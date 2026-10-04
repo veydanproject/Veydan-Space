@@ -1,0 +1,590 @@
+name: Release
+run-name: >-
+  ${{ contains(github.ref_name, '-alpha.') && format('Alpha {0}', github.ref_name)
+      || contains(github.ref_name, '-beta.') && format('Beta {0}', github.ref_name)
+      || contains(github.ref_name, '-rc.') && format('RC {0}', github.ref_name)
+      || format('Release {0}', github.ref_name) }}
+
+# One run builds ONE product (docs/platform-spec.md 14.1, 14.3; 20.14):
+#
+#   make push <product> alpha|beta|rc [p…]   <product>-vX.Y.Z-<channel>.N[-<platform>]…
+#                                            → the platforms named, or the three
+#                                            desktop ones; a CHANNEL build
+#   make push <product> release              <product>-vX.Y.Z → every platform;
+#                                            a RELEASE
+#
+# The tag names the product; the version must equal apps/<product>/VERSION
+# at the tagged commit. There is one job per platform, and it builds the
+# tagged product: the Rust cache of a platform is shared by the products,
+# so a product built after another reuses most of it.
+#
+# Where it is published (the owner's decision of 2026-10-04):
+#
+# - A channel build stays in THIS repository, the private monorepo: a
+#   prerelease under the tag that was pushed (notes-v5.0.0-alpha.1), with
+#   every bundle, the updater signatures and a latest.json, published with
+#   the run's own token by the job `publish-channel`, the only job with
+#   `contents: write`. No snapshot, no repository of a product, no
+#   PRODUCT_RELEASE_TOKEN: nothing of the channel path names them
+#   (scripts/tests/release.tests.mjs keeps it so). A prerelease is never
+#   what /releases/latest answers.
+# - A release goes to the PRODUCT's repository (products.json `repo`), under
+#   the tag without the prefix (v5.0.0), next to the snapshot of the tagged
+#   commit, which `make push <product> release` publishes with
+#   scripts/publish.sh before it tags the monorepo (14.4). The job
+#   `publish-release` does it with the secret PRODUCT_RELEASE_TOKEN — a
+#   token of the owner with Contents read/write on the four product
+#   repositories, kept in the environment `product-release`, which only
+#   `release-gate` and `publish-release` name. A run whose tagged commit is
+#   not on the default branch, whose snapshot tag is missing there, or
+#   without the token, stops in `release-gate`, before any build. THIS
+#   PATH IS TEMPORARY (20.21): once the owner approves the builds of the
+#   monorepo, a release will be built by the CI of the product's own
+#   repository, from its snapshot.
+#
+# Hence the shape: the build jobs only build, sign and hand their files
+# over as artifacts of the run. They hold no token that writes anywhere and
+# know nothing of where the release goes; what they need from the monorepo
+# is the checkout, scripts/release/ and the signing secrets, so the same
+# steps can later run on a snapshot (14.3, "What a snapshot lacks").
+#
+# Several products at once (20.14): one `make push <product> …` per
+# product. Each pushes its own tag on its own (GitHub starts nothing when
+# one `git push` carries more than three tags), and each tag starts its own
+# run. Run workflow by hand (Actions → Release) is for running a tag
+# again: on the product's tag, never on a branch.
+#
+# In a product's own repository (its snapshot, products.json with one
+# product) the tag is vX.Y.Z: kind=own, built there and published there as
+# its release with the run's token (the owner's decision of 2026-10-05).
+#
+# ios is accepted on a tag but not built.
+
+on:
+  push:
+    tags: ['space-v*', 'notes-v*', 'pass-v*', 'chat-v*', 'v*']
+  # Again, by hand, on a product's tag.
+  workflow_dispatch:
+
+# Read-only for every job; `publish-channel` alone asks for more.
+permissions:
+  contents: read
+
+# One run per tag at a time; a second one waits, it does not cancel a
+# release half published.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      product: ${{ steps.meta.outputs.product }}
+      version: ${{ steps.meta.outputs.version }}
+      kind: ${{ steps.meta.outputs.kind }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+      product_repo: ${{ steps.meta.outputs.product_repo }}
+      product_name: ${{ steps.meta.outputs.product_name }}
+      asset_prefix: ${{ steps.meta.outputs.asset_prefix }}
+      messenger: ${{ steps.meta.outputs.messenger }}
+      lib_name: ${{ steps.meta.outputs.lib_name }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      matrix: ${{ steps.meta.outputs.matrix }}
+      updater_keys: ${{ steps.meta.outputs.updater_keys }}
+      updater_pubkey: ${{ steps.meta.outputs.updater_pubkey }}
+      build_desktop: ${{ steps.meta.outputs.build_desktop }}
+      build_android: ${{ steps.meta.outputs.build_android }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # kind=channel or kind=release, the platforms, the names of the files.
+      # A channel build gets an empty product_repo.
+      - id: meta
+        name: Parse the tag and verify VERSION
+        run: bash scripts/release/meta.sh
+
+  # A release only (temporary, 20.21). The release is attached to the tag of
+  # the snapshot in the product's repository (14.4); this job stops it
+  # before anything is published when the tagged commit is not on the
+  # default branch (a tag put by hand on a side branch or an old commit),
+  # when the token is missing or cannot write, or when the snapshot's tag
+  # is not there. It runs in the environment `product-release`, which
+  # holds PRODUCT_RELEASE_TOKEN: only this job and `publish-release` name
+  # it, so a channel run, or the workflow of an older commit, cannot read it.
+  release-gate:
+    needs: meta
+    if: needs.meta.outputs.kind == 'release'
+    runs-on: ubuntu-latest
+    environment: product-release
+    permissions:
+      contents: read
+    steps:
+      # The whole history and the branches of origin: the ancestry is checked.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The tagged commit is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            echo "::error::The run does not name the default branch of the repository"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"; then
+            echo "::error::$GITHUB_REF_NAME is on $GITHUB_SHA, which is not on $DEFAULT_BRANCH: a release is cut from the default branch (make push)"
+            exit 1
+          fi
+
+      - name: The token reaches the product's repository, and the snapshot is there
+        env:
+          GH_TOKEN: ${{ secrets.PRODUCT_RELEASE_TOKEN }}
+          REPO: ${{ needs.meta.outputs.product_repo }}
+          RELEASE_TAG: ${{ needs.meta.outputs.release_tag }}
+          PRODUCT: ${{ needs.meta.outputs.product }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::The secret PRODUCT_RELEASE_TOKEN is missing: a token with Contents read/write on $REPO (docs/platform-spec.md 14.3)"
+            exit 1
+          fi
+          if ! gh api "repos/$REPO" --jq '.permissions.push' | grep -qx true; then
+            echo "::error::PRODUCT_RELEASE_TOKEN cannot write to $REPO (does the repository exist?)"
+            exit 1
+          fi
+          if ! gh api "repos/$REPO/git/ref/tags/$RELEASE_TAG" --jq .ref >/dev/null 2>&1; then
+            echo "::error::$REPO has no tag $RELEASE_TAG: publish the snapshot of this commit first (make push does; by hand: scripts/publish.sh $PRODUCT --tag $RELEASE_TAG --push)"
+            exit 1
+          fi
+
+  # Gate: the same checks CI runs on pull requests, for a channel build and
+  # for a release alike. Nothing builds or publishes until svelte-check,
+  # vitest and the Rust test suites pass on the tagged code.
+  checks:
+    needs: meta
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  # The desktop bundles of the product, signed for the updater, as an
+  # artifact of the run. No token: this job publishes nothing.
+  build:
+    needs: [meta, checks, release-gate]
+    # release-gate is skipped for a channel build: the status functions are
+    # written out, so that a skipped job does not skip this one.
+    if: >-
+      !cancelled() && needs.meta.result == 'success' && needs.checks.result == 'success' &&
+      needs.release-gate.result != 'failure' && needs.meta.outputs.build_desktop == 'true'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.meta.outputs.matrix) }}
+    runs-on: ${{ matrix.platform }}
+    env:
+      PRODUCT: ${{ needs.meta.outputs.product }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # As in the rust job of ci.yml: a release build of a product, with
+      # three Linux bundles, on a runner whose disk the image mostly fills
+      # with toolchains this job never uses.
+      - name: Free disk space
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            curl wget file
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      # The version rust-toolchain.toml names; macOS is built once per
+      # architecture.
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          case "${{ matrix.platform }}" in macos*) rustup target add aarch64-apple-darwin x86_64-apple-darwin ;; esac
+          rustc -V
+
+      # One cache per platform, shared by the products: they are built from
+      # the same crates of one workspace.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> data/target
+          key: ${{ matrix.platform }}${{ matrix.args }}
+
+      - name: Install frontend dependencies
+        run: pnpm --dir ui install --frozen-lockfile
+
+      # The updater installs only signed bundles; a build without the key
+      # would produce none and no signature.
+      - name: The updater key is there
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::The secret TAURI_SIGNING_PRIVATE_KEY is required: the updater installs only signed bundles"
+            exit 1
+          fi
+
+      # The CLI is the one of the UI project (ui/): TAURI_APP_PATH names the
+      # product and TAURI_FRONTEND_PATH the UI project (13.2) — the CLI never
+      # searches — and the product's beforeBuildCommand builds its UI there
+      # through the launcher (node ../scripts/ui.mjs <product> build).
+      # CARGO_TARGET_DIR is where .cargo/config.toml puts cargo's output.
+      # The runner's own shell: the line reads the same in each.
+      - name: Build and sign the bundles
+        env:
+          TAURI_APP_PATH: ${{ github.workspace }}/apps/${{ needs.meta.outputs.product }}
+          TAURI_FRONTEND_PATH: ${{ github.workspace }}/ui
+          CARGO_TARGET_DIR: ${{ github.workspace }}/data/target
+          # Signs updater artifacts (.sig) so installed apps accept them.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm --dir ui tauri build ${{ matrix.args }}
+
+      # The installers and signatures of this product and version, named
+      # for the release (Veydan.Notes_5.0.0_amd64.AppImage). Every signature
+      # is checked against the public key of tauri.conf.json: a secret that
+      # holds another key fails here, not on the first update.
+      - name: Gather the bundles
+        shell: bash
+        env:
+          PRODUCT_NAME: ${{ needs.meta.outputs.product_name }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          TARGET: ${{ matrix.target }}
+          PUBKEY: ${{ needs.meta.outputs.updater_pubkey }}
+        run: |
+          BUNDLE="data/target/release/bundle"
+          if [ -n "$TARGET" ]; then BUNDLE="data/target/$TARGET/release/bundle"; fi
+          node scripts/release/assets.mjs collect --bundle "$BUNDLE" \
+            --name "$PRODUCT_NAME" --version "$VERSION" --target "$TARGET" --pubkey "$PUBKEY" --out release-assets
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundles-${{ matrix.artifact }}
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 3
+
+      # What the build took of the disk: the first runs record it.
+      - name: Disk (after the job)
+        if: always()
+        shell: bash
+        run: df -h . && du -sh data/target 2>/dev/null || true
+
+  # Same SDK/NDK pins as scripts/android/android-env.sh. The build is the one
+  # of scripts/android/apk.sh: the product's env from scripts/product.sh, its
+  # own target directory data/target-android/<product> (13.4). The signed
+  # APK is an artifact of the run; no token here either.
+  build-android:
+    needs: [meta, checks, release-gate]
+    if: >-
+      !cancelled() && needs.meta.result == 'success' && needs.checks.result == 'success' &&
+      needs.release-gate.result != 'failure' && needs.meta.outputs.build_android == 'true'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 30.0.16248370
+      PRODUCT: ${{ needs.meta.outputs.product }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The same, except the Android SDK, which this job builds with.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0 ndk;30.0.16248370
+          log-accepted-android-sdk-licenses: false
+
+      - name: Export NDK paths
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      # The version and the components rust-toolchain.toml names.
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+          rustc -V
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> data/target-android/${{ needs.meta.outputs.product }}'
+          key: android-aarch64-${{ needs.meta.outputs.product }}
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ needs.meta.outputs.product }}-${{ hashFiles(format('apps/{0}/gen/android/**/*.gradle*', needs.meta.outputs.product)) }}
+
+      - name: Install frontend dependencies
+        run: pnpm --dir ui install --frozen-lockfile
+
+      # Firebase settings for the messenger's pushes (products with the
+      # messenger). The file is gitignored and must hold a client for the
+      # product's applicationId: one google-services.json of the Firebase
+      # project with an Android app per product.
+      - name: Write google-services.json
+        if: needs.meta.outputs.messenger == 'true'
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON secret (base64 of google-services.json) is required"
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -d > "apps/$PRODUCT/gen/android/app/google-services.json"
+
+      - name: Build Android APK
+        run: |
+          set -euo pipefail
+          ROOT_DIR="$GITHUB_WORKSPACE"
+          source scripts/product.sh
+          product_env "$PRODUCT"
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/data/target-android/$PRODUCT"
+          tauri_cli_ready
+          "$TAURI_CLI" android build --target aarch64
+
+      # 14.3, step 3: the push handler of the messenger is called by name from
+      # Java; a library that lost the symbol builds and fails on the phone.
+      # The list of llvm-nm is taken whole and searched afterwards. Piped into
+      # `grep -q` under pipefail, the check failed the first alphas of Space
+      # and Chat on a library that had the symbol: grep leaves at the match,
+      # llvm-nm fails on the closed pipe, and its status became the answer.
+      - name: The JNI symbol of the push handler
+        if: needs.meta.outputs.messenger == 'true'
+        env:
+          LIB_NAME: ${{ needs.meta.outputs.lib_name }}
+        run: |
+          set -euo pipefail
+          LIB="data/target-android/$PRODUCT/aarch64-linux-android/release/lib$LIB_NAME.so"
+          NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          SYMBOL=Java_net_veydan_push_Core_describe
+          if ! SYMBOLS="$("$NM" -D "$LIB")"; then
+            echo "::error::llvm-nm could not list the symbols of $LIB"
+            exit 1
+          fi
+          if ! grep " T $SYMBOL\$" <<<"$SYMBOLS"; then
+            echo "::error::$LIB does not export $SYMBOL"
+            echo "The Java_ symbols it exports:"
+            grep ' Java_' <<<"$SYMBOLS" || echo "  (none)"
+            exit 1
+          fi
+
+      # The passwords reach apksigner through the environment (env:NAME),
+      # never through a command line.
+      - name: Sign the APK
+        env:
+          ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          ANDROID_RELEASE_KEYSTORE: ${{ secrets.ANDROID_RELEASE_KEYSTORE }}
+          ANDROID_RELEASE_KS_PASS: ${{ secrets.ANDROID_RELEASE_KS_PASS }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_RELEASE_KEYSTORE" ] || [ -z "$ANDROID_RELEASE_KS_PASS" ]; then
+            echo "::error::ANDROID_RELEASE_KEYSTORE and ANDROID_RELEASE_KS_PASS secrets are required"
+            exit 1
+          fi
+          ALIAS="${ANDROID_RELEASE_KEY_ALIAS:-veydan}"
+          KS="$RUNNER_TEMP/android-release.keystore"
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE" | base64 -d > "$KS"
+
+          UNSIGNED="$(find "apps/$PRODUCT/gen/android/app/build/outputs/apk" \
+            -name '*-unsigned.apk' -printf '%T@\t%p\n' | sort -nr | sed -n '1s/^[^\t]*\t//p')"
+          if [ -z "$UNSIGNED" ]; then
+            rm -f "$KS"
+            echo "::error::No unsigned APK after tauri android build"
+            exit 1
+          fi
+
+          SIGNER="$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner | tail -n1)"
+          # Named after the product, like its desktop bundles: Veydan.Notes_5.0.0_android.apk
+          mkdir -p release-assets
+          SIGNED="release-assets/${ASSET_PREFIX}_${VERSION}_android.apk"
+          # Without the v4 scheme: it serves incremental installs over adb and
+          # is written as a second file, <apk>.idsig, which was uploaded and
+          # published next to the APK (the first alpha of Notes).
+          "$SIGNER" sign --ks "$KS" --ks-key-alias "$ALIAS" \
+            --ks-pass env:ANDROID_RELEASE_KS_PASS --key-pass env:ANDROID_RELEASE_KS_PASS \
+            --v4-signing-enabled false \
+            --out "$SIGNED" "$UNSIGNED"
+          rm -f "$KS"
+          "$SIGNER" verify "$SIGNED"
+          # The job hands over the signed APK and nothing else.
+          if [ "$(ls -A release-assets)" != "$(basename "$SIGNED")" ]; then
+            echo "::error::release-assets holds more than the signed APK"
+            ls -A release-assets
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundles-android
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Disk (after the job)
+        if: always()
+        shell: bash
+        run: df -h . && du -sh data/target-android 2>/dev/null || true
+
+  # A channel build: a prerelease of THIS repository under the tag that was
+  # pushed, with the run's own token. The owner downloads the packages from
+  # the monorepo's Releases page. Nothing here names a product's repository
+  # or PRODUCT_RELEASE_TOKEN.
+  publish-channel:
+    needs: [meta, build, build-android]
+    # Run when every requested platform succeeded; skipped jobs are fine.
+    if: |
+      !cancelled() &&
+      (needs.meta.outputs.kind == 'channel' || needs.meta.outputs.kind == 'own') &&
+      needs.build.result != 'failure' &&
+      needs.build-android.result != 'failure' &&
+      (needs.build.result == 'success' || needs.build-android.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # scripts/release/, and gh calls git even when --repo is set.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bundles-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish in this repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.meta.outputs.release_tag }}
+          RELEASE_NAME: ${{ needs.meta.outputs.release_name }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+          ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          UPDATER_KEYS: ${{ needs.meta.outputs.updater_keys }}
+          ASSETS_DIR: release-assets
+        run: |
+          if [ "$RELEASE_TAG" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::A build of this repository is published under its own tag $GITHUB_REF_NAME, not $RELEASE_TAG"
+            exit 1
+          fi
+          bash scripts/release/publish.sh
+
+  # A release: into the product's repository, next to its snapshot, with the
+  # owner's token. TEMPORARY (20.21): this job goes away when releases are
+  # built by the product repository's own CI.
+  publish-release:
+    needs: [meta, release-gate, build, build-android]
+    # Run when every requested platform succeeded; skipped jobs are fine.
+    if: |
+      !cancelled() &&
+      needs.meta.outputs.kind == 'release' &&
+      needs.release-gate.result == 'success' &&
+      needs.build.result != 'failure' &&
+      needs.build-android.result != 'failure' &&
+      (needs.build.result == 'success' || needs.build-android.result == 'success')
+    runs-on: ubuntu-latest
+    # The environment that holds PRODUCT_RELEASE_TOKEN (see release-gate).
+    environment: product-release
+    permissions:
+      contents: read
+    steps:
+      # scripts/release/, and gh calls git even when --repo is set.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bundles-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish the release in the product's repository
+        env:
+          GH_TOKEN: ${{ secrets.PRODUCT_RELEASE_TOKEN }}
+          REPO: ${{ needs.meta.outputs.product_repo }}
+          RELEASE_TAG: ${{ needs.meta.outputs.release_tag }}
+          RELEASE_NAME: ${{ needs.meta.outputs.release_name }}
+          PRERELEASE: 'false'
+          ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          UPDATER_KEYS: ${{ needs.meta.outputs.updater_keys }}
+          ASSETS_DIR: release-assets
+        run: |
+          if [ -z "$REPO" ]; then
+            echo "::error::No product repository: only a release (<product>-vX.Y.Z) is published there"
+            exit 1
+          fi
+          bash scripts/release/publish.sh
