@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+#
+# The one version of Rust this tree builds with. rustup reads the file from
+# the working directory upwards, so it covers the root workspace and
+# crates/messenger; scripts/toolchain.sh and every workflow install what it
+# names. A new stable, with its new lints, reaches CI only when this file
+# says so.
+# To move: change the version, run the clippy lines of
+# .github/workflows/ci.yml, fix what the new version finds, commit together.
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
+components = ["clippy"]

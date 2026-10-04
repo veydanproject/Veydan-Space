@@ -1,0 +1,76 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-shell"
+description = "What every product is started by: the module contract, the command router, the app builder, the tray frame, the services modules take from the host"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[build-dependencies]
+veydan-build-cfg = { path = "../build-cfg" }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio"] }
+veydan-core = { path = "../core" }
+# The lock of the app: the shell manages it, owns its commands and runs its timer.
+veydan-lock = { path = "../lock" }
+# The sync of the product: the shell builds its registry from the modules,
+# manages it, starts its scheduler and routes its commands.
+veydan-sync-host = { path = "../sync-host" }
+# The check for a new version on a phone (src/update.rs): its HTTP client.
+veydan-sync = { path = "../sync" }
+# Versions of latest.json against the product's.
+semver = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time"] }
+
+# The product names each plugin below as its own dependency too: tauri-build
+# learns a plugin's permissions only from the direct dependencies of the
+# crate it runs in.
+
+# ── Desktop only: one instance, the tray, --workdir, the updater ─────────────
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
+# Open http(s) links in the system browser without going through a shell
+tauri-plugin-opener = "2"
+url = "2"
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
+# Tag of a --workdir profile
+sha2 = "0.11"
+
+# ── Mobile only ──────────────────────────────────────────────────────────────
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# Native file picker (content:// URIs) and fd-based reads of those URIs.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+# ContentResolver queries for picked files (display name, size).
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Native StatusNotifierItem impl: unlike Tauri's libappindicator backend it
+# exposes separate left-click (Activate) and right-click (ContextMenu) handlers,
+# which KDE Plasma honors — used for the Linux tray so left-click opens the app.
+ksni = "0.3"
+# Answer WebKitGTK media permission requests (camera / microphone)
+webkit2gtk = "2"
+
+[dev-dependencies]
+# Mock runtime: tests call commands through the router, the way the webview does.
+tauri = { version = "2", features = ["test"] }
+# examples/ksni_smoke.rs
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+# The data file of a test of the demo driver.
+tempfile = "3"

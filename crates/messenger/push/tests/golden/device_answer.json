@@ -1,0 +1,8 @@
+{
+  "device_id": "phone-0001",
+  "expires_at": 1792592000,
+  "relays": [
+    { "url": "wss://node-1.veydan.net", "status": "pending" },
+    { "url": "wss://relay.example.org", "status": "not_allowed", "detail": "this server does not watch this relay" }
+  ]
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "pr-1",
+    "entity_type": "profile_snapshot",
+    "hlc": "000001a0fe5623d1-00000000-c522b5659447a28e",
+    "payload": {
+      "bytes": 74,
+      "files": 2,
+      "manifest_blob": "c8f64829ec3dfa694838c057fcd1cd505d0c75a8f4c58e6be4a0f3d1ec06b013",
+      "taken_at": "2026-10-02T20:37:33.265320085+00:00"
+    }
+  }
+]

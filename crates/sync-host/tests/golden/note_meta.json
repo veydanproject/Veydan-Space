@@ -1,0 +1,51 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "note-1",
+    "entity_type": "note_meta",
+    "hlc": "000001a0fe562361-00000000-c522b5659447a28e",
+    "payload": {
+      "archived": 0,
+      "folder_ids": [
+        "f-1",
+        "f-2"
+      ],
+      "pinned": 1
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "note-2",
+    "entity_type": "note_meta",
+    "hlc": "000001a0fe562361-00000001-c522b5659447a28e",
+    "payload": {
+      "archived": 0,
+      "folder_ids": [],
+      "pinned": 0
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "note-3",
+    "entity_type": "note_meta",
+    "hlc": "000001a0fe562361-00000002-c522b5659447a28e",
+    "payload": {
+      "archived": 1,
+      "folder_ids": [],
+      "pinned": 0
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "note-1",
+    "entity_type": "note_meta",
+    "hlc": "000001a0fe5623e6-00000001-c522b5659447a28e",
+    "payload": {
+      "archived": 0,
+      "folder_ids": [
+        "f-1"
+      ],
+      "pinned": 0
+    }
+  }
+]

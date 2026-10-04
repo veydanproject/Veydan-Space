@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "messenger-identity"
+description = "Messenger identity: Nostr key pair generation, import/export (nsec, ncryptsec, mnemonic), persisted through SecretStore"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+messenger-core.workspace = true
+messenger-store.workspace = true
+nostr.workspace = true
+serde.workspace = true
+zeroize.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+messenger-testkit.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

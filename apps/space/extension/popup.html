@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
+<!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; width: 320px; font: 13px system-ui, sans-serif; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; }
+    button { padding: 6px 8px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+    button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+    button:disabled { opacity: .5; cursor: default; }
+    .section { padding: 4px 10px 10px; }
+    .label { font-size: 11px; text-transform: uppercase; opacity: .6; margin: 6px 0 4px; }
+    .note { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; padding: 6px 4px; border-radius: 4px; }
+    .note .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .note .scope { font-size: 10px; opacity: .6; }
+    .empty, .error { padding: 6px 4px; opacity: .7; }
+    .error { color: #e5484d; opacity: 1; }
+    .hidden { display: none; }
+    .picker { padding: 0 10px 10px; }
+    .picker input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; background: transparent; color: inherit; font: inherit; }
+    .picker .hint { font-size: 11px; opacity: .6; margin: 6px 0 2px; }
+    details { border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+    summary { padding: 8px 10px; cursor: pointer; font-size: 12px; opacity: .8; }
+    .help { padding: 0 10px 10px; font-size: 12px; opacity: .8; line-height: 1.45; }
+    .help p { margin: 0 0 6px; }
+  </style>
+</head>
+<body>
+  <div class="actions">
+    <button data-kind="selection_new" data-i18n="save_selection" data-i18n-title="save_selection_hint"></button>
+    <button id="pick" data-i18n="add_to_note" data-i18n-title="add_to_note_hint"></button>
+    <button data-kind="article" data-i18n="save_article" data-i18n-title="save_article_hint"></button>
+    <button data-kind="screenshot" data-i18n="save_screenshot" data-i18n-title="save_screenshot_hint"></button>
+  </div>
+  <div id="picker" class="picker hidden">
+    <input id="query" type="search" autocomplete="off" data-i18n-placeholder="search_placeholder">
+    <div class="hint" data-i18n="pick_hint"></div>
+    <div id="results"></div>
+  </div>
+  <div class="section">
+    <div class="label" data-i18n="notes_for_page"></div>
+    <div id="notes"><div class="empty" data-i18n="loading"></div></div>
+  </div>
+  <details>
+    <summary data-i18n="how_it_works"></summary>
+    <div class="help">
+      <p data-i18n="help_1"></p>
+      <p data-i18n="help_2"></p>
+      <p data-i18n="help_3"></p>
+    </div>
+  </details>
+  <script src="config.js"></script>
+  <script src="i18n.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

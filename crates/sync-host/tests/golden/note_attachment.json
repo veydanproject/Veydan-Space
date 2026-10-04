@@ -1,0 +1,37 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "note-1/gone.txt",
+    "entity_type": "note_attachment",
+    "hlc": "000001a0fe562366-00000000-c522b5659447a28e",
+    "payload": {
+      "blob": "1d0b0d8f1586d107ba464ddd65f64a17c4a7df9d624f217241c619945ce2ec2c",
+      "name": "gone.txt",
+      "note_id": "note-1",
+      "size": 27
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "note-1/scan.pdf",
+    "entity_type": "note_attachment",
+    "hlc": "000001a0fe562366-00000001-c522b5659447a28e",
+    "payload": {
+      "blob": "e9f5254f61ac908098fa532c9c4f3a5e512a414e7869fc029784332d908d0504",
+      "name": "scan.pdf",
+      "note_id": "note-1",
+      "size": 21
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "note-1/gone.txt",
+    "entity_type": "note_attachment",
+    "hlc": "000001a0fe5623ea-00000000-c522b5659447a28e",
+    "payload": {
+      "name": "gone.txt",
+      "note_id": "note-1",
+      "size": 0
+    }
+  }
+]

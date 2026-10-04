@@ -1,0 +1,66 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "note-1",
+    "entity_type": "note",
+    "hlc": "000001a0fe5623b8-00000000-c522b5659447a28e",
+    "payload": {
+      "blob": "9a7f30fc23ac621dd6ac1aa0dc3e8b630ec3ac1e2076ae3b0e00742a2b549d04",
+      "format": "md",
+      "parents": [],
+      "title": "Deploy"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "note-2",
+    "entity_type": "note",
+    "hlc": "000001a0fe5623b8-00000001-c522b5659447a28e",
+    "payload": {
+      "blob": "650af56bacd19378590b9495690938fe45df5c642ee2c96f6f5b04fcc8171b68",
+      "format": "md",
+      "parents": [],
+      "title": "Plain"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "note-3",
+    "entity_type": "note",
+    "hlc": "000001a0fe5623b8-00000002-c522b5659447a28e",
+    "payload": {
+      "blob": "ab8a20bb0feeaaf33adb916d404df76d8e37836b7e59036fc63c122ee2a3d6bf",
+      "format": "md",
+      "parents": [],
+      "title": "Old"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "note-2",
+    "entity_type": "note",
+    "hlc": "000001a0fe5623eb-00000000-c522b5659447a28e",
+    "payload": {
+      "blob": "020b5812c28e3926340f7223f6f64dae4144e442eaf0b5bba446591a5a0050ee",
+      "format": "md",
+      "parents": [
+        "650af56bacd19378590b9495690938fe45df5c642ee2c96f6f5b04fcc8171b68"
+      ],
+      "title": "Plain"
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "note-3",
+    "entity_type": "note",
+    "hlc": "000001a0fe5623eb-00000001-c522b5659447a28e",
+    "payload": {
+      "blob": "",
+      "format": "",
+      "parents": [
+        "ab8a20bb0feeaaf33adb916d404df76d8e37836b7e59036fc63c122ee2a3d6bf"
+      ],
+      "title": ""
+    }
+  }
+]

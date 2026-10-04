@@ -1,0 +1,120 @@
+name: CI
+
+# Veydan Space. This repository is a snapshot of the sources of one product,
+# published release by release; nobody commits here by hand. The workflow
+# proves that the snapshot builds by itself from a clean clone: the crate of
+# the product, its UI, the type check and the tests.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      # The UI project is ui/: its package.json and lock file are there.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir ui install --frozen-lockfile
+
+      - name: Type-check (svelte-check)
+        run: node scripts/ui.mjs space svelte-check
+
+      - name: Unit tests (vitest)
+        run: node scripts/ui.mjs space vitest run
+
+      - name: Build the UI
+        run: node scripts/ui.mjs space build
+
+  # Which crate may depend on which, where Tauri may appear, what a UI file
+  # may import. Reads the manifests through `cargo metadata`; nothing is
+  # compiled or downloaded.
+  boundaries:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      # The version and the components rust-toolchain.toml names.
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc -V
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Boundaries
+        run: bash scripts/boundaries.sh
+
+  rust:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      # The tauri crate does not compile without the WebKitGTK headers,
+      # test builds included.
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            dbus \
+            curl wget file
+
+      # The version and the components rust-toolchain.toml names.
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc -V
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> data/target
+          key: ci
+
+      # The product by itself first: a build of the whole workspace unifies
+      # the features of its dependencies and can hide a crate that does not
+      # compile alone.
+      - name: Check (veydanspace)
+        run: cargo check -p veydanspace --locked
+
+      - name: Tests (workspace)
+        run: cargo test --workspace --all-targets --locked
+
+  # The crates of the messenger are a workspace of their own, free of Tauri,
+  # with their own lock file.
+  messenger:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      # The version and the components rust-toolchain.toml names.
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc -V
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: crates/messenger -> ../../data/target
+          key: messenger
+      - name: Tests (messenger workspace)
+        run: cargo test --workspace --all-targets --locked --manifest-path crates/messenger/Cargo.toml

@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "messenger-vlink"
+description = "The way to the project's servers through a bridge, when the direct way is throttled"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The client side of VLink, the bridge system: it lives in this repository
+# (services/link), in a workspace of its own. The one dependency of the
+# messenger that leaves crates/messenger (scripts/boundaries.sh knows it).
+vlink-proto = { git = "https://github.com/veydanproject/Veydan-Link", tag = "v0.1.0" }
+vlink-client = { git = "https://github.com/veydanproject/Veydan-Link", tag = "v0.1.0" }
+
+ring.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "sync", "rt"] }
+tracing.workspace = true
+
+# For the bridge of the tests (`testing`).
+bytes.workspace = true
+h2.workspace = true
+http.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+
+[features]
+# A bridge on this machine, for tests here and in the crates that use this one.
+testing = []
+
+[dev-dependencies]
+messenger-vlink = { path = ".", features = ["testing"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

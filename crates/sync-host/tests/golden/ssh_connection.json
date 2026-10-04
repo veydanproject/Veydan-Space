@@ -1,0 +1,74 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "ssh-1",
+    "entity_type": "ssh_connection",
+    "hlc": "000001a0fe5623bc-00000000-c522b5659447a28e",
+    "payload": {
+      "auth_type": "key",
+      "connect_timeout_sec": 15,
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "default_cols": 120,
+      "default_rows": 32,
+      "host": "203.0.113.5",
+      "keepalive_sec": 30,
+      "key_passphrase": null,
+      "name": "prod-web-01",
+      "password": null,
+      "port": 22,
+      "private_key": null,
+      "profile_ids": [
+        "pr-1"
+      ],
+      "proxy_id": "px-1",
+      "requires_2fa": 1,
+      "server_fingerprint": "SHA256:def",
+      "ssh_key_id": "key-1",
+      "terminal_theme": null,
+      "totp_entry_id": "totp-1",
+      "updated_at": "2026-09-02T11:30:00+00:00",
+      "username": "deploy",
+      "workspace_ids": [
+        "ws-1",
+        "ws-2"
+      ]
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "ssh-2",
+    "entity_type": "ssh_connection",
+    "hlc": "000001a0fe5623bd-00000000-c522b5659447a28e",
+    "payload": {
+      "auth_type": "password",
+      "connect_timeout_sec": 15,
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "default_cols": 120,
+      "default_rows": 32,
+      "host": "203.0.113.9",
+      "keepalive_sec": 30,
+      "key_passphrase": null,
+      "name": "gone",
+      "password": null,
+      "port": 22,
+      "private_key": null,
+      "profile_ids": [],
+      "proxy_id": null,
+      "requires_2fa": 0,
+      "server_fingerprint": null,
+      "ssh_key_id": null,
+      "terminal_theme": null,
+      "totp_entry_id": null,
+      "updated_at": "2026-09-01T10:00:00+00:00",
+      "username": "root",
+      "workspace_ids": []
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "ssh-2",
+    "entity_type": "ssh_connection",
+    "hlc": "000001a0fe5623ed-00000001-c522b5659447a28e",
+    "payload": {}
+  }
+]

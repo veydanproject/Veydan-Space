@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Direct messages</string>
+    <string name="veydan_push_channel_groups">Groups</string>
+    <string name="veydan_push_channel_service">Service messages</string>
+    <string name="veydan_push_update_title">New notification</string>
+    <string name="veydan_push_update_body">Update the app to see it.</string>
+    <string name="veydan_push_test_title">Test notification</string>
+    <string name="veydan_push_test_body">Pushes reach this phone.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">You</string>
+    <string name="veydan_push_dm_title">New message</string>
+    <string name="veydan_push_group">Group</string>
+    <string name="veydan_push_one">New message</string>
+    <string name="veydan_push_many">%d new messages</string>
+    <string name="veydan_push_more">and %d more</string>
+    <string name="veydan_push_request">Message request</string>
+    <string name="veydan_push_photo">Photo</string>
+    <string name="veydan_push_video">Video</string>
+    <string name="veydan_push_voice">Voice message</string>
+    <string name="veydan_push_circle">Video message</string>
+    <string name="veydan_push_audio">Audio</string>
+    <string name="veydan_push_file">File</string>
+    <string name="veydan_push_album">Album: %d</string>
+    <string name="veydan_push_files">Files: %d</string>
+    <string name="veydan_push_link_group">Group “%s”</string>
+    <string name="veydan_push_link_group_nameless">Link to a group</string>
+    <string name="veydan_push_link_contact">Contact: %s</string>
+    <string name="veydan_push_link_contact_nameless">Contact</string>
+    <string name="veydan_push_invite">Invites you to the group %s</string>
+    <string name="veydan_push_join_request">Asks to join %s</string>
+    <string name="veydan_push_welcome">You are in the group %s</string>
+</resources>

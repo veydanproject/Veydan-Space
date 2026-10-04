@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-pass"
+description = "The module Pass: passwords, TOTP and the history of the password generator, with their sync, their entities in the directory and their demo data"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[build-dependencies]
+veydan-build-cfg = { path = "../build-cfg" }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio", "macros"] }
+tokio = { version = "1", features = ["time"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
+# Wipes the plaintext of a password that moves to another key.
+zeroize = "1"
+# Errors, the data file, deletion hooks, the entity directory.
+veydan-core = { path = "../core" }
+# The key of the vault: field encryption, the reset, what pass keeps under the key.
+veydan-lock = { path = "../lock" }
+# The module contract and the services of the host: the tray, the main window.
+veydan-shell = { path = "../shell" }
+# What pass syncs.
+veydan-sync-host = { path = "../sync-host" }
+
+# ── Desktop only: a password copied to the clipboard ────────────────────────
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
+
+# ── Mobile only: the camera reads the QR code of a TOTP secret ──────────────
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+
+[dev-dependencies]
+# Mock runtime: the providers of the directory and the demo part run without the app.
+tauri = { version = "2", features = ["test"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"

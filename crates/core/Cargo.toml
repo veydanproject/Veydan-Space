@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-core"
+description = "What every module stands on: errors, the data file and its schemas, settings, deletion hooks, the entity directory"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[build-dependencies]
+veydan-build-cfg = { path = "../build-cfg" }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio"] }
+thiserror = "2"
+anyhow = "1"
+# The error type of the lock, turned into the error of the commands.
+veydan-lock = { path = "../lock" }
+# Only the entity directory needs it: a provider is called with the app handle.
+tauri = { version = "2", features = [] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+tauri = { version = "2", features = ["test"] }

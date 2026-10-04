@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "auth_expired",
+    "message": "the signature is too old or from the future; compare the clocks",
+    "server_time": 1790000000
+  },
+  "request_id": "5f3a9c1e"
+}

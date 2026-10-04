@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-messenger-app"
+description = "The adapter of the messenger: its commands, the start of its runtime, its secrets in the box of the lock, push on Android and notifications on a computer"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[build-dependencies]
+veydan-build-cfg = { path = "../build-cfg" }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+async-trait = "0.1.89"
+base64 = "0.22"
+# Wipes the messenger's secrets from memory
+zeroize = "1"
+# A file saved to a content:// URI on Android goes through the fs plugin.
+tauri-plugin-fs = "2"
+# The process holds two rustls crypto providers (aws-lc-rs from the host
+# tree, ring from nostr-sdk) and rustls refuses to guess; the setup of the
+# module installs aws-lc-rs explicitly.
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
+# Errors, settings, the data directory.
+veydan-core = { path = "../core" }
+# The module contract and the services of the host: the product, the unread
+# count, the main window, picked files, the camera and the microphone.
+veydan-shell = { path = "../shell" }
+# The box `messenger` the secrets are kept in, and the events of the lock.
+veydan-lock = { path = "../lock" }
+# The messenger: a workspace of its own, free of Tauri (docs/messenger-spec.md).
+messenger-core = { path = "../messenger/core" }
+messenger-runtime = { path = "../messenger/runtime" }
+messenger-notify = { path = "../messenger/notify" }
+
+# ── Desktop only: the notifications of the system, links and files opened ────
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+# Notifications of the messenger on a computer (D-Bus, WinRT, UserNotifications).
+desktop-notify = { path = "../desktop-notify" }
+# Open http(s) links and received files without going through a shell
+tauri-plugin-opener = "2"
+# The sender's picture of a notification.
+reqwest = "0.13"
+sha2 = "0.11"
+# The window icon of the product as a file, for systems that take the
+# source's icon from one (Windows).
+png = "0.18"
+
+# ── Android: push, and the push handler's way in without the app ────────────
+[target.'cfg(target_os = "android")'.dependencies]
+# The product depends on the plugin too: tauri-build finds the plugin's
+# Android library through the direct dependencies of the product crate.
+tauri-plugin-veydan-push = { path = "../tauri-plugin-veydan-push" }
+jni = "0.21"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+# The relay of the test that stops and starts the messenger: a socket that
+# takes the handshake and keeps the connection, as a relay does.
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+futures-util = "0.3"

@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-sync-host"
+description = "The sync of a product: the cycle and its scheduler, its state and settings, garbage collection of the vault, and the registry the modules fill with their entities"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[build-dependencies]
+veydan-build-cfg = { path = "../build-cfg" }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio"] }
+tokio = { version = "1", features = ["time"] }
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1.89"
+# Device name for the sync lease badge
+gethostname = "1"
+# Errors, settings, the data file and its schemas.
+veydan-core = { path = "../core" }
+# The key row of the lock is a system entity of sync.
+veydan-lock = { path = "../lock" }
+# E2E-encrypted sync core (folder / S3 / WebDAV), Tauri-free.
+veydan-sync = { path = "../sync" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"

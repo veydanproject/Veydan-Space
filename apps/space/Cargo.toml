@@ -1,0 +1,97 @@
+[package]
+name = "veydanspace"
+version = "5.0.0"
+description = "Workspace for multi-accounting: browser profiles, proxies, SSH, notes, passwords and chat"
+authors = ["Veydan Project"]
+edition = "2021"
+license-file = "../../LICENSE"
+
+[lib]
+# One library for every platform: desktop main.rs and the Android/iOS bootstrap load it.
+name = "veydan_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# ── Shared on every platform: the modules, sync, settings ───────────────────
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio", "chrono", "macros"] }
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+base64 = "0.22"
+sha2 = "0.11"
+# CSPRNG for SSH key generation (already in the tree via russh)
+rand = { version = "0.10", features = ["thread_rng"] }
+async-trait = "0.1.89"
+zstd = "0.13"
+# E2E-encrypted sync core (folder / S3 / WebDAV); Tauri-free so mobile can reuse it.
+veydan-sync = { path = "../../crates/sync" }
+# Errors, the data file and its schemas, settings.
+veydan-core = { path = "../../crates/core" }
+# The module contract, the command router, the app builder, the tray frame.
+veydan-shell = { path = "../../crates/shell" }
+# The lock of the app and the key of the vault: field encryption, secret boxes.
+veydan-lock = { path = "../../crates/lock" }
+# The sync cycle and its registry; the modules of Space register their entities.
+veydan-sync-host = { path = "../../crates/sync-host" }
+# The module Pass: passwords, TOTP, the history of the password generator.
+veydan-pass = { path = "../../crates/pass" }
+# The module Notes: note files, their index, attachments and their sync.
+veydan-notes = { path = "../../crates/notes" }
+# The module Messenger: the adapter of the messenger crates (docs/messenger-spec.md).
+veydan-messenger-app = { path = "../../crates/messenger-app" }
+
+[dev-dependencies]
+# Mock runtime: tests call commands through the IPC handler, the way the webview does.
+tauri = { version = "2", features = ["test"] }
+
+# ── Desktop only: browser, proxies, SSH/SFTP, backup ─────────────────────────
+# The plugins the shell registers are named here too: tauri-build learns a
+# plugin's permissions only from the direct dependencies of this crate.
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
+# Open http(s) links in the system browser without going through a shell
+tauri-plugin-opener = "2"
+reqwest = { version = "0.13", features = ["socks", "json", "stream"] }
+which = "8"
+zip = "8"
+lz4_flex = "0.13"
+futures-util = "0.3"
+# Capped at 0.39 (libsqlite3-sys 0.37): rusqlite 0.40 needs libsqlite3-sys
+# 0.38, which conflicts with sqlx-sqlite 0.9's `libsqlite3-sys <0.38` on the
+# native `sqlite3` link. Bump to 0.40 once sqlx moves to libsqlite3-sys 0.38.
+rusqlite = "0.39"
+# Escape proxy credentials when building proxy URLs (already in the tree via reqwest/url)
+percent-encoding = "2"
+russh = "0.62"
+russh-sftp = "2"
+tokio-util = "0.7"
+# Full-app backup: streaming tar + passphrase (scrypt) authenticated encryption.
+# age pinned to 0.11: 0.12 pulls post-quantum crates (ml-kem) that don't build
+# on this toolchain, and we only use the scrypt passphrase recipient anyway.
+tar = "0.4"
+age = { version = "0.11", default-features = false }
+
+# ── Mobile only ──────────────────────────────────────────────────────────────
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+# Native file picker (content:// URIs) and fd-based reads of those URIs.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# Push notifications of the messenger: token, permission, showing a push
+# while the app is not running. The module of the messenger registers it;
+# it is named here because tauri-build finds the Android library of a plugin
+# through the direct dependencies of the product crate.
+tauri-plugin-veydan-push = { path = "../../crates/tauri-plugin-veydan-push" }

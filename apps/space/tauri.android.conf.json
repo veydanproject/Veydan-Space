@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Veydan",
+  "identifier": "net.veydan.mobile",
+  "build": {
+    "devUrl": "http://localhost:1430",
+    "frontendDist": "../../data/build/space-android"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Veydan",
+        "width": 420,
+        "height": 860
+      }
+    ],
+    "security": {
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost data: blob: https:",
+        "media-src": "'self' asset: http://asset.localhost blob:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost ws://127.0.0.1:1431 http://127.0.0.1:1430 ws://localhost:1431 http://localhost:1430",
+        "frame-src": "'none'",
+        "object-src": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "android": {
+      "minSdkVersion": 26,
+      "versionCode": 2050000
+    }
+  }
+}

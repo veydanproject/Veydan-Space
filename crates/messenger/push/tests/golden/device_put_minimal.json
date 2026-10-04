@@ -1,0 +1,4 @@
+{
+  "app_id": "net.veydan.mobile",
+  "channel": { "provider": "fcm", "token": "fcm-token-of-the-device" }
+}

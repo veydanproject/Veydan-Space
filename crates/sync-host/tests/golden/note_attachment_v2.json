@@ -1,0 +1,53 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "note-2/old.txt",
+    "entity_type": "note_attachment_v2",
+    "hlc": "000001a0fe562388-00000000-c522b5659447a28e",
+    "payload": {
+      "lf": {
+        "file_id": "5552407925b551f34d92951852063344ecd85a36b9778d62ebb9c708cada0a84",
+        "manifest_id": "346effb8acd9b590e0dcf947d4a21e068822736eb5fed6081b0f3159f8937853",
+        "size": 1048593,
+        "version": 2
+      },
+      "lf_refs": [
+        "346effb8acd9b590e0dcf947d4a21e068822736eb5fed6081b0f3159f8937853"
+      ],
+      "name": "old.txt",
+      "note_id": "note-2",
+      "size": 1048593
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "note-2/video.txt",
+    "entity_type": "note_attachment_v2",
+    "hlc": "000001a0fe5623b7-00000000-c522b5659447a28e",
+    "payload": {
+      "lf": {
+        "file_id": "36c6840a91bdc8a9ab3d4b6cf28bcb15c9c67cfd2d6b8f036d67d28c8ff0174e",
+        "manifest_id": "8b3ef2f30da2d8a2cd938e15d0c62c2f67eed8c9f522b12f8e69812f0924a667",
+        "size": 1572864,
+        "version": 2
+      },
+      "lf_refs": [
+        "8b3ef2f30da2d8a2cd938e15d0c62c2f67eed8c9f522b12f8e69812f0924a667"
+      ],
+      "name": "video.txt",
+      "note_id": "note-2",
+      "size": 1572864
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "note-2/old.txt",
+    "entity_type": "note_attachment_v2",
+    "hlc": "000001a0fe5623ea-00000001-c522b5659447a28e",
+    "payload": {
+      "name": "old.txt",
+      "note_id": "note-2",
+      "size": 0
+    }
+  }
+]

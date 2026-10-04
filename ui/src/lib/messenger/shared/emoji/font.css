@@ -1,0 +1,31 @@
+/* SPDX-FileCopyrightText: 2026 Veydan Project */
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 */
+
+/*
+ * Colour emoji that do not depend on the system. Many Linux desktops ship
+ * no emoji font at all and fall back to partial monochrome glyphs.
+ *
+ * Noto Color Emoji (SIL OFL 1.1) from @fontsource/noto-color-emoji, the
+ * single-file build. The build that is split by unicode range draws empty
+ * glyphs in some webviews, this one does not. The file is fetched once,
+ * the first time an emoji is on screen.
+ */
+@font-face {
+  font-family: 'Veydan Emoji';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('@fontsource/noto-color-emoji/files/noto-color-emoji-emoji-400-normal.woff2') format('woff2');
+  unicode-range: U+200d, U+20e3, U+fe0f, U+a9, U+ae, U+203c, U+2049, U+2122, U+2139, U+2194-21aa, U+231a-23ff, U+24c2,
+    U+25aa-25fe, U+2600-27bf, U+2934-2935, U+2b05-2b55, U+3030, U+303d, U+3297, U+3299, U+1f000-1faff, U+e0020-e007f;
+}
+
+/*
+ * Applied to the messenger's own screens. The emoji font sits before the
+ * generic family so it is reached for the characters the text font lacks.
+ */
+.messenger,
+.msg-m,
+.msg-font {
+  font-family: 'Manrope Variable', 'Veydan Emoji', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}

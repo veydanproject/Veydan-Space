@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+#
+# Root workspace of Veydan Space: the application and the crates it is built
+# from share one lock file and one target directory (data/target, from
+# .cargo/config.toml). Build and check it by name:
+#
+#   cargo check -p veydanspace
+
+[workspace]
+resolver = "2"
+members = ["apps/space", "crates/build-cfg", "crates/core", "crates/desktop-notify", "crates/lock", "crates/messenger-app", "crates/notes", "crates/pass", "crates/shell", "crates/sync", "crates/sync-host", "crates/tauri-plugin-veydan-push"]
+# The messenger is a workspace of its own, with its own lock file; the
+# application takes its crates by path.
+exclude = ["crates/messenger"]
+
+[profile.release]
+# Symbol tables go; the dynamic exports (Tauri's and the push handler's
+# `Java_*`) stay. Android packages the library as cargo leaves it, and a
+# push starts a process that loads the whole of it before it can answer.
+strip = "symbols"

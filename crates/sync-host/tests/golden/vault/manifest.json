@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "vault_id": "10842cc0afb71396fc86f2ef1494d5b3",
+  "kdf": {
+    "algo": "argon2id",
+    "m_cost_kib": 65536,
+    "t_cost": 3,
+    "p_cost": 1,
+    "salt": "uwmgIQXgSZGf6180gTZzxQ=="
+  },
+  "wrapped_vmk": {
+    "nonce": "FmjGB0rytkWKwkIDujibdaLEjXnH7QvJ",
+    "ct": "PqlyldckamYrPBRfsq4NBmmvfX4yr0SrTNe+zEeL5GaZjHcDmP2NelXhwE8L2Uhj"
+  }
+}

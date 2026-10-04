@@ -1,0 +1,104 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Veydan Space",
+  "version": "5.0.0",
+  "identifier": "net.veydan.space",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../../data/build/space"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Veydan Space — Multi-Accounting Workspace",
+        "width": 1200,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 600,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost data: blob: https:",
+        "media-src": "'self' asset: http://asset.localhost blob:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "frame-src": "'none'",
+        "object-src": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost data: blob: https:",
+        "media-src": "'self' asset: http://asset.localhost blob:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420",
+        "frame-src": "'none'",
+        "object-src": "'none'"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "publisher": "Veydan Project",
+    "license": "LicenseRef-PolyForm-Perimeter-1.0.1",
+    "copyright": "Copyright 2026 Veydan Project",
+    "category": "Productivity",
+    "longDescription": "Veydan Space is a local-first workspace for multi-account work: isolated browser profiles, proxies, an SSH console with a file manager, notes, passwords with one-time codes, and end-to-end encrypted chat.",
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/veydanspace.desktop",
+        "files": {
+          "/usr/share/doc/veydan-space/copyright": "../../LICENSE"
+        },
+        "depends": ["libayatana-appindicator3-1"]
+      },
+      "rpm": {
+        "desktopTemplate": "linux/veydanspace.desktop",
+        "files": {
+          "/usr/share/licenses/veydan-space/LICENSE": "../../LICENSE"
+        },
+        "depends": ["libappindicator-gtk3"]
+      },
+      "appimage": {
+        "files": {
+          "/usr/share/doc/veydan-space/copyright": "../../LICENSE"
+        }
+      }
+    },
+    "macOS": {
+      "signingIdentity": "-"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJERjRFQjU3RjI5REYwMDQKUldRRThKM3lWK3YwdlZpQzNFbTlVTkZZb3NZbEhRZ1VucE96Q3JmUTZZYVE0SUpjbzBoLzBjWlQK",
+      "endpoints": [
+        "https://github.com/veydanproject/Veydan-Space/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

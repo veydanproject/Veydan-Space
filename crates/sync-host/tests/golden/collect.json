@@ -1,0 +1,1054 @@
+{
+  "rounds": [
+    {
+      "ops": [
+        {
+          "deleted": false,
+          "entity_id": "tag-1",
+          "entity_type": "note_tag",
+          "hlc": "000003bb2cc3d800-00000001-golden-device",
+          "payload": {
+            "color": "#f97316",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "name": "runbook",
+            "updated_at": "2026-09-02T11:30:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "tag-2",
+          "entity_type": "note_tag",
+          "hlc": "000003bb2cc3d800-00000002-golden-device",
+          "payload": {
+            "color": "#6366f1",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "name": "inbox",
+            "updated_at": "2026-09-01T10:00:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "f-1",
+          "entity_type": "note_folder",
+          "hlc": "000003bb2cc3d800-00000003-golden-device",
+          "payload": {
+            "color": "#6366f1",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "name": "DevOps",
+            "parent_id": null,
+            "updated_at": "2026-09-02T11:30:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "f-2",
+          "entity_type": "note_folder",
+          "hlc": "000003bb2cc3d800-00000004-golden-device",
+          "payload": {
+            "color": "#6366f1",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "name": "Runbooks",
+            "parent_id": "f-1",
+            "updated_at": "2026-09-02T11:30:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "sv-1",
+          "entity_type": "note_smart_view",
+          "hlc": "000003bb2cc3d800-00000005-golden-device",
+          "payload": {
+            "color": "#8b7bff",
+            "conditions": "{\"has_open_tasks\":true}",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "name": "Open tasks",
+            "sort_order": 1,
+            "updated_at": "2026-09-02T11:30:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-1",
+          "entity_type": "note_meta",
+          "hlc": "000003bb2cc3d800-00000006-golden-device",
+          "payload": {
+            "archived": 0,
+            "folder_ids": [
+              "f-1",
+              "f-2"
+            ],
+            "pinned": 1
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-2",
+          "entity_type": "note_meta",
+          "hlc": "000003bb2cc3d800-00000007-golden-device",
+          "payload": {
+            "archived": 0,
+            "folder_ids": [],
+            "pinned": 0
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-3",
+          "entity_type": "note_meta",
+          "hlc": "000003bb2cc3d800-00000008-golden-device",
+          "payload": {
+            "archived": 1,
+            "folder_ids": [],
+            "pinned": 0
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-1/scan.pdf",
+          "entity_type": "note_attachment",
+          "hlc": "000003bb2cc3d800-00000009-golden-device",
+          "payload": {
+            "blob": "6bba84b4866446e8a5cd8527a33959534787e049bf529e2d4d38c834a0bee301",
+            "name": "scan.pdf",
+            "note_id": "note-1",
+            "size": 21
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-2/video.bin",
+          "entity_type": "note_attachment_v2",
+          "hlc": "000003bb2cc3d800-0000000a-golden-device",
+          "payload": {
+            "lf": {
+              "file_id": "a159a642225b0a0e0c8bdba60f7610b55bf7e6504f5f47e5649e2c96295a1a85",
+              "manifest_id": "4357dae9f9bda67673e60cd743c99dd8b8632cea8733da5c36005d4dd8cbe06e",
+              "size": 1572864,
+              "version": 2
+            },
+            "lf_refs": [
+              "4357dae9f9bda67673e60cd743c99dd8b8632cea8733da5c36005d4dd8cbe06e"
+            ],
+            "name": "video.bin",
+            "note_id": "note-2",
+            "size": 1572864
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-1",
+          "entity_type": "note",
+          "hlc": "000003bb2cc3d800-0000000b-golden-device",
+          "payload": {
+            "blob": "84db89a0ee32be745139829372c9042068e5e856f412170afc8d71fc8d64b8f7",
+            "format": "md",
+            "parents": [],
+            "title": "Deploy"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-2",
+          "entity_type": "note",
+          "hlc": "000003bb2cc3d800-0000000c-golden-device",
+          "payload": {
+            "blob": "e667ab27f52b0211e69325a8781a2638bbc2906c1a8e8fbd21a9d1a2fb8faf86",
+            "format": "md",
+            "parents": [],
+            "title": "Plain"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-3",
+          "entity_type": "note",
+          "hlc": "000003bb2cc3d800-0000000d-golden-device",
+          "payload": {
+            "blob": "6dab810122961fd143023b2915399790d7d749d75167428e558e1c4c3c2056e7",
+            "format": "md",
+            "parents": [],
+            "title": "Old"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "default",
+          "entity_type": "workspace",
+          "hlc": "000003bb2cc3d800-0000000e-golden-device",
+          "payload": {
+            "color": "#6366f1",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "description": null,
+            "icon": "folder",
+            "is_default": 1,
+            "name": "Default",
+            "notes": null,
+            "updated_at": "2026-09-01T10:00:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "ws-1",
+          "entity_type": "workspace",
+          "hlc": "000003bb2cc3d800-0000000f-golden-device",
+          "payload": {
+            "color": "#22c55e",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "description": "Client accounts",
+            "icon": "briefcase",
+            "is_default": 0,
+            "name": "SMM",
+            "notes": null,
+            "updated_at": "2026-09-02T11:30:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "ws-2",
+          "entity_type": "workspace",
+          "hlc": "000003bb2cc3d800-00000010-golden-device",
+          "payload": {
+            "color": "#6366f1",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "description": null,
+            "icon": "folder",
+            "is_default": 1,
+            "name": "Ops",
+            "notes": "team notes",
+            "updated_at": "2026-09-01T10:00:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "col-1",
+          "entity_type": "workspace_column",
+          "hlc": "000003bb2cc3d800-00000011-golden-device",
+          "payload": {
+            "color": "#6366f1",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "name": "Warm-up",
+            "position": 2,
+            "tag_name": "warm-up",
+            "workspace_id": "ws-1"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "px-1",
+          "entity_type": "proxy",
+          "hlc": "000003bb2cc3d800-00000012-golden-device",
+          "payload": {
+            "city": "Berlin",
+            "country": "DE",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "host": "10.0.0.7",
+            "name": "DE residential",
+            "password": "secret",
+            "port": 1080,
+            "private_key": null,
+            "proxy_type": "socks5",
+            "server_fingerprint": null,
+            "tags": "[\"workspace:ws-1\"]",
+            "username": "user"
+          }
+        },
+        {
+          "deleted": true,
+          "entity_id": "px-gone",
+          "entity_type": "proxy",
+          "hlc": "000003bb2cc3d800-00000013-golden-device",
+          "payload": {}
+        },
+        {
+          "deleted": false,
+          "entity_id": "key-1",
+          "entity_type": "ssh_key",
+          "hlc": "000003bb2cc3d800-00000014-golden-device",
+          "payload": {
+            "algorithm": "ed25519",
+            "bits": null,
+            "comment": "ci",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "fingerprint": "SHA256:abc",
+            "name": "deploy",
+            "passphrase": null,
+            "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----",
+            "public_key": "ssh-ed25519 AAAA",
+            "source": "generated",
+            "updated_at": "2026-09-02T11:30:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "pr-1",
+          "entity_type": "profile",
+          "hlc": "000003bb2cc3d800-00000015-golden-device",
+          "payload": {
+            "browser_type": "camoufox",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "default_search_engine": "ddg",
+            "fingerprint_preset": "windows",
+            "geolocation_enabled": 1,
+            "history_enabled": 1,
+            "kanban_order": 3,
+            "kanban_status": "new",
+            "languages": "de-DE,de,en",
+            "latitude": 52.52,
+            "locale": "de-DE",
+            "longitude": 13.4,
+            "name": "Brand A",
+            "notes": "main account",
+            "platform": null,
+            "proxy_id": "px-1",
+            "screen_height": 1080,
+            "screen_width": 1920,
+            "tags": "[\"warm-up\"]",
+            "timezone": "Europe/Berlin",
+            "user_agent": null,
+            "webgl_renderer": null,
+            "webgl_vendor": null,
+            "webrtc_mode": "real_ip",
+            "workspace_id": "ws-1"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "ssh-1",
+          "entity_type": "ssh_connection",
+          "hlc": "000003bb2cc3d800-00000016-golden-device",
+          "payload": {
+            "auth_type": "key",
+            "connect_timeout_sec": 15,
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "default_cols": 120,
+            "default_rows": 32,
+            "host": "203.0.113.5",
+            "keepalive_sec": 30,
+            "key_passphrase": null,
+            "name": "prod-web-01",
+            "password": null,
+            "port": 22,
+            "private_key": null,
+            "profile_ids": [
+              "pr-1"
+            ],
+            "proxy_id": "px-1",
+            "requires_2fa": 1,
+            "server_fingerprint": "SHA256:def",
+            "ssh_key_id": "key-1",
+            "terminal_theme": null,
+            "totp_entry_id": "totp-1",
+            "updated_at": "2026-09-02T11:30:00+00:00",
+            "username": "deploy",
+            "workspace_ids": [
+              "ws-1",
+              "ws-2"
+            ]
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "totp-1",
+          "entity_type": "totp",
+          "hlc": "000003bb2cc3d800-00000017-golden-device",
+          "payload": {
+            "algorithm": "SHA1",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "digits": 6,
+            "issuer": "Veydan",
+            "name": "deploy@prod",
+            "period": 30,
+            "secret": "JBSWY3DPEHPK3PXP",
+            "tags": "[\"profile:pr-1\"]",
+            "updated_at": "2026-09-02T11:30:00+00:00"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "default",
+          "entity_type": "password_vault",
+          "hlc": "000003bb2cc3d800-00000018-golden-device",
+          "payload": {
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "crypto_version": 1,
+            "kdf_algorithm": "argon2id",
+            "kdf_iterations": 3,
+            "kdf_memory": 65536,
+            "kdf_parallelism": 1,
+            "kdf_salt": "c2FsdHNhbHRzYWx0c2FsdA==",
+            "lock_hash": "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",
+            "lock_hint": "the usual",
+            "lock_kind": "pin",
+            "recovery_salt": "cmVjb3Zlcnktc2FsdC0xNg==",
+            "recovery_wrapped_key": "cmVjb3Zlcnktd3JhcA==",
+            "updated_at": "2026-09-02T11:30:00+00:00",
+            "vault_id": "golden-vault-key",
+            "wrapped_key": "d3JhcHBlZC1rZXk="
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "pw-1",
+          "entity_type": "password",
+          "hlc": "000003bb2cc3d800-00000019-golden-device",
+          "payload": {
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "note_enc": null,
+            "password_enc": "v1:bm9uY2U=:Y2lwaGVy",
+            "tags": "[\"note:note-1\"]",
+            "title": "Hosting panel",
+            "totp_ids": "[\"totp-1\"]",
+            "updated_at": "2026-09-02T11:30:00+00:00",
+            "url": "https://panel.example",
+            "username": "admin",
+            "vault_id": "golden-vault-key"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "pw-2",
+          "entity_type": "password",
+          "hlc": "000003bb2cc3d800-0000001a-golden-device",
+          "payload": {
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "note_enc": "v1:bm9uY2U=:bm90ZQ==",
+            "password_enc": "v1:bm9uY2U=:bWFpbA==",
+            "tags": "[]",
+            "title": "Mail",
+            "totp_ids": "[]",
+            "updated_at": "2026-09-01T10:00:00+00:00",
+            "url": null,
+            "username": null,
+            "vault_id": "golden-vault-key"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "h-1",
+          "entity_type": "pw_history",
+          "hlc": "000003bb2cc3d800-0000001b-golden-device",
+          "payload": {
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "password": "x9!kPq"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "close_to_tray",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-0000001c-golden-device",
+          "payload": {
+            "value": "0"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "minimize_to_tray",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-0000001d-golden-device",
+          "payload": {
+            "value": "1"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "notes_capture_rules",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-0000001e-golden-device",
+          "payload": {
+            "value": "[{\"host\":\"example.com\"}]"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "notes_lock_timeout_min",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-0000001f-golden-device",
+          "payload": {
+            "value": "5"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "quick_capture_shortcut",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-00000020-golden-device",
+          "payload": {
+            "value": "CommandOrControl+Shift+N"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "start_hidden",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-00000021-golden-device",
+          "payload": {
+            "value": "0"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "ui_locale",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-00000022-golden-device",
+          "payload": {
+            "value": "ru"
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "pr-1",
+          "entity_type": "profile_lease",
+          "hlc": "000003bb2cc3d800-00000023-golden-device",
+          "payload": {
+            "device_id": "golden-device",
+            "device_name": "Laptop",
+            "since": "2026-09-01T10:00:00+00:00"
+          }
+        }
+      ],
+      "row_states": [
+        {
+          "deleted": 0,
+          "entity": "note_folder",
+          "hash": "15292e4b156261078f19cd482e6f00a19f16574663848acbea9f40a73a3905c4",
+          "hlc": "000003bb2cc3d800-00000003-golden-device",
+          "id": "f-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_folder",
+          "hash": "62dcc264d252be1a890beb939e44ff0b8b491e0df9bdf860672ae02f9e057404",
+          "hlc": "000003bb2cc3d800-00000004-golden-device",
+          "id": "f-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_meta",
+          "hash": "f07805c1cdf37e1802a426c67cd37f0a5610b60e40c34689e3448de474202870",
+          "hlc": "000003bb2cc3d800-00000006-golden-device",
+          "id": "note-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_meta",
+          "hash": "d41419ea5ad63577f0ace58c74bbeb287c9656fc0c172c6cbedd99400326614c",
+          "hlc": "000003bb2cc3d800-00000007-golden-device",
+          "id": "note-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_meta",
+          "hash": "018cd7dfb995ac9fdc3a608c9a9cc6fb89a7eb26c0c2d49d63f7bb0939323475",
+          "hlc": "000003bb2cc3d800-00000008-golden-device",
+          "id": "note-3"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_smart_view",
+          "hash": "01cd23bbfb985c8018d432af412703a423d471f816c6873c49bbb1edd5d135dd",
+          "hlc": "000003bb2cc3d800-00000005-golden-device",
+          "id": "sv-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_tag",
+          "hash": "5841c64a30a6ce5885dcc045daf0518e465cdeb5f8f0f4399cbec6783597da41",
+          "hlc": "000003bb2cc3d800-00000001-golden-device",
+          "id": "tag-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_tag",
+          "hash": "17edeabe32bafdad769f8031d065723cfaa3e8c761f83ce94d33612878b0b317",
+          "hlc": "000003bb2cc3d800-00000002-golden-device",
+          "id": "tag-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "password",
+          "hash": "6738fccab7afe02fef4c253e0032081a4645c82b970b4dd0145f8026806ee2bc",
+          "hlc": "000003bb2cc3d800-00000019-golden-device",
+          "id": "pw-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "password",
+          "hash": "61a54c60088784c415a008d15549dda87d99ff025c6dee96b49fa448d19e66c2",
+          "hlc": "000003bb2cc3d800-0000001a-golden-device",
+          "id": "pw-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "password_vault",
+          "hash": "c6b1f759dd8c6f47a1dbe4d31d60f812891e55149c28a03e5b1ffe552e0369a2",
+          "hlc": "000003bb2cc3d800-00000018-golden-device",
+          "id": "default"
+        },
+        {
+          "deleted": 0,
+          "entity": "profile",
+          "hash": "35006b57cda02b595292196a25c3bb963b3328f9ba632275ddc8468383baebbf",
+          "hlc": "000003bb2cc3d800-00000015-golden-device",
+          "id": "pr-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "proxy",
+          "hash": "f5e751881c9aa63f78df96bd8f3a72780d82178848a5b0e42e3765f675802774",
+          "hlc": "000003bb2cc3d800-00000012-golden-device",
+          "id": "px-1"
+        },
+        {
+          "deleted": 1,
+          "entity": "proxy",
+          "hash": "gone",
+          "hlc": "000003bb2cc3d800-00000013-golden-device",
+          "id": "px-gone"
+        },
+        {
+          "deleted": 0,
+          "entity": "pw_history",
+          "hash": "e85c8efaea6f4ec68695b8ce07c4d050ea3bfb68ca540f7f19151030b9871788",
+          "hlc": "000003bb2cc3d800-0000001b-golden-device",
+          "id": "h-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "b5da670deebffa683aa63b331c32a85c4b3d9c718e2a65ae7232eca4f059e380",
+          "hlc": "000003bb2cc3d800-0000001c-golden-device",
+          "id": "close_to_tray"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "7bb1728e697e5b90618d0abda45bdcca6fc8ac6a07b02ea34cd62d1a56853453",
+          "hlc": "000003bb2cc3d800-0000001d-golden-device",
+          "id": "minimize_to_tray"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "7f6fc27dfa748e68802f051bf564f4ff87988e4831d62dd1fc13c7eee5374e4e",
+          "hlc": "000003bb2cc3d800-0000001e-golden-device",
+          "id": "notes_capture_rules"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "099f84672e67aba794573eab93c7caa8836ce66a71b7ba9892f411ea3f89af74",
+          "hlc": "000003bb2cc3d800-0000001f-golden-device",
+          "id": "notes_lock_timeout_min"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "2c8176ba3f46d97b61165d60407a5774f71bea43b27985a312fb5d9b3339edc1",
+          "hlc": "000003bb2cc3d800-00000020-golden-device",
+          "id": "quick_capture_shortcut"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "b5da670deebffa683aa63b331c32a85c4b3d9c718e2a65ae7232eca4f059e380",
+          "hlc": "000003bb2cc3d800-00000021-golden-device",
+          "id": "start_hidden"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "69e236f917feb0fce372bdce75f066665848d1cd96252cd70689c1153d93e8e8",
+          "hlc": "000003bb2cc3d800-00000022-golden-device",
+          "id": "ui_locale"
+        },
+        {
+          "deleted": 0,
+          "entity": "ssh_connection",
+          "hash": "c696bc8e9fef11a1590083b5e832660a2f8bdfb3f647671606404eb399a1ce27",
+          "hlc": "000003bb2cc3d800-00000016-golden-device",
+          "id": "ssh-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "ssh_key",
+          "hash": "5990e60a1367c0a99c7a234fe533b7e0dfe71f2d11e296a173ef5980d6b4f3ce",
+          "hlc": "000003bb2cc3d800-00000014-golden-device",
+          "id": "key-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "totp",
+          "hash": "387d2a8153821976398c184c7bfbf0c4ced7d2650115d9ff324a4621808bf6b3",
+          "hlc": "000003bb2cc3d800-00000017-golden-device",
+          "id": "totp-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "workspace",
+          "hash": "39556a612dd1a8196bd2a86cdf4984e19ff0a9f40e9fdc478eb8c616461f8ca8",
+          "hlc": "000003bb2cc3d800-0000000e-golden-device",
+          "id": "default"
+        },
+        {
+          "deleted": 0,
+          "entity": "workspace",
+          "hash": "9a310d164462e316451f1a4d1c640af667196909b699fc6421db7daadb6f7940",
+          "hlc": "000003bb2cc3d800-0000000f-golden-device",
+          "id": "ws-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "workspace",
+          "hash": "998b9b895cedd1211882771b0b0728578204cd990be98b8e19ee31509c5a5c2f",
+          "hlc": "000003bb2cc3d800-00000010-golden-device",
+          "id": "ws-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "workspace_column",
+          "hash": "1e24a53c1765fdee422ad922374e2d563fbc6adc25bb839b1e2e686379d571e3",
+          "hlc": "000003bb2cc3d800-00000011-golden-device",
+          "id": "col-1"
+        }
+      ]
+    },
+    {
+      "ops": [
+        {
+          "deleted": false,
+          "entity_id": "tag-2",
+          "entity_type": "note_tag",
+          "hlc": "000003bb2cc3d800-00000024-golden-device",
+          "payload": {
+            "color": "#ef4444",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "name": "inbox",
+            "updated_at": "2026-09-01T10:00:00+00:00"
+          }
+        },
+        {
+          "deleted": true,
+          "entity_id": "sv-1",
+          "entity_type": "note_smart_view",
+          "hlc": "000003bb2cc3d800-00000025-golden-device",
+          "payload": {}
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-1",
+          "entity_type": "note_meta",
+          "hlc": "000003bb2cc3d800-00000026-golden-device",
+          "payload": {
+            "archived": 0,
+            "folder_ids": [
+              "f-1"
+            ],
+            "pinned": 0
+          }
+        },
+        {
+          "deleted": true,
+          "entity_id": "note-1/scan.pdf",
+          "entity_type": "note_attachment",
+          "hlc": "000003bb2cc3d800-00000027-golden-device",
+          "payload": {
+            "name": "scan.pdf",
+            "note_id": "note-1",
+            "size": 0
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "note-2",
+          "entity_type": "note",
+          "hlc": "000003bb2cc3d800-00000028-golden-device",
+          "payload": {
+            "blob": "1d8966372370b40351320d10853f339d0bffa7fb389674ce3a39fdeb71dee3b4",
+            "format": "md",
+            "parents": [
+              "e667ab27f52b0211e69325a8781a2638bbc2906c1a8e8fbd21a9d1a2fb8faf86"
+            ],
+            "title": "Plain"
+          }
+        },
+        {
+          "deleted": true,
+          "entity_id": "note-3",
+          "entity_type": "note",
+          "hlc": "000003bb2cc3d800-00000029-golden-device",
+          "payload": {
+            "blob": "",
+            "format": "",
+            "parents": [
+              "6dab810122961fd143023b2915399790d7d749d75167428e558e1c4c3c2056e7"
+            ],
+            "title": ""
+          }
+        },
+        {
+          "deleted": false,
+          "entity_id": "ws-1",
+          "entity_type": "workspace",
+          "hlc": "000003bb2cc3d800-0000002a-golden-device",
+          "payload": {
+            "color": "#22c55e",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "description": "Client accounts",
+            "icon": "briefcase",
+            "is_default": 0,
+            "name": "SMM team",
+            "notes": null,
+            "updated_at": "2026-09-02T11:30:00+00:00"
+          }
+        },
+        {
+          "deleted": true,
+          "entity_id": "pw-2",
+          "entity_type": "password",
+          "hlc": "000003bb2cc3d800-0000002b-golden-device",
+          "payload": {}
+        },
+        {
+          "deleted": true,
+          "entity_id": "h-1",
+          "entity_type": "pw_history",
+          "hlc": "000003bb2cc3d800-0000002c-golden-device",
+          "payload": {}
+        },
+        {
+          "deleted": false,
+          "entity_id": "ui_locale",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-0000002d-golden-device",
+          "payload": {
+            "value": "en"
+          }
+        },
+        {
+          "deleted": true,
+          "entity_id": "start_hidden",
+          "entity_type": "setting",
+          "hlc": "000003bb2cc3d800-0000002e-golden-device",
+          "payload": {}
+        },
+        {
+          "deleted": true,
+          "entity_id": "pr-1",
+          "entity_type": "profile_lease",
+          "hlc": "000003bb2cc3d800-0000002f-golden-device",
+          "payload": {
+            "device_id": "",
+            "device_name": "",
+            "since": ""
+          }
+        }
+      ],
+      "row_states": [
+        {
+          "deleted": 0,
+          "entity": "note_folder",
+          "hash": "15292e4b156261078f19cd482e6f00a19f16574663848acbea9f40a73a3905c4",
+          "hlc": "000003bb2cc3d800-00000003-golden-device",
+          "id": "f-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_folder",
+          "hash": "62dcc264d252be1a890beb939e44ff0b8b491e0df9bdf860672ae02f9e057404",
+          "hlc": "000003bb2cc3d800-00000004-golden-device",
+          "id": "f-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_meta",
+          "hash": "2c7143186b8d688d4f3b3c7bfce22e66e8c4083c043dfac9d607f44729b3a7d4",
+          "hlc": "000003bb2cc3d800-00000026-golden-device",
+          "id": "note-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_meta",
+          "hash": "d41419ea5ad63577f0ace58c74bbeb287c9656fc0c172c6cbedd99400326614c",
+          "hlc": "000003bb2cc3d800-00000007-golden-device",
+          "id": "note-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_meta",
+          "hash": "018cd7dfb995ac9fdc3a608c9a9cc6fb89a7eb26c0c2d49d63f7bb0939323475",
+          "hlc": "000003bb2cc3d800-00000008-golden-device",
+          "id": "note-3"
+        },
+        {
+          "deleted": 1,
+          "entity": "note_smart_view",
+          "hash": "01cd23bbfb985c8018d432af412703a423d471f816c6873c49bbb1edd5d135dd",
+          "hlc": "000003bb2cc3d800-00000025-golden-device",
+          "id": "sv-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_tag",
+          "hash": "5841c64a30a6ce5885dcc045daf0518e465cdeb5f8f0f4399cbec6783597da41",
+          "hlc": "000003bb2cc3d800-00000001-golden-device",
+          "id": "tag-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "note_tag",
+          "hash": "bfeaa195239cc65639dfb9962d5a895ad5fd975439013aeb23c90958f5a16a6d",
+          "hlc": "000003bb2cc3d800-00000024-golden-device",
+          "id": "tag-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "password",
+          "hash": "6738fccab7afe02fef4c253e0032081a4645c82b970b4dd0145f8026806ee2bc",
+          "hlc": "000003bb2cc3d800-00000019-golden-device",
+          "id": "pw-1"
+        },
+        {
+          "deleted": 1,
+          "entity": "password",
+          "hash": "61a54c60088784c415a008d15549dda87d99ff025c6dee96b49fa448d19e66c2",
+          "hlc": "000003bb2cc3d800-0000002b-golden-device",
+          "id": "pw-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "password_vault",
+          "hash": "c6b1f759dd8c6f47a1dbe4d31d60f812891e55149c28a03e5b1ffe552e0369a2",
+          "hlc": "000003bb2cc3d800-00000018-golden-device",
+          "id": "default"
+        },
+        {
+          "deleted": 0,
+          "entity": "profile",
+          "hash": "35006b57cda02b595292196a25c3bb963b3328f9ba632275ddc8468383baebbf",
+          "hlc": "000003bb2cc3d800-00000015-golden-device",
+          "id": "pr-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "proxy",
+          "hash": "f5e751881c9aa63f78df96bd8f3a72780d82178848a5b0e42e3765f675802774",
+          "hlc": "000003bb2cc3d800-00000012-golden-device",
+          "id": "px-1"
+        },
+        {
+          "deleted": 1,
+          "entity": "proxy",
+          "hash": "gone",
+          "hlc": "000003bb2cc3d800-00000013-golden-device",
+          "id": "px-gone"
+        },
+        {
+          "deleted": 1,
+          "entity": "pw_history",
+          "hash": "e85c8efaea6f4ec68695b8ce07c4d050ea3bfb68ca540f7f19151030b9871788",
+          "hlc": "000003bb2cc3d800-0000002c-golden-device",
+          "id": "h-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "b5da670deebffa683aa63b331c32a85c4b3d9c718e2a65ae7232eca4f059e380",
+          "hlc": "000003bb2cc3d800-0000001c-golden-device",
+          "id": "close_to_tray"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "7bb1728e697e5b90618d0abda45bdcca6fc8ac6a07b02ea34cd62d1a56853453",
+          "hlc": "000003bb2cc3d800-0000001d-golden-device",
+          "id": "minimize_to_tray"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "7f6fc27dfa748e68802f051bf564f4ff87988e4831d62dd1fc13c7eee5374e4e",
+          "hlc": "000003bb2cc3d800-0000001e-golden-device",
+          "id": "notes_capture_rules"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "099f84672e67aba794573eab93c7caa8836ce66a71b7ba9892f411ea3f89af74",
+          "hlc": "000003bb2cc3d800-0000001f-golden-device",
+          "id": "notes_lock_timeout_min"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "2c8176ba3f46d97b61165d60407a5774f71bea43b27985a312fb5d9b3339edc1",
+          "hlc": "000003bb2cc3d800-00000020-golden-device",
+          "id": "quick_capture_shortcut"
+        },
+        {
+          "deleted": 1,
+          "entity": "setting",
+          "hash": "b5da670deebffa683aa63b331c32a85c4b3d9c718e2a65ae7232eca4f059e380",
+          "hlc": "000003bb2cc3d800-0000002e-golden-device",
+          "id": "start_hidden"
+        },
+        {
+          "deleted": 0,
+          "entity": "setting",
+          "hash": "a1fe03486add2f521557f0624f251f7c67e593c99bec7b76258b2f3655fbebe8",
+          "hlc": "000003bb2cc3d800-0000002d-golden-device",
+          "id": "ui_locale"
+        },
+        {
+          "deleted": 0,
+          "entity": "ssh_connection",
+          "hash": "c696bc8e9fef11a1590083b5e832660a2f8bdfb3f647671606404eb399a1ce27",
+          "hlc": "000003bb2cc3d800-00000016-golden-device",
+          "id": "ssh-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "ssh_key",
+          "hash": "5990e60a1367c0a99c7a234fe533b7e0dfe71f2d11e296a173ef5980d6b4f3ce",
+          "hlc": "000003bb2cc3d800-00000014-golden-device",
+          "id": "key-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "totp",
+          "hash": "387d2a8153821976398c184c7bfbf0c4ced7d2650115d9ff324a4621808bf6b3",
+          "hlc": "000003bb2cc3d800-00000017-golden-device",
+          "id": "totp-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "workspace",
+          "hash": "39556a612dd1a8196bd2a86cdf4984e19ff0a9f40e9fdc478eb8c616461f8ca8",
+          "hlc": "000003bb2cc3d800-0000000e-golden-device",
+          "id": "default"
+        },
+        {
+          "deleted": 0,
+          "entity": "workspace",
+          "hash": "cb5c1f15ea08804bafd5ddde706ac79597e1cb1d4608cea0672ac28c52616d86",
+          "hlc": "000003bb2cc3d800-0000002a-golden-device",
+          "id": "ws-1"
+        },
+        {
+          "deleted": 0,
+          "entity": "workspace",
+          "hash": "998b9b895cedd1211882771b0b0728578204cd990be98b8e19ee31509c5a5c2f",
+          "hlc": "000003bb2cc3d800-00000010-golden-device",
+          "id": "ws-2"
+        },
+        {
+          "deleted": 0,
+          "entity": "workspace_column",
+          "hash": "1e24a53c1765fdee422ad922374e2d563fbc6adc25bb839b1e2e686379d571e3",
+          "hlc": "000003bb2cc3d800-00000011-golden-device",
+          "id": "col-1"
+        }
+      ]
+    }
+  ]
+}

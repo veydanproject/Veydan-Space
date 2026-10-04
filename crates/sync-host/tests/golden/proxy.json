@@ -1,0 +1,49 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "px-1",
+    "entity_type": "proxy",
+    "hlc": "000001a0fe5623ba-00000002-c522b5659447a28e",
+    "payload": {
+      "city": "Berlin",
+      "country": "DE",
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "host": "10.0.0.7",
+      "name": "DE residential",
+      "password": "secret",
+      "port": 1080,
+      "private_key": null,
+      "proxy_type": "socks5",
+      "server_fingerprint": null,
+      "tags": "[\"workspace:ws-1\"]",
+      "username": "user"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "px-2",
+    "entity_type": "proxy",
+    "hlc": "000001a0fe5623ba-00000003-c522b5659447a28e",
+    "payload": {
+      "city": null,
+      "country": null,
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "host": "10.0.0.8",
+      "name": "Gone",
+      "password": null,
+      "port": 8080,
+      "private_key": null,
+      "proxy_type": "http",
+      "server_fingerprint": null,
+      "tags": "[]",
+      "username": null
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "px-2",
+    "entity_type": "proxy",
+    "hlc": "000001a0fe5623ec-00000000-c522b5659447a28e",
+    "payload": {}
+  }
+]

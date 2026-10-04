@@ -1,0 +1,111 @@
+{
+  "$comment": "Veydan Space: the modules of the product and the product itself. This file is written for the published snapshot (\"snapshot\" names its product): scripts/boundaries.sh checks what is here, ui/vite-veydan-modules.js builds the UI from the modules, scripts/product.sh gives the wrappers of the Tauri CLI the crate, the identifiers and the ports. A dev server does not notice an edit: restart it.",
+  "snapshot": "space",
+  "modules": {
+    "browser": {
+      "ui": "ui/src/lib/browser",
+      "routes": [
+        "ui/src/routes/(desktop)/workspace",
+        "ui/src/routes/(desktop)/proxies"
+      ],
+      "crates": [],
+      "platforms": [
+        "desktop"
+      ]
+    },
+    "ssh": {
+      "ui": "ui/src/lib/ssh",
+      "routes": [
+        "ui/src/routes/(desktop)/terminal",
+        "ui/src/routes/(desktop)/files"
+      ],
+      "crates": [],
+      "platforms": [
+        "desktop"
+      ]
+    },
+    "notes": {
+      "ui": "ui/src/lib/notes",
+      "routes": [
+        "ui/src/routes/notes",
+        "ui/src/routes/(desktop)/notes",
+        "ui/src/routes/(mobile)/notes",
+        "ui/src/routes/(mobile)/search"
+      ],
+      "crates": [
+        "crates/notes"
+      ]
+    },
+    "pass": {
+      "ui": "ui/src/lib/pass",
+      "routes": [
+        "ui/src/routes/passwords",
+        "ui/src/routes/(mobile)/passwords",
+        "ui/src/routes/(mobile)/totp",
+        "ui/src/routes/(mobile)/tools"
+      ],
+      "crates": [
+        "crates/pass"
+      ]
+    },
+    "messenger": {
+      "ui": "ui/src/lib/messenger",
+      "routes": [
+        "ui/src/routes/messenger",
+        "ui/src/routes/(mobile)/messenger"
+      ],
+      "crates": [
+        "crates/messenger",
+        "crates/messenger-app",
+        "crates/desktop-notify",
+        "crates/tauri-plugin-veydan-push"
+      ]
+    },
+    "backup": {
+      "ui": "ui/src/lib/backup",
+      "routes": [],
+      "crates": [],
+      "platforms": [
+        "desktop"
+      ],
+      "service": true
+    }
+  },
+  "targets": {
+    "space": {
+      "kind": "product",
+      "app": "apps/space",
+      "tagline": {
+        "en": "A workspace for multi-accounting.",
+        "ru": "Рабочее пространство для мультиаккаунтинга."
+      },
+      "modules": [
+        "browser",
+        "ssh",
+        "notes",
+        "pass",
+        "messenger",
+        "backup"
+      ],
+      "identifier": "net.veydan.space",
+      "androidIdentifier": "net.veydan.mobile",
+      "repo": "veydanproject/Veydan-Space",
+      "public": true,
+      "devPort": 1420,
+      "androidDevPort": 1430,
+      "plugins": [
+        "dialog",
+        "fs",
+        "updater",
+        "process",
+        "single-instance",
+        "opener",
+        "barcode-scanner",
+        "veydan-push"
+      ],
+      "extra": [
+        "apps/space/extension"
+      ]
+    }
+  }
+}

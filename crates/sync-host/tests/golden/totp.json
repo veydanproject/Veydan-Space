@@ -1,0 +1,43 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "totp-1",
+    "entity_type": "totp",
+    "hlc": "000001a0fe5623bd-00000001-c522b5659447a28e",
+    "payload": {
+      "algorithm": "SHA1",
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "digits": 6,
+      "issuer": "Veydan",
+      "name": "deploy@prod",
+      "period": 30,
+      "secret": "JBSWY3DPEHPK3PXP",
+      "tags": "[\"profile:pr-1\"]",
+      "updated_at": "2026-09-02T11:30:00+00:00"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "totp-2",
+    "entity_type": "totp",
+    "hlc": "000001a0fe5623bd-00000002-c522b5659447a28e",
+    "payload": {
+      "algorithm": "SHA1",
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "digits": 6,
+      "issuer": null,
+      "name": "gone",
+      "period": 30,
+      "secret": "JBSWY3DPEHPK3PXQ",
+      "tags": "[]",
+      "updated_at": "2026-09-01T10:00:00+00:00"
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "totp-2",
+    "entity_type": "totp",
+    "hlc": "000001a0fe5623ee-00000000-c522b5659447a28e",
+    "payload": {}
+  }
+]

@@ -1,0 +1,603 @@
+/* SPDX-FileCopyrightText: 2026 Veydan Project */
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 */
+
+/* ============================================================================
+ * Veydan Space — base layer + global primitives
+ * Imported by each shell (DesktopShell, MobileShell) and by StartErrorScreen,
+ * after tokens.css.
+ *
+ * Everything here is GLOBAL. Components should reuse these classes instead of
+ * re-declaring buttons / badges / tabs / empty-states / cards locally.
+ * Svelte-scoped rules in a component still win over these (higher specificity),
+ * so adding primitives here never breaks existing local styles — migration is
+ * simply deleting the local copy so the global one takes over.
+ * ========================================================================== */
+
+/* ── Reset / base elements ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-glow), var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: var(--lh-base);
+  transition: background var(--dur-base), color var(--dur-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Entry animations shared by screens and drawers (design: vfade / vslide) */
+@keyframes vfade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes vslide {
+  from { transform: translateX(30px); opacity: 0.4; }
+  to   { transform: none; opacity: 1; }
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: var(--fs-base);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  width: 100%;
+  outline: none;
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237f7f8b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  padding-right: 2rem;
+  cursor: pointer;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* A checkbox or a radio is a mark, not a field: the rules above would stretch
+   it over its row and push its label aside. It is drawn from the tokens: the
+   native box of WebKitGTK stays white in the dark theme whatever color-scheme
+   says, and only its checked state took the accent. */
+input[type="checkbox"], input[type="radio"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  flex: none;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-xs);
+  background: var(--surface-2) center / 75% no-repeat;
+  vertical-align: middle;
+  cursor: pointer;
+}
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:checked, input[type="radio"]:checked {
+  border-color: var(--accent);
+  background-color: var(--accent);
+}
+input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+}
+input[type="checkbox"]:indeterminate {
+  border-color: var(--accent);
+  background-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E");
+}
+input[type="radio"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='3.5' fill='%23fff'/%3E%3C/svg%3E");
+  background-size: 100%;
+}
+input[type="checkbox"]:hover:not(:disabled), input[type="radio"]:hover:not(:disabled) { border-color: var(--accent-border); }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
+input[type="checkbox"]:focus, input[type="radio"]:focus { box-shadow: none; }
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+
+input::placeholder, textarea::placeholder { color: var(--text-3); }
+select option { background: var(--surface); color: var(--text); }
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--fs-base);
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  transition: all var(--dur-fast);
+}
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  /* A button stretched to its row (New chat's Start chat) keeps its label in the middle. */
+  justify-content: center;
+  gap: 0.45rem;
+  text-decoration: none;
+  font-family: inherit;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  border-radius: var(--radius);
+  padding: 0.55rem 1.1rem;
+  border: none;
+  cursor: pointer;
+  transition: all var(--dur-fast);
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-accent); }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-ghost { background: var(--surface-3); color: var(--text-body); border: 1px solid var(--border); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); border-color: var(--border-2); }
+.btn-success { background: var(--success-grad); color: #fff; box-shadow: 0 5px 16px rgba(52, 211, 153, 0.28); }
+.btn-success:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-success-soft { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+.btn-success-soft:hover:not(:disabled) { background: var(--success-bg); filter: brightness(1.2); }
+.btn-danger { background: var(--danger); color: #fff; box-shadow: var(--shadow-danger); }
+.btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-sm { padding: 0.3rem 0.65rem; font-size: 0.78rem; }
+
+/* ── Icon buttons ── */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  background: var(--surface-3); border: 1px solid var(--border);
+  color: var(--text-soft); cursor: pointer; transition: all var(--dur-fast);
+  text-decoration: none;
+}
+.icon-btn:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); color: var(--text); }
+.icon-btn.accent-soft:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
+.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.icon-btn.success { color: var(--success-text); background: var(--success-bg); border-color: color-mix(in srgb, var(--success) 25%, var(--border)); }
+.icon-btn.success:hover:not(:disabled) { filter: brightness(1.1); }
+.icon-btn.danger { color: var(--danger-text); background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 25%, var(--border)); }
+.icon-btn.danger:hover:not(:disabled) { filter: brightness(1.1); }
+.icon-btn.danger-soft:hover:not(:disabled) { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); color: var(--danger-text); }
+
+/* ── Forms ── */
+.form-group { display: flex; flex-direction: column; gap: 0.35rem; }
+.form-group label { font-size: 0.72rem; font-weight: var(--fw-bold); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.875rem; }
+
+.error-msg {
+  color: var(--danger-text);
+  font-size: var(--fs-sm);
+  padding: 0.5rem 0.75rem;
+  background: var(--danger-bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+/* ── Page shell ── (unifies max-width / gap / header spacing across routes) */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: var(--page-max, 1280px);
+  width: 100%;
+  margin-inline: auto;   /* center the rail — even gutters on wide screens */
+}
+.page--fill { height: 100%; min-height: 0; }  /* full-height / internal-scroll pages */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-shrink: 0;
+}
+.page-header h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-extrabold);
+  letter-spacing: -0.6px;
+}
+.page-header .spacer { margin-left: auto; }
+.page-sub { font-size: var(--fs-base); color: var(--text-2); }
+
+/* ── Card / section ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  transition: border-color 0.18s, transform 0.18s;
+}
+.card--hover:hover { border-color: var(--border-2); transform: translateY(-2px); }
+.card-title { font-size: var(--fs-md); font-weight: var(--fw-bold); }
+
+.section { display: flex; flex-direction: column; gap: var(--sp-2); }
+.section-label,
+.section-title {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.muted { color: var(--text-2); }
+
+/* ── Badges (static status pills) ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.badge-accent  { background: var(--accent-tint); color: var(--accent-text-2); border-color: var(--accent-tint-border); }
+.badge-ok      { background: var(--success-bg);  color: var(--success-text);  border-color: var(--success-border); }
+.badge-danger  { background: var(--danger-bg);   color: var(--danger-text);   border-color: var(--danger-border); }
+.badge-warn    { background: var(--warn-bg);     color: var(--warn-text);     border-color: var(--warn-border); }
+
+/* ── Chip (interactive / toggleable pill) ── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+  white-space: nowrap;
+}
+.chip:hover { border-color: var(--border-2); color: var(--text); }
+.chip.active { background: var(--accent-tint); color: var(--accent-text); border-color: var(--accent-tint-border); }
+
+/* ── Tinted ── (a chip, badge or label coloured from data: a workspace's
+   colour, a label's, a kanban column's). One rule for all of them: the
+   element has the class and sets the colour with `style:--chip={colour}`.
+   The colour is the tint under it (--chip-tint) and its border
+   (--chip-edge, mixed towards --border-2: a colour close to the surface
+   keeps the neutral chip's outline); its text is the colour mixed towards
+   --text (--chip-ink), so a pale colour on the light theme and a dark one
+   on the dark theme still read (WCAG AA, chip-contrast.test.ts).
+   `.active` (a picked one): the stronger tint (--chip-tint-strong), the
+   border and a ring in the ink (currentColor) — the raw colour can vanish
+   on the surface, the ink cannot; the selector outranks the colour-mix
+   border below, so it holds with and without color-mix. No `--chip` → the
+   neutral chip. `.tinted-text` is the text alone, for a coloured name with
+   no chip around it. Shape (padding, radius, border width) stays the
+   component's; the colours are this rule's alone — a component sets none
+   on these elements, and a × or a secondary text inside one inherits the
+   ink and fades by opacity (--chip-fade), never a fixed --text-* that
+   does not follow the tint. A dot, stripe or icon with no text keeps the
+   raw colour. Without color-mix (an old WebView) the chip is neutral with
+   a border of the raw colour. */
+.tinted { background: var(--surface-2); border-color: var(--border); color: var(--text-2); }
+.tinted[style*='--chip'] { border-color: var(--chip); color: var(--text); }
+.tinted.active[style*='--chip'] { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  .tinted[style*='--chip'] {
+    background: color-mix(in srgb, var(--chip) var(--chip-tint), transparent);
+    border-color: color-mix(in srgb, var(--chip) var(--chip-edge), var(--border-2));
+    color: color-mix(in srgb, var(--chip) var(--chip-ink), var(--text));
+  }
+  .tinted.active[style*='--chip'] {
+    background: color-mix(in srgb, var(--chip) var(--chip-tint-strong), transparent);
+  }
+  .tinted-text[style*='--chip'] {
+    color: color-mix(in srgb, var(--chip) var(--chip-ink), var(--text));
+  }
+}
+
+/* ── Filter bar ── (единый паттерн панелей фильтров: поиск + select-ы + счётчик.
+   Раньше .toolbar / .search-wrap / .filter-select дублировались в 5+ местах с
+   расходящимися размерами — из-за чего фильтры «прыгали» при смене вида.) */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* Поле поиска: иконка слева, опциональная кнопка очистки справа */
+.search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 240px;
+  flex-shrink: 0;
+}
+.search-field > svg {
+  position: absolute;
+  left: 0.6rem;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.search-field input {
+  height: var(--control-h);
+  width: 100%;
+  padding: 0 1.9rem 0 2rem;
+  font-size: var(--fs-sm);
+}
+.search-clear {
+  position: absolute;
+  right: 0.4rem;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--dur-fast);
+}
+.search-clear:hover { color: var(--text); }
+
+/* Компактный select для панели фильтров (фон/граница/стрелка — из глобального select) */
+.filter-select {
+  width: auto;
+  height: var(--control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: var(--fs-sm);
+  flex-shrink: 0;
+}
+
+/* Квадратная кнопка сброса всех фильтров */
+.filter-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  flex-shrink: 0;
+  padding: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+}
+.filter-clear:hover {
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  color: var(--danger-text);
+}
+
+/* Счётчик результатов (прижат к правому краю панели) */
+.count-badge {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-12) var(--sp-4);
+  color: var(--text-2);
+  text-align: center;
+}
+.empty-state svg { opacity: 0.5; }
+.empty-state p { color: var(--text-body); font-weight: var(--fw-semibold); }
+.empty-state span { font-size: var(--fs-sm); color: var(--text-faint); max-width: 260px; line-height: 1.5; }
+/* Icon tile for empty states (52×52 rounded square per design) */
+.empty-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--surface-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
+.empty-icon svg { opacity: 1; }
+
+/* ── Tabs ── */
+.tab-bar {
+  display: flex;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--sp-2);
+  flex-shrink: 0;
+}
+.tab {
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+}
+.tab:hover { background: var(--surface); color: var(--text); }
+.tab.active { color: var(--accent-text); border-bottom-color: var(--accent); background: transparent; }
+.tab-count {
+  font-size: 0.65rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  padding: 0.05rem 0.4rem;
+  color: var(--text-2);
+}
+
+/* ── Segmented control ── (view tabs on Board, language/theme pickers)
+   Container is a pill-box; the active option gets the accent tint. */
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-field);
+  padding: 4px;
+}
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.85rem;
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+  white-space: nowrap;
+}
+.seg-btn:hover:not(.active):not(:disabled) { color: var(--text); }
+.seg-btn.active { background: var(--accent-bg); color: var(--accent-text); }
+.seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Standalone segment buttons (Settings language/theme: 46px, own borders) */
+.seg-btn-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: var(--control-h-lg);
+  padding: 0 20px;
+  border-radius: var(--radius-field);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  color: var(--text-body);
+  font-size: 0.9rem;
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+}
+.seg-btn-lg:hover:not(.active):not(:disabled) { border-color: var(--border-2); color: var(--text); }
+.seg-btn-lg.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
+.seg-btn-lg:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Toggle (тумблер) ── track 54×30, knob 24; on = accent */
+.toggle {
+  position: relative;
+  width: 54px;
+  height: 30px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--toggle-off);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background var(--dur-base);
+}
+.toggle.on { background: var(--accent-hover); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-knob);
+  transition: left var(--dur-base);
+}
+.toggle.on::after { left: 27px; }
+
+/* ── Mono text ── (values read and copied character by character: passwords,
+   keys, secrets, recovery codes, fingerprints). `.mono` sets the face; no
+   ligature joins characters, in the mono face (JetBrains Mono's code
+   ligatures, its `calt`: != as ≠, -> as an arrow, >= as ≥) or any other;
+   `font-variant-ligatures: none` turns `calt` off too, in WebKitGTK as in
+   Chromium. The same holds for `.mono-chip` and code elements; a component
+   sets no ligature rules of its own. Important: a utility, it holds against
+   a component's `font: inherit` (which resets both). */
+.mono { font-family: var(--font-mono) !important; }
+.mono, .mono-chip, code, kbd, samp, pre {
+  font-variant-ligatures: none !important;
+}
+
+/* ── Mono chip ── (technical values: hosts, versions, OS ids) */
+.mono-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-body);
+  white-space: nowrap;
+}
+
+/* ── Data table ── (Proxies / Terminal / Board tables: rounded card wrapper,
+   caps header, row hover). Works for both <table> and grid-row markup. */
+.data-table {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.data-table-head {
+  font-size: 0.7rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
+.data-table-row { border-bottom: 1px solid var(--surface-2); transition: background 0.12s; }
+.data-table-row:last-child { border-bottom: none; }
+.data-table-row:hover { background: var(--surface-row-hover); }
+
+/* ── Loading / spinner ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.7s linear infinite; }
+.spinner {
+  width: 1.1em;
+  height: 1.1em;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  text-align: center;
+}

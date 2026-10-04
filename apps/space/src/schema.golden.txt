@@ -1,0 +1,400 @@
+pragma application_id = 1447385412
+module browser = 1
+module core = 2
+module lock = 2
+module notes = 1
+module pass = 1
+module ssh = 1
+module sync = 1
+index idx_nh_note_created: CREATE INDEX idx_nh_note_created ON note_history(note_id, created_at DESC)
+index idx_nh_note_revision: CREATE INDEX idx_nh_note_revision ON note_history(note_id, revision DESC)
+index idx_note_links_to: CREATE INDEX idx_note_links_to ON note_links(to_id)
+index idx_note_mentions_binding: CREATE INDEX idx_note_mentions_binding ON note_mentions(binding)
+index idx_ssh_conn_key: CREATE INDEX idx_ssh_conn_key ON ssh_connections(ssh_key_id)
+index idx_ssh_conn_pr: CREATE INDEX idx_ssh_conn_pr ON ssh_connection_profiles(profile_id)
+index idx_ssh_conn_ws: CREATE INDEX idx_ssh_conn_ws ON ssh_connection_workspaces(workspace_id)
+index labels_kind: CREATE INDEX labels_kind ON labels (kind)
+index sqlite_autoindex_app_settings_1: 
+index sqlite_autoindex_labels_1: 
+index sqlite_autoindex_lock_secrets_1: 
+index sqlite_autoindex_note_folder_links_1: 
+index sqlite_autoindex_note_folders_1: 
+index sqlite_autoindex_note_history_1: 
+index sqlite_autoindex_note_links_1: 
+index sqlite_autoindex_note_mentions_1: 
+index sqlite_autoindex_note_smart_views_1: 
+index sqlite_autoindex_note_tag_links_1: 
+index sqlite_autoindex_note_tags_1: 
+index sqlite_autoindex_note_tags_2: 
+index sqlite_autoindex_notes_1: 
+index sqlite_autoindex_password_history_1: 
+index sqlite_autoindex_password_vault_1: 
+index sqlite_autoindex_passwords_1: 
+index sqlite_autoindex_profiles_1: 
+index sqlite_autoindex_proxies_1: 
+index sqlite_autoindex_schema_modules_1: 
+index sqlite_autoindex_ssh_connection_profiles_1: 
+index sqlite_autoindex_ssh_connection_workspaces_1: 
+index sqlite_autoindex_ssh_connections_1: 
+index sqlite_autoindex_ssh_keys_1: 
+index sqlite_autoindex_sync_attachment_state_1: 
+index sqlite_autoindex_sync_gc_candidates_1: 
+index sqlite_autoindex_sync_note_state_1: 
+index sqlite_autoindex_sync_peers_1: 
+index sqlite_autoindex_sync_profile_files_state_1: 
+index sqlite_autoindex_sync_row_state_1: 
+index sqlite_autoindex_totp_entries_1: 
+index sqlite_autoindex_workspace_columns_1: 
+index sqlite_autoindex_workspaces_1: 
+table app_settings
+  column key TEXT notnull=1 default=- pk=1
+  column value TEXT notnull=1 default=- pk=0
+  index sqlite_autoindex_app_settings_1 (key) unique=1 origin=pk
+table labels
+  column key TEXT notnull=1 default=- pk=1
+  column kind TEXT notnull=1 default='' pk=0
+  column id TEXT notnull=1 default='' pk=0
+  column name TEXT notnull=1 default='' pk=0
+  column parent_kind TEXT notnull=0 default=- pk=0
+  column parent_id TEXT notnull=0 default=- pk=0
+  column color TEXT notnull=0 default=- pk=0
+  index labels_kind (kind) unique=0 origin=c
+  index sqlite_autoindex_labels_1 (key) unique=1 origin=pk
+table lock_secrets
+  column box TEXT notnull=1 default=- pk=1
+  column key TEXT notnull=1 default=- pk=2
+  column value TEXT notnull=1 default=- pk=0
+  index sqlite_autoindex_lock_secrets_1 (box, key) unique=1 origin=pk
+table note_folder_links
+  column note_id TEXT notnull=1 default=- pk=1
+  column folder_id TEXT notnull=1 default=- pk=2
+  index sqlite_autoindex_note_folder_links_1 (note_id, folder_id) unique=1 origin=pk
+table note_folders
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column parent_id TEXT notnull=0 default=- pk=0
+  column color TEXT notnull=1 default='#6366f1' pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  foreign key parent_id -> note_folders(id) on delete NO ACTION
+  index sqlite_autoindex_note_folders_1 (id) unique=1 origin=pk
+table note_history
+  column id TEXT notnull=0 default=- pk=1
+  column note_id TEXT notnull=1 default=- pk=0
+  column parent_id TEXT notnull=0 default=- pk=0
+  column revision INTEGER notnull=1 default=- pk=0
+  column version_type TEXT notnull=1 default='save' pk=0
+  column title TEXT notnull=1 default=- pk=0
+  column content BLOB notnull=1 default=- pk=0
+  column content_hash TEXT notnull=1 default=- pk=0
+  column author TEXT notnull=0 default=- pk=0
+  column device TEXT notnull=0 default=- pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  foreign key note_id -> notes(id) on delete CASCADE
+  foreign key parent_id -> note_history(id) on delete NO ACTION
+  index idx_nh_note_created (note_id, created_at) unique=0 origin=c
+  index idx_nh_note_revision (note_id, revision) unique=0 origin=c
+  index sqlite_autoindex_note_history_1 (id) unique=1 origin=pk
+table note_links
+  column from_id TEXT notnull=1 default=- pk=1
+  column to_id TEXT notnull=1 default=- pk=2
+  index idx_note_links_to (to_id) unique=0 origin=c
+  index sqlite_autoindex_note_links_1 (from_id, to_id) unique=1 origin=pk
+table note_mentions
+  column note_id TEXT notnull=1 default=- pk=1
+  column binding TEXT notnull=1 default=- pk=2
+  index idx_note_mentions_binding (binding) unique=0 origin=c
+  index sqlite_autoindex_note_mentions_1 (note_id, binding) unique=1 origin=pk
+table note_smart_views
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column color TEXT notnull=1 default='#8b7bff' pk=0
+  column conditions TEXT notnull=1 default='{}' pk=0
+  column sort_order INTEGER notnull=1 default=0 pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  index sqlite_autoindex_note_smart_views_1 (id) unique=1 origin=pk
+table note_tag_links
+  column note_id TEXT notnull=1 default=- pk=1
+  column tag_id TEXT notnull=1 default=- pk=2
+  index sqlite_autoindex_note_tag_links_1 (note_id, tag_id) unique=1 origin=pk
+table note_tags
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column color TEXT notnull=1 default='#6366f1' pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  index sqlite_autoindex_note_tags_1 (id) unique=1 origin=pk
+  index sqlite_autoindex_note_tags_2 (name) unique=1 origin=u
+table notes
+  column id TEXT notnull=1 default=- pk=1
+  column title TEXT notnull=1 default=- pk=0
+  column file_path TEXT notnull=1 default=- pk=0
+  column format TEXT notnull=1 default='md' pk=0
+  column pinned INTEGER notnull=1 default=0 pk=0
+  column archived INTEGER notnull=1 default=0 pk=0
+  column deleted INTEGER notnull=1 default=0 pk=0
+  column doc_status TEXT notnull=1 default='active' pk=0
+  column version_base TEXT notnull=0 default=- pk=0
+  column fts_rowid INTEGER notnull=0 default=- pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  column file_mtime TEXT notnull=0 default=- pk=0
+  column content_hash TEXT notnull=0 default=- pk=0
+  column preview TEXT notnull=1 default='' pk=0
+  column bindings TEXT notnull=1 default='[]' pk=0
+  index sqlite_autoindex_notes_1 (id) unique=1 origin=pk
+table notes_fts: CREATE VIRTUAL TABLE notes_fts USING fts5(note_id UNINDEXED, title, content, tags)
+table notes_fts_config
+  column k  notnull=1 default=- pk=1
+  column v  notnull=0 default=- pk=0
+  index sqlite_autoindex_notes_fts_config_1 (k) unique=1 origin=pk
+table notes_fts_content
+  column id INTEGER notnull=0 default=- pk=1
+  column c0  notnull=0 default=- pk=0
+  column c1  notnull=0 default=- pk=0
+  column c2  notnull=0 default=- pk=0
+  column c3  notnull=0 default=- pk=0
+table notes_fts_data
+  column id INTEGER notnull=0 default=- pk=1
+  column block BLOB notnull=0 default=- pk=0
+table notes_fts_docsize
+  column id INTEGER notnull=0 default=- pk=1
+  column sz BLOB notnull=0 default=- pk=0
+table notes_fts_idx
+  column segid  notnull=1 default=- pk=1
+  column term  notnull=1 default=- pk=2
+  column pgno  notnull=0 default=- pk=0
+  index sqlite_autoindex_notes_fts_idx_1 (segid, term) unique=1 origin=pk
+table password_history
+  column id TEXT notnull=1 default=- pk=1
+  column password TEXT notnull=1 default=- pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  index sqlite_autoindex_password_history_1 (id) unique=1 origin=pk
+table password_vault
+  column id TEXT notnull=1 default=- pk=1
+  column vault_id TEXT notnull=1 default=- pk=0
+  column crypto_version INTEGER notnull=1 default=1 pk=0
+  column kdf_algorithm TEXT notnull=1 default='argon2id' pk=0
+  column kdf_salt TEXT notnull=1 default=- pk=0
+  column kdf_memory INTEGER notnull=1 default=- pk=0
+  column kdf_iterations INTEGER notnull=1 default=- pk=0
+  column kdf_parallelism INTEGER notnull=1 default=- pk=0
+  column wrapped_key TEXT notnull=1 default=- pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  column recovery_salt TEXT notnull=0 default=- pk=0
+  column recovery_wrapped_key TEXT notnull=0 default=- pk=0
+  column lock_hash TEXT notnull=0 default=- pk=0
+  column lock_kind TEXT notnull=0 default=- pk=0
+  column lock_hint TEXT notnull=0 default=- pk=0
+  index sqlite_autoindex_password_vault_1 (id) unique=1 origin=pk
+table passwords
+  column id TEXT notnull=1 default=- pk=1
+  column title TEXT notnull=1 default=- pk=0
+  column username TEXT notnull=0 default=- pk=0
+  column url TEXT notnull=0 default=- pk=0
+  column password_enc TEXT notnull=1 default=- pk=0
+  column note_enc TEXT notnull=0 default=- pk=0
+  column totp_ids TEXT notnull=1 default='[]' pk=0
+  column tags TEXT notnull=1 default='[]' pk=0
+  column vault_id TEXT notnull=1 default=- pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  index sqlite_autoindex_passwords_1 (id) unique=1 origin=pk
+table profiles
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column status TEXT notnull=1 default='stopped' pk=0
+  column profile_path TEXT notnull=1 default=- pk=0
+  column browser_type TEXT notnull=1 default='camoufox' pk=0
+  column proxy_id TEXT notnull=0 default=- pk=0
+  column fingerprint_preset TEXT notnull=1 default='linux' pk=0
+  column user_agent TEXT notnull=0 default=- pk=0
+  column platform TEXT notnull=0 default=- pk=0
+  column timezone TEXT notnull=0 default=- pk=0
+  column locale TEXT notnull=1 default='en-US' pk=0
+  column languages TEXT notnull=1 default='en-US,en' pk=0
+  column screen_width INTEGER notnull=1 default=1920 pk=0
+  column screen_height INTEGER notnull=1 default=1080 pk=0
+  column webrtc_mode TEXT notnull=1 default='disable' pk=0
+  column geolocation_enabled INTEGER notnull=1 default=0 pk=0
+  column latitude REAL notnull=0 default=- pk=0
+  column longitude REAL notnull=0 default=- pk=0
+  column notes TEXT notnull=0 default=- pk=0
+  column workspace_id TEXT notnull=0 default=- pk=0
+  column kanban_status TEXT notnull=1 default='new' pk=0
+  column kanban_order INTEGER notnull=1 default=0 pk=0
+  column tags TEXT notnull=1 default='[]' pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  column last_launch_at TEXT notnull=0 default=- pk=0
+  column webgl_vendor TEXT notnull=0 default=- pk=0
+  column webgl_renderer TEXT notnull=0 default=- pk=0
+  column default_search_engine TEXT notnull=1 default='ddg' pk=0
+  column history_enabled INTEGER notnull=1 default=1 pk=0
+  foreign key workspace_id -> workspaces(id) on delete NO ACTION
+  index sqlite_autoindex_profiles_1 (id) unique=1 origin=pk
+table proxies
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column proxy_type TEXT notnull=1 default='socks5' pk=0
+  column host TEXT notnull=1 default=- pk=0
+  column port INTEGER notnull=1 default=- pk=0
+  column username TEXT notnull=0 default=- pk=0
+  column password TEXT notnull=0 default=- pk=0
+  column country TEXT notnull=0 default=- pk=0
+  column city TEXT notnull=0 default=- pk=0
+  column status TEXT notnull=1 default='unknown' pk=0
+  column last_ip TEXT notnull=0 default=- pk=0
+  column last_check_at TEXT notnull=0 default=- pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column private_key TEXT notnull=0 default=- pk=0
+  column server_fingerprint TEXT notnull=0 default=- pk=0
+  column tags TEXT notnull=1 default='[]' pk=0
+  index sqlite_autoindex_proxies_1 (id) unique=1 origin=pk
+table schema_modules
+  column module TEXT notnull=1 default=- pk=1
+  column version INTEGER notnull=1 default=- pk=0
+  index sqlite_autoindex_schema_modules_1 (module) unique=1 origin=pk
+table ssh_connection_profiles
+  column connection_id TEXT notnull=1 default=- pk=1
+  column profile_id TEXT notnull=1 default=- pk=2
+  foreign key connection_id -> ssh_connections(id) on delete CASCADE
+  index idx_ssh_conn_pr (profile_id) unique=0 origin=c
+  index sqlite_autoindex_ssh_connection_profiles_1 (connection_id, profile_id) unique=1 origin=pk
+table ssh_connection_workspaces
+  column connection_id TEXT notnull=1 default=- pk=1
+  column workspace_id TEXT notnull=1 default=- pk=2
+  foreign key connection_id -> ssh_connections(id) on delete CASCADE
+  foreign key workspace_id -> workspaces(id) on delete CASCADE
+  index idx_ssh_conn_ws (workspace_id) unique=0 origin=c
+  index sqlite_autoindex_ssh_connection_workspaces_1 (connection_id, workspace_id) unique=1 origin=pk
+table ssh_connections
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column host TEXT notnull=1 default=- pk=0
+  column port INTEGER notnull=1 default=22 pk=0
+  column username TEXT notnull=1 default=- pk=0
+  column auth_type TEXT notnull=1 default='password' pk=0
+  column password TEXT notnull=0 default=- pk=0
+  column private_key TEXT notnull=0 default=- pk=0
+  column key_passphrase TEXT notnull=0 default=- pk=0
+  column requires_2fa INTEGER notnull=1 default=0 pk=0
+  column totp_entry_id TEXT notnull=0 default=- pk=0
+  column proxy_id TEXT notnull=0 default=- pk=0
+  column connect_timeout_sec INTEGER notnull=1 default=15 pk=0
+  column keepalive_sec INTEGER notnull=1 default=30 pk=0
+  column terminal_theme TEXT notnull=0 default=- pk=0
+  column default_cols INTEGER notnull=1 default=120 pk=0
+  column default_rows INTEGER notnull=1 default=32 pk=0
+  column last_connected_at TEXT notnull=0 default=- pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  column ssh_key_id TEXT notnull=0 default=- pk=0
+  column server_fingerprint TEXT notnull=0 default=- pk=0
+  foreign key proxy_id -> proxies(id) on delete SET NULL
+  foreign key ssh_key_id -> ssh_keys(id) on delete SET NULL
+  index idx_ssh_conn_key (ssh_key_id) unique=0 origin=c
+  index sqlite_autoindex_ssh_connections_1 (id) unique=1 origin=pk
+table ssh_keys
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column algorithm TEXT notnull=1 default=- pk=0
+  column bits INTEGER notnull=0 default=- pk=0
+  column comment TEXT notnull=0 default=- pk=0
+  column private_key TEXT notnull=1 default=- pk=0
+  column public_key TEXT notnull=1 default=- pk=0
+  column passphrase TEXT notnull=0 default=- pk=0
+  column fingerprint TEXT notnull=0 default=- pk=0
+  column source TEXT notnull=1 default='imported' pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  index sqlite_autoindex_ssh_keys_1 (id) unique=1 origin=pk
+table sync_attachment_state
+  column note_id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=2
+  column head_blob TEXT notnull=1 default='' pk=0
+  column head_hlc TEXT notnull=1 default='' pk=0
+  column synced_hash TEXT notnull=1 default='' pk=0
+  column deleted INTEGER notnull=1 default=0 pk=0
+  column deferred_ref TEXT notnull=1 default='' pk=0
+  index sqlite_autoindex_sync_attachment_state_1 (note_id, name) unique=1 origin=pk
+table sync_gc_candidates
+  column blob TEXT notnull=1 default=- pk=1
+  column first_seen INTEGER notnull=1 default=- pk=0
+  index sqlite_autoindex_sync_gc_candidates_1 (blob) unique=1 origin=pk
+table sync_note_state
+  column note_id TEXT notnull=1 default=- pk=1
+  column head_blob TEXT notnull=1 default='' pk=0
+  column head_parents TEXT notnull=1 default='[]' pk=0
+  column head_hlc TEXT notnull=1 default='' pk=0
+  column synced_hash TEXT notnull=1 default='' pk=0
+  column deleted INTEGER notnull=1 default=0 pk=0
+  column conflict INTEGER notnull=1 default=0 pk=0
+  column conflict_ancestor_id TEXT notnull=1 default='' pk=0
+  column conflict_local_id TEXT notnull=1 default='' pk=0
+  column conflict_remote_id TEXT notnull=1 default='' pk=0
+  column conflict_remote_blob TEXT notnull=1 default='' pk=0
+  index sqlite_autoindex_sync_note_state_1 (note_id) unique=1 origin=pk
+table sync_peers
+  column device_id TEXT notnull=1 default=- pk=1
+  column seq INTEGER notnull=1 default=0 pk=0
+  column head_hash TEXT notnull=1 default='' pk=0
+  index sqlite_autoindex_sync_peers_1 (device_id) unique=1 origin=pk
+table sync_profile_files_state
+  column profile_id TEXT notnull=1 default=- pk=1
+  column head_hlc TEXT notnull=1 default='' pk=0
+  column synced_hash TEXT notnull=1 default='' pk=0
+  column manifest_json TEXT notnull=1 default='' pk=0
+  column snapshot_at TEXT notnull=1 default='' pk=0
+  column dirty INTEGER notnull=1 default=0 pk=0
+  column pending_manifest TEXT notnull=1 default='' pk=0
+  column lease_device TEXT notnull=1 default='' pk=0
+  column lease_name TEXT notnull=1 default='' pk=0
+  column lease_since TEXT notnull=1 default='' pk=0
+  column lease_hlc TEXT notnull=1 default='' pk=0
+  column lease_synced INTEGER notnull=1 default=1 pk=0
+  column diverged INTEGER notnull=1 default=0 pk=0
+  index sqlite_autoindex_sync_profile_files_state_1 (profile_id) unique=1 origin=pk
+table sync_row_state
+  column entity_type TEXT notnull=1 default=- pk=1
+  column entity_id TEXT notnull=1 default=- pk=2
+  column head_hlc TEXT notnull=1 default='' pk=0
+  column synced_hash TEXT notnull=1 default='' pk=0
+  column deleted INTEGER notnull=1 default=0 pk=0
+  index sqlite_autoindex_sync_row_state_1 (entity_type, entity_id) unique=1 origin=pk
+table totp_entries
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column issuer TEXT notnull=0 default=- pk=0
+  column secret TEXT notnull=1 default=- pk=0
+  column algorithm TEXT notnull=1 default='SHA1' pk=0
+  column digits INTEGER notnull=1 default=6 pk=0
+  column period INTEGER notnull=1 default=30 pk=0
+  column tags TEXT notnull=1 default='[]' pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  column last_used_at TEXT notnull=0 default=- pk=0
+  index sqlite_autoindex_totp_entries_1 (id) unique=1 origin=pk
+table workspace_columns
+  column id TEXT notnull=1 default=- pk=1
+  column workspace_id TEXT notnull=1 default=- pk=0
+  column name TEXT notnull=1 default=- pk=0
+  column tag_name TEXT notnull=1 default=- pk=0
+  column color TEXT notnull=1 default='#6366f1' pk=0
+  column position INTEGER notnull=1 default=0 pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  foreign key workspace_id -> workspaces(id) on delete NO ACTION
+  index sqlite_autoindex_workspace_columns_1 (id) unique=1 origin=pk
+table workspaces
+  column id TEXT notnull=1 default=- pk=1
+  column name TEXT notnull=1 default=- pk=0
+  column description TEXT notnull=0 default=- pk=0
+  column color TEXT notnull=1 default='#6366f1' pk=0
+  column icon TEXT notnull=1 default='folder' pk=0
+  column notes TEXT notnull=0 default=- pk=0
+  column is_default INTEGER notnull=1 default=0 pk=0
+  column created_at TEXT notnull=1 default=- pk=0
+  column updated_at TEXT notnull=1 default=- pk=0
+  index sqlite_autoindex_workspaces_1 (id) unique=1 origin=pk

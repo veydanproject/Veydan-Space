@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-store-keys"
+description = "Enables the store_keys command without any pre-configured scope."
+commands.allow = ["store_keys"]
+
+[[permission]]
+identifier = "deny-store-keys"
+description = "Denies the store_keys command without any pre-configured scope."
+commands.deny = ["store_keys"]

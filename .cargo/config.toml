@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+#
+# Every cargo workspace under this folder builds into one target directory,
+# data/target (relative to the folder that holds .cargo/): the root workspace,
+# crates/messenger and, in the monorepo, services/link, services/hub and
+# services/push. Their lock files differ; cargo keeps the artefacts of each
+# apart by hash. CARGO_TARGET_DIR still wins: the Android wrappers set
+# data/target-android/<product> (docs/platform-spec.md 4.1, 13.4).
+[build]
+target-dir = "data/target"

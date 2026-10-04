@@ -1,0 +1,90 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "close_to_tray",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623bf-00000001-c522b5659447a28e",
+    "payload": {
+      "value": "0"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "minimize_to_tray",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623bf-00000002-c522b5659447a28e",
+    "payload": {
+      "value": "1"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "notes_capture_rules",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623bf-00000003-c522b5659447a28e",
+    "payload": {
+      "value": "[{\"host\":\"example.com\"}]"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "notes_lock_timeout_min",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623bf-00000004-c522b5659447a28e",
+    "payload": {
+      "value": "5"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "quick_capture_shortcut",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623bf-00000005-c522b5659447a28e",
+    "payload": {
+      "value": "CommandOrControl+Shift+N"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "start_hidden",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623bf-00000006-c522b5659447a28e",
+    "payload": {
+      "value": "0"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "ui_locale",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623bf-00000007-c522b5659447a28e",
+    "payload": {
+      "value": "ru"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "ui_locale",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623ef-00000002-c522b5659447a28e",
+    "payload": {
+      "value": "en"
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "start_hidden",
+    "entity_type": "setting",
+    "hlc": "000001a0fe5623ef-00000003-c522b5659447a28e",
+    "payload": {}
+  },
+  {
+    "deleted": false,
+    "entity_id": "start_hidden",
+    "entity_type": "setting",
+    "hlc": "000001a0fe56240f-00000000-c522b5659447a28e",
+    "payload": {
+      "value": "1"
+    }
+  }
+]

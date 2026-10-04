@@ -1,0 +1,75 @@
+{
+  "format": "veydan-messenger-manifest",
+  "v": 1,
+  "serial": 6,
+  "issued_at": 1790847902,
+  "regions": [
+    "default",
+    "eu",
+    "us"
+  ],
+  "relays": [
+    {
+      "id": "veydan-eu-1-relay-1",
+      "url": "wss://eu-1-relay-1.veydan.net",
+      "regions": [
+        "*"
+      ],
+      "read": true,
+      "write": true,
+      "auth": {
+        "type": "api_key",
+        "key": "03551a613f236175aa24426e5d8b7450117d003cc21ece02f9cc896df8204492"
+      }
+    },
+    {
+      "id": "veydan-us-1-relay-1",
+      "url": "wss://us-1-relay-1.veydan.net",
+      "regions": [
+        "*"
+      ],
+      "read": true,
+      "write": true,
+      "auth": {
+        "type": "api_key",
+        "key": "03551a613f236175aa24426e5d8b7450117d003cc21ece02f9cc896df8204492"
+      }
+    }
+  ],
+  "media": [
+    {
+      "id": "veydan-eu-1-media",
+      "type": "blossom",
+      "url": "https://eu-1-media.veydan.net",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "id": "veydan-us-1-media",
+      "type": "blossom",
+      "url": "https://us-1-media.veydan.net",
+      "regions": [
+        "*"
+      ]
+    }
+  ],
+  "sources": [],
+  "push": [
+    {
+      "id": "veydan-eu-1-vpush",
+      "url": "https://eu-1-vpush.veydan.net",
+      "regions": [
+        "eu",
+        "default"
+      ]
+    },
+    {
+      "id": "veydan-us-1-vpush",
+      "url": "https://us-1-vpush.veydan.net",
+      "regions": [
+        "us"
+      ]
+    }
+  ]
+}

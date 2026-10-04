@@ -1,0 +1,32 @@
+{
+  "manifest_version": 2,
+  "name": "Veydan Notes",
+  "version": "__VERSION__",
+  "description": "Save selections, articles, pages and screenshots from this profile into Veydan notes. Notes are linked to the page, site and profile they were captured from.",
+  "icons": { "32": "icons/32.png", "64": "icons/64.png", "128": "icons/128.png" },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "notes@veydan.net",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": ["activeTab", "menus", "nativeMessaging", "notifications"],
+  "background": {
+    "scripts": ["config.js", "i18n.js", "background.js"]
+  },
+  "browser_action": {
+    "default_title": "Veydan Notes — save to notes",
+    "default_icon": { "32": "icons/32.png", "64": "icons/64.png" },
+    "default_popup": "popup.html"
+  },
+  "commands": {
+    "save-selection": {
+      "suggested_key": { "default": "Alt+Shift+N" },
+      "description": "Save selection (or page) to a new note"
+    },
+    "save-article": {
+      "suggested_key": { "default": "Alt+Shift+M" },
+      "description": "Save article as Markdown"
+    }
+  }
+}

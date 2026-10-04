@@ -1,0 +1,48 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "f-1",
+    "entity_type": "note_folder",
+    "hlc": "000001a0fe562360-00000000-c522b5659447a28e",
+    "payload": {
+      "color": "#6366f1",
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "name": "DevOps",
+      "parent_id": null,
+      "updated_at": "2026-09-02T11:30:00+00:00"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "f-2",
+    "entity_type": "note_folder",
+    "hlc": "000001a0fe562360-00000001-c522b5659447a28e",
+    "payload": {
+      "color": "#6366f1",
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "name": "Runbooks",
+      "parent_id": "f-1",
+      "updated_at": "2026-09-02T11:30:00+00:00"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "f-3",
+    "entity_type": "note_folder",
+    "hlc": "000001a0fe562360-00000002-c522b5659447a28e",
+    "payload": {
+      "color": "#6366f1",
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "name": "Gone",
+      "parent_id": null,
+      "updated_at": "2026-09-01T10:00:00+00:00"
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "f-3",
+    "entity_type": "note_folder",
+    "hlc": "000001a0fe5623e5-00000002-c522b5659447a28e",
+    "payload": {}
+  }
+]

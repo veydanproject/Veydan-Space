@@ -1,0 +1,19 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "h-1",
+    "entity_type": "pw_history",
+    "hlc": "000001a0fe5623bf-00000000-c522b5659447a28e",
+    "payload": {
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "password": "x9!kPq"
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "h-1",
+    "entity_type": "pw_history",
+    "hlc": "000001a0fe5623ef-00000001-c522b5659447a28e",
+    "payload": {}
+  }
+]

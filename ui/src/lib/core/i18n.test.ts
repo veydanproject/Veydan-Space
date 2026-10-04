@@ -1,0 +1,842 @@
+// SPDX-FileCopyrightText: 2026 Veydan Project
+// SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+// The dictionaries split by owner (platform-spec 11.5) merge back into the
+// dictionary of platform-stage-7, key for key, in both locales and in the
+// phone's layer: Space, which has every module, shows the same strings. A
+// product with fewer modules (`node scripts/ui.mjs notes vitest run`) has a
+// part of that dictionary: no key it has may differ from stage 7.
+// `testdata/i18n-platform-stage-7.json` is that dictionary as `t()` read it
+// (src/lib/i18n.ts, src/lib/mobile/i18n.ts and the messenger's dictionary at
+// the tag, duplicates resolved the way the object literal resolved them).
+
+import { describe, expect, it } from 'vitest';
+import { get } from 'svelte/store';
+import { countKey, dictionary, locale, t } from './i18n';
+import { mobileDictionary, t as mobileT } from './mobile/i18n';
+import stage7 from './testdata/i18n-platform-stage-7.json';
+import { product as built } from './product';
+
+type Dict = Record<string, string>;
+
+/**
+ * Keys the split added; none replaces or changes a string the app showed.
+ * Stage 8 step 1: names of kinds and tabs that were literals in markup.
+ * Stage 8 step 2: the mark of a reference whose owner is not in the product (10.3).
+ * Stage 9: the Modules section and the first start's question (section 12).
+ * Stage 10: the name of the product as a key (13.5; `{app}` is filled by `t()`).
+ * Stage 10, the review: the screen of a start the backend did not answer
+ * (core/start.ts), and the folder strings of the desktop notes sidebar,
+ * which were Russian literals in markup (the phone layer had them already).
+ * The UI/UX pass over the products (2026-10-04): the chrome of a product of
+ * one module (the way back from Settings, the window buttons' names), the
+ * shell's commands of the palette, the translated update error, the short
+ * interval chips, the screen of a UI built for the other platform, the
+ * browser's own About link, the phone's "Start screen". Then the notes: the
+ * strings of the version history, the merge, the tag and folder dialogs and
+ * the proxy and TOTP forms, which were Russian literals in markup; the names
+ * the list heading, its empty states and the label picker are built from.
+ * Then Pass: the shared confirmation question (core/ui/confirm.svelte.ts),
+ * the empty and nothing-found states of the panes, the edit title, the
+ * counter of hidden labels, the TOTP picker's first row, the remove button
+ * of a chip, the notes search of the TOTP form; on the phone the generator's
+ * "Tap" and a password placeholder that fits the screen. Then the
+ * messenger: the singular of a group's members, the phone's title of its
+ * settings, the sheet that adds a contact on the phone. Then Space: the
+ * plural forms of the workspaces' counts (`countKey` of core/i18n) and the
+ * strings of the workspace cards and their delete dialog, which were English
+ * literals in markup. The closing pass: the board, the table, the Raw data
+ * panel, the cookie import and the SSH list (English literals in markup),
+ * plural forms of the notes' counts, the checklist's and the panel's names
+ * for screen readers, the phone's clear and sheet buttons, the scanner's
+ * error, the new recovery key's title, the messenger's palette and contact
+ * actions, the tag picker's short placeholders. The owner's decision on the
+ * phone's generator: its history section, the hint of the switch turned
+ * off, the empty history and the question before the history is cleared
+ * (in the desktop dictionary since the desktop generator asks it too).
+ */
+const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
+  desktop: {
+    en: {
+      settings_camoufox_title: 'Camoufox',
+      totp_label: 'TOTP',
+      notes_label: 'Notes',
+      ctx_kind_note: 'Note',
+      ctx_kind_note_tag: 'Tag',
+      ctx_kind_note_folder: 'Folder',
+      ctx_kind_note_template: 'Template',
+      ctx_available_in_space: 'available in Veydan Space',
+      modules_section: 'Modules',
+      modules_hint: 'What this device shows. A module that is off keeps its data, and its data keeps syncing.',
+      modules_last: 'At least one module stays on.',
+      modules_first_title: 'What do you want to use?',
+      modules_first_hint: 'Choose what this device shows. You can change it at any time in Settings → Modules.',
+      modules_first_all: 'Use everything',
+      modules_first_continue: 'Continue',
+      start_error_no_answer: 'The app did not answer the window. Nothing was changed; try again.',
+      start_error_retry: 'Try again',
+      notes_filter_folders: 'Folders',
+      notes_filter_folders_empty: 'No folders yet',
+      notes_folder_new: 'New folder',
+      app_name: '{app}',
+      nav_back_to: "Back to {name}",
+      common_close: "Close",
+      window_minimize: "Minimize",
+      window_maximize: "Maximize",
+      window_restore: "Restore",
+      settings_theme_dark: "Dark",
+      settings_theme_light: "Light",
+      settings_update_failed: "Could not check for updates. Check the connection and try again.",
+      cmd_app_settings: "Open settings",
+      cmd_app_lock: "Lock {app}",
+      settings_lock_hint_note: "Never put the PIN or password itself here.",
+      settings_sync_device_name_profiles_hint: "Shown on other devices while a profile runs here.",
+      settings_sync_interval_sec: "{n} s",
+      settings_sync_interval_min: "{n} min",
+      start_error_wrong_ui_phone: "This window was given the phone interface of {app}: the app was built with the pages of the Android build.",
+      start_error_wrong_ui_desktop: "This device was given the desktop interface of {app}: the app was built with the pages of the desktop build.",
+      start_error_wrong_ui_fix: "Nothing was changed. Build the app again, or install a release build.",
+      settings_about_camoufox: "Built on Camoufox",
+      notes_list_search: "Search results",
+      notes_list_nothing: "Nothing found",
+      notes_list_empty_trash: "Trash is empty",
+      notes_list_empty_pinned: "No pinned notes",
+      notes_list_empty_archived: "No archived notes",
+      notes_btn_more: "More",
+      notes_btn_save: "Save",
+      notes_item_actions: "Actions",
+      notes_item_edit: "Edit",
+      notes_folder_sub: "Subfolder",
+      notes_folder_name_ph: "folder name",
+      notes_folder_parent: "Nest in:",
+      notes_folder_root: "— top level —",
+      notes_folder_create: "Create folder",
+      notes_create_named: "Create “{name}”",
+      notes_tag_add: "Add tag",
+      notes_tag_edit: "Edit tag",
+      notes_tag_in: "Tag in “{name}”",
+      notes_tag_add_in: "in “{name}”",
+      notes_tag_hint: "Use “/” for subgroups:",
+      notes_tag_hint_example: "Group/tag",
+      notes_tag_name_ph: "tag name",
+      notes_color: "Color {c}",
+      notes_color_custom: "Custom color",
+      notes_section_fold: "Collapse",
+      notes_section_unfold: "Expand",
+      notes_section_fold_all: "Collapse all",
+      notes_section_unfold_all: "Expand all",
+      notes_label_kind_tag: "tag",
+      notes_label_kind_folder: "folder",
+      notes_label_kind_workspace: "workspace",
+      notes_label_kind_profile: "profile",
+      notes_label_kind_proxy: "proxy",
+      notes_label_kind_ssh: "SSH",
+      notes_label_kind_totp: "TOTP",
+      notes_label_kind_password: "password",
+      notes_history_title: "Version history",
+      notes_history_compare: "Compare two versions",
+      notes_history_all_types: "All types",
+      notes_history_kind_save: "Save",
+      notes_history_kind_autosave: "Autosave",
+      notes_history_kind_restore: "Restore",
+      notes_history_kind_merge: "Merge",
+      notes_history_kind_import: "Import",
+      notes_history_kind_sync: "Sync",
+      notes_history_kind_conflict: "Conflict",
+      notes_history_from: "From",
+      notes_history_to: "To",
+      notes_history_apply: "Apply filter",
+      notes_history_reset: "Reset",
+      notes_history_pick_first: "Select the first version",
+      notes_history_pick_second: "Now select the second version",
+      notes_history_back: "Back to the versions",
+      notes_history_versions: "Versions",
+      notes_history_merge: "Merge with the current text",
+      notes_history_revert: "Revert to this version",
+      notes_history_no_changes: "No changes",
+      notes_history_none: "No history yet",
+      notes_history_none_hint: "Versions appear once the note is edited",
+      notes_history_today: "Today",
+      notes_history_yesterday: "Yesterday",
+      notes_merge_title: "Merge versions",
+      notes_merge_running: "Merging…",
+      notes_merge_clean: "No conflicts: the versions merged cleanly",
+      notes_merge_clean_hint: "The changes will be applied to the current note",
+      notes_merge_apply: "Apply",
+      notes_merge_unresolved: "Unresolved conflicts: {n}",
+      notes_merge_resolved: "All conflicts resolved",
+      notes_merge_current: "Current version",
+      notes_merge_history: "Version from history",
+      notes_merge_keep_current: "Keep current",
+      notes_merge_keep_both: "Keep both",
+      notes_merge_keep_history: "Keep from history",
+      notes_merge_local: "Local version",
+      notes_merge_remote: "Remote version",
+      notes_merge_this_device: "This computer",
+      notes_merge_keep_local: "Keep local",
+      notes_merge_keep_remote: "Keep remote",
+      notes_merge_result: "Result",
+      notes_merge_empty: "empty",
+      notes_label_remove: "Remove “{name}”",
+      proxy_section_ssh_key: "SSH private key (optional)",
+      proxy_ssh_key_hint: "When set, it is used instead of the password",
+      proxy_section_geo: "Geo (optional)",
+      totp_hint_secret: "The authentication key: a Base32 string (letters A–Z and digits 2–7). The site shows it in its 2FA settings, usually under the QR code.",
+      totp_hint_algorithm: "SHA1 suits 99% of services. A scanned QR code sets it. When entering by hand, change it only if the service names SHA256 or SHA512.",
+      totp_algo_default: "SHA1 (default)",
+      totp_hint_digits: "The length of the one-time code. The default is 6 digits; some services (Steam and others) use 8.",
+      totp_hint_period: "How often the code changes. The default is 30 seconds; 60 is rare.",
+      common_cancel: 'Cancel',
+      common_delete: 'Delete',
+      common_confirm: 'OK',
+      pass_nothing_found: 'Nothing found',
+      pass_nothing_found_hint: 'Nothing matches “{q}”.',
+      pw_edit_title: 'Edit password',
+      pw_more_tags: '{n} more',
+      totp_pick_new: 'New TOTP entry',
+      pass_remove: 'Remove',
+      pw_bind_note_search: 'Search notes…',
+      msg_group_members_1: '1 member',
+      msg_settings_title_full: 'Chat settings',
+      msg_contacts_new: 'New contact',
+      workspaces_sub_one: "{count} workspace · group profiles by project",
+      workspaces_sub_few: "{count} workspaces · group profiles by project",
+      workspaces_profiles_n: "{n} profiles",
+      workspaces_profiles_n_one: "{n} profile",
+      workspaces_profiles_n_few: "{n} profiles",
+      workspaces_proxies_n: "{n} proxies",
+      workspaces_proxies_n_one: "{n} proxy",
+      workspaces_proxies_n_few: "{n} proxies",
+      workspaces_active_n: "{n} active",
+      workspaces_active_n_one: "{n} active",
+      workspaces_active_n_few: "{n} active",
+      workspaces_drag: "Drag to reorder",
+      workspaces_color_custom: "Custom color",
+      workspaces_delete_question: "Delete {name}?",
+      workspaces_delete_move_hint: "Profiles and proxies move to the Default workspace",
+      workspaces_delete_all_hint: "All profiles and proxies are deleted for good",
+      kanban_unassigned: "Unassigned",
+      kanban_all_profiles: "All profiles",
+      kanban_add_column: "Add column",
+      kanban_column_name_ph: "Column name…",
+      kanban_edit_column: "Edit column",
+      kanban_delete_column: "Delete column",
+      kanban_delete_column_confirm: "Delete the column “{name}”? Its profiles ({n}) move to Unassigned.",
+      kanban_totp_codes: "TOTP codes",
+      kanban_clear_filters: "Clear filters",
+      ws_view_kanban: "Kanban view",
+      ws_view_table: "Table view",
+      table_col_os: "OS / Browser",
+      proxy_field_city: "City",
+      profile_field_screen: "Screen",
+      panel_column: "Column",
+      settings_camoufox_path: "Path",
+      cookies_imported_title: "Cookies imported",
+      cookies_imported_count: "Cookies: {n}",
+      cookies_imported_domains: "Domains ({n}):",
+      raw_title: "Raw data — {name}",
+      raw_tab_fingerprint: "Fingerprint",
+      raw_tab_config: "Raw config",
+      raw_tab_cookies: "Cookies",
+      raw_cookie_session: "Session",
+      raw_cookies_saved: "Saved: {path}",
+      raw_webrtc_disable: "Disabled (no leak)",
+      raw_webrtc_real_ip: "Real IP",
+      raw_webrtc_proxy_ip: "Proxy IP only",
+      raw_auto_by_os: "— auto (by OS)",
+      raw_system: "— system",
+      raw_disabled: "disabled",
+      raw_section_geo: "Timezone & geo",
+      raw_section_privacy: "Privacy",
+      raw_section_seeds: "Noise seeds (Camoufox)",
+      raw_section_screen: "Screen",
+      raw_copy: "Copy",
+      raw_cookies_count: "Cookies: {n}",
+      raw_cookies_empty: "No cookies yet",
+      raw_cookies_empty_hint: "Cookies appear after the profile has been launched and visited sites.",
+      raw_col_host: "Host",
+      raw_col_name: "Name",
+      raw_col_value: "Value",
+      raw_col_expiry: "Expiry",
+      raw_col_flags: "Flags",
+      ssh_btn_open_terminal: "Open terminal",
+      ssh_btn_edit: "Edit",
+      ssh_auth_badge_password: "password",
+      files_symlink: "Symbolic link",
+      notes_empty_trash_confirm_one: "Permanently delete {n} note from the trash? This cannot be undone.",
+      notes_empty_trash_confirm_few: "Permanently delete {n} notes from the trash? This cannot be undone.",
+      notes_delete_all_confirm_one: "Move {n} note from this list to the trash?",
+      notes_delete_all_confirm_few: "Move {n} notes from this list to the trash?",
+      notes_export_hint_one: "{n} note with attachments, Markdown + frontmatter.",
+      notes_export_hint_few: "{n} notes with attachments, Markdown + frontmatter.",
+      notes_export_done_one: "Exported {n} note to {path}",
+      notes_export_done_few: "Exported {n} notes to {path}",
+      notes_import_done_one: "Imported {n} note",
+      notes_import_done_few: "Imported {n} notes",
+      notes_label_placeholder_objects: "Tag, folder or object…",
+      panel_notes_count: "{n} notes",
+      panel_notes_count_few: "{n} notes",
+      notes_panel_resize: "Resize panel",
+      notes_task_checkbox: "Task: {text}",
+      notes_task_checkbox_empty: "Empty task",
+      notes_smart_profile_search: "Find a profile…",
+      msg_contacts_more: "More",
+      msg_cmd_open_chat: "Open chat: {name}",
+      settings_lock_recovery_new_title: "Your new recovery key",
+      // The follow-up of the UI/UX pass (2026-10-04): English left in markup,
+      // the reason of an unsent message, the result of a NIP-05 check.
+      panel_btn_import_cookies: "Import Cookies",
+      panel_btn_raw_data: "Raw data",
+      panel_tab_info: "Info",
+      proxy_city_placeholder: "New York",
+      settings_camoufox_extracting: "Extracting… please wait",
+      ssh_auth_badge_key: "key",
+      ssh_auth_badge_key_password: "key + pass",
+      msg_send_failed: "Not sent. Retry to send it again.",
+      msg_send_failed_offline: "Not sent: no connection to the relays. Retry when you are online.",
+      msg_contacts_nip05_ok: "NIP-05 address confirmed",
+      msg_contacts_nip05_failed: "NIP-05 address not confirmed",
+      pwgen_history_clear_title: 'Clear the history?',
+      pwgen_history_clear_message: 'The generated passwords saved on this device will be deleted. This cannot be undone.',
+      // The add-bridge field tells a link of another kind (`veydan://bridge/…`).
+      msg_bridge_error_link_type: 'This is a link of another kind. A link to a bridge starts with veydan://vlink/.',
+    },
+    ru: {
+      settings_camoufox_title: 'Camoufox',
+      totp_label: 'TOTP',
+      notes_label: "Заметки",
+      ctx_kind_note: 'Заметка',
+      ctx_kind_note_tag: 'Тег',
+      ctx_kind_note_folder: 'Папка',
+      ctx_kind_note_template: 'Шаблон',
+      ctx_available_in_space: 'доступно в Veydan Space',
+      modules_section: 'Модули',
+      modules_hint: 'Что показывает это устройство. Выключенный модуль сохраняет свои данные, и они продолжают синхронизироваться.',
+      modules_last: 'Хотя бы один модуль остаётся включённым.',
+      modules_first_title: 'Чем вы будете пользоваться?',
+      modules_first_hint: 'Выберите, что будет на этом устройстве. Изменить выбор можно в любой момент: Настройки → Модули.',
+      modules_first_all: 'Всё сразу',
+      modules_first_continue: 'Продолжить',
+      start_error_no_answer: 'Приложение не ответило окну. Ничего не изменено; попробуйте ещё раз.',
+      start_error_retry: 'Повторить',
+      notes_filter_folders: 'Папки',
+      notes_filter_folders_empty: 'Папок пока нет',
+      notes_folder_new: 'Новая папка',
+      app_name: '{app}',
+      nav_back_to: "Назад: {name}",
+      common_close: "Закрыть",
+      window_minimize: "Свернуть",
+      window_maximize: "Развернуть",
+      window_restore: "Восстановить",
+      settings_theme_dark: "Тёмная",
+      settings_theme_light: "Светлая",
+      settings_update_failed: "Не удалось проверить обновления. Проверьте соединение и попробуйте ещё раз.",
+      cmd_app_settings: "Открыть настройки",
+      cmd_app_lock: "Заблокировать {app}",
+      settings_lock_hint_note: "Не пишите сюда сам ПИН или пароль.",
+      settings_sync_device_name_profiles_hint: "Показывается на других устройствах, пока профиль запущен здесь.",
+      settings_sync_interval_sec: "{n} с",
+      settings_sync_interval_min: "{n} мин",
+      start_error_wrong_ui_phone: "Этому окну достался телефонный интерфейс {app}: приложение собрано со страницами сборки для Android.",
+      start_error_wrong_ui_desktop: "Этому устройству достался десктопный интерфейс {app}: приложение собрано со страницами десктопной сборки.",
+      start_error_wrong_ui_fix: "Ничего не изменено. Соберите приложение заново или установите релизную сборку.",
+      settings_about_camoufox: "Основано на Camoufox",
+      notes_list_search: "Результаты поиска",
+      notes_list_nothing: "Ничего не найдено",
+      notes_list_empty_trash: "Корзина пуста",
+      notes_list_empty_pinned: "Закреплённых заметок нет",
+      notes_list_empty_archived: "В архиве пусто",
+      notes_btn_more: "Ещё",
+      notes_btn_save: "Сохранить",
+      notes_item_actions: "Действия",
+      notes_item_edit: "Изменить",
+      notes_folder_sub: "Подпапка",
+      notes_folder_name_ph: "название папки",
+      notes_folder_parent: "Вложить в:",
+      notes_folder_root: "— корневая —",
+      notes_folder_create: "Создать папку",
+      notes_create_named: "Создать «{name}»",
+      notes_tag_add: "Добавить тег",
+      notes_tag_edit: "Редактировать тег",
+      notes_tag_in: "Тег в «{name}»",
+      notes_tag_add_in: "в «{name}»",
+      notes_tag_hint: "Используйте «/» для подгрупп:",
+      notes_tag_hint_example: "Группа/тег",
+      notes_tag_name_ph: "название тега",
+      notes_color: "Цвет {c}",
+      notes_color_custom: "Свой цвет",
+      notes_section_fold: "Свернуть",
+      notes_section_unfold: "Развернуть",
+      notes_section_fold_all: "Свернуть всё",
+      notes_section_unfold_all: "Развернуть всё",
+      notes_label_kind_tag: "тег",
+      notes_label_kind_folder: "папка",
+      notes_label_kind_workspace: "воркспейс",
+      notes_label_kind_profile: "профиль",
+      notes_label_kind_proxy: "прокси",
+      notes_label_kind_ssh: "SSH",
+      notes_label_kind_totp: "TOTP",
+      notes_label_kind_password: "пароль",
+      notes_history_title: "История версий",
+      notes_history_compare: "Сравнить две версии",
+      notes_history_all_types: "Все типы",
+      notes_history_kind_save: "Сохранение",
+      notes_history_kind_autosave: "Автосохранение",
+      notes_history_kind_restore: "Восстановление",
+      notes_history_kind_merge: "Слияние",
+      notes_history_kind_import: "Импорт",
+      notes_history_kind_sync: "Синхронизация",
+      notes_history_kind_conflict: "Конфликт",
+      notes_history_from: "С",
+      notes_history_to: "По",
+      notes_history_apply: "Применить фильтр",
+      notes_history_reset: "Сбросить",
+      notes_history_pick_first: "Выберите первую версию",
+      notes_history_pick_second: "Теперь выберите вторую версию",
+      notes_history_back: "К списку версий",
+      notes_history_versions: "Версии",
+      notes_history_merge: "Слить с текущей",
+      notes_history_revert: "Откатить к этой версии",
+      notes_history_no_changes: "Изменений нет",
+      notes_history_none: "История пуста",
+      notes_history_none_hint: "Версии появятся после редактирования заметки",
+      notes_history_today: "Сегодня",
+      notes_history_yesterday: "Вчера",
+      notes_merge_title: "Слияние версий",
+      notes_merge_running: "Выполняю слияние…",
+      notes_merge_clean: "Конфликтов нет — слияние прошло успешно",
+      notes_merge_clean_hint: "Изменения будут применены к текущей заметке",
+      notes_merge_apply: "Применить",
+      notes_merge_unresolved: "Не разрешено конфликтов: {n}",
+      notes_merge_resolved: "Все конфликты разрешены",
+      notes_merge_current: "Текущая версия",
+      notes_merge_history: "Версия из истории",
+      notes_merge_keep_current: "Принять текущую",
+      notes_merge_keep_both: "Принять обе версии",
+      notes_merge_keep_history: "Принять из истории",
+      notes_merge_local: "Локальная версия",
+      notes_merge_remote: "Удалённая версия",
+      notes_merge_this_device: "Этот компьютер",
+      notes_merge_keep_local: "Принять локальную версию",
+      notes_merge_keep_remote: "Принять удалённую версию",
+      notes_merge_result: "Получится",
+      notes_merge_empty: "пусто",
+      notes_label_remove: "Убрать «{name}»",
+      proxy_section_ssh_key: "SSH-ключ (необязательно)",
+      proxy_ssh_key_hint: "Если заполнено — используется вместо пароля",
+      proxy_section_geo: "Гео (необязательно)",
+      totp_hint_secret: "Ключ аутентификации — строка в формате Base32 (буквы A–Z и цифры 2–7). Берётся из настроек 2FA на сайте — обычно показывается под QR-кодом.",
+      totp_hint_algorithm: "SHA1 подходит для 99% сервисов. При сканировании QR определяется автоматически. При ручном вводе меняйте только если сервис явно указал SHA256 или SHA512.",
+      totp_algo_default: "SHA1 (стандарт)",
+      totp_hint_digits: "Длина одноразового кода. Стандарт — 6 цифр; 8 цифр используют некоторые сервисы (Steam и др.).",
+      totp_hint_period: "Как часто меняется код. Стандарт — 30 секунд; 60 секунд встречается редко.",
+      common_cancel: 'Отмена',
+      common_delete: 'Удалить',
+      common_confirm: 'ОК',
+      pass_nothing_found: 'Ничего не найдено',
+      pass_nothing_found_hint: 'Нет записей по запросу «{q}».',
+      pw_edit_title: 'Изменить пароль',
+      pw_more_tags: 'Ещё {n}',
+      totp_pick_new: 'Новая запись TOTP',
+      pass_remove: 'Убрать',
+      pw_bind_note_search: 'Поиск заметок…',
+      msg_group_members_1: 'участников: 1',
+      msg_settings_title_full: 'Настройки чата',
+      msg_contacts_new: 'Новый контакт',
+      workspaces_sub_one: "Воркспейсов: {count} · сгруппируйте профили по проектам",
+      workspaces_sub_few: "Воркспейсов: {count} · сгруппируйте профили по проектам",
+      workspaces_profiles_n: "{n} профилей",
+      workspaces_profiles_n_one: "{n} профиль",
+      workspaces_profiles_n_few: "{n} профиля",
+      workspaces_proxies_n: "{n} прокси",
+      workspaces_proxies_n_one: "{n} прокси",
+      workspaces_proxies_n_few: "{n} прокси",
+      workspaces_active_n: "{n} активных",
+      workspaces_active_n_one: "{n} активный",
+      workspaces_active_n_few: "{n} активных",
+      workspaces_drag: "Перетащите, чтобы изменить порядок",
+      workspaces_color_custom: "Свой цвет",
+      workspaces_delete_question: "Удалить {name}?",
+      workspaces_delete_move_hint: "Профили и прокси перейдут в воркспейс Default",
+      workspaces_delete_all_hint: "Все профили и прокси будут удалены безвозвратно",
+      kanban_unassigned: "Без колонки",
+      kanban_all_profiles: "Все профили",
+      kanban_add_column: "Добавить колонку",
+      kanban_column_name_ph: "Название колонки…",
+      kanban_edit_column: "Изменить колонку",
+      kanban_delete_column: "Удалить колонку",
+      kanban_delete_column_confirm: "Удалить колонку «{name}»? Её профили ({n}) перейдут в «Без колонки».",
+      kanban_totp_codes: "Коды TOTP",
+      kanban_clear_filters: "Сбросить фильтры",
+      ws_view_kanban: "Канбан",
+      ws_view_table: "Таблица",
+      table_col_os: "ОС / браузер",
+      proxy_field_city: "Город",
+      profile_field_screen: "Экран",
+      panel_column: "Колонка",
+      settings_camoufox_path: "Путь",
+      cookies_imported_title: "Cookies импортированы",
+      cookies_imported_count: "Cookies: {n}",
+      cookies_imported_domains: "Домены ({n}):",
+      raw_title: "Сырые данные — {name}",
+      raw_tab_fingerprint: "Отпечаток",
+      raw_tab_config: "Конфигурация",
+      raw_tab_cookies: "Cookies",
+      raw_cookie_session: "Сессия",
+      raw_cookies_saved: "Сохранено: {path}",
+      raw_webrtc_disable: "Отключён (без утечки)",
+      raw_webrtc_real_ip: "Реальный IP",
+      raw_webrtc_proxy_ip: "Только IP прокси",
+      raw_auto_by_os: "— авто (по ОС)",
+      raw_system: "— системный",
+      raw_disabled: "выключена",
+      raw_section_geo: "Часовой пояс и геопозиция",
+      raw_section_privacy: "Приватность",
+      raw_section_seeds: "Сиды шума (Camoufox)",
+      raw_section_screen: "Экран",
+      raw_copy: "Копировать",
+      raw_cookies_count: "Cookies: {n}",
+      raw_cookies_empty: "Cookies пока нет",
+      raw_cookies_empty_hint: "Cookies появятся, когда профиль запустят и он побывает на сайтах.",
+      raw_col_host: "Хост",
+      raw_col_name: "Имя",
+      raw_col_value: "Значение",
+      raw_col_expiry: "Истекает",
+      raw_col_flags: "Флаги",
+      ssh_btn_open_terminal: "Открыть терминал",
+      ssh_btn_edit: "Изменить",
+      ssh_auth_badge_password: "пароль",
+      files_symlink: "Символическая ссылка",
+      notes_empty_trash_confirm_one: "Удалить навсегда {n} заметку из корзины? Это действие нельзя отменить.",
+      notes_empty_trash_confirm_few: "Удалить навсегда {n} заметки из корзины? Это действие нельзя отменить.",
+      notes_delete_all_confirm_one: "Переместить {n} заметку из этого списка в корзину?",
+      notes_delete_all_confirm_few: "Переместить {n} заметки из этого списка в корзину?",
+      notes_export_hint_one: "Заметок: {n}, с вложениями, Markdown + frontmatter.",
+      notes_export_hint_few: "Заметок: {n}, с вложениями, Markdown + frontmatter.",
+      notes_export_done_one: "Экспортировано заметок: {n} в {path}",
+      notes_export_done_few: "Экспортировано заметок: {n} в {path}",
+      notes_import_done_one: "Импортировано заметок: {n}",
+      notes_import_done_few: "Импортировано заметок: {n}",
+      notes_label_placeholder_objects: "Тег, папка или объект…",
+      panel_notes_count: "{n} заметок",
+      panel_notes_count_few: "{n} заметки",
+      notes_panel_resize: "Изменить ширину панели",
+      notes_task_checkbox: "Задача: {text}",
+      notes_task_checkbox_empty: "Пустая задача",
+      notes_smart_profile_search: "Найти профиль…",
+      msg_contacts_more: "Ещё",
+      msg_cmd_open_chat: "Открыть чат: {name}",
+      settings_lock_recovery_new_title: "Новый ключ восстановления",
+      panel_btn_import_cookies: "Импорт куки",
+      panel_btn_raw_data: "Сырые данные",
+      panel_tab_info: "Сведения",
+      proxy_city_placeholder: "Нью-Йорк",
+      settings_camoufox_extracting: "Распаковка… подождите",
+      ssh_auth_badge_key: "ключ",
+      ssh_auth_badge_key_password: "ключ + фраза",
+      msg_send_failed: "Не отправлено. Повторите отправку.",
+      msg_send_failed_offline: "Не отправлено: нет соединения с реле. Повторите, когда появится сеть.",
+      msg_contacts_nip05_ok: "Адрес NIP-05 подтверждён",
+      msg_contacts_nip05_failed: "Адрес NIP-05 не подтверждён",
+      pwgen_history_clear_title: 'Очистить историю?',
+      pwgen_history_clear_message: 'Сгенерированные пароли, сохранённые на этом устройстве, будут удалены. Это нельзя отменить.',
+      msg_bridge_error_link_type: 'Это ссылка другого вида. Ссылка на мост начинается с veydan://vlink/.',
+    },
+  },
+  mobile: {
+    en: {
+      update_check: 'Check for updates',
+      update_checking: 'Checking…',
+      update_up_to_date: 'Latest version',
+      update_available: 'Version {version} is available',
+      update_available_hint: 'Download the APK on the release page and install it over this version.',
+      update_open: 'Download',
+      settings_start_screen: 'Start screen',
+      pwgen_placeholder: 'Tap “Generate”',
+      pw_unchanged: 'Unchanged if left empty',
+      pw_search: "Search passwords…",
+      totp_scan_unavailable: "The camera is not available. Allow camera access in the system settings, or add the code by its link.",
+      common_clear: "Clear",
+      pwgen_history_off_hint: 'New passwords are not saved.',
+      pwgen_history_off_kept: 'Passwords saved earlier stay on this device: {n}.',
+      pwgen_history_empty_hint: 'Passwords you generate appear here. Tap one to copy it.',
+    },
+    ru: {
+      update_check: 'Проверить обновления',
+      update_checking: 'Проверка…',
+      update_up_to_date: 'Последняя версия',
+      update_available: 'Доступна версия {version}',
+      update_available_hint: 'Скачайте APK на странице выпуска и установите поверх этой версии.',
+      update_open: 'Скачать',
+      settings_start_screen: 'Стартовый экран',
+      pwgen_placeholder: 'Нажмите «Сгенерировать»',
+      pw_unchanged: 'Пусто — без изменений',
+      pw_search: "Поиск паролей…",
+      totp_scan_unavailable: "Камера недоступна. Разрешите доступ к камере в настройках системы или добавьте код по ссылке.",
+      common_clear: "Очистить",
+      pwgen_history_off_hint: 'Новые пароли не сохраняются.',
+      pwgen_history_off_kept: 'Ранее сохранённые пароли остаются на этом устройстве: {n}.',
+      pwgen_history_empty_hint: 'Здесь появятся сгенерированные пароли. Нажмите на пароль, чтобы скопировать его.',
+    },
+  },
+};
+
+/**
+ * Keys the stages removed with what showed them. Stage 9: the messenger's
+ * own switch, a card on the desktop and a row on the phone, went into the
+ * Modules section (section 12). Stage 10: the About card shows the name of
+ * the product (`core/product.ts`) instead of a key that named Space. After
+ * stage 10: the quick capture shortcut went, and with it its settings row
+ * (20.18); the About tagline is the product's own, from products.json
+ * (`product.tagline`, 20.19). The UI/UX pass: the two halves of "Built on
+ * Camoufox" left the core; the browser module has the link's whole text.
+ * Then the workspace counters: a number before a fixed plural word became a
+ * key per plural form ("1 profile", "2 профиля").
+ */
+const REMOVED: Record<'desktop' | 'mobile', string[]> = {
+  desktop: [
+    'msg_settings_section',
+    'msg_settings_group',
+    'msg_settings_enable',
+    'msg_settings_enable_hint',
+    'msg_settings_not_compiled',
+    'msg_mobile_setting',
+    'msg_mobile_setting_on',
+    'msg_mobile_setting_off',
+    'settings_about_app',
+    'settings_quick_capture_section',
+    'settings_quick_capture_hint',
+    'settings_quick_capture_invalid',
+    'settings_about_tagline',
+    'settings_about_built_on',
+    'settings_about_link_camoufox',
+    'workspaces_profiles',
+    'workspaces_proxies',
+    'workspaces_active',
+    // The closing UI/UX pass: the notes' count has its plural forms
+    // (`panel_notes_count`, `_one`, `_few`) in place of a "many" form.
+    'panel_notes_count_many',
+  ],
+  // The phone's notes count is the desktop key with its plural forms.
+  mobile: ['notes_count_one', 'notes_count_many'],
+};
+
+/**
+ * Keys whose string names the product since stage 10 (13.5): the name
+ * "Veydan Space" of stage 7 became the placeholder `{app}`, which `t()`
+ * fills with the name of the product of the build (`core/product.ts`);
+ * filled with Space's name they are the strings of stage 7. After stage 10:
+ * the licence note of About names the product (20.19).
+ */
+const TEMPLATED = [
+  'tray_show',
+  'tray_tooltip',
+  'settings_bug_subject',
+  'msg_dnotify_text',
+  'msg_dnotify_unavailable',
+  'settings_about_license_note',
+];
+/**
+ * Keys the UI/UX pass over the products reworded (2026-10-04): their stage-7
+ * strings named Space's content or the bare brand in every product — the
+ * profiles and proxies of the demo and clear confirmations, "saved passwords"
+ * and "Veydan" of the lock, "Veydan 5" of the start error, "sync notes" and
+ * "while a profile runs" of the sync card. They name the product (`{app}`)
+ * or nothing product-specific now, and are not compared with stage 7.
+ */
+const REWORDED = new Set([
+  'settings_demo_confirm',
+  'settings_clear_confirm',
+  'settings_lock_hint',
+  'settings_lock_hint_ph',
+  'settings_lock_warning',
+  'lock_recovery_intro',
+  'lock_recover_none',
+  'lock_now',
+  'pw_mismatch',
+  'pw_err_mismatch',
+  'start_error_db_foreign',
+  'start_error_db_dev_schema',
+  'settings_sync_hint',
+  'settings_sync_device_name_hint',
+  // The notes' label picker named the kinds of Space (proxy, SSH, TOTP) in
+  // every product; it names what the product has (`notes/label-kinds.ts`).
+  'notes_label_placeholder',
+  'notes_label_hint',
+  'notes_context_empty',
+  // Pass (2026-10-04): the TOTP search named profiles, which Pass has not;
+  // the phone's empty 2FA list did not name the QR scan.
+  'totp_search_placeholder',
+  'totp_empty_hint',
+  // The messenger (2026-10-04): the empty chat list sent people to a pencil
+  // button the app no longer has; it names the New chat action.
+  'msg_chats_empty_hint',
+  // The closing UI/UX pass (2026-10-04): the lock is a PIN or a password, not
+  // a PIN alone; counters that read "1 duplicates" are label-first; counts
+  // of notes have plural forms instead of "note(s)" and "3 заметок"; the
+  // Russian tag word is one ("теги"); the lock tip says nothing of tapping on
+  // a desktop; the chunk warning says "сейф", not "vault".
+  'msg_status_ingress_value',
+  'msg_debug_feed',
+  'msg_notify_text',
+  'msg_notify_locked',
+  'pw_lock_off_tip',
+  'notes_empty_trash_confirm',
+  'notes_delete_all_confirm',
+  'notes_export_hint',
+  'notes_export_done',
+  'notes_import_done',
+  'pw_search',
+  'pw_field_tags',
+  'settings_sync_lf_chunk_warn',
+  // The follow-up of the UI/UX pass (2026-10-04): English words in the
+  // Russian UI ("Smart view", vault, blob, backend, the S3 keys), the
+  // sentence case of "New note", «TOTP-коды» and «QR-скриншот», one word for
+  // workspaces on Home.
+  'cmd_notes_smart_view',
+  'note_att_fetch',
+  'note_att_fetch_prompt',
+  'settings_att_hint',
+  'settings_att_large_enabled_hint',
+  'settings_att_threshold_hint',
+  'settings_att_max_hint',
+  'settings_att_download_on_sync_hint',
+  'settings_sync_s3_endpoint',
+  'settings_sync_s3_access_key',
+  'settings_sync_s3_secret_key',
+  'settings_sync_phase_gc',
+  'notes_create_title',
+  'totp_title',
+  'totp_tab_qr',
+  'workspaces_sub',
+  // The owner's decision (2026-10-04): the module is "Chat" («Чат»)
+  // everywhere, in Space and in Veydan Chat: its name in the navigation,
+  // the Modules section and the palette, its page title, and the sentences
+  // that named it "the messenger". The version row says "Module version",
+  // under "Module status".
+  'nav_messenger',
+  'msg_title',
+  'msg_status_version',
+  'msg_status_not_compiled',
+  'msg_status_error',
+  'msg_bridge_intro',
+  'msg_net_off',
+  'msg_mobile_disabled',
+  'pw_reset_confirm_messenger',
+  'settings_sync_join_own_lock',
+  // The owner's answer to the follow-up (2026-10-04): the descriptions say
+  // "chat" too; the line under the title no longer calls it a messenger.
+  'msg_intro',
+  // The owner's decision (2026-10-04): "bridge" is kept for bridges to
+  // other networks; the link of a VLink bridge is `veydan://vlink/…`.
+  'msg_bridge_add_hint',
+]);
+const SPACE = { app: 'Veydan Space' };
+/** The string of stage 7 of a templated key, from the template. */
+const filled = (key: string, text: string) => (TEMPLATED.includes(key) ? text.split('{app}').join(SPACE.app) : text);
+/** The string of stage 7 as this product shows it: its own name where Space's stood. */
+const shown = (key: string, text: string) => (TEMPLATED.includes(key) ? text.split(SPACE.app).join(built.name) : text);
+
+/** The product under test (the launcher sets it); only Space has every module's keys. */
+const product = process.env.VEYDAN_PRODUCT ?? 'space';
+const whole = product === 'space';
+
+function compare(now: Dict, before: Dict, added: Dict, removed: string[]) {
+  for (const k of removed) expect(now[k], k).toBeUndefined();
+  const extra = Object.keys(now).filter((k) => !(k in before));
+  if (whole) expect(extra.sort()).toEqual(Object.keys(added).sort());
+  else expect(extra.filter((k) => !(k in added))).toEqual([]);
+  for (const k of extra) expect(now[k], k).toBe(added[k]);
+  if (whole) {
+    const missing = Object.keys(before).filter((k) => !(k in now) && !removed.includes(k));
+    expect(missing).toEqual([]);
+  }
+  const changed = Object.keys(before).filter((k) => k in now && !REWORDED.has(k) && filled(k, now[k]) !== before[k]);
+  expect(changed).toEqual([]);
+  for (const k of TEMPLATED) if (k in now) expect(now[k], k).toContain('{app}');
+}
+
+describe(`the dictionaries of ${product} after the split`, () => {
+  for (const lang of ['en', 'ru'] as const) {
+    it(`equal the stage-7 dictionary in ${lang}`, () => {
+      compare(dictionary[lang] as Dict, stage7[lang] as Dict, ADDED.desktop[lang], REMOVED.desktop);
+    });
+
+    it(`equal the stage-7 phone layer in ${lang}`, () => {
+      compare(mobileDictionary[lang] as Dict, stage7.mobile[lang] as Dict, ADDED.mobile[lang], REMOVED.mobile);
+    });
+
+    it(`give the same t() for every stage-7 key in ${lang}`, () => {
+      locale.set(lang);
+      const tr = get(t) as (key: string) => string;
+      const mtr = get(mobileT) as (key: string) => string;
+      const before = stage7[lang] as Dict;
+      const fallback = stage7.en as Dict;
+      // A product without a key's module shows no screen that asks for it;
+      // a removed key went with its screen.
+      const has = (key: string) => (whole || key in dictionary.en) && !REMOVED.desktop.includes(key) && !REWORDED.has(key);
+      const mHas = (key: string) => (whole || key in mobileDictionary.en) && !REMOVED.mobile.includes(key) && !REWORDED.has(key);
+      for (const key of Object.keys(fallback).filter(has)) expect(tr(key), key).toBe(shown(key, before[key] ?? fallback[key]));
+      const mBefore = stage7.mobile[lang] as Dict;
+      for (const key of Object.keys(stage7.mobile.en).filter(mHas)) expect(mtr(key), key).toBe(mBefore[key] ?? (stage7.mobile.en as Dict)[key]);
+    });
+  }
+});
+
+describe(`About in ${product}`, () => {
+  it('shows the tagline of the product in each locale; Space keeps the line of stage 7', () => {
+    for (const lang of ['en', 'ru'] as const) {
+      expect(built.tagline[lang], lang).toMatch(/\S/);
+      if (whole) expect(built.tagline[lang], lang).toBe((stage7[lang] as Dict).settings_about_tagline);
+    }
+  });
+
+  it('names the product in the licence note', () => {
+    for (const lang of ['en', 'ru'] as const) {
+      locale.set(lang);
+      const note = (get(t) as (key: string) => string)('settings_about_license_note');
+      const competesWith = { en: 'competes with', ru: 'конкурирующего с' }[lang];
+      expect(note, lang).toContain(`${competesWith} ${built.name}.`);
+      if (!whole) expect(note, lang).not.toContain(SPACE.app);
+    }
+  });
+});
+
+describe('countKey', () => {
+  // Any key: the form only appends a suffix (a product's own keys differ).
+  const key = countKey as unknown as (base: string, n: number, loc: 'en' | 'ru') => string;
+
+  it('has a singular in English and keeps the plain key for the rest', () => {
+    expect([0, 1, 2, 5, 21].map((n) => key('k', n, 'en'))).toEqual(['k', 'k_one', 'k', 'k', 'k']);
+  });
+
+  it('has the Russian one, few and many forms', () => {
+    expect([1, 21, 101].map((n) => key('k', n, 'ru'))).toEqual(['k_one', 'k_one', 'k_one']);
+    expect([2, 3, 4, 22, 104].map((n) => key('k', n, 'ru'))).toEqual(['k_few', 'k_few', 'k_few', 'k_few', 'k_few']);
+    expect([0, 5, 11, 12, 14, 25, 111].map((n) => key('k', n, 'ru'))).toEqual(['k', 'k', 'k', 'k', 'k', 'k', 'k']);
+  });
+
+  it('finds every form of a key that has one in both locales', () => {
+    for (const lang of ['en', 'ru'] as const) {
+      const dict = dictionary[lang] as Dict;
+      for (const k of Object.keys(dict).filter((k) => k.endsWith('_few'))) {
+        const base = k.slice(0, -'_few'.length);
+        expect(dict[base], `${lang} ${base}`).toBeDefined();
+        expect(dict[`${base}_one`], `${lang} ${base}_one`).toBeDefined();
+      }
+    }
+  });
+});
+
+// English words of the Russian UI that it says in Russian elsewhere: the
+// palette's "Smart view" beside «умный список», "vault" beside «сейф»,
+// "blob" and "backend" beside «хранилище», the S3 keys (2026-10-04).
+describe(`the Russian dictionary of ${product}`, () => {
+  it('has no English word the UI says in Russian elsewhere', () => {
+    const banned = /\b(smart views?|vaults?|blobs?|backend|access key|secret key)\b/i;
+    const found = [...Object.entries(dictionary.ru as Dict), ...Object.entries(mobileDictionary.ru as Dict)]
+      .filter(([, text]) => banned.test(text))
+      .map(([key, text]) => `${key}: ${text}`);
+    expect(found).toEqual([]);
+  });
+});

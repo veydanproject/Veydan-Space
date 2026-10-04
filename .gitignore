@@ -1,0 +1,54 @@
+# What git never sees.
+#
+# data/ holds everything the project generates: cargo's target/ (every
+# workspace, .cargo/config.toml), target-android/<product>/, the built UI
+# build/<product>/, the toolchains (with the Android release keystore), the
+# WebKit dev prefix, the pnpm store. tmp/ holds anything temporary: the work
+# folders of the scripts, clones, screenshots, the root's strays.
+/data/
+/tmp/
+
+# The two generated folders that stay in the UI project: pnpm puts
+# node_modules/ beside package.json, and SvelteKit's folder has to find
+# node_modules/ above it (11.4). The lines are unanchored, like target/ and
+# build/: a second barrier for build output a tool writes outside data/
+# when it bypasses .cargo/config.toml or the UI config (an IDE's own
+# target dir, CARGO_TARGET_DIR=target, a stray pnpm install).
+node_modules/
+.svelte-kit/
+target/
+/build/
+ui/build/
+
+# Editors and local tools
+.vscode/
+.idea/
+# zig leaves it in the working directory of a cross build
+.intentionally-empty-file.o
+
+# Secrets, wherever a copy lands: a second barrier behind data/ and tmp/
+*.env
+*.env.*
+*.pem
+*.key
+*.key.password
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.token
+*.sig
+known_hosts
+known_hosts.old
+id_ed25519*
+id_rsa*
+google-services.json
+*.apk
+*.aab
+# Data of a run: the messenger's CLI writes messenger-cli-data/ where it starts
+messenger-cli-data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3

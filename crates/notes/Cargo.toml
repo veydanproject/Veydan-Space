@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-notes"
+description = "The module Notes: note files and their index, folders, tags, links, history, templates, smart views and attachments, with their sync, their entity in the directory and their demo data"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[build-dependencies]
+veydan-build-cfg = { path = "../build-cfg" }
+
+[dependencies]
+# Attachments are served to the page through the asset protocol.
+tauri = { version = "2", features = ["protocol-asset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio", "chrono", "macros"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1.89"
+base64 = "0.22"
+sha2 = "0.11"
+# The watcher of the notes folder.
+notify = "8"
+# Diffs of the history and the three-way merge of a note.
+diffy = "0.5"
+# The history keeps its versions compressed.
+zstd = "0.13"
+# Errors, the data file, deletion hooks, the entity directory, settings.
+veydan-core = { path = "../core" }
+# The module contract and the services of the host: windows, the tray, picked files.
+veydan-shell = { path = "../shell" }
+# The engine of sync: blobs, large files, clocks.
+veydan-sync = { path = "../sync" }
+# What notes sync: the rows, the files of notes and their attachments.
+veydan-sync-host = { path = "../sync-host" }
+
+# ── Desktop only: export and import, the clipboard ──────────────────────────
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+# File list from the OS clipboard (webviews hide pasted file paths from JS)
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
+zip = "8"
+# age pinned to 0.11 as in the product: 0.12 pulls crates that do not build here.
+age = { version = "0.11", default-features = false }
+
+# ── Android: a picked file is a content:// URI read through the fs plugin ────
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-fs = "2"
+
+[dev-dependencies]
+# Mock runtime: the provider of the directory and the demo part run without the app.
+tauri = { version = "2", features = ["test"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+# The lock the test states hold, as the shell puts it in place.
+veydan-lock = { path = "../lock" }

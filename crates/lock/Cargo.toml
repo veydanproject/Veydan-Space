@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-lock"
+description = "The lock of the app and the key of the vault it guards: lock parameters in the key row, field encryption, named secret boxes, events"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+# No crate of the repository and no Tauri: the key of the vault is tested
+# without the app, and every product takes the same code.
+[dependencies]
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# Hash of the PIN or password; key wrapping
+argon2 = "0.6.0-rc.8"
+# Field encryption and key wrapping
+chacha20poly1305 = "0.10"
+zeroize = "1"
+rand = { version = "0.10", features = ["thread_rng"] }
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"

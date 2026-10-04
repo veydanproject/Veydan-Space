@@ -1,0 +1,6 @@
+include ':app'
+// The Android library of the shell: what MainActivity does (docs/platform-spec.md 13.4).
+include ':veydan-shell'
+project(':veydan-shell').projectDir = new File(rootDir, '../../../../crates/shell/android')
+
+apply from: 'tauri.settings.gradle'

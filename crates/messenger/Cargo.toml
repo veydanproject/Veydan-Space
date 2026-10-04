@@ -1,0 +1,77 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+#
+# Messenger workspace. Every member is Tauri-free and must not depend on the
+# Veydan Space application crate; see docs/messenger-spec.md §4.2 for the
+# dependency matrix. Build and test in isolation:
+#
+#   cargo test --workspace --manifest-path crates/messenger/Cargo.toml
+
+[workspace]
+resolver = "2"
+members = ["core", "vlink", "http", "links", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "groups", "push", "notify", "runtime", "testkit"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+async-trait = "0.1"
+tokio = { version = "1", default-features = false }
+zeroize = "1"
+sqlx = { version = "0.9", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros"] }
+tempfile = "3"
+nostr-sdk = { version = "0.45", default-features = false, features = ["ring", "rustls-tls-webpki-roots"] }
+# `socks`: the way to the project's servers may lead through the local door
+# of messenger-vlink.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "http2", "stream", "socks"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+webpki-roots = "1"
+aes-gcm = "0.11"
+sha2 = "0.11"
+hmac = "0.13"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+hex = "0.4"
+base64 = "0.22"
+getrandom = "0.3"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+wiremock = "0.6"
+ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
+nostr = { version = "0.45", default-features = false, features = ["std", "nip06", "nip44", "nip49", "nip59", "os-rng"] }
+
+# What messenger-vlink is made of; all of it is already in the tree through
+# reqwest and nostr-sdk.
+bytes = "1"
+h2 = "0.4"
+http = "1"
+ring = "0.17"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+tracing = "0.1"
+# The message type and the socket nostr-sdk speaks through; named here
+# because a relay may be reached over a stream of our own (transport/ws.rs).
+async-wsocket = { version = "0.17", default-features = false }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+
+messenger-core = { path = "core" }
+messenger-vlink = { path = "vlink" }
+messenger-http = { path = "http" }
+messenger-links = { path = "links" }
+messenger-preview = { path = "preview" }
+messenger-store = { path = "store" }
+messenger-identity = { path = "identity" }
+messenger-transport = { path = "transport" }
+messenger-ingress = { path = "ingress" }
+messenger-contacts = { path = "contacts" }
+messenger-dm = { path = "dm" }
+messenger-media = { path = "media" }
+messenger-groups = { path = "groups" }
+messenger-push = { path = "push" }
+messenger-notify = { path = "notify" }
+messenger-runtime = { path = "runtime" }
+messenger-testkit = { path = "testkit" }

@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-build-cfg"
+description = "Build helper for library crates: cfg(desktop) and cfg(mobile), the Windows manifest of test executables"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+# No dependencies: this is a build-dependency of every platform crate.
+[dependencies]

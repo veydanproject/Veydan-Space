@@ -1,0 +1,292 @@
+{
+  "attachments": {
+    "note-1/scan.pdf": "%PDF-1.4 a small scan",
+    "note-2/video.txt": {
+      "sha256": "64ed52a3d1dd55197ad93b5d887e2d340d11e387b1fb6016000fbbc07d780ab5",
+      "size": 1572864
+    }
+  },
+  "leases": [
+    {
+      "device": "c522b5659447a28e",
+      "name": "Writer 4.0.7",
+      "profile_id": "pr-1",
+      "since": "2026-10-02T20:37:33.309363212+00:00"
+    }
+  ],
+  "notes": {
+    "note-1": {
+      "deleted": 0,
+      "text": "---\nid: note-1\ntitle: \"Deploy\"\nformat: md\nbindings: []\ntags: []\ncreated_at: 2026-09-01T10:00:00+00:00\nupdated_at: 2026-09-02T11:30:00+00:00\n---\nText of Deploy.\n"
+    },
+    "note-2": {
+      "deleted": 0,
+      "text": "---\nid: note-2\ntitle: \"Plain\"\nformat: md\nbindings: []\ntags: []\ncreated_at: 2026-09-01T10:00:00+00:00\nupdated_at: 2026-09-02T11:30:00+00:00\n---\nText of Plain, edited.\n"
+    },
+    "note-3": {
+      "deleted": 0,
+      "text": "---\nid: note-3\ntitle: \"Old\"\nformat: md\nbindings: []\ntags: []\ncreated_at: 2026-09-01T10:00:00+00:00\nupdated_at: 2026-09-02T11:30:00+00:00\n---\nText of Old.\n"
+    }
+  },
+  "profile_files": {
+    "pr-1": {
+      "bookmarks/places.json": "{\"places\":[\"https://panel.example\"]}",
+      "prefs.js": "user_pref(\"browser.startup.page\", 3);\n"
+    }
+  },
+  "rows": {
+    "note_folder": {
+      "f-1": {
+        "color": "#6366f1",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "name": "DevOps",
+        "parent_id": null,
+        "updated_at": "2026-09-02T11:30:00+00:00"
+      },
+      "f-2": {
+        "color": "#6366f1",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "name": "Runbooks",
+        "parent_id": "f-1",
+        "updated_at": "2026-09-02T11:30:00+00:00"
+      }
+    },
+    "note_meta": {
+      "note-1": {
+        "archived": 0,
+        "folder_ids": [
+          "f-1"
+        ],
+        "pinned": 0
+      },
+      "note-2": {
+        "archived": 0,
+        "folder_ids": [],
+        "pinned": 0
+      },
+      "note-3": {
+        "archived": 1,
+        "folder_ids": [],
+        "pinned": 0
+      }
+    },
+    "note_smart_view": {},
+    "note_tag": {
+      "tag-1": {
+        "color": "#f97316",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "name": "runbook",
+        "updated_at": "2026-09-02T11:30:00+00:00"
+      },
+      "tag-2": {
+        "color": "#ef4444",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "name": "inbox",
+        "updated_at": "2026-09-01T10:00:00+00:00"
+      }
+    },
+    "password": {
+      "pw-1": {
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "note_enc": null,
+        "password_enc": "v1:bm9uY2U=:Y2lwaGVy",
+        "tags": "[\"note:note-1\"]",
+        "title": "Hosting panel",
+        "totp_ids": "[\"totp-1\"]",
+        "updated_at": "2026-09-02T11:30:00+00:00",
+        "url": "https://panel.example",
+        "username": "admin",
+        "vault_id": "golden-vault-key"
+      }
+    },
+    "password_vault": {
+      "default": {
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "crypto_version": 1,
+        "kdf_algorithm": "argon2id",
+        "kdf_iterations": 3,
+        "kdf_memory": 65536,
+        "kdf_parallelism": 1,
+        "kdf_salt": "c2FsdHNhbHRzYWx0c2FsdA==",
+        "lock_hash": null,
+        "lock_hint": null,
+        "lock_kind": null,
+        "recovery_salt": null,
+        "recovery_wrapped_key": null,
+        "updated_at": "2026-09-02T11:30:00+00:00",
+        "vault_id": "golden-vault-key",
+        "wrapped_key": "d3JhcHBlZC1rZXk="
+      }
+    },
+    "profile": {
+      "pr-1": {
+        "browser_type": "camoufox",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "default_search_engine": "ddg",
+        "fingerprint_preset": "windows",
+        "geolocation_enabled": 1,
+        "history_enabled": 1,
+        "kanban_order": 3,
+        "kanban_status": "new",
+        "languages": "de-DE,de,en",
+        "latitude": 52.52,
+        "locale": "de-DE",
+        "longitude": 13.4,
+        "name": "Brand A",
+        "notes": "main account",
+        "platform": null,
+        "proxy_id": "px-1",
+        "screen_height": 1080,
+        "screen_width": 1920,
+        "tags": "[\"warm-up\"]",
+        "timezone": "Europe/Berlin",
+        "user_agent": null,
+        "webgl_renderer": null,
+        "webgl_vendor": null,
+        "webrtc_mode": "real_ip",
+        "workspace_id": "ws-1"
+      }
+    },
+    "proxy": {
+      "px-1": {
+        "city": "Berlin",
+        "country": "DE",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "host": "10.0.0.7",
+        "name": "DE residential",
+        "password": "secret",
+        "port": 1080,
+        "private_key": null,
+        "proxy_type": "socks5",
+        "server_fingerprint": null,
+        "tags": "[\"workspace:ws-1\"]",
+        "username": "user"
+      }
+    },
+    "pw_history": {},
+    "setting": {
+      "close_to_tray": {
+        "value": "0"
+      },
+      "minimize_to_tray": {
+        "value": "1"
+      },
+      "notes_capture_rules": {
+        "value": "[{\"host\":\"example.com\"}]"
+      },
+      "notes_lock_timeout_min": {
+        "value": "5"
+      },
+      "quick_capture_shortcut": {
+        "value": "CommandOrControl+Shift+N"
+      },
+      "start_hidden": {
+        "value": "1"
+      },
+      "ui_locale": {
+        "value": "en"
+      }
+    },
+    "ssh_connection": {
+      "ssh-1": {
+        "auth_type": "key",
+        "connect_timeout_sec": 15,
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "default_cols": 120,
+        "default_rows": 32,
+        "host": "203.0.113.5",
+        "keepalive_sec": 30,
+        "key_passphrase": null,
+        "name": "prod-web-01",
+        "password": null,
+        "port": 22,
+        "private_key": null,
+        "profile_ids": [
+          "pr-1"
+        ],
+        "proxy_id": "px-1",
+        "requires_2fa": 1,
+        "server_fingerprint": "SHA256:def",
+        "ssh_key_id": "key-1",
+        "terminal_theme": null,
+        "totp_entry_id": "totp-1",
+        "updated_at": "2026-09-02T11:30:00+00:00",
+        "username": "deploy",
+        "workspace_ids": [
+          "ws-1",
+          "ws-2"
+        ]
+      }
+    },
+    "ssh_key": {
+      "key-1": {
+        "algorithm": "ed25519",
+        "bits": null,
+        "comment": "ci",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "fingerprint": "SHA256:abc",
+        "name": "deploy",
+        "passphrase": null,
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "public_key": "ssh-ed25519 AAAA",
+        "source": "generated",
+        "updated_at": "2026-09-02T11:30:00+00:00"
+      }
+    },
+    "totp": {
+      "totp-1": {
+        "algorithm": "SHA1",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "digits": 6,
+        "issuer": "Veydan",
+        "name": "deploy@prod",
+        "period": 30,
+        "secret": "JBSWY3DPEHPK3PXP",
+        "tags": "[\"profile:pr-1\"]",
+        "updated_at": "2026-09-02T11:30:00+00:00"
+      }
+    },
+    "workspace": {
+      "default": {
+        "color": "#6366f1",
+        "created_at": "2026-10-02T20:37:33.765705627+00:00",
+        "description": null,
+        "icon": "folder",
+        "is_default": 1,
+        "name": "Default",
+        "notes": null,
+        "updated_at": "2026-10-02T20:37:33.765705627+00:00"
+      },
+      "ws-1": {
+        "color": "#22c55e",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "description": "Client accounts",
+        "icon": "briefcase",
+        "is_default": 0,
+        "name": "SMM team",
+        "notes": null,
+        "updated_at": "2026-09-02T11:30:00+00:00"
+      },
+      "ws-2": {
+        "color": "#6366f1",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "description": null,
+        "icon": "folder",
+        "is_default": 1,
+        "name": "Ops",
+        "notes": "team notes",
+        "updated_at": "2026-09-01T10:00:00+00:00"
+      }
+    },
+    "workspace_column": {
+      "col-1": {
+        "color": "#6366f1",
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "name": "Warm-up",
+        "position": 2,
+        "tag_name": "warm-up",
+        "workspace_id": "ws-1"
+      }
+    }
+  }
+}

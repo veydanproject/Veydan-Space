@@ -1,0 +1,47 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "key-1",
+    "entity_type": "ssh_key",
+    "hlc": "000001a0fe5623bb-00000000-c522b5659447a28e",
+    "payload": {
+      "algorithm": "ed25519",
+      "bits": null,
+      "comment": "ci",
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "fingerprint": "SHA256:abc",
+      "name": "deploy",
+      "passphrase": null,
+      "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "public_key": "ssh-ed25519 AAAA",
+      "source": "generated",
+      "updated_at": "2026-09-02T11:30:00+00:00"
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "key-2",
+    "entity_type": "ssh_key",
+    "hlc": "000001a0fe5623bb-00000001-c522b5659447a28e",
+    "payload": {
+      "algorithm": "ed25519",
+      "bits": null,
+      "comment": null,
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "fingerprint": "SHA256:x",
+      "name": "gone",
+      "passphrase": null,
+      "private_key": "k",
+      "public_key": "p",
+      "source": "generated",
+      "updated_at": "2026-09-01T10:00:00+00:00"
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "key-2",
+    "entity_type": "ssh_key",
+    "hlc": "000001a0fe5623ec-00000001-c522b5659447a28e",
+    "payload": {}
+  }
+]

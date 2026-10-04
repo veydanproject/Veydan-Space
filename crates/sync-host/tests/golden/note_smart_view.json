@@ -1,0 +1,23 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "sv-1",
+    "entity_type": "note_smart_view",
+    "hlc": "000001a0fe562360-00000003-c522b5659447a28e",
+    "payload": {
+      "color": "#8b7bff",
+      "conditions": "{\"has_open_tasks\":true}",
+      "created_at": "2026-09-01T10:00:00+00:00",
+      "name": "Open tasks",
+      "sort_order": 1,
+      "updated_at": "2026-09-02T11:30:00+00:00"
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "sv-1",
+    "entity_type": "note_smart_view",
+    "hlc": "000001a0fe5623e6-00000000-c522b5659447a28e",
+    "payload": {}
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "extends": "./.svelte-kit/tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
+    "moduleResolution": "bundler"
+  }
+  // Read by Vite for every file it transforms. The file it extends is written by
+  // scripts/ui.mjs when missing: SvelteKit's own tsconfig lives in the product's
+  // directory (.svelte-kit/<product>-<platform>/), and type checking goes through
+  // tsconfig.<product>.json, which extends that one (platform-spec 11.4). The
+  // editor opens tsconfig.space.json.
+  //
+  // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
+  // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
+  //
+  // If you want to overwrite includes/excludes, make sure to copy over the relevant includes/excludes
+  // from the referenced tsconfig.json - TypeScript does not merge them in
+}

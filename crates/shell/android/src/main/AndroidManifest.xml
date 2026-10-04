@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 Veydan Project
+  SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The check for a new version (crates/shell/src/update.rs) does not run
+         by itself on a metered network: ConnectivityManager needs this. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+</manifest>

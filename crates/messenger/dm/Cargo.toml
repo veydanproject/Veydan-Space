@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "messenger-dm"
+description = "Direct messages: NIP-17 wrapping, chats, message store, relationship matrix"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+messenger-core.workspace = true
+messenger-store.workspace = true
+messenger-contacts.workspace = true
+messenger-links.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+hex.workspace = true
+nostr.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

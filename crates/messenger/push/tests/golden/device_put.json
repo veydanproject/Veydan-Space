@@ -1,0 +1,24 @@
+{
+  "app_id": "net.veydan.mobile",
+  "channel": { "provider": "fcm", "token": "fcm-token-of-the-device" },
+  "app_version": "4.0.1-alpha.14",
+  "prefs": { "dm": true, "groups": true },
+  "author_key": "5f1d0c3b8a7e4f2a9b6c1d0e3f4a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6",
+  "relays": [
+    { "url": "wss://node-1.veydan.net", "dm": true, "groups": true },
+    { "url": "wss://relay.example.org", "dm": true, "groups": false }
+  ],
+  "groups": [
+    {
+      "id": "1111111111111111111111111111111111111111111111111111111111111111",
+      "keys": ["c960ddf616adb9a57ac7d0eb04da5e25cf3d139c95d5828addb8f1f0ed50da28"]
+    },
+    {
+      "id": "2222222222222222222222222222222222222222222222222222222222222222",
+      "keys": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ]
+    }
+  ]
+}

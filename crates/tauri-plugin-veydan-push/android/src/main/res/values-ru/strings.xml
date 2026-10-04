@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Личные сообщения</string>
+    <string name="veydan_push_channel_groups">Группы</string>
+    <string name="veydan_push_channel_service">Служебные сообщения</string>
+    <string name="veydan_push_update_title">Новое уведомление</string>
+    <string name="veydan_push_update_body">Обновите приложение, чтобы его увидеть.</string>
+    <string name="veydan_push_test_title">Тестовое уведомление</string>
+    <string name="veydan_push_test_body">Пуши доходят до этого телефона.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Вы</string>
+    <string name="veydan_push_dm_title">Новое сообщение</string>
+    <string name="veydan_push_group">Группа</string>
+    <string name="veydan_push_one">Новое сообщение</string>
+    <string name="veydan_push_many">Новых сообщений: %d</string>
+    <string name="veydan_push_more">и ещё %d</string>
+    <string name="veydan_push_request">Запрос на переписку</string>
+    <string name="veydan_push_photo">Фото</string>
+    <string name="veydan_push_video">Видео</string>
+    <string name="veydan_push_voice">Голосовое сообщение</string>
+    <string name="veydan_push_circle">Видеосообщение</string>
+    <string name="veydan_push_audio">Аудио</string>
+    <string name="veydan_push_file">Файл</string>
+    <string name="veydan_push_album">Альбом: %d</string>
+    <string name="veydan_push_files">Файлы: %d</string>
+    <string name="veydan_push_link_group">Группа «%s»</string>
+    <string name="veydan_push_link_group_nameless">Ссылка на группу</string>
+    <string name="veydan_push_link_contact">Контакт: %s</string>
+    <string name="veydan_push_link_contact_nameless">Контакт</string>
+    <string name="veydan_push_invite">Приглашает вас в группу %s</string>
+    <string name="veydan_push_join_request">Просится в группу %s</string>
+    <string name="veydan_push_welcome">Вы в группе %s</string>
+</resources>

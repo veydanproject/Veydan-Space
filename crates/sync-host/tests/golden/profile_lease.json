@@ -1,0 +1,35 @@
+[
+  {
+    "deleted": false,
+    "entity_id": "pr-1",
+    "entity_type": "profile_lease",
+    "hlc": "000001a0fe5623c0-00000000-c522b5659447a28e",
+    "payload": {
+      "device_id": "c522b5659447a28e",
+      "device_name": "Writer 4.0.7",
+      "since": "2026-10-02T20:37:33.143630605+00:00"
+    }
+  },
+  {
+    "deleted": true,
+    "entity_id": "pr-1",
+    "entity_type": "profile_lease",
+    "hlc": "000001a0fe5623f0-00000000-c522b5659447a28e",
+    "payload": {
+      "device_id": "",
+      "device_name": "",
+      "since": ""
+    }
+  },
+  {
+    "deleted": false,
+    "entity_id": "pr-1",
+    "entity_type": "profile_lease",
+    "hlc": "000001a0fe562410-00000000-c522b5659447a28e",
+    "payload": {
+      "device_id": "c522b5659447a28e",
+      "device_name": "Writer 4.0.7",
+      "since": "2026-10-02T20:37:33.309363212+00:00"
+    }
+  }
+]
