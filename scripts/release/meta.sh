@@ -118,6 +118,7 @@ if [ "$OWN" = "true" ]; then
   PRODUCT_REPO=""
   RELEASE_TAG="$GITHUB_REF_NAME"
 elif [ "$KIND" = "release" ]; then
+  fail "$TAG: a release is built by $REPO from its snapshot (make push $PRODUCT release publishes it there); the tag of the monorepo only marks the commit"
   # In the product's repository the tag has no prefix: v5.0.0.
   PUBLISH_REPO="$REPO"
   PRODUCT_REPO="$REPO"

@@ -17,7 +17,7 @@ use messenger_core::{
 use nostr_sdk::prelude::*;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -48,7 +48,15 @@ pub struct RelayPool {
     rx: Mutex<Option<mpsc::Receiver<RawEvent>>>,
     /// Configured relays; nostr-sdk keeps the live set.
     configured: Mutex<Vec<RelayConfig>>,
+    /// The websockets open now, whichever way they went.
+    sockets: Arc<crate::ws::Sockets>,
 }
+
+/// How long a relay that dropped waits before it is tried again. Fixed:
+/// `nostr-sdk` would stretch it from failures counted over the whole life
+/// of the pool, and a night of a sleeping phone holds every reconnect back a
+/// minute for good.
+const RETRY_INTERVAL: Duration = Duration::from_secs(3);
 
 impl RelayPool {
     /// `signer` enables NIP-42 authentication and is required for relays
@@ -57,7 +65,9 @@ impl RelayPool {
         crate::ensure_crypto_provider();
         // Every relay is connected by the transport that asks which way the
         // relay is reached: directly, or through a bridge.
-        let builder = Client::builder().websocket_transport(crate::ws::BridgedTransport::default());
+        let transport = crate::ws::BridgedTransport::default();
+        let sockets = transport.sockets();
+        let builder = Client::builder().websocket_transport(transport);
         let client = match signer {
             Some(keys) => builder.authenticator(SignerAuthenticator::new(keys)).build(),
             None => builder.build(),
@@ -69,6 +79,7 @@ impl RelayPool {
             tx,
             rx: Mutex::new(Some(rx)),
             configured: Mutex::new(Vec::new()),
+            sockets,
         };
         pool.spawn_forwarder();
         pool
@@ -109,6 +120,8 @@ impl RelayPool {
         for r in &relays {
             self.client
                 .add_relay(r.connect_url())
+                .retry_interval(RETRY_INTERVAL)
+                .adjust_retry_interval(false)
                 .await
                 .map_err(|e| MessengerError::Transport(e.to_string()))?;
         }
@@ -131,6 +144,23 @@ impl RelayPool {
 
     pub async fn disconnect(&self) {
         self.client.disconnect().await;
+    }
+
+    /// Asks every relay connection for a sign of life and closes the ones
+    /// that give none within `patience`; `nostr-sdk` connects them anew.
+    /// Called when the device wakes: a socket that slept may look open and
+    /// carry nothing, and the pings of `nostr-sdk` notice it only after two
+    /// rounds of 55 seconds. Returns how many were closed.
+    pub async fn revive(&self, patience: Duration) -> usize {
+        self.sockets.probe(patience).await
+    }
+
+    /// Closes every relay connection; `nostr-sdk` makes each anew, the way
+    /// the rule of the bridges says now. Unlike `disconnect` and `connect`
+    /// one after the other, this does not race the connection task of
+    /// `nostr-sdk`, which a terminate it has not yet seen leaves stuck.
+    pub fn reopen(&self) {
+        self.sockets.close_all();
     }
 
     pub fn is_silent(&self) -> bool {
@@ -593,6 +623,87 @@ mod tests {
         assert!(connected, "relay never reached Connected: {:?}", pool.status().await);
         let ack = pool.send(Outbound::PublishOwn { event: signed_note(&keys, "veydan e2e ping") }).await.unwrap();
         assert!(ack.is_delivered(), "relay rejected the note: {ack:?}");
+        pool.shutdown().await;
+    }
+
+    /// A way to the relay that can be made to swallow everything, both
+    /// ways, with the sockets left open: what a phone finds after a sleep.
+    async fn black_hole(to: &RelayUrl) -> (RelayUrl, Arc<AtomicBool>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let target = to.as_str().trim_start_matches("ws://").to_string();
+        let swallow = Arc::new(AtomicBool::new(false));
+        let on = swallow.clone();
+        tokio::spawn(async move {
+            while let Ok((client, _)) = listener.accept().await {
+                let Ok(server) = tokio::net::TcpStream::connect(&target).await else { continue };
+                let (cr, cw) = client.into_split();
+                let (sr, sw) = server.into_split();
+                for (mut from, mut to) in [(cr, sw), (sr, cw)] {
+                    let on = on.clone();
+                    tokio::spawn(async move {
+                        let mut buf = vec![0u8; 16 * 1024];
+                        while let Ok(n) = from.read(&mut buf).await {
+                            if n == 0 {
+                                break;
+                            }
+                            if !on.load(Ordering::SeqCst) && to.write_all(&buf[..n]).await.is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+            }
+        });
+        (RelayUrl::parse(&format!("ws://127.0.0.1:{port}")).unwrap(), swallow)
+    }
+
+    async fn wait_connected(pool: &RelayPool, secs: u64) -> bool {
+        for _ in 0..secs * 10 {
+            if pool.status().await.relays.iter().all(|r| r.state == RelayState::Connected) {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        false
+    }
+
+    /// After a sleep a socket may look open and carry nothing: `revive`
+    /// leaves a live one alone, closes a silent one, and the relay is
+    /// connected again in seconds, not after minutes of pings.
+    #[tokio::test]
+    async fn a_silent_connection_is_found_and_made_anew() {
+        let (_relay, relay_url) = local_relay().await;
+        let (url, swallow) = black_hole(&relay_url).await;
+        let pool = RelayPool::new(None);
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        assert!(wait_connected(&pool, 5).await);
+
+        assert_eq!(pool.revive(Duration::from_secs(2)).await, 0, "a live connection is left alone");
+        assert_eq!(pool.status().await.relays[0].state, RelayState::Connected);
+
+        swallow.store(true, Ordering::SeqCst);
+        assert_eq!(pool.revive(Duration::from_secs(1)).await, 1, "a silent one is closed");
+        swallow.store(false, Ordering::SeqCst);
+        assert!(wait_connected(&pool, RETRY_INTERVAL.as_secs() + 3).await, "and connected again at once");
+        assert_eq!(pool.sockets.count(), 1);
+        pool.shutdown().await;
+    }
+
+    /// `reopen` makes every connection anew: what a change of the way to the
+    /// servers needs, without the race of `disconnect` and `connect`.
+    #[tokio::test]
+    async fn reopen_connects_again() {
+        let (_relay, url) = local_relay().await;
+        let pool = RelayPool::new(None);
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        assert!(wait_connected(&pool, 5).await);
+        for _ in 0..3 {
+            pool.reopen();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert!(wait_connected(&pool, RETRY_INTERVAL.as_secs() + 3).await);
+        }
         pool.shutdown().await;
     }
 

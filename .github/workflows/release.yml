@@ -10,37 +10,27 @@ run-name: >-
 #   make push <product> alpha|beta|rc [p…]   <product>-vX.Y.Z-<channel>.N[-<platform>]…
 #                                            → the platforms named, or the three
 #                                            desktop ones; a CHANNEL build
-#   make push <product> release              <product>-vX.Y.Z → every platform;
-#                                            a RELEASE
+#   vX.Y.Z in a product's own repository  → every platform; a RELEASE there
 #
 # The tag names the product; the version must equal apps/<product>/VERSION
 # at the tagged commit. There is one job per platform, and it builds the
 # tagged product: the Rust cache of a platform is shared by the products,
 # so a product built after another reuses most of it.
 #
-# Where it is published (the owner's decision of 2026-10-04):
+# Where it is published (the owner's decisions of 2026-10-04 and 2026-10-05):
 #
 # - A channel build stays in THIS repository, the private monorepo: a
 #   prerelease under the tag that was pushed (notes-v5.0.0-alpha.1), with
 #   every bundle, the updater signatures and a latest.json, published with
 #   the run's own token by the job `publish-channel`, the only job with
-#   `contents: write`. No snapshot, no repository of a product, no
-#   PRODUCT_RELEASE_TOKEN: nothing of the channel path names them
-#   (scripts/tests/release.tests.mjs keeps it so). A prerelease is never
-#   what /releases/latest answers.
-# - A release goes to the PRODUCT's repository (products.json `repo`), under
-#   the tag without the prefix (v5.0.0), next to the snapshot of the tagged
-#   commit, which `make push <product> release` publishes with
-#   scripts/publish.sh before it tags the monorepo (14.4). The job
-#   `publish-release` does it with the secret PRODUCT_RELEASE_TOKEN — a
-#   token of the owner with Contents read/write on the four product
-#   repositories, kept in the environment `product-release`, which only
-#   `release-gate` and `publish-release` name. A run whose tagged commit is
-#   not on the default branch, whose snapshot tag is missing there, or
-#   without the token, stops in `release-gate`, before any build. THIS
-#   PATH IS TEMPORARY (20.21): once the owner approves the builds of the
-#   monorepo, a release will be built by the CI of the product's own
-#   repository, from its snapshot.
+#   `contents: write`. A prerelease is never what /releases/latest answers.
+# - A release is built by the PRODUCT's own repository, from its snapshot:
+#   `make push <product> release` publishes the snapshot there under vX.Y.Z,
+#   and this same workflow, carried by the snapshot, runs there on that tag
+#   (kind=own) and publishes the release there with that run's token. The
+#   tag <product>-vX.Y.Z of the monorepo only marks the commit of the
+#   release: it matches no trigger below and starts nothing here. Nothing
+#   in this repository writes to another one.
 #
 # Hence the shape: the build jobs only build, sign and hand their files
 # over as artifacts of the run. They hold no token that writes anywhere and
@@ -62,7 +52,10 @@ run-name: >-
 
 on:
   push:
-    tags: ['space-v*', 'notes-v*', 'pass-v*', 'chat-v*', 'v*']
+    # A channel build here (<product>-vX.Y.Z-<channel>.N…: a hyphen after the
+    # version); vX.Y.Z in a product's own repository. <product>-vX.Y.Z of a
+    # release matches neither and starts nothing.
+    tags: ['space-v*-*', 'notes-v*-*', 'pass-v*-*', 'chat-v*-*', 'v*']
   # Again, by hand, on a product's tag.
   workflow_dispatch:
 
@@ -103,70 +96,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # kind=channel or kind=release, the platforms, the names of the files.
-      # A channel build gets an empty product_repo.
+      # kind=channel (the monorepo) or kind=own (a product's repository), the
+      # platforms, the names of the files. A release tag of the monorepo stops here.
       - id: meta
         name: Parse the tag and verify VERSION
         run: bash scripts/release/meta.sh
 
-  # A release only (temporary, 20.21). The release is attached to the tag of
-  # the snapshot in the product's repository (14.4); this job stops it
-  # before anything is published when the tagged commit is not on the
-  # default branch (a tag put by hand on a side branch or an old commit),
-  # when the token is missing or cannot write, or when the snapshot's tag
-  # is not there. It runs in the environment `product-release`, which
-  # holds PRODUCT_RELEASE_TOKEN: only this job and `publish-release` name
-  # it, so a channel run, or the workflow of an older commit, cannot read it.
-  release-gate:
-    needs: meta
-    if: needs.meta.outputs.kind == 'release'
-    runs-on: ubuntu-latest
-    environment: product-release
-    permissions:
-      contents: read
-    steps:
-      # The whole history and the branches of origin: the ancestry is checked.
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: The tagged commit is on the default branch
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          if [ -z "$DEFAULT_BRANCH" ]; then
-            echo "::error::The run does not name the default branch of the repository"
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"; then
-            echo "::error::$GITHUB_REF_NAME is on $GITHUB_SHA, which is not on $DEFAULT_BRANCH: a release is cut from the default branch (make push)"
-            exit 1
-          fi
-
-      - name: The token reaches the product's repository, and the snapshot is there
-        env:
-          GH_TOKEN: ${{ secrets.PRODUCT_RELEASE_TOKEN }}
-          REPO: ${{ needs.meta.outputs.product_repo }}
-          RELEASE_TAG: ${{ needs.meta.outputs.release_tag }}
-          PRODUCT: ${{ needs.meta.outputs.product }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::error::The secret PRODUCT_RELEASE_TOKEN is missing: a token with Contents read/write on $REPO (docs/platform-spec.md 14.3)"
-            exit 1
-          fi
-          if ! gh api "repos/$REPO" --jq '.permissions.push' | grep -qx true; then
-            echo "::error::PRODUCT_RELEASE_TOKEN cannot write to $REPO (does the repository exist?)"
-            exit 1
-          fi
-          if ! gh api "repos/$REPO/git/ref/tags/$RELEASE_TAG" --jq .ref >/dev/null 2>&1; then
-            echo "::error::$REPO has no tag $RELEASE_TAG: publish the snapshot of this commit first (make push does; by hand: scripts/publish.sh $PRODUCT --tag $RELEASE_TAG --push)"
-            exit 1
-          fi
-
-  # Gate: the same checks CI runs on pull requests, for a channel build and
-  # for a release alike. Nothing builds or publishes until svelte-check,
-  # vitest and the Rust test suites pass on the tagged code.
   checks:
     needs: meta
     permissions:
@@ -176,12 +111,10 @@ jobs:
   # The desktop bundles of the product, signed for the updater, as an
   # artifact of the run. No token: this job publishes nothing.
   build:
-    needs: [meta, checks, release-gate]
-    # release-gate is skipped for a channel build: the status functions are
-    # written out, so that a skipped job does not skip this one.
+    needs: [meta, checks]
     if: >-
       !cancelled() && needs.meta.result == 'success' && needs.checks.result == 'success' &&
-      needs.release-gate.result != 'failure' && needs.meta.outputs.build_desktop == 'true'
+      needs.meta.outputs.build_desktop == 'true'
     permissions:
       contents: read
     strategy:
@@ -313,10 +246,10 @@ jobs:
   # own target directory data/target-android/<product> (13.4). The signed
   # APK is an artifact of the run; no token here either.
   build-android:
-    needs: [meta, checks, release-gate]
+    needs: [meta, checks]
     if: >-
       !cancelled() && needs.meta.result == 'success' && needs.checks.result == 'success' &&
-      needs.release-gate.result != 'failure' && needs.meta.outputs.build_android == 'true'
+      needs.meta.outputs.build_android == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -495,10 +428,9 @@ jobs:
         shell: bash
         run: df -h . && du -sh data/target-android 2>/dev/null || true
 
-  # A channel build: a prerelease of THIS repository under the tag that was
-  # pushed, with the run's own token. The owner downloads the packages from
-  # the monorepo's Releases page. Nothing here names a product's repository
-  # or PRODUCT_RELEASE_TOKEN.
+  # Publishes in THIS repository, under the tag that was pushed, with the
+  # run's own token: a channel build of the monorepo as a prerelease, a
+  # release of a product's own repository (kind=own) as its release.
   publish-channel:
     needs: [meta, build, build-android]
     # Run when every requested platform succeeded; skipped jobs are fine.
@@ -537,54 +469,6 @@ jobs:
         run: |
           if [ "$RELEASE_TAG" != "$GITHUB_REF_NAME" ]; then
             echo "::error::A build of this repository is published under its own tag $GITHUB_REF_NAME, not $RELEASE_TAG"
-            exit 1
-          fi
-          bash scripts/release/publish.sh
-
-  # A release: into the product's repository, next to its snapshot, with the
-  # owner's token. TEMPORARY (20.21): this job goes away when releases are
-  # built by the product repository's own CI.
-  publish-release:
-    needs: [meta, release-gate, build, build-android]
-    # Run when every requested platform succeeded; skipped jobs are fine.
-    if: |
-      !cancelled() &&
-      needs.meta.outputs.kind == 'release' &&
-      needs.release-gate.result == 'success' &&
-      needs.build.result != 'failure' &&
-      needs.build-android.result != 'failure' &&
-      (needs.build.result == 'success' || needs.build-android.result == 'success')
-    runs-on: ubuntu-latest
-    # The environment that holds PRODUCT_RELEASE_TOKEN (see release-gate).
-    environment: product-release
-    permissions:
-      contents: read
-    steps:
-      # scripts/release/, and gh calls git even when --repo is set.
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: bundles-*
-          path: release-assets
-          merge-multiple: true
-
-      - name: Publish the release in the product's repository
-        env:
-          GH_TOKEN: ${{ secrets.PRODUCT_RELEASE_TOKEN }}
-          REPO: ${{ needs.meta.outputs.product_repo }}
-          RELEASE_TAG: ${{ needs.meta.outputs.release_tag }}
-          RELEASE_NAME: ${{ needs.meta.outputs.release_name }}
-          PRERELEASE: 'false'
-          ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
-          VERSION: ${{ needs.meta.outputs.version }}
-          UPDATER_KEYS: ${{ needs.meta.outputs.updater_keys }}
-          ASSETS_DIR: release-assets
-        run: |
-          if [ -z "$REPO" ]; then
-            echo "::error::No product repository: only a release (<product>-vX.Y.Z) is published there"
             exit 1
           fi
           bash scripts/release/publish.sh

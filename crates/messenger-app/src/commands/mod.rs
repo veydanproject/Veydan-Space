@@ -336,8 +336,17 @@ fn spawn_manifest_refresher(rt: Arc<MessengerRuntime>) -> Task {
 /// Keeps an eye on the way to the project's servers: relays that stay down
 /// and uploads that fail are signs that the direct way is restricted, and
 /// the runtime then finds out whether a bridge would help. What is to be
-/// done about it is the runtime's to decide; this only wakes it up.
-fn spawn_net_watcher(rt: Arc<MessengerRuntime>) -> [Task; 2] {
+/// done about it is the runtime's to decide; this only wakes it up. A beat
+/// every two seconds lets the runtime notice that the device slept.
+fn spawn_net_watcher(rt: Arc<MessengerRuntime>) -> [Task; 3] {
+    const BEAT: Duration = Duration::from_secs(2);
+    let beating = rt.clone();
+    let beat = tauri::async_runtime::spawn(async move {
+        loop {
+            beating.net_beat(BEAT).await;
+            tokio::time::sleep(BEAT).await;
+        }
+    });
     let watched = rt.clone();
     let watch = tauri::async_runtime::spawn(async move {
         let mut ticks: u32 = 0;
@@ -365,7 +374,7 @@ fn spawn_net_watcher(rt: Arc<MessengerRuntime>) -> [Task; 2] {
             }
         }
     });
-    [watch, hear]
+    [beat, watch, hear]
 }
 
 /// Forwards runtime UI events to the webview as `EVENT_RUNTIME`. On a

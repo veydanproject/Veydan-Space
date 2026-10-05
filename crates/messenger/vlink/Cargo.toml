@@ -14,8 +14,8 @@ publish.workspace = true
 # The client side of VLink, the bridge system: it lives in this repository
 # (services/link), in a workspace of its own. The one dependency of the
 # messenger that leaves crates/messenger (scripts/boundaries.sh knows it).
-vlink-proto = { git = "https://github.com/veydanproject/Veydan-Link", tag = "v0.1.0" }
-vlink-client = { git = "https://github.com/veydanproject/Veydan-Link", tag = "v0.1.0" }
+vlink-proto = { git = "https://github.com/veydanproject/Veydan-Link", tag = "v0.1.1" }
+vlink-client = { git = "https://github.com/veydanproject/Veydan-Link", tag = "v0.1.1" }
 
 ring.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "sync", "rt"] }

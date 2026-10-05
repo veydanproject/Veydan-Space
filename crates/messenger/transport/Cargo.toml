@@ -32,4 +32,4 @@ tokio-tungstenite.workspace = true
 [dev-dependencies]
 messenger-vlink = { workspace = true, features = ["testing"] }
 nostr-sdk = { workspace = true, features = ["local-relay"] }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "io-util"] }

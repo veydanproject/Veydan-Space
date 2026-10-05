@@ -13,14 +13,20 @@
 //!   is spoken over it with the same roots as every HTTPS request of the
 //!   messenger, and the websocket is opened on top.
 //!
+//! Every connection, either way, is kept on a list ([`Sockets`]): after the
+//! device slept, a socket may look open and carry nothing, and only a ping
+//! tells. One that stays silent is closed, and `nostr-sdk` connects anew.
+//!
 //! The address is not logged anywhere here: it may carry the relay's key.
 
 use std::fmt;
-use std::future::Future;
+use std::future::{poll_fn, Future};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
+use std::task::{ready, Context, Poll};
+use std::time::Duration;
 
 use async_wsocket::message::CloseFrame;
 use async_wsocket::Message;
@@ -31,6 +37,7 @@ use nostr_sdk::error::Error;
 use nostr_sdk::transport::websocket::{DefaultWebsocketTransport, WebSocketSink, WebSocketStream, WebSocketTransport};
 use nostr::types::Url;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::sync::Notify;
 use tokio_rustls::rustls::pki_types::ServerName;
 use tokio_rustls::TlsConnector;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -43,11 +50,17 @@ const USER_AGENT: &str = "veydan-messenger";
 #[derive(Clone)]
 pub struct BridgedTransport {
     net: Net,
+    sockets: Arc<Sockets>,
 }
 
 impl BridgedTransport {
     pub fn new(net: Net) -> Self {
-        Self { net }
+        Self { net, sockets: Arc::default() }
+    }
+
+    /// The connections this transport opened and that are still open.
+    pub fn sockets(&self) -> Arc<Sockets> {
+        self.sockets.clone()
     }
 }
 
@@ -76,10 +89,166 @@ impl WebSocketTransport for BridgedTransport {
         url: &'a Url,
         proxy: Option<SocketAddr>,
     ) -> Pin<Box<dyn Future<Output = Connected> + Send + 'a>> {
-        match url.host_str() {
-            Some(host) if self.net.route(host) == Route::Bridge => Box::pin(self.through_bridge(url, host)),
-            _ => DefaultWebsocketTransport.connect(url, proxy),
+        Box::pin(async move {
+            let halves = match url.host_str() {
+                Some(host) if self.net.route(host) == Route::Bridge => self.through_bridge(url, host).await?,
+                _ => DefaultWebsocketTransport.connect(url, proxy).await?,
+            };
+            Ok(self.sockets.keep(halves))
+        })
+    }
+}
+
+/// The payload of the pings sent from here: their pongs are not handed to
+/// `nostr-sdk`, which takes a pong it did not ask for as an error.
+const PROBE: &[u8] = b"veydan-alive?";
+
+/// The connections open now.
+#[derive(Default)]
+pub struct Sockets {
+    open: Mutex<Vec<Weak<Socket>>>,
+}
+
+struct Socket {
+    sink: Mutex<WebSocketSink>,
+    /// Messages received, of any kind: a sign of life.
+    heard: AtomicU64,
+    closed: AtomicBool,
+    close: Notify,
+}
+
+impl Socket {
+    fn shut(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.close.notify_one();
+    }
+
+    fn gone() -> Error {
+        Error::transport("the connection was closed: it went silent, or its way changed")
+    }
+
+    async fn ping(&self) -> Result<(), Error> {
+        poll_fn(|cx| {
+            let mut sink = self.sink.lock().expect("socket sink");
+            ready!(sink.as_mut().poll_ready(cx))?;
+            Poll::Ready(sink.as_mut().start_send(Message::Ping(PROBE.to_vec())))
+        })
+        .await?;
+        poll_fn(|cx| self.sink.lock().expect("socket sink").as_mut().poll_flush(cx)).await
+    }
+}
+
+impl Sockets {
+    fn live(&self) -> Vec<Arc<Socket>> {
+        let mut open = self.open.lock().expect("sockets");
+        open.retain(|s| s.strong_count() > 0);
+        open.iter().filter_map(Weak::upgrade).collect()
+    }
+
+    /// Puts a new connection on the list and gives back its halves, which
+    /// end when the connection is closed from here.
+    fn keep(&self, (sink, stream): (WebSocketSink, WebSocketStream)) -> (WebSocketSink, WebSocketStream) {
+        let socket = Arc::new(Socket {
+            sink: Mutex::new(sink),
+            heard: AtomicU64::new(0),
+            closed: AtomicBool::new(false),
+            close: Notify::new(),
+        });
+        {
+            let mut open = self.open.lock().expect("sockets");
+            open.retain(|s| s.strong_count() > 0);
+            open.push(Arc::downgrade(&socket));
         }
+        let sink: WebSocketSink = Box::pin(Shared(socket.clone()));
+        let stream = futures_util::stream::unfold(Some((stream, socket)), |state| async move {
+            let (mut stream, socket) = state?;
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = socket.close.notified() => return Some((Err(Socket::gone()), None)),
+                    item = stream.next() => {
+                        let item = item?;
+                        socket.heard.fetch_add(1, Ordering::SeqCst);
+                        if matches!(&item, Ok(Message::Pong(payload)) if payload.as_slice() == PROBE) {
+                            continue;
+                        }
+                        return Some((item, Some((stream, socket))));
+                    }
+                }
+            }
+        });
+        (sink, Box::pin(stream))
+    }
+
+    /// Asks every open connection for a sign of life and closes the ones
+    /// that give none within `patience`. Returns how many were closed.
+    pub async fn probe(&self, patience: Duration) -> usize {
+        let checks = self.live().into_iter().map(|socket| async move {
+            let before = socket.heard.load(Ordering::SeqCst);
+            let deadline = tokio::time::Instant::now() + patience;
+            let pinged = tokio::time::timeout_at(deadline, socket.ping()).await;
+            if matches!(pinged, Ok(Ok(()))) {
+                while tokio::time::Instant::now() < deadline {
+                    if socket.heard.load(Ordering::SeqCst) != before {
+                        return false;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+            socket.shut();
+            true
+        });
+        futures_util::future::join_all(checks).await.into_iter().filter(|closed| *closed).count()
+    }
+
+    /// Closes every open connection: they are made anew, each the way the
+    /// rule says now.
+    pub fn close_all(&self) {
+        for socket in self.live() {
+            socket.shut();
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        self.live().len()
+    }
+}
+
+/// The sink of a kept connection, shared with [`Sockets::probe`], which
+/// sends its pings through it.
+struct Shared(Arc<Socket>);
+
+impl Sink<Message> for Shared {
+    type Error = Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        if self.0.closed.load(Ordering::SeqCst) {
+            return Poll::Ready(Err(Socket::gone()));
+        }
+        self.0.sink.lock().expect("socket sink").as_mut().poll_ready(cx)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Message) -> Result<(), Error> {
+        if self.0.closed.load(Ordering::SeqCst) {
+            return Err(Socket::gone());
+        }
+        self.0.sink.lock().expect("socket sink").as_mut().start_send(item)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        if self.0.closed.load(Ordering::SeqCst) {
+            return Poll::Ready(Err(Socket::gone()));
+        }
+        self.0.sink.lock().expect("socket sink").as_mut().poll_flush(cx)
+    }
+
+    // A connection closed from here is not waited on: a dead one would hold
+    // the next attempt back for the whole timeout of `nostr-sdk`.
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        if self.0.closed.load(Ordering::SeqCst) {
+            return Poll::Ready(Ok(()));
+        }
+        self.0.sink.lock().expect("socket sink").as_mut().poll_close(cx)
     }
 }
 

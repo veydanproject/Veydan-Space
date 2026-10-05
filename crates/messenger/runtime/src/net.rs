@@ -66,6 +66,11 @@ const CHECK_EVERY_SECS: i64 = 10 * 60;
 const CHECK_QUIET_SECS: i64 = 24 * 60 * 60;
 /// No relay connected for this long, with a session running, is trouble.
 const RELAYS_PATIENCE: Duration = Duration::from_secs(20);
+/// The clock moved this much more than the beat between two beats: the
+/// device slept, or the system froze the app.
+const WAKE_GAP: Duration = Duration::from_secs(10);
+/// How long a connection that slept has to answer a ping.
+const REVIVE_PATIENCE: Duration = Duration::from_secs(4);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -218,6 +223,9 @@ pub struct NetService {
     net: Net,
     /// Since when no relay has been connected, while one should be.
     relays_down_since: std::sync::Mutex<Option<Instant>>,
+    /// The wall clock at the last beat. The wall clock goes on while the
+    /// device sleeps; the clock of the timers does not.
+    last_beat: std::sync::Mutex<Option<std::time::SystemTime>>,
 }
 
 impl NetService {
@@ -230,7 +238,12 @@ impl NetService {
         if let Err(e) = net.configure(messenger_notify::net::saved(&store).await?).await {
             eprintln!("messenger net: {e}");
         }
-        Ok(Self { store, net, relays_down_since: std::sync::Mutex::new(None) })
+        Ok(Self {
+            store,
+            net,
+            relays_down_since: std::sync::Mutex::new(None),
+            last_beat: std::sync::Mutex::new(None),
+        })
     }
 
     /// The runtime stops: the door of the bridges closes with it, so a
@@ -415,10 +428,17 @@ impl NetService {
     /// Tries both ways and acts on what was found, as the mode says.
     pub async fn check(&self) -> Result<NetCheck> {
         settings::set(&self.store, KEY_CHECKED, &now().to_string()).await?;
-        let direct = self.direct_carries().await;
+        let mut direct = self.direct_carries().await;
         // The bridge is asked only when it matters.
         let bridge = if direct { false } else { self.bridge_carries().await? };
+        if bridge {
+            // The direct way is asked again before it is called restricted:
+            // a network that was only coming up (a phone that just woke)
+            // fails the first try and carries by the time a bridge did.
+            direct = self.direct_carries().await;
+        }
         let verdict = decide(direct, bridge);
+        eprintln!("messenger net: check: direct {direct}, bridge {bridge}");
         match step(self.mode().await?, verdict, now(), self.stamp(KEY_OFFER_DISMISSED).await?) {
             Step::Nothing => {}
             Step::Offer => settings::set_bool(&self.store, KEY_OFFER, true).await?,
@@ -462,11 +482,30 @@ impl NetService {
     }
 
     /// With bridges not always on: was the direct way last tried long ago?
+    /// While the offer is up, ten minutes is long: an offer made in a bad
+    /// moment goes away by itself once the direct way carries again.
     pub async fn quiet_check_is_due(&self) -> Result<bool> {
         if self.mode().await? == NetMode::On {
             return Ok(false);
         }
-        Ok(self.stamp(KEY_CHECKED).await?.is_none_or(|at| now() - at >= CHECK_QUIET_SECS))
+        let every =
+            if settings::get_bool(&self.store, KEY_OFFER, false).await? { CHECK_EVERY_SECS } else { CHECK_QUIET_SECS };
+        Ok(self.stamp(KEY_CHECKED).await?.is_none_or(|at| now() - at >= every))
+    }
+
+    /// Told every couple of seconds that the app runs. Returns how long it
+    /// did not run, when that was long enough to have slept.
+    pub fn beat(&self, beat: Duration) -> Option<Duration> {
+        let now = std::time::SystemTime::now();
+        let last = self.last_beat.lock().expect("last_beat").replace(now)?;
+        let gap = now.duration_since(last).ok()?;
+        (gap >= beat + WAKE_GAP).then_some(gap)
+    }
+
+    /// The device woke: relays down meanwhile were not trouble of the way,
+    /// and their patience starts over.
+    pub fn woke(&self) {
+        *self.relays_down_since.lock().expect("relays_down_since") = None;
     }
 
     /// In `auto`, with the bridge in use: is it time to try the direct way?
@@ -495,9 +534,7 @@ impl MessengerRuntime {
     /// anew: a connection made the old way would stay on it.
     pub async fn net_apply(&self) -> Result<()> {
         if self.net.apply(&self.relays).await? {
-            let pool = self.relays.pool().await;
-            pool.disconnect().await;
-            pool.connect().await;
+            self.relays.pool().await.reopen();
         }
         let _ = self.ui.send(UiEvent { name: "net".into(), payload: serde_json::json!({}) });
         Ok(())
@@ -556,6 +593,21 @@ impl MessengerRuntime {
             self.net_check().await?;
         }
         Ok(())
+    }
+
+    /// Called every `beat` while the app runs. After a sleep, connections
+    /// that look open may carry nothing: each is asked for a sign of life
+    /// and the silent ones are made anew at once, not minutes later when the
+    /// pings of `nostr-sdk` would notice.
+    pub async fn net_beat(&self, beat: Duration) {
+        let Some(gap) = self.net.beat(beat) else { return };
+        self.net.woke();
+        let pool = self.relays.pool().await;
+        if pool.is_silent() {
+            return;
+        }
+        let closed = pool.revive(REVIVE_PATIENCE).await;
+        eprintln!("messenger net: woke after {} s; {closed} silent relay connections made anew", gap.as_secs());
     }
 
     /// The housekeeping of an hour: a list that grew old, a hold that ran out.
