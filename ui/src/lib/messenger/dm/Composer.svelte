@@ -8,6 +8,9 @@
   import EmojiPicker from '../shared/emoji/EmojiPicker.svelte';
   import RecorderBar from '../media/RecorderBar.svelte';
   import CircleRecorder from '../media/CircleRecorder.svelte';
+  import TouchRecorder from '../media/TouchRecorder.svelte';
+  import { edgeHold } from '../shared/edge-hold';
+  import { HOLD_MS, IDLE, step, type Gesture, type GestureEvent } from './record-gesture';
   import { captureSupported, type Captured } from '../media/capture';
   import type { MessengerMessage, MessengerRecording } from '../api';
 
@@ -19,7 +22,7 @@
     peerTitle: string;
     oncancel: () => void;
     onsend: (text: string) => Promise<void>;
-    /** Buttons left of the input (attach, emoji). */
+    /** Buttons next to the input (attach); on a phone they stand inside the field. */
     tools?: Snippet;
     /** Keeps an unsent text per conversation. */
     draftKey?: string;
@@ -50,6 +53,7 @@
 
   async function recorded(kind: "voice" | "circle", c: Captured) {
     recording = null;
+    endHeld();
     try {
       await onrecording?.({ kind, mime: c.mime, duration_ms: c.durationMs, waveform: kind === "voice" ? c.waveform : undefined, blob: c.blob });
     } catch {
@@ -59,7 +63,95 @@
 
   function recordingFailed(code: string) {
     recording = null;
+    endHeld();
     recError = code;
+  }
+
+  // On a phone Enter is a new line; sending is the button.
+  const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+  // The phone has one record button: a tap switches between voice and circle,
+  // a hold records (record-gesture.ts).
+  const MODE_KEY = 'veydan.msg.rec.mode';
+  function savedMode(): "voice" | "circle" {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(MODE_KEY); } catch { /* no storage: the default */ }
+    if (!voiceOk) return "circle";
+    return saved === "circle" && circleOk ? "circle" : "voice";
+  }
+  let mode = $state<"voice" | "circle">(savedMode());
+  let gesture = $state<Gesture>(IDLE);
+  /** What the held button records; stays until it is sent or discarded. */
+  let held = $state<"voice" | "circle" | null>(null);
+  let heldLocked = $state(false);
+  let heldPhase = $state<"recording" | "preview">("recording");
+  let heldEl = $state<ReturnType<typeof TouchRecorder> | null>(null);
+  let hint = $state("");
+  let holdTimer: ReturnType<typeof setTimeout> | null = null;
+  let hintTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function endHeld() {
+    held = null;
+    heldLocked = false;
+    heldPhase = "recording";
+  }
+
+  function showHint() {
+    hint = mode;
+    if (hintTimer) clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => { hint = ""; }, 1800);
+  }
+
+  function act(e: GestureEvent) {
+    const r = step(gesture, e);
+    gesture = r.g;
+    if (r.action === "toggle") {
+      if (voiceOk && circleOk) {
+        mode = mode === "voice" ? "circle" : "voice";
+        try { localStorage.setItem(MODE_KEY, mode); } catch { /* the choice is not kept */ }
+      }
+      showHint();
+    } else if (r.action === "start") {
+      recError = "";
+      hint = "";
+      emojiOpen = false;
+      heldLocked = false;
+      heldPhase = "recording";
+      held = mode;
+      navigator.vibrate?.(12);
+    } else if (r.action === "discard") {
+      navigator.vibrate?.(20);
+      if (heldEl) heldEl.cancel(); else endHeld();
+    } else if (r.action === "lock") {
+      heldLocked = true;
+      navigator.vibrate?.(12);
+    } else if (r.action === "release") {
+      if (heldEl) heldEl.stop(); else endHeld();
+    }
+  }
+
+  function recDown(e: PointerEvent) {
+    e.preventDefault();
+    // Locked or under review: the tap sends, on the lift.
+    if (held) return;
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
+    act({ type: "down", x: e.clientX, y: e.clientY });
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => { holdTimer = null; act({ type: "hold" }); }, HOLD_MS);
+  }
+  function recMove(e: PointerEvent) {
+    if (gesture.phase === "holding") act({ type: "move", x: e.clientX, y: e.clientY });
+  }
+  function recUp() {
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = null;
+    if (gesture.phase === "idle") { if (held) heldEl?.send(); return; }
+    act({ type: "up" });
+  }
+  function recLost() {
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = null;
+    act({ type: "cancel" });
   }
 
   const drafts: Map<string, string> = ((globalThis as Record<string, unknown>).__msgDrafts ??= new Map()) as Map<string, string>;
@@ -72,6 +164,7 @@
   // Not gated on a send in flight: the next message can be typed and sent
   // while the previous one is still on its way (order is kept by the chat).
   const canSend = $derived(!disabled && text.trim().length > 0 && !tooLong);
+  const canRecordNow = $derived((!!held || !text.trim()) && !editing && !!onrecording && canRecord && !disabled && (voiceOk || circleOk));
 
   // Entering edit mode loads the message text; leaving it clears the field.
   let lastEditing: string | null = null;
@@ -99,7 +192,8 @@
   function resize() {
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+    // The phone field grows to three lines, then scrolls.
+    el.style.height = `${Math.min(el.scrollHeight, touch ? 82 : 180)}px`;
   }
 
   export function focus() { el?.focus(); }
@@ -131,9 +225,6 @@
   /** Buttons next to the field act without taking the focus from it. */
   const keepFocus = (e: Event) => e.preventDefault();
 
-  // On a phone Enter is a new line; sending is the button.
-  const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-
   function onkeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !touch) { e.preventDefault(); submit(); }
     else if (e.key === 'Escape' && (replyTo || editing)) { e.preventDefault(); oncancel(); }
@@ -156,7 +247,43 @@
     </div>
   {/if}
   <div class="row">
-    {#if recording === "voice"}
+    {#if touch}
+      {#if held}
+        <TouchRecorder bind:this={heldEl} bind:phase={heldPhase} kind={held} locked={heldLocked} dx={gesture.dx} dy={gesture.dy}
+          oncancel={endHeld} ondone={(c) => recorded(held!, c)} onerror={recordingFailed} />
+      {/if}
+        <!-- Stays in the page while a recording goes: taking the field away would close the keyboard. -->
+        <div class="field" class:away={!!held}>
+          <button class="tool" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
+            onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} aria-label={$t("msg_emoji_title")}>
+            <Icon name="smile" size={21} />
+          </button>
+          <textarea
+            bind:this={el} bind:value={text} rows="1" {disabled}
+            placeholder={placeholder ?? $t('msg_composer_placeholder')}
+            oninput={resize} {onkeydown}
+          ></textarea>
+          {#if tools}{@render tools()}{/if}
+        </div>
+      {#if canRecordNow}
+        {@const sends = !!held && (heldLocked || heldPhase === "preview")}
+        {#if hint && !held}<div class="hint" role="status">{$t(`msg_rec_hint_${hint}` as "msg_rec_hint_voice")}</div>{/if}
+        <button class="send record" use:edgeHold class:holding={gesture.phase === "holding"} tabindex="-1"
+          style:transform={gesture.phase === "holding" ? `translate(${gesture.dx}px, ${gesture.dy}px) scale(1.45)` : undefined}
+          onpointerdown={recDown} onpointermove={recMove} onpointerup={recUp} onpointercancel={recLost}
+          onmousedown={keepFocus} oncontextmenu={keepFocus}
+          aria-label={sends ? $t('msg_composer_send') : $t(mode === "circle" ? "msg_rec_circle" : "msg_rec_voice")}>
+          {#key sends ? "send" : mode}
+            <span class="glyph"><Icon name={sends ? "send" : mode === "circle" ? "circle-video" : "mic"} size={sends ? 17 : 19} /></span>
+          {/key}
+        </button>
+      {:else}
+        <button class="send" class:off={!canSend} aria-disabled={!canSend} tabindex="-1"
+          onpointerdown={keepFocus} onmousedown={keepFocus} onclick={submit} aria-label={$t('msg_composer_send')}>
+          <Icon name={editing ? 'check' : 'send'} size={17} />
+        </button>
+      {/if}
+    {:else if recording === "voice"}
       <RecorderBar oncancel={() => (recording = null)} ondone={(c) => recorded("voice", c)} onerror={recordingFailed} />
     {:else}
     {#if tools}{@render tools()}{/if}
@@ -169,7 +296,7 @@
       placeholder={placeholder ?? $t('msg_composer_placeholder')}
       oninput={resize} {onkeydown}
     ></textarea>
-    {#if !text.trim() && !editing && onrecording && canRecord && !disabled && (voiceOk || circleOk)}
+    {#if canRecordNow}
       {#if circleOk}
         <button class="tool" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => startRecording("circle")} title={$t("msg_rec_circle")}>
           <Icon name="video" size={18} />
@@ -224,9 +351,41 @@
   .icon { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   .warn { font-size: var(--fs-2xs); color: var(--danger-text); }
+  /* The phone: a glass bar over the conversation; the field holds its own buttons and stays one line high until the text needs more. */
   @media (pointer: coarse) {
-    .composer { padding-bottom: calc(var(--sp-2) + var(--sab, 0px)); }
-    textarea { font-size: 16px; min-height: 44px; border-radius: 22px; padding: 10px 14px; }
-    .send, .tool { width: 44px; height: 44px; }
+    .composer {
+      padding: 7px var(--sp-3) calc(var(--sp-2) + var(--sab, 0px));
+      background: color-mix(in srgb, var(--surface) 62%, transparent);
+      -webkit-backdrop-filter: blur(22px) saturate(1.7); backdrop-filter: blur(22px) saturate(1.7);
+      border-top-color: color-mix(in srgb, var(--text) 10%, transparent);
+    }
+    .context { background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent); border-radius: var(--radius-sm); padding: 6px 8px; }
+    .field {
+      flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 40px; border-radius: 20px;
+      background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent);
+      border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+      --attach-w: 40px; --attach-h: 38px;
+    }
+    .field:focus-within { border-color: var(--accent-border); }
+    .field.away { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; opacity: 0; pointer-events: none; border: none; }
+    .field textarea { min-width: 0; border: none; border-radius: 0; background: none; font-size: 16px; line-height: 22px; padding: 8px 2px; min-height: 38px; max-height: 82px; }
+    /* The field shows the focus, not the text inside it. */
+    .field textarea:focus { outline: none; box-shadow: none; }
+    .field textarea::placeholder { white-space: nowrap; }
+    .field .tool { width: 40px; height: 38px; margin-left: 2px; }
+    .field .tool.on { background: none; }
+    .send { width: 40px; height: 40px; }
+    .record { position: relative; z-index: 3; touch-action: none; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; box-shadow: var(--shadow-accent); transition: transform var(--dur-fast) var(--ease); }
+    .record.holding { transition: none; }
+    .record.holding::after { content: ""; position: absolute; inset: -8px; z-index: -1; border-radius: 50%; background: var(--accent); opacity: 0.22; animation: halo 1.3s ease-in-out infinite; }
+    .glyph { display: inline-flex; animation: swap var(--dur-base) var(--ease); }
+    .hint {
+      position: absolute; right: var(--sp-3); bottom: calc(100% + var(--sp-2)); z-index: 2; max-width: calc(100% - var(--sp-4));
+      padding: 7px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+      font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
   }
+  @keyframes halo { 50% { transform: scale(1.18); opacity: 0.1; } }
+  @keyframes swap { from { transform: rotate(-70deg) scale(0.4); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .glyph, .record.holding::after { animation: none; } }
 </style>

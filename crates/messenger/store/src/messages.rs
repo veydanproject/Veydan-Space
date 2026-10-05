@@ -206,11 +206,13 @@ pub async fn pending_for_target(store: &Store, target_id: &str) -> Result<Vec<Me
 }
 
 /// Ids of messages that changed status because their outbox row finished:
-/// `(now sent, now failed)`. A row counts as failed after `max_attempts`.
-pub async fn sync_outbox_status(store: &Store, max_attempts: i64) -> Result<(Vec<String>, Vec<String>)> {
+/// `(now sent, now failed)`. Out is sent, whatever was shown before; given
+/// up (past its deadline, or refused) is failed. A row that is only being
+/// retried leaves the message waiting.
+pub async fn sync_outbox_status(store: &Store) -> Result<(Vec<String>, Vec<String>)> {
     let sent = sqlx::query_scalar::<_, String>(
         "SELECT m.id FROM msg_messages m JOIN msg_outbox o ON o.local_id = m.outbox_local_id
-         WHERE m.status = 'queued' AND o.state = 'published'",
+         WHERE m.status IN ('queued', 'failed') AND o.state = 'published'",
     )
     .fetch_all(store.pool())
     .await
@@ -220,9 +222,8 @@ pub async fn sync_outbox_status(store: &Store, max_attempts: i64) -> Result<(Vec
     }
     let failed = sqlx::query_as::<_, (String, Option<String>)>(
         "SELECT m.id, o.last_error FROM msg_messages m JOIN msg_outbox o ON o.local_id = m.outbox_local_id
-         WHERE m.status = 'queued' AND o.state = 'failed' AND o.attempts >= ?",
+         WHERE m.status = 'queued' AND o.state = 'abandoned'",
     )
-    .bind(max_attempts)
     .fetch_all(store.pool())
     .await
     .map_err(storage)?;
@@ -343,25 +344,32 @@ mod tests {
         use messenger_core::{Outbound, SubId};
         let s = Store::open_in_memory().await.unwrap();
         let out = Outbound::Unsubscribe { id: SubId("x".into()) };
-        outbox::enqueue(&s, "ok", &out, 0).await.unwrap();
-        outbox::enqueue(&s, "bad", &out, 0).await.unwrap();
-        let mut a = text("a", "c", DIR_OUT, 1);
-        a.outbox_local_id = Some("ok".into());
-        let mut b = text("b", "c", DIR_OUT, 2);
-        b.outbox_local_id = Some("bad".into());
-        insert(&s, &a).await.unwrap();
-        insert(&s, &b).await.unwrap();
-
-        assert_eq!(sync_outbox_status(&s, 3).await.unwrap(), (vec![], vec![]));
-        outbox::mark_published(&s, "ok").await.unwrap();
-        for _ in 0..3 {
-            outbox::mark_publishing(&s, "bad").await.unwrap();
-            outbox::mark_failed(&s, "bad", "offline", 0).await.unwrap();
+        for (id, local) in [("a", "ok"), ("b", "bad"), ("c", "slow"), ("d", "late")] {
+            outbox::enqueue(&s, local, &out, 0, Some(3600)).await.unwrap();
+            let mut m = text(id, "c", DIR_OUT, 1);
+            m.outbox_local_id = Some(local.into());
+            insert(&s, &m).await.unwrap();
         }
-        let (sent, failed) = sync_outbox_status(&s, 3).await.unwrap();
+
+        assert_eq!(sync_outbox_status(&s).await.unwrap(), (vec![], vec![]));
+        outbox::mark_published(&s, "ok").await.unwrap();
+        for _ in 0..5 {
+            outbox::mark_publishing(&s, "slow").await.unwrap();
+            outbox::mark_failed(&s, "slow", "transport error: no relay connected", 0, false).await.unwrap();
+        }
+        outbox::mark_abandoned(&s, "bad", "expired: offline").await.unwrap();
+        let (sent, failed) = sync_outbox_status(&s).await.unwrap();
         assert_eq!(sent, vec!["a".to_string()]);
         assert_eq!(failed, vec!["b".to_string()]);
-        assert_eq!(get(&s, "b").await.unwrap().unwrap().failure_reason.as_deref(), Some("offline"));
-        assert_eq!(sync_outbox_status(&s, 3).await.unwrap(), (vec![], vec![]), "idempotent");
+        assert_eq!(get(&s, "b").await.unwrap().unwrap().failure_reason.as_deref(), Some("expired: offline"));
+        assert_eq!(get(&s, "c").await.unwrap().unwrap().status, STATUS_QUEUED, "retried, not given up: waiting");
+        assert_eq!(sync_outbox_status(&s).await.unwrap(), (vec![], vec![]), "idempotent");
+
+        // Shown as failed, then out after all (a retry, or the last try): sent.
+        set_status(&s, "d", STATUS_FAILED, Some("offline")).await.unwrap();
+        outbox::mark_published(&s, "late").await.unwrap();
+        assert_eq!(sync_outbox_status(&s).await.unwrap(), (vec!["d".to_string()], vec![]));
+        let d = get(&s, "d").await.unwrap().unwrap();
+        assert_eq!((d.status.as_str(), d.failure_reason), (STATUS_SENT, None));
     }
 }

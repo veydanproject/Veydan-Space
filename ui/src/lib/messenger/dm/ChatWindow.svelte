@@ -65,7 +65,9 @@
   let chatMenu = $state<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
   let acting = $state(false);
 
-  const online = $derived((messengerStore.status?.runtime?.relays_connected ?? 0) > 0);
+  // A promise, as the dot: shown as connected until the runtime takes it
+  // back after a while without relays.
+  const link = $derived(messengerStore.status?.runtime?.link ?? 'ok');
   const sessionActive = $derived(!!messengerStore.status?.runtime?.session_active);
 
   // Leaving a chat drops reply/edit state.
@@ -87,6 +89,11 @@
     watch.observe(content);
     return () => watch.disconnect();
   });
+
+  // On the phone the composer is glass over the conversation: the messages
+  // end above it and pass under it when scrolled.
+  let bottomH = $state(0);
+  $effect(() => { void bottomH; if (atBottom) tick().then(scrollToBottom); });
 
   // The keyboard takes height away: keep the latest message in view.
   $effect(() => onKeyboard(() => { if (atBottom) tick().then(scrollToBottom); }));
@@ -256,7 +263,7 @@
   <AttachButton disabled={!sessionActive || !canAttach || !!editing} onfiles={attach} />
 {/snippet}
 
-<section class="window">
+<section class="window" style:--bottom-h={phone ? `${bottomH}px` : undefined}>
   <header class="head" class:phone>
     {#if onback}
       {#if phone}<button class="icon back" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
@@ -269,7 +276,8 @@
       <div class="title">{chat.title}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
       <div class="sub">
         {#if !sessionActive}{$t('msg_chat_locked')}
-        {:else if !online}<span class="offline">{$t('msg_chat_offline')}</span>
+        {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
+        {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
         {:else if subtitle}{@render subtitle()}
         {:else}<code>{chat.peer_npub ? `${chat.peer_npub.slice(0, 14)}…${chat.peer_npub.slice(-6)}` : ''}</code>{/if}
       </div>
@@ -305,6 +313,7 @@
     </button>
   {/if}
 
+  <div class="bottom" class:float={phone} bind:clientHeight={bottomH}>
   {#if error}<div class="error-line">{error}</div>{/if}
 
   {#if chat.can_send}
@@ -315,6 +324,7 @@
   {:else}
     <div class="no-composer"><Icon name="lock" size={13} />{$t("msg_chat_cannot_send")}</div>
   {/if}
+  </div>
 </section>
 
 <MediaViewer />
@@ -344,7 +354,9 @@
   }
   .narrow-only { display: none; }
   @media (max-width: 860px) { .narrow-only { display: inline-flex; } }
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) 0; display: flex; flex-direction: column; }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) 0 calc(var(--sp-3) + var(--bottom-h, 0px)); display: flex; flex-direction: column; }
+  .bottom { flex-shrink: 0; }
+  .bottom.float { position: absolute; left: 0; right: 0; bottom: 0; }
   .content { margin-top: auto; display: flex; flex-direction: column; flex-shrink: 0; }
   /* Nothing to show yet: the note stands in the middle. */
   .content:has(> .placeholder) { margin-bottom: auto; }
@@ -353,7 +365,7 @@
   .placeholder span { font-size: var(--fs-xs); max-width: 320px; line-height: 1.5; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .to-bottom {
-    position: absolute; right: var(--sp-4); bottom: 84px; width: 36px; height: 36px; border-radius: 50%;
+    position: absolute; right: var(--sp-4); bottom: max(84px, calc(var(--bottom-h, 0px) + var(--sp-4))); width: 36px; height: 36px; border-radius: 50%;
     border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow);
   }

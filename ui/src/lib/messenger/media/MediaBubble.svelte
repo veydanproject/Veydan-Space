@@ -16,6 +16,7 @@
   import VoicePlayer from './VoicePlayer.svelte';
   import { viewer } from './viewer.svelte';
   import { playback } from './playback.svelte';
+  import { NO_POSTER, playableUrl, showFirstFrame } from './blob-url';
 
   interface Props {
     message: MessengerMessage;
@@ -39,6 +40,8 @@
   let busy = $state(false);
   let error = $state('');
   let previewFailed = $state(false);
+  /** A blob url made here, to give back when the bubble goes. */
+  let owned: string | null = null;
 
   /** One word for the whole component. */
   const phase = $derived.by(() => {
@@ -77,11 +80,17 @@
 
   let circle = $state<HTMLVideoElement | null>(null);
   let circlePlaying = $state(false);
+  /** The user asked for the sound; the silent first frame is not that. */
+  let circleWanted = false;
+  // My own circle is on the device before it is uploaded: it is shown at once.
+  const circleShown = $derived(media?.kind === "circle" && !!src && (phase === "here" || phase === "uploading"));
   $effect(() => { if (playback.current !== m.id && circlePlaying) circle?.pause(); });
 
   function toggleCircle() {
     if (!circle) return;
-    if (circlePlaying) { circle.pause(); return; }
+    if (circlePlaying) { circleWanted = false; circle.pause(); return; }
+    circleWanted = true;
+    circle.muted = false;
     playback.current = m.id;
     circle.currentTime = circle.ended ? 0 : circle.currentTime;
     circle.play().catch(() => {});
@@ -106,8 +115,12 @@
 
   async function loadPreview() {
     if (!previewable || src) return;
-    try { src = await messengerApi.media.dataUrl(m.id); }
-    catch { previewFailed = true; }
+    try {
+      const url = await messengerApi.media.dataUrl(m.id);
+      // Sound and video play from a blob, never from `data:` (blob-url.ts).
+      if (url && media?.kind !== 'image') { owned = playableUrl(url); src = owned; }
+      else src = url;
+    } catch { previewFailed = true; }
   }
 
   async function download(manual: boolean) {
@@ -150,6 +163,7 @@
     transferStore.hydrate(m.id).catch(() => {});
     if (media?.local_path) { local = media.local_path; loadPreview(); }
     else if (!out && !m.id.startsWith('local:')) download(false);
+    return () => { if (owned?.startsWith('blob:')) URL.revokeObjectURL(owned); };
   });
 </script>
 
@@ -225,12 +239,14 @@
     {#if media.kind === "voice"}
       <VoicePlayer id={m.id} {src} durationMs={media.duration_ms ?? 0} waveform={media.waveform ?? []} {out} busy={busy || moving}
         onneed={() => download(true)} />
-    {:else if media.kind === "circle" && phase === "here" && src}
+    {:else if circleShown}
       <button class="circle" onclick={toggleCircle} aria-label={circlePlaying ? $t("msg_media_pause") : $t("msg_voice_play")}>
         <!-- svelte-ignore a11y_media_has_caption -->
-        <video bind:this={circle} {src} playsinline preload="metadata"
-          onplay={() => (circlePlaying = true)} onpause={() => (circlePlaying = false)} onended={() => (circlePlaying = false)}></video>
-        {#if !circlePlaying}<span class="circle-play"><Icon name="play" size={26} /></span>{/if}
+        <video bind:this={circle} {src} poster={NO_POSTER} playsinline preload="auto"
+          onloadeddata={() => { if (circle) showFirstFrame(circle, () => circleWanted); }}
+          onplay={() => (circlePlaying = !circle?.muted)} onpause={() => (circlePlaying = false)} onended={() => { circlePlaying = false; circleWanted = false; }}></video>
+        {#if phase === "uploading"}<span class="circle-play spin"><Icon name="loader" size={26} /></span>
+        {:else if !circlePlaying}<span class="circle-play"><Icon name="play" size={26} /></span>{/if}
       </button>
     {:else if phase === "here" && src && media.kind === "image"}
       <button class="thumb" onclick={view} title={$t("msg_media_open")}>
@@ -243,7 +259,7 @@
       <audio class="audio" {src} controls preload="metadata"></audio>
     {/if}
 
-    {#if media.kind !== "voice" && !(media.kind === "circle" && phase === "here" && src)}
+    {#if media.kind !== "voice" && !circleShown}
     <div class="file-row">
       <span class="ico" class:spin={phase === 'uploading' || phase === 'downloading'}>
         {#if phase === 'uploading' || phase === 'downloading'}<Icon name="loader" size={18} />
@@ -346,6 +362,7 @@
   .circle { position: relative; width: 220px; height: 220px; border: none; padding: 0; border-radius: 50%; overflow: hidden; background: #000; cursor: pointer; }
   .circle video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .circle-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(0, 0, 0, 0.28); }
+  .circle-play.spin :global(svg) { animation: spin 1.1s linear infinite; }
   .player { max-width: 100%; max-height: 320px; border-radius: 10px; background: #000; }
   .audio { width: 100%; height: 36px; }
   .file-row { display: flex; align-items: center; gap: var(--sp-2); }

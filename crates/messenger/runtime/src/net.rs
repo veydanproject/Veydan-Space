@@ -595,19 +595,36 @@ impl MessengerRuntime {
         Ok(())
     }
 
-    /// Called every `beat` while the app runs. After a sleep, connections
-    /// that look open may carry nothing: each is asked for a sign of life
-    /// and the silent ones are made anew at once, not minutes later when the
-    /// pings of `nostr-sdk` would notice.
+    /// Called every `beat` while the app runs.
+    ///
+    /// After a sleep, connections that look open may carry nothing: each is
+    /// asked for a sign of life and the silent ones are made anew at once,
+    /// not minutes later when the pings of `nostr-sdk` would notice. A wake
+    /// is shown as connected, like a start (`link`).
+    ///
+    /// Every beat looks at the relays for what the app shows, and tells the
+    /// page when that changed. When a relay comes back, what waits in the
+    /// outbox goes at once instead of after its backoff.
     pub async fn net_beat(&self, beat: Duration) {
-        let Some(gap) = self.net.beat(beat) else { return };
-        self.net.woke();
         let pool = self.relays.pool().await;
-        if pool.is_silent() {
-            return;
+        if let Some(gap) = self.net.beat(beat) {
+            self.net.woke();
+            self.link.reset();
+            self.outbox.hold_expiry(now() + crate::link::HOLD_EXPIRY_SECS);
+            if !pool.is_silent() {
+                let closed = pool.revive(REVIVE_PATIENCE).await;
+                eprintln!("messenger net: woke after {} s; {closed} silent relay connections made anew", gap.as_secs());
+            }
         }
-        let closed = pool.revive(REVIVE_PATIENCE).await;
-        eprintln!("messenger net: woke after {} s; {closed} silent relay connections made anew", gap.as_secs());
+        let up = messenger_core::Transport::status(&*pool).await.relays.iter().any(|r| r.state == messenger_core::traits::RelayState::Connected);
+        let expected = self.session.lock().await.is_some() && !pool.is_silent();
+        let seen = self.link.observe(Instant::now(), up, expected);
+        if seen.changed {
+            let _ = self.ui.send(UiEvent { name: "link".into(), payload: serde_json::json!({ "state": seen.state }) });
+        }
+        if seen.came_up {
+            self.outbox.kick();
+        }
     }
 
     /// The housekeeping of an hour: a list that grew old, a hold that ran out.

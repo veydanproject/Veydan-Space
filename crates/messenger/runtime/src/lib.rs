@@ -16,6 +16,7 @@ pub mod notify;
 pub(crate) const REGION_FALLBACK: &str = "default";
 pub mod bindings;
 pub mod groups;
+pub mod link;
 pub mod links;
 pub mod net;
 pub mod preview;
@@ -70,6 +71,9 @@ pub struct RuntimeStatus {
     pub relays_total: usize,
     pub relays_connected: usize,
     pub silent_mode: bool,
+    /// What the app shows about its connection: a promise that is taken
+    /// back only after a while without relays (`link`).
+    pub link: link::LinkState,
     pub manifest_serial: Option<u64>,
     pub region: String,
     /// Whose servers are used; `None` until the user chooses.
@@ -107,6 +111,7 @@ pub struct MessengerRuntime {
     session: Mutex<Option<Session>>,
     manifest_remote: std::sync::RwLock<ManifestRemote>,
     net: net::NetService,
+    link: link::LinkWatch,
 }
 
 impl MessengerRuntime {
@@ -182,6 +187,7 @@ impl MessengerRuntime {
                 messenger_transport::HttpManifestFetcher::new()?,
             ))),
             net,
+            link: link::LinkWatch::default(),
         };
         if let Err(e) = rt.seed_media_servers().await {
             eprintln!("messenger: media servers from the manifest not applied: {e}");
@@ -244,6 +250,10 @@ impl MessengerRuntime {
     }
 
     async fn start_session(&self, keys: Keys) -> Result<()> {
+        // A start is shown as connected, and what waited while the app was
+        // off gets a try before its deadline is looked at.
+        self.link.reset();
+        self.outbox.hold_expiry(SystemClock.now().secs() + link::HOLD_EXPIRY_SECS);
         let pool = self.relays.pool().await;
         let keys_for_dm = keys.clone();
         let session = Session::start(
@@ -362,10 +372,12 @@ impl MessengerRuntime {
 
     async fn publish_prepared(&self, p: Prepared) -> Result<MessageView> {
         let peer = p.message.chat_id.strip_prefix("dm:").and_then(PubKey::parse);
-        let local_id = self.outbox.enqueue(p.to_peer).await?;
+        // A new message is tried for an hour, both copies; an edit or a
+        // deletion until it leaves.
+        let local_id = self.enqueue_copy(p.to_peer, p.expiring).await?;
         self.dm.attach_outbox(&p.tracking_id, &local_id).await?;
         if let Some(own) = p.to_self {
-            self.outbox.enqueue(own).await?;
+            self.enqueue_copy(own, p.expiring).await?;
         }
         // A request: the accept goes out after the text, and the peer
         // joins the address book.
@@ -575,6 +587,14 @@ impl MessengerRuntime {
         self.session.lock().await.as_ref().map(|s| s.keys.clone()).ok_or(MessengerError::NotLoggedIn)
     }
 
+    async fn enqueue_copy(&self, out: Outbound, expiring: bool) -> Result<String> {
+        if expiring {
+            self.outbox.enqueue_message(out).await
+        } else {
+            self.outbox.enqueue(out).await
+        }
+    }
+
     async fn enqueue_and_pump(&self, out: Outbound) -> Result<()> {
         self.outbox.enqueue(out).await?;
         self.outbox.kick();
@@ -643,6 +663,7 @@ impl MessengerRuntime {
             relays_total: relays.iter().filter(|r| r.enabled).count(),
             relays_connected: relays.iter().filter(|r| r.state == RelayState::Connected).count(),
             silent_mode: self.relays.is_silent().await?,
+            link: self.link.state(),
             manifest_serial: self.relays.manifest_serial().await?,
             region: self.relays.region().await?,
             servers_mode: self.relays.servers_mode().await?,

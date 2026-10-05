@@ -433,8 +433,16 @@ impl MessengerRuntime {
         self.group_driver.apply(outcome).await
     }
 
-    pub(crate) async fn publish_group_message(&self, message: MessageView, out: Outbound, tracking_id: &str) -> Result<MessageView> {
-        let local_id = self.outbox.enqueue(out).await?;
+    /// `expiring`: a new message, tried for an hour; an edit is tried until
+    /// it leaves.
+    pub(crate) async fn publish_group_message(
+        &self,
+        message: MessageView,
+        out: Outbound,
+        tracking_id: &str,
+        expiring: bool,
+    ) -> Result<MessageView> {
+        let local_id = if expiring { self.outbox.enqueue_message(out).await? } else { self.outbox.enqueue(out).await? };
         self.dm.attach_outbox(tracking_id, &local_id).await?;
         self.outbox.kick();
         Ok(self.dm.message(&message.id).await?.unwrap_or(message))
@@ -444,13 +452,13 @@ impl MessengerRuntime {
         let keys = self.session_keys().await?;
         let (message, out) = self.groups().prepare_text(&keys, group_id, text, reply_to).await?;
         let id = message.id.clone();
-        self.publish_group_message(message, out, &id).await
+        self.publish_group_message(message, out, &id, true).await
     }
 
     pub async fn group_edit(&self, message_id: &str, text: &str) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         let (message, tracking, out) = self.groups().prepare_edit(&keys, message_id, text).await?;
-        self.publish_group_message(message, out, &tracking).await
+        self.publish_group_message(message, out, &tracking, false).await
     }
 
     /// Remove a message for everyone in the group: my own, or as a

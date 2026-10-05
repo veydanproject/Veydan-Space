@@ -7,6 +7,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
+  import { netState as netStateOf } from '../shared/net-state';
   import { chatStore } from '../chats/chatStore.svelte';
   import ChatList from '../chats/ChatList.svelte';
   import NewChatDialog from '../chats/NewChatDialog.svelte';
@@ -39,9 +40,7 @@
   const s = $derived(messengerStore.status);
   const connected = $derived(s?.runtime?.relays_connected ?? 0);
   const total = $derived(s?.runtime?.relays_total ?? 0);
-  const netState = $derived(
-    !s?.runtime ? 'off' : s.runtime.silent_mode ? 'silent' : !s.runtime.session_active ? 'locked' : connected > 0 ? 'on' : 'connecting',
-  );
+  const netState = $derived(netStateOf(s?.runtime));
   const needsIdentity = $derived(messengerStore.needsOnboarding);
 
   const open = (c: MessengerChat) => goto(chatHref(c.id));
@@ -100,6 +99,7 @@
   .net { width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; background: var(--text-3); flex-shrink: 0; }
   .net.on { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
   .net.connecting { background: var(--warn-text); animation: pulse 1.4s ease-in-out infinite; }
+  .net.lost { background: var(--danger); }
   @keyframes pulse { 50% { opacity: 0.35; } }
   .note { padding: var(--sp-6) var(--sp-4); text-align: center; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
   .intro { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }

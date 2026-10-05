@@ -11,6 +11,11 @@ describe('the reason of an unsent message', () => {
     expect(sendFailureKey('offline')).toBe('msg_send_failed_offline');
   });
 
+  it('says "no connection for an hour" for a message the outbox gave up', () => {
+    expect(sendFailureKey('expired: transport error: no relay connected')).toBe('msg_send_failed_expired');
+    expect(sendFailureKey('rejected by wss://r.example: blocked: spam')).toBe('msg_send_failed');
+  });
+
   it('says "not sent" for anything else, never the raw text', () => {
     expect(sendFailureKey('storage error: disk full')).toBe('msg_send_failed');
     expect(sendFailureKey(null)).toBe('msg_send_failed');

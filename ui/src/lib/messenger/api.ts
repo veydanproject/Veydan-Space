@@ -19,6 +19,8 @@ export interface MessengerIngressCounters {
   ignored: number;
 }
 
+export type MessengerLink = 'ok' | 'waiting' | 'lost';
+
 export interface MessengerRuntimeStatus {
   version: string;
   data_dir: string;
@@ -29,6 +31,9 @@ export interface MessengerRuntimeStatus {
   relays_total: number;
   relays_connected: number;
   silent_mode: boolean;
+  /** What the app shows about its connection: connected from the start and
+   *  after a wake, `waiting` after 10 s without relays, `lost` after 60 s. */
+  link: MessengerLink;
   manifest_serial: number | null;
   region: string;
   /** Whose servers are used; `null` until the user chooses (onboarding). */
@@ -138,6 +143,8 @@ export interface MessengerMessage {
   deleted: boolean;
   failure_reason: string | null;
   media: Record<string, unknown> | null;
+  /** While `queued`: when it went to the outbox (unix seconds). */
+  queued_at?: number | null;
 }
 
 
@@ -710,6 +717,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
       relays_total: mockRelays.filter((r) => r.enabled).length,
       relays_connected: mockRelays.filter((r) => r.state === 'connected').length,
       silent_mode: mockSilent,
+      link: 'ok',
       manifest_serial: mockServersMode === 'veydan' ? (mockManifestOk ? 5 : 4) : null,
       region: mockRegion,
       servers_mode: mockServersMode,

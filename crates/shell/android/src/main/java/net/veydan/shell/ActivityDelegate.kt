@@ -4,6 +4,7 @@
 package net.veydan.shell
 
 import android.graphics.Color
+import android.graphics.Rect
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
@@ -29,6 +30,7 @@ class ActivityDelegate(private val activity: ComponentActivity) {
   private var lastBars: Insets = Insets.NONE
   private var lastImeBottom: Int = 0
   private var insetsScriptHandler: ScriptHandler? = null
+  private var webView: WebView? = null
 
   /** Before `super.onCreate`: light icons and scrims until the page reports its theme. */
   fun onCreate() {
@@ -39,6 +41,7 @@ class ActivityDelegate(private val activity: ComponentActivity) {
   }
 
   fun onWebViewCreate(webView: WebView) {
+    this.webView = webView
     webView.addJavascriptInterface(ChromeBridge(), "VeydanChrome")
 
     ViewCompat.setOnApplyWindowInsetsListener(webView) { v, windowInsets ->
@@ -90,6 +93,23 @@ class ActivityDelegate(private val activity: ComponentActivity) {
     @JavascriptInterface
     fun setLightBars(light: Boolean) {
       activity.runOnUiThread { applyLightBars(light) }
+    }
+
+    /**
+     * Where the page handles a drag that starts at the edge of the screen
+     * itself (CSS pixels of the page); the system does not take it for
+     * "back" there. An empty rectangle gives the edge back.
+     */
+    @JavascriptInterface
+    fun setGestureExclusion(left: Double, top: Double, width: Double, height: Double) {
+      activity.runOnUiThread {
+        val view = webView ?: return@runOnUiThread
+        val d = view.resources.displayMetrics.density
+        val rects = if (width <= 0 || height <= 0) emptyList() else listOf(
+          Rect((left * d).toInt(), (top * d).toInt(), ((left + width) * d).toInt(), ((top + height) * d).toInt()),
+        )
+        ViewCompat.setSystemGestureExclusionRects(view, rects)
+      }
     }
   }
 }

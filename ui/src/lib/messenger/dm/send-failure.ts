@@ -7,7 +7,11 @@
  * shows the reader a sentence of the dictionary, and the raw text goes to the
  * log (`logSendFailure`).
  */
-export function sendFailureKey(reason: string | null | undefined): 'msg_send_failed_offline' | 'msg_send_failed' {
+export function sendFailureKey(
+  reason: string | null | undefined,
+): 'msg_send_failed_expired' | 'msg_send_failed_offline' | 'msg_send_failed' {
+  // Tried for an hour without a connection, then given up (the outbox).
+  if (reason && /^expired:/i.test(reason)) return 'msg_send_failed_expired';
   if (reason && /^transport error\b|\bno relay\b|^offline$/i.test(reason)) return 'msg_send_failed_offline';
   return 'msg_send_failed';
 }

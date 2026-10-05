@@ -30,10 +30,6 @@ pub const UI_EVENT_CHATS_UPDATED: &str = "chats.updated";
 /// Plaintext budget of one message. NIP-44 caps the padded plaintext at
 /// 64 KiB and the rumor JSON wraps the text, so stay well below.
 pub const MAX_TEXT_BYTES: usize = 32 * 1024;
-/// An outgoing message is shown as failed after this many publish attempts;
-/// the outbox itself keeps retrying.
-pub const FAILED_AFTER_ATTEMPTS: i64 = 3;
-
 /// A message that is stored locally and ready to be published.
 #[derive(Clone, Debug)]
 pub struct Prepared {
@@ -52,6 +48,9 @@ pub struct Prepared {
     /// should put them in the address book.
     pub became_contact: bool,
     pub events: Vec<UiEvent>,
+    /// A new message the user can see: its copies are tried for an hour
+    /// and then given up. An edit or a deletion is tried until it leaves.
+    pub expiring: bool,
 }
 
 #[derive(Clone)]
@@ -245,7 +244,11 @@ impl DmService {
             }),
             None => None,
         };
-        Ok(MessageView::from_row(r, reply))
+        let queued_at = match (&r.outbox_local_id, r.status == repo::STATUS_QUEUED) {
+            (Some(local), true) => messenger_store::outbox::get(&self.store, local).await?.map(|o| o.created_at),
+            _ => None,
+        };
+        Ok(MessageView { queued_at, ..MessageView::from_row(r, reply) })
     }
 
     /// Where to deliver DMs for `peer`, best first.
@@ -360,7 +363,7 @@ impl DmService {
             events = result.events;
             became_contact = true;
         }
-        Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups, became_contact, events })
+        Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups, became_contact, events, expiring: true })
     }
 
     async fn own_target(&self, keys: &Keys, message_id: &str) -> Result<(MessageRow, PubKey)> {
@@ -451,7 +454,7 @@ impl DmService {
         repo::set_text(&self.store, message_id, text, created_at).await?;
         chats::recompute_last(&self.store, &row.chat_id).await?;
         let message = self.message(message_id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
-        Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups: vec![], became_contact: false, events: vec![] })
+        Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups: vec![], became_contact: false, events: vec![], expiring: false })
     }
 
     /// Retract one of our messages for everyone.
@@ -465,7 +468,7 @@ impl DmService {
         repo::mark_deleted(&self.store, message_id, created_at).await?;
         chats::recompute_last(&self.store, &row.chat_id).await?;
         let message = self.message(message_id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
-        Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups: vec![], became_contact: false, events: vec![] })
+        Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups: vec![], became_contact: false, events: vec![], expiring: false })
     }
 
     /// Hide a message on this device only (works for incoming ones too).
@@ -495,7 +498,7 @@ impl DmService {
     /// Pull publish results from the outbox into message statuses.
     /// Returns UI events for every visible message that changed.
     pub async fn sync_statuses(&self) -> Result<Vec<UiEvent>> {
-        let (sent, failed) = repo::sync_outbox_status(&self.store, FAILED_AFTER_ATTEMPTS).await?;
+        let (sent, failed) = repo::sync_outbox_status(&self.store).await?;
         let mut events = Vec::new();
         for id in sent.into_iter().chain(failed) {
             if let Some(row) = repo::get(&self.store, &id).await? {
@@ -574,10 +577,13 @@ impl DmService {
 
         if !inserted {
             // Another copy of something we already hold. Our own self-copy
-            // coming back proves a relay stored the message.
+            // coming back proves a relay stored it, but not that the peer's
+            // copy left: a message the outbox tracks follows the outbox.
+            // One it does not (written on another device of mine) is sent.
             if from_me {
                 if let Some(row) = repo::get(&self.store, &id).await? {
-                    if row.status == repo::STATUS_QUEUED || row.status == repo::STATUS_FAILED {
+                    let waiting = row.status == repo::STATUS_QUEUED || row.status == repo::STATUS_FAILED;
+                    if waiting && row.outbox_local_id.is_none() {
                         repo::set_status(&self.store, &id, repo::STATUS_SENT, None).await?;
                         if !row.is_hidden {
                             return Ok(vec![Effect::Emit(updated(&row.chat_id, &id))]);
@@ -925,6 +931,23 @@ mod tests {
         let msgs = bob.dm.messages(&chat.id, None, 50).await.unwrap();
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].text.as_deref(), Some("v2"));
+    }
+
+    /// The self-copy lands on my relays; the peer's copy goes elsewhere. A
+    /// message whose peer copy the outbox tracks follows the outbox, not
+    /// the echo: the echo would show it sent when nothing reached the peer.
+    #[tokio::test]
+    async fn the_echo_of_my_copy_does_not_speak_for_the_peers_copy() {
+        let alice = Party::new().await;
+        let bob = Party::new().await;
+        let p = alice.dm.prepare_text(&alice.keys, &bob.pk(), "hi", None).await.unwrap();
+        alice.dm.attach_outbox(&p.tracking_id, "outbox-1").await.unwrap();
+        assert!(alice.receive(&self_event(&p)).await.is_empty());
+        let m = alice.dm.message(&p.message.id).await.unwrap().unwrap();
+        assert_eq!(m.status, "queued", "still waiting for the peer's copy");
+        assert!(p.expiring, "a new message has a deadline");
+        let e = alice.dm.prepare_edit(&alice.keys, &p.message.id, "hello").await.unwrap();
+        assert!(!e.expiring, "an edit is tried until it leaves");
     }
 
     #[tokio::test]

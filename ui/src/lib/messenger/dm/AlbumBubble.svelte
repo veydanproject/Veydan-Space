@@ -19,6 +19,7 @@
   import { longpress } from '../shared/longpress';
   import type { MessengerMessage } from '../api';
   import { logSendFailure, sendFailureKey } from './send-failure';
+  import { lateAt, shownStatus } from './delivery';
 
   interface Props {
     messages: MessengerMessage[];
@@ -50,10 +51,22 @@
   const fileRows = $derived(mosaic(files));
   /** Pictures without words: the time sits on the last picture. */
   const overlay = $derived(variant === 'visual' && captions.length === 0);
+  // Parts on their way are shown as sent for a moment (`delivery`); one
+  // timer moves the album to the clock when the last of them is late.
+  let now = $state(Date.now() / 1000);
+  const late = $derived(Math.max(0, ...messages.filter((m) => m.status === 'queued').map(lateAt)));
+  $effect(() => {
+    if (!late) return;
+    const at = Date.now() / 1000;
+    now = at;
+    if (late <= at) return;
+    const timer = setTimeout(() => (now = Date.now() / 1000), (late - at) * 1000 + 50);
+    return () => clearTimeout(timer);
+  });
   /** The worst of what the parts are in. */
   const status = $derived(
     failed.length ? 'failed' : messages.some((m) => m.status === 'uploading') ? 'uploading'
-      : messages.some((m) => m.status === 'queued' || m.status === 'paused') ? 'queued' : 'sent',
+      : messages.some((m) => m.status === 'paused' || shownStatus(m, now) === 'waiting') ? 'waiting' : 'sent',
   );
   const statusIcon = $derived(status === 'sent' ? 'check' : status === 'failed' ? 'alert-triangle' : status === 'uploading' ? 'upload' : 'clock');
 
@@ -108,7 +121,7 @@
     {#each captions as m (m.id)}<div class="caption"><MessageContent text={m.text ?? ''} /></div>{/each}
     {#if !overlay}{@render meta(false)}{/if}
   </div>
-  {#each failed.filter((m) => out && !m.id.startsWith('local:')) as m (m.id)}
+  {#each failed.filter((m) => out && !m.deleted && !m.id.startsWith('local:')) as m (m.id)}
     <button class="retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
       <Icon name="refresh-cw" size={12} />{$t('msg_message_retry')}
     </button>

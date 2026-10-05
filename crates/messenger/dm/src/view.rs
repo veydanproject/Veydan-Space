@@ -53,6 +53,9 @@ pub struct MessageView {
     pub deleted: bool,
     pub failure_reason: Option<String>,
     pub media: Option<serde_json::Value>,
+    /// While `queued`: when it was put in the outbox (or put back by a
+    /// retry). The app shows it as sent for a moment counted from here.
+    pub queued_at: Option<i64>,
 }
 
 impl MessageView {
@@ -71,6 +74,7 @@ impl MessageView {
             deleted: r.deleted_at.is_some(),
             failure_reason: r.failure_reason,
             media: r.media_json.and_then(|j| serde_json::from_str(&j).ok()),
+            queued_at: None,
         }
     }
 }

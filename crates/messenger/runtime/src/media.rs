@@ -100,7 +100,7 @@ impl UploadJob {
         match finished {
             Ok((message, out)) => {
                 let _ = messenger_store::media::set_result(self.dm.store(), transfer_id, None, None, Some(&message.id)).await;
-                if let Ok(local_id) = self.outbox.enqueue(out).await {
+                if let Ok(local_id) = self.outbox.enqueue_message(out).await {
                     let _ = self.dm.attach_outbox(&message.id, &local_id).await;
                 }
                 self.outbox.kick();
@@ -152,11 +152,11 @@ impl UploadJob {
                     Ok(p) => {
                         let message_id = p.message.id.clone();
                         let _ = messenger_store::media::set_result(self.dm.store(), &transfer_id, None, None, Some(&message_id)).await;
-                        if let Ok(local_id) = self.outbox.enqueue(p.to_peer).await {
+                        if let Ok(local_id) = self.outbox.enqueue_message(p.to_peer).await {
                             let _ = self.dm.attach_outbox(&p.tracking_id, &local_id).await;
                         }
                         if let Some(own) = p.to_self {
-                            let _ = self.outbox.enqueue(own).await;
+                            let _ = self.outbox.enqueue_message(own).await;
                         }
                         self.outbox.kick();
                         if let Ok(events) = self.dm.sync_statuses().await {

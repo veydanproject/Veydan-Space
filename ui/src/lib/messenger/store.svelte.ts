@@ -9,6 +9,7 @@ import {
   type MessengerContact,
   type MessengerContactPatch,
   type MessengerIdentity,
+  type MessengerLink,
   type MessengerProfile,
   type MessengerProfileInput,
   type MessengerManifestCheck,
@@ -173,6 +174,12 @@ class MessengerStore {
         if (e.payload.name === 'transfer.progress') return;
         this.feed = [{ ...e.payload, at: Date.now() }, ...this.feed].slice(0, FEED_LIMIT);
         if (e.payload.name === 'dm.message' || e.payload.name === 'history.synced') this.scheduleStatusRefresh();
+        if (e.payload.name === 'link') {
+          // The dot changes at once; the rest of the status follows.
+          const link = (e.payload.payload as { state?: MessengerLink } | null)?.state;
+          if (link && this.status?.runtime) this.status = { ...this.status, runtime: { ...this.status.runtime, link } };
+          this.scheduleStatusRefresh();
+        }
         if (e.payload.name === "profile.updated") {
           const pk = (e.payload.payload as { pubkey?: string } | null)?.pubkey;
           if (pk) nameStore.refresh(pk);

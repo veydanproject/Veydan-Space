@@ -9,8 +9,9 @@
   import MessageContent from '../content/MessageContent.svelte';
   import { longpress } from '../shared/longpress';
   import { tint } from '../shared/tint';
-  import type { MessengerMessage } from '../api';
+  import { mediaOf, type MessengerMessage } from '../api';
   import { logSendFailure, sendFailureKey } from './send-failure';
+  import { lateAt, shownStatus } from './delivery';
 
   interface Props {
     message: MessengerMessage;
@@ -37,15 +38,30 @@
   });
 
   const out = $derived(m.direction === 'out');
+  // A circle is its own shape: no bubble under it.
+  const bare = $derived(!m.deleted && !m.reply_to && !m.text && m.content_type === 'media' && mediaOf(m)?.kind === 'circle');
+  // A message on its way is shown as sent for a moment; one timer moves it
+  // to the clock when that moment is over.
+  let now = $state(Date.now() / 1000);
+  $effect(() => {
+    if (m.status !== 'queued') return;
+    const at = Date.now() / 1000;
+    now = at;
+    const wait = lateAt(m) - at;
+    if (wait <= 0) return;
+    const timer = setTimeout(() => (now = Date.now() / 1000), wait * 1000 + 50);
+    return () => clearTimeout(timer);
+  });
+  const shown = $derived(shownStatus(m, now));
   const statusIcon = $derived(
-    m.status === 'sent' ? 'check' : m.status === 'failed' ? 'alert-triangle' : m.status === 'uploading' ? 'upload' : 'clock',
+    shown === 'sent' ? 'check' : shown === 'failed' ? 'alert-triangle' : shown === 'uploading' ? 'upload' : 'clock',
   );
-  const statusTitle = $derived($t(`msg_status_${m.status}` as 'msg_status_sent'));
+  const statusTitle = $derived($t(`msg_status_${shown}` as 'msg_status_sent'));
 </script>
 
 <div class="line" class:out class:first class:last class:highlighted data-mid={m.id}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="bubble" class:deleted={m.deleted} class:failed={m.status === 'failed'} oncontextmenu={(e) => onmenu(e, m)}
+  <div class="bubble" class:bare class:deleted={m.deleted} class:failed={m.status === 'failed'} oncontextmenu={(e) => onmenu(e, m)}
     use:longpress={{ onpress: (p) => onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), m) }}>
     {#if author && showAuthor}<span class="author" style="color: {tint(m.sender_pubkey)}">{author(m.sender_pubkey)}</span>{/if}
     {#if m.reply_to && !m.deleted}
@@ -70,11 +86,11 @@
       {#if m.edited_at && !m.deleted}<span>{$t('msg_message_edited')}</span>{/if}
       <span>{clock(m.created_at)}</span>
       {#if out && !m.deleted}
-        <span class="status {m.status}" title={statusTitle}><Icon name={statusIcon} size={12} /></span>
+        <span class="status {shown}" title={statusTitle}><Icon name={statusIcon} size={12} /></span>
       {/if}
     </span>
   </div>
-  {#if m.status === 'failed' && out && !m.id.startsWith('local:')}
+  {#if m.status === 'failed' && out && !m.deleted && !m.id.startsWith('local:')}
     <button class="retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
       <Icon name="refresh-cw" size={12} />{$t('msg_message_retry')}
     </button>
@@ -99,6 +115,7 @@
   .line.out:not(.first) .bubble { border-top-right-radius: var(--r-joined); }
   .line.out:not(.last) .bubble { border-bottom-right-radius: var(--r-joined); }
   .bubble.failed { border-color: var(--danger-border); }
+  .line .bubble.bare, .line.out .bubble.bare { background: none; border-color: transparent; padding: 0; }
   /* Touch: a long press opens the menu, so it must not start a selection. */
   @media (pointer: coarse) {
     .bubble { max-width: 86%; -webkit-touch-callout: none; }
