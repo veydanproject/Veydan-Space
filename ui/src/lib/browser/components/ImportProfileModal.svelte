@@ -8,6 +8,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { formatError } from '$lib/core/utils';
+  import { torLabel } from '$lib/browser/proxy-label';
 
   interface Props {
     workspaceId: string;
@@ -211,7 +212,11 @@
               <span class="preview-label">{$t('panel_proxy')}</span>
               <span class="preview-value proxy-value">
                 <Icon name="globe" size={11} />
-                {preview.proxy.proxy_type}://{preview.proxy.host}:{preview.proxy.port}
+                {#if preview.proxy.proxy_type === 'tor'}
+                  {torLabel(preview.proxy.country, $t)}
+                {:else}
+                  {preview.proxy.proxy_type}://{preview.proxy.host}:{preview.proxy.port}
+                {/if}
               </span>
             </div>
           {/if}

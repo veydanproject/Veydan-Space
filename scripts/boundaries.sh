@@ -193,8 +193,9 @@ crates/shell                     veydan-shell              lib      yes  crates/
 crates/pass                      veydan-pass               module   yes  crates/build-cfg crates/core crates/lock crates/sync-host crates/shell
 crates/notes                     veydan-notes              module   yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host crates/shell
 crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/desktop-notify crates/tauri-plugin-veydan-push
+crates/tor                       veydan-tor                module   yes  crates/build-cfg crates/core crates/shell
 crates/tauri-plugin-veydan-push  tauri-plugin-veydan-push  plugin   yes  crates/build-cfg
-apps/space                       veydanspace               product  yes  crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/tauri-plugin-veydan-push
+apps/space                       veydanspace               product  yes  crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/tor crates/tauri-plugin-veydan-push
 apps/notes                       veydannotes               product  yes  crates/shell crates/notes
 apps/pass                        veydanpass                product  yes  crates/shell crates/pass
 apps/chat                        veydanchat                product  yes  crates/shell crates/messenger-app crates/tauri-plugin-veydan-push
@@ -361,6 +362,7 @@ owner() {
     workspace_*|profile_*|profiles_*|proxy_*|proxies_*|camoufox_*) echo browser ;;
     ssh_*|sftp_*|fs_*) echo ssh ;;
     backup_*) echo backup ;;
+    tor_*) echo tor ;;
     *) echo "" ;;
   esac
 }

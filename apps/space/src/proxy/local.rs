@@ -28,6 +28,11 @@ pub enum Upstream {
     Ssh {
         session: crate::proxy::ssh::SharedSession,
     },
+    /// The SOCKS port of a tor instance. The relay holds the lease, so the
+    /// instance lives as long as the relay and the connections it carries.
+    Tor {
+        lease: veydan_tor::Lease,
+    },
 }
 
 /// Запускает локальный HTTP-прокси на 127.0.0.1:<random port>.
@@ -90,6 +95,17 @@ async fn handle(client: TcpStream, upstream: std::sync::Arc<Upstream>) -> anyhow
             .await
         }
         Upstream::Ssh { session } => handle_ssh_upstream(client, session).await,
+        // The credentials of the lease are what tor tells consumers apart by.
+        Upstream::Tor { lease } => {
+            handle_socks5_upstream(
+                client,
+                "127.0.0.1",
+                lease.socks_port,
+                Some(&lease.username),
+                Some(&lease.password),
+            )
+            .await
+        }
     }
 }
 

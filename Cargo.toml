@@ -9,7 +9,7 @@
 
 [workspace]
 resolver = "2"
-members = ["apps/space", "crates/build-cfg", "crates/core", "crates/desktop-notify", "crates/lock", "crates/messenger-app", "crates/notes", "crates/pass", "crates/shell", "crates/sync", "crates/sync-host", "crates/tauri-plugin-veydan-push"]
+members = ["apps/space", "crates/build-cfg", "crates/core", "crates/desktop-notify", "crates/lock", "crates/messenger-app", "crates/notes", "crates/pass", "crates/shell", "crates/sync", "crates/sync-host", "crates/tauri-plugin-veydan-push", "crates/tor"]
 # The messenger is a workspace of its own, with its own lock file; the
 # application takes its crates by path.
 exclude = ["crates/messenger"]

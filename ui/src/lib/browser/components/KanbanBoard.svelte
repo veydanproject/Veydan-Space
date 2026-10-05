@@ -6,6 +6,7 @@
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { api } from '$lib/browser/api';
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
+  import { proxyChip } from '$lib/browser/proxy-label';
   import Icon from '$lib/core/Icon.svelte';
   import ProfileSidePanel from './ProfileSidePanel.svelte';
   import { directory } from '$lib/core/directory';
@@ -356,7 +357,7 @@
                 <div class="card-meta">
                   <span class="meta-item"><Icon name="monitor" size={10} />{profile.fingerprint_preset}</span>
                   {#if proxy}
-                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxy.country ?? proxy.name}</span>
+                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
                   {:else}
                     <span class="meta-item muted"><Icon name="wifi-off" size={10} />{$t('panel_no_proxy')}</span>
                   {/if}
@@ -411,7 +412,7 @@
                 <div class="card-meta">
                   <span class="meta-item"><Icon name="monitor" size={10} />{profile.fingerprint_preset}</span>
                   {#if proxy}
-                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxy.country ?? proxy.name}</span>
+                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
                   {:else}
                     <span class="meta-item muted"><Icon name="wifi-off" size={10} />{$t('panel_no_proxy')}</span>
                   {/if}
@@ -456,7 +457,7 @@
                 <div class="card-meta">
                   <span class="meta-item"><Icon name="monitor" size={10} />{profile.fingerprint_preset}</span>
                   {#if proxy}
-                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxy.country ?? proxy.name}</span>
+                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
                   {:else}
                     <span class="meta-item muted"><Icon name="wifi-off" size={10} />{$t('panel_no_proxy')}</span>
                   {/if}

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { api } from '$lib/ssh/api';
-import { formatError } from '$lib/core/utils';
+import { get } from 'svelte/store';
+import { t } from '$lib/core/i18n';
+import { explainError, explainTorMessage } from '$lib/ssh/tor-error';
 import type {
   FileEntry,
   TransferDoneEvent,
@@ -118,7 +120,7 @@ class FilesStore {
       const home = await api.fs.home();
       await Promise.all([this.navigate(0, home), this.navigate(1, home)]);
     } catch (e) {
-      this.panels[0].error = formatError(e);
+      this.panels[0].error = explainError(e, get(t));
     }
   }
 
@@ -154,7 +156,7 @@ class FilesStore {
           if (status !== 'disconnected' && status !== 'error') return;
           for (const panel of this.panels) {
             if (panel.source.kind === 'remote' && panel.source.connectionId === connection_id && !panel.loading) {
-              panel.error = error ?? panel.error;
+              panel.error = error ? explainTorMessage(error, get(t)) : panel.error;
             }
           }
         }
@@ -227,7 +229,7 @@ class FilesStore {
           : (await api.sftp.connect(source.connectionId)).home;
       await this.navigate(i, home);
     } catch (e) {
-      panel.error = formatError(e);
+      panel.error = explainError(e, get(t));
       panel.loading = false;
     }
   }
@@ -249,7 +251,7 @@ class FilesStore {
         panel.selected = [];
       }
     } catch (e) {
-      panel.error = formatError(e);
+      panel.error = explainError(e, get(t));
     } finally {
       panel.loading = false;
     }

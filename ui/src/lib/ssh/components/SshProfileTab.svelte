@@ -4,6 +4,7 @@
 <script lang="ts">
   import { api } from '$lib/ssh/api';
   import { directory } from '$lib/core/directory';
+  import { explainError } from '$lib/ssh/tor-error';
   import type { SshConnection } from '$lib/ssh/types';
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
   import SSHConnectionsList from './SSHConnectionsList.svelte';
@@ -97,7 +98,7 @@
   function handleConnect(conn: SshConnection) {
     connectError = '';
     sshStore.connect(conn.id).catch((e: unknown) => {
-      connectError = String(e);
+      connectError = explainError(e, $t);
     });
   }
 </script>

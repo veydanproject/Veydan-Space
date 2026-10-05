@@ -141,11 +141,17 @@ fn validate_export(export: &ProfileExport) -> Result<(), AppError> {
     }
 
     if let Some(proxy) = &export.proxy {
-        if !["http", "https", "socks5", "ssh"].contains(&proxy.proxy_type.as_str()) {
+        if !crate::commands::proxies::is_supported_type(&proxy.proxy_type) {
             return Err(AppError::other(format!(
                 "Invalid proxy_type: {}",
                 proxy.proxy_type
             )));
+        }
+        // The countries of a Tor proxy are read at every launch: refuse a
+        // file whose countries no launch would accept.
+        if proxy.proxy_type == crate::proxy::tor::TYPE {
+            veydan_tor::ExitSet::parse(proxy.country.as_deref().unwrap_or(""))
+                .map_err(AppError::other)?;
         }
         if proxy.port < 1 || proxy.port > 65535 {
             return Err(AppError::other(format!(
@@ -237,6 +243,25 @@ async fn insert_export(
     let p = &export.profile;
     let mut tx = core.db.begin().await.map_err(AppError::db)?;
     let proxy_id: Option<String> = if let Some(proxy_data) = &export.proxy {
+        // A Tor row is stored as the proxy form stores it, whatever the
+        // file holds in the columns Tor does not use.
+        let mut tidy = crate::models::CreateProxyRequest {
+            name: proxy_data.name.clone(),
+            proxy_type: proxy_data.proxy_type.clone(),
+            host: proxy_data.host.clone(),
+            port: proxy_data.port,
+            tags: None,
+            username: proxy_data.username.clone(),
+            password: proxy_data.password.clone(),
+            country: proxy_data.country.clone(),
+            city: proxy_data.city.clone(),
+            private_key: None,
+        };
+        crate::proxy::tor::normalize(&mut tidy).map_err(AppError::other)?;
+        if tidy.proxy_type == crate::proxy::tor::TYPE {
+            tidy.password = None;
+        }
+        let proxy_data = &tidy;
         let pid = uuid::Uuid::new_v4().to_string();
         let tags_json = format!("[\"workspace:{}\"]", workspace_id);
         sqlx::query(

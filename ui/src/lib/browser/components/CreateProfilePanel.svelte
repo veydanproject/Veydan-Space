@@ -28,7 +28,7 @@
   const proxyOptions = $derived.by(() => {
     const ws = proxies.filter(p => p.tags.includes(wsTag));
     const other = proxies.filter(p => !p.tags.includes(wsTag));
-    const toOpt = (p: Proxy) => ({ label: proxyOptionLabel(p), value: p.id });
+    const toOpt = (p: Proxy) => ({ label: proxyOptionLabel(p, $t), value: p.id });
     return [
       { label: $t('profile_proxy_none'), value: null as string | null },
       ...ws.map(toOpt),

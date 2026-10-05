@@ -8,7 +8,7 @@
   import type { CreateProxyRequest, Proxy } from '$lib/browser/types';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import { registry } from '$lib/core/registry';
-  import { formatError } from '$lib/core/utils';
+  import { explainError } from '$lib/browser/tor-error';
 
   interface Props {
     proxy?: Proxy | null;
@@ -42,20 +42,69 @@
     tags: proxy ? proxy.tags : (workspaceId ? [`workspace:${workspaceId}`] : []),
   })));
 
+  // A Tor row names no server: the backend stores this placeholder and no credentials.
+  const TOR_HOST = '127.0.0.1';
+  const TOR_PORT = 9050;
+  const isTorType = $derived(form.proxy_type === 'tor');
+
+  /** Exit countries: empty (any country) or two ASCII letters each, as the backend checks them. */
+  const countriesValid = $derived(
+    !(form.country ?? '').trim() || (form.country ?? '').split(',').every((c) => /^[A-Za-z]{2}$/.test(c.trim())),
+  );
+
+  function setType(next: string) {
+    const prev = form.proxy_type;
+    if (next === prev) return;
+    form.proxy_type = next;
+    if (next === 'tor') {
+      form.host = TOR_HOST;
+      form.port = TOR_PORT;
+      form.username = null;
+      form.password = null;
+      form.private_key = null;
+      form.country = null;
+      form.city = null;
+    } else if (prev === 'tor') {
+      form.host = '';
+      form.port = next === 'ssh' ? 22 : 1080;
+      form.country = null;
+    } else {
+      if (next === 'ssh' && (form.port === 1080 || form.port === 8080)) form.port = 22;
+      if (next !== 'ssh' && form.port === 22) form.port = 1080;
+    }
+  }
+
   async function submit() {
-    if (!form.name.trim() || !form.host.trim()) {
+    if (!form.name.trim() || (!isTorType && !form.host.trim())) {
       error = $t('proxy_error_fields');
       return;
     }
+    if (isTorType && !countriesValid) {
+      error = $t('proxy_tor_countries_invalid');
+      return;
+    }
+    const body: CreateProxyRequest = isTorType
+      ? {
+          ...form,
+          host: TOR_HOST,
+          port: TOR_PORT,
+          username: null,
+          // '' clears a secret the row had before it became a Tor row.
+          password: proxy?.has_password ? '' : null,
+          private_key: proxy?.has_private_key ? '' : null,
+          country: (form.country ?? '').trim() || null,
+          city: null,
+        }
+      : form;
     saving = true;
     error = '';
     try {
       const result = isEdit
-        ? await api.proxies.update(proxy!.id, form)
-        : await api.proxies.create(form);
+        ? await api.proxies.update(proxy!.id, body)
+        : await api.proxies.create(body);
       onsaved(result);
     } catch (e) {
-      error = formatError(e);
+      error = explainError(e, $t);
     } finally {
       saving = false;
     }
@@ -71,17 +120,13 @@
         <div class="section">
           <div class="section-label">{$t('proxy_field_type')}</div>
           <div class="type-row">
-            {#each ['http', 'https', 'socks5', 'ssh'] as t_}
+            {#each ['http', 'https', 'socks5', 'ssh', 'tor'] as t_}
               <button
                 type="button"
                 class="type-btn"
                 class:active={form.proxy_type === t_}
-                onclick={() => {
-                  form.proxy_type = t_;
-                  if (t_ === 'ssh' && (form.port === 1080 || form.port === 8080)) form.port = 22;
-                  if (t_ !== 'ssh' && form.port === 22) form.port = 1080;
-                }}
-              >{t_.toUpperCase()}</button>
+                onclick={() => setType(t_)}
+              >{t_ === 'tor' ? 'Tor' : t_.toUpperCase()}</button>
             {/each}
           </div>
         </div>
@@ -101,6 +146,7 @@
             />
           </div>
 
+          {#if !isTorType}
           <div class="form-row">
             <div class="form-group host-group">
               <label for="pp-host">{$t('proxy_field_host')} *</label>
@@ -111,8 +157,33 @@
               <input id="pp-port" type="number" bind:value={form.port} min="1" max="65535" />
             </div>
           </div>
+          {/if}
         </div>
 
+        {#if isTorType}
+        <div class="divider"></div>
+        <div class="section">
+          <div class="section-label">{$t('proxy_tor_countries')}</div>
+          <div class="form-group">
+            <input
+              id="pp-tor-countries"
+              type="text"
+              bind:value={form.country}
+              placeholder={$t('proxy_tor_countries_placeholder')}
+              aria-invalid={!countriesValid}
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          {#if countriesValid}
+            <div class="field-hint">{$t('proxy_tor_countries_hint')}</div>
+          {:else}
+            <div class="field-hint field-hint--error">{$t('proxy_tor_countries_invalid')}</div>
+          {/if}
+          <div class="field-hint">{$t('proxy_tor_about')}</div>
+          <div class="field-hint">{$t('proxy_tor_note')}</div>
+        </div>
+        {:else}
         <div class="divider"></div>
 
         <div class="section">
@@ -169,6 +240,7 @@
             </div>
           </div>
         </div>
+        {/if}
 
         <div class="form-actions">
           <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('proxy_btn_cancel')}</button>
@@ -211,6 +283,7 @@
   .field-hint {
     font-size: var(--fs-2xs); color: var(--text-faint); margin-top: -0.25rem;
   }
+  .field-hint--error { color: var(--danger-text); }
   .link-btn {
     align-self: flex-start; background: none; border: none; padding: 0; margin-top: 0.25rem; cursor: pointer;
     font-size: var(--fs-2xs); color: var(--text-faint); text-decoration: underline;

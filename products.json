@@ -69,6 +69,19 @@
         "desktop"
       ],
       "service": true
+    },
+    "tor": {
+      "ui": "ui/src/lib/tor",
+      "routes": [
+        "ui/src/routes/(desktop)/tor"
+      ],
+      "crates": [
+        "crates/tor"
+      ],
+      "platforms": [
+        "desktop"
+      ],
+      "service": true
     }
   },
   "targets": {
@@ -85,7 +98,8 @@
         "notes",
         "pass",
         "messenger",
-        "backup"
+        "backup",
+        "tor"
       ],
       "identifier": "net.veydan.space",
       "androidIdentifier": "net.veydan.mobile",

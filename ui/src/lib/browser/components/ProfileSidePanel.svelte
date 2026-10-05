@@ -7,12 +7,14 @@
   import { api, leaseHolder } from '$lib/browser/api';
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
+  import { proxyChip } from '$lib/browser/proxy-label';
   import Icon from '$lib/core/Icon.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import Modal from '$lib/core/ui/Modal.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import ExportProfileModal from '$lib/browser/components/ExportProfileModal.svelte';
   import { registry } from '$lib/core/registry';
+  import { explainError } from '$lib/browser/tor-error';
   import { formatError, relTime as fmtRelTime, formatDateTime } from '$lib/core/utils';
 
   interface Props {
@@ -105,7 +107,7 @@
     } catch (e) {
       const holder = leaseHolder(e);
       if (holder !== null) leaseBlockedBy = holder;
-      else error = formatError(e);
+      else error = explainError(e, $t);
     }
     finally { actionLoading = false; }
   }
@@ -220,8 +222,8 @@
             {#if proxy}
               <Icon name="globe" size={12} />
               {proxy.name}
-              {#if proxy.country}
-                <span class="country-badge">{proxy.country}</span>
+              {#if proxyChip(proxy)}
+                <span class="country-badge">{proxyChip(proxy)}</span>
               {/if}
             {:else}
               <Icon name="wifi-off" size={12} />

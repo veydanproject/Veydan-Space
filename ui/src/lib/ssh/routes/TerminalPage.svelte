@@ -14,7 +14,7 @@
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
   import { directory } from '$lib/core/directory';
   import { api } from '$lib/ssh/api';
-  import { formatError } from '$lib/core/utils';
+  import { explainError } from '$lib/ssh/tor-error';
 
   const PAGE_SIZE = 20;
 
@@ -33,7 +33,7 @@
   onMount(async () => {
     loading = true;
     try { await Promise.all([sshStore.ensureLoaded(), directory.get('proxy')?.ensureLoaded()]); }
-    catch (e) { error = formatError(e); }
+    catch (e) { error = explainError(e, $t); }
     finally { loading = false; }
   });
 
@@ -71,7 +71,7 @@
     try {
       await sshStore.connect(conn.id);
     } catch (e) {
-      error = formatError(e);
+      error = explainError(e, $t);
     } finally {
       connectingId = null;
     }
@@ -91,7 +91,7 @@
       await api.ssh.connectionDelete(deleteModal.id);
       sshStore.connections = sshStore.connections.filter((c) => c.id !== deleteModal.id);
     } catch (e) {
-      error = formatError(e);
+      error = explainError(e, $t);
     } finally {
       deleteModal = { open: false, id: '', name: '' };
     }

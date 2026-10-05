@@ -4,6 +4,12 @@
 use crate::models::{Profile, Proxy};
 
 pub fn generate(profile: &Profile, proxy: Option<&Proxy>) -> String {
+    generate_with(profile, proxy, false)
+}
+
+/// `via_tor`: the proxy leads to Tor. The prefs Tor needs come last, and in
+/// user.js the last value of a pref is the one that holds.
+pub fn generate_with(profile: &Profile, proxy: Option<&Proxy>, via_tor: bool) -> String {
     let mut prefs: Vec<String> = vec![
         // Basic privacy
         pref_bool("privacy.resistFingerprinting", false),
@@ -158,7 +164,30 @@ pub fn generate(profile: &Profile, proxy: Option<&Proxy>) -> String {
     prefs.push(pref_int("extensions.autoDisableScopes", 0));
     prefs.push(pref_int("extensions.enabledScopes", 5));
 
+    if via_tor {
+        apply_tor_prefs(&mut prefs);
+    }
+
     prefs.join("\n")
+}
+
+/// What a profile behind Tor needs whatever its own settings say.
+fn apply_tor_prefs(prefs: &mut Vec<String>) {
+    // WebRTC talks UDP, which Tor does not carry: left on, it would go
+    // around the proxy with the real address.
+    prefs.push(pref_bool("media.peerconnection.enabled", false));
+    // Onion names are resolved by tor: the relay hands the name over as it is.
+    prefs.push(pref_bool("network.dns.blockDotOnion", false));
+    // No DNS of the browser's own beside the proxy: no DNS over HTTPS, no
+    // prefetch of names, no speculative connections.
+    prefs.push(pref_int("network.trr.mode", 5));
+    prefs.push(pref_bool("network.dns.disablePrefetch", true));
+    prefs.push(pref_bool("network.dns.disablePrefetchFromHTTPS", true));
+    prefs.push(pref_bool("network.predictor.enabled", false));
+    prefs.push(pref_bool("network.prefetch-next", false));
+    prefs.push(pref_int("network.http.speculative-parallel-limit", 0));
+    // HTTP/3 is UDP too.
+    prefs.push(pref_bool("network.http.http3.enable", false));
 }
 
 fn apply_proxy_prefs(prefs: &mut Vec<String>, proxy: &Proxy) {
@@ -371,6 +400,32 @@ mod tests {
         assert!(js.contains("user_pref(\"network.proxy.socks\", \"10.0.0.1\");"));
         assert!(js.contains("user_pref(\"network.proxy.socks_port\", 9050);"));
         assert!(js.contains("user_pref(\"network.proxy.socks_remote_dns\", true);"));
+    }
+
+    #[test]
+    fn a_profile_behind_tor_has_no_webrtc_whatever_it_asks_for() {
+        let mut p = Profile::test_default();
+        let mut proxy = Proxy::test_default();
+        proxy.proxy_type = "http".into();
+        for mode in ["disable", "proxy_only", "real_ip"] {
+            p.webrtc_mode = mode.into();
+            let js = generate_with(&p, Some(&proxy), true);
+            let last = js
+                .lines()
+                .rfind(|l| l.contains("\"media.peerconnection.enabled\""))
+                .unwrap();
+            assert_eq!(last, "user_pref(\"media.peerconnection.enabled\", false);", "{mode}");
+            assert!(js.contains("user_pref(\"network.dns.blockDotOnion\", false);"));
+            assert!(js.contains("user_pref(\"network.trr.mode\", 5);"));
+            assert!(js.contains("user_pref(\"network.http.http3.enable\", false);"));
+        }
+    }
+
+    #[test]
+    fn a_profile_not_behind_tor_gets_none_of_the_tor_prefs() {
+        let js = generate(&Profile::test_default(), Some(&Proxy::test_default()));
+        assert!(!js.contains("blockDotOnion"));
+        assert!(!js.contains("network.trr.mode"));
     }
 
     #[test]

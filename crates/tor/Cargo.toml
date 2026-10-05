@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-tor"
+description = "The module Tor: the tor daemon of the Tor Expert Bundle, where its files come from and their installation"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[build-dependencies]
+veydan-build-cfg = { path = "../build-cfg" }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+# The settings value and pt_config.json of the bundle.
+serde_json = "1"
+# The processes of tor, their output and the control port.
+tokio = { version = "1", features = ["sync", "macros", "rt", "process", "io-util", "net", "time", "fs"] }
+# The SOCKS password of a lease.
+getrandom = "0.3"
+# Errors and the data directory.
+veydan-core = { path = "../core" }
+# The module contract.
+veydan-shell = { path = "../shell" }
+
+# ── Desktop only: the bundle is downloaded and unpacked by the app ─────────
+# On Android the binary ships in the APK (a later stage).
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+reqwest = { version = "0.13", features = ["stream"] }
+futures-util = "0.3"
+# The checksum a download or a chosen archive is held against.
+sha2 = "0.11"
+tar = "0.4"
+flate2 = "1"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# The integration test fetches a page through the SOCKS port of tor.
+reqwest = { version = "0.13", features = ["socks"] }

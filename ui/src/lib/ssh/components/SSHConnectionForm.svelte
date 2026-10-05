@@ -14,6 +14,7 @@
   import { t } from '$lib/core/i18n';
   import { registry } from '$lib/core/registry';
   import { directory } from '$lib/core/directory';
+  import { explainError } from '$lib/ssh/tor-error';
 
   interface Props {
     connection?: SshConnection | null;
@@ -32,7 +33,7 @@
   }: Props = $props();
 
   // Proxies, workspaces and TOTP entries come through the catalog of entities (their owners are other modules).
-  let proxies = $state<{ id: string; name: string; proxy_type: string }[]>([]);
+  let proxies = $state<{ id: string; name: string; proxy_type: string; subtitle: string }[]>([]);
   let workspaces = $state<{ id: string; name: string }[]>([]);
   let totpEntries = $state<{ id: string; name: string; issuer: string }[]>([]);
   let sshKeys = $state<SshKey[]>([]);
@@ -92,7 +93,7 @@
 
   $effect(() => {
     directory.ensureLoaded().then(() => {
-      proxies = directory.list('proxy').map((p) => ({ id: p.id, name: p.name, proxy_type: directory.fields('proxy', p.id).type ?? '' }));
+      proxies = directory.list('proxy').map((p) => ({ id: p.id, name: p.name, proxy_type: directory.fields('proxy', p.id).type ?? '', subtitle: p.subtitle }));
       workspaces = directory.list('workspace').map((w) => ({ id: w.id, name: w.name }));
       totpEntries = directory.list('totp').map((e) => {
         const fields = directory.fields('totp', e.id);
@@ -170,7 +171,7 @@
       }
       onSave(conn);
     } catch (e: unknown) {
-      error = String(e);
+      error = explainError(e, $t);
     } finally {
       saving = false;
     }
@@ -365,7 +366,8 @@
         <option value={proxyId} disabled>{$t('ssh_proxy_missing')}</option>
       {/if}
       {#each proxies as p}
-        <option value={p.id}>[{p.proxy_type}] {p.name}</option>
+        <!-- A Tor row names no server: its subtitle (`Tor · DE, NL`) says which exit countries it uses. -->
+        <option value={p.id}>[{p.proxy_type === 'tor' ? p.subtitle : p.proxy_type}] {p.name}</option>
       {/each}
     </select>
     {#if danglingProxy}

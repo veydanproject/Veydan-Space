@@ -1181,13 +1181,22 @@ async fn http_connect_tunnel(
 /// presented (TOFU: pin it via `persist_connect_success` after auth succeeds).
 /// If a pinned fingerprint doesn't match, this fails with a
 /// `HOST_KEY_MISMATCH`-marked error the frontend recognizes.
+/// What a transport needs kept for as long as the session lives: the session
+/// of the jump host, or the lease of the tor instance. Never read, only held.
+#[allow(dead_code)]
+pub(crate) enum TransportHold {
+    Jump(crate::proxy::ssh::SharedSession),
+    Tor(veydan_tor::Lease),
+}
+
 pub(crate) async fn establish_transport(
     conn: &SshConnection,
     proxy: Option<&crate::models::Proxy>,
     config: Arc<client::Config>,
     db: &sqlx::SqlitePool,
+    tor: &veydan_tor::TorManager,
 ) -> anyhow::Result<(
-    Option<crate::proxy::ssh::SharedSession>,
+    Option<TransportHold>,
     client::Handle<TerminalHandler>,
     Option<String>,
 )> {
@@ -1200,11 +1209,28 @@ pub(crate) async fn establish_transport(
         received_fingerprint: Arc::clone(&received),
     };
 
-    let result: anyhow::Result<(
-        Option<crate::proxy::ssh::SharedSession>,
-        client::Handle<TerminalHandler>,
-    )> = async {
+    let result: anyhow::Result<(Option<TransportHold>, client::Handle<TerminalHandler>)> = async {
         Ok(match proxy {
+            // Tor: the instance of the row's exit countries, with circuits
+            // of this connection's own. No lease, no connection.
+            Some(p) if crate::proxy::tor::is_tor(p) => {
+                let lease = crate::proxy::tor::lease(tor, p, &format!("ssh:{}", conn.id))
+                    .await
+                    .map_err(anyhow::Error::msg)?;
+                let stream = crate::proxy::local::socks5_connect(
+                    "127.0.0.1",
+                    lease.socks_port,
+                    host,
+                    port,
+                    Some(&lease.username),
+                    Some(&lease.password),
+                )
+                .await?;
+                (
+                    Some(TransportHold::Tor(lease)),
+                    client::connect_stream(config, stream, make_handler()).await?,
+                )
+            }
             Some(p) if p.proxy_type == "socks5" => {
                 let stream = crate::proxy::local::socks5_connect(
                     &p.host,
@@ -1240,7 +1266,7 @@ pub(crate) async fn establish_transport(
                 // Keep the jump session Arc alive — dropping it would close the tunnel
                 let session_arc = jump_result.session.clone();
                 (
-                    Some(session_arc),
+                    Some(TransportHold::Jump(session_arc)),
                     client::connect_stream(config, stream, make_handler()).await?,
                 )
             }
@@ -1350,9 +1376,10 @@ async fn run_session(
 ) -> anyhow::Result<()> {
     let config = Arc::new(client::Config::default());
 
-    // _jump_session keeps the Arc alive for the duration of the session
-    let (_jump_session, mut handle, received_fp) =
-        establish_transport(conn, proxy.as_ref(), config, &db).await?;
+    let tor = app.state::<veydan_tor::TorManager>().inner().clone();
+    // _hold keeps the jump session or the tor lease for the duration of the session
+    let (_hold, mut handle, received_fp) =
+        establish_transport(conn, proxy.as_ref(), config, &db, &tor).await?;
     confirm_host_key(app, session_id, conn, received_fp.as_deref(), &mut rx).await?;
 
     // Authenticate

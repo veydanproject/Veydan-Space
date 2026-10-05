@@ -29,6 +29,8 @@
   import { profilesStore } from '$lib/browser/store/profiles.svelte';
   import { proxiesStore } from '$lib/browser/store/proxies.svelte';
   import { formatError } from '$lib/core/utils';
+  import { explainError } from '$lib/browser/tor-error';
+  import ProxyAddress from '$lib/browser/components/ProxyAddress.svelte';
   import { registry } from '$lib/core/registry';
 
   let workspaceId = $derived($page.params.id ?? '');
@@ -209,7 +211,7 @@
 
       proxies = proxiesStore.byWorkspace(workspaceId);
     } catch (e) {
-      proxyCheckResults = { ...proxyCheckResults, [id]: { ip: '', country: null, city: null, ok: false, checking: false, err: formatError(e) } };
+      proxyCheckResults = { ...proxyCheckResults, [id]: { ip: '', country: null, city: null, ok: false, checking: false, err: explainError(e, $t) } };
       proxiesStore.markFailed(id);
       proxies = proxiesStore.byWorkspace(workspaceId);
     }
@@ -461,7 +463,7 @@
                         <td class="col-type">
                           <span class="type-badge type-{proxy.proxy_type}">{proxy.proxy_type}</span>
                         </td>
-                        <td><code class="host-code">{proxy.host}:{proxy.port}</code></td>
+                        <td><ProxyAddress {proxy} {result} /></td>
                         <td class="col-status">
                           <span class="status-badge status-{proxy.status}">{proxy.status}</span>
                         </td>
@@ -681,10 +683,6 @@
 
   .row-num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
   .proxy-name { font-weight: var(--fw-semibold); display: block; }
-  .host-code {
-    font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body);
-    background: var(--surface-2); padding: 5px 10px; border-radius: 7px;
-  }
 
   /* Proxy type badges: http → blue tint, socks5 → purple tint (design) */
   .type-badge {
@@ -695,6 +693,7 @@
   }
   .type-http, .type-https { background: color-mix(in srgb, var(--cat-blue) 14%, transparent); color: var(--cat-blue); }
   .type-socks5 { background: var(--accent-tint); color: var(--accent-text-2); }
+  .type-tor { background: var(--accent-tint); color: var(--accent-text-2); }
 
   .status-badge {
     display: inline-flex; align-items: center; gap: 7px;

@@ -62,9 +62,15 @@ pub async fn proxy_export_url(id: String, core: tauri::State<'_, Core>) -> CmdRe
 
 #[tauri::command]
 pub async fn proxy_create(
-    req: CreateProxyRequest,
+    mut req: CreateProxyRequest,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<Proxy> {
+    crate::proxy::tor::normalize(&mut req).map_err(AppError::proxy)?;
+    if req.proxy_type == crate::proxy::tor::TYPE {
+        // A new row has no stored secret to keep: no value, not an empty one.
+        req.password = None;
+        req.private_key = None;
+    }
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
     let tags_json =
@@ -447,9 +453,10 @@ mod tests {
 #[tauri::command]
 pub async fn proxy_update(
     id: String,
-    req: CreateProxyRequest,
+    mut req: CreateProxyRequest,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<Proxy> {
+    crate::proxy::tor::normalize(&mut req).map_err(AppError::proxy)?;
     let tags_json =
         serde_json::to_string(&req.tags.unwrap_or_default()).map_err(AppError::other)?;
 
@@ -511,7 +518,7 @@ pub async fn pin_ssh_fingerprint(
 /// (terminal + SFTP) and `browser::profile_launcher::setup_proxy` (browser).
 /// Adding a type here without wiring both paths reintroduces the silent
 /// direct-connection fallback this list exists to prevent.
-pub const SUPPORTED_PROXY_TYPES: [&str; 4] = ["http", "https", "socks5", "ssh"];
+pub const SUPPORTED_PROXY_TYPES: [&str; 5] = ["http", "https", "socks5", "ssh", "tor"];
 
 pub fn is_supported_type(proxy_type: &str) -> bool {
     SUPPORTED_PROXY_TYPES.contains(&proxy_type)
@@ -621,7 +628,11 @@ pub async fn proxy_delete(id: String, core: tauri::State<'_, Core>) -> CmdResult
 }
 
 #[tauri::command]
-pub async fn proxy_check(id: String, core: tauri::State<'_, Core>) -> CmdResult<ProxyCheckResult> {
+pub async fn proxy_check(
+    id: String,
+    core: tauri::State<'_, Core>,
+    tor: tauri::State<'_, veydan_tor::TorManager>,
+) -> CmdResult<ProxyCheckResult> {
     let proxy = sqlx::query_as::<_, Proxy>("SELECT * FROM proxies WHERE id = ?")
         .bind(&id)
         .fetch_optional(&core.db)
@@ -629,7 +640,9 @@ pub async fn proxy_check(id: String, core: tauri::State<'_, Core>) -> CmdResult<
         .map_err(AppError::db)?
         .ok_or_else(|| AppError::not_found("Proxy not found"))?;
 
-    let result = check::check_proxy(&proxy).await.map_err(AppError::proxy)?;
+    let result = check::check_proxy(&proxy, &tor)
+        .await
+        .map_err(AppError::proxy)?;
 
     // For SSH proxies with a new fingerprint — do NOT save status yet,
     // the frontend must prompt the user to confirm the fingerprint first.
@@ -638,6 +651,13 @@ pub async fn proxy_check(id: String, core: tauri::State<'_, Core>) -> CmdResult<
     }
 
     let status = if result.ok { "active" } else { "error" };
+    // The country of a Tor row is the exits the user asked for, and empty
+    // means any: where this check happened to come out is not written there.
+    let (country, city) = if crate::proxy::tor::is_tor(&proxy) {
+        (None, None)
+    } else {
+        (result.country.clone(), result.city.clone())
+    };
     sqlx::query(
         "UPDATE proxies SET
             status = ?,
@@ -649,8 +669,8 @@ pub async fn proxy_check(id: String, core: tauri::State<'_, Core>) -> CmdResult<
     )
     .bind(status)
     .bind(&result.ip)
-    .bind(&result.country)
-    .bind(&result.city)
+    .bind(&country)
+    .bind(&city)
     .bind(&id)
     .execute(&core.db)
     .await

@@ -7,6 +7,7 @@
   import type { SshConnection } from '$lib/ssh/types';
   import { api } from '$lib/ssh/api';
   import { directory } from '$lib/core/directory';
+  import { explainError } from '$lib/ssh/tor-error';
   import Icon from '$lib/core/Icon.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import SSHConnectionsList from './SSHConnectionsList.svelte';
@@ -97,7 +98,7 @@
       await sshStore.connect(conn.id);
       open = false;
     } catch (e: unknown) {
-      connectError = String(e);
+      connectError = explainError(e, $t);
     } finally {
       connecting = null;
     }

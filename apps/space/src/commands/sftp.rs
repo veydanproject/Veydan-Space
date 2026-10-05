@@ -34,7 +34,7 @@ pub struct SftpSessionState {
     pub sftp: SftpSession,
     /// Kept alive so the SSH transport (and jump tunnel, if any) stays open.
     handle: client::Handle<TerminalHandler>,
-    _jump: Option<crate::proxy::ssh::SharedSession>,
+    _jump: Option<crate::commands::ssh::TransportHold>,
 }
 
 #[derive(Default)]
@@ -226,8 +226,22 @@ async fn do_connect(
 
     let timeout = std::time::Duration::from_secs(conn.connect_timeout_sec.max(1) as u64);
 
+    let tor = tauri::Manager::state::<veydan_tor::TorManager>(app)
+        .inner()
+        .clone();
+    // Tor may have to start and connect first, which takes longer than a
+    // connect timeout is set for: that wait is not counted against it. The
+    // lease taken here keeps the instance up until the transport has its own.
+    let _tor_ready = match proxy {
+        Some(p) if crate::proxy::tor::is_tor(p) => Some(
+            crate::proxy::tor::lease(&tor, p, &format!("ssh:{}", conn.id))
+                .await
+                .map_err(anyhow::Error::msg)?,
+        ),
+        _ => None,
+    };
     let (jump, mut handle, received_fp) =
-        tokio::time::timeout(timeout, establish_transport(conn, proxy, config, &core.db))
+        tokio::time::timeout(timeout, establish_transport(conn, proxy, config, &core.db, &tor))
             .await
             .map_err(|_| anyhow::anyhow!("Connection timeout ({}s)", timeout.as_secs()))??;
 

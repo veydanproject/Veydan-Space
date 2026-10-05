@@ -8130,8 +8130,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "veydan-tor"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "futures-util",
+ "getrandom 0.3.4",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tauri",
+ "tempfile",
+ "tokio",
+ "veydan-build-cfg",
+ "veydan-core",
+ "veydan-shell",
+]
+
+[[package]]
 name = "veydanspace"
-version = "5.0.1"
+version = "5.0.2"
 dependencies = [
  "age",
  "anyhow",
@@ -8172,6 +8192,7 @@ dependencies = [
  "veydan-shell",
  "veydan-sync",
  "veydan-sync-host",
+ "veydan-tor",
  "which",
  "zip 8.6.0",
  "zstd",
@@ -8179,8 +8200,8 @@ dependencies = [
 
 [[package]]
 name = "vlink-client"
-version = "0.1.1"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.1.1#61a8c42819e162b99175046b95c17aafbae81a29"
+version = "0.1.2"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.1.2#f6555f7b6536c6694ef01c8620677e5f7fdf37dd"
 dependencies = [
  "bytes",
  "h2",
@@ -8194,8 +8215,8 @@ dependencies = [
 
 [[package]]
 name = "vlink-proto"
-version = "0.1.1"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.1.1#61a8c42819e162b99175046b95c17aafbae81a29"
+version = "0.1.2"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.1.2#f6555f7b6536c6694ef01c8620677e5f7fdf37dd"
 dependencies = [
  "bytes",
  "h2",

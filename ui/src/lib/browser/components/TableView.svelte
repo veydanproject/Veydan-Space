@@ -9,6 +9,7 @@
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { formatDateTime } from '$lib/core/utils';
+  import { proxyChip, proxyTypeName } from '$lib/browser/proxy-label';
 
   interface Props {
     profiles: Profile[];
@@ -190,11 +191,11 @@
             <td class="td-proxy">
               {#if proxy}
                 <div class="proxy-info">
-                  {#if proxy.country}
-                    <span class="country-chip">{proxy.country}</span>
+                  {#if proxyChip(proxy)}
+                    <span class="country-chip">{proxyChip(proxy)}</span>
                   {/if}
                   <span class="proxy-name">{proxy.name}</span>
-                  <span class="proxy-type">{proxy.proxy_type}</span>
+                  <span class="proxy-type">{proxyTypeName(proxy)}</span>
                 </div>
               {:else}
                 <span class="no-proxy">

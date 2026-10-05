@@ -12,6 +12,8 @@
   import BulkImportProxyModal from '$lib/browser/components/BulkImportProxyModal.svelte';
   import { proxiesStore } from '$lib/browser/store/proxies.svelte';
   import { formatError } from '$lib/core/utils';
+  import { explainError } from '$lib/browser/tor-error';
+  import ProxyAddress from '$lib/browser/components/ProxyAddress.svelte';
 
   const PAGE_SIZE = 20;
 
@@ -51,6 +53,7 @@
       return (
         p.name.toLowerCase().includes(q) ||
         p.host.toLowerCase().includes(q) ||
+        (p.proxy_type === 'tor' && 'tor'.includes(q)) ||
         (p.country ?? '').toLowerCase().includes(q) ||
         (p.last_ip ?? '').includes(q)
       );
@@ -92,7 +95,7 @@
         };
       });
     } catch (e) {
-      checkResults = { ...checkResults, [id]: { ip: '', country: null, city: null, ok: false, checking: false, err: formatError(e) } };
+      checkResults = { ...checkResults, [id]: { ip: '', country: null, city: null, ok: false, checking: false, err: explainError(e, $t) } };
       proxiesStore.list = proxiesStore.list.map((p) => p.id === id ? { ...p, status: 'failed' } : p);
     }
   }
@@ -174,6 +177,7 @@
       <option value="https">HTTPS</option>
       <option value="socks5">SOCKS5</option>
       <option value="ssh">SSH</option>
+      <option value="tor">{'Tor'}</option>
     </select>
     <select bind:value={filterStatus} class="filter-select">
       <option value="all">{$t('proxies_filter_all_statuses')}</option>
@@ -226,7 +230,7 @@
                 <span class="type-badge type-{proxy.proxy_type}">{proxy.proxy_type}</span>
               </td>
               <td class="col-host">
-                <code>{proxy.host}:{proxy.port}</code>
+                <ProxyAddress {proxy} {result} />
               </td>
               <td class="col-status">
                 <span class="status-badge status-{proxy.status}">{$t(`proxies_filter_${proxy.status}`)}</span>
@@ -354,11 +358,6 @@
 
   .proxy-name { font-weight: var(--fw-semibold); font-size: 0.9rem; color: var(--text); display: block; }
 
-  code {
-    font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body);
-    background: var(--surface-2); padding: 5px 10px; border-radius: 7px;
-  }
-
   /* Proxy type badges: http → blue tint, socks5 → purple tint (design) */
   .type-badge {
     font-family: var(--font-mono);
@@ -368,6 +367,7 @@
   }
   .type-http, .type-https { background: color-mix(in srgb, var(--cat-blue) 14%, transparent); color: var(--cat-blue); }
   .type-socks5 { background: var(--accent-tint); color: var(--accent-text-2); }
+  .type-tor { background: var(--accent-tint); color: var(--accent-text-2); }
 
   .status-badge {
     display: inline-flex; align-items: center; gap: 7px;

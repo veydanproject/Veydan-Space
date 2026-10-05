@@ -10,6 +10,7 @@
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
   import { api } from '$lib/ssh/api';
+  import { explainTorMessage } from '$lib/ssh/tor-error';
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
   import { parseHostKeyMismatch } from '$lib/core/utils';
@@ -298,7 +299,7 @@
       {:else}
         <div class="disconnected-banner">
           <Icon name="wifi-off" size={13} />
-          {session?.error ? $t('ssh_terminal_error', { msg: session.error }) : $t('ssh_terminal_closed')}
+          {session?.error ? $t('ssh_terminal_error', { msg: explainTorMessage(session.error, $t) }) : $t('ssh_terminal_closed')}
           <button class="btn-primary btn-sm" onclick={reconnect}>{$t('ssh_btn_reconnect')}</button>
         </div>
       {/if}

@@ -3,15 +3,15 @@
 
 //! Veydan Space: the product crate. It holds the Tauri config, the strings of
 //! the product, the plan of its sync and the list of its modules — the
-//! crates of notes, pass and the messenger, and the modules that live here
-//! (`modules`): browser and ssh, the services backup and capture;
-//! `veydan_shell` starts them. What each module keeps in a backup is its
-//! `Module::backup`: browser the profiles, notes its folders, the messenger
-//! its folder.
+//! crates of notes, pass and the messenger, the crate of the service tor,
+//! and the modules that live here (`modules`): browser and ssh, the
+//! services backup and capture; `veydan_shell` starts them. What each module
+//! keeps in a backup is its `Module::backup`: browser the profiles, notes
+//! its folders, the messenger its folder.
 //!
 //! One library for every platform. Browser profiles, proxies, SSH/SFTP,
-//! backups and the capture bridge are `cfg(desktop)`; on a phone browser and
-//! ssh keep only their tables.
+//! backups, the capture bridge and tor are `cfg(desktop)`; on a phone
+//! browser and ssh keep only their tables.
 
 #[cfg(desktop)]
 mod browser;
@@ -62,7 +62,11 @@ pub(crate) fn module_list() -> Vec<Module> {
         veydan_notes::module(),
     ];
     #[cfg(desktop)]
-    list.extend([modules::capture::module(), modules::backup::module()]);
+    list.extend([
+        modules::capture::module(),
+        modules::backup::module(),
+        veydan_tor::module(),
+    ]);
     list.push(veydan_messenger_app::module());
     list
 }

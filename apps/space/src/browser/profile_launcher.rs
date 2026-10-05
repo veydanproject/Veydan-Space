@@ -159,9 +159,16 @@ pub async fn launch_profile(
     std::fs::create_dir_all(&firefox_profile_dir).map_err(err)?;
     repair_ui_customization_state(&firefox_profile_dir);
 
-    let (effective_proxy, local_proxy_stop) = setup_proxy(proxy, &core.db).await?;
+    let tor = tauri::Manager::state::<veydan_tor::TorManager>(&app_handle)
+        .inner()
+        .clone();
+    let (effective_proxy, local_proxy_stop) =
+        setup_proxy(proxy, &core.db, &tor, &profile.id).await?;
 
-    let user_js_content = userjs::generate(profile, effective_proxy.as_ref());
+    // The effective proxy is the local relay whatever stands behind it, so
+    // that the relay leads to Tor is told apart here.
+    let via_tor = proxy.is_some_and(crate::proxy::tor::is_tor);
+    let user_js_content = userjs::generate_with(profile, effective_proxy.as_ref(), via_tor);
     std::fs::write(firefox_profile_dir.join("user.js"), user_js_content).map_err(err)?;
 
     // Notes capture extension, carries this profile's id and the app UI language
@@ -214,8 +221,29 @@ pub async fn launch_profile(
 async fn setup_proxy(
     proxy: Option<&Proxy>,
     db: &sqlx::SqlitePool,
+    tor: &veydan_tor::TorManager,
+    profile_id: &str,
 ) -> Result<(Option<Proxy>, Option<tokio::sync::oneshot::Sender<()>>), String> {
     match proxy {
+        // Tor: the instance of the row's exit countries is started and
+        // connected first. Tor that is not installed or does not connect
+        // fails the launch; nothing below runs without the lease.
+        Some(p) if crate::proxy::tor::is_tor(p) => {
+            let lease = crate::proxy::tor::lease(tor, p, profile_id).await?;
+            let upstream = crate::proxy::local::Upstream::Tor { lease };
+            match crate::proxy::local::spawn(upstream).await {
+                Ok((local_port, stop_tx)) => {
+                    let mut local_p = p.clone();
+                    local_p.proxy_type = "http".to_string();
+                    local_p.host = "127.0.0.1".to_string();
+                    local_p.port = local_port as i64;
+                    local_p.username = None;
+                    local_p.password = None;
+                    Ok((Some(local_p), Some(stop_tx)))
+                }
+                Err(e) => Err(format!("Failed to start local proxy: {e}")),
+            }
+        }
         Some(p) if matches!(p.proxy_type.as_str(), "http" | "https") => {
             let upstream = crate::proxy::local::Upstream::Http {
                 host: p.host.clone(),

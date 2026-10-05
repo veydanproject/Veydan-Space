@@ -15,9 +15,12 @@ struct GeoResponse {
     city: Option<String>,
 }
 
-pub async fn check_proxy(proxy: &Proxy) -> Result<ProxyCheckResult> {
+pub async fn check_proxy(proxy: &Proxy, tor: &veydan_tor::TorManager) -> Result<ProxyCheckResult> {
     if proxy.proxy_type == "ssh" {
         return check_ssh(proxy).await;
+    }
+    if crate::proxy::tor::is_tor(proxy) {
+        return check_tor(proxy, tor).await;
     }
 
     let geo = fetch_geo(&build_proxy_url(proxy)).await?;
@@ -64,6 +67,54 @@ async fn check_ssh(proxy: &Proxy) -> Result<ProxyCheckResult> {
         city: geo.city,
         ssh_fingerprint: Some(result.fingerprint),
         ssh_fingerprint_is_new: Some(result.is_new),
+    })
+}
+
+/// The Tor Project's own answer to "did this request come out of Tor":
+/// the geo endpoint of the other checks turns the exits of Tor away.
+const TOR_CHECK_URL: &str = "https://check.torproject.org/api/ip";
+
+#[derive(Deserialize)]
+struct TorCheckResponse {
+    #[serde(rename = "IsTor")]
+    is_tor: bool,
+    #[serde(rename = "IP")]
+    ip: Option<String>,
+}
+
+/// Tor: a request through the instance of the row's exit countries, which
+/// must come out of Tor. The address is that of the exit this check got;
+/// another consumer gets another exit, so no country or city is reported.
+async fn check_tor(proxy: &Proxy, tor: &veydan_tor::TorManager) -> Result<ProxyCheckResult> {
+    let lease = crate::proxy::tor::lease(tor, proxy, &format!("check:{}", proxy.id))
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let client = reqwest::Client::builder()
+        .proxy(reqwest::Proxy::all(format!(
+            "socks5h://{}:{}@127.0.0.1:{}",
+            lease.username, lease.password, lease.socks_port
+        ))?)
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+    let answer = client
+        .get(TOR_CHECK_URL)
+        .send()
+        .await?
+        .json::<TorCheckResponse>()
+        .await?;
+    anyhow::ensure!(
+        answer.is_tor,
+        "the request did not come out of Tor (address {})",
+        answer.ip.as_deref().unwrap_or("unknown")
+    );
+    let ip = answer.ip.unwrap_or_default();
+    Ok(ProxyCheckResult {
+        ok: !ip.is_empty(),
+        ip,
+        country: None,
+        city: None,
+        ssh_fingerprint: None,
+        ssh_fingerprint_is_new: None,
     })
 }
 

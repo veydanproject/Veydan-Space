@@ -14,7 +14,8 @@
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
   import { api } from '$lib/ssh/api';
   import { t } from '$lib/core/i18n';
-  import { formatError, parseHostKeyMismatch } from '$lib/core/utils';
+  import { parseHostKeyMismatch } from '$lib/core/utils';
+  import { explainError } from '$lib/ssh/tor-error';
   import type { FileEntry } from '$lib/ssh/types';
 
   interface Props {
@@ -94,7 +95,7 @@
     try {
       await fn();
     } catch (e) {
-      opError = formatError(e);
+      opError = explainError(e, $t);
     }
   }
 
