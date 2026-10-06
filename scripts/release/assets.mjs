@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// The files of a release of one product (docs/platform-spec.md 14.3). A
+// The files of a release of one product (internal/platform-spec.md 14.3). A
 // build job gathers what the Tauri bundler wrote and names it for a GitHub
 // release; the publishing job writes latest.json over what the build jobs
 // gathered. Nothing here knows where the release is published.

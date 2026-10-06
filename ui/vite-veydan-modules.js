@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// One SvelteKit app, several products (docs/platform-spec.md 11.2–11.4).
+// One SvelteKit app, several products (internal/platform-spec.md 11.2–11.4).
 //
 // products.json says which modules a product has; VEYDAN_PRODUCT (set by
 // scripts/ui.mjs) says which product is built. This file gives
@@ -164,7 +164,7 @@ export function productFromEnv(env = process.env) {
     // pages in its folder —, and Vite's caches to
     // data/vite/<product>-<platform>. SvelteKit's own folder stays in the
     // project: its server output imports @sveltejs/kit, which Node finds only
-    // in a node_modules/ above it (docs/platform-spec.md 11.4).
+    // in a node_modules/ above it (internal/platform-spec.md 11.4).
     outDir: `${KIT_DIR}/${name}-${platform}`,
     pages: platform === 'android' ? `../data/build/${name}-android` : `../data/build/${name}`,
     cacheDir: `../data/vite/${name}-${platform}`,

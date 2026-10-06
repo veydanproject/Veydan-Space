@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Veydan Project
 # SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 #
-# The Tauri CLI for one product (docs/platform-spec.md 13.2):
+# The Tauri CLI for one product (internal/platform-spec.md 13.2):
 #
 #   scripts/tauri.sh <product> <args…>
 #   scripts/tauri.sh notes build --no-bundle      # after `source scripts/build-env.sh`

@@ -3,7 +3,7 @@
 
 //! Notes between my devices. A chat read on one is read on the others; a
 //! message removed for me on one is removed on the others. A note is a
-//! rumor of `KIND_OWN_RUMOR` wrapped to my own key (docs/messenger-wire.md
+//! rumor of `KIND_OWN_RUMOR` wrapped to my own key (internal/messenger-wire.md
 //! §3, "Свои устройства"); building the wrap and sending it is the
 //! runtime's job, this module says what the note is and applies one.
 //!

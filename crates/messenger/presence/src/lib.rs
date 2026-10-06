@@ -24,7 +24,7 @@
 //! the view. When to beat, whom to tell and when to rotate are the
 //! runtime's: nothing here sends anything. The notes go through the DM
 //! module and land in `messenger_store::presence`, which is all the two
-//! share. See docs/messenger-wire.md, "Присутствие".
+//! share. See internal/messenger-wire.md, "Присутствие".
 
 pub mod handler;
 pub mod heartbeat;

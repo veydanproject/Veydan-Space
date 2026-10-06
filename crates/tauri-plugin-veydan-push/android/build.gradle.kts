@@ -62,7 +62,7 @@ fun firebaseSettings(): Map<String, String> {
 
 // The library of the product the handler of a push loads without the app
 // (Core.kt): `[lib] name` of the product's Cargo.toml, the one place the
-// name exists (docs/platform-spec.md 13.4). The root project is the
+// name exists (internal/platform-spec.md 13.4). The root project is the
 // product's gen/android, so the crate is two levels up. A build of this
 // library alone (its own settings.gradle) names the library with
 // -PveydanCoreLibrary=<name>.

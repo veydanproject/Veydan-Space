@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 //! Notes between me and a peer: a rumor of `KIND_PEER_NOTE_RUMOR` that is
-//! not a message of the chat (docs/messenger-wire.md §3, "Записки
+//! not a message of the chat (internal/messenger-wire.md §3, "Записки
 //! собеседнику"). They carry receipts (which of my messages reached the
 //! peer, and up to when the peer has read the chat), reactions
 //! (`crate::reactions`) and the key a contact beats its presence from

@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     use Role::{Admin as A, Member as U, Moderator as M, Owner as O};
 
-    /// Rows of the table in docs/messenger-spec.md, stage 8:
+    /// Rows of the table in internal/messenger-spec.md, stage 8:
     /// owner, admin, moderator, member.
     #[test]
     fn permission_table() {

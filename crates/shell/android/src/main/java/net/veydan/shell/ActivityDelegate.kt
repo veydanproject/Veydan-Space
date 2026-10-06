@@ -19,7 +19,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
 /**
- * What the MainActivity of every product does (docs/platform-spec.md 13.4):
+ * What the MainActivity of every product does (internal/platform-spec.md 13.4):
  * edge-to-edge drawing, the insets of the system bars and the keyboard
  * handed to the page as CSS variables, and the bridge `VeydanChrome` the
  * page sets the look of the bars through. A base class is impossible —

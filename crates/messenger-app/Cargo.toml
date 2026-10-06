@@ -35,7 +35,7 @@ veydan-core = { path = "../core" }
 veydan-shell = { path = "../shell" }
 # The box `messenger` the secrets are kept in, and the events of the lock.
 veydan-lock = { path = "../lock" }
-# The messenger: a workspace of its own, free of Tauri (docs/messenger-spec.md).
+# The messenger: a workspace of its own, free of Tauri (internal/messenger-spec.md).
 messenger-core = { path = "../messenger/core" }
 messenger-runtime = { path = "../messenger/runtime" }
 messenger-notify = { path = "../messenger/notify" }

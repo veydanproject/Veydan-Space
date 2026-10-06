@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! What groups put on the wire (docs/messenger-wire.md §4).
+//! What groups put on the wire (internal/messenger-wire.md §4).
 //!
 //! **On the group relay**: events of kind 9 signed by a throw-away key,
 //! tagged with the group (`h`) and the key that opens them (`k`). The relay

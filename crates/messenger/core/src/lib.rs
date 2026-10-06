@@ -14,7 +14,7 @@
 //! - `emoji` — what may be sent as a reaction
 //! - `presence` — the kind and `d` tag of a presence beat
 //!
-//! Rules (docs/messenger-spec.md §4.2): no Tauri, no application code, no
+//! Rules (internal/messenger-spec.md §4.2): no Tauri, no application code, no
 //! protocol crates beyond plain types. Handlers never see relays; transport
 //! never sees message types.
 

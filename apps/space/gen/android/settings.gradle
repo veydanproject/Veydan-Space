@@ -1,5 +1,5 @@
 include ':app'
-// The Android library of the shell: what MainActivity does (docs/platform-spec.md 13.4).
+// The Android library of the shell: what MainActivity does (internal/platform-spec.md 13.4).
 include ':veydan-shell'
 project(':veydan-shell').projectDir = new File(rootDir, '../../../../crates/shell/android')
 

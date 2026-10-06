@@ -14,7 +14,7 @@ import org.json.JSONObject
  *
  * The library is the product's: its name is the string resource
  * `veydan_core_library`, which build.gradle.kts reads from the `[lib]`
- * name of the product's Cargo.toml (docs/platform-spec.md 13.4).
+ * name of the product's Cargo.toml (internal/platform-spec.md 13.4).
  *
  * Loading the library starts nothing: its entry points wait for a window.
  * A build without the messenger has no such function at all, and that is

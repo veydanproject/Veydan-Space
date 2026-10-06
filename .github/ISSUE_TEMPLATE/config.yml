@@ -1,0 +1,8 @@
+# The issue chooser of veydanproject/Veydan-Space, written into the snapshot by scripts/publish.sh
+# from scripts/publish/issue-config.yml (internal/platform-spec.md 14.4): every
+# issue takes a form, and a security problem goes to a private report.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/veydanproject/Veydan-Space/security/advisories/new
+    about: Privately, seen only by the maintainers. Please do not open a public issue for it.

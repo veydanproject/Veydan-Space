@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// The product of this build (docs/platform-spec.md 13.5): its id as in
+// The product of this build (internal/platform-spec.md 13.5): its id as in
 // products.json, the name the user reads (productName of its Tauri config)
 // the line under that name in About, in each locale, and the product's own
 // repository, where its releases are (products.json).

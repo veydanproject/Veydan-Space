@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// The Android library of the shell (docs/platform-spec.md 13.4): what every
+// The Android library of the shell (internal/platform-spec.md 13.4): what every
 // product's MainActivity does, in one place. A product includes it from its
 // gen/android/settings.gradle and app/build.gradle.kts (`:veydan-shell`).
 // The library builds into the gen/android/build/ of the product that

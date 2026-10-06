@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 //! The plan of the sync cycle of a product that has no order of its own to
-//! keep (docs/platform-spec.md 9.1): derived from what its modules register.
+//! keep (internal/platform-spec.md 9.1): derived from what its modules register.
 //!
 //! Space keeps its explicit plan: its push is frozen byte for byte with
 //! 4.0.7, which interleaves the rows of several modules in one pass and

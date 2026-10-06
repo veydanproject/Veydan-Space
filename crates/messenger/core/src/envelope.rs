@@ -4,7 +4,7 @@
 //! Application envelope carried inside encrypted content (DM rumors, group
 //! messages). One shape for everything: `{"v":1,"t":"<type>", …fields}`.
 //! Unknown `t` values are preserved so newer clients can add types without
-//! breaking older readers. See docs/messenger-wire.md §2.
+//! breaking older readers. See internal/messenger-wire.md §2.
 
 use crate::error::{MessengerError, Result};
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ pub const T_MEDIA: &str = "media";
 
 /// Kind of the rumor that carries a note from one of my devices to the
 /// others. Wrapped to my own key only; a client that knows only kind 14
-/// leaves it alone. See docs/messenger-wire.md §3, "Свои устройства".
+/// leaves it alone. See internal/messenger-wire.md §3, "Свои устройства".
 pub const KIND_OWN_RUMOR: u16 = 30078;
 /// `{"t":"own.read","chat":"<chat id>","at":<secs>}` — the chat was read up
 /// to the message of the peer with this time.
@@ -49,7 +49,7 @@ pub const T_OWN_PREFIX: &str = "own.";
 
 /// Kind of the rumor that carries a note from a peer that is not a message:
 /// a receipt, a reaction, a key. A client that knows only kind 14 drops it
-/// without a word. See docs/messenger-wire.md §3.
+/// without a word. See internal/messenger-wire.md §3.
 pub const KIND_PEER_NOTE_RUMOR: u16 = 30079;
 /// `{"t":"receipt.delivered","ids":["<rumor id>",…]}` — these messages of
 /// mine reached one of the peer's devices.

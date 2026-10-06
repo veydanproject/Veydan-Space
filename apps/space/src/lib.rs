@@ -32,7 +32,7 @@ mod sync;
 
 use veydan_shell::{Module, Plan, Step};
 
-/// What Space is (docs/platform-spec.md 13.1, 13.5). Its identifiers are in
+/// What Space is (internal/platform-spec.md 13.1, 13.5). Its identifiers are in
 /// the Tauri configs: `net.veydan.space` on a computer (`tauri.conf.json`),
 /// `net.veydan.mobile` on Android (`tauri.android.conf.json`); the keys of
 /// the messenger and the app of Firebase are bound to them. The version is

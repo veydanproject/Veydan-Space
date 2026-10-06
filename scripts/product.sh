@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Veydan Project
 # SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 #
-# The product a wrapper works on (docs/platform-spec.md 13.2) — meant to be
+# The product a wrapper works on (internal/platform-spec.md 13.2) — meant to be
 # *sourced* after ROOT_DIR is set:
 #
 #   product_env <product>       # space, notes, pass or chat

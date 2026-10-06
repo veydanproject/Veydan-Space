@@ -5,7 +5,7 @@ run-name: >-
       || contains(github.ref_name, '-rc.') && format('RC {0}', github.ref_name)
       || format('Release {0}', github.ref_name) }}
 
-# One run builds ONE product (docs/platform-spec.md 14.1, 14.3; 20.14):
+# One run builds ONE product (internal/platform-spec.md 14.1, 14.3; 20.14):
 #
 #   make push <product> alpha|beta|rc [p…]   <product>-vX.Y.Z-<channel>.N[-<platform>]…
 #                                            → the platforms named, or the three

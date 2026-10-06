@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Standalone Android APK of a product (docs/platform-spec.md 13.4):
+# Standalone Android APK of a product (internal/platform-spec.md 13.4):
 #   scripts/android/apk.sh [product] test      # debug-signed, installed on the phone
 #   scripts/android/apk.sh [product] build     # debug-signed, not installed
 #   scripts/android/apk.sh [product] release   # release-signed

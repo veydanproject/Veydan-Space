@@ -4,7 +4,7 @@
 //! The modules of Veydan Space that have no crate of their own — browser,
 //! ssh and the services backup and capture — and the tests of the product
 //! as a whole. Which command belongs to which module is section 22 of
-//! docs/platform-spec.md; `commands.golden.txt` pins it.
+//! internal/platform-spec.md; `commands.golden.txt` pins it.
 
 #[cfg(desktop)]
 pub(crate) mod backup;

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 #
 # Messenger workspace. Every member is Tauri-free and must not depend on the
-# Veydan Space application crate; see docs/messenger-spec.md §4.2 for the
+# Veydan Space application crate; see internal/messenger-spec.md §4.2 for the
 # dependency matrix. Build and test in isolation:
 #
 #   cargo test --workspace --manifest-path crates/messenger/Cargo.toml

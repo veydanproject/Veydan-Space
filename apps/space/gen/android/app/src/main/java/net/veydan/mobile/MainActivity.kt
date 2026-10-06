@@ -4,7 +4,7 @@ import android.os.Bundle
 import android.webkit.WebView
 import net.veydan.shell.ActivityDelegate
 
-// What the activity does is the shell's (crates/shell/android, docs/platform-spec.md 13.4).
+// What the activity does is the shell's (crates/shell/android, internal/platform-spec.md 13.4).
 class MainActivity : TauriActivity() {
   private val delegate = ActivityDelegate(this)
 

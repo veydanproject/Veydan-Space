@@ -1,0 +1,48 @@
+# The feature request of every public repository of Veydan: the products take
+# it from publish.shared, services/link and services/push carry copies equal
+# to it (internal/platform-spec.md 14.4). Written for any of them: no product named.
+name: Feature request
+description: An idea for something new or for something to work differently.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the idea. Please look through the open issues first: someone may have asked for it already, and a 👍 there counts.
+
+        English or Russian, as you prefer.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and what gets in the way now.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: How it could work. A sketch or a screenshot of another app helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead now
+      description: A workaround or another app you use for it, if any.
+    validations:
+      required: false
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Where you would use it, if it matters.
+      multiple: true
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Android
+        - Server
+    validations:
+      required: false

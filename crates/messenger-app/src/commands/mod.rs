@@ -4,7 +4,7 @@
 //! Tauri adapter for the messenger module.
 //!
 //! This is the only place where a product and the messenger crates meet
-//! (docs/messenger-spec.md §4.5). It owns three things and nothing else:
+//! (internal/messenger-spec.md §4.5). It owns three things and nothing else:
 //!
 //! 1. `MessengerState`: starts and stops `messenger_runtime::MessengerRuntime`
 //!    with a data dir under the app's data dir and the host `SecretStore`;

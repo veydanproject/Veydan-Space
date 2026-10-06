@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 // The check for a new version on a phone, where Tauri has no updater
-// (docs/platform-spec.md 14.3). The shell reads the product's latest.json
+// (internal/platform-spec.md 14.3). The shell reads the product's latest.json
 // (`update_check`); this store keeps the answer for Settings. A computer
 // uses the updater store instead.
 

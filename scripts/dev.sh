@@ -9,7 +9,7 @@ set -e
 # The root of the repository: this file is in scripts/.
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-# The product: its crate, binary, names and dev port (docs/platform-spec.md 13.2).
+# The product: its crate, binary, names and dev port (internal/platform-spec.md 13.2).
 source "$ROOT_DIR/scripts/product.sh"
 product_env "${1:-space}"
 

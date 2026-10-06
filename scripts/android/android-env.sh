@@ -67,7 +67,7 @@ export NDK_HOME="$SDK_DIR/ndk/$ANDROID_NDK_VERSION"
 export ANDROID_NDK_HOME="$NDK_HOME"
 
 # --- Rust targets for Android ---
-# To the Rust of rust-toolchain.toml (docs/platform-spec.md 14.6): rustup
+# To the Rust of rust-toolchain.toml (internal/platform-spec.md 14.6): rustup
 # reads the file from the working directory upwards, and this file may be
 # sourced from anywhere (the Gradle project of a product, a script of
 # another folder), so it asks from the root of the repository.

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Veydan Project
 # SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 #
-# What a tag asks the release workflow for (docs/platform-spec.md 14.1, 14.3):
+# What a tag asks the release workflow for (internal/platform-spec.md 14.1, 14.3):
 #
 #   GITHUB_REF_TYPE=tag GITHUB_REF_NAME=notes-v5.0.0-alpha.1 \
 #   GITHUB_REPOSITORY=<owner>/<repo> GITHUB_OUTPUT=<file> scripts/release/meta.sh

@@ -3,7 +3,7 @@
 
 //! What a presence beat looks like on the wire. Here, not in the presence
 //! crate, because ingress classifies the beat and must not depend on the
-//! crate that handles it. See docs/messenger-wire.md, "Присутствие".
+//! crate that handles it. See internal/messenger-wire.md, "Присутствие".
 
 /// Kind of a presence beat (NIP-38 user status). Addressable, so a relay
 /// keeps one per key and `d`.

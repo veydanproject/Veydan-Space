@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// The UI launcher (docs/platform-spec.md 11.6):
+// The UI launcher (internal/platform-spec.md 11.6):
 //
 //   node scripts/ui.mjs <product> [vitest|svelte-kit|svelte-check] <args…>
 //

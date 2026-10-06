@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Veydan Project
 # SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 #
-# Create the Android project of a product, once (docs/platform-spec.md 13.4):
+# Create the Android project of a product, once (internal/platform-spec.md 13.4):
 #   scripts/android/init.sh [product]     # space by default
 #
 # The CLI runs from the root with TAURI_APP_PATH, like every wrapper (13.2).

@@ -6,7 +6,7 @@ import org.gradle.api.logging.LogLevel
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.TaskAction
 
-// The callback of Gradle into the Tauri CLI (docs/platform-spec.md 13.2, 13.4).
+// The callback of Gradle into the Tauri CLI (internal/platform-spec.md 13.2, 13.4).
 // rootDirRel leads to the crate of the product (apps/<product>), the
 // repository root is two levels above it. The CLI is the one of the UI
 // project, ui/node_modules/.bin/tauri; it runs from the root like every

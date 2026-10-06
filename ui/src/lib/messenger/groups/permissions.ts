@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 // What a role may do. Mirrors the table the messenger core enforces
-// (docs/messenger-spec.md, stage 8): this file only decides what to
+// (internal/messenger-spec.md, stage 8): this file only decides what to
 // offer; a refusal still comes back from the core when it matters.
 
 import { roleRank, type GroupRole, type MessengerGroup, type MessengerGroupMember } from '../api';

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 //! The names of entities by kind and id, for the UI of a module that links
-//! to entities of other modules (docs/platform-spec.md 10.3): the tag
+//! to entities of other modules (internal/platform-spec.md 10.3): the tag
 //! `profile:<id>` of a password is shown by the name of the profile, also in
 //! a product that has no browser. The directory answers: the owner of the
 //! kind where the product has one, the synced table `labels` where it has

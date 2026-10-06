@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! Presence in motion (docs/messenger-wire.md, "Присутствие"). Every few
+//! Presence in motion (internal/messenger-wire.md, "Присутствие"). Every few
 //! seconds of a session the driver watches the presence keys of my
 //! approved contacts, tells each of them my own key when it has not been
 //! told the current one, and beats while the app is in sight.

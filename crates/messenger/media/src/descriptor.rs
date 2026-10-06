@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! What a `media` message carries (docs/messenger-wire.md §3). Version 1:
+//! What a `media` message carries (internal/messenger-wire.md §3). Version 1:
 //!
 //! ```json
 //! {"v":1,"t":"media","kind":"image","name":"cat.jpg","mime":"image/jpeg",

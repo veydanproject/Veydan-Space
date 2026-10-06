@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! The check for a new version of the product (docs/platform-spec.md 14.3).
+//! The check for a new version of the product (internal/platform-spec.md 14.3).
 //!
 //! A computer has the Tauri updater; a phone has none, so the shell reads the
 //! `latest.json` the updater would read — the first endpoint of

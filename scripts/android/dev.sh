@@ -2,7 +2,7 @@
 # Run a product on a connected Android device (or emulator).
 #   scripts/android/dev.sh [product]            # picks the connected device
 #   scripts/android/dev.sh [product] "<name>"   # explicit device/emulator name
-# The product is space when none is given (docs/platform-spec.md 13.2).
+# The product is space when none is given (internal/platform-spec.md 13.2).
 set -e
 
 ANDROID_SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"

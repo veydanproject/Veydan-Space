@@ -6,6 +6,6 @@
 # crates/messenger and, in the monorepo, services/link, services/hub and
 # services/push. Their lock files differ; cargo keeps the artefacts of each
 # apart by hash. CARGO_TARGET_DIR still wins: the Android wrappers set
-# data/target-android/<product> (docs/platform-spec.md 4.1, 13.4).
+# data/target-android/<product> (internal/platform-spec.md 4.1, 13.4).
 [build]
 target-dir = "data/target"

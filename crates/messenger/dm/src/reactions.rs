@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! Reactions (docs/messenger-wire.md §3, "Реакции"). A person puts up to
+//! Reactions (internal/messenger-wire.md §3, "Реакции"). A person puts up to
 //! three emoji on a message, each once; a message carries at most three
 //! different ones. A second tap takes mine back. In a direct chat a
 //! reaction is a note to the peer with a copy for my devices; in a group it

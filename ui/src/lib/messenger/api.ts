@@ -3,7 +3,7 @@
 
 // Messenger command layer. Intentionally separate from `$lib/api` so the
 // module can be lifted into a standalone app: this file is the only place
-// that knows command names (docs/messenger-spec.md §4.6).
+// that knows command names (internal/messenger-spec.md §4.6).
 
 // Types the runtime writes for itself (`make msg-types`); never by hand.
 export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView } from './generated/links';

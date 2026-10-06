@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 #
 # One GitHub release out of the files the build jobs gathered
-# (docs/platform-spec.md 14.3). The publishing jobs of
+# (internal/platform-spec.md 14.3). The publishing jobs of
 # .github/workflows/release.yml run it; it publishes where it is told and
 # knows no repository and no token of its own:
 #

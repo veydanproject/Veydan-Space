@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 //! Full-application backup & restore: the driver of Space's `backup` service
-//! (docs/platform-spec.md 5.9).
+//! (internal/platform-spec.md 5.9).
 //!
 //! A backup is a single encrypted file `veydan-backup-<ts>.vbk2` written to a
 //! user-chosen folder. It holds the data file and the parts of the product's
@@ -833,7 +833,7 @@ impl Running for TheApp<'_> {
     }
 }
 
-/// Stop the modules as on exit (docs/platform-spec.md 12; 19, № 59): the
+/// Stop the modules as on exit (internal/platform-spec.md 12; 19, № 59): the
 /// browsers they started, the watcher of the notes, the runtime of the
 /// messenger with its database; close the data file; then swap the data
 /// under them.

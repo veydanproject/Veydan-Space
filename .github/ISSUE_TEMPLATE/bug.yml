@@ -1,0 +1,87 @@
+# The bug report of every public repository of Veydan: the products take it
+# from publish.shared, services/link and services/push carry copies equal to
+# it (internal/platform-spec.md 14.4). Written for any of them: no product named.
+name: Bug report
+description: Something does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time. Please look through the open issues first: the bug may already be known.
+
+        **A security problem?** Do not describe it here, an issue is public. Use "Report a security vulnerability" on the previous page.
+
+        English or Russian, as you prefer.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version of the app or the server, as its About page, its release or `--version` shows it.
+      placeholder: "5.0.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Where it happens. Choose every one you saw it on.
+      multiple: true
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Android
+        - Server
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: The version of the system, the distribution or the device.
+      placeholder: "Ubuntu 24.04, Windows 11 24H2, Pixel 8 with Android 15"
+    validations:
+      required: false
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw. A screenshot or a recording helps.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What to do, step by step, to see it again.
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The output or the log around the moment it happened, if you have it. Remove passwords, keys, addresses and anything else private first.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send
+      options:
+        - label: I looked through the open issues and did not find this one.
+          required: true
+        - label: Nothing private is left in what I wrote, the screenshots and the logs.
+          required: true

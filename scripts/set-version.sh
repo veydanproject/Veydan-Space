@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The version of one product (docs/platform-spec.md 14.1):
+# The version of one product (internal/platform-spec.md 14.1):
 #   scripts/set-version.sh <product> <version>
 # writes it into apps/<product>/VERSION, the product's Cargo.toml and its
 # entry in Cargo.lock, its tauri.conf.json and the version code of its
