@@ -15,7 +15,7 @@ use crate::op::{GroupKind, KeyId, Op, OpBody};
 use crate::roles::Role;
 use crate::service::*;
 use crate::wire::{self, InnerMessage, Opened, SecretEnvelope};
-use messenger_core::envelope::{T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
+use messenger_core::envelope::{T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_RECEIPT_READ, T_TEXT};
 use messenger_core::traits::{Body, Notice, UiEvent};
 use messenger_core::{Context, DmInbound, Envelope, EventSource, GroupInbound, MessengerError, PubKey, Result};
 use messenger_store::groups::{self as repo, GroupRow, PendingRow};
@@ -28,7 +28,7 @@ const BUCKET_WELCOME: &str = "welcome";
 /// Opened, but the author is not known as a member yet.
 const HELD: &str = "held:";
 /// How long something of an unknown author is kept.
-const HELD_TTL_SECS: i64 = 24 * 3600;
+pub(crate) const HELD_TTL_SECS: i64 = 24 * 3600;
 /// Clocks differ: a message may be dated a little before the join.
 const JOIN_SLACK_SECS: i64 = 300;
 /// Keys a device keeps for one group.
@@ -802,15 +802,47 @@ impl GroupService {
         if s.is_banned(&m.author) {
             return Ok(Verdict::Done);
         }
-        match standing(&log, &m.author, m.created_at) {
-            Standing::Member => {}
-            Standing::Muted => return Ok(Verdict::Done),
-            Standing::Outsider => return Ok(Verdict::Hold),
+        let standing = standing(&log, &m.author, m.created_at);
+        // Not a member as far as the log here knows: the op that let them
+        // in may not have come yet. Held like anything they say, a reaction
+        // too, and tried again when the log grows (or given up after
+        // `HELD_TTL_SECS`).
+        if standing == Standing::Outsider {
+            return Ok(Verdict::Hold);
         }
         let from_me = &m.author == me;
         let chat_id = repo::group_chat_id(group_id);
         let id = m.id.as_hex().to_string();
         let Ok(envelope) = Envelope::parse(&m.content) else { return Ok(Verdict::Done) };
+        // A reaction: only a member who may speak puts one, mine from
+        // another device or my own echo too (the same word again changes
+        // nothing). One of a muted member is dropped.
+        if envelope.t == T_REACTION {
+            let fields = (envelope.str_field("target"), envelope.str_field("emoji"), envelope.fields.get("set").and_then(|v| v.as_bool()));
+            if let (Standing::Member, (Some(target), Some(emoji), Some(set))) = (&standing, fields) {
+                for fx in self.dm.apply_reaction(&chat_id, &m.author, target, emoji, set, m.created_at).await? {
+                    if let messenger_core::Effect::Emit(e) = fx {
+                        out.events.push(e);
+                    }
+                }
+            }
+            return Ok(Verdict::Done);
+        }
+        // A member read the group: a mark, not a message. One who may not
+        // speak may still read. Mine from another device says nothing new.
+        if envelope.t == T_RECEIPT_READ {
+            if let (false, Some(at)) = (from_me, envelope.fields.get("at").and_then(|v| v.as_i64())) {
+                for fx in self.dm.peer_read(&chat_id, m.author.as_hex(), at, m.created_at).await? {
+                    if let messenger_core::Effect::Emit(e) = fx {
+                        out.events.push(e);
+                    }
+                }
+            }
+            return Ok(Verdict::Done);
+        }
+        if standing == Standing::Muted {
+            return Ok(Verdict::Done);
+        }
         let target = envelope.str_field("target").map(String::from);
         let (content_type, text, hidden, media_json): (&str, Option<String>, bool, Option<String>) = match envelope.t.as_str() {
             T_TEXT => (msgs::CT_TEXT, envelope.as_text().map(String::from), false, None),
@@ -885,6 +917,8 @@ impl GroupService {
                 self.change(&log, &row, &p.content_type, &actor, p.created_at, new_text).await?;
             }
         }
+        // Removed for me on another device before it came here.
+        let hidden_before = self.dm.hide_if_hidden(&id).await?;
 
         let line = if content_type == msgs::CT_MEDIA {
             let name = envelope.str_field("name").unwrap_or("file");
@@ -895,9 +929,17 @@ impl GroupService {
         let live = !from_me && !item.historical;
         let floor = self.dm.unread_floor();
         let joined_at = s.member(me).map(|x| x.joined_at).unwrap_or(i64::MAX);
-        let unread = !from_me && m.created_at >= joined_at && (live || (floor >= 0 && m.created_at >= floor));
+        let unread =
+            !from_me && !hidden_before && m.created_at >= joined_at && (live || (floor >= 0 && m.created_at >= floor));
         chats::touch(&self.store, &chat_id, m.created_at, Some(&line), unread).await?;
         chats::recompute_last(&self.store, &chat_id).await?;
+        // Written on another device of mine: what came before is read there.
+        if from_me && chats::read_up_to(&self.store, &chat_id, m.created_at).await? {
+            out.events.push(UiEvent {
+                name: messenger_dm::UI_EVENT_CHAT_READ.into(),
+                payload: serde_json::json!({ "chat_id": chat_id }),
+            });
+        }
         let Some(view) = self.dm.message(&id).await? else { return Ok(Verdict::Done) };
         let deleted = view.deleted;
         out.events.push(UiEvent {

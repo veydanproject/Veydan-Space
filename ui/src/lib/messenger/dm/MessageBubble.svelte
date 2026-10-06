@@ -12,6 +12,7 @@
   import { mediaOf, type MessengerMessage } from '../api';
   import { logSendFailure, sendFailureKey } from './send-failure';
   import { lateAt, shownStatus } from './delivery';
+  import Reactions from './Reactions.svelte';
 
   interface Props {
     message: MessengerMessage;
@@ -29,8 +30,10 @@
     onretry: (m: MessengerMessage) => void;
     /** Renders the attachment of a `media` message (stage 6). */
     media?: Snippet<[MessengerMessage]>;
+    /** A reaction was refused: the window explains why. */
+    onreacterror?: (e: unknown) => void;
   }
-  let { message: m, first, last = true, peerTitle, showAuthor = false, author, highlighted = false, onmenu, onreplyclick, onretry, media }: Props = $props();
+  let { message: m, first, last = true, peerTitle, showAuthor = false, author, highlighted = false, onmenu, onreplyclick, onretry, media, onreacterror }: Props = $props();
 
   // The backend's own words go to the log; the Retry button says it in the UI's language.
   $effect(() => {
@@ -54,7 +57,7 @@
   });
   const shown = $derived(shownStatus(m, now));
   const statusIcon = $derived(
-    shown === 'sent' ? 'check' : shown === 'failed' ? 'alert-triangle' : shown === 'uploading' ? 'upload' : 'clock',
+    shown === 'sent' ? 'check' : shown === 'delivered' || shown === 'read' ? 'check-check' : shown === 'failed' ? 'alert-triangle' : shown === 'uploading' ? 'upload' : 'clock',
   );
   const statusTitle = $derived($t(`msg_status_${shown}` as 'msg_status_sent'));
 </script>
@@ -81,6 +84,8 @@
     {:else}
       <span class="tomb">{$t('msg_message_unsupported', { type: m.content_type })}</span>
     {/if}
+
+    {#if !m.deleted && m.reactions?.length}<Reactions message={m} onerror={onreacterror} />{/if}
 
     <span class="meta">
       {#if m.edited_at && !m.deleted}<span>{$t('msg_message_edited')}</span>{/if}
@@ -125,7 +130,8 @@
   .tomb { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
   .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-size: var(--fs-2xs); color: var(--text-3); line-height: 1; }
   .status { display: inline-flex; }
-  .status.sent { color: var(--accent-text-2); }
+  .status.sent, .status.delivered { color: var(--accent-text-2); }
+  .status.read { color: var(--accent); }
   .status.failed { color: var(--danger-text); }
   .reply {
     display: flex; flex-direction: column; gap: 1px; text-align: left; width: 100%;

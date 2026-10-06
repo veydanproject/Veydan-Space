@@ -21,6 +21,7 @@ use messenger_dm::body::body_of;
 use messenger_dm::DmService;
 use messenger_groups::wire::{self, Opened, T_INVITE, T_JOIN_REQUEST, T_WELCOME};
 use messenger_groups::service::MEMBERSHIP_JOINED;
+use messenger_ingress::classify::KIND_DM_RUMOR;
 use messenger_store::{chats, groups, messages, Store};
 use nostr::key::Keys;
 use std::path::Path;
@@ -127,6 +128,11 @@ impl Describe {
     }
 
     async fn dm_notice(&self, dm: messenger_core::DmInbound, settings: &Settings, count: u32) -> Result<Outcome> {
+        // A note between my devices or from a peer (a receipt, a reaction)
+        // is for the app, whatever its type says.
+        if dm.rumor_kind != KIND_DM_RUMOR {
+            return Ok(Outcome::Quiet { reason: Reason::NotAMessage });
+        }
         if dm.sender == self.me {
             return Ok(Outcome::Quiet { reason: Reason::Own });
         }

@@ -112,6 +112,8 @@ impl World {
         let contacts = ContactService::new(store.clone(), profiles.clone());
         let dm = DmService::new(store.clone(), contacts, profiles, self.clock.clone());
         dm.set_gate(false);
+        // Knows whose it is, so that its own reactions show as mine.
+        dm.set_signer(Some(keys.clone()));
         let svc = GroupService::new(store, Arc::new(Secrets::default()), self.clock.clone(), dm.clone());
         self.devices.push(Device { keys, svc, dm, online: true, missed: vec![], clock: self.clock.clone() });
         self.devices.len() - 1
@@ -207,6 +209,7 @@ impl World {
                     created_at: Timestamp(rumor.created_at.as_secs() as i64),
                     content: rumor.content.clone(),
                     reply_to: None,
+                    rumor_kind: rumor.kind.as_u16(),
                 };
                 d.svc.on_dm(&d.keys, &msg, &d.ctx()).await.unwrap().expect("a group message")
             }
@@ -813,5 +816,231 @@ async fn a_lifted_ban_opens_the_link_again() {
     let v = w.devices[bob].group(&g).await.unwrap();
     assert_eq!((v.membership.as_str(), v.can_post), ("joined", true));
     assert_eq!(w.devices[alice].group(&g).await.unwrap().members.len(), 2);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn members_learn_who_read() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let dave = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Readers", true).await;
+    w.bring(alice, &g, bob).await;
+    w.bring(alice, &g, carol).await;
+    let asked = w.say(alice, &g, "did you read it?").await;
+    let also = w.say(carol, &g, "me too").await;
+    let chat = format!("group:{g}");
+
+    // Bob reads; his device owes the group a receipt.
+    w.tick();
+    w.devices[bob].dm.mark_read(&chat).await.unwrap();
+    let due = w.devices[bob].dm.take_due_read().await.unwrap();
+    let at = w.devices[bob].visible(&g).await.iter().filter(|m| m.direction == "in" && m.content_type != "system").map(|m| m.created_at).max().unwrap();
+    assert_eq!(due, vec![(chat.clone(), at)]);
+    let d = &w.devices[bob];
+    let out = d.svc.prepare_read_receipt(&d.keys, &g, at).await.unwrap();
+    let Outbound::PublishScoped { event, .. } = &out else { panic!("{out:?}") };
+    let tags = event.json["tags"].as_array().unwrap();
+    assert!(tags.iter().any(|t| t[0] == pushtags::SILENT), "a receipt wakes nobody");
+    let before = w.devices[bob].visible(&g).await.len();
+    w.run(bob, Outcome { publish: vec![out], ..Default::default() }).await;
+    assert_eq!(w.devices[bob].visible(&g).await.len(), before, "a receipt is no message");
+    assert_eq!(w.devices[alice].visible(&g).await.len(), before);
+
+    // The authors see who read; nobody else's view of it changes.
+    let bob_hex = w.pk(bob).as_hex().to_string();
+    let of = |v: &[MessageView], id: &str| v.iter().find(|m| m.id == id).unwrap().clone();
+    let a = of(&w.devices[alice].visible(&g).await, &asked);
+    assert_eq!((a.read_at, a.seen_by.clone()), (Some(at), vec![bob_hex.clone()]));
+    assert_eq!(a.delivered_at, Some(at), "a read says delivered");
+    let c = of(&w.devices[carol].visible(&g).await, &also);
+    assert_eq!(c.seen_by, vec![bob_hex.clone()]);
+    assert!(of(&w.devices[carol].visible(&g).await, &asked).seen_by.is_empty(), "only the author is shown the readers");
+
+    // What comes after the mark is not read.
+    let next = w.say(alice, &g, "and this?").await;
+    let n = of(&w.devices[alice].visible(&g).await, &next);
+    assert_eq!((n.read_at, n.seen_by.len()), (None, 0));
+
+    // Someone outside the group, holding its key somehow, is not believed.
+    let svc = w.devices[alice].svc.clone();
+    let key_id = svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+    let key = svc.key(&g, &key_id).await.unwrap().unwrap();
+    let outsider = &w.devices[dave].keys;
+    let signed = crate::wire::sign_message(outsider, &g, &messenger_core::Envelope::receipt_read(i64::MAX / 2).encode(), w.clock.now().secs(), None).unwrap();
+    let sealed = crate::wire::seal_note(&g, &key, None, &signed, outsider).unwrap();
+    let o = w.deliver(alice, &Wire::Group(sealed), false).await;
+    w.run(alice, o).await;
+    let reads = messenger_store::receipts::peer_reads(w.devices[alice].dm.store(), &chat).await.unwrap();
+    assert_eq!(reads, vec![(bob_hex, at)]);
+}
+
+// ─── Reactions ──────────────────────────────────────────────────────────────
+
+impl World {
+    async fn react(&mut self, who: usize, message_id: &str, emoji: &str) -> Result<()> {
+        self.tick();
+        let d = &self.devices[who];
+        let (chat, out) = d.svc.prepare_reaction(&d.keys, message_id, emoji).await?;
+        assert!(chat.starts_with("group:"));
+        let Outbound::PublishScoped { event, .. } = &out else { panic!("{out:?}") };
+        assert!(event.json["tags"].as_array().unwrap().iter().any(|t| t[0] == pushtags::SILENT), "a reaction wakes nobody");
+        self.run(who, Outcome { publish: vec![out], ..Default::default() }).await;
+        Ok(())
+    }
+
+    /// What `who` shows under a message: emoji, count, mine.
+    async fn reactions(&self, who: usize, group: &str, message_id: &str) -> Vec<(String, i64, bool)> {
+        let v = self.devices[who].visible(group).await;
+        let m = v.iter().find(|m| m.id == message_id).expect("the message is here");
+        m.reactions.iter().map(|r| (r.emoji.clone(), r.count, r.mine)).collect()
+    }
+
+    /// A reaction sealed with the group's key by `who`, whether the group
+    /// lets them speak or not.
+    async fn forged_reaction(&self, who: usize, group: &str, message_id: &str, emoji: &str) -> WireEvent {
+        let svc = self.devices[0].svc.clone();
+        let key_id = svc.need_log(group).await.unwrap().state().current_key.clone().unwrap();
+        let key = svc.key(group, &key_id).await.unwrap().unwrap();
+        let author = &self.devices[who].keys;
+        let content = messenger_core::Envelope::reaction(message_id, emoji, true).encode();
+        let signed = crate::wire::sign_message(author, group, &content, self.clock.now().secs(), None).unwrap();
+        crate::wire::seal_note(group, &key, None, &signed, author).unwrap()
+    }
+}
+
+fn r(emoji: &str, count: i64, mine: bool) -> (String, i64, bool) {
+    (emoji.to_string(), count, mine)
+}
+
+#[tokio::test]
+async fn members_react_and_outsiders_cannot() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let dave = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Reactions", true).await;
+    w.bring(alice, &g, bob).await;
+    w.bring(alice, &g, carol).await;
+    let m = w.say(alice, &g, "pizza tonight?").await;
+    let before = w.devices[bob].visible(&g).await.len();
+
+    w.react(bob, &m, "👍").await.unwrap();
+    w.react(carol, &m, "👍").await.unwrap();
+    w.react(carol, &m, "🍕").await.unwrap();
+    assert_eq!(w.reactions(alice, &g, &m).await, vec![r("👍", 2, false), r("🍕", 1, false)]);
+    assert_eq!(w.reactions(bob, &g, &m).await, vec![r("👍", 2, true), r("🍕", 1, false)]);
+    assert_eq!(w.reactions(carol, &g, &m).await, vec![r("👍", 2, true), r("🍕", 1, true)]);
+    assert_eq!(w.devices[bob].visible(&g).await.len(), before, "a reaction is no message");
+    assert_eq!(w.devices[alice].group(&g).await.unwrap().undecrypted, 0);
+
+    // A second tap takes it back for everybody.
+    w.react(bob, &m, "👍").await.unwrap();
+    for d in [alice, bob, carol] {
+        assert_eq!(w.reactions(d, &g, &m).await, vec![r("👍", 1, d == carol), r("🍕", 1, d == carol)], "device {d}");
+    }
+    // The limits hold in a group too.
+    w.react(alice, &m, "🔥").await.unwrap();
+    assert_eq!(code(w.react(bob, &m, "😮").await), "reaction_limit");
+    assert_eq!(code(w.react(bob, &m, "no").await), "reaction_invalid");
+
+    // Muted: refused here, and dropped by the others if sent anyway.
+    w.act(alice, &g, OpBody::SetMuted { who: w.pk(carol), muted: true }).await.unwrap();
+    assert_eq!(code(w.react(carol, &m, "🔥").await), "group_muted");
+    w.tick();
+    let sealed = w.forged_reaction(carol, &g, &m, "🔥").await;
+    let o = w.deliver(alice, &Wire::Group(sealed), false).await;
+    assert!(o.events.is_empty());
+    w.run(alice, o).await;
+    assert_eq!(w.reactions(alice, &g, &m).await, vec![r("👍", 1, false), r("🍕", 1, false), r("🔥", 1, true)]);
+
+    // Someone outside, holding the key somehow: held like a message, since
+    // the op that let them in may be on its way; shown nowhere meanwhile.
+    let key_id = w.devices[bob].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+    let bucket = format!("held:{}", key_id.0);
+    let on_bob = vec![r("👍", 1, false), r("🍕", 1, false), r("🔥", 1, false)];
+    let sealed = w.forged_reaction(dave, &g, &m, "👍").await;
+    let o = w.deliver(bob, &Wire::Group(sealed), false).await;
+    w.run(bob, o).await;
+    assert_eq!(w.reactions(bob, &g, &m).await, on_bob);
+    let store = w.devices[bob].dm.store().clone();
+    let held = messenger_store::groups::take_pending(&store, &g, &bucket).await.unwrap();
+    assert_eq!(held.len(), 1, "it waits for the outsider to join");
+    for p in &held {
+        messenger_store::groups::add_pending(&store, p).await.unwrap();
+    }
+
+    // A day on, nobody let them in: when the log next grows, it is given
+    // up, and the outsider who joins then does not bring it back (it was
+    // said before the join anyway).
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    w.clock.0.store(now + crate::inbound::HELD_TTL_SECS + 60, Ordering::SeqCst);
+    w.bring(alice, &g, dave).await;
+    assert!(messenger_store::groups::take_pending(&store, &g, &bucket).await.unwrap().is_empty(), "given up, not held again");
+    assert_eq!(w.reactions(bob, &g, &m).await, on_bob);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+/// Carol joins and reacts at once; a device of Alice's that was away hears
+/// the reaction before the op that let Carol in. It waits, and shows once
+/// the op is there.
+#[tokio::test]
+async fn a_reaction_before_its_authors_join_waits_for_it() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let carol = w.person().await;
+    let alice2 = w.device(w.devices[alice].keys.clone()).await;
+    let g = w.create(alice, GroupKind::Private, "Late", true).await;
+    let m = w.say(alice, &g, "who is in?").await;
+    assert_eq!(w.devices[alice2].texts(&g).await, vec!["who is in?"]);
+
+    w.offline(alice2);
+    w.bring(alice, &g, carol).await;
+    w.catch_up(carol).await;
+    w.react(carol, &m, "🙋").await.unwrap();
+    // What it missed comes newest first: the reaction before the join.
+    w.online(alice2).await;
+    assert_eq!(w.reactions(alice2, &g, &m).await, vec![r("🙋", 1, false)]);
+    assert_eq!(w.reactions(alice, &g, &m).await, vec![r("🙋", 1, false)]);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn reactions_survive_history_replay() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let bob2 = w.device(w.devices[bob].keys.clone()).await;
+    w.offline(bob2);
+    let g = w.create(alice, GroupKind::Private, "Replay", true).await;
+    w.bring(alice, &g, bob).await;
+    let m = w.say(alice, &g, "vote").await;
+    w.react(bob, &m, "👍").await.unwrap();
+    w.react(alice, &m, "❤️").await.unwrap();
+    w.react(alice, &m, "😂").await.unwrap();
+    w.react(alice, &m, "❤️").await.unwrap();
+    let want_bob = vec![r("👍", 1, true), r("😂", 1, false)];
+    assert_eq!(w.reactions(bob, &g, &m).await, want_bob);
+
+    // Bob's other device was away: it learns of the group, then fetches
+    // its history, newest first: the take-back before the put it takes back.
+    w.online(bob2).await;
+    w.catch_up(bob2).await;
+    assert_eq!(w.reactions(bob2, &g, &m).await, want_bob);
+
+    // Carol joins later and reads the whole history, newest first.
+    w.bring(alice, &g, carol).await;
+    w.catch_up(carol).await;
+    assert_eq!(w.reactions(carol, &g, &m).await, vec![r("👍", 1, false), r("😂", 1, false)]);
+
+    // Everything again, on a device that has it all: nothing changes.
+    let o_before = w.reactions(alice, &g, &m).await;
+    w.catch_up(alice).await;
+    assert_eq!(w.reactions(alice, &g, &m).await, o_before);
+    assert_eq!(o_before, vec![r("👍", 1, false), r("😂", 1, true)]);
     assert!(w.notes.is_empty(), "{:?}", w.notes);
 }

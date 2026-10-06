@@ -11,16 +11,20 @@
 //! - `traits` — `Transport`, `SecretStore`, `Clock`, `Handler`, `Effect`
 //! - `config` — `MessengerConfig` (paths and switches passed in by the host)
 //! - `error` — `MessengerError`
+//! - `emoji` — what may be sent as a reaction
+//! - `presence` — the kind and `d` tag of a presence beat
 //!
 //! Rules (docs/messenger-spec.md §4.2): no Tauri, no application code, no
 //! protocol crates beyond plain types. Handlers never see relays; transport
 //! never sees message types.
 
 pub mod config;
+pub mod emoji;
 pub mod envelope;
 pub mod error;
 pub mod inbound;
 pub mod outbound;
+pub mod presence;
 pub mod traits;
 pub mod types;
 

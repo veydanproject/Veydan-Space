@@ -16,8 +16,13 @@
 //! messenger-cli [--data-dir DIR] sync [SECONDS]
 //! messenger-cli [--data-dir DIR] chats
 //! messenger-cli [--data-dir DIR] history <npub|hex>
+//! messenger-cli [--data-dir DIR] read <npub|hex> [SECONDS]
+//! messenger-cli [--data-dir DIR] privacy [on|off|presence-on|presence-off]
+//! messenger-cli [--data-dir DIR] presence [SECONDS] | presence-on | presence-rotate
 //! messenger-cli [--data-dir DIR] edit <message-id> <text…>
 //! messenger-cli [--data-dir DIR] delete <message-id>
+//! messenger-cli [--data-dir DIR] react <message-id> <emoji>
+//! messenger-cli [--data-dir DIR] emoji-top [N]
 //! messenger-cli [--data-dir DIR] relation <npub|hex>
 //! messenger-cli [--data-dir DIR] request|accept|decline|block|unblock|remove <npub|hex>
 //! messenger-cli [--data-dir DIR] push-on <token> [--server URL]
@@ -40,7 +45,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> [picture] | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> [picture] | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -247,15 +252,88 @@ async fn main() {
             let chat = rt.chat_open(&args[0]).await.unwrap_or_else(die);
             for m in rt.dm().messages(&chat.id, None, 200).await.unwrap_or_else(die) {
                 println!(
-                    "{} {} {:<8} {}{}{}",
+                    "{} {} {:<8} {:<4} {}{}{}{}",
                     m.created_at,
                     if m.direction == "out" { "->" } else { "<-" },
                     m.status,
+                    ticks(&m),
                     if m.deleted { "(deleted)".to_string() } else { m.text.clone().unwrap_or_else(|| format!("[{}]", m.content_type)) },
                     if m.edited_at.is_some() && !m.deleted { " (edited)" } else { "" },
+                    reactions(&m),
                     format_args!("  #{}", &m.id[..8.min(m.id.len())]),
                 );
             }
+        }
+        "read" => {
+            // Stay a little first: what came while away is read too.
+            if args.is_empty() {
+                usage();
+            }
+            let secs: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(3);
+            let chat = rt.chat_open(&args[0]).await.unwrap_or_else(die);
+            settle(&rt, secs).await;
+            rt.chat_mark_read(&chat.id).await.unwrap_or_else(die);
+            rt.flush_receipts().await.unwrap_or_else(die);
+            flush(&rt).await;
+            println!("read {}", chat.id);
+        }
+        "privacy" => {
+            let mut s = rt.privacy_settings().await.unwrap_or_else(die);
+            match args.first().map(String::as_str) {
+                None => {}
+                Some("on") => s.read_receipts = true,
+                Some("off") => s.read_receipts = false,
+                Some("presence-on") => s.presence = true,
+                Some("presence-off") => s.presence = false,
+                Some(_) => usage(),
+            }
+            if !args.is_empty() {
+                s = rt.privacy_set(s).await.unwrap_or_else(die);
+                // Turned off, the contacts are told the key is gone.
+                flush(&rt).await;
+            }
+            let word = |b: bool| if b { "on" } else { "off" };
+            println!("read_receipts={} presence={}", word(s.read_receipts), word(s.presence));
+        }
+        "presence" => {
+            // Watch the contacts' keys for a while, then say who is online.
+            let secs: u64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(5);
+            wait_connect(&rt).await;
+            rt.presence_tick().await.unwrap_or_else(die);
+            tokio::time::sleep(Duration::from_secs(secs)).await;
+            print_presence(&rt).await;
+        }
+        "presence-on" => {
+            // In sight until Ctrl-C: tell my key, beat, and print what comes.
+            wait_connect(&rt).await;
+            print_my_presence(&rt).await;
+            rt.presence_foreground(true).await.unwrap_or_else(die);
+            rt.presence_tick().await.unwrap_or_else(die);
+            print_presence(&rt).await;
+            eprintln!("beating — Ctrl-C to stop");
+            let mut rx = rt.ui_events();
+            let mut lease = tokio::time::interval(Duration::from_secs(45));
+            loop {
+                tokio::select! {
+                    _ = lease.tick() => rt.presence_foreground(true).await.unwrap_or_else(die),
+                    ev = rx.recv() => match ev {
+                        Ok(e) if e.name.starts_with("presence.") => println!("{} {}", e.name, e.payload),
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => eprintln!("(lagged {n})"),
+                        Err(_) => break,
+                    },
+                    _ = tokio::signal::ctrl_c() => break,
+                }
+            }
+            rt.presence_foreground(false).await.unwrap_or_else(die);
+        }
+        "presence-rotate" => {
+            wait_connect(&rt).await;
+            let epoch = rt.presence_rotate().await.unwrap_or_else(die);
+            rt.presence_tick().await.unwrap_or_else(die);
+            flush(&rt).await;
+            println!("epoch {epoch}");
+            print_my_presence(&rt).await;
         }
         "shared" => {
             if args.is_empty() {
@@ -292,6 +370,21 @@ async fn main() {
             rt.dm_delete(&id, true).await.unwrap_or_else(die);
             flush(&rt).await;
             println!("deleted {id}");
+        }
+        "react" => {
+            // A second time takes it back.
+            if args.len() != 2 {
+                usage();
+            }
+            let id = full_id(&rt, &args[0]).await;
+            wait_connect(&rt).await;
+            let m = rt.dm_react(&id, &args[1]).await.unwrap_or_else(die);
+            flush(&rt).await;
+            println!("{} #{}{}", if m.reactions.iter().any(|r| r.mine && r.emoji == args[1]) { "put" } else { "taken back" }, &m.id[..8], reactions(&m));
+        }
+        "emoji-top" => {
+            let n: usize = args.first().and_then(|s| s.parse().ok()).unwrap_or(24);
+            println!("{}", rt.emoji_top(n).await.unwrap_or_else(die).join(" "));
         }
         "sync" => {
             // Stay online for a while so live delivery and the history
@@ -1035,9 +1128,55 @@ async fn group_id(rt: &MessengerRuntime, short: &str) -> String {
     std::process::exit(1)
 }
 
+/// The marks of a message of mine, as the app draws them: sent, delivered,
+/// read. Nothing for the peer's messages, nor for mine that did not leave.
+fn ticks(m: &messenger_runtime::MessageView) -> &'static str {
+    if m.direction != "out" || m.status != "sent" || m.content_type == "system" {
+        ""
+    } else if m.read_at.is_some() {
+        "✓✓•"
+    } else if m.delivered_at.is_some() {
+        "✓✓"
+    } else {
+        "✓"
+    }
+}
+
+/// What stands under a message: `  [👍2* ❤️1]`, a star on mine.
+fn reactions(m: &messenger_runtime::MessageView) -> String {
+    if m.reactions.is_empty() {
+        return String::new();
+    }
+    let all: Vec<String> = m.reactions.iter().map(|r| format!("{}{}{}", r.emoji, r.count, if r.mine { "*" } else { "" })).collect();
+    format!("  [{}]", all.join(" "))
+}
+
 /// Stay online long enough to hear what happened meanwhile: a command
 /// that changes a group should know the group as it is now.
 async fn settle(rt: &MessengerRuntime, secs: u64) {
     wait_connect(rt).await;
     tokio::time::sleep(Duration::from_secs(secs)).await;
+}
+
+/// Who of my contacts is online, and when the others were last seen.
+async fn print_presence(rt: &MessengerRuntime) {
+    let now = messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs();
+    let list = rt.presence_list().await.unwrap_or_else(die);
+    if list.is_empty() {
+        println!("(nobody to show)");
+    }
+    for v in list {
+        if now < v.online_until {
+            println!("{}  online (until +{} s)", v.peer, v.online_until - now);
+        } else {
+            println!("{}  last seen {} s ago", v.peer, now - v.seen_at);
+        }
+    }
+}
+
+/// The key my beats are signed with now.
+async fn print_my_presence(rt: &MessengerRuntime) {
+    let keys = rt.identity().load_keys().await.unwrap_or_else(die);
+    let (epoch, mine) = rt.presence().presence_keys(&keys).await.unwrap_or_else(die);
+    println!("presence key {} (epoch {epoch})", mine.public_key().to_hex());
 }

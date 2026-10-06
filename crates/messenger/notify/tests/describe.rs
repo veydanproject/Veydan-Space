@@ -8,7 +8,7 @@ use messenger_contacts::{ContactService, ProfileService};
 use messenger_core::traits::SystemClock;
 use messenger_core::{Context, Envelope, MessengerConfig, PubKey, RelayUrl, Timestamp};
 use messenger_dm::relationship::Action;
-use messenger_dm::wrap::{wrap, wrap_as, Wake};
+use messenger_dm::wrap::{wrap, wrap_as, wrap_note, wrap_own, Wake};
 use messenger_dm::DmService;
 use messenger_groups::wire::{seal_message, sign_message};
 use messenger_groups::{GroupKind, GroupService};
@@ -193,6 +193,26 @@ async fn edits_deletes_and_signals_are_not_messages() {
         let event = dm_from(&alice, &phone, &envelope, 1_000_000);
         assert_eq!(quiet(phone.describe(dm_push(&event)).await), Reason::NotAMessage, "{}", envelope.t);
     }
+}
+
+#[tokio::test]
+async fn notes_from_a_peer_and_between_my_devices_are_not_messages() {
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+
+    // A receipt, and a note whose type nobody knows yet: neither is named.
+    for envelope in [Envelope::receipt_read(1_000_000), Envelope::new("reaction.future")] {
+        let note = wrap_note(&alice, &phone.me(), &envelope.encode(), 1_000_000, false, None).unwrap().to_peer.json;
+        assert_eq!(quiet(phone.describe(dm_push(&note)).await), Reason::NotAMessage, "{}", envelope.t);
+    }
+    // A note from a stranger is not a request either.
+    let stranger = Keys::generate();
+    let note = wrap_note(&stranger, &phone.me(), &Envelope::text("hi").encode(), 1_000_000, false, None).unwrap().to_peer.json;
+    assert_eq!(quiet(phone.describe(dm_push(&note)).await), Reason::NotAMessage);
+
+    let own = wrap_own(&phone.keys, &Envelope::own_read("dm:x", 1).encode(), 1_000_000).unwrap().json;
+    assert_eq!(quiet(phone.describe(dm_push(&own)).await), Reason::NotAMessage);
 }
 
 fn descriptor(kind: MediaKind, name: &str, caption: Option<&str>) -> MediaDescriptor {

@@ -60,11 +60,14 @@ messenger_dm_action messenger all
 messenger_dm_blocked messenger all
 messenger_dm_delete messenger all
 messenger_dm_edit messenger all
+messenger_dm_react messenger all
 messenger_dm_relation messenger all
 messenger_dm_retry messenger all
 messenger_dm_send_file messenger all
 messenger_dm_send_recording messenger all
 messenger_dm_send_text messenger all
+messenger_emoji_top messenger all
+messenger_emoji_used messenger all
 messenger_group_act messenger all
 messenger_group_answer_invite messenger all
 messenger_group_answer_request messenger all
@@ -91,6 +94,7 @@ messenger_media_cancel messenger all
 messenger_media_data_url messenger all
 messenger_media_download messenger all
 messenger_media_grant_access messenger all
+messenger_media_import messenger all
 messenger_media_local_path messenger all
 messenger_media_open messenger all
 messenger_media_pause messenger all
@@ -113,6 +117,10 @@ messenger_notice_words messenger desktop
 messenger_notify_get messenger all
 messenger_notify_set messenger all
 messenger_open_url messenger all
+messenger_presence_foreground messenger all
+messenger_presence_list messenger all
+messenger_privacy_get messenger all
+messenger_privacy_set messenger all
 messenger_profile_get messenger all
 messenger_profile_own_get messenger all
 messenger_profile_own_set messenger all

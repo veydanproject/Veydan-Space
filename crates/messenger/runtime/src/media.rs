@@ -47,6 +47,19 @@ struct AttachmentMeta {
 }
 
 /// `audio/webm;codecs=opus` → `audio/webm`.
+/// A picked file waiting in the composer (`MessengerRuntime::picked`).
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PickedView {
+    /// Where it is on this device; what is sent.
+    pub path: String,
+    pub name: String,
+    /// `image`, `video`, `audio` or `file`.
+    pub kind: String,
+    pub size: u64,
+    /// A picture as a `data:` url; `None` for anything else.
+    pub preview: Option<String>,
+}
+
 fn base_mime(mime: &str) -> String {
     mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase()
 }
@@ -510,6 +523,30 @@ impl MessengerRuntime {
     }
 
     /// The attachment as a `data:` url for inline previews.
+    /// A file the user picked, as the composer shows it before it is sent:
+    /// its name, what it will be sent as, and a picture as a `data:` url.
+    /// The host checks first that the user did pick this path.
+    pub async fn picked(&self, path: &Path) -> Result<PickedView> {
+        let name = messenger_media::descriptor::safe_name(
+            &path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        );
+        let mime = messenger_media::descriptor::mime_for(&name);
+        let meta = tokio::fs::metadata(path).await.map_err(|_| MessengerError::Io("err.file_not_found".into()))?;
+        let picture = matches!(mime, "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/avif" | "image/bmp");
+        let preview = if picture && meta.is_file() && meta.len() <= MAX_INLINE_BYTES {
+            Some(format!("data:{mime};base64,{}", B64.encode(tokio::fs::read(path).await?)))
+        } else {
+            None
+        };
+        Ok(PickedView {
+            path: path.to_string_lossy().into_owned(),
+            name,
+            kind: MediaKind::from_mime(mime).as_str().into(),
+            size: meta.len(),
+            preview,
+        })
+    }
+
     pub async fn media_data_url(&self, message_id: &str) -> Result<Option<String>> {
         let Some(path) = self.media_local_path(message_id).await? else { return Ok(None) };
         let meta = tokio::fs::metadata(&path).await?;

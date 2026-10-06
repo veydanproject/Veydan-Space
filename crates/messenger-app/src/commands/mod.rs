@@ -35,7 +35,7 @@ use messenger_runtime::{
     ChatView, ContactPatch, ContactView, CreatedIdentity, DmAction, GroupKind, GroupOp, GroupView, Identity, InviteView,
     LinkPreview, LinkView, ManifestCheck, ManifestInfo, MessageView,
     MediaKind, MediaServerInput, MediaServerView, MessengerRuntime, Recording, RelationView, TransferView,
-    ProfileView, RelayView,
+    PresenceView, PrivacySettings, ProfileView, RelayView,
     RuntimeStatus, SharedCounts, SharedSection,
 };
 use messenger_runtime::net::{NetCheck, NetMode, NetStatus};
@@ -394,6 +394,12 @@ fn spawn_ui_event_forwarder(
                     #[cfg(desktop)]
                     if ev.name == "notify" && desktop.take(&rt, &ev.payload).await {
                         ev.payload["os"] = serde_json::Value::Bool(true);
+                    }
+                    // Read on another device of mine: its notifications go here too.
+                    if ev.name == messenger_runtime::UI_EVENT_CHAT_READ {
+                        unread_changed();
+                        #[cfg(desktop)]
+                        desktop.clear(ev.payload["chat_id"].as_str());
                     }
                     let _ = app.emit(EVENT_RUNTIME, &ev);
                 }
@@ -795,8 +801,34 @@ pub async fn messenger_chat_shared(
 }
 
 #[tauri::command]
+pub async fn messenger_privacy_get(messenger: tauri::State<'_, MessengerState>) -> CmdResult<PrivacySettings> {
+    messenger.runtime()?.privacy_settings().await.map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn messenger_privacy_set(
+    read_receipts: bool,
+    presence: bool,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<PrivacySettings> {
+    messenger.runtime()?.privacy_set(PrivacySettings { read_receipts, presence }).await.map_err(map_err)
+}
+
+/// When each approved contact was last seen; empty with presence off.
+#[tauri::command]
+pub async fn messenger_presence_list(messenger: tauri::State<'_, MessengerState>) -> CmdResult<Vec<PresenceView>> {
+    messenger.runtime()?.presence_list().await.map_err(map_err)
+}
+
+/// The page is in sight (said again every 45 s while it is) or hidden.
+#[tauri::command]
+pub async fn messenger_presence_foreground(visible: bool, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    messenger.runtime()?.presence_foreground(visible).await.map_err(map_err)
+}
+
+#[tauri::command]
 pub async fn messenger_chat_mark_read(chat_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.dm().mark_read(&chat_id).await.map_err(map_err)?;
+    messenger.runtime()?.chat_mark_read(&chat_id).await.map_err(map_err)?;
     messenger.notices_seen(Some(&chat_id));
     Ok(())
 }
@@ -859,6 +891,29 @@ pub async fn messenger_dm_edit(
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
     messenger.runtime()?.dm_edit(&message_id, &text).await.map_err(map_err)
+}
+
+/// Put an emoji on a message, or take mine back. Refusals reach the UI as
+/// `reaction_limit`, `reaction_invalid` and the codes of the chat.
+#[tauri::command]
+pub async fn messenger_dm_react(
+    message_id: String,
+    emoji: String,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<MessageView> {
+    messenger.runtime()?.dm_react(&message_id, &emoji).await.map_err(map_err)
+}
+
+/// An emoji was picked in the composer: it counts among the ones I use most.
+#[tauri::command]
+pub async fn messenger_emoji_used(emoji: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    messenger.runtime()?.emoji_used(&emoji).await.map_err(map_err)
+}
+
+/// The emoji I use most, on any of my devices.
+#[tauri::command]
+pub async fn messenger_emoji_top(n: u32, messenger: tauri::State<'_, MessengerState>) -> CmdResult<Vec<String>> {
+    messenger.runtime()?.emoji_top(n as usize).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -1080,6 +1135,26 @@ pub async fn messenger_dm_send_file(
     let rt = messenger.runtime()?;
     let local = import_picked(&app, &path, rt.config().data_dir()).await?;
     rt.dm_send_file(&to, &local, caption.as_deref(), batch.as_deref()).await.map_err(map_err)
+}
+
+/// A picked file as the composer holds it until it is sent: a local path
+/// and, for a picture, what it looks like. Android's `content://` is copied
+/// in first. Only what the user picked is read: that copy, or a path the
+/// computer's picker has let in.
+#[tauri::command]
+pub async fn messenger_media_import(
+    path: String,
+    app: tauri::AppHandle,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<messenger_runtime::PickedView> {
+    use tauri_plugin_fs::FsExt;
+    let rt = messenger.runtime()?;
+    let copied = path.starts_with("content://");
+    let local = import_picked(&app, &path, rt.config().data_dir()).await?;
+    if !copied && !app.try_fs_scope().is_some_and(|s| s.is_allowed(&local)) {
+        return Err(AppError::Other("the file was not picked".into()));
+    }
+    rt.picked(&local).await.map_err(map_err)
 }
 
 /// A picked file as a local path. Desktop pickers give paths. Android gives

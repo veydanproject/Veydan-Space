@@ -9,6 +9,8 @@
   import Avatar from '../contacts/Avatar.svelte';
   import MessageBubble from './MessageBubble.svelte';
   import AlbumBubble from './AlbumBubble.svelte';
+  import QuickReactions from './QuickReactions.svelte';
+  import { reactionTarget } from './quick-reactions';
   import Timeline from '../content/Timeline.svelte';
   import type { TimelineItem } from '../content/types';
   import { tint } from '../shared/tint';
@@ -17,13 +19,16 @@
   import MediaBubble from '../media/MediaBubble.svelte';
   import AttachButton from '../media/AttachButton.svelte';
   import MediaViewer from '../media/MediaViewer.svelte';
-  import type { MessengerRecording } from '../api';
+  import { viewer } from '../media/viewer.svelte';
+  import type { MessengerPicked, MessengerRecording } from '../api';
   import { chatStore } from '../chats/chatStore.svelte';
   import { messengerStore } from '../store.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
   import { onKeyboard } from '../shared/keyboard';
   import { onPhone } from '../shared/phone';
-  import { dmErrorCode, mediaErrorCode, messengerError, type DmAction, type MessengerChat, type MessengerMessage } from '../api';
+  import { nameStore } from '../groups/names.svelte';
+  import { presenceStore } from '../presence/presenceStore.svelte';
+  import { dmErrorCode, mediaErrorCode, messengerApi, messengerError, type DmAction, type MessengerChat, type MessengerMessage } from '../api';
 
   interface Props {
     chat: MessengerChat;
@@ -61,19 +66,27 @@
   let error = $state('');
   let atBottom = $state(true);
   let highlighted = $state<string | null>(null);
-  let menu = $state<{ open: boolean; x: number; y: number; m: MessengerMessage | null }>({ open: false, x: 0, y: 0, m: null });
+  /** `m`: the message pressed, what the items act on. `target`: what a reaction from the menu lands on (an album's last part). */
+  let menu = $state<{ open: boolean; x: number; y: number; m: MessengerMessage | null; target: MessengerMessage | null }>({ open: false, x: 0, y: 0, m: null, target: null });
+  /** The menu of a message shows the whole emoji picker instead of the quick strip. */
+  let menuMore = $state(false);
   let chatMenu = $state<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
+  /** Who in a group read a message of mine: opened from its menu, where that menu was. */
+  let seen = $state<{ open: boolean; x: number; y: number; who: string[] }>({ open: false, x: 0, y: 0, who: [] });
   let acting = $state(false);
 
   // A promise, as the dot: shown as connected until the runtime takes it
   // back after a while without relays.
   const link = $derived(messengerStore.status?.runtime?.link ?? 'ok');
   const sessionActive = $derived(!!messengerStore.status?.runtime?.session_active);
+  // A DM's peer: online now, or when last seen; nothing for groups or when unknown.
+  const presence = $derived(chat.kind === 'dm' ? presenceStore.status(chat.peer_pubkey) : null);
+  const presenceText = $derived(chat.kind === 'dm' ? presenceStore.label(chat.peer_pubkey) : null);
 
-  // Leaving a chat drops reply/edit state.
+  // Leaving a chat drops reply/edit state, and a picture it had open.
   let lastChat = '';
   $effect(() => {
-    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; }
+    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; viewer.close(); }
   });
 
   // New message at the tail: follow it when the user is already at the bottom.
@@ -176,6 +189,8 @@
         const id = editing.id;
         editing = null;
         await chatStore.edit(id, text);
+      } else if (picked.length) {
+        await sendPicked(text);
       } else {
         const r = replyTo?.id;
         replyTo = null;
@@ -200,20 +215,73 @@
     if (mine) { replyTo = null; editing = mine; }
   }
 
+  /** Picked files wait above the field until they are sent; `file` is `null` while it is read in. */
+  let picked = $state<{ key: number; file: MessengerPicked | null }[]>([]);
+  let pickSeq = 0;
+  const attached = $derived(picked.length === 0 ? null : picked.some((p) => !p.file) ? 'loading' : 'ready');
+
   async function attach(paths: string[]) {
     error = "";
-    atBottom = true;
-    // Picked together, shown together.
-    const batch = paths.length > 1 ? crypto.randomUUID() : undefined;
     for (const p of paths) {
-      try { await chatStore.sendFile(p, undefined, batch); }
-      catch (e) { error = explain(e); break; }
+      const key = ++pickSeq;
+      picked = [...picked, { key, file: null }];
+      try {
+        const file = await messengerApi.media.importPicked(p);
+        picked = picked.map((x) => (x.key === key ? { key, file } : x));
+      } catch (e) {
+        picked = picked.filter((x) => x.key !== key);
+        error = explain(e);
+      }
     }
   }
 
-  function openMenu(e: MouseEvent, m: MessengerMessage) {
+  function unpick(key: number) {
+    picked = picked.filter((x) => x.key !== key);
+  }
+
+  /**
+   * Picked together, sent together: one album, the text as its caption.
+   * The caption goes with the last file, so the list of chats shows it.
+   * With a reply the text goes on its own after the files, as the reply.
+   */
+  async function sendPicked(text: string) {
+    const files = picked.flatMap((x) => (x.file ? [x.file] : []));
+    picked = [];
+    atBottom = true;
+    const reply = replyTo?.id;
+    replyTo = null;
+    const batch = files.length > 1 ? crypto.randomUUID() : undefined;
+    for (const [i, f] of files.entries()) {
+      try {
+        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch);
+      } catch (e) {
+        // What did not leave waits again.
+        picked = files.slice(i).map((file) => ({ key: ++pickSeq, file }));
+        throw e;
+      }
+    }
+    if (reply && text) await chatStore.send(text, reply);
+  }
+
+  function openMenu(e: MouseEvent, m: MessengerMessage, album?: MessengerMessage[]) {
     e.preventDefault();
-    menu = { open: true, x: e.clientX, y: e.clientY, m };
+    menuMore = false;
+    menu = { open: true, x: e.clientX, y: e.clientY, m, target: reactionTarget(m, album) };
+  }
+
+  /** A message one may react to: it is there, it left this device, and this chat takes words from me. */
+  const reactable = (m: MessengerMessage | null): m is MessengerMessage =>
+    !!m && !m.deleted && chat.can_send && m.content_type !== 'system' && !m.id.startsWith('local:') && m.status !== 'failed';
+
+  function react(m: MessengerMessage, emoji: string) {
+    menu.open = false;
+    guard(() => chatStore.react(m.id, emoji));
+  }
+
+  function showMore() {
+    menuMore = true;
+    // The menu grows: a new place makes it measure itself and stay on screen.
+    menu.y -= 0.01;
   }
 
   async function jumpTo(id: string) {
@@ -234,6 +302,10 @@
       if (m.text) list.push({ label: $t('msg_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').catch(() => {}) });
       if (own && m.content_type === 'text' && chat.can_send) list.push({ label: $t('msg_message_edit'), icon: 'pencil', onselect: () => { replyTo = null; editing = m; } });
       if (own && m.status === 'failed') list.push({ label: $t('msg_message_retry'), icon: 'refresh-cw', onselect: () => guard(() => chatStore.retry(m.id)) });
+      if (own && isGroup && m.seen_by?.length) {
+        const { x, y } = menu;
+        list.push({ label: $t('msg_seen_by', { n: String(m.seen_by.length) }), icon: 'eye', onselect: () => (seen = { open: true, x, y, who: [...m.seen_by] }) });
+      }
       list.push({ type: 'separator' });
       list.push({ label: $t('msg_message_delete_me'), icon: 'trash-2', danger: true, onselect: () => guard(() => chatStore.remove(m.id, false)) });
       if (own || canModerate?.(m)) list.push({ label: $t("msg_message_delete_all"), icon: "trash-2", danger: true, onselect: () => guard(() => chatStore.remove(m.id, true)) });
@@ -244,23 +316,51 @@
   const systemLine = (m: MessengerMessage) => systemText?.(m) ?? $t(`msg_sys_${m.text}` as "msg_sys_request_sent", { name: chat.title });
 </script>
 
+{#snippet readers()}
+  <div class="readers">
+    {#each seen.who as pk (pk)}
+      <div class="reader"><Avatar url={nameStore.picture(pk)} label={nameStore.label(pk)} seed={pk} size={24} /><span>{nameStore.label(pk)}</span></div>
+    {:else}
+      <div class="reader">{$t('msg_seen_by_none')}</div>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet quick()}
+  {#if menu.target}<QuickReactions message={menu.target} more={menuMore} onmore={showMore} onreact={(e) => menu.target && react(menu.target, e)} />{/if}
+{/snippet}
+
 {#snippet attachment(m: MessengerMessage)}
   <MediaBubble message={m} />
 {/snippet}
 
 {#snippet bubble(item: Extract<TimelineItem, { type: "bubble" }>)}
   <MessageBubble message={item.message} first={item.first} last={item.last} showAuthor={item.showAuthor} peerTitle={chat.title} {author} highlighted={highlighted === item.message.id}
-    onmenu={openMenu} onreplyclick={jumpTo} onretry={(m) => guard(() => chatStore.retry(m.id))} media={attachment} />
+    onmenu={openMenu} onreplyclick={jumpTo} onretry={(m) => guard(() => chatStore.retry(m.id))} media={attachment} onreacterror={(e) => (error = explain(e))} />
 {/snippet}
 
 {#snippet album(item: Extract<TimelineItem, { type: "album" }>)}
   {@const who = item.messages[0].sender_pubkey}
   <AlbumBubble messages={item.messages} variant={item.variant} first={item.first} last={item.last} author={item.showAuthor && author ? author(who) : null} authorTint={tint(who)} {highlighted}
-    onmenu={openMenu} onretry={(m) => guard(() => chatStore.retry(m.id))} />
+    onmenu={(e, m) => openMenu(e, m, item.messages)} onretry={(m) => guard(() => chatStore.retry(m.id))} onreacterror={(e) => (error = explain(e))} />
 {/snippet}
 
 {#snippet composerTools()}
   <AttachButton disabled={!sessionActive || !canAttach || !!editing} onfiles={attach} />
+{/snippet}
+
+{#snippet tray()}
+  <div class="tray">
+    {#each picked as p (p.key)}
+      <div class="pick" class:picture={!!p.file?.preview}>
+        {#if p.file?.preview}<img src={p.file.preview} alt={p.file.name} />
+        {:else if p.file}<Icon name={p.file.kind === "video" ? "video" : p.file.kind === "image" ? "image" : "file"} size={20} /><span class="pick-name">{p.file.name}</span>
+        {:else}<Icon name="loader" size={18} />{/if}
+        <button class="unpick" tabindex="-1" onpointerdown={(e) => e.preventDefault()} onmousedown={(e) => e.preventDefault()} onclick={() => unpick(p.key)}
+          aria-label={$t("msg_attach_remove")} title={$t("msg_attach_remove")}><Icon name="x" size={12} /></button>
+      </div>
+    {/each}
+  </div>
 {/snippet}
 
 <section class="window" style:--bottom-h={phone ? `${bottomH}px` : undefined}>
@@ -271,7 +371,7 @@
     {/if}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div class="ident" class:clickable={!!ontitle} onclick={() => ontitle?.()}>
-    <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={36} />
+    <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={36} online={presence === 'online'} />
     <div class="who">
       <div class="title">{chat.title}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
       <div class="sub">
@@ -279,6 +379,7 @@
         {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
         {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
         {:else if subtitle}{@render subtitle()}
+        {:else if presenceText}<span class:online={presence === 'online'}>{presenceText}</span>
         {:else}<code>{chat.peer_npub ? `${chat.peer_npub.slice(0, 14)}…${chat.peer_npub.slice(-6)}` : ''}</code>{/if}
       </div>
     </div>
@@ -318,7 +419,7 @@
 
   {#if chat.can_send}
     <Composer {replyTo} {editing} peerTitle={chat.title} disabled={!sessionActive} draftKey={chat.id} autofocus={!phone} oneditlast={editLast} onrecording={record} canRecord={canAttach}
-      oncancel={() => { replyTo = null; editing = null; }} onsend={send} tools={composerTools} />
+      oncancel={() => { replyTo = null; editing = null; }} onsend={send} tools={composerTools} {attached} attachments={picked.length ? tray : undefined} />
   {:else if footer}
     {@render footer()}
   {:else}
@@ -328,7 +429,8 @@
 </section>
 
 <MediaViewer />
-<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} header={reactable(menu.target) ? quick : undefined} onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={seen.open} x={seen.x} y={seen.y} items={[]} header={readers} onclose={() => (seen.open = false)} />
 <ContextMenu bind:open={chatMenu.open} x={chatMenu.x} y={chatMenu.y} items={chatItems} onclose={() => (chatMenu.open = false)} />
 
 <style>
@@ -345,6 +447,7 @@
   .sub { font-size: var(--fs-2xs); color: var(--text-3); }
   .sub code { font-family: var(--font-mono); }
   .offline { color: var(--warn-text); }
+  .sub .online { color: var(--accent); }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   @media (pointer: coarse) {
@@ -370,6 +473,24 @@
     display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow);
   }
   .to-bottom:hover { color: var(--text); }
+  /* Picked files above the field: pictures as they look, the rest by name. */
+  .tray { display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; scrollbar-width: thin; }
+  .pick {
+    position: relative; flex-shrink: 0; width: 64px; height: 64px; border-radius: var(--radius-md); overflow: hidden;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2);
+  }
+  .pick.picture { padding: 0; }
+  .pick img { width: 100%; height: 100%; object-fit: cover; }
+  .pick-name { max-width: 100%; font-size: var(--fs-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .unpick {
+    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: none; border-radius: 50%; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;
+  }
+  @media (pointer: coarse) { .pick { width: 72px; height: 72px; } .unpick { width: 24px; height: 24px; } }
   .error-line { padding: 6px var(--sp-4); font-size: var(--fs-xs); color: var(--danger-text); background: var(--danger-bg); border-top: 1px solid var(--danger-border); }
+  .readers { display: flex; flex-direction: column; gap: var(--sp-1); max-height: 50vh; overflow-y: auto; }
+  .reader { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text); font-size: var(--fs-sm); }
+  .reader span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .no-composer { display: flex; align-items: center; justify-content: center; gap: 6px; padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-3); }
 </style>

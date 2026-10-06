@@ -4,6 +4,7 @@
 //! Host-facing shapes. Plain data, no secrets.
 
 use messenger_store::messages::MessageRow;
+pub use messenger_store::reactions::ReactionView;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +57,22 @@ pub struct MessageView {
     /// While `queued`: when it was put in the outbox (or put back by a
     /// retry). The app shows it as sent for a moment counted from here.
     pub queued_at: Option<i64>,
+    /// Mine only: when a device of the peer said it has the message, or
+    /// the peer read past it. Groups have no delivery receipts: a read is
+    /// the first word of it there.
+    pub delivered_at: Option<i64>,
+    /// Mine only: the read mark that covers it: the peer's in a direct
+    /// chat, the newest of the members' in a group. `None` while read
+    /// receipts are off.
+    pub read_at: Option<i64>,
+    /// Mine in a group: who has read it (hex keys). Empty while read
+    /// receipts are off.
+    #[serde(default)]
+    pub seen_by: Vec<String>,
+    /// What stands under the message, one entry per emoji in the order the
+    /// emoji first came. Empty on a deleted message.
+    #[serde(default)]
+    pub reactions: Vec<ReactionView>,
 }
 
 impl MessageView {
@@ -75,6 +92,10 @@ impl MessageView {
             failure_reason: r.failure_reason,
             media: r.media_json.and_then(|j| serde_json::from_str(&j).ok()),
             queued_at: None,
+            delivered_at: None,
+            read_at: None,
+            seen_by: vec![],
+            reactions: vec![],
         }
     }
 }

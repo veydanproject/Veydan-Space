@@ -3654,6 +3654,7 @@ dependencies = [
  "messenger-links",
  "messenger-store",
  "nostr",
+ "secp256k1",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -3770,6 +3771,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "messenger-presence"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hmac 0.13.0",
+ "messenger-core",
+ "messenger-store",
+ "nostr",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "messenger-preview"
 version = "0.1.0"
 dependencies = [
@@ -3817,6 +3832,7 @@ dependencies = [
  "messenger-links",
  "messenger-media",
  "messenger-notify",
+ "messenger-presence",
  "messenger-preview",
  "messenger-push",
  "messenger-store",
@@ -3835,6 +3851,7 @@ name = "messenger-store"
 version = "0.1.0"
 dependencies = [
  "messenger-core",
+ "serde",
  "serde_json",
  "sqlx",
  "thiserror 2.0.18",
@@ -8151,7 +8168,7 @@ dependencies = [
 
 [[package]]
 name = "veydanspace"
-version = "5.0.3"
+version = "5.0.4"
 dependencies = [
  "age",
  "anyhow",

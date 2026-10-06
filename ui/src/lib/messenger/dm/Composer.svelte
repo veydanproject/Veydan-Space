@@ -6,6 +6,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import EmojiPicker from '../shared/emoji/EmojiPicker.svelte';
+  import { usageStore } from '../shared/emoji/usageStore.svelte';
   import RecorderBar from '../media/RecorderBar.svelte';
   import CircleRecorder from '../media/CircleRecorder.svelte';
   import TouchRecorder from '../media/TouchRecorder.svelte';
@@ -33,10 +34,13 @@
     canRecord?: boolean;
     /** Take the focus when a conversation opens (not on a phone: it would raise the keyboard). */
     autofocus?: boolean;
+    /** Picked files that wait above the field: being read in, or ready to go with the text as their caption. */
+    attached?: "loading" | "ready" | null;
+    attachments?: Snippet;
   }
   let {
     disabled = false, placeholder, replyTo, editing, peerTitle, oncancel, onsend, tools, draftKey, oneditlast,
-    onrecording, canRecord = true, autofocus = true,
+    onrecording, canRecord = true, autofocus = true, attached = null, attachments,
   }: Props = $props();
 
   let emojiOpen = $state(false);
@@ -163,8 +167,9 @@
   const tooLong = $derived(bytes > MAX_BYTES);
   // Not gated on a send in flight: the next message can be typed and sent
   // while the previous one is still on its way (order is kept by the chat).
-  const canSend = $derived(!disabled && text.trim().length > 0 && !tooLong);
-  const canRecordNow = $derived((!!held || !text.trim()) && !editing && !!onrecording && canRecord && !disabled && (voiceOk || circleOk));
+  // Picked files go with or without words, once they are read in.
+  const canSend = $derived(!disabled && !tooLong && attached !== "loading" && (text.trim().length > 0 || attached === "ready"));
+  const canRecordNow = $derived((!!held || (!text.trim() && !attached)) && !editing && !!onrecording && canRecord && !disabled && (voiceOk || circleOk));
 
   // Entering edit mode loads the message text; leaving it clears the field.
   let lastEditing: string | null = null;
@@ -234,7 +239,7 @@
 
 <div class="composer">
   {#if emojiOpen}
-    <EmojiPicker onpick={(e) => insert(e)} onclose={() => (emojiOpen = false)} />
+    <EmojiPicker onpick={(e) => { insert(e); usageStore.used(e); }} onclose={() => (emojiOpen = false)} />
   {/if}
   {#if editing || replyTo}
     <div class="context">
@@ -246,6 +251,7 @@
       <button class="icon" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('msg_back')}><Icon name="x" size={14} /></button>
     </div>
   {/if}
+  {#if attachments}{@render attachments()}{/if}
   <div class="row">
     {#if touch}
       {#if held}
@@ -260,7 +266,7 @@
           </button>
           <textarea
             bind:this={el} bind:value={text} rows="1" {disabled}
-            placeholder={placeholder ?? $t('msg_composer_placeholder')}
+            placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
             oninput={resize} {onkeydown}
           ></textarea>
           {#if tools}{@render tools()}{/if}
@@ -293,7 +299,7 @@
     </button>
     <textarea
       bind:this={el} bind:value={text} rows="1" {disabled}
-      placeholder={placeholder ?? $t('msg_composer_placeholder')}
+      placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
       oninput={resize} {onkeydown}
     ></textarea>
     {#if canRecordNow}

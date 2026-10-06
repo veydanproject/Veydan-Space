@@ -15,19 +15,44 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-fn read_window_size_from_xulstore(firefox_profile_dir: &std::path::Path) -> Option<(i64, i64)> {
-    let content = std::fs::read_to_string(firefox_profile_dir.join("xulstore.json")).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-    let win = json
-        .get("chrome://browser/content/browser.xhtml")?
-        .get("main-window")?;
-    let w: i64 = win.get("width")?.as_str()?.parse().ok()?;
-    let h: i64 = win.get("height")?.as_str()?.parse().ok()?;
-    if w > 0 && h > 0 {
-        Some((w, h))
-    } else {
-        None
+/// The size of a browser window that has none saved (CSS pixels).
+const DEFAULT_WINDOW_SIZE: (i64, i64) = (1280, 760);
+/// The smallest saved size of a browser window that is kept (CSS pixels).
+const MIN_WINDOW_SIZE: (i64, i64) = (640, 400);
+
+/// Gives the browser window a size to open with in xulstore.json, unless a
+/// usable one is saved there; the saved state (maximized or not) and position
+/// stay. Camoufox does not size a new window itself, and its resize at start
+/// (removed from omni.ja, see `DEFAULT_SIZE_BROKEN`) left sizes like 516×200
+/// behind as the size a maximized window returns to.
+fn ensure_window_size(firefox_profile_dir: &std::path::Path) {
+    let path = firefox_profile_dir.join("xulstore.json");
+    let mut json = match std::fs::read_to_string(&path) {
+        Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(json) if json.is_object() => json,
+            _ => return,
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(_) => return,
+    };
+    // Indexing a value that is neither an object nor null panics
+    let doc = &mut json["chrome://browser/content/browser.xhtml"];
+    if !doc.is_object() {
+        *doc = serde_json::json!({});
     }
+    let win = &mut doc["main-window"];
+    if !win.is_object() {
+        *win = serde_json::json!({});
+    }
+    let size = |key: &str| win.get(key)?.as_str()?.parse::<i64>().ok();
+    if let (Some(w), Some(h)) = (size("width"), size("height")) {
+        if w >= MIN_WINDOW_SIZE.0 && h >= MIN_WINDOW_SIZE.1 {
+            return;
+        }
+    }
+    win["width"] = DEFAULT_WINDOW_SIZE.0.to_string().into();
+    win["height"] = DEFAULT_WINDOW_SIZE.1.to_string().into();
+    std::fs::write(&path, json.to_string()).ok();
 }
 
 const UI_STATE_PREF: &str = "user_pref(\"browser.uiCustomization.state\", \"";
@@ -408,8 +433,8 @@ async fn resolve_binary_and_config(
 
             let _ = effective_proxy; // proxy already encoded in user.js
 
-            let win_size = read_window_size_from_xulstore(firefox_profile_dir);
-            let cfg = crate::commands::profiles::build_camoufox_config(profile, win_size);
+            ensure_window_size(firefox_profile_dir);
+            let cfg = crate::commands::profiles::build_camoufox_config(profile);
             Ok((bin, Some(cfg)))
         }
         _ => {
@@ -417,5 +442,79 @@ async fn resolve_binary_and_config(
                 .map_err(|_| "Firefox not found in PATH. Please install it first.".to_string())?;
             Ok((bin, None))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile_dir(name: &str, xulstore: Option<&str>) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "veydan-window-size-{name}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::remove_file(dir.join("xulstore.json")).ok();
+        if let Some(text) = xulstore {
+            std::fs::write(dir.join("xulstore.json"), text).unwrap();
+        }
+        dir
+    }
+
+    fn main_window(dir: &std::path::Path) -> serde_json::Value {
+        let text = std::fs::read_to_string(dir.join("xulstore.json")).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        json["chrome://browser/content/browser.xhtml"]["main-window"].clone()
+    }
+
+    #[test]
+    fn a_new_profile_opens_with_the_default_size() {
+        let dir = profile_dir("new", None);
+        ensure_window_size(&dir);
+        let win = main_window(&dir);
+        assert_eq!(win["width"], "1280");
+        assert_eq!(win["height"], "760");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_tiny_saved_size_is_replaced_and_the_state_kept() {
+        let dir = profile_dir(
+            "tiny",
+            Some(r#"{"chrome://browser/content/browser.xhtml":{"main-window":{"screenX":"0","screenY":"0","width":"516","height":"200","sizemode":"maximized"}},"chrome://browser/content/places/places.xhtml":{"places":{"width":"800"}}}"#),
+        );
+        ensure_window_size(&dir);
+        let win = main_window(&dir);
+        assert_eq!(win["width"], "1280");
+        assert_eq!(win["height"], "760");
+        assert_eq!(win["sizemode"], "maximized");
+        assert_eq!(win["screenX"], "0");
+        let text = std::fs::read_to_string(dir.join("xulstore.json")).unwrap();
+        assert!(text.contains("places.xhtml"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_size_to_work_in_stays_as_it_is() {
+        let text = r#"{"chrome://browser/content/browser.xhtml":{"main-window":{"width":"1600","height":"900","sizemode":"normal"}}}"#;
+        let dir = profile_dir("fine", Some(text));
+        ensure_window_size(&dir);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("xulstore.json")).unwrap(),
+            text
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_file_that_is_not_json_is_left_alone() {
+        let dir = profile_dir("broken", Some("{not json"));
+        ensure_window_size(&dir);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("xulstore.json")).unwrap(),
+            "{not json"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

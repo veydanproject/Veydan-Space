@@ -9,8 +9,9 @@
 //!
 //! A message the user wrote (`enqueue_message`) is tried for an hour, then
 //! given up; a relay that refuses it outright gives it up sooner. A network
-//! that is down is no refusal: it only runs the hour out. Everything else
-//! (`enqueue`) is tried until it leaves.
+//! that is down is no refusal: it only runs the hour out. A receipt
+//! (`enqueue_for`) is given up the same way after a time of its own.
+//! Everything else (`enqueue`) is tried until it leaves.
 
 use messenger_core::{Ack, Clock, Outbound, Result, Transport};
 use messenger_store::{outbox as repo, Store};
@@ -94,6 +95,12 @@ impl Outbox {
     /// A message the user wrote: tried for `MESSAGE_TTL_SECS`, then given up.
     pub async fn enqueue_message(&self, out: Outbound) -> Result<String> {
         self.put(out, Some(MESSAGE_TTL_SECS)).await
+    }
+
+    /// Tried for `ttl_secs`, then given up, as a message is: for what is
+    /// worth nothing once late (a receipt).
+    pub async fn enqueue_for(&self, out: Outbound, ttl_secs: i64) -> Result<String> {
+        self.put(out, Some(ttl_secs)).await
     }
 
     async fn put(&self, out: Outbound, ttl: Option<i64>) -> Result<String> {
@@ -458,6 +465,21 @@ mod tests {
         let r = row(&store, &id).await;
         assert_eq!((r.state.as_str(), r.created_at, r.expires_at), ("queued", later, Some(later + MESSAGE_TTL_SECS)));
         assert_eq!(outbox.pump(&t).await.unwrap().failed, 1, "tried again, within its new hour");
+    }
+
+    #[tokio::test]
+    async fn what_is_late_for_nothing_is_given_up_after_its_own_time() {
+        let (clock, made) = setup();
+        let (store, outbox) = made.await;
+        let id = outbox.enqueue_for(publish(), 86_400).await.unwrap();
+        let r = row(&store, &id).await;
+        assert_eq!((r.state.as_str(), r.created_at, r.expires_at), ("queued", 1_000, Some(1_000 + 86_400)));
+
+        let t = Scripted::new(vec![offline()]);
+        *clock.0.lock().unwrap() = 1_000 + MESSAGE_TTL_SECS + 120;
+        assert_eq!(outbox.pump(&t).await.unwrap().failed, 1, "a message's hour is not its time");
+        *clock.0.lock().unwrap() = 1_000 + 86_400;
+        assert_eq!(outbox.pump(&t).await.unwrap().abandoned, 1);
     }
 
     #[tokio::test]

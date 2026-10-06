@@ -56,7 +56,7 @@
 > Файлы 4.x версия 5 не удаляет: если что-то пойдёт не так, установите 4.x
 > снова, и она откроет свои данные как раньше.
 
-This repository holds the sources of **Veydan Space 5.0.3** and its releases.
+This repository holds the sources of **Veydan Space 5.0.4** and its releases.
 It is a snapshot: the product is developed together with the other Veydan
 apps, and each release is published here as one commit with the tag
 `v<version>`. Nobody commits here by hand, so pull requests cannot be merged

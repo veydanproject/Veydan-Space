@@ -255,6 +255,27 @@ pub async fn count_visible_outgoing(store: &Store, chat_id: &str) -> Result<i64>
     .map_err(storage)
 }
 
+/// The message was removed for me (here or on another device of mine):
+/// remembered by id, so a copy that comes later is removed as well.
+pub async fn remember_hidden(store: &Store, id: &str, at: i64) -> Result<()> {
+    sqlx::query("INSERT OR IGNORE INTO msg_own_hidden (message_id, hidden_at) VALUES (?, ?)")
+        .bind(id)
+        .bind(at)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
+/// When the message was removed for me, if it was.
+pub async fn hidden_at(store: &Store, id: &str) -> Result<Option<i64>> {
+    sqlx::query_scalar::<_, i64>("SELECT hidden_at FROM msg_own_hidden WHERE message_id = ?")
+        .bind(id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)
+}
+
 pub const STATUS_UPLOADING: &str = "uploading";
 
 /// Remove one row for good (placeholders of uploads).

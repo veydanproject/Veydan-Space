@@ -609,6 +609,7 @@ impl MessengerRuntime {
         let pool = self.relays.pool().await;
         if let Some(gap) = self.net.beat(beat) {
             self.net.woke();
+            self.presence.woke();
             self.link.reset();
             self.outbox.hold_expiry(now() + crate::link::HOLD_EXPIRY_SECS);
             if !pool.is_silent() {

@@ -70,14 +70,16 @@ pub async fn list(store: &Store, include_archived: bool) -> Result<Vec<ChatRow>>
 }
 
 /// New activity: move `last_message_at` forward (never back), refresh the
-/// preview when this message is the newest, and bump unread if asked.
+/// preview when this message is the newest, and bump unread if asked and
+/// the message is later than what was read on any of my devices.
 pub async fn touch(store: &Store, id: &str, at: i64, preview: Option<&str>, bump_unread: bool) -> Result<()> {
     let now = crate::now();
     sqlx::query(
         "UPDATE msg_chats SET
            last_preview = CASE WHEN last_message_at IS NULL OR ? >= last_message_at THEN ? ELSE last_preview END,
            last_message_at = MAX(COALESCE(last_message_at, 0), ?),
-           unread = unread + ?,
+           unread = unread + CASE WHEN ? AND ? > COALESCE((SELECT read_at FROM msg_own_read WHERE chat_id = ?), 0)
+                                  THEN 1 ELSE 0 END,
            archived = 0,
            updated_at = ?
          WHERE id = ?",
@@ -85,7 +87,9 @@ pub async fn touch(store: &Store, id: &str, at: i64, preview: Option<&str>, bump
     .bind(at)
     .bind(preview)
     .bind(at)
-    .bind(if bump_unread { 1 } else { 0 })
+    .bind(bump_unread)
+    .bind(at)
+    .bind(id)
     .bind(now)
     .bind(id)
     .execute(store.pool())
@@ -94,16 +98,19 @@ pub async fn touch(store: &Store, id: &str, at: i64, preview: Option<&str>, bump
     Ok(())
 }
 
-/// Recompute `last_message_at`/`last_preview` from the visible messages
-/// (after a delete or an edit of the newest message).
+/// Recompute `last_message_at`/`last_preview` from the messages still shown
+/// (after a delete or an edit of the newest message). A removed message
+/// leaves its place in the chat but not in the list: the list shows the
+/// newest one that is still there.
 pub async fn recompute_last(store: &Store, id: &str) -> Result<()> {
     sqlx::query(
         "UPDATE msg_chats SET
-           last_message_at = (SELECT MAX(created_at) FROM msg_messages WHERE chat_id = ? AND is_hidden = 0 AND content_type != 'system'),
-           last_preview = (SELECT CASE WHEN deleted_at IS NOT NULL THEN NULL
-                                       WHEN content_type = 'media' THEN '📎 ' || COALESCE(text, json_extract(media_json, '$.name'), '')
+           last_message_at = (SELECT MAX(created_at) FROM msg_messages
+                               WHERE chat_id = ? AND is_hidden = 0 AND deleted_at IS NULL AND content_type != 'system'),
+           last_preview = (SELECT CASE WHEN content_type = 'media' THEN '📎 ' || COALESCE(text, json_extract(media_json, '$.name'), '')
                                        ELSE text END FROM msg_messages
-                           WHERE chat_id = ? AND is_hidden = 0 AND content_type != 'system' ORDER BY created_at DESC LIMIT 1),
+                           WHERE chat_id = ? AND is_hidden = 0 AND deleted_at IS NULL AND content_type != 'system'
+                           ORDER BY created_at DESC LIMIT 1),
            updated_at = ?
          WHERE id = ?",
     )
@@ -117,14 +124,79 @@ pub async fn recompute_last(store: &Store, id: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn mark_read(store: &Store, id: &str) -> Result<()> {
+/// The chat was read here: nothing waits, and what is read moves up to the
+/// newest message of the peer. Returns that time when it moved, so the
+/// other devices can be told; `None` when they know it already. A mark that
+/// moved is also owed to the peers (`receipts::take_due_read`).
+pub async fn mark_read(store: &Store, id: &str) -> Result<Option<i64>> {
     sqlx::query("UPDATE msg_chats SET unread = 0, updated_at = ? WHERE id = ?")
         .bind(crate::now())
         .bind(id)
         .execute(store.pool())
         .await
         .map_err(storage)?;
-    Ok(())
+    let newest = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT MAX(created_at) FROM msg_messages WHERE chat_id = ? AND direction = 'in' AND is_hidden = 0",
+    )
+    .bind(id)
+    .fetch_one(store.pool())
+    .await
+    .map_err(storage)?;
+    match newest {
+        Some(at) if raise_read(store, id, at, true).await? => Ok(Some(at)),
+        _ => Ok(None),
+    }
+}
+
+/// Another device of mine read the chat up to `at`: what is not later stops
+/// counting. Unread is only ever lowered here. `true` when it went down.
+/// The peers are told by the device that read, not by this one.
+pub async fn read_up_to(store: &Store, id: &str, at: i64) -> Result<bool> {
+    if !raise_read(store, id, at, false).await? {
+        return Ok(false);
+    }
+    let later = "(SELECT COUNT(*) FROM msg_messages
+                  WHERE chat_id = ?1 AND direction = 'in' AND is_hidden = 0 AND deleted_at IS NULL
+                    AND content_type != 'system' AND created_at > ?2)";
+    let r = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "UPDATE msg_chats SET unread = {later}, updated_at = ?3 WHERE id = ?1 AND unread > {later}"
+    )))
+    .bind(id)
+    .bind(at)
+    .bind(crate::now())
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(r.rows_affected() > 0)
+}
+
+/// Move what is read in the chat up to `at`, never back. `true` when it moved.
+/// `due`: read here, so a receipt is owed; a mark from elsewhere leaves a
+/// receipt still owed as it was.
+async fn raise_read(store: &Store, id: &str, at: i64, due: bool) -> Result<bool> {
+    let r = sqlx::query(
+        "INSERT INTO msg_own_read (chat_id, read_at, receipt_due) VALUES (?, ?, ?)
+         ON CONFLICT(chat_id) DO UPDATE SET read_at = excluded.read_at,
+                                            receipt_due = MAX(msg_own_read.receipt_due, excluded.receipt_due)
+         WHERE excluded.read_at > msg_own_read.read_at",
+    )
+    .bind(id)
+    .bind(at)
+    .bind(due)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(r.rows_affected() > 0)
+}
+
+/// Up to when the chat is read on any of my devices; `0` when it never was.
+pub async fn read_at(store: &Store, id: &str) -> Result<i64> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT read_at FROM msg_own_read WHERE chat_id = ?")
+        .bind(id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)?
+        .unwrap_or(0))
 }
 
 pub async fn set_pinned(store: &Store, id: &str, pinned: bool) -> Result<()> {
@@ -165,12 +237,13 @@ pub async fn is_muted(store: &Store, id: &str) -> Result<bool> {
     Ok(get(store, id).await?.map(|c| c.muted).unwrap_or(false))
 }
 
-/// Remove the chat and every message in it (local only; relays keep the
-/// ciphertext, and history sync would bring visible rows back unless the
-/// caller also records the retraction).
+/// Remove the chat, every message in it and every reaction that came in it
+/// (local only; relays keep the ciphertext, and history sync would bring
+/// visible rows back unless the caller also records the retraction).
 pub async fn delete(store: &Store, id: &str) -> Result<()> {
     let mut tx = store.pool().begin().await.map_err(storage)?;
     sqlx::query("DELETE FROM msg_messages WHERE chat_id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
+    sqlx::query("DELETE FROM msg_reactions WHERE chat_id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
     sqlx::query("DELETE FROM msg_chats WHERE id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
     tx.commit().await.map_err(storage)
 }
@@ -228,5 +301,59 @@ mod tests {
 
         delete(&s, "dm:aa").await.unwrap();
         assert!(get(&s, "dm:aa").await.unwrap().is_none());
+    }
+
+    async fn incoming(s: &Store, id: &str, at: i64, text: &str) {
+        let m = crate::messages::NewMessage {
+            id: id.into(),
+            chat_id: "dm:aa".into(),
+            wire_id: None,
+            direction: "in".into(),
+            status: "received".into(),
+            content_type: "text".into(),
+            text: Some(text.into()),
+            envelope_json: "{}".into(),
+            sender_pubkey: "aa".into(),
+            reply_to_id: None,
+            target_id: None,
+            created_at: at,
+            is_hidden: false,
+            outbox_local_id: None,
+            media_json: None,
+        };
+        crate::messages::insert(s, &m).await.unwrap();
+        touch(s, "dm:aa", at, Some(text), true).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_list_shows_the_newest_message_still_there() {
+        let s = Store::open_in_memory().await.unwrap();
+        ensure_dm(&s, "aa").await.unwrap();
+        incoming(&s, "m1", 100, "one").await;
+        incoming(&s, "m2", 200, "two").await;
+        crate::messages::mark_deleted(&s, "m2", 300).await.unwrap();
+        recompute_last(&s, "dm:aa").await.unwrap();
+        let c = get(&s, "dm:aa").await.unwrap().unwrap();
+        assert_eq!((c.last_preview.as_deref(), c.last_message_at), (Some("one"), Some(100)));
+        crate::messages::mark_deleted(&s, "m1", 300).await.unwrap();
+        recompute_last(&s, "dm:aa").await.unwrap();
+        assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().last_preview, None, "nothing left");
+    }
+
+    #[tokio::test]
+    async fn read_on_any_device_holds_whatever_comes_first() {
+        let s = Store::open_in_memory().await.unwrap();
+        assert!(!read_up_to(&s, "dm:aa", 150).await.unwrap(), "no chat yet: kept, nothing to lower");
+        ensure_dm(&s, "aa").await.unwrap();
+        incoming(&s, "m1", 100, "one").await;
+        incoming(&s, "m2", 200, "two").await;
+        assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().unread, 1, "the earlier one was read elsewhere");
+        assert!(!read_up_to(&s, "dm:aa", 120).await.unwrap(), "never back");
+        assert_eq!(mark_read(&s, "dm:aa").await.unwrap(), Some(200));
+        assert_eq!(mark_read(&s, "dm:aa").await.unwrap(), None, "the others know it");
+        assert_eq!(read_at(&s, "dm:aa").await.unwrap(), 200);
+        incoming(&s, "m3", 300, "three").await;
+        assert!(read_up_to(&s, "dm:aa", 300).await.unwrap());
+        assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().unread, 0);
     }
 }

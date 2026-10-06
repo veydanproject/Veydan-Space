@@ -26,12 +26,18 @@ import { nameStore } from "./groups/names.svelte";
 import { linkStore } from "./content/linkStore.svelte";
 import { sharedStore } from "./content/shared/sharedStore.svelte";
 import { netStore } from "./net/netStore.svelte";
+import { usageStore } from "./shared/emoji/usageStore.svelte";
+import { presenceStore } from "./presence/presenceStore.svelte";
+import { privacyStore } from "./privacy/privacyStore.svelte";
+import { pushSeen } from "./push/bridge";
 
 export interface FeedEntry extends MessengerUiEvent {
   at: number;
 }
 
 const FEED_LIMIT = 50;
+/** Half the runtime's 90 s lease on "the page is seen". */
+const PRESENCE_LEASE_MS = 45_000;
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -109,6 +115,11 @@ class MessengerStore {
           groupStore.load().catch(() => {});
           // Whether a bridge is offered shows above the chats, not only in settings.
           netStore.load().catch(() => {});
+          // Popular emoji come from every device of mine: reactions and the picker start from them.
+          usageStore.load().catch(() => {});
+          // Who of my contacts is online; the clock of "last seen" starts with it.
+          presenceStore.load().catch(() => {});
+          presenceStore.start();
           // Events must flow as soon as the module is visible, not only
           // while its page is open (unread badge, statuses).
           this.startListeners().catch(() => {});
@@ -124,6 +135,8 @@ class MessengerStore {
         linkStore.reset();
         sharedStore.reset();
         netStore.reset();
+        usageStore.reset();
+        presenceStore.reset();
       }
       this.loaded = true;
     } finally {
@@ -153,6 +166,8 @@ class MessengerStore {
     linkStore.reset();
     sharedStore.reset();
     netStore.reset();
+    usageStore.reset();
+    presenceStore.reset();
   }
 
   /** Subscribe to relay-state and runtime event pushes. Idempotent. */
@@ -171,6 +186,9 @@ class MessengerStore {
         linkStore.handleEvent(e.payload);
         sharedStore.handleEvent(e.payload);
         netStore.handleEvent(e.payload);
+        usageStore.handleEvent(e.payload);
+        presenceStore.handleEvent(e.payload);
+        privacyStore.handleEvent(e.payload);
         if (e.payload.name === 'transfer.progress') return;
         this.feed = [{ ...e.payload, at: Date.now() }, ...this.feed].slice(0, FEED_LIMIT);
         if (e.payload.name === 'dm.message' || e.payload.name === 'history.synced') this.scheduleStatusRefresh();
@@ -179,6 +197,11 @@ class MessengerStore {
           const link = (e.payload.payload as { state?: MessengerLink } | null)?.state;
           if (link && this.status?.runtime) this.status = { ...this.status, runtime: { ...this.status.runtime, link } };
           this.scheduleStatusRefresh();
+        }
+        if (e.payload.name === 'chat.read') {
+          // Read on another device of mine: the phone's notification of it goes too.
+          const chatId = (e.payload.payload as { chat_id?: string } | null)?.chat_id;
+          if (chatId) pushSeen(chatId);
         }
         if (e.payload.name === "profile.updated") {
           const pk = (e.payload.payload as { pubkey?: string } | null)?.pubkey;
@@ -189,6 +212,26 @@ class MessengerStore {
         }
       }),
     );
+    this._unlisten.push(this.leaseForeground());
+  }
+
+  /**
+   * The runtime beats presence only while the page is seen. `true` is a
+   * lease of 90 s, said again every 45 s, so a page that died without a
+   * word stops the heartbeat by itself; hiding says `false` at once.
+   * Returns what undoes it.
+   */
+  private leaseForeground(): () => void {
+    const visible = () => document.visibilityState === 'visible';
+    const say = (v: boolean) => messengerApi.presence.foreground(v).catch(() => {});
+    const onChange = () => say(visible());
+    document.addEventListener('visibilitychange', onChange);
+    say(visible());
+    const timer = setInterval(() => { if (visible()) say(true); }, PRESENCE_LEASE_MS);
+    return () => {
+      document.removeEventListener('visibilitychange', onChange);
+      clearInterval(timer);
+    };
   }
 
   private _statusTimer: ReturnType<typeof setTimeout> | null = null;

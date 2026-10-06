@@ -5,6 +5,7 @@
 //! so handlers and tests can inspect them without a protocol crate.
 
 use messenger_core::outbound::Filter;
+use messenger_core::presence::{KIND_PRESENCE, PRESENCE_D};
 use messenger_core::{PubKey, Timestamp};
 
 /// Gift wraps carry a `created_at` tweaked randomly up to two days into the
@@ -95,9 +96,33 @@ pub fn group_events(group_ids: &[String], since: Option<Timestamp>) -> Filter {
     Filter(f)
 }
 
+pub const SUB_PRESENCE: &str = "presence";
+
+/// Presence beats of the given presence keys (not user keys: a contact
+/// beats from a key only its approved contacts know).
+pub fn presence_of(authors: &[PubKey]) -> Filter {
+    Filter(serde_json::json!({
+        "kinds": [KIND_PRESENCE],
+        "authors": authors.iter().map(|p| p.as_hex()).collect::<Vec<_>>(),
+        "#d": [PRESENCE_D],
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presence_filter_asks_for_our_beats_of_these_keys() {
+        let a = PubKey::parse(&"ab".repeat(32)).unwrap();
+        let b = PubKey::parse(&"cd".repeat(32)).unwrap();
+        let f = presence_of(&[a.clone(), b.clone()]);
+        assert_eq!(
+            f.0,
+            serde_json::json!({ "kinds": [30315], "authors": [a.as_hex(), b.as_hex()], "#d": ["veydan"] })
+        );
+        assert_eq!(SUB_PRESENCE, "presence");
+    }
 
     #[test]
     fn dm_filters_target_gift_wraps_for_me() {

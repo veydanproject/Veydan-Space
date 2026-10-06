@@ -11,6 +11,8 @@
   let zoomed = $state(false);
 
   $effect(() => { if (viewer.item) zoomed = false; });
+  // The screen is left: what it showed does not wait for its return.
+  $effect(() => () => viewer.close());
 
   function key(e: KeyboardEvent) {
     if (viewer.item && e.key === 'Escape') { e.stopPropagation(); viewer.close(); }

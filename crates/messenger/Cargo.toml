@@ -9,7 +9,7 @@
 
 [workspace]
 resolver = "2"
-members = ["core", "vlink", "http", "links", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "groups", "push", "notify", "runtime", "testkit"]
+members = ["core", "vlink", "http", "links", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "groups", "push", "presence", "notify", "runtime", "testkit"]
 
 [workspace.package]
 version = "0.1.0"
@@ -44,6 +44,10 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 wiremock = "0.6"
 ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
 nostr = { version = "0.45", default-features = false, features = ["std", "nip06", "nip44", "nip49", "nip59", "os-rng"] }
+# The curve nostr signs with, named for the one check nostr does not offer:
+# a BIP-340 signature over something that is not an event (the proof of a
+# presence key, messenger-dm).
+secp256k1 = { version = "0.30", default-features = false, features = ["std"] }
 
 # What messenger-vlink is made of; all of it is already in the tree through
 # reqwest and nostr-sdk.
@@ -72,6 +76,7 @@ messenger-dm = { path = "dm" }
 messenger-media = { path = "media" }
 messenger-groups = { path = "groups" }
 messenger-push = { path = "push" }
+messenger-presence = { path = "presence" }
 messenger-notify = { path = "notify" }
 messenger-runtime = { path = "runtime" }
 messenger-testkit = { path = "testkit" }

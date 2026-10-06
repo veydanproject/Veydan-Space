@@ -1495,6 +1495,7 @@ dependencies = [
  "messenger-links",
  "messenger-store",
  "nostr",
+ "secp256k1",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1624,6 +1625,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "messenger-presence"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hmac",
+ "messenger-core",
+ "messenger-store",
+ "nostr",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+]
+
+[[package]]
 name = "messenger-preview"
 version = "0.1.0"
 dependencies = [
@@ -1673,6 +1689,7 @@ dependencies = [
  "messenger-links",
  "messenger-media",
  "messenger-notify",
+ "messenger-presence",
  "messenger-preview",
  "messenger-push",
  "messenger-store",
@@ -1680,9 +1697,11 @@ dependencies = [
  "messenger-transport",
  "messenger-vlink",
  "nostr",
+ "nostr-sdk",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sqlx",
  "tempfile",
  "tokio",
  "ts-rs",
@@ -1694,6 +1713,7 @@ name = "messenger-store"
 version = "0.1.0"
 dependencies = [
  "messenger-core",
+ "serde",
  "serde_json",
  "sqlx",
  "tempfile",

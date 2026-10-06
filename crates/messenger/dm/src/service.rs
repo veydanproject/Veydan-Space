@@ -5,10 +5,10 @@
 //! building; sending is the runtime's job (it enqueues the returned
 //! `Outbound`s and reports the outbox id back with `attach_outbox`).
 
-use crate::view::{preview, ChatView, MessageView, ReplyPreview};
+use crate::view::{preview, ChatView, MessageView, ReactionView, ReplyPreview};
 use crate::wrap::{wrap_as, Wake};
 use messenger_contacts::{ContactService, ProfileService};
-use messenger_core::envelope::{T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
+use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
 use messenger_core::traits::{Notice, UiEvent};
 use messenger_core::{
     Clock, Context, DmInbound, Effect, Envelope, EventSource, MessengerError, Outbound, PubKey, RelayUrl, Result,
@@ -16,10 +16,11 @@ use messenger_core::{
 use messenger_store::chats::{self, ChatRow};
 use messenger_store::messages::{self as repo, MessageRow, NewMessage};
 use messenger_store::shared::{self, Counts, Section};
-use messenger_store::{dm_routes, Store};
+use messenger_store::{dm_routes, reactions, receipts, settings, Store};
 use nostr::key::Keys;
 use nostr::nips::nip19::ToBech32;
 use nostr::prelude::PublicKey;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, RwLock};
 
@@ -51,6 +52,16 @@ pub struct Prepared {
     /// A new message the user can see: its copies are tried for an hour
     /// and then given up. An edit or a deletion is tried until it leaves.
     pub expiring: bool,
+}
+
+/// Up to when the peers of one chat have read it: the peer of a direct
+/// chat (`peer`), the members of a group (`peer` is `None`).
+struct Marks {
+    peer: Option<String>,
+    reads: Vec<(String, i64)>,
+    show_read: bool,
+    /// Whose reactions are shown as mine.
+    me: Option<String>,
 }
 
 #[derive(Clone)]
@@ -135,10 +146,6 @@ impl DmService {
         self.chat_view(row).await
     }
 
-    pub async fn mark_read(&self, chat_id: &str) -> Result<()> {
-        chats::mark_read(&self.store, chat_id).await
-    }
-
     pub async fn set_pinned(&self, chat_id: &str, pinned: bool) -> Result<()> {
         chats::set_pinned(&self.store, chat_id, pinned).await
     }
@@ -206,19 +213,25 @@ impl DmService {
 
     pub async fn messages(&self, chat_id: &str, before: Option<i64>, limit: i64) -> Result<Vec<MessageView>> {
         let rows = repo::list(&self.store, chat_id, before, limit.clamp(1, 500)).await?;
-        let mut out = Vec::with_capacity(rows.len());
-        for r in rows {
-            out.push(self.message_view(r).await?);
-        }
-        Ok(out)
+        self.views(chat_id, rows).await
     }
 
     /// What a chat has shared in one section, newest first.
     pub async fn shared(&self, chat_id: &str, section: Section, before: Option<i64>, limit: i64) -> Result<Vec<MessageView>> {
         let rows = shared::list(&self.store, chat_id, section, before, limit.clamp(1, 500)).await?;
+        self.views(chat_id, rows).await
+    }
+
+    /// Views of rows of one chat: the marks and the reactions are read once
+    /// for the whole list.
+    async fn views(&self, chat_id: &str, rows: Vec<MessageRow>) -> Result<Vec<MessageView>> {
+        let marks = self.marks(chat_id).await?;
+        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        let mut reactions = self.reactions_of(chat_id, &ids, &marks).await?;
         let mut out = Vec::with_capacity(rows.len());
         for r in rows {
-            out.push(self.message_view(r).await?);
+            let under = reactions.remove(&r.id).unwrap_or_default();
+            out.push(self.message_view(r, &marks, under).await?);
         }
         Ok(out)
     }
@@ -230,12 +243,47 @@ impl DmService {
 
     pub async fn message(&self, id: &str) -> Result<Option<MessageView>> {
         match repo::get(&self.store, id).await? {
-            Some(r) => Ok(Some(self.message_view(r).await?)),
+            Some(r) => {
+                let chat_id = r.chat_id.clone();
+                Ok(self.views(&chat_id, vec![r]).await?.pop())
+            }
             None => Ok(None),
         }
     }
 
-    async fn message_view(&self, r: MessageRow) -> Result<MessageView> {
+    /// What the peers told of a chat, read once for a whole list.
+    async fn marks(&self, chat_id: &str) -> Result<Marks> {
+        Ok(Marks {
+            peer: chat_id.strip_prefix("dm:").map(String::from),
+            reads: receipts::peer_reads(&self.store, chat_id).await?,
+            show_read: settings::get_bool(&self.store, crate::notes::KEY_READ_RECEIPTS, true).await?,
+            me: self.my_key().await?,
+        })
+    }
+
+    /// My key: the session's, or the stored identity's while locked. `None`
+    /// before there is an identity: then nothing is shown as mine.
+    pub(crate) async fn my_key(&self) -> Result<Option<String>> {
+        let signer = self.signer.read().unwrap().as_ref().map(Self::me);
+        match signer {
+            Some(me) => Ok(Some(me)),
+            None => Ok(messenger_store::identity::get(&self.store).await?.map(|i| i.pubkey_hex)),
+        }
+    }
+
+    /// The reactions under messages of one chat, in one read.
+    async fn reactions_of(&self, chat_id: &str, ids: &[String], marks: &Marks) -> Result<HashMap<String, Vec<ReactionView>>> {
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        reactions::aggregate_many(&self.store, chat_id, ids, marks.me.as_deref().unwrap_or("")).await
+    }
+
+    async fn message_view(&self, r: MessageRow, marks: &Marks, reactions: Vec<ReactionView>) -> Result<MessageView> {
+        // A message taken back for everyone or removed for me carries nothing.
+        let reactions = if r.deleted_at.is_some() { vec![] } else { reactions };
+        let (delivered_at, read_at, seen_by) =
+            if r.direction == repo::DIR_OUT && r.content_type != repo::CT_SYSTEM { self.receipts_of(&r, marks).await? } else { (None, None, vec![]) };
         let reply = match &r.reply_to_id {
             Some(id) => repo::get(&self.store, id).await?.filter(|t| !t.is_hidden).map(|t| ReplyPreview {
                 id: t.id,
@@ -248,7 +296,28 @@ impl DmService {
             (Some(local), true) => messenger_store::outbox::get(&self.store, local).await?.map(|o| o.created_at),
             _ => None,
         };
-        Ok(MessageView { queued_at, ..MessageView::from_row(r, reply) })
+        Ok(MessageView { queued_at, delivered_at, read_at, seen_by, reactions, ..MessageView::from_row(r, reply) })
+    }
+
+    /// The marks of one message of mine. A read mark says delivered too.
+    /// With read receipts off, nobody is shown to have read anything.
+    async fn receipts_of(&self, r: &MessageRow, marks: &Marks) -> Result<(Option<i64>, Option<i64>, Vec<String>)> {
+        match &marks.peer {
+            Some(peer) => {
+                let mark = marks.reads.iter().find(|(m, _)| m == peer).map(|(_, at)| *at).filter(|at| *at >= r.created_at);
+                let delivered = receipts::delivered_at(&self.store, &r.id, peer).await?.or(mark);
+                Ok((delivered, mark.filter(|_| marks.show_read), vec![]))
+            }
+            None => {
+                let seen: Vec<&(String, i64)> =
+                    marks.reads.iter().filter(|(m, at)| *m != r.sender_pubkey && *at >= r.created_at).collect();
+                let newest = seen.iter().map(|(_, at)| *at).max();
+                if !marks.show_read {
+                    return Ok((newest, None, vec![]));
+                }
+                Ok((newest, newest, seen.into_iter().map(|(m, _)| m.clone()).collect()))
+            }
+        }
     }
 
     /// Where to deliver DMs for `peer`, best first.
@@ -471,15 +540,6 @@ impl DmService {
         Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups: vec![], became_contact: false, events: vec![], expiring: false })
     }
 
-    /// Hide a message on this device only (works for incoming ones too).
-    pub async fn delete_local(&self, message_id: &str) -> Result<()> {
-        let row = repo::get(&self.store, message_id)
-            .await?
-            .ok_or_else(|| MessengerError::Invalid("unknown message".into()))?;
-        repo::mark_deleted(&self.store, message_id, self.clock.now().secs()).await?;
-        chats::recompute_last(&self.store, &row.chat_id).await
-    }
-
     /// Link a row to the outbox entry that publishes it.
     pub async fn attach_outbox(&self, tracking_id: &str, local_id: &str) -> Result<()> {
         repo::set_outbox_local_id(&self.store, tracking_id, Some(local_id)).await
@@ -515,6 +575,18 @@ impl DmService {
     pub async fn apply_inbound(&self, msg: DmInbound, ctx: &Context) -> Result<Vec<Effect>> {
         let me = &ctx.my_pubkey;
         let from_me = &msg.sender == me;
+        // A note of my other device: not a message of any chat.
+        if msg.rumor_kind == KIND_OWN_RUMOR {
+            if !from_me || msg.recipients.iter().any(|p| p != me) {
+                return Ok(vec![]);
+            }
+            let Ok(envelope) = Envelope::parse(&msg.content) else { return Ok(vec![]) };
+            return self.apply_own(&msg, &envelope).await;
+        }
+        // A note between the peer and me: not a message of the chat either.
+        if msg.rumor_kind == KIND_PEER_NOTE_RUMOR {
+            return self.apply_peer_note(&msg, ctx).await;
+        }
         let peer = if from_me {
             msg.recipients.iter().find(|p| *p != me).cloned().unwrap_or_else(|| me.clone())
         } else {
@@ -593,6 +665,10 @@ impl DmService {
             }
             return Ok(vec![]);
         }
+        // Old news to the peer (history on a new login): no receipt, ever.
+        if !from_me && !hidden && msg.created_at.secs() < self.clock.now().secs() - crate::notes::RECEIPT_WINDOW_SECS {
+            receipts::set_acked(&self.store, &id, msg.created_at.secs()).await?;
+        }
 
         if content_type == repo::CT_CONTROL {
             let action = envelope.str_field("action").map(String::from);
@@ -620,6 +696,8 @@ impl DmService {
                 _ => {}
             }
         }
+        // Removed for me on another device before it came here.
+        let hidden_before = self.hide_if_hidden(&id).await?;
 
         let line = if content_type == repo::CT_MEDIA {
             let name = envelope.str_field("name").unwrap_or("file");
@@ -629,9 +707,13 @@ impl DmService {
         };
         let live_incoming = !from_me && !historical;
         let floor = self.unread_floor.load(Ordering::SeqCst);
-        let counts_unread = !from_me && (live_incoming || (floor >= 0 && msg.created_at.secs() >= floor));
+        let counts_unread =
+            !from_me && !hidden_before && (live_incoming || (floor >= 0 && msg.created_at.secs() >= floor));
         chats::touch(&self.store, &chat.id, msg.created_at.secs(), Some(&line), counts_unread).await?;
         chats::recompute_last(&self.store, &chat.id).await?;
+        if from_me {
+            effects.extend(self.read_elsewhere(&chat.id, msg.created_at.secs()).await?);
+        }
 
         let view = self.message(&id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
         effects.push(Effect::Emit(UiEvent {
@@ -693,7 +775,7 @@ fn text_of(e: &Envelope) -> Option<String> {
     e.str_field("text").map(String::from)
 }
 
-fn updated(chat_id: &str, message_id: &str) -> UiEvent {
+pub(crate) fn updated(chat_id: &str, message_id: &str) -> UiEvent {
     UiEvent {
         name: UI_EVENT_DM_UPDATED.into(),
         payload: serde_json::json!({ "chat_id": chat_id, "message_id": message_id }),
@@ -785,6 +867,7 @@ mod tests {
                     .filter_map(|t| t.as_slice().get(1))
                     .filter_map(|s| EventId::parse(s))
                     .next(),
+                rumor_kind: rumor.kind.as_u16(),
             };
             self.dm.apply_inbound(msg, &self.ctx()).await.unwrap()
         }
@@ -980,6 +1063,78 @@ mod tests {
         assert_eq!(msgs[0].id, a1.message.id);
     }
 
+    /// A note of mine as my other device gets it.
+    fn own_note(keys: &Keys, note: &Envelope, at: i64) -> WireEvent {
+        crate::wrap::wrap_own(keys, &note.encode(), at).unwrap()
+    }
+
+    #[tokio::test]
+    async fn what_one_device_reads_or_hides_the_other_does_too() {
+        let alice = Party::new().await;
+        let phone = Party::with_keys(alice.keys.clone()).await;
+        let bob = Party::new().await;
+        let b1 = bob.dm.prepare_text(&bob.keys, &alice.pk(), "one", None).await.unwrap();
+        bob.clock.0.store(1_000_010, Ordering::SeqCst);
+        let b2 = bob.dm.prepare_text(&bob.keys, &alice.pk(), "two", None).await.unwrap();
+        for p in [&b1, &b2] {
+            alice.receive(&peer_event(p)).await;
+            phone.receive(&peer_event(p)).await;
+        }
+        let chat = alice.dm.open_chat(&bob.pk()).await.unwrap();
+        assert_eq!((chat.unread, phone.dm.open_chat(&bob.pk()).await.unwrap().unread), (2, 2));
+
+        // Read on the computer: the phone is told, once.
+        let read = alice.dm.mark_read(&chat.id).await.unwrap().expect("a note for the phone");
+        assert_eq!(read, Envelope::own_read(&chat.id, b2.message.created_at));
+        assert!(alice.dm.mark_read(&chat.id).await.unwrap().is_none(), "nothing new to tell");
+        assert_eq!(names(&phone.receive(&own_note(&alice.keys, &read, 1_000_020)).await), vec!["chat.read"]);
+        assert_eq!(phone.dm.open_chat(&bob.pk()).await.unwrap().unread, 0);
+
+        // Removed for me on the computer: gone on the phone, and the list
+        // shows what is left.
+        let hide = alice.dm.delete_local(&b2.message.id).await.unwrap();
+        assert_eq!(alice.dm.open_chat(&bob.pk()).await.unwrap().last_preview.as_deref(), Some("one"));
+        assert_eq!(names(&phone.receive(&own_note(&alice.keys, &hide, 1_000_021)).await), vec!["dm.updated"]);
+        assert!(phone.dm.message(&b2.message.id).await.unwrap().unwrap().deleted);
+        let on_phone = phone.dm.open_chat(&bob.pk()).await.unwrap();
+        assert_eq!(on_phone.last_preview.as_deref(), Some("one"));
+        assert_eq!(phone.dm.list_chats(true).await.unwrap().len(), 1, "a note makes no chat with myself");
+    }
+
+    #[tokio::test]
+    async fn notes_hold_for_what_comes_after_them() {
+        let alice = Party::new().await;
+        let phone = Party::with_keys(alice.keys.clone()).await;
+        let bob = Party::new().await;
+        let b1 = bob.dm.prepare_text(&bob.keys, &alice.pk(), "one", None).await.unwrap();
+        bob.clock.0.store(1_000_010, Ordering::SeqCst);
+        let b2 = bob.dm.prepare_text(&bob.keys, &alice.pk(), "two", None).await.unwrap();
+        bob.clock.0.store(1_000_020, Ordering::SeqCst);
+        let b3 = bob.dm.prepare_text(&bob.keys, &alice.pk(), "three", None).await.unwrap();
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+
+        // The phone was away: the notes come before the messages they name.
+        let read = Envelope::own_read(&chat_id, b2.message.created_at);
+        let hide = Envelope::own_hide(&chat_id, &b1.message.id);
+        assert!(phone.receive(&own_note(&alice.keys, &read, 1_000_030)).await.is_empty());
+        assert!(phone.receive(&own_note(&alice.keys, &hide, 1_000_031)).await.is_empty());
+        assert!(phone.dm.list_chats(true).await.unwrap().is_empty(), "no chat before its messages");
+        for p in [&b3, &b1, &b2] {
+            phone.receive(&peer_event(p)).await;
+        }
+        let chat = phone.dm.open_chat(&bob.pk()).await.unwrap();
+        assert_eq!(chat.unread, 1, "only what came after the read");
+        assert!(phone.dm.message(&b1.message.id).await.unwrap().unwrap().deleted);
+        assert_eq!(chat.last_preview.as_deref(), Some("three"));
+
+        // An answer written on the computer: what came before is read.
+        alice.clock.0.store(1_000_040, Ordering::SeqCst);
+        alice.receive(&peer_event(&b3)).await;
+        let answer = alice.dm.prepare_text(&alice.keys, &bob.pk(), "ok", None).await.unwrap();
+        assert_eq!(names(&phone.receive(&self_event(&answer)).await), vec!["chat.read", "dm.message"]);
+        assert_eq!(phone.dm.open_chat(&bob.pk()).await.unwrap().unread, 0);
+    }
+
     #[tokio::test]
     async fn plain_text_from_other_clients_unknown_types_and_mute() {
         let alice = Party::new().await;
@@ -1084,7 +1239,12 @@ mod tests {
     use crate::relationship::Action;
 
     async fn gated() -> Party {
-        let p = Party::new().await;
+        gated_with(Keys::generate()).await
+    }
+
+    /// A device as the app runs it: the relationship gate on.
+    async fn gated_with(keys: Keys) -> Party {
+        let p = Party::with_keys(keys).await;
         p.dm.set_gate(true);
         p.dm.set_signer(Some(p.keys.clone()));
         p
@@ -1438,5 +1598,753 @@ mod tests {
         alice.dm.media_discard(&ph.id).await.unwrap();
         assert!(alice.dm.message(&ph.id).await.unwrap().is_none());
         assert_eq!(alice.dm.open_chat(&bob.pk()).await.unwrap().last_preview.as_deref(), Some("text"));
+    }
+
+    // ─── Stage A: receipts ──────────────────────────────────────────────────
+
+    /// A receipt as the runtime builds it: to the peer only, out of sight.
+    fn receipt(from: &Party, to: &Party, note: &Envelope) -> WireEvent {
+        let now = from.clock.now().secs();
+        let w = crate::wrap::wrap_note(&from.keys, &to.pk(), &note.encode(), now, false, Some(now + 7 * 86_400)).unwrap();
+        assert!(w.to_self.is_none(), "my devices are not told of my receipts");
+        w.to_peer
+    }
+
+    async fn take_delivered(p: &Party) -> Vec<(String, String, Vec<String>)> {
+        p.dm.take_due_delivered(p.clock.now().secs()).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn delivered_receipt_paints_the_second_tick() {
+        let (alice, bob) = mutual().await;
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        let p = alice.dm.prepare_text(&alice.keys, &bob.pk(), "did it come?", None).await.unwrap();
+        bob.receive(&peer_event(&p)).await;
+
+        let due = take_delivered(&bob).await;
+        assert_eq!(due.len(), 1, "one note per peer");
+        let (chat_id, peer, ids) = &due[0];
+        assert_eq!((chat_id.as_str(), peer.as_str()), (chats::dm_chat_id(alice.pk().as_hex()).as_str(), alice.pk().as_hex()));
+        assert!(ids.contains(&p.message.id));
+        assert!(!ids.iter().any(|id| id.starts_with("sys:")), "system lines are nobody's messages");
+        assert!(take_delivered(&bob).await.is_empty(), "taken once");
+
+        let note = receipt(&bob, &alice, &Envelope::receipt_delivered(ids));
+        assert!(alice.dm.message(&p.message.id).await.unwrap().unwrap().delivered_at.is_none());
+        let fx = alice.receive(&note).await;
+        assert!(names(&fx).iter().all(|n| n == "dm.updated") && !fx.is_empty());
+        let m = alice.dm.message(&p.message.id).await.unwrap().unwrap();
+        assert_eq!(m.delivered_at, Some(bob.clock.now().secs()));
+        assert_eq!(m.read_at, None, "delivered is not read");
+        assert!(alice.receive(&note).await.is_empty(), "the same receipt again changes nothing");
+
+        // Alice's second device hears of the receipt before its copy of the message.
+        let phone = Party::with_keys(alice.keys.clone()).await;
+        assert!(phone.receive(&note).await.is_empty());
+        phone.receive(&self_event(&p)).await;
+        assert!(phone.dm.message(&p.message.id).await.unwrap().unwrap().delivered_at.is_some());
+
+        // Bob's own messages are never marked by a receipt about them.
+        let b = bob.dm.prepare_text(&bob.keys, &alice.pk(), "mine", None).await.unwrap();
+        alice.receive(&peer_event(&b)).await;
+        let forged = receipt(&bob, &alice, &Envelope::receipt_delivered(std::slice::from_ref(&b.message.id)));
+        assert!(alice.receive(&forged).await.is_empty());
+        assert!(messenger_store::receipts::delivered_at(alice.dm.store(), &b.message.id, bob.pk().as_hex()).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn read_receipt_is_a_watermark() {
+        let (alice, bob) = mutual().await;
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        let m1 = alice.dm.prepare_text(&alice.keys, &bob.pk(), "one", None).await.unwrap();
+        let m2 = alice.dm.prepare_text(&alice.keys, &bob.pk(), "two", None).await.unwrap();
+        for p in [&m1, &m2] {
+            bob.receive(&peer_event(p)).await;
+        }
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+        bob.dm.mark_read(&chat.id).await.unwrap();
+        let m3 = alice.dm.prepare_text(&alice.keys, &bob.pk(), "three, not read yet", None).await.unwrap();
+
+        let due = bob.dm.take_due_read().await.unwrap();
+        assert_eq!(due, vec![(chat.id.clone(), m2.message.created_at)]);
+        assert!(bob.dm.take_due_read().await.unwrap().is_empty(), "taken once");
+
+        bob.clock.0.store(1_000_200, Ordering::SeqCst);
+        let note = receipt(&bob, &alice, &Envelope::receipt_read(m2.message.created_at));
+        assert_eq!(names(&alice.receive(&note).await), vec!["chat.receipt"]);
+        let a_chat = alice.dm.open_chat(&bob.pk()).await.unwrap();
+        let list = alice.dm.messages(&a_chat.id, None, 50).await.unwrap();
+        let of = |id: &str| list.iter().find(|m| m.id == id).unwrap().clone();
+        assert_eq!(of(&m1.message.id).read_at, Some(m2.message.created_at));
+        assert_eq!(of(&m2.message.id).read_at, Some(m2.message.created_at));
+        assert_eq!(of(&m1.message.id).delivered_at, Some(m2.message.created_at), "read says delivered");
+        assert_eq!(of(&m3.message.id).read_at, None);
+        assert_eq!(of(&m3.message.id).delivered_at, None);
+        assert!(list.iter().filter(|m| m.direction == "in").all(|m| m.read_at.is_none() && m.delivered_at.is_none()));
+
+        // An older mark that comes late moves nothing back; a mark from the
+        // future covers what is here, not what I write next.
+        let late = receipt(&bob, &alice, &Envelope::receipt_read(m1.message.created_at));
+        assert!(alice.receive(&late).await.is_empty());
+        let ahead = receipt(&bob, &alice, &Envelope::receipt_read(9_999_999));
+        assert_eq!(names(&alice.receive(&ahead).await), vec!["chat.receipt"]);
+        assert!(alice.dm.message(&m3.message.id).await.unwrap().unwrap().read_at.is_some());
+        alice.clock.0.store(1_000_300, Ordering::SeqCst);
+        let m4 = alice.dm.prepare_text(&alice.keys, &bob.pk(), "four", None).await.unwrap();
+        assert_eq!(m4.message.read_at, None);
+        assert_eq!(alice.dm.message(&m4.message.id).await.unwrap().unwrap().read_at, None);
+    }
+
+    #[tokio::test]
+    async fn a_read_mark_dated_ahead_covers_nothing_i_write_later() {
+        let (alice, bob) = mutual().await;
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        let m1 = alice.dm.prepare_text(&alice.keys, &bob.pk(), "one", None).await.unwrap();
+        bob.receive(&peer_event(&m1)).await;
+
+        // Bob's note says it read everything up to 2286, and is dated 2286 too.
+        bob.clock.0.store(9_999_999_999, Ordering::SeqCst);
+        let ahead = receipt(&bob, &alice, &Envelope::receipt_read(9_999_999_999));
+        assert_eq!(names(&alice.receive(&ahead).await), vec!["chat.receipt"]);
+        assert!(alice.dm.message(&m1.message.id).await.unwrap().unwrap().read_at.is_some(), "what is here is read");
+        let chat = chats::dm_chat_id(bob.pk().as_hex());
+        let marks = messenger_store::receipts::peer_reads(alice.dm.store(), &chat).await.unwrap();
+        assert!(marks[0].1 <= 1_000_100, "no further than my clock: {marks:?}");
+
+        alice.clock.0.store(1_000_300, Ordering::SeqCst);
+        let m2 = alice.dm.prepare_text(&alice.keys, &bob.pk(), "two", None).await.unwrap();
+        let shown = alice.dm.message(&m2.message.id).await.unwrap().unwrap();
+        assert_eq!((shown.read_at, shown.delivered_at), (None, None), "written after the note: not read");
+    }
+
+    #[tokio::test]
+    async fn a_receipt_before_my_device_knows_the_peer_still_counts() {
+        let (alice, bob) = mutual().await;
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        let p = alice.dm.prepare_text(&alice.keys, &bob.pk(), "did it come?", None).await.unwrap();
+        bob.receive(&peer_event(&p)).await;
+        let (_, _, ids) = take_delivered(&bob).await.remove(0);
+        bob.clock.0.store(1_000_200, Ordering::SeqCst);
+        let delivered = receipt(&bob, &alice, &Envelope::receipt_delivered(&ids));
+        let read = receipt(&bob, &alice, &Envelope::receipt_read(p.message.created_at));
+
+        // Alice logs in on a new phone, gate on as in the app. History comes
+        // in any order: Bob's notes before the accept and before Alice's own
+        // copy of the message they name.
+        let phone = gated_with(alice.keys.clone()).await;
+        phone.clock.0.store(1_000_300, Ordering::SeqCst);
+        assert_eq!(mode(&phone, &bob).await, "first_contact");
+        assert!(phone.receive(&delivered).await.is_empty());
+        assert!(phone.receive(&read).await.is_empty(), "nothing to repaint yet");
+        assert!(phone.dm.list_chats(true).await.unwrap().is_empty(), "a note makes no chat");
+        phone.receive(&self_event(&p)).await;
+        let m = phone.dm.message(&p.message.id).await.unwrap().unwrap();
+        assert_eq!(m.delivered_at, Some(1_000_200));
+        assert_eq!(m.read_at, Some(p.message.created_at));
+    }
+
+    #[tokio::test]
+    async fn read_receipts_obey_the_toggle_both_ways() {
+        let (alice, bob) = mutual().await;
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        let m = alice.dm.prepare_text(&alice.keys, &bob.pk(), "hi", None).await.unwrap();
+        bob.receive(&peer_event(&m)).await;
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+
+        // Bob turned them off: what he reads is not told, and turning them on
+        // again does not tell it later.
+        settings::set_bool(bob.dm.store(), crate::notes::KEY_READ_RECEIPTS, false).await.unwrap();
+        bob.dm.mark_read(&chat.id).await.unwrap();
+        assert!(bob.dm.take_due_read().await.unwrap().is_empty());
+        settings::set_bool(bob.dm.store(), crate::notes::KEY_READ_RECEIPTS, true).await.unwrap();
+        assert!(bob.dm.take_due_read().await.unwrap().is_empty());
+        assert_eq!(take_delivered(&bob).await.len(), 1, "delivery is told whatever the toggle says");
+
+        // Alice turned them off: what Bob tells is not kept, and no one is
+        // shown to have read anything; delivered stays.
+        let note = receipt(&bob, &alice, &Envelope::receipt_read(m.message.created_at));
+        settings::set_bool(alice.dm.store(), crate::notes::KEY_READ_RECEIPTS, false).await.unwrap();
+        assert!(alice.receive(&note).await.is_empty());
+        assert!(alice.dm.message(&m.message.id).await.unwrap().unwrap().read_at.is_none());
+        settings::set_bool(alice.dm.store(), crate::notes::KEY_READ_RECEIPTS, true).await.unwrap();
+        let again = receipt(&bob, &alice, &Envelope::receipt_read(m.message.created_at));
+        assert_eq!(names(&alice.receive(&again).await), vec!["chat.receipt"]);
+        settings::set_bool(alice.dm.store(), crate::notes::KEY_READ_RECEIPTS, false).await.unwrap();
+        let shown = alice.dm.message(&m.message.id).await.unwrap().unwrap();
+        assert_eq!((shown.read_at, shown.delivered_at), (None, Some(m.message.created_at)), "the mark is kept, not shown");
+        settings::set_bool(alice.dm.store(), crate::notes::KEY_READ_RECEIPTS, true).await.unwrap();
+        assert_eq!(alice.dm.message(&m.message.id).await.unwrap().unwrap().read_at, Some(m.message.created_at));
+    }
+
+    #[tokio::test]
+    async fn stale_history_is_acked_silently() {
+        let alice = Party::new().await;
+        let mut bob = Party::new().await;
+        bob.session_started_at = 1_000_000;
+        let now = bob.clock.now().secs();
+        let old = wrap(&alice.keys, &bob.pk(), &Envelope::text("last month").encode(), now - 8 * 86_400, None).unwrap();
+        let recent = wrap(&alice.keys, &bob.pk(), &Envelope::text("yesterday").encode(), now - 86_400, None).unwrap();
+        bob.receive_from(&old.to_peer, true).await;
+        bob.receive_from(&recent.to_peer, true).await;
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+        let ids: Vec<String> = bob.dm.messages(&chat.id, None, 50).await.unwrap().into_iter().map(|m| m.id).collect();
+        assert_eq!(ids.len(), 2);
+
+        // Acknowledged on arrival: not owed even to a take that looks further back.
+        let owed = messenger_store::receipts::take_due_delivered(bob.dm.store(), now, 0).await.unwrap();
+        assert_eq!(owed, vec![(chat.id.clone(), vec![ids[1].clone()])], "only the recent one");
+    }
+
+    #[tokio::test]
+    async fn a_strangers_note_shows_nothing_and_a_blocked_ones_is_dropped() {
+        let alice = gated().await;
+        let bob = gated().await;
+        let id = "ab".repeat(32);
+        for note in [Envelope::receipt_delivered(std::slice::from_ref(&id)), Envelope::receipt_read(1_000_000)] {
+            assert!(alice.receive(&receipt(&bob, &alice, &note)).await.is_empty(), "nothing to repaint");
+        }
+        assert!(alice.dm.list_chats(true).await.unwrap().is_empty(), "a note makes no chat");
+
+        // Nor are receipts owed to someone whose request I have not accepted,
+        // and what he said marks none of his own messages.
+        let p = bob.dm.prepare_text(&bob.keys, &alice.pk(), "may I?", None).await.unwrap();
+        alice.receive(&peer_event(&p)).await;
+        assert!(take_delivered(&alice).await.is_empty());
+        let chat = alice.dm.open_chat(&bob.pk()).await.unwrap();
+        let list = alice.dm.messages(&chat.id, None, 50).await.unwrap();
+        assert!(list.iter().all(|m| m.delivered_at.is_none() && m.read_at.is_none()));
+
+        // Blocked: the notes of a former friend are dropped.
+        let (carol, dave) = mutual().await;
+        carol.dm.act(&carol.keys, &dave.pk(), Action::Block).await.unwrap();
+        for note in [Envelope::receipt_delivered(std::slice::from_ref(&id)), Envelope::receipt_read(1_000_000)] {
+            assert!(carol.receive(&receipt(&dave, &carol, &note)).await.is_empty());
+        }
+        let store = carol.dm.store();
+        assert!(messenger_store::receipts::delivered_at(store, &id, dave.pk().as_hex()).await.unwrap().is_none());
+        assert!(messenger_store::receipts::peer_reads(store, &chats::dm_chat_id(dave.pk().as_hex())).await.unwrap().is_empty());
+    }
+
+    // ─── Stage B: reactions ─────────────────────────────────────────────────
+
+    use crate::reactions::PreparedReaction;
+    use crate::view::ReactionView;
+
+    /// A device that knows whose it is, so that it can tell its own reactions.
+    async fn signed(keys: Keys) -> Party {
+        let p = Party::with_keys(keys).await;
+        p.dm.set_signer(Some(p.keys.clone()));
+        p
+    }
+
+    fn reaction_to_peer(r: &PreparedReaction) -> WireEvent {
+        match &r.to_peer {
+            Outbound::PublishToInbox { event, .. } => event.clone(),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    fn reaction_to_self(r: &PreparedReaction) -> WireEvent {
+        match r.to_self.as_ref().expect("a copy for my devices") {
+            Outbound::PublishOwn { event } => event.clone(),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    /// A reaction note as another client could write it, unchecked.
+    fn reaction_note(from: &Party, to: &Party, target: &str, emoji: &str, set: bool) -> WireEvent {
+        let now = from.clock.now().secs();
+        crate::wrap::wrap_note(&from.keys, &to.pk(), &Envelope::reaction(target, emoji, set).encode(), now, false, None).unwrap().to_peer
+    }
+
+    async fn shown(p: &Party, id: &str) -> Vec<ReactionView> {
+        p.dm.message(id).await.unwrap().expect("the message is here").reactions
+    }
+
+    fn view(emoji: &str, count: i64, mine: bool) -> ReactionView {
+        ReactionView { emoji: emoji.into(), count, mine }
+    }
+
+    #[tokio::test]
+    async fn reactions_toggle_and_reach_the_other_device() {
+        let alice = signed(Keys::generate()).await;
+        let phone = signed(alice.keys.clone()).await;
+        let bob = signed(Keys::generate()).await;
+        let m = bob.dm.prepare_text(&bob.keys, &alice.pk(), "lunch?", None).await.unwrap();
+        alice.receive(&peer_event(&m)).await;
+        phone.receive(&peer_event(&m)).await;
+        bob.receive(&self_event(&m)).await;
+
+        let r = alice.dm.prepare_reaction(&alice.keys, &m.message.id, "👍").await.unwrap();
+        assert_eq!(r.chat_id, chats::dm_chat_id(bob.pk().as_hex()));
+        assert_eq!(r.message.reactions, vec![view("👍", 1, true)]);
+        assert_eq!(names(&bob.receive(&reaction_to_peer(&r)).await), vec!["dm.updated"]);
+        assert_eq!(shown(&bob, &m.message.id).await, vec![view("👍", 1, false)]);
+        assert!(bob.receive(&reaction_to_peer(&r)).await.is_empty(), "the same note again changes nothing");
+        assert_eq!(names(&phone.receive(&reaction_to_self(&r)).await), vec!["dm.updated"]);
+        assert_eq!(shown(&phone, &m.message.id).await, vec![view("👍", 1, true)], "my copy says it is mine");
+        assert!(alice.receive(&reaction_to_self(&r)).await.is_empty(), "my own echo changes nothing");
+
+        // Bob joins with the same emoji; his list reads two.
+        let b = bob.dm.prepare_reaction(&bob.keys, &m.message.id, "👍").await.unwrap();
+        assert_eq!(b.message.reactions, vec![view("👍", 2, true)]);
+        alice.receive(&reaction_to_peer(&b)).await;
+        phone.receive(&reaction_to_peer(&b)).await;
+        assert_eq!(shown(&alice, &m.message.id).await, vec![view("👍", 2, true)]);
+
+        // A second tap in the same second takes it back, everywhere.
+        let off = alice.dm.prepare_reaction(&alice.keys, &m.message.id, "👍").await.unwrap();
+        assert_eq!(off.message.reactions, vec![view("👍", 1, false)]);
+        assert_eq!(Envelope::parse(&opened_content(&bob, &reaction_to_peer(&off))).unwrap(), Envelope::reaction(&m.message.id, "👍", false));
+        assert_eq!(names(&bob.receive(&reaction_to_peer(&off)).await), vec!["dm.updated"]);
+        assert_eq!(names(&phone.receive(&reaction_to_self(&off)).await), vec!["dm.updated"]);
+        for p in [&bob, &phone] {
+            assert_eq!(shown(p, &m.message.id).await, vec![view("👍", 1, p.pk() == bob.pk())]);
+        }
+        // The put coming late does not bring it back.
+        assert!(phone.receive(&reaction_to_self(&r)).await.is_empty());
+        assert_eq!(shown(&phone, &m.message.id).await, vec![view("👍", 1, false)]);
+
+        // Counted where it was made, and nowhere else.
+        assert_eq!(alice.dm.emoji_top(6).await.unwrap(), vec!["👍"]);
+        assert!(phone.dm.emoji_top(6).await.unwrap().is_empty(), "the map tells the phone, not the reaction");
+    }
+
+    fn opened_content(to: &Party, event: &WireEvent) -> String {
+        let ev: Event = serde_json::from_value(event.json.clone()).unwrap();
+        let u = UnwrappedGift::from_gift_wrap(&to.keys, &ev).unwrap();
+        assert_eq!(u.rumor.kind.as_u16(), KIND_PEER_NOTE_RUMOR);
+        u.rumor.content
+    }
+
+    #[tokio::test]
+    async fn a_fourth_emoji_is_refused_here_and_not_shown_there() {
+        let alice = signed(Keys::generate()).await;
+        let bob = signed(Keys::generate()).await;
+        let m = bob.dm.prepare_text(&bob.keys, &alice.pk(), "news", None).await.unwrap();
+        alice.receive(&peer_event(&m)).await;
+        bob.receive(&self_event(&m)).await;
+        let id = m.message.id.clone();
+
+        for e in ["👍", "❤️", "😂"] {
+            alice.clock.0.fetch_add(1, Ordering::SeqCst);
+            let r = alice.dm.prepare_reaction(&alice.keys, &id, e).await.unwrap();
+            bob.receive(&reaction_to_peer(&r)).await;
+        }
+        assert_eq!(reason(alice.dm.prepare_reaction(&alice.keys, &id, "🔥").await.unwrap_err()), "reaction_limit");
+        assert_eq!(reason(alice.dm.prepare_reaction(&alice.keys, &id, "ok").await.unwrap_err()), "reaction_invalid");
+        // Three different stand on it: Bob may join one of them, not bring a fourth.
+        assert_eq!(reason(bob.dm.prepare_reaction(&bob.keys, &id, "🔥").await.unwrap_err()), "reaction_limit");
+        bob.clock.0.store(1_000_010, Ordering::SeqCst);
+        let joined = bob.dm.prepare_reaction(&bob.keys, &id, "❤️").await.unwrap();
+        assert_eq!(joined.message.reactions, vec![view("👍", 1, false), view("❤️", 2, true), view("😂", 1, false)]);
+
+        // A client that does not keep the rules: a fourth of hers is kept
+        // but not shown, while three earlier ones stand; what is no
+        // reaction at all is dropped without a word.
+        alice.clock.0.fetch_add(1, Ordering::SeqCst);
+        bob.receive(&reaction_note(&alice, &bob, &id, "🔥", true)).await;
+        assert!(bob.receive(&reaction_note(&alice, &bob, &id, "hello", true)).await.is_empty());
+        assert!(bob.receive(&reaction_note(&alice, &bob, "not-an-id", "🔥", true)).await.is_empty());
+        let on_bob = shown(&bob, &id).await;
+        assert_eq!(on_bob.iter().map(|r| r.emoji.as_str()).collect::<Vec<_>>(), vec!["👍", "❤️", "😂"]);
+
+        // Taking one back frees a place.
+        let off = alice.dm.prepare_reaction(&alice.keys, &id, "😂").await.unwrap();
+        bob.receive(&reaction_to_peer(&off)).await;
+        let fire = alice.dm.prepare_reaction(&alice.keys, &id, "🔥").await.unwrap();
+        bob.receive(&reaction_to_peer(&fire)).await;
+        assert_eq!(shown(&bob, &id).await, vec![view("👍", 1, false), view("❤️", 2, true), view("🔥", 1, false)]);
+    }
+
+    /// Bob has three on a message, takes one back and puts another; Alice
+    /// and his own phone hear the two notes in either order and agree.
+    #[tokio::test]
+    async fn what_an_author_shows_does_not_depend_on_the_order_notes_come_in() {
+        let alice = signed(Keys::generate()).await;
+        let bob = signed(Keys::generate()).await;
+        let phone = signed(bob.keys.clone()).await;
+        let m = alice.dm.prepare_text(&alice.keys, &bob.pk(), "plans?", None).await.unwrap();
+        for p in [&bob, &phone] {
+            p.receive(&peer_event(&m)).await;
+        }
+        alice.receive(&self_event(&m)).await;
+        let id = m.message.id.clone();
+        let mut notes = Vec::new();
+        for e in ["👍", "❤️", "😂", "😂", "🔥"] {
+            bob.clock.0.fetch_add(1, Ordering::SeqCst);
+            notes.push(bob.dm.prepare_reaction(&bob.keys, &id, e).await.unwrap());
+        }
+        let want = vec![view("👍", 1, true), view("❤️", 1, true), view("🔥", 1, true)];
+        assert_eq!(shown(&bob, &id).await, want);
+
+        // Alice: the 🔥 before the take-back of 😂.
+        for i in [0, 1, 2, 4, 3] {
+            alice.receive(&reaction_to_peer(&notes[i])).await;
+        }
+        // The phone: in the order they were made.
+        for r in &notes {
+            phone.receive(&reaction_to_self(r)).await;
+        }
+        assert_eq!(shown(&phone, &id).await, want);
+        let on_alice: Vec<_> = want.iter().map(|r| view(&r.emoji, 1, false)).collect();
+        assert_eq!(shown(&alice, &id).await, on_alice);
+    }
+
+    /// A stranger's notes name ids that never come: a week later they are
+    /// gone. What stands on a message that is here stays.
+    #[tokio::test]
+    async fn reactions_to_nothing_here_are_swept_after_a_week() {
+        let alice = signed(Keys::generate()).await;
+        let bob = signed(Keys::generate()).await;
+        let stranger = signed(Keys::generate()).await;
+        let m = bob.dm.prepare_text(&bob.keys, &alice.pk(), "hi", None).await.unwrap();
+        alice.receive(&peer_event(&m)).await;
+        bob.receive(&self_event(&m)).await;
+        let r = bob.dm.prepare_reaction(&bob.keys, &m.message.id, "👋").await.unwrap();
+        alice.receive(&reaction_to_peer(&r)).await;
+        let nowhere = "cd".repeat(32);
+        assert!(alice.receive(&reaction_note(&stranger, &alice, &nowhere, "👍", true)).await.is_empty());
+        let in_strangers_chat = chats::dm_chat_id(stranger.pk().as_hex());
+        let store = alice.dm.store();
+        assert!(messenger_store::reactions::get(store, &nowhere, stranger.pk().as_hex(), "👍").await.unwrap().is_some());
+
+        let now = alice.clock.now().secs();
+        assert_eq!(alice.dm.prune_reactions_if_due(now).await.unwrap(), 0, "it may still come");
+        let later = now + crate::reactions::ORPHAN_KEEP_SECS + 1;
+        assert_eq!(alice.dm.prune_reactions_if_due(later).await.unwrap(), 1);
+        assert!(messenger_store::reactions::get(store, &nowhere, stranger.pk().as_hex(), "👍").await.unwrap().is_none());
+        assert!(alice.dm.messages(&in_strangers_chat, None, 10).await.unwrap().is_empty());
+        assert_eq!(shown(&alice, &m.message.id).await, vec![view("👋", 1, false)]);
+
+        // Once a day at most.
+        alice.receive(&reaction_note(&stranger, &alice, &nowhere, "🔥", true)).await;
+        assert_eq!(alice.dm.prune_reactions_if_due(later + 3600).await.unwrap(), 0);
+        assert_eq!(alice.dm.prune_reactions_if_due(later + crate::reactions::PRUNE_EVERY_SECS).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_reaction_before_its_message_waits_by_id() {
+        let alice = signed(Keys::generate()).await;
+        let bob = signed(Keys::generate()).await;
+        let m = alice.dm.prepare_text(&alice.keys, &bob.pk(), "see you", None).await.unwrap();
+        bob.receive(&peer_event(&m)).await;
+        let r = bob.dm.prepare_reaction(&bob.keys, &m.message.id, "🔥").await.unwrap();
+
+        // Alice's new phone hears the reaction before its copy of the message.
+        let phone = signed(alice.keys.clone()).await;
+        assert!(phone.receive(&reaction_to_peer(&r)).await.is_empty(), "nothing to repaint yet");
+        assert!(phone.dm.list_chats(true).await.unwrap().is_empty(), "a reaction makes no chat");
+        phone.receive(&self_event(&m)).await;
+        assert_eq!(shown(&phone, &m.message.id).await, vec![view("🔥", 1, false)]);
+    }
+
+    #[tokio::test]
+    async fn a_reaction_names_a_message_of_another_chat_and_shows_nowhere() {
+        let alice = signed(Keys::generate()).await;
+        let bob = signed(Keys::generate()).await;
+        let carol = signed(Keys::generate()).await;
+        let from_carol = carol.dm.prepare_text(&carol.keys, &alice.pk(), "a secret", None).await.unwrap();
+        alice.receive(&peer_event(&from_carol)).await;
+        let from_bob = bob.dm.prepare_text(&bob.keys, &alice.pk(), "hi", None).await.unwrap();
+        alice.receive(&peer_event(&from_bob)).await;
+
+        // Bob somehow knows the id of Carol's message.
+        assert!(alice.receive(&reaction_note(&bob, &alice, &from_carol.message.id, "💩", true)).await.is_empty());
+        assert!(shown(&alice, &from_carol.message.id).await.is_empty());
+        let in_bobs_chat = alice.dm.messages(&chats::dm_chat_id(bob.pk().as_hex()), None, 50).await.unwrap();
+        assert!(in_bobs_chat.iter().all(|m| m.reactions.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn a_blocked_peers_reaction_is_dropped() {
+        let (alice, bob) = mutual().await;
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        let m = alice.dm.prepare_text(&alice.keys, &bob.pk(), "hello", None).await.unwrap();
+        bob.receive(&peer_event(&m)).await;
+        alice.dm.act(&alice.keys, &bob.pk(), Action::Block).await.unwrap();
+
+        // Bob does not know yet; what he sends is dropped all the same.
+        let r = bob.dm.prepare_reaction(&bob.keys, &m.message.id, "👎").await.unwrap();
+        assert!(alice.receive(&reaction_to_peer(&r)).await.is_empty());
+        assert!(shown(&alice, &m.message.id).await.is_empty());
+        assert!(messenger_store::reactions::active(alice.dm.store(), &m.message.id, &chats::dm_chat_id(bob.pk().as_hex()))
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(reason(alice.dm.prepare_reaction(&alice.keys, &m.message.id, "👍").await.unwrap_err()), "dm_blocked");
+
+        // Nor does one go to someone I have not agreed to talk with.
+        let stranger = gated().await;
+        let ask = stranger.dm.prepare_text(&stranger.keys, &alice.pk(), "may I?", None).await.unwrap();
+        alice.receive(&peer_event(&ask)).await;
+        let refused = reason(alice.dm.prepare_reaction(&alice.keys, &ask.message.id, "👍").await.unwrap_err());
+        assert!(refused.starts_with("dm_"), "{refused}");
+        assert!(shown(&alice, &ask.message.id).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_deleted_message_shows_no_reactions_and_takes_none() {
+        let alice = signed(Keys::generate()).await;
+        let bob = signed(Keys::generate()).await;
+        let m = alice.dm.prepare_text(&alice.keys, &bob.pk(), "oops", None).await.unwrap();
+        bob.receive(&peer_event(&m)).await;
+        let r = bob.dm.prepare_reaction(&bob.keys, &m.message.id, "😮").await.unwrap();
+        alice.receive(&reaction_to_peer(&r)).await;
+        assert_eq!(shown(&alice, &m.message.id).await, vec![view("😮", 1, false)]);
+        let d = alice.dm.prepare_delete(&alice.keys, &m.message.id).await.unwrap();
+        assert!(d.message.reactions.is_empty());
+        assert_eq!(reason(alice.dm.prepare_reaction(&alice.keys, &m.message.id, "👍").await.unwrap_err()), "message is deleted");
+    }
+
+    #[tokio::test]
+    async fn emoji_usage_snapshot_merges_on_my_other_device() {
+        let alice = signed(Keys::generate()).await;
+        let phone = signed(alice.keys.clone()).await;
+        let now = alice.clock.now().secs();
+        for e in ["❤️", "👍", "❤️"] {
+            alice.dm.emoji_used(e, now).await.unwrap();
+        }
+        assert_eq!(reason(alice.dm.emoji_used("abc", now).await.unwrap_err()), "reaction_invalid");
+        phone.dm.emoji_used("🔥", now - 100).await.unwrap();
+
+        let note = alice.dm.emoji_snapshot_if_due(now).await.unwrap().expect("uses were counted");
+        assert_eq!(note, Envelope::own_emoji(&[("❤️".into(), 2, now), ("👍".into(), 1, now)]));
+        assert!(alice.dm.emoji_snapshot_if_due(now).await.unwrap().is_none(), "nothing new");
+        alice.dm.emoji_used("👍", now + 1).await.unwrap();
+        assert!(alice.dm.emoji_snapshot_if_due(now + 599).await.unwrap().is_none(), "not twice in ten minutes");
+        let later = alice.dm.emoji_snapshot_if_due(now + 600).await.unwrap().expect("due now");
+        assert!(alice.dm.emoji_snapshot_now(now + 601).await.unwrap().is_none(), "taken");
+
+        assert_eq!(names(&phone.receive(&own_note(&alice.keys, &note, now)).await), vec!["emoji.updated"]);
+        assert_eq!(phone.dm.emoji_top(6).await.unwrap(), vec!["❤️", "👍", "🔥"]);
+        assert!(phone.receive(&own_note(&alice.keys, &note, now)).await.is_empty(), "the same map again");
+        assert_eq!(names(&phone.receive(&own_note(&alice.keys, &later, now + 600)).await), vec!["emoji.updated"]);
+        assert_eq!(phone.dm.emoji_top(2).await.unwrap(), vec!["👍", "❤️"], "a tie goes to the last used");
+        // A map older than what the phone knows takes nothing away.
+        assert!(phone.receive(&own_note(&alice.keys, &note, now + 700)).await.is_empty());
+        assert_eq!(phone.dm.emoji_top(6).await.unwrap(), vec!["👍", "❤️", "🔥"]);
+
+        // What is not an emoji, or not a pair of numbers, is skipped.
+        let junk = Envelope::new(messenger_core::envelope::T_OWN_EMOJI)
+            .with("usage", serde_json::json!({ "ok": [9, 1], "😂": "x", "😮": [1], "🎉": [50, now] }));
+        assert_eq!(names(&phone.receive(&own_note(&alice.keys, &junk, now)).await), vec!["emoji.updated"]);
+        assert_eq!(phone.dm.emoji_top(6).await.unwrap(), vec!["🎉", "👍", "❤️", "🔥"]);
+        // The phone still owes the others its own 🔥: a map it heard does not
+        // settle that.
+        assert!(phone.dm.emoji_snapshot_if_due(now).await.unwrap().is_some(), "the phone's own 🔥");
+        assert!(phone.dm.emoji_snapshot_if_due(now + 10_000).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_map_of_emoji_fits_its_size() {
+        let alice = signed(Keys::generate()).await;
+        // 64 long emoji weigh more than a map may: the least used fall off.
+        let family = "👨\u{200d}👩\u{200d}👧";
+        let base = 0x1f600u32;
+        for i in 0..80u32 {
+            let e = format!("{family}{}", char::from_u32(base + i).unwrap());
+            alice.dm.emoji_used(&e, 1_000 + i as i64).await.unwrap();
+        }
+        let note = alice.dm.emoji_snapshot_now(2_000).await.unwrap().unwrap();
+        assert!(note.encode().len() <= crate::own::EMOJI_SNAPSHOT_MAX_BYTES, "{}", note.encode().len());
+        let kept = note.fields["usage"].as_object().unwrap().len();
+        assert!(kept > 0 && kept < 64, "{kept}");
+    }
+
+    // ─── Stage C: presence keys ─────────────────────────────────────────────
+
+    /// The note `from` tells its presence key with, as the runtime builds it.
+    fn presence_key_note(from: &Party, key: &Keys, since: i64) -> Envelope {
+        let pubkey = key.public_key().to_hex();
+        Envelope::presence_key(Some((&pubkey, &crate::notes::presence_proof(key, &from.pk(), since))), since)
+    }
+
+    async fn key_of(p: &Party, peer: &Party) -> Option<(String, i64)> {
+        messenger_store::presence::key_of(p.dm.store(), peer.pk().as_hex()).await.unwrap()
+    }
+
+    fn hex_of(k: &Keys) -> String {
+        k.public_key().to_hex()
+    }
+
+    #[tokio::test]
+    async fn a_presence_key_is_taken_with_its_proof_from_anyone_not_blocked() {
+        let (alice, bob) = mutual().await;
+        let now = alice.clock.now().secs();
+        let k1 = Keys::generate();
+
+        // Bob is not in Alice's book (yet): his key is kept, for when he is.
+        let fx = alice.receive(&receipt(&bob, &alice, &presence_key_note(&bob, &k1, 5))).await;
+        assert_eq!(names(&fx), vec![crate::notes::UI_EVENT_PRESENCE_KEYS_CHANGED]);
+        let Effect::Emit(ui) = &fx[0] else { unreachable!() };
+        assert_eq!(ui.payload, serde_json::json!({ "peer": bob.pk().as_hex() }));
+        assert_eq!(key_of(&alice, &bob).await, Some((hex_of(&k1), 5)));
+        assert!(!alice.dm.presence_allowed(&bob.pk()).await.unwrap(), "not watched nor shown");
+        alice.contacts.add(&alice.pk(), bob.pk().as_hex(), None).await.unwrap();
+        assert!(alice.dm.presence_allowed(&bob.pk()).await.unwrap());
+        assert!(alice.receive(&receipt(&bob, &alice, &presence_key_note(&bob, &k1, 5))).await.is_empty(), "a replay");
+
+        // An older epoch told late loses; a `since` past the note counts as a second past it.
+        assert!(alice.receive(&receipt(&bob, &alice, &presence_key_note(&bob, &Keys::generate(), 4))).await.is_empty());
+        let k2 = Keys::generate();
+        assert_eq!(names(&alice.receive(&receipt(&bob, &alice, &presence_key_note(&bob, &k2, now + 3_600))).await).len(), 1);
+        assert_eq!(key_of(&alice, &bob).await, Some((hex_of(&k2), now + 1)));
+
+        // What is not a key, or not proven to be Bob's, is dropped.
+        let k3 = Keys::generate();
+        let t = messenger_core::envelope::T_PRESENCE_KEY;
+        let proof = |owner: &PubKey, since| crate::notes::presence_proof(&k3, owner, since);
+        let since = now + 2;
+        let mut bad: Vec<Envelope> = [
+            serde_json::json!("ff".repeat(32)),
+            serde_json::json!(hex_of(&k3).to_uppercase()),
+            serde_json::json!(&hex_of(&k3)[..63]),
+            serde_json::json!(42),
+        ]
+        .into_iter()
+        .map(|key| Envelope::new(t).with("pubkey", key).with("proof", proof(&bob.pk(), since)).with("since", since))
+        .collect();
+        bad.push(Envelope::new(t).with("pubkey", hex_of(&k3)).with("since", since));
+        bad.push(Envelope::presence_key(Some((&hex_of(&k3), &proof(&alice.pk(), since))), since));
+        bad.push(Envelope::presence_key(Some((&hex_of(&k3), &proof(&bob.pk(), since + 1))), since));
+        bad.push(Envelope::presence_key(Some((&hex_of(&k3), &"00".repeat(64))), since));
+        bad.push(Envelope::presence_key(Some((&hex_of(&k3), "cd")), since));
+        bad.push(Envelope::new(t).with("pubkey", hex_of(&k3)).with("proof", proof(&bob.pk(), since)));
+        bad.push(Envelope::new(t).with("pubkey", serde_json::Value::Null));
+        for note in &bad {
+            assert!(alice.receive(&receipt(&bob, &alice, note)).await.is_empty(), "{}", note.encode());
+        }
+        assert_eq!(key_of(&alice, &bob).await, Some((hex_of(&k2), now + 1)));
+
+        // A contact I only asked: kept, not shown until we both chose to talk.
+        let dave = gated().await;
+        let ask = alice.dm.prepare_text(&alice.keys, &dave.pk(), "hi dave", None).await.unwrap();
+        dave.receive(&peer_event(&ask)).await;
+        alice.contacts.add(&alice.pk(), dave.pk().as_hex(), None).await.unwrap();
+        assert_eq!(mode(&alice, &dave).await, "request_sent");
+        let kd = Keys::generate();
+        assert_eq!(names(&alice.receive(&receipt(&dave, &alice, &presence_key_note(&dave, &kd, 1))).await).len(), 1);
+        assert_eq!(key_of(&alice, &dave).await, Some((hex_of(&kd), 1)));
+        assert!(!alice.dm.presence_allowed(&dave.pk()).await.unwrap());
+
+        // Somebody I blocked: dropped.
+        let carol = gated().await;
+        alice.dm.act(&alice.keys, &carol.pk(), Action::Block).await.unwrap();
+        assert!(alice.receive(&receipt(&carol, &alice, &presence_key_note(&carol, &Keys::generate(), 1))).await.is_empty());
+        assert_eq!(key_of(&alice, &carol).await, None);
+
+        // Bob stopped sharing: the key goes, and a key of his told before it
+        // and heard after it stays out.
+        let fx = alice.receive(&receipt(&bob, &alice, &Envelope::presence_key(None, now + 1))).await;
+        assert_eq!(names(&fx), vec![crate::notes::UI_EVENT_PRESENCE_KEYS_CHANGED]);
+        assert_eq!(key_of(&alice, &bob).await, None);
+        assert!(alice.receive(&receipt(&bob, &alice, &presence_key_note(&bob, &k1, 5))).await.is_empty());
+        assert!(alice.receive(&receipt(&bob, &alice, &presence_key_note(&bob, &k2, now + 1))).await.is_empty());
+        assert_eq!(key_of(&alice, &bob).await, None);
+    }
+
+    #[tokio::test]
+    async fn a_presence_key_of_another_contact_is_not_taken() {
+        let (alice, bob) = mutual().await;
+        let carol = gated_with(Keys::generate()).await;
+        // Carol becomes a contact Alice talks with too.
+        let p = carol.dm.prepare_text(&carol.keys, &alice.pk(), "hi", None).await.unwrap();
+        alice.receive(&peer_event(&p)).await;
+        for w in for_peer(&p.followups) {
+            alice.receive(&w).await;
+        }
+        let acc = alice.dm.act(&alice.keys, &carol.pk(), Action::Accept).await.unwrap();
+        for w in for_peer(&acc.outbounds) {
+            for back in for_peer(&sends(&carol.receive(&w).await)) {
+                alice.receive(&back).await;
+            }
+        }
+        assert_eq!(mode(&alice, &carol).await, "full_chat");
+        for peer in [&bob, &carol] {
+            alice.contacts.add(&alice.pk(), peer.pk().as_hex(), None).await.unwrap();
+        }
+        // Bob told Carol his key; she tells it to Alice first, with Bob's proof.
+        let k = Keys::generate();
+        let bobs_note = presence_key_note(&bob, &k, 1);
+        assert!(alice.receive(&receipt(&carol, &alice, &bobs_note)).await.is_empty(), "the proof names Bob");
+        assert_eq!(key_of(&alice, &carol).await, None);
+        assert_eq!(names(&alice.receive(&receipt(&bob, &alice, &bobs_note)).await).len(), 1);
+        assert_eq!(key_of(&alice, &bob).await, Some((hex_of(&k), 1)));
+        // Even with the secret of the key, a key Bob holds is not Carol's.
+        assert!(alice.receive(&receipt(&carol, &alice, &presence_key_note(&carol, &k, 2))).await.is_empty());
+        assert_eq!(key_of(&alice, &carol).await, None);
+        assert_eq!(key_of(&alice, &bob).await, Some((hex_of(&k), 1)));
+    }
+
+    #[test]
+    fn the_proof_of_a_presence_key_is_fixed() {
+        // SHA-256 of "veydan-presence-key-v1", 32 bytes 01, and since 1759700000 as i64 LE.
+        let owner = PubKey::parse(&"01".repeat(32)).unwrap();
+        let digest = crate::notes::presence_proof_digest(&owner, 1_759_700_000);
+        assert_eq!(hex::encode(digest), "eb949e1e5c60c048a2e78d382252be61a4a6aa698c125a2cada28824b101ed7b");
+        let k = Keys::generate();
+        let proof = crate::notes::presence_proof(&k, &owner, 1_759_700_000);
+        assert_eq!(proof.len(), 128);
+        assert!(crate::notes::presence_proof_ok(&hex_of(&k), &owner, 1_759_700_000, &proof));
+        assert!(!crate::notes::presence_proof_ok(&hex_of(&k), &owner, 1_759_700_001, &proof));
+        assert!(!crate::notes::presence_proof_ok(&hex_of(&Keys::generate()), &owner, 1_759_700_000, &proof));
+    }
+
+    #[tokio::test]
+    async fn own_presence_carries_the_epoch_its_since_and_the_switch() {
+        use crate::own::PresenceState;
+        let alice = Party::new().await;
+        let phone = Party::with_keys(alice.keys.clone()).await;
+        let now = phone.clock.now().secs();
+        let state = |epoch, since, sharing| PresenceState { epoch, since, sharing };
+        assert_eq!(phone.dm.presence_state().await.unwrap(), state(0, 0, true));
+        // The phone told Bob the key of epoch 0.
+        let bob = "bb".repeat(32);
+        messenger_store::presence::mark_told(phone.dm.store(), &bob, 0).await.unwrap();
+
+        let fx = phone.receive(&own_note(&alice.keys, &Envelope::own_presence(2, 1_000, true), now)).await;
+        assert_eq!(names(&fx), vec![crate::own::UI_EVENT_PRESENCE_EPOCH_CHANGED]);
+        assert_eq!(phone.dm.presence_state().await.unwrap(), state(2, 1_000, true), "the since of the device that rotated");
+        assert_eq!(
+            messenger_store::presence::told(phone.dm.store(), &bob).await.unwrap(),
+            Some(2),
+            "the device that rotated tells the new key"
+        );
+        assert_eq!(phone.dm.presence_devices_owed().await.unwrap(), None, "my devices know: one of them told me");
+
+        // Older epochs, the same note again, and what is not a note change nothing.
+        for note in [Envelope::own_presence(1, 2_000, false), Envelope::own_presence(2, 1_000, true)] {
+            assert!(phone.receive(&own_note(&alice.keys, &note, now + 5)).await.is_empty());
+        }
+        let t = messenger_core::envelope::T_OWN_PRESENCE;
+        for junk in [
+            Envelope::new(t).with("epoch", u64::from(u32::MAX) + 1).with("since", 5),
+            Envelope::new(t).with("epoch", -3).with("since", 5),
+            Envelope::new(t).with("epoch", 9),
+            Envelope::new(t).with("epoch", 9).with("since", -1),
+        ] {
+            assert!(phone.receive(&own_note(&alice.keys, &junk, now)).await.is_empty(), "{}", junk.encode());
+        }
+        assert_eq!(phone.dm.presence_state().await.unwrap(), state(2, 1_000, true));
+
+        // Two devices that moved to one epoch at once end alike: the later
+        // since, and off if either is.
+        assert_eq!(names(&phone.receive(&own_note(&alice.keys, &Envelope::own_presence(2, 900, false), now)).await).len(), 1);
+        assert_eq!(phone.dm.presence_state().await.unwrap(), state(2, 1_000, false));
+        assert_eq!(names(&phone.receive(&own_note(&alice.keys, &Envelope::own_presence(2, 1_100, true), now)).await).len(), 1);
+        assert_eq!(phone.dm.presence_state().await.unwrap(), state(2, 1_100, false));
+        // A newer epoch turns it on again.
+        phone.receive(&own_note(&alice.keys, &Envelope::own_presence(3, now + 50, true), now)).await;
+        assert_eq!(phone.dm.presence_state().await.unwrap(), state(3, now + 50, true));
+
+        // This device moving: up by one, after the since before it, owed to my other devices once.
+        let moved = phone.dm.rotate_presence(false).await.unwrap();
+        assert_eq!(moved, state(4, now + 51, false));
+        assert_eq!(phone.dm.presence_state().await.unwrap(), moved);
+        assert_eq!(phone.dm.presence_devices_owed().await.unwrap(), Some(moved));
+        phone.dm.presence_devices_told(4).await.unwrap();
+        assert_eq!(phone.dm.presence_devices_owed().await.unwrap(), None);
+        assert_eq!(phone.dm.rotate_presence(true).await.unwrap().since, now + 52);
     }
 }

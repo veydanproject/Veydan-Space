@@ -26,6 +26,7 @@ messenger-preview.workspace = true
 messenger-push.workspace = true
 messenger-notify.workspace = true
 messenger-http.workspace = true
+messenger-presence.workspace = true
 sha2.workspace = true
 hex.workspace = true
 getrandom.workspace = true
@@ -41,4 +42,6 @@ base64.workspace = true
 messenger-testkit.workspace = true
 wiremock.workspace = true
 tempfile.workspace = true
+sqlx.workspace = true
+nostr-sdk = { workspace = true, features = ["local-relay"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

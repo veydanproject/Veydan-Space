@@ -1218,6 +1218,64 @@ impl GroupService {
         Ok((view, Self::scoped(group_id, sealed)))
     }
 
+    /// Tell the members that I read the group up to `at`. Signed by me like
+    /// a message, sealed quietly, and kept nowhere here: it is no message of
+    /// the chat. A muted member may still say it.
+    pub async fn prepare_read_receipt(&self, keys: &Keys, group_id: &str, at: i64) -> Result<Outbound> {
+        let me = me_of(keys);
+        let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
+        let log = self.need_log(group_id).await?;
+        let s = log.state();
+        if row.membership != MEMBERSHIP_JOINED || s.member(&me).is_none() {
+            return Err(MessengerError::Invalid("group_not_member".into()));
+        }
+        let key = match &s.current_key {
+            Some(id) => self.key(group_id, id).await?,
+            None => None,
+        }
+        .ok_or_else(|| MessengerError::Invalid("group_no_key".into()))?;
+        let signed = wire::sign_message(keys, group_id, &Envelope::receipt_read(at).encode(), self.now(), None)?;
+        let grace = self.grace_key(group_id, s).await?;
+        let sealed = wire::seal_note(group_id, &key, grace.as_ref(), &signed, keys)?;
+        Ok(Self::scoped(group_id, sealed))
+    }
+
+    /// Put `emoji` on a message of a group, or take mine back if it is
+    /// there: the rules of `messenger_dm::reactions`, applied here at once.
+    /// Who may write may react; a muted member may not. Signed by me and
+    /// sealed quietly, like a read receipt, with the time it was applied
+    /// here, so its echo changes nothing. Returns the chat and what to publish.
+    pub async fn prepare_reaction(&self, keys: &Keys, message_id: &str, emoji: &str) -> Result<(String, Outbound)> {
+        let me = me_of(keys);
+        let row = msgs::get(&self.store, message_id)
+            .await?
+            .filter(|r| !r.is_hidden && r.content_type != msgs::CT_SYSTEM)
+            .ok_or_else(|| MessengerError::Invalid("unknown message".into()))?;
+        if row.deleted_at.is_some() {
+            return Err(MessengerError::Invalid("message is deleted".into()));
+        }
+        let group_id = Self::group_of(&row.chat_id)?.to_string();
+        let group = repo::get(&self.store, &group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
+        if group.membership != MEMBERSHIP_JOINED {
+            return Err(MessengerError::Invalid("group_not_member".into()));
+        }
+        let log = self.need_log(&group_id).await?;
+        let s = log.state();
+        if !s.can_post(&me) {
+            return Err(MessengerError::Invalid(if s.member(&me).is_some_and(|m| m.muted) { "group_muted".into() } else { "group_not_member".into() }));
+        }
+        let key = match &s.current_key {
+            Some(id) => self.key(&group_id, id).await?,
+            None => None,
+        }
+        .ok_or_else(|| MessengerError::Invalid("group_no_key".into()))?;
+        let grace = self.grace_key(&group_id, s).await?;
+        let (set, at) = self.dm.react_locally(&row.chat_id, &me, &row.id, emoji).await?;
+        let signed = wire::sign_message(keys, &group_id, &Envelope::reaction(&row.id, emoji, set).encode(), at, None)?;
+        let sealed = wire::seal_note(&group_id, &key, grace.as_ref(), &signed, keys)?;
+        Ok((row.chat_id, Self::scoped(&group_id, sealed)))
+    }
+
     pub async fn prepare_text(&self, keys: &Keys, group_id: &str, text: &str, reply_to: Option<&str>) -> Result<(MessageView, Outbound)> {
         let text = text.trim();
         if text.is_empty() {

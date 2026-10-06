@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 //! A session = a signer + a live ingress loop + an outbox pump + one
-//! history catch-up. It exists only while the runtime holds signing keys;
-//! the runtime restarts it when the signer or the relay pool changes.
+//! history catch-up + a loop that sends the receipts this device owes + the
+//! presence loop (`crate::presence`). It exists only while the runtime
+//! holds signing keys; the runtime restarts it when the signer or the relay
+//! pool changes.
 
 use async_trait::async_trait;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
 use messenger_core::Clock;
 use messenger_core::{Ack, Context, Outbound, PubKey, Result, Scope, SubId, SyncItem, Timestamp, Transport};
 use messenger_dm::DmService;
+use messenger_groups::GroupService;
 use messenger_ingress::{filters, Dispatcher, EffectSink, IngressLoop, Outbox};
 use messenger_store::{cursors, events_raw, settings, Store};
 use messenger_transport::RelayPool;
@@ -60,11 +63,16 @@ pub struct Session {
     ingress: IngressLoop,
     pump: JoinHandle<()>,
     history: JoinHandle<()>,
+    /// Sends the receipts this device owes (`crate::receipts`).
+    receipts: JoinHandle<()>,
+    /// Tells my key, watches the contacts, beats (`crate::presence`).
+    presence: JoinHandle<()>,
 }
 
 impl Session {
-    /// Subscribe to the inbox, start the ingress loop, the outbox pump and
-    /// the history catch-up.
+    /// Subscribe to the inbox, start the ingress loop, the outbox pump, the
+    /// receipt loop, the presence loop and the history catch-up.
+    #[allow(clippy::too_many_arguments)]
     pub async fn start(
         store: Store,
         pool: Arc<RelayPool>,
@@ -73,6 +81,8 @@ impl Session {
         ui: broadcast::Sender<UiEvent>,
         dispatcher: Arc<Dispatcher>,
         dm: DmService,
+        groups: GroupService,
+        presence: Arc<crate::presence::PresenceDriver>,
     ) -> Result<Self> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let started_at = clock.now();
@@ -100,9 +110,11 @@ impl Session {
         let ctx = Context { my_pubkey: me.clone(), session_started_at: started_at, clock };
         let ingress = IngressLoop::spawn(pool.events(), store.clone(), Some(keys.clone()), dispatcher, ctx, sink);
 
+        let receipts = tokio::spawn(crate::receipts::receipt_loop(dm.clone(), groups, outbox.clone(), keys.clone()));
+        let presence = tokio::spawn(crate::presence::presence_loop(presence, pool.clone(), keys.clone()));
         let pump = tokio::spawn(pump_loop(store.clone(), pool.clone(), outbox, dm, ui.clone()));
         let history = tokio::spawn(history_catch_up(store, pool, me, started_at, ui));
-        Ok(Self { keys, started_at, ingress, pump, history })
+        Ok(Self { keys, started_at, ingress, pump, history, receipts, presence })
     }
 
     pub fn stats(&self) -> (u64, u64, u64, u64, u64) {
@@ -113,6 +125,8 @@ impl Session {
         self.ingress.abort();
         self.pump.abort();
         self.history.abort();
+        self.receipts.abort();
+        self.presence.abort();
     }
 }
 

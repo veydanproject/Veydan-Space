@@ -358,7 +358,7 @@ pub async fn profile_raw_data(
         None
     };
 
-    let cfg = super::build_camoufox_config(&profile, None);
+    let cfg = super::build_camoufox_config(&profile);
     let camoufox_config = serde_json::to_string_pretty(&cfg).unwrap_or_default();
     let user_js = crate::browser::userjs::generate(&profile, proxy.as_ref());
 

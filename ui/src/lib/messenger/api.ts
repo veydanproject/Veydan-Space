@@ -145,6 +145,21 @@ export interface MessengerMessage {
   media: Record<string, unknown> | null;
   /** While `queued`: when it went to the outbox (unix seconds). */
   queued_at?: number | null;
+  /** Outgoing only: when a device of the peer had it (unix seconds). */
+  delivered_at: number | null;
+  /** Outgoing only: when the peer, or any member of a group, read it. */
+  read_at: number | null;
+  /** Group members who read this outgoing message; empty elsewhere. */
+  seen_by: string[];
+  /** Reactions on it, in the order they first came; empty when deleted. */
+  reactions: MessengerReaction[];
+}
+
+/** One emoji on a message: how many put it, and whether I am among them. */
+export interface MessengerReaction {
+  emoji: string;
+  count: number;
+  mine: boolean;
 }
 
 
@@ -257,7 +272,8 @@ export interface MessengerRelation {
 
 /** Stable refusal code inside an error (`dm_waiting_approval`, …), if any. */
 export function dmErrorCode(e: unknown): string | null {
-  const m = /\bdm_[a-z_]+\b/.exec(messengerError(e));
+  // Refusals of a reaction come as their own codes, not under `dm_`.
+  const m = /\b(?:dm_[a-z_]+|reaction_(?:limit|invalid))\b/.exec(messengerError(e));
   return m ? m[0] : null;
 }
 
@@ -335,6 +351,17 @@ export interface MessengerMediaServer {
   enabled: boolean;
   source: 'manifest' | 'user';
   public_base: string;
+}
+
+/** A picked file waiting in the composer until it is sent. */
+export interface MessengerPicked {
+  /** On this device; what is sent. */
+  path: string;
+  name: string;
+  kind: MediaKind;
+  size: number;
+  /** A picture as a `data:` url; `null` for anything else. */
+  preview: string | null;
 }
 
 /** A voice message or a video circle as the recorder produced it. */
@@ -498,6 +525,20 @@ export interface MessengerNotifySettings {
   locked: boolean;
 }
 
+/** What the other side learns of the user; each works both ways: off here, the user sees nothing of it from others either. */
+export interface MessengerPrivacy {
+  read_receipts: boolean;
+  presence: boolean;
+}
+
+/** When an approved contact was last seen and until when they count as online (unix seconds). */
+export interface MessengerPresence {
+  /** The contact's own key (hex), not the key they announce presence from. */
+  peer: string;
+  seen_at: number;
+  online_until: number;
+}
+
 /** Notifications of this computer: the app shows them itself while it runs. */
 export interface MessengerDesktopNotify {
   enabled: boolean;
@@ -594,6 +635,7 @@ function manifestRelay(): MessengerRelay {
 }
 let mockRelays: MessengerRelay[] = [manifestRelay()];
 let mockNotify: MessengerNotifySettings = { content: 'sender_text', lockscreen_hidden: false, locked: false };
+let mockPrivacy: MessengerPrivacy = { read_receipts: true, presence: true };
 let mockDesktopNotify: MessengerDesktopNotify = { enabled: true, sound: true, available: true, close_to_tray: false };
 // `messenger.demo.desk=1`: the demo is a computer (no push, notifications of its own).
 const mockDesk = typeof localStorage !== 'undefined' && localStorage.getItem('messenger.demo.desk') === '1';
@@ -672,6 +714,27 @@ function mockFind(id: string): MessengerMessage | undefined {
   return Object.values(mockMessages).flat().find((m) => m.id === id);
 }
 
+const MOCK_EMOJI_TOP = ['👍', '😂', '🔥', '🙏', '❤️', '🎉', '🤔', '👀'];
+
+/** Browser preview only: the runtime keeps reactions in the app. Toggles mine. */
+function mockReact(id: string, emoji: string): MessengerMessage {
+  const m = mockFind(id);
+  if (!m || m.deleted) throw new Error('dm_message_unknown');
+  if (!emoji || emoji.length > 32 || /[\x00-\x7f]|\s/.test(emoji)) throw new Error('reaction_invalid');
+  const list = (m.reactions ?? []).map((r) => ({ ...r }));
+  const had = list.find((r) => r.emoji === emoji);
+  if (had?.mine) {
+    had.mine = false;
+    had.count -= 1;
+  } else {
+    const mine = list.filter((r) => r.mine).length;
+    if (mine >= 3 || (!had && list.length >= 3)) throw new Error('reaction_limit');
+    if (had) { had.mine = true; had.count += 1; } else list.push({ emoji, count: 1, mine: true });
+  }
+  m.reactions = list.filter((r) => r.count > 0);
+  return { ...m };
+}
+
 /** Browser preview only: in the app links are taken apart by the runtime. */
 function mockInspect(text: string): LinkView {
   const link = text.trim();
@@ -701,6 +764,17 @@ function mockInspect(text: string): LinkView {
     kind: 'group', link, group_id: m[2], group_kind: t, name: g?.name || p.get('n') || '', relay: p.get('r') ?? '', owner: p.get('o') ?? '',
     picture: g?.picture || null, members: g?.members.length || null, membership: g?.membership ?? null,
   };
+}
+
+/** The demo's first two approved contacts: one online, one seen an hour ago; nobody while the switch is off. */
+function mockPresence(): MessengerPresence[] {
+  if (!mockPrivacy.presence || !demo) return [];
+  const now = Math.floor(Date.now() / 1000);
+  const [online, away] = demo.chats.filter((c) => c.kind === 'dm' && c.mode === 'full_chat').map((c) => c.peer_pubkey ?? '');
+  const list: MessengerPresence[] = [];
+  if (online) list.push({ peer: online, seen_at: now - 10, online_until: now + 70 });
+  if (away) list.push({ peer: away, seen_at: now - 3600, online_until: now - 3520 });
+  return list;
 }
 
 const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
@@ -753,11 +827,14 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const c = mockChat(String(a?.to));
     const now = Math.floor(Date.now() / 1000);
     const target = a?.replyTo ? mockFind(String(a.replyTo)) : undefined;
-    const m: MessengerMessage = { id: `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'text', text: String(a?.text), sender_pubkey: 'ab'.repeat(32), reply_to: target ? { id: target.id, sender_pubkey: target.sender_pubkey, text: target.text } : null, created_at: now, edited_at: null, deleted: false, failure_reason: null, media: null };
+    const m: MessengerMessage = { id: `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'text', text: String(a?.text), sender_pubkey: 'ab'.repeat(32), reply_to: target ? { id: target.id, sender_pubkey: target.sender_pubkey, text: target.text } : null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
     mockChats = mockChats.map((x) => x.id === c.id ? { ...x, last_message_at: now, last_preview: m.text } : x);
     return m;
   },
+  messenger_dm_react: (a) => mockReact(String(a?.messageId), String(a?.emoji)),
+  messenger_emoji_used: () => undefined,
+  messenger_emoji_top: (a) => MOCK_EMOJI_TOP.slice(0, Number(a?.n ?? 24)),
   messenger_dm_edit: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.text = String(a?.text); m.edited_at = Math.floor(Date.now() / 1000); } return m; },
   messenger_dm_delete: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.deleted = true; m.text = null; } },
   messenger_dm_retry: () => undefined,
@@ -778,17 +855,23 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const name = String(a?.path).split(/[\\/]/).pop() ?? 'file';
     const ext = name.split('.').pop()?.toLowerCase() ?? '';
     const kind = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) ? 'image' : ['mp4', 'webm'].includes(ext) ? 'video' : ['mp3', 'ogg', 'wav'].includes(ext) ? 'audio' : 'file';
-    const m: MessengerMessage = { id: `local:${Date.now().toString(16)}${Math.random().toString(16).slice(2, 8)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'media', text: (a?.caption as string) ?? null, sender_pubkey: 'ab'.repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, media: { name, mime: 'application/octet-stream', size: 1_234_567, kind, local_path: String(a?.path), ...(a?.batch ? { batch: String(a.batch) } : {}) } };
+    const m: MessengerMessage = { id: `local:${Date.now().toString(16)}${Math.random().toString(16).slice(2, 8)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'media', text: (a?.caption as string) ?? null, sender_pubkey: 'ab'.repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: { name, mime: 'application/octet-stream', size: 1_234_567, kind, local_path: String(a?.path), ...(a?.batch ? { batch: String(a.batch) } : {}) } };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
     mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `📎 ${name}` } : x));
     return m;
+  },
+  messenger_media_import: (a) => {
+    const path = String(a?.path);
+    const name = path.split(/[\\/]/).pop() ?? 'file';
+    const image = /\.(png|jpe?g|gif|webp)$/i.test(name);
+    return { path, name, kind: image ? 'image' : 'file', size: 120_000, preview: null } satisfies MessengerPicked;
   },
   messenger_media_grant_access: () => undefined,
   messenger_dm_send_recording: (a) => {
     const c = mockChat(String(a?.to));
     const r = (a?.recording ?? {}) as { kind: MediaKind; mime: string; duration_ms: number; waveform: number[] | null; data_base64: string };
     const now = Math.floor(Date.now() / 1000);
-    const m: MessengerMessage = { id: `local:${Date.now().toString(16)}`, chat_id: c.id, direction: "out", status: "sent", content_type: "media", text: null, sender_pubkey: "ab".repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, media: { name: `${r.kind}.webm`, mime: r.mime, size: Math.round((r.data_base64.length * 3) / 4), kind: r.kind, duration_ms: r.duration_ms, waveform: r.waveform ?? undefined, local_path: "/dev/mock", mock_data: `data:${r.mime.split(";")[0]};base64,${r.data_base64}` } };
+    const m: MessengerMessage = { id: `local:${Date.now().toString(16)}`, chat_id: c.id, direction: "out", status: "sent", content_type: "media", text: null, sender_pubkey: "ab".repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: { name: `${r.kind}.webm`, mime: r.mime, size: Math.round((r.data_base64.length * 3) / 4), kind: r.kind, duration_ms: r.duration_ms, waveform: r.waveform ?? undefined, local_path: "/dev/mock", mock_data: `data:${r.mime.split(";")[0]};base64,${r.data_base64}` } };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
     return m;
   },
@@ -1030,6 +1113,10 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_push_take_tap: () => null,
   messenger_push_clear: () => undefined,
   messenger_notify_get: () => mockNotify,
+  messenger_privacy_get: () => mockPrivacy,
+  messenger_presence_list: () => mockPresence(),
+  messenger_presence_foreground: () => undefined,
+  messenger_privacy_set: (a) => { mockPrivacy = { read_receipts: Boolean(a?.readReceipts), presence: Boolean(a?.presence) }; return mockPrivacy; },
   messenger_desktop_notify_get: () => mockDesktopNotify,
   messenger_desktop_notify_set: (a) => { mockDesktopNotify = { ...mockDesktopNotify, enabled: Boolean(a?.enabled), sound: Boolean(a?.sound) }; return mockDesktopNotify; },
   messenger_desktop_notify_test: () => undefined,
@@ -1112,6 +1199,13 @@ export const messengerApi = {
     clear: (key?: string) => invoke<void>('messenger_push_clear', { key: key ?? null }),
   },
 
+  /** What the other side learns: read receipts and presence. */
+  privacy: {
+    get: () => invoke<MessengerPrivacy>('messenger_privacy_get'),
+    set: (readReceipts: boolean, presence: boolean) =>
+      invoke<MessengerPrivacy>('messenger_privacy_set', { readReceipts, presence }),
+  },
+
   /** A computer's own notifications (no push: the app runs and shows them). */
   desktopNotify: {
     get: () => invoke<MessengerDesktopNotify>('messenger_desktop_notify_get'),
@@ -1170,6 +1264,8 @@ export const messengerApi = {
     sendText: (to: string, text: string, replyTo?: string) =>
       invoke<MessengerMessage>('messenger_dm_send_text', { to, text, replyTo: replyTo ?? null }),
     edit: (messageId: string, text: string) => invoke<MessengerMessage>('messenger_dm_edit', { messageId, text }),
+    /** Toggles my `emoji` on a message: puts it, or takes it back when it is already mine. */
+    react: (messageId: string, emoji: string) => invoke<MessengerMessage>('messenger_dm_react', { messageId, emoji }),
     delete: (messageId: string, forEveryone: boolean) => invoke<void>('messenger_dm_delete', { messageId, forEveryone }),
     retry: (messageId: string) => invoke<void>('messenger_dm_retry', { messageId }),
     relation: (peer: string) => invoke<MessengerRelation>('messenger_dm_relation', { peer }),
@@ -1177,6 +1273,21 @@ export const messengerApi = {
     blocked: () => invoke<string[]>('messenger_dm_blocked'),
   },
 
+
+  /** When approved contacts are online; empty while the presence switch is off. */
+  presence: {
+    list: () => invoke<MessengerPresence[]>('messenger_presence_list'),
+    /** `true` is a lease of 90 s: say it again every 45 s while the page is visible. */
+    foreground: (visible: boolean) => invoke<void>('messenger_presence_foreground', { visible }),
+  },
+
+  /** Which emoji I use most, the same on every device of mine. */
+  emoji: {
+    /** I picked this emoji in the composer (a reaction counts by itself). */
+    used: (emoji: string) => invoke<void>('messenger_emoji_used', { emoji }),
+    /** Most used first. */
+    top: (n: number) => invoke<string[]>('messenger_emoji_top', { n }),
+  },
 
   groups: {
     list: () => invoke<MessengerGroup[]>('messenger_groups_list'),
@@ -1212,6 +1323,8 @@ export const messengerApi = {
       }),
     /** Must run before the first `getUserMedia` (desktop webviews deny otherwise). */
     grantAccess: () => invoke<void>('messenger_media_grant_access'),
+    /** A picked file as the composer holds it (Android copies `content://` in first). */
+    importPicked: (path: string) => invoke<MessengerPicked>('messenger_media_import', { path }),
     /** `batch`: the same for files picked together. */
     sendFile: (to: string, path: string, caption?: string, batch?: string) =>
       invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, batch: batch ?? null }),

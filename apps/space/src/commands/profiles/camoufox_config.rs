@@ -7,8 +7,7 @@ pub const DEFAULT_UA: &str =
     "Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0";
 
 /// Builds the CAMOU_CONFIG_1 JSON for a Camoufox profile.
-/// `win_size` — сохранённый размер окна из xulstore.json; None → дефолт 1280×760.
-pub fn build_camoufox_config(profile: &Profile, win_size: Option<(i64, i64)>) -> serde_json::Value {
+pub fn build_camoufox_config(profile: &Profile) -> serde_json::Value {
     let preset = crate::fingerprint::get_preset(&profile.fingerprint_preset);
 
     let ua = profile
@@ -65,13 +64,9 @@ pub fn build_camoufox_config(profile: &Profile, win_size: Option<(i64, i64)>) ->
         cfg["timezone"] = serde_json::Value::String(tz.clone());
     }
 
-    // Physical window size: read from xulstore (persistence) or safe default (1280×760).
-    // Camoufox hardcodes window.resizeTo(1280, 1040) on every launch and ignores xulstore.
-    // The only way to override this is via window.outerWidth/outerHeight in CAMOU_CONFIG_1.
-    // The inline CSS lock that Camoufox sets alongside is countered by chrome.css overrides.
-    let (outer_w, outer_h) = win_size.unwrap_or((1280, 760));
-    cfg["window.outerWidth"] = serde_json::Value::Number(outer_w.into());
-    cfg["window.outerHeight"] = serde_json::Value::Number(outer_h.into());
+    // No window.outerWidth/outerHeight: Camoufox resizes the window to them at
+    // start, over the size and the maximized state Firefox restores from
+    // xulstore.json, and reports them fixed while the real window changes.
 
     // Always allow native parameters — otherwise WebGL appears blocked
     cfg["webGl:parameters:blockIfNotDefined"] = serde_json::Value::Bool(false);
@@ -118,8 +113,8 @@ mod tests {
     #[test]
     fn seed_is_deterministic_and_derived_from_id() {
         let p = Profile::test_default();
-        let a = build_camoufox_config(&p, None);
-        let b = build_camoufox_config(&p, None);
+        let a = build_camoufox_config(&p);
+        let b = build_camoufox_config(&p);
         // Same profile id → identical fingerprint seeds across calls
         assert_eq!(a["canvas:seed"], b["canvas:seed"]);
 
@@ -135,34 +130,27 @@ mod tests {
         let mut p2 = Profile::test_default();
         p2.id = "profile-bbbb".into();
         assert_ne!(
-            build_camoufox_config(&p1, None)["canvas:seed"],
-            build_camoufox_config(&p2, None)["canvas:seed"]
+            build_camoufox_config(&p1)["canvas:seed"],
+            build_camoufox_config(&p2)["canvas:seed"]
         );
     }
 
     #[test]
-    fn default_window_size_and_avail_height() {
+    fn no_window_size_and_avail_height() {
         let p = Profile::test_default();
-        let cfg = build_camoufox_config(&p, None);
-        assert_eq!(cfg["window.outerWidth"], 1280);
-        assert_eq!(cfg["window.outerHeight"], 760);
+        let cfg = build_camoufox_config(&p);
+        // The window keeps the size it is restored with
+        assert!(cfg.get("window.outerWidth").is_none());
+        assert!(cfg.get("window.outerHeight").is_none());
         // availHeight is screen height minus a 48px taskbar allowance
         assert_eq!(cfg["screen.availHeight"], p.screen_height - 48);
-    }
-
-    #[test]
-    fn explicit_window_size_overrides_default() {
-        let p = Profile::test_default();
-        let cfg = build_camoufox_config(&p, Some((1600, 900)));
-        assert_eq!(cfg["window.outerWidth"], 1600);
-        assert_eq!(cfg["window.outerHeight"], 900);
     }
 
     #[test]
     fn language_matches_first_of_languages() {
         let mut p = Profile::test_default();
         p.languages = "fr-FR,fr,en".into();
-        let cfg = build_camoufox_config(&p, None);
+        let cfg = build_camoufox_config(&p);
         assert_eq!(cfg["navigator.language"], "fr-FR");
         assert_eq!(cfg["navigator.languages"][0], "fr-FR");
         assert_eq!(cfg["navigator.languages"][2], "en");
@@ -171,8 +159,8 @@ mod tests {
     #[test]
     fn timezone_present_only_when_set() {
         let mut p = Profile::test_default();
-        assert!(build_camoufox_config(&p, None).get("timezone").is_none());
+        assert!(build_camoufox_config(&p).get("timezone").is_none());
         p.timezone = Some("Europe/Paris".into());
-        assert_eq!(build_camoufox_config(&p, None)["timezone"], "Europe/Paris");
+        assert_eq!(build_camoufox_config(&p)["timezone"], "Europe/Paris");
     }
 }

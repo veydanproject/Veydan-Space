@@ -1,32 +1,43 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- Emoji panel for any composer (DMs now, groups later). -->
+<!--
+  Emoji panel for any composer, and for a reaction in the menu of a message.
+  A popover floats above the composer and closes on a tap outside; inline
+  sits in the flow of whatever holds it, which also decides when it closes.
+-->
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import { EMOJI, loadRecent, pushRecent, type EmojiGroup } from './data';
+  import { usageStore } from './usageStore.svelte';
 
   interface Props {
     onpick: (emoji: string) => void;
-    onclose: () => void;
+    onclose?: () => void;
+    variant?: 'popover' | 'inline';
   }
-  let { onpick, onclose }: Props = $props();
+  let { onpick, onclose, variant = 'popover' }: Props = $props();
+  const inline = $derived(variant === 'inline');
 
-  let recent = $state<string[]>([]);
+  /** Recents of this device: shown only until the runtime names popular ones. */
+  let local = $state<string[]>([]);
+  const popular = $derived(usageStore.popular.length > 0);
+  const recent = $derived(popular ? usageStore.popular : local);
   let active = $state<EmojiGroup['id'] | 'recent'>('smileys');
   let root = $state<HTMLDivElement | null>(null);
   let body = $state<HTMLDivElement | null>(null);
 
   onMount(() => {
-    recent = loadRecent();
+    local = loadRecent();
     if (recent.length) active = 'recent';
+    if (variant === 'inline') return;
     // A tap outside closes the panel; taps inside never steal the focus.
     const outside = (e: PointerEvent) => {
       const target = e.target as Node;
-      if (root && !root.contains(target) && !(target as HTMLElement).closest?.('[data-emoji-toggle]')) onclose();
+      if (root && !root.contains(target) && !(target as HTMLElement).closest?.('[data-emoji-toggle]')) onclose?.();
     };
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onclose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onclose?.(); };
     document.addEventListener('pointerdown', outside, true);
     window.addEventListener('keydown', key);
     return () => {
@@ -36,7 +47,7 @@
   });
 
   function pick(e: string) {
-    recent = pushRecent(e);
+    local = pushRecent(e);
     onpick(e);
   }
 
@@ -48,11 +59,11 @@
   const keep = (e: Event) => e.preventDefault();
 </script>
 
-<div class="picker msg-font" bind:this={root} role="dialog" aria-label={$t('msg_emoji_title')}>
+<div class="picker msg-font" class:inline bind:this={root} role="dialog" aria-label={$t('msg_emoji_title')}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="tabs" onpointerdown={keep}>
     {#if recent.length}
-      <button class:active={active === 'recent'} onclick={() => go('recent')} title={$t('msg_emoji_recent')}>🕘</button>
+      <button class:active={active === 'recent'} onclick={() => go('recent')} title={popular ? $t('msg_reactions_popular') : $t('msg_emoji_recent')}>🕘</button>
     {/if}
     {#each EMOJI as g (g.id)}
       <button class:active={active === g.id} onclick={() => go(g.id)} title={$t(`msg_emoji_${g.id}` as 'msg_emoji_smileys')}>{g.icon}</button>
@@ -61,7 +72,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="body" bind:this={body} onpointerdown={keep}>
     {#if recent.length}
-      <div class="label" data-group="recent">{$t('msg_emoji_recent')}</div>
+      <div class="label" data-group="recent">{popular ? $t('msg_reactions_popular') : $t('msg_emoji_recent')}</div>
       <div class="grid">{#each recent as e (e)}<button onclick={() => pick(e)}>{e}</button>{/each}</div>
     {/if}
     {#each EMOJI as g (g.id)}
@@ -86,8 +97,10 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); }
   .grid button { border: none; background: none; font-size: 22px; line-height: 1; padding: 6px 0; border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; }
   .grid button:hover { background: var(--surface-3); }
+  /* In the flow of a menu or a sheet: as wide as it, no shadow of its own. */
+  .picker.inline { position: static; width: 100%; height: 260px; box-shadow: none; }
   @media (pointer: coarse) {
-    .picker { left: 0; right: 0; width: 100%; border-radius: var(--radius-md) var(--radius-md) 0 0; border-inline: none; bottom: 100%; height: 280px; }
+    .picker:not(.inline) { left: 0; right: 0; width: 100%; border-radius: var(--radius-md) var(--radius-md) 0 0; border-inline: none; bottom: 100%; height: 280px; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); }
     .grid button { font-size: 26px; padding: 8px 0; }
   }

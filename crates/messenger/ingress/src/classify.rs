@@ -4,7 +4,11 @@
 //! Wire event → `Inbound`. Pure with respect to storage; the only input
 //! besides the event is the optional signer needed to open gift wraps.
 
+use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR};
 use messenger_core::inbound::Envelope as WireEnvelope;
+/// Re-exported: ingress filters and skips beats by these, the presence
+/// crate builds them; both take them from core.
+pub use messenger_core::presence::{KIND_PRESENCE, PRESENCE_D};
 use messenger_core::{ChannelInbound, DmInbound, EventId, GroupInbound, Inbound, MetaInbound, PubKey, RawEvent, Timestamp};
 use nostr::key::Keys;
 use nostr::nips::nip59::UnwrappedGift;
@@ -73,6 +77,7 @@ pub fn classify(raw: &RawEvent, keys: Option<&Keys>) -> Inbound {
                 .filter_map(|t| t.as_slice().get(1).cloned())
                 .collect(),
         }),
+        KIND_PRESENCE => classify_presence(&event),
         k if CHANNEL_KINDS.contains(&k) => Inbound::Channel(ChannelInbound { envelope, kind: k }),
         k => Inbound::ignored(k, "no handler for kind"),
     }
@@ -97,7 +102,12 @@ fn classify_gift_wrap(event: &Event, envelope: WireEnvelope, keys: Option<&Keys>
         Err(_) => return Inbound::ignored(KIND_GIFT_WRAP, "gift wrap does not open with our key"),
     };
     let rumor = unwrapped.rumor;
-    if rumor.kind.as_u16() != KIND_DM_RUMOR {
+    // A note from one of my devices to the others: only I can seal one.
+    let own_note = rumor.kind.as_u16() == KIND_OWN_RUMOR && unwrapped.sender == me;
+    // A note from a peer may come from anybody; who may send one is for the
+    // DM service to decide, as for a message.
+    let peer_note = rumor.kind.as_u16() == KIND_PEER_NOTE_RUMOR;
+    if rumor.kind.as_u16() != KIND_DM_RUMOR && !own_note && !peer_note {
         return Inbound::ignored(KIND_GIFT_WRAP, format!("rumor kind {} is not a DM", rumor.kind.as_u16()));
     }
     // The seal is signed by the real sender; the rumor's pubkey must match it,
@@ -134,6 +144,7 @@ fn classify_gift_wrap(event: &Event, envelope: WireEnvelope, keys: Option<&Keys>
         created_at: ts(rumor.created_at),
         content: rumor.content,
         reply_to,
+        rumor_kind: rumor.kind.as_u16(),
     })
 }
 
@@ -175,6 +186,24 @@ fn classify_group(event: &Event, envelope: WireEnvelope) -> Inbound {
 }
 
 /// Id of an unsigned rumor per NIP-01 (sha256 of the canonical array).
+/// A beat of our own `d` only: other clients use the same kind for a song
+/// or a mood. The expiration is kept as given; the handler decides what a
+/// missing one means.
+fn classify_presence(event: &Event) -> Inbound {
+    let d = event.tags.iter().find(|t| t.kind() == "d").and_then(|t| t.as_slice().get(1));
+    if d.map(String::as_str) != Some(PRESENCE_D) {
+        return Inbound::ignored(KIND_PRESENCE, "presence status of another client");
+    }
+    let expires_at = event
+        .tags
+        .iter()
+        .find(|t| t.kind() == "expiration")
+        .and_then(|t| t.as_slice().get(1))
+        .and_then(|s| s.parse::<i64>().ok())
+        .map(Timestamp);
+    Inbound::Meta(MetaInbound::Presence { author: pk(&event.pubkey), created_at: ts(event.created_at), expires_at })
+}
+
 fn rumor_id_of(rumor: &UnsignedEvent) -> String {
     let mut r = rumor.clone();
     r.ensure_id();
@@ -230,6 +259,58 @@ mod tests {
         assert!(matches!(classify(&raw, None), Inbound::Ignored { .. }), "no signer");
     }
 
+    /// A rumor of `KIND_OWN_RUMOR` wrapped by `author` to `to`.
+    fn own_note(author: &Keys, to: &Keys) -> Event {
+        let rumor = EventBuilder::new(Kind::from(KIND_OWN_RUMOR), r#"{"v":1,"t":"own.read","chat":"dm:x","at":1}"#)
+            .tag(Tag::public_key(to.public_key()))
+            .finalize_unsigned(author.public_key());
+        nostr::nips::nip59::GiftWrapBuilder::new(to.public_key(), rumor).finalize(author).unwrap()
+    }
+
+    #[test]
+    fn notes_between_my_devices_come_from_me_only() {
+        let me = Keys::generate();
+        let eve = Keys::generate();
+        match classify(&raw_of(&own_note(&me, &me)), Some(&me)) {
+            Inbound::Dm(dm) => {
+                assert_eq!(dm.rumor_kind, KIND_OWN_RUMOR);
+                assert_eq!(dm.sender.as_hex(), me.public_key().to_hex());
+            }
+            other => panic!("expected Dm, got {other:?}"),
+        }
+        assert!(matches!(classify(&raw_of(&own_note(&eve, &me)), Some(&me)), Inbound::Ignored { .. }), "sealed by someone else");
+    }
+
+    /// A rumor of `kind` wrapped by `author` to `to`.
+    fn rumor_of_kind(kind: u16, author: &Keys, to: &Keys) -> Event {
+        let rumor = EventBuilder::new(Kind::from(kind), r#"{"v":1,"t":"receipt.read","at":1}"#)
+            .tag(Tag::public_key(to.public_key()))
+            .finalize_unsigned(author.public_key());
+        nostr::nips::nip59::GiftWrapBuilder::new(to.public_key(), rumor).finalize(author).unwrap()
+    }
+
+    #[test]
+    fn a_note_from_a_peer_comes_from_anybody_and_nothing_else_does() {
+        let me = Keys::generate();
+        let stranger = Keys::generate();
+        match classify(&raw_of(&rumor_of_kind(KIND_PEER_NOTE_RUMOR, &stranger, &me)), Some(&me)) {
+            Inbound::Dm(dm) => {
+                assert_eq!(dm.rumor_kind, KIND_PEER_NOTE_RUMOR);
+                assert_eq!(dm.sender.as_hex(), stranger.public_key().to_hex());
+                assert_eq!(dm.content, r#"{"v":1,"t":"receipt.read","at":1}"#);
+            }
+            other => panic!("expected Dm, got {other:?}"),
+        }
+        assert!(
+            matches!(classify(&raw_of(&rumor_of_kind(KIND_OWN_RUMOR, &stranger, &me)), Some(&me)), Inbound::Ignored { .. }),
+            "a note between my devices is still mine only"
+        );
+        assert!(
+            matches!(classify(&raw_of(&rumor_of_kind(15, &stranger, &me)), Some(&me)), Inbound::Ignored { .. }),
+            "any other kind is not a DM"
+        );
+    }
+
     #[test]
     fn tampered_signature_and_unknown_kinds_are_ignored() {
         let k = Keys::generate();
@@ -275,6 +356,53 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    fn beat(k: &Keys, d: &str, expiration: Option<&str>) -> Event {
+        let mut b = EventBuilder::new(Kind::from(KIND_PRESENCE), "")
+            .tag(Tag::parse(["d", d]).unwrap())
+            .custom_created_at(nostr::types::Timestamp::from(1_759_700_000u64));
+        if let Some(e) = expiration {
+            b = b.tag(Tag::parse(["expiration", e]).unwrap());
+        }
+        b.finalize(k).unwrap()
+    }
+
+    #[test]
+    fn a_presence_beat_of_ours_is_meta_with_its_expiration() {
+        let k = Keys::generate();
+        match classify(&raw_of(&beat(&k, PRESENCE_D, Some("1759700080"))), None) {
+            Inbound::Meta(MetaInbound::Presence { author, created_at, expires_at }) => {
+                assert_eq!(author.as_hex(), k.public_key().to_hex());
+                assert_eq!(created_at, Timestamp(1_759_700_000));
+                assert_eq!(expires_at, Some(Timestamp(1_759_700_080)));
+            }
+            other => panic!("expected Meta::Presence, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_presence_beat_without_a_good_expiration_has_none() {
+        let k = Keys::generate();
+        for exp in [None, Some("soon"), Some("")] {
+            match classify(&raw_of(&beat(&k, PRESENCE_D, exp)), None) {
+                Inbound::Meta(MetaInbound::Presence { expires_at, .. }) => assert_eq!(expires_at, None, "{exp:?}"),
+                other => panic!("expected Meta::Presence, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_status_of_another_client_is_ignored() {
+        let k = Keys::generate();
+        for d in ["general", "music", ""] {
+            assert!(
+                matches!(classify(&raw_of(&beat(&k, d, Some("1759700080"))), None), Inbound::Ignored { kind: KIND_PRESENCE, .. }),
+                "d = {d:?}"
+            );
+        }
+        let no_d = EventBuilder::new(Kind::from(KIND_PRESENCE), "").finalize(&k).unwrap();
+        assert!(matches!(classify(&raw_of(&no_d), None), Inbound::Ignored { .. }), "no d at all");
     }
 
     #[test]

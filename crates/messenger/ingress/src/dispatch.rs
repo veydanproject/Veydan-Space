@@ -203,6 +203,7 @@ mod tests {
             created_at: Timestamp(1),
             content: content.into(),
             reply_to: None,
+            rumor_kind: 14,
         }
     }
 

@@ -20,7 +20,11 @@ pub mod link;
 pub mod links;
 pub mod net;
 pub mod preview;
+pub mod presence;
+pub mod privacy;
 pub mod push;
+pub mod reactions;
+pub mod receipts;
 pub mod relays;
 pub mod servers;
 pub mod session;
@@ -42,8 +46,10 @@ use session::Session;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 
-pub use messenger_dm::{Action as DmAction, ChatView, MessageView, RelationView};
-pub use media::Recording;
+pub use messenger_dm::{
+    Action as DmAction, ChatView, MessageView, ReactionView, RelationView, UI_EVENT_CHAT_READ, UI_EVENT_CHAT_RECEIPT, UI_EVENT_EMOJI_UPDATED,
+};
+pub use media::{PickedView, Recording};
 pub use messenger_media::{MediaKind, MediaServerInput, MediaServerView, TransferView};
 
 pub use messenger_contacts::book::{parse_key, ContactPatch};
@@ -51,6 +57,8 @@ pub use messenger_contacts::{ContactView, ProfileInput, ProfileView};
 pub use messenger_identity::{CreatedIdentity, Identity};
 pub use messenger_groups::{GroupKind, GroupView, InviteView, KeyView as GroupKeyView, MemberView, OpBody as GroupOp, Role as GroupRole};
 pub use links::LinkView;
+pub use privacy::PrivacySettings;
+pub use messenger_presence::PresenceView;
 pub use messenger_preview::Preview as LinkPreview;
 pub use relays::{ManifestCheck, ManifestInfo, RelayService, RelayView, ServersMode};
 pub use servers::ManifestRemote;
@@ -112,6 +120,8 @@ pub struct MessengerRuntime {
     manifest_remote: std::sync::RwLock<ManifestRemote>,
     net: net::NetService,
     link: link::LinkWatch,
+    /// Presence: whom to tell my key, whom to watch, when to beat.
+    presence: Arc<presence::PresenceDriver>,
 }
 
 impl MessengerRuntime {
@@ -153,6 +163,7 @@ impl MessengerRuntime {
                 .with_meta(Arc::new(Fanout::new(vec![
                     Arc::new(MetaHandler::new(profiles.clone(), contacts.clone())),
                     Arc::new(DmRoutesHandler::new(store.clone())),
+                    Arc::new(messenger_presence::PresenceHandler::new(store.clone())),
                 ]))),
         );
         let previews = preview::LinkPreviews::new(
@@ -165,6 +176,7 @@ impl MessengerRuntime {
         let group_driver =
             groups::GroupsDriver::new(group_service, store.clone(), relays.clone(), outbox.clone(), ui.clone());
         let group_signals = tokio::spawn(group_driver.clone().run(signals_rx));
+        let presence = Arc::new(presence::PresenceDriver::new(store.clone(), dm.clone(), contacts.clone(), outbox.clone()));
         let rt = Self {
             config,
             store,
@@ -188,6 +200,7 @@ impl MessengerRuntime {
             ))),
             net,
             link: link::LinkWatch::default(),
+            presence,
         };
         if let Err(e) = rt.seed_media_servers().await {
             eprintln!("messenger: media servers from the manifest not applied: {e}");
@@ -256,6 +269,7 @@ impl MessengerRuntime {
         self.outbox.hold_expiry(SystemClock.now().secs() + link::HOLD_EXPIRY_SECS);
         let pool = self.relays.pool().await;
         let keys_for_dm = keys.clone();
+        self.presence.session_started().await;
         let session = Session::start(
             self.store.clone(),
             pool,
@@ -264,6 +278,8 @@ impl MessengerRuntime {
             self.ui.clone(),
             self.dispatcher.clone(),
             self.dm.clone(),
+            self.group_driver.groups.clone(),
+            self.presence.clone(),
         )
         .await?;
         self.group_driver.groups.set_signer(Some(keys_for_dm.clone()));
@@ -439,9 +455,38 @@ impl MessengerRuntime {
             let prepared = self.dm.prepare_delete(&keys, message_id).await?;
             self.publish_prepared(prepared).await?;
         } else {
-            self.dm.delete_local(message_id).await?;
+            let note = self.dm.delete_local(message_id).await?;
+            self.tell_own_devices(&note).await;
         }
         Ok(())
+    }
+
+    /// The chat was read on this device; my other devices are told.
+    pub async fn chat_mark_read(&self, chat_id: &str) -> Result<()> {
+        if let Some(note) = self.dm.mark_read(chat_id).await? {
+            self.tell_own_devices(&note).await;
+            // The peer hears of it now, not at the next tick of the session.
+            if let Err(e) = self.flush_receipts().await {
+                eprintln!("messenger receipts: {e}");
+            }
+        }
+        Ok(())
+    }
+
+    /// A note for my other devices (`messenger_dm::own`). What is done here
+    /// stays done when the note cannot leave: locked, or a broken outbox.
+    async fn tell_own_devices(&self, note: &messenger_core::Envelope) {
+        let Ok(keys) = self.session_keys().await else { return };
+        let sent = async {
+            let event = messenger_dm::wrap::wrap_own(&keys, &note.encode(), SystemClock.now().secs())?;
+            self.enqueue_and_pump(Outbound::PublishOwn { event }).await
+        };
+        if let Err(e) = sent.await {
+            let _ = self.ui.send(UiEvent {
+                name: "error".into(),
+                payload: serde_json::json!({ "family": "own", "error": e.to_string() }),
+            });
+        }
     }
 
     pub async fn dm_relation(&self, peer: &str) -> Result<RelationView> {
@@ -470,6 +515,17 @@ impl MessengerRuntime {
             }
             Action::Remove if is_contact => self.contacts.remove(&pk).await?,
             _ => {}
+        }
+        // Whoever was told my presence key may no longer watch it, and the
+        // page no longer shows the peer (`presence_list` leaves it out).
+        if matches!(action, Action::Remove | Action::Block) {
+            if let Err(e) = self.presence_rotate().await {
+                eprintln!("messenger presence: key not moved: {e}");
+            }
+            let _ = self.ui.send(UiEvent {
+                name: presence::UI_EVENT_PRESENCE_KEYS_CHANGED.into(),
+                payload: serde_json::json!({ "peer": pk.as_hex() }),
+            });
         }
         for ev in result.events {
             let _ = self.ui.send(ev);
@@ -558,8 +614,13 @@ impl MessengerRuntime {
     }
 
     pub async fn contact_remove(&self, pubkey: &PubKey) -> Result<()> {
-        // The signal is derived from the state before the removal.
-        let _ = self.dm_act(pubkey.as_hex(), Action::Remove).await;
+        // The signal is derived from the state before the removal. Without
+        // it (no session) the presence key still moves on.
+        if self.dm_act(pubkey.as_hex(), Action::Remove).await.is_err() {
+            if let Err(e) = self.presence_rotate().await {
+                eprintln!("messenger presence: key not moved: {e}");
+            }
+        }
         self.contacts.remove(pubkey).await
     }
 
@@ -602,6 +663,14 @@ impl MessengerRuntime {
     }
 
     async fn stop_session(&self) {
+        // The emoji counted since the last map: queued now, sent by the next
+        // session if not by this one.
+        let keys = self.session.lock().await.as_ref().map(|s| s.keys.clone());
+        if let Some(keys) = keys {
+            if let Err(e) = reactions::send_emoji_snapshot(&self.dm, &self.outbox, &keys, SystemClock.now().secs(), true).await {
+                eprintln!("messenger emoji: {e}");
+            }
+        }
         self.dm.set_signer(None);
         self.group_driver.groups.set_signer(None);
         if let Some(s) = self.session.lock().await.take() {

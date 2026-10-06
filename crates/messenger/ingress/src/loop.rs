@@ -4,7 +4,7 @@
 //! `IngressLoop`: consumes a transport's event stream, dedups, classifies,
 //! dispatches. One per session; dropping the handle stops it.
 
-use crate::classify::classify;
+use crate::classify::{classify, KIND_PRESENCE};
 use crate::dispatch::{Dispatcher, EffectSink};
 use messenger_core::{Context, Inbound, RawEvent};
 use messenger_store::{events_raw, Store};
@@ -13,6 +13,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+
+/// Kinds that are not kept in `msg_events_raw`. A presence beat is
+/// replaceable and comes twice a minute per contact: kept, it would pile up
+/// forever, and a replay of one does no harm (its handler only moves
+/// forward).
+pub const TRANSIENT_KINDS: &[u16] = &[KIND_PRESENCE];
+
+/// Whether an event of `kind` skips the dedup table.
+pub fn is_transient(kind: u16) -> bool {
+    TRANSIENT_KINDS.contains(&kind)
+}
 
 /// Counters for the status screen.
 #[derive(Default)]
@@ -57,15 +68,17 @@ impl IngressLoop {
         let handle = tokio::spawn(async move {
             while let Some(raw) = events.recv().await {
                 st.received.fetch_add(1, Ordering::Relaxed);
-                match events_raw::insert_if_new(&store, &raw).await {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        st.duplicates.fetch_add(1, Ordering::Relaxed);
-                        continue;
-                    }
-                    Err(e) => {
-                        eprintln!("messenger ingress: dedup store failed: {e}");
-                        continue;
+                if !is_transient(raw.kind) {
+                    match events_raw::insert_if_new(&store, &raw).await {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            st.duplicates.fetch_add(1, Ordering::Relaxed);
+                            continue;
+                        }
+                        Err(e) => {
+                            eprintln!("messenger ingress: dedup store failed: {e}");
+                            continue;
+                        }
                     }
                 }
                 let inbound = classify(&raw, keys.as_ref());
@@ -155,6 +168,44 @@ mod tests {
         assert_eq!((received, dups, dispatched, dm, ignored), (3, 1, 2, 1, 1));
         // No DM handler registered → reported as ignored to the sink, plus the kind-1 note.
         assert_eq!(sink.0.lock().unwrap().len(), 2);
+        drop(lp);
+    }
+
+    #[test]
+    fn only_presence_beats_are_transient() {
+        assert!(is_transient(KIND_PRESENCE));
+        for kind in [0u16, 3, 9, 14, 1059, 10002, 10050, 30078, 30079] {
+            assert!(!is_transient(kind), "kind {kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn presence_beats_are_dispatched_but_never_kept() {
+        let store = Store::open_in_memory().await.unwrap();
+        let me = Keys::generate();
+        let presence = Keys::generate();
+        let (tx, rx) = mpsc::channel(8);
+        let sink = Arc::new(Sink(Mutex::new(vec![])));
+        let ctx = Context {
+            my_pubkey: PubKey::parse(&me.public_key().to_hex()).unwrap(),
+            session_started_at: Timestamp(0),
+            clock: Arc::new(SystemClock),
+        };
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), Arc::new(Dispatcher::new()), ctx, sink.clone());
+
+        let beat = EventBuilder::new(Kind::from(KIND_PRESENCE), "")
+            .tag(Tag::parse(["d", crate::classify::PRESENCE_D]).unwrap())
+            .finalize(&presence)
+            .unwrap();
+        let note = EventBuilder::new(Kind::from(1u16), "n").finalize(&presence).unwrap();
+        tx.send(raw_of(&beat)).await.unwrap();
+        tx.send(raw_of(&beat)).await.unwrap(); // a replay goes through
+        tx.send(raw_of(&note)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let (received, dups, dispatched, _, _) = lp.stats.snapshot();
+        assert_eq!((received, dups, dispatched), (3, 0, 3));
+        assert_eq!(events_raw::count(&store).await.unwrap(), 1, "only the kind-1 note is kept");
         drop(lp);
     }
 }

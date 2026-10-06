@@ -5,7 +5,9 @@
   Attachments sent by one action, in one bubble: pictures and videos as a
   mosaic, files as a list. A picture sent alone is drawn here too, as a
   picture. Each attachment stays a message of its own: the menu, the
-  status and the transfer belong to the one that was pressed.
+  status and the transfer belong to the one that was pressed. Reactions
+  belong to the album: they are kept on its last part (`reactionTarget`),
+  whichever part the menu was opened on, and shown under the whole.
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
@@ -19,7 +21,9 @@
   import { longpress } from '../shared/longpress';
   import type { MessengerMessage } from '../api';
   import { logSendFailure, sendFailureKey } from './send-failure';
-  import { lateAt, shownStatus } from './delivery';
+  import { lateAt, shownStatus, worstOf } from './delivery';
+  import Reactions from './Reactions.svelte';
+  import { reactionTarget } from './quick-reactions';
 
   interface Props {
     messages: MessengerMessage[];
@@ -32,11 +36,15 @@
     highlighted?: string | null;
     onmenu: (e: MouseEvent, m: MessengerMessage) => void;
     onretry: (m: MessengerMessage) => void;
+    /** A reaction was refused: the window explains why. */
+    onreacterror?: (e: unknown) => void;
   }
-  let { messages, variant, first, last, author = null, authorTint = 'inherit', highlighted = null, onmenu, onretry }: Props = $props();
+  let { messages, variant, first, last, author = null, authorTint = 'inherit', highlighted = null, onmenu, onretry, onreacterror }: Props = $props();
 
   const head = $derived(messages[0]);
   const tail = $derived(messages[messages.length - 1]);
+  /** The part the album's reactions are kept on. */
+  const reacted = $derived(reactionTarget(head, messages));
   const out = $derived(head.direction === 'out');
   const captions = $derived(messages.filter((m) => m.text?.trim()));
   const failed = $derived(messages.filter((m) => m.status === 'failed'));
@@ -64,11 +72,8 @@
     return () => clearTimeout(timer);
   });
   /** The worst of what the parts are in. */
-  const status = $derived(
-    failed.length ? 'failed' : messages.some((m) => m.status === 'uploading') ? 'uploading'
-      : messages.some((m) => m.status === 'paused' || shownStatus(m, now) === 'waiting') ? 'waiting' : 'sent',
-  );
-  const statusIcon = $derived(status === 'sent' ? 'check' : status === 'failed' ? 'alert-triangle' : status === 'uploading' ? 'upload' : 'clock');
+  const status = $derived(worstOf(messages.map((m) => shownStatus(m, now))));
+  const statusIcon = $derived(status === 'sent' ? 'check' : status === 'delivered' || status === 'read' ? 'check-check' : status === 'failed' ? 'alert-triangle' : status === 'uploading' ? 'upload' : 'clock');
 
   const press = (m: MessengerMessage) => ({
     onpress: (p: { x: number; y: number }) => onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), m),
@@ -118,6 +123,7 @@
       </div>
     {/if}
 
+    {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} /></div>{/if}
     {#each captions as m (m.id)}<div class="caption"><MessageContent text={m.text ?? ''} /></div>{/each}
     {#if !overlay}{@render meta(false)}{/if}
   </div>
@@ -159,13 +165,15 @@
   .card-cell > :global(*) { flex: 1; }
 
   .caption { padding: 0 8px; }
+  .reactions { padding: 2px 5px 0; }
   .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-size: var(--fs-2xs); color: var(--text-3); line-height: 1; padding: 0 8px 5px; }
   .meta.on-picture {
     position: absolute; right: 6px; bottom: 6px; padding: 3px 7px; border-radius: var(--radius-pill);
     background: rgba(0, 0, 0, 0.5); color: #fff; pointer-events: none;
   }
   .status { display: inline-flex; }
-  .status.sent { color: var(--accent-text-2); }
+  .status.sent, .status.delivered { color: var(--accent-text-2); }
+  .status.read { color: var(--accent); }
   .meta.on-picture .status { color: #fff; }
   .status.failed { color: var(--danger-text); }
   .retry {

@@ -10,6 +10,7 @@
   import NetPanel from '../net/NetPanel.svelte';
   import MediaServersPanel from '../media/MediaServersPanel.svelte';
   import NotificationsPanel from '../push/NotificationsPanel.svelte';
+  import PrivacyPanel from '../privacy/PrivacyPanel.svelte';
   import DebugFeed from '../debug/DebugFeed.svelte';
 
   interface Props {
@@ -18,7 +19,7 @@
   }
   let { compact = false }: Props = $props();
 
-  type Tab = 'profile' | 'network' | 'notifications' | 'diagnostics';
+  type Tab = 'profile' | 'network' | 'notifications' | 'privacy' | 'diagnostics';
   let tab = $state<Tab>('profile');
   const s = $derived(messengerStore.status);
 </script>
@@ -28,7 +29,7 @@
     <!-- The phone: the sections as the shell's segment chips, kept in view
          while the section scrolls; a chip cut at the edge says the row scrolls. -->
     <div class="m-seg seg-sticky" role="tablist">
-      {#each ['profile', 'network', 'notifications', 'diagnostics'] as const as id}
+      {#each ['profile', 'network', 'notifications', 'privacy', 'diagnostics'] as const as id}
         <button role="tab" class="m-seg-btn" class:active={tab === id} aria-selected={tab === id}
           onclick={(e) => { tab = id; (e.currentTarget as HTMLElement).scrollIntoView({ inline: 'nearest', block: 'nearest' }); }}>
           {$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')}
@@ -38,7 +39,7 @@
   {:else}
     <h2>{$t('msg_settings_title_full')}</h2>
     <div class="tabs" role="tablist">
-      {#each ['profile', 'network', 'notifications', 'diagnostics'] as const as id}
+      {#each ['profile', 'network', 'notifications', 'privacy', 'diagnostics'] as const as id}
         <button role="tab" class="tab" class:active={tab === id} aria-selected={tab === id} onclick={() => (tab = id)}>
           {$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')}
         </button>
@@ -58,6 +59,8 @@
     <MediaServersPanel />
   {:else if tab === 'notifications'}
     <NotificationsPanel />
+  {:else if tab === 'privacy'}
+    <PrivacyPanel />
   {:else if s?.runtime}
     <div class="card status-card">
       <div class="card-title">{$t('msg_status_title')}</div>

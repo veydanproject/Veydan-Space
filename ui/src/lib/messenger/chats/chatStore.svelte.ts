@@ -12,6 +12,7 @@ import {
   type MessengerRecording,
   type MessengerUiEvent,
 } from '../api';
+import { usageStore } from '../shared/emoji/usageStore.svelte';
 
 const PAGE = 50;
 
@@ -184,6 +185,19 @@ class ChatStore {
     this.scheduleChatsRefresh();
   }
 
+  /**
+   * Puts my `emoji` on a message, or takes it back when it is already mine.
+   * A refusal (`reaction_limit`, `reaction_invalid`, a relationship code)
+   * is thrown for the window to explain, as a refused send is.
+   */
+  async react(messageId: string, emoji: string) {
+    const m = await messengerApi.dm.react(messageId, emoji);
+    if (m.chat_id === this.activeId) this.upsert(m);
+    // A reaction put counts toward popular emoji in the runtime: read the new order.
+    if (m.reactions.some((r) => r.emoji === emoji && r.mine)) usageStore.load().catch(() => {});
+    return m;
+  }
+
   async remove(messageId: string, forEveryone: boolean) {
     await messengerApi.dm.delete(messageId, forEveryone);
     await this.reloadWindow();
@@ -253,9 +267,14 @@ class ChatStore {
         if (p.chat_id === this.activeId) this.scheduleWindowReload();
         this.scheduleChatsRefresh();
         break;
+      // Someone read up to here: the ticks of the open chat change, its place in the list does not.
+      case 'chat.receipt':
+        if (p.chat_id === this.activeId) this.scheduleWindowReload();
+        break;
       case "group.invite":
       case "group.request":
       case 'chats.updated':
+      case 'chat.read':
       case 'profile.updated':
       case 'history.synced':
         this.scheduleChatsRefresh();

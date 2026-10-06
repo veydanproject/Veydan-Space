@@ -52,7 +52,7 @@ export function buildDemo(): DemoData {
   const msg = (chat: string, from: string, at: number, text: string | null, extra: Partial<MessengerMessage> = {}): MessengerMessage => ({
     id: `demo${(n++).toString(16).padStart(60, '0')}`, chat_id: chat, direction: from === ME ? 'out' : 'in',
     status: from === ME ? 'sent' : 'received', content_type: 'text', text, sender_pubkey: from, reply_to: null,
-    created_at: at, edited_at: null, deleted: false, failure_reason: null, media: null, ...extra,
+    created_at: at, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null, ...extra,
   });
 
   for (const [pk, name, about, nip05, mode, canSend] of people) {
@@ -75,15 +75,15 @@ export function buildDemo(): DemoData {
     msg(a, '', now - day * 2 - 4100, 'request_accepted', { content_type: 'system', direction: 'out' }),
     m1, m2,
     msg(a, alice, now - day * 2 - 3800, 'Первое: время последнего сообщения лучше прижать вправо. Второе: счётчик непрочитанных у заглушённых чатов сделать серым, а не акцентным.'),
-    msg(a, alice, now - day * 2 - 3790, 'И ещё: закреплённые чаты сверху.'),
+    msg(a, alice, now - day * 2 - 3790, 'И ещё: закреплённые чаты сверху.', { reactions: [{ emoji: '👍', count: 2, mine: true }, { emoji: '🔥', count: 1, mine: false }] }),
     msg(a, ME, now - day * 2 - 3600, 'Согласен по всем трём пунктам. Сделаю сегодня.', { reply_to: { id: m1.id, sender_pubkey: alice, text: m1.text } }),
-    msg(a, ME, now - day - 7200, 'Готово, обновил. Посмотри, когда будет минута.', { edited_at: now - day - 7100 }),
+    msg(a, ME, now - day - 7200, 'Готово, обновил. Посмотри, когда будет минута.', { edited_at: now - day - 7100, delivered_at: now - day - 7190, read_at: now - day - 7000 }),
     msg(a, alice, now - day - 7000, null, { deleted: true }),
     msg(a, alice, now - day - 6900, 'Смотрю.'),
     msg(a, alice, now - 5400, 'Макет экрана', { content_type: 'media', media: { name: 'chat-list-v3.png', mime: 'image/png', size: 842_113, kind: 'image' } }),
     msg(a, ME, now - 5000, null, { content_type: 'media', media: { name: 'Техническое задание (черновик).pdf', mime: 'application/pdf', size: 2_412_004, kind: 'file', local_path: '/home/dev/spec.pdf' } }),
     msg(a, alice, now - 2400, null, { content_type: 'media', media: { name: 'voice.weba', mime: 'audio/webm', size: 48_200, kind: 'voice', duration_ms: 17_400, waveform: [20, 60, 120, 200, 240, 180, 90, 140, 220, 255, 190, 110, 60, 40, 90, 170, 230, 210, 150, 80, 50, 100, 180, 240, 200, 130, 70, 40, 60, 120, 190, 230, 170, 100, 60, 90, 150, 210, 180, 120, 70, 40, 30, 60, 110, 160, 120, 60] } }),
-    msg(a, ME, now - 1800, 'Отлично выглядит. Беру в работу 👍'),
+    msg(a, ME, now - 1800, 'Отлично выглядит. Беру в работу 👍', { delivered_at: now - 1790 }),
     msg(a, ME, now - 600, 'Это сообщение не ушло: реле было недоступно.', { status: 'failed', failure_reason: 'no relay accepted' }),
     msg(a, ME, now - 60, 'А это ждёт отправки.', { status: 'queued' }),
   );
@@ -157,7 +157,7 @@ export function buildDemo(): DemoData {
     t1,
     msg(tm, alice, now - day - 2900, 'Отлично. А история для новых участников?'),
     msg(tm, alice, now - day - 2890, 'В приватных по настройке группы, в публичных всегда.'),
-    msg(tm, ME, now - day - 2700, 'Да, именно так.', { reply_to: { id: t1.id, sender_pubkey: boris, text: t1.text } }),
+    msg(tm, ME, now - day - 2700, 'Да, именно так.', { reply_to: { id: t1.id, sender_pubkey: boris, text: t1.text }, read_at: now - day - 2600, seen_by: [boris, alice] }),
     sys(tm, now - day * 3, 'group_admitted', boris, daria),
     msg(tm, daria, now - day * 3 + 500, 'Всем привет!'),
     sys(tm, now - 7000, 'group_muted', alice, daria),

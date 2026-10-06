@@ -117,7 +117,7 @@ const SEARCH_ENGINE_BLOCK: &str = r#"if (true) {
     }"#;
 
 /// Bump when the set of omni.ja patches changes so already-patched installs get re-patched.
-const OMNI_PATCH_VERSION: u32 = 2;
+const OMNI_PATCH_VERSION: u32 = 3;
 
 /// Marker file storing "<omni.ja mtime secs>:<OMNI_PATCH_VERSION>" after the last successful patch.
 fn patch_marker_path(install_dir: &Path) -> PathBuf {
@@ -332,9 +332,31 @@ fn patch_toolkit_omni(install_dir: &Path) -> Result<(), String> {
 const ADDONS_PIN_BROKEN: &str = "    inPanel = false;\n    this.pinToToolbar(aWidgetId, true);\n    if (!CustomizableUI.isWebExtensionWidget(aWidgetId)) {\n      return;\n    }\n";
 const ADDONS_PIN_FIXED: &str = "    if (!CustomizableUI.isWebExtensionWidget(aWidgetId)) {\n      return;\n    }\n    inPanel = false;\n    this.pinToToolbar(aWidgetId, true);\n";
 
+/// Camoufox resizes every browser window to 1280×1040 once it is laid out, over
+/// the size and the state Firefox restored from xulstore.json. A window restored
+/// maximized stays maximized for the system but small on the screen (Windows),
+/// so the maximize button restores it instead. Without the line Firefox keeps
+/// what it restored, or sizes a first window to the screen itself.
+const DEFAULT_SIZE_BROKEN: &str = "    // Set default size\n    window.resizeTo(1280, 1040);\n";
+const DEFAULT_SIZE_FIXED: &str = "";
+
+/// Text fixes of browser/omni.ja: (entry, Camoufox's text, ours).
+const BROWSER_TEXT_PATCHES: &[(&str, &str, &str)] = &[
+    (
+        "chrome/browser/content/browser/browser-addons.js",
+        ADDONS_PIN_BROKEN,
+        ADDONS_PIN_FIXED,
+    ),
+    (
+        "chrome/browser/content/browser/browser-init.js",
+        DEFAULT_SIZE_BROKEN,
+        DEFAULT_SIZE_FIXED,
+    ),
+];
+
 /// Patches browser/omni.ja:
 /// - clears search-config-overrides-v2.json to prevent parse errors;
-/// - moves the web-extension check before Camoufox's pin-to-toolbar hack in browser-addons.js.
+/// - applies `BROWSER_TEXT_PATCHES`.
 fn patch_browser_omni(install_dir: &Path) -> Result<(), String> {
     let omni_path = install_dir.join("browser").join("omni.ja");
     if !omni_path.exists() {
@@ -344,20 +366,21 @@ fn patch_browser_omni(install_dir: &Path) -> Result<(), String> {
     use std::io::Read;
     use zip::ZipArchive;
 
-    let addons_target = "chrome/browser/content/browser/browser-addons.js";
     let src = std::fs::File::open(&omni_path).map_err(|e| e.to_string())?;
     let mut archive = ZipArchive::new(src).map_err(|e| e.to_string())?;
-    let patched_addons = match archive.by_name(addons_target) {
-        Ok(mut entry) => {
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-            let text = String::from_utf8_lossy(&buf).into_owned();
-            // Not found = already patched or structure changed — leave untouched
-            text.contains(ADDONS_PIN_BROKEN)
-                .then(|| text.replace(ADDONS_PIN_BROKEN, ADDONS_PIN_FIXED))
+    let mut patched_texts: Vec<(&str, String)> = Vec::new();
+    for &(target, broken, fixed) in BROWSER_TEXT_PATCHES {
+        let Ok(mut entry) = archive.by_name(target) else {
+            continue;
+        };
+        let mut buf = Vec::new();
+        entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        let text = String::from_utf8_lossy(&buf).into_owned();
+        // Not found = already patched or structure changed — leave untouched
+        if text.contains(broken) {
+            patched_texts.push((target, text.replace(broken, fixed)));
         }
-        Err(_) => None,
-    };
+    }
     drop(archive);
 
     let empty_overrides: &[u8] = br#"{"data":[],"timestamp":0}"#;
@@ -365,8 +388,8 @@ fn patch_browser_omni(install_dir: &Path) -> Result<(), String> {
         "defaults/settings/main/search-config-overrides-v2.json",
         empty_overrides,
     )];
-    if let Some(addons) = &patched_addons {
-        replacements.push((addons_target, addons.as_bytes()));
+    for (target, text) in &patched_texts {
+        replacements.push((target, text.as_bytes()));
     }
     patch_zip_file(&omni_path, &replacements)
 }
@@ -1223,4 +1246,50 @@ pub fn write_search_engine_to_profile(
 
     let json_bytes = serde_json::to_vec(&doc).map_err(|e| e.to_string())?;
     write_mozlz4(&search_json, &json_bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    const INIT_JS: &str = "chrome/browser/content/browser/browser-init.js";
+
+    fn install_dir_with_browser_init(name: &str, text: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("veydan-omni-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("browser")).unwrap();
+        let file = std::fs::File::create(dir.join("browser").join("omni.ja")).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file(INIT_JS, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(text.as_bytes()).unwrap();
+        zip.finish().unwrap();
+        dir
+    }
+
+    fn read_browser_init(dir: &Path) -> String {
+        let file = std::fs::File::open(dir.join("browser").join("omni.ja")).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut text = String::new();
+        archive
+            .by_name(INIT_JS)
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
+        text
+    }
+
+    #[test]
+    fn the_window_keeps_the_size_it_is_restored_with() {
+        let before = format!("    }}\n\n{DEFAULT_SIZE_BROKEN}\n    // Hijack the outer window size.\n");
+        let dir = install_dir_with_browser_init("size", &before);
+        patch_browser_omni(&dir).unwrap();
+        let after = read_browser_init(&dir);
+        assert!(!after.contains("window.resizeTo(1280, 1040)"));
+        assert!(after.contains("// Hijack the outer window size."));
+        // A second patch finds nothing to change
+        patch_browser_omni(&dir).unwrap();
+        assert_eq!(read_browser_init(&dir), after);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

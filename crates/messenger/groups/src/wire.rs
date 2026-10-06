@@ -206,8 +206,25 @@ pub fn seal_message(
     signed: &Event,
     author: &Keys,
 ) -> Result<WireEvent> {
+    seal_inner(group_id, key, grace, signed, author, false)
+}
+
+/// A note to the members that is not a message (a read receipt): sealed as
+/// a message, so that a client that does not know its `t` drops it after
+/// the author's signature was checked, and quiet, so that it wakes nobody.
+pub fn seal_note(
+    group_id: &str,
+    key: &GroupKey,
+    grace: Option<&GroupKey>,
+    signed: &Event,
+    author: &Keys,
+) -> Result<WireEvent> {
+    seal_inner(group_id, key, grace, signed, author, true)
+}
+
+fn seal_inner(group_id: &str, key: &GroupKey, grace: Option<&GroupKey>, signed: &Event, author: &Keys, quiet: bool) -> Result<WireEvent> {
     let payload = Payload { v: PAYLOAD_VERSION, t: "msg".into(), event: serde_json::to_value(signed)?, envelopes: vec![], keys: vec![] };
-    seal(group_id, key, grace, &payload, signed.created_at.as_secs() as i64, author, false)
+    seal(group_id, key, grace, &payload, signed.created_at.as_secs() as i64, author, quiet)
 }
 
 /// Older keys for the holders of a newer one.

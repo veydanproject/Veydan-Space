@@ -62,6 +62,15 @@ pub struct DmInbound {
     pub created_at: Timestamp,
     pub content: String,
     pub reply_to: Option<EventId>,
+    /// Kind of the rumor: 14 for a message, `KIND_OWN_RUMOR` for a note
+    /// from one of my devices to the others, `KIND_PEER_NOTE_RUMOR` for a
+    /// note from a peer that is not a message.
+    #[serde(default = "dm_rumor_kind")]
+    pub rumor_kind: u16,
+}
+
+fn dm_rumor_kind() -> u16 {
+    14
 }
 
 /// A group event (kind 9 or its companions). Content is still ciphertext:
@@ -95,6 +104,10 @@ pub enum MetaInbound {
     RelayList { author: PubKey, created_at: Timestamp, relays: Vec<(String, Option<String>)> },
     /// NIP-17 inbox relay list (kind 10050): where to deliver DMs to `author`.
     DmRelays { author: PubKey, created_at: Timestamp, relays: Vec<String> },
+    /// A presence beat (kind 30315, `d = veydan`). `author` is a presence
+    /// key, not a user: only the presence handler knows whose it is.
+    /// `expires_at` is the NIP-40 `expiration` tag, when it parses.
+    Presence { author: PubKey, created_at: Timestamp, expires_at: Option<Timestamp> },
 }
 
 #[cfg(test)]

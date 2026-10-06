@@ -17,7 +17,7 @@ let n = 0;
 function msg(from: string, at: number, extra: Partial<MessengerMessage> = {}): MessengerMessage {
   return {
     id: `m${n++}`, chat_id: 'c', direction: from === ME ? 'out' : 'in', status: 'sent', content_type: 'text', text: 'x',
-    sender_pubkey: from, reply_to: null, created_at: at, edited_at: null, deleted: false, failure_reason: null, media: null, ...extra,
+    sender_pubkey: from, reply_to: null, created_at: at, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null, ...extra,
   };
 }
 const sys = (at: number) => msg(ANN, at, { content_type: 'system', text: 'group_joined' });

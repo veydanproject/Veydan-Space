@@ -27,4 +27,4 @@ pub mod r#loop;
 pub use classify::classify;
 pub use dispatch::{Dispatcher, EffectSink, Fanout};
 pub use outbox::Outbox;
-pub use r#loop::{IngressLoop, IngressStats};
+pub use r#loop::{is_transient, IngressLoop, IngressStats, TRANSIENT_KINDS};

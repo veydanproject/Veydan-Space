@@ -9,7 +9,7 @@ function msg(id: string, over: Partial<MessengerMessage> = {}): MessengerMessage
   return {
     id, chat_id: 'c', direction: 'in', status: 'received', content_type: 'text', text: null,
     sender_pubkey: 's', reply_to: null, created_at: 1, edited_at: null, deleted: false,
-    failure_reason: null, media: null, ...over,
+    failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null, ...over,
   } as MessengerMessage;
 }
 

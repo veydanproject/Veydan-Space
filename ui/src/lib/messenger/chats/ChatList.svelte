@@ -7,6 +7,7 @@
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import { chatStore } from './chatStore.svelte';
+  import { presenceStore } from '../presence/presenceStore.svelte';
   import { listStamp } from '../shared/time';
   import { confirmStore } from '../shared/confirm.svelte';
   import { longpress } from '../shared/longpress';
@@ -54,7 +55,7 @@
   <li>
     <button class="chat" class:active={chatStore.activeId === c.id} onclick={() => onopen(c)} oncontextmenu={(e) => openMenu(e, c)}
       use:longpress={{ onpress: (p) => (menu = { open: true, x: p.x, y: p.y, chat: c }) }}>
-      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={42} />
+      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={42} online={c.kind === 'dm' && presenceStore.status(c.peer_pubkey) === 'online'} />
       <span class="body">
         <span class="top">
           {#if c.kind === "group"}<span class="dim"><Icon name="users" size={12} /></span>{/if}
