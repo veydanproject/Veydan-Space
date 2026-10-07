@@ -20,7 +20,8 @@
   import AttachButton from '../media/AttachButton.svelte';
   import MediaViewer from '../media/MediaViewer.svelte';
   import { viewer } from '../media/viewer.svelte';
-  import type { MessengerPicked, MessengerRecording } from '../api';
+  import type { MessengerPicked, MessengerPoster, MessengerRecording } from '../api';
+  import { posterUrl, videoPoster } from '../media/poster';
   import { chatStore } from '../chats/chatStore.svelte';
   import { messengerStore } from '../store.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
@@ -232,8 +233,11 @@
     if (mine) { replyTo = null; editing = mine; }
   }
 
-  /** Picked files wait above the field until they are sent; `file` is `null` while it is read in. */
-  let picked = $state<{ key: number; file: MessengerPicked | null }[]>([]);
+  /**
+   * Picked files wait above the field until they are sent; `file` is `null` while it is read in.
+   * A video carries a frame of it (`poster`): the tray shows it, and so does the other side before the file is there.
+   */
+  let picked = $state<{ key: number; file: MessengerPicked | null; poster?: MessengerPoster | null }[]>([]);
   let pickSeq = 0;
   const attached = $derived(picked.length === 0 ? null : picked.some((p) => !p.file) ? 'loading' : 'ready');
   /** Pictures of this sending go as they are, not compressed (the owner's per-send switch). */
@@ -258,6 +262,10 @@
         // The runtime refuses a file over the limit; one that told no size then is caught here.
         if (file.size > MAX_SEND_BYTES) throw new Error(`err.file_too_large: ${file.name}`);
         picked = picked.map((x) => (x.key === key ? { key, file } : x));
+        if (file.kind === 'video' && file.url) {
+          const poster = await videoPoster(file.url);
+          if (poster) picked = picked.map((x) => (x.key === key ? { key, file: { ...file, preview: posterUrl(poster) }, poster } : x));
+        }
       } catch (e) {
         picked = picked.filter((x) => x.key !== key);
         // A `content://` path names nothing a person reads: the refusal carries the file's name.
@@ -279,7 +287,7 @@
    * With a reply the text goes on its own after the files, as the reply.
    */
   async function sendPicked(text: string) {
-    const files = picked.flatMap((x) => (x.file ? [x.file] : []));
+    const files = picked.flatMap((x) => (x.file ? [{ ...x.file, poster: x.poster ?? null }] : []));
     const asIs = original;
     picked = [];
     original = false;
@@ -289,10 +297,10 @@
     const batch = files.length > 1 ? crypto.randomUUID() : undefined;
     for (const [i, f] of files.entries()) {
       try {
-        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch, asIs);
+        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch, asIs, f.poster);
       } catch (e) {
         // What did not leave waits again.
-        picked = files.slice(i).map((file) => ({ key: ++pickSeq, file }));
+        picked = files.slice(i).map(({ poster, ...file }) => ({ key: ++pickSeq, file, poster }));
         original = asIs;
         throw e;
       }

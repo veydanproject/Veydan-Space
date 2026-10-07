@@ -20,6 +20,7 @@ use messenger_core::{MessengerError, PubKey, Result};
 use messenger_dm::{DmService, MessageView};
 use messenger_ingress::Outbox;
 pub use messenger_media::descriptor::MAX_SEND_BYTES;
+use messenger_media::descriptor::{valid_thumb, MAX_THUMB_BYTES};
 use messenger_media::service::{progress_of, short_reason, SMALL_BYTES};
 use messenger_media::{
     Cancelled, MediaDescriptor, MediaKind, MediaServerInput, MediaServerView, MediaService, Paused, Progress, ProgressSink, Publishing,
@@ -52,6 +53,40 @@ pub const PHOTO_QUALITY: u8 = 78;
 pub const PHOTO_MAX_BYTES: u64 = 1024 * 1024;
 /// The first bytes of a picture read for its size.
 const HEADER_BYTES: u64 = 512 * 1024;
+/// The longer side of a preview carried in the message, tried smaller
+/// until it fits `MAX_THUMB_BYTES`.
+const THUMB_SIDES: [u32; 3] = [160, 96, 64];
+/// A frame the UI hands over is never larger than this (base64).
+const MAX_POSTER_B64: usize = 1024 * 1024;
+
+/// A frame of a video the UI took from the picked file, shown before the
+/// file is fetched: a JPEG (base64) and the size of the video.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct Poster {
+    pub jpeg: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// A preview of a picture (any the avatar crate reads), written anew as a
+/// small JPEG: base64 within `MAX_THUMB_BYTES`; `None` when it cannot be
+/// read. Only pixels go: nothing of the source survives.
+fn thumb_of(bytes: &[u8]) -> Option<String> {
+    let img = messenger_avatar::decode(bytes).ok()?;
+    THUMB_SIDES
+        .into_iter()
+        .map(|side| messenger_avatar::preview_jpeg(&img, side))
+        .find(|j| j.len() <= MAX_THUMB_BYTES)
+        .map(|j| B64.encode(j))
+}
+
+/// `thumb_of` the picture at `path`, within the avatar crate's limits.
+fn thumb_of_file(path: &Path) -> Option<String> {
+    if std::fs::metadata(path).ok()?.len() > messenger_avatar::MAX_INPUT_BYTES as u64 {
+        return None;
+    }
+    thumb_of(&std::fs::read(path).ok()?)
+}
 
 /// What a transfer is in while it is not over.
 const NOT_OVER: [&str; 5] = [ST_QUEUED, ST_RUNNING, ST_WAITING_RETRY, ST_PAUSED, ST_FAILED];
@@ -90,6 +125,8 @@ pub struct PickedView {
     pub name: String,
     /// `image`, `video`, `audio` or `file`.
     pub kind: String,
+    /// The type it is sent as, by its name.
+    pub mime: String,
     pub size: u64,
     /// A picture as a `data:` url; `None` for anything else.
     pub preview: Option<String>,
@@ -294,6 +331,25 @@ impl UploadJob {
         prepared
     }
 
+    /// A picture's placeholder gets a preview made from the file that goes
+    /// (`thumb_of`), unless it has one; the bubble is told.
+    async fn add_thumb(&self, placeholder: &str, chat_id: &str, local_path: &str) {
+        let Ok(Some(ph)) = self.dm.message(placeholder).await else { return };
+        let Some(fields) = ph.media else { return };
+        if fields.get("kind").and_then(|v| v.as_str()) != Some(MediaKind::Image.as_str()) || fields.get("thumb").is_some() {
+            return;
+        }
+        let path = PathBuf::from(local_path);
+        let Some(thumb) = tokio::task::spawn_blocking(move || thumb_of_file(&path)).await.ok().flatten() else { return };
+        // The placeholder as it is now: the upload may have told it more.
+        let Ok(Some(ph)) = self.dm.message(placeholder).await else { return };
+        let mut fields = ph.media.unwrap_or_else(|| serde_json::json!({}));
+        fields["thumb"] = thumb.into();
+        if messenger_store::messages::set_media_json(self.dm.store(), placeholder, &fields.to_string()).await.is_ok() {
+            self.updated(chat_id, placeholder);
+        }
+    }
+
     async fn queued(&self, transfer_id: &str) -> bool {
         matches!(self.media.transfer(transfer_id).await, Ok(Some(t)) if t.status == ST_QUEUED)
     }
@@ -464,8 +520,15 @@ impl UploadJob {
             Ok(Some(t)) => t.local_path.unwrap_or_default(),
             _ => String::new(),
         };
+        // A picture's preview is made while the file goes up.
+        let thumb = tokio::spawn({
+            let job = self.clone();
+            let (placeholder, chat_id, local_path) = (placeholder.clone(), chat_id.clone(), local_path.clone());
+            async move { job.add_thumb(&placeholder, &chat_id, &local_path).await }
+        });
         // The transfer ends once the message is out (the publishing stage).
         let outcome = self.media.upload_to_publish(&transfer_id, &self.keys, None, &sink).await;
+        let _ = thumb.await;
         match outcome {
             Ok(Some(publishing)) => {
                 let mut descriptor = publishing.descriptor().clone();
@@ -484,6 +547,7 @@ impl UploadJob {
                     descriptor.duration_ms = ph.get("duration_ms").and_then(|v| v.as_u64());
                     descriptor.batch = ph.get("batch").and_then(|v| v.as_str()).map(String::from);
                     descriptor.dim = ph.get("dim").and_then(|v| serde_json::from_value::<(u32, u32)>(v.clone()).ok());
+                    descriptor.thumb = ph.get("thumb").and_then(|v| v.as_str()).filter(|t| valid_thumb(t)).map(String::from);
                     descriptor.waveform = ph
                         .get("waveform")
                         .and_then(|v| v.as_array())
@@ -658,10 +722,25 @@ impl MessengerRuntime {
         batch: Option<&str>,
         original: bool,
     ) -> Result<MessageView> {
+        self.dm_send_file_with(to, path, caption, batch, original, None).await
+    }
+
+    /// `dm_send_file` with a frame the UI took from a video (`Poster`):
+    /// written anew as the preview the other side sees before it fetches
+    /// the file. A frame that cannot be read is left out.
+    pub async fn dm_send_file_with(
+        &self,
+        to: &str,
+        path: &Path,
+        caption: Option<&str>,
+        batch: Option<&str>,
+        original: bool,
+        poster: Option<Poster>,
+    ) -> Result<MessageView> {
         if batch.is_some_and(|b| !messenger_media::descriptor::valid_batch(b)) {
             return Err(MessengerError::Invalid("err.bad_batch".into()));
         }
-        self.send_attachment(to, path, caption, None, batch, original).await
+        self.send_attachment(to, path, caption, None, batch, original, poster).await
     }
 
     /// Send something recorded in the app (voice message, video circle).
@@ -698,13 +777,14 @@ impl MessengerRuntime {
         tokio::fs::write(&path, &rec.bytes).await?;
         let waveform = rec.waveform.map(|w| w.into_iter().take(messenger_media::descriptor::MAX_WAVEFORM).collect::<Vec<u8>>());
         let meta = AttachmentMeta { kind: rec.kind, mime, duration_ms: rec.duration_ms, waveform };
-        let result = self.send_attachment(to, &path, caption, Some(meta), None, false).await;
+        let result = self.send_attachment(to, &path, caption, Some(meta), None, false, None).await;
         if result.is_err() {
             let _ = tokio::fs::remove_dir_all(&dir).await;
         }
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn send_attachment(
         &self,
         to: &str,
@@ -713,6 +793,7 @@ impl MessengerRuntime {
         meta_override: Option<AttachmentMeta>,
         batch: Option<&str>,
         original: bool,
+        poster: Option<Poster>,
     ) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         let group = to.strip_prefix("group:").map(String::from);
@@ -754,6 +835,18 @@ impl MessengerRuntime {
             }
             if original {
                 fields["original"] = true.into();
+            }
+        }
+        // A video shows the frame the UI took, and keeps its place.
+        if fields["kind"] == MediaKind::Video.as_str() {
+            if let Some(p) = poster.filter(|p| p.jpeg.len() <= MAX_POSTER_B64) {
+                let jpeg = B64.decode(p.jpeg.trim()).unwrap_or_default();
+                if let Some(thumb) = tokio::task::spawn_blocking(move || thumb_of(&jpeg)).await.ok().flatten() {
+                    fields["thumb"] = thumb.into();
+                }
+                if (1..=16384).contains(&p.width) && (1..=16384).contains(&p.height) {
+                    fields["dim"] = serde_json::json!([p.width, p.height]);
+                }
             }
         }
         // Files picked together stay together on the other side.
@@ -1132,6 +1225,7 @@ impl MessengerRuntime {
             path: path.to_string_lossy().into_owned(),
             name,
             kind: MediaKind::from_mime(mime).as_str().into(),
+            mime: mime.into(),
             size: meta.len(),
             preview,
         })
@@ -1143,26 +1237,39 @@ impl MessengerRuntime {
         if meta.len() > MAX_INLINE_BYTES {
             return Err(MessengerError::Invalid("err.too_large_for_preview".into()));
         }
-        let m = self.dm.message(message_id).await?.and_then(|m| m.media);
-        let mime = m
-            .as_ref()
-            .and_then(|f| f.get("mime"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("application/octet-stream")
-            .to_string();
-        let mime = base_mime(&mime);
-        // Only types a webview renders passively; never html or svg.
-        let safe = matches!(
-            mime.as_str(),
-            "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/avif" | "image/bmp"
-                | "video/mp4" | "video/webm" | "audio/mpeg" | "audio/ogg" | "audio/wav" | "audio/mp4" | "audio/flac" | "audio/webm"
-        );
-        if !safe {
+        let mime = self.media_mime(message_id).await?;
+        if !passive(&mime) {
             return Ok(None);
         }
         let bytes = tokio::fs::read(&path).await?;
         Ok(Some(format!("data:{mime};base64,{}", B64.encode(bytes))))
     }
+
+    /// The attachment of a message on this device and the type it is
+    /// shown as, when a webview shows that type passively (`passive`):
+    /// for the host to let the webview read the file by itself.
+    pub async fn media_playable(&self, message_id: &str) -> Result<Option<(PathBuf, String)>> {
+        let Some(path) = self.media_local_path(message_id).await? else { return Ok(None) };
+        let mime = self.media_mime(message_id).await?;
+        Ok(passive(&mime).then_some((path, mime)))
+    }
+
+    async fn media_mime(&self, message_id: &str) -> Result<String> {
+        let m = self.dm.message(message_id).await?.and_then(|m| m.media);
+        let mime = m.as_ref().and_then(|f| f.get("mime")).and_then(|v| v.as_str()).unwrap_or("application/octet-stream");
+        Ok(base_mime(mime))
+    }
+}
+
+/// Types a webview renders passively: pictures, videos, sounds; never
+/// HTML or SVG.
+pub fn passive(mime: &str) -> bool {
+    matches!(
+        mime,
+        "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/avif" | "image/bmp"
+            | "video/mp4" | "video/webm" | "video/quicktime"
+            | "audio/mpeg" | "audio/ogg" | "audio/wav" | "audio/mp4" | "audio/flac" | "audio/webm"
+    )
 }
 
 #[cfg(test)]
@@ -1361,6 +1468,44 @@ mod tests {
         m.media.as_ref().and_then(|f| f["transfer_id"].as_str()).unwrap().to_string()
     }
 
+    /// A video goes with the frame the UI took, written anew as a small
+    /// JPEG, and with its size; a frame that is no picture is left out.
+    #[tokio::test]
+    async fn a_video_goes_with_its_frame() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let mut rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        let backend = MemoryBackend::new("https://mem.example/a");
+        use_memory(&mut rt, &backend);
+        with_session(&rt).await;
+        let peer = Keys::generate().public_key().to_hex();
+        let video = dir.path().join("trip.mp4");
+        std::fs::write(&video, vec![7u8; 4096]).unwrap();
+        let mut frame = Vec::new();
+        image::DynamicImage::ImageRgb8(picture(640, 360))
+            .write_to(&mut std::io::Cursor::new(&mut frame), image::ImageFormat::Jpeg)
+            .unwrap();
+        let poster = Poster { jpeg: B64.encode(&frame), width: 1920, height: 1080 };
+
+        let ph = rt.dm_send_file_with(&peer, &video, None, None, false, Some(poster)).await.unwrap();
+        let t = transfer_of(&ph);
+        until(async || status_of(&rt, &t).await == "done").await;
+        let m = sent(&rt, &t).await;
+        assert_eq!(m["kind"].as_str(), Some("video"));
+        assert_eq!(m["dim"], serde_json::json!([1920, 1080]));
+        let thumb = B64.decode(m["thumb"].as_str().expect("a preview")).unwrap();
+        assert_ne!(thumb, frame, "written anew");
+        assert_eq!(messenger_avatar::upright_size(&thumb), Some((160, 90)));
+
+        let bad = Poster { jpeg: B64.encode(b"<svg onload=alert(1)>"), width: 0, height: 5 };
+        let ph = rt.dm_send_file_with(&peer, &video, None, None, false, Some(bad)).await.unwrap();
+        let t = transfer_of(&ph);
+        until(async || status_of(&rt, &t).await == "done").await;
+        let m = sent(&rt, &t).await;
+        assert!(m.get("thumb").is_none() && m.get("dim").is_none(), "{m}");
+        rt.shutdown().await;
+    }
+
     /// The message that took the place of the placeholder of `transfer`.
     async fn sent(rt: &MessengerRuntime, transfer: &str) -> serde_json::Value {
         let id = rt.media.transfer(transfer).await.unwrap().unwrap().message_id.unwrap();
@@ -1394,6 +1539,10 @@ mod tests {
         assert_eq!((m["name"].as_str(), m["mime"].as_str()), (Some("holiday.jpg"), Some("image/jpeg")));
         assert_eq!(m["dim"], serde_json::json!([1280, 960]));
         assert!(m["size"].as_u64().unwrap() < big_len);
+        // Its preview goes with it: a small JPEG within the limit.
+        let thumb = m["thumb"].as_str().expect("a preview");
+        assert!(valid_thumb(thumb));
+        assert_eq!(messenger_avatar::upright_size(&B64.decode(thumb).unwrap()), Some((160, 120)));
         let local = PathBuf::from(m["local_path"].as_str().unwrap());
         assert!(local.starts_with(cfg.data_dir().join("outgoing")), "{local:?}");
         assert_eq!(std::fs::metadata(&local).unwrap().len(), m["size"].as_u64().unwrap());

@@ -116,6 +116,7 @@ messenger_media_server_set_enabled messenger all
 messenger_media_servers messenger all
 messenger_media_transfer messenger all
 messenger_media_transfers messenger all
+messenger_media_url messenger all
 messenger_net_bridge_add messenger all
 messenger_net_bridge_remove messenger all
 messenger_net_check messenger all

@@ -31,6 +31,8 @@ pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 pub const MAX_SEND_BYTES: u64 = 1 << 30;
 pub const MAX_CHUNKS: usize = 4096;
 pub const MAX_WAVEFORM: usize = 64;
+/// A preview carried in the message: a small JPEG, at most this many bytes.
+pub const MAX_THUMB_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -116,6 +118,10 @@ pub struct MediaDescriptor {
     /// Loudness outline of a voice message: up to 64 values, 0..=255.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waveform: Option<Vec<u8>>,
+    /// A small JPEG of the picture or of a frame of the video (base64),
+    /// shown before the file is fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumb: Option<String>,
 }
 
 impl MediaDescriptor {
@@ -173,6 +179,9 @@ impl MediaDescriptor {
         if self.duration_ms.is_some_and(|d| d > 24 * 3600 * 1000) {
             return bad("duration out of range");
         }
+        if self.thumb.as_deref().is_some_and(|t| !valid_thumb(t)) {
+            return bad("thumb is not a small JPEG");
+        }
         self.file_key()?;
         if safe_name(&self.name) != self.name {
             return bad("unsafe file name");
@@ -212,6 +221,12 @@ impl MediaDescriptor {
 /// shown.
 pub fn valid_batch(batch: &str) -> bool {
     (8..=64).contains(&batch.len()) && batch.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// A preview as it may travel: base64 of a JPEG of at most `MAX_THUMB_BYTES`.
+pub fn valid_thumb(thumb: &str) -> bool {
+    thumb.len() <= MAX_THUMB_BYTES.div_ceil(3) * 4
+        && B64.decode(thumb).is_ok_and(|b| b.len() <= MAX_THUMB_BYTES && b.starts_with(&[0xff, 0xd8, 0xff]))
 }
 
 /// A file name that cannot escape a directory: no separators, no leading
@@ -294,6 +309,7 @@ pub(crate) mod tests {
             dim: Some((1280, 720)),
             duration_ms: None,
             waveform: None,
+            thumb: None,
         };
         d.set_key(&FileKey { key: [1; 32], base_nonce: [2; 12] });
         d
@@ -382,6 +398,24 @@ pub(crate) mod tests {
         d.validate().unwrap();
         (d.chunks[0].size, d.chunks[3].size) = (10 + tag, 64 * 1024 + tag);
         assert!(d.validate().is_err(), "the rest in the first place");
+    }
+
+    /// A preview is a small JPEG or nothing: anything else, or one too
+    /// large, makes the descriptor invalid; a reader that knows no preview
+    /// reads the rest as before.
+    #[test]
+    fn a_preview_is_a_small_jpeg() {
+        let mut d = sample();
+        d.thumb = Some(B64.encode([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]));
+        d.validate().unwrap();
+        let back = MediaDescriptor::from_envelope(&d.to_envelope()).unwrap();
+        assert_eq!(back.thumb, d.thumb);
+        for bad in [B64.encode(b"<svg/>"), B64.encode(vec![0xff; MAX_THUMB_BYTES + 1]), "not base64!".into()] {
+            d.thumb = Some(bad);
+            assert!(d.validate().is_err());
+        }
+        d.thumb = None;
+        assert!(!d.to_envelope().fields.contains_key("thumb"), "absent when there is none");
     }
 
     /// We send up to 1 GiB; a peer may send more and is still received.

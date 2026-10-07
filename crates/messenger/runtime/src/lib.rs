@@ -52,7 +52,7 @@ pub use messenger_dm::{
     Action as DmAction, ChatView, MessageView, ReactionView, RelationView, UI_EVENT_CHAT_READ, UI_EVENT_CHAT_RECEIPT,
     UI_EVENT_CONTACT_PRIVATE_UPDATED, UI_EVENT_EMOJI_UPDATED, UI_EVENT_OWN_PRIVATE_UPDATED,
 };
-pub use media::{PickedView, Recording};
+pub use media::{passive, PickedView, Poster, Recording};
 pub use avatars::{AvatarPreview, UI_EVENT_AVATAR_READY};
 pub use cards::{ContactPrivateView, OwnPrivateView};
 pub use messenger_avatar::CropRect;

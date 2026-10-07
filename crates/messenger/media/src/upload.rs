@@ -518,6 +518,7 @@ pub async fn upload(
         dim: None,
         duration_ms: None,
         waveform: None,
+        thumb: None,
     };
     descriptor.set_key(&key);
     Ok(UploadOutcome::Done(Box::new(descriptor)))

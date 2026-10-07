@@ -321,6 +321,10 @@ export interface MessengerMedia {
   /** Recordings: length and loudness outline (0..255 per bar). */
   duration_ms?: number;
   waveform?: number[];
+  /** A small JPEG (base64) of the picture or of a frame of the video, shown before the file is here. */
+  thumb?: string;
+  /** Width and height the picture or the video is shown at. */
+  dim?: [number, number];
 }
 
 export function mediaOf(m: MessengerMessage): MessengerMedia | null {
@@ -336,7 +340,15 @@ export function mediaOf(m: MessengerMessage): MessengerMedia | null {
     chunks: Array.isArray(f.chunks) && f.chunks.length ? f.chunks.length : undefined,
     duration_ms: typeof f.duration_ms === "number" ? f.duration_ms : undefined,
     waveform: Array.isArray(f.waveform) ? (f.waveform as unknown[]).filter((x): x is number => typeof x === "number") : undefined,
+    thumb: typeof f.thumb === "string" && f.thumb ? f.thumb : undefined,
+    dim: dimOf(f.dim),
   };
+}
+
+function dimOf(v: unknown): [number, number] | undefined {
+  if (!Array.isArray(v) || v.length !== 2) return undefined;
+  const [w, h] = v;
+  return typeof w === "number" && typeof h === "number" && w > 0 && h > 0 ? [w, h] : undefined;
 }
 
 // File transfers (the runtime's types, as generated).
@@ -386,9 +398,20 @@ export interface MessengerPicked {
   path: string;
   name: string;
   kind: MediaKind;
+  /** The type it is sent as, by its name. */
+  mime?: string;
   size: number;
   /** A picture as a `data:` url; `null` for anything else. */
   preview: string | null;
+  /** A video: where the webview reads it, for a frame of it. */
+  url?: string | null;
+}
+
+/** A frame the UI took from a video it sends: a JPEG (base64, no `data:` prefix) and the size of the video. */
+export interface MessengerPoster {
+  jpeg: string;
+  width: number;
+  height: number;
 }
 
 /** A voice message or a video circle as the recorder produced it. */
@@ -1186,6 +1209,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     return (md?.mock_data as string | undefined) ?? (md?.kind === 'image' && md.local_path ? demoPicture(String(md.name), 640, 480) : null);
   },
   messenger_media_local_path: () => null,
+  messenger_media_url: () => null,
   messenger_media_open: () => undefined,
   messenger_open_url: (a) => { window.open(String(a?.url), '_blank', 'noopener'); },
   messenger_links_inspect: (a) => ((a?.links ?? []) as string[]).map((l) => mockInspect(l)),
@@ -1652,8 +1676,9 @@ export const messengerApi = {
      */
     importPicked: (path: string) => invoke<MessengerPicked>('messenger_media_import', { path }),
     /** `batch`: the same for files picked together. `original`: a picture goes as it is, not compressed. */
-    sendFile: (to: string, path: string, caption?: string, batch?: string, original = false) =>
-      invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, batch: batch ?? null, original }),
+    /** `poster`: a frame of a video, the other side's preview before it fetches the file. */
+    sendFile: (to: string, path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null) =>
+      invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, batch: batch ?? null, original, poster }),
     download: (messageId: string, manual: boolean) => invoke<string | null>('messenger_media_download', { messageId, manual }),
     transfer: (messageId: string) => invoke<MessengerTransfer | null>('messenger_media_transfer', { messageId }),
     /** Every transfer queued, running, waiting, paused or failed, newest first. */
@@ -1666,6 +1691,8 @@ export const messengerApi = {
     saveAs: (messageId: string, dest: string) => invoke<void>('messenger_media_save_as', { messageId, dest }),
     dataUrl: (messageId: string) => invoke<string | null>('messenger_media_data_url', { messageId }),
     localPath: (messageId: string) => invoke<string | null>('messenger_media_local_path', { messageId }),
+    /** Where the webview reads the attachment on this device by itself (the app's server on the loopback); `null` when it is not here or not a picture, video or sound. */
+    url: (messageId: string) => invoke<string | null>('messenger_media_url', { messageId }),
     /** Opens with the default application; runnable files are only revealed in their folder. */
     open: (messageId: string) => invoke<void>('messenger_media_open', { messageId }),
   },

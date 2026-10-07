@@ -233,6 +233,7 @@ fn descriptor(kind: MediaKind, name: &str, caption: Option<&str>) -> MediaDescri
         dim: None,
         duration_ms: None,
         waveform: None,
+        thumb: None,
     }
 }
 

@@ -782,10 +782,13 @@ async fn main() {
             }
             let id = full_id(&rt, &args[0]).await;
             let m = rt.dm().message(&id).await.unwrap_or_else(die).and_then(|m| m.media).unwrap_or_default();
-            for k in ["kind", "mime", "name", "size", "duration_ms"] {
+            for k in ["kind", "mime", "name", "size", "duration_ms", "dim"] {
                 println!("{k}: {}", m.get(k).map(|v| v.to_string()).unwrap_or_else(|| "-".into()));
             }
             println!("waveform: {} values", m.get("waveform").and_then(|w| w.as_array()).map(|a| a.len()).unwrap_or(0));
+            // The preview the message carries: about how many bytes of JPEG.
+            let thumb = m.get("thumb").and_then(|v| v.as_str()).map(|t| t.len() / 4 * 3);
+            println!("thumb: {}", thumb.map(|n| format!("~{n} bytes")).unwrap_or_else(|| "-".into()));
         }
         // Push notifications. The token is what a phone would bring; here it
         // is given by hand, a real one to see a push arrive, or any string

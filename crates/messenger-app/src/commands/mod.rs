@@ -42,6 +42,7 @@ use messenger_runtime::net::{NetCheck, NetMode, NetStatus};
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::Path;
+use crate::media_server::MediaServer;
 #[cfg(desktop)]
 use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
@@ -1257,6 +1258,7 @@ pub async fn messenger_media_server_check(id: String, messenger: tauri::State<'_
 /// Attach a local file; returns the placeholder message immediately. A
 /// photo is made smaller first unless `original` (left out: made smaller).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn messenger_dm_send_file(
     to: String,
     path: String,
@@ -1264,12 +1266,14 @@ pub async fn messenger_dm_send_file(
     // The same for files picked together: they are shown as one album.
     batch: Option<String>,
     original: Option<bool>,
+    // A frame the UI took from a video, shown before the file is fetched.
+    poster: Option<messenger_runtime::Poster>,
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
     let rt = messenger.runtime()?;
     let local = import_picked(&app, &path, rt.config().data_dir()).await?;
-    rt.dm_send_file(&to, &local, caption.as_deref(), batch.as_deref(), original.unwrap_or(false))
+    rt.dm_send_file_with(&to, &local, caption.as_deref(), batch.as_deref(), original.unwrap_or(false), poster)
         .await
         .map_err(map_err)
 }
@@ -1285,7 +1289,7 @@ pub async fn messenger_media_import(
     path: String,
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
-) -> CmdResult<messenger_runtime::PickedView> {
+) -> CmdResult<Picked> {
     use tauri_plugin_fs::FsExt;
     let rt = messenger.runtime()?;
     let copied = path.starts_with("content://");
@@ -1293,7 +1297,13 @@ pub async fn messenger_media_import(
     if !copied && !app.try_fs_scope().is_some_and(|s| s.is_allowed(&local)) {
         return Err(AppError::Other("the file was not picked".into()));
     }
-    rt.picked(&local).await.map_err(map_err)
+    let picked = rt.picked(&local).await.map_err(map_err)?;
+    // The webview reads a picked video by itself, for a frame of it.
+    let url = match picked.kind.as_str() {
+        "video" if messenger_runtime::passive(&picked.mime) => app.state::<MediaServer>().url(&local, &picked.mime).await,
+        _ => None,
+    };
+    Ok(Picked { picked, url })
 }
 
 /// A picked file as a local path. Desktop pickers give paths. Android gives
@@ -1457,6 +1467,30 @@ pub async fn messenger_media_local_path(
 ) -> CmdResult<Option<String>> {
     let p = messenger.runtime()?.media_local_path(&message_id).await.map_err(map_err)?;
     Ok(p.map(|p| p.to_string_lossy().into_owned()))
+}
+
+/// A picked file as `messenger_media_import` gives it: a video also with
+/// the address the webview reads it at (`MediaServer`), for a frame of it.
+#[derive(serde::Serialize)]
+pub struct Picked {
+    #[serde(flatten)]
+    picked: messenger_runtime::PickedView,
+    url: Option<String>,
+}
+
+/// The address the webview reads the attachment of a message at, when it
+/// is on this device and of a type a webview shows passively: a video
+/// plays and seeks from the file however large it is, a picture shows
+/// without a copy in memory. Only that file is given a name
+/// (`MediaServer`).
+#[tauri::command]
+pub async fn messenger_media_url(
+    message_id: String,
+    server: tauri::State<'_, MediaServer>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<Option<String>> {
+    let Some((path, mime)) = messenger.runtime()?.media_playable(&message_id).await.map_err(map_err)? else { return Ok(None) };
+    Ok(server.url(&path, &mime).await)
 }
 
 /// Open a link from a message in the system browser. http(s) only; the

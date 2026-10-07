@@ -12,6 +12,7 @@
 //! `Module::stop`): off, the runtime is shut down and holds no connection.
 
 mod commands;
+mod media_server;
 
 pub use commands::MessengerState;
 
@@ -129,6 +130,7 @@ pub fn module() -> Module {
                 commands::messenger_media_save_as,
                 commands::messenger_media_data_url,
                 commands::messenger_media_local_path,
+                commands::messenger_media_url,
                 commands::messenger_open_url,
                 commands::messenger_media_open,
                 commands::messenger_dm_send_recording,
@@ -176,6 +178,7 @@ fn setup(app: &mut tauri::App) -> SetupResult {
         commands::OLD_ENABLED_KEY,
     ))?;
     app.manage(MessengerState::new(app.handle().clone(), &core.app_data_dir));
+    app.manage(media_server::MediaServer::default());
     Ok(())
 }
 

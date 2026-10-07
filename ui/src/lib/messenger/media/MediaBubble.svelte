@@ -43,6 +43,12 @@
   let busy = $state(false);
   let error = $state('');
   let previewFailed = $state(false);
+  /** `src` is the file itself, read by the webview from the app's server, not a copy in memory. */
+  let fromFile = false;
+  /** The file could not be read that way: a copy in memory instead, when it is small enough. */
+  let fileFailed = false;
+  /** The preview the message carries, until the picture or the video itself is shown. */
+  const thumbSrc = $derived(media?.thumb ? `data:image/jpeg;base64,${media.thumb}` : null);
   /** A blob url made here, to give back when the bubble goes. */
   let owned: string | null = null;
 
@@ -87,6 +93,9 @@
     return h % 360;
   });
 
+  /** The place a picture or a video alone takes before it is shown: its own proportions, within reason. */
+  const ratio = $derived(media?.dim ? Math.min(1.9, Math.max(0.75, media.dim[0] / media.dim[1])) : 4 / 3);
+
   /** What pressing a tile or a card does: look or open, or fetch. A transfer has its own buttons. */
   function press() {
     if (phase === 'here') { if (src && (media?.kind === 'image' || media?.kind === 'video')) view(); else open(); return; }
@@ -124,13 +133,27 @@
   const recordingFailure = $derived(failed && (media?.kind === 'voice' || circleShown) ? explain(shown?.failure_reason || 'err.unknown') : '');
 
   async function loadPreview() {
-    if (!previewable || src) return;
+    if (src || !media) return;
+    // A picture or a video is read from the file by the webview itself:
+    // however large it is, it shows at once and a video seeks.
+    if (isTauriHost && !fileFailed && (media.kind === 'image' || media.kind === 'video')) {
+      try {
+        const url = await messengerApi.media.url(m.id);
+        if (url) { fromFile = true; src = url; return; }
+      } catch { /* the copy in memory below */ }
+    }
+    if (!previewable) return;
     try {
       const url = await messengerApi.media.dataUrl(m.id);
       // Sound and video play from a blob, never from `data:` (blob-url.ts).
       if (url && media?.kind !== 'image') { owned = playableUrl(url); src = owned; }
       else src = url;
     } catch { previewFailed = true; }
+  }
+
+  function previewBroken() {
+    if (fromFile) { fromFile = false; fileFailed = true; src = null; loadPreview(); return; }
+    previewFailed = true; src = null;
   }
 
   async function download(manual: boolean) {
@@ -172,7 +195,8 @@
   onMount(() => {
     transferStore.hydrate(m.id).catch(() => {});
     if (media?.local_path) { local = media.local_path; loadPreview(); }
-    else if (!out && !m.id.startsWith('local:')) download(false);
+    // Mine from another device is fetched as what others send is.
+    else if (!m.id.startsWith('local:')) download(false);
     return () => { if (owned?.startsWith('blob:')) URL.revokeObjectURL(owned); };
   });
 </script>
@@ -205,13 +229,16 @@
     {#if error}<span class="card-fail" title={error}><Icon name="alert-triangle" size={11} />{error}</span>{/if}
   </div>
 {:else if media && variant === 'tile'}
-  <div class="tile kind-{media.kind}" class:natural={fit === 'natural'} class:shown={phase === 'here' && !!src} style="--h:{hue}">
-    {#if phase === 'here' && src && media.kind === 'image'}
-      <img {src} alt={media.name} onerror={() => { previewFailed = true; src = null; }} />
-    {:else if phase === 'here' && src && media.kind === 'video'}
+  <div class="tile kind-{media.kind}" class:natural={fit === 'natural'} class:shown={(phase === 'here' || uploading) && !!src} style="--h:{hue}; --ar:{ratio}">
+    <!-- The file on this device shows while it goes up too, as it will once sent. -->
+    {#if (phase === 'here' || uploading) && src && media.kind === 'image'}
+      <img {src} alt={media.name} onerror={previewBroken} />
+    {:else if (phase === 'here' || uploading) && src && media.kind === 'video'}
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video {src} muted playsinline preload="metadata"></video>
+      <!-- A frame a little after the start stands for the video; the preview the message carries until then (Android draws none by itself). -->
+      <video src="{src}#t=0.1" poster={thumbSrc ?? NO_POSTER} muted playsinline preload="metadata" onerror={previewBroken}></video>
     {:else}
+      {#if thumbSrc}<img class="blur" src={thumbSrc} alt="" aria-hidden="true" />{/if}
       <span class="placeholder-name">{media.name}</span>
     {/if}
 
@@ -250,11 +277,11 @@
       </div>
     {:else if phase === "here" && src && media.kind === "image"}
       <button class="thumb" onclick={view} title={$t("msg_media_open")}>
-        <img {src} alt={media.name} onerror={() => { previewFailed = true; src = null; }} />
+        <img {src} alt={media.name} onerror={previewBroken} />
       </button>
     {:else if phase === 'here' && src && media.kind === 'video'}
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video class="player" {src} controls preload="metadata" playsinline></video>
+      <video class="player" {src} poster={thumbSrc ?? NO_POSTER} controls preload="metadata" playsinline></video>
     {:else if phase === 'here' && src && media.kind === 'audio'}
       <audio class="audio" {src} controls preload="metadata"></audio>
     {/if}
@@ -322,9 +349,10 @@
   :global([data-theme='dark']) .placeholder-name { color: rgba(255, 255, 255, 0.6); }
   .tile.shown { background: var(--surface-3); }
   .tile img, .tile video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .tile img.blur { position: absolute; inset: 0; filter: blur(8px); transform: scale(1.08); }
   .tile.natural { height: auto; min-height: 120px; }
   .tile.natural img, .tile.natural video { height: auto; max-height: 360px; object-fit: contain; }
-  .tile.natural:not(.shown) { aspect-ratio: 4 / 3; }
+  .tile.natural:not(.shown) { aspect-ratio: var(--ar, 4 / 3); }
   .placeholder-name {
     position: absolute; left: 8px; bottom: 7px; right: 8px; font-family: var(--font-mono); font-size: 10px;
     color: rgba(0, 0, 0, 0.55); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

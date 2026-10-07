@@ -9,6 +9,7 @@ import {
   type DmAction,
   type MessengerChat,
   type MessengerMessage,
+  type MessengerPoster,
   type MessengerRecording,
   type MessengerUiEvent,
 } from '../api';
@@ -199,11 +200,11 @@ class ChatStore {
    * Attach a local file; the placeholder appears at once. Files of one `batch` are shown together.
    * `original`: a picture goes as it is, not compressed.
    */
-  async sendFile(path: string, caption?: string, batch?: string, original = false) {
+  async sendFile(path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null) {
     const chat = this.active;
     const to = this.target(chat);
     if (!chat) throw new Error("no chat");
-    const m = await messengerApi.media.sendFile(to, path, caption, batch, original);
+    const m = await messengerApi.media.sendFile(to, path, caption, batch, original, poster);
     if (this.activeId === chat.id) this.upsert(m);
     this.scheduleChatsRefresh();
     return m;
