@@ -5,20 +5,180 @@
 // `localStorage['messenger.demo'] = '1'`. Never used inside the app.
 
 import type {
-  ChatMode, MessengerChat, MessengerContact, MessengerGroup, MessengerGroupInvite, MessengerGroupMember, MessengerIdentity,
-  MessengerMessage, MessengerProfile,
+  CardView, ChatMode, Color, MessageStatus, MessengerChat, MessengerContact, MessengerGroup, MessengerGroupInvite, MessengerGroupMember, MessengerIdentity,
+  MessengerMessage, MessengerProfile, MessengerTransfer, SocialLink, SocialView, Span, Style,
 } from './api';
 
 const ME = 'ab'.repeat(32);
 const hex = (c: string) => c.repeat(64).slice(0, 64);
 const npub = (pk: string, tag: string) => `npub1${tag}${pk}`.slice(0, 63);
 
-function profile(pk: string, name: string, about: string, nip05: string | null): MessengerProfile {
+function profile(pk: string, name: string, about: string, nip05: string | null, extra: Partial<MessengerProfile> = {}): MessengerProfile {
   return {
-    pubkey: pk, npub: npub(pk, name.toLowerCase().replace(/[^a-z]/g, '')), name: name.toLowerCase(), display_name: name, about,
+    pubkey: pk, npub: npub(pk, name.toLowerCase().replace(/[^a-z]/g, '')), name: name.toLowerCase(), display_name: name, about: demoStrip(about) || null,
     picture: null, banner: null, website: null, nip05, lud16: null, nip05_verified: !!nip05, event_created_at: 1, fetched_at: 1,
+    bio: demoBioParse(about), bio_source: about || null, socials: [], ...extra,
   };
 }
+
+// ── What the runtime does in the app, played for the browser preview ──────
+// Rough on purpose: the real parser, checks and pictures are in Rust.
+
+const COLORS: readonly Color[] = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'gray'];
+
+/** A bio's marks as spans: `**b**`, `*i*`, `~~s~~`, `\`code\``, `{red}…{/}`, bare https links. */
+export function demoBioParse(markup: string): Span[] {
+  const src = markup.replace(/\r\n?/g, '\n').trim().slice(0, 2000);
+  const out: Span[] = [];
+  const st: Style = { bold: false, italic: false, strike: false, code: false, color: null };
+  let buf = '';
+  const flush = () => {
+    if (!buf) return;
+    const style = { ...st };
+    let last = 0;
+    for (const m of buf.matchAll(/https:\/\/[^\s<>"]+/g)) {
+      const url = m[0].replace(/[.,;:!?)\]}'"]+$/, '');
+      if (m.index! > last) out.push({ kind: 'text', text: buf.slice(last, m.index), style });
+      out.push({ kind: 'link', url, text: url, style });
+      last = m.index! + url.length;
+    }
+    if (last < buf.length) out.push({ kind: 'text', text: buf.slice(last), style });
+    buf = '';
+  };
+  const closes = (mark: string, from: number) => src.indexOf(mark, from) > 0;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '\n') { flush(); out.push({ kind: 'break' }); continue; }
+    if (st.code) {
+      if (ch === '`') { flush(); st.code = false; } else buf += ch;
+      continue;
+    }
+    if (ch === '\\' && i + 1 < src.length) { buf += src[++i]; continue; }
+    if (ch === '`' && closes('`', i + 1)) { flush(); st.code = true; continue; }
+    const two = src.slice(i, i + 2);
+    if (two === '**' || two === '~~') {
+      const key = two === '**' ? 'bold' : 'strike';
+      if (st[key] || closes(two, i + 2)) { flush(); st[key] = !st[key]; i++; continue; }
+    }
+    if (ch === '*' && (st.italic || closes('*', i + 1))) { flush(); st.italic = !st.italic; continue; }
+    if (ch === '{') {
+      if (st.color && src.startsWith('{/}', i)) { flush(); st.color = null; i += 2; continue; }
+      const name = /^\{([a-z]+)\}/.exec(src.slice(i))?.[1] as Color | undefined;
+      if (!st.color && name && COLORS.includes(name) && closes('{/}', i)) { flush(); st.color = name; i += name.length + 1; continue; }
+    }
+    buf += ch;
+  }
+  flush();
+  return out;
+}
+
+/** The bio without its marks: what other clients get as `about`. */
+export function demoStrip(markup: string): string {
+  return demoBioParse(markup).map((s) => (s.kind === 'break' ? '\n' : s.text)).join('');
+}
+
+const SOCIAL: Record<string, [name: string, prefix: string, url: (h: string) => string]> = {
+  telegram: ['Telegram', '@', (h) => `https://t.me/${h}`],
+  instagram: ['Instagram', '@', (h) => `https://instagram.com/${h}`],
+  tiktok: ['TikTok', '@', (h) => `https://tiktok.com/@${h}`],
+  x: ['X', '@', (h) => `https://x.com/${h}`],
+  youtube: ['YouTube', '@', (h) => `https://youtube.com/@${h}`],
+  vk: ['VK', '', (h) => `https://vk.com/${h}`],
+  facebook: ['Facebook', '', (h) => `https://facebook.com/${h}`],
+  linkedin: ['LinkedIn', '', (h) => `https://linkedin.com/in/${h}`],
+  github: ['GitHub', '', (h) => `https://github.com/${h}`],
+  whatsapp: ['WhatsApp', '+', (h) => `https://wa.me/${h}`],
+  discord: ['Discord', '', () => ''],
+  twitch: ['Twitch', '', (h) => `https://twitch.tv/${h}`],
+  mastodon: ['Mastodon', '@', (h) => { const [u, host] = h.split('@'); return `https://${host}/@${u}`; }],
+  bluesky: ['Bluesky', '@', (h) => `https://bsky.app/profile/${h}`],
+  threads: ['Threads', '@', (h) => `https://threads.net/@${h}`],
+  reddit: ['Reddit', 'u/', (h) => `https://reddit.com/user/${h}`],
+  other: ['Link', '', (h) => h],
+};
+
+/** The platforms a link can be of, as the runtime lists them. */
+export const DEMO_PLATFORMS = Object.entries(SOCIAL).map(([id, [name, prefix]]) => ({
+  id, name,
+  hint: id === 'other' ? 'https://…' : id === 'whatsapp' ? '+1 555 123 4567' : id === 'mastodon' ? '@user@mastodon.social' : id === 'bluesky' ? '@name.bsky.social' : `${prefix}username`,
+}));
+
+/** A typed link in its stored form; throws the runtime's codes. */
+export function demoSocialLink(link: SocialLink): SocialLink {
+  if (!SOCIAL[link.p]) throw new Error('social_unknown_platform');
+  let h = link.h.trim();
+  if (link.p === 'other') {
+    if (!/^https:\/\/[^\s/@]+\.[^\s/@]+(\/\S*)?$/.test(h) || h.length > 512) throw new Error('social_bad_handle');
+    return { p: link.p, h };
+  }
+  if (h.includes('/')) h = h.replace(/\/+$/, '').split('/').pop() ?? '';
+  h = h.replace(/^(@|u\/)/, '');
+  if (link.p === 'whatsapp') h = h.replace(/[\s().-]/g, '').replace(/^\+/, '');
+  if (link.p === 'bluesky' && !h.includes('.')) h = `${h}.bsky.social`;
+  const ok = link.p === 'whatsapp' ? /^\d{7,15}$/ : link.p === 'mastodon' ? /^[A-Za-z0-9_]{1,30}@[a-z0-9.-]+\.[a-z]{2,}$/ : /^[A-Za-z0-9._-]{1,64}$/;
+  if (!ok.test(h)) throw new Error('social_bad_handle');
+  return { p: link.p, h };
+}
+
+/** A stored link as the UI shows it. */
+export function demoSocialView(link: SocialLink): SocialView {
+  const [name, prefix, url] = SOCIAL[link.p] ?? SOCIAL.other;
+  return { platform: link.p, name, handle: link.p === 'other' ? link.h.replace(/^https:\/\//, '') : `${prefix}${link.h}`, url: url(link.h) };
+}
+
+/** `+` and 7..15 digits, as typed with spaces, dashes, dots or brackets; throws `phone_invalid`. */
+export function demoPhone(input: string): string | null {
+  const s = input.trim();
+  if (!s) return null;
+  const digits = s.replace(/[\s().-]/g, '');
+  if (!/^\+\d{7,15}$/.test(digits)) throw new Error('phone_invalid');
+  return digits;
+}
+
+/**
+ * A picture for the preview: a JPEG `data:` URL drawn on a canvas, the
+ * colours picked by `seed`. Null where there is no canvas (tests).
+ */
+export function demoPicture(seed: string, w = 256, h = w): string | null {
+  try {
+    if (typeof document === 'undefined') return null;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    if (!g) return null;
+    let x = 0;
+    for (let i = 0; i < seed.length; i++) x = (x * 31 + seed.charCodeAt(i)) >>> 0;
+    const hue = x % 360;
+    const grad = g.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, `hsl(${hue} 70% 55%)`);
+    grad.addColorStop(1, `hsl(${(hue + 70) % 360} 65% 35%)`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 5; i++) {
+      x = (x * 1103515245 + 12345) >>> 0;
+      g.fillStyle = `hsla(${(hue + i * 47) % 360} 80% ${60 + (i % 3) * 10}% / 0.55)`;
+      g.beginPath();
+      g.arc((x % w), ((x >>> 8) % h), Math.min(w, h) * (0.12 + (i % 3) * 0.08), 0, Math.PI * 2);
+      g.fill();
+    }
+    return c.toDataURL('image/jpeg', 0.85);
+  } catch {
+    return null;
+  }
+}
+
+/** A card as the runtime shows it, from a profile of the demo. */
+export function demoCard(p: MessengerProfile, phone: string | null, flags: { is_me?: boolean; is_contact?: boolean; blocked?: boolean } = {}): CardView {
+  return {
+    pubkey: p.pubkey, npub: p.npub, label: p.display_name?.trim() || p.name?.trim() || `${p.npub.slice(0, 12)}…`,
+    name: p.name, display_name: p.display_name, bio: p.bio, website: p.website, socials: p.socials, phone,
+    avatar: p.picture ? demoPicture(p.picture, 160) : null,
+    is_me: flags.is_me ?? false, is_contact: flags.is_contact ?? false, blocked: flags.blocked ?? false,
+  };
+}
+
+/** Pictures of the demo's people: these URLs "are cached" in the preview. */
+export const DEMO_PICTURE_BASE = 'https://node-1.veydan.net/media/';
 
 export interface DemoData {
   identity: MessengerIdentity;
@@ -28,6 +188,8 @@ export interface DemoData {
   messages: Record<string, MessengerMessage[]>;
   groups: MessengerGroup[];
   invites: MessengerGroupInvite[];
+  /** Transfers of the files of the demo, in the states they show. */
+  transfers: MessengerTransfer[];
 }
 
 export function demoEnabled(): boolean {
@@ -38,8 +200,8 @@ export function demoEnabled(): boolean {
 export function buildDemo(): DemoData {
   const now = Math.floor(Date.now() / 1000);
   const people: [string, string, string, string | null, ChatMode, boolean][] = [
-    [hex('1a'), 'Алиса Морозова', 'Дизайнер. Пишу редко, но по делу.', 'alice@veydan.net', 'full_chat', true],
-    [hex('2b'), 'Борис', 'Бэкенд, реле, инфраструктура.', null, 'full_chat', true],
+    [hex('1a'), 'Алиса Морозова', '**Дизайнер.** Пишу {purple}редко{/}, но *по делу*.\nПортфолио: https://example.com/alice', 'alice@veydan.net', 'full_chat', true],
+    [hex('2b'), 'Борис', 'Бэкенд, {teal}реле{/}, инфраструктура. `wss://node-1.veydan.net`', null, 'full_chat', true],
     [hex('3c'), 'Вера К.', '', null, 'request_received', false],
     [hex('4d'), 'Глеб', '', null, 'request_sent', false],
     [hex('5e'), 'Спам-бот', '', null, 'blocked', false],
@@ -55,14 +217,23 @@ export function buildDemo(): DemoData {
     created_at: at, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null, ...extra,
   });
 
+  const looks: Record<string, Partial<MessengerProfile>> = {
+    [hex('1a')]: {
+      picture: `${DEMO_PICTURE_BASE}${'a1'.repeat(32)}`, website: 'https://example.com/alice',
+      socials: [{ p: 'telegram', h: 'alice_m' }, { p: 'instagram', h: 'alice.designs' }, { p: 'github', h: 'alicem' }].map(demoSocialView),
+    },
+    [hex('2b')]: { picture: `${DEMO_PICTURE_BASE}${'b2'.repeat(32)}`, socials: [{ p: 'github', h: 'boris-dev' }, { p: 'mastodon', h: 'boris@mastodon.social' }].map(demoSocialView) },
+    // Never "fetched": the initials stay.
+    [hex('6f')]: { picture: 'https://example.org/missing/daria.jpg' },
+  };
   for (const [pk, name, about, nip05, mode, canSend] of people) {
-    const p = profile(pk, name, about, nip05);
+    const p = profile(pk, name, about, nip05, looks[pk]);
     const isContact = mode === 'full_chat' || mode === 'request_sent' || mode === 'removed_by_peer';
     if (isContact) {
       contacts.push({ pubkey: pk, npub: p.npub, nickname: null, note: null, followed: name === 'Алиса Морозова', profile: p, created_at: now - 86400 * 9, updated_at: now - 3600 });
     }
     const id = `dm:${pk}`;
-    chats.push({ id, kind: 'dm', peer_pubkey: pk, peer_npub: p.npub, title: name, picture: null, is_contact: isContact, is_muted: name === 'Борис', unread: 0, last_message_at: null, last_preview: null, pinned: name === 'Алиса Морозова', archived: false, mode, can_send: canSend });
+    chats.push({ id, kind: 'dm', peer_pubkey: pk, peer_npub: p.npub, title: name, picture: p.picture, is_contact: isContact, is_muted: name === 'Борис', unread: 0, last_message_at: null, last_preview: null, pinned: name === 'Алиса Морозова', archived: false, mode, can_send: canSend });
     messages[id] = [];
   }
 
@@ -212,20 +383,87 @@ export function buildDemo(): DemoData {
       msg(a, alice, now - 4, i === 4 ? 'Поездка, часть первая' : null, { content_type: 'media', media: { name, mime: 'image/jpeg', size: 1_900_000, kind: 'image', batch: 'demo-batch-3' } })),
   );
 
+  // Contact cards: Boris's own, with his phone; Alice's of someone not in my contacts (never a phone).
+  const borisP = contacts.find((c) => c.pubkey === boris)?.profile;
+  const zhenya = profile(hex('c7'), 'Евгений Соколов', '{orange}Фотограф{/} и **путешественник**.\n~~Не~~ отвечаю быстро. Снимки: https://example.net/zhenya', null, {
+    picture: `${DEMO_PICTURE_BASE}${'c7'.repeat(32)}`, website: 'https://example.net/zhenya',
+    socials: [{ p: 'instagram', h: 'zhenya.photo' }, { p: 'youtube', h: 'zhenyatravels' }, { p: 'x', h: 'zhenya_s' }, { p: 'other', h: 'https://example.net/zhenya/gallery' }].map(demoSocialView),
+  });
+  if (borisP) {
+    messages[b].push(msg(b, boris, now - 150, null, { content_type: 'contact', card: demoCard(borisP, '+79161234567', { is_contact: true }) }));
+  }
+  messages[a].push(msg(a, alice, now - 3, null, { content_type: 'contact', card: demoCard(zhenya, null) }));
+
+  // Files on their way, in every state a transfer shows (Boris's chat). They
+  // stand still until a button moves them; `transfers` are their rows as the
+  // runtime would keep them.
+  const MB = 1024 * 1024;
+  const CHUNK = 4 * MB;
+  const nowMs = Date.now();
+  const transfers: MessengerTransfer[] = [];
+  const parts = (size: number, chunk = CHUNK) => Math.max(1, Math.ceil(size / chunk));
+  const row = (over: Partial<MessengerTransfer> & Pick<MessengerTransfer, 'id' | 'direction' | 'message_id' | 'file_name' | 'mime' | 'size'>): MessengerTransfer => ({
+    chat_id: b, status: 'running', done_bytes: 0, attempts: 0, failure_reason: null, local_path: null,
+    stage: over.direction === 'up' ? 'uploading' : 'downloading', chunks_done: 0, chunks_total: parts(over.size, over.chunk_size),
+    chunk_size: CHUNK, rate_bps: 0, eta_secs: null, retry_at_ms: null, ...over,
+  });
+  let at = now - 140;
+  /** A file of mine going up: its placeholder (`status`) and its transfer. */
+  const up = (name: string, mime: string, kind: string, size: number, t: Partial<MessengerTransfer>, status: MessageStatus = 'uploading', media: Record<string, unknown> = {}) => {
+    const id = `demo-up-${transfers.length}`;
+    const m = msg(b, ME, at++, null, {
+      id: `local:demo-${transfers.length}`, status, failure_reason: status === 'failed' ? (t.failure_reason ?? null) : null, content_type: 'media',
+      media: { name, mime, size, kind, local_path: `/home/dev/${name}`, transfer_id: id, ...media },
+    });
+    transfers.push(row({ id, direction: 'up', message_id: m.id, file_name: name, mime, size, local_path: `/home/dev/${name}`, ...t }));
+    return m;
+  };
+  /** A file of Boris's: its parts listed, fetched or not. */
+  const down = (name: string, mime: string, kind: string, size: number, t: Partial<MessengerTransfer> | null) => {
+    const m = msg(b, boris, at++, null, { content_type: 'media', media: { name, mime, size, kind, chunks: Array.from({ length: parts(size) }, () => ({})) } });
+    if (t) transfers.push(row({ id: `demo-down-${transfers.length}`, direction: 'down', message_id: m.id, file_name: name, mime, size, ...t }));
+    return m;
+  };
+  const trip = 'demo-batch-up';
+  messages[b].push(
+    msg(b, ME, at++, 'Все состояния передачи файлов — нажимайте кнопки.'),
+    up('IMG_3001.jpg', 'image/jpeg', 'image', 6_800_000, { status: 'queued', stage: 'preparing', chunks_total: 0 }),
+    up('design-export.zip', 'application/zip', 'file', 96 * MB, { stage: 'checking', done_bytes: 40 * MB, chunks_done: 7 }),
+    up('project-backup.7z', 'application/x-7z-compressed', 'file', 812 * MB, { done_bytes: 330 * MB, chunks_done: 82, rate_bps: Math.round(5.2 * MB), eta_secs: 92 }),
+    up('Договор (подписан).pdf', 'application/pdf', 'file', 3_100_000, { stage: 'publishing', done_bytes: 3_100_000, chunks_done: 1 }),
+    up('backup-photos.tar', 'application/x-tar', 'file', 250 * MB, { status: 'waiting_retry', done_bytes: 120 * MB, chunks_done: 30, attempts: 2, failure_reason: 'err.network', retry_at_ms: nowMs + 12_000 }),
+    up('raw-footage.mov', 'video/quicktime', 'file', 400 * MB, { status: 'paused', done_bytes: 100 * MB, chunks_done: 25 }, 'paused'),
+    up('presentation.key', 'application/octet-stream', 'file', 48 * MB, { status: 'failed', done_bytes: 16 * MB, chunks_done: 4, attempts: 5, failure_reason: 'err.network' }, 'failed'),
+    up('voice.weba', 'audio/webm', 'voice', 52_000, { status: 'failed', failure_reason: 'err.timeout' }, 'failed', {
+      duration_ms: 6_200, waveform: [30, 90, 160, 220, 180, 120, 70, 140, 210, 250, 200, 130, 80, 50, 100, 170, 220, 160, 90, 60],
+    }),
+    msg(b, ME, at++, null, { content_type: 'media', media: { name: 'trip-1.jpg', mime: 'image/jpeg', size: 2_100_000, kind: 'image', batch: trip, local_path: '/home/dev/trip-1.jpg' } }),
+    up('trip-2.jpg', 'image/jpeg', 'image', 2_300_000, { done_bytes: 920_000, chunks_done: 1, chunk_size: 786_432, chunks_total: 3, rate_bps: 410_000, eta_secs: 4 }, 'uploading', { batch: trip }),
+    up('trip-3.jpg', 'image/jpeg', 'image', 1_900_000, { status: 'queued', stage: 'queued', chunk_size: 786_432, chunks_total: 3 }, 'uploading', { batch: trip }),
+    down('dataset-2026.csv.gz', 'application/gzip', 'file', 820 * MB, null),
+    down('archive-2025.zip', 'application/zip', 'file', 800 * MB, { done_bytes: 40 * MB, chunks_done: 10, rate_bps: Math.round(3.1 * MB), eta_secs: 245 }),
+    down('IMG_4410.jpg', 'image/jpeg', 'image', 3_400_000, { done_bytes: 1_400_000, rate_bps: 600_000, eta_secs: 4 }),
+    down('movie.mkv', 'video/x-matroska', 'video', 300 * MB, { stage: 'assembling', done_bytes: 300 * MB, chunks_done: 34 }),
+    down('docs.pdf', 'application/pdf', 'file', 12 * MB, { stage: 'verifying', done_bytes: 12 * MB, chunks_done: 3 }),
+    down('logs.tar.gz', 'application/gzip', 'file', 60 * MB, { status: 'failed', done_bytes: 20 * MB, chunks_done: 5, failure_reason: 'err.not_found' }),
+  );
+
   const unread: Record<string, number> = { [b]: 2, [v]: 1, [sq]: 2 };
   for (const c of chats) {
     const list = messages[c.id].filter((x) => x.content_type !== 'system');
     const last = list[list.length - 1];
     if (last) {
       c.last_message_at = last.created_at;
-      c.last_preview = last.deleted ? null : last.content_type === 'media' ? `📎 ${last.text ?? (last.media?.name as string)}` : last.text;
+      c.last_preview = last.deleted ? null : last.content_type === 'media' ? `📎 ${last.text ?? (last.media?.name as string)}` : last.card ? `👤 ${last.card.label}` : last.text;
     }
     c.unread = unread[c.id] ?? 0;
   }
 
-  const ownProfile = profile(ME, 'Виталий', 'Строю Veydan Space.', null);
+  const ownProfile = profile(ME, 'Виталий', 'Строю **Veydan Space**. {blue}Приватность{/} по умолчанию.', null, {
+    socials: [{ p: 'telegram', h: 'vitaly_v' }, { p: 'github', h: 'veydanproject' }].map(demoSocialView), website: 'https://veydan.net',
+  });
   return {
     identity: { npub: ownProfile.npub, pubkey: ME, created_at: now - day * 30 },
-    ownProfile, contacts, chats, messages, groups, invites,
+    ownProfile, contacts, chats, messages, groups, invites, transfers,
   };
 }

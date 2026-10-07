@@ -3,7 +3,11 @@
 
 // Module-local strings; the host passes the locale.
 
-export type MediaLocale = 'en' | 'ru';
+// English and Russian are here; every other language of the UI is a file
+// locales/<code>.json beside this one, `{ "desktop": {…}, "mobile": {} }`
+// (scripts/i18n.mjs). The files are small and come with the module.
+
+export type MediaLocale = string;
 
 const en = {
   audio: 'Audio',
@@ -71,11 +75,16 @@ const ru: typeof en = {
 
 export type MediaKey = keyof typeof en;
 
-const dict: Record<MediaLocale, typeof en> = { en, ru };
+const files = import.meta.glob<{ desktop: Partial<typeof en> }>('./locales/*.json', {
+  import: 'default',
+  eager: true,
+});
+const dict: Record<MediaLocale, Partial<typeof en>> = { en, ru };
+for (const [file, data] of Object.entries(files)) dict[file.slice(file.lastIndexOf('/') + 1, -'.json'.length)] = data.desktop;
 
 export function mediaT(locale: MediaLocale) {
   return (key: MediaKey, vars?: Record<string, string>): string => {
-    let text: string = dict[locale][key] ?? en[key];
+    let text: string = dict[locale]?.[key] ?? en[key];
     if (vars) for (const [k, v] of Object.entries(vars)) text = text.replace(`{${k}}`, v);
     return text;
   };

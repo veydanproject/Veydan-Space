@@ -21,14 +21,23 @@
 //! tells the contacts the new key, the others take the epoch, beat from
 //! the new key, tell it with the same `since` and tell nobody what they
 //! told before; a switch turned off on one device is off on all.
+//!
+//! What of my profile stays off kind 0 travels the same way: my phone and
+//! whether my card carries it (`own.profile`, sent on a change and again
+//! every week), and the phone each contact sent me in its own card
+//! (`own.card`). The later `at` wins, per contact for the second.
 
 use crate::service::{DmService, UI_EVENT_DM_UPDATED};
+use messenger_contacts::normalize_phone;
 use messenger_core::emoji::is_reaction;
-use messenger_core::envelope::{T_OWN_EMOJI, T_OWN_HIDE, T_OWN_PRESENCE, T_OWN_READ};
+use messenger_core::envelope::{T_OWN_CARD, T_OWN_EMOJI, T_OWN_HIDE, T_OWN_PRESENCE, T_OWN_PROFILE, T_OWN_READ};
 use messenger_core::traits::UiEvent;
-use messenger_core::{DmInbound, Effect, Envelope, MessengerError, Result};
+use messenger_core::{DmInbound, Effect, Envelope, MessengerError, PubKey, Result};
+use messenger_store::contact_private::{self, ContactPrivate};
 use messenger_store::messages as repo;
+use messenger_store::own_private::{self, OwnPrivate};
 use messenger_store::{chats, emoji_usage, presence, settings};
+use serde_json::Value;
 
 /// A chat was read on another device of mine: its counter went down.
 pub const UI_EVENT_CHAT_READ: &str = "chat.read";
@@ -66,6 +75,18 @@ pub const KEY_PRESENCE_DEVICES_TOLD: &str = "presence.devices_told";
 /// My presence key moved to another epoch, or the switch moved on another
 /// device: `{}`.
 pub const UI_EVENT_PRESENCE_EPOCH_CHANGED: &str = "presence.epoch_changed";
+
+/// My phone or the default of my card changed by a note from another
+/// device of mine: `{}`.
+pub const UI_EVENT_OWN_PRIVATE_UPDATED: &str = "own_private.updated";
+/// The phone a contact sent me changed by a note from another device of
+/// mine: `{pubkey}`.
+pub const UI_EVENT_CONTACT_PRIVATE_UPDATED: &str = "contact_private.updated";
+/// When this device last sent `own.profile` (unix seconds).
+pub const KEY_OWN_PROFILE_SENT_AT: &str = "own_profile.sent_at";
+/// `own.profile` goes again after this long, so a device added since
+/// learns my phone.
+pub const OWN_PROFILE_EVERY_SECS: i64 = 7 * 86_400;
 
 /// Where my presence key stands (`DmService::presence_state`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -110,6 +131,12 @@ impl DmService {
         }
         if envelope.t == T_OWN_PRESENCE {
             return self.presence_elsewhere(envelope).await;
+        }
+        if envelope.t == T_OWN_PROFILE {
+            return self.own_private_elsewhere(envelope).await;
+        }
+        if envelope.t == T_OWN_CARD {
+            return self.contact_private_elsewhere(envelope).await;
         }
         let Some(chat_id) = envelope.str_field("chat") else { return Ok(vec![]) };
         match envelope.t.as_str() {
@@ -311,6 +338,99 @@ impl DmService {
         settings::set(&self.store, KEY_EMOJI_DIRTY, "1").await
     }
 
+    // ─── My phone, and the phones my contacts sent me ───────────────────────
+
+    /// My phone and whether my card carries it by default.
+    pub async fn own_private(&self) -> Result<OwnPrivate> {
+        own_private::get(&self.store).await
+    }
+
+    /// Change my phone (any way of writing a number; empty or `None`
+    /// removes it) and the default of my card. Returns what is kept and the
+    /// note for my other devices. Error: `phone_invalid`.
+    pub async fn set_own_private(&self, phone: Option<&str>, share_phone: bool) -> Result<(OwnPrivate, Envelope)> {
+        let phone = clean_phone(phone)?;
+        let kept = own_private::set(&self.store, phone.as_deref(), share_phone, self.clock.now().secs()).await?;
+        Ok((kept.clone(), own_profile_note(&kept)))
+    }
+
+    /// The note of my phone when my other devices are owed it again: it was
+    /// ever set, and none went for `OWN_PROFILE_EVERY_SECS` (a device added
+    /// since learns it so). Call `own_profile_sent` once it is queued.
+    pub async fn own_profile_due(&self, now: i64) -> Result<Option<Envelope>> {
+        let kept = own_private::get(&self.store).await?;
+        if kept.updated_at == 0 {
+            return Ok(None);
+        }
+        let last = settings::get(&self.store, KEY_OWN_PROFILE_SENT_AT).await?.and_then(|s| s.parse::<i64>().ok());
+        if last.is_some_and(|at| at > now - OWN_PROFILE_EVERY_SECS) {
+            return Ok(None);
+        }
+        Ok(Some(own_profile_note(&kept)))
+    }
+
+    /// The note of my phone was queued at `now`.
+    pub async fn own_profile_sent(&self, now: i64) -> Result<()> {
+        settings::set(&self.store, KEY_OWN_PROFILE_SENT_AT, &now.to_string()).await
+    }
+
+    /// The note of a change could not be queued: it is owed at once, so
+    /// the next `own_profile_due` gives it whenever the last one went.
+    pub async fn own_profile_owed(&self) -> Result<()> {
+        settings::delete(&self.store, KEY_OWN_PROFILE_SENT_AT).await
+    }
+
+    /// The phone a contact sent me in its own card, if any.
+    pub async fn contact_private(&self, pubkey: &str) -> Result<Option<ContactPrivate>> {
+        contact_private::get(&self.store, pubkey).await
+    }
+
+    /// Keep `phone` as the contact's (`None` forgets it), as its card made
+    /// at `at` says (the card's own time, never later than now): a card
+    /// older than the one the kept phone came from changes nothing, here
+    /// or, by the same time in the note, on my other devices. The note for
+    /// my other devices, or `None` when nothing changed.
+    pub async fn keep_contact_phone(&self, pubkey: &str, phone: Option<&str>, at: i64) -> Result<Option<Envelope>> {
+        let pk = PubKey::parse(pubkey).ok_or_else(|| MessengerError::Invalid("card_invalid".into()))?;
+        let phone = clean_phone(phone)?;
+        let at = at.clamp(1, self.clock.now().secs().max(1));
+        let old = contact_private::get(&self.store, pk.as_hex()).await?;
+        if old.as_ref().map(|o| &o.phone) == Some(&phone) {
+            return Ok(None);
+        }
+        let value = ContactPrivate { pubkey: pk.as_hex().to_string(), phone, updated_at: at };
+        if !contact_private::put_if_newer(&self.store, &value).await? {
+            return Ok(None);
+        }
+        Ok(Some(Envelope::own_card(&value.pubkey, value.phone.as_deref(), value.updated_at)))
+    }
+
+    /// My phone as another device of mine has it: the later one is kept.
+    async fn own_private_elsewhere(&self, envelope: &Envelope) -> Result<Vec<Effect>> {
+        let (Some(phone), Some(at)) = (note_phone(envelope), note_at(envelope)) else { return Ok(vec![]) };
+        let share_phone = envelope.fields.get("share_phone").and_then(|v| v.as_bool()).unwrap_or(false);
+        let value = OwnPrivate { phone, share_phone, updated_at: at };
+        if !own_private::put_if_newer(&self.store, &value).await? {
+            return Ok(vec![]);
+        }
+        Ok(vec![Effect::Emit(UiEvent { name: UI_EVENT_OWN_PRIVATE_UPDATED.into(), payload: serde_json::json!({}) })])
+    }
+
+    /// The phone of a contact as another device of mine has it: per
+    /// contact, the later one is kept.
+    async fn contact_private_elsewhere(&self, envelope: &Envelope) -> Result<Vec<Effect>> {
+        let pubkey = envelope.str_field("pubkey").and_then(PubKey::parse);
+        let (Some(pubkey), Some(phone), Some(at)) = (pubkey, note_phone(envelope), note_at(envelope)) else { return Ok(vec![]) };
+        let value = ContactPrivate { pubkey: pubkey.as_hex().to_string(), phone, updated_at: at };
+        if !contact_private::put_if_newer(&self.store, &value).await? {
+            return Ok(vec![]);
+        }
+        Ok(vec![Effect::Emit(UiEvent {
+            name: UI_EVENT_CONTACT_PRIVATE_UPDATED.into(),
+            payload: serde_json::json!({ "pubkey": value.pubkey }),
+        })])
+    }
+
     /// A message just stored that was removed for me before it came: it is
     /// removed now. `true` when it was.
     pub async fn hide_if_hidden(&self, message_id: &str) -> Result<bool> {
@@ -322,4 +442,30 @@ impl DmService {
             None => Ok(false),
         }
     }
+}
+
+/// A phone as the user wrote it, in the one form; none for nothing.
+fn clean_phone(phone: Option<&str>) -> Result<Option<String>> {
+    match phone.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) => Ok(Some(normalize_phone(p).map_err(|code| MessengerError::Invalid(code.into()))?)),
+        None => Ok(None),
+    }
+}
+
+fn own_profile_note(kept: &OwnPrivate) -> Envelope {
+    Envelope::own_profile(kept.phone.as_deref(), kept.share_phone, kept.updated_at)
+}
+
+/// The `phone` of a note: `Some(None)` when there is none, `None` when it
+/// is no number (the note is dropped).
+fn note_phone(envelope: &Envelope) -> Option<Option<String>> {
+    match envelope.fields.get("phone") {
+        None | Some(Value::Null) => Some(None),
+        Some(Value::String(p)) => normalize_phone(p).ok().map(Some),
+        Some(_) => None,
+    }
+}
+
+fn note_at(envelope: &Envelope) -> Option<i64> {
+    envelope.fields.get("at").and_then(Value::as_i64).filter(|at| *at > 0)
 }

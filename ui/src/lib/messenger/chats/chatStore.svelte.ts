@@ -25,6 +25,8 @@ class ChatStore {
   loadingOlder = $state(false);
   /** Bumped whenever a message lands at the bottom; the view scrolls on it. */
   tailTick = $state(0);
+  /** A message to bring into view once its chat shows it (the list of transfers asks). */
+  jumpTo = $state<{ chatId: string; messageId: string } | null>(null);
   private _refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private _reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -109,6 +111,22 @@ class ChatStore {
     }
   }
 
+  /**
+   * Older pages of the open chat until `messageId` is among the messages
+   * (a message the list of transfers asks for may be far up), or until the
+   * chat has no more. Whether it is shown now.
+   */
+  async reach(messageId: string): Promise<boolean> {
+    const id = this.activeId;
+    while (this.activeId === id && !this.messages.some((m) => m.id === messageId)) {
+      if (!this.hasMore || this.messages.length === 0) return false;
+      // A page the scroll asked for is on its way: it is waited for.
+      if (this.loadingOlder) await new Promise((r) => setTimeout(r, 50));
+      else await this.loadOlder();
+    }
+    return this.activeId === id;
+  }
+
   /** Re-read the loaded window (statuses, edits, deletes). */
   async reloadWindow() {
     const id = this.activeId;
@@ -158,12 +176,34 @@ class ChatStore {
     return m;
   }
 
-  /** Attach a local file; the placeholder appears at once. Files of one `batch` are shown together. */
-  async sendFile(path: string, caption?: string, batch?: string) {
+  /**
+   * A contact card into `chat`: mine when `pubkey` is `null` (with my phone
+   * when `includePhone`), else that person's public profile.
+   * Errors: `phone_public_group`, `card_too_large`, a relationship code.
+   */
+  async sendCard(chat: MessengerChat, pubkey: string | null, includePhone: boolean) {
+    const m = await messengerApi.cards.send(chat.id, pubkey, includePhone);
+    if (this.activeId === chat.id) this.upsert(m);
+    this.scheduleChatsRefresh();
+    return m;
+  }
+
+  /** "Add contact" on a received card; the message comes back with the person a contact. */
+  async acceptCard(messageId: string) {
+    const m = await messengerApi.cards.accept(messageId);
+    if (m.chat_id === this.activeId) this.upsert(m);
+    return m;
+  }
+
+  /**
+   * Attach a local file; the placeholder appears at once. Files of one `batch` are shown together.
+   * `original`: a picture goes as it is, not compressed.
+   */
+  async sendFile(path: string, caption?: string, batch?: string, original = false) {
     const chat = this.active;
     const to = this.target(chat);
     if (!chat) throw new Error("no chat");
-    const m = await messengerApi.media.sendFile(to, path, caption, batch);
+    const m = await messengerApi.media.sendFile(to, path, caption, batch, original);
     if (this.activeId === chat.id) this.upsert(m);
     this.scheduleChatsRefresh();
     return m;

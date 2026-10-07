@@ -246,7 +246,7 @@
       <Icon name={editing ? 'pencil' : 'reply'} size={14} />
       <span class="ctx-body">
         <span class="ctx-title">{editing ? $t('msg_composer_editing') : $t('msg_composer_reply_to', { name: replyTo!.direction === 'out' ? $t('msg_you') : peerTitle })}</span>
-        <span class="ctx-text">{(editing ?? replyTo)!.text ?? ''}</span>
+        <span class="ctx-text">{(editing ?? replyTo)!.text ?? (replyTo?.card ? `👤 ${replyTo.card.label}` : '')}</span>
       </span>
       <button class="icon" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('msg_back')}><Icon name="x" size={14} /></button>
     </div>

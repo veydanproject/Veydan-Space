@@ -72,12 +72,12 @@
     try {
       const parsed = JSON.parse(json) as ProfileExport;
       if (!parsed.version || !parsed.profile) {
-        previewError = 'Not a valid profile export';
+        previewError = $t('profile_import_not_export');
         return;
       }
       preview = parsed;
     } catch {
-      previewError = 'Invalid JSON';
+      previewError = $t('profile_import_bad_json');
     }
   }
 

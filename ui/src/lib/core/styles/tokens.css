@@ -22,9 +22,13 @@
  * ========================================================================== */
 
 :root {
-  /* ── Fonts ── (bundled via @fontsource-variable, imported in +layout.svelte) */
-  --font-ui:   'Manrope Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono Variable', 'Fira Code', 'Consolas', monospace;
+  /* ── Fonts ── (bundled via @fontsource-variable and core/fonts/cjk.css, imported by the shells)
+   * --font-cjk draws Chinese, Japanese and Korean where the system has no such
+   * font; its order picks the glyphs of the UI's language for the ideographs
+   * the three share (:lang below). */
+  --font-cjk:  'Veydan SC', 'Veydan JP', 'Veydan KR';
+  --font-ui:   'Manrope Variable', var(--font-cjk), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'Fira Code', 'Consolas', var(--font-cjk), monospace;
 
   /* ── Spacing scale — 4px grid ── */
   --sp-0:   0;
@@ -112,6 +116,10 @@
   --ease-drawer: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
+/* The ideographs Chinese, Japanese and Korean share take the glyphs of the UI's language. */
+:root:lang(ja) { --font-cjk: 'Veydan JP', 'Veydan SC', 'Veydan KR'; }
+:root:lang(ko) { --font-cjk: 'Veydan KR', 'Veydan SC', 'Veydan JP'; }
+
 /* ── Colours: DARK ── */
 [data-theme='dark'] {
   color-scheme: dark;
@@ -165,6 +173,19 @@
   --cat-blue:   #60a5fa;
   --cat-teal:   #2dd4bf;
   --cat-pink:   #f472b6;
+
+  /* The palette of a bio (messenger contacts/BioView): text colours, each
+     WCAG AA (4.5:1) or more on every surface of the theme and on a tinted
+     (outgoing) bubble. */
+  --bio-red:    #f87171;
+  --bio-orange: #fb923c;
+  --bio-yellow: #facc15;
+  --bio-green:  #4ade80;
+  --bio-teal:   #2dd4bf;
+  --bio-blue:   #60a5fa;
+  --bio-purple: #a78bfa;
+  --bio-pink:   #f472b6;
+  --bio-gray:   #a1a1aa;
 
   /* A chip coloured from data (`.tinted`, base.css): the tint under it, its
      pressed tint, its border, and the share of the colour in its text (the
@@ -275,6 +296,19 @@
   --cat-blue:   #3b82f6;
   --cat-teal:   #0d9488;
   --cat-pink:   #db2777;
+
+  /* The palette of a bio (messenger contacts/BioView): text colours, each
+     WCAG AA (4.5:1) or more on every surface of the theme and on a tinted
+     (outgoing) bubble. */
+  --bio-red:    #b91c1c;
+  --bio-orange: #a63a0c;
+  --bio-yellow: #7f5400;
+  --bio-green:  #13703a;
+  --bio-teal:   #0d6b64;
+  --bio-blue:   #1d4ed8;
+  --bio-purple: #7e22ce;
+  --bio-pink:   #be185d;
+  --bio-gray:   #52525b;
 
   /* A chip coloured from data (`.tinted`): as in the dark block. The ink
      share is lower here: a pale colour on white needs more of the text. */

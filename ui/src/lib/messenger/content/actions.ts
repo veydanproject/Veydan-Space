@@ -56,3 +56,21 @@ export const linkActions = {
 
   copy: (text: string) => navigator.clipboard.writeText(text),
 };
+
+/** What a contact card in a chat does. It acts on the message: the runtime reads the card it checked. */
+export const cardActions = {
+  /** Adds the person; a phone in the sender's own card is kept with the contact. */
+  async accept(messageId: string) {
+    const m = await chatStore.acceptCard(messageId);
+    await messengerStore.refreshContacts();
+    linkStore.refresh();
+    // The runtime says `contact_private.updated` too; asking here keeps a panel that is open right.
+    if (m.card?.phone) messengerStore.loadContactPhone(m.card.pubkey).catch(() => {});
+    return m;
+  },
+
+  async write(pubkey: string) {
+    const chat = await chatStore.openPeer(pubkey);
+    await show(chat.id);
+  },
+};

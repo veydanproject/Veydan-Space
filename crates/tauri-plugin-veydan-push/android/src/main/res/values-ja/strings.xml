@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">ダイレクトメッセージ</string>
+    <string name="veydan_push_channel_groups">グループ</string>
+    <string name="veydan_push_channel_service">サービスメッセージ</string>
+    <string name="veydan_push_update_title">新しい通知</string>
+    <string name="veydan_push_update_body">表示するにはアプリをアップデートしてください。</string>
+    <string name="veydan_push_test_title">テスト通知</string>
+    <string name="veydan_push_test_body">このスマートフォンにプッシュ通知が届いています。</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">あなた</string>
+    <string name="veydan_push_dm_title">新しいメッセージ</string>
+    <string name="veydan_push_group">グループ</string>
+    <string name="veydan_push_one">新しいメッセージ</string>
+    <string name="veydan_push_many">新しいメッセージ：%d件</string>
+    <string name="veydan_push_more">他%d件</string>
+    <string name="veydan_push_request">メッセージリクエスト</string>
+    <string name="veydan_push_photo">写真</string>
+    <string name="veydan_push_video">動画</string>
+    <string name="veydan_push_voice">ボイスメッセージ</string>
+    <string name="veydan_push_circle">ビデオメッセージ</string>
+    <string name="veydan_push_audio">音声</string>
+    <string name="veydan_push_file">ファイル</string>
+    <string name="veydan_push_album">アルバム：%d</string>
+    <string name="veydan_push_files">ファイル：%d</string>
+    <string name="veydan_push_link_group">グループ「%s」</string>
+    <string name="veydan_push_link_group_nameless">グループへのリンク</string>
+    <string name="veydan_push_link_contact">連絡先：%s</string>
+    <string name="veydan_push_link_contact_nameless">連絡先</string>
+    <string name="veydan_push_invite">グループ「%s」に招待しています</string>
+    <string name="veydan_push_join_request">「%s」への参加をリクエストしています</string>
+    <string name="veydan_push_welcome">グループ「%s」に参加しました</string>
+</resources>

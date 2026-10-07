@@ -6,7 +6,13 @@
   <meta charset="utf-8">
   <style>
     :root { color-scheme: light dark; }
-    body { margin: 0; width: 320px; font: 13px system-ui, sans-serif; }
+    @font-face { font-family: 'Veydan SC'; font-weight: 400 800; src: url('fonts/cjk-sc.woff2') format('woff2'); }
+    @font-face { font-family: 'Veydan JP'; font-weight: 400 800; src: url('fonts/cjk-jp.woff2') format('woff2'); }
+    @font-face { font-family: 'Veydan KR'; font-weight: 400 800; src: url('fonts/cjk-kr.woff2') format('woff2'); }
+    :root { --cjk: 'Veydan SC', 'Veydan JP', 'Veydan KR'; }
+    :root:lang(ja) { --cjk: 'Veydan JP', 'Veydan SC', 'Veydan KR'; }
+    :root:lang(ko) { --cjk: 'Veydan KR', 'Veydan SC', 'Veydan JP'; }
+    body { margin: 0; width: 320px; font: 13px system-ui, var(--cjk), sans-serif; }
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; }
     button { padding: 6px 8px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
     button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }

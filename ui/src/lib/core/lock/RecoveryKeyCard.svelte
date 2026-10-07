@@ -41,7 +41,7 @@
     const dest = await save({ defaultPath: `${product.id === 'space' ? 'veydan' : `veydan-${product.id}`}-recovery-key.txt` });
     if (!dest) return;
     const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-    await writeTextFile(dest, `${product.name} recovery key\n${code}\n`);
+    await writeTextFile(dest, `${$t('lock_recovery_file_title')}\n${code}\n`);
   }
 </script>
 

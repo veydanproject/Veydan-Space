@@ -11,6 +11,7 @@
   import type { HostInfo } from '$lib/core/types';
   import { api, onSyncStatus, type SyncStatus } from '$lib/core/mobile/api';
   import { t, locale, type Locale } from '$lib/core/mobile/i18n';
+  import { LANGUAGES } from '$lib/core/i18n';
   import { loadDefaultApp, registry, saveDefaultApp } from '$lib/core/registry';
   import PickerSheet from '$lib/core/mobile/PickerSheet.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
@@ -21,10 +22,7 @@
   import { product } from '$lib/core/product';
   import { updateCheck } from '$lib/core/store/update-check.svelte';
 
-  const locales: { id: Locale; label: string }[] = [
-    { id: 'en', label: 'English' },
-    { id: 'ru', label: 'Русский' },
-  ];
+  const locales: { id: Locale; label: string }[] = LANGUAGES.map((l) => ({ id: l.code, label: l.native }));
 
   const demoLocales: { id: 'en' | 'ru'; label: string }[] = [
     { id: 'en', label: 'English' },
@@ -39,7 +37,8 @@
   // the language of the UI to begin with.
   const demoModules = registry.modules.filter((m) => m.demo);
   const hasDemo = demoModules.length > 0;
-  let demoLocale = $state<'en' | 'ru'>(get(locale));
+  // The demo data exists in English and Russian; every other language starts from English.
+  let demoLocale = $state<'en' | 'ru'>(get(locale) === 'ru' ? 'ru' : 'en');
   /** The sections whose data the demo set replaces and "Clear app data" deletes. */
   const dataList = $derived(demoModules.map((m) => $t(m.title)).join(', '));
   // What goes with the lock's key when the demo data replaces it: each module's own sentence.

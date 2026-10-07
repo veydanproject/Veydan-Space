@@ -10,3 +10,9 @@ export const translations = {
   ru: messengerTranslations.ru,
   mobile: { en: {}, ru: {} },
 } as const;
+
+/** The other languages (core/i18n.ts fetches a language's file when it is first shown). */
+export const locales = import.meta.glob<{ desktop: Record<string, string>; mobile: Record<string, string> }>(
+  '../locales/*.json',
+  { import: 'default' },
+);

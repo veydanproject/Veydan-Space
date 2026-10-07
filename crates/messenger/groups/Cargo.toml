@@ -19,6 +19,7 @@ sha2.workspace = true
 hex.workspace = true
 messenger-store.workspace = true
 messenger-dm.workspace = true
+messenger-contacts.workspace = true
 nostr.workspace = true
 async-trait.workspace = true
 aes-gcm.workspace = true
@@ -30,4 +31,3 @@ qrcode.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 zeroize.workspace = true
-messenger-contacts.workspace = true

@@ -5,9 +5,11 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
-  import { contactLabel, messengerApi, messengerError, type MessengerContact } from '../api';
+  import { contactLabel, messengerError, type MessengerContact } from '../api';
   import ShareDialog from '../content/ShareDialog.svelte';
   import MessageContent from '../content/MessageContent.svelte';
+  import BioView from './BioView.svelte';
+  import SocialLinks from './SocialLinks.svelte';
   import Avatar from './Avatar.svelte';
   import ContactAddForm from './ContactAddForm.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
@@ -110,7 +112,8 @@
 
           {#if openId === c.pubkey}
             <div class="details">
-              {#if c.profile?.about}<div class="about"><MessageContent text={c.profile.about} cards={false} /></div>{/if}
+              {#if c.profile?.bio?.length}<BioView spans={c.profile.bio} />{:else if c.profile?.about}<div class="about"><MessageContent text={c.profile.about} cards={false} /></div>{/if}
+              {#if c.profile?.socials?.length}<SocialLinks socials={c.profile.socials} compact />{/if}
               <div class="grid">
                 <label><span>{$t('msg_contacts_nickname')}</span><input type="text" bind:value={editNick} disabled={busy} /></label>
                 <label><span>{$t('msg_contacts_note')}</span><input type="text" bind:value={editNote} disabled={busy} /></label>
@@ -167,7 +170,7 @@
 
 {#if sharing}
   {@const who = sharing}
-  <ShareDialog bind:open={shareOpen} link={() => messengerApi.links.contact(who)} exclude={`dm:${who}`} />
+  <ShareDialog bind:open={shareOpen} card={{ pubkey: who }} exclude={`dm:${who}`} />
 {/if}
 
 <style>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Messaggi diretti</string>
+    <string name="veydan_push_channel_groups">Gruppi</string>
+    <string name="veydan_push_channel_service">Messaggi di servizio</string>
+    <string name="veydan_push_update_title">Nuova notifica</string>
+    <string name="veydan_push_update_body">Aggiorna l’app per vederla.</string>
+    <string name="veydan_push_test_title">Notifica di prova</string>
+    <string name="veydan_push_test_body">Le notifiche push arrivano su questo telefono.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Tu</string>
+    <string name="veydan_push_dm_title">Nuovo messaggio</string>
+    <string name="veydan_push_group">Gruppo</string>
+    <string name="veydan_push_one">Nuovo messaggio</string>
+    <string name="veydan_push_many">Nuovi messaggi: %d</string>
+    <string name="veydan_push_more">e altri %d</string>
+    <string name="veydan_push_request">Richiesta di messaggio</string>
+    <string name="veydan_push_photo">Foto</string>
+    <string name="veydan_push_video">Video</string>
+    <string name="veydan_push_voice">Messaggio vocale</string>
+    <string name="veydan_push_circle">Videomessaggio</string>
+    <string name="veydan_push_audio">Audio</string>
+    <string name="veydan_push_file">File</string>
+    <string name="veydan_push_album">Album: %d</string>
+    <string name="veydan_push_files">File: %d</string>
+    <string name="veydan_push_link_group">Gruppo “%s”</string>
+    <string name="veydan_push_link_group_nameless">Link a un gruppo</string>
+    <string name="veydan_push_link_contact">Contatto: %s</string>
+    <string name="veydan_push_link_contact_nameless">Contatto</string>
+    <string name="veydan_push_invite">Ti invita nel gruppo %s</string>
+    <string name="veydan_push_join_request">Chiede di unirsi a %s</string>
+    <string name="veydan_push_welcome">Fai parte del gruppo %s</string>
+</resources>

@@ -2,8 +2,8 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { tick, type Snippet } from 'svelte';
-  import { t } from '$lib/core/i18n';
+  import { tick, untrack, type Snippet } from 'svelte';
+  import { t, locale, localeTag } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import Avatar from '../contacts/Avatar.svelte';
@@ -28,7 +28,10 @@
   import { onPhone } from '../shared/phone';
   import { nameStore } from '../groups/names.svelte';
   import { presenceStore } from '../presence/presenceStore.svelte';
-  import { dmErrorCode, mediaErrorCode, messengerApi, messengerError, type DmAction, type MessengerChat, type MessengerMessage } from '../api';
+  import { dmErrorCode, MAX_SEND_BYTES, mediaErrorCode, messengerApi, type DmAction, type MessengerChat, type MessengerMessage } from '../api';
+  import { mediaErrorText, tooLargeName } from '../media/errors';
+  import { bytes } from '../shared/format';
+  import TransfersChip from './TransfersChip.svelte';
 
   interface Props {
     chat: MessengerChat;
@@ -86,7 +89,22 @@
   // Leaving a chat drops reply/edit state, and a picture it had open.
   let lastChat = '';
   $effect(() => {
-    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; viewer.close(); }
+    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; viewer.close(); }
+  });
+
+  // The list of transfers asked for a message of this chat: shown once the
+  // chat has it, older pages read until it does.
+  $effect(() => {
+    const want = chatStore.jumpTo;
+    if (!want || want.chatId !== chat.id || chatStore.loading || chatStore.activeId !== chat.id) return;
+    chatStore.jumpTo = null;
+    untrack(() => chatStore.reach(want.messageId))
+      .then((shown) => {
+        if (!shown || chatStore.activeId !== want.chatId) return;
+        atBottom = false;
+        tick().then(() => jumpTo(want.messageId, false));
+      })
+      .catch(() => {});
   });
 
   // New message at the tail: follow it when the user is already at the bottom.
@@ -141,8 +159,7 @@
     if (own) return own;
     const code = dmErrorCode(e);
     if (code) return $t(`msg_err_${code}` as "msg_err_dm_blocked", { name: chat.title });
-    const media = mediaErrorCode(e);
-    return media ? $t(`msg_media_${media.replace(".", "_")}` as "msg_media_err_network") : messengerError(e);
+    return mediaErrorText(e, (key) => $t(key));
   }
 
   async function act(a: DmAction) {
@@ -219,24 +236,41 @@
   let picked = $state<{ key: number; file: MessengerPicked | null }[]>([]);
   let pickSeq = 0;
   const attached = $derived(picked.length === 0 ? null : picked.some((p) => !p.file) ? 'loading' : 'ready');
+  /** Pictures of this sending go as they are, not compressed (the owner's per-send switch). */
+  let original = $state(false);
+  const pictures = $derived(picked.some((p) => p.file?.kind === 'image'));
+
+  /** The name of a picked path, for a note before the file is read: `content://…/IMG_1.jpg` too. */
+  function pathName(path: string): string {
+    const last = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+    try { return decodeURIComponent(last); } catch { return last; }
+  }
 
   async function attach(paths: string[]) {
     error = "";
+    const refused: string[] = [];
+    const other: string[] = [];
     for (const p of paths) {
       const key = ++pickSeq;
       picked = [...picked, { key, file: null }];
       try {
         const file = await messengerApi.media.importPicked(p);
+        // The runtime refuses a file over the limit; one that told no size then is caught here.
+        if (file.size > MAX_SEND_BYTES) throw new Error(`err.file_too_large: ${file.name}`);
         picked = picked.map((x) => (x.key === key ? { key, file } : x));
       } catch (e) {
         picked = picked.filter((x) => x.key !== key);
-        error = explain(e);
+        // A `content://` path names nothing a person reads: the refusal carries the file's name.
+        if (mediaErrorCode(e) === 'err.file_too_large') refused.push($t('msg_xfer_too_big', { name: tooLargeName(e) ?? pathName(p) }));
+        else other.push(explain(e));
       }
     }
+    error = [...refused, ...other].join('\n');
   }
 
   function unpick(key: number) {
     picked = picked.filter((x) => x.key !== key);
+    if (!picked.length) original = false;
   }
 
   /**
@@ -246,17 +280,20 @@
    */
   async function sendPicked(text: string) {
     const files = picked.flatMap((x) => (x.file ? [x.file] : []));
+    const asIs = original;
     picked = [];
+    original = false;
     atBottom = true;
     const reply = replyTo?.id;
     replyTo = null;
     const batch = files.length > 1 ? crypto.randomUUID() : undefined;
     for (const [i, f] of files.entries()) {
       try {
-        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch);
+        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch, asIs);
       } catch (e) {
         // What did not leave waits again.
         picked = files.slice(i).map((file) => ({ key: ++pickSeq, file }));
+        original = asIs;
         throw e;
       }
     }
@@ -284,10 +321,11 @@
     menu.y -= 0.01;
   }
 
-  async function jumpTo(id: string) {
+  /** `smooth`: a jump within what is on screen; a chat just opened lands at once, before its pictures grow. */
+  async function jumpTo(id: string, smooth = true) {
     const el = scroller?.querySelector(`[data-mid="${id}"]`);
     if (!el) return;
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.scrollIntoView({ block: 'center', behavior: smooth ? 'smooth' : 'auto' });
     highlighted = id;
     setTimeout(() => { if (highlighted === id) highlighted = null; }, 1400);
   }
@@ -352,15 +390,22 @@
 {#snippet tray()}
   <div class="tray">
     {#each picked as p (p.key)}
-      <div class="pick" class:picture={!!p.file?.preview}>
+      <div class="pick" class:picture={!!p.file?.preview} title={p.file ? `${p.file.name} · ${bytes(p.file.size, localeTag($locale))}` : undefined}>
         {#if p.file?.preview}<img src={p.file.preview} alt={p.file.name} />
         {:else if p.file}<Icon name={p.file.kind === "video" ? "video" : p.file.kind === "image" ? "image" : "file"} size={20} /><span class="pick-name">{p.file.name}</span>
         {:else}<Icon name="loader" size={18} />{/if}
+        {#if p.file}<span class="pick-size">{bytes(p.file.size, localeTag($locale))}</span>{/if}
         <button class="unpick" tabindex="-1" onpointerdown={(e) => e.preventDefault()} onmousedown={(e) => e.preventDefault()} onclick={() => unpick(p.key)}
           aria-label={$t("msg_attach_remove")} title={$t("msg_attach_remove")}><Icon name="x" size={12} /></button>
       </div>
     {/each}
   </div>
+  {#if pictures}
+    <button class="original" class:on={original} role="switch" aria-checked={original} title={$t('msg_xfer_original_hint')}
+      onpointerdown={(e) => e.preventDefault()} onmousedown={(e) => e.preventDefault()} onclick={() => (original = !original)}>
+      <span class="box" aria-hidden="true">{#if original}<Icon name="check" size={11} />{/if}</span>{$t('msg_xfer_original')}
+    </button>
+  {/if}
 {/snippet}
 
 <section class="window" style:--bottom-h={phone ? `${bottomH}px` : undefined}>
@@ -384,6 +429,7 @@
       </div>
     </div>
     </div>
+    <TransfersChip {phone} />
     {#if actions}{@render actions()}{/if}
     <button class="icon" onclick={openChatMenu} title={$t("msg_chat_menu")}><Icon name="more-vertical" size={16} /></button>
   </header>
@@ -483,6 +529,23 @@
   .pick.picture { padding: 0; }
   .pick img { width: 100%; height: 100%; object-fit: cover; }
   .pick-name { max-width: 100%; font-size: var(--fs-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pick-size {
+    position: absolute; left: 3px; bottom: 3px; max-width: calc(100% - 6px); padding: 0 4px; border-radius: var(--radius-pill);
+    font-size: 9px; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: rgba(0, 0, 0, 0.55); color: #fff; pointer-events: none;
+  }
+  .pick:not(.picture) .pick-name { margin-bottom: 12px; }
+  /* Pictures go compressed unless this is on, for this sending only. */
+  .original {
+    display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin-top: 2px; padding: 4px 8px 4px 6px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2);
+    font: inherit; font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
+  }
+  .original.on { border-color: var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-text-2); }
+  .original .box {
+    width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .error-line { white-space: pre-line; }
   .unpick {
     position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: none; border-radius: 50%; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;

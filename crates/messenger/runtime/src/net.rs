@@ -604,7 +604,8 @@ impl MessengerRuntime {
     ///
     /// Every beat looks at the relays for what the app shows, and tells the
     /// page when that changed. When a relay comes back, what waits in the
-    /// outbox goes at once instead of after its backoff.
+    /// outbox goes at once instead of after its backoff, and so does a
+    /// transfer that waits for its next attempt.
     pub async fn net_beat(&self, beat: Duration) {
         let pool = self.relays.pool().await;
         if let Some(gap) = self.net.beat(beat) {
@@ -625,6 +626,7 @@ impl MessengerRuntime {
         }
         if seen.came_up {
             self.outbox.kick();
+            self.media_network_back().await;
         }
     }
 

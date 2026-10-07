@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Pesan langsung</string>
+    <string name="veydan_push_channel_groups">Grup</string>
+    <string name="veydan_push_channel_service">Pesan layanan</string>
+    <string name="veydan_push_update_title">Notifikasi baru</string>
+    <string name="veydan_push_update_body">Perbarui aplikasi untuk melihatnya.</string>
+    <string name="veydan_push_test_title">Notifikasi uji</string>
+    <string name="veydan_push_test_body">Notifikasi push sampai ke ponsel ini.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Anda</string>
+    <string name="veydan_push_dm_title">Pesan baru</string>
+    <string name="veydan_push_group">Grup</string>
+    <string name="veydan_push_one">Pesan baru</string>
+    <string name="veydan_push_many">%d pesan baru</string>
+    <string name="veydan_push_more">dan %d lainnya</string>
+    <string name="veydan_push_request">Permintaan pesan</string>
+    <string name="veydan_push_photo">Foto</string>
+    <string name="veydan_push_video">Video</string>
+    <string name="veydan_push_voice">Pesan suara</string>
+    <string name="veydan_push_circle">Pesan video</string>
+    <string name="veydan_push_audio">Audio</string>
+    <string name="veydan_push_file">File</string>
+    <string name="veydan_push_album">Album: %d</string>
+    <string name="veydan_push_files">File: %d</string>
+    <string name="veydan_push_link_group">Grup “%s”</string>
+    <string name="veydan_push_link_group_nameless">Tautan ke grup</string>
+    <string name="veydan_push_link_contact">Kontak: %s</string>
+    <string name="veydan_push_link_contact_nameless">Kontak</string>
+    <string name="veydan_push_invite">Mengundang Anda ke grup %s</string>
+    <string name="veydan_push_join_request">Meminta bergabung ke %s</string>
+    <string name="veydan_push_welcome">Anda sudah bergabung ke grup %s</string>
+</resources>

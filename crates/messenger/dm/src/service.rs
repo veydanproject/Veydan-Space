@@ -7,8 +7,9 @@
 
 use crate::view::{preview, ChatView, MessageView, ReactionView, ReplyPreview};
 use crate::wrap::{wrap_as, Wake};
-use messenger_contacts::{ContactService, ProfileService};
-use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
+use crate::view::CardView;
+use messenger_contacts::{ContactCard, ContactService, ProfileService};
+use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
 use messenger_core::traits::{Notice, UiEvent};
 use messenger_core::{
     Clock, Context, DmInbound, Effect, Envelope, EventSource, MessengerError, Outbound, PubKey, RelayUrl, Result,
@@ -296,7 +297,21 @@ impl DmService {
             (Some(local), true) => messenger_store::outbox::get(&self.store, local).await?.map(|o| o.created_at),
             _ => None,
         };
-        Ok(MessageView { queued_at, delivered_at, read_at, seen_by, reactions, ..MessageView::from_row(r, reply) })
+        let card = match (r.content_type == repo::CT_CONTACT, r.media_json.as_deref()) {
+            (true, Some(json)) => self.card_view(json, marks.me.as_deref()).await?,
+            _ => None,
+        };
+        Ok(MessageView { queued_at, delivered_at, read_at, seen_by, reactions, card, ..MessageView::from_row(r, reply) })
+    }
+
+    /// A stored card as the UI shows it, with what this side knows of the
+    /// person. `None` when the row holds no card.
+    async fn card_view(&self, json: &str, me: Option<&str>) -> Result<Option<CardView>> {
+        let Ok(card) = serde_json::from_str::<ContactCard>(json) else { return Ok(None) };
+        let Some(pk) = PubKey::parse(&card.pubkey) else { return Ok(None) };
+        let is_contact = self.contacts.is_contact(&pk).await?;
+        let blocked = self.load_relation(&pk).await?.blocked;
+        Ok(Some(CardView::new(&card, me == Some(card.pubkey.as_str()), is_contact, blocked)))
     }
 
     /// The marks of one message of mine. A read mark says delivered too.
@@ -399,6 +414,11 @@ impl DmService {
         let created_at = self.next_created_at(&chat.id).await?;
         let (id, wire_id, to_peer, to_self) =
             self.publish_pair(keys, peer, &content, created_at, reply_to, Wake::Peer).await?;
+        let card = media_json.as_deref().filter(|_| content_type == repo::CT_CONTACT).and_then(|j| serde_json::from_str(j).ok());
+        let line = match card {
+            Some(card) => crate::view::card_line(&card),
+            None => text.as_deref().map(preview).unwrap_or_else(|| format!("[{content_type}]")),
+        };
         repo::insert(
             &self.store,
             &NewMessage {
@@ -420,7 +440,6 @@ impl DmService {
             },
         )
         .await?;
-        let line = text.as_deref().map(preview).unwrap_or_else(|| format!("[{content_type}]"));
         chats::touch(&self.store, &chat.id, created_at, Some(&line), false).await?;
         let message = self.message(&id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
         let (mut followups, mut events, mut became_contact) = (Vec::new(), Vec::new(), false);
@@ -599,9 +618,17 @@ impl DmService {
         let mut effects: Vec<Effect> = Vec::new();
 
         // Other NIP-17 clients send bare text; read it as a text message.
-        let envelope = Envelope::parse(&msg.content).unwrap_or_else(|_| Envelope::text(&msg.content));
+        let mut envelope = Envelope::parse(&msg.content).unwrap_or_else(|_| Envelope::text(&msg.content));
+        let mut card_line = None;
         let (content_type, text, hidden, target, media_json): (String, Option<String>, bool, Option<String>, Option<String>) =
             match envelope.t.as_str() {
+                // A card that is no card is dropped; one about somebody else
+                // loses its phone here, before anything keeps it.
+                T_CONTACT => {
+                    let Some(card) = crate::cards::received_card(&envelope, msg.sender.as_hex()) else { return Ok(vec![]) };
+                    card_line = Some(crate::view::card_line(&card));
+                    (repo::CT_CONTACT.into(), None, false, None, Some(card.to_json().to_string()))
+                }
                 T_TEXT => (repo::CT_TEXT.into(), envelope.as_text().map(String::from), false, None, None),
                 T_EDIT => (repo::CT_EDIT.into(), None, true, envelope.str_field("target").map(String::from), None),
                 T_DELETE => (repo::CT_DELETE.into(), None, true, envelope.str_field("target").map(String::from), None),
@@ -615,6 +642,14 @@ impl DmService {
                 ),
                 other => (other.to_string(), envelope.str_field("text").map(String::from), false, None, None),
             };
+        // A card is kept as it was checked, the envelope too.
+        let content = match (&card_line, &media_json) {
+            (Some(_), Some(json)) => {
+                envelope = Envelope::contact(serde_json::from_str(json)?);
+                envelope.encode()
+            }
+            _ => msg.content.clone(),
+        };
 
         // Relationship gate for regular messages of the peer. A copy of
         // something already stored skips it and dedups below.
@@ -635,7 +670,7 @@ impl DmService {
                 status: if from_me { repo::STATUS_SENT.into() } else { repo::STATUS_RECEIVED.into() },
                 content_type: content_type.clone(),
                 text: text.clone(),
-                envelope_json: msg.content.clone(),
+                envelope_json: content,
                 sender_pubkey: msg.sender.as_hex().to_string(),
                 reply_to_id: msg.reply_to.as_ref().map(|e| e.as_hex().to_string()),
                 target_id: target.clone(),
@@ -699,7 +734,9 @@ impl DmService {
         // Removed for me on another device before it came here.
         let hidden_before = self.hide_if_hidden(&id).await?;
 
-        let line = if content_type == repo::CT_MEDIA {
+        let line = if let Some(line) = card_line {
+            line
+        } else if content_type == repo::CT_MEDIA {
             let name = envelope.str_field("name").unwrap_or("file");
             format!("📎 {}", text.as_deref().map(preview).unwrap_or_else(|| name.to_string()))
         } else {
@@ -2346,5 +2383,174 @@ mod tests {
         phone.dm.presence_devices_told(4).await.unwrap();
         assert_eq!(phone.dm.presence_devices_owed().await.unwrap(), None);
         assert_eq!(phone.dm.rotate_presence(true).await.unwrap().since, now + 52);
+    }
+
+    // ─── Contact cards ──────────────────────────────────────────────────────
+
+    fn card_of(pubkey: &str, name: &str, phone: Option<&str>) -> ContactCard {
+        let mut raw = serde_json::json!({ "pubkey": pubkey, "display_name": name, "about": "**hi** there", "at": 1_000_000 });
+        if let Some(p) = phone {
+            raw["phone"] = p.into();
+        }
+        messenger_contacts::card::validate(&raw).unwrap()
+    }
+
+    fn notice_body(effects: &[Effect]) -> Option<messenger_core::Body> {
+        effects.iter().find_map(|e| match e {
+            Effect::Notify(n) => n.body.clone(),
+            _ => None,
+        })
+    }
+
+    #[tokio::test]
+    async fn my_own_card_reaches_the_peer_with_its_phone() {
+        let alice = Party::new().await;
+        let bob = Party::new().await;
+        alice.dm.set_signer(Some(alice.keys.clone()));
+        let card = card_of(alice.pk().as_hex(), "Alice  A.", Some("+7 999 123-45-67"));
+        let p = alice.dm.prepare_card(&alice.keys, &bob.pk(), &card).await.unwrap();
+        assert_eq!(p.message.content_type, "contact");
+        assert!(p.message.text.is_none() && p.message.media.is_none());
+        let mine = p.message.card.as_ref().expect("a card");
+        assert!(mine.is_me && !mine.is_contact);
+        assert_eq!(alice.dm.open_chat(&bob.pk()).await.unwrap().last_preview.as_deref(), Some("👤 Alice  A."));
+
+        let fx = bob.receive(&peer_event(&p)).await;
+        assert_eq!(names(&fx), vec!["dm.message", "notify"]);
+        assert_eq!(
+            notice_body(&fx),
+            Some(messenger_core::Body::Link { link: messenger_core::LinkKind::Contact, title: "Alice A.".into() })
+        );
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+        assert_eq!(chat.last_preview.as_deref(), Some("👤 Alice  A."));
+        let m = &bob.dm.messages(&chat.id, None, 50).await.unwrap()[0];
+        assert_eq!((m.content_type.as_str(), m.direction.as_str()), ("contact", "in"));
+        let seen = m.card.as_ref().expect("a card");
+        assert_eq!(seen.pubkey, alice.pk().as_hex());
+        assert_eq!(seen.phone.as_deref(), Some("+79991234567"));
+        assert_eq!(seen.label, "Alice  A.");
+        assert!(!seen.is_me && !seen.is_contact && !seen.blocked);
+        assert!(!seen.bio.is_empty());
+        let kept = bob.dm.stored_card(&m.id).await.unwrap();
+        assert_eq!((kept.incoming, kept.sender.as_str(), kept.card.phone.as_deref()), (true, alice.pk().as_hex(), Some("+79991234567")));
+
+        // Known as a contact, the card says so; removed, it is gone.
+        bob.contacts.add(&bob.pk(), alice.pk().as_hex(), None).await.unwrap();
+        assert!(bob.dm.message(&m.id).await.unwrap().unwrap().card.unwrap().is_contact);
+        bob.dm.delete_local(&m.id).await.unwrap();
+        assert!(bob.dm.message(&m.id).await.unwrap().unwrap().card.is_none());
+        assert!(bob.dm.stored_card(&m.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_card_of_somebody_else_never_keeps_a_phone() {
+        let alice = Party::new().await;
+        let bob = Party::new().await;
+        let carol = Keys::generate().public_key().to_hex();
+        // A client that put Carol's phone in her card anyway.
+        let card = card_of(&carol, "Carol", Some("+15550001111"));
+        let p = alice.dm.prepare_card(&alice.keys, &bob.pk(), &card).await.unwrap();
+        bob.receive(&peer_event(&p)).await;
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+        let m = &bob.dm.messages(&chat.id, None, 50).await.unwrap()[0];
+        assert_eq!(m.card.as_ref().unwrap().pubkey, carol);
+        assert_eq!(m.card.as_ref().unwrap().phone, None);
+        let row = repo::get(&bob.dm.store, &m.id).await.unwrap().unwrap();
+        assert!(!row.envelope_json.contains("+1555") && !row.media_json.unwrap().contains("+1555"), "kept nowhere");
+    }
+
+    #[tokio::test]
+    async fn a_card_that_is_no_card_is_dropped() {
+        let alice = Party::new().await;
+        let bob = Party::new().await;
+        for (i, junk) in [
+            Envelope::contact(serde_json::json!({ "pubkey": "zz", "name": "x" })),
+            Envelope::contact(serde_json::json!("just a string")),
+            Envelope::new(T_CONTACT),
+            Envelope::contact(serde_json::json!({ "pubkey": "ab".repeat(32), "about": "x".repeat(30_000) })),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let w = wrap(&alice.keys, &bob.pk(), &junk.encode(), 1_000_001 + i as i64, None).unwrap();
+            assert!(bob.receive(&w.to_peer).await.is_empty(), "{}", junk.encode());
+        }
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+        assert!(bob.dm.messages(&chat.id, None, 50).await.unwrap().is_empty());
+        assert!(chat.last_preview.is_none());
+    }
+
+    // ─── Phones between my devices ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn my_phone_goes_to_my_other_devices_and_the_later_wins() {
+        let alice = Party::new().await;
+        let phone = Party::with_keys(alice.keys.clone()).await;
+        assert_eq!(alice.dm.own_profile_due(1_000_000).await.unwrap(), None, "nothing set, nothing to tell");
+        assert!(matches!(alice.dm.set_own_private(Some("12"), true).await, Err(MessengerError::Invalid(c)) if c == "phone_invalid"));
+
+        let (kept, note) = alice.dm.set_own_private(Some(" +7 (999) 123-45-67 "), true).await.unwrap();
+        assert_eq!((kept.phone.as_deref(), kept.share_phone, kept.updated_at), (Some("+79991234567"), true, 1_000_000));
+        assert_eq!(note, Envelope::own_profile(Some("+79991234567"), true, 1_000_000));
+        assert_eq!(names(&phone.receive(&own_note(&alice.keys, &note, 1_000_000)).await), vec!["own_private.updated"]);
+        assert_eq!(phone.dm.own_private().await.unwrap(), kept);
+        assert!(phone.receive(&own_note(&alice.keys, &note, 1_000_001)).await.is_empty(), "the same again is no news");
+
+        // An older note, or one that is no number, changes nothing.
+        let older = Envelope::own_profile(None, false, 999_999);
+        assert!(phone.receive(&own_note(&alice.keys, &older, 1_000_002)).await.is_empty());
+        let junk = Envelope::own_profile(None, false, 1_000_500).with("phone", "call me");
+        assert!(phone.receive(&own_note(&alice.keys, &junk, 1_000_003)).await.is_empty());
+        let no_time = Envelope::own_profile(None, false, 0);
+        assert!(phone.receive(&own_note(&alice.keys, &no_time, 1_000_004)).await.is_empty());
+        assert_eq!(phone.dm.own_private().await.unwrap(), kept);
+
+        // Removed on the phone, with a clock behind: still the later.
+        phone.clock.0.store(900_000, Ordering::SeqCst);
+        let (gone, note) = phone.dm.set_own_private(Some("  "), false).await.unwrap();
+        assert_eq!((gone.phone, gone.updated_at), (None, 1_000_001));
+        alice.receive(&own_note(&alice.keys, &note, 1_000_005)).await;
+        assert_eq!(alice.dm.own_private().await.unwrap().phone, None);
+
+        // Told again once a week.
+        let due = alice.dm.own_profile_due(1_000_010).await.unwrap().expect("never sent from here");
+        assert_eq!(due, Envelope::own_profile(None, false, 1_000_001));
+        alice.dm.own_profile_sent(1_000_010).await.unwrap();
+        assert_eq!(alice.dm.own_profile_due(1_000_010 + crate::own::OWN_PROFILE_EVERY_SECS - 1).await.unwrap(), None);
+        assert!(alice.dm.own_profile_due(1_000_010 + crate::own::OWN_PROFILE_EVERY_SECS).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn the_phones_of_my_contacts_go_to_my_other_devices() {
+        let alice = Party::new().await;
+        let phone = Party::with_keys(alice.keys.clone()).await;
+        let (bob, carol) = (Keys::generate().public_key().to_hex(), Keys::generate().public_key().to_hex());
+        let note = alice.dm.keep_contact_phone(&bob, Some("+1 555 000 1111"), 999_000).await.unwrap().expect("news");
+        assert_eq!(note, Envelope::own_card(&bob, Some("+15550001111"), 999_000), "the time of the card");
+        assert_eq!(alice.dm.keep_contact_phone(&bob, Some("+15550001111"), 999_500).await.unwrap(), None, "kept already");
+        assert!(alice.dm.keep_contact_phone(&bob, Some("nope"), 999_500).await.is_err());
+        // An older card does not take the place of a newer one.
+        assert_eq!(alice.dm.keep_contact_phone(&bob, Some("+1 555 000 9999"), 998_000).await.unwrap(), None);
+        assert_eq!(alice.dm.contact_private(&bob).await.unwrap().unwrap().phone.as_deref(), Some("+15550001111"));
+        // A card from the future counts as made now.
+        let later = alice.dm.keep_contact_phone(&carol, Some("+1 555 000 3333"), i64::MAX).await.unwrap().unwrap();
+        assert_eq!(later, Envelope::own_card(&carol, Some("+15550003333"), 1_000_000));
+
+        let fx = phone.receive(&own_note(&alice.keys, &note, 1_000_000)).await;
+        assert_eq!(names(&fx), vec!["contact_private.updated"]);
+        let Effect::Emit(ev) = &fx[0] else { panic!() };
+        assert_eq!(ev.payload["pubkey"], bob.as_str());
+        assert_eq!(phone.dm.contact_private(&bob).await.unwrap().unwrap().phone.as_deref(), Some("+15550001111"));
+        assert_eq!(phone.dm.contact_private(&carol).await.unwrap(), None, "per contact");
+
+        // Taken back later; an older note does not bring it back.
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        let gone = alice.dm.keep_contact_phone(&bob, None, 1_000_100).await.unwrap().unwrap();
+        phone.receive(&own_note(&alice.keys, &gone, 1_000_100)).await;
+        assert!(phone.receive(&own_note(&alice.keys, &note, 1_000_101)).await.is_empty());
+        assert_eq!(phone.dm.contact_private(&bob).await.unwrap().unwrap().phone, None);
+        // A note about no key is dropped.
+        let junk = Envelope::own_card("not-a-key", Some("+15550001111"), 1_000_200);
+        assert!(phone.receive(&own_note(&alice.keys, &junk, 1_000_102)).await.is_empty());
     }
 }

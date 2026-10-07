@@ -14,7 +14,9 @@ pub mod notify;
 
 /// Region used when the stored one cannot be read.
 pub(crate) const REGION_FALLBACK: &str = "default";
+pub mod avatars;
 pub mod bindings;
+pub mod cards;
 pub mod groups;
 pub mod link;
 pub mod links;
@@ -36,7 +38,7 @@ use messenger_contacts::{ContactService, MetaHandler, Nip05Service, ProfileServi
 use messenger_core::{Clock, EventId, MessengerConfig, MessengerError, Outbound, PubKey, Result, Scope, SecretStore, SubId, Transport};
 use messenger_dm::{Action, DmHandler, DmRoutesHandler, DmService, Prepared};
 use messenger_identity::IdentityService;
-use messenger_media::MediaService;
+use messenger_media::{MediaService, Recovered};
 use messenger_ingress::{filters, Dispatcher, Fanout, Outbox};
 use messenger_store::{settings, Store};
 use nostr::key::Keys;
@@ -47,10 +49,16 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 
 pub use messenger_dm::{
-    Action as DmAction, ChatView, MessageView, ReactionView, RelationView, UI_EVENT_CHAT_READ, UI_EVENT_CHAT_RECEIPT, UI_EVENT_EMOJI_UPDATED,
+    Action as DmAction, ChatView, MessageView, ReactionView, RelationView, UI_EVENT_CHAT_READ, UI_EVENT_CHAT_RECEIPT,
+    UI_EVENT_CONTACT_PRIVATE_UPDATED, UI_EVENT_EMOJI_UPDATED, UI_EVENT_OWN_PRIVATE_UPDATED,
 };
 pub use media::{PickedView, Recording};
-pub use messenger_media::{MediaKind, MediaServerInput, MediaServerView, TransferView};
+pub use avatars::{AvatarPreview, UI_EVENT_AVATAR_READY};
+pub use cards::{ContactPrivateView, OwnPrivateView};
+pub use messenger_avatar::CropRect;
+pub use messenger_contacts::{CardView, SocialLink, SocialPlatform, SocialView};
+pub use messenger_richtext::{Color as BioColor, Span, Style as BioStyle};
+pub use messenger_media::{MediaKind, MediaServerInput, MediaServerView, Paused, Progress as TransferProgress, TransferStage, TransferView};
 
 pub use messenger_contacts::book::{parse_key, ContactPatch};
 pub use messenger_contacts::{ContactView, ProfileInput, ProfileView};
@@ -122,6 +130,13 @@ pub struct MessengerRuntime {
     link: link::LinkWatch,
     /// Presence: whom to tell my key, whom to watch, when to beat.
     presence: Arc<presence::PresenceDriver>,
+    /// My avatar and those of others (`crate::avatars`).
+    avatars: avatars::Avatars,
+    /// Photos made smaller at once (`media::PHOTO_SLOTS`): each takes a
+    /// decoded picture in memory.
+    photo_slots: Arc<tokio::sync::Semaphore>,
+    /// Uploads in the preparing stage now (`media::Preparing`).
+    preparing: media::Preparing,
 }
 
 impl MessengerRuntime {
@@ -142,8 +157,13 @@ impl MessengerRuntime {
             eprintln!("messenger net: the way to the servers was not set: {e}");
         }
         let media = MediaService::new(store.clone(), secrets.clone(), config.data_dir())?;
-        media.recover().await?;
-        messenger_store::messages::pause_uploading(&store).await?;
+        // Another process with this data folder (the CLI beside the app) may
+        // be sending: every upload pauses but those it may run.
+        let under_way = match media.recover().await? {
+            Recovered::Alone(_) => Vec::new(),
+            Recovered::Beside(under_way) => under_way,
+        };
+        messenger_store::messages::pause_uploading_except(&store, &under_way).await?;
         let outbox = Outbox::new(store.clone(), Arc::new(SystemClock));
         let profiles = ProfileService::new(store.clone());
         let contacts = ContactService::new(store.clone(), profiles.clone());
@@ -173,6 +193,16 @@ impl MessengerRuntime {
             Arc::new(SystemClock),
         );
         let (ui, _) = broadcast::channel(256);
+        let avatars = avatars::Avatars::new(
+            store.clone(),
+            media.clone(),
+            profiles.clone(),
+            outbox.clone(),
+            ui.clone(),
+            Arc::new(SystemClock),
+            Arc::new(avatars::HttpAvatarNet::new()?),
+            config.avatars_dir(),
+        );
         let group_driver =
             groups::GroupsDriver::new(group_service, store.clone(), relays.clone(), outbox.clone(), ui.clone());
         let group_signals = tokio::spawn(group_driver.clone().run(signals_rx));
@@ -201,6 +231,9 @@ impl MessengerRuntime {
             net,
             link: link::LinkWatch::default(),
             presence,
+            avatars,
+            photo_slots: Arc::new(tokio::sync::Semaphore::new(media::PHOTO_SLOTS)),
+            preparing: media::Preparing::default(),
         };
         if let Err(e) = rt.seed_media_servers().await {
             eprintln!("messenger: media servers from the manifest not applied: {e}");
@@ -280,6 +313,7 @@ impl MessengerRuntime {
             self.dm.clone(),
             self.group_driver.groups.clone(),
             self.presence.clone(),
+            self.avatars.clone(),
         )
         .await?;
         self.group_driver.groups.set_signer(Some(keys_for_dm.clone()));
@@ -289,6 +323,14 @@ impl MessengerRuntime {
         self.group_driver.session_started().await;
         if let Err(e) = self.publish_dm_relays(false).await {
             eprintln!("messenger: inbox relay list not published: {e}");
+        }
+        // The keys are here: what the closing of the app interrupted goes on.
+        if self.config.resume_transfers {
+            match self.resume_interrupted().await {
+                Ok(0) => {}
+                Ok(n) => eprintln!("messenger media: {n} interrupted transfers go on"),
+                Err(e) => eprintln!("messenger media: interrupted transfers not taken up: {e}"),
+            }
         }
         Ok(())
     }
@@ -458,6 +500,8 @@ impl MessengerRuntime {
             let note = self.dm.delete_local(message_id).await?;
             self.tell_own_devices(&note).await;
         }
+        // Its file goes no further, in either direction.
+        self.cancel_transfers_of_message(message_id).await;
         Ok(())
     }
 
@@ -573,9 +617,13 @@ impl MessengerRuntime {
     }
 
     /// Sign and publish our kind 0; the cache is updated immediately.
+    /// `picture` stays what the last kind 0 said: only the avatar's own
+    /// commands and its keeper (`crate::avatars`) change it, so a profile
+    /// saved on a device that has not yet taken on an avatar set elsewhere
+    /// does not take it away.
     pub async fn publish_own_profile(&self, input: &ProfileInput) -> Result<ProfileView> {
         let keys = self.session_keys().await?;
-        let event = self.profiles.build_own(&keys, input).await?;
+        let event = self.profiles.build_own(&keys, input, messenger_contacts::Picture::Keep).await?;
         self.enqueue_and_pump(Outbound::PublishOwn { event }).await?;
         let me = PubKey::parse(&keys.public_key().to_hex()).expect("valid pubkey");
         self.profiles.get(&me).await?.ok_or_else(|| MessengerError::Storage("own profile missing after publish".into()))
@@ -744,6 +792,9 @@ impl MessengerRuntime {
     /// Stop background work, close the door of the bridges and the
     /// database. Idempotent.
     pub async fn shutdown(&self) {
+        // Transfers here pause, and the data folder is let go: a runtime
+        // started again in this process recovers as after a restart.
+        self.media.release();
         self.stop_session().await;
         self.group_signals.abort();
         self.relays.shutdown().await;

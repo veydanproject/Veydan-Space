@@ -90,7 +90,20 @@
       "app": "apps/space",
       "tagline": {
         "en": "A workspace for multi-accounting.",
-        "ru": "Рабочее пространство для мультиаккаунтинга."
+        "ru": "Рабочее пространство для мультиаккаунтинга.",
+        "uk": "Робочий простір для мультиакаунтингу.",
+        "de": "Ein Workspace für Multi-Accounting.",
+        "es": "Un espacio de trabajo para multicuentas.",
+        "fr": "Un espace de travail pour gérer plusieurs comptes.",
+        "it": "Un workspace per il multi-account.",
+        "pl": "Przestrzeń robocza do pracy z wieloma kontami.",
+        "pt-BR": "Um espaço de trabalho para múltiplas contas.",
+        "tr": "Çoklu hesap yönetimi için bir çalışma alanı.",
+        "id": "Ruang kerja untuk multi-akun.",
+        "vi": "Không gian làm việc để quản lý nhiều tài khoản.",
+        "zh-CN": "多账号工作区。",
+        "ja": "マルチアカウント運用のためのワークスペース。",
+        "ko": "멀티 계정 운영을 위한 워크스페이스."
       },
       "modules": [
         "browser",

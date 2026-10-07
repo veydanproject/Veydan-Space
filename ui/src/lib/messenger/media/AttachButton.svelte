@@ -41,7 +41,8 @@
     sheet = false;
     if (!isTauriHost) {
       // Browser preview: there are no paths; send a sample so the UI can be seen.
-      onfiles(['/home/dev/Pictures/sample-1.png', '/home/dev/Pictures/sample-2.png', '/home/dev/Pictures/sample-3.png']);
+      // `huge`: a file over the send limit, refused as the app refuses it.
+      onfiles(['/home/dev/Pictures/sample-1.png', '/home/dev/Pictures/sample-2.png', '/home/dev/Documents/report.pdf', '/home/dev/Videos/conference-huge.mov']);
       return;
     }
     const { open } = await import('@tauri-apps/plugin-dialog');

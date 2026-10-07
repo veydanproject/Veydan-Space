@@ -6,7 +6,8 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
-  import { mediaErrorCode, messengerApi, messengerError, type MessengerMediaServer } from '../api';
+  import { messengerApi, type MessengerMediaServer } from '../api';
+  import { mediaErrorText } from './errors';
   import { onPhone } from '../shared/phone';
 
   /** The phone: the address on the first line, whole; Check and the switch under it, at the right. */
@@ -29,8 +30,7 @@
   const canAct = $derived(!!messengerStore.status?.runtime?.session_active);
 
   function explain(e: unknown): string {
-    const code = mediaErrorCode(e);
-    return code ? $t(`msg_media_${code.replace('.', '_')}` as 'msg_media_err_network') : messengerError(e);
+    return mediaErrorText(e, (key) => $t(key));
   }
 
   async function load() { servers = await messengerApi.media.servers(); }

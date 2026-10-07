@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Tin nhắn riêng</string>
+    <string name="veydan_push_channel_groups">Nhóm</string>
+    <string name="veydan_push_channel_service">Tin nhắn hệ thống</string>
+    <string name="veydan_push_update_title">Thông báo mới</string>
+    <string name="veydan_push_update_body">Cập nhật ứng dụng để xem.</string>
+    <string name="veydan_push_test_title">Thông báo thử nghiệm</string>
+    <string name="veydan_push_test_body">Thông báo đẩy đến được điện thoại này.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Bạn</string>
+    <string name="veydan_push_dm_title">Tin nhắn mới</string>
+    <string name="veydan_push_group">Nhóm</string>
+    <string name="veydan_push_one">Tin nhắn mới</string>
+    <string name="veydan_push_many">%d tin nhắn mới</string>
+    <string name="veydan_push_more">và %d tin khác</string>
+    <string name="veydan_push_request">Yêu cầu nhắn tin</string>
+    <string name="veydan_push_photo">Ảnh</string>
+    <string name="veydan_push_video">Video</string>
+    <string name="veydan_push_voice">Tin nhắn thoại</string>
+    <string name="veydan_push_circle">Tin nhắn video</string>
+    <string name="veydan_push_audio">Âm thanh</string>
+    <string name="veydan_push_file">Tệp</string>
+    <string name="veydan_push_album">Album: %d</string>
+    <string name="veydan_push_files">Tệp: %d</string>
+    <string name="veydan_push_link_group">Nhóm “%s”</string>
+    <string name="veydan_push_link_group_nameless">Liên kết đến nhóm</string>
+    <string name="veydan_push_link_contact">Liên hệ: %s</string>
+    <string name="veydan_push_link_contact_nameless">Liên hệ</string>
+    <string name="veydan_push_invite">Mời bạn vào nhóm %s</string>
+    <string name="veydan_push_join_request">Xin tham gia %s</string>
+    <string name="veydan_push_welcome">Bạn đã ở trong nhóm %s</string>
+</resources>

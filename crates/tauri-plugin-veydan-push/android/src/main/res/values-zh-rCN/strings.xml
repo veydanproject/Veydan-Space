@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">私信</string>
+    <string name="veydan_push_channel_groups">群组</string>
+    <string name="veydan_push_channel_service">服务消息</string>
+    <string name="veydan_push_update_title">新通知</string>
+    <string name="veydan_push_update_body">请更新应用以查看。</string>
+    <string name="veydan_push_test_title">测试通知</string>
+    <string name="veydan_push_test_body">推送可以送达这部手机。</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">你</string>
+    <string name="veydan_push_dm_title">新消息</string>
+    <string name="veydan_push_group">群组</string>
+    <string name="veydan_push_one">新消息</string>
+    <string name="veydan_push_many">%d 条新消息</string>
+    <string name="veydan_push_more">还有 %d 条</string>
+    <string name="veydan_push_request">聊天请求</string>
+    <string name="veydan_push_photo">照片</string>
+    <string name="veydan_push_video">视频</string>
+    <string name="veydan_push_voice">语音消息</string>
+    <string name="veydan_push_circle">视频消息</string>
+    <string name="veydan_push_audio">音频</string>
+    <string name="veydan_push_file">文件</string>
+    <string name="veydan_push_album">相册：%d</string>
+    <string name="veydan_push_files">文件：%d</string>
+    <string name="veydan_push_link_group">群组“%s”</string>
+    <string name="veydan_push_link_group_nameless">群组链接</string>
+    <string name="veydan_push_link_contact">联系人：%s</string>
+    <string name="veydan_push_link_contact_nameless">联系人</string>
+    <string name="veydan_push_invite">邀请你加入群组“%s”</string>
+    <string name="veydan_push_join_request">申请加入“%s”</string>
+    <string name="veydan_push_welcome">你已加入群组“%s”</string>
+</resources>

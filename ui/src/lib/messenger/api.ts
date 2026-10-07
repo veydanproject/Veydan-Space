@@ -42,31 +42,56 @@ export interface MessengerRuntimeStatus {
   outbox_pending: number;
 }
 
-export interface MessengerProfile {
-  pubkey: string;
-  npub: string;
-  name: string | null;
-  display_name: string | null;
-  about: string | null;
-  picture: string | null;
-  banner: string | null;
-  website: string | null;
-  nip05: string | null;
-  lud16: string | null;
-  nip05_verified: boolean;
-  event_created_at: number;
-  fetched_at: number;
+// Profiles, avatars and contact cards (the runtime's types, as generated).
+export type {
+  AvatarPreview, CardView, Color, ContactPrivateView, CropRect, OwnPrivateView, ProfileInput, ProfileView,
+  SocialLink, SocialPlatform, SocialView, Span, Style,
+} from './generated/profile';
+import type {
+  AvatarPreview, CardView, Color, ContactPrivateView, CropRect, OwnPrivateView, ProfileInput, ProfileView,
+  SocialLink, SocialPlatform, SocialView, Span, Style,
+} from './generated/profile';
+
+/** A profile as the runtime shows it: bio as spans, socials checked, `picture` set by the runtime alone. */
+export type MessengerProfile = ProfileView;
+
+/** What the user edits of their own profile; there is no picture: the avatar has commands of its own. */
+export type MessengerProfileInput = ProfileInput;
+
+/** An input with every field of `p` as it is, for an editor to start from. */
+export function profileInputOf(p: MessengerProfile | null): MessengerProfileInput {
+  return {
+    name: p?.name ?? null, display_name: p?.display_name ?? null, about: p?.bio_source ?? p?.about ?? null,
+    website: p?.website ?? null, nip05: p?.nip05 ?? null, lud16: p?.lud16 ?? null,
+    socials: (p?.socials ?? []).map(socialLinkOf),
+  };
 }
 
-export interface MessengerProfileInput {
-  name?: string | null;
-  display_name?: string | null;
-  about?: string | null;
-  picture?: string | null;
-  banner?: string | null;
-  website?: string | null;
-  nip05?: string | null;
-  lud16?: string | null;
+/** A shown link back in the form the runtime takes (a handle as written there; "other" by its address). */
+export function socialLinkOf(v: SocialView): SocialLink {
+  return { p: v.platform, h: v.platform === 'other' ? v.url : v.handle };
+}
+
+/** The colours of a bio, in the order a palette shows them. */
+export const BIO_COLORS: readonly Color[] = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'gray'];
+
+/** The bio's limit, as the runtime counts it (Unicode scalar values). */
+export const BIO_MAX_CHARS = 2000;
+
+/** At most this many social links on a profile. */
+export const SOCIALS_MAX = 16;
+
+/** Codes of refusals about profiles, avatars, phones and cards. */
+const PROFILE_CODES = /\b(bio_too_long|social_unknown_platform|social_bad_handle|profile_too_large|phone_invalid|phone_public_group|card_invalid|card_too_large|card_unknown|card_is_me|avatar_too_large|avatar_unsupported|avatar_corrupt|avatar_bad_crop|avatar_expired|avatar_not_ours|avatar_unavailable)\b|\berr\.(media_no_server)\b/;
+
+/**
+ * The stable code of a refusal about a profile, an avatar, a phone or a card
+ * (`bio_too_long`, `avatar_bad_crop`, `media_no_server` for
+ * `err.media_no_server`…), if any. The UI shows `msg_err_<code>`.
+ */
+export function profileErrorCode(e: unknown): string | null {
+  const m = PROFILE_CODES.exec(typeof e === 'string' ? e : messengerError(e));
+  return m ? (m[1] ?? m[2]) : null;
 }
 
 export interface MessengerContact {
@@ -153,6 +178,8 @@ export interface MessengerMessage {
   seen_by: string[];
   /** Reactions on it, in the order they first came; empty when deleted. */
   reactions: MessengerReaction[];
+  /** A contact card (`content_type` `contact`), as the runtime checked it; its `media` is then empty. */
+  card?: CardView | null;
 }
 
 /** One emoji on a message: how many put it, and whether I am among them. */
@@ -289,6 +316,8 @@ export interface MessengerMedia {
   /** Present when the file is on this device. */
   local_path?: string;
   transfer_id?: string;
+  /** Encrypted parts the file is stored in, when the message lists them. */
+  chunks?: number;
   /** Recordings: length and loudness outline (0..255 per bar). */
   duration_ms?: number;
   waveform?: number[];
@@ -304,39 +333,37 @@ export function mediaOf(m: MessengerMessage): MessengerMedia | null {
     kind: (["image", "video", "audio", "file", "voice", "circle"] as const).includes(f.kind as MediaKind) ? (f.kind as MediaKind) : "file",
     local_path: typeof f.local_path === 'string' ? f.local_path : undefined,
     transfer_id: typeof f.transfer_id === 'string' ? f.transfer_id : undefined,
+    chunks: Array.isArray(f.chunks) && f.chunks.length ? f.chunks.length : undefined,
     duration_ms: typeof f.duration_ms === "number" ? f.duration_ms : undefined,
     waveform: Array.isArray(f.waveform) ? (f.waveform as unknown[]).filter((x): x is number => typeof x === "number") : undefined,
   };
 }
 
-export type TransferStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+// File transfers (the runtime's types, as generated).
+export type { TransferStage } from './generated/transfer';
+import type { Progress, TransferStage, TransferView } from './generated/transfer';
 
-export interface MessengerTransfer {
-  id: string;
-  direction: 'up' | 'down';
-  message_id: string | null;
-  chat_id: string | null;
-  file_name: string;
-  mime: string;
-  size: number;
-  status: TransferStatus;
-  done_bytes: number;
-  attempts: number;
-  failure_reason: string | null;
-  local_path: string | null;
-}
+/** queued | running | waiting_retry | paused | done | failed | cancelled */
+export type TransferStatus = TransferView['status'];
+
+/** A transfer as the runtime keeps it (`messenger_media_transfer`, `messenger_media_transfers`). */
+export type MessengerTransfer = TransferView;
 
 /** Payload of the `transfer.progress` runtime event. */
-export interface MessengerTransferProgress {
-  transfer_id: string;
-  message_id: string | null;
-  chat_id: string | null;
-  direction: 'up' | 'down';
-  status: TransferStatus;
-  done_bytes: number;
-  total_bytes: number;
-  failure_reason: string | null;
-  local_path: string | null;
+export type MessengerTransferProgress = Progress;
+
+/** The largest file that is sent; the runtime refuses more with `err.file_too_large`. */
+export const MAX_SEND_BYTES = 1024 ** 3;
+
+/** A kept transfer as its last event would have told it. */
+export function transferProgress(v: MessengerTransfer): MessengerTransferProgress {
+  return {
+    transfer_id: v.id, message_id: v.message_id, chat_id: v.chat_id, direction: v.direction, status: v.status,
+    done_bytes: v.done_bytes, total_bytes: v.size, failure_reason: v.failure_reason, local_path: v.local_path,
+    stage: v.stage ?? (v.direction === 'up' ? 'uploading' : 'downloading'), chunks_done: v.chunks_done ?? 0,
+    chunks_total: v.chunks_total ?? 0, chunk_size: v.chunk_size ?? 0, rate_bps: v.rate_bps ?? 0, eta_secs: v.eta_secs ?? null,
+    retry_at_ms: v.retry_at_ms ?? null, attempt: v.attempts, file_name: v.file_name, mime: v.mime,
+  };
 }
 
 export interface MessengerMediaServer {
@@ -622,7 +649,10 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 const NOT_COMPILED: MessengerStatus = { compiled: false, enabled: false, runtime: null, error: null };
 
-import { buildDemo, demoEnabled } from './devDemo';
+import {
+  buildDemo, demoBioParse, demoCard, demoEnabled, demoPhone, demoPicture, demoSocialLink, demoSocialView, demoStrip,
+  DEMO_PICTURE_BASE, DEMO_PLATFORMS,
+} from './devDemo';
 import type { ExternalUrl, InternalLinkText } from './content/types';
 import type { GroupMembership, LinkPreview, LinkView } from './generated/links';
 import type { SharedCounts, SharedSection } from './generated/shared';
@@ -680,7 +710,102 @@ let mockOwnProfile: MessengerProfile | null = demo?.ownProfile ?? null;
 const emptyProfile = (pubkey: string): MessengerProfile => ({
   pubkey, npub: `npub1${pubkey.slice(0, 58)}`, name: null, display_name: null, about: null, picture: null, banner: null,
   website: null, nip05: null, lud16: null, nip05_verified: false, event_created_at: 0, fetched_at: 0,
+  bio: [], bio_source: null, socials: [],
 });
+
+// Avatars, private parts and cards in the browser preview. In the app Rust
+// decodes, crops, uploads and fetches; here pictures are drawn on a canvas.
+const mockAvatars = new Map<string, string | null>();
+let mockAvatarPick: { token: string; preview: string } | null = null;
+let mockOwnPrivate: OwnPrivateView = { phone: demo ? '+79991234567' : null, share_phone: true };
+const mockContactPhones: Record<string, string> = demo ? { ['1a'.repeat(32)]: '+380671234567' } : {};
+
+/** Pictures of the demo and the user's own are "cached"; of other URLs about two in three, the rest never come. */
+function mockAvatarCached(url: string): string | null {
+  if (!url.startsWith('https://')) throw new Error('avatar_unsupported');
+  if (mockAvatars.has(url)) return mockAvatars.get(url) ?? null;
+  let h = 0;
+  for (let i = 0; i < url.length; i++) h = (h * 31 + url.charCodeAt(i)) >>> 0;
+  const ready = url.startsWith(DEMO_PICTURE_BASE) || (!url.includes('/missing/') && h % 3 !== 0);
+  const data = ready ? demoPicture(url, 256) : null;
+  mockAvatars.set(url, data);
+  return data;
+}
+
+function mockOwnSet(input: MessengerProfileInput): MessengerProfile {
+  const markup = (input.about ?? '').trim();
+  if ([...markup].length > BIO_MAX_CHARS) throw new Error('bio_too_long');
+  const socials = (input.socials ?? []).map(demoSocialLink);
+  const clean = (v: string | null | undefined) => v?.trim() || null;
+  if (input.website && !/^https?:\/\/\S+$/.test(input.website.trim())) throw new Error('website must be a URL');
+  const base = mockOwnProfile ?? emptyProfile(mockIdentity?.pubkey ?? 'ab'.repeat(32));
+  mockOwnProfile = {
+    ...base, name: clean(input.name), display_name: clean(input.display_name), about: demoStrip(markup) || null,
+    website: clean(input.website), nip05: clean(input.nip05), lud16: clean(input.lud16),
+    bio: demoBioParse(markup), bio_source: markup || null,
+    socials: socials.filter((x, i) => socials.findIndex((y) => y.p === x.p && y.h === x.h) === i).slice(0, SOCIALS_MAX).map(demoSocialView),
+    event_created_at: Math.floor(Date.now() / 1000),
+  };
+  return mockOwnProfile;
+}
+
+function mockAvatarSet(token: string, rect: CropRect): MessengerProfile {
+  if (!mockAvatarPick || mockAvatarPick.token !== token) throw new Error('avatar_expired');
+  const ok = [rect.x, rect.y, rect.w, rect.h].every(Number.isFinite) && rect.w > 0 && rect.h > 0
+    && rect.x >= 0 && rect.y >= 0 && rect.x + rect.w <= 1.0001 && rect.y + rect.h <= 1.0001;
+  if (!ok) throw new Error('avatar_bad_crop');
+  if (!mockMediaServers.some((m) => m.enabled)) throw new Error('err.media_no_server');
+  const sha = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  const url = `${DEMO_PICTURE_BASE}${sha}`;
+  mockAvatars.set(url, demoPicture(url, 256));
+  mockAvatarPick = null;
+  mockOwnProfile = { ...(mockOwnProfile ?? emptyProfile(mockIdentity?.pubkey ?? 'ab'.repeat(32))), picture: url, event_created_at: Math.floor(Date.now() / 1000) };
+  return mockOwnProfile;
+}
+
+function mockCardSend(chat: string, pubkey: string | null, includePhone: boolean): MessengerMessage {
+  const c = mockChat(chat.replace(/^dm:/, ''));
+  const me = mockIdentity?.pubkey ?? 'ab'.repeat(32);
+  const whose = pubkey && pubkey !== me ? pubkey : null;
+  let card: CardView;
+  if (!whose) {
+    const phone = includePhone ? mockOwnPrivate.phone : null;
+    const g = c.kind === 'group' ? mockGroups.find((x) => x.chat_id === c.id) : undefined;
+    if (phone && g && g.kind !== 'private') throw new Error('phone_public_group');
+    card = demoCard(mockOwnProfile ?? emptyProfile(me), phone, { is_me: true });
+  } else {
+    const contact = mockContacts.find((x) => x.pubkey === whose);
+    card = demoCard(contact?.profile ?? emptyProfile(whose), null, { is_contact: !!contact });
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const m: MessengerMessage = {
+    id: `local:${Date.now().toString(16)}${Math.random().toString(16).slice(2, 8)}`, chat_id: c.id, direction: 'out', status: 'sent',
+    content_type: 'contact', text: null, sender_pubkey: me, reply_to: null, created_at: now, edited_at: null, deleted: false,
+    failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null, card,
+  };
+  mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
+  mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `👤 ${card.label}` } : x));
+  return m;
+}
+
+function mockCardAccept(messageId: string): MessengerMessage {
+  const m = mockFind(messageId);
+  const card = m?.card;
+  if (!m || !card) throw new Error('card_unknown');
+  if (card.is_me) throw new Error('card_is_me');
+  if (!mockContacts.some((x) => x.pubkey === card.pubkey)) {
+    const now = Math.floor(Date.now() / 1000);
+    const profile: MessengerProfile = {
+      ...emptyProfile(card.pubkey), npub: card.npub, name: card.name, display_name: card.display_name, website: card.website,
+      bio: card.bio, socials: card.socials, about: card.bio.map((x) => (x.kind === 'break' ? '\n' : x.text)).join('') || null,
+    };
+    mockContacts = [{ pubkey: card.pubkey, npub: card.npub, nickname: null, note: null, followed: false, profile, created_at: now, updated_at: now }, ...mockContacts];
+  }
+  // A phone is kept only from its owner's own card.
+  if (card.phone && card.pubkey === m.sender_pubkey) mockContactPhones[card.pubkey] = card.phone;
+  m.card = { ...card, is_contact: true };
+  return { ...m };
+}
 
 let mockChats: MessengerChat[] = demo?.chats ?? [];
 let mockMediaServers: MessengerMediaServer[] = [
@@ -712,6 +837,132 @@ function mockChat(peer: string): MessengerChat {
 }
 function mockFind(id: string): MessengerMessage | undefined {
   return Object.values(mockMessages).flat().find((m) => m.id === id);
+}
+
+// ── File transfers of the browser preview ─────────────────────────────────
+// The demo's transfers stand still in the states they show until a button
+// moves them; a file sent in the preview plays its upload in about 8 s. The
+// preview has no host to send events: the stores hear them by `onDemoEvent`.
+
+type DemoListener = (ev: MessengerUiEvent) => void;
+const demoListeners = new Set<DemoListener>();
+
+/** The browser preview's runtime events (store.svelte.ts listens). */
+export function onDemoEvent(fn: DemoListener): () => void {
+  demoListeners.add(fn);
+  return () => { demoListeners.delete(fn); };
+}
+
+function demoEmit(name: string, payload: unknown) {
+  for (const fn of demoListeners) fn({ name, payload });
+}
+
+const MOCK_CHUNK = 4 * 1024 * 1024;
+const mockTransfers = new Map<string, MessengerTransfer>((demo?.transfers ?? []).map((x) => [x.id, x]));
+/** Ticks spent in the current stage. */
+const mockTicks = new Map<string, number>();
+/** Pictures sent compressed: they go through "preparing" first. */
+const mockCompress = new Set<string>();
+const mockRunning = new Set<string>();
+
+function mockTransferPut(t: MessengerTransfer) {
+  mockTransfers.set(t.id, t);
+  demoEmit('transfer.progress', transferProgress(t));
+}
+
+function mockTransferOf(id: string): MessengerTransfer {
+  const t = mockTransfers.get(id);
+  if (!t) throw new Error('err.not_found');
+  return t;
+}
+
+/** Changes a message of the demo (`null` removes it); the open chat reads it again. */
+function mockMessageUpdate(id: string, change: (m: MessengerMessage) => MessengerMessage | null) {
+  for (const [chat, list] of Object.entries(mockMessages)) {
+    if (!list.some((m) => m.id === id)) continue;
+    mockMessages[chat] = list.flatMap((m) => {
+      if (m.id !== id) return [m];
+      const next = change(m);
+      return next ? [next] : [];
+    });
+    demoEmit('dm.updated', { chat_id: chat });
+  }
+}
+
+/** One step of a running transfer: about 6 s of bytes, a moment for each stage around them. */
+function mockStep(t: MessengerTransfer): MessengerTransfer {
+  const ticks = (mockTicks.get(t.id) ?? 0) + 1;
+  mockTicks.set(t.id, ticks);
+  const to = (stage: TransferStage, over: Partial<MessengerTransfer> = {}): MessengerTransfer => {
+    mockTicks.set(t.id, 0);
+    return { ...t, stage, ...over };
+  };
+  const total = Math.max(1, Math.ceil(t.size / t.chunk_size));
+  const stored = Math.floor(t.done_bytes / t.chunk_size);
+  // A photo being made smaller is still queued, as the runtime tells it.
+  switch (t.status === 'queued' && t.stage !== 'preparing' ? 'queued' : t.stage) {
+    case 'queued': {
+      const first = t.direction === 'down' ? 'downloading' : mockCompress.has(t.id) ? 'preparing' : t.done_bytes > 0 ? 'checking' : 'uploading';
+      return to(first, { status: first === 'preparing' ? 'queued' : 'running', chunks_done: first === 'downloading' ? stored : 0, chunks_total: total });
+    }
+    case 'preparing':
+      return ticks < 4 ? t : to('uploading', { status: 'running', chunks_done: 0 });
+    case 'checking': {
+      const done = Math.min(stored, t.chunks_done + Math.max(1, Math.ceil(stored / 4)));
+      return done >= stored ? to('uploading', { chunks_done: stored }) : { ...t, chunks_done: done };
+    }
+    case 'uploading':
+    case 'downloading': {
+      const step = t.size / 24;
+      const done = Math.min(t.size, t.done_bytes + step);
+      const moved = { done_bytes: done, chunks_done: done >= t.size ? total : Math.floor(done / t.chunk_size), rate_bps: Math.round(step * 4), eta_secs: Math.round((t.size - done) / (step * 4)) };
+      if (done < t.size) return { ...t, ...moved };
+      const still = { ...moved, rate_bps: 0, eta_secs: null };
+      return t.direction === 'up' ? to('publishing', still) : to('assembling', { ...still, chunks_done: 0 });
+    }
+    case 'assembling': {
+      const done = Math.min(total, t.chunks_done + Math.max(1, Math.ceil(total / 6)));
+      return done >= total ? to('verifying', { chunks_done: total }) : { ...t, chunks_done: done };
+    }
+    case 'publishing':
+    case 'verifying':
+      return ticks < 4 ? t : { ...t, status: 'done', local_path: t.local_path ?? '/dev/mock' };
+  }
+  return t;
+}
+
+/** Moves a transfer four times a second until it stops or ends. */
+function mockRun(id: string) {
+  if (mockRunning.has(id)) return;
+  mockRunning.add(id);
+  const tick = () => {
+    const t = mockTransfers.get(id);
+    if (!t || (t.status !== 'running' && t.status !== 'queued')) { mockRunning.delete(id); return; }
+    const next = mockStep(t);
+    mockTransferPut(next);
+    if (next.status !== 'done') { setTimeout(tick, 250); return; }
+    mockRunning.delete(id);
+    if (!next.message_id) return;
+    if (next.direction === 'up') mockMessageUpdate(next.message_id, (m) => ({ ...m, status: 'sent', failure_reason: null }));
+    else mockMessageUpdate(next.message_id, (m) => ({ ...m, media: { ...m.media, local_path: next.local_path } }));
+  };
+  setTimeout(tick, 250);
+}
+
+function mockResume(t: MessengerTransfer) {
+  const stage: TransferStage = t.direction === 'down' ? 'downloading' : t.done_bytes > 0 ? 'checking' : t.stage === 'preparing' ? 'preparing' : 'uploading';
+  mockTicks.set(t.id, 0);
+  mockTransferPut({ ...t, status: stage === 'preparing' ? 'queued' : 'running', stage, chunks_done: stage === 'checking' ? 0 : t.chunks_done, failure_reason: null, retry_at_ms: null });
+  mockRun(t.id);
+}
+
+/** A file picked in the preview: what its name says it is. */
+function mockKind(name: string): { kind: MediaKind; mime: string } {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return { kind: 'image', mime: ext === 'png' ? 'image/png' : 'image/jpeg' };
+  if (['mp4', 'webm', 'mov'].includes(ext)) return { kind: 'video', mime: 'video/mp4' };
+  if (['mp3', 'ogg', 'wav'].includes(ext)) return { kind: 'audio', mime: 'audio/mpeg' };
+  return { kind: 'file', mime: ext === 'pdf' ? 'application/pdf' : 'application/octet-stream' };
 }
 
 const MOCK_EMOJI_TOP = ['👍', '😂', '🔥', '🙏', '❤️', '🎉', '🤔', '👀'];
@@ -853,18 +1104,32 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const c = mockChat(String(a?.to));
     const now = Math.floor(Date.now() / 1000);
     const name = String(a?.path).split(/[\\/]/).pop() ?? 'file';
-    const ext = name.split('.').pop()?.toLowerCase() ?? '';
-    const kind = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) ? 'image' : ['mp4', 'webm'].includes(ext) ? 'video' : ['mp3', 'ogg', 'wav'].includes(ext) ? 'audio' : 'file';
-    const m: MessengerMessage = { id: `local:${Date.now().toString(16)}${Math.random().toString(16).slice(2, 8)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'media', text: (a?.caption as string) ?? null, sender_pubkey: 'ab'.repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: { name, mime: 'application/octet-stream', size: 1_234_567, kind, local_path: String(a?.path), ...(a?.batch ? { batch: String(a.batch) } : {}) } };
+    const { kind, mime } = mockKind(name);
+    const size = kind === 'image' ? 3_400_000 : 24 * 1024 * 1024;
+    const id = `local:${Date.now().toString(16)}${Math.random().toString(16).slice(2, 8)}`;
+    const transferId = `demo-send-${id.slice(6)}`;
+    const m: MessengerMessage = { id, chat_id: c.id, direction: 'out', status: 'uploading', content_type: 'media', text: (a?.caption as string) ?? null, sender_pubkey: 'ab'.repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: { name, mime, size, kind, local_path: String(a?.path), transfer_id: transferId, ...(a?.batch ? { batch: String(a.batch) } : {}) } };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
     mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `📎 ${name}` } : x));
+    // The upload plays: a picture is compressed first unless it goes as it is.
+    const chunk = kind === 'image' ? 512 * 1024 : MOCK_CHUNK;
+    if (kind === 'image' && !a?.original) mockCompress.add(transferId);
+    const t: MessengerTransfer = {
+      id: transferId, direction: 'up', message_id: id, chat_id: c.id, file_name: name, mime, size, status: 'queued', done_bytes: 0, attempts: 0,
+      failure_reason: null, local_path: String(a?.path), stage: 'queued', chunks_done: 0, chunks_total: Math.ceil(size / chunk), chunk_size: chunk,
+      rate_bps: 0, eta_secs: null, retry_at_ms: null,
+    };
+    setTimeout(() => { mockTransferPut(t); mockRun(transferId); }, 0);
     return m;
   },
   messenger_media_import: (a) => {
     const path = String(a?.path);
     const name = path.split(/[\\/]/).pop() ?? 'file';
-    const image = /\.(png|jpe?g|gif|webp)$/i.test(name);
-    return { path, name, kind: image ? 'image' : 'file', size: 120_000, preview: null } satisfies MessengerPicked;
+    // `huge` in the name: a file over the limit, refused as the runtime refuses it.
+    if (/huge/i.test(name)) throw new Error(`err.file_too_large: ${name}`);
+    const { kind } = mockKind(name);
+    const image = kind === 'image';
+    return { path, name, kind, size: image ? 3_400_000 : 24 * 1024 * 1024, preview: image ? demoPicture(name, 160) : null } satisfies MessengerPicked;
   },
   messenger_media_grant_access: () => undefined,
   messenger_dm_send_recording: (a) => {
@@ -875,13 +1140,51 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
     return m;
   },
-  messenger_media_download: () => null,
-  messenger_media_transfer: () => null,
-  messenger_media_pause: () => undefined,
-  messenger_media_resume: () => undefined,
-  messenger_media_cancel: () => undefined,
+  // Fetched only when asked: the demo's other files stay where they are.
+  messenger_media_download: (a) => {
+    if (!a?.manual) return null;
+    const m = mockFind(String(a?.messageId));
+    const md = m && mediaOf(m);
+    if (!m || !md) return null;
+    const known = [...mockTransfers.values()].reverse().find((t) => t.message_id === m.id && t.direction === 'down');
+    if (known && known.status !== 'done' && known.status !== 'cancelled') {
+      if (known.status === 'failed' || known.status === 'paused') mockResume(known);
+      return null;
+    }
+    const t: MessengerTransfer = {
+      id: `demo-fetch-${Date.now().toString(16)}`, direction: 'down', message_id: m.id, chat_id: m.chat_id, file_name: md.name, mime: md.mime,
+      size: md.size, status: 'queued', done_bytes: 0, attempts: 0, failure_reason: null, local_path: null, stage: 'queued', chunks_done: 0,
+      chunks_total: md.chunks ?? Math.max(1, Math.ceil(md.size / MOCK_CHUNK)), chunk_size: MOCK_CHUNK, rate_bps: 0, eta_secs: null, retry_at_ms: null,
+    };
+    mockTransferPut(t);
+    mockRun(t.id);
+    return null;
+  },
+  messenger_media_transfer: (a) => [...mockTransfers.values()].reverse().find((t) => t.message_id === a?.messageId) ?? null,
+  messenger_media_transfers: () => [...mockTransfers.values()].filter((t) => t.status !== 'done' && t.status !== 'cancelled').reverse(),
+  messenger_media_retry_failed: () => {
+    const failed = [...mockTransfers.values()].filter((t) => t.status === 'failed' || t.status === 'waiting_retry');
+    failed.forEach(mockResume);
+    return failed.length;
+  },
+  messenger_media_pause: (a) => {
+    const t = mockTransferOf(String(a?.transferId));
+    mockTransferPut({ ...t, status: 'paused', rate_bps: 0, eta_secs: null, retry_at_ms: null });
+  },
+  // Also "now" for one waiting for its next attempt, and "again" for a failed one.
+  messenger_media_resume: (a) => mockResume(mockTransferOf(String(a?.transferId))),
+  messenger_media_cancel: (a) => {
+    const t = mockTransferOf(String(a?.transferId));
+    mockTransferPut({ ...t, status: 'cancelled', rate_bps: 0, eta_secs: null, retry_at_ms: null });
+    // A cancelled upload takes its message with it.
+    if (t.direction === 'up' && t.message_id) mockMessageUpdate(t.message_id, () => null);
+  },
   messenger_media_save_as: () => undefined,
-  messenger_media_data_url: (a) => (mockFind(String(a?.messageId))?.media?.mock_data as string | undefined) ?? null,
+  messenger_media_data_url: (a) => {
+    const md = mockFind(String(a?.messageId))?.media;
+    // A picture of the demo that is "here" gets one drawn for it.
+    return (md?.mock_data as string | undefined) ?? (md?.kind === 'image' && md.local_path ? demoPicture(String(md.name), 640, 480) : null);
+  },
   messenger_media_local_path: () => null,
   messenger_media_open: () => undefined,
   messenger_open_url: (a) => { window.open(String(a?.url), '_blank', 'noopener'); },
@@ -1001,12 +1304,32 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_profile_get: () => null,
   messenger_profile_request: () => undefined,
   messenger_profile_own_get: () => mockOwnProfile,
-  messenger_profile_own_set: (a) => {
-    const i = (a?.input ?? {}) as MessengerProfileInput;
-    mockOwnProfile = { ...(mockOwnProfile ?? emptyProfile('ab'.repeat(32))), ...i, event_created_at: Date.now() / 1000 } as MessengerProfile;
+  messenger_profile_own_set: (a) => mockOwnSet((a?.input ?? {}) as MessengerProfileInput),
+  messenger_nip05_verify: () => false,
+  messenger_social_platforms: (): SocialPlatform[] => DEMO_PLATFORMS,
+  messenger_bio_parse: (a): Span[] => demoBioParse(String(a?.markup ?? '')),
+  messenger_avatar_prepare: (a): AvatarPreview => {
+    const source = String(a?.source ?? '');
+    if (!/\.(jpe?g|png|webp|gif|bmp)$/i.test(source) && !source.startsWith('content://')) throw new Error('avatar_unsupported');
+    const preview = demoPicture(source, 800, 600);
+    if (!preview) throw new Error('avatar_corrupt');
+    mockAvatarPick = { token: `mock-${Date.now().toString(16)}`, preview };
+    return { token: mockAvatarPick.token, preview, width: 1600, height: 1200 };
+  },
+  messenger_avatar_set: (a) => mockAvatarSet(String(a?.token), (a?.rect ?? {}) as CropRect),
+  messenger_avatar_remove: () => {
+    mockOwnProfile = { ...(mockOwnProfile ?? emptyProfile(mockIdentity?.pubkey ?? 'ab'.repeat(32))), picture: null, event_created_at: Math.floor(Date.now() / 1000) };
     return mockOwnProfile;
   },
-  messenger_nip05_verify: () => false,
+  messenger_avatar_cached: (a) => mockAvatarCached(String(a?.url)),
+  messenger_own_private_get: (): OwnPrivateView => mockOwnPrivate,
+  messenger_own_private_set: (a): OwnPrivateView => {
+    mockOwnPrivate = { phone: demoPhone(String(a?.phone ?? '')), share_phone: Boolean(a?.sharePhone) };
+    return mockOwnPrivate;
+  },
+  messenger_contact_private_get: (a): ContactPrivateView => ({ pubkey: String(a?.pubkey), phone: mockContactPhones[String(a?.pubkey)] ?? null }),
+  messenger_card_send: (a) => mockCardSend(String(a?.chat), (a?.pubkey as string | null) ?? null, Boolean(a?.includePhone)),
+  messenger_card_accept: (a) => mockCardAccept(String(a?.messageId)),
   messenger_contacts_list: () => mockContacts,
   messenger_contacts_add: (a) => {
     const c: MessengerContact = { pubkey: 'ef'.repeat(32), npub: 'npub1mockcontactmockcontactmockcontactmockcontactmockcontact0000', nickname: (a?.nickname as string) ?? null, note: null, followed: false, profile: null, created_at: Date.now() / 1000, updated_at: Date.now() / 1000 };
@@ -1323,13 +1646,20 @@ export const messengerApi = {
       }),
     /** Must run before the first `getUserMedia` (desktop webviews deny otherwise). */
     grantAccess: () => invoke<void>('messenger_media_grant_access'),
-    /** A picked file as the composer holds it (Android copies `content://` in first). */
+    /**
+     * A picked file as the composer holds it (Android copies `content://` in first).
+     * A file over `MAX_SEND_BYTES` is refused with `err.file_too_large`.
+     */
     importPicked: (path: string) => invoke<MessengerPicked>('messenger_media_import', { path }),
-    /** `batch`: the same for files picked together. */
-    sendFile: (to: string, path: string, caption?: string, batch?: string) =>
-      invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, batch: batch ?? null }),
+    /** `batch`: the same for files picked together. `original`: a picture goes as it is, not compressed. */
+    sendFile: (to: string, path: string, caption?: string, batch?: string, original = false) =>
+      invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, batch: batch ?? null, original }),
     download: (messageId: string, manual: boolean) => invoke<string | null>('messenger_media_download', { messageId, manual }),
     transfer: (messageId: string) => invoke<MessengerTransfer | null>('messenger_media_transfer', { messageId }),
+    /** Every transfer queued, running, waiting, paused or failed, newest first. */
+    transfers: () => invoke<MessengerTransfer[]>('messenger_media_transfers'),
+    /** Starts again every failed transfer, every one the closing of the app paused and every one waiting for its next attempt (never a pause the user made); how many. */
+    retryFailed: () => invoke<number>('messenger_media_retry_failed'),
     pause: (transferId: string) => invoke<void>('messenger_media_pause', { transferId }),
     resume: (transferId: string) => invoke<void>('messenger_media_resume', { transferId }),
     cancel: (transferId: string) => invoke<void>('messenger_media_cancel', { transferId }),
@@ -1344,8 +1674,65 @@ export const messengerApi = {
     get: (pubkey: string) => invoke<MessengerProfile | null>('messenger_profile_get', { pubkey }),
     request: (pubkey: string) => invoke<void>('messenger_profile_request', { pubkey }),
     ownGet: () => invoke<MessengerProfile | null>('messenger_profile_own_get'),
+    /**
+     * Publishes my kind 0. `about` is the bio with its marks; socials as
+     * typed (checked here). The picture is not in it: see `avatar`.
+     * Errors: `bio_too_long`, `social_unknown_platform`, `social_bad_handle`, `profile_too_large`.
+     */
     ownSet: (input: MessengerProfileInput) => invoke<MessengerProfile>('messenger_profile_own_set', { input }),
     verifyNip05: (pubkey: string) => invoke<boolean>('messenger_nip05_verify', { pubkey }),
+    /** The platforms a social link can be of, in the order to offer them. */
+    platforms: () => invoke<SocialPlatform[]>('messenger_social_platforms'),
+    /** A bio as it will show: the live preview of the editor. */
+    bioParse: (markup: string) => invoke<Span[]>('messenger_bio_parse', { markup }),
+  },
+
+  /** My own picture: picked from a file, cropped in the UI, re-encoded and uploaded by the runtime. */
+  avatar: {
+    /**
+     * `source`: a picked path, or `content://` on Android. The picture is
+     * held under a token for ten minutes, until another is picked.
+     * Errors: `avatar_too_large`, `avatar_unsupported`, `avatar_corrupt`.
+     */
+    prepare: (source: string) => invoke<AvatarPreview>('messenger_avatar_prepare', { source }),
+    /**
+     * Crops (fractions 0..1 of the preview), uploads to my media servers and
+     * republishes my profile. Errors: `avatar_expired`, `avatar_bad_crop`, `err.media_no_server`.
+     */
+    set: (token: string, rect: CropRect) => invoke<MessengerProfile>('messenger_avatar_set', { token, rect }),
+    remove: () => invoke<MessengerProfile>('messenger_avatar_remove'),
+    /**
+     * The picture at `url` (https) as a `data:` url, or `null` while it is
+     * fetched: `avatar.ready {url}` follows. Use `avatarStore`, not this.
+     */
+    cached: (url: string) => invoke<string | null>('messenger_avatar_cached', { url }),
+  },
+
+  /** My phone: never published, synced between my devices, sent only in my own card. */
+  ownPrivate: {
+    get: () => invoke<OwnPrivateView>('messenger_own_private_get'),
+    /** `phone` as typed; `null` or empty removes it. Error: `phone_invalid`. */
+    set: (phone: string | null, sharePhone: boolean) =>
+      invoke<OwnPrivateView>('messenger_own_private_set', { phone: phone?.trim() || null, sharePhone }),
+  },
+
+  /** What a contact told me privately: the phone of its own card. */
+  contactPrivate: {
+    get: (pubkey: string) => invoke<ContactPrivateView>('messenger_contact_private_get', { pubkey }),
+  },
+
+  /** Contact cards as messages. */
+  cards: {
+    /**
+     * Sends a card to `chat` (a person, `dm:<hex>` or `group:<id>`): mine
+     * when `pubkey` is `null` (with my phone when `includePhone`), else
+     * that person's public profile, never a phone.
+     * Errors: `phone_public_group`, `card_too_large`.
+     */
+    send: (chat: string, pubkey: string | null, includePhone: boolean) =>
+      invoke<MessengerMessage>('messenger_card_send', { chat, pubkey, includePhone }),
+    /** "Add contact" on a received card. Errors: `card_unknown`, `card_is_me`. */
+    accept: (messageId: string) => invoke<MessengerMessage>('messenger_card_accept', { messageId }),
   },
 
   contacts: {

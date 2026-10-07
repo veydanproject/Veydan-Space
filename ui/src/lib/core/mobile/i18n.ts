@@ -6,7 +6,8 @@
 // modules come in through the virtual module, like the desktop ones.
 
 import { derived } from 'svelte/store';
-import { locale, t as desktopT, type Locale, type TranslationKey } from '$lib/core/i18n';
+import { loadedLocales, locale, t as desktopT, type Locale, type TranslationKey } from '$lib/core/i18n';
+import { product } from '$lib/core/product';
 import { translations as moduleTranslations } from 'virtual:veydan-modules/i18n';
 
 const mobile = {
@@ -120,7 +121,7 @@ const mobile = {
     update_open: 'Скачать',
     common_clear: 'Очистить',
   },
-} as const satisfies Record<Locale, Record<string, string>>;
+} as const satisfies Record<'en' | 'ru', Record<string, string>>;
 
 export type MobileKey = keyof typeof mobile.en;
 export type Key = MobileKey | TranslationKey;
@@ -129,15 +130,16 @@ export { locale };
 export type { Locale };
 
 function interpolate(text: string, vars?: Record<string, string>): string {
-  if (!vars) return text;
-  for (const [k, v] of Object.entries(vars)) text = text.split(`{${k}}`).join(v);
-  return text;
+  if (vars) for (const [k, v] of Object.entries(vars)) text = text.split(`{${k}}`).join(v);
+  // The name of the product (13.5), as the desktop t() fills it.
+  return text.split('{app}').join(product.name);
 }
 
-export const t = derived([locale, desktopT], ([$locale, $t]) => {
+export const t = derived([locale, desktopT, loadedLocales], ([$locale, $t, $loaded]) => {
   return (key: Key, vars?: Record<string, string>): string => {
     if (key in mobile.en) {
-      const dict = mobile[$locale] as Record<string, string>;
+      // English and Russian here, any other language in its files (core/i18n.ts).
+      const dict = ((mobile as unknown as Record<Locale, Record<string, string>>)[$locale] ?? $loaded[$locale]?.mobile ?? {}) as Record<string, string>;
       return interpolate(dict[key] ?? mobile.en[key as MobileKey], vars);
     }
     return $t(key as TranslationKey, vars);

@@ -4,9 +4,9 @@
 <!-- The Backup card of the settings page: the backup service of Space (platform-spec 1.2, 11.3). -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { t } from '$lib/core/i18n';
+  import { t, locale } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { formatError, formatBytes } from '$lib/core/utils';
+  import { formatDateTime, formatError, formatBytes } from '$lib/core/utils';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { api } from '$lib/backup/api';
@@ -321,7 +321,7 @@
     <div class="version-row">
       <span class="version-label">{$t('settings_backup_last_run')}</span>
       <span class="version-value">
-        {backupCfg.last_run ? new Date(backupCfg.last_run).toLocaleString() : $t('settings_backup_never')}
+        {backupCfg.last_run ? formatDateTime(backupCfg.last_run, $locale) : $t('settings_backup_never')}
       </span>
     </div>
   </div>

@@ -438,3 +438,28 @@ async fn what_does_not_open_with_a_key_the_phone_has_says_nothing() {
     };
     assert_eq!(quiet(phone.describe(group_push(&gid, &resigned)).await), Reason::Invalid);
 }
+
+/// A card says whose it is, in a direct chat and in a group; one the app
+/// would drop says nothing, as the app keeps nothing of it.
+#[tokio::test]
+async fn a_contact_card_is_told_and_a_broken_one_is_not() {
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+    let card = |pubkey: &str| Envelope::contact(serde_json::json!({ "pubkey": pubkey, "display_name": "Анна", "at": 1 }));
+    let anna = Keys::generate().public_key().to_hex();
+    let want = Some(Body::Link { link: messenger_notify::LinkKind::Contact, title: "Анна".into() });
+
+    let n = shown(phone.describe(dm_push(&dm_from(&alice, &phone, &card(&anna), 1_000_000))).await);
+    assert_eq!(n.body, want);
+    let junk = dm_from(&alice, &phone, &card("zz"), 1_000_001);
+    assert_eq!(quiet(phone.describe(dm_push(&junk)).await), Reason::Invalid);
+    let no_card = dm_from(&alice, &phone, &Envelope::new(messenger_core::envelope::T_CONTACT), 1_000_002);
+    assert_eq!(quiet(phone.describe(dm_push(&no_card)).await), Reason::Invalid);
+
+    let (gid, bob, key) = group_with_bob(&phone).await;
+    let n = shown(phone.describe(group_push(&gid, &group_message(&gid, &key, &bob, &card(&anna), 1_000_003))).await);
+    assert_eq!((n.kind, n.body), (ChatKind::Group, want));
+    let junk = group_message(&gid, &key, &bob, &card("zz"), 1_000_004);
+    assert_eq!(quiet(phone.describe(group_push(&gid, &junk)).await), Reason::Invalid);
+}

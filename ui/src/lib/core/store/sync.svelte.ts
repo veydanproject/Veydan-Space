@@ -4,7 +4,7 @@
 import { api } from '$lib/core/api';
 import type { SyncProgress, SyncStatus } from '$lib/core/api';
 import { formatError } from '$lib/core/utils';
-import { locale } from '$lib/core/i18n';
+import { isLocale, locale } from '$lib/core/i18n';
 import { registry } from '$lib/core/registry';
 import { get } from 'svelte/store';
 
@@ -13,7 +13,8 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 /** Follow the UI language another device saved. */
 async function applyRemoteLocale() {
   const remote = await api.settings.getLocale();
-  if ((remote === 'en' || remote === 'ru') && remote !== get(locale)) locale.set(remote);
+  // A language this version does not have stays as it is here (platform-spec 9.5).
+  if (isLocale(remote) && remote !== get(locale)) locale.set(remote);
 }
 
 /**

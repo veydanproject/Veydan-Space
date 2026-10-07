@@ -3,9 +3,9 @@
 
 //! A session = a signer + a live ingress loop + an outbox pump + one
 //! history catch-up + a loop that sends the receipts this device owes + the
-//! presence loop (`crate::presence`). It exists only while the runtime
-//! holds signing keys; the runtime restarts it when the signer or the relay
-//! pool changes.
+//! presence loop (`crate::presence`) + the keeper of my avatar
+//! (`crate::avatars`). It exists only while the runtime holds signing keys;
+//! the runtime restarts it when the signer or the relay pool changes.
 
 use async_trait::async_trait;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
@@ -67,6 +67,8 @@ pub struct Session {
     receipts: JoinHandle<()>,
     /// Tells my key, watches the contacts, beats (`crate::presence`).
     presence: JoinHandle<()>,
+    /// Looks after my avatar (`crate::avatars`).
+    avatars: JoinHandle<()>,
 }
 
 impl Session {
@@ -83,6 +85,7 @@ impl Session {
         dm: DmService,
         groups: GroupService,
         presence: Arc<crate::presence::PresenceDriver>,
+        avatars: crate::avatars::Avatars,
     ) -> Result<Self> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let started_at = clock.now();
@@ -113,8 +116,11 @@ impl Session {
         let receipts = tokio::spawn(crate::receipts::receipt_loop(dm.clone(), groups, outbox.clone(), keys.clone()));
         let presence = tokio::spawn(crate::presence::presence_loop(presence, pool.clone(), keys.clone()));
         let pump = tokio::spawn(pump_loop(store.clone(), pool.clone(), outbox, dm, ui.clone()));
+        let quiet = pool.clone();
+        avatars.session_started();
+        let avatars = tokio::spawn(crate::avatars::keeper_loop(avatars, keys.clone(), move || quiet.is_silent()));
         let history = tokio::spawn(history_catch_up(store, pool, me, started_at, ui));
-        Ok(Self { keys, started_at, ingress, pump, history, receipts, presence })
+        Ok(Self { keys, started_at, ingress, pump, history, receipts, presence, avatars })
     }
 
     pub fn stats(&self) -> (u64, u64, u64, u64, u64) {
@@ -127,6 +133,7 @@ impl Session {
         self.history.abort();
         self.receipts.abort();
         self.presence.abort();
+        self.avatars.abort();
     }
 }
 

@@ -7,9 +7,11 @@
   import Icon from '$lib/core/Icon.svelte';
   import { clock } from '../shared/time';
   import MessageContent from '../content/MessageContent.svelte';
+  import ContactCardMessage from '../content/ContactCardMessage.svelte';
   import { longpress } from '../shared/longpress';
   import { tint } from '../shared/tint';
   import { mediaOf, type MessengerMessage } from '../api';
+  import { chatStore } from '../chats/chatStore.svelte';
   import { logSendFailure, sendFailureKey } from './send-failure';
   import { lateAt, shownStatus } from './delivery';
   import Reactions from './Reactions.svelte';
@@ -41,6 +43,13 @@
   });
 
   const out = $derived(m.direction === 'out');
+  // A card has no text: a reply to one names the person, when the card is in the loaded window.
+  const replyCard = $derived.by(() => {
+    const r = m.reply_to;
+    if (!r || r.text) return null;
+    const card = chatStore.messages.find((x) => x.id === r.id)?.card;
+    return card ? `👤 ${card.label}` : null;
+  });
   // A circle is its own shape: no bubble under it.
   const bare = $derived(!m.deleted && !m.reply_to && !m.text && m.content_type === 'media' && mediaOf(m)?.kind === 'circle');
   // A message on its way is shown as sent for a moment; one timer moves it
@@ -70,12 +79,14 @@
     {#if m.reply_to && !m.deleted}
       <button class="reply" onclick={() => onreplyclick(m.reply_to!.id)}>
         <span class="reply-who">{author ? author(m.reply_to.sender_pubkey) : m.reply_to.sender_pubkey === m.sender_pubkey && out || m.reply_to.sender_pubkey !== m.sender_pubkey && !out ? $t("msg_you") : peerTitle}</span>
-        <span class="reply-text">{#if m.reply_to.text}<MessageContent text={m.reply_to.text} plain />{:else}{$t('msg_message_deleted')}{/if}</span>
+        <span class="reply-text">{#if m.reply_to.text}<MessageContent text={m.reply_to.text} plain />{:else if replyCard}{replyCard}{:else}{$t('msg_message_deleted')}{/if}</span>
       </button>
     {/if}
 
     {#if m.deleted}
       <span class="tomb"><Icon name="ban" size={12} /> {$t('msg_message_deleted')}</span>
+    {:else if m.content_type === 'contact'}
+      <ContactCardMessage message={m} />
     {:else if m.content_type === 'media' && media}
       {@render media(m)}
       {#if m.text}<MessageContent text={m.text} />{/if}

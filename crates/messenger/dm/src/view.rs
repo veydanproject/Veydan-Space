@@ -3,7 +3,9 @@
 
 //! Host-facing shapes. Plain data, no secrets.
 
-use messenger_store::messages::MessageRow;
+pub use messenger_contacts::CardView;
+use messenger_contacts::ContactCard;
+use messenger_store::messages::{MessageRow, CT_CONTACT};
 pub use messenger_store::reactions::ReactionView;
 use serde::{Deserialize, Serialize};
 
@@ -73,10 +75,15 @@ pub struct MessageView {
     /// emoji first came. Empty on a deleted message.
     #[serde(default)]
     pub reactions: Vec<ReactionView>,
+    /// A contact card (`content_type` `contact`), as the UI shows it; its
+    /// `media` is then empty.
+    #[serde(default)]
+    pub card: Option<CardView>,
 }
 
 impl MessageView {
     pub fn from_row(r: MessageRow, reply_to: Option<ReplyPreview>) -> Self {
+        let is_card = r.content_type == CT_CONTACT;
         Self {
             id: r.id,
             chat_id: r.chat_id,
@@ -90,14 +97,22 @@ impl MessageView {
             edited_at: r.edited_at,
             deleted: r.deleted_at.is_some(),
             failure_reason: r.failure_reason,
-            media: r.media_json.and_then(|j| serde_json::from_str(&j).ok()),
+            media: r.media_json.filter(|_| !is_card).and_then(|j| serde_json::from_str(&j).ok()),
             queued_at: None,
             delivered_at: None,
             read_at: None,
             seen_by: vec![],
             reactions: vec![],
+            card: None,
         }
     }
+}
+
+/// The line of a checked contact card for chat lists: the name it shows
+/// (one line already), as the store writes it when it looks again
+/// (`chats::recompute_last`).
+pub fn card_line(card: &ContactCard) -> String {
+    format!("👤 {}", card.display_name.as_deref().or(card.name.as_deref()).unwrap_or_default())
 }
 
 /// One line for chat lists and notifications.

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">1:1 채팅</string>
+    <string name="veydan_push_channel_groups">그룹</string>
+    <string name="veydan_push_channel_service">서비스 메시지</string>
+    <string name="veydan_push_update_title">새 알림</string>
+    <string name="veydan_push_update_body">알림을 보려면 앱을 업데이트하세요.</string>
+    <string name="veydan_push_test_title">테스트 알림</string>
+    <string name="veydan_push_test_body">이 휴대폰으로 푸시가 도착합니다.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">나</string>
+    <string name="veydan_push_dm_title">새 메시지</string>
+    <string name="veydan_push_group">그룹</string>
+    <string name="veydan_push_one">새 메시지</string>
+    <string name="veydan_push_many">새 메시지 %d개</string>
+    <string name="veydan_push_more">외 %d개</string>
+    <string name="veydan_push_request">메시지 요청</string>
+    <string name="veydan_push_photo">사진</string>
+    <string name="veydan_push_video">동영상</string>
+    <string name="veydan_push_voice">음성 메시지</string>
+    <string name="veydan_push_circle">동영상 메시지</string>
+    <string name="veydan_push_audio">오디오</string>
+    <string name="veydan_push_file">파일</string>
+    <string name="veydan_push_album">앨범: %d개</string>
+    <string name="veydan_push_files">파일: %d개</string>
+    <string name="veydan_push_link_group">그룹 “%s”</string>
+    <string name="veydan_push_link_group_nameless">그룹 링크</string>
+    <string name="veydan_push_link_contact">연락처: %s</string>
+    <string name="veydan_push_link_contact_nameless">연락처</string>
+    <string name="veydan_push_invite">%s 그룹에 초대했습니다</string>
+    <string name="veydan_push_join_request">%s 그룹에 가입을 요청했습니다</string>
+    <string name="veydan_push_welcome">%s 그룹에 참여했습니다</string>
+</resources>

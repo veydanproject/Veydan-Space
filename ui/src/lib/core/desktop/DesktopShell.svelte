@@ -4,6 +4,7 @@
 <script lang="ts">
   import '@fontsource-variable/manrope/index.css';
   import '@fontsource-variable/jetbrains-mono/index.css';
+  import '$lib/core/fonts/cjk.css';
   import '$lib/core/styles/tokens.css';
   import '$lib/core/styles/base.css';
   import { page } from '$app/stores';
@@ -11,7 +12,7 @@
   import { onMount, untrack } from 'svelte';
   import { get } from 'svelte/store';
   import type { Snippet } from 'svelte';
-  import { t, locale, type TranslationKey } from '$lib/core/i18n';
+  import { t, locale, isLocale, localeChosen, type TranslationKey } from '$lib/core/i18n';
   import type { TrayLabels } from '$lib/core/api';
   import type { ToolItem } from '$lib/core/module';
   import { theme, toggleTheme } from '$lib/core/theme';
@@ -85,20 +86,26 @@
     };
   }
 
-  /** Fresh webview profile (new install or app rename): take the language saved in the database. */
+  /**
+   * Fresh webview profile (new install or app rename): take the language saved
+   * in the database, chosen here before or on another computer (it syncs). A
+   * language this version does not have, and no language at all, leave the
+   * guess from the system. The database is written by the language picker
+   * alone (Settings): a start that wrote its own language would undo the
+   * choice another computer synced.
+   */
   async function restoreLocale() {
-    if (!isTauri || localStorage.getItem('vb_locale')) return;
+    if (!isTauri || localeChosen()) return;
     try {
       const saved = await api.settings.getLocale();
-      if ((saved === 'en' || saved === 'ru') && saved !== get(locale)) locale.set(saved);
+      if (isLocale(saved) && saved !== get(locale)) locale.set(saved);
     } catch {}
   }
 
-  // Tray menu and browser extension follow the app language
+  // The tray menu follows the app language.
   function syncTrayLabels() {
     if (!isTauri) return;
     api.settings.setTrayLabels(buildTrayLabels()).catch(() => {});
-    api.settings.setLocale(get(locale)).catch(() => {});
   }
 
   /** Plain text fields use the browser undo stack; the rich editor handles its own. */
@@ -178,7 +185,8 @@
 
     const unsubLocale = standaloneNotes
       ? () => {}
-      : locale.subscribe(() => syncTrayLabels());
+      : // `t`, not `locale`: it changes once the files of a new language are here.
+        t.subscribe(() => syncTrayLabels());
     if (!standaloneNotes) void restoreLocale().then(syncTrayLabels);
 
     // The tray's own entries; a module's entries (profiles, the generator) are listened for by the module.

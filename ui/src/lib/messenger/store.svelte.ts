@@ -3,6 +3,7 @@
 
 import {
   messengerApi,
+  onDemoEvent,
   RELAY_STATUS_EVENT,
   RUNTIME_EVENT,
   type IdentityImportKind,
@@ -12,13 +13,16 @@ import {
   type MessengerLink,
   type MessengerProfile,
   type MessengerProfileInput,
+  type CropRect,
   type MessengerManifestCheck,
   type MessengerManifestInfo,
   type MessengerRelay,
   type MessengerServersMode,
   type MessengerStatus,
   type MessengerUiEvent,
+  type OwnPrivateView,
 } from './api';
+import { avatarStore } from './contacts/avatars.svelte';
 import { chatStore } from './chats/chatStore.svelte';
 import { transferStore } from './media/transferStore.svelte';
 import { groupStore } from "./groups/groupStore.svelte";
@@ -51,6 +55,11 @@ class MessengerStore {
   feed = $state<FeedEntry[]>([]);
   contacts = $state<MessengerContact[]>([]);
   ownProfile = $state<MessengerProfile | null>(null);
+  /** My phone and whether my card carries it; `null` until `loadOwnPrivate`. Never published. */
+  ownPrivate = $state<OwnPrivateView | null>(null);
+  /** Phones contacts sent me in their own cards, by hex key, as far as asked (`contactPhone`). */
+  contactPhones = $state<Record<string, string | null>>({});
+  private phonesAsked = new Set<string>();
   /** One-time encrypted backup of a freshly created key, until the user confirms it is saved. */
   pendingBackup = $state<{ npub: string; ncryptsec: string } | null>(null);
   loaded = $state(false);
@@ -130,6 +139,10 @@ class MessengerStore {
         this.manifest = null;
         this.contacts = [];
         this.ownProfile = null;
+        this.ownPrivate = null;
+        this.contactPhones = {};
+        this.phonesAsked.clear();
+        avatarStore.reset();
         chatStore.reset();
         groupStore.reset();
         linkStore.reset();
@@ -137,6 +150,7 @@ class MessengerStore {
         netStore.reset();
         usageStore.reset();
         presenceStore.reset();
+        transferStore.reset();
       }
       this.loaded = true;
     } finally {
@@ -159,7 +173,11 @@ class MessengerStore {
     this.manifest = null;
     this.contacts = [];
     this.ownProfile = null;
+    this.ownPrivate = null;
+    this.contactPhones = {};
+    this.phonesAsked.clear();
     this.feed = [];
+    avatarStore.reset();
     this.loaded = false;
     chatStore.reset();
     groupStore.reset();
@@ -168,11 +186,20 @@ class MessengerStore {
     netStore.reset();
     usageStore.reset();
     presenceStore.reset();
+    transferStore.reset();
   }
 
   /** Subscribe to relay-state and runtime event pushes. Idempotent. */
   async startListeners() {
-    if (this._unlisten.length || !isTauri) return;
+    if (this._unlisten.length) return;
+    if (!isTauri) {
+      // The browser preview plays its file transfers (api.ts).
+      this._unlisten.push(onDemoEvent((ev) => {
+        chatStore.handleEvent(ev);
+        transferStore.handleEvent(ev);
+      }));
+      return;
+    }
     const { listen } = await import('@tauri-apps/api/event');
     this._unlisten.push(
       await listen<MessengerRelay[]>(RELAY_STATUS_EVENT, (e) => {
@@ -189,6 +216,8 @@ class MessengerStore {
         usageStore.handleEvent(e.payload);
         presenceStore.handleEvent(e.payload);
         privacyStore.handleEvent(e.payload);
+        avatarStore.handleEvent(e.payload);
+        this.handleProfileEvent(e.payload);
         if (e.payload.name === 'transfer.progress') return;
         this.feed = [{ ...e.payload, at: Date.now() }, ...this.feed].slice(0, FEED_LIMIT);
         if (e.payload.name === 'dm.message' || e.payload.name === 'history.synced') this.scheduleStatusRefresh();
@@ -285,6 +314,56 @@ class MessengerStore {
   async saveOwnProfile(input: MessengerProfileInput) {
     this.ownProfile = await messengerApi.profiles.ownSet(input);
     return this.ownProfile;
+  }
+
+  /** Cropped picture (token of `messengerApi.avatar.prepare`) → my avatar, published. */
+  async setAvatar(token: string, rect: CropRect) {
+    this.ownProfile = await messengerApi.avatar.set(token, rect);
+    return this.ownProfile;
+  }
+
+  async removeAvatar() {
+    this.ownProfile = await messengerApi.avatar.remove();
+    return this.ownProfile;
+  }
+
+  async loadOwnPrivate() {
+    this.ownPrivate = await messengerApi.ownPrivate.get();
+    return this.ownPrivate;
+  }
+
+  /** Error: `phone_invalid`. */
+  async saveOwnPrivate(phone: string | null, sharePhone: boolean) {
+    this.ownPrivate = await messengerApi.ownPrivate.set(phone, sharePhone);
+    return this.ownPrivate;
+  }
+
+  /**
+   * The phone `pubkey` sent me in its own card: `undefined` until known,
+   * then kept fresh by `contact_private.updated`. Reading it asks once.
+   */
+  contactPhone(pubkey: string): string | null | undefined {
+    if (!this.phonesAsked.has(pubkey)) {
+      this.phonesAsked.add(pubkey);
+      queueMicrotask(() => this.loadContactPhone(pubkey).catch(() => {}));
+    }
+    return this.contactPhones[pubkey];
+  }
+
+  async loadContactPhone(pubkey: string) {
+    const v = await messengerApi.contactPrivate.get(pubkey);
+    this.contactPhones[v.pubkey] = v.phone;
+    if (v.pubkey !== pubkey) this.contactPhones[pubkey] = v.phone;
+    return v.phone;
+  }
+
+  /** Private parts changed on another device of mine, or a card was accepted. */
+  private handleProfileEvent(ev: MessengerUiEvent) {
+    if (ev.name === 'own_private.updated' && this.ownPrivate) this.loadOwnPrivate().catch(() => {});
+    if (ev.name === 'contact_private.updated') {
+      const pk = (ev.payload as { pubkey?: string } | null)?.pubkey;
+      if (pk && pk in this.contactPhones) this.loadContactPhone(pk).catch(() => {});
+    }
   }
 
   clearFeed() {

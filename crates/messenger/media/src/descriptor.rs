@@ -26,6 +26,9 @@ pub const ALGO: &str = "aes-256-gcm";
 /// Files larger than this are refused (each chunk index is a u32 and a
 /// descriptor must fit a message).
 pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+/// Files larger than this are not sent from here. What others send is
+/// held to `MAX_FILE_BYTES` only.
+pub const MAX_SEND_BYTES: u64 = 1 << 30;
 pub const MAX_CHUNKS: usize = 4096;
 pub const MAX_WAVEFORM: usize = 64;
 
@@ -144,10 +147,12 @@ impl MediaDescriptor {
         if self.chunks.len() != expected || expected > MAX_CHUNKS {
             return bad("chunk table does not match the size");
         }
+        // Every chunk is bound to its place, as every sender makes it: a
+        // receiver never makes room for more than one chunk can hold.
         let overhead = crate::crypto::TAG_LEN as u64;
-        let total: u64 = self.chunks.iter().map(|c| c.size).sum();
-        if total != self.size + overhead * expected as u64 {
-            return bad("chunk sizes do not add up");
+        let fits = |(i, c): (usize, &ChunkRef)| c.size == self.chunk_size.min(self.size - i as u64 * self.chunk_size) + overhead;
+        if !self.chunks.iter().enumerate().all(fits) {
+            return bad("chunk sizes do not match their places");
         }
         let hex64 = |s: &str| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase());
         if !hex64(&self.sha256) || !self.chunks.iter().all(|c| hex64(&c.sha256)) {
@@ -348,6 +353,47 @@ pub(crate) mod tests {
             change(&mut d);
             assert!(d.validate().is_err(), "{what} must be rejected");
         }
+    }
+
+    /// Sizes that add up but not chunk by chunk: one chunk claims most of
+    /// 4 GiB, so a receiver would make room for all of it at once.
+    #[test]
+    fn every_chunk_is_bound_to_its_place() {
+        let mut d = sample();
+        d.size = 4 << 30;
+        d.chunk_size = 64 << 20;
+        let n = d.size.div_ceil(d.chunk_size);
+        let tag = crate::crypto::TAG_LEN as u64;
+        d.chunks = (0..n).map(|_| ChunkRef { sha256: "b".repeat(64), size: d.chunk_size + tag }).collect();
+        d.validate().unwrap();
+        d.chunks[0].size = d.size + tag;
+        for c in &mut d.chunks[1..] {
+            c.size = tag;
+        }
+        assert_eq!(d.chunks.iter().map(|c| c.size).sum::<u64>(), d.size + tag * n, "they add up");
+        assert!(d.validate().is_err());
+
+        // The last chunk holds the rest, and only it.
+        let mut d = sample();
+        d.size = 3 * 64 * 1024 + 10;
+        d.chunk_size = 64 * 1024;
+        let sizes = [64 * 1024 + tag, 64 * 1024 + tag, 64 * 1024 + tag, 10 + tag];
+        d.chunks = sizes.iter().map(|s| ChunkRef { sha256: "b".repeat(64), size: *s }).collect();
+        d.validate().unwrap();
+        (d.chunks[0].size, d.chunks[3].size) = (10 + tag, 64 * 1024 + tag);
+        assert!(d.validate().is_err(), "the rest in the first place");
+    }
+
+    /// We send up to 1 GiB; a peer may send more and is still received.
+    #[test]
+    fn a_two_gib_file_from_a_peer_is_valid() {
+        let mut d = sample();
+        d.size = 2 << 30;
+        d.chunk_size = chunk_size_for(d.size);
+        let n = d.size.div_ceil(d.chunk_size);
+        d.chunks = (0..n).map(|_| ChunkRef { sha256: "b".repeat(64), size: d.chunk_size + crate::crypto::TAG_LEN as u64 }).collect();
+        assert!(d.size > MAX_SEND_BYTES);
+        d.validate().unwrap();
     }
 
     #[test]

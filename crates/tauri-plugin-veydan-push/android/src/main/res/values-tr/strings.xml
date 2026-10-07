@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Doğrudan mesajlar</string>
+    <string name="veydan_push_channel_groups">Gruplar</string>
+    <string name="veydan_push_channel_service">Hizmet mesajları</string>
+    <string name="veydan_push_update_title">Yeni bildirim</string>
+    <string name="veydan_push_update_body">Görmek için uygulamayı güncelleyin.</string>
+    <string name="veydan_push_test_title">Test bildirimi</string>
+    <string name="veydan_push_test_body">Anlık bildirimler bu telefona ulaşıyor.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Siz</string>
+    <string name="veydan_push_dm_title">Yeni mesaj</string>
+    <string name="veydan_push_group">Grup</string>
+    <string name="veydan_push_one">Yeni mesaj</string>
+    <string name="veydan_push_many">%d yeni mesaj</string>
+    <string name="veydan_push_more">ve %d tane daha</string>
+    <string name="veydan_push_request">Mesaj isteği</string>
+    <string name="veydan_push_photo">Fotoğraf</string>
+    <string name="veydan_push_video">Video</string>
+    <string name="veydan_push_voice">Sesli mesaj</string>
+    <string name="veydan_push_circle">Görüntülü mesaj</string>
+    <string name="veydan_push_audio">Ses</string>
+    <string name="veydan_push_file">Dosya</string>
+    <string name="veydan_push_album">Albüm: %d</string>
+    <string name="veydan_push_files">Dosyalar: %d</string>
+    <string name="veydan_push_link_group">“%s” grubu</string>
+    <string name="veydan_push_link_group_nameless">Grup bağlantısı</string>
+    <string name="veydan_push_link_contact">Kişi: %s</string>
+    <string name="veydan_push_link_contact_nameless">Kişi</string>
+    <string name="veydan_push_invite">Sizi %s grubuna davet ediyor</string>
+    <string name="veydan_push_join_request">%s grubuna katılmak istiyor</string>
+    <string name="veydan_push_welcome">%s grubundasınız</string>
+</resources>

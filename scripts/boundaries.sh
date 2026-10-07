@@ -437,19 +437,21 @@ allowed() {
     vlink)     echo "" ;;
     http)      echo "messenger-core messenger-vlink" ;;
     links)     echo "messenger-core" ;;
+    richtext)  echo "" ;;
+    avatar)    echo "messenger-core" ;;
     preview)   echo "messenger-core messenger-http" ;;
     store)     echo "messenger-core" ;;
     transport) echo "messenger-core messenger-http messenger-vlink" ;;
     identity)  echo "messenger-core messenger-store" ;;
     ingress)   echo "messenger-core messenger-store messenger-identity" ;;
-    contacts)  echo "messenger-core messenger-store messenger-http" ;;
+    contacts)  echo "messenger-core messenger-store messenger-http messenger-richtext messenger-avatar" ;;
     dm)        echo "messenger-core messenger-store messenger-contacts messenger-links" ;;
     media)     echo "messenger-core messenger-store messenger-http" ;;
-    groups)    echo "messenger-core messenger-store messenger-media messenger-dm messenger-links" ;;
+    groups)    echo "messenger-core messenger-store messenger-media messenger-dm messenger-links messenger-contacts" ;;
     push)      echo "messenger-core messenger-http" ;;
     presence)  echo "messenger-core messenger-store" ;;
     notify)    echo "messenger-core messenger-store messenger-ingress messenger-contacts messenger-dm messenger-groups messenger-media messenger-transport messenger-vlink" ;;
-    runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence" ;;
+    runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence messenger-richtext messenger-avatar" ;;
     testkit)   echo "messenger-core messenger-store messenger-runtime messenger-notify messenger-dm messenger-groups messenger-vlink" ;;
     *)         echo "__unknown__" ;;
   esac

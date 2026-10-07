@@ -10,9 +10,10 @@
   whichever part the menu was opened on, and shown under the whole.
 -->
 <script lang="ts">
-  import { t } from '$lib/core/i18n';
+  import { countKey, locale, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import MediaBubble from '../media/MediaBubble.svelte';
+  import { transferStore } from '../media/transferStore.svelte';
   import MessageContent from '../content/MessageContent.svelte';
   import { mosaic, rowHeight } from '../content/mosaic';
   import { mediaFamily } from '../content/timeline';
@@ -75,6 +76,16 @@
   const status = $derived(worstOf(messages.map((m) => shownStatus(m, now))));
   const statusIcon = $derived(status === 'sent' ? 'check' : status === 'delivered' || status === 'read' ? 'check-check' : status === 'failed' ? 'alert-triangle' : status === 'uploading' ? 'upload' : 'clock');
 
+  /** A part on its way up: its placeholder says so, or its transfer does. */
+  const sending = (m: MessengerMessage) => {
+    const live = transferStore.get(m.id);
+    return m.status === 'uploading' || (live?.direction === 'up' && ['queued', 'running', 'waiting_retry'].includes(live.status));
+  };
+  /** Not stored yet: on its way, paused, or failed before it left. */
+  const notYet = (m: MessengerMessage) => sending(m) || m.status === 'paused' || (m.status === 'failed' && m.id.startsWith('local:'));
+  /** While parts of an album of mine go up: how many of them are there already. */
+  const uploaded = $derived(out && messages.length > 1 && messages.some(sending) ? { k: messages.filter((m) => !notYet(m)).length, n: messages.length } : null);
+
   const press = (m: MessengerMessage) => ({
     onpress: (p: { x: number; y: number }) => onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), m),
   });
@@ -123,6 +134,11 @@
       </div>
     {/if}
 
+    {#if uploaded}
+      <div class="uploaded" aria-live="polite">
+        <Icon name="upload" size={11} />{$t(countKey('msg_xfer_album', uploaded.n, $locale), { k: String(uploaded.k), n: String(uploaded.n) })}
+      </div>
+    {/if}
     {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} /></div>{/if}
     {#each captions as m (m.id)}<div class="caption"><MessageContent text={m.text ?? ''} /></div>{/each}
     {#if !overlay}{@render meta(false)}{/if}
@@ -165,6 +181,7 @@
   .card-cell > :global(*) { flex: 1; }
 
   .caption { padding: 0 8px; }
+  .uploaded { display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: var(--fs-2xs); color: var(--text-3); }
   .reactions { padding: 2px 5px 0; }
   .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-size: var(--fs-2xs); color: var(--text-3); line-height: 1; padding: 0 8px 5px; }
   .meta.on-picture {

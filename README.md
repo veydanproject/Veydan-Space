@@ -16,6 +16,10 @@
 </p>
 
 <p align="center">
+  <sub>15 languages: English · Deutsch · Español · Français · Italiano · Polski · Русский · Українська · Português (Brasil) · Türkçe · Bahasa Indonesia · Tiếng Việt · 简体中文 · 日本語 · 한국어</sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/veydanproject/Veydan-Space/releases/latest"><b>Download</b></a> ·
   <a href="#features">Features</a> ·
   <a href="#on-your-phone">On your phone</a> ·
@@ -171,7 +175,7 @@ a key only you hold. Also available on its own as
   devices.
 - **App lock** — PIN or password, auto-lock when you step away.
 - **Automatic, signed updates.**
-- **English and Russian**, light and dark themes.
+- **15 languages**, the language of the system on the first start; light and dark themes.
 
 ## On your phone
 

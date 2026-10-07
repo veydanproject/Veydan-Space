@@ -9,7 +9,7 @@
 
 [workspace]
 resolver = "2"
-members = ["core", "vlink", "http", "links", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "groups", "push", "presence", "notify", "runtime", "testkit"]
+members = ["core", "vlink", "http", "links", "richtext", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "avatar", "groups", "push", "presence", "notify", "runtime", "testkit"]
 
 [workspace.package]
 version = "0.1.0"
@@ -43,6 +43,9 @@ getrandom = "0.3"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 wiremock = "0.6"
 ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
+# Avatar pictures (messenger-avatar): the formats a phone or a desktop hands
+# over, decoded with limits and written back as a plain JPEG.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
 nostr = { version = "0.45", default-features = false, features = ["std", "nip06", "nip44", "nip49", "nip59", "os-rng"] }
 # The curve nostr signs with, named for the one check nostr does not offer:
 # a BIP-340 signature over something that is not an event (the proof of a
@@ -66,6 +69,8 @@ messenger-core = { path = "core" }
 messenger-vlink = { path = "vlink" }
 messenger-http = { path = "http" }
 messenger-links = { path = "links" }
+messenger-richtext = { path = "richtext" }
+messenger-avatar = { path = "avatar" }
 messenger-preview = { path = "preview" }
 messenger-store = { path = "store" }
 messenger-identity = { path = "identity" }

@@ -53,25 +53,42 @@ pub async fn window_minimize(
 
 const UI_LOCALE_KEY: &str = "ui_locale";
 
-/// Persist the UI language so non-frontend consumers (browser extension) can follow it.
-#[tauri::command]
-pub async fn app_locale_set(locale: String, core: tauri::State<'_, Core>) -> CmdResult<()> {
-    let locale = match locale.as_str() {
-        "ru" => "ru",
-        _ => "en",
+/// Whether a value is the code of a language of the UI as
+/// `ui/src/lib/core/languages.json` writes them: `en`, `de`, `pt-BR`, `zh-CN`.
+/// The list itself is the UI's: a newer version's language passes through an
+/// older one (the value syncs) and is shown in English there.
+fn is_locale_code(code: &str) -> bool {
+    let (lang, region) = match code.split_once('-') {
+        Some((lang, region)) => (lang, Some(region)),
+        None => (code, None),
     };
-    settings::set(&core.db, UI_LOCALE_KEY, locale).await
+    (2..=3).contains(&lang.len())
+        && lang.bytes().all(|b| b.is_ascii_lowercase())
+        && region.is_none_or(|r| r.len() == 2 && r.bytes().all(|b| b.is_ascii_uppercase()))
 }
 
+/// Persist the UI language the user chose, so the browser extension and the
+/// other computers (the value syncs) follow it.
 #[tauri::command]
-pub async fn app_locale_get(core: tauri::State<'_, Core>) -> CmdResult<String> {
-    Ok(app_locale(&core.db).await)
+pub async fn app_locale_set(locale: String, core: tauri::State<'_, Core>) -> CmdResult<()> {
+    if !is_locale_code(&locale) {
+        return Err(AppError::Other(format!("not a language code: {locale}")));
+    }
+    settings::set(&core.db, UI_LOCALE_KEY, &locale).await
+}
+
+/// The language chosen here or on another computer; none when no one chose
+/// one (the UI then follows the system's).
+#[tauri::command]
+pub async fn app_locale_get(core: tauri::State<'_, Core>) -> CmdResult<Option<String>> {
+    Ok(settings::get(&core.db, UI_LOCALE_KEY).await.filter(|c| is_locale_code(c)))
 }
 
 /// Stored UI language, `en` when never set.
 pub async fn app_locale(db: &Pool<Sqlite>) -> String {
     settings::get(db, UI_LOCALE_KEY)
         .await
+        .filter(|c| is_locale_code(c))
         .unwrap_or_else(|| "en".to_string())
 }
 
@@ -81,4 +98,19 @@ pub async fn tray_set_labels(labels: TrayLabels, shell: tauri::State<'_, Shell>)
     shell.tray.set_labels(labels)?;
     shell.tray_refresh();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_locale_code;
+
+    #[test]
+    fn language_codes_of_the_ui_pass_and_nothing_else() {
+        for code in ["en", "ru", "uk", "de", "pt-BR", "zh-CN", "fil"] {
+            assert!(is_locale_code(code), "{code}");
+        }
+        for code in ["", "e", "EN", "pt_BR", "pt-br", "zh-Hans", "english", "de-", "-DE", "de-DE-x"] {
+            assert!(!is_locale_code(code), "{code}");
+        }
+    }
 }

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Messages privés</string>
+    <string name="veydan_push_channel_groups">Groupes</string>
+    <string name="veydan_push_channel_service">Messages de service</string>
+    <string name="veydan_push_update_title">Nouvelle notification</string>
+    <string name="veydan_push_update_body">Mettez à jour l\'application pour la voir.</string>
+    <string name="veydan_push_test_title">Notification de test</string>
+    <string name="veydan_push_test_body">Les notifications push arrivent sur ce téléphone.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Vous</string>
+    <string name="veydan_push_dm_title">Nouveau message</string>
+    <string name="veydan_push_group">Groupe</string>
+    <string name="veydan_push_one">Nouveau message</string>
+    <string name="veydan_push_many">Nouveaux messages : %d</string>
+    <string name="veydan_push_more">et %d de plus</string>
+    <string name="veydan_push_request">Demande de discussion</string>
+    <string name="veydan_push_photo">Photo</string>
+    <string name="veydan_push_video">Vidéo</string>
+    <string name="veydan_push_voice">Message vocal</string>
+    <string name="veydan_push_circle">Message vidéo</string>
+    <string name="veydan_push_audio">Audio</string>
+    <string name="veydan_push_file">Fichier</string>
+    <string name="veydan_push_album">Album : %d</string>
+    <string name="veydan_push_files">Fichiers : %d</string>
+    <string name="veydan_push_link_group">Groupe « %s »</string>
+    <string name="veydan_push_link_group_nameless">Lien vers un groupe</string>
+    <string name="veydan_push_link_contact">Contact : %s</string>
+    <string name="veydan_push_link_contact_nameless">Contact</string>
+    <string name="veydan_push_invite">Vous invite dans le groupe %s</string>
+    <string name="veydan_push_join_request">Demande à rejoindre %s</string>
+    <string name="veydan_push_welcome">Vous êtes dans le groupe %s</string>
+</resources>

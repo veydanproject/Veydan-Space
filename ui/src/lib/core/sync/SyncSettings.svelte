@@ -3,11 +3,11 @@
 
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { t } from '$lib/core/i18n';
+  import { t, locale } from '$lib/core/i18n';
   import { api, LARGE_FILE_LIMITS, largeFilePeakMib } from '$lib/core/api';
   import type { SyncConfig, SyncStatus } from '$lib/core/api';
   import { syncStore } from '$lib/core/store/sync.svelte';
-  import { formatError } from '$lib/core/utils';
+  import { formatDateTime, formatError } from '$lib/core/utils';
   import { joinErrorKey } from '$lib/core/join-error';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Icon from '$lib/core/Icon.svelte';
@@ -406,7 +406,7 @@
           {/each}
         {/if}
         <div class="trow"><span class="tlabel">{$t('settings_sync_last_applied')}</span><span class="tvalue">{status.last_applied ?? 0}</span></div>
-        <div class="trow"><span class="tlabel">{$t('settings_sync_last_run')}</span><span class="tvalue">{status.last_run ? new Date(status.last_run).toLocaleString() : $t('settings_backup_never')}</span></div>
+        <div class="trow"><span class="tlabel">{$t('settings_sync_last_run')}</span><span class="tvalue">{status.last_run ? formatDateTime(status.last_run, $locale) : $t('settings_backup_never')}</span></div>
         {#if status.last_error}
           <div class="trow"><span class="tlabel">{$t('settings_sync_last_error')}</span><span class="tvalue error">{status.last_error}</span></div>
         {/if}
@@ -416,13 +416,13 @@
         {#if status.blobs_total !== null}
           <div class="trow" title={$t('settings_sync_gc_hint')}>
             <span class="tlabel">{$t('settings_sync_gc')}</span>
-            <span class="tvalue">{$t('settings_sync_gc_value', { total: String(status.blobs_total), removed: String(status.blobs_removed_last_gc ?? 0), when: status.gc_last ? new Date(status.gc_last).toLocaleString() : '' })}</span>
+            <span class="tvalue">{$t('settings_sync_gc_value', { total: String(status.blobs_total), removed: String(status.blobs_removed_last_gc ?? 0), when: status.gc_last ? formatDateTime(status.gc_last, $locale) : '' })}</span>
           </div>
         {/if}
         {#if syncsFiles && status.lf_total !== null}
           <div class="trow" title={$t('settings_sync_gc_hint')}>
             <span class="tlabel">{$t('settings_sync_lf_gc')}</span>
-            <span class="tvalue">{$t('settings_sync_gc_value', { total: String(status.lf_total), removed: String(status.lf_removed_last_gc ?? 0), when: status.gc_last ? new Date(status.gc_last).toLocaleString() : '' })}</span>
+            <span class="tvalue">{$t('settings_sync_gc_value', { total: String(status.lf_total), removed: String(status.lf_removed_last_gc ?? 0), when: status.gc_last ? formatDateTime(status.gc_last, $locale) : '' })}</span>
           </div>
         {/if}
       {/if}

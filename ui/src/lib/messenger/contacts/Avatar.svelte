@@ -2,8 +2,13 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { avatarStore, safeDataImage } from './avatars.svelte';
+
   interface Props {
+    /** A picture's address (kind 0 `picture`): never loaded here; the runtime fetches it and gives a `data:` URL. */
     url: string | null;
+    /** A picture the runtime already made (a card's): a `data:image/…` URL, used as it is. */
+    src?: string | null;
     label: string;
     size?: number;
     /** Stable value (public key) that picks the colour; the label otherwise. */
@@ -11,8 +16,8 @@
     /** A dot at the bottom right: the person is online now. */
     online?: boolean;
   }
-  let { url, label, size = 36, seed = null, online = false }: Props = $props();
-  let failed = $state(false);
+  let { url, src = null, label, size = 36, seed = null, online = false }: Props = $props();
+  let failed = $state<string | null>(null);
 
   // Two letters: first letters of the first two words, or the first two
   // letters of a single word. Keys (npub1…) get a neutral glyph.
@@ -25,8 +30,9 @@
     return pick.toUpperCase();
   });
 
-  // Only https images; anything else falls back to initials (no plain-http leaks).
-  const src = $derived(url && url.startsWith('https://') && !failed ? url : null);
+  // Only a `data:` picture the runtime made; initials until there is one.
+  const picture = $derived(safeDataImage(src) ?? avatarStore.get(url));
+  const shown = $derived(picture && picture !== failed ? picture : null);
 
   const hue = $derived.by(() => {
     const s = seed || label;
@@ -37,8 +43,8 @@
 </script>
 
 {#snippet face()}
-  {#if src}
-    <img class="avatar" {src} alt="" width={size} height={size} loading="lazy" referrerpolicy="no-referrer" onerror={() => (failed = true)} />
+  {#if shown}
+    <img class="avatar" src={shown} alt="" width={size} height={size} onerror={() => (failed = shown)} />
   {:else}
     <span class="avatar initials" style="width:{size}px;height:{size}px;font-size:{Math.round(size * 0.38)}px;--h:{hue}">{initials}</span>
   {/if}

@@ -14,6 +14,7 @@
 <script lang="ts">
   import '@fontsource-variable/manrope/index.css';
   import '@fontsource-variable/jetbrains-mono/index.css';
+  import '$lib/core/fonts/cjk.css';
   import '$lib/core/styles/tokens.css';
   import '$lib/core/styles/base.css';
   import { onMount } from 'svelte';

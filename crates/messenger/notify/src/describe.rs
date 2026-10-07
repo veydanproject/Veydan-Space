@@ -12,7 +12,7 @@ use crate::notice::{Body, ChatKind, Notice, Outcome, Plain, Reason};
 use crate::push::{PushData, PushKind};
 use crate::settings::{Content, Settings};
 use messenger_contacts::{ContactService, ProfileService};
-use messenger_core::envelope::{T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
+use messenger_core::envelope::{T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
 use messenger_core::traits::SystemClock;
 use messenger_core::{Envelope, EventSource, Inbound, MessengerConfig, MessengerError, PubKey, RawEvent, RelayUrl, Result, Timestamp};
 use messenger_dm::pushtags::{author_key, author_mark};
@@ -157,6 +157,9 @@ impl Describe {
 
         let (body, chat) = match envelope.t.as_str() {
             T_TEXT | T_MEDIA => (body_of(&envelope), Some(chat_id.clone())),
+            // A card the app would drop is nothing to tell of.
+            T_CONTACT if card_dropped(&envelope, &peer) => return Ok(Outcome::Quiet { reason: Reason::Invalid }),
+            T_CONTACT => (body_of(&envelope), Some(chat_id.clone())),
             T_EDIT | T_DELETE | T_CONTROL => return Ok(Outcome::Quiet { reason: Reason::NotAMessage }),
             T_INVITE => {
                 let invite: wire::Invite = wire::dm_body(&envelope)?;
@@ -230,6 +233,8 @@ impl Describe {
         let envelope = Envelope::parse(&message.content).unwrap_or_else(|_| Envelope::text(&message.content));
         let body = match envelope.t.as_str() {
             T_TEXT | T_MEDIA => body_of(&envelope),
+            T_CONTACT if card_dropped(&envelope, &message.author) => return Ok(Outcome::Quiet { reason: Reason::Invalid }),
+            T_CONTACT => body_of(&envelope),
             T_EDIT | T_DELETE => return Ok(Outcome::Quiet { reason: Reason::NotAMessage }),
             _ => return Ok(Outcome::Quiet { reason: Reason::NotAMessage }),
         };
@@ -248,6 +253,13 @@ impl Describe {
             count,
         }))
     }
+}
+
+/// Whether the app drops this card when it stores the message
+/// (`messenger_dm::cards::received_card`), as it does a card without a
+/// valid key.
+fn card_dropped(envelope: &Envelope, author: &PubKey) -> bool {
+    messenger_dm::cards::received_card(envelope, author.as_hex()).is_none()
 }
 
 /// A signed event as JSON, checked as far as its shape goes; the

@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
-  import { locale, t, type TranslationKey } from '$lib/core/i18n';
+  import { LANGUAGES, locale, t, taglineOf, type Locale, type TranslationKey } from '$lib/core/i18n';
   import {
     theme,
     themeCustom,
@@ -17,7 +17,6 @@
   import { inspectorApp } from '$lib/core/inspector/inspector.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { api } from '$lib/core/api';
-  import type { Locale } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
   import { updaterStore } from '$lib/core/store/updater.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
@@ -175,10 +174,11 @@
     },
   } as const;
 
-  const languages: { value: Locale; label: string; native: string }[] = [
-    { value: 'en', label: 'English', native: 'English' },
-    { value: 'ru', label: 'Russian', native: 'Русский' },
-  ];
+  /** The user's choice: shown here, remembered by this device and saved for the extension and the other computers (it syncs). */
+  function chooseLanguage(code: Locale) {
+    locale.set(code);
+    if (isTauri) api.settings.setLocale(code).catch((e) => console.error('app_locale_set failed', e));
+  }
 
   // The product's own repository (products.json `repo`): releases, licence files.
   const REPO_URL: string = product.repo;
@@ -214,7 +214,8 @@
   const hasDemo = demoModules.length > 0;
   /** The sections whose data the demo set replaces and "Clear app data" deletes. */
   const dataList = $derived(demoModules.map((m) => $t(m.title as TranslationKey)).join(', '));
-  let demoLocale = $state<'en' | 'ru'>(get(locale));
+  // The demo data exists in English and Russian; every other language starts from English.
+  let demoLocale = $state<'en' | 'ru'>(get(locale) === 'ru' ? 'ru' : 'en');
   // What goes with the lock's key when the demo data replaces it: each module's own sentence.
   const demoLosses = $derived(registry.active.flatMap((m) => (m.vaultResetNote ? [m.vaultResetNote] : [])));
   let demoBusy = $state(false);
@@ -379,15 +380,16 @@
     <div class="card-title">{$t('settings_section_language')}</div>
     <p class="muted">{$t('settings_language_label')}</p>
     <div class="lang-options">
-      {#each languages as lang}
+      {#each LANGUAGES as lang (lang.code)}
         <button
           class="lang-btn"
-          class:active={$locale === lang.value}
-          onclick={() => locale.set(lang.value)}
+          class:active={$locale === lang.code}
+          lang={lang.tag}
+          onclick={() => chooseLanguage(lang.code)}
         >
-          <span class="lang-code">{lang.value}</span>
+          <span class="lang-code">{lang.code}</span>
           <span class="lang-native">{lang.native}</span>
-          {#if $locale === lang.value}<span class="lang-check">✓</span>{/if}
+          {#if $locale === lang.code}<span class="lang-check">✓</span>{/if}
         </button>
       {/each}
     </div>
@@ -604,7 +606,7 @@
       </span>
       <div class="about-head-text">
         <div class="about-app">{product.name}</div>
-        <div class="about-tagline">{product.tagline[$locale]}</div>
+        <div class="about-tagline">{taglineOf($locale)}</div>
       </div>
     </div>
 
@@ -811,7 +813,7 @@
   .settings-main :global(.progress-fill) { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.2s ease; }
   .settings-main :global(.progress-label) { font-size: var(--fs-2xs); color: var(--text-2); font-family: var(--font-mono); }
 
-  .lang-options { display: flex; gap: 0.625rem; }
+  .lang-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.625rem; }
 
   /* Segment buttons per design: 46px, radius 11, accent tint when active */
   .lang-btn {

@@ -108,6 +108,8 @@ pub async fn recompute_last(store: &Store, id: &str) -> Result<()> {
            last_message_at = (SELECT MAX(created_at) FROM msg_messages
                                WHERE chat_id = ? AND is_hidden = 0 AND deleted_at IS NULL AND content_type != 'system'),
            last_preview = (SELECT CASE WHEN content_type = 'media' THEN '📎 ' || COALESCE(text, json_extract(media_json, '$.name'), '')
+                                       WHEN content_type = 'contact' THEN '👤 ' || COALESCE(json_extract(media_json, '$.display_name'),
+                                                                                         json_extract(media_json, '$.name'), '')
                                        ELSE text END FROM msg_messages
                            WHERE chat_id = ? AND is_hidden = 0 AND deleted_at IS NULL AND content_type != 'system'
                            ORDER BY created_at DESC LIMIT 1),
@@ -338,6 +340,39 @@ mod tests {
         crate::messages::mark_deleted(&s, "m1", 300).await.unwrap();
         recompute_last(&s, "dm:aa").await.unwrap();
         assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().last_preview, None, "nothing left");
+    }
+
+    #[tokio::test]
+    async fn a_contact_card_shows_in_the_list_by_its_name() {
+        let s = Store::open_in_memory().await.unwrap();
+        ensure_dm(&s, "aa").await.unwrap();
+        incoming(&s, "m1", 100, "one").await;
+        let card = |id: &str, at: i64, json: &str| crate::messages::NewMessage {
+            id: id.into(),
+            chat_id: "dm:aa".into(),
+            wire_id: None,
+            direction: "in".into(),
+            status: "received".into(),
+            content_type: crate::messages::CT_CONTACT.into(),
+            text: None,
+            envelope_json: "{}".into(),
+            sender_pubkey: "aa".into(),
+            reply_to_id: None,
+            target_id: None,
+            created_at: at,
+            is_hidden: false,
+            outbox_local_id: None,
+            media_json: Some(json.into()),
+        };
+        crate::messages::insert(&s, &card("c1", 200, r#"{"pubkey":"bb","name":"anna","display_name":"Анна"}"#)).await.unwrap();
+        recompute_last(&s, "dm:aa").await.unwrap();
+        assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().last_preview.as_deref(), Some("👤 Анна"));
+        crate::messages::insert(&s, &card("c2", 300, r#"{"pubkey":"bb","name":"anna"}"#)).await.unwrap();
+        recompute_last(&s, "dm:aa").await.unwrap();
+        assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().last_preview.as_deref(), Some("👤 anna"));
+        crate::messages::insert(&s, &card("c3", 400, r#"{"pubkey":"bb"}"#)).await.unwrap();
+        recompute_last(&s, "dm:aa").await.unwrap();
+        assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().last_preview.as_deref(), Some("👤 "));
     }
 
     #[tokio::test]

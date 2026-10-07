@@ -6,8 +6,9 @@
   import { syncStore } from '$lib/core/store/sync.svelte';
   import { notesStore } from '$lib/notes/store/notes.svelte';
   import { api } from '$lib/notes/api';
-  import { t } from '$lib/core/i18n';
+  import { t, locale } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { formatDateTime } from '$lib/core/utils';
 
   onMount(() => {
     let off: (() => void) | null = null;
@@ -30,7 +31,7 @@
     }
     if (running) return $t('notes_sync_running');
     if (!s?.joined) return `${$t('notes_btn_sync')} · ${$t('notes_sync_not_joined')}`;
-    const last = s.last_run ? new Date(s.last_run).toLocaleString() : $t('notes_sync_never');
+    const last = s.last_run ? formatDateTime(s.last_run, $locale) : $t('notes_sync_never');
     const err = syncStore.error || s.last_error;
     const warn = s.last_warning;
     let base = `${$t('notes_btn_sync')} · ${$t('notes_sync_last')}: ${last}`;

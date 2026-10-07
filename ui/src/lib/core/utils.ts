@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import type { AppError } from '$lib/core/types';
+import languageList from '$lib/core/languages.json';
 
 export function formatError(e: unknown): string {
   if (e != null && typeof e === 'object' && 'message' in e) {
@@ -42,11 +43,11 @@ export function formatBytes(bytes: number | null | undefined): string {
 }
 
 // ── Date/time formatting ─────────────────────────────────────────────────────
-// Helpers follow the app UI locale ('en' | 'ru' from i18n). Callers pass the
-// current `$locale`; we map it to a BCP-47 tag for Intl. Previously each screen
+// Helpers follow the app UI locale (a code of core/languages.json). Callers pass
+// the current `$locale`; we map it to a BCP-47 tag for Intl. Previously each screen
 // re-implemented these with divergent (and sometimes hardcoded 'ru') formats.
 
-const LOCALE_TAG: Record<string, string> = { en: 'en-US', ru: 'ru-RU' };
+const LOCALE_TAG: Record<string, string> = Object.fromEntries(languageList.languages.map((l) => [l.code, l.tag]));
 
 function tag(locale: string | undefined): string {
   return (locale && LOCALE_TAG[locale]) || locale || 'en-US';

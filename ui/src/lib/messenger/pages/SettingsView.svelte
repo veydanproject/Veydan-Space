@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { tick } from 'svelte';
   import { t } from '$lib/core/i18n';
   import { messengerStore } from '../store.svelte';
   import IdentityCard from '../identity/IdentityCard.svelte';
@@ -22,6 +23,15 @@
   type Tab = 'profile' | 'network' | 'notifications' | 'privacy' | 'diagnostics';
   let tab = $state<Tab>('profile');
   const s = $derived(messengerStore.status);
+
+  let media = $state<HTMLElement | null>(null);
+
+  // From the profile: an avatar needs a media server to be stored on.
+  async function openMedia() {
+    tab = 'network';
+    await tick();
+    media?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 </script>
 
 <div class="settings">
@@ -50,13 +60,13 @@
   {#if tab === 'profile'}
     <!-- No profile card for an identity that is gone (removed a moment ago) -->
     {#if messengerStore.identity}
-      <OwnProfileCard />
+      <OwnProfileCard onopenmedia={openMedia} />
       <IdentityCard identity={messengerStore.identity} />
     {/if}
   {:else if tab === 'network'}
     <NetPanel />
     <RelaysPanel />
-    <MediaServersPanel />
+    <div class="media-anchor" bind:this={media}><MediaServersPanel /></div>
   {:else if tab === 'notifications'}
     <NotificationsPanel />
   {:else if tab === 'privacy'}
@@ -97,6 +107,7 @@
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--accent-text-2); border-bottom-color: var(--accent); }
   .settings :global(.card) { max-width: none; }
+  .media-anchor { scroll-margin-top: var(--sp-12); }
   .status-card { display: flex; flex-direction: column; gap: var(--sp-3); align-items: flex-start; }
   .status-grid { display: grid; grid-template-columns: max-content 1fr; gap: var(--sp-2) var(--sp-4); margin: 0; font-size: var(--fs-sm); }
   .status-grid dt { color: var(--text-3); }

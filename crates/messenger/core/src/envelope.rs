@@ -22,6 +22,10 @@ pub const T_DELETE: &str = "delete";
 pub const T_CONTROL: &str = "control";
 /// `{"t":"media", …}` — encrypted blob reference (stage 6).
 pub const T_MEDIA: &str = "media";
+/// `{"t":"contact","card":{"pubkey":"<hex>",…}}` — a contact card: a
+/// person's key and public profile with a tiny picture, and a phone only
+/// in the sender's own card (messenger-contacts `card`).
+pub const T_CONTACT: &str = "contact";
 
 /// Kind of the rumor that carries a note from one of my devices to the
 /// others. Wrapped to my own key only; a client that knows only kind 14
@@ -44,6 +48,15 @@ pub const T_OWN_EMOJI: &str = "own.emoji";
 /// `since` and follow the switch. A reader keeps the larger epoch; at the
 /// same epoch the later `since` and "not sharing" win.
 pub const T_OWN_PRESENCE: &str = "own.presence";
+/// `{"t":"own.profile","phone":"+…"|null,"share_phone":bool,"at":<secs>}` —
+/// what of my profile stays off kind 0: my phone and whether my own card
+/// carries it by default. The later `at` wins; sent on a change and again
+/// every few days, so a new device learns it.
+pub const T_OWN_PROFILE: &str = "own.profile";
+/// `{"t":"own.card","pubkey":"<hex>","phone":"+…"|null,"at":<secs>}` — the
+/// phone a contact sent me in its own card, or `null` when it was taken
+/// back. The later `at` wins per contact.
+pub const T_OWN_CARD: &str = "own.card";
 /// Every type of a note between my devices starts so.
 pub const T_OWN_PREFIX: &str = "own.";
 
@@ -138,6 +151,19 @@ impl Envelope {
         let map: Map<String, Value> =
             usage.iter().map(|(emoji, count, at)| (emoji.clone(), Value::from(vec![*count, *at]))).collect();
         Self::new(T_OWN_EMOJI).with("usage", map)
+    }
+
+    /// `card` is a checked card as JSON (messenger-contacts `ContactCard`).
+    pub fn contact(card: Value) -> Self {
+        Self::new(T_CONTACT).with("card", card)
+    }
+
+    pub fn own_profile(phone: Option<&str>, share_phone: bool, at: i64) -> Self {
+        Self::new(T_OWN_PROFILE).with("phone", phone.map_or(Value::Null, Value::from)).with("share_phone", share_phone).with("at", at)
+    }
+
+    pub fn own_card(pubkey: &str, phone: Option<&str>, at: i64) -> Self {
+        Self::new(T_OWN_CARD).with("pubkey", pubkey).with("phone", phone.map_or(Value::Null, Value::from)).with("at", at)
     }
 
     pub fn with(mut self, key: &str, value: impl Into<Value>) -> Self {
@@ -272,6 +298,46 @@ mod tests {
         assert!(e.t.starts_with(T_OWN_PREFIX));
         assert_eq!(e.fields.get("epoch").and_then(Value::as_u64), Some(3));
         assert_eq!(e.fields.get("sharing").and_then(Value::as_bool), Some(false));
+    }
+
+    #[test]
+    fn contact_card_golden_vector() {
+        let key = "ab".repeat(32);
+        let card = serde_json::json!({ "pubkey": key, "name": "Анна", "at": 1_759_700_000 });
+        let wire = format!(r#"{{"v":1,"t":"contact","card":{{"at":1759700000,"name":"Анна","pubkey":"{key}"}}}}"#);
+        assert_eq!(Envelope::contact(card.clone()).encode(), wire);
+        let e = Envelope::parse(&wire).unwrap();
+        assert_eq!(e, Envelope::contact(card.clone()));
+        assert_eq!(e.t, T_CONTACT);
+        assert_eq!(e.fields.get("card"), Some(&card));
+        assert!(!e.t.starts_with(T_OWN_PREFIX));
+        assert!(e.as_text().is_none(), "a card is not text");
+    }
+
+    #[test]
+    fn own_profile_and_card_golden_vectors() {
+        let with = r#"{"v":1,"t":"own.profile","at":1759700000,"phone":"+79991234567","share_phone":true}"#;
+        assert_eq!(Envelope::own_profile(Some("+79991234567"), true, 1_759_700_000).encode(), with);
+        let e = Envelope::parse(with).unwrap();
+        assert_eq!(e, Envelope::own_profile(Some("+79991234567"), true, 1_759_700_000));
+        assert_eq!(e.t, T_OWN_PROFILE);
+        assert!(e.t.starts_with(T_OWN_PREFIX));
+        assert_eq!(e.str_field("phone"), Some("+79991234567"));
+        assert_eq!(e.fields.get("share_phone").and_then(Value::as_bool), Some(true));
+        let without = r#"{"v":1,"t":"own.profile","at":1759700001,"phone":null,"share_phone":false}"#;
+        assert_eq!(Envelope::own_profile(None, false, 1_759_700_001).encode(), without);
+        assert_eq!(Envelope::parse(without).unwrap().fields.get("phone"), Some(&Value::Null));
+
+        let key = "cd".repeat(32);
+        let card = format!(r#"{{"v":1,"t":"own.card","at":1759700002,"phone":"+15550001111","pubkey":"{key}"}}"#);
+        assert_eq!(Envelope::own_card(&key, Some("+15550001111"), 1_759_700_002).encode(), card);
+        let e = Envelope::parse(&card).unwrap();
+        assert_eq!(e, Envelope::own_card(&key, Some("+15550001111"), 1_759_700_002));
+        assert_eq!(e.t, T_OWN_CARD);
+        assert!(e.t.starts_with(T_OWN_PREFIX));
+        assert_eq!(e.str_field("pubkey"), Some(key.as_str()));
+        let gone = format!(r#"{{"v":1,"t":"own.card","at":1759700003,"phone":null,"pubkey":"{key}"}}"#);
+        assert_eq!(Envelope::own_card(&key, None, 1_759_700_003).encode(), gone);
     }
 
     #[test]

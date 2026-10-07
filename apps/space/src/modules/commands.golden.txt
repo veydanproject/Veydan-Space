@@ -36,6 +36,13 @@ lock_timeout_set shell all
 lock_touch shell all
 lock_unlock shell all
 media_grant_access shell all
+messenger_avatar_cached messenger all
+messenger_avatar_prepare messenger all
+messenger_avatar_remove messenger all
+messenger_avatar_set messenger all
+messenger_bio_parse messenger all
+messenger_card_accept messenger all
+messenger_card_send messenger all
 messenger_chat_delete messenger all
 messenger_chat_mark_read messenger all
 messenger_chat_messages messenger all
@@ -47,6 +54,7 @@ messenger_chat_shared messenger all
 messenger_chat_shared_counts messenger all
 messenger_chats_list messenger all
 messenger_contact_link messenger all
+messenger_contact_private_get messenger all
 messenger_contacts_add messenger all
 messenger_contacts_list messenger all
 messenger_contacts_remove messenger all
@@ -99,6 +107,7 @@ messenger_media_local_path messenger all
 messenger_media_open messenger all
 messenger_media_pause messenger all
 messenger_media_resume messenger all
+messenger_media_retry_failed messenger all
 messenger_media_save_as messenger all
 messenger_media_server_check messenger all
 messenger_media_server_put messenger all
@@ -106,6 +115,7 @@ messenger_media_server_remove messenger all
 messenger_media_server_set_enabled messenger all
 messenger_media_servers messenger all
 messenger_media_transfer messenger all
+messenger_media_transfers messenger all
 messenger_net_bridge_add messenger all
 messenger_net_bridge_remove messenger all
 messenger_net_check messenger all
@@ -117,6 +127,8 @@ messenger_notice_words messenger desktop
 messenger_notify_get messenger all
 messenger_notify_set messenger all
 messenger_open_url messenger all
+messenger_own_private_get messenger all
+messenger_own_private_set messenger all
 messenger_presence_foreground messenger all
 messenger_presence_list messenger all
 messenger_privacy_get messenger all
@@ -142,6 +154,7 @@ messenger_relays_set_silent messenger all
 messenger_servers_use_own messenger all
 messenger_servers_use_veydan messenger all
 messenger_set_enabled messenger all
+messenger_social_platforms messenger all
 messenger_status messenger all
 modules_choose shell all
 modules_list shell all

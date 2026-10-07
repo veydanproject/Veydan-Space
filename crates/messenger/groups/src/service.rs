@@ -13,6 +13,7 @@ use crate::op::{GroupKind, KeyId, Op, OpBody};
 use crate::roles::Role;
 use crate::state::{GroupState, Rejection};
 use crate::wire::{self, SecretEnvelope};
+use messenger_contacts::ContactCard;
 use messenger_core::traits::{Notice, UiEvent};
 use messenger_core::{Clock, Envelope, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SecretStore};
 use messenger_dm::pushtags;
@@ -1185,6 +1186,7 @@ impl GroupService {
         let sealed = wire::seal_message(group_id, &key, grace.as_ref(), &signed, keys)?;
         let id = signed.id.to_hex();
         let hidden = matches!(content_type, msgs::CT_EDIT | msgs::CT_DELETE);
+        let card: Option<ContactCard> = media_json.as_deref().and_then(|j| serde_json::from_str(j).ok());
         msgs::insert(
             &self.store,
             &NewMessage {
@@ -1207,10 +1209,12 @@ impl GroupService {
         )
         .await?;
         if !hidden {
-            let line = match (&text, content_type) {
-                (Some(t), msgs::CT_MEDIA) => format!("📎 {}", messenger_dm::view::preview(t)),
-                (Some(t), _) => messenger_dm::view::preview(t),
-                (None, _) => format!("📎 {}", envelope.str_field("name").unwrap_or("file")),
+            let card = card.filter(|_| content_type == msgs::CT_CONTACT);
+            let line = match (&text, content_type, card) {
+                (_, _, Some(card)) => messenger_dm::view::card_line(&card),
+                (Some(t), msgs::CT_MEDIA, _) => format!("📎 {}", messenger_dm::view::preview(t)),
+                (Some(t), _, _) => messenger_dm::view::preview(t),
+                (None, _, _) => format!("📎 {}", envelope.str_field("name").unwrap_or("file")),
             };
             chats::touch(&self.store, &chat_id, created_at, Some(&line), false).await?;
         }
@@ -1285,6 +1289,14 @@ impl GroupService {
             return Err(MessengerError::Invalid("message is too long".into()));
         }
         self.prepare_message(keys, group_id, Envelope::text(text), msgs::CT_TEXT, Some(text.to_string()), reply_to, None).await
+    }
+
+    /// Send a contact card to the group. The card is sent as it is: the
+    /// host decides what it holds.
+    pub async fn prepare_card(&self, keys: &Keys, group_id: &str, card: &ContactCard) -> Result<(MessageView, Outbound)> {
+        let json = card.to_json();
+        let envelope = Envelope::contact(json.clone());
+        self.prepare_message(keys, group_id, envelope, msgs::CT_CONTACT, None, None, Some(json.to_string())).await
     }
 
     fn group_of(chat_id: &str) -> Result<&str> {

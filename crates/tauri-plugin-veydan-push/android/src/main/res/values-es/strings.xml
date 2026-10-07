@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Mensajes directos</string>
+    <string name="veydan_push_channel_groups">Grupos</string>
+    <string name="veydan_push_channel_service">Mensajes del servicio</string>
+    <string name="veydan_push_update_title">Nueva notificación</string>
+    <string name="veydan_push_update_body">Actualiza la app para verla.</string>
+    <string name="veydan_push_test_title">Notificación de prueba</string>
+    <string name="veydan_push_test_body">Las notificaciones push llegan a este teléfono.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Tú</string>
+    <string name="veydan_push_dm_title">Nuevo mensaje</string>
+    <string name="veydan_push_group">Grupo</string>
+    <string name="veydan_push_one">Nuevo mensaje</string>
+    <string name="veydan_push_many">Mensajes nuevos: %d</string>
+    <string name="veydan_push_more">y %d más</string>
+    <string name="veydan_push_request">Solicitud de mensaje</string>
+    <string name="veydan_push_photo">Foto</string>
+    <string name="veydan_push_video">Video</string>
+    <string name="veydan_push_voice">Mensaje de voz</string>
+    <string name="veydan_push_circle">Mensaje de video</string>
+    <string name="veydan_push_audio">Audio</string>
+    <string name="veydan_push_file">Archivo</string>
+    <string name="veydan_push_album">Álbum: %d</string>
+    <string name="veydan_push_files">Archivos: %d</string>
+    <string name="veydan_push_link_group">Grupo «%s»</string>
+    <string name="veydan_push_link_group_nameless">Enlace a un grupo</string>
+    <string name="veydan_push_link_contact">Contacto: %s</string>
+    <string name="veydan_push_link_contact_nameless">Contacto</string>
+    <string name="veydan_push_invite">Te invita al grupo %s</string>
+    <string name="veydan_push_join_request">Pide unirse a %s</string>
+    <string name="veydan_push_welcome">Estás en el grupo %s</string>
+</resources>

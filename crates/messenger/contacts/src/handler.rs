@@ -29,7 +29,11 @@ impl Handler<MetaInbound> for MetaHandler {
     async fn handle(&self, msg: MetaInbound, ctx: &Context) -> Result<Vec<Effect>> {
         match msg {
             MetaInbound::Profile { author, created_at, content } => {
-                if self.profiles.apply_event(&author, created_at, &content).await? {
+                let changed = self.profiles.apply_event(&author, created_at, &content).await?;
+                if author == ctx.my_pubkey {
+                    self.profiles.note_own_heard();
+                }
+                if changed {
                     return Ok(vec![Effect::Emit(UiEvent {
                         name: UI_EVENT_PROFILE_UPDATED.into(),
                         payload: serde_json::json!({ "pubkey": author.as_hex() }),
@@ -88,6 +92,14 @@ mod tests {
             .await
             .unwrap();
         assert!(fx.is_empty(), "older profile emits nothing");
+        assert_eq!(profiles.own_heard(), 0, "not mine");
+
+        // Mine, whether newer than the cache or not: heard.
+        let mine = |at| MetaInbound::Profile { author: pk(&me), created_at: Timestamp(at), content: r#"{"name":"me"}"#.into() };
+        assert_eq!(h.handle(mine(5), &ctx).await.unwrap().len(), 1);
+        assert_eq!(profiles.own_heard(), 1);
+        assert!(h.handle(mine(5), &ctx).await.unwrap().is_empty());
+        assert_eq!(profiles.own_heard(), 2, "the same again still says the relay has nothing newer");
 
         let fx = h
             .handle(MetaInbound::Follows { author: pk(&other), created_at: Timestamp(1), follows: vec![pk(&me)] }, &ctx)

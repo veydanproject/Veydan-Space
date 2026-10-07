@@ -6,6 +6,8 @@
   import { isMobile } from '$lib/core/platform';
   import { api, type StartError } from '$lib/core/api';
   import { registry } from '$lib/core/registry';
+  import { loadLocaleFiles, locale } from '$lib/core/i18n';
+  import { get } from 'svelte/store';
   import { product } from '$lib/core/product';
   import { answerWithin, isMobileOs, retryOnce, START_TIMEOUT_MS, started as startWorked, wrongPlatform } from '$lib/core/start';
 
@@ -27,6 +29,7 @@
     const [{ default: Screen }, Frame] = await Promise.all([
       import('$lib/core/StartErrorScreen.svelte'),
       desktop ? import('$lib/core/desktop/WindowFrame.svelte').then((m) => m.default) : null,
+      loadLocaleFiles(get(locale)),
     ]);
     return { error, Screen, Frame, hostOs: hostOs ?? null };
   }
@@ -53,9 +56,11 @@
         return errorView(null, host?.os);
       }
     }
+    // The language's files too: the shell opens in its language, not in English first.
     const [{ default: Shell }] = await Promise.all([
       import('virtual:veydan-modules/shell'),
       registry.load(),
+      loadLocaleFiles(get(locale)),
     ]);
     return { Shell };
   }

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Wiadomości prywatne</string>
+    <string name="veydan_push_channel_groups">Grupy</string>
+    <string name="veydan_push_channel_service">Wiadomości systemowe</string>
+    <string name="veydan_push_update_title">Nowe powiadomienie</string>
+    <string name="veydan_push_update_body">Zaktualizuj aplikację, aby je zobaczyć.</string>
+    <string name="veydan_push_test_title">Powiadomienie testowe</string>
+    <string name="veydan_push_test_body">Powiadomienia push docierają na ten telefon.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Ty</string>
+    <string name="veydan_push_dm_title">Nowa wiadomość</string>
+    <string name="veydan_push_group">Grupa</string>
+    <string name="veydan_push_one">Nowa wiadomość</string>
+    <string name="veydan_push_many">Nowe wiadomości: %d</string>
+    <string name="veydan_push_more">i jeszcze %d</string>
+    <string name="veydan_push_request">Prośba o wiadomość</string>
+    <string name="veydan_push_photo">Zdjęcie</string>
+    <string name="veydan_push_video">Wideo</string>
+    <string name="veydan_push_voice">Wiadomość głosowa</string>
+    <string name="veydan_push_circle">Wiadomość wideo</string>
+    <string name="veydan_push_audio">Audio</string>
+    <string name="veydan_push_file">Plik</string>
+    <string name="veydan_push_album">Album: %d</string>
+    <string name="veydan_push_files">Pliki: %d</string>
+    <string name="veydan_push_link_group">Grupa „%s”</string>
+    <string name="veydan_push_link_group_nameless">Link do grupy</string>
+    <string name="veydan_push_link_contact">Kontakt: %s</string>
+    <string name="veydan_push_link_contact_nameless">Kontakt</string>
+    <string name="veydan_push_invite">Zaproszenie do grupy %s</string>
+    <string name="veydan_push_join_request">Prośba o dołączenie do %s</string>
+    <string name="veydan_push_welcome">Jesteś w grupie %s</string>
+</resources>

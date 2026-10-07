@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Direktnachrichten</string>
+    <string name="veydan_push_channel_groups">Gruppen</string>
+    <string name="veydan_push_channel_service">Dienstnachrichten</string>
+    <string name="veydan_push_update_title">Neue Benachrichtigung</string>
+    <string name="veydan_push_update_body">Aktualisiere die App, um sie zu sehen.</string>
+    <string name="veydan_push_test_title">Testbenachrichtigung</string>
+    <string name="veydan_push_test_body">Push-Benachrichtigungen erreichen dieses Smartphone.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Du</string>
+    <string name="veydan_push_dm_title">Neue Nachricht</string>
+    <string name="veydan_push_group">Gruppe</string>
+    <string name="veydan_push_one">Neue Nachricht</string>
+    <string name="veydan_push_many">Neue Nachrichten: %d</string>
+    <string name="veydan_push_more">und %d weitere</string>
+    <string name="veydan_push_request">Nachrichtenanfrage</string>
+    <string name="veydan_push_photo">Foto</string>
+    <string name="veydan_push_video">Video</string>
+    <string name="veydan_push_voice">Sprachnachricht</string>
+    <string name="veydan_push_circle">Rundvideo</string>
+    <string name="veydan_push_audio">Audio</string>
+    <string name="veydan_push_file">Datei</string>
+    <string name="veydan_push_album">Album: %d</string>
+    <string name="veydan_push_files">Dateien: %d</string>
+    <string name="veydan_push_link_group">Gruppe „%s“</string>
+    <string name="veydan_push_link_group_nameless">Link zu einer Gruppe</string>
+    <string name="veydan_push_link_contact">Kontakt: %s</string>
+    <string name="veydan_push_link_contact_nameless">Kontakt</string>
+    <string name="veydan_push_invite">Lädt dich in die Gruppe %s ein</string>
+    <string name="veydan_push_join_request">Möchte %s beitreten</string>
+    <string name="veydan_push_welcome">Du bist in der Gruppe %s</string>
+</resources>

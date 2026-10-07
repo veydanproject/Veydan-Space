@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_push_channel_dm">Mensagens diretas</string>
+    <string name="veydan_push_channel_groups">Grupos</string>
+    <string name="veydan_push_channel_service">Mensagens de serviço</string>
+    <string name="veydan_push_update_title">Nova notificação</string>
+    <string name="veydan_push_update_body">Atualize o app para vê-la.</string>
+    <string name="veydan_push_test_title">Notificação de teste</string>
+    <string name="veydan_push_test_body">As notificações push chegam a este celular.</string>
+    <string name="veydan_push_service_title">Veydan</string>
+    <string name="veydan_push_me">Você</string>
+    <string name="veydan_push_dm_title">Nova mensagem</string>
+    <string name="veydan_push_group">Grupo</string>
+    <string name="veydan_push_one">Nova mensagem</string>
+    <string name="veydan_push_many">Novas mensagens: %d</string>
+    <string name="veydan_push_more">e mais %d</string>
+    <string name="veydan_push_request">Solicitação de mensagem</string>
+    <string name="veydan_push_photo">Foto</string>
+    <string name="veydan_push_video">Vídeo</string>
+    <string name="veydan_push_voice">Mensagem de voz</string>
+    <string name="veydan_push_circle">Mensagem de vídeo</string>
+    <string name="veydan_push_audio">Áudio</string>
+    <string name="veydan_push_file">Arquivo</string>
+    <string name="veydan_push_album">Álbum: %d</string>
+    <string name="veydan_push_files">Arquivos: %d</string>
+    <string name="veydan_push_link_group">Grupo “%s”</string>
+    <string name="veydan_push_link_group_nameless">Link para um grupo</string>
+    <string name="veydan_push_link_contact">Contato: %s</string>
+    <string name="veydan_push_link_contact_nameless">Contato</string>
+    <string name="veydan_push_invite">Convida você para o grupo %s</string>
+    <string name="veydan_push_join_request">Pede para entrar em %s</string>
+    <string name="veydan_push_welcome">Você está no grupo %s</string>
+</resources>

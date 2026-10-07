@@ -48,8 +48,11 @@ const SHELLS = /** @type {const} */ ({
   desktop: path.join(UI, 'src/lib/core/desktop/DesktopShell.svelte'),
   android: path.join(UI, 'src/lib/core/mobile/MobileShell.svelte'),
 });
-/** The locales of the UI (src/lib/core/i18n.ts). */
+/** The languages written in the dictionaries themselves (src/lib/core/i18n.ts). */
 const LOCALES = /** @type {const} */ (['en', 'ru']);
+/** Every language of the UI (src/lib/core/languages.json). */
+const languageCodes = () =>
+  JSON.parse(fs.readFileSync(path.join(UI, 'src/lib/core/languages.json'), 'utf8')).languages.map((/** @type {{ code: string }} */ l) => l.code);
 /**
  * The pictures of the brand the UI shows by a fixed path (13.5): `/logo.png`
  * (the title bar, the top bar, About, the phone's home, hub and notes menu:
@@ -70,7 +73,7 @@ const relUi = (/** @type {string} */ p) => posix(path.relative(UI, p));
 /**
  * @typedef {{ id: string, ui: string, routes: string[], entries: Record<string, string>, platforms: string[] }} ModuleEntry
  * @typedef {{
- *   name: string, title: string, tagline: { en: string, ru: string }, repo: string, platform: 'desktop' | 'android',
+ *   name: string, title: string, tagline: { en: string, ru: string } & Record<string, string>, repo: string, platform: 'desktop' | 'android',
  *   present: ModuleEntry[], absent: ModuleEntry[], brand: Record<string, string>,
  *   outDir: string, pages: string, cacheDir: string, port: number, hmrPort: number, typesFile: string,
  * }} Product
@@ -134,11 +137,18 @@ export function productFromEnv(env = process.env) {
   if (typeof title !== 'string' || !title) {
     throw new Error(`product ${name}: no productName in ${target.app}/tauri.conf.json; the UI names the product by it (13.5)`);
   }
-  // The line under the name in About, in each locale of the UI (13.5).
+  // The line under the name in About (13.5): English and Russian always, the
+  // other languages of the UI where products.json has them (English stands in).
   const tagline = target.tagline ?? {};
   for (const lang of LOCALES) {
     if (typeof tagline[lang] !== 'string' || !tagline[lang]) {
       throw new Error(`product ${name}: no "tagline.${lang}" in ${rel(MANIFEST)} (13.5)`);
+    }
+  }
+  const codes = languageCodes();
+  for (const [lang, text] of Object.entries(tagline)) {
+    if (!codes.includes(lang) || typeof text !== 'string' || !text) {
+      throw new Error(`product ${name}: "tagline.${lang}" in ${rel(MANIFEST)} is not a language of the UI with a text (13.5)`);
     }
   }
   // The product's own repository (products.json `repo`): its releases, its
@@ -149,7 +159,7 @@ export function productFromEnv(env = process.env) {
   return {
     name,
     title,
-    tagline: { en: tagline.en, ru: tagline.ru },
+    tagline,
     repo: `https://github.com/${target.repo}`,
     platform,
     present: all.filter(inBuild),
@@ -259,6 +269,8 @@ export function virtualCode(product, id) {
       `  ru: { ${merged('.ru')} },`,
       `  mobile: { en: { ${merged('.mobile.en')} }, ru: { ${merged('.mobile.ru')} } },`,
       '};',
+      // The files of the other languages, fetched one language at a time (core/i18n.ts).
+      `export const locales = [${mods.map((m) => `${m.id}.locales`).join(', ')}];`,
     ].join('\n');
   }
   return [...imports, `export const modules = { ${mods.map((m) => m.id).join(', ')} };`].join('\n');
@@ -290,7 +302,13 @@ export function virtualTypes(product) {
   dict('', '    ');
   lines.push('    mobile: {');
   dict("['mobile']", '      ');
-  lines.push('    };', '  };', '}', '');
+  lines.push(
+    '    };',
+    '  };',
+    '  export const locales: Record<string, () => Promise<{ desktop: Record<string, string>; mobile: Record<string, string> }>>[];',
+    '}',
+    '',
+  );
   for (const slot of ['desktop', 'mobile']) {
     lines.push(`declare module 'virtual:veydan-modules/${slot}' {`, '  export const modules: {');
     for (const m of mods(slot)) lines.push(`    ${m.id}: typeof import(${from(m.entries[slot])});`);

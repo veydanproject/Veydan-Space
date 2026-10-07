@@ -22,19 +22,20 @@ pub struct ProfileRow {
     pub event_created_at: i64,
     pub fetched_at: i64,
     pub raw_json: String,
+    /// The bio with its marks, kept only when it agrees with `about`.
+    pub about_rich: Option<String>,
+    /// The checked social links, a JSON list of `{"p","h"}`.
+    pub socials_json: Option<String>,
 }
 
-const COLS: &str = "pubkey, name, display_name, about, picture, banner, website, nip05, lud16, nip05_verified_at, event_created_at, fetched_at, raw_json";
+const COLS: &str = "pubkey, name, display_name, about, picture, banner, website, nip05, lud16, nip05_verified_at, event_created_at, fetched_at, raw_json, about_rich, socials_json";
 
 pub async fn get(store: &Store, pubkey: &str) -> Result<Option<ProfileRow>> {
-    sqlx::query_as::<_, ProfileRow>(
-        "SELECT pubkey, name, display_name, about, picture, banner, website, nip05, lud16, nip05_verified_at, event_created_at, fetched_at, raw_json
-         FROM msg_profiles WHERE pubkey = ?",
-    )
-    .bind(pubkey)
-    .fetch_optional(store.pool())
-    .await
-    .map_err(storage)
+    sqlx::query_as::<_, ProfileRow>(sqlx::AssertSqlSafe(format!("SELECT {COLS} FROM msg_profiles WHERE pubkey = ?")))
+        .bind(pubkey)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)
 }
 
 pub async fn get_many(store: &Store, pubkeys: &[String]) -> Result<Vec<ProfileRow>> {
@@ -52,13 +53,14 @@ pub async fn get_many(store: &Store, pubkeys: &[String]) -> Result<Vec<ProfileRo
 /// preserved unless the nip05 value changed.
 pub async fn upsert_if_newer(store: &Store, row: &ProfileRow) -> Result<bool> {
     let res = sqlx::query(sqlx::AssertSqlSafe(format!(
-            "INSERT INTO msg_profiles ({COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO msg_profiles ({COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(pubkey) DO UPDATE SET
                name = excluded.name, display_name = excluded.display_name, about = excluded.about,
                picture = excluded.picture, banner = excluded.banner, website = excluded.website,
                nip05 = excluded.nip05, lud16 = excluded.lud16,
                nip05_verified_at = CASE WHEN msg_profiles.nip05 IS excluded.nip05 THEN msg_profiles.nip05_verified_at ELSE NULL END,
-               event_created_at = excluded.event_created_at, fetched_at = excluded.fetched_at, raw_json = excluded.raw_json
+               event_created_at = excluded.event_created_at, fetched_at = excluded.fetched_at, raw_json = excluded.raw_json,
+               about_rich = excluded.about_rich, socials_json = excluded.socials_json
              WHERE excluded.event_created_at > msg_profiles.event_created_at"
     )))
     .bind(&row.pubkey)
@@ -74,6 +76,8 @@ pub async fn upsert_if_newer(store: &Store, row: &ProfileRow) -> Result<bool> {
     .bind(row.event_created_at)
     .bind(crate::now())
     .bind(&row.raw_json)
+    .bind(&row.about_rich)
+    .bind(&row.socials_json)
     .execute(store.pool())
     .await
     .map_err(storage)?;
@@ -93,12 +97,11 @@ pub async fn set_nip05_verified(store: &Store, pubkey: &str, verified_at: Option
 /// Case-insensitive search over name/display_name/nip05/pubkey prefix.
 pub async fn search(store: &Store, query: &str, limit: i64) -> Result<Vec<ProfileRow>> {
     let like = format!("%{}%", query.trim().to_lowercase());
-    sqlx::query_as::<_, ProfileRow>(
-        "SELECT pubkey, name, display_name, about, picture, banner, website, nip05, lud16, nip05_verified_at, event_created_at, fetched_at, raw_json
-         FROM msg_profiles
+    sqlx::query_as::<_, ProfileRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_profiles
          WHERE lower(COALESCE(name,'')) LIKE ? OR lower(COALESCE(display_name,'')) LIKE ? OR lower(COALESCE(nip05,'')) LIKE ? OR pubkey LIKE ?
-         ORDER BY fetched_at DESC LIMIT ?",
-    )
+         ORDER BY fetched_at DESC LIMIT ?"
+    )))
     .bind(&like)
     .bind(&like)
     .bind(&like)
@@ -125,6 +128,31 @@ mod tests {
         assert_eq!(get(&s, "a").await.unwrap().unwrap().name.as_deref(), Some("one"));
         assert!(upsert_if_newer(&s, &row("a", "two", 20)).await.unwrap());
         assert_eq!(get(&s, "a").await.unwrap().unwrap().name.as_deref(), Some("two"));
+    }
+
+    #[tokio::test]
+    async fn bio_and_socials_follow_the_newer_event() {
+        let s = Store::open_in_memory().await.unwrap();
+        let mut r = row("a", "x", 1);
+        r.about = Some("hi".into());
+        r.about_rich = Some("**hi**".into());
+        r.socials_json = Some(r#"[{"p":"github","h":"octocat"}]"#.into());
+        assert!(upsert_if_newer(&s, &r).await.unwrap());
+        let got = get(&s, "a").await.unwrap().unwrap();
+        assert_eq!(got.about_rich.as_deref(), Some("**hi**"));
+        assert_eq!(got.socials_json.as_deref(), Some(r#"[{"p":"github","h":"octocat"}]"#));
+
+        // An older event changes nothing.
+        let older = ProfileRow { about: Some("old".into()), ..row("a", "x", 0) };
+        assert!(!upsert_if_newer(&s, &older).await.unwrap());
+        assert_eq!(get(&s, "a").await.unwrap().unwrap().about_rich.as_deref(), Some("**hi**"));
+
+        // A newer kind 0 from another client has neither: both go.
+        let newer = ProfileRow { about: Some("plain".into()), ..row("a", "x", 2) };
+        assert!(upsert_if_newer(&s, &newer).await.unwrap());
+        let got = get(&s, "a").await.unwrap().unwrap();
+        assert_eq!((got.about_rich, got.socials_json), (None, None));
+        assert_eq!(search(&s, "x", 5).await.unwrap()[0].about.as_deref(), Some("plain"));
     }
 
     #[tokio::test]

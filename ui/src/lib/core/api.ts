@@ -162,7 +162,7 @@ export const api = {
       }),
     setTrayLabels: (labels: TrayLabels) => call<void>('tray_set_labels', { labels }),
     setLocale: (locale: string) => call<void>('app_locale_set', { locale }),
-    getLocale: () => call<string>('app_locale_get'),
+    getLocale: () => call<string | null>('app_locale_get'),
     windowMinimize: () => call<void>('window_minimize'),
   },
 

@@ -190,6 +190,11 @@ export const translations = {
     back_workspaces: 'Workspaces',
     // Export / Import
     export_title: 'Export profile',
+    profile_export_json_saved: 'JSON saved: {path}',
+    profile_export_zip_saved: 'ZIP saved: {path}',
+    profile_export_zip_filter: 'ZIP archive',
+    profile_import_not_export: 'Not a profile export',
+    profile_import_bad_json: 'Invalid JSON',
     export_no_proxy: '(no proxy assigned)',
     export_include_proxy: 'Include proxy',
     export_include_password: 'Include proxy password',
@@ -524,6 +529,11 @@ export const translations = {
     back_workspaces: 'Воркспейсы',
     // Export / Import
     export_title: 'Экспорт профиля',
+    profile_export_json_saved: 'JSON сохранён: {path}',
+    profile_export_zip_saved: 'ZIP сохранён: {path}',
+    profile_export_zip_filter: 'ZIP-архив',
+    profile_import_not_export: 'Это не экспорт профиля',
+    profile_import_bad_json: 'Неверный JSON',
     export_no_proxy: '(прокси не назначен)',
     export_include_proxy: 'Включить прокси',
     export_include_password: 'Включить пароль прокси',

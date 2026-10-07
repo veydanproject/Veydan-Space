@@ -3,3 +3,9 @@
 
 // The light entry: the dictionary alone, no stores on the import path of i18n.
 export { translations } from '$lib/tor/i18n';
+
+/** The other languages (core/i18n.ts fetches a language's file when it is first shown). */
+export const locales = import.meta.glob<{ desktop: Record<string, string>; mobile: Record<string, string> }>(
+  '../locales/*.json',
+  { import: 'default' },
+);

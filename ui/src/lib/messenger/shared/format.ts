@@ -1,14 +1,78 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-/** `1.4 MB`, binary units, one decimal below 10. */
-export function bytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '0 B';
+/**
+ * `1.4 MB`, binary units, one decimal below 10. With `lang` (a BCP-47 tag)
+ * the number and the unit are that language's: `5,2 МБ`.
+ */
+export function bytes(n: number, lang?: string): string {
+  if (!Number.isFinite(n) || n <= 0) return lang ? `0${NBSP}${unitOf('byte', 'narrow', lang)}` : '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
   let i = 0;
   let v = n;
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+  let digits = v < 10 && i > 0 ? 1 : 0;
+  // Rounded as shown first: just under 1024 of a unit is 1,0 of the next one, never 1 024 of it.
+  const shown = digits ? Math.round(v * 10) / 10 : Math.round(v);
+  if (shown >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+    digits = v < 10 ? 1 : 0;
+  }
+  if (!lang) return `${digits ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+  const number = new Intl.NumberFormat(lang, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v);
+  return `${number}${NBSP}${unitOf(BYTE_UNITS[i], 'narrow', lang)}`;
+}
+
+const BYTE_UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte'] as const;
+/** Between a number and its unit: the two never part at the end of a line. */
+const NBSP = '\u00a0';
+
+/** The name of a unit as a language writes it after a number. */
+function unitOf(unit: string, display: 'narrow' | 'short', lang: string): string {
+  const parts = new Intl.NumberFormat(lang, { style: 'unit', unit, unitDisplay: display }).formatToParts(5);
+  return parts.find((p) => p.type === 'unit')?.value ?? unit;
+}
+
+/** A speed: `5,2 МБ/с`, `5.2 MB/s`, `5,2 MB/s`; '' while nothing moves. */
+export function rate(bps: number, lang = 'en'): string {
+  if (!Number.isFinite(bps) || bps <= 0) return '';
+  return `${bytes(bps, lang)}${perSecond(lang)}`;
+}
+
+/**
+ * What makes a size a speed, as the language writes it after `MB`: `/s`,
+ * also where its own short second is a word (`Sek.` in German). Russian
+ * keeps its own `с`: CLDR writes its `МБ/c` with a Latin letter.
+ */
+function perSecond(lang: string): string {
+  if (lang.split('-')[0].toLowerCase() !== 'ru') {
+    try {
+      const speed = unitOf('megabyte-per-second', 'narrow', lang);
+      const size = unitOf('megabyte', 'narrow', lang);
+      if (speed.startsWith(size) && speed.length > size.length) return speed.slice(size.length);
+    } catch {
+      // No compound units here: the unit of a second follows.
+    }
+  }
+  return `/${unitOf('second', 'narrow', lang)}`;
+}
+
+/** Time left, roughly: `~40 с`, `~2 мин`, `~1 ч`; '' when unknown. */
+export function eta(secs: number | null | undefined, lang = 'en'): string {
+  if (secs == null || !Number.isFinite(secs) || secs <= 0) return '';
+  const [unit, v] = secs < 60 ? ['second', Math.max(5, Math.round(secs / 5) * 5)] as const
+    : secs < 3600 ? ['minute', Math.max(1, Math.round(secs / 60))] as const
+    : ['hour', Math.round(secs / 3600)] as const;
+  // 58 s rounds to 60: one minute, not "60 s".
+  if (unit === 'second' && v >= 60) return `~${duration(1, 'minute', lang)}`;
+  if (unit === 'minute' && v >= 60) return `~${duration(1, 'hour', lang)}`;
+  return `~${duration(v, unit, lang)}`;
+}
+
+/** `12 с`, `2 min`: a whole number of a unit of time. */
+export function duration(n: number, unit: 'second' | 'minute' | 'hour', lang = 'en'): string {
+  return new Intl.NumberFormat(lang, { style: 'unit', unit, unitDisplay: 'short', maximumFractionDigits: 0 }).format(n).replace(/ /g, NBSP);
 }
 
 export function percent(done: number, total: number): number {

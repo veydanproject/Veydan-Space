@@ -28,7 +28,7 @@
     if (!isTauri) return;
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({ directory: true, multiple: false, title: 'Select notes folder' });
+      const selected = await open({ directory: true, multiple: false, title: $t('notes_dir_pick_title') });
       if (selected && typeof selected === 'string') {
         notesDir = selected;
       }

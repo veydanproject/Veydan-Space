@@ -17,6 +17,7 @@ messenger-http.workspace = true
 nostr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ts-rs.workspace = true
 async-trait.workspace = true
 reqwest.workspace = true
 aes-gcm.workspace = true
@@ -25,10 +26,13 @@ hmac.workspace = true
 hex.workspace = true
 base64.workspace = true
 getrandom.workspace = true
+futures-util.workspace = true
+bytes.workspace = true
 
 tokio = { workspace = true, features = ["sync", "rt", "time", "fs", "io-util"] }
 
 [dev-dependencies]
 zeroize.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 tempfile.workspace = true
+wiremock.workspace = true

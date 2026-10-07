@@ -9,16 +9,24 @@
 //! `make msg-types` (or `UPDATE_TS_BINDINGS=1 cargo test -p
 //! messenger-runtime bindings`) writes them again.
 
+use crate::avatars::AvatarPreview;
+use crate::cards::{ContactPrivateView, OwnPrivateView};
 use crate::links::{GroupMembership, LinkGroupKind, LinkView};
 use crate::net::{BridgeView, NetCheck, NetMode, NetStatus, Verdict};
 use crate::shared::{SharedCounts, SharedSection};
+use messenger_avatar::CropRect;
+use messenger_media::{Progress, TransferStage, TransferView};
+use messenger_contacts::{CardView, ProfileInput, ProfileView, SocialLink, SocialPlatform, SocialView};
 use messenger_preview::Preview;
+use messenger_richtext::{Color, Span, Style};
 use ts_rs::{Config, TS};
 
 /// Relative to this crate.
 pub const LINKS_FILE: &str = "../../../ui/src/lib/messenger/generated/links.ts";
 pub const SHARED_FILE: &str = "../../../ui/src/lib/messenger/generated/shared.ts";
 pub const NET_FILE: &str = "../../../ui/src/lib/messenger/generated/net.ts";
+pub const PROFILE_FILE: &str = "../../../ui/src/lib/messenger/generated/profile.ts";
+pub const TRANSFER_FILE: &str = "../../../ui/src/lib/messenger/generated/transfer.ts";
 
 const HEADER: &str = "// SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
@@ -63,9 +71,46 @@ pub fn net_ts() -> String {
     out
 }
 
+/// A profile, its bio and links, a contact card, the avatar's crop and the
+/// phones, as the profile editor and the cards read them.
+pub fn profile_ts() -> String {
+    let cfg = Config::new();
+    let mut out = String::from(HEADER);
+    out += &export::<Color>(&cfg, "A color of the bio's palette; the UI maps each to a token readable in both themes.");
+    out += &export::<Style>(&cfg, "How a piece of a bio is written.");
+    out += &export::<Span>(&cfg, "A piece of a bio: text, a link (its text is its address) or a line break.");
+    out += &export::<SocialLink>(&cfg, "A link to a profile elsewhere as it is stored and sent: a platform id and a handle.");
+    out += &export::<SocialView>(&cfg, "A checked link to a profile elsewhere, as the UI shows it; `url` may be empty.");
+    out += &export::<SocialPlatform>(&cfg, "A platform the user can pick for a link.");
+    out += &export::<ProfileView>(&cfg, "A profile as the UI sees it.");
+    out += &export::<ProfileInput>(&cfg, "What the user edits of their own profile; the avatar has commands of its own.");
+    out += &export::<CardView>(&cfg, "A contact card as the UI shows it.");
+    out += &export::<CropRect>(&cfg, "The part of a picked picture to keep, as fractions 0..1 of its preview.");
+    out += &export::<AvatarPreview>(&cfg, "A picked picture, ready to be cropped.");
+    out += &export::<OwnPrivateView>(&cfg, "My phone, which never goes into my public profile, and whether my card carries it by default.");
+    out += &export::<ContactPrivateView>(&cfg, "The phone a contact sent me in its own card; `null` when none.");
+    out
+}
+
+/// A transfer of a file, as the bubbles and the list of transfers read it.
+pub fn transfer_ts() -> String {
+    let cfg = Config::new();
+    let mut out = String::from(HEADER);
+    out += &export::<TransferStage>(&cfg, "Where a transfer is: queued, preparing (a photo is made smaller), checking what an earlier attempt kept, uploading, publishing its message, downloading, assembling, verifying.");
+    out += &export::<Progress>(&cfg, "The payload of the runtime event `transfer.progress` (`messenger://event`).");
+    out += &export::<TransferView>(&cfg, "A transfer as `messenger_media_transfers` and `messenger_media_transfer` read it.");
+    out
+}
+
 /// Every generated file and what it should hold.
-pub fn files() -> [(&'static str, String); 3] {
-    [(LINKS_FILE, links_ts()), (SHARED_FILE, shared_ts()), (NET_FILE, net_ts())]
+pub fn files() -> [(&'static str, String); 5] {
+    [
+        (LINKS_FILE, links_ts()),
+        (SHARED_FILE, shared_ts()),
+        (NET_FILE, net_ts()),
+        (PROFILE_FILE, profile_ts()),
+        (TRANSFER_FILE, transfer_ts()),
+    ]
 }
 
 #[cfg(test)]

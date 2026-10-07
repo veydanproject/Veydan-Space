@@ -493,7 +493,19 @@ impl MessengerRuntime {
 
 impl MessengerRuntime {
     /// Remove a chat from this device. A group has to be left first.
+    /// Its transfers end first, while their messages are still here.
     pub async fn chat_delete(&self, chat_id: &str) -> Result<()> {
+        if let Some(group) = chat_id.strip_prefix("group:") {
+            let me = self.session_pubkey().await;
+            let joined = match &me {
+                Some(me) => self.groups().get(group, me).await?.is_some_and(|g| g.membership == messenger_groups::service::MEMBERSHIP_JOINED),
+                None => false,
+            };
+            if joined {
+                return Err(MessengerError::Invalid("group_leave_first".into()));
+            }
+        }
+        self.cancel_transfers_of_chat(chat_id).await;
         match chat_id.strip_prefix("group:") {
             Some(group) => self.group_forget(group).await,
             None => self.dm.delete_chat(chat_id).await,

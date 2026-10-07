@@ -6,7 +6,7 @@
 //! app and a computer's notification, direct message or group alike.
 
 use crate::view::preview;
-use messenger_core::envelope::{T_MEDIA, T_TEXT};
+use messenger_core::envelope::{T_CONTACT, T_MEDIA, T_TEXT};
 use messenger_core::{Body, Envelope, LinkKind};
 use messenger_links::{ContactLink, LinkType, Uri};
 
@@ -22,6 +22,7 @@ pub fn body_of(envelope: &Envelope) -> Option<Body> {
     match envelope.t.as_str() {
         T_TEXT => text(envelope.as_text().unwrap_or_default()),
         T_MEDIA => Some(media(envelope)),
+        T_CONTACT => Some(contact(envelope)),
         _ => text(envelope.str_field("text").unwrap_or_default()),
     }
 }
@@ -63,6 +64,12 @@ fn link(text: &str) -> Option<Body> {
 /// What anybody may put into a link is no word to show as it is.
 fn clean(name: &str) -> String {
     name.chars().filter(|c| !c.is_control()).collect()
+}
+
+/// A contact card is told as a link to a person: by the name it shows.
+fn contact(envelope: &Envelope) -> Body {
+    let name = envelope.fields.get("card").map(messenger_contacts::card::name_of).unwrap_or_default();
+    Body::Link { link: LinkKind::Contact, title: preview(&name) }
 }
 
 /// A file somebody sent is told by its kind and name, even when its
@@ -122,6 +129,19 @@ mod tests {
 
         // A link of a kind this app does not know is shown as it came.
         assert_eq!(body_of(&Envelope::text("veydan://poll/abc")), Some(Body::Text { text: "veydan://poll/abc".into() }));
+    }
+
+    #[test]
+    fn a_contact_card_is_told_by_its_name() {
+        let card = serde_json::json!({ "pubkey": "ab".repeat(32), "name": "anna", "display_name": "  Анна\u{202E}\nСмирнова " });
+        assert_eq!(
+            body_of(&Envelope::contact(card)),
+            Some(Body::Link { link: LinkKind::Contact, title: "Анна Смирнова".into() })
+        );
+        let nameless = Envelope::contact(serde_json::json!({ "pubkey": "ab".repeat(32) }));
+        assert_eq!(body_of(&nameless), Some(Body::Link { link: LinkKind::Contact, title: String::new() }));
+        let broken = Envelope::new(T_CONTACT).with("card", "junk");
+        assert_eq!(body_of(&broken), Some(Body::Link { link: LinkKind::Contact, title: String::new() }));
     }
 
     #[test]

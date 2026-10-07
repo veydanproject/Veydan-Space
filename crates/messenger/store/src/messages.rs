@@ -22,6 +22,9 @@ pub const CT_DELETE: &str = "delete";
 pub const CT_CONTROL: &str = "control";
 pub const CT_SYSTEM: &str = "system";
 pub const CT_MEDIA: &str = "media";
+/// A contact card (`messenger_contacts::card`): `media_json` holds the
+/// checked card, `text` is empty.
+pub const CT_CONTACT: &str = "contact";
 
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
 pub struct MessageRow {
@@ -294,13 +297,16 @@ pub async fn set_media_json(store: &Store, id: &str, media_json: &str) -> Result
     Ok(())
 }
 
-/// After a restart no upload is running: placeholders show as paused.
-pub async fn pause_uploading(store: &Store) -> Result<u64> {
-    let res = sqlx::query("UPDATE msg_messages SET status = 'paused' WHERE status = 'uploading'")
-        .execute(store.pool())
-        .await
-        .map_err(storage)?;
-    Ok(res.rows_affected())
+/// After a restart no upload is running: placeholders show as paused, all
+/// but these (another process with the data folder may be sending them).
+pub async fn pause_uploading_except(store: &Store, ids: &[String]) -> Result<u64> {
+    let marks = vec!["?"; ids.len()].join(", ");
+    let sql = format!("UPDATE msg_messages SET status = 'paused' WHERE status = 'uploading' AND id NOT IN ({marks})");
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
+    for id in ids {
+        q = q.bind(id);
+    }
+    Ok(q.execute(store.pool()).await.map_err(storage)?.rows_affected())
 }
 
 #[cfg(test)]
@@ -357,6 +363,25 @@ mod tests {
         assert!(m.text.is_none() && m.deleted_at == Some(100));
         assert_eq!(count_visible_incoming(&s, "c").await.unwrap(), 5, "a retracted request still was a request");
         assert_eq!(count_visible_outgoing(&s, "c").await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn every_placeholder_but_those_named_is_paused() {
+        let s = Store::open_in_memory().await.unwrap();
+        for id in ["mine", "lost", "theirs", "sent"] {
+            let mut m = text(id, "c", DIR_OUT, 1);
+            m.status = if id == "sent" { STATUS_SENT.into() } else { STATUS_UPLOADING.into() };
+            insert(&s, &m).await.unwrap();
+        }
+        let named = ["theirs".to_string(), "sent".to_string()];
+        assert_eq!(pause_uploading_except(&s, &named).await.unwrap(), 2);
+        let status = async |id| get(&s, id).await.unwrap().unwrap().status;
+        assert_eq!(status("mine").await, "paused");
+        assert_eq!(status("lost").await, "paused", "nothing named sends it");
+        assert_eq!(status("theirs").await, STATUS_UPLOADING, "another process may be sending it");
+        assert_eq!(status("sent").await, STATUS_SENT);
+        set_status(&s, "mine", STATUS_UPLOADING, None).await.unwrap();
+        assert_eq!(pause_uploading_except(&s, &[]).await.unwrap(), 2, "with none named, all");
     }
 
     #[tokio::test]

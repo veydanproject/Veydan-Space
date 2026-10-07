@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 667
+- **Rust / Cargo crates:** 678
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 823
+- **Total third-party components:** 834
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -19,7 +19,7 @@ licenses under which these components are distributed.
 > completeness of attribution across all supported platforms.
 
 All bundled dependencies use permissive or file-level-copyleft licenses
-(MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0, MPL-2.0, CC0, BSL-1.0). **No GPL, LGPL,
+(MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0, MPL-2.0, CC0, BSL-1.0; the fonts OFL-1.1). **No GPL, LGPL,
 AGPL or SSPL code is included.** MPL-2.0 components (`cssparser`, `selectors`,
 `webpki-root-certs`, `lightningcss`, and related crates) are used unmodified;
 their file-level copyleft imposes no obligations on Veydan Space's own code.
@@ -30,19 +30,19 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 | License | Count |
 |---|---:|
-| MIT OR Apache-2.0 | 270 |
-| MIT | 132 |
+| MIT OR Apache-2.0 | 275 |
+| MIT | 133 |
 | MIT OR Apache-2.0 (platform dep) | 96 |
 | Apache-2.0 OR MIT | 80 |
 | Unicode-3.0 | 18 |
 | Apache-2.0 | 7 |
 | MPL-2.0 | 6 |
 | ISC | 6 |
-| Unlicense OR MIT | 5 |
+| Unlicense OR MIT | 6 |
 | BSD-3-Clause | 5 |
 | CC0-1.0 OR MIT-0 OR Apache-2.0 | 3 |
 | Apache-2.0 OR ISC OR MIT | 3 |
-| MIT OR Apache-2.0 OR Zlib | 3 |
+| MIT OR Apache-2.0 OR Zlib | 5 |
 | Zlib OR Apache-2.0 OR MIT | 2 |
 | Zlib | 3 |
 | BSD-3-Clause OR MIT OR Apache-2.0 | 2 |
@@ -66,6 +66,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | Apache-2.0 AND ISC | 1 |
 | (MIT OR Apache-2.0) AND Unicode-3.0 | 1 |
 | Apache-2.0 OR BSL-1.0 OR MIT | 1 |
+| BSD-3-Clause OR Apache-2.0 | 2 |
 | BSL-1.0 (platform dep) | 2 |
 
 ## License summary — npm packages
@@ -82,7 +83,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (667)
+## Full acknowledgements — Rust crates (678)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -130,6 +131,7 @@ Thank you to the authors of the following Cargo crates:
 | bumpalo | 3.20.3 | MIT OR Apache-2.0 |
 | bytemuck | 1.25.0 | Zlib OR Apache-2.0 OR MIT * |
 | byteorder | 1.5.0 | Unlicense OR MIT |
+| byteorder-lite | 0.1.0 | Unlicense OR MIT |
 | bytes | 1.12.0 | MIT |
 | bzip2 | 0.6.1 | MIT OR Apache-2.0 |
 | cairo-rs | 0.18.5 | MIT |
@@ -151,6 +153,7 @@ Thank you to the authors of the following Cargo crates:
 | clipboard-win | 5.4.1 | BSL-1.0 (platform dep) |
 | cmake | 0.1.58 | MIT OR Apache-2.0 |
 | cmov | 0.5.4 | Apache-2.0 OR MIT |
+| color_quant | 1.1.0 | MIT |
 | combine | 4.6.7 | MIT * |
 | concurrent-queue | 2.5.0 | Apache-2.0 OR MIT |
 | const-oid | 0.10.2 | Apache-2.0 OR MIT |
@@ -272,6 +275,7 @@ Thank you to the authors of the following Cargo crates:
 | getrandom | 0.3.4 | MIT OR Apache-2.0 |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 |
 | ghash | 0.6.0 | Apache-2.0 OR MIT |
+| gif | 0.14.2 | MIT OR Apache-2.0 |
 | gio | 0.18.4 | MIT |
 | gio-sys | 0.18.1 | MIT |
 | glib | 0.18.5 | MIT |
@@ -319,6 +323,8 @@ Thank you to the authors of the following Cargo crates:
 | ident_case | 1.0.1 | MIT/Apache-2.0 |
 | idna | 1.1.0 | MIT OR Apache-2.0 |
 | idna_adapter | 1.2.2 | Apache-2.0 OR MIT |
+| image | 0.25.10 | MIT OR Apache-2.0 |
+| image-webp | 0.2.4 | MIT OR Apache-2.0 |
 | indexmap | 1.9.3 | Apache-2.0 OR MIT |
 | indexmap | 2.14.0 | Apache-2.0 OR MIT |
 | infer | 0.19.0 | MIT |
@@ -369,6 +375,7 @@ Thank you to the authors of the following Cargo crates:
 | mio | 1.2.1 | MIT |
 | ml-kem | 0.3.2 | Apache-2.0 OR MIT |
 | module-lattice | 0.2.3 | Apache-2.0 OR MIT |
+| moxcms | 0.8.1 | BSD-3-Clause OR Apache-2.0 |
 | muda | 0.19.3 | Apache-2.0 OR MIT |
 | ndk | 0.9.0 | MIT OR Apache-2.0 (platform dep) |
 | ndk-sys | 0.6.0+11769913 | MIT OR Apache-2.0 (platform dep) |
@@ -448,6 +455,8 @@ Thank you to the authors of the following Cargo crates:
 | proc-macro-error | 1.0.4 | MIT OR Apache-2.0 |
 | proc-macro-error-attr | 1.0.4 | MIT OR Apache-2.0 |
 | proc-macro2 | 1.0.106 | MIT OR Apache-2.0 |
+| pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 |
+| quick-error | 2.0.1 | MIT/Apache-2.0 |
 | quick-xml | 0.39.4 | MIT |
 | quick-xml | 0.41.0 | MIT |
 | quinn | 0.11.11 | MIT OR Apache-2.0 |
@@ -667,6 +676,7 @@ Thank you to the authors of the following Cargo crates:
 | webview2-com | 0.38.2 | MIT * |
 | webview2-com-macros | 0.8.1 | MIT * |
 | webview2-com-sys | 0.38.2 | MIT * |
+| weezl | 0.1.12 | MIT OR Apache-2.0 |
 | which | 8.0.4 | MIT |
 | whoami | 2.1.2 | Apache-2.0 OR BSL-1.0 OR MIT |
 | winapi | 0.3.9 | MIT OR Apache-2.0 (platform dep) |
@@ -755,6 +765,8 @@ Thank you to the authors of the following Cargo crates:
 | zstd | 0.13.3 | MIT |
 | zstd-safe | 7.2.4 | MIT OR Apache-2.0 |
 | zstd-sys | 2.0.16+zstd.1.5.7 | MIT/Apache-2.0 |
+| zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib |
+| zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib |
 
 ---
 
@@ -923,6 +935,23 @@ Thank you to the authors of the following npm packages:
 
 ---
 
+## Fonts
+
+Bundled with the UI, under the SIL Open Font License 1.1 (OFL-1.1):
+
+- **Manrope** — @fontsource-variable/manrope
+- **JetBrains Mono** — @fontsource-variable/jetbrains-mono
+- **Noto Color Emoji** — @fontsource/noto-color-emoji
+- **Noto Sans SC, Noto Sans JP, Noto Sans KR** — github.com/google/fonts, cut down to the characters of the UI's Chinese, Japanese and Korean strings (`ui/src/lib/core/fonts`, made by `scripts/fonts-cjk.mjs`); also in the web clipper of Veydan Space
+
+---
+
+## Icons
+
+The brand icons of social networks in the profile (`ui/src/lib/core/Icon.svelte`, `brand-*`) are the paths of **simple-icons** 16.34.0 (LinkedIn from 13.21.0), https://simpleicons.org, under CC0-1.0. The names and logos are trademarks of their owners and only point to a person's page there.
+
+---
+
 ## Full license texts
 
 The complete text of each referenced license is available at:
@@ -937,6 +966,7 @@ The complete text of each referenced license is available at:
 - Unicode-3.0 — https://www.unicode.org/license.txt
 - CC0-1.0 — https://creativecommons.org/publicdomain/zero/1.0/legalcode
 - BSL-1.0 — https://www.boost.org/LICENSE_1_0.txt
+- OFL-1.1 — https://openfontlicense.org/open-font-license-official-text/
 
 Copies of the Apache-2.0 and MIT license texts, where required, are retained in
 the corresponding package directories under `ui/node_modules/` and the Cargo

@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "messenger-richtext"
+description = "The small markup of a profile's bio: normalising, parsing into typed spans, plain-text stripping"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

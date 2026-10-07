@@ -23,6 +23,9 @@
 //! messenger-cli [--data-dir DIR] delete <message-id>
 //! messenger-cli [--data-dir DIR] react <message-id> <emoji>
 //! messenger-cli [--data-dir DIR] emoji-top [N]
+//! messenger-cli [--data-dir DIR] phone [<number>|none [--share]] | contact-phone <npub|hex>
+//! messenger-cli [--data-dir DIR] card-send <npub|hex|group:ID> [me|<npub|hex>] [--phone]
+//! messenger-cli [--data-dir DIR] cards <npub|hex|group:ID> [SECONDS] | card-accept <message-id>
 //! messenger-cli [--data-dir DIR] relation <npub|hex>
 //! messenger-cli [--data-dir DIR] request|accept|decline|block|unblock|remove <npub|hex>
 //! messenger-cli [--data-dir DIR] push-on <token> [--server URL]
@@ -36,7 +39,7 @@
 //! Secrets live in `<data-dir>/secrets.json` in plaintext: development only.
 
 use messenger_core::MessengerConfig;
-use messenger_runtime::MessengerRuntime;
+use messenger_runtime::{MessengerRuntime, Paused};
 use messenger_testkit::FileSecretStore;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -45,7 +48,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> [picture] | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -84,7 +87,9 @@ async fn main() {
         _ => {}
     }
 
-    let config = MessengerConfig::new(data_dir.clone());
+    // One command and out: what an earlier run left is taken up by `resume
+    // <id>`, never behind the back of the command.
+    let config = MessengerConfig::new(data_dir.clone()).without_resume();
     let secrets = Arc::new(FileSecretStore::open(data_dir.join("secrets.json")).await.unwrap_or_else(die));
     let rt = MessengerRuntime::start(config, secrets).await.unwrap_or_else(die);
 
@@ -257,7 +262,7 @@ async fn main() {
                     if m.direction == "out" { "->" } else { "<-" },
                     m.status,
                     ticks(&m),
-                    if m.deleted { "(deleted)".to_string() } else { m.text.clone().unwrap_or_else(|| format!("[{}]", m.content_type)) },
+                    if m.deleted { "(deleted)".to_string() } else { body_line(&m) },
                     if m.edited_at.is_some() && !m.deleted { " (edited)" } else { "" },
                     reactions(&m),
                     format_args!("  #{}", &m.id[..8.min(m.id.len())]),
@@ -382,6 +387,71 @@ async fn main() {
             flush(&rt).await;
             println!("{} #{}{}", if m.reactions.iter().any(|r| r.mine && r.emoji == args[1]) { "put" } else { "taken back" }, &m.id[..8], reactions(&m));
         }
+        "phone" => {
+            // `phone`: shows mine; `phone <number|none> [--share]` sets it
+            // and tells my other devices.
+            let share = take_switch(&mut args, "--share");
+            if let Some(number) = args.first() {
+                wait_connect(&rt).await;
+                let number = (number != "none").then_some(number.as_str());
+                rt.own_private_set(number, share).await.unwrap_or_else(die);
+                flush(&rt).await;
+            }
+            let p = rt.own_private_get().await.unwrap_or_else(die);
+            println!("phone {}  share={}", p.phone.unwrap_or_else(|| "-".into()), p.share_phone);
+        }
+        "contact-phone" => {
+            if args.is_empty() {
+                usage();
+            }
+            let p = rt.contact_private_get(&args[0]).await.unwrap_or_else(die);
+            println!("{}  phone {}", p.pubkey, p.phone.unwrap_or_else(|| "-".into()));
+        }
+        "card-send" => {
+            // `card-send <peer|group:ID> [me|<npub|hex>] [--phone]`
+            let phone = take_switch(&mut args, "--phone");
+            if args.is_empty() {
+                usage();
+            }
+            let to = chat_target(&rt, &args[0]).await;
+            let whose = args.get(1).filter(|w| *w != "me").cloned();
+            settle(&rt, 3).await;
+            let m = rt.card_send(&to, whose.as_deref(), phone).await.unwrap_or_else(die);
+            flush(&rt).await;
+            println!("queued #{}  {}", &m.id[..8], m.card.as_ref().map(card_line).unwrap_or_default());
+        }
+        "cards" => {
+            // `cards <peer|group:ID> [SECONDS]`: the cards of a chat.
+            if args.is_empty() {
+                usage();
+            }
+            let to = chat_target(&rt, &args[0]).await;
+            let secs: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            if secs > 0 {
+                settle(&rt, secs).await;
+            }
+            let chat_id = match to.strip_prefix("group:") {
+                Some(_) => to.clone(),
+                None => rt.chat_open(&to).await.unwrap_or_else(die).id,
+            };
+            for m in rt.dm().messages(&chat_id, None, 500).await.unwrap_or_else(die) {
+                if let Some(c) = &m.card {
+                    println!("{} {} #{}  {}", m.created_at, if m.direction == "out" { "->" } else { "<-" }, &m.id[..8], card_line(c));
+                }
+            }
+        }
+        "card-accept" => {
+            if args.is_empty() {
+                usage();
+            }
+            let id = full_id(&rt, &args[0]).await;
+            wait_connect(&rt).await;
+            let m = rt.card_accept(&id).await.unwrap_or_else(die);
+            flush(&rt).await;
+            let c = m.card.unwrap_or_else(|| die(messenger_core::MessengerError::Invalid("card_unknown".into())));
+            let kept = rt.contact_private_get(&c.pubkey).await.unwrap_or_else(die);
+            println!("added {}  contact={}  phone kept {}", c.npub, c.is_contact, kept.phone.unwrap_or_else(|| "-".into()));
+        }
         "emoji-top" => {
             let n: usize = args.first().and_then(|s| s.parse().ok()).unwrap_or(24);
             println!("{}", rt.emoji_top(n).await.unwrap_or_else(die).join(" "));
@@ -488,31 +558,57 @@ async fn main() {
             println!("ok: writable and publicly readable");
         }
         "send-file" => {
+            // send-file <to> <path> [caption…] [--batch <id>] [--original] [--pause-after N] [--cancel-after N]
             if args.len() < 2 {
                 usage();
             }
             // `--batch <id>`: files sent with the same id are one album.
-            let batch = args.iter().position(|a| a == "--batch").map(|i| {
-                args.remove(i);
-                if i < args.len() { args.remove(i) } else { usage() }
-            });
+            let batch = take_flag(&mut args, "--batch");
+            // `--original`: a photo goes as it is, not made smaller.
+            let original = take_switch(&mut args, "--original");
+            let mut steer = Steer::take(&mut args);
             let to = args.remove(0);
             let path = PathBuf::from(args.remove(0));
             let caption = if args.is_empty() { None } else { Some(args.join(" ")) };
             wait_connect(&rt).await;
             let started = std::time::Instant::now();
-            let ph = rt.dm_send_file(&to, &path, caption.as_deref(), batch.as_deref()).await.unwrap_or_else(die);
+            // The preparing stage comes before any run: only events tell it.
+            let mut events = rt.ui_events();
+            let ph = rt
+                .dm_send_file(&to, &path, caption.as_deref(), batch.as_deref(), original)
+                .await
+                .unwrap_or_else(die);
             let tid = ph.media.as_ref().and_then(|m| m["transfer_id"].as_str().map(String::from)).unwrap_or_default();
-            let mut last = 0u64;
+            eprintln!("  transfer {tid}");
+            let mut last = String::new();
+            let mut sent_as = String::new();
             loop {
-                tokio::time::sleep(Duration::from_millis(300)).await;
-                let Some(t) = rt.media().transfer(&tid).await.unwrap_or_else(die) else { break };
-                if t.done_bytes != last {
-                    last = t.done_bytes;
-                    eprintln!("  {} {}/{}", t.status, t.done_bytes, t.size);
+                steer.wait().await;
+                while let Ok(ev) = events.try_recv() {
+                    let p = &ev.payload;
+                    let ours = ev.name == messenger_runtime::media::UI_EVENT_TRANSFER && p["transfer_id"] == tid.as_str();
+                    if ours && p["stage"] == "preparing" {
+                        let (name, size) = (p["file_name"].as_str().unwrap_or(""), p["total_bytes"].as_u64().unwrap_or(0));
+                        eprintln!("  {:<13} {:<11} {name} {}", "queued", "preparing", human(size));
+                    }
                 }
+                let Some(t) = rt.media().transfer(&tid).await.unwrap_or_else(die) else { break };
+                let file = format!("{} {}", t.file_name, human(t.size));
+                if file != sent_as {
+                    if !sent_as.is_empty() {
+                        eprintln!("  sent as {file}");
+                    }
+                    sent_as = file;
+                }
+                let line = transfer_line(&t);
+                if line != last {
+                    eprintln!("  {line}");
+                    last = line;
+                }
+                steer.check(&rt, &t).await;
                 if matches!(t.status.as_str(), "done" | "failed" | "cancelled" | "paused") {
                     flush(&rt).await;
+                    removals_done(&rt).await;
                     println!(
                         "{} {} bytes in {:.1}s {}",
                         t.status,
@@ -525,42 +621,102 @@ async fn main() {
             }
         }
         "download" => {
+            // download <message id> [--pause-after N] [--cancel-after N]
+            let mut steer = Steer::take(&mut args);
             if args.is_empty() {
                 usage();
             }
             let id = full_id(&rt, &args[0]).await;
             let started = std::time::Instant::now();
-            match rt.media_download(&id, true).await.unwrap_or_else(die) {
+            // The download runs here; its view is read and steered beside
+            // it, and it goes on meanwhile: a cancel waits for its end.
+            let download = rt.media_download(&id, true);
+            tokio::pin!(download);
+            let mut last = String::new();
+            let result = loop {
+                let look = async {
+                    steer.wait().await;
+                    if let Some(t) = rt.media_transfer(&id).await.unwrap_or_else(die) {
+                        let line = transfer_line(&t);
+                        if line != last {
+                            eprintln!("  {} {line}", t.id);
+                            last = line;
+                        }
+                        steer.check(&rt, &t).await;
+                    }
+                };
+                tokio::select! {
+                    result = &mut download => break result,
+                    _ = look => {}
+                }
+            };
+            removals_done(&rt).await;
+            match result.unwrap_or_else(die) {
                 Some(p) => println!("{} ({:.1}s)", p.display(), started.elapsed().as_secs_f32()),
                 None => println!("not downloaded"),
             }
         }
         "transfers" => {
             for t in rt.media().active_transfers().await.unwrap_or_else(die) {
-                println!(
-                    "{} {:<4} {:<9} {}/{} {} {}",
-                    t.id,
-                    t.direction,
-                    t.status,
-                    t.done_bytes,
-                    t.size,
-                    t.file_name,
-                    t.failure_reason.unwrap_or_default()
-                );
+                println!("{} {:<4} {} {}", t.id, t.direction, transfer_line(&t), t.file_name);
+            }
+        }
+        "pause" => {
+            // pause <transfer id>. A transfer runs in the process that
+            // started it (send-file, download, resume, or the app); it is
+            // asked there and pauses itself. One whose run is gone is
+            // paused here.
+            if args.is_empty() {
+                usage();
+            }
+            let paused = rt.media().pause(&args[0]).await.unwrap_or_else(die);
+            if paused == Paused::Nothing {
+                println!("{}: not running anywhere", args[0]);
+            } else {
+                if paused == Paused::ByRun {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+                match rt.media().transfer(&args[0]).await.unwrap_or_else(die) {
+                    Some(t) => println!("{} {}", t.id, transfer_line(&t)),
+                    None => println!("unknown transfer"),
+                }
+            }
+        }
+        "cancel" => {
+            // cancel <transfer id>: one that runs, here or in another
+            // process (the run there cancels itself), or one that does not.
+            if args.is_empty() {
+                usage();
+            }
+            rt.media_cancel(&args[0]).await.unwrap_or_else(die);
+            removals_done(&rt).await;
+            match rt.media().transfer(&args[0]).await.unwrap_or_else(die) {
+                Some(t) => println!("{} {}", t.id, transfer_line(&t)),
+                None => println!("unknown transfer"),
             }
         }
         "resume" => {
+            // resume <transfer id> [--pause-after N] [--cancel-after N]
+            let mut steer = Steer::take(&mut args);
             if args.is_empty() {
                 usage();
             }
             wait_connect(&rt).await;
             let started = std::time::Instant::now();
             rt.media_resume(&args[0]).await.unwrap_or_else(die);
+            let mut last = String::new();
             loop {
-                flush(&rt).await;
+                steer.wait().await;
                 let Some(t) = rt.media().transfer(&args[0]).await.unwrap_or_else(die) else { break };
+                let line = transfer_line(&t);
+                if line != last {
+                    eprintln!("  {line}");
+                    last = line;
+                }
+                steer.check(&rt, &t).await;
                 if matches!(t.status.as_str(), "done" | "failed" | "cancelled" | "paused") {
                     flush(&rt).await;
+                    removals_done(&rt).await;
                     println!(
                         "{} {}/{} in {:.1}s {}",
                         t.status,
@@ -658,14 +814,14 @@ async fn main() {
         }
         "push-off" => print_push(&rt.push_set_enabled(false).await.unwrap_or_else(die)),
         "profile-set" => {
-            // `profile-set <name> [picture-url]`: publishes this identity's kind 0.
+            // `profile-set <name>`: publishes this identity's kind 0 (the
+            // picture is the avatar's own, set by the app).
             if args.is_empty() {
                 usage();
             }
             wait_connect(&rt).await;
             let input = messenger_runtime::ProfileInput {
                 name: Some(args[0].clone()),
-                picture: args.get(1).cloned(),
                 ..Default::default()
             };
             let p = rt.publish_own_profile(&input).await.unwrap_or_else(die);
@@ -899,7 +1055,7 @@ async fn main() {
                     if m.direction == "out" { "->" } else { "<-" },
                     m.status,
                     &m.sender_pubkey[..8],
-                    if m.deleted { "(deleted)".to_string() } else if m.content_type == "system" { format!("* {}", m.text.clone().unwrap_or_default()) } else { m.text.clone().unwrap_or_else(|| format!("[{}]", m.content_type)) },
+                    if m.deleted { "(deleted)".to_string() } else if m.content_type == "system" { format!("* {}", m.text.clone().unwrap_or_default()) } else { body_line(&m) },
                     if m.edited_at.is_some() && !m.deleted { " (edited)" } else { "" },
                     &m.id[..8.min(m.id.len())],
                 );
@@ -1053,6 +1209,94 @@ fn print_net(status: &messenger_runtime::net::NetStatus) {
     }
 }
 
+/// Pause or cancel a transfer that runs in this process (a transfer runs
+/// where it was started): after so many chunks (`--pause-after N`,
+/// `--cancel-after N`) or on Ctrl-C, which pauses it for `resume <id>`; a
+/// second Ctrl-C quits.
+struct Steer {
+    pause_after: Option<u32>,
+    cancel_after: Option<u32>,
+    interrupted: bool,
+    asked: bool,
+}
+
+impl Steer {
+    fn take(args: &mut Vec<String>) -> Self {
+        let n = |v: Option<String>| v.map(|s| s.parse::<u32>().unwrap_or_else(|_| usage()));
+        let pause_after = n(take_flag(args, "--pause-after"));
+        let cancel_after = n(take_flag(args, "--cancel-after"));
+        Self { pause_after, cancel_after, interrupted: false, asked: false }
+    }
+
+    /// A moment between two looks, cut short by Ctrl-C.
+    async fn wait(&mut self) {
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(300)) => {}
+            _ = tokio::signal::ctrl_c() => {
+                if self.interrupted {
+                    std::process::exit(130);
+                }
+                self.interrupted = true;
+            }
+        }
+    }
+
+    /// Stop `t` once it is time.
+    async fn check(&mut self, rt: &MessengerRuntime, t: &messenger_runtime::TransferView) {
+        if self.asked || !matches!(t.status.as_str(), "queued" | "running" | "waiting_retry") {
+            return;
+        }
+        let reached = |n: Option<u32>| n.is_some_and(|n| t.chunks_done >= n);
+        if reached(self.cancel_after) {
+            self.asked = true;
+            eprintln!("  cancel at chunk {}/{}", t.chunks_done, t.chunks_total);
+            rt.media_cancel(&t.id).await.unwrap_or_else(die);
+        } else if self.interrupted || reached(self.pause_after) {
+            self.asked = true;
+            eprintln!("  pause at chunk {}/{}", t.chunks_done, t.chunks_total);
+            rt.media_pause(&t.id).await.unwrap_or_else(die);
+        }
+    }
+}
+
+/// `1.5 MiB` and the like.
+fn human(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1 << 30 => format!("{:.2} GiB", b as f64 / (1u64 << 30) as f64),
+        b if b >= 1 << 20 => format!("{:.1} MiB", b as f64 / (1u64 << 20) as f64),
+        b if b >= 1 << 10 => format!("{:.1} KiB", b as f64 / 1024.0),
+        b => format!("{b} B"),
+    }
+}
+
+/// Status, stage, chunks, bytes, speed, time left and the next retry of a
+/// transfer, on one line.
+fn transfer_line(t: &messenger_runtime::TransferView) -> String {
+    let mut line = format!(
+        "{:<13} {:<11} chunk {}/{} {}/{}",
+        t.status,
+        format!("{:?}", t.stage).to_lowercase(),
+        t.chunks_done,
+        t.chunks_total,
+        human(t.done_bytes),
+        human(t.size)
+    );
+    if t.rate_bps > 0 {
+        line.push_str(&format!(" {}/s", human(t.rate_bps)));
+    }
+    if let Some(eta) = t.eta_secs {
+        line.push_str(&format!(" {eta}s left"));
+    }
+    if let Some(at) = t.retry_at_ms {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+        line.push_str(&format!(" retry in {}s", (at - now).max(0) / 1000));
+    }
+    if let Some(reason) = &t.failure_reason {
+        line.push_str(&format!(" {reason}"));
+    }
+    line
+}
+
 fn die<T>(e: messenger_core::MessengerError) -> T {
     eprintln!("error: {e}");
     std::process::exit(1)
@@ -1073,6 +1317,20 @@ async fn full_id(rt: &MessengerRuntime, short: &str) -> String {
     }
     eprintln!("error: no message starts with {short}");
     std::process::exit(1)
+}
+
+/// Wait while chunks of a cancelled upload leave the server: they go in
+/// the background, and would stay there were the CLI to end first.
+async fn removals_done(rt: &MessengerRuntime) {
+    let removals = rt.media().removals_done();
+    tokio::pin!(removals);
+    if tokio::time::timeout(Duration::from_millis(200), &mut removals).await.is_ok() {
+        return;
+    }
+    eprintln!("  removing its chunks from the server…");
+    if tokio::time::timeout(Duration::from_secs(120), removals).await.is_err() {
+        eprintln!("warning: some chunks may still be on the server");
+    }
 }
 
 /// Publishing happens in the background; a command line tool must not
@@ -1179,4 +1437,35 @@ async fn print_my_presence(rt: &MessengerRuntime) {
     let keys = rt.identity().load_keys().await.unwrap_or_else(die);
     let (epoch, mine) = rt.presence().presence_keys(&keys).await.unwrap_or_else(die);
     println!("presence key {} (epoch {epoch})", mine.public_key().to_hex());
+}
+
+/// A chat as the commands name it: a person, or `group:<id prefix>`.
+async fn chat_target(rt: &MessengerRuntime, name: &str) -> String {
+    match name.strip_prefix("group:") {
+        Some(short) => format!("group:{}", group_id(rt, short).await),
+        None => name.to_string(),
+    }
+}
+
+/// One line of a card: whose, its name, what it carries.
+fn card_line(c: &messenger_runtime::CardView) -> String {
+    format!(
+        "card {}  \"{}\"  phone {}  avatar {}  socials {}{}{}",
+        c.npub,
+        c.label,
+        c.phone.as_deref().unwrap_or("-"),
+        c.avatar.as_ref().map_or("-".to_string(), |a| format!("{} bytes", a.len())),
+        c.socials.len(),
+        if c.is_me { "  (me)" } else { "" },
+        if c.is_contact { "  (contact)" } else { "" },
+    )
+}
+
+/// What a message shows: its text, its card, or its type.
+fn body_line(m: &messenger_runtime::MessageView) -> String {
+    match (&m.text, &m.card) {
+        (Some(t), _) => t.clone(),
+        (None, Some(c)) => card_line(c),
+        (None, None) => format!("[{}]", m.content_type),
+    }
 }

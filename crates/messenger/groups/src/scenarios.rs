@@ -1044,3 +1044,53 @@ async fn reactions_survive_history_replay() {
     assert_eq!(o_before, vec![r("👍", 1, false), r("😂", 1, true)]);
     assert!(w.notes.is_empty(), "{:?}", w.notes);
 }
+
+// ─── Contact cards ──────────────────────────────────────────────────────────
+
+use messenger_core::Envelope;
+use messenger_store::messages as msgs;
+
+impl World {
+    async fn send_card(&mut self, who: usize, group: &str, card: serde_json::Value) -> String {
+        self.tick();
+        let card = messenger_contacts::card::validate(&card).unwrap();
+        let d = &self.devices[who];
+        let (m, out) = d.svc.prepare_card(&d.keys, group, &card).await.unwrap();
+        assert_eq!(m.content_type, "contact");
+        self.run(who, Outcome { publish: vec![out], ..Default::default() }).await;
+        m.id
+    }
+}
+
+#[tokio::test]
+async fn cards_in_a_group_keep_a_phone_only_from_its_owner() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Cards", true).await;
+    w.bring(alice, &g, bob).await;
+    let (alice_hex, carol_hex) = (w.pk(alice).as_hex().to_string(), Keys::generate().public_key().to_hex());
+
+    let own = w.send_card(alice, &g, serde_json::json!({ "pubkey": alice_hex, "name": "alice", "phone": "+1 555 000 1111" })).await;
+    let other = w.send_card(alice, &g, serde_json::json!({ "pubkey": carol_hex, "display_name": "Carol", "phone": "+15550002222" })).await;
+    let list = w.devices[bob].visible(&g).await;
+    let card = |id: &str| list.iter().find(|m| m.id == id).and_then(|m| m.card.clone()).expect("a card");
+    assert_eq!((card(&own).pubkey, card(&own).phone.as_deref()), (alice_hex.clone(), Some("+15550001111")));
+    assert_eq!((card(&other).label.as_str(), card(&other).phone.as_deref()), ("Carol", None));
+    let row = msgs::get(w.devices[bob].dm.store(), &other).await.unwrap().unwrap();
+    assert!(!row.envelope_json.contains("+1555") && !row.media_json.unwrap().contains("+1555"), "kept nowhere");
+    for d in [alice, bob] {
+        let chat = w.devices[d].dm.chat(&format!("group:{g}")).await.unwrap().unwrap();
+        assert_eq!(chat.last_preview.as_deref(), Some("👤 Carol"), "device {d}");
+    }
+
+    // A card that is no card is not shown.
+    let before = w.devices[bob].visible(&g).await.len();
+    w.tick();
+    let d = &w.devices[alice];
+    let junk = Envelope::contact(serde_json::json!({ "pubkey": "nope" }));
+    let (_, out) = d.svc.prepare_message(&d.keys, &g, junk, msgs::CT_CONTACT, None, None, None).await.unwrap();
+    w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
+    assert_eq!(w.devices[bob].visible(&g).await.len(), before);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}

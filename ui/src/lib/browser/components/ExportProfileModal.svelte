@@ -80,7 +80,7 @@
       if (!path) { loading = null; return; }
 
       await api.profiles.exportJsonToFile(profile.id, getOptions(), path);
-      successMsg = `JSON saved: ${path}`;
+      successMsg = $t('profile_export_json_saved', { path });
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -96,12 +96,12 @@
       const { save } = await import('@tauri-apps/plugin-dialog');
       const path = await save({
         defaultPath: `${profile.name.replace(/[^a-z0-9_-]/gi, '_')}.zip`,
-        filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
+        filters: [{ name: $t('profile_export_zip_filter'), extensions: ['zip'] }],
       });
       if (!path) { loading = null; return; }
 
       await api.profiles.exportZip(profile.id, getOptions(), path);
-      successMsg = `ZIP saved: ${path}`;
+      successMsg = $t('profile_export_zip_saved', { path });
     } catch (e) {
       error = formatError(e);
     } finally {

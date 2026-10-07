@@ -47,6 +47,11 @@ const ICONS: &[(&str, &[u8])] = &[
     ("icons/32.png", include_bytes!("../../icons/32x32.png")),
     ("icons/64.png", include_bytes!("../../icons/64x64.png")),
     ("icons/128.png", include_bytes!("../../icons/128x128.png")),
+    // The CJK fonts of the UI (ui/src/lib/core/fonts, scripts/fonts-cjk.mjs):
+    // the popup in Chinese, Japanese or Korean on a system without such fonts.
+    ("fonts/cjk-sc.woff2", include_bytes!("../../../../ui/src/lib/core/fonts/cjk-sc.woff2")),
+    ("fonts/cjk-jp.woff2", include_bytes!("../../../../ui/src/lib/core/fonts/cjk-jp.woff2")),
+    ("fonts/cjk-kr.woff2", include_bytes!("../../../../ui/src/lib/core/fonts/cjk-kr.woff2")),
 ];
 
 fn build_xpi(profile_id: &str, locale: &str) -> Result<Vec<u8>, String> {

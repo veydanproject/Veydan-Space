@@ -1,0 +1,20 @@
+{
+  "$comment": "The languages of the UI (internal/platform-spec.md 11.8), in the order of the language picker. `code` is what the setting ui_locale and the file names locales/<code>.json hold, `tag` the BCP 47 tag of Intl and <html lang>, `native` the name in the language itself. English and Russian live in the dictionaries (i18n.ts); every other one in locales/<code>.json beside them (scripts/i18n.mjs).",
+  "languages": [
+    { "code": "en", "tag": "en-US", "native": "English" },
+    { "code": "de", "tag": "de-DE", "native": "Deutsch" },
+    { "code": "es", "tag": "es", "native": "Español" },
+    { "code": "fr", "tag": "fr-FR", "native": "Français" },
+    { "code": "it", "tag": "it-IT", "native": "Italiano" },
+    { "code": "pl", "tag": "pl-PL", "native": "Polski" },
+    { "code": "ru", "tag": "ru-RU", "native": "Русский" },
+    { "code": "uk", "tag": "uk-UA", "native": "Українська" },
+    { "code": "pt-BR", "tag": "pt-BR", "native": "Português (Brasil)" },
+    { "code": "tr", "tag": "tr-TR", "native": "Türkçe" },
+    { "code": "id", "tag": "id-ID", "native": "Bahasa Indonesia" },
+    { "code": "vi", "tag": "vi-VN", "native": "Tiếng Việt" },
+    { "code": "zh-CN", "tag": "zh-CN", "native": "简体中文" },
+    { "code": "ja", "tag": "ja-JP", "native": "日本語" },
+    { "code": "ko", "tag": "ko-KR", "native": "한국어" }
+  ]
+}

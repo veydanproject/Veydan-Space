@@ -15,7 +15,7 @@ use crate::op::{GroupKind, KeyId, Op, OpBody};
 use crate::roles::Role;
 use crate::service::*;
 use crate::wire::{self, InnerMessage, Opened, SecretEnvelope};
-use messenger_core::envelope::{T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_RECEIPT_READ, T_TEXT};
+use messenger_core::envelope::{T_CONTACT, T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_RECEIPT_READ, T_TEXT};
 use messenger_core::traits::{Body, Notice, UiEvent};
 use messenger_core::{Context, DmInbound, Envelope, EventSource, GroupInbound, MessengerError, PubKey, Result};
 use messenger_store::groups::{self as repo, GroupRow, PendingRow};
@@ -844,6 +844,7 @@ impl GroupService {
             return Ok(Verdict::Done);
         }
         let target = envelope.str_field("target").map(String::from);
+        let mut card_line = None;
         let (content_type, text, hidden, media_json): (&str, Option<String>, bool, Option<String>) = match envelope.t.as_str() {
             T_TEXT => (msgs::CT_TEXT, envelope.as_text().map(String::from), false, None),
             T_EDIT => (msgs::CT_EDIT, None, true, None),
@@ -854,6 +855,15 @@ impl GroupService {
                 false,
                 Some(serde_json::Value::Object(envelope.fields.clone()).to_string()),
             ),
+            // A card that is no card is dropped; one about somebody else
+            // loses its phone here, before anything keeps it.
+            T_CONTACT => match messenger_dm::cards::received_card(&envelope, m.author.as_hex()) {
+                Some(card) => {
+                    card_line = Some(messenger_dm::view::card_line(&card));
+                    (msgs::CT_CONTACT, None, false, Some(card.to_json().to_string()))
+                }
+                None => return Ok(Verdict::Done),
+            },
             _ => return Ok(Verdict::Done),
         };
         if text.as_ref().is_some_and(|t| t.len() > messenger_dm::service::MAX_TEXT_BYTES) {
@@ -869,7 +879,11 @@ impl GroupService {
                 status: if from_me { msgs::STATUS_SENT.into() } else { msgs::STATUS_RECEIVED.into() },
                 content_type: content_type.into(),
                 text: text.clone(),
-                envelope_json: m.content.clone(),
+                envelope_json: match (&card_line, &media_json) {
+                    // A card is kept as it was checked, the envelope too.
+                    (Some(_), Some(json)) => Envelope::contact(serde_json::from_str(json)?).encode(),
+                    _ => m.content.clone(),
+                },
                 sender_pubkey: m.author.as_hex().to_string(),
                 reply_to_id: m.reply_to.as_ref().map(|e| e.as_hex().to_string()),
                 target_id: if hidden { target.clone() } else { None },
@@ -920,7 +934,9 @@ impl GroupService {
         // Removed for me on another device before it came here.
         let hidden_before = self.dm.hide_if_hidden(&id).await?;
 
-        let line = if content_type == msgs::CT_MEDIA {
+        let line = if let Some(line) = card_line {
+            line
+        } else if content_type == msgs::CT_MEDIA {
             let name = envelope.str_field("name").unwrap_or("file");
             format!("📎 {}", text.as_deref().map(messenger_dm::view::preview).unwrap_or_else(|| name.to_string()))
         } else {

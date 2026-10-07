@@ -708,6 +708,139 @@ pub mod messenger_contacts_input {
     pub use messenger_runtime::ProfileInput;
 }
 
+/// The links to profiles elsewhere a user can add, in the order of the picker.
+#[tauri::command]
+pub async fn messenger_social_platforms(
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<Vec<messenger_runtime::SocialPlatform>> {
+    Ok(messenger.runtime()?.social_platforms())
+}
+
+/// A bio as it will show: the live preview of the editor.
+#[tauri::command]
+pub async fn messenger_bio_parse(
+    markup: String,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<Vec<messenger_runtime::Span>> {
+    Ok(messenger.runtime()?.bio_parse(&markup))
+}
+
+/// A picked picture, decoded and held for the crop. Like a picked file, it
+/// is read only when the user picked it: an Android `content://` source,
+/// or a path the computer's picker has let in.
+#[tauri::command]
+pub async fn messenger_avatar_prepare(
+    source: String,
+    app: tauri::AppHandle,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<messenger_runtime::AvatarPreview> {
+    use tauri_plugin_fs::FsExt;
+    let rt = messenger.runtime()?;
+    if source.starts_with("content://") {
+        let picked = app.state::<veydan_shell::Shell>().open_source(&source)?;
+        let bytes = read_picked(picked, messenger_runtime::avatars::MAX_PICK_BYTES).await?;
+        return rt.avatar_prepare_bytes(bytes).await.map_err(map_err);
+    }
+    let path = std::path::PathBuf::from(&source);
+    if !app.try_fs_scope().is_some_and(|s| s.is_allowed(&path)) {
+        return Err(AppError::Other("the file was not picked".into()));
+    }
+    rt.avatar_prepare(&path).await.map_err(map_err)
+}
+
+/// The bytes of a picked source, at most `max` of them; a larger file is
+/// refused as an avatar too large.
+async fn read_picked(source: veydan_shell::FileSource, max: usize) -> CmdResult<Vec<u8>> {
+    if source.len.is_some_and(|n| n > max as u64) {
+        return Err(AppError::Other("avatar_too_large".into()));
+    }
+    tauri::async_runtime::spawn_blocking(move || -> CmdResult<Vec<u8>> {
+        use std::io::Read;
+        let file = (source.open)().map_err(AppError::io)?;
+        let mut out = Vec::new();
+        file.take(max as u64 + 1).read_to_end(&mut out).map_err(AppError::io)?;
+        if out.len() > max {
+            return Err(AppError::Other("avatar_too_large".into()));
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::io)?
+}
+
+/// Make the part `rect` of the prepared picture my avatar; my profile as
+/// it is now.
+#[tauri::command]
+pub async fn messenger_avatar_set(
+    token: String,
+    rect: messenger_runtime::CropRect,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<ProfileView> {
+    messenger.runtime()?.avatar_set(&token, rect).await.map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn messenger_avatar_remove(messenger: tauri::State<'_, MessengerState>) -> CmdResult<ProfileView> {
+    messenger.runtime()?.avatar_remove().await.map_err(map_err)
+}
+
+/// The avatar at `url` as a `data:` url, or `null` while it is fetched;
+/// `avatar.ready {url}` follows as a runtime event.
+#[tauri::command]
+pub async fn messenger_avatar_cached(url: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<Option<String>> {
+    messenger.runtime()?.avatar_cached(&url).await.map_err(map_err)
+}
+
+/// My phone, which never goes into kind 0, and whether my card carries it.
+#[tauri::command]
+pub async fn messenger_own_private_get(
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<messenger_runtime::OwnPrivateView> {
+    messenger.runtime()?.own_private_get().await.map_err(map_err)
+}
+
+/// `phone` in any way of writing a number; `null` or empty removes it.
+/// Error: `phone_invalid`.
+#[tauri::command]
+pub async fn messenger_own_private_set(
+    phone: Option<String>,
+    share_phone: bool,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<messenger_runtime::OwnPrivateView> {
+    messenger.runtime()?.own_private_set(phone.as_deref(), share_phone).await.map_err(map_err)
+}
+
+/// The phone a contact sent me in its own card.
+#[tauri::command]
+pub async fn messenger_contact_private_get(
+    pubkey: String,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<messenger_runtime::ContactPrivateView> {
+    messenger.runtime()?.contact_private_get(&pubkey).await.map_err(map_err)
+}
+
+/// Send a contact card to `chat` (a person or `group:<id>`): mine when
+/// `pubkey` is `null`, with my phone when `include_phone`; another
+/// person's never carries a phone.
+#[tauri::command]
+pub async fn messenger_card_send(
+    chat: String,
+    pubkey: Option<String>,
+    include_phone: bool,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<MessageView> {
+    messenger.runtime()?.card_send(&chat, pubkey.as_deref(), include_phone).await.map_err(map_err)
+}
+
+/// "Add contact" on a received card. Errors: `card_unknown`, `card_is_me`.
+#[tauri::command]
+pub async fn messenger_card_accept(
+    message_id: String,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<MessageView> {
+    messenger.runtime()?.card_accept(&message_id).await.map_err(map_err)
+}
+
 #[tauri::command]
 pub async fn messenger_nip05_verify(pubkey: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<bool> {
     messenger.runtime()?.verify_nip05(&parse_pubkey(&pubkey)?).await.map_err(map_err)
@@ -1121,7 +1254,8 @@ pub async fn messenger_media_server_check(id: String, messenger: tauri::State<'_
     messenger.runtime()?.media_server_check(&id).await.map_err(map_err)
 }
 
-/// Attach a local file; returns the placeholder message immediately.
+/// Attach a local file; returns the placeholder message immediately. A
+/// photo is made smaller first unless `original` (left out: made smaller).
 #[tauri::command]
 pub async fn messenger_dm_send_file(
     to: String,
@@ -1129,18 +1263,23 @@ pub async fn messenger_dm_send_file(
     caption: Option<String>,
     // The same for files picked together: they are shown as one album.
     batch: Option<String>,
+    original: Option<bool>,
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
     let rt = messenger.runtime()?;
     let local = import_picked(&app, &path, rt.config().data_dir()).await?;
-    rt.dm_send_file(&to, &local, caption.as_deref(), batch.as_deref()).await.map_err(map_err)
+    rt.dm_send_file(&to, &local, caption.as_deref(), batch.as_deref(), original.unwrap_or(false))
+        .await
+        .map_err(map_err)
 }
 
 /// A picked file as the composer holds it until it is sent: a local path
 /// and, for a picture, what it looks like. Android's `content://` is copied
 /// in first. Only what the user picked is read: that copy, or a path the
-/// computer's picker has let in.
+/// computer's picker has let in. A file over 1 GiB is refused
+/// (`err.file_too_large`), a `content://` one before it is copied and
+/// with the name its source gives (`err.file_too_large: IMG_1.mp4`).
 #[tauri::command]
 pub async fn messenger_media_import(
     path: String,
@@ -1167,17 +1306,20 @@ async fn import_picked(app: &tauri::AppHandle, picked: &str, data_dir: &Path) ->
         return Ok(std::path::PathBuf::from(picked));
     }
     let source = app.state::<veydan_shell::Shell>().open_source(picked)?;
-    copy_picked(source, data_dir).await
+    copy_picked(source, data_dir, messenger_runtime::media::MAX_SEND_BYTES).await
+}
+
+/// A file too large to send, by the name its source gives: a `content://`
+/// path says nothing a person reads.
+fn too_large(name: &str) -> AppError {
+    AppError::Other(format!("err.file_too_large: {name}"))
 }
 
 /// The picked file copied into `outgoing/` of the messenger's folder, under
-/// the last segment of the name its source gives.
-async fn copy_picked(source: veydan_shell::FileSource, data_dir: &Path) -> CmdResult<std::path::PathBuf> {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let dir = data_dir.join("outgoing").join(format!("{stamp:x}"));
+/// the last segment of the name its source gives. One larger than `limit`
+/// is refused, with that name: before the copy when its source tells its
+/// size, else as soon as the copy grows past it (the copy goes).
+async fn copy_picked(source: veydan_shell::FileSource, data_dir: &Path, limit: u64) -> CmdResult<std::path::PathBuf> {
     // The display name comes from another app: keep only its last segment.
     let name: String = source
         .name
@@ -1188,13 +1330,28 @@ async fn copy_picked(source: veydan_shell::FileSource, data_dir: &Path) -> CmdRe
         .filter(|c| !c.is_control())
         .collect();
     let name = if name.trim().is_empty() || name.starts_with('.') { "file".to_string() } else { name };
-    let dest = dir.join(name);
+    if source.len.is_some_and(|len| len > limit) {
+        return Err(too_large(&name));
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = data_dir.join("outgoing").join(format!("{stamp:x}"));
+    let dest = dir.join(&name);
     let out = dest.clone();
     tokio::task::spawn_blocking(move || -> CmdResult<()> {
+        use std::io::Read;
         std::fs::create_dir_all(&dir).map_err(AppError::io)?;
-        let mut input = (source.open)().map_err(AppError::io)?;
+        let input = (source.open)().map_err(AppError::io)?;
         let mut file = std::fs::File::create(&out).map_err(AppError::io)?;
-        std::io::copy(&mut input, &mut file).map_err(AppError::io)?;
+        // One byte past the limit is enough to know.
+        let copied = std::io::copy(&mut input.take(limit.saturating_add(1)), &mut file).map_err(AppError::io);
+        if !matches!(copied, Ok(n) if n <= limit) {
+            drop(file);
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(copied.err().unwrap_or_else(|| too_large(&name)));
+        }
         Ok(())
     })
     .await
@@ -1220,6 +1377,21 @@ pub async fn messenger_media_transfer(
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<TransferView>> {
     messenger.runtime()?.media_transfer(&message_id).await.map_err(map_err)
+}
+
+/// Every transfer that is not over (queued, running, waiting for its next
+/// attempt, paused, failed), the newest first: the list of transfers and
+/// the chip of a chat start from it, events keep it current.
+#[tauri::command]
+pub async fn messenger_media_transfers(messenger: tauri::State<'_, MessengerState>) -> CmdResult<Vec<TransferView>> {
+    messenger.runtime()?.media_transfers().await.map_err(map_err)
+}
+
+/// "Retry all": what failed or what the closing of the app paused goes on,
+/// never a pause the user made. How many transfers started again.
+#[tauri::command]
+pub async fn messenger_media_retry_failed(messenger: tauri::State<'_, MessengerState>) -> CmdResult<u32> {
+    messenger.runtime()?.media_retry_failed().await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -1802,15 +1974,38 @@ mod tests {
         std::fs::write(&file, b"the bytes of a picked file").unwrap();
         let data_dir = dir.path().join(DATA_SUBDIR);
 
-        let copied = copy_picked(picked("Download/../photos/IMG_1.jpg", &file), &data_dir).await.unwrap();
+        let copied = copy_picked(picked("Download/../photos/IMG_1.jpg", &file), &data_dir, 1 << 20).await.unwrap();
         assert_eq!(copied.file_name().unwrap(), "IMG_1.jpg");
         assert_eq!(copied.parent().unwrap().parent().unwrap(), data_dir.join("outgoing"));
         assert_eq!(std::fs::read(&copied).unwrap(), b"the bytes of a picked file");
 
         // A name that would hide the file or say nothing becomes `file`.
         for name in [".profile", "  ", "a\\b\\", "dir/"] {
-            let copied = copy_picked(picked(name, &file), &data_dir).await.unwrap();
+            let copied = copy_picked(picked(name, &file), &data_dir, 1 << 20).await.unwrap();
             assert_eq!(copied.file_name().unwrap(), "file", "{name:?}");
         }
+    }
+
+    /// A file larger than may be sent is refused: before the copy when its
+    /// source tells its size, else once the copy grows past the limit, and
+    /// nothing of it stays.
+    #[tokio::test]
+    async fn a_picked_file_too_large_to_send_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("source.bin");
+        std::fs::write(&file, [7u8; 100]).unwrap();
+        let data_dir = dir.path().join(DATA_SUBDIR);
+        // Told by the name its source gives, which a person reads.
+        let too_large = |e: AppError| assert_eq!(e.to_string(), "err.file_too_large: big.bin");
+
+        let told = veydan_shell::FileSource { len: Some(100), ..picked("big.bin", &file) };
+        too_large(copy_picked(told, &data_dir, 99).await.unwrap_err());
+        assert!(!data_dir.exists(), "nothing was copied");
+        too_large(copy_picked(picked("big.bin", &file), &data_dir, 99).await.unwrap_err());
+        let left = std::fs::read_dir(data_dir.join("outgoing")).unwrap().count();
+        assert_eq!(left, 0, "the copy went");
+
+        let copied = copy_picked(picked("fits.bin", &file), &data_dir, 100).await.unwrap();
+        assert_eq!(std::fs::read(&copied).unwrap().len(), 100, "exactly the limit goes");
     }
 }

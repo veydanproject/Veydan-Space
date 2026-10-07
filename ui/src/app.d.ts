@@ -10,6 +10,6 @@ declare const __TAURI_PLATFORM__: string;
  */
 declare const __VEYDAN_PRODUCT__: string;
 declare const __VEYDAN_PRODUCT_NAME__: string;
-declare const __VEYDAN_PRODUCT_TAGLINE__: { en: string; ru: string };
+declare const __VEYDAN_PRODUCT_TAGLINE__: { en: string; ru: string } & Record<string, string>;
 /** https://github.com/<owner>/<repo> of the product (products.json `repo`). */
 declare const __VEYDAN_PRODUCT_REPO__: string;

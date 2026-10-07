@@ -1,11 +1,31 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-import { writable, derived } from 'svelte/store';
-import { translations as moduleTranslations } from 'virtual:veydan-modules/i18n';
+import { writable, derived, get, type Readable } from 'svelte/store';
+import { translations as moduleTranslations, locales as moduleLocales } from 'virtual:veydan-modules/i18n';
 import { product } from '$lib/core/product';
+import languageList from './languages.json';
 
-export type Locale = 'en' | 'ru';
+/** A language of the UI: a `code` of languages.json (`en`, `ru`, `pt-BR`…). */
+export type Locale = string;
+
+/** One language of the UI (languages.json, platform-spec 11.8). */
+export type Language = { code: Locale; tag: string; native: string };
+
+/** The languages of the UI, in the order of the picker. */
+export const LANGUAGES: readonly Language[] = languageList.languages;
+
+/** The languages written in the dictionaries themselves; the rest come from `locales/<code>.json`. */
+const BUILT_IN: readonly Locale[] = ['en', 'ru'];
+
+export function isLocale(value: unknown): value is Locale {
+  return typeof value === 'string' && LANGUAGES.some((l) => l.code === value);
+}
+
+/** The BCP 47 tag of a language for Intl and `<html lang>`. */
+export function localeTag(code: Locale): string {
+  return LANGUAGES.find((l) => l.code === code)?.tag ?? code;
+}
 
 const translations = {
   en: {
@@ -239,6 +259,7 @@ const translations = {
     lock_hint_prefix: 'Hint: {hint}',
     lock_forgot: 'Forgot PIN or password?',
     lock_recovery_title: 'Your recovery key',
+    lock_recovery_file_title: '{app} recovery key',
     lock_recovery_intro: 'Shown only once. With this key you can set a new PIN or password without losing the data under the lock. Store it somewhere safe, outside {app}.',
     lock_recovery_copy: 'Copy key',
     lock_recovery_copied: 'Copied',
@@ -686,6 +707,7 @@ const translations = {
     lock_hint_prefix: 'Подсказка: {hint}',
     lock_forgot: 'Забыли ПИН или пароль?',
     lock_recovery_title: 'Ваш ключ восстановления',
+    lock_recovery_file_title: 'Ключ восстановления {app}',
     lock_recovery_intro: 'Показывается один раз. С этим ключом можно задать новый ПИН или пароль, не потеряв данные под блокировкой. Храните его в надёжном месте вне {app}.',
     lock_recovery_copy: 'Копировать ключ',
     lock_recovery_copied: 'Скопировано',
@@ -908,25 +930,133 @@ const translations = {
 
 export type TranslationKey = keyof typeof translations.en;
 
-function loadLocale(): Locale {
-  if (typeof localStorage !== 'undefined') {
-    const saved = localStorage.getItem('vb_locale');
-    if (saved === 'en' || saved === 'ru') return saved;
+type Dict = Record<string, string>;
+
+/** A language's file beside a dictionary (`locales/<code>.json`): the desktop keys and the phone layer. */
+export type LocaleFile = { desktop: Dict; mobile: Dict };
+
+/**
+ * The language of the system, when the user has not chosen one: the first of
+ * `navigator.languages` the UI has, by its full tag (`pt-BR`) or by its
+ * language (`de-AT` → `de`, `pt-PT` → `pt-BR`). Chinese other than the
+ * simplified script stays out: Traditional readers get English, not a script
+ * they did not ask for.
+ */
+export function systemLocale(tags: readonly string[]): Locale {
+  for (const raw of tags) {
+    const tag = raw.replace('_', '-').toLowerCase();
+    const exact = LANGUAGES.find((l) => l.code.toLowerCase() === tag);
+    if (exact) return exact.code;
+    const [lang, ...rest] = tag.split('-');
+    if (lang === 'zh') {
+      if (rest.some((r) => r === 'tw' || r === 'hk' || r === 'mo' || r === 'hant')) continue;
+      return 'zh-CN';
+    }
+    // `in` is the old code of Indonesian that Java and older Android still report.
+    const base = lang === 'in' ? 'id' : lang;
+    const same = LANGUAGES.find((l) => l.code.split('-')[0].toLowerCase() === base);
+    if (same) return same.code;
   }
   return 'en';
 }
 
-export const locale = writable<Locale>(loadLocale());
+const STORAGE_KEY = 'vb_locale';
 
-locale.subscribe((val) => {
+function loadLocale(): Locale {
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('vb_locale', val);
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (isLocale(saved)) return saved;
   }
+  if (typeof navigator !== 'undefined') {
+    return systemLocale(navigator.languages?.length ? navigator.languages : [navigator.language ?? 'en']);
+  }
+  return 'en';
+}
+
+/** Whether the user (or another device, through sync) has chosen the language; a guess from the system is not a choice. */
+export function localeChosen(): boolean {
+  try {
+    return isLocale(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return false;
+  }
+}
+
+// The files of each language, fetched when the language is first shown: the
+// core's here, the modules' through the virtual module (their entry/i18n.ts).
+const coreLocales = import.meta.glob<LocaleFile>('./locales/*.json', { import: 'default' });
+const loaded = writable<Record<Locale, LocaleFile>>({});
+const loading = new Map<Locale, Promise<void>>();
+
+/** The languages fetched so far besides English and Russian (the phone layer reads them too). */
+export const loadedLocales: Readable<Record<Locale, LocaleFile>> = { subscribe: loaded.subscribe };
+
+/**
+ * Fetch a language's files once. Until they are here `t()` shows English; the
+ * start of the page waits for the language it opens with
+ * (routes/+layout.svelte), so only a switch in Settings may show English for
+ * a moment.
+ */
+export function loadLocaleFiles(code: Locale): Promise<void> {
+  if (BUILT_IN.includes(code) || !isLocale(code) || get(loaded)[code]) return Promise.resolve();
+  let pending = loading.get(code);
+  if (!pending) {
+    const name = `/${code}.json`;
+    const loaders = [coreLocales, ...moduleLocales].flatMap((files) =>
+      Object.entries(files).flatMap(([file, load]) => (file.endsWith(name) ? [load] : [])),
+    );
+    pending = Promise.all(loaders.map((load) => load()))
+      .then((files) => {
+        const desktop: Dict = {};
+        const mobile: Dict = {};
+        for (const f of files) {
+          Object.assign(desktop, f.desktop);
+          Object.assign(mobile, f.mobile);
+        }
+        loaded.update((all) => ({ ...all, [code]: { desktop, mobile } }));
+      })
+      .catch((e) => {
+        loading.delete(code);
+        console.error(`the files of the language ${code} did not load`, e);
+      });
+    loading.set(code, pending);
+  }
+  return pending;
+}
+
+const current = writable<Locale>(loadLocale());
+
+/**
+ * The language of the UI. Setting it remembers the choice on this device and
+ * fetches the language's files; the backend's copy (`ui_locale`, which syncs
+ * between computers) is written by the language picker alone.
+ */
+export const locale = {
+  subscribe: current.subscribe,
+  set(value: Locale) {
+    const code = isLocale(value) ? value : 'en';
+    try {
+      localStorage.setItem(STORAGE_KEY, code);
+    } catch {}
+    void loadLocaleFiles(code);
+    current.set(code);
+  },
+};
+
+current.subscribe((code) => {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = localeTag(code);
 });
 
-export const t = derived(locale, ($locale) => {
+/** The text of a key in a language: the language's own, else English, else the key. */
+function lookup(all: Record<Locale, LocaleFile>, code: Locale, key: string): string {
+  const own = BUILT_IN.includes(code) ? (translations as unknown as Record<Locale, Dict>)[code] : all[code]?.desktop;
+  return own?.[key] ?? (translations.en as Dict)[key] ?? key;
+}
+
+export const t = derived([current, loaded], ([$locale, $loaded]) => {
   return (key: TranslationKey, vars?: Record<string, string>): string => {
-    let text: string = translations[$locale][key] ?? translations.en[key] ?? key;
+    let text = lookup($loaded, $locale, key);
     if (vars) {
       for (const [k, v] of Object.entries(vars)) {
         // split/join replaces ALL occurrences without regex-escaping concerns
@@ -947,15 +1077,23 @@ export type CountKey = {
 const pluralRules: Partial<Record<Locale, Intl.PluralRules>> = {};
 
 /**
- * The key of a count's plural form: `<key>_one` (English 1; Russian 1, 21, 31…),
- * `<key>_few` (Russian 2–4, 22–24…) or `<key>` itself for the rest. English has
- * no "few"; its `_few` repeats the plain form.
+ * The key of a count's plural form (CLDR, Intl.PluralRules): `<key>_one`
+ * (English 1; Russian, Ukrainian 1, 21, 31…; Polish 1 alone), `<key>_few`
+ * (Russian, Ukrainian, Polish 2–4, 22–24…) or `<key>` itself for the rest
+ * ("many" and "other"). A language without "few" repeats the plain form in
+ * `_few`; one without "one" (Chinese, Japanese…) never reads `_one`.
  */
 export function countKey<K extends CountKey>(key: K, n: number, loc: Locale): K | `${K}_one` | `${K}_few` {
-  const form = (pluralRules[loc] ??= new Intl.PluralRules(loc)).select(n);
+  const form = (pluralRules[loc] ??= new Intl.PluralRules(localeTag(loc))).select(n);
   if (form === 'one') return `${key}_one`;
   if (form === 'few') return `${key}_few`;
   return key;
+}
+
+/** The product's tagline (About) in a language, English where products.json has none. */
+export function taglineOf(code: Locale): string {
+  const tagline = product.tagline as Record<string, string>;
+  return tagline[code] ?? tagline.en;
 }
 
 /** The merged dictionary as `t()` reads it (the test compares it with the dictionary before the split). */

@@ -64,7 +64,7 @@
     const picked = await open(
       directory
         ? { directory: true, multiple: false }
-        : { multiple: true, filters: [{ name: 'Notes', extensions: ['md', 'markdown', 'txt', 'zip', 'age'] }] }
+        : { multiple: true, filters: [{ name: $t('notes_title'), extensions: ['md', 'markdown', 'txt', 'zip', 'age'] }] }
     );
     if (!picked) return null;
     const paths = Array.isArray(picked) ? picked : [picked];

@@ -10,11 +10,26 @@ use std::path::{Path, PathBuf};
 pub struct MessengerConfig {
     /// Root of messenger data: `messenger.db`, `media/`, `avatars/`, `tmp/`.
     pub data_dir: PathBuf,
+    /// Transfers the closing of the app interrupted start again by
+    /// themselves once a session runs (the app). A tool that runs one
+    /// command and ends leaves them to the user (the CLI).
+    #[serde(default = "yes")]
+    pub resume_transfers: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl MessengerConfig {
     pub fn new(data_dir: impl Into<PathBuf>) -> Self {
-        Self { data_dir: data_dir.into() }
+        Self { data_dir: data_dir.into(), resume_transfers: true }
+    }
+
+    /// See `resume_transfers`.
+    pub fn without_resume(mut self) -> Self {
+        self.resume_transfers = false;
+        self
     }
 
     pub fn db_path(&self) -> PathBuf {
