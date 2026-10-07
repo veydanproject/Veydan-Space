@@ -32,15 +32,30 @@
 //! messenger-cli [--data-dir DIR] push-status | push-test | push-off
 //! messenger-cli [--data-dir DIR] servers [veydan|own|refresh]
 //! messenger-cli [--data-dir DIR] net [off|on|auto|check|add <address:port#id>|remove <id>]
+//! messenger-cli [--data-dir DIR] call <npub|hex> [--video] [--relay-only] [--node <address:port#id>[,…]] [--audio-in tone[:HZ]|<file.wav>] [--audio-out <file.wav>] [--secs N]
+//!   (--video: a video call; this side sends a moving test pattern of 640×360 at 30 fps whenever its video is on, and
+//!    prints the size and the rate of what the far end sends; `video on`, `video off` and `camera` on stdin as well)
+//! messenger-cli [--data-dir DIR] call-answer [--wait N] [the flags of call]   (one incoming call: answered, held until it ends)
+//! messenger-cli [--data-dir DIR] call-wait [the flags of call]                (every incoming call, until Ctrl-C)
 //! messenger-cli manifest-keygen <secret-file>
 //! messenger-cli manifest-sign --key-file <secret-file> <doc.json> <signed.json>
 //! ```
+//!
+//! A call lives in the process that holds it: `call` and `call-answer`
+//! stay in the call and read `end`, `mute`, `unmute` and `state` from
+//! stdin until it is over. The sound goes through the engine's pushed
+//! path, 48 kHz mono: a tone or a WAV file in, a WAV file out, and the
+//! received tail is measured for the tones of the other side (440 and
+//! 660 Hz, the ones the live checks send) so that a run without a sound
+//! card still says whether the sound came through.
 //!
 //! Secrets live in `<data-dir>/secrets.json` in plaintext: development only.
 
 use messenger_core::MessengerConfig;
 use messenger_runtime::{MessengerRuntime, Paused};
 use messenger_testkit::FileSecretStore;
+use messenger_rtc::{has_test_square, test_pattern, AudioMode, AudioProcessing, AudioTap, RtcEngine, VideoFrame, VideoSource, VideoTap, FRAME_SAMPLES, SAMPLE_RATE};
+use messenger_runtime::calls::VideoInput;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -48,7 +63,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -91,7 +106,17 @@ async fn main() {
     // <id>`, never behind the back of the command.
     let config = MessengerConfig::new(data_dir.clone()).without_resume();
     let secrets = Arc::new(FileSecretStore::open(data_dir.join("secrets.json")).await.unwrap_or_else(die));
-    let rt = MessengerRuntime::start(config, secrets).await.unwrap_or_else(die);
+    // A call from the command line pushes its sound into the engine and
+    // keeps what comes out (no sound card involved); every other command
+    // leaves the engine of the runtime alone.
+    let mut call_engine = None;
+    let rt = if cmd.starts_with("call") {
+        let engine = Arc::new(RtcEngine::new(AudioMode::Pushed(AudioProcessing::NONE)).unwrap_or_else(die));
+        call_engine = Some(engine.clone());
+        MessengerRuntime::start_with_engine(config, secrets, engine).await.unwrap_or_else(die)
+    } else {
+        MessengerRuntime::start(config, secrets).await.unwrap_or_else(die)
+    };
 
     // Scenarios written before the choice existed expect the project's servers.
     if cmd != "servers" && rt.servers_mode().await.unwrap_or_else(die).is_none() {
@@ -1117,6 +1142,18 @@ async fn main() {
             rt.group_forget(&id).await.unwrap_or_else(die);
             println!("forgotten {id}");
         }
+        "call" | "call-answer" | "call-wait" => {
+            let engine = call_engine.take().expect("the engine of the call commands");
+            let plan = CallPlan::take(&mut args, &cmd);
+            match cmd.as_str() {
+                "call" => {
+                    let Some(peer) = args.first().cloned() else { usage() };
+                    call_out(&rt, &engine, &peer, &plan).await;
+                }
+                "call-answer" => call_in(&rt, &engine, &plan, true).await,
+                _ => call_in(&rt, &engine, &plan, false).await,
+            }
+        }
         _ => usage(),
     }
     rt.shutdown().await;
@@ -1471,4 +1508,545 @@ fn body_line(m: &messenger_runtime::MessageView) -> String {
         (None, Some(c)) => card_line(c),
         (None, None) => format!("[{}]", m.content_type),
     }
+}
+
+// ─── Calls ───────────────────────────────────────────────────────────────────
+
+/// The tones the live checks send each way; the received tail is
+/// measured for both, whichever side this is.
+const TONES: [f64; 2] = [440.0, 660.0];
+/// How much of the end of the received sound is measured: past the ramp
+/// of the jitter buffer.
+const TAIL_SECS: usize = 2;
+
+/// What a call from the command line sends and keeps.
+struct CallPlan {
+    video: bool,
+    relay_only: bool,
+    nodes: Vec<String>,
+    source: AudioSource,
+    out_path: Option<PathBuf>,
+    /// Hang up this long after the call became active.
+    secs: Option<u64>,
+    /// `call-answer`: how long to wait for the call to come.
+    wait: u64,
+}
+
+enum AudioSource {
+    Tone(f64),
+    /// 48 kHz mono, played once; silence after it.
+    Wav(Vec<i16>),
+}
+
+impl CallPlan {
+    fn take(args: &mut Vec<String>, cmd: &str) -> Self {
+        let video = take_switch(args, "--video");
+        let relay_only = take_switch(args, "--relay-only");
+        let nodes = take_flag(args, "--node").map(|s| s.split(',').map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).collect()).unwrap_or_default();
+        let source = match take_flag(args, "--audio-in").as_deref() {
+            // The caller sends the first tone, the answering side the second.
+            None | Some("tone") => AudioSource::Tone(if cmd == "call" { TONES[0] } else { TONES[1] }),
+            Some(spec) if spec.starts_with("tone:") => AudioSource::Tone(spec[5..].parse().unwrap_or_else(|_| usage())),
+            Some(path) => AudioSource::Wav(read_wav(path)),
+        };
+        let out_path = take_flag(args, "--audio-out").map(PathBuf::from);
+        let secs = take_flag(args, "--secs").map(|s| s.parse().unwrap_or_else(|_| usage()));
+        let wait = take_flag(args, "--wait").map(|s| s.parse().unwrap_or_else(|_| usage())).unwrap_or(90);
+        Self { video, relay_only, nodes, source, out_path, secs, wait }
+    }
+
+    /// The policy and the nodes of the call, into the settings.
+    async fn apply(&self, rt: &MessengerRuntime) {
+        let policy = if self.relay_only { messenger_runtime::RelayPolicy::RelayOnly } else { messenger_runtime::RelayPolicy::Auto };
+        rt.call_set_policy(policy).await.unwrap_or_else(die);
+        if !self.nodes.is_empty() {
+            let nodes = self.nodes.iter().map(|r| messenger_runtime::CallNodeInput { reference: r.clone(), key: None }).collect();
+            rt.call_set_nodes(nodes).await.unwrap_or_else(die);
+        }
+        let st = rt.call_state().await.unwrap_or_else(die);
+        println!(
+            "{} policy {:?} nodes [{}]",
+            stamp(),
+            st.policy,
+            st.nodes.iter().map(|n| format!("{} ({})", n.reference, n.class)).collect::<Vec<_>>().join(", ")
+        );
+    }
+}
+
+/// `call <peer>`: ring the peer, stay in the call until it ends.
+async fn call_out(rt: &MessengerRuntime, engine: &RtcEngine, peer: &str, plan: &CallPlan) {
+    wait_connect(rt).await;
+    plan.apply(rt).await;
+    let mut events = rt.ui_events();
+    let taps = engine.audio_taps().expect("the taps of the engine, once");
+    let media = if plan.video { messenger_runtime::CallMedia::Video } else { messenger_runtime::CallMedia::Audio };
+    let issued = std::time::Instant::now();
+    println!("{} call {peer} {media:?}", stamp());
+    let view = rt.call_start(peer, media).await.unwrap_or_else(die);
+    println!("{} started {} phase {:?} nodes {:?}", stamp(), view.call_id, view.phase, view.nodes);
+    in_call(rt, &mut events, taps, plan, &view.call_id, issued).await;
+    flush(rt).await;
+}
+
+/// `call-answer` (one call) and `call-wait` (every call): answer what rings.
+async fn call_in(rt: &MessengerRuntime, engine: &RtcEngine, plan: &CallPlan, once: bool) {
+    wait_connect(rt).await;
+    plan.apply(rt).await;
+    let mut events = rt.ui_events();
+    let mut taps = engine.audio_taps().expect("the taps of the engine, once");
+    let me = rt.identity().get().await.unwrap_or_else(die).map(|i| i.npub).unwrap_or_default();
+    println!("{} waiting for a call as {me}{}", stamp(), if once { format!(" (up to {} s)", plan.wait) } else { " — Ctrl-C to stop".into() });
+    loop {
+        let deadline = tokio::time::sleep(Duration::from_secs(if once { plan.wait } else { u64::MAX / 4 }));
+        tokio::pin!(deadline);
+        let call_id = loop {
+            tokio::select! {
+                ev = events.recv() => match ev {
+                    Ok(e) if e.name == messenger_runtime::UI_EVENT_CALL_INCOMING => {
+                        let call = e.payload["call"].clone();
+                        println!("{} call.incoming from {} {} media {}", stamp(), call["peer"].as_str().unwrap_or("?"), call["call_id"].as_str().unwrap_or("?"), call["media"]);
+                        break call["call_id"].as_str().unwrap_or_default().to_string();
+                    }
+                    Ok(e) if e.name == messenger_runtime::UI_EVENT_CALL_ENDED => {
+                        // Missed while away, or declined elsewhere: on record, not for us.
+                        println!("{} call.ended {} ({})", stamp(), e.payload["call"]["call_id"].as_str().unwrap_or("?"), e.payload["outcome"]);
+                    }
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => eprintln!("(lagged {n})"),
+                    Err(_) => return,
+                },
+                _ = &mut deadline => {
+                    println!("{} no call came in {} s", stamp(), plan.wait);
+                    return;
+                }
+                _ = tokio::signal::ctrl_c() => return,
+            }
+        };
+        let answered = std::time::Instant::now();
+        match rt.call_accept(&call_id).await {
+            Ok(view) => println!("{} answered {} phase {:?} nodes {:?}", stamp(), view.call_id, view.phase, view.nodes),
+            Err(e) => {
+                eprintln!("{} accept failed: {e}", stamp());
+                continue;
+            }
+        }
+        in_call(rt, &mut events, &mut taps, plan, &call_id, answered).await;
+        flush(rt).await;
+        if once {
+            return;
+        }
+        println!("{} waiting for the next call — Ctrl-C to stop", stamp());
+    }
+}
+
+/// The call from here to its end: the sound pumped and kept, the video
+/// pushed while wanted and counted as it comes, the events printed,
+/// stdin read for `end`, `mute`, `unmute`, `video on|off`, `camera`,
+/// `state`; `--secs` hangs up after that long active; Ctrl-C hangs up.
+async fn in_call(
+    rt: &MessengerRuntime,
+    events: &mut tokio::sync::broadcast::Receiver<messenger_core::traits::UiEvent>,
+    mut taps: impl std::borrow::BorrowMut<tokio::sync::mpsc::UnboundedReceiver<AudioTap>>,
+    plan: &CallPlan,
+    call_id: &str,
+    since: std::time::Instant,
+) {
+    let taps = taps.borrow_mut();
+    let mut pump: Option<tokio::task::JoinHandle<()>> = None;
+    // What came from the far end so far: read here once the call is over,
+    // since the far end's stream does not end by itself.
+    let got: Arc<std::sync::Mutex<Vec<i16>>> = Arc::default();
+    let mut keep: Option<tokio::task::JoinHandle<()>> = None;
+    let got_video: Arc<std::sync::Mutex<VideoGot>> = Arc::default();
+    let mut video_tasks: Vec<tokio::task::JoinHandle<()>> = vec![];
+    let mut active_at: Option<std::time::Instant> = None;
+    let hang_up = tokio::time::sleep(Duration::from_secs(u64::MAX / 4));
+    tokio::pin!(hang_up);
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = tokio::io::AsyncBufReadExt::lines(stdin);
+    let mut stdin_open = true;
+    let mut last_stats = String::new();
+    let mut outcome = None;
+    loop {
+        tokio::select! {
+            tap = taps.recv() => {
+                let Some(tap) = tap else { continue };
+                println!("{} audio: the engine took the sound of this side", stamp());
+                pump = Some(pump_audio(tap.input, &plan.source));
+                let VideoTap { source, wanted, remote } = tap.video;
+                video_tasks.push(pump_video(source, wanted));
+                video_tasks.push(watch_video(remote, got_video.clone()));
+                let got = got.clone();
+                keep = Some(tokio::spawn(async move {
+                    let Ok(mut output) = tap.output.await else { return };
+                    while let Some(frame) = output.next().await {
+                        got.lock().unwrap().extend_from_slice(&frame);
+                    }
+                }));
+            }
+            ev = events.recv() => match ev {
+                Ok(e) if e.name.starts_with("call.") => {
+                    if e.payload["call"]["call_id"] != call_id && e.payload["call_id"] != call_id {
+                        continue;
+                    }
+                    match e.name.as_str() {
+                        messenger_runtime::UI_EVENT_CALL_STATE => {
+                            let c = &e.payload["call"];
+                            let size = |s: &serde_json::Value| if s.is_null() { "-".to_string() } else { format!("{}x{}", s["width"], s["height"]) };
+                            println!(
+                                "{} call.state {} via {} muted {} nodes {} video mine {}{} {} theirs {} {} (+{:.2} s)",
+                                stamp(),
+                                c["phase"].as_str().unwrap_or("?"),
+                                c["via"].as_str().unwrap_or("-"),
+                                c["muted"],
+                                c["nodes"],
+                                c["video_local"],
+                                if c["video_screen"] == true { " (screen)" } else { "" },
+                                size(&c["video_local_size"]),
+                                c["video_remote"],
+                                size(&c["video_remote_size"]),
+                                since.elapsed().as_secs_f32()
+                            );
+                            if c["phase"] == "active" && active_at.is_none() {
+                                active_at = Some(std::time::Instant::now());
+                                if let Some(secs) = plan.secs {
+                                    hang_up.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(secs));
+                                }
+                            }
+                        }
+                        messenger_runtime::UI_EVENT_CALL_ENDED => {
+                            outcome = Some((e.payload["outcome"].to_string(), e.payload["duration_secs"].to_string()));
+                            break;
+                        }
+                        "call.stats" => {
+                            let s = &e.payload["stats"];
+                            let line = format!(
+                                "rtt {} ms, sent {} B, received {} B, lost {}, jitter {} ms",
+                                s["rtt_ms"], s["bytes_sent"], s["bytes_received"], s["packets_lost"], s["jitter_ms"]
+                            );
+                            if line != last_stats {
+                                println!("{} call.stats {line}", stamp());
+                                last_stats = line;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(_) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => eprintln!("(lagged {n})"),
+                Err(_) => break,
+            },
+            line = lines.next_line(), if stdin_open => match line {
+                Ok(Some(line)) => match line.trim() {
+                    "end" | "call-end" => { let _ = rt.call_end(call_id).await.map_err(|e| eprintln!("end: {e}")); }
+                    "mute" => { let _ = rt.call_set_mute(true).await.map_err(|e| eprintln!("mute: {e}")); }
+                    "unmute" => { let _ = rt.call_set_mute(false).await.map_err(|e| eprintln!("unmute: {e}")); }
+                    "video on" => { let _ = rt.call_set_video(VideoInput::Camera { id: None }).await.map_err(|e| eprintln!("video on: {e}")); }
+                    "video off" => { let _ = rt.call_set_video(VideoInput::Off).await.map_err(|e| eprintln!("video off: {e}")); }
+                    "camera" => match rt.call_switch_camera(None).await {
+                        Ok(v) => println!("{} camera {:?}", stamp(), v.camera),
+                        Err(e) => eprintln!("camera: {e}"),
+                    },
+                    "state" => println!("{} {}", stamp(), serde_json::to_string(&rt.call_state().await.unwrap_or_else(die)).unwrap_or_default()),
+                    "" => {}
+                    other => eprintln!("(unknown: {other}; end, mute, unmute, video on, video off, camera, state)"),
+                },
+                // No stdin (a pipe that closed, /dev/null): the call goes on without it.
+                _ => stdin_open = false,
+            },
+            _ = &mut hang_up => {
+                hang_up.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(u64::MAX / 4));
+                println!("{} hanging up after {} s", stamp(), plan.secs.unwrap_or(0));
+                let _ = rt.call_end(call_id).await.map_err(|e| eprintln!("end: {e}"));
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("{} Ctrl-C: hanging up", stamp());
+                let _ = rt.call_end(call_id).await.map_err(|e| eprintln!("end: {e}"));
+            }
+        }
+    }
+    if let Some(p) = pump {
+        p.abort();
+    }
+    for t in video_tasks {
+        t.abort();
+    }
+    let (outcome, duration) = outcome.unwrap_or_else(|| ("\"?\"".into(), "null".into()));
+    println!("{} call.ended outcome {outcome} duration {duration} s{}", stamp(), active_at.map(|a| format!(" (active for {:.1} s here)", a.elapsed().as_secs_f32())).unwrap_or_default());
+    if let Some(keep) = keep {
+        // A moment for the last frames, then the stream is let go.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        keep.abort();
+        let got = std::mem::take(&mut *got.lock().unwrap());
+        report_received(&got, plan.out_path.as_deref());
+    }
+    let v = got_video.lock().unwrap();
+    println!(
+        "{} video received {} frames; sizes (width x height, rotation) {:?}; best second {} fps; the test pattern seen: {}",
+        stamp(),
+        v.frames,
+        v.sizes,
+        v.peak_fps,
+        v.pattern
+    );
+}
+
+/// What came of the far end's video.
+#[derive(Default)]
+struct VideoGot {
+    frames: u64,
+    /// Every size seen, as it changed: width, height, rotation.
+    sizes: Vec<(u32, u32, u16)>,
+    peak_fps: u32,
+    /// Some frame showed the bright square of the test pattern.
+    pattern: bool,
+}
+
+/// Pushes the test pattern of 640×360 into `source` at 30 frames a second
+/// while `wanted` says my video is on (the core turned it on: a video
+/// call, or `video on`), and nothing while it is off.
+fn pump_video(source: VideoSource, mut wanted: tokio::sync::watch::Receiver<bool>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        let mut seq = 0u32;
+        loop {
+            if !*wanted.borrow() {
+                if wanted.changed().await.is_err() {
+                    return;
+                }
+                continue;
+            }
+            println!("{} video: pushing the test pattern 640x360 at 30 fps", stamp());
+            let mut tick = tokio::time::interval(Duration::from_micros(1_000_000 / 30));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let pushed_from = seq;
+            loop {
+                tokio::select! {
+                    _ = tick.tick() => {
+                        let mut frame = test_pattern(640, 360, seq);
+                        frame.timestamp_us = started.elapsed().as_micros() as i64;
+                        source.push(Arc::new(frame));
+                        seq += 1;
+                    }
+                    changed = wanted.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        if !*wanted.borrow() {
+                            break;
+                        }
+                    }
+                }
+            }
+            println!("{} video: off after {} frames pushed", stamp(), seq - pushed_from);
+        }
+    })
+}
+
+/// Counts the far end's frames by the second and says so, with the size
+/// and the rotation whenever they change.
+fn watch_video(mut remote: tokio::sync::broadcast::Receiver<Arc<VideoFrame>>, got: Arc<std::sync::Mutex<VideoGot>>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(1));
+        let mut in_second = 0u32;
+        let mut size: Option<(u32, u32, u16)> = None;
+        loop {
+            tokio::select! {
+                frame = remote.recv() => match frame {
+                    Ok(f) => {
+                        in_second += 1;
+                        let s = (f.width, f.height, f.rotation);
+                        let mut g = got.lock().unwrap();
+                        g.frames += 1;
+                        let pattern = has_test_square(&f);
+                        g.pattern |= pattern;
+                        if size != Some(s) {
+                            size = Some(s);
+                            g.sizes.push(s);
+                            println!("{} video: frames of {}x{} rotation {} ({})", stamp(), s.0, s.1, s.2, if pattern { "the test pattern" } else { "not the test pattern" });
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                },
+                _ = tick.tick() => {
+                    if in_second > 0 {
+                        let mut g = got.lock().unwrap();
+                        g.peak_fps = g.peak_fps.max(in_second);
+                        if let Some((w, h, _)) = size {
+                            println!("{} video: {in_second} fps {w}x{h}", stamp());
+                        }
+                    }
+                    in_second = 0;
+                }
+            }
+        }
+    })
+}
+
+/// Pushes the source into `input` every 10 ms: the tone forever, the
+/// file once and silence after it.
+fn pump_audio(input: messenger_rtc::AudioInput, source: &AudioSource) -> tokio::task::JoinHandle<()> {
+    enum Feed {
+        Tone { hz: f64, phase: f64 },
+        Wav { samples: Vec<i16>, at: usize },
+    }
+    let mut feed = match source {
+        AudioSource::Tone(hz) => Feed::Tone { hz: *hz, phase: 0.0 },
+        AudioSource::Wav(samples) => Feed::Wav { samples: samples.clone(), at: 0 },
+    };
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_millis(10));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
+        let mut frame = vec![0i16; FRAME_SAMPLES];
+        loop {
+            tick.tick().await;
+            match &mut feed {
+                Feed::Tone { hz, phase } => {
+                    let step = 2.0 * std::f64::consts::PI * *hz / SAMPLE_RATE as f64;
+                    for s in frame.iter_mut() {
+                        *s = (phase.sin() * 8000.0) as i16;
+                        *phase = (*phase + step) % (2.0 * std::f64::consts::PI);
+                    }
+                }
+                Feed::Wav { samples, at } => {
+                    for s in frame.iter_mut() {
+                        *s = samples.get(*at).copied().unwrap_or(0);
+                        *at += 1;
+                    }
+                }
+            }
+            if let Err(e) = input.push(&mut frame).await {
+                eprintln!("audio push: {e}");
+                return;
+            }
+        }
+    })
+}
+
+/// What came from the far end: how much, how loud its tail was and how
+/// much of the tail is each of the tones; the whole of it to a file.
+fn report_received(got: &[i16], out: Option<&std::path::Path>) {
+    let secs = got.len() as f64 / SAMPLE_RATE as f64;
+    let tail = &got[got.len().saturating_sub(TAIL_SECS * SAMPLE_RATE as usize)..];
+    let rms = if tail.is_empty() { 0.0 } else { (tail.iter().map(|&x| (x as f64).powi(2)).sum::<f64>() / tail.len() as f64).sqrt() };
+    let tones: Vec<String> = TONES.iter().map(|hz| format!("{hz} Hz {:.3}", tone_ratio(tail, *hz))).collect();
+    println!("{} audio received {secs:.1} s; tail rms {rms:.0}; tone {}", stamp(), tones.join(", "));
+    if let Some(path) = out {
+        match write_wav(path, got) {
+            Ok(()) => println!("{} audio written to {}", stamp(), path.display()),
+            Err(e) => eprintln!("audio: {}: {e}", path.display()),
+        }
+    }
+}
+
+/// Goertzel power of `hz` in `samples` against the total power: 1.0 a
+/// pure tone, 0.0 silence or noise.
+fn tone_ratio(samples: &[i16], hz: f64) -> f64 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let n = samples.len() as f64;
+    let k = (0.5 + n * hz / SAMPLE_RATE as f64).floor();
+    let w = 2.0 * std::f64::consts::PI * k / n;
+    let coeff = 2.0 * w.cos();
+    let (mut s1, mut s2, mut total) = (0.0f64, 0.0f64, 0.0f64);
+    for &x in samples {
+        let x = x as f64;
+        total += x * x;
+        let s0 = x + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    let power = s1 * s1 + s2 * s2 - coeff * s1 * s2;
+    if total > 0.0 { (power / (total * n / 2.0)).min(1.0) } else { 0.0 }
+}
+
+/// 16-bit PCM WAV, any rate and channel count, as 48 kHz mono.
+fn read_wav(path: &str) -> Vec<i16> {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| {
+        eprintln!("error: {path}: {e}");
+        std::process::exit(1)
+    });
+    let bad = |why: &str| -> ! {
+        eprintln!("error: {path}: {why}");
+        std::process::exit(1)
+    };
+    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        bad("not a WAV file");
+    }
+    let (mut channels, mut rate, mut bits) = (0u16, 0u32, 0u16);
+    let mut data: &[u8] = &[];
+    let mut at = 12;
+    while at + 8 <= bytes.len() {
+        let id = &bytes[at..at + 4];
+        let len = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
+        let body = &bytes[at + 8..(at + 8 + len).min(bytes.len())];
+        match id {
+            b"fmt " if body.len() >= 16 => {
+                if u16::from_le_bytes([body[0], body[1]]) != 1 {
+                    bad("not PCM");
+                }
+                channels = u16::from_le_bytes([body[2], body[3]]);
+                rate = u32::from_le_bytes(body[4..8].try_into().unwrap());
+                bits = u16::from_le_bytes([body[14], body[15]]);
+            }
+            b"data" => data = body,
+            _ => {}
+        }
+        at += 8 + len + (len & 1);
+    }
+    if bits != 16 || channels == 0 || rate == 0 || data.is_empty() {
+        bad("needs 16-bit PCM with a fmt and a data chunk");
+    }
+    let frames: Vec<i16> = data
+        .chunks_exact(2 * channels as usize)
+        .map(|f| {
+            let sum: i32 = f.as_chunks::<2>().0.iter().map(|s| i16::from_le_bytes(*s) as i32).sum();
+            (sum / channels as i32) as i16
+        })
+        .collect();
+    if rate == SAMPLE_RATE {
+        return frames;
+    }
+    // Linear resampling: good enough for a check of the way, not for music.
+    let out_len = (frames.len() as u64 * SAMPLE_RATE as u64 / rate as u64) as usize;
+    (0..out_len)
+        .map(|i| {
+            let pos = i as f64 * rate as f64 / SAMPLE_RATE as f64;
+            let (a, t) = (pos.floor() as usize, pos.fract());
+            let x0 = frames.get(a).copied().unwrap_or(0) as f64;
+            let x1 = frames.get(a + 1).copied().unwrap_or(x0 as i16) as f64;
+            (x0 + (x1 - x0) * t) as i16
+        })
+        .collect()
+}
+
+/// 16-bit PCM WAV, 48 kHz mono.
+fn write_wav(path: &std::path::Path, samples: &[i16]) -> std::io::Result<()> {
+    let data_len = (samples.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + data_len as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    out.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for s in samples {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    std::fs::write(path, out)
+}
+
+/// The wall clock in milliseconds, for lines compared across processes
+/// and machines (the delay of the signalling).
+fn stamp() -> String {
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    format!("[{}.{:03}]", ms / 1000, ms % 1000)
 }

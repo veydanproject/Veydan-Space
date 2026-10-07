@@ -9,7 +9,11 @@
 
 [workspace]
 resolver = "2"
-members = ["core", "vlink", "http", "links", "richtext", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "avatar", "groups", "push", "presence", "notify", "runtime", "testkit"]
+members = ["core", "vlink", "http", "links", "richtext", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "avatar", "groups", "push", "presence", "notify", "calls", "rtc", "runtime", "testkit"]
+# The vendored C++ bridge of the engine (crates/messenger/rtc/vendor/webrtc-sys,
+# the [patch] below) is a dependency, not a member: it is built as the
+# registry crate would be, and neither tested nor linted as ours.
+exclude = ["rtc/vendor/webrtc-sys"]
 
 [workspace.package]
 version = "0.1.0"
@@ -51,6 +55,13 @@ nostr = { version = "0.45", default-features = false, features = ["std", "nip06"
 # a BIP-340 signature over something that is not an event (the proof of a
 # presence key, messenger-dm).
 secp256k1 = { version = "0.30", default-features = false, features = ["std"] }
+# The media engine of calls (messenger-rtc): the safe bindings of
+# livekit/rust-sdks over a prebuilt libwebrtc (scripts/webrtc-toolchain.sh).
+# Move it together with the vendored webrtc-sys and the archive tag.
+libwebrtc = "0.3.51"
+# The JNI of libwebrtc on Android: the same version, so that the JavaVM the
+# plugin hands over is the type the engine takes.
+jni = "0.21"
 
 # What messenger-vlink is made of; all of it is already in the tree through
 # reqwest and nostr-sdk.
@@ -83,5 +94,14 @@ messenger-groups = { path = "groups" }
 messenger-push = { path = "push" }
 messenger-presence = { path = "presence" }
 messenger-notify = { path = "notify" }
+messenger-calls = { path = "calls" }
 messenger-runtime = { path = "runtime" }
 messenger-testkit = { path = "testkit" }
+messenger-rtc = { path = "rtc" }
+
+[patch.crates-io]
+# webrtc-sys as published, with four small patches (its PATCH.md): the
+# include order of the Linux build, the toolchain of this repository, and
+# TURN over TLS to a node whose certificate is signed by the node's own key.
+# The root workspace carries the same patch for the products.
+webrtc-sys = { path = "rtc/vendor/webrtc-sys" }

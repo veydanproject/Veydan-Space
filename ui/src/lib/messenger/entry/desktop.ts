@@ -10,6 +10,7 @@ import { common, navItem } from './common';
 import { messengerStore } from '../store.svelte';
 import { startDesktopNotices } from '../push/desktop';
 import DesktopNotices from '../push/DesktopNotices.svelte';
+import CallOverlay from '../calls/CallOverlay.svelte';
 import { messengerPalette } from '../palette.svelte';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -21,7 +22,11 @@ export const module: ModuleDef = {
   nav: [navItem],
   // The module's switch is in the Modules section of the core (section 12).
   settings: [],
-  overlays: [{ id: 'notices', component: DesktopNotices, place: 'window' }],
+  // The card of a ringing call and the panel of the call under way float over any page.
+  overlays: [
+    { id: 'notices', component: DesktopNotices, place: 'window' },
+    { id: 'calls', component: CallOverlay, place: 'window' },
+  ],
   // New chat, new group, contacts, settings and every chat by name in the palette.
   palette: messengerPalette,
   // "{n} unread" in the tray's tooltip; the backend fills in the count.

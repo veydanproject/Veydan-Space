@@ -25,7 +25,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 
 mod certs;
-pub use certs::{CERT, KEY, OTHER_CERT};
+pub use certs::{CERT, KEY, OTHER_CERT, OTHER_KEY, RENEWED_CERT, RENEWED_KEY};
 
 /// What the bridge does with a stream.
 #[derive(Clone, Copy)]
@@ -43,18 +43,31 @@ pub struct FakeBridge {
     pub streams: Arc<AtomicUsize>,
 }
 
-pub fn id_of(cert_pem: &str) -> BridgeId {
-    BridgeId::of_cert(CertificateDer::from_pem_slice(cert_pem.as_bytes()).unwrap().as_ref())
+/// The certificates of a chain, in the order the bridge shows them.
+fn chain(chain_pem: &str) -> Vec<CertificateDer<'static>> {
+    CertificateDer::pem_slice_iter(chain_pem.as_bytes()).collect::<Result<_, _>>().unwrap()
 }
 
+/// The id of the bridge whose chain this is: of the key that signed the
+/// TLS certificate, carried by the second certificate.
+pub fn id_of(chain_pem: &str) -> BridgeId {
+    BridgeId::of_cert(chain(chain_pem)[1].as_ref()).unwrap()
+}
+
+/// A bridge with the usual chain and TLS key (`CERT`, `KEY`).
 pub async fn bridge(behaviour: Behaviour) -> FakeBridge {
-    let cert = CertificateDer::from_pem_slice(CERT.as_bytes()).unwrap();
-    let key = PrivateKeyDer::from_pem_slice(KEY.as_bytes()).unwrap();
+    bridge_with(behaviour, CERT, KEY).await
+}
+
+/// A bridge showing the chain `chain_pem` over the TLS key `key_pem`; its
+/// reference carries the id of the key that signed the chain.
+pub async fn bridge_with(behaviour: Behaviour, chain_pem: &str, key_pem: &str) -> FakeBridge {
+    let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes()).unwrap();
     let mut config = rustls::ServerConfig::builder_with_provider(pin::provider())
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_no_client_auth()
-        .with_single_cert(vec![cert], key)
+        .with_single_cert(chain(chain_pem), key)
         .unwrap();
     config.alpn_protocols = vec![b"h2".to_vec()];
     let acceptor = TlsAcceptor::from(Arc::new(config));
@@ -97,7 +110,7 @@ pub async fn bridge(behaviour: Behaviour) -> FakeBridge {
             });
         }
     });
-    FakeBridge { bridge: BridgeRef { addr, id: id_of(CERT), sni: None }, asked, streams }
+    FakeBridge { bridge: BridgeRef { addr, id: id_of(chain_pem), sni: None }, asked, streams }
 }
 
 /// A server that sends back what it gets.

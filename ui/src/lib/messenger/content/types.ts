@@ -41,6 +41,8 @@ export type TimelineItem =
   | { type: 'day'; id: string; at: number }
   /** One line, or several in a row folded into one. */
   | { type: 'system'; id: string; messages: MessengerMessage[] }
+  /** A call's line: on its own, never folded with others. */
+  | { type: 'call'; id: string; message: MessengerMessage }
   | ({ type: 'bubble'; id: string; message: MessengerMessage } & Run)
   /** Attachments sent by one action, or one picture alone. */
   | ({ type: 'album'; id: string; variant: AlbumVariant; messages: MessengerMessage[] } & Run);

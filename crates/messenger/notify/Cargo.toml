@@ -33,3 +33,5 @@ tempfile.workspace = true
 sqlx.workspace = true
 messenger-testkit.workspace = true
 messenger-media.workspace = true
+# Only to keep the life of an invitation the same as the core's.
+messenger-calls.workspace = true

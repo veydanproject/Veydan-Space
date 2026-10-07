@@ -383,6 +383,29 @@ export function buildDemo(): DemoData {
       msg(a, alice, now - 4, i === 4 ? 'Поездка, часть первая' : null, { content_type: 'media', media: { name, mime: 'image/jpeg', size: 1_900_000, kind: 'image', batch: 'demo-batch-3' } })),
   );
 
+  // Calls as the runtime writes their lines: answered both ways (one through a relay), declined,
+  // not answered by Alice, and two of Boris's that I missed (the last one is new).
+  const callLine = (chat: string, at: number, direction: 'in' | 'out', outcome: string | null, duration: number | null, via: string | null, media = 'audio') => {
+    const id = `demo-call-${(n++).toString(16)}`;
+    return msg(chat, '', at, 'call', {
+      id: `sys:call:${id}`, content_type: 'system', direction,
+      media: { call_id: id, direction, media, outcome, duration_secs: duration, via, started_at: at },
+    });
+  };
+  messages[a].push(
+    callLine(a, now - day * 2 - 3500, 'in', 'missed', null, null),
+    callLine(a, now - day * 2 - 3300, 'out', 'ended', 754, 'direct'),
+    callLine(a, now - day - 6000, 'in', 'ended', 185, 'relay'),
+    callLine(a, now - day - 5000, 'out', 'missed', null, null, 'video'),
+    callLine(a, now - 58, 'out', 'declined', null, null),
+  );
+  messages[b].push(
+    callLine(b, now - 7000, 'in', 'busy', null, null),
+    callLine(b, now - 160, 'in', 'missed', null, null),
+  );
+  messages[a].sort((x, y) => x.created_at - y.created_at);
+  messages[b].sort((x, y) => x.created_at - y.created_at);
+
   // Contact cards: Boris's own, with his phone; Alice's of someone not in my contacts (never a phone).
   const borisP = contacts.find((c) => c.pubkey === boris)?.profile;
   const zhenya = profile(hex('c7'), 'Евгений Соколов', '{orange}Фотограф{/} и **путешественник**.\n~~Не~~ отвечаю быстро. Снимки: https://example.net/zhenya', null, {

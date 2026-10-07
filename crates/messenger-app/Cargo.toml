@@ -53,11 +53,13 @@ sha2 = "0.11"
 # source's icon from one (Windows).
 png = "0.18"
 
-# ── Android: push, and the push handler's way in without the app ────────────
+# ── Android: push, the push handler's way in without the app, calls ──────────
 [target.'cfg(target_os = "android")'.dependencies]
 # The product depends on the plugin too: tauri-build finds the plugin's
 # Android library through the direct dependencies of the product crate.
 tauri-plugin-veydan-push = { path = "../tauri-plugin-veydan-push" }
+# The phone's side of a call: the ringing notification, its service, the sound.
+tauri-plugin-veydan-call = { path = "../tauri-plugin-veydan-call" }
 jni = "0.21"
 
 [dev-dependencies]

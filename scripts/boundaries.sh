@@ -180,8 +180,9 @@ is_package() { grep -q "^[^	]*	$1	-	" <<<"$root_deps"$'\n'"$messenger_deps"; }
 #    product  the crate tauri-build and generate_context! run in
 #
 #    Only the adapter of the messenger reaches into crates/messenger. The
-#    product names the push plugin itself: tauri-build finds the Android
-#    library of a plugin through the direct dependencies of the product.
+#    product names the push and the call plugins itself: tauri-build finds
+#    the Android library of a plugin through the direct dependencies of the
+#    product.
 MATRIX='
 crates/build-cfg                 veydan-build-cfg          lib      no
 crates/lock                      veydan-lock               lib      no
@@ -192,13 +193,14 @@ crates/sync-host                 veydan-sync-host          lib      yes  crates/
 crates/shell                     veydan-shell              lib      yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host
 crates/pass                      veydan-pass               module   yes  crates/build-cfg crates/core crates/lock crates/sync-host crates/shell
 crates/notes                     veydan-notes              module   yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host crates/shell
-crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/desktop-notify crates/tauri-plugin-veydan-push
+crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
 crates/tor                       veydan-tor                module   yes  crates/build-cfg crates/core crates/shell
 crates/tauri-plugin-veydan-push  tauri-plugin-veydan-push  plugin   yes  crates/build-cfg
-apps/space                       veydanspace               product  yes  crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/tor crates/tauri-plugin-veydan-push
+crates/tauri-plugin-veydan-call  tauri-plugin-veydan-call  plugin   yes  crates/build-cfg crates/messenger/rtc
+apps/space                       veydanspace               product  yes  crates/build-cfg crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/tor crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
 apps/notes                       veydannotes               product  yes  crates/shell crates/notes
 apps/pass                        veydanpass                product  yes  crates/shell crates/pass
-apps/chat                        veydanchat                product  yes  crates/shell crates/messenger-app crates/tauri-plugin-veydan-push
+apps/chat                        veydanchat                product  yes  crates/build-cfg crates/shell crates/messenger-app crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
 '
 # A snapshot holds the rows of its product only.
 if [ -n "$snapshot" ]; then
@@ -451,8 +453,10 @@ allowed() {
     push)      echo "messenger-core messenger-http" ;;
     presence)  echo "messenger-core messenger-store" ;;
     notify)    echo "messenger-core messenger-store messenger-ingress messenger-contacts messenger-dm messenger-groups messenger-media messenger-transport messenger-vlink" ;;
-    runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence messenger-richtext messenger-avatar" ;;
-    testkit)   echo "messenger-core messenger-store messenger-runtime messenger-notify messenger-dm messenger-groups messenger-vlink" ;;
+    calls)     echo "messenger-core messenger-store messenger-dm messenger-vlink" ;;
+    runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence messenger-richtext messenger-avatar messenger-calls messenger-rtc" ;;
+    testkit)   echo "messenger-core messenger-store messenger-runtime messenger-notify messenger-dm messenger-groups messenger-vlink messenger-calls messenger-rtc" ;;
+    rtc)       echo "messenger-core messenger-calls" ;;
     *)         echo "__unknown__" ;;
   esac
 }

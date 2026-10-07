@@ -1,0 +1,7 @@
+"$schema" = "schemas/schema.json"
+
+# Nothing is open to the web page. The app reaches the plugin from Rust,
+# which needs no permission.
+[default]
+description = "No command of the call bridge is exposed to the web page."
+permissions = []

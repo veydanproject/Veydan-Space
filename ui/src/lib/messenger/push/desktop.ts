@@ -39,6 +39,10 @@ function words(): MessengerNoticeWords {
     link_group_nameless: tt('msg_notice_link_group_nameless'),
     link_contact: tt('msg_notice_link_contact'),
     link_contact_nameless: tt('msg_notice_link_contact_nameless'),
+    call_audio: tt('msg_call_phase_incoming'),
+    call_video: tt('msg_call_phase_incoming_video'),
+    call_answer: tt('msg_call_answer'),
+    call_decline: tt('msg_call_decline'),
   };
 }
 

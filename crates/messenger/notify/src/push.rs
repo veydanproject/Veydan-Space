@@ -29,6 +29,10 @@ pub struct PushData {
     /// server held the tail of a burst back.
     pub count: u32,
     pub trace: String,
+    /// The server says the event carries an invitation to a call (the
+    /// outer tag of the wrap, which anyone may put there): the phone
+    /// opens it even when it would say nothing of a message.
+    pub call: bool,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +53,8 @@ struct Raw {
     count: Option<String>,
     #[serde(default)]
     trace: Option<String>,
+    #[serde(default)]
+    call: Option<String>,
 }
 
 fn hex64(s: &str) -> bool {
@@ -81,7 +87,8 @@ impl PushData {
             .trace
             .filter(|t| !t.is_empty() && t.len() <= 64 && t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
             .unwrap_or_else(|| "-".into());
-        Ok(Self { kind, event: raw.event.filter(|e| !e.is_empty()), event_id, relay, group_id, count, trace })
+        let call = kind == PushKind::Dm && raw.call.as_deref() == Some("1");
+        Ok(Self { kind, event: raw.event.filter(|e| !e.is_empty()), event_id, relay, group_id, count, trace, call })
     }
 }
 
@@ -100,6 +107,16 @@ mod tests {
         assert_eq!(p.event.as_deref(), Some("{}"));
         assert_eq!(p.count, 1);
         assert_eq!(p.trace, "abc");
+        assert!(!p.call);
+    }
+
+    /// The server marks the push of a call; on a direct message only.
+    #[test]
+    fn a_call_is_marked_on_a_dm_push() {
+        assert!(PushData::parse(&map(&[("v", "2"), ("type", "dm"), ("call", "1")])).unwrap().call);
+        assert!(!PushData::parse(&map(&[("v", "2"), ("type", "dm"), ("call", "yes")])).unwrap().call);
+        let g = "ab".repeat(32);
+        assert!(!PushData::parse(&map(&[("v", "2"), ("type", "group"), ("group_id", &g), ("call", "1")])).unwrap().call);
     }
 
     #[test]

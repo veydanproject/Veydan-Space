@@ -80,6 +80,39 @@ pub const T_REACTION: &str = "reaction";
 /// `pubkey: null` (no proof) says I stopped sharing. The later `since` wins.
 pub const T_PRESENCE_KEY: &str = "presence.key";
 
+/// Every type of the signalling of a call starts so. The invitation is a
+/// message (kind 14: it wakes the peer's phone); everything after it is a
+/// note (`KIND_PEER_NOTE_RUMOR`). See internal/messenger-wire.md §10.
+pub const T_CALL_PREFIX: &str = "call.";
+/// `{"t":"call.invite","call_id":"<32 hex>","media":"audio"|"video","sdp":"<offer>","ice":[…]}`
+/// — I call you. With `restart: true`, on a note within a call: a new
+/// offer for the same call (ICE restart).
+pub const T_CALL_INVITE: &str = "call.invite";
+/// `{"t":"call.answer","call_id":"…","sdp":"<answer>","ice":[…]}` — I take the call.
+pub const T_CALL_ANSWER: &str = "call.answer";
+/// `{"t":"call.ice","call_id":"…","ice":[…]}` — candidates found after the
+/// offer or the answer left.
+pub const T_CALL_ICE: &str = "call.ice";
+/// `{"t":"call.decline","call_id":"…","reason":"declined"}` — I will not take it.
+pub const T_CALL_DECLINE: &str = "call.decline";
+/// `{"t":"call.end","call_id":"…","reason":"ended"|"failed"|"timeout"|"answered_elsewhere"|"superseded","answer":"<rumor id>"?}`
+/// — the call is over; `answer` names the one answer of several this end
+/// is for. `superseded`: we both called at once and this call lost; it
+/// never was (no record of it anywhere).
+pub const T_CALL_END: &str = "call.end";
+/// `{"t":"call.busy","call_id":"…"}` — I am on another call.
+pub const T_CALL_BUSY: &str = "call.busy";
+/// `{"t":"call.restart","call_id":"…"}` — the called side lost the
+/// connection, or its network changed: the caller is asked for a new
+/// offer (`call.invite` with `restart: true`). Only the caller makes
+/// offers within a call, so two never cross.
+pub const T_CALL_RESTART: &str = "call.restart";
+/// `{"t":"call.video","call_id":"…","on":true|false}` — my camera (or my
+/// screen) went on or off within the call. No renegotiation goes with it:
+/// the video of every call is negotiated from the first offer, and frames
+/// simply start or stop (internal/messenger-wire.md §10, "Видео").
+pub const T_CALL_VIDEO: &str = "call.video";
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
     pub v: u32,
@@ -164,6 +197,57 @@ impl Envelope {
 
     pub fn own_card(pubkey: &str, phone: Option<&str>, at: i64) -> Self {
         Self::new(T_OWN_CARD).with("pubkey", pubkey).with("phone", phone.map_or(Value::Null, Value::from)).with("at", at)
+    }
+
+    /// `ice` is the list of candidates as the calls crate spells them
+    /// (`{"candidate","mid","index"}`); `restart` marks a new offer within
+    /// a call and is left out otherwise.
+    pub fn call_invite(call_id: &str, media: &str, sdp: &str, ice: Vec<Value>, restart: bool) -> Self {
+        let e = Self::new(T_CALL_INVITE).with("call_id", call_id).with("media", media).with("sdp", sdp).with("ice", ice);
+        if restart {
+            e.with("restart", true)
+        } else {
+            e
+        }
+    }
+
+    pub fn call_answer(call_id: &str, sdp: &str, ice: Vec<Value>) -> Self {
+        Self::new(T_CALL_ANSWER).with("call_id", call_id).with("sdp", sdp).with("ice", ice)
+    }
+
+    pub fn call_ice(call_id: &str, ice: Vec<Value>) -> Self {
+        Self::new(T_CALL_ICE).with("call_id", call_id).with("ice", ice)
+    }
+
+    pub fn call_decline(call_id: &str, reason: &str) -> Self {
+        Self::new(T_CALL_DECLINE).with("call_id", call_id).with("reason", reason)
+    }
+
+    /// `answer`: the rumor id of the answer this end is for, when the peer
+    /// answered from several devices and only one of them is meant.
+    pub fn call_end(call_id: &str, reason: &str, answer: Option<&str>) -> Self {
+        let e = Self::new(T_CALL_END).with("call_id", call_id).with("reason", reason);
+        match answer {
+            Some(id) => e.with("answer", id),
+            None => e,
+        }
+    }
+
+    pub fn call_busy(call_id: &str) -> Self {
+        Self::new(T_CALL_BUSY).with("call_id", call_id)
+    }
+
+    pub fn call_restart(call_id: &str) -> Self {
+        Self::new(T_CALL_RESTART).with("call_id", call_id)
+    }
+
+    pub fn call_video(call_id: &str, on: bool) -> Self {
+        Self::new(T_CALL_VIDEO).with("call_id", call_id).with("on", on)
+    }
+
+    /// Is this the signalling of a call (`t` starts with `call.`).
+    pub fn is_call(&self) -> bool {
+        self.t.starts_with(T_CALL_PREFIX)
     }
 
     pub fn with(mut self, key: &str, value: impl Into<Value>) -> Self {
@@ -338,6 +422,49 @@ mod tests {
         assert_eq!(e.str_field("pubkey"), Some(key.as_str()));
         let gone = format!(r#"{{"v":1,"t":"own.card","at":1759700003,"phone":null,"pubkey":"{key}"}}"#);
         assert_eq!(Envelope::own_card(&key, None, 1_759_700_003).encode(), gone);
+    }
+
+    #[test]
+    fn call_golden_vectors() {
+        let id = "ab".repeat(16);
+        let cand = serde_json::json!({ "candidate": "candidate:1 1 udp 2 203.0.113.7 5000 typ host", "index": 0, "mid": "0" });
+        let invite = format!(
+            r#"{{"v":1,"t":"call.invite","call_id":"{id}","ice":[{{"candidate":"candidate:1 1 udp 2 203.0.113.7 5000 typ host","index":0,"mid":"0"}}],"media":"audio","sdp":"v=0"}}"#
+        );
+        assert_eq!(Envelope::call_invite(&id, "audio", "v=0", vec![cand.clone()], false).encode(), invite);
+        let e = Envelope::parse(&invite).unwrap();
+        assert_eq!(e, Envelope::call_invite(&id, "audio", "v=0", vec![cand.clone()], false));
+        assert!(e.is_call());
+        assert_eq!(e.str_field("call_id"), Some(id.as_str()));
+        assert!(e.fields.get("restart").is_none(), "a first offer says nothing of a restart");
+        assert_eq!(
+            Envelope::call_invite(&id, "video", "v=1", vec![], true).encode(),
+            format!(r#"{{"v":1,"t":"call.invite","call_id":"{id}","ice":[],"media":"video","restart":true,"sdp":"v=1"}}"#)
+        );
+        assert_eq!(
+            Envelope::call_answer(&id, "v=2", vec![cand]).encode(),
+            format!(
+                r#"{{"v":1,"t":"call.answer","call_id":"{id}","ice":[{{"candidate":"candidate:1 1 udp 2 203.0.113.7 5000 typ host","index":0,"mid":"0"}}],"sdp":"v=2"}}"#
+            )
+        );
+        assert_eq!(Envelope::call_ice(&id, vec![]).encode(), format!(r#"{{"v":1,"t":"call.ice","call_id":"{id}","ice":[]}}"#));
+        assert_eq!(
+            Envelope::call_decline(&id, "declined").encode(),
+            format!(r#"{{"v":1,"t":"call.decline","call_id":"{id}","reason":"declined"}}"#)
+        );
+        assert_eq!(Envelope::call_end(&id, "ended", None).encode(), format!(r#"{{"v":1,"t":"call.end","call_id":"{id}","reason":"ended"}}"#));
+        let answer = "cd".repeat(32);
+        assert_eq!(
+            Envelope::call_end(&id, "answered_elsewhere", Some(&answer)).encode(),
+            format!(r#"{{"v":1,"t":"call.end","answer":"{answer}","call_id":"{id}","reason":"answered_elsewhere"}}"#)
+        );
+        assert_eq!(Envelope::call_busy(&id).encode(), format!(r#"{{"v":1,"t":"call.busy","call_id":"{id}"}}"#));
+        assert_eq!(Envelope::call_restart(&id).encode(), format!(r#"{{"v":1,"t":"call.restart","call_id":"{id}"}}"#));
+        assert!(Envelope::call_restart(&id).is_call());
+        assert_eq!(Envelope::call_video(&id, true).encode(), format!(r#"{{"v":1,"t":"call.video","call_id":"{id}","on":true}}"#));
+        assert_eq!(Envelope::parse(&Envelope::call_video(&id, false).encode()).unwrap().fields.get("on"), Some(&serde_json::json!(false)));
+        assert!(!Envelope::text("call.invite").is_call(), "text that names a type is text");
+        assert!(Envelope::parse(&invite).unwrap().as_text().is_none(), "a call is not text");
     }
 
     #[test]

@@ -9,13 +9,18 @@ import { messengerStore } from '../store.svelte';
 import { followRoute, launchRoute, startPushBridge } from '../push/bridge';
 import { BASE } from '../mobile/routes';
 import NoticeBanner from '../push/NoticeBanner.svelte';
+import CallWatcher from '../calls/CallWatcher.svelte';
 
 export const module: ModuleDef = {
   ...common,
   nav: [navItem],
   // The module's switch is in the Modules section of the core (section 12).
   settings: [],
-  overlays: [{ id: 'notices', component: NoticeBanner, place: 'window' }],
+  // A call opens its page from any screen, and stays a tap away when left.
+  overlays: [
+    { id: 'notices', component: NoticeBanner, place: 'window' },
+    { id: 'calls', component: CallWatcher, place: 'window' },
+  ],
   // The chat, contacts and settings screens use the whole height; the list keeps the root bar.
   bar: (url) => (url.pathname.startsWith(`${BASE}/`) ? null : undefined),
   async start() {

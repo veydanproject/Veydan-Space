@@ -10,6 +10,10 @@
 //! messenger-runtime bindings`) writes them again.
 
 use crate::avatars::AvatarPreview;
+use crate::calls::{
+    CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState,
+    CallStats, CallVia, CallView, CameraInfo, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoSize, VideoTrack,
+};
 use crate::cards::{ContactPrivateView, OwnPrivateView};
 use crate::links::{GroupMembership, LinkGroupKind, LinkView};
 use crate::net::{BridgeView, NetCheck, NetMode, NetStatus, Verdict};
@@ -27,6 +31,7 @@ pub const SHARED_FILE: &str = "../../../ui/src/lib/messenger/generated/shared.ts
 pub const NET_FILE: &str = "../../../ui/src/lib/messenger/generated/net.ts";
 pub const PROFILE_FILE: &str = "../../../ui/src/lib/messenger/generated/profile.ts";
 pub const TRANSFER_FILE: &str = "../../../ui/src/lib/messenger/generated/transfer.ts";
+pub const CALLS_FILE: &str = "../../../ui/src/lib/messenger/generated/calls.ts";
 
 const HEADER: &str = "// SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
@@ -102,14 +107,42 @@ pub fn transfer_ts() -> String {
     out
 }
 
+/// A call, as the call screen, the incoming-call screen and the settings
+/// of calls read it.
+pub fn calls_ts() -> String {
+    let cfg = Config::new();
+    let mut out = String::from(HEADER);
+    out += &export::<CallMedia>(&cfg, "What a call carries.");
+    out += &export::<CallDirection>(&cfg, "Who called whom.");
+    out += &export::<CallPhase>(&cfg, "Where a call is: ringing on their side, ringing here, ICE looking for a way, talking, over.");
+    out += &export::<CallVia>(&cfg, "How the media goes: directly between the two, or through a relay.");
+    out += &export::<CallOutcome>(&cfg, "How a call ended; `answered_elsewhere` means another device of mine took it.");
+    out += &export::<RelayPolicy>(&cfg, "Which way a call may take: `auto` (directly when it works), `relay_only` (my address stays behind a relay).");
+    out += &export::<CallLimits>(&cfg, "What the nearest node allows, as it said.");
+    out += &export::<VideoTrack>(&cfg, "Which video of a call: mine as the camera sees it, or the peer's.");
+    out += &export::<VideoInput>(&cfg, "What I send as video, as `messenger_call_set_video` takes it: nothing, a camera (by id, or the default; `front`/`back` on a phone), a screen or window (by id, or the first screen; a computer only).");
+    out += &export::<VideoQuality>(&cfg, "How big my video is sent, for the next time it goes on: 640×360 or 1280×720 at 30 fps.");
+    out += &export::<VideoSize>(&cfg, "The size of the frames of one video as they show.");
+    out += &export::<CameraInfo>(&cfg, "A camera the engine can open, as `messenger_call_list_cameras` lists them; `id` is what `VideoInput` and `messenger_call_switch_camera` take.");
+    out += &export::<ScreenInfo>(&cfg, "A screen or a window that can be shared, as `messenger_call_list_screens` lists them.");
+    out += &export::<CallView>(&cfg, "The call as the screen shows it: the `call` of every `call.*` event and the answer of the call commands.");
+    out += &export::<CallEnded>(&cfg, "The payload of the runtime event `call.ended`.");
+    out += &export::<CallStats>(&cfg, "The `stats` of the runtime event `call.stats`, as the engine tells them.");
+    out += &export::<CallNodeView>(&cfg, "A call node the client may use, as the settings list it.");
+    out += &export::<CallNodeInput>(&cfg, "One own node, as `messenger_call_set_nodes` takes it.");
+    out += &export::<CallState>(&cfg, "The call under way, the policy and the nodes, as `messenger_call_get_state` answers.");
+    out
+}
+
 /// Every generated file and what it should hold.
-pub fn files() -> [(&'static str, String); 5] {
+pub fn files() -> [(&'static str, String); 6] {
     [
         (LINKS_FILE, links_ts()),
         (SHARED_FILE, shared_ts()),
         (NET_FILE, net_ts()),
         (PROFILE_FILE, profile_ts()),
         (TRANSFER_FILE, transfer_ts()),
+        (CALLS_FILE, calls_ts()),
     ]
 }
 

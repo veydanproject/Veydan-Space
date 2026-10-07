@@ -32,6 +32,19 @@ pub enum Wake {
     Peer,
     /// A signal of the protocol: for the peer's app, not for the peer.
     Nobody,
+    /// A call: the peer's phone rings now or never. The push server sends
+    /// it at once, past the throttle of a chat, and keeps it for a minute,
+    /// not a day (`["call", "1"]` on the outside; services/push/spec). The
+    /// price: a relay sees that the wrap is a call, not what call.
+    Call,
+}
+
+/// `["call", "1"]`: the tag of a call on the outside of a wrap. Spelled
+/// here and in `vpush-server::pipeline::classify`; the two must agree.
+pub const CALL_TAG: &str = "call";
+
+fn call_tag() -> Result<Tag> {
+    Tag::parse([CALL_TAG, "1"]).map_err(crypto)
 }
 
 fn crypto(e: impl std::fmt::Display) -> MessengerError {
@@ -52,6 +65,14 @@ pub fn wrap_as(
     wake: Wake,
 ) -> Result<Wrapped> {
     wrap_kind(keys, peer, Kind::PrivateDirectMessage.as_u16(), content, created_at, reply_to, wake, true, None)
+}
+
+/// A message to `peer` that wakes the peer as a call ([`Wake::Call`]) and
+/// is forgotten by the relays at `expiration` (NIP-40, on the outside of
+/// both wraps): the invitation to a call, which rings a phone now or not
+/// at all. With a self-copy, so my other devices know I called.
+pub fn wrap_expiring(keys: &Keys, peer: &PubKey, content: &str, created_at: i64, expiration: i64) -> Result<Wrapped> {
+    wrap_kind(keys, peer, Kind::PrivateDirectMessage.as_u16(), content, created_at, None, Wake::Call, true, Some(expiration))
 }
 
 /// A note to `peer` that is not a message (a receipt, a reaction, a key): a
@@ -102,6 +123,10 @@ fn wrap_kind(
         let mut outside = Vec::new();
         if quiet {
             outside.push(pushtags::silent_tag()?);
+        } else if wake == Wake::Call {
+            // The peer's copy of a call, and only that: the copy for my
+            // own devices is quiet like any other.
+            outside.push(call_tag()?);
         }
         outside.extend(expiration.clone());
         let gift = GiftWrapBuilder::new(to, rumor.clone()).extra_tags(outside);
@@ -258,6 +283,48 @@ mod tests {
             assert_eq!(r.id.unwrap().to_hex(), w.rumor_id.as_hex());
             assert_eq!(r.kind.as_u16(), KIND_PEER_NOTE_RUMOR);
         }
+    }
+
+    #[test]
+    fn an_invitation_wakes_the_peer_and_expires_outside() {
+        let (alice, bob) = (Keys::generate(), Keys::generate());
+        let w = wrap_expiring(&alice, &pk(&bob), r#"{"v":1,"t":"call.invite"}"#, 1_700_000_000, 1_700_000_060).unwrap();
+        let copy = w.to_self.as_ref().expect("my devices learn I called");
+        assert!(!silent(&w.to_peer), "a ring");
+        assert!(silent(copy));
+        for wrap in [&w.to_peer, copy] {
+            assert_eq!(tag_value(wrap, "expiration").as_deref(), Some("1700000060"));
+        }
+        let opened = UnwrappedGift::from_gift_wrap(&bob, &serde_json::from_value(w.to_peer.json.clone()).unwrap()).unwrap();
+        assert_eq!(opened.rumor.kind, Kind::PrivateDirectMessage);
+        assert!(!opened.rumor.tags.iter().any(|t| t.kind() == "expiration"));
+    }
+
+    /// The push server reads `["call", "1"]` off the peer's copy and sends
+    /// it past its throttle (the same value is in the tests of
+    /// `vpush-server::pipeline::classify`); my own copy is quiet, and a
+    /// plain message or a note is no call.
+    #[test]
+    fn an_invitation_is_marked_as_a_call_on_the_peers_copy_only() {
+        let (alice, bob) = (Keys::generate(), Keys::generate());
+        let w = wrap_expiring(&alice, &pk(&bob), r#"{"v":1,"t":"call.invite"}"#, 1_700_000_000, 1_700_000_060).unwrap();
+        assert_eq!(tag_value(&w.to_peer, CALL_TAG).as_deref(), Some("1"));
+        assert!(!silent(&w.to_peer));
+        let copy = w.to_self.as_ref().unwrap();
+        assert_eq!(tag_value(copy, CALL_TAG), None);
+        assert!(silent(copy));
+        // The tag is on the outside; the rumor says nothing of it.
+        let opened = UnwrappedGift::from_gift_wrap(&bob, &serde_json::from_value(w.to_peer.json.clone()).unwrap()).unwrap();
+        assert!(!opened.rumor.tags.iter().any(|t| t.kind() == CALL_TAG));
+
+        let message = wrap(&alice, &pk(&bob), "hi", 1_700_000_000, None).unwrap();
+        assert_eq!(tag_value(&message.to_peer, CALL_TAG), None);
+        let note = wrap_note(&alice, &pk(&bob), "x", 1_700_000_000, false, None).unwrap();
+        assert_eq!(tag_value(&note.to_peer, CALL_TAG), None);
+        // A call to myself is my own copy: quiet, and no call.
+        let mine = wrap_expiring(&alice, &pk(&alice), "x", 1, 60).unwrap();
+        assert!(silent(&mine.to_peer));
+        assert_eq!(tag_value(&mine.to_peer, CALL_TAG), None);
     }
 
     #[test]

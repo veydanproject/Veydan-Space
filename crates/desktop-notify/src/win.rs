@@ -7,32 +7,32 @@
 //! to show and to click toasts of a running app.
 //!
 //! WinRT is called from a thread of its own that joined the multithreaded
-//! apartment; a click comes on a thread of the system's pool.
+//! apartment; a click or a button comes on a thread of the system's pool.
 
 use tokio::sync::{mpsc, watch};
-use windows::core::{HSTRING, IInspectable};
+use windows::core::{IInspectable, Interface, HSTRING};
 use windows::Data::Xml::Dom::XmlDocument;
 use windows::Foundation::TypedEventHandler;
-use windows::UI::Notifications::{ToastNotification, ToastNotificationManager, ToastNotifier};
+use windows::UI::Notifications::{ToastActivatedEventArgs, ToastNotification, ToastNotificationManager, ToastNotifier};
 use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 
 use crate::toast_xml::toast_xml;
-use crate::{short_tag, AppInfo, Command, OnClick, Toast};
+use crate::{short_tag, AppInfo, Command, Handlers, Press, Toast};
 
 /// All toasts of the app share one group; the tag tells the chats apart.
 const GROUP: &str = "messages";
 
-pub(crate) fn start(app: AppInfo, rx: mpsc::UnboundedReceiver<Command>, up: watch::Sender<bool>, on_click: OnClick) {
+pub(crate) fn start(app: AppInfo, rx: mpsc::UnboundedReceiver<Command>, up: watch::Sender<bool>, handlers: Handlers) {
     let spawned = std::thread::Builder::new()
         .name("desktop-notify".into())
-        .spawn(move || run(app, rx, up, on_click));
+        .spawn(move || run(app, rx, up, handlers));
     if let Err(e) = spawned {
         eprintln!("desktop-notify: no thread: {e}");
     }
 }
 
-fn run(app: AppInfo, mut rx: mpsc::UnboundedReceiver<Command>, up: watch::Sender<bool>, on_click: OnClick) {
+fn run(app: AppInfo, mut rx: mpsc::UnboundedReceiver<Command>, up: watch::Sender<bool>, handlers: Handlers) {
     // SAFETY: once per thread, before any WinRT call on it.
     let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
     if let Err(e) = register(&app) {
@@ -56,7 +56,7 @@ fn run(app: AppInfo, mut rx: mpsc::UnboundedReceiver<Command>, up: watch::Sender
 
     while let Some(cmd) = rx.blocking_recv() {
         let done = match cmd {
-            Command::Show(t) => show(&notifier, &t, &on_click),
+            Command::Show(t) => show(&notifier, &t, &handlers),
             Command::Clear(key) => clear(&aumid, &key),
             Command::ClearAll => clear_all(&aumid),
             Command::Shutdown(done) => {
@@ -83,16 +83,23 @@ fn register(app: &AppInfo) -> windows::core::Result<()> {
     unsafe { SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(app.id.as_str())) }
 }
 
-fn show(notifier: &ToastNotifier, t: &Toast, on_click: &OnClick) -> windows::core::Result<()> {
+fn show(notifier: &ToastNotifier, t: &Toast, handlers: &Handlers) -> windows::core::Result<()> {
     let doc = XmlDocument::new()?;
     doc.LoadXml(&HSTRING::from(toast_xml(t)))?;
     let toast = ToastNotification::CreateToastNotification(&doc)?;
     toast.SetTag(&HSTRING::from(short_tag(&t.key)))?;
     toast.SetGroup(&HSTRING::from(GROUP))?;
     let key = t.key.clone();
-    let on_click = on_click.clone();
-    toast.Activated(&TypedEventHandler::<ToastNotification, IInspectable>::new(move |_, _| {
-        on_click(key.clone());
+    let handlers = handlers.clone();
+    toast.Activated(&TypedEventHandler::<ToastNotification, IInspectable>::new(move |_, args| {
+        // A button's id, or nothing for the toast itself (it has no `launch`).
+        let id = args
+            .as_ref()
+            .and_then(|a| a.cast::<ToastActivatedEventArgs>().ok())
+            .and_then(|a| a.Arguments().ok())
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default();
+        Press::of(key.clone(), &id).deliver(&handlers);
         Ok(())
     }))?;
     notifier.Show(&toast)

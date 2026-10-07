@@ -66,6 +66,15 @@ fi
 export NDK_HOME="$SDK_DIR/ndk/$ANDROID_NDK_VERSION"
 export ANDROID_NDK_HOME="$NDK_HOME"
 
+# The calls engine (crates/messenger/rtc): the prebuilt libwebrtc for the
+# phone, pinned by hash (VEYDAN_WEBRTC_DIR; the build script of the engine
+# picks the archive of the target it builds). Only arm64 is pinned: a build
+# of another ABI needs its archive and hash in scripts/webrtc-toolchain.sh.
+# The C++ bridge is compiled by the NDK's own clang, which cargo-mobile sets
+# for the Android targets.
+source "$ROOT_DIR/scripts/webrtc-toolchain.sh"
+webrtc_toolchain android-arm64 || echo ">> webrtc: the engine of calls will not build without its archive" >&2
+
 # --- Rust targets for Android ---
 # To the Rust of rust-toolchain.toml (internal/platform-spec.md 14.6): rustup
 # reads the file from the working directory upwards, and this file may be

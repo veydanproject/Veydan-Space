@@ -265,6 +265,41 @@ internal object Notifier {
     return "$emoji ${context.getString(word)}$length"
   }
 
+  /**
+   * Somebody calls, and the app is not up to ring for it: the call plugin
+   * rings, in this same process, with its call notification and its screen
+   * over the lock screen. It is reached by an explicit intent to its
+   * receiver (`net.veydan.call.CallActionReceiver`, action `RING`), so
+   * that this plugin needs nothing of it at build time: a product without
+   * calls has no such receiver, and the intent goes nowhere. The push
+   * came with high priority, which lets the plugin start its foreground
+   * service from the background. An invitation that is no longer good
+   * (`expiresAt`, 45 seconds from its making) rings nobody: it is a missed
+   * call, which the app shows when it runs. What is answered is the line
+   * of the log.
+   */
+  fun ring(context: Context, call: CallNotice): String {
+    val now = System.currentTimeMillis() / 1000
+    if (call.expiresAt in 1 until now) return "a call that expired ${now - call.expiresAt} s ago, not rung"
+    val intent = Intent(CALL_RING)
+      .setClassName(context.packageName, CALL_RECEIVER)
+      .putExtra("veydan_call_id", call.callId)
+      .putExtra("veydan_call_name", call.name)
+      .putExtra("veydan_call_video", call.media == "video")
+      .putExtra("veydan_call_hidden", call.hideOnLockscreen)
+      .putExtra("veydan_call_expires_at_wall", if (call.expiresAt > 0) call.expiresAt * 1000 else 0L)
+    return try {
+      context.sendBroadcast(intent)
+      "rings (call ${call.callId.take(8)})"
+    } catch (e: Exception) {
+      "not rung: ${e.javaClass.simpleName}"
+    }
+  }
+
+  /** The receiver and the action of the call plugin, as its CallActionReceiver spells them. */
+  private const val CALL_RECEIVER = "net.veydan.call.CallActionReceiver"
+  private const val CALL_RING = "net.veydan.call.RING"
+
   /** `12400` → `0:12`; an hour and more as `1:02:03`. */
   private fun duration(ms: Long): String {
     val s = (ms + 500) / 1000

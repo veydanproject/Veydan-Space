@@ -11,6 +11,7 @@
   import type { MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import ChatWindow from './ChatWindow.svelte';
   import PeerInfo from './PeerInfo.svelte';
+  import CallButton from '../calls/CallButton.svelte';
   import WithInfo from '../shared/WithInfo.svelte';
   import type { MessengerChat } from '../api';
 
@@ -32,6 +33,7 @@
 </script>
 
 {#snippet actions()}
+  <CallButton {chat} />
   <button class="icon" class:active={info} onclick={() => (info = !info)} title={$t('msg_peer_info')}><Icon name="user" size={16} /></button>
 {/snippet}
 

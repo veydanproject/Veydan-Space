@@ -29,6 +29,14 @@ messenger-http.workspace = true
 messenger-presence.workspace = true
 messenger-richtext.workspace = true
 messenger-avatar.workspace = true
+messenger-calls.workspace = true
+# The engine of calls on libwebrtc, behind the feature `rtc` (on by default):
+# a build without it (`--no-default-features`) has no engine, and the host
+# gives one (`MessengerRuntime::start_with_engine`), as the tests do with
+# the fake of messenger-testkit; libwebrtc is then neither built nor linked.
+# The tests keep it so: the testkit below is taken without its own engine
+# (that of messenger-cli), or cargo would turn `rtc` back on for them.
+messenger-rtc = { workspace = true, optional = true }
 reqwest.workspace = true
 sha2.workspace = true
 hex.workspace = true
@@ -41,8 +49,16 @@ tokio = { workspace = true, features = ["sync", "rt", "time", "fs"] }
 serde_json.workspace = true
 base64.workspace = true
 
+[features]
+default = ["rtc"]
+rtc = ["dep:messenger-rtc"]
+
 [dev-dependencies]
-messenger-testkit.workspace = true
+# Without the testkit's `rtc`: the fakes need no engine, and the feature
+# would bring `messenger-runtime/rtc` with it into a `--no-default-features`
+# test. By path, not from the workspace table: cargo ignores
+# `default-features = false` on an inherited dependency.
+messenger-testkit = { path = "../testkit", default-features = false }
 # Pictures built in memory for the tests of photos sent smaller.
 image.workspace = true
 wiremock.workspace = true

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">Звонки</string>
+    <string name="veydan_call_channel_ongoing">Идёт звонок</string>
+    <string name="veydan_call_incoming">Входящий звонок</string>
+    <string name="veydan_call_incoming_video">Входящий видеозвонок</string>
+    <string name="veydan_call_ongoing">Идёт звонок</string>
+    <string name="veydan_call_answer">Ответить</string>
+    <string name="veydan_call_decline">Отклонить</string>
+    <string name="veydan_call_hangup">Завершить</string>
+    <string name="veydan_call_unknown">Неизвестный</string>
+</resources>

@@ -152,4 +152,25 @@ export OPENSSL_NO_VENDOR=1
 # Project-local Rust + Node + pnpm (installs into data/toolchains/ on first run)
 source "$VEYDAN_ROOT/scripts/toolchain.sh"
 
+# The calls engine (crates/messenger/rtc): the prebuilt libwebrtc of this
+# target, pinned by hash (VEYDAN_WEBRTC_DIR), and the clang that compiles its
+# C++ bridge. The bridge needs clang >= 21 for the hermetic libc++ of
+# libwebrtc; the host has none, the NDK in data/toolchains ships one that
+# targets the host too (it is fetched with the rest of the Android SDK by
+# scripts/android/android-env.sh). Named for that one crate only
+# (VEYDAN_WEBRTC_CLANGXX, read by its build.rs): CC/CXX would send every
+# C and C++ crate of the build to it. CFLAGS/CXXFLAGS above stay for the
+# rest of the build; the bridge drops them for itself (vendor/webrtc-sys,
+# PATCH.md).
+source "$VEYDAN_ROOT/scripts/webrtc-toolchain.sh"
+webrtc_toolchain linux-x64 || echo ">> webrtc: the engine of calls will not build without its archive" >&2
+VEYDAN_NDK_LLVM="$VEYDAN_ROOT/data/toolchains/android-sdk/ndk/30.0.16248370/toolchains/llvm/prebuilt/linux-x86_64"
+if [ -x "$VEYDAN_NDK_LLVM/bin/clang++" ]; then
+  export VEYDAN_WEBRTC_CLANGXX="$VEYDAN_NDK_LLVM/bin/clang++"
+  # bindgen (the v4l2 bindings of the camera crate) wants a libclang; the NDK has one.
+  export LIBCLANG_PATH="${LIBCLANG_PATH:-$VEYDAN_NDK_LLVM/lib}"
+else
+  echo ">> webrtc: no clang 21 in $VEYDAN_NDK_LLVM; source scripts/android/android-env.sh once to fetch the NDK, or set VEYDAN_WEBRTC_CLANGXX" >&2
+fi
+
 cd "$VEYDAN_ROOT"

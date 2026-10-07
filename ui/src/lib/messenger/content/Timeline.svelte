@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  Messages of a chat, drawn: days, system lines (folded when many), runs
+  Messages of a chat, drawn: days, system lines (folded when many), calls, runs
   of one author with the picture of whoever wrote. What a bubble and an
   album look like is for the chat to say.
 -->
@@ -11,6 +11,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Avatar from '../contacts/Avatar.svelte';
+  import CallLine from '../calls/CallLine.svelte';
   import { nameStore } from '../groups/names.svelte';
   import { dayLabel } from '../shared/time';
   import type { MessengerMessage } from '../api';
@@ -43,6 +44,8 @@
 {#each items as item (item.id)}
   {#if item.type === 'day'}
     <div class="day"><span>{day(item.at)}</span></div>
+  {:else if item.type === 'call'}
+    <CallLine message={item.message} />
   {:else if item.type === 'system'}
     {#if item.messages.length === 1}
       <div class="system"><span>{systemText(item.messages[0])}</span></div>

@@ -7,15 +7,26 @@
 //! - [`FakeTransport`]: records every `Outbound`, lets tests inject `RawEvent`s.
 //!
 //! - [`FileSecretStore`]: plaintext JSON secrets for the CLI and standalone runs.
+//! - [`FakeEngine`]: a media engine with no media, whose sessions connect
+//!   to each other in the process (`messenger-calls`).
+//! - [`open_dm`]: a gift wrap opened into the `DmInbound` ingress would
+//!   make of it, for tests that pass wraps between parties.
 //!
 //! The `messenger-cli` binary (src/bin) drives `MessengerRuntime` headless.
 
+pub mod fake_engine;
 pub mod file_secrets;
+pub use fake_engine::{FakeEngine, FakeHandle};
 pub use file_secrets::FileSecretStore;
 
 use async_trait::async_trait;
+use messenger_core::inbound::Envelope as WireEnvelope;
+use messenger_core::outbound::WireEvent;
 use messenger_core::traits::RelayStatusSnapshot;
-use messenger_core::{Ack, MessengerError, Outbound, RawEvent, Result, SecretStore, Transport};
+use messenger_core::{Ack, DmInbound, EventId, EventSource, MessengerError, Outbound, PubKey, RawEvent, RelayUrl, Result, SecretStore, Timestamp, Transport};
+use nostr::key::Keys;
+use nostr::nips::nip59::UnwrappedGift;
+use nostr::prelude::Event;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::sync::mpsc;
@@ -73,6 +84,42 @@ impl SecretStore for MemorySecretStore {
     async fn is_unlocked(&self) -> bool {
         *self.unlocked.lock().unwrap()
     }
+}
+
+/// The recipients a wrap is addressed to (its `p` tags), hex.
+pub fn wrap_recipients(event: &WireEvent) -> Vec<PubKey> {
+    let Ok(ev) = serde_json::from_value::<Event>(event.json.clone()) else { return vec![] };
+    ev.tags.iter().filter(|t| t.kind() == "p").filter_map(|t| t.as_slice().get(1)).filter_map(|s| PubKey::parse(s)).collect()
+}
+
+/// Open a gift wrap with `keys` into what ingress would hand the DM
+/// handlers. `None` when the wrap is not addressed to these keys.
+pub fn open_dm(keys: &Keys, event: &WireEvent, via_sync: bool) -> Option<DmInbound> {
+    let ev: Event = serde_json::from_value(event.json.clone()).ok()?;
+    let u = UnwrappedGift::from_gift_wrap(keys, &ev).ok()?;
+    let mut rumor = u.rumor.clone();
+    rumor.ensure_id();
+    let url = RelayUrl::parse("wss://r.example").unwrap();
+    Some(DmInbound {
+        envelope: WireEnvelope {
+            wire_id: event.id.clone(),
+            source: if via_sync { EventSource::Sync { url } } else { EventSource::Relay { url } },
+            wire_created_at: Timestamp(ev.created_at.as_secs() as i64),
+        },
+        rumor_id: EventId::parse(&rumor.id?.to_hex())?,
+        sender: PubKey::parse(&u.sender.to_hex())?,
+        recipients: rumor
+            .tags
+            .iter()
+            .filter(|t| t.kind() == "p")
+            .filter_map(|t| t.as_slice().get(1))
+            .filter_map(|s| PubKey::parse(s))
+            .collect(),
+        created_at: Timestamp(rumor.created_at.as_secs() as i64),
+        content: rumor.content.clone(),
+        reply_to: rumor.tags.iter().filter(|t| t.kind() == "e").filter_map(|t| t.as_slice().get(1)).filter_map(|s| EventId::parse(s)).next(),
+        rumor_kind: rumor.kind.as_u16(),
+    })
 }
 
 /// Records outbound traffic and feeds inbound events on demand.

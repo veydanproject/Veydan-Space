@@ -128,7 +128,8 @@
         "single-instance",
         "opener",
         "barcode-scanner",
-        "veydan-push"
+        "veydan-push",
+        "veydan-call"
       ],
       "extra": [
         "apps/space/extension"

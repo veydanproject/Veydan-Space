@@ -7,3 +7,6 @@
 export const BASE = '/messenger';
 
 export const chatHref = (chatId: string) => `${BASE}/chat?id=${encodeURIComponent(chatId)}`;
+
+/** The call under way, the whole screen. */
+export const callHref = () => `${BASE}/call`;

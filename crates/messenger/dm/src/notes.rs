@@ -51,6 +51,15 @@ impl DmService {
         Ok(self.contacts.is_contact(peer).await? && self.notes_allowed(peer).await?)
     }
 
+    /// Whether `peer` may call me and I may call `peer`: we both chose to
+    /// talk (`full_chat`) and neither blocked the other, the same rule as
+    /// for notes. A call from anybody else is dropped without a word: a
+    /// ring, like a receipt, tells that a device is alive, and the call
+    /// would show the peer my address.
+    pub async fn calls_allowed(&self, peer: &PubKey) -> Result<bool> {
+        self.notes_allowed(peer).await
+    }
+
     /// Whether I send `peer` notes. Blocked either way: never. With the
     /// relationship gate off every chat counts as `full_chat`.
     pub(crate) async fn notes_allowed(&self, peer: &PubKey) -> Result<bool> {

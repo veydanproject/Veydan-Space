@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "messenger-rtc"
+description = "The media engine of calls on libwebrtc: PeerConnection with ICE, audio in and out, frame encryption"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The trait the core asks an engine to fill (adapter.rs), and its errors.
+messenger-core.workspace = true
+messenger-calls.workspace = true
+async-trait.workspace = true
+# The engine. Its C++ bridge, webrtc-sys, is the vendored copy in
+# vendor/webrtc-sys ([patch.crates-io] of the workspace; PATCH.md there).
+libwebrtc.workspace = true
+tokio = { workspace = true, features = ["sync", "rt", "time"] }
+futures-util.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+# The same jni as libwebrtc's, so that the plugin's JavaVM is the one the
+# engine takes.
+jni.workspace = true
+
+[dev-dependencies]
+# The pin of a call node's id for the live run (tests/live.rs): the same
+# check the messenger makes of a bridge.
+messenger-vlink.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "io-util", "net", "time"] }
+bytes.workspace = true
+h2.workspace = true
+http.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+# The camera of a computer (camera.rs). Linux: V4L2 by ioctl, pure Rust
+# (`no_wrapper`: without it rscam links libv4l2, which the build machine and
+# the user's may lack); the bindings of nokhwa need bindgen and a libclang at
+# build time, which the build of this repository has only inside the Android
+# NDK. Windows and macOS: nokhwa over Media Foundation and AVFoundation, no
+# decoder (the frames are taken uncompressed: YUYV or NV12).
+[target.'cfg(target_os = "linux")'.dependencies]
+rscam = { version = "0.5.5", features = ["no_wrapper"] }
+# poll() on the camera's descriptor with a timeout, and O_NONBLOCK on it:
+# rscam reads with a bare blocking ioctl (camera.rs).
+libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+nokhwa = { version = "0.10.11", default-features = false, features = ["input-msmf"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+nokhwa = { version = "0.10.11", default-features = false, features = ["input-avfoundation"] }

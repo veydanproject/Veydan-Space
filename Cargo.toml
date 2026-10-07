@@ -9,10 +9,16 @@
 
 [workspace]
 resolver = "2"
-members = ["apps/space", "crates/build-cfg", "crates/core", "crates/desktop-notify", "crates/lock", "crates/messenger-app", "crates/notes", "crates/pass", "crates/shell", "crates/sync", "crates/sync-host", "crates/tauri-plugin-veydan-push", "crates/tor"]
+members = ["apps/space", "crates/build-cfg", "crates/core", "crates/desktop-notify", "crates/lock", "crates/messenger-app", "crates/notes", "crates/pass", "crates/shell", "crates/sync", "crates/sync-host", "crates/tauri-plugin-veydan-call", "crates/tauri-plugin-veydan-push", "crates/tor"]
 # The messenger is a workspace of its own, with its own lock file; the
 # application takes its crates by path.
 exclude = ["crates/messenger"]
+
+[patch.crates-io]
+# The C++ bridge of the calls engine (crates/messenger/rtc), the same copy
+# the messenger workspace patches in; a product takes the engine through
+# messenger-runtime, and cargo wants the patch in the workspace it builds.
+webrtc-sys = { path = "crates/messenger/rtc/vendor/webrtc-sys" }
 
 [profile.release]
 # Symbol tables go; the dynamic exports (Tauri's and the push handler's

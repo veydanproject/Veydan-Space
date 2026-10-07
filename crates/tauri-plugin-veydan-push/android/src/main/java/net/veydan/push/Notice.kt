@@ -16,6 +16,9 @@ internal sealed class Outcome {
   /** Nothing to show, and why. */
   data class Quiet(val reason: String) : Outcome()
 
+  /** Somebody calls: the phone rings with the call plugin's notification. */
+  data class Call(val call: CallNotice) : Outcome()
+
   /** The core could not answer. */
   data class Error(val error: String) : Outcome()
 
@@ -24,7 +27,41 @@ internal sealed class Outcome {
       "show" -> Show(Notice.from(json))
       "plain" -> Plain(PlainNotice.from(json))
       "quiet" -> Quiet(json.optString("reason", "?"))
+      "call" -> CallNotice.from(json)?.let { Call(it) } ?: Error("a call without an id")
       else -> Error(json.optString("error", "unknown outcome"))
+    }
+  }
+}
+
+/** An invitation to a call that came by push (`messenger-notify`, `CallNotice`). */
+internal data class CallNotice(
+  val callId: String,
+  /** `audio` | `video` */
+  val media: String,
+  val name: String,
+  val peerKey: String,
+  val picture: String?,
+  /** Unix seconds, the time inside the invitation. */
+  val createdAt: Long,
+  /** Unix seconds: after this the invitation is a missed call. */
+  val expiresAt: Long,
+  val hideOnLockscreen: Boolean,
+) {
+  companion object {
+    private val CALL_ID = Regex("^[0-9a-f]{32}$")
+
+    fun from(json: JSONObject): CallNotice? {
+      val callId = json.str("call_id")?.takeIf { CALL_ID.matches(it) } ?: return null
+      return CallNotice(
+        callId = callId,
+        media = json.str("media") ?: "audio",
+        name = json.str("name") ?: "",
+        peerKey = json.str("peer_key") ?: "",
+        picture = json.str("picture")?.takeIf { it.startsWith("https://") },
+        createdAt = json.optLong("created_at", 0),
+        expiresAt = json.optLong("expires_at", 0),
+        hideOnLockscreen = json.optBoolean("hide_on_lockscreen", false),
+      )
     }
   }
 }

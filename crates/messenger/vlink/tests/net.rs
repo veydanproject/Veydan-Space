@@ -8,7 +8,10 @@ use std::sync::atomic::Ordering;
 
 use http::StatusCode;
 use messenger_vlink::{trust, BridgeRef, Error, Net, NetConfig, Route};
-use messenger_vlink::testing::{self as support, bridge, echo_server, id_of, there_and_back, Behaviour, OTHER_CERT};
+use messenger_vlink::testing::{
+    self as support, bridge, bridge_with, echo_server, id_of, there_and_back, Behaviour, CERT, KEY, OTHER_CERT, OTHER_KEY,
+    RENEWED_CERT, RENEWED_KEY,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -98,14 +101,52 @@ async fn a_dead_bridge_is_passed_over() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_address_that_shows_another_certificate_is_no_bridge() {
-    let fake = bridge(Behaviour::CarryTo(echo_server().await)).await;
-    // The right address, the id of somebody else.
-    let wrong = BridgeRef { addr: fake.bridge.addr, id: id_of(OTHER_CERT), sni: None };
+async fn an_address_that_shows_a_certificate_over_another_key_is_no_bridge() {
+    // What is at the address has a key of its own: the id of the bridge
+    // the user was given is of another key, and the chain shown, however
+    // alike, is signed by the wrong one.
+    let fake = bridge_with(Behaviour::CarryTo(echo_server().await), OTHER_CERT, OTHER_KEY).await;
+    assert_eq!(fake.bridge.id, id_of(OTHER_CERT));
+    let wrong = BridgeRef { addr: fake.bridge.addr, id: id_of(CERT), sni: None };
     let net = Net::new();
     net.configure(config(true, vec![wrong])).await.unwrap();
     assert!(matches!(net.open(OURS, 443).await, Err(Error::Unreachable(_))));
     assert_eq!(fake.streams.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_tls_certificate_the_bridges_key_did_not_sign_is_no_bridge() {
+    // An impostor at the address with the bridge's public chain (anybody
+    // who called the bridge has it) but not its key: their own TLS
+    // certificate, the bridge's key certificate put behind it. The id of
+    // that certificate is the bridge's; the signature is not.
+    let cert_of = |chain: &str, n: usize| chain.split_inclusive("-----END CERTIFICATE-----\n").nth(n).unwrap().to_string();
+    let forged = cert_of(OTHER_CERT, 0) + &cert_of(CERT, 1);
+    let fake = bridge_with(Behaviour::CarryTo(echo_server().await), &forged, OTHER_KEY).await;
+    assert_eq!(fake.bridge.id, id_of(CERT));
+    let net = Net::new();
+    net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
+    assert!(matches!(net.open(OURS, 443).await, Err(Error::Unreachable(_))));
+    assert_eq!(fake.streams.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bridge_with_a_renewed_certificate_is_the_bridge_the_user_knows() {
+    // The bridge made itself a new TLS key and a new certificate over it,
+    // signed by the key it has had all along: the reference the user
+    // holds, with the id of that key, still reaches it. The client here is
+    // the one the app is built on, for every system alike.
+    assert_eq!(id_of(RENEWED_CERT), id_of(CERT));
+    assert_ne!(RENEWED_CERT, CERT);
+    assert_ne!(RENEWED_KEY, KEY);
+    let fake = bridge_with(Behaviour::CarryTo(echo_server().await), RENEWED_CERT, RENEWED_KEY).await;
+    let known = BridgeRef { addr: fake.bridge.addr, id: id_of(CERT), sni: None };
+    let net = Net::new();
+    net.configure(config(true, vec![known.clone()])).await.unwrap();
+    let mut stream = net.open(OURS, 443).await.unwrap();
+    there_and_back(&mut stream, "the same bridge, a new certificate").await;
+    assert_eq!(net.current().await, Some(known));
+    assert_eq!(fake.streams.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

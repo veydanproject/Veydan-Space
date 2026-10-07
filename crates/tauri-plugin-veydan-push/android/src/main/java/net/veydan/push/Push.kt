@@ -23,6 +23,8 @@ internal data class Push(
   val trace: String,
   /** Payload of a service push, as JSON. */
   val data: String?,
+  /** The server says the event carries an invitation to a call (the outside of the wrap, which anyone may mark). */
+  val call: Boolean = false,
 ) {
   /** Handled, not shown. */
   val silent: Boolean
@@ -42,6 +44,7 @@ internal data class Push(
     groupId?.let { put("group_id", it) }
     if (count > 1) put("count", count.toString())
     put("trace", trace)
+    if (call) put("call", "1")
   }
 
   companion object {
@@ -73,6 +76,7 @@ internal data class Push(
         count = data["count"]?.toIntOrNull()?.takeIf { it in 1..9999 } ?: 1,
         trace = data["trace"]?.takeIf { TRACE.matches(it) } ?: "-",
         data = data["data"],
+        call = data["call"] == "1",
       )
     }
 

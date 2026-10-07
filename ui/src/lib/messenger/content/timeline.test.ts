@@ -21,15 +21,18 @@ function msg(from: string, at: number, extra: Partial<MessengerMessage> = {}): M
   };
 }
 const sys = (at: number) => msg(ANN, at, { content_type: 'system', text: 'group_joined' });
+/** A call's line, as the runtime writes it. */
+const call = (at: number) => msg('', at, { id: `sys:call:c${n}`, content_type: 'system', text: 'call', media: { call_id: `c${n}`, direction: 'in', outcome: 'missed' } });
 const pic = (from: string, at: number, batch: string | null, kind = 'image') =>
   msg(from, at, { content_type: 'media', text: null, media: { name: 'a.png', kind, ...(batch ? { batch } : {}) } });
 
-/** `d` day, `s` system (with how many lines), `b` bubble, `a` album (with how many); `<` first of a run, `>` last. */
+/** `d` day, `s` system (with how many lines), `c` a call, `b` bubble, `a` album (with how many); `<` first of a run, `>` last. */
 function shape(items: TimelineItem[]): string {
   return items
     .map((i) => {
       if (i.type === 'day') return 'd';
       if (i.type === 'system') return `s${i.messages.length}`;
+      if (i.type === 'call') return 'c';
       const run = `${i.first ? '<' : ''}${i.last ? '>' : ''}`;
       return i.type === 'album' ? `a${i.messages.length}${run}` : `b${run}`;
     })
@@ -123,6 +126,15 @@ describe('buildTimeline', () => {
     expect(shape(buildTimeline([sys(NOON), sys(NOON + 1), sys(NOON + 2), sys(NOON + 3)], { many: true }))).toBe('d s4');
     expect(shape(buildTimeline([sys(NOON), sys(NOON + 1), msg(ANN, NOON + 2), sys(NOON + 3)], { many: true }))).toBe('d s1 s1 b<> s1');
     expect(shape(buildTimeline([sys(NOON), sys(NOON + 1), sys(NOON + DAY), sys(NOON + DAY + 1)], { many: true }))).toBe('d s1 s1 d s1 s1');
+  });
+
+  it('keeps the line of every call on its own', () => {
+    // Three calls missed in a row are three lines, never one fold; a call breaks a run and the folds around it.
+    expect(shape(buildTimeline([call(NOON), call(NOON + 1), call(NOON + 2)], { many: false }))).toBe('d c c c');
+    expect(shape(buildTimeline([msg(ANN, NOON), call(NOON + 1), msg(ANN, NOON + 2)], { many: false }))).toBe('d b<> c b<>');
+    expect(shape(buildTimeline([sys(NOON), sys(NOON + 1), call(NOON + 2), sys(NOON + 3), sys(NOON + 4), sys(NOON + 5)], { many: true }))).toBe('d s1 s1 c s3');
+    const ids = buildTimeline([call(NOON), call(NOON + 1)], { many: false }).map((i) => i.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('gives every item its own id', () => {

@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use tokio::sync::{mpsc, watch};
 use zbus::zvariant::Value;
 
-use crate::{escape, AppInfo, Command, OnClick, Toast};
+use crate::{escape, AppInfo, Command, Handlers, Kind, Press, Toast};
 
 #[zbus::proxy(
     interface = "org.freedesktop.Notifications",
@@ -66,7 +66,7 @@ pub(crate) async fn run(
     app: AppInfo,
     mut rx: mpsc::UnboundedReceiver<Command>,
     up: watch::Sender<bool>,
-    on_click: OnClick,
+    handlers: Handlers,
     bus: Option<String>,
 ) {
     let proxy = match connect(bus).await {
@@ -118,13 +118,14 @@ pub(crate) async fn run(
                     }
                 }
             }
+            // A click (`default`) or a button: the notification has done
+            // its work either way, and a call's would otherwise stay.
             Some(sig) = clicks.next() => {
                 let Ok(args) = sig.args() else { continue };
-                if args.action_key != "default" { continue }
                 if let Some(key) = shown.key_of(args.id).cloned() {
                     shown.forget_id(args.id);
                     let _ = proxy.close_notification(args.id).await;
-                    on_click(key);
+                    Press::of(key, &args.action_key).deliver(&handlers);
                 }
             }
             Some(sig) = closed.next() => {
@@ -160,26 +161,59 @@ async fn ask(proxy: &NotificationsProxy<'_>, caps: &mut Option<Caps>, up: &watch
     }
 }
 
-async fn show(proxy: &NotificationsProxy<'_>, app: &AppInfo, caps: &Caps, shown: &mut Shown, t: Toast) {
-    let replaces = shown.by_key.get(&t.key).copied().unwrap_or(0);
-    let body = if caps.markup { escape(&t.body) } else { t.body.clone() };
-    let actions: &[&str] = if caps.actions { &["default", ""] } else { &[] };
-    let image = t.image.as_ref().map(|p| format!("file://{}", p.display()));
+/// The urgency of a call (the spec's `critical`): the server keeps it on
+/// the screen and lets it through "do not disturb" where it can.
+const URGENCY_CRITICAL: u8 = 2;
 
-    let mut hints: HashMap<&str, Value<'_>> = HashMap::new();
-    hints.insert("desktop-entry", Value::from(app.desktop_entry.as_str()));
-    hints.insert("category", Value::from("im.received"));
-    if let Some(img) = image.as_deref() {
-        hints.insert("image-path", Value::from(img));
+/// What goes into one `Notify` beside the names.
+struct Request {
+    body: String,
+    /// Pairs of an id and its label; `default` is a click on the
+    /// notification, with no button of its own.
+    actions: Vec<String>,
+    hints: HashMap<&'static str, Value<'static>>,
+    /// Milliseconds; -1 the server decides, 0 never.
+    timeout: i32,
+}
+
+fn request(app: &AppInfo, caps: &Caps, t: &Toast) -> Request {
+    let body = if caps.markup { escape(&t.body) } else { t.body.clone() };
+    let mut actions = Vec::new();
+    if caps.actions {
+        actions.extend(["default".to_string(), String::new()]);
+        for a in &t.actions {
+            actions.extend([a.id.clone(), a.label.clone()]);
+        }
     }
+
+    let mut hints: HashMap<&'static str, Value<'static>> = HashMap::new();
+    hints.insert("desktop-entry", Value::from(app.desktop_entry.clone()));
+    if let Some(img) = &t.image {
+        hints.insert("image-path", Value::from(format!("file://{}", img.display())));
+    }
+    let (category, sound) = match t.kind {
+        Kind::Message => ("im.received", "message-new-instant"),
+        Kind::Call => {
+            hints.insert("urgency", Value::from(URGENCY_CRITICAL));
+            ("call.incoming", "phone-incoming-call")
+        }
+    };
+    hints.insert("category", Value::from(category));
     if t.silent {
         hints.insert("suppress-sound", Value::from(true));
     } else {
-        hints.insert("sound-name", Value::from("message-new-instant"));
+        hints.insert("sound-name", Value::from(sound));
     }
+    let timeout = if t.kind == Kind::Call { 0 } else { -1 };
+    Request { body, actions, hints, timeout }
+}
 
+async fn show(proxy: &NotificationsProxy<'_>, app: &AppInfo, caps: &Caps, shown: &mut Shown, t: Toast) {
+    let replaces = shown.by_key.get(&t.key).copied().unwrap_or(0);
+    let r = request(app, caps, &t);
+    let actions: Vec<&str> = r.actions.iter().map(String::as_str).collect();
     match proxy
-        .notify(&app.name, replaces, &app.icon, &t.title, &body, actions, hints, -1)
+        .notify(&app.name, replaces, &app.icon, &t.title, &r.body, &actions, r.hints, r.timeout)
         .await
     {
         Ok(id) => {
@@ -187,5 +221,68 @@ async fn show(proxy: &NotificationsProxy<'_>, app: &AppInfo, caps: &Caps, shown:
             shown.by_key.insert(t.key, id);
         }
         Err(e) => eprintln!("desktop-notify: notify failed: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Action;
+
+    fn app() -> AppInfo {
+        AppInfo { id: "t".into(), name: "Veydan Chat".into(), desktop_entry: "veydanchat".into(), icon: "i".into(), icon_file: None }
+    }
+
+    fn str_of<'a>(r: &'a Request, hint: &str) -> Option<&'a str> {
+        r.hints.get(hint).and_then(|v| <&str>::try_from(v).ok())
+    }
+
+    fn call() -> Toast {
+        Toast {
+            key: "call:c1".into(),
+            title: "Alice".into(),
+            body: "Incoming call".into(),
+            image: Some("/tmp/a.png".into()),
+            kind: Kind::Call,
+            actions: vec![Action::new("answer", "Answer"), Action::new("decline", "Decline")],
+            ..Toast::default()
+        }
+    }
+
+    #[test]
+    fn a_call_is_critical_rings_and_stays() {
+        let caps = Caps { actions: true, markup: true };
+        let r = request(&app(), &caps, &call());
+        assert_eq!(r.actions, ["default", "", "answer", "Answer", "decline", "Decline"]);
+        assert_eq!(r.timeout, 0, "no timeout");
+        assert_eq!(r.hints.get("urgency").and_then(|v| u8::try_from(v).ok()), Some(2));
+        assert_eq!(str_of(&r, "category"), Some("call.incoming"));
+        assert_eq!(str_of(&r, "sound-name"), Some("phone-incoming-call"));
+        assert_eq!(str_of(&r, "image-path"), Some("file:///tmp/a.png"));
+        assert_eq!(str_of(&r, "desktop-entry"), Some("veydanchat"));
+
+        let quiet = request(&app(), &caps, &Toast { silent: true, ..call() });
+        assert!(!quiet.hints.contains_key("sound-name"));
+        assert_eq!(quiet.hints.get("suppress-sound").and_then(|v| bool::try_from(v).ok()), Some(true));
+    }
+
+    #[test]
+    fn a_message_is_as_it_was() {
+        let caps = Caps { actions: true, markup: true };
+        let t = Toast { key: "dm:a".into(), title: "A".into(), body: "<b>".into(), ..Toast::default() };
+        let r = request(&app(), &caps, &t);
+        assert_eq!(r.body, "&lt;b&gt;");
+        assert_eq!(r.actions, ["default", ""]);
+        assert_eq!(r.timeout, -1);
+        assert!(!r.hints.contains_key("urgency"));
+        assert_eq!(str_of(&r, "category"), Some("im.received"));
+        assert_eq!(str_of(&r, "sound-name"), Some("message-new-instant"));
+    }
+
+    #[test]
+    fn a_server_without_buttons_gets_none() {
+        let r = request(&app(), &Caps { actions: false, markup: false }, &call());
+        assert!(r.actions.is_empty());
+        assert_eq!(r.body, "Incoming call");
     }
 }

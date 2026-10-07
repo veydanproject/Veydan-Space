@@ -74,6 +74,31 @@ pub fn module() -> Module {
                 commands::desktop_notify::messenger_desktop_notify_keep_running,
                 commands::push::messenger_notify_get,
                 commands::push::messenger_notify_set,
+                #[cfg(mobile)]
+                commands::call_android::messenger_call_debug_ring,
+                #[cfg(mobile)]
+                commands::call_android::messenger_call_audio_route,
+                #[cfg(mobile)]
+                commands::call_android::messenger_call_camera,
+                commands::calls::messenger_call_start,
+                commands::calls::messenger_call_accept,
+                commands::calls::messenger_call_decline,
+                commands::calls::messenger_call_end,
+                commands::calls::messenger_call_mute,
+                commands::calls::messenger_call_set_video,
+                commands::calls::messenger_call_switch_camera,
+                commands::calls::messenger_call_list_cameras,
+                #[cfg(desktop)]
+                commands::calls::messenger_call_list_screens,
+                #[cfg(desktop)]
+                commands::calls::messenger_call_share_screen,
+                commands::calls::messenger_call_set_video_quality,
+                commands::calls::messenger_call_video_subscribe,
+                commands::calls::messenger_call_video_ack,
+                commands::calls::messenger_call_video_unsubscribe,
+                commands::calls::messenger_call_set_policy,
+                commands::calls::messenger_call_set_nodes,
+                commands::calls::messenger_call_get_state,
                 commands::messenger_privacy_get,
                 commands::messenger_privacy_set,
                 commands::messenger_presence_list,
@@ -171,6 +196,9 @@ fn setup(app: &mut tauri::App) -> SetupResult {
     // messenger's start already talks to the plugin.
     #[cfg(target_os = "android")]
     app.handle().plugin(tauri_plugin_veydan_push::init())?;
+    // The phone's side of a call; see commands/call_android.rs.
+    #[cfg(target_os = "android")]
+    app.handle().plugin(tauri_plugin_veydan_call::init())?;
     let core = app.state::<Core>();
     // The switch is the shell's now: the old setting goes.
     tauri::async_runtime::block_on(veydan_core::settings::delete(

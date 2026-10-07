@@ -92,6 +92,24 @@ jobs:
           workspaces: . -> data/target
           key: ci
 
+      # The engine of calls (crates/messenger/rtc), which the product links
+      # through the messenger: the prebuilt libwebrtc, fetched once by
+      # scripts/webrtc-toolchain.sh, pinned by sha256 and kept between runs
+      # by its tag. Its C++ bridge (the vendored webrtc-sys) needs clang 21
+      # for the hermetic libc++ of libwebrtc, which jammy has not:
+      # apt.llvm.org.
+      - name: libwebrtc (cache)
+        uses: actions/cache@v6
+        with:
+          path: data/toolchains/webrtc
+          key: webrtc-89d790b-linux-x64
+      - name: libwebrtc and clang 21
+        run: |
+          bash scripts/webrtc-toolchain.sh linux-x64
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+          echo "VEYDAN_WEBRTC_DIR=$PWD/data/toolchains/webrtc" >> "$GITHUB_ENV"
+          echo "VEYDAN_WEBRTC_CLANGXX=/usr/bin/clang++-21" >> "$GITHUB_ENV"
+
       # The product by itself first: a build of the whole workspace unifies
       # the features of its dependencies and can hide a crate that does not
       # compile alone.
@@ -117,5 +135,20 @@ jobs:
         with:
           workspaces: crates/messenger -> ../../data/target
           key: messenger
+      # The engine of calls, as in the job rust; and the glib headers the
+      # build script of its C++ bridge asks pkg-config for (the job rust
+      # has them with WebKitGTK).
+      - name: libwebrtc (cache)
+        uses: actions/cache@v6
+        with:
+          path: data/toolchains/webrtc
+          key: webrtc-89d790b-linux-x64
+      - name: libwebrtc and clang 21
+        run: |
+          bash scripts/webrtc-toolchain.sh linux-x64
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+          sudo apt-get install -y libglib2.0-dev
+          echo "VEYDAN_WEBRTC_DIR=$PWD/data/toolchains/webrtc" >> "$GITHUB_ENV"
+          echo "VEYDAN_WEBRTC_CLANGXX=/usr/bin/clang++-21" >> "$GITHUB_ENV"
       - name: Tests (messenger workspace)
         run: cargo test --workspace --all-targets --locked --manifest-path crates/messenger/Cargo.toml

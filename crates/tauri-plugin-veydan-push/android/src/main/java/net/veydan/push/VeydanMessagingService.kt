@@ -62,6 +62,7 @@ class VeydanMessagingService : FirebaseMessagingService() {
       is Outcome.Show -> if (Notifier.show(this, outcome.notice)) "shown" else "not shown, notifications are off"
       is Outcome.Plain -> if (Notifier.showPlain(this, outcome.plain)) "shown plain" else "not shown, notifications are off"
       is Outcome.Quiet -> "quiet: ${outcome.reason}"
+      is Outcome.Call -> Notifier.ring(this, outcome.call)
       is Outcome.Error -> plain(push, outcome.error)
     }
   }

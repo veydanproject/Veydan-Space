@@ -8,12 +8,12 @@
 
 use crate::bundle::KeyBundle;
 use crate::fetch;
-use crate::notice::{Body, ChatKind, Notice, Outcome, Plain, Reason};
+use crate::notice::{Body, CallNotice, ChatKind, Notice, Outcome, Plain, Reason};
 use crate::push::{PushData, PushKind};
 use crate::settings::{Content, Settings};
 use messenger_contacts::{ContactService, ProfileService};
-use messenger_core::envelope::{T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
-use messenger_core::traits::SystemClock;
+use messenger_core::envelope::{T_CALL_INVITE, T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
+use messenger_core::traits::{Clock, SystemClock};
 use messenger_core::{Envelope, EventSource, Inbound, MessengerConfig, MessengerError, PubKey, RawEvent, RelayUrl, Result, Timestamp};
 use messenger_dm::pushtags::{author_key, author_mark};
 use messenger_dm::relationship::{inbound_decision, InboundDecision};
@@ -67,6 +67,19 @@ impl Describe {
         let settings = Settings::load(&self.store).await?;
         let mut plain = plain(&self.store, push).await?;
         if settings.content == Content::None {
+            // Nothing of a message is said, so no message is opened. A
+            // call is the one thing that is: a ring is not a word of the
+            // content, and a phone that says "only that something came"
+            // must still ring. The push says whether it carries a call
+            // (anyone can say so on the outside, so the wrap is opened
+            // and the call rings from a mutual contact only, with no
+            // name); whatever goes wrong in that says only that
+            // something came.
+            if push.call {
+                if let Ok(Some(outcome)) = self.call_only(&settings, push).await {
+                    return Ok(outcome);
+                }
+            }
             return Ok(Outcome::Plain(plain));
         }
 
@@ -91,6 +104,26 @@ impl Describe {
         }
     }
 
+
+    /// The push opened for a call and nothing else: the invitation of a
+    /// mutual contact rings (`Some`, with no name and no picture under
+    /// the settings that brought us here); any other content is left
+    /// unread (`None`).
+    async fn call_only(&self, settings: &Settings, push: &PushData) -> Result<Option<Outcome>> {
+        let Some(raw) = self.event_of(push).await? else { return Ok(None) };
+        let Inbound::Dm(dm) = messenger_ingress::classify(&raw, Some(&self.keys)) else { return Ok(None) };
+        if dm.rumor_kind != KIND_DM_RUMOR || dm.sender == self.me {
+            return Ok(None);
+        }
+        let Ok(envelope) = Envelope::parse(&dm.content) else { return Ok(None) };
+        if envelope.t != T_CALL_INVITE {
+            return Ok(None);
+        }
+        if self.dm.load_relation(&dm.sender).await?.blocked {
+            return Ok(Some(Outcome::Quiet { reason: Reason::Blocked }));
+        }
+        self.call_notice(&dm.sender, &envelope, dm.created_at.0, settings).await.map(Some)
+    }
 
     async fn event_of(&self, push: &PushData) -> Result<Option<RawEvent>> {
         let json: serde_json::Value = match (&push.event, &push.event_id, &push.relay) {
@@ -146,6 +179,9 @@ impl Describe {
         let relation = self.dm.load_relation(&peer).await?;
         if relation.blocked {
             return Ok(Outcome::Quiet { reason: Reason::Blocked });
+        }
+        if envelope.t == T_CALL_INVITE {
+            return self.call_notice(&peer, &envelope, dm.created_at.0, settings).await;
         }
         let stored = messages::get(&self.store, dm.rumor_id.as_hex()).await?.is_some();
         let seen = messages::count_visible_incoming(&self.store, &chat_id).await?;
@@ -205,6 +241,45 @@ impl Describe {
         }))
     }
 
+    /// Somebody calls (`call.invite`). The same gate as the app's: only a
+    /// peer we both chose to talk with may ring this phone, as a ring tells
+    /// that the device is alive. A new offer inside a call (`restart`) is a
+    /// signal for the app. What the phone rings with is who calls, by the
+    /// chat's name (nobody under "no content"); the app shows the rest.
+    async fn call_notice(&self, peer: &PubKey, envelope: &Envelope, created_at: i64, settings: &Settings) -> Result<Outcome> {
+        if envelope.fields.get("restart").and_then(serde_json::Value::as_bool).unwrap_or(false) {
+            return Ok(Outcome::Quiet { reason: Reason::NotAMessage });
+        }
+        let call_id = envelope.str_field("call_id").filter(|id| is_call_id(id));
+        let media = envelope.str_field("media").filter(|m| matches!(*m, "audio" | "video"));
+        let (Some(call_id), Some(media)) = (call_id, media) else {
+            return Ok(Outcome::Quiet { reason: Reason::Invalid });
+        };
+        if !self.dm.calls_allowed(peer).await? {
+            return Ok(Outcome::Quiet { reason: Reason::NotForMe });
+        }
+        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let (name, picture) = if settings.content == Content::None {
+            (String::new(), None)
+        } else {
+            match self.dm.chat(&chat_id).await? {
+                Some(view) => (view.title, view.picture),
+                None => self.contacts.face_of(peer).await?,
+            }
+        };
+        let (created_at, expires_at) = invite_times(created_at, SystemClock.now().secs());
+        Ok(Outcome::Call(CallNotice {
+            call_id: call_id.to_string(),
+            media: media.to_string(),
+            name,
+            peer_key: peer.as_hex().to_string(),
+            picture: https(picture),
+            created_at,
+            expires_at,
+            hide_on_lockscreen: settings.lockscreen_hidden,
+        }))
+    }
+
     async fn group_notice(
         &self,
         group_id: &str,
@@ -255,6 +330,26 @@ impl Describe {
     }
 }
 
+/// How long an invitation to a call is good for, from the time inside its
+/// rumor: `messenger_calls::signal::INVITE_TTL_SECS`, spelled here again
+/// because this crate stays free of the core of calls (a test of this
+/// crate, `tests/describe.rs`, keeps the two the same).
+pub const CALL_INVITE_TTL_SECS: i64 = 45;
+
+/// When the invitation was made and until when it is good, as the core
+/// judges them (`messenger_calls::service`, on an invite): the time inside
+/// the rumor, and never later than `now`, so that a clock ahead of mine
+/// makes no call of the future and no longer ring.
+pub fn invite_times(created_at: i64, now: i64) -> (i64, i64) {
+    let at = created_at.min(now);
+    (at, at.saturating_add(CALL_INVITE_TTL_SECS))
+}
+
+/// A call id as the core of calls makes it: 16 random bytes, hex.
+fn is_call_id(s: &str) -> bool {
+    s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
 /// Whether the app drops this card when it stores the message
 /// (`messenger_dm::cards::received_card`), as it does a card without a
 /// valid key.
@@ -292,4 +387,20 @@ async fn plain(store: &Store, push: &PushData) -> Result<Plain> {
 /// passed on, as the app itself shows no others.
 pub(crate) fn https(picture: Option<String>) -> Option<String> {
     picture.filter(|p| p.starts_with("https://") && p.len() <= 2048)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An invitation from a clock ahead of mine is good for 45 s from
+    /// now, not from its time: the phone would otherwise ring on from a
+    /// push for as long as the limit of a ringing allows, while the app
+    /// treats the same invitation as 45 s old at most.
+    #[test]
+    fn an_invitation_from_the_future_is_good_for_its_life_from_now() {
+        assert_eq!(invite_times(1_000, 1_010), (1_000, 1_045));
+        assert_eq!(invite_times(1_600, 1_010), (1_010, 1_055));
+        assert_eq!(invite_times(i64::MAX, 1_010), (1_010, 1_055));
+    }
 }

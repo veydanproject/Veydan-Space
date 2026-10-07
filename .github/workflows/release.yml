@@ -123,6 +123,10 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       PRODUCT: ${{ needs.meta.outputs.product }}
+      # The archive of libwebrtc for the target of this job, by the names of
+      # scripts/webrtc-toolchain.sh: macOS builds both architectures on one
+      # runner, and each needs its own.
+      WEBRTC_TARGET: ${{ matrix.artifact == 'linux-x86_64' && 'linux-x64' || matrix.artifact == 'windows-x86_64' && 'win-x64' || matrix.artifact == 'darwin-aarch64' && 'mac-arm64' || 'mac-x64' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -179,6 +183,39 @@ jobs:
         with:
           workspaces: . -> data/target
           key: ${{ matrix.platform }}${{ matrix.args }}
+
+      # The engine of calls (crates/messenger/rtc), which a product with the
+      # messenger links: the prebuilt libwebrtc of the target, fetched once by
+      # scripts/webrtc-toolchain.sh, pinned by sha256 and kept between runs
+      # by its tag (the key moves with WEBRTC_TAG of the script). The build
+      # script of the vendored webrtc-sys refuses to build without it
+      # (vendor/webrtc-sys/PATCH.md, patch 2). A product without the
+      # messenger links no engine: these steps are skipped for it, and it
+      # downloads nothing. On Linux the C++ bridge needs clang 21 for the
+      # hermetic libc++ of libwebrtc, which jammy has not: apt.llvm.org, as
+      # in ci.yml. On Windows and macOS the system's compiler (MSVC, Xcode)
+      # builds it. VEYDAN_WEBRTC_DIR is the workspace as the runner names it
+      # (D:\a\… on Windows): the $PWD of Git Bash there is /d/a/…, which
+      # cargo, run from pwsh, would read as a folder of the current drive.
+      - name: libwebrtc (cache)
+        if: needs.meta.outputs.messenger == 'true'
+        uses: actions/cache@v6
+        with:
+          path: data/toolchains/webrtc
+          key: webrtc-89d790b-${{ env.WEBRTC_TARGET }}
+      - name: libwebrtc
+        if: needs.meta.outputs.messenger == 'true'
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          bash scripts/webrtc-toolchain.sh "$WEBRTC_TARGET"
+          echo "VEYDAN_WEBRTC_DIR=$WORKSPACE/data/toolchains/webrtc" >> "$GITHUB_ENV"
+      - name: clang 21 (Linux)
+        if: needs.meta.outputs.messenger == 'true' && startsWith(matrix.platform, 'ubuntu')
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+          echo "VEYDAN_WEBRTC_CLANGXX=/usr/bin/clang++-21" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies
         run: pnpm --dir ui install --frozen-lockfile
@@ -314,6 +351,25 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: gradle-${{ needs.meta.outputs.product }}-${{ hashFiles(format('apps/{0}/gen/android/**/*.gradle*', needs.meta.outputs.product)) }}
+
+      # The engine of calls for the phone, as scripts/android/android-env.sh
+      # fetches it. Only arm64 is pinned, and the APK is built for aarch64
+      # alone (Build Android APK). The C++ bridge is compiled by the NDK's
+      # clang, which the Tauri CLI sets for the Android target. Products with
+      # the messenger only, as in the desktop job.
+      - name: libwebrtc (cache)
+        if: needs.meta.outputs.messenger == 'true'
+        uses: actions/cache@v6
+        with:
+          path: data/toolchains/webrtc
+          key: webrtc-89d790b-android-arm64
+      - name: libwebrtc
+        if: needs.meta.outputs.messenger == 'true'
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          bash scripts/webrtc-toolchain.sh android-arm64
+          echo "VEYDAN_WEBRTC_DIR=$WORKSPACE/data/toolchains/webrtc" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies
         run: pnpm --dir ui install --frozen-lockfile

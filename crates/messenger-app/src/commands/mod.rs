@@ -26,6 +26,13 @@ pub mod desktop_notify;
 // The push handler's entry into the messenger: a JNI export, Android only.
 #[cfg(target_os = "android")]
 pub mod notify_jni;
+// Calls: the commands of the page, forwarded to the runtime.
+pub mod calls;
+// Calls on a phone: the call plugin, driven from Rust. Its decisions that
+// need no phone are tested on a computer, where the module is otherwise
+// absent.
+#[cfg(any(mobile, test))]
+pub mod call_android;
 
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -231,6 +238,9 @@ impl MessengerState {
             .stop(|rt| async move {
                 #[cfg(target_os = "android")]
                 push::stop_bridge(&app, &rt).await;
+                // A call under way ends with the runtime: the shell of the phone (service, audio mode, camera) is let go.
+                #[cfg(target_os = "android")]
+                call_android::stop_bridge(&app).await;
                 #[cfg(not(target_os = "android"))]
                 let _ = (app, rt);
             })
@@ -286,8 +296,14 @@ fn serve(
     tasks.extend(spawn_lock_watcher(app, rt.clone()));
     #[cfg(target_os = "android")]
     tasks.extend(push::spawn_bridge(app.clone(), rt.clone()));
+    #[cfg(target_os = "android")]
+    tasks.push(call_android::spawn_bridge(app.clone()));
     #[cfg(desktop)]
     tasks.push(desktop_notify::spawn_unread(app.clone(), rt.clone()));
+    // An incoming call rings as a toast with its two buttons while the
+    // window is not on screen (calls.rs).
+    #[cfg(desktop)]
+    tasks.push(calls::spawn_desktop_ring(rt.clone(), desktop.clone()));
     tasks.push(spawn_ui_event_forwarder(
         app.clone(),
         rt.clone(),

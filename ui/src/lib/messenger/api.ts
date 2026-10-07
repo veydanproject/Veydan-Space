@@ -10,6 +10,13 @@ export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView } from './ge
 export type { SharedCounts, SharedSection } from './generated/shared';
 export type { BridgeView, NetCheck, NetMode, NetStatus, Verdict } from './generated/net';
 import type { NetCheck, NetMode, NetStatus } from './generated/net';
+export type {
+  CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState, CallStats, CallView, CallVia, RelayPolicy,
+  CameraInfo, ScreenInfo, VideoInput, VideoQuality, VideoSize, VideoTrack,
+} from './generated/calls';
+import type {
+  CallMedia, CallNodeInput, CallState, CallView, CameraInfo, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoTrack,
+} from './generated/calls';
 
 export interface MessengerIngressCounters {
   received: number;
@@ -628,6 +635,12 @@ export interface MessengerNoticeWords {
   /** `{name}` is the person's. */
   link_contact: string;
   link_contact_nameless: string;
+  /** The body of a ringing call's notification. */
+  call_audio: string;
+  call_video: string;
+  /** Its buttons. */
+  call_answer: string;
+  call_decline: string;
 }
 
 export interface MessengerPushTap {
@@ -660,6 +673,15 @@ export interface MessengerCreatedIdentity {
   ncryptsec: string;
 }
 
+/** Where the sound of a call goes on a phone (the call plugin's words). */
+export type CallAudioRoute = 'earpiece' | 'speaker' | 'bluetooth' | 'wired';
+
+/** The routes a phone has now; `current` is `null` while no call holds the sound. */
+export interface CallAudioRoutes {
+  current: CallAudioRoute | null;
+  available: CallAudioRoute[];
+}
+
 export type IdentityImportKind = 'nsec' | 'ncryptsec' | 'mnemonic';
 
 /** Error shape forwarded by the host (`{ code, message }`). */
@@ -680,6 +702,7 @@ import type { ExternalUrl, InternalLinkText } from './content/types';
 import type { GroupMembership, LinkPreview, LinkView } from './generated/links';
 import type { SharedCounts, SharedSection } from './generated/shared';
 import { inSection } from './content/shared/sections';
+import { demoCallMocks } from './calls/demo';
 
 const demo = !isTauri && demoEnabled() ? buildDemo() : null;
 let mockIdentity: MessengerIdentity | null = demo?.identity ?? null;
@@ -1472,6 +1495,15 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_notify_set: (a) => { mockNotify = { ...mockNotify, content: a?.content as MessengerNotifySettings['content'], lockscreen_hidden: Boolean(a?.lockscreenHidden) }; return mockNotify; },
 };
 
+// Calls in the browser preview: played by calls/demo.ts (`messenger.demo.call`).
+Object.assign(devMocks, demoCallMocks({
+  demo: !!demo,
+  emit: demoEmit,
+  chat: (peer) => mockChat(peer),
+  lines: (chatId) => (mockMessages[chatId] ??= []),
+  touch: (chatId, at) => { mockChats = mockChats.map((c) => (c.id === chatId ? { ...c, last_message_at: at, last_preview: '📞' } : c)); },
+}));
+
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
@@ -1634,6 +1666,76 @@ export const messengerApi = {
     used: (emoji: string) => invoke<void>('messenger_emoji_used', { emoji }),
     /** Most used first. */
     top: (n: number) => invoke<string[]>('messenger_emoji_top', { n }),
+  },
+
+  /**
+   * Calls of two. What a call does comes back as runtime events:
+   * `call.incoming`, `call.state`, `call.ended`, `call.stats`, `call.level`.
+   * Refusals are the runtime's sentences (`calls/words.ts` words them).
+   */
+  calls: {
+    /** `peer`: hex or npub; only a contact in a mutual chat. */
+    start: (peer: string, media: CallMedia = 'audio') => invoke<CallView>('messenger_call_start', { peer, media }),
+    accept: (callId: string) => invoke<CallView>('messenger_call_accept', { callId }),
+    /** My other devices stop ringing too. */
+    decline: (callId: string) => invoke<void>('messenger_call_decline', { callId }),
+    /** Hangs up, or gives up calling. */
+    end: (callId: string) => invoke<void>('messenger_call_end', { callId }),
+    mute: (muted: boolean) => invoke<CallView>('messenger_call_mute', { muted }),
+    /** For the next call; the one under way keeps its way. */
+    setPolicy: (policy: RelayPolicy) => invoke<CallState>('messenger_call_set_policy', { policy }),
+    /** My own nodes, replacing the list (`address:port#id`, a key for a private one). */
+    setNodes: (nodes: CallNodeInput[]) => invoke<CallState>('messenger_call_set_nodes', { nodes }),
+    /** The call under way, the policy, the nodes, whether this build can call. */
+    state: () => invoke<CallState>('messenger_call_get_state'),
+    /**
+     * A phone: where the sound of the call goes. `list` answers the routes
+     * there are and the one in use; `set` sends the sound to `route`. A
+     * change made elsewhere (a headset plugged in) is the event
+     * `call.audio_route` with the same answer. Refused on a computer and
+     * while no call holds the sound.
+     */
+    audioRoute: (op: 'list' | 'set', route?: CallAudioRoute) =>
+      invoke<CallAudioRoutes>('messenger_call_audio_route', { input: { op, route: route ?? null } }),
+    /**
+     * My video in the call under way: a camera, a screen, or off. The peer
+     * is told; a camera that will not open is refused and the call goes on
+     * without video.
+     */
+    setVideo: (input: VideoInput) => invoke<CallView>('messenger_call_set_video', { input }),
+    /** The next camera (or `camera`): at once when mine is on, for the next time otherwise. */
+    switchCamera: (camera?: string) => invoke<CallView>('messenger_call_switch_camera', { camera: camera ?? null }),
+    /** A computer's cameras, the default first; empty on a phone (`front`/`back`). */
+    cameras: () => invoke<CameraInfo[]>('messenger_call_list_cameras'),
+    /** A computer: the screens and windows that can be shown. */
+    screens: () => invoke<ScreenInfo[]>('messenger_call_list_screens'),
+    /** A computer: my screen (or the window `screen`) instead of my camera. */
+    shareScreen: (screen?: string) => invoke<CallView>('messenger_call_share_screen', { screen: screen ?? null }),
+    /** How big my video goes, from the next time it goes on. */
+    setVideoQuality: (quality: VideoQuality) => invoke<CallState>('messenger_call_set_video_quality', { quality }),
+    /**
+     * The frames of `track` of the call under way: `onframe` gets each
+     * message of the channel as it came (calls/video.ts reads them) until
+     * the last one or `videoUnsubscribe`. Answers the subscription's id.
+     * Every message but the last is acknowledged with `videoAck`: the next
+     * one comes only after that.
+     */
+    videoSubscribe: async (track: VideoTrack, onframe: (data: ArrayBuffer) => void): Promise<number> => {
+      if (isTauri) {
+        const { Channel, invoke: call } = await import('@tauri-apps/api/core');
+        const channel = new Channel<ArrayBuffer>();
+        channel.onmessage = onframe;
+        return call<number>('messenger_call_video_subscribe', { track, channel });
+      }
+      // The preview's channel: calls/demo.ts sends its test pictures to it.
+      return invoke<number>('messenger_call_video_subscribe', { track, channel: { onmessage: onframe } });
+    },
+    /**
+     * The page took the frame `seq` of the subscription `id` (drew it or
+     * let it go): the runtime sends the next one only after this.
+     */
+    videoAck: (id: number, seq: number) => invoke<void>('messenger_call_video_ack', { id, seq }),
+    videoUnsubscribe: (id: number) => invoke<void>('messenger_call_video_unsubscribe', { id }),
   },
 
   groups: {

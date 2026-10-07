@@ -136,6 +136,9 @@ impl MessengerRuntime {
         if let Err(e) = self.seed_media_servers().await {
             eprintln!("messenger: media servers from the manifest not applied: {e}");
         }
+        if let Err(e) = self.seed_call_nodes().await {
+            eprintln!("messenger: call nodes from the manifest not applied: {e}");
+        }
         if !self.refresh_signer().await? && self.session.lock().await.is_some() {
             if let Err(e) = self.publish_dm_relays(false).await {
                 eprintln!("messenger: inbox relay list not published: {e}");

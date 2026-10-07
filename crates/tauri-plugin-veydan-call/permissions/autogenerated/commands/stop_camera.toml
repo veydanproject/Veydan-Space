@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-stop-camera"
+description = "Enables the stop_camera command without any pre-configured scope."
+commands.allow = ["stop_camera"]
+
+[[permission]]
+identifier = "deny-stop-camera"
+description = "Denies the stop_camera command without any pre-configured scope."
+commands.deny = ["stop_camera"]

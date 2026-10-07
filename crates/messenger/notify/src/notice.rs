@@ -67,10 +67,36 @@ pub enum Reason {
     Invalid,
 }
 
+/// Somebody calls: the invitation to a call (`call.invite`,
+/// internal/messenger-wire.md §10) came by push while the app may not be
+/// up to ring for it. The phone rings with its call notification, and the
+/// app, started by Answer, takes the call once its runtime hears the same
+/// invitation from the relays.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallNotice {
+    /// The call's id, as every signal of the call names it.
+    pub call_id: String,
+    /// `audio` | `video`.
+    pub media: String,
+    /// Who calls, as this phone calls them, and their key.
+    pub name: String,
+    pub peer_key: String,
+    /// Address of the caller's picture, https only.
+    pub picture: Option<String>,
+    /// When the invitation was made, unix seconds: the time inside the
+    /// rumor, which is what the app judges the invitation by.
+    pub created_at: i64,
+    /// After this (unix seconds) the invitation is a missed call, not a
+    /// ringing phone; the phone stops ringing by itself then.
+    pub expires_at: i64,
+    pub hide_on_lockscreen: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum Outcome {
     Show(Notice),
     Plain(Plain),
     Quiet { reason: Reason },
+    Call(CallNotice),
 }

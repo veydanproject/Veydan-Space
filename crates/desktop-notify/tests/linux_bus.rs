@@ -8,7 +8,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use desktop_notify::{AppInfo, Notifier, Toast};
+use desktop_notify::{Action, AppInfo, Handlers, Kind, Notifier, Toast};
 use tokio::sync::mpsc;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedValue;
@@ -40,6 +40,10 @@ struct Seen {
     actions: Vec<String>,
     silent: bool,
     entry: String,
+    category: String,
+    sound: String,
+    urgency: Option<u8>,
+    timeout: i32,
 }
 
 #[derive(Default)]
@@ -50,6 +54,10 @@ struct State {
 }
 
 struct Server(Arc<Mutex<State>>);
+
+fn text(hints: &HashMap<String, OwnedValue>, name: &str) -> String {
+    hints.get(name).and_then(|v| <&str>::try_from(v).ok().map(str::to_string)).unwrap_or_default()
+}
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
 impl Server {
@@ -63,21 +71,21 @@ impl Server {
         body: &str,
         actions: Vec<String>,
         hints: HashMap<String, OwnedValue>,
-        _expire_timeout: i32,
+        expire_timeout: i32,
     ) -> u32 {
         let mut s = self.0.lock().unwrap();
         let silent = hints.get("suppress-sound").map(|v| bool::try_from(v).unwrap_or(false)).unwrap_or(false);
-        let entry = hints
-            .get("desktop-entry")
-            .and_then(|v| <&str>::try_from(v).ok().map(str::to_string))
-            .unwrap_or_default();
         s.seen.push(Seen {
             replaces: replaces_id,
             summary: summary.into(),
             body: body.into(),
             actions,
             silent,
-            entry,
+            entry: text(&hints, "desktop-entry"),
+            category: text(&hints, "category"),
+            sound: text(&hints, "sound-name"),
+            urgency: hints.get("urgency").and_then(|v| u8::try_from(v).ok()),
+            timeout: expire_timeout,
         });
         if replaces_id != 0 {
             return replaces_id;
@@ -102,11 +110,15 @@ async fn settle() {
     tokio::time::sleep(Duration::from_millis(300)).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn one_per_key_replaced_cleared_clicked() {
-    let (_bus, address) = private_bus();
+fn app() -> AppInfo {
+    AppInfo { id: "t".into(), name: "Veydan Space".into(), desktop_entry: "veydanspace".into(), icon: "veydanspace".into(), icon_file: None }
+}
+
+/// A notification server on a private bus, and what it was asked.
+async fn server() -> (Bus, String, zbus::Connection, Arc<Mutex<State>>) {
+    let (bus, address) = private_bus();
     let state = Arc::new(Mutex::new(State::default()));
-    let server = zbus::connection::Builder::address(address.as_str())
+    let conn = zbus::connection::Builder::address(address.as_str())
         .unwrap()
         .name("org.freedesktop.Notifications")
         .unwrap()
@@ -115,10 +127,14 @@ async fn one_per_key_replaced_cleared_clicked() {
         .build()
         .await
         .unwrap();
+    (bus, address, conn, state)
+}
 
+#[tokio::test(flavor = "multi_thread")]
+async fn one_per_key_replaced_cleared_clicked() {
+    let (_bus, address, server, state) = server().await;
     let (click_tx, mut click_rx) = mpsc::unbounded_channel();
-    let app = AppInfo { id: "t".into(), name: "Veydan Space".into(), desktop_entry: "veydanspace".into(), icon: "veydanspace".into(), icon_file: None };
-    let n = Notifier::start_on_bus(app, Arc::new(move |k| { let _ = click_tx.send(k); }), address);
+    let n = Notifier::start_on_bus(app(), Handlers::clicks(Arc::new(move |k| { let _ = click_tx.send(k); })), address);
     settle().await;
     assert!(n.available());
 
@@ -126,8 +142,8 @@ async fn one_per_key_replaced_cleared_clicked() {
         key: key.into(),
         title: "Alice".into(),
         body: body.into(),
-        image: None,
         silent,
+        ..Toast::default()
     };
     n.show(toast("dm:a", "a <b>", false));
     n.show(toast("dm:a", "a <b>\nsecond", true));
@@ -140,6 +156,8 @@ async fn one_per_key_replaced_cleared_clicked() {
         assert_eq!(s.seen[0].body, "a &lt;b&gt;", "markup is escaped");
         assert_eq!(s.seen[0].actions, vec!["default".to_string(), String::new()]);
         assert_eq!(s.seen[0].entry, "veydanspace");
+        assert_eq!((s.seen[0].category.as_str(), s.seen[0].sound.as_str()), ("im.received", "message-new-instant"));
+        assert_eq!((s.seen[0].urgency, s.seen[0].timeout), (None, -1));
         assert!(!s.seen[0].silent);
         assert_eq!(s.seen[1].replaces, 1, "the same key replaces");
         assert!(s.seen[1].silent);
@@ -163,12 +181,64 @@ async fn one_per_key_replaced_cleared_clicked() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_call_rings_until_a_button_is_pressed() {
+    let (_bus, address, server, state) = server().await;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (clicks, actions) = (tx.clone(), tx);
+    let handlers = Handlers {
+        on_click: Arc::new(move |k| { let _ = clicks.send(format!("click {k}")); }),
+        on_action: Arc::new(move |k, id| { let _ = actions.send(format!("{id} {k}")); }),
+    };
+    let n = Notifier::start_on_bus(app(), handlers, address);
+    settle().await;
+
+    let call = |key: &str| Toast {
+        key: key.into(),
+        title: "Alice".into(),
+        body: "Incoming call".into(),
+        kind: Kind::Call,
+        actions: vec![Action::new("answer", "Answer"), Action::new("decline", "Decline")],
+        ..Toast::default()
+    };
+    n.show(call("call:c1"));
+    n.show(call("call:c2"));
+    settle().await;
+    {
+        let s = state.lock().unwrap();
+        let seen = &s.seen[0];
+        assert_eq!(seen.actions, ["default", "", "answer", "Answer", "decline", "Decline"]);
+        assert_eq!(seen.category, "call.incoming");
+        assert_eq!(seen.sound, "phone-incoming-call");
+        assert_eq!(seen.urgency, Some(2), "critical");
+        assert_eq!(seen.timeout, 0, "it stays");
+    }
+
+    // Answer on the first: its key and the button come back, the
+    // notification is closed; Decline on the second likewise.
+    let emitter = SignalEmitter::new(&server, "/org/freedesktop/Notifications").unwrap();
+    Server::action_invoked(&emitter, 1, "answer").await.unwrap();
+    Server::action_invoked(&emitter, 2, "decline").await.unwrap();
+    let mut got = Vec::new();
+    for _ in 0..2 {
+        got.push(tokio::time::timeout(Duration::from_secs(2), rx.recv()).await.unwrap().unwrap());
+    }
+    assert_eq!(got, ["answer call:c1", "decline call:c2"]);
+    settle().await;
+    assert_eq!(state.lock().unwrap().closed, vec![1, 2]);
+
+    // A press on what is gone goes nowhere.
+    Server::action_invoked(&emitter, 1, "answer").await.unwrap();
+    settle().await;
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn no_server_is_not_available() {
     let (_bus, address) = private_bus();
     let app = AppInfo { id: "x".into(), name: "x".into(), desktop_entry: "x".into(), icon: "x".into(), icon_file: None };
-    let n = Notifier::start_on_bus(app, Arc::new(|_| {}), address);
+    let n = Notifier::start_on_bus(app, Handlers::clicks(Arc::new(|_| {})), address);
     settle().await;
     assert!(!n.available());
-    n.show(Toast { key: "k".into(), title: "t".into(), body: "b".into(), image: None, silent: false });
+    n.show(Toast { key: "k".into(), title: "t".into(), body: "b".into(), ..Toast::default() });
     settle().await;
 }

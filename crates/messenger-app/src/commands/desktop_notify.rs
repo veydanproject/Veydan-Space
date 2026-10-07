@@ -16,18 +16,24 @@
 //! last lines and a "+N"; reading the chat takes it away; a click brings
 //! the window up and opens the chat.
 //!
+//! A call that rings while the window is away rings in a notification too
+//! (`call.incoming`), with the caller's name and face as a message would
+//! have them and the buttons Answer and Decline; it goes when the call is
+//! answered or over (`call.state`, `call.ended`), here or on another device.
+//! The ring of the app itself is the page's.
+//!
 //! The notifier lives as long as the process: a messenger that is switched
 //! off has no runtime to raise a `notify`, and its notifications are taken
 //! away when it stops.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use desktop_notify::{AppInfo, Notifier, Toast};
+use desktop_notify::{Action, AppInfo, Handlers, Kind, Notifier, Toast};
 use messenger_notify::{Body, ChatKind, DesktopSettings, LinkKind, Outcome};
-use messenger_runtime::MessengerRuntime;
+use messenger_runtime::{CallMedia, CallPhase, CallView, MessengerRuntime, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_STATE};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager};
@@ -80,6 +86,12 @@ pub struct Words {
     /// `{name}` is the person's.
     pub link_contact: String,
     pub link_contact_nameless: String,
+    /// The body of a ringing call's notification.
+    pub call_audio: String,
+    pub call_video: String,
+    /// Its buttons.
+    pub call_answer: String,
+    pub call_decline: String,
 }
 
 impl Default for Words {
@@ -105,6 +117,10 @@ impl Default for Words {
             link_group_nameless: "Link to a group".into(),
             link_contact: "Contact: {name}".into(),
             link_contact_nameless: "Contact".into(),
+            call_audio: "Incoming call".into(),
+            call_video: "Incoming video call".into(),
+            call_answer: "Answer".into(),
+            call_decline: "Decline".into(),
         }
     }
 }
@@ -352,6 +368,137 @@ pub fn word(outcome: Outcome, words: &Words) -> Option<Worded> {
             picture: None,
         }),
         Outcome::Quiet { .. } => None,
+        // An invitation by push is the phone's way to a ringing call; a
+        // computer hears of calls from its runtime (`call.incoming`).
+        Outcome::Call(_) => None,
+    }
+}
+
+// ─── A ringing call ─────────────────────────────────────────────────────────
+
+/// The ids of the buttons of a ringing call.
+pub const ACTION_ANSWER: &str = "answer";
+pub const ACTION_DECLINE: &str = "decline";
+
+/// The key of a call's notification: `call:<call_id>`.
+const CALL_KEY: &str = "call:";
+
+/// A ringing call's notification goes after this at the latest, should
+/// the end of the call never be heard (the runtime gives up at 45 s).
+const RING_LIMIT: Duration = Duration::from_secs(90);
+
+fn call_key(call_id: &str) -> String {
+    format!("{CALL_KEY}{call_id}")
+}
+
+/// What of the `call` of a `call.*` event a notification needs.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Ringing {
+    pub call_id: String,
+    /// The caller, hex.
+    pub peer: String,
+    pub chat_id: String,
+    pub media: CallMedia,
+    phase: CallPhase,
+}
+
+/// What a `call.*` event means for the notifications.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CallNotice {
+    /// A call rings here.
+    Ring(Ringing),
+    /// Its ringing is over: answered, declined, ended, taken elsewhere.
+    Gone(String),
+    Nothing,
+}
+
+pub fn call_notice(name: &str, payload: &serde_json::Value) -> CallNotice {
+    let Some(call) = payload.get("call").and_then(|c| Ringing::deserialize(c).ok()) else {
+        return CallNotice::Nothing;
+    };
+    match name {
+        UI_EVENT_CALL_INCOMING if call.phase == CallPhase::Incoming => CallNotice::Ring(call),
+        UI_EVENT_CALL_STATE if call.phase != CallPhase::Incoming => CallNotice::Gone(call.call_id),
+        UI_EVENT_CALL_ENDED => CallNotice::Gone(call.call_id),
+        _ => CallNotice::Nothing,
+    }
+}
+
+/// Who calls, as a message of theirs would name them: a PIN on the app or
+/// the setting "no content" leaves only the app's name, and no face.
+fn caller(outcome: Outcome, words: &Words) -> (String, Option<String>) {
+    match outcome {
+        Outcome::Show(n) if !n.title.is_empty() => (n.title, n.picture),
+        _ => (words.app.clone(), None),
+    }
+}
+
+fn call_toast(call: &Ringing, title: String, image: Option<PathBuf>, silent: bool, words: &Words) -> Toast {
+    let body = match call.media {
+        CallMedia::Audio => &words.call_audio,
+        CallMedia::Video => &words.call_video,
+    };
+    Toast {
+        key: call_key(&call.call_id),
+        title,
+        body: body.clone(),
+        image,
+        silent,
+        kind: Kind::Call,
+        actions: vec![
+            Action::new(ACTION_ANSWER, words.call_answer.clone()),
+            Action::new(ACTION_DECLINE, words.call_decline.clone()),
+        ],
+    }
+}
+
+/// The call of `call_state` as a notification needs it, when it rings here.
+fn ringing_now(call: CallView) -> Option<Ringing> {
+    (call.phase == CallPhase::Incoming).then_some(Ringing {
+        call_id: call.call_id,
+        peer: call.peer,
+        chat_id: call.chat_id,
+        media: call.media,
+        phase: call.phase,
+    })
+}
+
+/// What a look at the call ringing now changes after missed events.
+#[derive(Debug, PartialEq, Eq)]
+struct Recheck {
+    /// Notifications of calls that no longer ring.
+    gone: Vec<String>,
+    /// A call that rings and has no notification yet: its `call.incoming`
+    /// was among the missed events.
+    ring: Option<Ringing>,
+}
+
+/// `now` is the call ringing now (`None`: nothing rings). An error means the
+/// runtime could not tell: a call that may still ring keeps its notification.
+fn recheck<E>(ringing: &HashSet<String>, now: Result<Option<Ringing>, E>) -> Recheck {
+    let Ok(now) = now else {
+        return Recheck { gone: Vec::new(), ring: None };
+    };
+    let id = now.as_ref().map(|c| &c.call_id);
+    let mut gone: Vec<String> = ringing.iter().filter(|r| Some(*r) != id).cloned().collect();
+    gone.sort();
+    let ring = now.filter(|c| !ringing.contains(&c.call_id));
+    Recheck { gone, ring }
+}
+
+/// A button pressed on a call's notification.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CallPress {
+    Answer(String),
+    Decline(String),
+}
+
+pub fn call_press(key: &str, action: &str) -> Option<CallPress> {
+    let call_id = key.strip_prefix(CALL_KEY).filter(|id| !id.is_empty())?.to_string();
+    match action {
+        ACTION_ANSWER => Some(CallPress::Answer(call_id)),
+        ACTION_DECLINE => Some(CallPress::Decline(call_id)),
+        _ => None,
     }
 }
 
@@ -361,6 +508,10 @@ pub struct DesktopNotify {
     words: RwLock<Words>,
     stacks: Mutex<HashMap<String, Stack>>,
     avatars: Option<PathBuf>,
+    /// The calls whose notification is up or being made. What is shown and
+    /// what is taken away goes under this lock, so a call that ended while
+    /// its face was fetched is not shown after.
+    ringing: Mutex<HashSet<String>>,
 }
 
 impl DesktopNotify {
@@ -377,9 +528,12 @@ impl DesktopNotify {
             _ => None,
         };
         let info = app_info(app.config().identifier.clone(), app.package_info().name.clone(), &product, icon);
-        let tapped = app.clone();
-        let on_click = Arc::new(move |key: String| clicked(&tapped, key));
-        let notifier = Notifier::start(info, on_click);
+        let (tapped, pressed_on) = (app.clone(), app.clone());
+        let handlers = Handlers {
+            on_click: Arc::new(move |key: String| clicked(&tapped, key)),
+            on_action: Arc::new(move |key: String, action: String| pressed(&pressed_on, &key, &action)),
+        };
+        let notifier = Notifier::start(info, handlers);
         let avatars = cache.map(|d| d.join("notify-avatars"));
         Arc::new(Self {
             app,
@@ -387,6 +541,7 @@ impl DesktopNotify {
             words: RwLock::new(Words::named(product.name)),
             stacks: Mutex::new(HashMap::new()),
             avatars,
+            ringing: Mutex::new(HashSet::new()),
         })
     }
 
@@ -399,6 +554,7 @@ impl DesktopNotify {
     /// for up to a second.
     pub fn withdraw(&self) {
         self.stacks.lock().unwrap().clear();
+        self.ringing.lock().unwrap().clear();
         self.notifier.shutdown();
     }
 
@@ -423,11 +579,7 @@ impl DesktopNotify {
     }
 
     async fn show(&self, rt: &MessengerRuntime, notice: messenger_core::Notice) {
-        let locked = match self.app.try_state::<veydan_lock::Lock>() {
-            Some(lock) => lock.enabled().await,
-            None => true,
-        };
-        let outcome = match rt.live_notice(&notice, locked).await {
+        let outcome = match rt.live_notice(&notice, self.locked().await).await {
             Ok(o) => o,
             Err(e) => {
                 eprintln!("messenger notify: {e}");
@@ -447,13 +599,97 @@ impl DesktopNotify {
             stack.push(w.line, &words);
             stack.body(&words)
         };
-        self.notifier.show(Toast { key: w.key, title: w.title, body, image, silent: !sound });
+        self.notifier.show(Toast { key: w.key, title: w.title, body, image, silent: !sound, ..Toast::default() });
     }
 
     /// A notification to see that notifications work, from the settings.
     pub async fn show_test(&self, rt: &MessengerRuntime, title: String, body: String) {
         let sound = rt.desktop_notify_settings().await.map(|s| s.sound).unwrap_or(true);
-        self.notifier.show(Toast { key: "test".into(), title, body, image: None, silent: !sound });
+        self.notifier.show(Toast { key: "test".into(), title, body, silent: !sound, ..Toast::default() });
+    }
+
+    /// Takes a `call.*` event: a call that rings while the window is away
+    /// gets a notification; one that stopped ringing loses it.
+    pub async fn take_call(self: &Arc<Self>, rt: &Arc<MessengerRuntime>, name: &str, payload: &serde_json::Value) {
+        match call_notice(name, payload) {
+            CallNotice::Ring(call) => self.start_ring(rt, call).await,
+            CallNotice::Gone(call_id) => self.call_gone(&call_id),
+            CallNotice::Nothing => {}
+        }
+    }
+
+    /// A call rings here: its notification, unless the window is seen or
+    /// the notifications are off.
+    async fn start_ring(self: &Arc<Self>, rt: &Arc<MessengerRuntime>, call: Ringing) {
+        let settings = rt.desktop_notify_settings().await.unwrap_or_default();
+        if route(WindowSeen::of(&self.app), settings.enabled, self.available()) == Route::Card {
+            return;
+        }
+        self.ringing.lock().unwrap().insert(call.call_id.clone());
+        let (me, rt) = (self.clone(), rt.clone());
+        tauri::async_runtime::spawn(async move { me.ring(&rt, call, !settings.sound).await });
+    }
+
+    async fn ring(self: Arc<Self>, rt: &MessengerRuntime, call: Ringing, silent: bool) {
+        let words = self.words.read().unwrap().clone();
+        let notice = messenger_core::Notice {
+            title: String::new(),
+            body: None,
+            chat_id: Some(call.chat_id.clone()),
+            sender: Some(call.peer.clone()),
+            request: false,
+        };
+        let (title, picture) = match rt.live_notice(&notice, self.locked().await).await {
+            Ok(outcome) => caller(outcome, &words),
+            Err(e) => {
+                eprintln!("messenger notify: call: {e}");
+                (words.app.clone(), None)
+            }
+        };
+        let image = match &picture {
+            Some(url) => self.avatar(url).await,
+            None => None,
+        };
+        let toast = call_toast(&call, title, image, silent, &words);
+        {
+            let ringing = self.ringing.lock().unwrap();
+            if !ringing.contains(&call.call_id) {
+                return;
+            }
+            self.notifier.show(toast);
+        }
+        // The end of a call that is never heard must not leave it ringing.
+        tokio::time::sleep(RING_LIMIT).await;
+        self.call_gone(&call.call_id);
+    }
+
+    /// The call stopped ringing: its notification goes.
+    fn call_gone(&self, call_id: &str) {
+        let mut ringing = self.ringing.lock().unwrap();
+        if ringing.remove(call_id) {
+            self.notifier.clear(&call_key(call_id));
+        }
+    }
+
+    /// Events were missed: whatever is not the call ringing now goes, and
+    /// a call that rings now gets the notification its lost `call.incoming`
+    /// would have given. When the runtime cannot tell, all stays as it is.
+    pub async fn recheck_calls(self: &Arc<Self>, rt: &Arc<MessengerRuntime>) {
+        let now = rt.call_state().await.map(|state| state.call.and_then(ringing_now));
+        let change = recheck(&self.ringing.lock().unwrap(), now);
+        for call_id in change.gone {
+            self.call_gone(&call_id);
+        }
+        if let Some(call) = change.ring {
+            self.start_ring(rt, call).await;
+        }
+    }
+
+    async fn locked(&self) -> bool {
+        match self.app.try_state::<veydan_lock::Lock>() {
+            Some(lock) => lock.enabled().await,
+            None => true,
+        }
     }
 
     /// Takes the chat's notification away (it was read), or all of them.
@@ -589,6 +825,32 @@ fn clicked(app: &tauri::AppHandle, key: String) {
         d.stacks.lock().unwrap().remove(&key);
     }
     let _ = app.emit(EVENT_NOTICE_TAP, serde_json::json!({ "chat": chat }));
+}
+
+/// A button on a call's notification, which is gone by then: Answer takes
+/// the call and brings the window up, where the call goes on; Decline
+/// refuses it. What follows comes to the page as the call's events.
+fn pressed(app: &tauri::AppHandle, key: &str, action: &str) {
+    let Some(press) = call_press(key, action) else { return };
+    let state = app.try_state::<MessengerState>();
+    if let Some(d) = state.as_ref().and_then(|s| s.desktop()) {
+        if let Some(call_id) = key.strip_prefix(CALL_KEY) {
+            d.ringing.lock().unwrap().remove(call_id);
+        }
+    }
+    let Some(rt) = state.and_then(|s| s.runtime().ok()) else { return };
+    if matches!(press, CallPress::Answer(_)) {
+        app.state::<Shell>().show_main_window();
+    }
+    tauri::async_runtime::spawn(async move {
+        let done = match &press {
+            CallPress::Answer(call_id) => rt.call_accept(call_id).await.map(drop),
+            CallPress::Decline(call_id) => rt.call_decline(call_id).await,
+        };
+        if let Err(e) = done {
+            eprintln!("messenger notify: {press:?}: {e}");
+        }
+    });
 }
 
 // ─── Commands ───────────────────────────────────────────────────────────────
@@ -844,6 +1106,96 @@ mod tests {
         let words = Words::named(CHAT.name).with_page(page);
         assert_eq!(words.app, "Veydan Chat");
         assert_eq!(words.new_message, "Новое сообщение");
+    }
+
+    fn call_payload(phase: &str, media: &str) -> serde_json::Value {
+        // As `messenger-calls` writes it, with fields a notification ignores.
+        serde_json::json!({ "call": {
+            "call_id": "c1", "peer": "ab".repeat(32), "chat_id": format!("dm:{}", "ab".repeat(32)),
+            "direction": "in", "media": media, "phase": phase, "muted": false,
+            "started_at": 1_700_000_000, "nodes": [], "via": "relay",
+        }})
+    }
+
+    #[test]
+    fn a_call_rings_until_it_is_answered_or_over() {
+        let ring = call_notice(UI_EVENT_CALL_INCOMING, &call_payload("incoming", "video"));
+        let CallNotice::Ring(call) = ring else { panic!("{ring:?}") };
+        assert_eq!((call.call_id.as_str(), call.media), ("c1", CallMedia::Video));
+        assert!(call.chat_id.starts_with("dm:"));
+
+        for phase in ["connecting", "active", "ended"] {
+            assert_eq!(call_notice(UI_EVENT_CALL_STATE, &call_payload(phase, "audio")), CallNotice::Gone("c1".into()), "{phase}");
+        }
+        // Still ringing (a mute, a new offer) is nothing new.
+        assert_eq!(call_notice(UI_EVENT_CALL_STATE, &call_payload("incoming", "audio")), CallNotice::Nothing);
+        let ended = serde_json::json!({ "call": call_payload("ended", "audio")["call"], "outcome": "answered_elsewhere", "duration_secs": null });
+        assert_eq!(call_notice(UI_EVENT_CALL_ENDED, &ended), CallNotice::Gone("c1".into()));
+        // My own call rings nowhere here; other events and bad payloads are nothing.
+        assert_eq!(call_notice(UI_EVENT_CALL_INCOMING, &call_payload("outgoing", "audio")), CallNotice::Nothing);
+        assert_eq!(call_notice("call.level", &serde_json::json!({ "call_id": "c1", "level": 0.5 })), CallNotice::Nothing);
+        assert_eq!(call_notice(UI_EVENT_CALL_ENDED, &serde_json::json!({})), CallNotice::Nothing);
+    }
+
+    #[test]
+    fn a_ringing_call_is_named_as_a_message_would_be_and_has_two_buttons() {
+        let w = Words { call_answer: "Ответить".into(), ..words() };
+        let CallNotice::Ring(call) = call_notice(UI_EVENT_CALL_INCOMING, &call_payload("incoming", "audio")) else { panic!() };
+
+        let shown = Outcome::Show(Notice {
+            kind: ChatKind::Dm,
+            chat: Some(call.chat_id.clone()),
+            title: "Alice".into(),
+            sender: "Alice".into(),
+            sender_key: call.peer.clone(),
+            picture: Some("https://x/a.png".into()),
+            body: None,
+            muted: false,
+            hide_on_lockscreen: false,
+            count: 1,
+        });
+        assert_eq!(caller(shown, &w), ("Alice".to_string(), Some("https://x/a.png".to_string())));
+        // A PIN on the app: only the app's name, and no face.
+        let plain = Outcome::Plain(Plain { kind: ChatKind::Dm, chat: Some(call.chat_id.clone()), title: None, muted: false, count: 1 });
+        assert_eq!(caller(plain, &w), ("Veydan Space".to_string(), None));
+
+        let t = call_toast(&call, "Alice".into(), Some("/c/a".into()), false, &w);
+        assert_eq!((t.key.as_str(), t.title.as_str(), t.body.as_str()), ("call:c1", "Alice", "Incoming call"));
+        assert_eq!(t.kind, Kind::Call);
+        assert_eq!(t.actions, [Action::new("answer", "Ответить"), Action::new("decline", "Decline")]);
+        let video = Ringing { media: CallMedia::Video, ..call };
+        assert_eq!(call_toast(&video, "A".into(), None, true, &w).body, "Incoming video call");
+    }
+
+    #[test]
+    fn missed_events_are_made_up_for_by_the_call_ringing_now() {
+        let view = |phase: &str| serde_json::from_value::<CallView>(call_payload(phase, "audio")["call"].clone()).unwrap();
+        let now = ringing_now(view("incoming")).expect("it rings");
+        assert_eq!((now.call_id.as_str(), now.media), ("c1", CallMedia::Audio));
+        assert_eq!(ringing_now(view("active")), None);
+        assert_eq!(ringing_now(view("outgoing")), None);
+
+        let none = HashSet::new();
+        let c1: HashSet<String> = ["c1".to_string()].into();
+        let both: HashSet<String> = ["c0".to_string(), "c1".to_string()].into();
+        // Its `call.incoming` was lost: it rings now.
+        assert_eq!(recheck::<()>(&none, Ok(Some(now.clone()))), Recheck { gone: vec![], ring: Some(now.clone()) });
+        // Already shown: not again; one that stopped ringing goes.
+        assert_eq!(recheck::<()>(&c1, Ok(Some(now.clone()))), Recheck { gone: vec![], ring: None });
+        assert_eq!(recheck::<()>(&both, Ok(Some(now.clone()))), Recheck { gone: vec!["c0".into()], ring: None });
+        // Nothing rings: all go.
+        assert_eq!(recheck::<()>(&both, Ok(None)), Recheck { gone: vec!["c0".into(), "c1".into()], ring: None });
+        // The runtime could not tell: what rings keeps ringing.
+        assert_eq!(recheck(&c1, Err(())), Recheck { gone: vec![], ring: None });
+    }
+
+    #[test]
+    fn the_buttons_answer_and_decline_that_call() {
+        assert_eq!(call_press("call:c1", ACTION_ANSWER), Some(CallPress::Answer("c1".into())));
+        assert_eq!(call_press("call:c1", ACTION_DECLINE), Some(CallPress::Decline("c1".into())));
+        assert_eq!(call_press("call:c1", "other"), None);
+        assert_eq!(call_press("dm:ab", ACTION_ANSWER), None, "not a call");
+        assert_eq!(call_press("call:", ACTION_ANSWER), None);
     }
 
     #[test]

@@ -213,8 +213,8 @@ mod tests {
     use super::*;
 
     /// `commands.golden.txt`: every command of the product on a line with the
-    /// module that answers it and where it exists (`all` platforms or
-    /// `desktop` only). The names are what the frontend invokes: a line may
+    /// module that answers it and where it exists (`all` platforms,
+    /// `desktop` or `mobile` only). The names are what the frontend invokes: a line may
     /// move to another module, but a name neither appears nor disappears
     /// without a matching change in the UI.
     #[test]
@@ -228,10 +228,14 @@ mod tests {
                     words.next().unwrap(),
                     words.next().unwrap(),
                 );
-                assert!(matches!(platform, "all" | "desktop"), "{line}");
+                assert!(matches!(platform, "all" | "desktop" | "mobile"), "{line}");
                 (command, module, platform)
             })
-            .filter(|(_, _, platform)| cfg!(desktop) || *platform == "all")
+            .filter(|(_, _, platform)| match *platform {
+                "desktop" => cfg!(desktop),
+                "mobile" => cfg!(mobile),
+                _ => true,
+            })
             .map(|(command, module, _)| (command, module))
             .collect();
         let table = veydan_shell::command_table(crate::PRODUCT, all()).unwrap();

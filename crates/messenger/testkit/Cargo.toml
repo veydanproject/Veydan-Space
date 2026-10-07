@@ -13,19 +13,35 @@ publish.workspace = true
 [dependencies]
 messenger-core.workspace = true
 messenger-store.workspace = true
-messenger-runtime.workspace = true
+# The runtime's engine comes with the feature `rtc` below: the fakes of
+# this crate need none, and the runtime's own tests must be able to leave
+# libwebrtc out (`cargo test -p messenger-runtime --no-default-features`).
+# By path, not from the workspace table: cargo ignores
+# `default-features = false` on an inherited dependency.
+messenger-runtime = { path = "../runtime", default-features = false }
 messenger-notify.workspace = true
 messenger-dm.workspace = true
 messenger-groups.workspace = true
+messenger-calls.workspace = true
+# The engine of calls for messenger-cli: a call from the command line pushes
+# a file or a tone into it and keeps what comes back.
+messenger-rtc = { workspace = true, optional = true }
 serde_json.workspace = true
 async-trait.workspace = true
 tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros", "signal", "io-std", "io-util"] }
 zeroize.workspace = true
 nostr.workspace = true
 
+[features]
+default = ["rtc"]
+# libwebrtc, for messenger-cli: its own engine for the call commands, and
+# the runtime's for everything else.
+rtc = ["dep:messenger-rtc", "messenger-runtime/rtc"]
+
 [[bin]]
 name = "messenger-cli"
 path = "src/bin/messenger-cli.rs"
+required-features = ["rtc"]
 
 [dev-dependencies]
 serde_json.workspace = true

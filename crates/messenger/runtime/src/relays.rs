@@ -433,6 +433,7 @@ mod tests {
             media: vec![],
             sources: vec![],
             push: vec![],
+            calls: vec![],
         }
     }
 

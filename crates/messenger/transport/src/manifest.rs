@@ -54,6 +54,66 @@ pub struct Manifest {
     /// Push servers. Absent in manifests written before pushes existed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub push: Vec<ManifestPush>,
+    /// Call nodes (`vcall`): STUN, TURN and the SFU of groups. Absent in
+    /// manifests written before calls existed; a client then takes nodes
+    /// from the registry and its own settings only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub calls: Vec<ManifestCall>,
+}
+
+/// Who runs a call node, and so how far it is trusted (the "trust level"
+/// setting: any / the project's and own / own only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallNodeClass {
+    /// The project's own servers.
+    Project,
+    /// Somebody who offered a node to everybody.
+    Volunteer,
+    /// The user's or the team's own node. Never in a manifest, which the
+    /// project signs; named here because server sets share the word.
+    Own,
+    /// Reserved for Veydan Cloud (paid nodes bound to a subscription): a
+    /// manifest may carry it, a client of today leaves such nodes alone.
+    Cloud,
+    /// A class this client does not know, from a newer manifest: the node
+    /// is skipped, the manifest is still taken.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A call node, as a manifest names it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManifestCall {
+    /// `address:control_port#id`: a bare IP address, the TLS port of the
+    /// node's control channel, and its id (64 hex characters, the hash of
+    /// its Ed25519 key) that TLS is pinned to.
+    #[serde(rename = "ref")]
+    pub node: String,
+    /// STUN and TURN over UDP and TCP.
+    pub turn_port: u16,
+    /// The SFU; 0 when the node has none.
+    #[serde(default)]
+    pub sfu_port: u16,
+    pub class: CallNodeClass,
+    #[serde(default)]
+    pub regions: Vec<String>,
+}
+
+impl ManifestCall {
+    /// The control address and the id of `node`, when it is well formed.
+    pub fn parse_ref(&self) -> Option<(std::net::SocketAddr, String)> {
+        let (addr, id) = self.node.trim().split_once('#')?;
+        let addr: std::net::SocketAddr = addr.parse().ok()?;
+        let ok = id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
+        (ok && addr.port() != 0).then(|| (addr, id.to_ascii_lowercase()))
+    }
+
+    /// A node a client of today may call through: the classes it knows
+    /// and does not hold back.
+    pub fn usable(&self) -> bool {
+        matches!(self.class, CallNodeClass::Project | CallNodeClass::Volunteer)
+    }
 }
 
 /// A server that watches relays for the user and wakes the phone.
@@ -241,6 +301,22 @@ impl Manifest {
                 return Err(MessengerError::Invalid(format!("media server '{}' url must be http(s)", m.id)));
             }
         }
+        let mut call_ids = BTreeSet::new();
+        for c in &self.calls {
+            let Some((_, id)) = c.parse_ref() else {
+                return Err(MessengerError::Invalid(format!("call node '{}' is not address:port#id", c.node)));
+            };
+            if !call_ids.insert(id) {
+                return Err(MessengerError::Invalid(format!("call node '{}' is listed twice", c.node)));
+            }
+            if c.turn_port == 0 {
+                return Err(MessengerError::Invalid(format!("call node '{}' has no turn port", c.node)));
+            }
+            // The project signs the manifest: it cannot name the user's own nodes.
+            if c.class == CallNodeClass::Own {
+                return Err(MessengerError::Invalid(format!("call node '{}' is of the class own", c.node)));
+            }
+        }
         Ok(())
     }
 
@@ -279,6 +355,16 @@ impl Manifest {
             .iter()
             .filter(|p| p.regions.iter().any(|g| g == tag || g == REGION_ANY))
             .collect()
+    }
+
+    /// Call nodes for `region`, by the rule of the push servers, among the
+    /// nodes a client of today may use (`ManifestCall::usable`): `cloud`
+    /// and unknown classes are left out before the region is looked at.
+    pub fn calls_for_region(&self, region: &str) -> Vec<&ManifestCall> {
+        let usable = || self.calls.iter().filter(|c| c.usable());
+        let has = usable().any(|c| c.regions.iter().any(|g| g == region));
+        let tag = if has || region == REGION_DEFAULT { region } else { REGION_DEFAULT };
+        usable().filter(|c| c.regions.iter().any(|g| g == tag || g == REGION_ANY)).collect()
     }
 
     pub fn media_for_region(&self, region: &str) -> Vec<&ManifestMedia> {
@@ -356,7 +442,69 @@ mod tests {
             media: vec![ManifestMedia { id: "m1".into(), url: "https://media.example".into(), regions: vec!["default".into()], kind: "blossom".into(), bucket: None, s3_region: None }],
             sources: vec![ManifestSource::Http { url: "https://cfg.example/m.json".into(), regions: vec![], priority: 10 }],
             push: vec![ManifestPush { id: "p1".into(), url: "https://push.example".into(), regions: vec!["default".into()] }],
+            calls: vec![
+                call("203.0.113.7:8443", 'a', CallNodeClass::Project, &["default"]),
+                call("198.51.100.9:443", 'b', CallNodeClass::Volunteer, &["ru"]),
+                call("192.0.2.1:443", 'c', CallNodeClass::Cloud, &["*"]),
+            ],
         }
+    }
+
+    fn call(addr: &str, id: char, class: CallNodeClass, regions: &[&str]) -> ManifestCall {
+        ManifestCall {
+            node: format!("{addr}#{}", id.to_string().repeat(64)),
+            turn_port: 3478,
+            sfu_port: 0,
+            class,
+            regions: regions.iter().map(|r| r.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn call_nodes_by_region_leave_out_what_a_client_of_today_does_not_use() {
+        let m = sample();
+        m.validate().unwrap();
+        let ids = |region: &str| m.calls_for_region(region).iter().map(|c| c.node.split(':').next().unwrap().to_string()).collect::<Vec<_>>();
+        assert_eq!(ids("default"), vec!["203.0.113.7"]);
+        assert_eq!(ids("ru"), vec!["198.51.100.9"]);
+        assert_eq!(ids("mars"), vec!["203.0.113.7"], "unknown region falls back to default");
+        let (addr, id) = m.calls[0].parse_ref().unwrap();
+        assert_eq!((addr.to_string(), id), ("203.0.113.7:8443".to_string(), "a".repeat(64)));
+
+        // A class of a newer manifest is skipped, the manifest is taken.
+        let json = serde_json::to_string(&m).unwrap().replace("\"cloud\"", "\"satellite\"");
+        let newer = Manifest::parse_content(&json).unwrap();
+        assert_eq!(newer.calls[2].class, CallNodeClass::Unknown);
+        assert_eq!(newer.calls_for_region("default").len(), 1);
+    }
+
+    #[test]
+    fn call_nodes_are_validated() {
+        let bad = |change: fn(&mut Manifest)| {
+            let mut m = sample();
+            change(&mut m);
+            m.validate().is_err()
+        };
+        assert!(bad(|m| m.calls[0].node = "eu-1.veydan.net:443#".to_string() + &"a".repeat(64)), "a name, not an address");
+        assert!(bad(|m| m.calls[0].node = "203.0.113.7:8443".into()), "no id");
+        assert!(bad(|m| m.calls[0].node = format!("203.0.113.7:8443#{}", "z".repeat(64))), "id not hex");
+        assert!(bad(|m| m.calls[0].node = format!("203.0.113.7:0#{}", "a".repeat(64))), "port 0");
+        assert!(bad(|m| m.calls[1].node = m.calls[0].node.replace("8443", "443")), "the same id twice");
+        assert!(bad(|m| m.calls[0].turn_port = 0));
+        assert!(bad(|m| m.calls[0].class = CallNodeClass::Own), "the project cannot name own nodes");
+        assert!(!bad(|m| m.calls[0].node = format!("[2001:db8::7]:443#{}", "A".repeat(64))), "v6 and upper case are fine");
+    }
+
+    #[test]
+    fn a_manifest_without_call_nodes_is_written_as_before() {
+        // Old clients and old signatures see the very same document.
+        let mut m = sample();
+        m.calls.clear();
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(!json.contains("calls"));
+        assert_eq!(Manifest::parse_content(&json).unwrap(), m);
+        let keys = Keys::generate();
+        assert_eq!(Manifest::parse_signed(&sample().sign(&keys).unwrap(), None).unwrap(), sample());
     }
 
     #[test]
@@ -372,6 +520,8 @@ mod tests {
             "the embedded manifest names only the project's own servers"
         );
         assert!(m.relays.iter().any(|r| matches!(r.auth, Some(ManifestAuth::ApiKey { .. }))), "project relay is gated");
+        // Call nodes, when the owner adds them, are the project's own.
+        assert!(m.calls.iter().all(|c| c.class == CallNodeClass::Project), "the embedded manifest names only the project's call nodes");
         // Every region it names, the default one and an unknown one get a
         // relay, a media server and a push server.
         let regions = m.regions.iter().map(String::as_str).chain([REGION_DEFAULT, "nowhere"]);

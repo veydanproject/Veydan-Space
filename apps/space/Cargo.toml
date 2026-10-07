@@ -1,6 +1,6 @@
 [package]
 name = "veydanspace"
-version = "5.0.8"
+version = "5.1.0"
 description = "Workspace for multi-accounting: browser profiles, proxies, SSH, notes, passwords and chat"
 authors = ["Veydan Project"]
 edition = "2021"
@@ -13,6 +13,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# The JNI exports of the engine of calls on Android (apps/*/build.rs).
+veydan-build-cfg = { path = "../../crates/build-cfg" }
 
 # ── Shared on every platform: the modules, sync, settings ───────────────────
 [dependencies]
@@ -97,3 +99,6 @@ tauri-plugin-fs = "2"
 # it is named here because tauri-build finds the Android library of a plugin
 # through the direct dependencies of the product crate.
 tauri-plugin-veydan-push = { path = "../../crates/tauri-plugin-veydan-push" }
+# The phone's side of a call, which the module of the messenger registers;
+# named here for the same reason.
+tauri-plugin-veydan-call = { path = "../../crates/tauri-plugin-veydan-call" }

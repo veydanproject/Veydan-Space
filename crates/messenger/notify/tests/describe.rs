@@ -5,7 +5,7 @@
 //! that others wrote. What it may show is what the app would have shown.
 
 use messenger_contacts::{ContactService, ProfileService};
-use messenger_core::traits::SystemClock;
+use messenger_core::traits::{Clock, SystemClock};
 use messenger_core::{Context, Envelope, MessengerConfig, PubKey, RelayUrl, Timestamp};
 use messenger_dm::relationship::Action;
 use messenger_dm::wrap::{wrap, wrap_as, wrap_note, wrap_own, Wake};
@@ -463,4 +463,115 @@ async fn a_contact_card_is_told_and_a_broken_one_is_not() {
     assert_eq!((n.kind, n.body), (ChatKind::Group, want));
     let junk = group_message(&gid, &key, &bob, &card("zz"), 1_000_004);
     assert_eq!(quiet(phone.describe(group_push(&gid, &junk)).await), Reason::Invalid);
+}
+
+// ─── Calls ───────────────────────────────────────────────────────────────────
+
+/// A call rings only from somebody we both chose to talk with (the gate
+/// of the app, `calls_allowed`): the phone then rings with who calls, by
+/// the chat's name, and the invitation's times. A new offer inside a call,
+/// a stranger's call and a malformed one ring nobody.
+#[tokio::test]
+async fn an_invitation_to_a_call_rings_from_a_mutual_contact_only() {
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+    let id = "0123456789abcdef0123456789abcdef";
+    let invite = Envelope::call_invite(id, "video", "v=0", vec![], false);
+
+    // My request alone is no mutual chat: the peer has not accepted.
+    let event = dm_from(&alice, &phone, &invite, 1_000_000);
+    assert_eq!(quiet(phone.describe(dm_push(&event)).await), Reason::NotForMe);
+
+    phone.app_received(&dm_from(&alice, &phone, &Envelope::control("dm_accept"), 999_999)).await;
+    let call = match phone.describe(dm_push(&event)).await {
+        Outcome::Call(c) => c,
+        other => panic!("expected a call, got {other:?}"),
+    };
+    assert_eq!(call.call_id, id);
+    assert_eq!(call.media, "video");
+    assert_eq!(call.name, "Al");
+    assert_eq!(call.peer_key, alice.public_key().to_hex());
+    assert_eq!(call.created_at, 1_000_000);
+    assert_eq!(call.expires_at, 1_000_000 + messenger_notify::CALL_INVITE_TTL_SECS);
+    assert!(!call.hide_on_lockscreen);
+
+    let restart = dm_from(&alice, &phone, &Envelope::call_invite(id, "audio", "v=0", vec![], true), 1_000_001);
+    assert_eq!(quiet(phone.describe(dm_push(&restart)).await), Reason::NotAMessage);
+    let malformed = dm_from(&alice, &phone, &Envelope::call_invite("short", "audio", "v=0", vec![], false), 1_000_002);
+    assert_eq!(quiet(phone.describe(dm_push(&malformed)).await), Reason::Invalid);
+    let hologram = dm_from(&alice, &phone, &Envelope::call_invite(id, "hologram", "v=0", vec![], false), 1_000_003);
+    assert_eq!(quiet(phone.describe(dm_push(&hologram)).await), Reason::Invalid);
+
+    let stranger = Keys::generate();
+    let event = dm_from(&stranger, &phone, &invite, 1_000_004);
+    assert_eq!(quiet(phone.describe(dm_push(&event)).await), Reason::NotForMe);
+
+    // The JSON the phone reads: the outcome's word and the fields by name.
+    let json = serde_json::to_value(Outcome::Call(call)).unwrap();
+    assert_eq!(json["outcome"], "call");
+    assert_eq!(json["call_id"], id);
+    assert_eq!(json["expires_at"], 1_000_045);
+}
+
+/// The life of an invitation is the core's word (`messenger_calls`), which
+/// this crate spells again rather than depend on the core of calls.
+#[test]
+fn the_life_of_an_invitation_is_the_cores() {
+    assert_eq!(messenger_notify::CALL_INVITE_TTL_SECS, messenger_calls::INVITE_TTL_SECS);
+}
+
+/// A contact whose clock is ahead sends an invitation from the future: it
+/// is good for its life from now, as the app judges it, and not for as
+/// long as the limit of a ringing would let a push ring.
+#[tokio::test]
+async fn an_invitation_from_a_clock_ahead_rings_for_its_life_from_now() {
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+    phone.app_received(&dm_from(&alice, &phone, &Envelope::control("dm_accept"), 999_999)).await;
+    let id = "0123456789abcdef0123456789abcdef";
+    let before = SystemClock.now().secs();
+    let event = dm_from(&alice, &phone, &Envelope::call_invite(id, "audio", "v=0", vec![], false), before + 600);
+    let Outcome::Call(call) = phone.describe(dm_push(&event)).await else { panic!("a call") };
+    let after = SystemClock.now().secs();
+    assert!((before..=after).contains(&call.created_at), "{} is not now", call.created_at);
+    assert_eq!(call.expires_at, call.created_at + messenger_notify::CALL_INVITE_TTL_SECS);
+}
+
+/// "Only that something came" says nothing of a message, and a message
+/// is not even opened; a call must still ring, as it does on a computer
+/// and in the running app, so the push the server marked as a call is
+/// opened and rings with no name and no picture. The mark is anyone's to
+/// put on a wrap: a stranger's "call", or a message so marked, still
+/// says only that something came or nothing, as before.
+#[tokio::test]
+async fn under_no_content_a_call_rings_nameless_and_a_message_says_nothing() {
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+    phone.app_received(&dm_from(&alice, &phone, &Envelope::control("dm_accept"), 999_999)).await;
+    Settings { content: Content::None, lockscreen_hidden: true }.save(&phone.store).await.unwrap();
+    let id = "0123456789abcdef0123456789abcdef";
+    let invite = Envelope::call_invite(id, "video", "v=0", vec![], false);
+    let marked = |event: &serde_json::Value| push_with(&[("type", "dm"), ("event", &event.to_string()), ("call", "1")]);
+
+    let event = dm_from(&alice, &phone, &invite, 1_000_000);
+    let Outcome::Call(call) = phone.describe(marked(&event)).await else { panic!("a call") };
+    assert_eq!(call.call_id, id);
+    assert_eq!(call.media, "video");
+    assert_eq!(call.name, "", "no content: nobody is named");
+    assert!(call.picture.is_none());
+    assert!(call.hide_on_lockscreen);
+
+    // The same invitation in a push the server did not mark: not opened.
+    let p = plain(phone.describe(dm_push(&event)).await);
+    assert_eq!(p.kind, ChatKind::Dm);
+    // A message in a push marked as a call: opened, found not to be one.
+    let text = dm_from(&alice, &phone, &Envelope::text("secret"), 1_000_001);
+    assert!(plain(phone.describe(marked(&text)).await).chat.is_none());
+    // A stranger's call: as in the app, nothing.
+    let stranger = Keys::generate();
+    let event = dm_from(&stranger, &phone, &invite, 1_000_002);
+    assert_eq!(quiet(phone.describe(marked(&event)).await), Reason::NotForMe);
 }

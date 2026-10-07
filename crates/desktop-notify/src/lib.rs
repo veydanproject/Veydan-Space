@@ -1,8 +1,9 @@
 //! Notifications of the desktop systems.
 //!
-//! One notification per `key` (a chat): showing a key again replaces what
-//! is on the screen, clearing a key takes it away, a click hands the key
-//! back. Knows nothing about the messenger: the caller words the text.
+//! One notification per `key` (a chat, a call): showing a key again
+//! replaces what is on the screen, clearing a key takes it away, a click
+//! hands the key back, a button the key and the button's id. Knows nothing
+//! about the messenger: the caller words the text.
 //!
 //! - Linux: `org.freedesktop.Notifications` over D-Bus.
 //! - Windows: WinRT toasts under the app's AppUserModelID, registered for
@@ -43,8 +44,37 @@ pub struct AppInfo {
     pub icon_file: Option<PathBuf>,
 }
 
-/// One notification.
+/// What a notification is about. The systems treat a call apart: it stays
+/// on the screen until it is answered or taken away, and it rings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Kind {
+    #[default]
+    Message,
+    /// A call that rings now. Linux: urgency critical, category
+    /// `call.incoming`, no timeout; Windows: the `incomingCall` scenario
+    /// with a looping ring; macOS: a category with the buttons.
+    Call,
+}
+
+/// A button of a notification.
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Action {
+    /// What a press hands back. Not empty and not `default`: Linux keeps
+    /// that for a click on the notification itself, Windows hands back an
+    /// empty one for it.
+    pub id: String,
+    /// What the button says.
+    pub label: String,
+}
+
+impl Action {
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self { id: id.into(), label: label.into() }
+    }
+}
+
+/// One notification.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Toast {
     /// What it is about; the same key replaces, a click returns it.
     pub key: String,
@@ -55,9 +85,57 @@ pub struct Toast {
     pub image: Option<PathBuf>,
     /// No sound.
     pub silent: bool,
+    pub kind: Kind,
+    /// Buttons, in order. A system that shows none (a Linux server without
+    /// `actions`) shows the notification without them.
+    pub actions: Vec<Action>,
 }
 
+/// A click on a notification: its key.
 pub type OnClick = Arc<dyn Fn(String) + Send + Sync>;
+/// A press on a button: the notification's key and the button's id. The
+/// notification is taken away by then.
+pub type OnAction = Arc<dyn Fn(String, String) + Send + Sync>;
+
+/// What the notifier hands back, from a thread or a task of its own.
+#[derive(Clone)]
+pub struct Handlers {
+    pub on_click: OnClick,
+    pub on_action: OnAction,
+}
+
+impl Handlers {
+    /// Clicks only: a press on a button is dropped.
+    pub fn clicks(on_click: OnClick) -> Self {
+        Self { on_click, on_action: Arc::new(|_, _| {}) }
+    }
+}
+
+/// What a press on a notification of the system means, as each backend
+/// tells it: the id it hands back, `default` (Linux) or empty (Windows)
+/// for the notification itself.
+#[cfg_attr(not(any(target_os = "linux", windows, target_os = "macos")), allow(dead_code))]
+pub(crate) enum Press {
+    Click(String),
+    Action(String, String),
+}
+
+impl Press {
+    pub(crate) fn of(key: String, id: &str) -> Self {
+        if id.is_empty() || id == "default" {
+            Self::Click(key)
+        } else {
+            Self::Action(key, id.to_string())
+        }
+    }
+
+    pub(crate) fn deliver(self, handlers: &Handlers) {
+        match self {
+            Self::Click(key) => (handlers.on_click)(key),
+            Self::Action(key, id) => (handlers.on_action)(key, id),
+        }
+    }
+}
 
 pub(crate) enum Command {
     Show(Toast),
@@ -76,35 +154,35 @@ pub struct Notifier {
 
 impl Notifier {
     /// Starts the notifier on the current tokio runtime.
-    pub fn start(app: AppInfo, on_click: OnClick) -> Self {
-        Self::spawn(app, on_click, None)
+    pub fn start(app: AppInfo, handlers: Handlers) -> Self {
+        Self::spawn(app, handlers, None)
     }
 
     /// Linux, tests: the notification server on a bus of its own.
     #[doc(hidden)]
     #[cfg(target_os = "linux")]
-    pub fn start_on_bus(app: AppInfo, on_click: OnClick, address: String) -> Self {
-        Self::spawn(app, on_click, Some(address))
+    pub fn start_on_bus(app: AppInfo, handlers: Handlers, address: String) -> Self {
+        Self::spawn(app, handlers, Some(address))
     }
 
-    fn spawn(app: AppInfo, on_click: OnClick, bus: Option<String>) -> Self {
+    fn spawn(app: AppInfo, handlers: Handlers, bus: Option<String>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         let (up, available) = watch::channel(false);
         #[cfg(target_os = "linux")]
-        tokio::spawn(linux::run(app, rx, up, on_click, bus));
+        tokio::spawn(linux::run(app, rx, up, handlers, bus));
         #[cfg(target_os = "macos")]
         {
             let _ = bus;
-            mac::start(app, rx, up, on_click);
+            mac::start(app, rx, up, handlers);
         }
         #[cfg(windows)]
         {
             let _ = bus;
-            win::start(app, rx, up, on_click);
+            win::start(app, rx, up, handlers);
         }
         #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
         {
-            let _ = (app, on_click, up, bus);
+            let _ = (app, handlers, up, bus);
             tokio::spawn(drain(rx));
         }
         Self { tx, available }
@@ -172,8 +250,8 @@ pub(crate) fn escape(text: &str) -> String {
 }
 
 /// A short, stable name for a key where the system limits its length
-/// (Windows: a toast's tag, at most 64 characters). FNV-1a, 64 bits.
-#[cfg_attr(not(windows), allow(dead_code))]
+/// (Windows: a toast's tag, at most 64 characters; macOS: a category). FNV-1a, 64 bits.
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 pub(crate) fn short_tag(key: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in key.bytes() {
@@ -212,6 +290,23 @@ mod tests {
     fn escapes_markup() {
         assert_eq!(escape("a<b>&c"), "a&lt;b&gt;&amp;c");
         assert_eq!(escape("привет"), "привет");
+    }
+
+    #[test]
+    fn a_press_goes_to_the_click_or_to_the_button() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (clicks, actions) = (seen.clone(), seen.clone());
+        let handlers = Handlers {
+            on_click: Arc::new(move |key| clicks.lock().unwrap().push(format!("click {key}"))),
+            on_action: Arc::new(move |key, id| actions.lock().unwrap().push(format!("{id} {key}"))),
+        };
+        Press::of("call:1".into(), "default").deliver(&handlers);
+        Press::of("call:1".into(), "").deliver(&handlers);
+        Press::of("call:1".into(), "answer").deliver(&handlers);
+        Press::of("call:2".into(), "decline").deliver(&handlers);
+        assert_eq!(*seen.lock().unwrap(), ["click call:1", "click call:1", "answer call:1", "decline call:2"]);
+        // Clicks only: a button goes nowhere.
+        Press::of("k".into(), "answer").deliver(&Handlers::clicks(Arc::new(|_| panic!("not a click"))));
     }
 
     #[test]
