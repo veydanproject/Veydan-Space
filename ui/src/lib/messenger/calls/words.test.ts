@@ -29,7 +29,11 @@ describe('the clock of a call', () => {
     const words = duration(754, 'en');
     if ('DurationFormat' in Intl) expect(words).toMatch(/12.*34/);
     else expect(words).toBe('12:34');
-    expect(duration(3 * 3600 + 120 + 5, 'en')).not.toMatch(/5/);
+    // With hours, the words drop the seconds; the clock (no DurationFormat, as on
+    // the CI's Node) keeps them.
+    const long = duration(3 * 3600 + 120 + 5, 'en');
+    if ('DurationFormat' in Intl) expect(long).not.toMatch(/5/);
+    else expect(long).toBe('3:02:05');
   });
 
   it('runs from the answer only', () => {
