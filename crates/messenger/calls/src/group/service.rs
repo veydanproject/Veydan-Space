@@ -980,7 +980,7 @@ impl GroupCallService {
             call_id: call_id.clone(),
             room_id: created.room_id.clone(),
             node: node.node.clone(),
-            key: node.access_key.clone(),
+            key: inner.shared_key_for(group_id, &node).await,
             join_token: created.join_token,
             secret,
             media,
@@ -1389,8 +1389,7 @@ impl Inner {
     /// servers; nodes judged gone lately left out.
     async fn candidates(&self, group_id: &str, bad: &HashMap<BridgeId, Instant>) -> Vec<CallNode> {
         let mut out: Vec<CallNode> = Vec::new();
-        if let Ok(Some(mut pinned)) = self.groups.pinned_node(group_id).await {
-            pinned.class = NodeClass::Group;
+        if let Some(pinned) = self.pinned(group_id).await {
             out.push(pinned);
         }
         for n in self.servers.call_nodes().await.unwrap_or_default() {
@@ -1402,18 +1401,96 @@ impl Inner {
         out
     }
 
+    /// The node pinned to the group (class `Group`), as the candidates
+    /// carry it: with the group's key when the group has one, else with
+    /// the credentials of this device when the node invited me. Where an
+    /// access is asked for (`sfu_node`, `plan_join`), my own credentials
+    /// are tried first and the group's key after them
+    /// (`access_mine_first`): the node tells my device apart, and a
+    /// device revoked there does not shut the group's own key out. What
+    /// the members are told is the group's key (`shared_key_for`),
+    /// whichever I use.
+    async fn pinned(&self, group_id: &str) -> Option<CallNode> {
+        let mut pinned = self.groups.pinned_node(group_id).await.ok()??;
+        pinned.class = NodeClass::Group;
+        if pinned.access_key.as_deref().is_none_or(str::is_empty) {
+            pinned.access_key = None;
+            if let Some(mine) = self.my_device_on(&pinned).await {
+                pinned.access_key = mine.access_key;
+            }
+        }
+        Some(pinned)
+    }
+
+    /// `node` with the credentials of this device, when the node invited
+    /// me (`call.devices`): the same node and class, my own key. `None`
+    /// when it did not, or the credentials cannot be read now.
+    async fn my_device_on(&self, node: &CallNode) -> Option<CallNode> {
+        let mine = self.servers.call_nodes().await.unwrap_or_default().into_iter().find(|n| n.node.id == node.node.id && n.is_device())?;
+        Some(CallNode::with_key(node.node.clone(), node.class, mine.access_key))
+    }
+
+    /// The access to `node` as I get it: with the credentials of this
+    /// device first, when the node invited me and they still hold there,
+    /// else with the key `node` carries (the group's for its pinned node,
+    /// the one a `call.start` told), else as anybody. A node that takes
+    /// neither is told as it is (`authorized` false).
+    async fn access_mine_first(&self, node: &CallNode, now: i64) -> Result<NodeAccess> {
+        if let Some(mine) = self.my_device_on(node).await {
+            if mine.access_key == node.access_key {
+                return self.nodes.access(node, now).await;
+            }
+            let access = self.nodes.access(&mine, now).await?;
+            if access.authorized {
+                return Ok(access);
+            }
+            tracing::info!(node = %node.node.id.short(), with_key = node.access_key.is_some(), "group call: my invitation on the node no longer holds");
+            if node.access_key.is_none() {
+                return Ok(access);
+            }
+        }
+        self.nodes.access(node, now).await
+    }
+
+    /// The key the members are told with a start or a move onto `node`:
+    /// the group's own for the node pinned to it, else the node's shared
+    /// key; never the credentials of this device (a member joins a room
+    /// on a node of mine by its token, without TURN there).
+    async fn shared_key_for(&self, group_id: &str, node: &CallNode) -> Option<String> {
+        if let Ok(Some(pinned)) = self.groups.pinned_node(group_id).await {
+            if pinned.node.id == node.node.id {
+                return pinned.access_key.filter(|k| !k.is_empty());
+            }
+        }
+        node.shared_key()
+    }
+
     /// The node for a room of `group_id`: the one pinned to the group,
-    /// else the first with an SFU from the sets of servers.
+    /// else the first with an SFU from the sets of servers — among them a
+    /// node the group can follow before one that invited only this
+    /// device. On a private node of mine the members have no TURN (they
+    /// enter by the token alone), and a member of 5.1.7 cannot enter at
+    /// all (its client takes the node's 401 for a failure); so such a
+    /// node hosts a room only when the group pinned it, or when nothing
+    /// else with an SFU answers (the level «только свои» with one
+    /// invited node). I still sit through it when I join a room of
+    /// another (`plan_join`).
     async fn sfu_node(&self, group_id: &str, now: i64, bad: &HashMap<BridgeId, Instant>) -> Result<NodeAccess> {
-        if let Some(pinned) = self.groups.pinned_node(group_id).await? {
-            let access = self.nodes.access(&pinned, now).await?;
+        if let Some(pinned) = self.pinned(group_id).await {
+            let access = self.access_mine_first(&pinned, now).await?;
+            if !access.authorized {
+                return Err(MessengerError::Transport("the group's node does not let me in (its key, or my invitation, no longer holds)".into()));
+            }
             if !access.welcome.capabilities.iter().any(|c| c == CAP_SFU) {
                 return Err(MessengerError::Transport("the group's node has no SFU".into()));
             }
             return Ok(access);
         }
-        let nodes = self.candidates(group_id, bad).await;
-        self.nodes.pick_sfu(&nodes, now).await.ok_or_else(|| MessengerError::Transport("no call node with an SFU answered".into()))
+        let (mine_only, shareable): (Vec<CallNode>, Vec<CallNode>) = self.candidates(group_id, bad).await.into_iter().partition(CallNode::is_device);
+        if let Some(access) = self.nodes.pick_sfu(&shareable, now).await {
+            return Ok(access);
+        }
+        self.nodes.pick_sfu(&mine_only, now).await.ok_or_else(|| MessengerError::Transport("no call node with an SFU answered".into()))
     }
 
     /// How to get into the room `room_id` on `home` (cascade.md,
@@ -1424,11 +1501,18 @@ impl Inner {
     /// below all: my own node keeps my address from it) or is nearer by
     /// [`CASCADE_GAIN`] — and the home gives a pass for it. A private
     /// home is joined directly: its key goes to no other node. A home
-    /// without `delegate` (404) is of the wave before: directly.
+    /// that invited me is joined directly too, with the credentials of
+    /// my device (the call carries no key for it, or the group's: mine
+    /// are tried first, as on the pinned node), so that I have its TURN
+    /// there. My invitation no longer holding and no key told, I enter
+    /// as anybody: by the token, without TURN. A home without `delegate`
+    /// (404) is of the wave before: directly.
     async fn plan_join(&self, group_id: &str, home: &CallNode, room_id: &str, join_token: &str, now: i64, bad: &HashMap<BridgeId, Instant>) -> Result<Plan> {
-        if home.access_key.is_some() {
-            let access = self.nodes.access(home, now).await?;
-            return Ok(Plan { home: access, via: None });
+        if home.access_key.is_some() || self.my_device_on(home).await.is_some() {
+            let access = self.access_mine_first(home, now).await?;
+            if home.access_key.is_some() || access.authorized {
+                return Ok(Plan { home: access, via: None });
+            }
         }
         let candidates = self.candidates(group_id, bad).await;
         let home_class = candidates.iter().find(|n| n.node.id == home.node.id).map(|n| n.class);
@@ -2708,7 +2792,7 @@ impl Inner {
                 from_room_id,
                 room_id: created.room_id,
                 node: node.node.clone(),
-                key: node.access_key.clone(),
+                key: inner.shared_key_for(&group_id, &node).await,
                 join_token: created.join_token,
                 expires_at: created.expires_at as i64,
                 seat: from_seat,

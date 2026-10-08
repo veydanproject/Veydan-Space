@@ -2540,3 +2540,247 @@ async fn a_move_that_did_not_work_out_still_owes_the_leave_of_the_dead_room() {
     assert_eq!(leaves[0].fields.get("participant").and_then(serde_json::Value::as_u64), Some(1), "her seat there");
     assert_eq!(alice.count("call.end"), 0, "an empty dead room is no knowledge of the end");
 }
+
+// ─── Private nodes by invitation (wave 6) ──────────────────────────────────
+
+/// A private node I was invited to is mine (class `own`): my rooms go
+/// on it (it being my only node) with the credentials of my device,
+/// which nobody else is told — a member joins my room by its token, the
+/// node not letting them use its TURN. Revoked on the node, the
+/// credentials open nothing: no room of mine goes there, and with the
+/// project's node in my sets the next room goes on it.
+#[tokio::test]
+async fn an_invited_private_node_is_mine_and_its_credentials_stay_with_me() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_private(n1, true, &[]);
+    w.group(&[0, 1]);
+    // The operator invites Alice's phone (`vcall ctl invite`); the app
+    // exchanges the token of the link for the credentials of the device.
+    let token = w.node.invite(n1, 1, 3600);
+    let private = w.node.node(n1, NodeClass::Own).node;
+    let creds = w.node.client().redeem_invite(&private, &token, "Veydan Chat, test", START).await.unwrap();
+    assert_eq!(w.node.devices(n1).len(), 1);
+    assert!(w.node.client().redeem_invite(&private, &token, "again", START).await.unwrap_err().to_string().contains("bad_invite"), "one use");
+    let mine = messenger_calls::CallNode::with_device(NodeClass::Own, &creds);
+    assert!(mine.is_device() && mine.shared_key().is_none());
+    w.with_servers(0, vec![mine.clone()], cascade_timing()).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    assert_eq!(w.node.rooms_on(n1).len(), 1, "the room is on my private node, my only one");
+    assert_eq!(alice.last_state().unwrap().phase, GroupPhase::InRoom);
+    let start = alice.envelopes().into_iter().find_map(|e| match messenger_calls::GroupSignal::parse(&e) {
+        Some(s @ messenger_calls::GroupSignal::Start { .. }) => Some(s),
+        _ => None,
+    });
+    let messenger_calls::GroupSignal::Start { key, node, .. } = start.unwrap() else { unreachable!() };
+    assert_eq!(node, private, "the group is told the node");
+    assert_eq!(key, None, "and nothing of my credentials");
+
+    // Bob has nothing for the node: he still gets in by the token.
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(bob.last_state().unwrap().phase, GroupPhase::InRoom);
+    assert!(bob.errors().is_empty(), "{:?}", bob.errors());
+    alice.calls.leave().await.unwrap();
+    bob.calls.leave().await.unwrap();
+    w.settle().await;
+
+    // Revoked (`vcall ctl revoke`): a fresh core of Alice's finds the
+    // node there but closed to her: no room on it, and the next room
+    // elsewhere when there is an elsewhere.
+    assert!(w.node.revoke(n1, &creds.device_id));
+    assert!(w.node.devices(n1).is_empty());
+    w.with_servers(0, vec![mine.clone()], cascade_timing()).await;
+    let made_before = w.node.created_on().len();
+    let err = w.p(0).calls.start(GROUP, Media::Audio).await.unwrap_err();
+    assert!(err.to_string().contains("no call node with an SFU answered"), "{err}");
+    assert_eq!(w.node.created_on().len(), made_before, "nothing was made on the node that shut me out");
+    w.with_servers(0, vec![mine, w.node.as_call_node()], cascade_timing()).await;
+    let alice = w.p(0).clone();
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    let made = w.node.created_on();
+    assert_eq!(made.len(), made_before + 1);
+    assert_eq!(made.last().unwrap(), &w.node.reference().to_string(), "the room went on the project's node, not the private one");
+    assert_eq!(alice.last_state().unwrap().phase, GroupPhase::InRoom);
+}
+
+/// The node pinned to a group with the group's key, on which I was also
+/// invited: my own requests go with my credentials, the group is still
+/// told the group's key, and a member without an invitation uses it.
+#[tokio::test]
+async fn the_node_pinned_to_a_group_takes_the_group_key_and_my_device_alike() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_private(n1, true, &["gk"]);
+    w.group(&[0, 1]);
+    let private = w.node.node(n1, NodeClass::Own).node;
+    for i in [0, 1] {
+        w.p(i).groups.pin(GROUP, messenger_calls::CallNode::with_key(private.clone(), NodeClass::Group, Some("gk".into())));
+    }
+    let token = w.node.invite(n1, 1, 3600);
+    let creds = w.node.client().redeem_invite(&private, &token, "Veydan Chat, test", START).await.unwrap();
+    w.with_servers(0, vec![messenger_calls::CallNode::with_device(NodeClass::Own, &creds)], cascade_timing()).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    assert_eq!(w.node.rooms_on(n1).len(), 1);
+    let start = alice.envelopes().into_iter().find_map(|e| match messenger_calls::GroupSignal::parse(&e) {
+        Some(s @ messenger_calls::GroupSignal::Start { .. }) => Some(s),
+        _ => None,
+    });
+    let messenger_calls::GroupSignal::Start { key, .. } = start.unwrap() else { unreachable!() };
+    assert_eq!(key.as_deref(), Some("gk"), "the group's key, not my credentials");
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(bob.last_state().unwrap().phase, GroupPhase::InRoom);
+    for p in [&alice, &bob] {
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+
+    // My device revoked on the node (`vcall ctl revoke`), the group's key
+    // still good: the pinned node takes the group's key after my
+    // credentials, and my calls go on there as everybody's.
+    alice.calls.leave().await.unwrap();
+    bob.calls.leave().await.unwrap();
+    w.settle().await;
+    assert!(w.node.revoke(n1, &creds.device_id));
+    w.with_servers(0, vec![messenger_calls::CallNode::with_device(NodeClass::Own, &creds)], cascade_timing()).await;
+    let alice = w.p(0).clone();
+    let made_before = w.node.created_on().len();
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    assert_eq!(w.node.created_on().len(), made_before + 1);
+    assert_eq!(w.node.created_on().last().unwrap(), &private.to_string(), "on the pinned node, by the group's key");
+    assert_eq!(alice.last_state().unwrap().phase, GroupPhase::InRoom);
+    assert!(alice.errors().is_empty(), "{:?}", alice.errors());
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(bob.last_state().unwrap().phase, GroupPhase::InRoom);
+    alice.calls.leave().await.unwrap();
+    bob.calls.leave().await.unwrap();
+    w.settle().await;
+
+    // The group's key withdrawn on the node too: the pinned node lets me
+    // in no more, and a start says so.
+    w.node.set_private(n1, true, &[]);
+    w.with_servers(0, vec![messenger_calls::CallNode::with_device(NodeClass::Own, &creds)], cascade_timing()).await;
+    let err = w.p(0).calls.start(GROUP, Media::Audio).await.unwrap_err();
+    assert!(err.to_string().contains("does not let me in"), "{err}");
+}
+
+/// Whether the session `id` of the fake engine was given a TURN server.
+fn session_has_turn(w: &World, id: u32) -> bool {
+    w.engine.sessions().into_iter().find(|h| h.id() == id).is_some_and(|h| h.record().ice_servers.iter().any(|s| s.urls.iter().any(|u| u.starts_with("turn"))))
+}
+
+/// The session of a party's own seat in the room `room_id`.
+fn my_session(w: &World, p: &Party, room_id: &str) -> u32 {
+    let seat = p.last_state().unwrap().participant.expect("a seat");
+    session_of_seat(w, room_id, seat)
+}
+
+/// A family's private node invited all of us. The room is on it with no
+/// key told (my credentials go to nobody); a member enters it with their
+/// own credentials and has its TURN, as on a pinned node. A member whose
+/// device the operator revoked since still enters by the token, as
+/// anybody, without TURN.
+#[tokio::test]
+async fn a_member_invited_to_the_node_of_the_room_enters_with_their_own_credentials() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_private(n1, true, &[]);
+    w.group(&[0, 1, 2]);
+    let private = w.node.node(n1, NodeClass::Own).node;
+    let mut creds = vec![];
+    for i in [0, 1, 2] {
+        let token = w.node.invite(n1, 1, 3600);
+        let c = w.node.client().redeem_invite(&private, &token, "Veydan Chat, test", START).await.unwrap();
+        w.with_servers(i, vec![messenger_calls::CallNode::with_device(NodeClass::Own, &c)], cascade_timing()).await;
+        creds.push(c);
+    }
+    // Carol's device was revoked before the call (`vcall ctl revoke`).
+    assert!(w.node.revoke(n1, &creds[2].device_id));
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    assert_eq!(w.node.rooms_on(n1).len(), 1, "the invited node is the only one: the room is on it");
+    let room = w.node.rooms_on(n1)[0].clone();
+    let start = alice.envelopes().into_iter().find(|e| e.t == "call.start").unwrap();
+    assert_eq!(start.str_field("key"), None, "nothing of my credentials is told");
+    assert!(session_has_turn(&w, my_session(&w, &alice, &room)), "the starter has the TURN of her node");
+
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let bv = bob.last_state().unwrap();
+    assert_eq!(bv.phase, GroupPhase::InRoom);
+    assert_eq!((bv.node.as_str(), bv.home.as_str()), (private.to_string().as_str(), private.to_string().as_str()), "directly on the home");
+    assert!(session_has_turn(&w, my_session(&w, &bob, &room)), "bob's own credentials opened the node's TURN for him");
+    assert!(bob.errors().is_empty(), "{:?}", bob.errors());
+    assert_eq!(w.node.delegated(), Vec::<(String, String)>::new(), "no pass was asked: his own node is the home");
+
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let cv = carol.last_state().unwrap();
+    assert_eq!(cv.phase, GroupPhase::InRoom);
+    assert_eq!(cv.node, private.to_string());
+    assert!(!session_has_turn(&w, my_session(&w, &carol, &room)), "no credentials of hers hold there: in by the token, no TURN");
+    assert!(carol.errors().is_empty(), "{:?}", carol.errors());
+    assert_eq!(alice.last_state().unwrap().participants.len(), 3, "alice sees both");
+}
+
+/// A room goes where the group can follow: on a node whose access the
+/// members can be told (the project's), before a private node that
+/// invited only this device — there the members would have no TURN,
+/// and a member of 5.1.7 could not enter at all. The invited node hosts
+/// a room when nothing else with an SFU answers.
+#[tokio::test]
+async fn a_room_goes_where_the_group_can_follow_before_my_invited_node() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_private(n1, true, &[]);
+    // The invited node is the nearer: nearness does not make it the host.
+    w.node.set_rtt(0, 80);
+    w.node.set_rtt(n1, 10);
+    w.group(&[0, 1]);
+    let private = w.node.node(n1, NodeClass::Own).node;
+    let token = w.node.invite(n1, 1, 3600);
+    let creds = w.node.client().redeem_invite(&private, &token, "Veydan Chat, test", START).await.unwrap();
+    let mine = messenger_calls::CallNode::with_device(NodeClass::Own, &creds);
+    w.with_servers(0, vec![mine.clone(), w.node.as_call_node()], cascade_timing()).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    assert_eq!(w.node.rooms_on(n1), Vec::<String>::new(), "no room on the node only I can use");
+    assert_eq!(w.node.rooms_on(0).len(), 1, "the room is on the project's node");
+    let room = w.node.rooms_on(0)[0].clone();
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(bob.last_state().unwrap().phase, GroupPhase::InRoom);
+    assert!(session_has_turn(&w, my_session(&w, &bob, &room)), "a member has the TURN of the project's node");
+    assert!(bob.errors().is_empty(), "{:?}", bob.errors());
+    bob.calls.leave().await.unwrap();
+    w.wait(SWITCH * 3).await;
+    alice.calls.leave().await.unwrap();
+    w.settle().await;
+    assert!(alice.calls.announced(GROUP).await.is_none(), "the last one out ended it");
+
+    // The project's node gone (a fresh core of Alice's, so that nothing
+    // of it is in the cache of credentials): the invited node is the
+    // last resort.
+    w.node.kill(0);
+    w.with_servers(0, vec![mine, w.node.as_call_node()], cascade_timing()).await;
+    let alice = w.p(0).clone();
+    let made_before = w.node.created_on().len();
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    assert_eq!(w.node.created_on().len(), made_before + 1);
+    assert_eq!(w.node.created_on().last().unwrap(), &private.to_string(), "the room went on my invited node");
+    assert_eq!(alice.last_state().unwrap().phase, GroupPhase::InRoom);
+}

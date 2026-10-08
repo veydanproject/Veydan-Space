@@ -134,7 +134,8 @@ reference: string,
  */
 id: string, 
 /**
- * Whose it is: `own` (the setting), `project` (the manifest).
+ * Whose it is: `own` (invited, or the setting), `project` (the
+ * manifest), `volunteer` (the registry, or so named by the manifest).
  */
 class: string, 
 /**
@@ -177,6 +178,102 @@ video_quality: VideoQuality,
  * nothing goes on record on this device.
  */
 incoming_enabled: boolean, };
+
+/** Which nodes calls may use: any (mine, the project's, volunteers'), the project's and mine, mine only. */
+export type CallTrust = "any" | "project_and_own" | "own_only";
+
+/** Whose a call node is: mine, a group's, the cloud of a subscription, the project's, a volunteer's. */
+export type CallNodeClass = "own" | "group" | "cloud" | "project" | "volunteer";
+
+/** Where a call node of the list came from: an invitation of this device, my own list, the cloud, the manifest, the registry. */
+export type CallNodeSource = "device" | "setting" | "cloud" | "manifest" | "registry";
+
+/** How a call node is, as far as this device knows: working, at its limits, not letting me in, not reached by the last probe, never asked. */
+export type CallNodeHealth = "active" | "degraded" | "refused" | "unreachable" | "unknown";
+
+/** One call node of the settings: whose, from where, how near and how full, whether a call may use it now. */
+export type CallNodeInfo = { 
+/**
+ * `address:port#id`.
+ */
+reference: string, 
+/**
+ * 64 hex: what TLS to its control channel is pinned to.
+ */
+id: string, 
+/**
+ * `address:port` of its control channel.
+ */
+addr: string, class: CallNodeClass, source: CallNodeSource, 
+/**
+ * Mine (invited, or in my own list): only mine can be removed.
+ */
+mine: boolean, 
+/**
+ * A key or the credentials of this device are kept for it.
+ */
+has_key: boolean, 
+/**
+ * The label of its invitation, else what this device called itself
+ * when invited.
+ */
+label?: string, 
+/**
+ * The region the node names for itself in the registry (`eu`); the
+ * registry knows no country.
+ */
+region?: string, 
+/**
+ * What it can do: the node's word when it was spoken to, the
+ * registry's otherwise (`sfu`, `cascade`, `turn-tls`…).
+ */
+caps: Array<string>, 
+/**
+ * The round trip of the last answer.
+ */
+rtt_ms?: number, 
+/**
+ * How full, percent: the node's own word when it was spoken to
+ * lately, the registry's otherwise.
+ */
+load?: number, health: CallNodeHealth, 
+/**
+ * Private (only for those with a key or an invitation), by its word.
+ */
+private?: boolean, version?: string, 
+/**
+ * A call may use it now: the trust level lets it, and it is in the
+ * sets (the credentials of an invited node are readable, a degraded
+ * node of the registry only while it lists no active one).
+ */
+used: boolean, 
+/**
+ * When this device was invited, unix seconds.
+ */
+added_at?: number, };
+
+/** The call nodes and the trust level, as the `messenger_call_nodes_*` commands answer. */
+export type CallNodesView = { trust: CallTrust, 
+/**
+ * Mine first, then the cloud's, the manifest's, the registry's: the
+ * order in which a call tries them.
+ */
+nodes: Array<CallNodeInfo>, 
+/**
+ * This build asks a registry for volunteers' nodes.
+ */
+registry: boolean, 
+/**
+ * When the registry last answered, unix seconds.
+ */
+registry_checked_at: number | null, 
+/**
+ * The registry is not asked now, whatever the trust level: the
+ * project's servers are not in use (own ones, or none chosen yet),
+ * or the silent mode is on. The list kept from before is still
+ * shown and used under `any`.
+ */
+registry_paused: boolean, };
 
 /** Where I am with the room of a group call: making it, joining it, in it, restoring the way to the node, out of it. */
 export type GroupCallPhase = "starting" | "joining" | "in_room" | "reconnecting" | "left";

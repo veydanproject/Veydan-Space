@@ -32,6 +32,10 @@
 //! messenger-cli [--data-dir DIR] push-status | push-test | push-off
 //! messenger-cli [--data-dir DIR] servers [veydan|own|refresh]
 //! messenger-cli [--data-dir DIR] net [off|on|auto|check|add <address:port#id>|remove <id>]
+//! messenger-cli [--data-dir DIR] nodes [refresh] [--probe]          (the call nodes: class, source, used, state, round trip, load)
+//! messenger-cli [--data-dir DIR] node-add <veydan://call-node/…|address:port#id> [--key K]   (an invitation is exchanged at the node)
+//! messenger-cli [--data-dir DIR] node-rm <id>
+//! messenger-cli [--data-dir DIR] trust [any|project_and_own|own_only]  (which nodes calls may use)
 //! messenger-cli [--data-dir DIR] call <npub|hex> [--video] [--relay-only] [--node <address:port#id>[,…]] [--audio-in tone[:HZ]|<file.wav>] [--audio-out <file.wav>] [--secs N]
 //!   (--video: a video call; this side sends a moving test pattern of 640×360 at 30 fps whenever its video is on, and
 //!    prints the size and the rate of what the far end sends; `video on`, `video off` and `camera` on stdin as well)
@@ -77,7 +81,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -175,6 +179,35 @@ async fn main() {
             Some("add") if args.len() == 2 => print_net(&rt.net_bridge_add(&args[1]).await.unwrap_or_else(die)),
             Some("remove") if args.len() == 2 => print_net(&rt.net_bridge_remove(&args[1]).await.unwrap_or_else(die)),
             _ => usage(),
+        },
+        "nodes" => {
+            let probe = take_switch(&mut args, "--probe");
+            let view = match args.first().map(String::as_str) {
+                None => rt.call_nodes_list(probe).await.unwrap_or_else(die),
+                Some("refresh") => {
+                    rt.call_nodes_refresh().await.unwrap_or_else(die);
+                    rt.call_nodes_list(probe).await.unwrap_or_else(die)
+                }
+                _ => usage(),
+            };
+            print_call_nodes(&view);
+        }
+        "node-add" => {
+            let Some(text) = args.first() else { usage() };
+            let name = format!("messenger-cli, {}", std::env::consts::OS);
+            let view = rt.call_node_add(text, api_key.clone(), &name).await.unwrap_or_else(die);
+            print_call_nodes(&view);
+        }
+        "node-rm" => {
+            let Some(id) = args.first() else { usage() };
+            print_call_nodes(&rt.call_node_remove(id).await.unwrap_or_else(die));
+        }
+        "trust" => match args.first().map(String::as_str) {
+            None => print_call_nodes(&rt.call_nodes_list(false).await.unwrap_or_else(die)),
+            Some(word) => {
+                let Some(level) = messenger_runtime::CallTrust::parse(word) else { usage() };
+                print_call_nodes(&rt.call_nodes_set_trust(level).await.unwrap_or_else(die));
+            }
         },
         "keygen" => {
             let pw = password.unwrap_or_else(|| "cli-dev-password".into());
@@ -1278,6 +1311,56 @@ fn write_private(path: &str, content: &str) {
         std::process::exit(1)
     });
 }
+
+/// The call nodes of the settings, one a line, in the order a call tries
+/// them: class, source, whether a call may use it now, its state, round
+/// trip and load, the region the registry names.
+fn print_call_nodes(view: &messenger_runtime::CallNodesView) {
+    println!("trust     {}", view.trust.as_str());
+    match (view.registry, view.registry_checked_at) {
+        (false, _) => println!("registry  none in this build"),
+        (true, Some(at)) => println!("registry  answered at unix {at}"),
+        (true, None) => println!("registry  never answered"),
+    }
+    if view.registry && view.registry_paused {
+        println!("          paused: not the project's servers, or the silent mode");
+    }
+    if view.nodes.is_empty() {
+        println!("nodes     none");
+    }
+    for n in &view.nodes {
+        let mut line = format!(
+            "  {:<9} {:<8} {:<8} {:<11} {:>7} {:>9}  {}",
+            n.class.as_str(),
+            n.source.as_str(),
+            if n.used { "used" } else { "not used" },
+            n.health.as_str(),
+            n.rtt_ms.map(|r| format!("{r} ms")).unwrap_or_else(|| "-".into()),
+            n.load.map(|l| format!("load {l}%")).unwrap_or_else(|| "-".into()),
+            n.reference,
+        );
+        if let Some(region) = &n.region {
+            line += &format!(" region {region}");
+        }
+        if let Some(label) = &n.label {
+            line += &format!(" label {label:?}");
+        }
+        if n.private == Some(true) {
+            line += " private";
+        }
+        if n.has_key {
+            line += " (with a key)";
+        }
+        if let Some(v) = &n.version {
+            line += &format!(" v{v}");
+        }
+        if !n.caps.is_empty() {
+            line += &format!(" caps {}", n.caps.join(","));
+        }
+        println!("{line}");
+    }
+}
+
 
 fn print_net(status: &messenger_runtime::net::NetStatus) {
     println!("mode      {}", status.mode.as_str());

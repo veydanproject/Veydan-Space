@@ -52,8 +52,9 @@ fn link(text: &str) -> Option<Body> {
                 let name = ContactLink::from_uri(&uri).map(|c| c.name).unwrap_or_default();
                 Some(Body::Link { link: LinkKind::Contact, title: preview(&name) })
             }
-            // A bridge has no name to show; the text of the link stands.
-            LinkType::Bridge | LinkType::Unknown(_) => None,
+            // A bridge or a call node has no name to show; the text of
+            // the link stands.
+            LinkType::Bridge | LinkType::CallNode | LinkType::Unknown(_) => None,
         };
     }
     let rest = text.strip_prefix("https://").or_else(|| text.strip_prefix("http://"))?;

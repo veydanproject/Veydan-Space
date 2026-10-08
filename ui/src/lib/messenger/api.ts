@@ -13,10 +13,12 @@ import type { NetCheck, NetMode, NetStatus } from './generated/net';
 export type {
   CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState, CallStats, CallView, CallVia, RelayPolicy,
   CameraInfo, ScreenInfo, VideoInput, VideoQuality, VideoSize, VideoTrack,
+  CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust,
   GroupCallAnnounced, GroupCallEnded, GroupCallLevel, GroupCallPhase, GroupCallState, GroupCallView, GroupParticipant,
 } from './generated/calls';
 import type {
-  CallMedia, CallNodeInput, CallState, CallView, CameraInfo, GroupCallState, GroupCallView, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoTrack,
+  CallMedia, CallNodeInput, CallNodesView, CallState, CallTrust, CallView, CameraInfo, GroupCallState, GroupCallView, RelayPolicy, ScreenInfo, VideoInput,
+  VideoQuality, VideoTrack,
 } from './generated/calls';
 
 /**
@@ -714,6 +716,7 @@ import type { GroupMembership, LinkPreview, LinkView } from './generated/links';
 import type { SharedCounts, SharedSection } from './generated/shared';
 import { inSection } from './content/shared/sections';
 import { demoCallMocks } from './calls/demo';
+import { demoCallNodeMocks, demoNodeIsMine, demoNodeOf } from './net/callNodesDemo';
 
 const demo = !isTauri && demoEnabled() ? buildDemo() : null;
 let mockIdentity: MessengerIdentity | null = demo?.identity ?? null;
@@ -1057,8 +1060,13 @@ function mockInspect(text: string): LinkView {
       is_me: me, is_contact: !!c, blocked: false,
     };
   }
-  const m = /^veydan:\/\/([a-z]+)\/([A-Za-z0-9._~-]+)(?:\?(.*))?$/.exec(link);
+  const m = /^veydan:\/\/([a-z]+(?:-[a-z]+)*)\/([A-Za-z0-9._~-]+)(?:\?(.*))?$/.exec(link);
   if (!m) return { kind: 'invalid', code: link.startsWith('veydan://') ? 'link_bad_id' : 'link_bad_scheme' };
+  if (m[1] === 'call-node') {
+    const node = demoNodeOf(link);
+    if (typeof node === 'string') return { kind: 'invalid', code: 'link_bad_param' };
+    return { kind: 'call_node', link, id: node.id, addr: node.addr, has_token: node.token !== null, added: demoNodeIsMine(node.id, node.token !== null) };
+  }
   if (m[1] === 'vlink') {
     const bridge = mockBridgeOf(link);
     return bridge ? { kind: 'vlink', link, id: bridge.id, addr: bridge.addr, added: mockNet.private.some((b) => b.id === bridge.id) } : { kind: 'invalid', code: 'link_bad_param' };
@@ -1516,6 +1524,8 @@ Object.assign(devMocks, demoCallMocks({
   me: () => mockIdentity?.pubkey ?? '',
   members: (groupId) => mockGroups.find((g) => g.id === groupId && g.membership === 'joined')?.members.map((m) => m.pubkey) ?? [],
 }));
+// The call nodes of the settings: net/callNodesDemo.ts.
+Object.assign(devMocks, demoCallNodeMocks());
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri) {
@@ -1679,6 +1689,27 @@ export const messengerApi = {
     used: (emoji: string) => invoke<void>('messenger_emoji_used', { emoji }),
     /** Most used first. */
     top: (n: number) => invoke<string[]>('messenger_emoji_top', { n }),
+  },
+
+  /**
+   * The call nodes of the settings: every node the sets know, whose it is,
+   * how near and how full, whether a call may use it now, and the trust
+   * level. Refusals are `call_node_*` codes (net/errors.ts words them).
+   */
+  callNodes: {
+    /** With `probe`, the nodes a call may use are asked first: their round trip and state come back. */
+    list: (probe = false) => invoke<CallNodesView>('messenger_call_nodes_list', { probe }),
+    /**
+     * A link `veydan://call-node/…` (its invitation is exchanged at the node
+     * for a key of this device, kept in the vault) or a reference
+     * `address:port#id` with the `key` of a private node.
+     */
+    add: (link: string, key?: string) => invoke<CallNodesView>('messenger_call_nodes_add', { link, key: key?.trim() || null }),
+    /** Forgets a node of mine; its owner is not told. */
+    remove: (id: string) => invoke<CallNodesView>('messenger_call_nodes_remove', { id }),
+    setTrust: (trust: CallTrust) => invoke<CallNodesView>('messenger_call_nodes_set_trust', { trust }),
+    /** Asks the registry of volunteers' nodes now (only under `any`). */
+    refresh: () => invoke<CallNodesView>('messenger_call_nodes_refresh'),
   },
 
   /**

@@ -24,12 +24,15 @@
 //!
 //! # Where the code comes from
 //!
-//! `net.rs` and this file are written here. The client itself is not: it
+//! `net.rs`, `call_list.rs` (the signed list of call nodes a registry
+//! gives, checked by the rules of the lists of bridges) and this file are
+//! written here. The client itself is not: it
 //! is VLink, the bridge system, which lives in this repository in a
 //! workspace of its own (`services/link/`). This crate depends on its crates
 //! `vlink-proto` and `vlink-client` by path and gives them out under the
 //! names below, so that the rest of the messenger knows one crate only.
 
+pub mod call_list;
 pub mod net;
 #[cfg(feature = "testing")]
 pub mod testing;

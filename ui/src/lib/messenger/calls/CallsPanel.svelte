@@ -5,8 +5,8 @@
   The settings of calls: whether calls ring on this device and whether a
   call button asks first; which way a call may take (directly when it
   works, or always through a relay, which keeps my address from the
-  peer), the quality of my video, and the call nodes: the project's, and the developer's own ones
-  (`address:port#id`, with the key of a private node), tried first.
+  peer), the quality of my video. The call nodes and the trust level are in the
+  network settings (net/CallNodesPanel.svelte); a card here leads there.
 
   "Accept calls on this device" is the runtime's (shown once it says it);
   "Ask before calling" is kept in this webview, like the place of the call's window.
@@ -19,14 +19,13 @@
   import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
   import { callErrorText } from './words';
+  import { settingsRequest } from '../pages/settingsTab.svelte';
 
   const POLICIES: RelayPolicy[] = ['auto', 'relay_only'];
   const QUALITIES: VideoQuality[] = ['360p', '720p'];
 
   const tr = (key: string, params?: Record<string, string>) => $t(key as 'msg_title', params);
 
-  let reference = $state('');
-  let key = $state('');
   let refusal = $state('');
 
   onMount(() => {
@@ -36,18 +35,6 @@
   });
 
   const error = $derived(refusal || (callStore.error && !callStore.call ? callErrorText(callStore.error, tr) : ''));
-  const shape = /^[^\s#]+:\d{1,5}#[0-9a-fA-F]{64}$/;
-
-  async function add() {
-    refusal = '';
-    const ref = reference.trim();
-    if (!shape.test(ref)) { refusal = $t('msg_calls_node_invalid'); return; }
-    if (await callStore.addNode(ref, key)) { reference = ''; key = ''; }
-  }
-
-  function short(id: string): string {
-    return `${id.slice(0, 10)}…${id.slice(-4)}`;
-  }
 </script>
 
 <div class="card calls">
@@ -112,37 +99,10 @@
 
 <div class="card calls">
   <div class="card-title"><Icon name="network" size={16} />{$t('msg_calls_nodes_title')}</div>
-  <p class="muted">{$t('msg_calls_nodes_intro')}</p>
-
-  {#if callStore.nodes.length}
-    <ul class="list">
-      {#each callStore.nodes as node (node.reference)}
-        <li class="row">
-          <div class="node">
-            <code title={node.reference}>{node.reference.split('#')[0]}</code>
-            <span class="meta">#{short(node.id)}</span>
-          </div>
-          <span class="spacer"></span>
-          {#if node.has_key}<span class="tag" title={$t('msg_calls_node_key')}><Icon name="key" size={11} /></span>{/if}
-          <span class="tag" class:own={node.class === 'own'}>{$t(node.class === 'own' ? 'msg_calls_node_own' : 'msg_calls_node_project')}</span>
-          {#if node.class === 'own'}
-            <button class="icon-btn danger-soft" disabled={callStore.busy} title={$t('msg_calls_node_remove')} aria-label={$t('msg_calls_node_remove')}
-              onclick={() => { refusal = ''; callStore.removeNode(node.reference); }}><Icon name="trash-2" size={14} /></button>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {:else if callStore.loaded}
-    <p class="hint">{$t('msg_calls_nodes_empty')}</p>
-  {/if}
-
-  <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
-    <input class="ref" type="text" bind:value={reference} placeholder="203.0.113.7:8443#…" spellcheck="false" autocomplete="off" disabled={callStore.busy} aria-label={$t('msg_calls_nodes_title')} />
-    <input class="key" type="password" bind:value={key} placeholder={$t('msg_calls_node_key_placeholder')} autocomplete="off" disabled={callStore.busy} />
-    <button class="btn btn-ghost" type="submit" disabled={callStore.busy || !reference.trim()}>
-      <Icon name="plus" size={14} />{$t('msg_calls_node_add')}
-    </button>
-  </form>
+  <p class="muted">{$t('msg_calls_nodes_moved')}</p>
+  <button class="btn btn-ghost btn-sm open" onclick={() => (settingsRequest.tab = 'network')}>
+    <Icon name="arrow-right" size={12} />{$t('msg_card_open')}
+  </button>
   {#if error}<div class="error-msg">{error}</div>{/if}
 </div>
 
@@ -158,24 +118,5 @@
   /* A phone is narrower than the two choices in one line: each wraps its words instead of the row running off. */
   .seg { align-self: flex-start; max-width: 100%; }
   .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-  .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: 6px 0; border-bottom: 1px solid var(--border); }
-  .row:last-child { border-bottom: none; }
-  .node { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-  .node code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
-  .spacer { flex: 1; }
-  .tag {
-    display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); white-space: nowrap;
-  }
-  .tag.own { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }
-  .add { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-  .add input {
-    min-width: 0; font: inherit; font-size: var(--fs-xs); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
-  }
-  .add .ref { flex: 2 1 220px; font-family: var(--font-mono); }
-  .add .key { flex: 1 1 140px; }
-  .add input:focus { outline: none; border-color: var(--accent-border); }
+  .open { align-self: flex-start; }
 </style>

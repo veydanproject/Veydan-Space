@@ -35,6 +35,26 @@ addr: string,
 /**
  * Already among the bridges added on this device.
  */
+added: boolean, } | { "kind": "call_node", 
+/**
+ * The link as this device writes it, the token with it.
+ */
+link: string, id: string, 
+/**
+ * `address:port` of its control channel.
+ */
+addr: string, 
+/**
+ * The link carries an invitation (a link without one names the
+ * node alone: its key is given by hand).
+ */
+has_token: boolean, 
+/**
+ * Already among the nodes of mine on this device: for a link with
+ * an invitation, only when this device holds its own credentials
+ * on the node (an entry of my own list leaves the invitation to
+ * be exchanged).
+ */
 added: boolean, } | { "kind": "unknown", link_type: string, } | { "kind": "invalid", code: string, };
 
 /** What a page outside says about itself. */

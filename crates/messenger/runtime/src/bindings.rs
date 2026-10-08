@@ -16,6 +16,7 @@ use crate::calls::{
     GroupCallState, GroupCallView, GroupParticipant, ReconnectReason, RelayPolicy, ScreenInfo, VideoInput, VideoQuality,
     VideoSize, VideoTrack,
 };
+use crate::call_nodes::{CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust};
 use crate::cards::{ContactPrivateView, OwnPrivateView};
 use crate::links::{GroupMembership, LinkGroupKind, LinkView};
 use crate::net::{BridgeView, NetCheck, NetMode, NetStatus, Verdict};
@@ -135,6 +136,12 @@ pub fn calls_ts() -> String {
     out += &export::<CallNodeView>(&cfg, "A call node the client may use, as the settings list it.");
     out += &export::<CallNodeInput>(&cfg, "One own node, as `messenger_call_set_nodes` takes it.");
     out += &export::<CallState>(&cfg, "The call under way, the policy and the nodes, as `messenger_call_get_state` answers.");
+    out += &export::<CallTrust>(&cfg, "Which nodes calls may use: any (mine, the project's, volunteers'), the project's and mine, mine only.");
+    out += &export::<CallNodeClass>(&cfg, "Whose a call node is: mine, a group's, the cloud of a subscription, the project's, a volunteer's.");
+    out += &export::<CallNodeSource>(&cfg, "Where a call node of the list came from: an invitation of this device, my own list, the cloud, the manifest, the registry.");
+    out += &export::<CallNodeHealth>(&cfg, "How a call node is, as far as this device knows: working, at its limits, not letting me in, not reached by the last probe, never asked.");
+    out += &export::<CallNodeInfo>(&cfg, "One call node of the settings: whose, from where, how near and how full, whether a call may use it now.");
+    out += &export::<CallNodesView>(&cfg, "The call nodes and the trust level, as the `messenger_call_nodes_*` commands answer.");
     out += &export::<GroupCallPhase>(&cfg, "Where I am with the room of a group call: making it, joining it, in it, restoring the way to the node, out of it.");
     out += &export::<GroupParticipant>(&cfg, "One seat of the room of a group call; only a verified seat is a person and is heard. `video_mid` is what `messenger_group_call_video_subscribe` takes.");
     out += &export::<GroupCallView>(&cfg, "The room of a group call I am in: the `call` of `group_call.state` and the answer of the group call commands.");

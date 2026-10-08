@@ -33,13 +33,20 @@ use async_trait::async_trait;
 use messenger_calls::engine::{ConnectionState, DataPayload, Media, SessionEvent, CTL_LABEL};
 use messenger_calls::group::ctl::{self, Message, Track};
 use messenger_calls::node_client::{
-    Delegated, Joined, Limits, MediaLimits, NodeClient, NodeError, RoomApi, RoomCreated, TurnCredentials, Welcome, CAP_CASCADE, CAP_SFU,
+    Delegated, DeviceIssued, Joined, Limits, MediaLimits, NodeClient, NodeError, NodeLoad, RoomApi, RoomCreated, TurnCredentials, Welcome,
+    CAP_CASCADE, CAP_SFU,
 };
+use messenger_calls::registry::{ListFetch, Registry};
 use messenger_calls::servers::{CallNode, NodeClass, NodeRef};
 use messenger_calls::GroupAccess;
 use messenger_core::outbound::{Scope, WireEvent};
 use messenger_core::{Envelope, EventId, MessengerError, Outbound, PubKey, Result};
+use messenger_store::Store;
+use messenger_vlink::call_list::{self, CallList, ListedNode};
+use messenger_vlink::proto::list::Delegation;
+use messenger_vlink::proto::sign::Signer;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 struct Seat {
@@ -75,6 +82,21 @@ struct FakeRoom {
     passes: Vec<String>,
 }
 
+/// An invitation a private node made (`vcall ctl invite`).
+struct FakeInvite {
+    token: String,
+    uses_left: u32,
+    expires_at: u64,
+}
+
+/// A device a private node issued credentials to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FakeDevice {
+    pub device_id: String,
+    pub secret: String,
+    pub label: String,
+}
+
 /// One of the nodes this fake stands for.
 struct NodeInfo {
     reference: NodeRef,
@@ -89,6 +111,51 @@ struct NodeInfo {
     rtt_ms: u64,
     /// HELLOs answered (the checks of the core).
     hellos: u32,
+    /// `VCALL_PRIVATE=true`: TURN and rooms only with a key it knows or
+    /// the credentials of a device it issued; HELLO and a join by token
+    /// for anybody.
+    private: bool,
+    /// Its shared access keys (`VCALL_ACCESS_KEYS`).
+    keys: Vec<String>,
+    invites: Vec<FakeInvite>,
+    devices: Vec<FakeDevice>,
+    /// What it says of its load in WELCOME; `None` for a node of before.
+    load: Option<NodeLoad>,
+    /// Of a version before invitations: `/v1/invite` is a 404 page.
+    no_invites: bool,
+}
+
+impl NodeInfo {
+    fn new(i: usize) -> Self {
+        Self {
+            reference: reference_of(i),
+            cascade: true,
+            wave4: false,
+            dead: false,
+            silent: false,
+            rtt_ms: 20,
+            hellos: 0,
+            private: false,
+            keys: vec![],
+            invites: vec![],
+            devices: vec![],
+            load: None,
+            no_invites: false,
+        }
+    }
+
+    /// Whether the node takes the access `node` carries: a public node
+    /// takes anybody; a private one a key of its file or the credentials
+    /// of a device it issued and did not revoke.
+    fn lets_in(&self, node: &CallNode) -> bool {
+        if !self.private {
+            return true;
+        }
+        match node.device() {
+            Some((id, secret)) => self.devices.iter().any(|d| d.device_id == id && d.secret == secret),
+            None => node.access_key.as_ref().is_some_and(|k| self.keys.contains(k)),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -148,7 +215,7 @@ fn reference_of(i: usize) -> NodeRef {
 impl FakeNode {
     /// A node whose rooms are joined by the sessions of `engine`.
     pub fn new(engine: FakeEngine) -> Self {
-        let first = NodeInfo { reference: reference_of(0), cascade: true, wave4: false, dead: false, silent: false, rtt_ms: 20, hellos: 0 };
+        let first = NodeInfo::new(0);
         let node = Self {
             state: Arc::new(Mutex::new(NodeState { max_participants: 12, now: 1_760_000_000, nodes: vec![first], ..NodeState::default() })),
             engine: engine.clone(),
@@ -171,8 +238,86 @@ impl FakeNode {
     pub fn add_node(&self) -> usize {
         let mut st = self.state.lock().unwrap();
         let i = st.nodes.len();
-        st.nodes.push(NodeInfo { reference: reference_of(i), cascade: true, wave4: false, dead: false, silent: false, rtt_ms: 20, hellos: 0 });
+        st.nodes.push(NodeInfo::new(i));
         i
+    }
+
+    /// The node `i` is private (`VCALL_PRIVATE=true`): TURN and rooms
+    /// only with one of `keys` or the credentials of a device it
+    /// invited; HELLO and a join by token for anybody.
+    pub fn set_private(&self, i: usize, on: bool, keys: &[&str]) {
+        let mut st = self.state.lock().unwrap();
+        st.nodes[i].private = on;
+        st.nodes[i].keys = keys.iter().map(|k| k.to_string()).collect();
+    }
+
+    /// What the node `i` says of its load in WELCOME.
+    pub fn set_load(&self, i: usize, load: Option<NodeLoad>) {
+        self.state.lock().unwrap().nodes[i].load = load;
+    }
+
+    /// The node `i` is of a version before invitations: `/v1/invite` is
+    /// a 404 page.
+    pub fn set_no_invites(&self, i: usize, on: bool) {
+        self.state.lock().unwrap().nodes[i].no_invites = on;
+    }
+
+    /// `vcall ctl invite` on the node `i`: a token good `uses` times
+    /// within `ttl_secs` of the node's clock. The link is
+    /// `veydan://call-node/<id>?a=<address>&t=<token>`.
+    pub fn invite(&self, i: usize, uses: u32, ttl_secs: u64) -> String {
+        let mut st = self.state.lock().unwrap();
+        st.next += 1;
+        let token = format!("inv-{}", st.next);
+        let expires_at = st.now + ttl_secs;
+        st.nodes[i].invites.push(FakeInvite { token: token.clone(), uses_left: uses, expires_at });
+        token
+    }
+
+    /// `vcall ctl devices` on the node `i`: the devices it issued
+    /// credentials to and did not revoke.
+    pub fn devices(&self, i: usize) -> Vec<FakeDevice> {
+        self.state.lock().unwrap().nodes[i].devices.clone()
+    }
+
+    /// `vcall ctl revoke <device>` on the node `i`: its credentials open
+    /// nothing from now on. `false` when there is no such device.
+    pub fn revoke(&self, i: usize, device_id: &str) -> bool {
+        let mut st = self.state.lock().unwrap();
+        let before = st.nodes[i].devices.len();
+        st.nodes[i].devices.retain(|d| d.device_id != device_id);
+        st.nodes[i].devices.len() != before
+    }
+
+    /// Whether the node of `node` would let it in (its key, the
+    /// credentials of its device); a node this fake does not know is public.
+    fn lets_in(st: &NodeState, node: &CallNode) -> bool {
+        Self::info(st, &node.node).is_none_or(|n| n.lets_in(node))
+    }
+
+    /// The exchange of an invitation at the node of `node`
+    /// (`POST /v1/invite`), as the node would do it.
+    fn redeem(st: &mut NodeState, node: &NodeRef, token: &str, name: &str) -> std::result::Result<DeviceIssued, NodeError> {
+        let now = st.now;
+        st.next += 1;
+        let n = st.next;
+        let Some(info) = st.nodes.iter_mut().find(|i| i.reference.id == node.id) else {
+            return Err(NodeError::Unreachable("fake node: no such node".into()));
+        };
+        if info.dead {
+            return Err(NodeError::Unreachable("fake node: dead".into()));
+        }
+        if info.no_invites {
+            return Err(NodeError::Refused { status: 404, error: "http".into(), message: "status 404".into() });
+        }
+        info.invites.retain(|i| i.uses_left > 0 && i.expires_at > now);
+        let Some(invite) = info.invites.iter_mut().find(|i| i.token == token) else {
+            return Err(refused(403, "bad_invite"));
+        };
+        invite.uses_left -= 1;
+        let device = FakeDevice { device_id: format!("dev{n:04x}"), secret: format!("secret-{n}"), label: name.to_string() };
+        info.devices.push(device.clone());
+        Ok(DeviceIssued { device_id: device.device_id, secret: device.secret, node: info.reference.to_string(), label: String::new() })
     }
 
     /// The node `i` in the sets of servers, of `class`.
@@ -259,18 +404,21 @@ impl FakeNode {
     }
 
     /// A node client whose HELLO every node of this fake answers with its
-    /// capabilities and round trip (an SFU, the cascade unless taken
-    /// away), with credentials of a TURN that is not there: nothing of
-    /// the network is touched. A node this fake does not know answers as
-    /// the first does.
+    /// capabilities, load and round trip (an SFU, the cascade unless
+    /// taken away), with credentials of a TURN that is not there —
+    /// none from a private node that does not let the caller in —
+    /// and whose invitations every node of this fake exchanges: nothing
+    /// of the network is touched. A node this fake does not know answers
+    /// as the first does.
     pub fn client(&self) -> NodeClient {
         let state = self.state.clone();
-        NodeClient::with_fetch(
+        let invites = self.state.clone();
+        NodeClient::with_fakes(
             "test",
             Arc::new(move |node, _| {
                 let state = state.clone();
                 Box::pin(async move {
-                    let (caps, rtt) = {
+                    let (caps, rtt, private, load, let_in) = {
                         let st = state.lock().unwrap();
                         let info = st.nodes.iter().find(|n| n.reference.id == node.node.id);
                         // A silent node answers nothing the cache does not
@@ -283,7 +431,13 @@ impl FakeNode {
                         if info.is_none_or(|n| n.cascade && !n.wave4) {
                             caps.push(CAP_CASCADE.to_string());
                         }
-                        (caps, info.map(|n| n.rtt_ms).unwrap_or(20))
+                        (
+                            caps,
+                            info.map(|n| n.rtt_ms).unwrap_or(20),
+                            info.is_some_and(|n| n.private),
+                            info.and_then(|n| n.load),
+                            Self::lets_in(&st, &node),
+                        )
                     };
                     let welcome = Welcome {
                         protocol_min: 1,
@@ -292,18 +446,30 @@ impl FakeNode {
                         version: "fake".into(),
                         capabilities: caps,
                         codecs: vec!["opus".into(), "vp8".into()],
-                        private: node.access_key.is_some(),
+                        private,
                         limits: Limits { turn_lifetime_secs: 600, turn_kbps_per_allocation: 2000, credentials_ttl_secs: 600 },
+                        load,
                     };
-                    let credentials = TurnCredentials {
-                        username: "1760000600:fake".into(),
-                        password: "pw".into(),
-                        realm: "veydan".into(),
-                        ttl_secs: 600,
-                        expires_at: 1_760_000_600,
-                        urls: vec![format!("turn:{}?transport=udp", node.node.addr)],
+                    let credentials = if let_in {
+                        TurnCredentials {
+                            username: "1760000600:fake".into(),
+                            password: "pw".into(),
+                            realm: "veydan".into(),
+                            ttl_secs: 600,
+                            expires_at: 1_760_000_600,
+                            urls: vec![format!("turn:{}?transport=udp", node.node.addr)],
+                        }
+                    } else {
+                        TurnCredentials::none()
                     };
                     Ok((welcome, credentials, std::time::Duration::from_millis(rtt)))
+                })
+            }),
+            Arc::new(move |node, token, label, _| {
+                let state = invites.clone();
+                Box::pin(async move {
+                    let mut st = state.lock().unwrap();
+                    Self::redeem(&mut st, &node, &token, &label)
                 })
             }),
         )
@@ -615,6 +781,9 @@ impl RoomApi for FakeNode {
         let mut st = self.state.lock().unwrap();
         Self::take_refusal(&mut st)?;
         Self::alive(&st, &node.node)?;
+        if !Self::lets_in(&st, node) {
+            return Err(refused(401, "access_key_required"));
+        }
         st.next += 1;
         let n = st.next;
         let room_id = hex_id(n, 32);
@@ -733,6 +902,9 @@ impl RoomApi for FakeNode {
         if via.node.id == home.id {
             return Err(refused(400, "bad_home"));
         }
+        if !Self::lets_in(&st, via) {
+            return Err(refused(401, "access_key_required"));
+        }
         if !Self::info(&st, &via.node).is_none_or(|n| n.cascade && !n.wave4) {
             return Err(refused(503, "cascade_refused"));
         }
@@ -755,11 +927,14 @@ impl RoomApi for FakeNode {
         let mut st = self.state.lock().unwrap();
         Self::alive(&st, &node.node)?;
         let mut caps = vec![CAP_SFU.to_string()];
+        let (mut private, mut load) = (false, None);
         if let Some(info) = st.nodes.iter_mut().find(|n| n.reference.id == node.node.id) {
             info.hellos += 1;
             if info.cascade && !info.wave4 {
                 caps.push(CAP_CASCADE.to_string());
             }
+            private = info.private;
+            load = info.load;
         }
         Ok(Welcome {
             protocol_min: 1,
@@ -768,8 +943,9 @@ impl RoomApi for FakeNode {
             version: "fake".into(),
             capabilities: caps,
             codecs: vec![],
-            private: false,
+            private,
             limits: Limits::default(),
+            load,
         })
     }
 }
@@ -866,5 +1042,130 @@ impl GroupAccess for FakeGroups {
         let id = EventId::parse(&nostr::key::Keys::generate().public_key().to_hex()).expect("64 hex");
         let json = serde_json::json!({ "group": group_id, "author": self.me.as_hex(), "content": envelope.encode() });
         Ok(Outbound::PublishScoped { scope: Scope::Group { id: group_id.to_string() }, event: WireEvent { id, json } })
+    }
+}
+
+// ─── A registry with no network ────────────────────────────────────────────
+
+struct RegistryState {
+    nodes: Vec<ListedNode>,
+    expires_at: u64,
+    /// Every fetch fails.
+    down: bool,
+}
+
+/// The registry of call nodes (`services/hub`) with no network: a root
+/// and a list key of its own, lists signed as the hub signs them
+/// (`messenger_vlink::call_list`), given to a [`Registry`] through a
+/// fetch that touches nothing. The root is the registry's, not the one
+/// built into the clients: `registry(store)` makes a `Registry` that
+/// trusts it.
+pub struct FakeRegistry {
+    state: Arc<Mutex<RegistryState>>,
+    root_hex: String,
+    list_der: Vec<u8>,
+    delegation: Delegation,
+    asked: Arc<AtomicUsize>,
+}
+
+impl Default for FakeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FakeRegistry {
+    pub fn new() -> Self {
+        let root_der = call_list::generate_pkcs8();
+        let list_der = call_list::generate_pkcs8();
+        let root = Signer::from_pkcs8(&root_der).expect("a fresh key");
+        let delegation = root.delegate(&call_list::public_hex(&list_der).expect("a fresh key"), u64::MAX / 2);
+        let expires_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) + 86_400;
+        Self {
+            state: Arc::new(Mutex::new(RegistryState { nodes: vec![], expires_at, down: false })),
+            root_hex: root.public_hex(),
+            list_der,
+            delegation,
+            asked: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// The root the lists of this registry are signed under.
+    pub fn root_hex(&self) -> String {
+        self.root_hex.clone()
+    }
+
+    /// The nodes the next lists name, in this order (the hub puts the
+    /// least loaded first): each with its region and its load in percent,
+    /// all active.
+    pub fn list(&self, nodes: Vec<(NodeRef, &str, u8)>) {
+        self.state.lock().unwrap().nodes = nodes
+            .into_iter()
+            .map(|(node, region, load)| ListedNode {
+                node,
+                turn_port: 3478,
+                sfu_port: 3479,
+                region: region.to_string(),
+                caps: vec!["stun".into(), "turn".into(), "sfu".into()],
+                class: call_list::CLASS_VOLUNTEER.into(),
+                state: Some(call_list::STATE_ACTIVE.into()),
+                load: f64::from(load) / 100.0,
+            })
+            .collect();
+    }
+
+    /// The next lists name `node` as degraded (its last check failed).
+    pub fn degrade(&self, node: &NodeRef) {
+        let mut st = self.state.lock().unwrap();
+        for n in st.nodes.iter_mut().filter(|n| n.node.id == node.id) {
+            n.state = Some(call_list::STATE_DEGRADED.into());
+        }
+    }
+
+    /// Until when the next lists are good (unix seconds).
+    pub fn expire_lists_at(&self, at: u64) {
+        self.state.lock().unwrap().expires_at = at;
+    }
+
+    /// Every fetch fails from now on (or not).
+    pub fn set_down(&self, on: bool) {
+        self.state.lock().unwrap().down = on;
+    }
+
+    /// How many times the list was fetched.
+    pub fn asked(&self) -> Arc<AtomicUsize> {
+        self.asked.clone()
+    }
+
+    /// The signed list as it would come from the wire, now.
+    pub fn signed(&self) -> String {
+        let st = self.state.lock().unwrap();
+        let list = CallList { v: call_list::VERSION, kind: call_list::KIND.into(), complete: false, issued_at: 0, expires_at: st.expires_at, nodes: st.nodes.clone() };
+        serde_json::to_string(&call_list::sign(&self.list_der, &list, &self.delegation).expect("the list key signs")).expect("plain data")
+    }
+
+    /// A fetch that answers every URL with the signed list of now.
+    pub fn fetch(&self) -> ListFetch {
+        let state = self.state.clone();
+        let asked = self.asked.clone();
+        let (list_der, delegation) = (self.list_der.clone(), self.delegation.clone());
+        Arc::new(move |_url| {
+            let (state, asked, list_der, delegation) = (state.clone(), asked.clone(), list_der.clone(), delegation.clone());
+            Box::pin(async move {
+                asked.fetch_add(1, Ordering::SeqCst);
+                let st = state.lock().unwrap();
+                if st.down {
+                    return Err(MessengerError::Transport("fake registry: down".into()));
+                }
+                let list = CallList { v: call_list::VERSION, kind: call_list::KIND.into(), complete: false, issued_at: 0, expires_at: st.expires_at, nodes: st.nodes.clone() };
+                let signed = call_list::sign(&list_der, &list, &delegation).map_err(|e| MessengerError::Crypto(e.to_string()))?;
+                Ok(serde_json::to_string(&signed)?)
+            })
+        })
+    }
+
+    /// A [`Registry`] over `store` that asks this fake and trusts its root.
+    pub fn registry(&self, store: Store) -> Registry {
+        Registry::with_trust(store, self.fetch(), vec!["https://registry.test/vlink".into()], self.root_hex())
     }
 }

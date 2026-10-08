@@ -25,7 +25,7 @@
 //! client of VLink (scripts/boundaries.sh).
 
 use crate::engine::{IceServer, RelayPolicy};
-use crate::servers::{CallNode, NodeClass, NodeRef};
+use crate::servers::{CallNode, DeviceCredentials, NodeClass, NodeRef};
 use bytes::Bytes;
 use messenger_core::{MessengerError, Result};
 use messenger_vlink::proto::{io as h2io, pin, BridgeId};
@@ -43,6 +43,8 @@ pub const ALPN: &[u8] = b"vcall/1";
 const PATH_HELLO: &str = "/v1/hello";
 const PATH_TURN: &str = "/v1/turn";
 const PATH_ROOMS: &str = "/v1/rooms";
+/// The exchange of an invitation for the credentials of this device.
+const PATH_INVITE: &str = "/v1/invite";
 /// What a node with an SFU says in `capabilities`.
 pub const CAP_SFU: &str = "sfu";
 /// What a node that seats its participants in the rooms of other nodes
@@ -79,10 +81,90 @@ const NODES_PER_CALL: usize = 2;
 
 // ─── The wire of the control channel ───────────────────────────────────────
 
+/// How a private node is asked to let me in: a shared access key, or
+/// the credentials of this device (its id with the secret as `key`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Access {
+    /// A shared access key (`VCALL_ACCESS_KEYS`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+    /// The credentials of this device, as the invitation gave them
+    /// (`redeem_invite`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<DeviceAccess>,
+}
+
+/// The credentials of a device on a private node: the node's name for
+/// it and the secret (the node keeps the secret's hash only).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceAccess {
+    pub id: String,
+    pub secret: String,
+}
+
+impl Access {
+    /// What `node` is asked with: its key as a shared key, or taken
+    /// apart into the device's id and secret.
+    pub fn of(node: &CallNode) -> Self {
+        match node.device() {
+            Some((id, secret)) => Self { key: None, device: Some(DeviceAccess { id: id.to_string(), secret: secret.to_string() }) },
+            None => Self { key: node.access_key.clone(), device: None },
+        }
+    }
+}
+
+/// How busy a node says it is, in WELCOME: the figures of its report to
+/// the registry (services/call/spec/protocol.md, "Регистрация"). A
+/// `max_*` of 0 is "no limit said". Believed for the choice among nodes
+/// and for the screen, nothing else.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeLoad {
+    #[serde(default)]
+    pub allocations: u32,
+    #[serde(default)]
+    pub max_allocations: u32,
+    #[serde(default)]
+    pub participants: u32,
+    #[serde(default)]
+    pub max_participants: u32,
+    #[serde(default)]
+    pub mbps: u32,
+    #[serde(default)]
+    pub max_mbps: u32,
+    #[serde(default)]
+    pub rooms: u32,
+    #[serde(default)]
+    pub max_rooms: u32,
+    #[serde(default)]
+    pub uplinks: u32,
+    #[serde(default)]
+    pub max_uplinks: u32,
+}
+
+impl NodeLoad {
+    fn part(now: u32, max: u32) -> u8 {
+        if max == 0 {
+            0
+        } else {
+            (u64::from(now) * 100 / u64::from(max)).min(100) as u8
+        }
+    }
+
+    /// The fullest of its parts, in percent (0–100), as the registry
+    /// reckons it.
+    pub fn percent(&self) -> u8 {
+        Self::part(self.allocations, self.max_allocations)
+            .max(Self::part(self.participants, self.max_participants))
+            .max(Self::part(self.mbps, self.max_mbps))
+            .max(Self::part(self.rooms, self.max_rooms))
+            .max(Self::part(self.uplinks, self.max_uplinks))
+    }
+
+    /// At one of its own caps: a call there would be refused or starved.
+    /// The caps are the node's; nothing of the client's is in this.
+    pub fn full(&self) -> bool {
+        self.percent() >= 100
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,6 +208,10 @@ pub struct Welcome {
     pub private: bool,
     #[serde(default)]
     pub limits: Limits,
+    /// How busy the node is now; a node of before the volunteers' wave
+    /// says nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load: Option<NodeLoad>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +238,32 @@ pub struct Refusal {
     pub error: String,
     #[serde(default)]
     pub message: String,
+}
+
+/// `POST /v1/invite`: the invitation of a private node (`vcall ctl
+/// invite`, the `t` of `veydan://call-node/…`) exchanged for the
+/// credentials of this device.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InviteRequest {
+    pub token: String,
+    /// What this device calls itself, for the operator's list
+    /// (`vcall ctl devices`): a product and a platform, no name of a person.
+    #[serde(default)]
+    pub name: String,
+}
+
+/// What the node gave for the invitation: the device's id (what the
+/// operator revokes) and its secret, good until the operator revokes it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceIssued {
+    pub device_id: String,
+    pub secret: String,
+    /// The node as it names itself, `address:port#id`.
+    #[serde(default)]
+    pub node: String,
+    /// The label the operator gave the invitation, if any.
+    #[serde(default)]
+    pub label: String,
 }
 
 /// What a node allows a room: the creator may lower the node's limits,
@@ -300,6 +412,13 @@ impl NodeError {
     pub fn is_room_full(&self) -> bool {
         self.status() == Some(409)
     }
+
+    /// The node would not let me in: no key, a wrong one, the device
+    /// revoked (`401 access_key_required`, `403 bad_key`, `403
+    /// device_revoked`). Not a refusal of the request itself.
+    pub fn is_not_let_in(&self) -> bool {
+        matches!(self.status(), Some(401) | Some(403))
+    }
 }
 
 impl std::fmt::Display for NodeError {
@@ -365,10 +484,9 @@ impl HttpRooms {
     }
 
     async fn session(&self, node: &CallNode) -> std::result::Result<(h2::client::SendRequest<Bytes>, Welcome), NodeError> {
-        let send = connect(node).await.map_err(|e| NodeError::Unreachable(e.to_string()))?;
+        let send = connect(&node.node).await.map_err(|e| NodeError::Unreachable(e.to_string()))?;
         let short = node.node.id.short();
-        let access = Access { key: node.access_key.clone() };
-        let welcome: Welcome = post(&send, PATH_HELLO, &hello(access, &self.client_name), short.as_str()).await?;
+        let welcome: Welcome = post(&send, PATH_HELLO, &hello(Access::of(node), &self.client_name), short.as_str()).await?;
         if welcome.node_id != node.node.id.to_string() {
             return Err(NodeError::Unreachable(format!("node {short}: says it is another node")));
         }
@@ -380,7 +498,7 @@ impl HttpRooms {
 impl RoomApi for HttpRooms {
     async fn create(&self, node: &CallNode, limits: MediaLimits) -> std::result::Result<RoomCreated, NodeError> {
         let (send, _) = self.session(node).await?;
-        let request = RoomRequest { access: Access { key: node.access_key.clone() }, media_limits: limits };
+        let request = RoomRequest { access: Access::of(node), media_limits: limits };
         post(&send, PATH_ROOMS, &request, node.node.id.short().as_str()).await
     }
 
@@ -423,7 +541,7 @@ impl RoomApi for HttpRooms {
             token: proxy_token.to_string(),
             sdp_offer: sdp_offer.to_string(),
             caps: vec![],
-            access: via.access_key.as_ref().map(|k| Access { key: Some(k.clone()) }),
+            access: via.access_key.as_ref().map(|_| Access::of(via)),
             home: Some(JoinHome { node: home.to_string() }),
         };
         post_within(&send, &format!("{PATH_ROOMS}/{room_id}/join"), &request, via.node.id.short().as_str(), CASCADE_JOIN_TIMEOUT).await
@@ -477,13 +595,66 @@ pub fn stun_addr(creds: &TurnCredentials) -> Option<SocketAddr> {
 pub struct NodeAccess {
     pub node: CallNode,
     pub welcome: Welcome,
+    /// The TURN credentials; none (no `urls`) when the node would not
+    /// let me in (`authorized` false): a private node I have no key to,
+    /// or whose key it no longer takes. HELLO and a join by token still
+    /// work there; TURN and rooms of my own do not.
     pub credentials: TurnCredentials,
+    /// The node took my access: it gave TURN credentials.
+    pub authorized: bool,
     /// The round trip to the node, as measured when the credentials were
     /// fetched.
     pub rtt: Duration,
     /// Until when the credentials are used, by this device's clock: their
     /// `ttl_secs` from the moment they came, less a margin.
     pub good_until: Instant,
+}
+
+impl NodeAccess {
+    /// How full the node said it was in WELCOME, percent.
+    pub fn load(&self) -> Option<u8> {
+        self.welcome.load.map(|l| l.percent())
+    }
+
+    /// At one of its caps by its own word: taken only when no other
+    /// node of the class answered.
+    pub fn full(&self) -> bool {
+        self.welcome.load.is_some_and(|l| l.full())
+    }
+}
+
+/// A node the client spoke to lately, for the screen: its round trip,
+/// what it said of itself, whether it let me in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnownNode {
+    pub id: String,
+    pub class: NodeClass,
+    pub rtt_ms: u64,
+    pub private: bool,
+    pub authorized: bool,
+    pub version: String,
+    pub capabilities: Vec<String>,
+    /// How full the node said it was, percent; `None` when it says nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load: Option<u8>,
+    /// `active` | `degraded` (at one of its caps by its own word).
+    pub state: String,
+    /// Whether the credentials kept are still good.
+    pub good: bool,
+}
+
+/// The round trip in steps of this: nodes within one step are as near
+/// as each other, and the less loaded of them is preferred.
+const RTT_STEP: Duration = Duration::from_millis(50);
+
+/// The order of the nodes of one class that answered (the rule of the
+/// choice, written once): not full before full; nearer before farther,
+/// by steps of [`RTT_STEP`]; within a step the less loaded by the node's
+/// own word first (a node that says nothing counts as empty); then the
+/// order the sets gave (the registry's list is least loaded first); the
+/// exact round trip last.
+fn rank(a: &NodeAccess, index: usize) -> (bool, u128, u8, usize, Duration) {
+    (a.full(), a.rtt.as_millis() / RTT_STEP.as_millis(), a.load().unwrap_or(0), index, a.rtt)
 }
 
 /// Until when credentials that came at `fetched` are used. The node
@@ -505,15 +676,24 @@ pub struct Picked {
     pub limits: Option<Limits>,
 }
 
-/// What `fetch` gives: WELCOME, the credentials, the round trip.
+/// What `fetch` gives: WELCOME, the credentials (none when the node
+/// would not let me in), the round trip.
 pub type Fetched = (Welcome, TurnCredentials, Duration);
 /// The way to a node; the tests put a fake one in (`NodeClient::with_fetch`).
 pub type Fetch = Arc<dyn Fn(CallNode, String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Fetched>> + Send>> + Send + Sync>;
+/// The exchange of an invitation: the node, the token, the label, the
+/// client's name → what the node issued. The tests put a fake one in.
+pub type Invite = Arc<
+    dyn Fn(NodeRef, String, String, String) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::result::Result<DeviceIssued, NodeError>> + Send>>
+        + Send
+        + Sync,
+>;
 
 struct Inner {
     client_name: String,
     cache: Mutex<HashMap<BridgeId, NodeAccess>>,
     fetch: Fetch,
+    invite: Invite,
 }
 
 #[derive(Clone)]
@@ -524,17 +704,89 @@ pub struct NodeClient {
 impl NodeClient {
     /// `client_name` goes into HELLO for the node's log: `veydan-chat/5.1.0`.
     pub fn new(client_name: &str) -> Self {
-        Self::with_fetch(client_name, Arc::new(|node, name| Box::pin(async move { fetch(&node, &name).await })))
+        Self::with_fakes(
+            client_name,
+            Arc::new(|node, name| Box::pin(async move { fetch(&node, &name).await })),
+            Arc::new(|node, token, label, name| Box::pin(async move { redeem(&node, &token, &label, &name).await })),
+        )
     }
 
-    /// A client whose way to every node is `fetch`: the fakes of the tests.
+    /// A client whose way to every node is `fetch`: the fakes of the
+    /// tests. Invitations are exchanged over the network still.
     pub fn with_fetch(client_name: &str, fetch: Fetch) -> Self {
-        Self { inner: Arc::new(Inner { client_name: client_name.to_string(), cache: Mutex::new(HashMap::new()), fetch }) }
+        Self::with_fakes(client_name, fetch, Arc::new(|node, token, label, name| Box::pin(async move { redeem(&node, &token, &label, &name).await })))
+    }
+
+    /// A client whose way to every node is `fetch` and whose invitations
+    /// are exchanged by `invite`: the fakes of the tests.
+    pub fn with_fakes(client_name: &str, fetch: Fetch, invite: Invite) -> Self {
+        Self { inner: Arc::new(Inner { client_name: client_name.to_string(), cache: Mutex::new(HashMap::new()), fetch, invite }) }
     }
 
     /// Forget every credential (a logout, a test).
     pub fn clear(&self) {
         self.inner.cache.lock().unwrap().clear();
+    }
+
+    /// Forget what one node gave (its key changed, it was removed).
+    pub fn forget(&self, id: &BridgeId) {
+        self.inner.cache.lock().unwrap().remove(id);
+    }
+
+    /// The nodes spoken to lately, as the screen lists them.
+    pub fn known(&self) -> Vec<KnownNode> {
+        let now = Instant::now();
+        let mut out: Vec<KnownNode> = self
+            .inner
+            .cache
+            .lock()
+            .unwrap()
+            .values()
+            .map(|a| KnownNode {
+                id: a.node.node.id.to_string(),
+                class: a.node.class,
+                rtt_ms: a.rtt.as_millis() as u64,
+                private: a.welcome.private,
+                authorized: a.authorized,
+                version: a.welcome.version.clone(),
+                capabilities: a.welcome.capabilities.clone(),
+                load: a.load(),
+                state: if a.full() { "degraded" } else { "active" }.to_string(),
+                good: a.good_until > now,
+            })
+            .collect();
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        out
+    }
+
+    /// The invitation of a private node (the `t` of its link) exchanged
+    /// for the credentials of this device, over TLS pinned to the id of
+    /// the link. `name` is what this device calls itself for the
+    /// operator's list. The node answers 404 when it is of a version
+    /// before invitations, 403 `bad_invite` when the token is unknown,
+    /// used up or ran out.
+    pub async fn redeem_invite(&self, node: &NodeRef, token: &str, name: &str, now: i64) -> Result<DeviceCredentials> {
+        let issued = (self.inner.invite)(node.clone(), token.to_string(), name.to_string(), self.inner.client_name.clone())
+            .await
+            .map_err(|e| match e.status() {
+                Some(404) => MessengerError::Transport(format!("node {}: takes no invitations (a version before them)", node.id.short())),
+                _ => MessengerError::from(e),
+            })?;
+        if !issued.node.is_empty() && issued.node.parse::<NodeRef>().ok().is_none_or(|n| n.id != node.id) {
+            return Err(MessengerError::Transport(format!("node {}: says it is another node", node.id.short())));
+        }
+        if issued.device_id.is_empty() || issued.secret.is_empty() || issued.device_id.contains(':') {
+            return Err(MessengerError::Transport(format!("node {}: issued no usable credentials", node.id.short())));
+        }
+        self.forget(&node.id);
+        Ok(DeviceCredentials {
+            node: node.clone(),
+            device_id: issued.device_id,
+            secret: issued.secret,
+            label: issued.label,
+            name: name.to_string(),
+            added_at: now,
+        })
     }
 
     /// The credentials of `node`, from the cache while they are good for
@@ -547,81 +799,84 @@ impl NodeClient {
         }
         let fetched = Instant::now();
         let (welcome, credentials, rtt) = (self.inner.fetch)(node.clone(), self.inner.client_name.clone()).await?;
-        let good_until = good_until(fetched, &credentials, now);
-        let access = NodeAccess { node: node.clone(), welcome, credentials, rtt, good_until };
+        let authorized = !credentials.urls.is_empty();
+        let good_until = if authorized { good_until(fetched, &credentials, now) } else { fetched };
+        let access = NodeAccess { node: node.clone(), welcome, credentials, authorized, rtt, good_until };
         self.inner.cache.lock().unwrap().insert(node.node.id, access.clone());
         Ok(access)
     }
 
+    /// Asks every node of `class` among `nodes` at once, within
+    /// [`CLASS_TIMEOUT`] and `deadline`: the ones that answered and let
+    /// me in (`keep` says which answers count), in the order of the rule
+    /// ([`rank`]).
+    async fn ask_class(&self, nodes: &[CallNode], class: NodeClass, deadline: tokio::time::Instant, now: i64, keep: fn(&NodeAccess) -> bool) -> Vec<NodeAccess> {
+        let mut tasks = tokio::task::JoinSet::new();
+        for (index, node) in nodes.iter().enumerate().filter(|(_, n)| n.class == class) {
+            let (client, node) = (self.clone(), node.clone());
+            tasks.spawn(async move { (index, client.access(&node, now).await) });
+        }
+        let class_deadline = deadline.min(tokio::time::Instant::now() + CLASS_TIMEOUT);
+        let mut answered: Vec<(usize, NodeAccess)> = Vec::new();
+        while let Ok(Some(joined)) = tokio::time::timeout_at(class_deadline, tasks.join_next()).await {
+            if let Ok((index, Ok(access))) = joined {
+                if access.authorized && keep(&access) {
+                    answered.push((index, access));
+                } else if !access.authorized {
+                    tracing::debug!(node = %access.node.node.id.short(), "call node: would not let me in; not chosen");
+                }
+            }
+        }
+        answered.sort_by_key(|(index, a)| rank(a, *index));
+        answered.into_iter().map(|(_, a)| a).collect()
+    }
+
     /// The ICE servers of a call: of the first class of `nodes` (which
-    /// come in order of priority) that has a node answering, the one or
-    /// two nearest. The classes are asked one after another, and a class
-    /// is not spoken to while a higher one answers. Without a node a call
-    /// under `Auto` goes with host candidates alone; under `RelayOnly`
-    /// there is nothing to relay through, and that is an error.
+    /// come in order of priority) that has a node answering and letting
+    /// me in, the one or two first by the rule of [`rank`]: nearest by
+    /// steps of 50 ms, the less loaded within a step, a node at its caps
+    /// only when no other answered. The classes are asked one after
+    /// another, and a class is not spoken to while a higher one answers.
+    /// Without a node a call under `Auto` goes with host candidates
+    /// alone; under `RelayOnly` there is nothing to relay through, and
+    /// that is an error.
     pub async fn pick(&self, nodes: &[CallNode], policy: RelayPolicy, now: i64) -> Result<Picked> {
-        let mut answered: Vec<NodeAccess> = Vec::new();
         let mut classes: Vec<NodeClass> = nodes.iter().map(|n| n.class).collect();
         classes.sort_unstable();
         classes.dedup();
         let deadline = tokio::time::Instant::now() + PICK_TIMEOUT;
         for class in classes {
-            let mut tasks = tokio::task::JoinSet::new();
-            for node in nodes.iter().filter(|n| n.class == class) {
-                let (client, node) = (self.clone(), node.clone());
-                tasks.spawn(async move { client.access(&node, now).await });
+            let answered = self.ask_class(nodes, class, deadline, now, |_| true).await;
+            if answered.is_empty() {
+                continue;
             }
-            let class_deadline = deadline.min(tokio::time::Instant::now() + CLASS_TIMEOUT);
-            while let Ok(Some(joined)) = tokio::time::timeout_at(class_deadline, tasks.join_next()).await {
-                if let Ok(Ok(access)) = joined {
-                    answered.push(access);
-                }
-            }
-            if !answered.is_empty() {
-                break;
-            }
+            let chosen: Vec<&NodeAccess> = answered.iter().take(NODES_PER_CALL).collect();
+            return Ok(Picked {
+                servers: chosen.iter().flat_map(|a| ice_servers_of(&a.credentials)).collect(),
+                nodes: chosen.iter().map(|a| a.node.node.id.to_string()).collect(),
+                limits: chosen.first().map(|a| a.welcome.limits.clone()),
+            });
         }
-        answered.sort_by_key(|a| (a.node.class, a.rtt));
-        let Some(best) = answered.first().map(|a| a.node.class) else {
-            return if policy == RelayPolicy::RelayOnly {
-                Err(MessengerError::Transport("no call node answered: nothing to relay through".into()))
-            } else {
-                Ok(Picked::default())
-            };
-        };
-        let chosen: Vec<&NodeAccess> = answered.iter().filter(|a| a.node.class == best).take(NODES_PER_CALL).collect();
-        Ok(Picked {
-            servers: chosen.iter().flat_map(|a| ice_servers_of(&a.credentials)).collect(),
-            nodes: chosen.iter().map(|a| a.node.node.id.to_string()).collect(),
-            limits: chosen.first().map(|a| a.welcome.limits.clone()),
-        })
+        if policy == RelayPolicy::RelayOnly {
+            Err(MessengerError::Transport("no call node answered: nothing to relay through".into()))
+        } else {
+            Ok(Picked::default())
+        }
     }
 
     /// The node a group call makes its room on: of the first class of
-    /// `nodes` (in order of priority) with a node that answers and has an
-    /// SFU, the nearest. The classes are asked one after another, as in
-    /// `pick`. `None` when no node with an SFU answers.
+    /// `nodes` (in order of priority) with a node that answers, lets me
+    /// in and has an SFU, the first by the rule of [`rank`]. The classes
+    /// are asked one after another, as in `pick`. `None` when no node
+    /// with an SFU answers.
     pub async fn pick_sfu(&self, nodes: &[CallNode], now: i64) -> Option<NodeAccess> {
         let mut classes: Vec<NodeClass> = nodes.iter().map(|n| n.class).collect();
         classes.sort_unstable();
         classes.dedup();
         let deadline = tokio::time::Instant::now() + PICK_TIMEOUT;
         for class in classes {
-            let mut tasks = tokio::task::JoinSet::new();
-            for node in nodes.iter().filter(|n| n.class == class) {
-                let (client, node) = (self.clone(), node.clone());
-                tasks.spawn(async move { client.access(&node, now).await });
-            }
-            let class_deadline = deadline.min(tokio::time::Instant::now() + CLASS_TIMEOUT);
-            let mut answered: Vec<NodeAccess> = Vec::new();
-            while let Ok(Some(joined)) = tokio::time::timeout_at(class_deadline, tasks.join_next()).await {
-                if let Ok(Ok(access)) = joined {
-                    if access.welcome.capabilities.iter().any(|c| c == CAP_SFU) {
-                        answered.push(access);
-                    }
-                }
-            }
-            if let Some(best) = answered.into_iter().min_by_key(|a| a.rtt) {
+            let answered = self.ask_class(nodes, class, deadline, now, |a| a.welcome.capabilities.iter().any(|c| c == CAP_SFU)).await;
+            if let Some(best) = answered.into_iter().next() {
                 return Some(best);
             }
         }
@@ -647,11 +902,14 @@ fn client_config(id: BridgeId) -> Result<rustls::ClientConfig> {
 }
 
 /// HELLO and TURN credentials from `node`, with the round trip measured.
+/// A node that takes the HELLO but not my access (401, 403) answers with
+/// no credentials: the caller sees it is there and that it would not let
+/// me in (`NodeAccess::authorized`).
 async fn fetch(node: &CallNode, client_name: &str) -> Result<Fetched> {
     let short = node.node.id.short();
     let short = short.as_str();
-    let send = connect(node).await?;
-    let access = Access { key: node.access_key.clone() };
+    let send = connect(&node.node).await?;
+    let access = Access::of(node);
     let started = Instant::now();
     let welcome: Welcome = post(&send, PATH_HELLO, &hello(access.clone(), client_name), short).await?;
     let hello_rtt = started.elapsed();
@@ -663,7 +921,14 @@ async fn fetch(node: &CallNode, client_name: &str) -> Result<Fetched> {
     if welcome.node_id != node.node.id.to_string() {
         return Err(MessengerError::Transport(format!("node {short}: says it is another node")));
     }
-    let credentials: TurnCredentials = post(&send, PATH_TURN, &TurnRequest { access }, short).await?;
+    let credentials: TurnCredentials = match post(&send, PATH_TURN, &TurnRequest { access }, short).await {
+        Ok(c) => c,
+        Err(e) if e.is_not_let_in() => {
+            tracing::info!(node = %short, error = %e, "call node: would not let me in");
+            return Ok((welcome, TurnCredentials::none(), hello_rtt));
+        }
+        Err(e) => return Err(e.into()),
+    };
     let rtt = match stun_addr(&credentials) {
         Some(addr) => stun_rtt(addr).await.unwrap_or(hello_rtt),
         None => hello_rtt,
@@ -671,17 +936,38 @@ async fn fetch(node: &CallNode, client_name: &str) -> Result<Fetched> {
     Ok((welcome, credentials, rtt))
 }
 
-/// The control channel of `node`: TLS with its id pinned, h2.
-async fn connect(node: &CallNode) -> Result<h2::client::SendRequest<Bytes>> {
-    let short = node.node.id.short();
+/// The exchange of an invitation at `node`: HELLO (a node of another id
+/// or version is found out here), then `POST /v1/invite`.
+async fn redeem(node: &NodeRef, token: &str, name: &str, client_name: &str) -> std::result::Result<DeviceIssued, NodeError> {
+    let short = node.id.short();
     let short = short.as_str();
-    let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(node.node.addr))
+    let send = connect(node).await.map_err(|e| NodeError::Unreachable(e.to_string()))?;
+    let welcome: Welcome = post(&send, PATH_HELLO, &hello(Access::default(), client_name), short).await?;
+    if welcome.node_id != node.id.to_string() {
+        return Err(NodeError::Unreachable(format!("node {short}: says it is another node")));
+    }
+    let request = InviteRequest { token: token.to_string(), name: name.to_string() };
+    post(&send, PATH_INVITE, &request, short).await
+}
+
+impl TurnCredentials {
+    /// No credentials: the node would not let me in.
+    pub fn none() -> Self {
+        Self { username: String::new(), password: String::new(), realm: String::new(), ttl_secs: 0, expires_at: 0, urls: vec![] }
+    }
+}
+
+/// The control channel of `node`: TLS with its id pinned, h2.
+async fn connect(node: &NodeRef) -> Result<h2::client::SendRequest<Bytes>> {
+    let short = node.id.short();
+    let short = short.as_str();
+    let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(node.addr))
         .await
         .map_err(|_| MessengerError::Transport(format!("node {short}: no connection in time")))?
         .map_err(|e| MessengerError::Transport(format!("node {short}: {e}")))?;
     let _ = tcp.set_nodelay(true);
-    let config = client_config(node.node.id)?;
-    let name = pin::server_name(&node.node).map_err(|e| MessengerError::Crypto(e.to_string()))?;
+    let config = client_config(node.id)?;
+    let name = pin::server_name(node).map_err(|e| MessengerError::Crypto(e.to_string()))?;
     let tls = tokio::time::timeout(CONNECT_TIMEOUT, TlsConnector::from(Arc::new(config)).connect(name, tcp))
         .await
         .map_err(|_| MessengerError::Transport(format!("node {short}: no TLS in time")))?
@@ -813,14 +1099,27 @@ mod tests {
 
     #[test]
     fn hello_is_what_the_node_reads() {
-        let h = hello(Access { key: Some("k".into()) }, "veydan-chat/5.1.0");
+        let h = hello(Access { key: Some("k".into()), device: None }, "veydan-chat/5.1.0");
         let json = serde_json::to_value(&h).unwrap();
         assert_eq!(json["protocol_max"], 1);
-        assert_eq!(json["access"]["key"], "k");
+        assert_eq!(json["access"], serde_json::json!({ "key": "k" }), "a shared key goes as before");
         assert_eq!(serde_json::to_value(hello(Access::default(), "x")).unwrap()["access"], serde_json::json!({}));
         let w: Welcome = serde_json::from_str(r#"{"protocol_min":1,"protocol_max":1,"node_id":"ab","limits":{"turn_lifetime_secs":600}}"#).unwrap();
         assert_eq!(w.limits.turn_lifetime_secs, 600);
         assert!(!w.private);
+        assert_eq!(w.load, None, "a node of before says nothing of its load");
+
+        // The credentials of this device: the id and the secret apart.
+        let mine = CallNode::with_key(format!("127.0.0.1:1#{}", "ab".repeat(32)).parse().unwrap(), NodeClass::Own, Some(crate::servers::device_key("d-7", "s3")));
+        assert_eq!(serde_json::to_value(Access::of(&mine)).unwrap(), serde_json::json!({ "device": { "id": "d-7", "secret": "s3" } }));
+        let w: Welcome = serde_json::from_str(
+            r#"{"protocol_min":1,"protocol_max":1,"node_id":"ab","private":true,"load":{"allocations":500,"max_allocations":1000,"participants":40,"max_participants":40}}"#,
+        )
+        .unwrap();
+        assert_eq!(w.load.unwrap().percent(), 100);
+        assert!(w.load.unwrap().full());
+        assert_eq!(NodeLoad { mbps: 30, max_mbps: 100, ..NodeLoad::default() }.percent(), 30);
+        assert_eq!(NodeLoad { mbps: 30, ..NodeLoad::default() }.percent(), 0, "no limit said: empty");
     }
 
     #[test]
@@ -844,8 +1143,11 @@ mod tests {
         CallNode::new(format!("127.0.0.1:{port}#{}", format!("{:02x}", port % 256).repeat(32)).parse().unwrap(), class)
     }
 
-    /// A client whose nodes answer or refuse by their port (1 refuses),
-    /// counting who was asked.
+    /// A client whose nodes answer or refuse by their port (1 refuses;
+    /// 5 is private and lets nobody in; 6 lets the device `d-6` in and
+    /// nobody else), counting who was asked. Ports 10–99 are nodes at
+    /// 10 ms (one step of the rule) whose load is the port's second digit
+    /// in tens of percent, 9 full. Other ports: the round trip in ms.
     fn fake_client(asked: Arc<Mutex<Vec<u16>>>) -> NodeClient {
         NodeClient::with_fetch(
             "test",
@@ -857,6 +1159,11 @@ mod tests {
                     if port == 1 {
                         return Err(MessengerError::Transport("refused".into()));
                     }
+                    let private = matches!(port, 5 | 6);
+                    let load = (10..100).contains(&port).then(|| {
+                        let tenths = (port % 10) as u32;
+                        NodeLoad { participants: tenths * 10, max_participants: 90, ..NodeLoad::default() }
+                    });
                     let welcome = Welcome {
                         protocol_min: 1,
                         protocol_max: 1,
@@ -865,14 +1172,126 @@ mod tests {
                         // Nodes on a port below 100 have an SFU.
                         capabilities: if port < 100 { vec![CAP_SFU.into()] } else { vec![] },
                         codecs: vec![],
-                        private: false,
+                        private,
                         limits: Limits { turn_lifetime_secs: 600, ..Limits::default() },
+                        load,
                     };
-                    let c = creds(&[&format!("turn:127.0.0.1:{port}?transport=udp")]);
-                    Ok((welcome, c, Duration::from_millis(port as u64)))
+                    let let_in = match port {
+                        5 => false,
+                        6 => node.device().is_some_and(|(id, secret)| id == "d-6" && secret == "s6"),
+                        _ => true,
+                    };
+                    let c = if let_in { creds(&[&format!("turn:127.0.0.1:{port}?transport=udp")]) } else { TurnCredentials::none() };
+                    let rtt = if (10..100).contains(&port) { 10 } else { port as u64 };
+                    Ok((welcome, c, Duration::from_millis(rtt)))
                 })
             }),
         )
+    }
+
+    #[tokio::test]
+    async fn among_nodes_as_near_the_less_loaded_is_taken_and_a_full_one_last() {
+        // All at 10 ms: loads 70 %, 30 %, full (90 of 90), 50 %, and a
+        // node of before that says nothing of its load (counts as empty).
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = fake_client(asked.clone());
+        let nodes = [node(NodeClass::Project, 17), node(NodeClass::Project, 13), node(NodeClass::Project, 19), node(NodeClass::Project, 15)];
+        let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.servers[0].urls, vec!["turn:127.0.0.1:13?transport=udp"], "the least loaded of a step");
+        assert_eq!(picked.servers[1].urls, vec!["turn:127.0.0.1:15?transport=udp"]);
+        assert_eq!(client.pick_sfu(&nodes, 0).await.unwrap().node.node.addr.port(), 13);
+        // A nearer step wins over a lighter load: 2 ms against 10 ms.
+        let nodes = [node(NodeClass::Project, 17), node(NodeClass::Project, 2)];
+        assert_eq!(client.pick_sfu(&nodes, 0).await.unwrap().node.node.addr.port(), 2);
+        // Within a step, equal loads: the order of the sets (the
+        // registry lists the least loaded first).
+        let nodes = [node(NodeClass::Volunteer, 24), node(NodeClass::Volunteer, 14)];
+        assert_eq!(client.pick_sfu(&nodes, 0).await.unwrap().node.node.addr.port(), 24);
+        // A node that says nothing of its load counts as empty.
+        let nodes = [node(NodeClass::Project, 13), node(NodeClass::Project, 7)];
+        assert_eq!(client.pick_sfu(&nodes, 0).await.unwrap().node.node.addr.port(), 7);
+        // Full (degraded) only when nobody else of the class answered.
+        let nodes = [node(NodeClass::Project, 19), node(NodeClass::Project, 1)];
+        assert_eq!(client.pick_sfu(&nodes, 0).await.unwrap().node.node.addr.port(), 19);
+        let known = client.known();
+        let k = |port: u16| known.iter().find(|k| k.id.starts_with(&format!("{:02x}", port % 256))).unwrap();
+        assert_eq!((k(19).state.as_str(), k(19).load, k(19).rtt_ms), ("degraded", Some(100), 10));
+        assert_eq!((k(13).state.as_str(), k(13).load), ("active", Some(33)), "30 of 90");
+        assert_eq!(k(7).load, None);
+    }
+
+    #[tokio::test]
+    async fn a_node_that_does_not_let_me_in_is_there_but_not_chosen() {
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = fake_client(asked.clone());
+        // My private node without a key that holds: HELLO answers, TURN
+        // does not; the class below is asked then.
+        let mine = CallNode::with_key(node(NodeClass::Own, 5).node, NodeClass::Own, Some("old-key".into()));
+        let access = client.access(&mine, 0).await.unwrap();
+        assert!(access.welcome.private && !access.authorized && access.credentials.urls.is_empty());
+        let picked = client.pick(&[mine.clone(), node(NodeClass::Project, 3000)], RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.servers[0].urls, vec!["turn:127.0.0.1:3000?transport=udp"], "fallen back to the project's");
+        assert!(client.pick_sfu(std::slice::from_ref(&mine), 0).await.is_none());
+        assert!(!client.known()[0].authorized);
+        // Nothing of it is kept as good: the next pick asks it again.
+        let before = asked.lock().unwrap().len();
+        client.pick(std::slice::from_ref(&mine), RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(asked.lock().unwrap().len(), before + 1);
+        assert!(client.pick(&[mine], RelayPolicy::RelayOnly, 0).await.is_err());
+
+        // The credentials of this device open the node 6; another
+        // device's, or a revoked one's, do not.
+        let invited = CallNode::with_key(node(NodeClass::Own, 6).node, NodeClass::Own, Some(crate::servers::device_key("d-6", "s6")));
+        let picked = client.pick(&[invited, node(NodeClass::Project, 3000)], RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.servers[0].urls, vec!["turn:127.0.0.1:6?transport=udp"]);
+        let revoked = CallNode::with_key(node(NodeClass::Own, 6).node, NodeClass::Own, Some(crate::servers::device_key("d-6", "gone")));
+        let picked = client.pick(&[revoked, node(NodeClass::Project, 3000)], RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.servers[0].urls, vec!["turn:127.0.0.1:3000?transport=udp"]);
+    }
+
+    #[tokio::test]
+    async fn an_invitation_is_exchanged_for_the_credentials_of_this_device() {
+        let issued = Arc::new(Mutex::new(vec![]));
+        let seen = issued.clone();
+        let client = NodeClient::with_fakes(
+            "veydan-chat/5.1.8",
+            Arc::new(|_, _| Box::pin(async { Err(MessengerError::Transport("not here".into())) })),
+            Arc::new(move |node, token, name, client| {
+                let seen = seen.clone();
+                Box::pin(async move {
+                    seen.lock().unwrap().push((node.to_string(), token.clone(), name, client));
+                    match token.as_str() {
+                        "inv-1" => Ok(DeviceIssued { device_id: "d-1".into(), secret: "s-1".into(), label: "Anna's phone".into(), node: node.to_string() }),
+                        "other" => Ok(DeviceIssued { device_id: "d-1".into(), secret: "s-1".into(), label: String::new(), node: format!("{}#{}", node.addr, "ff".repeat(32)) }),
+                        "empty" => Ok(DeviceIssued { device_id: String::new(), secret: String::new(), label: String::new(), node: String::new() }),
+                        "old" => Err(NodeError::Refused { status: 404, error: "http".into(), message: "status 404".into() }),
+                        _ => Err(NodeError::Refused { status: 403, error: "bad_invite".into(), message: "used up".into() }),
+                    }
+                })
+            }),
+        );
+        let n = node(NodeClass::Own, 2000).node;
+        let creds = client.redeem_invite(&n, "inv-1", "Veydan Chat, Android", 77).await.unwrap();
+        assert_eq!(
+            creds,
+            DeviceCredentials {
+                node: n.clone(),
+                device_id: "d-1".into(),
+                secret: "s-1".into(),
+                label: "Anna's phone".into(),
+                name: "Veydan Chat, Android".into(),
+                added_at: 77
+            }
+        );
+        assert_eq!(creds.key(), crate::servers::device_key("d-1", "s-1"));
+        assert_eq!(serde_json::to_value(InviteRequest { token: "t".into(), name: "n".into() }).unwrap(), serde_json::json!({ "token": "t", "name": "n" }));
+        assert_eq!(issued.lock().unwrap()[0], (n.to_string(), "inv-1".to_string(), "Veydan Chat, Android".to_string(), "veydan-chat/5.1.8".to_string()));
+        assert!(client.redeem_invite(&n, "other", "", 0).await.unwrap_err().to_string().contains("another node"));
+        assert!(client.redeem_invite(&n, "empty", "", 0).await.is_err());
+        assert!(client.redeem_invite(&n, "old", "", 0).await.unwrap_err().to_string().contains("takes no invitations"));
+        assert!(client.redeem_invite(&n, "used", "", 0).await.unwrap_err().to_string().contains("bad_invite"));
+        let r = NodeError::Refused { status: 403, error: "device_revoked".into(), message: String::new() };
+        assert!(r.is_not_let_in() && !NodeError::Refused { status: 429, error: "rate_limited".into(), message: String::new() }.is_not_let_in());
     }
 
     #[tokio::test]

@@ -77,7 +77,15 @@ impl Uri {
             None => (rest, ""),
         };
         let (word, id) = path.split_once('/').ok_or(LinkError::Type)?;
-        if word.is_empty() || word.len() > MAX_TYPE_LEN || !word.bytes().all(|b| b.is_ascii_lowercase()) {
+        // A type is a word of small latin letters; two words are joined
+        // by a hyphen (`call-node`), never at an end or doubled.
+        if word.is_empty()
+            || word.len() > MAX_TYPE_LEN
+            || !word.bytes().all(|b| b.is_ascii_lowercase() || b == b'-')
+            || word.starts_with('-')
+            || word.ends_with('-')
+            || word.contains("--")
+        {
             return Err(LinkError::Type);
         }
         if id.is_empty() || id.len() > MAX_ID_LEN || !id.bytes().all(unreserved) {

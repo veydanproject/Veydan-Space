@@ -20,7 +20,7 @@ pub mod fake_engine;
 pub mod fake_node;
 pub mod file_secrets;
 pub use fake_engine::{FakeEngine, FakeHandle};
-pub use fake_node::{FakeGroups, FakeNode};
+pub use fake_node::{FakeDevice, FakeGroups, FakeNode, FakeRegistry};
 pub use file_secrets::FileSecretStore;
 
 use async_trait::async_trait;

@@ -13,17 +13,20 @@
 //! - `kind`: the types of links there are.
 //! - `contact`: the link of a person.
 //! - `bridge`: the link of a VLink bridge to the project's servers (`veydan://vlink/…`).
+//! - `call_node`: the link of a private call node with an invitation to it (`veydan://call-node/…`).
 //! - `error`: refusals, as stable codes.
 //!
 //! Everything in this crate is pure: no network, no storage, no clock.
 
 pub mod bridge;
+pub mod call_node;
 pub mod contact;
 pub mod error;
 pub mod kind;
 pub mod uri;
 
 pub use bridge::BridgeLink;
+pub use call_node::CallNodeLink;
 pub use contact::ContactLink;
 pub use error::LinkError;
 pub use kind::LinkType;

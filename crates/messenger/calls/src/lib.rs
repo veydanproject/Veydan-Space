@@ -10,9 +10,13 @@
 //! - `service`: [`CallService`], the state of the one call under way,
 //!   its commands and what it does with what the peer and the engine say.
 //! - `handler`: [`CallDmHandler`], the door in the chain of DM handlers.
-//! - `servers`: [`ServerSets`], where the nodes come from, by priority.
+//! - `servers`: [`ServerSets`], where the nodes come from, by priority;
+//!   the trust level, the private nodes this device was invited to.
+//! - `registry`: the signed list of volunteers' nodes, cached and
+//!   refreshed in the background.
 //! - `node_client`: the control channel of a call node, credentials, the
-//!   choice of the nearest nodes.
+//!   exchange of an invitation, the choice among the nodes by distance
+//!   and load.
 //! - `feed`: the record of a call and its line in the chat.
 //! - `call`: what the screen sees, and the names of its events.
 //! - `group`: the calls of a group on an SFU room ([`GroupCallService`]).
@@ -25,6 +29,7 @@ pub mod feed;
 pub mod group;
 pub mod handler;
 pub mod node_client;
+pub mod registry;
 pub mod servers;
 pub mod service;
 pub mod signal;
@@ -43,8 +48,15 @@ pub use group::{
     UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_LEVEL, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 pub use handler::CallDmHandler;
-pub use node_client::{Delegated, HttpRooms, Joined, MediaLimits, NodeClient, NodeError, Picked, RoomApi, RoomCreated, CAP_CASCADE, CAP_SFU};
-pub use servers::{CallNode, NodeClass, NodeRef, ServerSets, SettingsServerSets, StaticServerSets, KEY_CALL_NODES, KEY_RELAY_POLICY};
+pub use node_client::{
+    Access, Delegated, DeviceAccess, DeviceIssued, HttpRooms, InviteRequest, Joined, KnownNode, MediaLimits, NodeClient, NodeError, NodeLoad,
+    Picked, RoomApi, RoomCreated, CAP_CASCADE, CAP_SFU,
+};
+pub use registry::{ListFetch, Registry, RegistryNode};
+pub use servers::{
+    CallNode, DeviceCredentials, DeviceNodeEntry, NodeClass, NodeDescription, NodeRef, NodeSource, ServerSets, SettingsServerSets,
+    StaticServerSets, TrustLevel, KEY_CALL_DEVICES, KEY_CALL_NODES, KEY_CALL_TRUST, KEY_RELAY_POLICY,
+};
 pub use service::{
     CallService, VideoQuality, ANSWERED_ELSEWHERE, CONNECT_TIMEOUT, GATHER_WAIT, ICE_DEBOUNCE, KEY_INCOMING_ENABLED,
     KEY_VIDEO_QUALITY, LOSS_CONFIRM, RESTART_SETTLE, RING_TIMEOUT, VIDEO_FPS,

@@ -17,10 +17,15 @@
 //! ([`default_engine`]); a host or a test may give another one
 //! (`MessengerRuntime::start_with_engine`).
 //!
-//! Where the nodes come from: the developer setting `call.nodes` (own
-//! nodes, by reference) and the `calls` of the project's manifest for the
-//! region in use, put into the core's server sets whenever the manifest
-//! or the region changes ([`MessengerRuntime::seed_call_nodes`]).
+//! Where the nodes come from: the core's server sets — the private nodes
+//! this device was invited to (their credentials in the secret store of
+//! the runtime) and the developer setting `call.nodes`, the `calls` of the
+//! project's manifest for the region in use with their classes (put in
+//! whenever the manifest or the region changes,
+//! [`MessengerRuntime::seed_call_nodes`]), and the signed list of the
+//! registry of volunteers ([`RegistrySource`]), cut by the trust level.
+//! The list of the settings, adding by a link, the trust level:
+//! `crate::call_nodes`.
 //!
 //! The types the UI reads (`CallView` and its words) are spelled here
 //! again with their TypeScript, field for field as the core has them; a
@@ -56,15 +61,18 @@ use messenger_calls::servers::{parse_own_nodes, CallNode, NodeClass, NodeRef};
 use messenger_calls::{
     AnnouncedCall as CoreAnnounced, CallDmHandler, CallService, CallView as CoreView, GroupAccess, GroupCallService,
     GroupCallView as CoreGroupView, GroupPhase as CoreGroupPhase, HttpRooms, NodeClient, Phase, RoomApi, ServerSets,
-    SettingsServerSets, VideoQuality as CoreQuality, KEY_CALL_NODES,
+    ListFetch, Registry, SettingsServerSets, VideoQuality as CoreQuality, KEY_CALL_NODES,
 };
 use messenger_core::traits::UiEvent;
-use messenger_core::{Effect, Envelope, MessengerError, Outbound, PubKey, Result};
+use messenger_core::{Effect, Envelope, MessengerError, Outbound, PubKey, Result, SecretStore};
+use messenger_transport::manifest::CallNodeClass;
 use messenger_dm::DmService;
 use messenger_groups::{GroupCallSink, GroupService};
 use messenger_ingress::Outbox;
 use messenger_store::{settings, Store};
 use serde::{Deserialize, Serialize};
+use crate::relays::ServersMode;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -91,6 +99,23 @@ pub struct CallBackends {
     pub engine: Option<Arc<dyn MediaEngine>>,
     pub nodes: NodeClient,
     pub rooms: Arc<dyn RoomApi>,
+    /// The registry of volunteers' nodes, the last set of servers.
+    pub registry: RegistrySource,
+}
+
+/// Where the registry of volunteers' call nodes is asked
+/// (`messenger_calls::Registry`).
+pub enum RegistrySource {
+    /// The registries built into the client (`trust::REGISTRIES`), over
+    /// HTTPS with the roots of the web, through a bridge when bridges
+    /// are on ([`registry_fetch`]); asked only with the project's servers
+    /// and not in the silent mode ([`gated_registry_fetch`]).
+    Build,
+    /// A registry the host makes over the store: the fake of the tests.
+    Given(Box<dyn FnOnce(Store) -> Registry + Send>),
+    /// No registry: the sets end with the manifest (the tests that touch
+    /// no network).
+    Off,
 }
 
 impl CallBackends {
@@ -99,10 +124,64 @@ impl CallBackends {
         Self::with_engine(default_engine())
     }
 
-    /// `engine` with the HTTP clients of the nodes.
+    /// `engine` with the HTTP clients of the nodes and of the registry.
     pub fn with_engine(engine: Option<Arc<dyn MediaEngine>>) -> Self {
-        Self { engine, nodes: NodeClient::new(&client_name()), rooms: Arc::new(HttpRooms::new(&client_name())) }
+        Self {
+            engine,
+            nodes: NodeClient::new(&client_name()),
+            rooms: Arc::new(HttpRooms::new(&client_name())),
+            registry: RegistrySource::Build,
+        }
     }
+}
+
+/// The `GET` of the registry's list on the HTTP client of the messenger
+/// (`messenger_http`: through a bridge when bridges are on, as the list
+/// of bridges). Every ask is a line in the log: what the device told the
+/// network is to be seen there.
+pub fn registry_fetch() -> ListFetch {
+    Arc::new(|url: String| {
+        Box::pin(async move {
+            eprintln!("messenger calls: asking the registry for call nodes: {url}");
+            let client = messenger_http::client(Duration::from_secs(6), Duration::from_secs(12))?;
+            let transport = |e: reqwest::Error| MessengerError::Transport(e.to_string());
+            let response = client.get(&url).send().await.map_err(transport)?;
+            if !response.status().is_success() {
+                return Err(MessengerError::Transport(format!("the registry answered {}", response.status())));
+            }
+            response.text().await.map_err(transport)
+        })
+    })
+}
+
+/// Whether the registry of volunteers may be asked now: the rule of
+/// everything else of the project's infrastructure (the manifest, the
+/// list of bridges), only with the project's servers chosen, and never
+/// in the silent mode. Before the onboarding, with own servers or in the
+/// silent mode the device tells the registry nothing, whatever the trust
+/// level of calls.
+pub(crate) async fn registry_may_ask(store: &Store) -> bool {
+    let mode = settings::get(store, crate::relays::KEY_MODE).await.ok().flatten();
+    let veydan = mode.as_deref().and_then(ServersMode::parse) == Some(ServersMode::Veydan);
+    let silent = settings::get_bool(store, crate::relays::KEY_SILENT, false).await.unwrap_or(true);
+    veydan && !silent
+}
+
+/// `fetch` behind [`registry_may_ask`]: an ask it refuses touches no
+/// network and fails (the core's own asks, `Registry::nodes` of every
+/// call, go through it too). The watch of the app asks at once when the
+/// gate opens, not after the pause that follows a failure
+/// (`MessengerRuntime::call_registry_tick`).
+pub fn gated_registry_fetch(store: Store, fetch: ListFetch) -> ListFetch {
+    Arc::new(move |url: String| {
+        let (store, fetch) = (store.clone(), fetch.clone());
+        Box::pin(async move {
+            if !registry_may_ask(&store).await {
+                return Err(MessengerError::Transport("the registry is not asked: the project's servers are not in use, or the silent mode is on".into()));
+            }
+            fetch(url).await
+        })
+    })
 }
 
 /// The engine of this build: libwebrtc through the platform's audio
@@ -140,6 +219,20 @@ pub const GOODBYE_WAIT: Duration = Duration::from_secs(3);
 pub struct CallsDriver {
     pub service: CallService,
     servers: Arc<SettingsServerSets>,
+    /// The client of the nodes the service uses: what it knows of them
+    /// (`known`), the probes and the invitations of the settings.
+    pub(crate) nodes: NodeClient,
+    /// The nodes of the manifest in use, with their classes, as put into
+    /// the sets (`seed_call_nodes`): what the list of the settings names.
+    pub(crate) manifest: std::sync::RwLock<Vec<(NodeRef, NodeClass)>>,
+    /// The nodes the last probe of the settings did not reach, by id, and
+    /// why (`call_nodes_list` with `probe`).
+    pub(crate) unreachable: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    /// The last tick of the registry found it paused ([`registry_may_ask`]
+    /// said no; so it is before the first tick): the next tick that may
+    /// ask, asks at once if the list is due, whatever a refused ask left
+    /// behind as a failure.
+    pub(crate) registry_paused: AtomicBool,
     /// A media engine is here (of the build, or given by the host): a
     /// call can be made.
     available: bool,
@@ -219,20 +312,53 @@ fn drain_effects(
 impl CallsDriver {
     /// With `engine` `None` every call fails at its start, and the
     /// state says `available: false`.
-    pub fn new(store: Store, dm: DmService, engine: Option<Arc<dyn MediaEngine>>, nodes: NodeClient, outbox: Outbox, ui: broadcast::Sender<UiEvent>) -> Self {
+    ///
+    /// The sets of servers keep the credentials of this device on private
+    /// nodes in `secrets` and end with the registry `registry` names.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        store: Store,
+        dm: DmService,
+        engine: Option<Arc<dyn MediaEngine>>,
+        nodes: NodeClient,
+        outbox: Outbox,
+        ui: broadcast::Sender<UiEvent>,
+        secrets: Arc<dyn SecretStore>,
+        registry: RegistrySource,
+    ) -> Self {
         let servers = Arc::new(SettingsServerSets::new(store.clone()));
+        servers.set_secrets(secrets);
+        match registry {
+            RegistrySource::Build => {
+                let fetch = gated_registry_fetch(store.clone(), registry_fetch());
+                servers.set_registry(Arc::new(Registry::new(store.clone(), fetch)))
+            }
+            RegistrySource::Given(make) => servers.set_registry(Arc::new(make(store.clone()))),
+            RegistrySource::Off => {}
+        }
         let available = engine.is_some();
         let (service, rx) = CallService::new(
             store,
             dm,
             engine.unwrap_or_else(|| Arc::new(NoEngine)),
             servers.clone(),
-            nodes,
+            nodes.clone(),
             Arc::new(messenger_core::traits::SystemClock),
         );
         let group_calls = Arc::new(std::sync::OnceLock::new());
         let (effects, flush) = drain_effects(rx, outbox, ui, Some(group_calls.clone()));
-        Self { service, servers, available, effects, flush, group_calls }
+        Self {
+            service,
+            servers,
+            nodes,
+            manifest: std::sync::RwLock::new(Vec::new()),
+            unreachable: std::sync::Mutex::new(std::collections::HashMap::new()),
+            registry_paused: AtomicBool::new(true),
+            available,
+            effects,
+            flush,
+            group_calls,
+        }
     }
 
     /// The sets of servers the calls take their nodes from: the group
@@ -645,7 +771,8 @@ pub struct CallNodeView {
     pub reference: String,
     /// The node's id, hex: what the TLS of its control channel is pinned to.
     pub id: String,
-    /// Whose it is: `own` (the setting), `project` (the manifest).
+    /// Whose it is: `own` (invited, or the setting), `project` (the
+    /// manifest), `volunteer` (the registry, or so named by the manifest).
     pub class: String,
     /// A key of a private node is kept for it.
     pub has_key: bool,
@@ -1176,8 +1303,23 @@ impl MessengerRuntime {
     pub(crate) async fn seed_call_nodes(&self) -> Result<()> {
         let (manifest, _) = self.relays.current_manifest().await?;
         let region = self.relays.region().await?;
-        let nodes: Vec<NodeRef> = manifest.calls_for_region(&region).iter().filter_map(|c| c.node.parse().ok()).collect();
-        self.calls.servers.set_manifest(nodes);
+        let nodes: Vec<(NodeRef, NodeClass)> = manifest
+            .calls_for_region(&region)
+            .iter()
+            .filter_map(|c| {
+                let class = match c.class {
+                    CallNodeClass::Project => NodeClass::Project,
+                    CallNodeClass::Volunteer => NodeClass::Volunteer,
+                    // `cloud` comes through a door of its own when there
+                    // is one; `own` and unknown classes are no node of a
+                    // manifest (`ManifestCall::usable` left them out).
+                    CallNodeClass::Own | CallNodeClass::Cloud | CallNodeClass::Unknown => return None,
+                };
+                Some((c.node.parse().ok()?, class))
+            })
+            .collect();
+        *self.calls.manifest.write().unwrap() = nodes.clone();
+        self.calls.servers.set_manifest_classed(nodes);
         Ok(())
     }
 
@@ -1386,7 +1528,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let secrets = Arc::new(MemorySecretStore::unlocked());
-        let rt = MessengerRuntime::start_with_engine(cfg, secrets, Arc::new(FakeEngine::new())).await.unwrap();
+        // No registry: what is listed is what the test put in.
+        let backends = CallBackends { registry: RegistrySource::Off, ..CallBackends::with_engine(Some(Arc::new(FakeEngine::new()))) };
+        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
 
@@ -1459,7 +1603,8 @@ mod tests {
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let secrets = Arc::new(MemorySecretStore::unlocked());
         let engine = FakeEngine::new();
-        let rt = MessengerRuntime::start_with_engine(cfg, secrets, Arc::new(engine.clone())).await.unwrap();
+        let backends = CallBackends { registry: RegistrySource::Off, ..CallBackends::with_engine(Some(Arc::new(engine.clone()))) };
+        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
         rt.identity().create("pw").await.unwrap();
@@ -1517,7 +1662,8 @@ mod tests {
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let secrets = Arc::new(MemorySecretStore::unlocked());
         let engine = FakeEngine::new();
-        let rt = MessengerRuntime::start_with_engine(cfg, secrets.clone(), Arc::new(engine.clone())).await.unwrap();
+        let backends = CallBackends { registry: RegistrySource::Off, ..CallBackends::with_engine(Some(Arc::new(engine.clone()))) };
+        let rt = MessengerRuntime::start_with_backends(cfg, secrets.clone(), backends).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
         rt.identity().create("pw").await.unwrap();
@@ -1630,7 +1776,7 @@ mod tests {
         // The runtime keeps the system clock: the fake node's rooms expire
         // twelve hours from now, not from the clock of the core's tests.
         node.set_now(messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs() as u64);
-        let backends = CallBackends { engine: Some(Arc::new(engine.clone())), nodes: node.client(), rooms: Arc::new(node.clone()) };
+        let backends = CallBackends { engine: Some(Arc::new(engine.clone())), nodes: node.client(), rooms: Arc::new(node.clone()), registry: RegistrySource::Off };
         let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
@@ -1730,7 +1876,7 @@ mod tests {
         let engine = FakeEngine::new();
         let node = FakeNode::new(engine.clone());
         node.set_now(messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs() as u64);
-        let backends = CallBackends { engine: Some(Arc::new(engine.clone())), nodes: node.client(), rooms: Arc::new(node.clone()) };
+        let backends = CallBackends { engine: Some(Arc::new(engine.clone())), nodes: node.client(), rooms: Arc::new(node.clone()), registry: RegistrySource::Off };
         let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;

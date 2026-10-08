@@ -30,6 +30,7 @@ import { nameStore } from "./groups/names.svelte";
 import { linkStore } from "./content/linkStore.svelte";
 import { sharedStore } from "./content/shared/sharedStore.svelte";
 import { netStore } from "./net/netStore.svelte";
+import { callNodesStore } from "./net/callNodesStore.svelte";
 import { usageStore } from "./shared/emoji/usageStore.svelte";
 import { presenceStore } from "./presence/presenceStore.svelte";
 import { privacyStore } from "./privacy/privacyStore.svelte";
@@ -154,6 +155,7 @@ class MessengerStore {
         linkStore.reset();
         sharedStore.reset();
         netStore.reset();
+        callNodesStore.reset();
         usageStore.reset();
         presenceStore.reset();
         transferStore.reset();
@@ -192,6 +194,7 @@ class MessengerStore {
     linkStore.reset();
     sharedStore.reset();
     netStore.reset();
+    callNodesStore.reset();
     usageStore.reset();
     presenceStore.reset();
     transferStore.reset();

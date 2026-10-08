@@ -11,7 +11,7 @@ use crate::MessengerRuntime;
 use messenger_core::{MessengerError, PubKey, Result};
 use messenger_groups::{GroupKind, GroupLink};
 use messenger_links::contact::{npub_of, pubkey_of_npub};
-use messenger_links::{BridgeLink, ContactLink, LinkError, LinkType, Uri};
+use messenger_links::{BridgeLink, CallNodeLink, ContactLink, LinkError, LinkType, Uri};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -100,6 +100,24 @@ pub enum LinkView {
         /// Already among the bridges added on this device.
         added: bool,
     },
+    /// A private call node and, mostly, an invitation to it
+    /// (`veydan://call-node/<id>?a=…&t=…`): what `messenger_call_nodes_add`
+    /// takes. The card asks before the invitation is spent.
+    CallNode {
+        /// The link as this device writes it, the token with it.
+        link: String,
+        id: String,
+        /// `address:port` of its control channel.
+        addr: String,
+        /// The link carries an invitation (a link without one names the
+        /// node alone: its key is given by hand).
+        has_token: bool,
+        /// Already among the nodes of mine on this device: for a link with
+        /// an invitation, only when this device holds its own credentials
+        /// on the node (an entry of my own list leaves the invitation to
+        /// be exchanged).
+        added: bool,
+    },
     /// A well-formed link of a type a newer client knows.
     Unknown { link_type: String },
     Invalid { code: String },
@@ -152,6 +170,13 @@ impl MessengerRuntime {
                 Ok(b) => {
                     let added = self.net_status().await?.private.iter().any(|p| p.id == b.id);
                     Ok(LinkView::Bridge { link: b.encode(), id: b.id, addr: b.addr.to_string(), added })
+                }
+                Err(e) => Ok(LinkView::invalid(e)),
+            },
+            LinkType::CallNode => match CallNodeLink::from_uri(&uri) {
+                Ok(n) => {
+                    let added = self.call_node_is_mine(&n.id, n.token.is_some()).await?;
+                    Ok(LinkView::CallNode { link: n.encode(), id: n.id.clone(), addr: n.addr.to_string(), has_token: n.token.is_some(), added })
                 }
                 Err(e) => Ok(LinkView::invalid(e)),
             },

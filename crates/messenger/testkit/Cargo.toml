@@ -23,6 +23,8 @@ messenger-notify.workspace = true
 messenger-dm.workspace = true
 messenger-groups.workspace = true
 messenger-calls.workspace = true
+# The signed list of call nodes a fake registry makes (`FakeRegistry`).
+messenger-vlink.workspace = true
 # The engine of calls for messenger-cli: a call from the command line pushes
 # a file or a tone into it and keeps what comes back.
 messenger-rtc = { workspace = true, optional = true }

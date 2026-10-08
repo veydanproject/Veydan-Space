@@ -52,6 +52,11 @@ messenger_call_list_cameras messenger all
 messenger_call_list_screens messenger desktop
 messenger_call_mute messenger all
 messenger_call_network_changed messenger all
+messenger_call_nodes_add messenger all
+messenger_call_nodes_list messenger all
+messenger_call_nodes_refresh messenger all
+messenger_call_nodes_remove messenger all
+messenger_call_nodes_set_trust messenger all
 messenger_call_set_incoming messenger all
 messenger_call_set_nodes messenger all
 messenger_call_set_policy messenger all

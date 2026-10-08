@@ -9,6 +9,7 @@
   import OwnProfileCard from '../contacts/OwnProfileCard.svelte';
   import RelaysPanel from '../relays/RelaysPanel.svelte';
   import NetPanel from '../net/NetPanel.svelte';
+  import CallNodesPanel from '../net/CallNodesPanel.svelte';
   import MediaServersPanel from '../media/MediaServersPanel.svelte';
   import NotificationsPanel from '../push/NotificationsPanel.svelte';
   import PrivacyPanel from '../privacy/PrivacyPanel.svelte';
@@ -76,6 +77,7 @@
     {/if}
   {:else if tab === 'network'}
     <NetPanel />
+    <CallNodesPanel />
     <RelaysPanel />
     <div class="media-anchor" bind:this={media}><MediaServersPanel /></div>
   {:else if tab === 'notifications'}

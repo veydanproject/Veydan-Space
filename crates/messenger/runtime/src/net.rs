@@ -579,6 +579,12 @@ impl MessengerRuntime {
     /// stay down, and tries the direct way once a day when nothing else
     /// gave a reason to.
     pub async fn net_watch(&self) -> Result<()> {
+        // The registry of call nodes grows old on a clock of its own: the
+        // tick asks it in the background when due, and only with the
+        // project's servers, out of the silent mode and under the trust
+        // level `any` (it keeps the rule itself, and notices the servers
+        // or the silent mode coming back).
+        self.call_registry_tick().await;
         if self.relays.servers_mode().await? != Some(ServersMode::Veydan) {
             return Ok(());
         }

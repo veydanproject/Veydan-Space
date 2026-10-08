@@ -20,7 +20,7 @@ use tokio::sync::RwLock;
 const KEY_SERIAL: &str = "manifest.serial";
 const KEY_ISSUED_AT: &str = "manifest.issued_at";
 const KEY_REGION: &str = "manifest.region";
-const KEY_SILENT: &str = "relays.silent_mode";
+pub(crate) const KEY_SILENT: &str = "relays.silent_mode";
 pub(crate) const KEY_MODE: &str = "servers.mode";
 const KEY_JSON: &str = "manifest.json";
 const KEY_ORIGIN: &str = "manifest.origin";
@@ -48,7 +48,7 @@ impl ServersMode {
         }
     }
 
-    fn parse(s: &str) -> Option<Self> {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
         match s {
             "veydan" => Some(Self::Veydan),
             "own" => Some(Self::Own),

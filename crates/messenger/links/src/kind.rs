@@ -11,16 +11,20 @@ pub enum LinkType {
     /// `bridge` is kept for bridges to other networks: this version does
     /// not know `veydan://bridge/…`.
     Bridge,
+    /// A private call node and an invitation to it, written `call-node`.
+    CallNode,
     Unknown(String),
 }
 
 impl LinkType {
-    /// `word` is already known to be small latin letters.
+    /// `word` is already known to be small latin letters, with a hyphen
+    /// between two words at most.
     pub(crate) fn of(word: &str) -> Self {
         match word {
             "group" => Self::Group,
             "contact" => Self::Contact,
             "vlink" => Self::Bridge,
+            "call-node" => Self::CallNode,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -30,6 +34,7 @@ impl LinkType {
             Self::Group => "group",
             Self::Contact => "contact",
             Self::Bridge => "vlink",
+            Self::CallNode => "call-node",
             Self::Unknown(w) => w,
         }
     }
@@ -46,5 +51,12 @@ mod tests {
         // `bridge` is kept for bridges to other networks; nothing was
         // released with it, so it is no alias.
         assert_eq!(LinkType::of("bridge"), LinkType::Unknown("bridge".into()));
+    }
+
+    #[test]
+    fn a_call_node_is_written_with_a_hyphen() {
+        assert_eq!(LinkType::of("call-node"), LinkType::CallNode);
+        assert_eq!(LinkType::CallNode.as_str(), "call-node");
+        assert_eq!(LinkType::of("callnode"), LinkType::Unknown("callnode".into()));
     }
 }

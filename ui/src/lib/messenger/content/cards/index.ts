@@ -8,6 +8,7 @@
 import type { Component } from 'svelte';
 import type { LinkView } from '../../api';
 import BridgeCard from './BridgeCard.svelte';
+import CallNodeCard from './CallNodeCard.svelte';
 import ContactCard from './ContactCard.svelte';
 import GroupCard from './GroupCard.svelte';
 import UnknownCard from './UnknownCard.svelte';
@@ -20,6 +21,7 @@ export const CARDS: { [K in LinkKind]: CardOf<K> } = {
   group: GroupCard,
   contact: ContactCard,
   vlink: BridgeCard,
+  call_node: CallNodeCard,
   unknown: UnknownCard,
   invalid: UnknownCard,
 };
@@ -29,6 +31,7 @@ export const ICONS: Record<LinkKind, string> = {
   group: 'users',
   contact: 'user',
   vlink: 'shield',
+  call_node: 'network',
   unknown: 'info',
   invalid: 'alert-triangle',
 };

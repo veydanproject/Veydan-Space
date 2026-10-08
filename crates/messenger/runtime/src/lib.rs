@@ -16,6 +16,7 @@ pub mod notify;
 pub(crate) const REGION_FALLBACK: &str = "default";
 pub mod avatars;
 pub mod bindings;
+pub mod call_nodes;
 pub mod calls;
 pub mod cards;
 pub mod groups;
@@ -66,7 +67,8 @@ pub use messenger_contacts::{ContactView, ProfileInput, ProfileView};
 pub use messenger_identity::{CreatedIdentity, Identity};
 pub use messenger_groups::{GroupKind, GroupView, InviteView, KeyView as GroupKeyView, MemberView, OpBody as GroupOp, Role as GroupRole};
 pub use links::LinkView;
-pub use calls::CallBackends;
+pub use calls::{CallBackends, RegistrySource};
+pub use call_nodes::{CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust};
 pub use calls::{
     CallDirection, CallEnded, CallIncoming, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase,
     CallState, CallStats, CallVia, CallView, GroupCallAnnounced, GroupCallEnded, GroupCallLevel, GroupCallPhase,
@@ -205,8 +207,17 @@ impl MessengerRuntime {
             messenger_groups::GroupService::new(store.clone(), secrets.clone(), Arc::new(SystemClock), dm.clone());
         let (signals, signals_rx) = tokio::sync::mpsc::unbounded_channel();
         let (ui, _) = broadcast::channel(256);
-        let CallBackends { engine, nodes, rooms } = backends;
-        let calls = calls::CallsDriver::new(store.clone(), dm.clone(), engine.clone(), nodes.clone(), outbox.clone(), ui.clone());
+        let CallBackends { engine, nodes, rooms, registry } = backends;
+        let calls = calls::CallsDriver::new(
+            store.clone(),
+            dm.clone(),
+            engine.clone(),
+            nodes.clone(),
+            outbox.clone(),
+            ui.clone(),
+            secrets.clone(),
+            registry,
+        );
         let group_calls = calls::GroupCallsDriver::new(
             store.clone(),
             dm.clone(),

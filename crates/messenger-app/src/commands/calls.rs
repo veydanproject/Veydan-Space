@@ -44,7 +44,9 @@
 
 use super::{map_err, MessengerState};
 use messenger_runtime::calls::{CameraInfo, ScreenInfo, VideoFrame, VideoInput, VideoQuality, VideoTrack};
-use messenger_runtime::{CallMedia, CallNodeInput, CallState, CallView, GroupCallState, GroupCallView, MessengerRuntime, RelayPolicy};
+use messenger_runtime::{
+    CallMedia, CallNodeInput, CallNodesView, CallState, CallTrust, CallView, GroupCallState, GroupCallView, MessengerRuntime, RelayPolicy,
+};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -493,6 +495,66 @@ pub async fn messenger_call_set_nodes(
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<CallState> {
     messenger.runtime()?.call_set_nodes(nodes).await.map_err(map_err)
+}
+
+// ─── The call nodes of the settings ─────────────────────────────────────────
+
+/// What this device calls itself in the list of devices of a private
+/// node it is invited to: the product and the platform.
+fn device_name(app: &tauri::AppHandle) -> String {
+    let product = app.config().product_name.clone().unwrap_or_else(|| app.package_info().name.clone());
+    let platform = match std::env::consts::OS {
+        "android" => "Android",
+        "linux" => "Linux",
+        "windows" => "Windows",
+        "macos" => "macOS",
+        "ios" => "iOS",
+        other => other,
+    };
+    format!("{product}, {platform}")
+}
+
+/// Every call node the sets know (mine, the cloud's, the manifest's, the
+/// registry's), whose it is, how near and how full, whether a call may
+/// use it now, and the trust level. With `probe` the nodes a call may use
+/// are asked first (their round trip and state come with the answer).
+#[tauri::command]
+pub async fn messenger_call_nodes_list(probe: Option<bool>, messenger: tauri::State<'_, MessengerState>) -> CmdResult<CallNodesView> {
+    messenger.runtime()?.call_nodes_list(probe.unwrap_or(false)).await.map_err(map_err)
+}
+
+/// Adds a node of mine: `link` is a link `veydan://call-node/…` (with an
+/// invitation, exchanged at the node for the credentials of this device,
+/// kept in the vault) or a reference `address:port#id` (into my own list,
+/// with `key` for a private node). Refusals are `call_node_*` codes.
+#[tauri::command]
+pub async fn messenger_call_nodes_add(
+    app: tauri::AppHandle,
+    link: String,
+    key: Option<String>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<CallNodesView> {
+    let name = device_name(&app);
+    messenger.runtime()?.call_node_add(&link, key, &name).await.map_err(map_err)
+}
+
+/// Removes the node `id` of mine (its credentials, or its entry in my list).
+#[tauri::command]
+pub async fn messenger_call_nodes_remove(id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<CallNodesView> {
+    messenger.runtime()?.call_node_remove(&id).await.map_err(map_err)
+}
+
+/// Which nodes calls may use: `any`, `project_and_own`, `own_only`.
+#[tauri::command]
+pub async fn messenger_call_nodes_set_trust(trust: CallTrust, messenger: tauri::State<'_, MessengerState>) -> CmdResult<CallNodesView> {
+    messenger.runtime()?.call_nodes_set_trust(trust).await.map_err(map_err)
+}
+
+/// Asks the registry of volunteers' nodes for its list now (only under
+/// the level `any`; otherwise the registry is not used and nothing is asked).
+#[tauri::command]
+pub async fn messenger_call_nodes_refresh(messenger: tauri::State<'_, MessengerState>) -> CmdResult<CallNodesView> {
+    messenger.runtime()?.call_nodes_refresh().await.map_err(map_err)
 }
 
 /// The call under way, the policy and the nodes.

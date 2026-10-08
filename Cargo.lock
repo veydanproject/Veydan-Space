@@ -4297,6 +4297,8 @@ dependencies = [
  "http",
  "ring",
  "rustls",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-rustls",
  "tracing",
@@ -8804,7 +8806,7 @@ dependencies = [
 
 [[package]]
 name = "veydanspace"
-version = "5.1.7"
+version = "5.1.8"
 dependencies = [
  "age",
  "anyhow",
