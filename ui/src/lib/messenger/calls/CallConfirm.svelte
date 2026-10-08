@@ -20,10 +20,14 @@
     /** The kind asked about; `null`: closed. */
     media: CallMedia | null;
     peer: CallPeer;
+    /** The question instead of "Start a voice call?" / "Start a video call?" (a group call asks its own). */
+    question?: string;
+    /** The words of the button that calls, instead of "Call" / "Video call". */
+    action?: string;
     oncall: (media: CallMedia) => void;
     onclose: () => void;
   }
-  let { media, peer, oncall, onclose }: Props = $props();
+  let { media, peer, question, action, oncall, onclose }: Props = $props();
 
   // The choice of the box is kept while the dialog is open and applied as it is ticked.
   let never = $state(false);
@@ -47,7 +51,7 @@
     <div class="ask">
       <CallFace {peer} size={64} />
       <div class="name">{peer.name}</div>
-      <div class="question">{$t(media === 'video' ? 'msg_call_confirm_video' : 'msg_call_confirm_audio')}</div>
+      <div class="question">{question ?? $t(media === 'video' ? 'msg_call_confirm_video' : 'msg_call_confirm_audio')}</div>
     </div>
     <label class="never">
       <input type="checkbox" checked={never} onchange={(e) => tick((e.currentTarget as HTMLInputElement).checked)} />
@@ -60,7 +64,7 @@
     <!-- svelte-ignore a11y_autofocus -->
     <button type="button" class="btn btn-success" onclick={go} autofocus>
       <CallIcon name={media === 'video' ? 'video' : 'phone'} size={15} />
-      {$t(media === 'video' ? 'msg_call_video_start' : 'msg_call_start')}
+      {action ?? $t(media === 'video' ? 'msg_call_video_start' : 'msg_call_start')}
     </button>
   {/snippet}
 </Dialog>

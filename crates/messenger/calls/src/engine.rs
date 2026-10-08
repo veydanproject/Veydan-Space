@@ -285,6 +285,34 @@ pub struct PushedFrame {
     pub data: Vec<u8>,
 }
 
+/// One message of a data channel: text (the node's JSON on `ctl`) or
+/// bytes (what the participants of a room say to each other).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataPayload {
+    Text(String),
+    Binary(Vec<u8>),
+}
+
+/// What a session of a room (an SFU of a group call) is made with, beyond
+/// what every session has. The engine opens the data channel `data_label`
+/// before the first offer, so that the offer carries it, and encrypts
+/// every frame it sends and decrypts every frame it receives with the
+/// keys the core gives it (`set_sender_key`, `set_receiver_key`), derived
+/// with `key_salt` (the same for everybody in the call).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoomConfig {
+    pub call_id: String,
+    pub data_label: String,
+    pub key_salt: Vec<u8>,
+    /// The node takes simulcast (`simulcast` in its welcome): this side
+    /// sends three layers of its video. A node without it would forward
+    /// the layers of one m-line as one stream, mixed.
+    pub simulcast: bool,
+}
+
+/// The label of the control channel of a room (services/call/spec/protocol.md).
+pub const CTL_LABEL: &str = "ctl";
+
 /// What a session tells the core.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SessionEvent {
@@ -311,6 +339,24 @@ pub enum SessionEvent {
     /// window closed. The engine sends nothing from then on; the core
     /// turns the video off, tells the peer and shows the reason.
     VideoLost { reason: String },
+
+    // ─── Rooms (a session of a group call on an SFU) ───────────────────
+    /// A data channel is open both ways (the `ctl` of a room: the node's
+    /// `hello` follows at once).
+    DataOpen { label: String },
+    DataClosed { label: String },
+    /// A message came on a data channel.
+    Data { label: String, payload: DataPayload },
+    /// A track of another participant appeared on an m-line of the node's
+    /// offer (one per stream of each other participant); the core knows
+    /// whose it is from the offer's `tracks`.
+    RemoteTrack { mid: String, kind: Media },
+    /// The m-line was closed by a later offer (its participant left).
+    RemoteTrackGone { mid: String },
+    /// Level of the sound of one remote track, 0.0 to 1.0.
+    RemoteLevel { mid: String, level: f32 },
+    /// The frames of one remote video track changed size.
+    RemoteVideoSize { mid: String, width: u32, height: u32 },
 }
 
 /// One peer connection.
@@ -359,12 +405,57 @@ pub trait Session: Send + Sync {
     fn push_video_frame(&self, _frame: PushedFrame) -> Result<()> {
         Err(MessengerError::Transport("this engine takes no pushed video".into()))
     }
+
+    // ─── Rooms: only a session made with `create_room_session` has these ──
+
+    /// Send on a data channel of the session (`ctl` of a room): text for
+    /// the node, bytes for the other participants.
+    async fn send_data(&self, _label: &str, _payload: DataPayload) -> Result<()> {
+        Err(MessengerError::Transport("this session has no data channel".into()))
+    }
+
+    /// The key material of slot `index` for everything this side sends,
+    /// from now on; every frame carries its slot, so a receiver with the
+    /// old key still reads the frames in flight. Replaces the slot.
+    async fn set_sender_key(&self, _index: u8, _key: &[u8]) -> Result<()> {
+        Err(MessengerError::Transport("this session encrypts no frames".into()))
+    }
+
+    /// The key material of slot `index` for the frames that come on the
+    /// m-line `mid`. A track without a key for the slot of its frames
+    /// stays silent and dark: that is how an unconfirmed participant is
+    /// not listened to.
+    async fn set_receiver_key(&self, _mid: &str, _index: u8, _key: &[u8]) -> Result<()> {
+        Err(MessengerError::Transport("this session encrypts no frames".into()))
+    }
+
+    /// The frames of the remote video on the m-line `mid` (a room), as
+    /// `video_frames` gives the one video of a call between two.
+    fn video_frames_of(&self, _mid: &str) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
+        None
+    }
 }
 
 /// The engine: a factory of sessions.
 #[async_trait]
 pub trait MediaEngine: Send + Sync {
     async fn create_session(&self, ice_servers: Vec<IceServer>, policy: RelayPolicy, media: Media) -> Result<Box<dyn Session>>;
+
+    /// A session for a room of an SFU (a group call): what this side
+    /// sends goes `sendonly` in its one offer together with the data
+    /// channel `room.data_label`; what the others send comes later on
+    /// m-lines of the node's offers, given with `set_remote(Offer)` and
+    /// answered with `create_answer`. Frames are encrypted end to end
+    /// under the keys the core sets. An engine without rooms says so.
+    async fn create_room_session(
+        &self,
+        _ice_servers: Vec<IceServer>,
+        _policy: RelayPolicy,
+        _media: Media,
+        _room: RoomConfig,
+    ) -> Result<Box<dyn Session>> {
+        Err(MessengerError::Transport("this engine has no rooms".into()))
+    }
 
     /// The cameras of this machine, the default first. Empty on a phone:
     /// its plugin lists them and pushes their frames.

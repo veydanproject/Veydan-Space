@@ -24,6 +24,41 @@
 //! a press is kept as the *expected* answer for a short while
 //! ([`EXPECTED_FOR`]), and the call is taken the moment it rings in.
 //!
+//! The room of a group call takes the same shell, without a ringing: a
+//! call announced in a group is a banner in its chat, not a call that
+//! rings here (messenger-wire §10). The room I start or join goes on from
+//! its first word (`group_call.state`: the service, the sound's mode, the
+//! processor awake), and ends when I leave it or it goes:
+//!
+//! ```text
+//! group_call.state (starting … reconnecting) ──▶ start_ongoing   Hang up ──▶ group_call_leave
+//! group_call.state (left), group_call.ended  ──▶ stop
+//! ```
+//!
+//! A call of two that rings in while I am in a room is not rung here
+//! (`IncomingStep::InRoom`): the core leaves it ringing for my other
+//! devices, and the phone's shell is the room's until I am out of it. Out
+//! of the room while that call still rings in the core (an invitation
+//! lives 45 s), the phone rings it then (`rings_after_room`): the user
+//! may have left the room for it.
+//!
+//! The camera of a room is the phone's as in a call of two: it follows
+//! `video_local` and `camera` of the room's word, and its frames go into
+//! the room through the runtime (`group_call_push_video_frame`), never
+//! through the page; the other camera comes by
+//! `messenger_group_call_switch_camera`, whose answer the bridge follows.
+//!
+//! A call announced in a group while the app is away is a quiet
+//! notification (`group_call.started` ──▶ `show_group_call`): the group's
+//! name over "A call is on", no sound, no buttons; a tap opens the group's
+//! chat, whose banner has Join. Once per call, not for a call I started or
+//! am in; gone when the call ends or I join it. The bridge keeps the
+//! calls it showed for the life of the process (`NOTICED`); the plugin
+//! keeps them, and the calls that went on here, across processes
+//! (`GroupCallMemory` of the Kotlin side), so that a process started
+//! anew shows no notice of a call I left before it died, and takes down
+//! the notice a dead process left.
+//!
 //! As with pushes, the web page never talks to the plugin: the route of the
 //! sound is a command here (`messenger_call_audio_route`), and a change of
 //! it is an event (`call.audio_route`). The developer's command rings this
@@ -40,12 +75,13 @@ use messenger_notify::Content;
 use messenger_runtime::calls::VideoInput;
 use messenger_runtime::{CallMedia, CallPhase};
 #[cfg(target_os = "android")]
-use messenger_runtime::{CallView, MessengerRuntime};
+use messenger_runtime::{CallView, GroupCallAnnounced, GroupCallView, MessengerRuntime};
+use messenger_runtime::GroupCallPhase;
 #[cfg(target_os = "android")]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 #[cfg(target_os = "android")]
-use tauri_plugin_veydan_call::{Action, AudioRoute, CallAction, Incoming, NetworkChange, Ongoing, Routes, VeydanCall};
+use tauri_plugin_veydan_call::{Action, AudioRoute, CallAction, GroupCallNotice, Incoming, NetworkChange, Ongoing, Routes, VeydanCall};
 
 /// The event of the developer's command and of what the plugin reports.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -142,6 +178,79 @@ static ONGOING: std::sync::Mutex<Option<(String, bool)>> = std::sync::Mutex::new
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 static EXPECTED: std::sync::Mutex<Option<(String, Instant)>> = std::sync::Mutex::new(None);
 
+/// What a `group_call.state` does to the phone's shell: the room is going
+/// on (the shell started once per room and per `video`, the wording of
+/// the notification), or over for me.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RoomStep {
+    /// The room goes on: the shell for it, unless it is shown already.
+    Ongoing,
+    /// I am out of the room: the shell of the room, if it is shown, stops.
+    Over,
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn room_step(phase: GroupCallPhase) -> RoomStep {
+    match phase {
+        GroupCallPhase::Starting | GroupCallPhase::Joining | GroupCallPhase::InRoom | GroupCallPhase::Reconnecting => RoomStep::Ongoing,
+        GroupCallPhase::Left => RoomStep::Over,
+    }
+}
+
+/// The calls announced in groups whose quiet notification was shown, by
+/// call id, the newest last: one notification per call, however many
+/// times the group announces it (every change of who is in). Forgotten
+/// when the call ends; a few at a time, the oldest first, so that the
+/// calls of a long life never pile up. For the life of the process: the
+/// plugin remembers across processes (see the module's doc), and answers
+/// `show_group_call` with `false` for a call it knows.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+static NOTICED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// How many announced calls [`NOTICED`] remembers.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const NOTICED_MAX: usize = 16;
+
+/// Whether a `group_call.started` is news for the phone's shade: a call
+/// I am not in and did not start (`me`: my key, hex, as `started_by`
+/// has it), not shown yet. A call I started or joined is on my screen;
+/// one shown already stays as it is while the group tells of every seat
+/// taken.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn group_call_is_news(joined: bool, started_by: &str, me: &str, shown: bool) -> bool {
+    !joined && !shown && started_by != me
+}
+
+/// Remembers `call_id` as shown (see [`NOTICED`]).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn noticed(call_id: &str) {
+    let mut list = lock(&NOTICED);
+    if list.iter().any(|c| c == call_id) {
+        return;
+    }
+    list.push(call_id.to_string());
+    if list.len() > NOTICED_MAX {
+        let extra = list.len() - NOTICED_MAX;
+        list.drain(..extra);
+    }
+}
+
+/// Whether `call_id` was shown (see [`NOTICED`]).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn was_noticed(call_id: &str) -> bool {
+    lock(&NOTICED).iter().any(|c| c == call_id)
+}
+
+/// The call `call_id` ended: not shown any more, and forgotten.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn forget_noticed(call_id: &str) -> bool {
+    let mut list = lock(&NOTICED);
+    let before = list.len();
+    list.retain(|c| c != call_id);
+    list.len() != before
+}
+
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
@@ -176,12 +285,22 @@ fn shell_end(ongoing: Option<&str>, ended: &str) -> ShellEnd {
 }
 
 /// What a `call.incoming` of the runtime does on the phone, given an
-/// answer expected for the call and the phase the runtime has the call in
-/// right now (`None`: no such call any more). The event may be read after
-/// the call moved on: the bridge subscribes before it takes the presses
-/// made before it listened, and an Answer taken then accepts a call the
-/// runtime already had; its buffered `call.incoming` must not ring the
-/// answered call again.
+/// answer expected for the call, the phase the runtime has the call in
+/// right now (`None`: no such call any more) and whether I am in the room
+/// of a group call. The event may be read after the call moved on: the
+/// bridge subscribes before it takes the presses made before it listened,
+/// and an Answer taken then accepts a call the runtime already had; its
+/// buffered `call.incoming` must not ring the answered call again.
+///
+/// A call of two that rings in during a room is the core's to leave
+/// ringing: it answers Busy to a second call of two alone, and refuses
+/// my answer while the room is on (`call_accept`: one call at a time,
+/// and the ringing one keeps ringing for my other devices). The phone
+/// must not ring for it either: the plugin knows one call at a time, and
+/// a ringing over the room would end — by a press or by its limit — in
+/// the plugin's `stop`, which takes the room's service, notification,
+/// sound mode and wake lock down with it while the core keeps me in the
+/// room, with nothing to bring them back.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IncomingStep {
@@ -191,16 +310,35 @@ enum IncomingStep {
     Ring,
     /// Not ringing any more: answered, declined or over already.
     Skip,
+    /// A room goes on here: not rung, and the plugin remembers the call
+    /// as over (a late push for it rings nothing); it rings on for my
+    /// other devices and ends as missed here.
+    InRoom,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-fn incoming_step(expected: bool, phase: Option<CallPhase>) -> IncomingStep {
-    match (expected, phase) {
-        (_, Some(phase)) if phase != CallPhase::Incoming => IncomingStep::Skip,
-        (_, None) => IncomingStep::Skip,
-        (true, _) => IncomingStep::Accept,
-        (false, _) => IncomingStep::Ring,
+fn incoming_step(expected: bool, phase: Option<CallPhase>, in_room: bool) -> IncomingStep {
+    match (expected, phase, in_room) {
+        (_, Some(phase), _) if phase != CallPhase::Incoming => IncomingStep::Skip,
+        (_, None, _) => IncomingStep::Skip,
+        (_, _, true) => IncomingStep::InRoom,
+        (true, _, false) => IncomingStep::Accept,
+        (false, _, false) => IncomingStep::Ring,
     }
+}
+
+/// Whether the phone rings, once a room is over for me, the call of two
+/// that rang in during the room and was left to my other devices
+/// (`IncomingStep::InRoom`): yes while the core still has it ringing
+/// (`phase`, `None` for no such call) and no room has taken its place
+/// (`in_room`: the core's word after the stop, not the shell's). The core
+/// takes `call_accept` again the moment the room is gone, and the user may
+/// have left the room for this very call; without a ringing it would go
+/// missed in silence (the push for it was dismissed as over with the
+/// room, and rings nothing).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn rings_after_room(in_room: bool, phase: Option<CallPhase>) -> bool {
+    !in_room && phase == Some(CallPhase::Incoming)
 }
 
 /// Who the call notification names, as a message of theirs would: the
@@ -223,10 +361,17 @@ fn camera_denied(error: &str) -> bool {
     error.contains("not allowed")
 }
 
+/// The call shown as going on, and whether its service holds the camera.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+type Shell = (String, bool);
+/// The call whose camera is open, and which camera (`front` or `back`).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+type OpenCamera = (String, String);
+
 /// Everything the bridge remembers of the phone, taken: the call shown as
 /// going on and the camera open (answered), the answer expected (dropped).
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-fn forget() -> (Option<(String, bool)>, Option<(String, String)>) {
+fn forget() -> (Option<Shell>, Option<OpenCamera>) {
     *lock(&EXPECTED) = None;
     (lock(&ONGOING).take(), lock(&CAMERA).take())
 }
@@ -335,6 +480,16 @@ async fn pressed(app: &tauri::AppHandle, press: CallAction) {
         Some(rt) => rt.call_state().await.ok().and_then(|s| s.call).filter(|c| c.call_id == press.call_id),
         None => None,
     };
+    // Hang up on the notification of a room: out of it (the room goes on
+    // for the others, or ends with the last one out).
+    if let (Action::Hangup, Some(rt), None) = (press.action, &rt, &current) {
+        if rt.group_call_state(None).await.call.is_some_and(|c| c.call_id == press.call_id) {
+            if let Err(e) = rt.group_call_leave().await {
+                report(app, EVENT_DEBUG, serde_json::json!({ "error": e.to_string(), "callId": press.call_id }));
+            }
+            return;
+        }
+    }
     let outcome = match (press.action, rt, current) {
         (Action::Answer, Some(rt), Some(call)) if call.phase == CallPhase::Incoming => {
             // The microphone (and the camera) first; a no was told to
@@ -445,7 +600,13 @@ async fn network_changed(app: &tauri::AppHandle, how: &str) {
     let Some(rt) = runtime(app) else { return };
     let pool = rt.relays().pool().await;
     pool.reopen();
-    let in_call = rt.call_state().await.ok().and_then(|s| s.call).is_some();
+    // A room counts too: its signals (the words of identity, a key for a
+    // new epoch) go through the relays the same way, so the wait for a
+    // relay is the same. The core restarts the way of a call of two
+    // alone (`call_network_changed` is the DM service's); the room has
+    // no restart yet, and its way to the node either recovers by the
+    // engine's own gathering or fails, which ends the room for me.
+    let in_call = rt.call_state().await.ok().and_then(|s| s.call).is_some() || rt.group_call_state(None).await.call.is_some();
     if !in_call || pool.is_silent() {
         eprintln!("messenger call: the network changed ({how}); the relay connections are made anew");
         rt.call_network_changed().await;
@@ -545,6 +706,26 @@ async fn face_of(app: &tauri::AppHandle, rt: &MessengerRuntime, call: &CallView)
             None => String::new(),
         },
     };
+    named(app, rt, name).await
+}
+
+/// The group of a room, as its chat shows it, under the same settings.
+#[cfg(target_os = "android")]
+async fn face_of_room(app: &tauri::AppHandle, rt: &MessengerRuntime, group_id: &str, chat_id: &str) -> (String, bool) {
+    let name = match rt.group_get(group_id).await {
+        Ok(group) if !group.name.is_empty() => group.name,
+        _ => match rt.dm().chat(chat_id).await {
+            Ok(Some(chat)) => chat.title,
+            _ => String::new(),
+        },
+    };
+    named(app, rt, name).await
+}
+
+/// `name` as the notifications' settings allow it (see [`shown_name`]),
+/// and whether it stays off the lock screen.
+#[cfg(target_os = "android")]
+async fn named(app: &tauri::AppHandle, rt: &MessengerRuntime, name: String) -> (String, bool) {
     let (content, hidden) = match messenger_notify::Settings::load(rt.store()).await {
         Ok(s) => (s.content, s.lockscreen_hidden),
         Err(e) => {
@@ -559,6 +740,9 @@ async fn face_of(app: &tauri::AppHandle, rt: &MessengerRuntime, call: &CallView)
 #[cfg(target_os = "android")]
 async fn on_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str, payload: &serde_json::Value) {
     use messenger_runtime::{UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_STATE};
+    if name.starts_with("group_call.") {
+        return on_room_event(app, rt, name, payload).await;
+    }
     let Ok(call) = bridge(app) else { return };
     let Ok(view) = serde_json::from_value::<CallView>(payload["call"].clone()) else { return };
     match name {
@@ -570,7 +754,23 @@ async fn on_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str
                 Ok(state) => state.call.filter(|c| c.call_id == view.call_id).map(|c| c.phase),
                 Err(_) => Some(view.phase),
             };
-            match incoming_step(take_expected(&view.call_id), phase) {
+            let in_room = rt.group_call_state(None).await.call.map(|c| c.call_id);
+            match incoming_step(take_expected(&view.call_id), phase, in_room.is_some()) {
+                IncomingStep::InRoom => {
+                    // The room keeps the phone (see `IncomingStep`); the
+                    // plugin is told the call is over for the phone, as
+                    // for a call the core answered Busy, so that a push
+                    // for it rings nothing when the room ends first.
+                    eprintln!(
+                        "messenger call: {} rang in while the room {} goes on; not rung here",
+                        view.call_id,
+                        in_room.unwrap_or_default()
+                    );
+                    if let Err(e) = call.dismiss_incoming(Some(&view.call_id)).await {
+                        report(app, EVENT_DEBUG, serde_json::json!({ "error": e.to_string(), "callId": view.call_id }));
+                    }
+                    return;
+                }
                 IncomingStep::Accept => {
                     // Answered on the notification before the runtime heard
                     // the invitation: taken now, and the phone is not rung.
@@ -589,23 +789,7 @@ async fn on_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str
                 }
                 IncomingStep::Ring => {}
             }
-            // The phone rings whether the app is in front or away: the
-            // ringtone is the plugin's on a phone (the page of the call
-            // sounds nothing for a call that comes in), and so is the
-            // notification. With the app in front the plugin opens no
-            // screen of its own: the page of the messenger shows the call.
-            let (name, hidden) = face_of(app, rt, &view).await;
-            let incoming = Incoming {
-                call_id: view.call_id.clone(),
-                name,
-                avatar: None,
-                video: view.media == CallMedia::Video,
-                hide_on_lockscreen: hidden,
-            };
-            match call.show_incoming(&incoming).await {
-                Ok(shown) => report(app, EVENT_DEBUG, serde_json::json!({ "shown": shown, "callId": view.call_id })),
-                Err(e) => report(app, EVENT_DEBUG, serde_json::json!({ "error": e.to_string(), "callId": view.call_id })),
-            }
+            ring(app, rt, &view).await;
         }
         n if n == UI_EVENT_CALL_STATE => {
             if !matches!(view.phase, CallPhase::Outgoing | CallPhase::Connecting | CallPhase::Active | CallPhase::Reconnecting) {
@@ -634,7 +818,7 @@ async fn on_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str
                 }
                 let _ = call.keep_awake(true).await;
             }
-            sync_camera(app, rt, &view.call_id, camera.then_some(facing.as_str())).await;
+            sync_camera(app, rt, &view.call_id, camera.then_some(facing.as_str()), Feed::Dm).await;
         }
         n if n == UI_EVENT_CALL_ENDED => {
             let end = {
@@ -662,6 +846,144 @@ async fn on_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str
     }
 }
 
+/// The phone rings `view`, whether the app is in front or away: the
+/// ringtone is the plugin's on a phone (the page of the call sounds
+/// nothing for a call that comes in), and so is the notification. With
+/// the app in front the plugin opens no screen of its own: the page of
+/// the messenger shows the call. A call that rings already goes on
+/// ringing as it is.
+#[cfg(target_os = "android")]
+async fn ring(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, view: &CallView) {
+    let Ok(call) = bridge(app) else { return };
+    let (name, hidden) = face_of(app, rt, view).await;
+    let incoming = Incoming {
+        call_id: view.call_id.clone(),
+        name,
+        avatar: None,
+        video: view.media == CallMedia::Video,
+        hide_on_lockscreen: hidden,
+    };
+    match call.show_incoming(&incoming).await {
+        Ok(shown) => report(app, EVENT_DEBUG, serde_json::json!({ "shown": shown, "callId": view.call_id })),
+        Err(e) => report(app, EVENT_DEBUG, serde_json::json!({ "error": e.to_string(), "callId": view.call_id })),
+    }
+}
+
+/// One `group_call.*` event of the runtime, to the plugin: the room I am
+/// in takes the shell of a call that goes on (the service, the sound's
+/// mode, the processor awake, the camera while my video is on), and
+/// gives it back when I am out of it or it went. A call announced in a
+/// group (`group_call.started`) that is not mine is a quiet notification
+/// while the app is away (the plugin shows nothing over the app: the
+/// chat's banner says it there), once per call.
+#[cfg(target_os = "android")]
+async fn on_room_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str, payload: &serde_json::Value) {
+    use messenger_runtime::{UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE};
+    let Ok(call) = bridge(app) else { return };
+    match name {
+        n if n == UI_EVENT_GROUP_CALL_STATE => {
+            let Ok(view) = serde_json::from_value::<GroupCallView>(payload["call"].clone()) else { return };
+            if room_step(view.phase) == RoomStep::Over {
+                return stop_room(app, rt, &view.call_id).await;
+            }
+            // The service holds the camera only when told so at its start
+            // (its type), as for a call of two: a camera turned on inside
+            // a voice room starts it again, with the camera. The camera
+            // follows the room's word: on through `front` or `back`
+            // (`messenger_group_call_switch_camera` changes it), off.
+            let camera = view.video_local;
+            let facing = view.camera.clone().unwrap_or_else(|| CAMERA_FRONT.to_string());
+            let video = view.media == CallMedia::Video || camera;
+            let started = lock(&ONGOING).clone();
+            if started.as_ref() != Some(&(view.call_id.clone(), video)) {
+                *lock(&ONGOING) = Some((view.call_id.clone(), video));
+                let (name, hidden) = face_of_room(app, rt, &view.group_id, &view.chat_id).await;
+                let ongoing = Ongoing { call_id: view.call_id.clone(), name, video, hide_on_lockscreen: hidden };
+                if let Err(e) = call.start_ongoing(&ongoing).await {
+                    report(app, EVENT_DEBUG, serde_json::json!({ "error": e.to_string(), "callId": view.call_id }));
+                }
+                let _ = call.keep_awake(true).await;
+                // I am in: the quiet notification of this call, if any,
+                // goes, and the call is no news afterwards either (the
+                // group announces it again at every seat taken, and after
+                // I leave it while it goes on).
+                if was_noticed(&view.call_id) {
+                    let _ = call.dismiss_group_call(&view.call_id).await;
+                }
+                noticed(&view.call_id);
+            }
+            sync_camera(app, rt, &view.call_id, camera.then_some(facing.as_str()), Feed::Room).await;
+        }
+        n if n == UI_EVENT_GROUP_CALL_STARTED => {
+            let Ok(announced) = serde_json::from_value::<GroupCallAnnounced>(payload["call"].clone()) else { return };
+            let me = rt.session_pubkey().await.map(|k| k.to_string()).unwrap_or_default();
+            if !group_call_is_news(announced.joined, &announced.started_by, &me, was_noticed(&announced.call_id)) {
+                return;
+            }
+            let (name, hidden) = face_of_room(app, rt, &announced.group_id, &announced.chat_id).await;
+            let notice = GroupCallNotice {
+                call_id: announced.call_id.clone(),
+                chat_id: announced.chat_id.clone(),
+                name,
+                video: announced.media == CallMedia::Video,
+                hide_on_lockscreen: hidden,
+            };
+            match call.show_group_call(&notice).await {
+                // Shown once; not shown (the app in front, notifications
+                // off): the next word of the call, with the app away, may.
+                Ok(true) => noticed(&announced.call_id),
+                Ok(false) => {}
+                Err(e) => report(app, EVENT_DEBUG, serde_json::json!({ "error": e.to_string(), "callId": announced.call_id })),
+            }
+        }
+        n if n == UI_EVENT_GROUP_CALL_ENDED => {
+            // The room went for everybody while I was in it (the core
+            // says `left` too; the second stop finds nothing), or a call
+            // announced in a group is over: its notification goes. Asked
+            // of the plugin whether this process showed one or not: the
+            // notice may be a dead process's, caught up with now.
+            let Ok(ended) = serde_json::from_value::<GroupCallAnnounced>(payload["call"].clone()) else { return };
+            forget_noticed(&ended.call_id);
+            if let Err(e) = call.dismiss_group_call(&ended.call_id).await {
+                report(app, EVENT_DEBUG, serde_json::json!({ "error": e.to_string(), "callId": ended.call_id }));
+            }
+            stop_room(app, rt, &ended.call_id).await;
+        }
+        _ => {}
+    }
+}
+
+/// The room `call_id` is over for me: its camera closes and its shell
+/// stops, when it is the one shown as going on; the shell of anything
+/// else is left alone. Then the call of two that rang in during the
+/// room, if it still rings in the core, rings on the phone at last (see
+/// [`rings_after_room`]).
+#[cfg(target_os = "android")]
+async fn stop_room(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id: &str) {
+    let end = {
+        let mut ongoing = lock(&ONGOING);
+        let end = shell_end(ongoing.as_ref().map(|(id, _)| id.as_str()), call_id);
+        if end == ShellEnd::Stop {
+            *ongoing = None;
+        }
+        end
+    };
+    close_camera(app, call_id).await;
+    if end == ShellEnd::Stop {
+        let Ok(call) = bridge(app) else { return };
+        if let Err(e) = call.stop().await {
+            report(app, EVENT_DEBUG, serde_json::json!({ "error": e.to_string(), "callId": call_id }));
+        }
+    }
+    let Ok(state) = rt.call_state().await else { return };
+    let Some(view) = state.call else { return };
+    let in_room = rt.group_call_state(None).await.call.is_some();
+    if rings_after_room(in_room, Some(view.phase)) {
+        eprintln!("messenger call: {} rang in during the room {call_id}; the room is over, it rings here now", view.call_id);
+        ring(app, rt, &view).await;
+    }
+}
+
 /// What the camera is asked for: the size the plan measures the phone at.
 #[cfg(target_os = "android")]
 const CAMERA_WIDTH: u32 = 640;
@@ -677,6 +999,18 @@ const CAMERA_FRONT: &str = "front";
 #[cfg(target_os = "android")]
 const CAMERA_QUEUE: usize = 2;
 
+/// Where the frames of the camera go: into the call of two
+/// (`call_push_video_frame`) or into the room of a group call
+/// (`group_call_push_video_frame`). The two are the runtime's separate
+/// services, one of them with a session at a time; the bridge opens the
+/// camera for the one whose word asked for it.
+#[cfg(target_os = "android")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Feed {
+    Dm,
+    Room,
+}
+
 /// The call whose camera is open, and which camera (`front` or `back`):
 /// the camera follows `video_local` and `camera` of the call's state (the
 /// core turns it on for a video call at the answer and at the start, the
@@ -689,7 +1023,7 @@ static CAMERA: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::ne
 /// go through the plugin's sink to the engine of the runtime, as pushed
 /// frames (NV21, turned by the engine).
 #[cfg(target_os = "android")]
-async fn sync_camera(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id: &str, wanted: Option<&str>) {
+async fn sync_camera(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id: &str, wanted: Option<&str>, feed: Feed) {
     let Ok(call) = bridge(app) else { return };
     let open = lock(&CAMERA).clone();
     let open_for = open.as_ref().filter(|(id, _)| id == call_id).map(|(_, facing)| facing.as_str());
@@ -717,7 +1051,7 @@ async fn sync_camera(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id
         // A full queue drops the frame: the newest come after it.
         let _ = tx.try_send(frame);
     })));
-    spawn_camera_feed(rt.clone(), rx, call_id.to_string());
+    spawn_camera_feed(rt.clone(), rx, call_id.to_string(), feed);
     // The phone's permission first: the system asks the user when it was
     // never asked, and the camera opens on a yes. An answer that does
     // not come (no window to ask from) is a no.
@@ -733,7 +1067,11 @@ async fn sync_camera(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id
             // The core believes my video is on and told the peer so: off
             // again, so that nobody waits for a picture that never comes,
             // and the state no longer asks for the camera at every event.
-            if let Err(e) = rt.call_set_video(VideoInput::Off).await {
+            let off = match feed {
+                Feed::Dm => rt.call_set_video(VideoInput::Off).await.map(|_| ()),
+                Feed::Room => rt.group_call_set_video(VideoInput::Off).await.map(|_| ()),
+            };
+            if let Err(e) = off {
                 eprintln!("messenger call: my video could not be turned off after the camera failed: {e}");
             }
             report(
@@ -766,11 +1104,15 @@ async fn close_camera(app: &tauri::AppHandle, call_id: &str) {
 /// session yet, the call ending) is dropped; the first refusal and every
 /// hundredth after it go to the log.
 #[cfg(target_os = "android")]
-fn spawn_camera_feed(rt: Arc<MessengerRuntime>, mut rx: tokio::sync::mpsc::Receiver<tauri_plugin_veydan_call::camera::Frame>, call_id: String) {
+fn spawn_camera_feed(rt: Arc<MessengerRuntime>, mut rx: tokio::sync::mpsc::Receiver<tauri_plugin_veydan_call::camera::Frame>, call_id: String, feed: Feed) {
     tauri::async_runtime::spawn(async move {
         let mut refused = 0u64;
         while let Some(frame) = rx.recv().await {
-            if let Err(e) = rt.calls().push_video_frame(frame.into_pushed()).await {
+            let pushed = match feed {
+                Feed::Dm => rt.calls().push_video_frame(frame.into_pushed()).await,
+                Feed::Room => rt.group_call_push_video_frame(frame.into_pushed()).await,
+            };
+            if let Err(e) = pushed {
                 if refused % 100 == 0 {
                     eprintln!("messenger call: a frame of the camera was refused ({refused} before): {e}");
                 }
@@ -824,7 +1166,9 @@ pub fn spawn_bridge(app: tauri::AppHandle) -> tauri::async_runtime::JoinHandle<(
         listen(&app).await;
         loop {
             match events.recv().await {
-                Ok(ev) if ev.name.starts_with("call.") => on_event(&app, &rt, &ev.name, &ev.payload).await,
+                Ok(ev) if ev.name.starts_with("call.") || ev.name.starts_with("group_call.") => {
+                    on_event(&app, &rt, &ev.name, &ev.payload).await
+                }
                 Ok(_) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => break,
@@ -1053,14 +1397,45 @@ mod tests {
     /// taken only while the call still rings in the runtime.
     #[test]
     fn a_buffered_incoming_of_a_call_taken_already_does_not_ring() {
-        assert_eq!(incoming_step(false, Some(CallPhase::Incoming)), IncomingStep::Ring);
-        assert_eq!(incoming_step(true, Some(CallPhase::Incoming)), IncomingStep::Accept);
-        assert_eq!(incoming_step(false, Some(CallPhase::Connecting)), IncomingStep::Skip);
-        assert_eq!(incoming_step(false, Some(CallPhase::Active)), IncomingStep::Skip);
-        assert_eq!(incoming_step(true, Some(CallPhase::Reconnecting)), IncomingStep::Skip);
-        assert_eq!(incoming_step(true, Some(CallPhase::Ended)), IncomingStep::Skip);
-        assert_eq!(incoming_step(false, None), IncomingStep::Skip, "over, or another call is current");
-        assert_eq!(incoming_step(true, None), IncomingStep::Skip);
+        assert_eq!(incoming_step(false, Some(CallPhase::Incoming), false), IncomingStep::Ring);
+        assert_eq!(incoming_step(true, Some(CallPhase::Incoming), false), IncomingStep::Accept);
+        assert_eq!(incoming_step(false, Some(CallPhase::Connecting), false), IncomingStep::Skip);
+        assert_eq!(incoming_step(false, Some(CallPhase::Active), false), IncomingStep::Skip);
+        assert_eq!(incoming_step(true, Some(CallPhase::Reconnecting), false), IncomingStep::Skip);
+        assert_eq!(incoming_step(true, Some(CallPhase::Ended), false), IncomingStep::Skip);
+        assert_eq!(incoming_step(false, None, false), IncomingStep::Skip, "over, or another call is current");
+        assert_eq!(incoming_step(true, None, false), IncomingStep::Skip);
+    }
+
+    /// In the room of a Trio, a contact calls me 1:1: the core lets it
+    /// ring (its Busy is for a second call of two), but the phone must
+    /// not — the ringing over the room ended in the plugin's `stop`,
+    /// which took the room's service, notification and sound mode down
+    /// for good. Not rung, whatever was pressed before (the answer would
+    /// be refused by the core anyway); a call that moved on is skipped
+    /// as before, room or not.
+    #[test]
+    fn a_call_ringing_in_during_a_room_does_not_ring_the_phone() {
+        assert_eq!(incoming_step(false, Some(CallPhase::Incoming), true), IncomingStep::InRoom);
+        assert_eq!(incoming_step(true, Some(CallPhase::Incoming), true), IncomingStep::InRoom);
+        assert_eq!(incoming_step(false, Some(CallPhase::Ended), true), IncomingStep::Skip);
+        assert_eq!(incoming_step(false, None, true), IncomingStep::Skip);
+    }
+
+    /// In the room of a Trio, the screen dark, Alice calls 1:1: not rung
+    /// (above). I leave the room, by Hang up on its notification or on
+    /// its page, while her call still rings in the core: the core takes
+    /// my answer now, and the phone must ring at last — it once stayed
+    /// silent, the push for the call dismissed as over with the room,
+    /// and the call went missed. Not for a call that moved on or is
+    /// gone, nor while another room took the shell at once.
+    #[test]
+    fn the_call_left_ringing_during_a_room_rings_once_the_room_is_over() {
+        assert!(rings_after_room(false, Some(CallPhase::Incoming)));
+        assert!(!rings_after_room(true, Some(CallPhase::Incoming)));
+        assert!(!rings_after_room(false, Some(CallPhase::Active)));
+        assert!(!rings_after_room(false, Some(CallPhase::Ended)));
+        assert!(!rings_after_room(false, None));
     }
 
     /// "No content" in the notifications and a PIN on the app name nobody
@@ -1101,6 +1476,49 @@ mod tests {
         assert!(lock(&CAMERA).is_none());
         assert!(!take_expected("x"), "the answer expected before the stop is dropped");
         assert_eq!(forget(), (None, None));
+    }
+
+    /// The room of a group call holds the phone's shell from its first
+    /// word (the room being made, my offer with the node) to my leaving;
+    /// a word of a room I am out of stops it. The shell of a room ends
+    /// only for the room shown as going on (`shell_end`), as for a call
+    /// of two.
+    #[test]
+    fn a_room_holds_the_shell_until_i_am_out() {
+        for phase in [GroupCallPhase::Starting, GroupCallPhase::Joining, GroupCallPhase::InRoom, GroupCallPhase::Reconnecting] {
+            assert_eq!(room_step(phase), RoomStep::Ongoing, "{phase:?}");
+        }
+        assert_eq!(room_step(GroupCallPhase::Left), RoomStep::Over);
+    }
+
+    /// Alice starts a call in the Trio while Bob's phone is in his pocket:
+    /// the quiet notification, once — the group announces the call again
+    /// at every seat taken. Not for a call Bob started (his screen has
+    /// it), nor for one he is in; a call he joined is noted as shown, so
+    /// that his leaving it (announced again) is no news either. The call
+    /// over, it is forgotten, so that
+    /// a call started anew under the same id (never, but cheap) is news
+    /// again; and the list of shown calls stays short.
+    #[test]
+    fn a_call_on_in_a_group_is_news_once_unless_it_is_mine() {
+        const ALICE: &str = "a1";
+        const BOB: &str = "b2";
+        lock(&NOTICED).clear();
+        assert!(group_call_is_news(false, ALICE, BOB, was_noticed("c1")));
+        noticed("c1");
+        assert!(!group_call_is_news(false, ALICE, BOB, was_noticed("c1")), "the next word of the same call: shown already");
+        assert!(!group_call_is_news(false, BOB, BOB, false), "my own call");
+        assert!(!group_call_is_news(true, ALICE, BOB, false), "a call I am in");
+        assert!(forget_noticed("c1"));
+        assert!(!forget_noticed("c1"), "forgotten once");
+        assert!(group_call_is_news(false, ALICE, BOB, was_noticed("c1")));
+        for n in 0..NOTICED_MAX + 3 {
+            noticed(&format!("call-{n}"));
+        }
+        assert_eq!(lock(&NOTICED).len(), NOTICED_MAX);
+        assert!(!was_noticed("call-0") && !was_noticed("call-2"), "the oldest forgotten first");
+        assert!(was_noticed("call-3") && was_noticed(&format!("call-{}", NOTICED_MAX + 2)));
+        lock(&NOTICED).clear();
     }
 
     /// The readings of the relays after `reopen`, one per look, and how

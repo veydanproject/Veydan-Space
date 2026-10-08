@@ -62,6 +62,28 @@ pub struct Incoming {
     pub hide_on_lockscreen: bool,
 }
 
+/// A call on in a group, for the quiet notification of it: the group's
+/// name and whether it is a video call; a tap opens the group's chat
+/// (its banner has the button to join). Nothing rings.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupCallNotice {
+    /// The app's id of the call: the notification is kept by it.
+    pub call_id: String,
+    /// The chat of the group, `group:<id>`, which a tap opens.
+    pub chat_id: String,
+    /// The group, as the app shows it; empty for the app's own name.
+    pub name: String,
+    pub video: bool,
+    /// As in [`Incoming`]: the lock screen shows only that a call is on.
+    pub hide_on_lockscreen: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct NoticeAnswer {
+    shown: bool,
+}
+
 /// A call that goes on.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,6 +121,14 @@ pub struct Shown {
     /// notification pops up over it, and the app may show its own screen.
     #[serde(default)]
     pub in_front: bool,
+    /// The call that goes on on the phone, over which the plugin would
+    /// not ring (`ringing` is false, nothing was shown): the phone stays
+    /// that call's. The app answers busy for a second call of two before
+    /// it rings, and does not ring a call of two during a group call, so
+    /// this is set for a call of the app's own making (the developer's
+    /// command) if at all.
+    #[serde(default)]
+    pub busy_with: Option<String>,
 }
 
 /// Where the sound of a call goes.
@@ -209,6 +239,22 @@ impl<R: Runtime> VeydanCall<R> {
     /// `call_id`: only that call; None: whatever rings.
     pub async fn dismiss_incoming(&self, call_id: Option<&str>) -> Result<()> {
         self.run("dismissIncoming", serde_json::json!({ "callId": call_id })).await
+    }
+
+    /// A call is on in a group: a quiet notification of it (no sound, no
+    /// buttons), unless the app is what the user looks at, or the phone
+    /// knows the call already: shown before, or gone on here (I was in
+    /// it, by `start_ongoing`), which it remembers across processes.
+    /// Answers whether it was shown.
+    pub async fn show_group_call(&self, notice: &GroupCallNotice) -> Result<bool> {
+        Ok(self.call::<NoticeAnswer>("showGroupCall", notice).await?.shown)
+    }
+
+    /// The call of a group is over, or I am in it: its notification goes,
+    /// whichever process showed it. The phone keeps knowing a call it
+    /// went on with.
+    pub async fn dismiss_group_call(&self, call_id: &str) -> Result<()> {
+        self.run("dismissGroupCall", serde_json::json!({ "callId": call_id })).await
     }
 
     /// The call goes on: the notification with Hang up, the service that

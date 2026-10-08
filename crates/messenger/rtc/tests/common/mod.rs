@@ -1,16 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! What the tests of the engine share: a tone and its detector, two
-//! sessions joined in this process with their candidates trickled across,
-//! a call node started from `services/call/dist/vcall`, and a client of
-//! its control channel for the credentials (the same HELLO/TURN over
-//! pinned TLS and h2 that `vcall probe` makes; copied, not depended on:
-//! the node's crates stay in their own workspace).
+//! What the tests of the engine share: a tone and its detector, a test
+//! pattern and its watchers, two sessions joined in this process with
+//! their candidates trickled across, a call node started from the binary
+//! `VCALL_BIN` names (or `services/call/dist/vcall`), and a client of its
+//! control channel for the credentials and the rooms (the same
+//! HELLO/TURN/ROOMS over pinned TLS and h2 that `vcall probe` and `vcall
+//! room-test` make; copied, not depended on: the node's crates stay in
+//! their own workspace).
 
 #![allow(dead_code)]
 
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,13 +21,13 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use http::{Method, Request};
 use messenger_rtc::{
-    AudioInput, AudioMode, AudioOutput, AudioProcessing, Candidate, ConnectionState, Engine, IceServer, Session,
-    SessionConfig, SessionEvent, FRAME_SAMPLES, SAMPLE_RATE,
+    has_test_square, test_pattern, AudioInput, AudioMode, AudioOutput, AudioProcessing, Candidate, ConnectionState,
+    Engine, IceServer, Session, SessionConfig, SessionEvent, VideoFrame, VideoSource, FRAME_SAMPLES, SAMPLE_RATE,
 };
 use messenger_vlink::proto::{io as h2io, pin, BridgeRef};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio_rustls::TlsConnector;
 
 /// A 10 ms mono frame of a sine at `hz`; `phase` carries over.
@@ -114,6 +117,118 @@ pub async fn collect(output: &mut AudioOutput, dur: Duration) -> Vec<i16> {
 pub fn tail_tone(got: &[i16], hz: f64) -> (f64, f64) {
     let tail = &got[got.len().saturating_sub(2 * SAMPLE_RATE as usize)..];
     tone_ratio(tail, hz)
+}
+
+/// A tone that came as pushed: the ratio near 1.0 and the RMS of 8000
+/// of amplitude (5657).
+pub fn assert_tone((ratio, rms): (f64, f64), hz: f64, where_: &str) {
+    assert!(ratio > 0.95, "{hz} Hz at {where_}: ratio {ratio:.3}, rms {rms:.0}");
+    assert!(rms > 4000.0 && rms < 7000.0, "{hz} Hz at {where_}: rms {rms:.0} (pushed 5657)");
+}
+
+/// How many 10 ms frames of `got` are silent (an RMS under 100).
+pub fn silent_frames(got: &[i16]) -> usize {
+    got.chunks(FRAME_SAMPLES).filter(|f| tone_ratio(f, 440.0).1 < 100.0).count()
+}
+
+/// Pushes the test pattern of `width`×`height` into `source` at 30
+/// frames a second until `stop` says so; how many were pushed.
+pub fn pump_pattern(source: VideoSource, width: u32, height: u32, stop: watch::Receiver<bool>) -> tokio::task::JoinHandle<u32> {
+    pump_frames(source, width, height, false, stop)
+}
+
+/// The same with grain over the picture, new on every frame: a picture
+/// the encoder cannot compress to nearly nothing, so that it spends
+/// what the estimate allows, as a camera's does (the plain pattern is
+/// so cheap that the upper layers of a simulcast never turn on: the
+/// stable estimate grows only with what is really sent).
+pub fn pump_noisy_pattern(source: VideoSource, width: u32, height: u32, stop: watch::Receiver<bool>) -> tokio::task::JoinHandle<u32> {
+    pump_frames(source, width, height, true, stop)
+}
+
+fn pump_frames(source: VideoSource, width: u32, height: u32, noisy: bool, mut stop: watch::Receiver<bool>) -> tokio::task::JoinHandle<u32> {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_micros(1_000_000 / 30));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let started = std::time::Instant::now();
+        let mut seq = 0u32;
+        let mut rng = 0x2545_F491_4F6C_DD1Du64;
+        loop {
+            tokio::select! {
+                _ = tick.tick() => {
+                    let mut frame = test_pattern(width, height, seq);
+                    if noisy {
+                        let luma = (width * height) as usize;
+                        for y in &mut frame.data[..luma] {
+                            rng ^= rng << 13;
+                            rng ^= rng >> 7;
+                            rng ^= rng << 17;
+                            // Grain of up to 31 on the gradient; the square stays bright.
+                            let grain = (rng >> 59) as u8;
+                            if *y <= 200 {
+                                *y = y.saturating_add(grain).min(200);
+                            }
+                        }
+                    }
+                    frame.timestamp_us = started.elapsed().as_micros() as i64;
+                    source.push(Arc::new(frame));
+                    seq += 1;
+                }
+                _ = stop.changed() => return seq,
+            }
+        }
+    })
+}
+
+/// Frames of `rx` for `dur`: how many came, and the sizes seen in order
+/// (each once).
+pub async fn watch_frames(rx: &mut broadcast::Receiver<Arc<VideoFrame>>, dur: Duration) -> (u32, Vec<(u32, u32)>) {
+    let deadline = tokio::time::sleep(dur);
+    tokio::pin!(deadline);
+    let (mut n, mut sizes): (u32, Vec<(u32, u32)>) = (0, vec![]);
+    loop {
+        tokio::select! {
+            frame = rx.recv() => match frame {
+                Ok(f) => {
+                    n += 1;
+                    if sizes.last() != Some(&(f.width, f.height)) {
+                        sizes.push((f.width, f.height));
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            _ = &mut deadline => break,
+        }
+    }
+    (n, sizes)
+}
+
+/// The first frame of `rx` of `width`×`height` that shows the square of
+/// the pattern, within `timeout`; the sizes seen before it.
+pub async fn wait_for_size(rx: &mut broadcast::Receiver<Arc<VideoFrame>>, width: u32, height: u32, timeout: Duration) -> Vec<(u32, u32)> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    let mut sizes: Vec<(u32, u32)> = vec![];
+    loop {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let frame = tokio::time::timeout(left, rx.recv()).await.unwrap_or_else(|_| panic!("no {width}×{height} frame with the square within {timeout:?}; sizes seen: {sizes:?}"));
+        match frame {
+            Ok(f) => {
+                if sizes.last() != Some(&(f.width, f.height)) {
+                    sizes.push((f.width, f.height));
+                }
+                if (f.width, f.height) == (width, height) {
+                    assert!(f.is_well_formed());
+                    assert_eq!(f.rotation, 0);
+                    if has_test_square(&f) {
+                        return sizes;
+                    }
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(broadcast::error::RecvError::Closed) => panic!("the frames ended"),
+        }
+    }
 }
 
 /// One side of a pair: the session and what its events said.
@@ -239,22 +354,28 @@ pub fn lan_ip() -> IpAddr {
     s.local_addr().expect("local").ip()
 }
 
-/// A call node of `services/call/dist/vcall` on this machine, for the
-/// relay tests. `None` when the binary is not there (`make -C
-/// services/call release`): the test says so and passes nothing.
+/// A call node on this machine, for the tests of the relay and the
+/// rooms: the binary `VCALL_BIN` names, or `services/call/dist/vcall`.
+/// `None` when there is neither (CI has no node): the test says so and
+/// passes nothing.
 pub struct Node {
     child: tokio::process::Child,
     pub control: SocketAddr,
     pub turn: SocketAddr,
+    /// The SFU port, UDP and TCP.
+    pub sfu: SocketAddr,
     pub id: String,
     _data: tempfile::TempDir,
 }
 
 impl Node {
     pub async fn start() -> Option<Node> {
-        let bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../services/call/dist/vcall");
+        let bin = match std::env::var_os("VCALL_BIN") {
+            Some(path) => PathBuf::from(path),
+            None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../services/call/dist/vcall"),
+        };
         if !bin.exists() {
-            eprintln!("no {}: make -C services/call release; the relay test is skipped", bin.display());
+            eprintln!("no call node binary at {} (set VCALL_BIN, or make -C services/call release); the test is skipped", bin.display());
             return None;
         }
         let ip = lan_ip();
@@ -265,6 +386,7 @@ impl Node {
         let mut child = tokio::process::Command::new(bin)
             .env("VCALL_LISTEN", format!("{ip}:0"))
             .env("VCALL_TURN_LISTEN", format!("{ip}:0"))
+            .env("VCALL_SFU_LISTEN", format!("{ip}:0"))
             .env("VCALL_PUBLIC_IP", ip.to_string())
             .env("VCALL_DATA", data.path())
             .env("VCALL_CTL", data.path().join("ctl.sock"))
@@ -288,8 +410,9 @@ impl Node {
             panic!("vcall ended before it was up");
         };
         let line = tokio::time::timeout(Duration::from_secs(10), up).await.expect("vcall up within 10 s");
-        // `... node is up control=1.2.3.4:5 turn=1.2.3.4:6 ... id=<hex>`, in
-        // the colours tracing paints a terminal with, pipe or not.
+        // `... node is up control=1.2.3.4:5 turn=1.2.3.4:6 sfu=1.2.3.4:7 ...
+        // id=<hex>`, in the colours tracing paints a terminal with, pipe or
+        // not.
         let line = strip_ansi(&line);
         let field = |name: &str| -> String {
             line.split_whitespace()
@@ -301,6 +424,7 @@ impl Node {
             child,
             control: field("control").parse().expect("control addr"),
             turn: field("turn").parse().expect("turn addr"),
+            sfu: field("sfu").parse().expect("sfu addr"),
             id: field("id"),
             _data: data,
         };
@@ -319,10 +443,11 @@ impl Node {
 }
 
 // The control protocol of a node (services/call/crates/vcall-proto):
-// enough of it for credentials.
+// enough of it for credentials and rooms.
 const ALPN: &[u8] = b"vcall/1";
 const PATH_HELLO: &str = "/v1/hello";
 const PATH_TURN: &str = "/v1/turn";
+const PATH_ROOMS: &str = "/v1/rooms";
 
 #[derive(Serialize)]
 struct Hello {
@@ -334,7 +459,7 @@ struct Hello {
     client: String,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Clone)]
 struct Access {
     #[serde(skip_serializing_if = "Option::is_none")]
     key: Option<String>,
@@ -350,6 +475,8 @@ pub struct Welcome {
     pub node_id: String,
     pub version: String,
     pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub codecs: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -379,42 +506,118 @@ impl TurnCredentials {
     }
 }
 
-/// HELLO and TURN on the control channel of the node `reference`
-/// (`address:port#id`): its welcome and credentials.
-pub async fn credentials(reference: &str, access_key: Option<String>) -> (Welcome, TurnCredentials) {
-    let node: BridgeRef = reference.parse().expect("node reference");
-    let tcp = tokio::time::timeout(Duration::from_secs(10), tokio::net::TcpStream::connect(node.addr))
-        .await
-        .expect("connect in time")
-        .expect("connect");
-    let _ = tcp.set_nodelay(true);
-    let mut config = rustls::ClientConfig::builder_with_provider(pin::provider())
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .expect("tls13")
-        .dangerous()
-        .with_custom_certificate_verifier(pin::verifier(node.id))
-        .with_no_client_auth();
-    config.alpn_protocols = vec![ALPN.to_vec()];
-    let name = pin::server_name(&node).expect("server name");
-    let tls = tokio::time::timeout(
-        Duration::from_secs(10),
-        TlsConnector::from(Arc::new(config)).connect(name, tcp),
-    )
-    .await
-    .expect("tls in time")
-    .expect("tls: the pin");
-    assert_eq!(tls.get_ref().1.alpn_protocol(), Some(ALPN), "the node took the control ALPN");
-    let (mut send, connection) = h2io::client_builder().handshake::<_, Bytes>(tls).await.expect("h2");
-    tokio::spawn(async move {
-        let _ = connection.await;
-    });
+#[derive(Serialize, Default)]
+struct RoomRequest {
+    access: Access,
+    media_limits: serde_json::Value,
+}
 
-    async fn post<T: Serialize, R: for<'de> Deserialize<'de>>(
-        send: &mut h2::client::SendRequest<Bytes>,
-        path: &str,
-        body: &T,
-    ) -> R {
-        let mut ready = send.clone().ready().await.expect("ready");
+/// What the node answers a room's creator (protocol.md, RoomCreated).
+#[derive(Deserialize, Debug, Clone)]
+pub struct RoomCreated {
+    pub room_id: String,
+    pub join_token: String,
+    pub admin_token: String,
+    pub max_participants: u32,
+    pub kbps_per_participant: u32,
+    pub sfu_udp: String,
+    pub sfu_tcp: String,
+}
+
+#[derive(Serialize)]
+struct JoinRequest<'a> {
+    token: &'a str,
+    sdp_offer: &'a str,
+    caps: Vec<String>,
+}
+
+/// What the node answers a join (protocol.md, Joined).
+#[derive(Deserialize, Debug, Clone)]
+pub struct Joined {
+    pub sdp_answer: String,
+    pub participant_id: u32,
+    pub participant_token: String,
+    pub participants: Vec<u32>,
+}
+
+#[derive(Serialize)]
+struct LeaveRequest<'a> {
+    participant_id: u32,
+    token: &'a str,
+}
+
+/// A stream of another participant on an m-line of the node's offer.
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct CtlTrack {
+    pub id: u32,
+    pub kind: String,
+    pub mid: String,
+}
+
+/// The text frames of the channel `ctl` (protocol.md, "Канал ctl").
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "t", rename_all = "snake_case")]
+pub enum CtlMessage {
+    Hello { you: u32, participants: Vec<u32> },
+    Joined { id: u32 },
+    Left { id: u32 },
+    Offer { seq: u32, sdp: String, tracks: Vec<CtlTrack> },
+    Answer { seq: u32, sdp: String },
+    /// Who is speaking now, the loudest first (a node that counts the
+    /// audio levels).
+    Speaking { participants: Vec<u32> },
+}
+
+/// The sender's id in front of a relayed binary frame of `ctl`.
+pub fn relayed_from(frame: &[u8]) -> Option<(u32, &[u8])> {
+    let head: [u8; 4] = frame.get(..4)?.try_into().ok()?;
+    Some((u32::from_be_bytes(head), &frame[4..]))
+}
+
+/// A client of the control channel of a node: pinned TLS and h2, JSON
+/// both ways.
+pub struct Control {
+    send: h2::client::SendRequest<Bytes>,
+    node: BridgeRef,
+    access: Access,
+}
+
+impl Control {
+    /// Connects to the node `reference` (`address:port#id`), with an
+    /// access key for a private one.
+    pub async fn connect(reference: &str, access_key: Option<String>) -> Control {
+        let node: BridgeRef = reference.parse().expect("node reference");
+        let tcp = tokio::time::timeout(Duration::from_secs(10), tokio::net::TcpStream::connect(node.addr))
+            .await
+            .expect("connect in time")
+            .expect("connect");
+        let _ = tcp.set_nodelay(true);
+        let mut config = rustls::ClientConfig::builder_with_provider(pin::provider())
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .expect("tls13")
+            .dangerous()
+            .with_custom_certificate_verifier(pin::verifier(node.id))
+            .with_no_client_auth();
+        config.alpn_protocols = vec![ALPN.to_vec()];
+        let name = pin::server_name(&node).expect("server name");
+        let tls = tokio::time::timeout(
+            Duration::from_secs(10),
+            TlsConnector::from(Arc::new(config)).connect(name, tcp),
+        )
+        .await
+        .expect("tls in time")
+        .expect("tls: the pin");
+        assert_eq!(tls.get_ref().1.alpn_protocol(), Some(ALPN), "the node took the control ALPN");
+        let (send, connection) = h2io::client_builder().handshake::<_, Bytes>(tls).await.expect("h2");
+        tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        Control { send, node, access: Access { key: access_key } }
+    }
+
+    /// One request: the status and the body.
+    pub async fn post_raw<T: Serialize>(&mut self, path: &str, body: &T) -> (u16, Vec<u8>) {
+        let mut ready = self.send.clone().ready().await.expect("ready");
         let request = Request::builder()
             .method(Method::POST)
             .uri(path)
@@ -432,21 +635,57 @@ pub async fn credentials(reference: &str, access_key: Option<String>) -> (Welcom
             let _ = body.flow_control().release_capacity(chunk.len());
             out.extend_from_slice(&chunk);
         }
+        (status, out)
+    }
+
+    /// One request that must succeed: its answer.
+    pub async fn post<T: Serialize, R: for<'de> Deserialize<'de>>(&mut self, path: &str, body: &T) -> R {
+        let (status, out) = self.post_raw(path, body).await;
         assert_eq!(status, 200, "{path}: {status} {}", String::from_utf8_lossy(&out));
         serde_json::from_slice(&out).expect("json body")
     }
 
-    let hello = Hello {
-        protocol_min: 1,
-        protocol_max: 1,
-        capabilities: ["stun", "turn", "turn-tcp", "turn-tls"].map(String::from).to_vec(),
-        codecs: vec!["opus".into()],
-        access: Access { key: access_key.clone() },
-        client: "messenger-rtc-test/0".into(),
-    };
-    let welcome: Welcome = post(&mut send, PATH_HELLO, &hello).await;
-    assert_eq!(welcome.node_id, node.id.to_string(), "the node is the one pinned");
-    let creds: TurnCredentials = post(&mut send, PATH_TURN, &TurnRequest { access: Access { key: access_key } }).await;
+    /// HELLO: the node's welcome, checked against the pin.
+    pub async fn hello(&mut self) -> Welcome {
+        let hello = Hello {
+            protocol_min: 1,
+            protocol_max: 1,
+            capabilities: ["stun", "turn", "turn-tcp", "turn-tls", "sfu"].map(String::from).to_vec(),
+            codecs: ["opus", "vp8"].map(String::from).to_vec(),
+            access: self.access.clone(),
+            client: "messenger-rtc-test/0".into(),
+        };
+        let welcome: Welcome = self.post(PATH_HELLO, &hello).await;
+        assert_eq!(welcome.node_id, self.node.id.to_string(), "the node is the one pinned");
+        welcome
+    }
+
+    pub async fn turn(&mut self) -> TurnCredentials {
+        self.post(PATH_TURN, &TurnRequest { access: self.access.clone() }).await
+    }
+
+    /// A room with the node's own limits.
+    pub async fn create_room(&mut self) -> RoomCreated {
+        self.post(PATH_ROOMS, &RoomRequest { access: self.access.clone(), media_limits: serde_json::json!({}) }).await
+    }
+
+    /// Joins `room` with `offer`: the node's answer and the seat.
+    pub async fn join(&mut self, room: &str, token: &str, offer: &str) -> Joined {
+        self.post(&format!("{PATH_ROOMS}/{room}/join"), &JoinRequest { token, sdp_offer: offer, caps: vec![] }).await
+    }
+
+    /// Leaves `room` over the control channel.
+    pub async fn leave(&mut self, room: &str, participant_id: u32, token: &str) {
+        let _: serde_json::Value = self.post(&format!("{PATH_ROOMS}/{room}/leave"), &LeaveRequest { participant_id, token }).await;
+    }
+}
+
+/// HELLO and TURN on the control channel of the node `reference`
+/// (`address:port#id`): its welcome and credentials.
+pub async fn credentials(reference: &str, access_key: Option<String>) -> (Welcome, TurnCredentials) {
+    let mut control = Control::connect(reference, access_key).await;
+    let welcome = control.hello().await;
+    let creds = control.turn().await;
     (welcome, creds)
 }
 

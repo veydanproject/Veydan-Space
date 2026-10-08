@@ -1159,8 +1159,11 @@ Thank you to the authors of the following npm packages:
 
 The engine of calls of the messenger (`crates/messenger/rtc`, in the products
 with the messenger) links **libwebrtc**, the WebRTC library of Google, as the
-prebuilt static archives of **livekit/rust-sdks** (release `webrtc-89d790b`,
-one archive per platform, pinned by SHA-256 in `scripts/webrtc-toolchain.sh`).
+prebuilt static archives of **Veydan WebRTC** (`services/webrtc`, release
+`v1.0.7` of github.com/veydanproject/Veydan-WebRTC: the build scripts of
+livekit/rust-sdks at the commit `89d790b` of webrtc-sdk/webrtc, with the
+software H.264 left out; one archive per platform, pinned by SHA-256 in
+`scripts/webrtc-toolchain.sh`).
 Its Rust side is the crates `libwebrtc`, `webrtc-sys-build` (Apache-2.0, listed
 above) and `webrtc-sys` (Apache-2.0); `webrtc-sys` 0.3.48 is vendored in `crates/messenger/rtc/vendor/webrtc-sys`
 with three small build patches (`PATCH.md` there), under its own `LICENSE` and
@@ -1175,14 +1178,15 @@ build scripts after arcas-io, MIT; Implib.so, MIT).
   RNNoise (BSD-3-Clause), protobuf (BSD-3-Clause), Perfetto (Apache-2.0),
   PFFFT, Ooura FFT, the FFT of Mark Olesen, the G.711 and G.722 code of
   SpanDSP, spl_sqrt_floor, fiat-crypto (Apache-2.0), zlib (Zlib), libc++ and
-  libc++abi and llvm-libc (Apache-2.0 WITH LLVM-exception); on the desktop
-  also OpenH264 (BSD-2-Clause), NASM (BSD-2-Clause) and FFmpeg
-  (LGPL-2.1-or-later, the H.264 decoder); on Android also the Android SDK
-  parts, compiler-rt, libunwind, cpu_features, jni_zero, ijar and the Kotlin
-  standard library (Apache-2.0).
+  libc++abi and llvm-libc (Apache-2.0 WITH LLVM-exception); on Android also
+  the Android SDK parts, compiler-rt, libunwind, cpu_features, jni_zero, ijar
+  and the Kotlin standard library (Apache-2.0). No FFmpeg and no OpenH264:
+  the archives are built with `rtc_use_h264=false`; H.264 on Android is the
+  hardware codec of the device (MediaCodec).
 
-The full notices are the `LICENSE.md` of each archive
-(https://github.com/livekit/rust-sdks/releases/tag/webrtc-89d790b).
+The full notices are the `LICENSE.md` of each archive and
+`THIRD-PARTY-LICENSES.md` of the release
+(https://github.com/veydanproject/Veydan-WebRTC/releases/tag/v1.0.7).
 
 ---
 

@@ -643,7 +643,7 @@ async fn a_device_that_was_away_catches_up() {
     w.say(carol, &g, "two").await;
     w.act(alice, &g, OpBody::Remove { who: w.pk(carol) }).await.unwrap();
     w.say(alice, &g, "three").await;
-    w.act(alice, &g, OpBody::EditSettings { name: Some("Team 2".into()), about: None, picture: None, history_for_new: None }).await.unwrap();
+    w.act(alice, &g, OpBody::EditSettings { name: Some("Team 2".into()), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None }).await.unwrap();
     w.online(bob).await;
     let v = w.devices[bob].group(&g).await.unwrap();
     assert_eq!((v.name.as_str(), v.members.len(), v.undecrypted), ("Team 2", 2, 0));

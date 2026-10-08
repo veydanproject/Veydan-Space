@@ -778,6 +778,13 @@ impl GroupService {
         if row.membership != before.membership {
             out.resubscribe = true;
         }
+        if row.membership != before.membership || row.members != before.members {
+            // Who is in the group changed: the core of calls looks at its
+            // room again (a removed member is heard no more, the keys turn).
+            if let Some(sink) = self.call_sink() {
+                sink.on_members_changed(group_id).await;
+            }
+        }
         if row.membership == MEMBERSHIP_JOINING {
             match self.try_join(keys, group_id).await {
                 Ok(o) => out.merge(o),
@@ -837,6 +844,15 @@ impl GroupService {
                         out.events.push(e);
                     }
                 }
+            }
+            return Ok(Verdict::Done);
+        }
+        // A word of a group call (`call.*`): for the core of calls, which
+        // keeps the room and the banner; no message of the chat. A muted
+        // member may be in a call.
+        if envelope.is_call() {
+            if let Some(sink) = self.call_sink() {
+                sink.on_group_call(group_id, &m.author, &envelope, m.created_at, item.historical).await;
             }
             return Ok(Verdict::Done);
         }

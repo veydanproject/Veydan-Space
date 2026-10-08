@@ -21,8 +21,8 @@
 
 use async_trait::async_trait;
 use messenger_calls::engine::{
-    ConnectionState, IceCandidate, IceServer, Media, MediaEngine, PairKind, PushedFrame, RelayPolicy, SdpKind, Session,
-    SessionEvent, VideoFrame, VideoInput, VideoSettings, VideoTrack,
+    ConnectionState, DataPayload, IceCandidate, IceServer, Media, MediaEngine, PairKind, PushedFrame, RelayPolicy, RoomConfig,
+    SdpKind, Session, SessionEvent, VideoFrame, VideoInput, VideoSettings, VideoTrack,
 };
 use messenger_core::{MessengerError, Result};
 use std::collections::HashMap;
@@ -30,10 +30,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
 
+/// Who hears what a room session does: the fake node ([`crate::FakeNode`]).
+pub trait RoomHook: Send + Sync {
+    /// The session sent on a data channel.
+    fn data(&self, session: u32, label: &str, payload: DataPayload);
+    /// The session closed.
+    fn closed(&self, session: u32);
+}
+
 #[derive(Default)]
 struct Fabric {
     next: u32,
     sessions: HashMap<u32, Peer>,
+    hook: Option<Arc<dyn RoomHook>>,
 }
 
 struct Peer {
@@ -41,7 +50,15 @@ struct Peer {
     relay_only: bool,
     linked: Option<u32>,
     closed: bool,
+    /// A session of a room: it links to no other session; the node
+    /// (through the hook) is its far end.
+    room: bool,
 }
+
+/// The answer of the fake node to the one offer of a room session.
+pub const NODE_ANSWER: &str = "fake-node-answer:";
+/// The offers of the fake node over `ctl`.
+pub const NODE_OFFER: &str = "fake-node-offer:";
 
 /// What one session did, for the tests to look at.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -64,6 +81,14 @@ pub struct Record {
     pub video_bitrate: Vec<Option<u32>>,
     /// Frames pushed into this side's video.
     pub pushed_frames: u32,
+    /// A room session: what it was made with.
+    pub room: Option<RoomConfig>,
+    /// Every `set_sender_key`, in order: slot and material.
+    pub sender_keys: Vec<(u8, Vec<u8>)>,
+    /// Every `set_receiver_key`, in order: m-line, slot, material.
+    pub receiver_keys: Vec<(String, u8, Vec<u8>)>,
+    /// Everything sent on data channels, in order.
+    pub data_sent: Vec<(String, DataPayload)>,
 }
 
 #[derive(Clone)]
@@ -86,6 +111,14 @@ pub struct FakeEngine {
 struct Frames {
     local: broadcast::Sender<Arc<VideoFrame>>,
     remote: broadcast::Sender<Arc<VideoFrame>>,
+    /// The remote videos of a room, by m-line, made as asked for.
+    by_mid: HashMap<String, broadcast::Sender<Arc<VideoFrame>>>,
+}
+
+impl Frames {
+    fn of_mid(&mut self, mid: &str) -> &broadcast::Sender<Arc<VideoFrame>> {
+        self.by_mid.entry(mid.to_string()).or_insert_with(|| broadcast::channel(4).0)
+    }
 }
 
 impl Default for FakeEngine {
@@ -135,6 +168,22 @@ impl FakeEngine {
 
     pub fn session_count(&self) -> usize {
         self.fabric.lock().unwrap().sessions.len()
+    }
+
+    /// Who hears the data and the closing of room sessions (the fake node).
+    pub fn set_room_hook(&self, hook: Arc<dyn RoomHook>) {
+        self.fabric.lock().unwrap().hook = Some(hook);
+    }
+
+    /// Tell the session `id` something, as the engine would (the fake
+    /// node speaks to its participants so).
+    pub fn inject_into(&self, id: u32, ev: SessionEvent) {
+        Self::tell(&self.fabric.lock().unwrap(), id, ev);
+    }
+
+    /// The media the session `id` was made for.
+    pub fn media_of(&self, id: u32) -> Option<Media> {
+        self.records.lock().unwrap().get(&id).and_then(|r| r.media)
     }
 
     fn tell(fabric: &Fabric, id: u32, ev: SessionEvent) {
@@ -199,25 +248,66 @@ impl FakeHandle {
             };
         }
     }
+
+    /// The frames of `track` as the session's owner reads them
+    /// (`Session::video_frames`): what a pushed frame shows as, for one.
+    pub fn frames(&self, track: VideoTrack) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
+        let frames = self.engine.frames.lock().unwrap();
+        let f = frames.get(&self.id)?;
+        Some(match track {
+            VideoTrack::Local => f.local.subscribe(),
+            VideoTrack::Remote => f.remote.subscribe(),
+        })
+    }
+
+    /// A frame of the remote video on the m-line `mid` (a room).
+    pub fn show_mid(&self, mid: &str, frame: VideoFrame) {
+        if let Some(f) = self.engine.frames.lock().unwrap().get_mut(&self.id) {
+            let _ = f.of_mid(mid).send(Arc::new(frame));
+        }
+    }
 }
 
-#[async_trait]
-impl MediaEngine for FakeEngine {
-    async fn create_session(&self, ice_servers: Vec<IceServer>, policy: RelayPolicy, media: Media) -> Result<Box<dyn Session>> {
+impl FakeEngine {
+    fn make_session(&self, ice_servers: Vec<IceServer>, policy: RelayPolicy, media: Media, room: Option<RoomConfig>) -> FakeSession {
         let (tx, rx) = mpsc::channel(1024);
         let id = {
             let mut fabric = self.fabric.lock().unwrap();
             fabric.next += 1;
             let id = fabric.next;
-            fabric.sessions.insert(id, Peer { tx, relay_only: policy == RelayPolicy::RelayOnly, linked: None, closed: false });
+            fabric.sessions.insert(
+                id,
+                Peer { tx, relay_only: policy == RelayPolicy::RelayOnly, linked: None, closed: false, room: room.is_some() },
+            );
             id
         };
-        self.records.lock().unwrap().insert(
+        self.records.lock().unwrap().insert(id, Record { ice_servers, policy, media: Some(media), room, ..Record::default() });
+        self.frames.lock().unwrap().insert(
             id,
-            Record { ice_servers, policy, media: Some(media), ..Record::default() },
+            Frames { local: broadcast::channel(4).0, remote: broadcast::channel(4).0, by_mid: HashMap::new() },
         );
-        self.frames.lock().unwrap().insert(id, Frames { local: broadcast::channel(4).0, remote: broadcast::channel(4).0 });
-        Ok(Box::new(FakeSession { id, engine: self.clone(), rx: Mutex::new(Some(rx)), epoch: Mutex::new(0) }))
+        FakeSession { id, engine: self.clone(), rx: Mutex::new(Some(rx)), epoch: Mutex::new(0) }
+    }
+
+    fn hook(&self) -> Option<Arc<dyn RoomHook>> {
+        self.fabric.lock().unwrap().hook.clone()
+    }
+}
+
+#[async_trait]
+impl MediaEngine for FakeEngine {
+    async fn create_session(&self, ice_servers: Vec<IceServer>, policy: RelayPolicy, media: Media) -> Result<Box<dyn Session>> {
+        Ok(Box::new(self.make_session(ice_servers, policy, media, None)))
+    }
+
+    async fn create_room_session(
+        &self,
+        ice_servers: Vec<IceServer>,
+        policy: RelayPolicy,
+        media: Media,
+        room: RoomConfig,
+    ) -> Result<Box<dyn Session>> {
+        Ok(Box::new(self.make_session(ice_servers, policy, media, Some(room))))
     }
 }
 
@@ -266,6 +356,10 @@ impl FakeSession {
             .get(&self.id)
             .is_some_and(|r| r.ice_servers.iter().any(|s| s.urls.iter().any(|u| u.starts_with("turn"))))
     }
+
+    fn is_room(&self) -> bool {
+        self.engine.fabric.lock().unwrap().sessions.get(&self.id).is_some_and(|p| p.room)
+    }
 }
 
 fn remote_session(sdp: &str, prefix: &str) -> Result<u32> {
@@ -293,6 +387,21 @@ impl Session for FakeSession {
 
     async fn set_remote(&self, sdp: &str, kind: SdpKind) -> Result<()> {
         self.with_record(|r| r.remote_sdps.push(sdp.to_string()));
+        if self.is_room() {
+            // The node is the far end: its answer to my one offer connects
+            // me; its offers over `ctl` bring the m-lines of the others.
+            return match kind {
+                SdpKind::Answer if sdp.starts_with(NODE_ANSWER) => {
+                    if self.engine.connects.load(Ordering::SeqCst) {
+                        self.tell(SessionEvent::ConnectionState(ConnectionState::Connecting));
+                        self.tell(SessionEvent::ConnectionState(ConnectionState::Connected));
+                    }
+                    Ok(())
+                }
+                SdpKind::Offer if sdp.starts_with(NODE_OFFER) => Ok(()),
+                _ => Err(MessengerError::Invalid(format!("not a fake node sdp: {sdp}"))),
+            };
+        }
         match kind {
             SdpKind::Offer => {
                 let remote = remote_session(sdp, "fake-offer:")?;
@@ -339,6 +448,16 @@ impl Session for FakeSession {
 
     async fn close(&self) {
         self.with_record(|r| r.closed = true);
+        if self.is_room() {
+            if let Some(p) = self.engine.fabric.lock().unwrap().sessions.get_mut(&self.id) {
+                p.closed = true;
+            }
+            if let Some(hook) = self.engine.hook() {
+                hook.closed(self.id);
+            }
+            self.tell(SessionEvent::ConnectionState(ConnectionState::Closed));
+            return;
+        }
         let fabric = self.engine.fabric.lock().unwrap();
         // Only a peer linked back is told: an answerer whose answer was
         // not taken knows its offerer, but the offerer talks to another.
@@ -383,6 +502,41 @@ impl Session for FakeSession {
             VideoTrack::Local => f.local.subscribe(),
             VideoTrack::Remote => f.remote.subscribe(),
         })
+    }
+
+    async fn send_data(&self, label: &str, payload: DataPayload) -> Result<()> {
+        if !self.is_room() {
+            return Err(MessengerError::Transport("fake: no data channel on a call between two".into()));
+        }
+        self.with_record(|r| r.data_sent.push((label.to_string(), payload.clone())));
+        if let Some(hook) = self.engine.hook() {
+            hook.data(self.id, label, payload);
+        }
+        Ok(())
+    }
+
+    async fn set_sender_key(&self, index: u8, key: &[u8]) -> Result<()> {
+        if !self.is_room() {
+            return Err(MessengerError::Transport("fake: no frame keys on a call between two".into()));
+        }
+        self.with_record(|r| r.sender_keys.push((index, key.to_vec())));
+        Ok(())
+    }
+
+    async fn set_receiver_key(&self, mid: &str, index: u8, key: &[u8]) -> Result<()> {
+        if !self.is_room() {
+            return Err(MessengerError::Transport("fake: no frame keys on a call between two".into()));
+        }
+        self.with_record(|r| r.receiver_keys.push((mid.to_string(), index, key.to_vec())));
+        Ok(())
+    }
+
+    fn video_frames_of(&self, mid: &str) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
+        if !self.is_room() {
+            return None;
+        }
+        let mut frames = self.engine.frames.lock().unwrap();
+        Some(frames.get_mut(&self.id)?.of_mid(mid).subscribe())
     }
 
     /// Counted, and shown as this side's own picture at its size (the

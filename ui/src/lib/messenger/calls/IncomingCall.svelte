@@ -5,7 +5,9 @@
   A call rings on a computer: a card in the middle of the window, over
   everything, with Answer and Decline (and, for a video call, Answer
   without video). Nothing but these buttons closes it: a stray Escape or
-  click must not refuse a call.
+  click must not refuse a call. A call that comes while I sit in the room
+  of a group call cannot be taken (the runtime refuses it): the card says
+  "busy" and offers Decline alone.
 
   The focus goes to the card itself, not to a button: a call comes while
   the user types, and the next space or Enter meant for the chat must not
@@ -25,6 +27,7 @@
 
   const call = $derived(callStore.call?.phase === 'incoming' ? callStore.call : null);
   const peer = $derived(call ? callPeer(call) : null);
+  const busy = $derived(!!call && callStore.busyWithGroup);
   const error = $derived(callStore.error ? callErrorText(callStore.error, tr) : '');
 
   let card = $state<HTMLElement | null>(null);
@@ -68,6 +71,7 @@
         <CallIcon name={call.media === 'video' ? 'video' : 'incoming'} size={14} />
         {$t(call.media === 'video' ? 'msg_call_phase_incoming_video' : 'msg_call_phase_incoming')}
       </div>
+      {#if busy}<div class="busy" role="status"><CallIcon name="missed" size={14} />{$t('msg_call_busy_in_group')}</div>{/if}
       {#if error}<div class="error">{error}</div>{/if}
       <div class="actions">
         <div class="action">
@@ -76,14 +80,16 @@
           </button>
           <span>{$t('msg_call_decline')}</span>
         </div>
-        <div class="action">
-          <button class="round answer" disabled={callStore.busy || callStore.ending} onclick={() => callStore.accept()} aria-label={$t('msg_call_answer')}>
-            <CallIcon name={call.media === 'video' ? 'video' : 'phone'} size={26} />
-          </button>
-          <span>{$t('msg_call_answer')}</span>
-        </div>
+        {#if !busy}
+          <div class="action">
+            <button class="round answer" disabled={callStore.busy || callStore.ending} onclick={() => callStore.accept()} aria-label={$t('msg_call_answer')}>
+              <CallIcon name={call.media === 'video' ? 'video' : 'phone'} size={26} />
+            </button>
+            <span>{$t('msg_call_answer')}</span>
+          </div>
+        {/if}
       </div>
-      {#if call.media === 'video'}
+      {#if call.media === 'video' && !busy}
         <button class="voice" disabled={callStore.busy || callStore.ending} onclick={() => callStore.acceptWithoutVideo()}>
           <CallIcon name="video-off" size={14} />{$t('msg_call_answer_audio')}
         </button>
@@ -108,6 +114,10 @@
   .face { margin-bottom: var(--sp-3); }
   .name { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.3px; text-align: center; overflow-wrap: anywhere; }
   .what { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); }
+  .busy {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: var(--sp-1); padding: 4px 12px; border-radius: var(--radius-pill);
+    font-size: var(--fs-xs); background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); text-align: center;
+  }
   .error { font-size: var(--fs-xs); color: var(--danger-text); text-align: center; }
   .actions { display: flex; justify-content: center; gap: var(--sp-12); margin-top: var(--sp-5); }
   .action { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); }

@@ -13,9 +13,10 @@ import type { NetCheck, NetMode, NetStatus } from './generated/net';
 export type {
   CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState, CallStats, CallView, CallVia, RelayPolicy,
   CameraInfo, ScreenInfo, VideoInput, VideoQuality, VideoSize, VideoTrack,
+  GroupCallAnnounced, GroupCallEnded, GroupCallLevel, GroupCallPhase, GroupCallState, GroupCallView, GroupParticipant,
 } from './generated/calls';
 import type {
-  CallMedia, CallNodeInput, CallState, CallView, CameraInfo, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoTrack,
+  CallMedia, CallNodeInput, CallState, CallView, CameraInfo, GroupCallState, GroupCallView, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoTrack,
 } from './generated/calls';
 
 /**
@@ -648,6 +649,9 @@ export interface MessengerNoticeWords {
   /** Its buttons. */
   call_answer: string;
   call_decline: string;
+  /** The body of the quiet notification of a call on in a group (the title is the group's name). */
+  group_call_audio: string;
+  group_call_video: string;
 }
 
 export interface MessengerPushTap {
@@ -1509,6 +1513,8 @@ Object.assign(devMocks, demoCallMocks({
   chat: (peer) => mockChat(peer),
   lines: (chatId) => (mockMessages[chatId] ??= []),
   touch: (chatId, at) => { mockChats = mockChats.map((c) => (c.id === chatId ? { ...c, last_message_at: at, last_preview: '📞' } : c)); },
+  me: () => mockIdentity?.pubkey ?? '',
+  members: (groupId) => mockGroups.find((g) => g.id === groupId && g.membership === 'joined')?.members.map((m) => m.pubkey) ?? [],
 }));
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -1748,6 +1754,50 @@ export const messengerApi = {
      */
     videoAck: (id: number, seq: number) => invoke<void>('messenger_call_video_ack', { id, seq }),
     videoUnsubscribe: (id: number) => invoke<void>('messenger_call_video_unsubscribe', { id }),
+  },
+
+  /**
+   * Calls of a group: a room on a call node, the group told by its own
+   * notes. One call of either kind at a time: the runtime refuses a group
+   * call during a call of two and the other way round. Events:
+   * `group_call.state`, `group_call.started` (the banner of a group, at
+   * every change of who is in), `group_call.ended`, `group_call.level`.
+   */
+  groupCalls: {
+    /** A room on a node, me in it, the group told. Refused while a call is on in the group already: join it. */
+    start: (groupId: string, media: CallMedia = 'audio') => invoke<GroupCallView>('messenger_group_call_start', { groupId, media }),
+    /** Into the call that is on in the group (the banner's button). */
+    join: (groupId: string) => invoke<GroupCallView>('messenger_group_call_join', { groupId }),
+    /** Out of the room; the last one out ends the call for the group. */
+    leave: () => invoke<void>('messenger_group_call_leave'),
+    mute: (muted: boolean) => invoke<GroupCallView>('messenger_group_call_mute', { muted }),
+    /** My video in the room: a camera, a screen, or off. */
+    setVideo: (input: VideoInput) => invoke<GroupCallView>('messenger_group_call_set_video', { input }),
+    /** The next camera (or `camera`): at once when mine is on, for the next time otherwise; `front`/`back` on a phone. */
+    switchCamera: (camera?: string) => invoke<GroupCallView>('messenger_group_call_switch_camera', { camera: camera ?? null }),
+    /**
+     * The layer of the video of the seat `participant` I want, for the
+     * size of its tile: `q` (a quarter), `h` (a half), `f` (the full
+     * size). Refused by a node without simulcast.
+     */
+    setLayer: (participant: number, rid: string) => invoke<void>('messenger_group_call_set_layer', { participant, rid }),
+    /** The room I am in, and the call announced in `groupId` when one is. */
+    state: (groupId?: string) => invoke<GroupCallState>('messenger_group_call_get_state', { groupId: groupId ?? null }),
+    /**
+     * The frames of the video of one seat, by the m-line of its track
+     * (`GroupParticipant.video_mid`), as `calls.videoSubscribe` carries
+     * them: acknowledged and taken back with `calls.videoAck` and
+     * `calls.videoUnsubscribe`.
+     */
+    videoSubscribe: async (mid: string, onframe: (data: ArrayBuffer) => void): Promise<number> => {
+      if (isTauri) {
+        const { Channel, invoke: call } = await import('@tauri-apps/api/core');
+        const channel = new Channel<ArrayBuffer>();
+        channel.onmessage = onframe;
+        return call<number>('messenger_group_call_video_subscribe', { mid, channel });
+      }
+      return invoke<number>('messenger_group_call_video_subscribe', { mid, channel: { onmessage: onframe } });
+    },
   },
 
   groups: {

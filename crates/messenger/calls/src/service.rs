@@ -1386,6 +1386,15 @@ impl Inner {
                     self.emit(vec![error_event(&MessengerError::Transport(format!("the video stopped: {reason}")))]);
                 }
             }
+            // The words of a room: a call between two has no data channel
+            // and no m-lines of a node.
+            SessionEvent::DataOpen { .. }
+            | SessionEvent::DataClosed { .. }
+            | SessionEvent::Data { .. }
+            | SessionEvent::RemoteTrack { .. }
+            | SessionEvent::RemoteTrackGone { .. }
+            | SessionEvent::RemoteLevel { .. }
+            | SessionEvent::RemoteVideoSize { .. } => {}
         }
     }
 

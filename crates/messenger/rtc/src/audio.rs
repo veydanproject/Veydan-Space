@@ -23,6 +23,7 @@ use libwebrtc::audio_frame::AudioFrame;
 use libwebrtc::audio_source::native::NativeAudioSource;
 use libwebrtc::audio_stream::native::NativeAudioStream;
 use libwebrtc::native::apm::AudioProcessingModule;
+use tokio::sync::watch;
 
 use crate::{Error, Result};
 
@@ -59,6 +60,25 @@ impl AudioProcessing {
     pub fn is_none(&self) -> bool {
         *self == Self::NONE
     }
+}
+
+/// Several frames of the same length summed into one, for a reader of
+/// the pushed path that takes the outputs of a room (one per remote
+/// track, [`crate::Session::take_audio_output_of`]) and wants to hear
+/// them all, as the device path does by itself. Clipped, not scaled: a
+/// voice stays as loud as it came. Frames of another length than the
+/// first are skipped.
+pub fn mix(frames: &[&[i16]]) -> Vec<i16> {
+    let Some(first) = frames.first() else { return Vec::new() };
+    let mut out: Vec<i32> = first.iter().map(|&s| i32::from(s)).collect();
+    for frame in &frames[1..] {
+        if frame.len() == out.len() {
+            for (o, &s) in out.iter_mut().zip(frame.iter()) {
+                *o += i32::from(s);
+            }
+        }
+    }
+    out.into_iter().map(|s| s.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16).collect()
 }
 
 /// The processing module shared by the input and the output of one
@@ -145,24 +165,48 @@ impl AudioInput {
 /// a frame every 10 ms whether or not anybody pulls; what is not pulled
 /// within half a second is dropped, oldest first, so a slow reader hears
 /// the present, not the past.
+///
+/// It ends ([`AudioOutput::next`] gives `None`) when its track is gone:
+/// the m-line of a room's track closed
+/// ([`crate::SessionEvent::RemoteTrackGone`]) or the session closed.
+/// libwebrtc's own stream never ends by itself (its queue closes only
+/// when the stream is dropped, and the reader holds it), so the session
+/// keeps the other end of `ended` and pulls it.
 pub struct AudioOutput {
     stream: NativeAudioStream,
     apm: Option<Arc<Apm>>,
+    /// `true`, or the sender gone, once the track is.
+    ended: watch::Receiver<bool>,
 }
 
 /// Frames kept for a reader that is late: half a second.
 pub(crate) const OUTPUT_QUEUE_FRAMES: usize = 50;
 
+/// The session's end of an output's `ended`.
+pub(crate) type AudioEnd = watch::Sender<bool>;
+
 impl AudioOutput {
-    pub(crate) fn new(stream: NativeAudioStream, apm: Option<Arc<Apm>>) -> Self {
-        Self { stream, apm }
+    pub(crate) fn new(stream: NativeAudioStream, apm: Option<Arc<Apm>>) -> (AudioEnd, Self) {
+        let (end, ended) = watch::channel(false);
+        (end, Self { stream, apm, ended })
     }
 
     /// The next frame, [`FRAME_SAMPLES`] samples of 48 kHz mono, or `None`
-    /// once the track is gone. The frame is what the far end sent, and it
-    /// is the render reference of the echo canceller from here on.
+    /// once the track is gone (and `None` from then on). The frame is
+    /// what the far end sent, and it is the render reference of the echo
+    /// canceller from here on.
     pub async fn next(&mut self) -> Option<Vec<i16>> {
-        let frame = self.stream.next().await?;
+        let frame = tokio::select! {
+            biased;
+            // Told to end, or the session let go of its end: the stream
+            // is closed here (the reader holds it, nobody else can), so
+            // that every later call finds its queue closed.
+            _ = self.ended.changed() => {
+                self.stream.close();
+                return None;
+            }
+            frame = self.stream.next() => frame?,
+        };
         let mut data: Vec<i16> = if frame.num_channels == 1 {
             frame.data.into_owned()
         } else {
@@ -178,5 +222,18 @@ impl AudioOutput {
             }
         }
         Some(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frames_are_summed_and_clipped() {
+        assert_eq!(mix(&[&[1, 2, 3], &[10, 20, 30]]), vec![11, 22, 33]);
+        assert_eq!(mix(&[&[i16::MAX, i16::MIN], &[10, -10]]), vec![i16::MAX, i16::MIN], "clipped");
+        assert_eq!(mix(&[&[1, 2], &[7]]), vec![1, 2], "another length is skipped");
+        assert!(mix(&[]).is_empty());
     }
 }

@@ -35,6 +35,7 @@ import { presenceStore } from "./presence/presenceStore.svelte";
 import { privacyStore } from "./privacy/privacyStore.svelte";
 import { pushSeen } from "./push/bridge";
 import { callStore } from "./calls/callStore.svelte";
+import { groupCallStore } from "./calls/groupCallStore.svelte";
 
 export interface FeedEntry extends MessengerUiEvent {
   at: number;
@@ -132,6 +133,8 @@ class MessengerStore {
           presenceStore.start();
           // A call under way (the phone's Answer may have started the app for it), the policy, the nodes.
           callStore.load().catch(() => {});
+          // The room of a group call I am in (a page that came back finds it).
+          groupCallStore.load().catch(() => {});
           // Events must flow as soon as the module is visible, not only
           // while its page is open (unread badge, statuses).
           this.startListeners().catch(() => {});
@@ -155,6 +158,7 @@ class MessengerStore {
         presenceStore.reset();
         transferStore.reset();
         callStore.reset();
+        groupCallStore.reset();
       }
       this.loaded = true;
     } finally {
@@ -192,6 +196,7 @@ class MessengerStore {
     presenceStore.reset();
     transferStore.reset();
     callStore.reset();
+    groupCallStore.reset();
   }
 
   /** Subscribe to relay-state and runtime event pushes. Idempotent. */
@@ -203,6 +208,7 @@ class MessengerStore {
         chatStore.handleEvent(ev);
         transferStore.handleEvent(ev);
         callStore.handleEvent(ev);
+        groupCallStore.handleEvent(ev);
       }));
       return;
     }
@@ -224,9 +230,10 @@ class MessengerStore {
         privacyStore.handleEvent(e.payload);
         avatarStore.handleEvent(e.payload);
         callStore.handleEvent(e.payload);
+        groupCallStore.handleEvent(e.payload);
         this.handleProfileEvent(e.payload);
         // Many a second while a file moves or a peer speaks: not for the feed.
-        if (e.payload.name === 'transfer.progress' || e.payload.name === 'call.level') return;
+        if (e.payload.name === 'transfer.progress' || e.payload.name === 'call.level' || e.payload.name === 'group_call.level') return;
         this.feed = [{ ...e.payload, at: Date.now() }, ...this.feed].slice(0, FEED_LIMIT);
         if (e.payload.name === 'dm.message' || e.payload.name === 'history.synced') this.scheduleStatusRefresh();
         if (e.payload.name === 'link') {

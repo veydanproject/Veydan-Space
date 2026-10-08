@@ -24,6 +24,7 @@
 //! NV21 of a phone) go through libyuv where it has the routine and
 //! through a plain loop where the Rust wrapper lacks it (YUYV).
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use futures_util::StreamExt;
@@ -44,9 +45,21 @@ pub(crate) const OUTPUT_QUEUE_FRAMES: usize = 2;
 /// to the newest: a page that stalls gets the present, not a backlog.
 pub(crate) const FAN_OUT_FRAMES: usize = 2;
 
+/// Told by a source when the frames pushed into it change size: the
+/// source itself (a clone of it, which shares the one size), the new
+/// width and height. Called on the pusher's thread, before the frame
+/// goes to the encoder.
+pub(crate) type SizeHook = Arc<dyn Fn(&VideoSource, u32, u32) + Send + Sync>;
+
 /// Where the frames this side sends come from. Fed by whatever captures;
 /// cheap to clone (a handle on one source). Frames pushed into it reach
 /// the encoder and everybody who subscribed to this side's own picture.
+///
+/// The size it was made for ([`VideoSource::resolution`]) is what the
+/// capture is asked for; the size that matters to the encoder is that
+/// of the frames pushed ([`VideoSource::frame_size`]): a camera gives
+/// the nearest size it has, a phone's plugin pushes whatever CameraX
+/// delivers into the default source of the session.
 #[derive(Clone)]
 pub struct VideoSource {
     pub(crate) inner: NativeVideoSource,
@@ -54,6 +67,10 @@ pub struct VideoSource {
     height: u32,
     screencast: bool,
     fan_out: broadcast::Sender<Arc<VideoFrame>>,
+    /// The size of the last frame pushed, `width << 32 | height`; 0
+    /// before the first. Shared by the clones of one source.
+    pushed: Arc<AtomicU64>,
+    on_size: Option<SizeHook>,
 }
 
 impl VideoSource {
@@ -72,14 +89,36 @@ impl VideoSource {
     /// it for the screencast hint, which only that constructor sets,
     /// and the hint matters more than the few black frames before its
     /// first capture, which the thread pushes at once.
-    pub(crate) fn new(width: u32, height: u32, screencast: bool, fan_out: broadcast::Sender<Arc<VideoFrame>>) -> VideoSource {
+    pub(crate) fn new(
+        width: u32,
+        height: u32,
+        screencast: bool,
+        fan_out: broadcast::Sender<Arc<VideoFrame>>,
+        on_size: Option<SizeHook>,
+    ) -> VideoSource {
         let resolution = VideoResolution { width, height };
         let inner = if screencast { NativeVideoSource::new(resolution, true) } else { NativeVideoSource::new_encoded(resolution) };
-        VideoSource { inner, width, height, screencast, fan_out }
+        VideoSource { inner, width, height, screencast, fan_out, pushed: Arc::new(AtomicU64::new(0)), on_size }
     }
 
+    /// The size the source was made for: what the capture is asked for,
+    /// not necessarily what it gives ([`VideoSource::frame_size`]).
     pub fn resolution(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    /// The size of the last frame pushed, as pushed (a frame turned by
+    /// 90° is still its width by its height); `None` before the first.
+    pub fn frame_size(&self) -> Option<(u32, u32)> {
+        match self.pushed.load(Ordering::Acquire) {
+            0 => None,
+            packed => Some(((packed >> 32) as u32, packed as u32)),
+        }
+    }
+
+    /// Whether `other` is a handle on this same source.
+    pub fn is_same(&self, other: &VideoSource) -> bool {
+        Arc::ptr_eq(&self.pushed, &other.pushed)
     }
 
     pub fn is_screencast(&self) -> bool {
@@ -94,6 +133,14 @@ impl VideoSource {
     pub fn push(&self, frame: Arc<VideoFrame>) -> bool {
         if !frame.is_well_formed() {
             return false;
+        }
+        // A new size is told before the frame goes, so that the layers
+        // of a simulcast are set for it by the time the encoder sees it.
+        let packed = (u64::from(frame.width) << 32) | u64::from(frame.height);
+        if self.pushed.swap(packed, Ordering::AcqRel) != packed {
+            if let Some(hook) = &self.on_size {
+                hook(self, frame.width, frame.height);
+            }
         }
         let (y, u, v) = frame.planes().expect("well formed");
         let mut buffer = I420Buffer::new(frame.width, frame.height);

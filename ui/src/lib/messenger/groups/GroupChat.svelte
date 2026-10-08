@@ -23,6 +23,9 @@
   import { confirmStore } from '../shared/confirm.svelte';
   import { messengerError, type MessengerChat, type MessengerMessage } from '../api';
   import { groupRefusal } from './errors';
+  import GroupCallButton from '../calls/GroupCallButton.svelte';
+  import GroupCallBanner from '../calls/GroupCallBanner.svelte';
+  import { groupCallStore } from '../calls/groupCallStore.svelte';
 
   interface Props {
     chat: MessengerChat;
@@ -42,6 +45,15 @@
   $effect(() => {
     if (chat.id !== last) { last = chat.id; info = false; error = ''; }
     if (!groupStore.byChat(chat.id)) groupStore.refresh(chat.id.slice(6)).catch(() => {});
+  });
+
+  // The call on in the group, for its banner: the events tell of changes, the
+  // runtime of what was on before the page heard any.
+  let asked = '';
+  $effect(() => {
+    if (groupId === asked || group?.membership !== 'joined') return;
+    asked = groupId;
+    groupCallStore.load(groupId).catch(() => {});
   });
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'msg_you', params);
@@ -99,6 +111,7 @@
 {/snippet}
 
 {#snippet actions()}
+  <GroupCallButton {chat} {group} />
   {#if group && group.requests.length > 0}
     <button class="pill" onclick={() => (info = true)} title={$t('msg_group_requests')}>
       <Icon name="user-plus" size={13} />{group.requests.length}
@@ -108,6 +121,7 @@
 {/snippet}
 
 {#snippet banner()}
+  {#if membership === 'joined'}<GroupCallBanner {groupId} />{/if}
   {#if group && group.undecrypted > 0 && membership === 'joined'}
     <div class="strip info"><Icon name="key" size={13} />{$t('msg_group_undecrypted', { n: String(group.undecrypted) })}</div>
   {/if}

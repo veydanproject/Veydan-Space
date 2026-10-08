@@ -18,32 +18,39 @@
 #
 # Two sources carry the same archives, webrtc-<target>-release.zip of one
 # layout, built from one commit of WebRTC (WEBRTC_SOURCE):
-#   livekit  the releases of livekit/rust-sdks at WEBRTC_TAG — the default
-#            today; they hold the software H.264 (FFmpeg, OpenH264);
 #   veydan   the releases of veydanproject/Veydan-WebRTC (services/webrtc)
-#            at WEBRTC_VEYDAN_TAG — our build without it. Its hashes come
-#            with the first release; until then the source is refused.
+#            at WEBRTC_VEYDAN_TAG — our build without the software H.264
+#            (no FFmpeg, no OpenH264); the default since 1.0.7;
+#   livekit  the releases of livekit/rust-sdks at WEBRTC_TAG — the archives
+#            the stage-0 spike was measured with; they hold FFmpeg and
+#            OpenH264, so a product is not shipped on them.
 # Whichever the source, the unpacked folder is <WEBRTC_TAG>/<target>-release/:
 # that is the path webrtc-sys-build 0.3.19 looks for (its WEBRTC_TAG; move
 # the crate and this tag together, with new hashes). A file SOURCE in the
 # folder says whose archive it is; a folder of the other source is unpacked
 # again, one without the file is livekit's (unpacked before the file was).
-# Making veydan the default is a commit of its own, once the engine is seen
-# to build and run on our archives.
+# veydan became the default on 2026-10-08, after the engine built and its
+# tests ran on our archives (linux-x64 and android-arm64 unpacked by hand).
 
 VEYDAN_ROOT="${VEYDAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 WEBRTC_TAG="webrtc-89d790b"
-WEBRTC_SOURCE="${WEBRTC_SOURCE:-livekit}"
-WEBRTC_VEYDAN_TAG="v1.0.0"
+WEBRTC_SOURCE="${WEBRTC_SOURCE:-veydan}"
+WEBRTC_VEYDAN_TAG="v1.0.7"
 WEBRTC_DIR="$VEYDAN_ROOT/data/toolchains/webrtc"
 export VEYDAN_WEBRTC_DIR="$WEBRTC_DIR"
 
 # sha256 of webrtc-<target>-release.zip of the release WEBRTC_VEYDAN_TAG of
-# Veydan-WebRTC: the numbers of its SHA256SUMS, written here after the
-# first release is built and checked. Empty until then, so that
-# WEBRTC_SOURCE=veydan is refused rather than taken on trust.
+# Veydan-WebRTC: the numbers of its SHA256SUMS. A target missing here is
+# refused rather than taken on trust.
 webrtc_veydan_sha256() {
   case "$1" in
+    linux-x64)     echo "eaf42ca72a5a2c50ca15d449640155549fa959c3bc71cd2570886f67413f69fb" ;;
+    linux-arm64)   echo "1a98060b02b9521951bbc8de54c1408fe532a301d11947082612333d43ccb574" ;;
+    android-arm64) echo "52d93c84fe665d4313c7b30d8c313e2b5fb177d4b5000fecfee08d12ddb17dc1" ;;
+    win-x64)       echo "6b3050c924e41c6dde2128417a54b919039c2a7f6b2334d9633d5b76337e6784" ;;
+    win-arm64)     echo "570b0bacc59ef2cefe12ab5398ac8fd21489e50b3ea621ffd95d21304e87d693" ;;
+    mac-x64)       echo "60a61fc8745b03f2481195dde744dcd1ed206b9f34abd57478f058cab35f17e3" ;;
+    mac-arm64)     echo "5c4fbbd29acd9a0855e35b164616fe2cb960163de8399a5afcb369a41b8243d6" ;;
     *) return 1 ;;
   esac
 }

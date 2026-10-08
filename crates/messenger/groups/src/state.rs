@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const MAX_NAME_CHARS: usize = 100;
 pub const MAX_ABOUT_CHARS: usize = 1000;
 pub const MAX_PICTURE_CHARS: usize = 500;
+pub const MAX_CALL_NODE_CHARS: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Member {
@@ -60,6 +61,13 @@ pub struct GroupState {
     pub keys: Vec<KeyId>,
     /// Someone who knows the current key is no longer a member.
     pub key_stale: bool,
+    /// The call node pinned to the group (`address:port#id`), empty for
+    /// none: its group calls go through it (class `group`).
+    #[serde(default)]
+    pub call_node: String,
+    /// The access key of that node, empty for a public one.
+    #[serde(default)]
+    pub call_node_key: String,
 }
 
 /// Why an operation does not apply.
@@ -88,6 +96,28 @@ pub enum Rejection {
 
 fn invalid(what: &str) -> Rejection {
     Rejection::Invalid { what: what.into() }
+}
+
+/// A pinned call node is `address:port#id` (the id 64 hex), or nothing;
+/// its key is short. The groups do not know the nodes: the reference is
+/// checked for its shape here and parsed by whoever makes the call.
+fn check_call_node(node: Option<&str>, key: Option<&str>) -> Result<(), Rejection> {
+    if let Some(n) = node {
+        let n = n.trim();
+        if !n.is_empty() {
+            let Some((addr, id)) = n.rsplit_once('#') else { return Err(invalid("call_node")) };
+            let well_formed = addr.rsplit_once(':').is_some_and(|(host, port)| !host.is_empty() && port.parse::<u16>().is_ok())
+                && id.len() == 64
+                && id.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase());
+            if !well_formed || n.chars().count() > MAX_CALL_NODE_CHARS {
+                return Err(invalid("call_node"));
+            }
+        }
+    }
+    if key.is_some_and(|k| k.chars().count() > MAX_CALL_NODE_CHARS || k.chars().any(char::is_control)) {
+        return Err(invalid("call_node_key"));
+    }
+    Ok(())
 }
 
 fn check_text(name: Option<&str>, about: Option<&str>, picture: Option<&str>) -> Result<(), Rejection> {
@@ -147,6 +177,8 @@ impl GroupState {
             replaced_key: None,
             keys: vec![key],
             key_stale: false,
+            call_node: String::new(),
+            call_node_key: String::new(),
         })
     }
 
@@ -349,9 +381,10 @@ impl GroupState {
                     m.muted = *muted;
                 }
             }
-            OpBody::EditSettings { name, about, picture, history_for_new } => {
+            OpBody::EditSettings { name, about, picture, history_for_new, call_node, call_node_key } => {
                 allow(Action::EditSettings)?;
                 check_text(name.as_deref(), about.as_deref(), picture.as_deref())?;
+                check_call_node(call_node.as_deref(), call_node_key.as_deref())?;
                 if history_for_new.is_some() && self.kind == GroupKind::Public {
                     return Err(Rejection::WrongKind);
                 }
@@ -366,6 +399,12 @@ impl GroupState {
                 }
                 if let Some(h) = history_for_new {
                     self.history_for_new = *h;
+                }
+                if let Some(n) = call_node {
+                    self.call_node = n.trim().to_string();
+                }
+                if let Some(k) = call_node_key {
+                    self.call_node_key = k.clone();
                 }
             }
             OpBody::TransferOwnership { to } => {
@@ -514,11 +553,11 @@ pub(crate) mod tests {
         future.v = 2;
         assert_eq!(s.apply(&future), Err(Rejection::UnsupportedVersion));
         assert!(matches!(
-            s.apply(&op(&o, OpBody::EditSettings { name: Some("  ".into()), about: None, picture: None, history_for_new: None })),
+            s.apply(&op(&o, OpBody::EditSettings { name: Some("  ".into()), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None })),
             Err(Rejection::Invalid { .. })
         ));
         assert!(matches!(
-            s.apply(&op(&o, OpBody::EditSettings { name: None, about: None, picture: Some("http://x".into()), history_for_new: None })),
+            s.apply(&op(&o, OpBody::EditSettings { name: None, about: None, picture: Some("http://x".into()), history_for_new: None, call_node: None, call_node_key: None })),
             Err(Rejection::Invalid { .. })
         ));
         assert_eq!(s, before);
@@ -564,9 +603,20 @@ pub(crate) mod tests {
         assert_eq!(s.apply(&op(&o, OpBody::Disband)), Err(Rejection::NotPermitted));
         s.apply(&op(&o, OpBody::Leave)).unwrap();
 
-        s.apply(&op(&a, OpBody::EditSettings { name: Some("New".into()), about: Some("x".into()), picture: None, history_for_new: Some(true) })).unwrap();
+        s.apply(&op(&a, OpBody::EditSettings { name: Some("New".into()), about: Some("x".into()), picture: None, history_for_new: Some(true), call_node: None, call_node_key: None })).unwrap();
         assert_eq!((s.name.as_str(), s.history_for_new), ("New", true));
         assert!(!s.requires_key(&OpBody::Admit { who: x.clone() }), "history shown: newcomers get the old keys");
+        // The call node pinned to the group: a reference of the right
+        // shape with its key, nothing else; an empty string takes it away.
+        let node = format!("203.0.113.7:8443#{}", "fa".repeat(32));
+        let pin = |n: &str, k: Option<&str>| OpBody::EditSettings { name: None, about: None, picture: None, history_for_new: None, call_node: Some(n.into()), call_node_key: k.map(String::from) };
+        s.apply(&op(&a, pin(&node, Some("secret")))).unwrap();
+        assert_eq!((s.call_node.as_str(), s.call_node_key.as_str()), (node.as_str(), "secret"));
+        assert!(matches!(s.apply(&op(&a, pin("203.0.113.7:8443", None))), Err(Rejection::Invalid { .. })), "no id");
+        assert!(matches!(s.apply(&op(&a, pin("203.0.113.7#abcd", None))), Err(Rejection::Invalid { .. })), "no port, short id");
+        assert_eq!(s.call_node, node, "a refused edit changes nothing");
+        s.apply(&op(&a, pin("", Some("")))).unwrap();
+        assert!(s.call_node.is_empty() && s.call_node_key.is_empty());
 
         s.apply(&op(&a, OpBody::Disband)).unwrap();
         assert_eq!(s.apply(&op(&a, OpBody::RotateKey).with_key(key(30))), Err(Rejection::Disbanded));
@@ -597,7 +647,7 @@ pub(crate) mod tests {
         assert!(s.shows_messages_of(&x), "public: former members stay visible");
 
         assert_eq!(
-            s.apply(&op(&a, OpBody::EditSettings { name: None, about: None, picture: None, history_for_new: Some(false) })),
+            s.apply(&op(&a, OpBody::EditSettings { name: None, about: None, picture: None, history_for_new: Some(false), call_node: None, call_node_key: None })),
             Err(Rejection::WrongKind)
         );
         assert_eq!(s.apply(&op(&a, OpBody::RotateLink { link_epoch: 1 })), Err(Rejection::KeyRequired));

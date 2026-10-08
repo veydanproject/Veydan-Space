@@ -66,10 +66,13 @@ pub use messenger_contacts::{ContactView, ProfileInput, ProfileView};
 pub use messenger_identity::{CreatedIdentity, Identity};
 pub use messenger_groups::{GroupKind, GroupView, InviteView, KeyView as GroupKeyView, MemberView, OpBody as GroupOp, Role as GroupRole};
 pub use links::LinkView;
+pub use calls::CallBackends;
 pub use calls::{
-    CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState,
-    CallStats, CallVia, CallView, MediaEngine, ReconnectReason, RelayPolicy, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING,
-    UI_EVENT_CALL_STATE,
+    CallDirection, CallEnded, CallIncoming, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase,
+    CallState, CallStats, CallVia, CallView, GroupCallAnnounced, GroupCallEnded, GroupCallLevel, GroupCallPhase,
+    GroupCallState, GroupCallView, GroupParticipant, MediaEngine, ReconnectReason, RelayPolicy, UI_EVENT_CALL_ENDED,
+    UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_STATE, UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_LEVEL,
+    UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 pub use privacy::PrivacySettings;
 pub use messenger_presence::PresenceView;
@@ -145,22 +148,31 @@ pub struct MessengerRuntime {
     preparing: media::Preparing,
     /// Calls: the service of the core and what serves it (`crate::calls`).
     calls: calls::CallsDriver,
+    /// Group calls: the other service of the core, over the same engine.
+    group_calls: calls::GroupCallsDriver,
 }
 
 impl MessengerRuntime {
     /// The runtime with the media engine of this build (`calls::default_engine`),
     /// or without one in a build that has none.
     pub async fn start(config: MessengerConfig, secrets: Arc<dyn SecretStore>) -> Result<Self> {
-        Self::start_inner(config, secrets, calls::default_engine()).await
+        Self::start_inner(config, secrets, CallBackends::of_build()).await
     }
 
     /// The runtime with the media engine the host gives: the CLI pushes
     /// its sound through one, the tests take the fake of the testkit.
     pub async fn start_with_engine(config: MessengerConfig, secrets: Arc<dyn SecretStore>, engine: Arc<dyn MediaEngine>) -> Result<Self> {
-        Self::start_inner(config, secrets, Some(engine)).await
+        Self::start_inner(config, secrets, CallBackends::with_engine(Some(engine))).await
     }
 
-    async fn start_inner(config: MessengerConfig, secrets: Arc<dyn SecretStore>, engine: Option<Arc<dyn MediaEngine>>) -> Result<Self> {
+    /// The runtime with everything its calls are made with given by the
+    /// host: the engine, the client of the nodes, the client of their
+    /// rooms (the tests take the fakes of the testkit for all three).
+    pub async fn start_with_backends(config: MessengerConfig, secrets: Arc<dyn SecretStore>, backends: CallBackends) -> Result<Self> {
+        Self::start_inner(config, secrets, backends).await
+    }
+
+    async fn start_inner(config: MessengerConfig, secrets: Arc<dyn SecretStore>, backends: CallBackends) -> Result<Self> {
         messenger_transport::ensure_crypto_provider();
         let store = Store::open(&config).await?;
         let identity = IdentityService::new(store.clone(), secrets.clone());
@@ -193,7 +205,21 @@ impl MessengerRuntime {
             messenger_groups::GroupService::new(store.clone(), secrets.clone(), Arc::new(SystemClock), dm.clone());
         let (signals, signals_rx) = tokio::sync::mpsc::unbounded_channel();
         let (ui, _) = broadcast::channel(256);
-        let calls = calls::CallsDriver::new(store.clone(), dm.clone(), engine, outbox.clone(), ui.clone());
+        let CallBackends { engine, nodes, rooms } = backends;
+        let calls = calls::CallsDriver::new(store.clone(), dm.clone(), engine.clone(), nodes.clone(), outbox.clone(), ui.clone());
+        let group_calls = calls::GroupCallsDriver::new(
+            store.clone(),
+            dm.clone(),
+            group_service.clone(),
+            engine,
+            calls.servers(),
+            nodes,
+            rooms,
+            outbox.clone(),
+            ui.clone(),
+        );
+        // A call between two that rings in during a group call is told so.
+        calls.link_group_calls(group_calls.service.clone());
         // The chain of the DM handlers: GroupDmHandler → CallDmHandler → DmHandler.
         let dispatcher = Arc::new(
             Dispatcher::new()
@@ -257,6 +283,7 @@ impl MessengerRuntime {
             photo_slots: Arc::new(tokio::sync::Semaphore::new(media::PHOTO_SLOTS)),
             preparing: media::Preparing::default(),
             calls,
+            group_calls,
         };
         if let Err(e) = rt.seed_media_servers().await {
             eprintln!("messenger: media servers from the manifest not applied: {e}");
@@ -344,6 +371,7 @@ impl MessengerRuntime {
         .await?;
         self.group_driver.groups.set_signer(Some(keys_for_dm.clone()));
         self.calls.service.set_signer(Some(keys_for_dm.clone()));
+        self.group_calls.service.set_signer(Some(keys_for_dm.clone()));
         self.dm.set_signer(Some(keys_for_dm));
         *self.session.lock().await = Some(session);
         self.resubscribe_meta().await?;
@@ -754,10 +782,12 @@ impl MessengerRuntime {
         }
         // A call under way ends as a hang-up while the keys are still here:
         // the peer hears of it now, not after a timeout of its connection.
-        let goodbye = keys.is_some() && self.end_call_before_leaving().await;
+        // The room of a group call is left the same way.
+        let goodbye = keys.is_some() && (self.end_call_before_leaving().await | self.leave_group_call_before_leaving().await);
         self.dm.set_signer(None);
         self.group_driver.groups.set_signer(None);
         self.calls.service.set_signer(None);
+        self.group_calls.service.set_signer(None);
         if goodbye {
             let pool = self.relays.pool().await;
             if tokio::time::timeout(calls::GOODBYE_WAIT, self.outbox.pump(pool.as_ref())).await.is_err() {
@@ -838,6 +868,7 @@ impl MessengerRuntime {
         self.stop_session().await;
         self.group_signals.abort();
         self.calls.stop();
+        self.group_calls.stop();
         self.relays.shutdown().await;
         self.net.shutdown();
         self.store.close().await;

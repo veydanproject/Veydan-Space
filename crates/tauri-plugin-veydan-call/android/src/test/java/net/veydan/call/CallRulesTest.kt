@@ -152,6 +152,19 @@ class CallRulesTest {
     assertFalse(RingRules.pushRings("alice", over = false, busyWith = "carol"))
   }
 
+  /**
+   * Bob is in the room of a Trio (its service, sound mode and wake lock
+   * on the phone); Alice calls him 1:1 and the app asks to ring it. Once
+   * the ringing took the phone over, and its end (Decline, or the limit)
+   * stopped everything of the room while the app kept Bob in it. Nothing
+   * rings over a call that goes on; with nothing going on, it rings.
+   */
+  @Test
+  fun theAppDoesNotRingOverACallThatGoesOn() {
+    assertFalse(RingRules.appRings(ongoingWith = "trio-room"))
+    assertTrue(RingRules.appRings(ongoingWith = null))
+  }
+
   /** The ids that ended are kept for the life of a ringing, a few at a time, the oldest forgotten first. */
   @Test
   fun aCallIsOverForTheLifeOfARingingAndNoLonger() {
@@ -171,6 +184,79 @@ class CallRulesTest {
     over.ended("b", now = 4_000)
     assertTrue(over.isOver("b", now = 124_000))
     assertTrue(over.isOver("c", now = 4_000))
+  }
+
+  // ─── GroupCallMemory: the calls of groups across the processes ───────────
+
+  /**
+   * Bob joins the call of the Trio and leaves; the system kills the app;
+   * the call goes on and somebody takes a seat, which the group announces
+   * again: the new process, which had nothing in its memory, once showed
+   * "Trio · A call is on" to the man who had just left it. The phone
+   * remembers what went on here, as the preferences keep it; a notice
+   * dismissed (he joins) does not take that away.
+   */
+  @Test
+  fun aCallIWasInIsNoNewsAfterTheProcessDied() {
+    val memory = GroupCallMemory(keptMs = 24 * 3_600_000L)
+    assertTrue(memory.isNews("trio", now = 1_000))
+    memory.joined("trio", now = 1_000)
+    assertFalse(memory.isNews("trio", now = 2_000))
+    // The next process reads what the last one wrote.
+    val next = GroupCallMemory.decode(memory.encode(), keptMs = 24 * 3_600_000L)
+    assertFalse(next.isNews("trio", now = 3_600_000L))
+    assertFalse("the notice dismissed as I am in it: still no news", next.dismissed("trio"))
+    assertFalse(next.isNews("trio", now = 3_600_000L))
+    // A notice shown of a call I was in does not weaken the word; the call is on still, and the time moves on.
+    next.shown("trio", now = 4_000_000L)
+    assertEquals(listOf(GroupCallMemory.How.JOINED), next.entries().map { it.how })
+    assertFalse(next.isNews("trio", now = 4_000_000L + 24 * 3_600_000L))
+    assertTrue("the next day, the id is nobody's", next.isNews("trio", now = 4_000_000L + 24 * 3_600_000L + 1))
+    assertFalse("a clock gone back: known still", next.isNews("trio", now = 500))
+  }
+
+  /**
+   * The notice of a call is shown and the process dies; the call ends
+   * while no process lives, or goes on. The notice once stayed in the
+   * shade to the user's tap. At the next start it is a leftover: it goes,
+   * and the call is news again (the app shows it anew if it is still on).
+   * What I was in is not a leftover. Nothing read: nothing to do.
+   */
+  @Test
+  fun aNoticeOfADeadProcessIsALeftover() {
+    val memory = GroupCallMemory(keptMs = 24 * 3_600_000L)
+    memory.shown("quartet", now = 1_000)
+    memory.joined("trio", now = 2_000)
+    assertFalse(memory.isNews("quartet", now = 3_000))
+    assertEquals(listOf("quartet"), memory.leftovers())
+    assertTrue(memory.isNews("quartet", now = 3_000))
+    assertFalse(memory.isNews("trio", now = 3_000))
+    assertTrue(memory.leftovers().isEmpty())
+    assertTrue(GroupCallMemory.decode(null, keptMs = 1).leftovers().isEmpty())
+    assertTrue(GroupCallMemory.decode("", keptMs = 1).leftovers().isEmpty())
+  }
+
+  /** The notice shown once is dismissed once, the ids are kept a few at a time, and a line that cannot be read is skipped. */
+  @Test
+  fun theMemoryOfGroupCallsStaysShortAndReadsWhatItCan() {
+    val memory = GroupCallMemory(keptMs = 10_000, keep = 2)
+    memory.shown("a", now = 1_000)
+    assertTrue(memory.dismissed("a"))
+    assertFalse("dismissed once", memory.dismissed("a"))
+    assertTrue(memory.isNews("a", now = 1_000))
+    memory.shown("a", now = 1_000)
+    memory.shown("b", now = 2_000)
+    memory.shown("c", now = 3_000)
+    assertEquals(listOf("b", "c"), memory.entries().map { it.callId })
+    assertTrue("the oldest made room", memory.isNews("a", now = 3_000))
+    // Shown again: kept once, at the later time.
+    memory.shown("b", now = 4_000)
+    assertEquals(listOf("c", "b"), memory.entries().map { it.callId })
+    assertFalse(memory.isNews("b", now = 14_000))
+    assertTrue(memory.isNews("b", now = 14_001))
+    val read = GroupCallMemory.decode("x\tSHOWN\t5\nbroken line\ny\tWHAT\t6\nz\tJOINED\tsoon\n\tSHOWN\t7\nw\tJOINED\t8", keptMs = 10_000)
+    assertEquals(listOf("x" to GroupCallMemory.How.SHOWN, "w" to GroupCallMemory.How.JOINED), read.entries().map { it.callId to it.how })
+    assertEquals(read.encode(), GroupCallMemory.decode(read.encode(), keptMs = 10_000).encode())
   }
 
   // ─── RingAge: a press that outlived the process that rang ────────────────

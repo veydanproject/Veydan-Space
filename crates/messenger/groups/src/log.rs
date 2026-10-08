@@ -475,7 +475,7 @@ mod tests {
         let mut d0 = base.fork(&o);
         let op_a = da.make(OpBody::Remove { who: u.clone() }, Some(50));
         let op_b = db.make(OpBody::Admit { who: x.clone() }, None);
-        let op_o = d0.make(OpBody::EditSettings { name: Some("Renamed".into()), about: None, picture: None, history_for_new: None }, None);
+        let op_o = d0.make(OpBody::EditSettings { name: Some("Renamed".into()), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None }, None);
         // Then B, having seen only its own, mutes w.
         let op_b2 = db.make(OpBody::SetMuted { who: w.clone(), muted: true }, None);
 
@@ -750,7 +750,7 @@ mod tests {
                     2 => OpBody::SetMuted { who: target, muted: rng.next(2) == 0 },
                     3 => OpBody::SetRole { who: target, role: [Role::Member, Role::Moderator, Role::Admin][rng.next(3)] },
                     4 => OpBody::Ban { who: target },
-                    5 => OpBody::EditSettings { name: Some(format!("n{}", rng.next(9))), about: None, picture: None, history_for_new: None },
+                    5 => OpBody::EditSettings { name: Some(format!("n{}", rng.next(9))), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None },
                     _ => OpBody::RotateKey,
                 };
                 let dev = &mut devices[d];

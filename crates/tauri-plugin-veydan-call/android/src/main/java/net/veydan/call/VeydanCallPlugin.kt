@@ -43,6 +43,16 @@ class OngoingArgs {
 }
 
 @InvokeArg
+class GroupCallArgs {
+  var callId: String? = null
+  /** The chat of the group (`group:<id>`), which a tap opens. */
+  var chatId: String? = null
+  var name: String? = null
+  var video: Boolean = false
+  var hideOnLockscreen: Boolean = true
+}
+
+@InvokeArg
 class RouteArgs {
   var route: String? = null
 }
@@ -127,6 +137,37 @@ class VeydanCallPlugin(private val activity: Activity) : Plugin(activity) {
     val callId = invoke.parseArgs(DismissArgs::class.java).callId
     onMain(invoke) {
       Calls.dismissIncoming(activity, callId)
+      null
+    }
+  }
+
+  /**
+   * A call is on in a group: a quiet notification (no sound, no buttons)
+   * unless the app is in front; a tap opens the group's chat. Answers
+   * `{ shown }`.
+   */
+  @Command
+  fun showGroupCall(invoke: Invoke) {
+    val args = invoke.parseArgs(GroupCallArgs::class.java)
+    val callId = args.callId
+    val chatId = args.chatId
+    if (callId.isNullOrEmpty() || chatId.isNullOrEmpty()) {
+      invoke.reject("no call or chat id")
+      return
+    }
+    val notice = GroupCallNotice(callId.take(128), chatId.take(128), (args.name ?: "").take(200), args.video, args.hideOnLockscreen)
+    onMain(invoke) { JSObject().put("shown", Calls.showGroupCall(activity, notice)) }
+  }
+
+  @Command
+  fun dismissGroupCall(invoke: Invoke) {
+    val callId = invoke.parseArgs(DismissArgs::class.java).callId
+    if (callId.isNullOrEmpty()) {
+      invoke.reject("no call id")
+      return
+    }
+    onMain(invoke) {
+      Calls.dismissGroupCall(activity, callId)
       null
     }
   }

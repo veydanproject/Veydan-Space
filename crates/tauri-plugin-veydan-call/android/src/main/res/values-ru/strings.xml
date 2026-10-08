@@ -9,4 +9,7 @@
     <string name="veydan_call_decline">Отклонить</string>
     <string name="veydan_call_hangup">Завершить</string>
     <string name="veydan_call_unknown">Неизвестный</string>
+    <string name="veydan_call_channel_group">Групповые звонки</string>
+    <string name="veydan_call_group_on">Идёт звонок</string>
+    <string name="veydan_call_group_video_on">Идёт видеозвонок</string>
 </resources>

@@ -43,6 +43,8 @@ function words(): MessengerNoticeWords {
     call_video: tt('msg_call_phase_incoming_video'),
     call_answer: tt('msg_call_answer'),
     call_decline: tt('msg_call_decline'),
+    group_call_audio: tt('msg_gcall_banner'),
+    group_call_video: tt('msg_gcall_banner_video'),
   };
 }
 

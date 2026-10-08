@@ -11,7 +11,9 @@
 //! answer as SDP text, candidates both ways, a restart of ICE, the state,
 //! the pair of candidates in use (directly or through a relay), the
 //! statistics, the audio track with its mute, and, for groups, the
-//! encryption of frames ([`FrameKeys`]). Video: a track of this side in
+//! encryption of frames ([`FrameKeys`]) and the leg to the SFU of a call
+//! node ([`RoomConfig`]: sendonly tracks, the data channel, the tracks
+//! of the others by their mid, three layers of video). Video: a track of this side in
 //! every session from the start, fed by the camera of a computer
 //! (`camera.rs`), its screen (`screen.rs`) or frames pushed from outside
 //! (a phone's plugin, the CLI); the far end's frames and this side's own
@@ -64,15 +66,15 @@ pub mod android;
 pub mod screen;
 
 pub use adapter::{AudioTap, LazyRtcEngine, RtcEngine, VideoTap};
-pub use audio::{AudioDevice, AudioDevices, AudioInput, AudioOutput, AudioProcessing, FRAME_SAMPLES, SAMPLE_RATE};
+pub use audio::{mix, AudioDevice, AudioDevices, AudioInput, AudioOutput, AudioProcessing, FRAME_SAMPLES, SAMPLE_RATE};
 pub use camera::CameraCapture;
 pub use crypto::{Encryption, EncryptionState, FrameKeys};
 pub use engine::{AudioMode, Engine};
 #[cfg(not(target_os = "android"))]
 pub use screen::{ScreenCapture, SCREEN_FPS};
 pub use session::{
-    Candidate, CandidateKind, ConnectionState, IcePolicy, IceServer, IceState, Path, Session, SessionConfig,
-    SessionEvent, Stats,
+    Candidate, CandidateKind, ConnectionState, IcePolicy, IceServer, IceState, Path, RoomConfig, Session, SessionConfig,
+    SessionEvent, Stats, TrackKind, TrackStats, VideoEncoding, VideoLayer,
 };
 pub use video::{has_test_square, test_pattern, to_i420, PixelFormat, PushedFrame, VideoFrame, VideoOutput, VideoSource};
 

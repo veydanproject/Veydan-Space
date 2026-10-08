@@ -29,6 +29,11 @@
     track: VideoTrack;
     /** The call the frames belong to: another call, another subscription. */
     callId: string;
+    /**
+     * A seat of a group call: the m-line of its video
+     * (`GroupParticipant.video_mid`); `track` is not read then.
+     */
+    mid?: string | null;
     /** Mirrored left to right: my own face, as in a mirror. */
     mirror?: boolean;
     /** `auto`: cropped to fill when the picture stands as the tile does, whole otherwise. */
@@ -37,7 +42,7 @@
     /** The size the picture shows at and the frames a second, for the screen to tell. */
     info?: TileInfo | null;
   }
-  let { track, callId, mirror = false, fit = 'auto', live = $bindable(false), info = $bindable(null) }: Props = $props();
+  let { track, callId, mid = null, mirror = false, fit = 'auto', live = $bindable(false), info = $bindable(null) }: Props = $props();
 
   /** No frame for this long: the video is taken as stopped. */
   const STALE_MS = 1200;
@@ -56,6 +61,7 @@
     const el = canvas;
     const id = callId;
     const which = track;
+    const seat = mid;
     // A canvas the key took away (its context let go) is not drawn on: the
     // new one comes next.
     if (!el || !el.isConnected || !id) return;
@@ -117,7 +123,7 @@
       }
     }, 500);
 
-    messengerApi.calls.videoSubscribe(which, onframe).then(
+    (seat ? messengerApi.groupCalls.videoSubscribe(seat, onframe) : messengerApi.calls.videoSubscribe(which, onframe)).then(
       (n) => {
         if (gone) messengerApi.calls.videoUnsubscribe(n).catch(() => {});
         else {
@@ -143,7 +149,7 @@
 <!-- A canvas for each call and kind of drawing: the renderer lets its WebGL
      context go when it is done, and a canvas gives its context once. -->
 <div class="tile" bind:clientWidth={boxW} bind:clientHeight={boxH}>
-  {#key `${track}:${callId}:${noGl}`}
+  {#key `${mid ?? track}:${callId}:${noGl}`}
     <canvas bind:this={canvas} width="2" height="2" style:object-fit={objectFit} class:shown={live}></canvas>
   {/key}
 </div>

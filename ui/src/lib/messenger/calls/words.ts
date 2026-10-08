@@ -72,6 +72,8 @@ export function endedKey(outcome: CallOutcome, direction: CallDirection): string
 
 /** The facts of a call's line in the chat, as the runtime wrote them. */
 export interface CallLine {
+  /** A call between two, or a call of a group (`kind: "group"` of its details). */
+  kind: 'dm' | 'group';
   callId: string;
   direction: CallDirection;
   media: CallMedia;
@@ -82,6 +84,10 @@ export interface CallLine {
   /** How the media went; known once the call is over. */
   via: CallVia | null;
   startedAt: number;
+  /** A group call: who made its room, hex (`direction` is `out` when I did). */
+  startedBy: string | null;
+  /** A group call: how many people its room saw, me included; 0 when not known. */
+  participants: number;
 }
 
 const OUTCOMES = new Set(['missed', 'declined', 'busy', 'ended', 'failed']);
@@ -98,6 +104,7 @@ export function callLineOf(m: MessengerMessage): CallLine | null {
   const direction: CallDirection = d.direction === 'in' ? 'in' : 'out';
   const outcome = typeof d.outcome === 'string' && OUTCOMES.has(d.outcome) ? (d.outcome as CallLine['outcome']) : null;
   return {
+    kind: d.kind === 'group' ? 'group' : 'dm',
     callId: typeof d.call_id === 'string' ? d.call_id : m.id.slice('sys:call:'.length),
     direction,
     media: d.media === 'video' ? 'video' : 'audio',
@@ -105,7 +112,32 @@ export function callLineOf(m: MessengerMessage): CallLine | null {
     duration: typeof d.duration_secs === 'number' ? d.duration_secs : null,
     via: d.via === 'relay' || d.via === 'direct' ? d.via : null,
     startedAt: typeof d.started_at === 'number' ? d.started_at : m.created_at,
+    startedBy: typeof d.started_by === 'string' && d.started_by ? d.started_by : (m.sender_pubkey || null),
+    participants: typeof d.participants === 'number' && d.participants > 0 ? Math.floor(d.participants) : 0,
   };
+}
+
+/**
+ * What the line of a group call says: the kind of call, then who started
+ * it (somebody else), whether it is on now, how long it was and how many
+ * were in it, or that it did not come about. `live`: the call is on in the
+ * group now; `starter`: the name of who started it, `null` for me;
+ * `people(n)`: "{n} participants" in the language.
+ */
+export function groupLineWords(
+  line: CallLine,
+  tr: Translate,
+  opts: { live: boolean; starter: string | null; people: (n: number) => string; howLong?: (secs: number) => string },
+): { title: string; detail: string | null } {
+  const title = tr(line.media === 'video' ? 'msg_gcall_line_video' : 'msg_gcall_line');
+  const howLong = opts.howLong ?? clock;
+  const parts: string[] = [];
+  if (opts.starter) parts.push(opts.starter);
+  if (opts.live) parts.push(tr('msg_gcall_detail_live'));
+  else if (line.outcome === 'failed') parts.push(tr('msg_call_detail_failed'));
+  else if (line.outcome && line.duration != null) parts.push(howLong(line.duration));
+  if (line.participants > 1 && line.outcome !== 'failed') parts.push(opts.people(line.participants));
+  return { title, detail: parts.length ? parts.join(' · ') : null };
 }
 
 /**
@@ -143,6 +175,13 @@ export function callLineWords(line: CallLine, tr: Translate, live = false, howLo
  */
 export function callErrorText(e: unknown, tr: Translate): string {
   const text = errorString(e);
+  // A call of a group (messenger-calls::group).
+  if (/a call is on in this group already/i.test(text)) return tr('msg_gcall_err_on');
+  if (/no call is on in this group|room_not_found|the call ended/i.test(text)) return tr('msg_gcall_err_gone');
+  if (/room_full/i.test(text)) return tr('msg_gcall_err_full');
+  if (/not a member of the group/i.test(text)) return tr('msg_gcall_err_member');
+  if (/no call node with an SFU|node has no SFU/i.test(text)) return tr('msg_gcall_err_no_node');
+  if (/way to the node/i.test(text)) return tr('msg_gcall_err_node_lost');
   if (/contacts only|own key/i.test(text)) return tr('msg_call_err_contacts');
   if (/call is under way/i.test(text)) return tr('msg_call_err_busy');
   if (/no media engine/i.test(text)) return tr('msg_call_unavailable');

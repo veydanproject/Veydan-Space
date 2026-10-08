@@ -15,10 +15,9 @@ use std::time::Duration;
 
 use common::*;
 use messenger_rtc::{
-    has_test_square, test_pattern, CandidateKind, ConnectionState, Encryption, EncryptionState, FrameKeys, IcePolicy,
-    SessionConfig, SessionEvent, VideoFrame, VideoSource,
+    has_test_square, CandidateKind, ConnectionState, Encryption, EncryptionState, FrameKeys, IcePolicy, SessionConfig,
+    SessionEvent,
 };
-use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 
 const TONE_A: f64 = 440.0;
@@ -39,11 +38,6 @@ async fn exchange(a: &mut Side, b: &mut Side) -> ((f64, f64), (f64, f64)) {
     let _ = stop_tx.send(true);
     let _ = tokio::join!(pump_a, pump_b);
     (tail_tone(&got_b, TONE_A), tail_tone(&got_a, TONE_B))
-}
-
-fn assert_tone((ratio, rms): (f64, f64), hz: f64, where_: &str) {
-    assert!(ratio > 0.95, "{hz} Hz at {where_}: ratio {ratio:.3}, rms {rms:.0}");
-    assert!(rms > 4000.0 && rms < 7000.0, "{hz} Hz at {where_}: rms {rms:.0} (pushed 5657)");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -297,79 +291,6 @@ async fn relay_only_goes_through_a_node_over_udp_and_over_tls() {
         b.session.close();
     }
     node.stop().await;
-}
-
-/// Pushes the test pattern of `width`×`height` into `source` at 30
-/// frames a second until `stop` says so; how many were pushed.
-fn pump_pattern(source: VideoSource, width: u32, height: u32, mut stop: watch::Receiver<bool>) -> tokio::task::JoinHandle<u32> {
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_micros(1_000_000 / 30));
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let started = std::time::Instant::now();
-        let mut seq = 0u32;
-        loop {
-            tokio::select! {
-                _ = tick.tick() => {
-                    let mut frame = test_pattern(width, height, seq);
-                    frame.timestamp_us = started.elapsed().as_micros() as i64;
-                    source.push(Arc::new(frame));
-                    seq += 1;
-                }
-                _ = stop.changed() => return seq,
-            }
-        }
-    })
-}
-
-/// Frames of `rx` for `dur`: how many came, and the sizes seen in order
-/// (each once).
-async fn watch_frames(rx: &mut broadcast::Receiver<Arc<VideoFrame>>, dur: Duration) -> (u32, Vec<(u32, u32)>) {
-    let deadline = tokio::time::sleep(dur);
-    tokio::pin!(deadline);
-    let (mut n, mut sizes): (u32, Vec<(u32, u32)>) = (0, vec![]);
-    loop {
-        tokio::select! {
-            frame = rx.recv() => match frame {
-                Ok(f) => {
-                    n += 1;
-                    if sizes.last() != Some(&(f.width, f.height)) {
-                        sizes.push((f.width, f.height));
-                    }
-                }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
-            _ = &mut deadline => break,
-        }
-    }
-    (n, sizes)
-}
-
-/// The first frame of `rx` of `width`×`height` that shows the square of
-/// the pattern, within `timeout`; the sizes seen before it.
-async fn wait_for_size(rx: &mut broadcast::Receiver<Arc<VideoFrame>>, width: u32, height: u32, timeout: Duration) -> Vec<(u32, u32)> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    let mut sizes: Vec<(u32, u32)> = vec![];
-    loop {
-        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
-        let frame = tokio::time::timeout(left, rx.recv()).await.unwrap_or_else(|_| panic!("no {width}×{height} frame with the square within {timeout:?}; sizes seen: {sizes:?}"));
-        match frame {
-            Ok(f) => {
-                if sizes.last() != Some(&(f.width, f.height)) {
-                    sizes.push((f.width, f.height));
-                }
-                if (f.width, f.height) == (width, height) {
-                    assert!(f.is_well_formed());
-                    assert_eq!(f.rotation, 0);
-                    if has_test_square(&f) {
-                        return sizes;
-                    }
-                }
-            }
-            Err(broadcast::error::RecvError::Lagged(_)) => continue,
-            Err(broadcast::error::RecvError::Closed) => panic!("the frames ended"),
-        }
-    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

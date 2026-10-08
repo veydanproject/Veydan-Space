@@ -22,6 +22,7 @@
   import CallConfirm from './CallConfirm.svelte';
   import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
+  import { groupCallStore } from './groupCallStore.svelte';
   import { hold } from './hold';
   import { callErrorText } from './words';
 
@@ -33,7 +34,7 @@
   const sessionActive = $derived(!!messengerStore.status?.runtime?.session_active);
   const reason = $derived(
     callStore.loaded && !callStore.available ? $t('msg_call_unavailable')
-      : callStore.call ? $t('msg_call_err_busy')
+      : callStore.call || groupCallStore.call ? $t('msg_call_err_busy')
       : !sessionActive ? $t('msg_call_err_locked')
       : '',
   );

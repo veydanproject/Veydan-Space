@@ -521,7 +521,7 @@ mod tests {
     #[test]
     fn the_reading_stops_when_told_and_reports_when_it_gives_up() {
         let (fan_out, _keep) = tokio::sync::broadcast::channel(2);
-        let source = VideoSource::new(4, 2, false, fan_out);
+        let source = VideoSource::new(4, 2, false, fan_out, None);
         let stop = AtomicBool::new(false);
         let mut waits = 0;
         let outcome = run(&stop, &source, || {

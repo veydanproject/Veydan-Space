@@ -128,6 +128,19 @@ internal object RingRules {
    */
   fun pushRings(callId: String, over: Boolean, busyWith: String?): Boolean =
     !over && (busyWith == null || busyWith == callId)
+
+  /**
+   * Whether the app may ring a call while `ongoingWith` goes on on the
+   * phone (null: nothing goes on; a call that only rings is replaced, as
+   * ever). The phone knows one call at a time: a ringing over a call
+   * under way ends — Answer, Decline or the limit — in `stop`, which
+   * takes the service, the notification, the sound's mode and the wake
+   * lock of the call under way down with it, while the app keeps that
+   * call. So nothing rings over a call that goes on; the app answers
+   * busy for a second call of two before it rings here, and leaves a
+   * call that comes in during a group call to the user's other devices.
+   */
+  fun appRings(ongoingWith: String?): Boolean = ongoingWith == null
 }
 
 /**
@@ -148,6 +161,100 @@ internal class RecentlyOver(private val keptMs: Long, private val keep: Int = 16
   /** Did `callId` end within the last `keptMs` before `now`. */
   fun isOver(callId: String, now: Long): Boolean =
     ended.any { it.first == callId && now - it.second in 0..keptMs }
+}
+
+/**
+ * The calls on in groups this phone has dealt with, across its processes:
+ * the ones whose quiet notification was shown (`SHOWN`), and the ones
+ * that went on here, which I was in (`JOINED`). Kept by `Calls` in the
+ * app's preferences, so that a process started anew knows them: the app
+ * keeps the same in its memory and forgets it when the process dies,
+ * while the group announces its call again at every seat taken.
+ *
+ * A call I was in is no news after I leave it, whatever process hears of
+ * it (`isNews`). A notification shown is shown once, until the call is
+ * over (`dismissed`) or the next process starts (`leftovers`): the process
+ * that showed it may have died with the call still on or over, and the
+ * notification would stay in the shade to the user's tap either way; it
+ * goes at the start, and the app shows the call anew if it is still on.
+ *
+ * Times are a wall clock (`currentTimeMillis`): the phone may reboot in
+ * between. A few entries, the oldest first; a call id never comes back,
+ * so an entry is good until it is pruned or `keptMs` old.
+ */
+internal class GroupCallMemory(private val keptMs: Long, private val keep: Int = 32) {
+  enum class How { SHOWN, JOINED }
+
+  data class Entry(val callId: String, val how: How, val at: Long)
+
+  private val calls = ArrayDeque<Entry>()
+
+  /** The entries, oldest first (for keeping). */
+  fun entries(): List<Entry> = calls.toList()
+
+  /** The notification of `callId` was shown at `now`. A call I am in stays as such. */
+  fun shown(callId: String, now: Long) = put(callId, How.SHOWN, now)
+
+  /** The call `callId` went on here at `now`: I was in it. */
+  fun joined(callId: String, now: Long) = put(callId, How.JOINED, now)
+
+  private fun put(callId: String, how: How, now: Long) {
+    val was = calls.firstOrNull { it.callId == callId }
+    // In it: the stronger word, kept; a notice shown of a call I was in changes nothing.
+    val kept = if (was?.how == How.JOINED) How.JOINED else how
+    calls.removeAll { it.callId == callId }
+    calls.addLast(Entry(callId, kept, now))
+    while (calls.size > keep) calls.removeFirst()
+  }
+
+  /**
+   * The notice of `callId` goes (the call is over, or I am in it): no
+   * longer shown. What I was in stays known: a call I joined is no news
+   * after I leave it, and a call that is over never comes back under its
+   * id. Answers whether a notice was known.
+   */
+  fun dismissed(callId: String): Boolean = calls.removeAll { it.callId == callId && it.how == How.SHOWN }
+
+  /**
+   * Whether `callId` is news at `now`: neither shown nor joined within
+   * `keptMs`. An entry from the future (the clock was set back since) is
+   * known still: it is this call's alone, and a notice shown again of a
+   * call I was in is the worse mistake.
+   */
+  fun isNews(callId: String, now: Long): Boolean =
+    calls.none { it.callId == callId && now - it.at <= keptMs }
+
+  /**
+   * At the start of a process: the notifications a dead process left,
+   * which go now and are forgotten as shown (the call, if still on, is
+   * news again); what I was in stays known.
+   */
+  fun leftovers(): List<String> {
+    val shown = calls.filter { it.how == How.SHOWN }.map { it.callId }
+    calls.removeAll { it.how == How.SHOWN }
+    return shown
+  }
+
+  /** The entries as one string, for the preferences; `decode` reads it back. */
+  fun encode(): String = calls.joinToString("\n") { "${it.callId}\t${it.how.name}\t${it.at}" }
+
+  companion object {
+    fun decode(text: String?, keptMs: Long, keep: Int = 32): GroupCallMemory {
+      val memory = GroupCallMemory(keptMs, keep)
+      if (text.isNullOrEmpty()) return memory
+      for (line in text.split('\n')) {
+        val parts = line.split('\t')
+        if (parts.size != 3) continue
+        val how = How.values().firstOrNull { it.name == parts[1] } ?: continue
+        val at = parts[2].toLongOrNull() ?: continue
+        if (parts[0].isEmpty()) continue
+        memory.calls.removeAll { it.callId == parts[0] }
+        memory.calls.addLast(Entry(parts[0], how, at))
+      }
+      while (memory.calls.size > keep) memory.calls.removeFirst()
+      return memory
+    }
+  }
 }
 
 /**

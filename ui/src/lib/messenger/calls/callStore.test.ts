@@ -7,7 +7,7 @@
 // off, the screen in its place and back, a video call taken without it.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CallView } from '../generated/calls';
+import type { CallView, GroupCallView } from '../generated/calls';
 
 const calls = vi.hoisted(() => ({
   state: vi.fn(),
@@ -30,6 +30,7 @@ const calls = vi.hoisted(() => ({
 vi.mock('../api', () => ({ messengerApi: { calls } }));
 
 const { callStore, CONFIRM_KEY, RING_TIMEOUT_SECS, gaveUp } = await import('./callStore.svelte');
+const { groupCallStore } = await import('./groupCallStore.svelte');
 const { endSound } = await import('./sounds');
 
 function view(over: Partial<CallView> = {}): CallView {
@@ -39,10 +40,57 @@ function view(over: Partial<CallView> = {}): CallView {
   };
 }
 
+/** The room of a group call, as the group store hears of it (the module store hands every event to both stores). */
+function room(phase: GroupCallView['phase']): GroupCallView {
+  const me = 'ab'.repeat(32);
+  return {
+    call_id: 'g1', group_id: 'grp', chat_id: 'group:grp', phase, media: 'audio', muted: false, video_local: false,
+    started_by: me, started_at: 900, joined_at: 901, node: '1.2.3.4:8443#' + 'cd'.repeat(32), participant: 1, epoch: 1,
+    participants: [{ id: 1, npub: me, verified: true, speaking: false, audio: true, me: true }], kbps_per_participant: 0, max_participants: 0,
+  };
+}
+
 describe('the call store', () => {
   beforeEach(() => {
     callStore.reset();
+    groupCallStore.reset();
     vi.clearAllMocks();
+  });
+
+  it('says busy for a call that rings while I sit in the room of a group call', () => {
+    groupCallStore.handleEvent({ name: 'group_call.state', payload: { call: room('in_room') } });
+    callStore.handleEvent({ name: 'call.incoming', payload: { call: view(), busy_with_group: true } });
+    expect(callStore.ringing).toBe(true);
+    expect(callStore.busyWithGroup).toBe(true);
+    // The word is for this call: another one, or its end, takes it away.
+    callStore.handleEvent({ name: 'call.ended', payload: { call: view({ phase: 'ended' }), outcome: 'missed', duration_secs: null } });
+    expect(callStore.busyWithGroup).toBe(false);
+    callStore.handleEvent({ name: 'call.incoming', payload: { call: view({ call_id: 'c2' }) } });
+    expect(callStore.busyWithGroup, 'a payload without the word is not busy').toBe(false);
+    callStore.handleEvent({ name: 'call.incoming', payload: { call: view({ call_id: 'c3' }), busy_with_group: true } });
+    expect(callStore.busyWithGroup).toBe(true);
+    callStore.reset();
+    expect(callStore.busyWithGroup).toBe(false);
+  });
+
+  /**
+   * In the room of a Trio, Alice calls 1:1: "busy", Decline alone. I leave
+   * the room to take her call while it still rings (the invitation lives
+   * 45 s): the runtime would take `call_accept` now, and the screen once
+   * kept showing "busy" to the end of the call. The word of the runtime
+   * holds only while the room does.
+   */
+  it('takes "busy" away once I am out of the room while the call still rings', () => {
+    groupCallStore.handleEvent({ name: 'group_call.state', payload: { call: room('in_room') } });
+    callStore.handleEvent({ name: 'call.incoming', payload: { call: view(), busy_with_group: true } });
+    expect(callStore.busyWithGroup).toBe(true);
+    groupCallStore.handleEvent({ name: 'group_call.state', payload: { call: room('left') } });
+    expect(groupCallStore.call).toBeNull();
+    expect(callStore.ringing, 'the call rings on').toBe(true);
+    expect(callStore.busyWithGroup, 'Answer is back').toBe(false);
+    // The room that went for everybody says `ended` after `left`: still not busy.
+    groupCallStore.handleEvent({ name: 'group_call.ended', payload: { call: { call_id: 'g1', group_id: 'grp' }, outcome: 'ended' } });
+    expect(callStore.busyWithGroup).toBe(false);
   });
 
   it('takes a ringing call and its changes', () => {

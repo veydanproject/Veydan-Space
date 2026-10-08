@@ -147,6 +147,91 @@ pub async fn set_outcome(store: &Store, call_id: &str, outcome: &str, ended_at: 
     Ok(())
 }
 
+// ─── Group calls (migration 021) ───────────────────────────────────────────
+
+/// A call between two people (the default of every row).
+pub const KIND_DM: &str = "dm";
+/// A call of a group, on an SFU room.
+pub const KIND_GROUP: &str = "group";
+
+/// What a row says of a group call beyond [`CallRow`].
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
+pub struct GroupCallInfo {
+    pub kind: String,
+    /// Who made the room, hex.
+    pub started_by: Option<String>,
+    /// How many people were seen in the room, me included.
+    pub participants: i64,
+}
+
+/// Insert the record of a group call: `chat_id` the group's chat, `peer`
+/// the group id, `direction` `out` when `started_by` is me. `false` when
+/// it is on record already (the start came again, or by another device).
+pub async fn insert_group(store: &Store, c: &NewCall, started_by: &str) -> Result<bool> {
+    let res = sqlx::query(
+        "INSERT OR IGNORE INTO msg_calls (call_id, chat_id, peer, direction, media, started_at, answered_at, ended_at, outcome, via_relay, kind, started_by, participants)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 1, ?, ?, 0)",
+    )
+    .bind(&c.call_id)
+    .bind(&c.chat_id)
+    .bind(&c.peer)
+    .bind(&c.direction)
+    .bind(&c.media)
+    .bind(c.started_at)
+    .bind(KIND_GROUP)
+    .bind(started_by)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(res.rows_affected() == 1)
+}
+
+pub async fn group_info(store: &Store, call_id: &str) -> Result<Option<GroupCallInfo>> {
+    sqlx::query_as::<_, GroupCallInfo>("SELECT kind, started_by, participants FROM msg_calls WHERE call_id = ?")
+        .bind(call_id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)
+}
+
+/// The count of people seen in the room only ever grows.
+pub async fn set_participants(store: &Store, call_id: &str, participants: i64) -> Result<()> {
+    sqlx::query("UPDATE msg_calls SET participants = ? WHERE call_id = ? AND participants < ?")
+        .bind(participants)
+        .bind(call_id)
+        .bind(participants)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
+/// The group calls of a chat that have no end on record yet, oldest first.
+pub async fn open_group_calls(store: &Store, chat_id: &str) -> Result<Vec<CallRow>> {
+    sqlx::query_as::<_, CallRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_calls WHERE chat_id = ? AND kind = ? AND outcome IS NULL ORDER BY started_at ASC"
+    )))
+    .bind(chat_id)
+    .bind(KIND_GROUP)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// The group calls that have no end on record although their room has
+/// expired on the node by now (started before `started_before`): a call
+/// whose `call.end` never came while this device was off, oldest first.
+pub async fn stale_group_calls(store: &Store, started_before: i64) -> Result<Vec<CallRow>> {
+    sqlx::query_as::<_, CallRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_calls WHERE kind = ? AND outcome IS NULL AND started_at < ? ORDER BY started_at ASC"
+    )))
+    .bind(KIND_GROUP)
+    .bind(started_before)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
 /// Forget a call that never was (the losing half of a glare).
 pub async fn delete(store: &Store, call_id: &str) -> Result<()> {
     sqlx::query("DELETE FROM msg_calls WHERE call_id = ?").bind(call_id).execute(store.pool()).await.map_err(storage)?;
@@ -193,5 +278,37 @@ mod tests {
         assert_eq!(ids, vec!["c2", "c1"]);
         delete(&store, "c2").await.unwrap();
         assert!(get(&store, "c2").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_group_call_is_a_row_of_its_own_kind() {
+        let store = Store::open_in_memory().await.unwrap();
+        let new = NewCall {
+            call_id: "g1".into(),
+            chat_id: "group:aa".into(),
+            peer: "aa".into(),
+            direction: DIR_IN.into(),
+            media: MEDIA_AUDIO.into(),
+            started_at: 100,
+        };
+        assert!(insert_group(&store, &new, "bb").await.unwrap());
+        assert!(!insert_group(&store, &new, "cc").await.unwrap(), "the first start holds");
+        let info = group_info(&store, "g1").await.unwrap().unwrap();
+        assert_eq!(info, GroupCallInfo { kind: KIND_GROUP.into(), started_by: Some("bb".into()), participants: 0 });
+        assert_eq!(group_info(&store, "nope").await.unwrap(), None);
+        set_participants(&store, "g1", 3).await.unwrap();
+        set_participants(&store, "g1", 2).await.unwrap();
+        assert_eq!(group_info(&store, "g1").await.unwrap().unwrap().participants, 3, "the count only grows");
+        assert_eq!(open_group_calls(&store, "group:aa").await.unwrap().len(), 1);
+        assert_eq!(stale_group_calls(&store, 100).await.unwrap().len(), 0, "started at 100 is not before 100");
+        assert_eq!(stale_group_calls(&store, 101).await.unwrap().len(), 1);
+        assert!(finish(&store, "g1", OUTCOME_ENDED, 300).await.unwrap());
+        assert!(open_group_calls(&store, "group:aa").await.unwrap().is_empty());
+        assert!(stale_group_calls(&store, 101).await.unwrap().is_empty());
+
+        // A call between two is of the kind `dm`, by the default of the column.
+        insert(&store, &NewCall { call_id: "c1".into(), chat_id: "dm:aa".into(), ..new }).await.unwrap();
+        assert_eq!(group_info(&store, "c1").await.unwrap().unwrap().kind, KIND_DM);
+        assert!(open_group_calls(&store, "dm:aa").await.unwrap().is_empty());
     }
 }

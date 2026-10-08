@@ -10,3 +10,6 @@ export const chatHref = (chatId: string) => `${BASE}/chat?id=${encodeURIComponen
 
 /** The call under way, the whole screen. */
 export const callHref = () => `${BASE}/call`;
+
+/** The room of the group call I am in, the whole screen. */
+export const groupCallHref = () => `${BASE}/group-call`;

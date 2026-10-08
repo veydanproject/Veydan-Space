@@ -139,6 +139,20 @@ describe('the place of the video window', () => {
     // A page smaller than the window: its top left stays on it, where the bar's buttons start.
     expect(edges(clampShift({ dx: -900, dy: 900 }, win, { width: 300, height: 200 }), { width: 300, height: 200 })).toMatchObject({ left: WINDOW_MARGIN, top: WINDOW_MARGIN });
   });
+
+  it('brings back a window at the left edge that the list of a group call widened to the left', () => {
+    // GroupCallWindow: held by its right edge; the list makes it wider, so its left side moves left.
+    const page = { width: 1280, height: 720 };
+    const narrow = { width: 563, height: 435 };
+    const wide = { width: 742, height: 435 };
+    const at = clampShift({ dx: -5000, dy: 0 }, narrow, page);
+    const left = (s: { dx: number }, w: { width: number }) => page.width - WINDOW_CORNER - w.width + s.dx;
+    expect(left(at, narrow)).toBe(WINDOW_MARGIN);
+    expect(left(at, wide), 'the list opened, the place as it was').toBeLessThan(0);
+    const fitted = clampShift(at, wide, page);
+    expect(left(fitted, wide)).toBe(WINDOW_MARGIN);
+    expect(fitted.dy).toBe(at.dy);
+  });
 });
 
 /**

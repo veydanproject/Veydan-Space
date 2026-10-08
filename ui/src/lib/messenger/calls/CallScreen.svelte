@@ -47,6 +47,8 @@
   const video = $derived(callStore.video);
   const cameraOn = $derived(!!call?.video_local && !call.video_screen);
   const hasSpeaker = $derived(!!callStore.routes?.available.includes('speaker'));
+  /** The call rings while I sit in the room of a group call: it cannot be taken here, only refused. */
+  const busy = $derived(call?.phase === 'incoming' && callStore.busyWithGroup);
   /** Four buttons and more do not fit a narrow phone at full size. */
   const many = $derived(3 + (cameraOn ? 1 : 0) + (hasSpeaker ? 1 : 0) >= 4);
 
@@ -105,6 +107,7 @@
           {/if}
           {#if rtt != null}<span class="chip quiet">{$t('msg_call_rtt', { ms: String(rtt) })}</span>{/if}
           {#if call?.muted}<span class="chip warn"><CallIcon name="mic-off" size={13} />{$t('msg_call_muted')}</span>{/if}
+          {#if busy}<span class="chip warn"><CallIcon name="missed" size={13} />{$t('msg_call_busy_in_group')}</span>{/if}
         </div>
         {#if error}<p class="error">{error}</p>{/if}
       </div>
@@ -116,18 +119,20 @@
           <button class="round decline" disabled={callStore.ending} onclick={() => callStore.decline()} aria-label={$t('msg_call_decline')}><CallIcon name="hangup" size={30} /></button>
           <span>{$t('msg_call_decline')}</span>
         </div>
-        {#if call.media === 'video'}
+        {#if call.media === 'video' && !busy}
           <div class="action">
             <button class="round soft" disabled={callStore.busy} onclick={() => callStore.acceptWithoutVideo()} aria-label={$t('msg_call_answer_audio')}><CallIcon name="video-off" size={26} /></button>
             <span>{$t('msg_call_answer_voice')}</span>
           </div>
         {/if}
-        <div class="action">
-          <button class="round answer" disabled={callStore.busy} onclick={() => callStore.accept()} aria-label={$t('msg_call_answer')}>
-            <CallIcon name={call.media === 'video' ? 'video' : 'phone'} size={30} />
-          </button>
-          <span>{$t('msg_call_answer')}</span>
-        </div>
+        {#if !busy}
+          <div class="action">
+            <button class="round answer" disabled={callStore.busy} onclick={() => callStore.accept()} aria-label={$t('msg_call_answer')}>
+              <CallIcon name={call.media === 'video' ? 'video' : 'phone'} size={30} />
+            </button>
+            <span>{$t('msg_call_answer')}</span>
+          </div>
+        {/if}
       {:else if call}
         <div class="action">
           <button class="round soft" class:on={call.muted} disabled={callStore.busy || call.phase === 'outgoing'} onclick={() => callStore.toggleMute()}

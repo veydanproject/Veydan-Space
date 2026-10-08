@@ -30,10 +30,21 @@
 //! Nothing of a call is decided here; the phone's shell around one (the
 //! ringing notification, the route of the sound, the camera) is
 //! `call_android.rs`, a computer's ringing notification `desktop_notify.rs`.
+//!
+//! Group calls (`messenger_group_call_*`): the same way, with the events
+//! `group_call.state`, `group_call.started`, `group_call.ended` and
+//! `group_call.level`; the video of every other seat comes on a channel
+//! of its own by the m-line of its track
+//! (`messenger_group_call_video_subscribe`), acknowledged like the video
+//! of a call between two. The camera of a phone goes into a room as into
+//! a call between two: the bridge pushes its frames through the runtime
+//! (`group_call_push_video_frame`), never through the page. A call
+//! announced in a group while the window is away is a quiet notification
+//! on a computer (`desktop_notify.rs`, `take_group_call`).
 
 use super::{map_err, MessengerState};
 use messenger_runtime::calls::{CameraInfo, ScreenInfo, VideoFrame, VideoInput, VideoQuality, VideoTrack};
-use messenger_runtime::{CallMedia, CallNodeInput, CallState, CallView, MessengerRuntime, RelayPolicy};
+use messenger_runtime::{CallMedia, CallNodeInput, CallState, CallView, GroupCallState, GroupCallView, MessengerRuntime, RelayPolicy};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -131,17 +142,43 @@ fn end_marker(seq: u32) -> Vec<u8> {
     pack(&VideoFrame { width: 0, height: 0, rotation: 0, timestamp_us: 0, data: vec![] }, seq)
 }
 
-/// Carries the frames of `track` to `channel` until the call is over, the
-/// page is gone (a send fails) or the subscription is taken back, one
-/// frame on its way at a time ([`InFlight`]; `acked` says when the page
-/// took it). Before the call's media is there it waits; without a call
-/// it ends at once.
-async fn pump_frames(rt: Arc<MessengerRuntime>, track: VideoTrack, channel: Channel<Response>, mut acked: watch::Receiver<Option<u32>>) {
+/// Whose frames a subscription carries: one video of the call between
+/// two, or the video of one seat of a group call by the m-line of its
+/// track.
+enum Frames {
+    Call(VideoTrack),
+    Seat(String),
+}
+
+impl Frames {
+    /// The frames as the engine hands them, when the call's media is there.
+    async fn of(&self, rt: &MessengerRuntime) -> Option<tokio::sync::broadcast::Receiver<Arc<VideoFrame>>> {
+        match self {
+            Frames::Call(track) => rt.call_video_frames(*track).await,
+            Frames::Seat(mid) => rt.group_call_video_frames(mid).await,
+        }
+    }
+
+    /// Whether the call these frames are of is under way at all.
+    async fn alive(&self, rt: &MessengerRuntime) -> bool {
+        match self {
+            Frames::Call(_) => rt.calls().current().await.is_some(),
+            Frames::Seat(_) => rt.group_calls().current().await.is_some(),
+        }
+    }
+}
+
+/// Carries the frames of `source` to `channel` until the call is over,
+/// the page is gone (a send fails) or the subscription is taken back,
+/// one frame on its way at a time ([`InFlight`]; `acked` says when the
+/// page took it). Before the call's media is there it waits; without a
+/// call it ends at once.
+async fn pump_frames(rt: Arc<MessengerRuntime>, source: Frames, channel: Channel<Response>, mut acked: watch::Receiver<Option<u32>>) {
     use tokio::sync::broadcast::error::RecvError;
     let mut flight = InFlight::new();
     'calls: loop {
-        let Some(mut frames) = rt.call_video_frames(track).await else {
-            if rt.calls().current().await.is_none() {
+        let Some(mut frames) = source.of(&rt).await else {
+            if !source.alive(&rt).await {
                 break;
             }
             tokio::time::sleep(MEDIA_POLL).await;
@@ -177,8 +214,10 @@ async fn pump_frames(rt: Arc<MessengerRuntime>, track: VideoTrack, channel: Chan
 }
 
 /// A computer: the `call.*` events go to the notifications as well, where
-/// a call that rings while the window is away rings too. Missed events
-/// (the channel lagged behind `call.level`) are made up for by asking the
+/// a call that rings while the window is away rings too, and the
+/// `group_call.*` events, where a call somebody started in a group while
+/// the window is away is a quiet notification. Missed events (the
+/// channel lagged behind `call.level`) are made up for by asking the
 /// runtime which call rings now.
 #[cfg(desktop)]
 pub(crate) fn spawn_desktop_ring(
@@ -191,6 +230,7 @@ pub(crate) fn spawn_desktop_ring(
         loop {
             match rx.recv().await {
                 Ok(ev) if ev.name.starts_with("call.") => desktop.take_call(&rt, &ev.name, &ev.payload).await,
+                Ok(ev) if ev.name.starts_with("group_call.") => desktop.take_group_call(&rt, &ev.name, &ev.payload).await,
                 Ok(_) => {}
                 Err(RecvError::Lagged(_)) => desktop.recheck_calls(&rt).await,
                 Err(RecvError::Closed) => break,
@@ -332,16 +372,20 @@ pub async fn messenger_call_video_subscribe(
     channel: Channel<Response>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<u64> {
+    Ok(subscribe(messenger.runtime()?, Frames::Call(track), channel))
+}
+
+/// A subscription of the page to `source`, by the id it is known by.
+fn subscribe(rt: Arc<MessengerRuntime>, source: Frames, channel: Channel<Response>) -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
-    let rt = messenger.runtime()?;
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let (acked, acked_rx) = watch::channel(None);
     let task = tauri::async_runtime::spawn(async move {
-        pump_frames(rt, track, channel, acked_rx).await;
+        pump_frames(rt, source, channel, acked_rx).await;
         subscriptions().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
     });
     subscriptions().lock().unwrap_or_else(|e| e.into_inner()).insert(id, Subscription { task, acked });
-    Ok(id)
+    id
 }
 
 /// The page took (drew, or let go of) the frame `seq` of the subscription
@@ -474,4 +518,102 @@ pub async fn messenger_call_set_incoming(enabled: bool, messenger: tauri::State<
 pub async fn messenger_call_network_changed(messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
     messenger.runtime()?.call_network_changed().await;
     Ok(())
+}
+
+// ─── Group calls ─────────────────────────────────────────────────────────────
+
+/// Start a call in the group `group_id` with `media` (`audio` | `video`):
+/// a room on a node, me in it, the group told (`group_call.started` for
+/// everybody, `group_call.state` here). Refused while a call of either
+/// kind is under way, and while a call is on in the group already.
+#[tauri::command]
+pub async fn messenger_group_call_start(
+    app: tauri::AppHandle,
+    group_id: String,
+    media: CallMedia,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<GroupCallView> {
+    permissions_for_call(&app, media).await?;
+    messenger.runtime()?.group_call_start(&group_id, media).await.map_err(map_err)
+}
+
+/// Join the call that is on in the group `group_id` (the banner's
+/// button). Refused while a call of either kind is under way.
+#[tauri::command]
+pub async fn messenger_group_call_join(
+    app: tauri::AppHandle,
+    group_id: String,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<GroupCallView> {
+    let rt = messenger.runtime()?;
+    // A phone asks for the microphone (and the camera of a video call)
+    // first; a call the group does not have fails on its own below.
+    let media = rt.group_call_state(Some(&group_id)).await.announced.map(|a| a.media).unwrap_or(CallMedia::Audio);
+    permissions_for_call(&app, media).await?;
+    rt.group_call_join(&group_id).await.map_err(map_err)
+}
+
+/// Leave the room; the last one out ends the call for the group.
+#[tauri::command]
+pub async fn messenger_group_call_leave(messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    messenger.runtime()?.group_call_leave().await.map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn messenger_group_call_mute(muted: bool, messenger: tauri::State<'_, MessengerState>) -> CmdResult<GroupCallView> {
+    messenger.runtime()?.group_call_set_mute(muted).await.map_err(map_err)
+}
+
+/// My video in the room: `{kind: "camera", id?}`, `{kind: "screen",
+/// id?}` or `{kind: "off"}`.
+#[tauri::command]
+pub async fn messenger_group_call_set_video(input: VideoInput, messenger: tauri::State<'_, MessengerState>) -> CmdResult<GroupCallView> {
+    messenger.runtime()?.group_call_set_video(input).await.map_err(map_err)
+}
+
+/// The next camera of the list (or the one `camera` names) in the room:
+/// switched at once when my camera is on, kept for when it goes on
+/// otherwise; `front` and `back` on a phone, as in a call between two.
+#[tauri::command]
+pub async fn messenger_group_call_switch_camera(
+    camera: Option<String>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<GroupCallView> {
+    messenger.runtime()?.group_call_switch_camera(camera).await.map_err(map_err)
+}
+
+/// The layer of the video of the seat `participant` I want, for the
+/// size of its tile: `q` (a quarter), `h` (a half) or `f` (the full
+/// size). An error with a node without simulcast.
+#[tauri::command]
+pub async fn messenger_group_call_set_layer(
+    participant: u32,
+    rid: String,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<()> {
+    messenger.runtime()?.group_call_set_layer(participant, &rid).await.map_err(map_err)
+}
+
+/// The room I am in, and the call announced in `group_id` when one is.
+#[tauri::command]
+pub async fn messenger_group_call_get_state(
+    group_id: Option<String>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<GroupCallState> {
+    Ok(messenger.runtime()?.group_call_state(group_id.as_deref()).await)
+}
+
+/// The frames of the video of one seat of the group call under way, by
+/// the m-line of its track (`GroupParticipant::video_mid`), on `channel`
+/// as `messenger_call_video_subscribe` carries them: the same header,
+/// the same acknowledgement (`messenger_call_video_ack`), taken back by
+/// `messenger_call_video_unsubscribe`. Made before the seat's track is
+/// there it waits for it; made without a group call it ends at once.
+#[tauri::command]
+pub async fn messenger_group_call_video_subscribe(
+    mid: String,
+    channel: Channel<Response>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<u64> {
+    Ok(subscribe(messenger.runtime()?, Frames::Seat(mid), channel))
 }

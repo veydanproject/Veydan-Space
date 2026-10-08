@@ -25,6 +25,7 @@ import {
   type VideoInput,
   type VideoQuality,
 } from '../api';
+import { groupCallStore } from './groupCallStore.svelte';
 
 /** How long the screen shows how a call ended. */
 export const ENDED_SHOWN_MS = 2500;
@@ -102,6 +103,24 @@ class CallStore {
    * without the setting), and the settings do not offer it.
    */
   incoming = $state<boolean | null>(null);
+  /**
+   * The runtime's word that the call that rings here came while I sat in
+   * the room of a group call (`call.incoming`, `busy_with_group`); see
+   * `busyWithGroup`.
+   */
+  private busyWord = $state(false);
+  /**
+   * The call that rings here cannot be taken: it came while I sit in the
+   * room of a group call, and I am still in it. The runtime refuses its
+   * answer only while the room goes on (`call_accept`: one call at a
+   * time), so the screen says "busy" and offers no Answer for as long as
+   * that holds; out of the room while the call still rings (an
+   * invitation lives 45 s), Answer is back. It rings on for my other
+   * devices meanwhile.
+   */
+  get busyWithGroup(): boolean {
+    return this.busyWord && groupCallStore.call !== null;
+  }
   /** A call button asks "voice call?" / "video call?" first, so that none is made by accident. Kept on this device. */
   confirm = $state(readConfirm());
   /** A computer's cameras, as last asked; empty on a phone. */
@@ -142,9 +161,9 @@ class CallStore {
     return !!c && c.phase !== 'incoming' && (c.video_local || c.video_remote);
   }
 
-  /** A call can be made now: this build has the engine and none is under way. */
+  /** A call can be made now: this build has the engine and none is under way (a group's neither). */
   canCall(): boolean {
-    return this.available && !this.call;
+    return this.available && !this.call && !groupCallStore.call;
   }
 
   async load() {
@@ -447,6 +466,7 @@ class CallStore {
         // A late word of a call that is over is not a new call.
         if (this.isOver(view.call_id) && this.call?.call_id !== view.call_id) break;
         this.setCall(view);
+        if (ev.name === 'call.incoming') this.busyWord = p.busy_with_group === true;
         break;
       }
       case 'call.ended': {
@@ -483,6 +503,7 @@ class CallStore {
         this.stats = null;
         this.level = 0;
         this.error = null;
+        this.busyWord = false;
         this.dropEnded();
       }
       this.tick();
@@ -490,6 +511,7 @@ class CallStore {
       this.stats = null;
       this.level = 0;
       this.routes = null;
+      this.busyWord = false;
       this.cameraBeforeScreen = false;
       this.tick();
     }
@@ -545,6 +567,7 @@ class CallStore {
     this.error = null;
     this.over = [];
     this.incoming = null;
+    this.busyWord = false;
     this.leaving = null;
   }
 }

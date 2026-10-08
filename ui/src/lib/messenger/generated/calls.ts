@@ -110,6 +110,9 @@ video_remote: boolean,
  */
 video_local_size?: VideoSize, video_remote_size?: VideoSize, };
 
+/** The payload of the runtime event `call.incoming`; `busy_with_group` says I sit in the room of a group call as it rings: its `accept` is refused, the screen shows "busy" instead of "answer". */
+export type CallIncoming = { call: CallView, busy_with_group: boolean, };
+
 /** The payload of the runtime event `call.ended`. */
 export type CallEnded = { call: CallView, outcome: CallOutcome, 
 /**
@@ -174,3 +177,107 @@ video_quality: VideoQuality,
  * nothing goes on record on this device.
  */
 incoming_enabled: boolean, };
+
+/** Where I am with the room of a group call: making it, joining it, in it, restoring the way to the node, out of it. */
+export type GroupCallPhase = "starting" | "joining" | "in_room" | "reconnecting" | "left";
+
+/** One seat of the room of a group call; only a verified seat is a person and is heard. `video_mid` is what `messenger_group_call_video_subscribe` takes. */
+export type GroupParticipant = { 
+/**
+ * The seat: the node's participant id.
+ */
+id: number, 
+/**
+ * Who sits there, hex, once its word of identity was checked.
+ */
+npub?: string, 
+/**
+ * The word of identity checked: a member, signed by its key, on
+ * this seat. Only a verified seat is shown as a person and heard.
+ */
+verified: boolean, speaking: boolean, 
+/**
+ * The seat sends sound.
+ */
+audio: boolean, 
+/**
+ * The m-line of the seat's sound when it sends one.
+ */
+audio_mid?: string, 
+/**
+ * The m-line of the seat's video when it sends one: what
+ * `messenger_group_call_video_subscribe` takes.
+ */
+video_mid?: string, me: boolean, };
+
+/** The room of a group call I am in: the `call` of `group_call.state` and the answer of the group call commands. */
+export type GroupCallView = { call_id: string, group_id: string, chat_id: string, phase: GroupCallPhase, media: CallMedia, muted: boolean, video_local: boolean, 
+/**
+ * The camera in use (or the one for the next time), by the id the
+ * engine lists; absent for its default. On a phone `front` or `back`.
+ */
+camera?: string, 
+/**
+ * Who made the room, hex.
+ */
+started_by: string, 
+/**
+ * When the room was made, unix seconds.
+ */
+started_at: number, 
+/**
+ * When I got into the room.
+ */
+joined_at?: number, 
+/**
+ * The node the room is on, `address:port#id`.
+ */
+node: string, 
+/**
+ * My seat, once the node gave it.
+ */
+participant?: number, 
+/**
+ * The epoch of the keys I send with.
+ */
+epoch: number, 
+/**
+ * Every seat of the room, mine included, by seat.
+ */
+participants: Array<GroupParticipant>, limits?: CallLimits, 
+/**
+ * The most the room takes from one participant, kbit/s (0: no limit).
+ */
+kbps_per_participant: number, 
+/**
+ * Seats the room has at most (0: the node did not say).
+ */
+max_participants: number, };
+
+/** A call announced in a group, for the banner of its chat: the `call` of `group_call.started` and `group_call.ended`. */
+export type GroupCallAnnounced = { call_id: string, group_id: string, chat_id: string, media: CallMedia, 
+/**
+ * Who made the room, hex.
+ */
+started_by: string, started_at: number, 
+/**
+ * The members in the room by their own word, hex.
+ */
+participants: Array<string>, 
+/**
+ * I am in this room.
+ */
+joined: boolean, };
+
+/** The payload of the runtime event `group_call.ended`. */
+export type GroupCallEnded = { call: GroupCallAnnounced, outcome: CallOutcome, 
+/**
+ * From the start of the room to the end, seconds; `null` when unknown.
+ */
+duration_secs: number | null, };
+
+/** The payload of the runtime event `group_call.level`: how loud one seat is. */
+export type GroupCallLevel = { call_id: string, participant: number, level: number, };
+
+/** The room I am in and the call announced in a group, as `messenger_group_call_get_state` answers. */
+export type GroupCallState = { call: GroupCallView | null, announced: GroupCallAnnounced | null, };

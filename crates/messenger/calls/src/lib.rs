@@ -15,12 +15,14 @@
 //!   choice of the nearest nodes.
 //! - `feed`: the record of a call and its line in the chat.
 //! - `call`: what the screen sees, and the names of its events.
+//! - `group`: the calls of a group on an SFU room ([`GroupCallService`]).
 //!
 //! Wire format: internal/messenger-wire.md §10.
 
 pub mod call;
 pub mod engine;
 pub mod feed;
+pub mod group;
 pub mod handler;
 pub mod node_client;
 pub mod servers;
@@ -32,11 +34,16 @@ pub use call::{
     UI_EVENT_CALL_LEVEL, UI_EVENT_CALL_STATE, UI_EVENT_CALL_STATS,
 };
 pub use engine::{
-    CameraInfo, ConnectionState, IceCandidate, IceServer, Media, MediaEngine, PairKind, PixelFormat, PushedFrame, RelayPolicy,
-    ScreenInfo, SdpKind, Session, SessionEvent, SessionStats, VideoFrame, VideoInput, VideoSettings, VideoTrack,
+    CameraInfo, ConnectionState, DataPayload, IceCandidate, IceServer, Media, MediaEngine, PairKind, PixelFormat, PushedFrame,
+    RelayPolicy, RoomConfig, ScreenInfo, SdpKind, Session, SessionEvent, SessionStats, VideoFrame, VideoInput, VideoSettings,
+    VideoTrack, CTL_LABEL,
+};
+pub use group::{
+    AnnouncedCall, GroupAccess, GroupCallService, GroupCallView, GroupPhase, GroupSignal, ParticipantView, MY_VIDEO_MID,
+    UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_LEVEL, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 pub use handler::CallDmHandler;
-pub use node_client::{NodeClient, Picked};
+pub use node_client::{HttpRooms, Joined, MediaLimits, NodeClient, NodeError, Picked, RoomApi, RoomCreated};
 pub use servers::{CallNode, NodeClass, NodeRef, ServerSets, SettingsServerSets, StaticServerSets, KEY_CALL_NODES, KEY_RELAY_POLICY};
 pub use service::{
     CallService, VideoQuality, ANSWERED_ELSEWHERE, CONNECT_TIMEOUT, GATHER_WAIT, ICE_DEBOUNCE, KEY_INCOMING_ENABLED,

@@ -7,41 +7,82 @@
   did not take stands out. Pressed, it calls the peer back when a call can
   be made; a refusal shows under the line for a moment, as under the call
   button of the chat's header.
+
+  A call of a group: who started it, that it is on now (pressed, it joins;
+  while I am in it, it opens the room), how long it was and how many were
+  in it. A group call over is not called back from its line: a new one
+  starts from the header.
 -->
 <script lang="ts">
-  import { locale, localeTag, t } from '$lib/core/i18n';
+  import { countKey, locale, localeTag, t } from '$lib/core/i18n';
   import type { MessengerMessage } from '../api';
   import { chatStore } from '../chats/chatStore.svelte';
+  import { nameStore } from '../groups/names.svelte';
+  import { onPhone } from '../shared/phone';
   import { clock as timeOfDay } from '../shared/time';
   import { messengerStore } from '../store.svelte';
   import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
-  import { callErrorText, callLineOf, callLineWords, duration, isMissed } from './words';
+  import { groupCallStore } from './groupCallStore.svelte';
+  import { openGroupRoom } from './room';
+  import { callErrorText, callLineOf, callLineWords, duration, groupLineWords, isMissed } from './words';
 
   let { message }: { message: MessengerMessage } = $props();
 
   const tr = (key: string, params?: Record<string, string>) => $t(key as 'msg_title', params);
+  const phone = onPhone();
 
   const line = $derived(callLineOf(message));
-  const live = $derived(!!line && callStore.call?.call_id === line.callId);
+  const group = $derived(line?.kind === 'group');
+  const groupId = $derived(message.chat_id.startsWith('group:') ? message.chat_id.slice('group:'.length) : '');
+  /** I am in this very call (of either kind). */
+  const mine = $derived(!!line && (callStore.call?.call_id === line.callId || groupCallStore.call?.call_id === line.callId));
+  /** A group call on in the group now, that I am not in. */
+  const on = $derived(!!line && group && !mine && groupCallStore.announcedIn(groupId)?.call_id === line.callId);
+  const live = $derived(mine || on);
   const missed = $derived(!!line && isMissed(line));
-  const words = $derived(line ? callLineWords(line, tr, live, (s) => duration(s, localeTag($locale))) : null);
+  const howLong = (s: number) => duration(s, localeTag($locale));
+  const words = $derived.by(() => {
+    if (!line) return null;
+    if (!group) return callLineWords(line, tr, live, howLong);
+    const starter = line.direction === 'out' || !line.startedBy ? null : nameStore.label(line.startedBy);
+    const people = (n: number) => $t(countKey('msg_gcall_people', n, $locale), { n: String(n) });
+    return groupLineWords(line, tr, { live, starter, people, howLong });
+  });
   const chat = $derived(chatStore.chats.find((c) => c.id === message.chat_id) ?? null);
   const sessionActive = $derived(!!messengerStore.status?.runtime?.session_active);
-  const callable = $derived(!live && !!chat?.peer_pubkey && chat.mode === 'full_chat' && callStore.canCall() && !callStore.busy);
-  const canCallBack = $derived(callable && sessionActive);
-  const glyph = $derived(!line ? 'phone' : line.media === 'video' ? 'video' : missed ? 'missed' : line.direction === 'in' ? 'incoming' : 'outgoing');
+  const callable = $derived(!group && !live && !!chat?.peer_pubkey && chat.mode === 'full_chat' && callStore.canCall() && !callStore.busy);
+  /** A group call on now: joined from its line, as from the banner. */
+  const joinable = $derived(on && callStore.available && callStore.canCall() && !groupCallStore.busy);
+  const canPress = $derived(group ? (mine && !!groupCallStore.call) || (joinable && sessionActive) : callable && sessionActive);
+  const glyph = $derived(!line ? 'phone' : line.media === 'video' ? 'video' : group ? 'phone' : missed ? 'missed' : line.direction === 'in' ? 'incoming' : 'outgoing');
+  const hint = $derived(
+    group
+      ? (mine ? $t('msg_call_return') : joinable ? (sessionActive ? $t('msg_gcall_join_title') : $t('msg_call_err_locked')) : undefined)
+      : (canPress ? $t('msg_call_back') : callable ? $t('msg_call_err_locked') : undefined),
+  );
 
   let refusal = $state('');
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  async function callBack() {
-    if (!canCallBack || !chat?.peer_pubkey) return;
-    const { view, refusal: why } = await callStore.dial(chat.peer_pubkey, line?.media ?? 'audio');
-    if (view || !why) return;
+  function refuse(why: unknown) {
     refusal = callErrorText(why, tr);
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => (refusal = ''), 4000);
+  }
+
+  async function press() {
+    if (!canPress || !line) return;
+    if (group) {
+      if (mine) { openGroupRoom(phone); return; }
+      const { view, refusal: why } = await groupCallStore.join(groupId);
+      if (view) openGroupRoom(phone);
+      else if (why) refuse(why);
+      return;
+    }
+    if (!chat?.peer_pubkey) return;
+    const { view, refusal: why } = await callStore.dial(chat.peer_pubkey, line.media);
+    if (!view && why) refuse(why);
   }
 
   $effect(() => () => { if (timer) clearTimeout(timer); });
@@ -49,11 +90,11 @@
 
 {#if line && words}
   <div class="row" data-mid={message.id}>
-    <button class="call" class:missed class:live disabled={!canCallBack} onclick={callBack}
-      title={canCallBack ? $t('msg_call_back') : callable ? $t('msg_call_err_locked') : undefined}>
+    <button class="call" class:missed class:live class:group disabled={!canPress} onclick={press} title={hint}>
       <span class="ico"><CallIcon name={glyph} size={13} /></span>
       <span class="title">{words.title}</span>
       {#if words.detail}<span class="detail">{words.detail}</span>{/if}
+      {#if on && canPress}<span class="join">{$t('msg_gcall_join')}</span>{/if}
       <span class="time">{timeOfDay(line.startedAt)}</span>
     </button>
     {#if refusal}<span class="refusal" role="status">{refusal}</span>{/if}
@@ -90,5 +131,9 @@
   .missed .title { color: var(--danger-text); }
   .live { border-color: var(--success-border); }
   .live .ico { background: var(--success); color: #fff; }
+  .join {
+    padding: 1px 8px; border-radius: var(--radius-pill); background: var(--success); color: #fff;
+    font-size: var(--fs-2xs); font-weight: var(--fw-bold); white-space: nowrap;
+  }
   @media (pointer: coarse) { .call { padding-block: 6px; } }
 </style>

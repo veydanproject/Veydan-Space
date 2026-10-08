@@ -20,11 +20,15 @@
 // stood upright by the page) on a narrow screen, my screen 960×540. As the
 // runtime does, the next frame goes only once the page acknowledged the
 // last one (`messenger_call_video_ack`).
+//
+// The calls of groups are calls/groupDemo.ts's (`messenger.demo.gcall`), on the
+// same channels of frames; one call of either kind at a time, as in the app.
 
 import type { CallStateView, MessengerChat, MessengerMessage } from '../api';
 import type {
   CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallView, RelayPolicy, VideoInput, VideoQuality, VideoTrack,
 } from '../generated/calls';
+import { demoGroupCallMocks } from './groupDemo';
 import { HEADER_BYTES, testPattern } from './video';
 
 export interface DemoCallHost {
@@ -36,6 +40,15 @@ export interface DemoCallHost {
   lines: (chatId: string) => MessengerMessage[];
   /** The chat list shows the call. */
   touch: (chatId: string, at: number) => void;
+  /** My key, hex. */
+  me: () => string;
+  /** The members of a group I am in, hex; empty for any other. */
+  members: (groupId: string) => string[];
+}
+
+/** The page's channel of video frames, as the preview hands it. */
+export interface DemoChannel {
+  onmessage?: (data: ArrayBuffer) => void;
 }
 
 const ALICE = '1a'.repeat(32);
@@ -74,7 +87,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
    * no other goes until it has.
    */
   const subs = new Map<number, {
-    track: VideoTrack; channel: { onmessage?: (data: ArrayBuffer) => void }; seq: number; sent: number | null; timer: ReturnType<typeof setInterval>;
+    owner: 'call' | 'group'; channel: DemoChannel; seq: number; sent: number | null; timer: ReturnType<typeof setInterval>;
   }>();
   let nextSub = 1;
 
@@ -147,6 +160,40 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
     if (last) s.channel.onmessage?.(new ArrayBuffer(HEADER_BYTES));
   }
 
+  /**
+   * A subscription of the page's channel: `make` gives the frame `seq`, or
+   * nothing while that video does not go; `fps` frames a second at most,
+   * the next one only once the page acknowledged the last.
+   */
+  function subscribe(owner: 'call' | 'group', channel: DemoChannel, make: (seq: number) => ArrayBuffer | null, fps = FPS): number {
+    const id = nextSub++;
+    const sub = {
+      owner, channel, seq: 0, sent: null as number | null,
+      timer: setInterval(() => {
+        if (sub.sent != null) return;
+        const f = make(sub.seq);
+        if (!f) return;
+        sub.sent = sub.seq;
+        sub.seq += 1;
+        sub.channel.onmessage?.(f);
+      }, 1000 / fps),
+    };
+    subs.set(id, sub);
+    return id;
+  }
+
+  /** The last message to every subscription of `owner`: its call is over. */
+  function endAll(owner: 'call' | 'group') {
+    for (const [id, s] of [...subs]) if (s.owner === owner) unsubscribe(id, true);
+  }
+
+  /** A subscription made without a call: its last message at once. */
+  function endNow(channel: DemoChannel): number {
+    const id = nextSub++;
+    setTimeout(() => channel.onmessage?.(new ArrayBuffer(HEADER_BYTES)), 0);
+    return id;
+  }
+
   /** Talking: the clock runs, the engine tells its numbers, the peer speaks in bursts. */
   function talk(via: 'direct' | 'relay') {
     if (!call) return;
@@ -174,7 +221,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
     route = 'earpiece';
     const duration = c.answered_at ? nowSecs() - c.answered_at : null;
     call = null;
-    for (const id of [...subs.keys()]) unsubscribe(id, true);
+    endAll('call');
     line(c, outcome, duration);
     host.emit('call.ended', { call: { ...c, phase: 'ended' }, outcome, duration_secs: duration });
   }
@@ -220,6 +267,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   /** `hold`: the peer never answers (the screen of a call that rings). */
   function start(a: Record<string, unknown> | undefined, hold = false): CallView {
     if (call) throw { code: 'other', message: 'a call is under way' };
+    if (group.active()) throw { code: 'invalid', message: 'a group call is under way' };
     const chat = host.chat(String(a?.peer ?? ''));
     if (chat.mode !== 'full_chat') throw { code: 'other', message: 'calls go to contacts only' };
     const view = newCall(chat.peer_pubkey ?? '', 'out', (a?.media as CallMedia) ?? 'audio');
@@ -237,6 +285,9 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
     });
     return view;
   }
+
+  // The calls of groups: their own state, the same channels of frames.
+  const group = demoGroupCallMocks(host, { subscribe: (channel, make, fps) => subscribe('group', channel, make, fps), endAll: () => endAll('group'), endNow, dmBusy: () => call !== null });
 
   if (host.demo && typeof window !== 'undefined') {
     (window as unknown as { veydanDemoCall?: (kind: string) => void }).veydanDemoCall = play;
@@ -308,26 +359,10 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
     messenger_call_set_incoming: (a) => { incoming = a?.enabled !== false; return state(); },
     messenger_call_set_video_quality: (a) => { quality = a?.quality === '720p' ? '720p' : '360p'; return state(); },
     messenger_call_video_subscribe: (a) => {
-      const id = nextSub++;
-      const channel = (a?.channel ?? {}) as { onmessage?: (data: ArrayBuffer) => void };
+      const channel = (a?.channel ?? {}) as DemoChannel;
       const track: VideoTrack = a?.track === 'local' ? 'local' : 'remote';
-      if (!call) {
-        setTimeout(() => channel.onmessage?.(new ArrayBuffer(HEADER_BYTES)), 0);
-        return id;
-      }
-      const sub = {
-        track, channel, seq: 0, sent: null as number | null,
-        timer: setInterval(() => {
-          if (sub.sent != null) return;
-          const f = frame(sub.track, sub.seq);
-          if (!f) return;
-          sub.sent = sub.seq;
-          sub.seq += 1;
-          sub.channel.onmessage?.(f);
-        }, 1000 / FPS),
-      };
-      subs.set(id, sub);
-      return id;
+      if (!call) return endNow(channel);
+      return subscribe('call', channel, (seq) => frame(track, seq));
     },
     // The page took the frame `seq` (or a later one): the next may go.
     messenger_call_video_ack: (a) => {
@@ -343,5 +378,6 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
       own = list.map((n) => ({ reference: n.reference.trim(), key: !!n.key || own.find((o) => o.reference === n.reference.trim())?.key === true }));
       return state();
     },
+    ...group.mocks,
   };
 }

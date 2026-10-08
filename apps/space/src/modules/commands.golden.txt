@@ -101,6 +101,15 @@ messenger_emoji_used messenger all
 messenger_group_act messenger all
 messenger_group_answer_invite messenger all
 messenger_group_answer_request messenger all
+messenger_group_call_get_state messenger all
+messenger_group_call_join messenger all
+messenger_group_call_leave messenger all
+messenger_group_call_mute messenger all
+messenger_group_call_set_layer messenger all
+messenger_group_call_set_video messenger all
+messenger_group_call_start messenger all
+messenger_group_call_switch_camera messenger all
+messenger_group_call_video_subscribe messenger all
 messenger_group_create messenger all
 messenger_group_forget messenger all
 messenger_group_get messenger all

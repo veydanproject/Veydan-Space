@@ -49,6 +49,27 @@
 //! `set_video(Off)`, the peer's by `call.video {on: false}`), and the
 //! same camera coming back at the same size would otherwise never be
 //! told again. The core drops a size it already has.
+//!
+//! A room (`create_room_session`, a group call on the SFU of a node):
+//! the session is made with the data channel of the room and the ring
+//! of frame keys by sender (`FrameKeys::per_sender`, the slot of a key
+//! is the epoch of the call modulo 256, as the core counts it), with
+//! three layers of video when the node takes simulcast
+//! (`RoomConfig::simulcast`). The words of the two sides differ in
+//! small things, translated here: a text or a binary payload is one
+//! `Data` with a flag on the engine's side; the kind of a remote track
+//! is `TrackKind` there, `Media` here; the level of every remote audio
+//! track (`RemoteLevel`) comes from the statistics, read every second,
+//! as the level of a call between two does. On the pushed path the
+//! sound of every remote track of a room comes out by its mid on
+//! [`AudioTap::room_audio`], once its track is there. The device path
+//! of a room is the device path of a call between two: the microphone
+//! through the platform's audio device module into this side's one
+//! audio track (sendonly in a room), every remote track mixed into the
+//! speaker by libwebrtc (tests/room.rs,
+//! `a_participant_on_the_device_path_is_heard_in_the_room_and_sees_itself`).
+//! This side's own frames (`video_frames(Local)`, the tile of oneself)
+//! are the same broadcast in a room as in a call between two.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -56,17 +77,18 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use messenger_calls::engine::{
-    CameraInfo, ConnectionState as CoreState, IceCandidate, IceServer as CoreIceServer, Media, MediaEngine, PairKind,
-    PushedFrame, RelayPolicy, ScreenInfo, SdpKind, Session as CoreSession, SessionEvent as CoreEvent, SessionStats,
-    VideoFrame, VideoInput, VideoSettings, VideoTrack,
+    CameraInfo, ConnectionState as CoreState, DataPayload, IceCandidate, IceServer as CoreIceServer, Media, MediaEngine,
+    PairKind, PushedFrame, RelayPolicy, RoomConfig as CoreRoomConfig, ScreenInfo, SdpKind, Session as CoreSession,
+    SessionEvent as CoreEvent, SessionStats, VideoFrame, VideoInput, VideoSettings, VideoTrack,
 };
 use messenger_core::{MessengerError, Result};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 use crate::audio::{AudioInput, AudioOutput};
 use crate::camera::CameraCapture;
+use crate::crypto::{Encryption, EncryptionState, FrameKeys};
 use crate::engine::{AudioMode, Engine};
-use crate::session::{Candidate, ConnectionState, IcePolicy, IceServer, Session, SessionConfig, SessionEvent};
+use crate::session::{Candidate, ConnectionState, IcePolicy, IceServer, RoomConfig, Session, SessionConfig, SessionEvent, TrackKind};
 use crate::video::VideoSource;
 
 /// How often the adapter reads the statistics of a session.
@@ -88,10 +110,18 @@ const SIZE_AGAIN_EVERY: u32 = 30;
 /// [`RtcEngine::audio_taps`]: frames go in through `input`, the far end's
 /// frames come out of `output` once its track arrived (`None` when the
 /// session ended before that). The video of the same session is `video`.
+/// In a room the far ends are many: the sound of each comes out of
+/// `room_audio` by the mid of its track, as the tracks arrive (whose it
+/// is the core knows from the node's offer), and `output` never comes.
 pub struct AudioTap {
     pub input: AudioInput,
     pub output: oneshot::Receiver<AudioOutput>,
     pub video: VideoTap,
+    pub room_audio: mpsc::UnboundedReceiver<(String, AudioOutput)>,
+    /// How the media goes, as the statistics last said: directly or
+    /// through a relay; `None` before ICE settled and after the way was
+    /// lost. What the core is told as `SelectedPair`.
+    pub via: watch::Receiver<Option<PairKind>>,
 }
 
 /// The video of one session on the pushed path: `source` takes this
@@ -164,9 +194,12 @@ impl RtcEngine {
     }
 }
 
-#[async_trait]
-impl MediaEngine for RtcEngine {
-    async fn create_session(&self, ice_servers: Vec<CoreIceServer>, policy: RelayPolicy, _media: Media) -> Result<Box<dyn CoreSession>> {
+impl RtcEngine {
+    /// A session of the engine as the core drives it: the one of a call
+    /// between two (`room` `None`) or a leg of a room. The sound of the
+    /// pushed path is told to whoever listens, or dropped (then nothing
+    /// is pushed, and the far end hears silence).
+    fn make_session(&self, ice_servers: Vec<CoreIceServer>, policy: RelayPolicy, room: Option<&CoreRoomConfig>) -> Result<Box<dyn CoreSession>> {
         // The media of the call says what goes on at the start; the
         // session carries audio and video either way (session.rs).
         let config = SessionConfig {
@@ -175,27 +208,41 @@ impl MediaEngine for RtcEngine {
                 RelayPolicy::Auto => IcePolicy::Auto,
                 RelayPolicy::RelayOnly => IcePolicy::RelayOnly,
             },
-            encryption: None,
+            encryption: room.map(|r| Encryption { keys: FrameKeys::per_sender(&r.key_salt), participant: r.call_id.clone() }),
+            room: room.map(|r| RoomConfig { data_label: r.data_label.clone(), simulcast: r.simulcast }),
         };
         let session = Arc::new(self.engine.session(config).map_err(engine_error)?);
         let events = session.events().expect("the events of a new session");
         let (wanted_tx, wanted_rx) = watch::channel(false);
         let (lost_tx, lost_rx) = mpsc::unbounded_channel();
-        // The sound of the pushed path: told to whoever listens, or dropped
-        // (then nothing is pushed, and the far end hears silence).
+        let (room_tx, room_rx) = mpsc::unbounded_channel();
+        let (via_tx, via_rx) = watch::channel(None);
         let output_slot = match session.take_audio_input() {
             Some(input) => {
                 let (tx, rx) = oneshot::channel();
                 let taps = self.taps.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(taps) = taps.as_ref() {
                     let video = VideoTap { source: session.video_source(), wanted: wanted_rx, remote: session.remote_video_frames() };
-                    let _ = taps.send(AudioTap { input, output: rx, video });
+                    let _ = taps.send(AudioTap { input, output: rx, video, room_audio: room_rx, via: via_rx });
                 }
                 Some(tx)
             }
             None => None,
         };
-        Ok(Box::new(RtcSession::new(session, events, output_slot, self.engine.captures_video(), wanted_tx, lost_tx, lost_rx)))
+        let data_label = room.map(|r| r.data_label.clone());
+        let pump_ends = PumpEnds { room_audio: room_tx, via: via_tx };
+        Ok(Box::new(RtcSession::new(session, events, output_slot, self.engine.captures_video(), wanted_tx, lost_tx, lost_rx, data_label, pump_ends)))
+    }
+}
+
+#[async_trait]
+impl MediaEngine for RtcEngine {
+    async fn create_session(&self, ice_servers: Vec<CoreIceServer>, policy: RelayPolicy, _media: Media) -> Result<Box<dyn CoreSession>> {
+        self.make_session(ice_servers, policy, None)
+    }
+
+    async fn create_room_session(&self, ice_servers: Vec<CoreIceServer>, policy: RelayPolicy, _media: Media, room: CoreRoomConfig) -> Result<Box<dyn CoreSession>> {
+        self.make_session(ice_servers, policy, Some(&room))
     }
 
     async fn cameras(&self) -> Vec<CameraInfo> {
@@ -225,6 +272,10 @@ impl LazyRtcEngine {
 impl MediaEngine for LazyRtcEngine {
     async fn create_session(&self, ice_servers: Vec<CoreIceServer>, policy: RelayPolicy, media: Media) -> Result<Box<dyn CoreSession>> {
         RtcEngine::shared(self.mode)?.create_session(ice_servers, policy, media).await
+    }
+
+    async fn create_room_session(&self, ice_servers: Vec<CoreIceServer>, policy: RelayPolicy, media: Media, room: CoreRoomConfig) -> Result<Box<dyn CoreSession>> {
+        RtcEngine::shared(self.mode)?.create_room_session(ice_servers, policy, media, room).await
     }
 
     /// Empty where the engine cannot be made (no audio device): the
@@ -266,9 +317,13 @@ struct RtcSession {
     /// that comes after that is of a network that just came up. Reset by
     /// every new description of this side (an offer, an answer, a restart).
     gathering_done: Arc<AtomicBool>,
+    /// The label of the data channel of a room; `None` for a call
+    /// between two, which has none.
+    data_label: Option<String>,
 }
 
 impl RtcSession {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         inner: Arc<Session>,
         events: mpsc::UnboundedReceiver<SessionEvent>,
@@ -277,12 +332,15 @@ impl RtcSession {
         wanted: watch::Sender<bool>,
         lost: mpsc::UnboundedSender<String>,
         lost_rx: mpsc::UnboundedReceiver<String>,
+        data_label: Option<String>,
+        ends: PumpEnds,
     ) -> Self {
         let (tx, rx) = mpsc::channel(EVENTS_QUEUE);
         let closed = Arc::new(AtomicBool::new(false));
         let gathering_done = Arc::new(AtomicBool::new(false));
-        let pump = tokio::spawn(pump(Arc::downgrade(&inner), events, tx, output_slot, closed.clone(), lost_rx, gathering_done.clone()));
-        Self { inner, events: Mutex::new(Some(rx)), closed, pump, captures, capture: Mutex::new(None), wanted, lost, gathering_done }
+        let room = data_label.is_some();
+        let pump = tokio::spawn(pump(Arc::downgrade(&inner), events, tx, output_slot, closed.clone(), lost_rx, gathering_done.clone(), room, ends));
+        Self { inner, events: Mutex::new(Some(rx)), closed, pump, captures, capture: Mutex::new(None), wanted, lost, gathering_done, data_label }
     }
 
     /// Whatever captured this side's video, taken out of the session (a
@@ -424,11 +482,18 @@ impl CoreSession for RtcSession {
         self.inner.set_video_max_bitrate(max_kbps).map_err(engine_error)
     }
 
+    /// This side's own frames (`Local`: what the camera thread, the
+    /// plugin of a phone or the CLI pushed into the source in use), in a
+    /// call between two and in a room alike: the tile of oneself. The far
+    /// end's (`Remote`) in a call between two; a room has no one far end,
+    /// its videos come by mid ([`CoreSession::video_frames_of`]), so
+    /// `Remote` is `None` there.
     fn video_frames(&self, track: VideoTrack) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
-        Some(match track {
-            VideoTrack::Local => self.inner.local_video_frames(),
-            VideoTrack::Remote => self.inner.remote_video_frames(),
-        })
+        match track {
+            VideoTrack::Local => Some(self.inner.local_video_frames()),
+            VideoTrack::Remote if self.data_label.is_some() => None,
+            VideoTrack::Remote => Some(self.inner.remote_video_frames()),
+        }
     }
 
     /// A frame the engine drops (no encoder yet, or adapting its rate)
@@ -444,6 +509,39 @@ impl CoreSession for RtcSession {
             None => mpsc::channel(1).1,
         }
     }
+
+    // ─── A room ──────────────────────────────────────────────────────
+
+    /// On the one data channel of the room; another label is a mistake
+    /// of the caller, a call between two has none.
+    async fn send_data(&self, label: &str, payload: DataPayload) -> Result<()> {
+        match self.data_label.as_deref() {
+            Some(mine) if mine == label => {}
+            Some(mine) => return Err(MessengerError::Transport(format!("this session has no data channel {label} (it has {mine})"))),
+            None => return Err(MessengerError::Transport("this session has no data channel".into())),
+        }
+        let (binary, bytes): (bool, &[u8]) = match &payload {
+            DataPayload::Text(text) => (false, text.as_bytes()),
+            DataPayload::Binary(bytes) => (true, bytes),
+        };
+        self.inner.send_data(binary, bytes).map_err(engine_error)
+    }
+
+    async fn set_sender_key(&self, index: u8, key: &[u8]) -> Result<()> {
+        self.inner.set_sender_key(index, key).map_err(engine_error)
+    }
+
+    async fn set_receiver_key(&self, mid: &str, index: u8, key: &[u8]) -> Result<()> {
+        self.inner.set_receiver_key(mid, index, key).map_err(engine_error)
+    }
+
+    /// The frames of the remote video on `mid`; subscribed before its
+    /// track is there, the receiver waits for the first frame. Nothing
+    /// for a call between two (`video_frames` has its one remote video).
+    fn video_frames_of(&self, mid: &str) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
+        self.data_label.as_ref()?;
+        Some(self.inner.remote_video_frames_of(mid))
+    }
 }
 
 impl Drop for RtcSession {
@@ -452,6 +550,13 @@ impl Drop for RtcSession {
         // Dropped here, with its bounded wait: nothing to await in a drop.
         drop(self.take_capture());
     }
+}
+
+/// What the pump tells the tap of the pushed path besides the core: the
+/// sound of every remote track of a room by mid, and the way in use.
+struct PumpEnds {
+    room_audio: mpsc::UnboundedSender<(String, AudioOutput)>,
+    via: watch::Sender<Option<PairKind>>,
 }
 
 /// The size a frame shows at: turned by 90 or 270 degrees, its width and
@@ -500,7 +605,11 @@ impl SizeTold {
 /// after gathering was complete is a network that came up: told to the
 /// core as `NetworkChanged`, once per gathering. Holds the session
 /// weakly: it ends when the session is gone, and is aborted when it is
-/// closed.
+/// closed. In a room (`room`) the events of the data channel and of the
+/// remote tracks by mid go through as well, the sound of every remote
+/// audio track of the pushed path goes out on `room_audio` as its track
+/// arrives, and the level of each is told with the statistics.
+#[allow(clippy::too_many_arguments)]
 async fn pump(
     session: Weak<Session>,
     mut events: mpsc::UnboundedReceiver<SessionEvent>,
@@ -509,6 +618,8 @@ async fn pump(
     closed: Arc<AtomicBool>,
     mut lost: mpsc::UnboundedReceiver<String>,
     gathering_done: Arc<AtomicBool>,
+    room: bool,
+    ends: PumpEnds,
 ) {
     let mut tick = tokio::time::interval(STATS_EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -592,6 +703,7 @@ async fn pump(
                         connected = state == CoreState::Connected;
                         if !connected {
                             told_pair = None;
+                            let _ = ends.via.send(None);
                         }
                         Some(CoreEvent::ConnectionState(state))
                     }
@@ -603,14 +715,53 @@ async fn pump(
                         }
                         None
                     }
+                    // A room: the data channel and the tracks of the others by mid.
+                    SessionEvent::DataOpen { label } => Some(CoreEvent::DataOpen { label }),
+                    SessionEvent::DataClosed { label } => Some(CoreEvent::DataClosed { label }),
+                    SessionEvent::Data { label, binary, data } => {
+                        let payload = if binary { DataPayload::Binary(data) } else { DataPayload::Text(String::from_utf8_lossy(&data).into_owned()) };
+                        Some(CoreEvent::Data { label, payload })
+                    }
+                    SessionEvent::RemoteTrack { mid, kind } => {
+                        if kind == TrackKind::Audio {
+                            // The pushed path: its sound, to whoever took the tap.
+                            if let Some(output) = session.upgrade().and_then(|s| s.take_audio_output_of(&mid)) {
+                                let _ = ends.room_audio.send((mid.clone(), output));
+                            }
+                        }
+                        Some(CoreEvent::RemoteTrack { mid, kind: media_of(kind) })
+                    }
+                    SessionEvent::RemoteTrackGone { mid } => Some(CoreEvent::RemoteTrackGone { mid }),
+                    SessionEvent::RemoteVideoSize { mid, width, height } => Some(CoreEvent::RemoteVideoSize { mid, width, height }),
+                    // The cryptors say in the log how the keys fare: a
+                    // remote track that cannot be read is silence and
+                    // darkness on the screen with its packets flowing,
+                    // which the counters alone would not tell apart from
+                    // a far end that sends silence.
+                    SessionEvent::RemoteEncryption { mid, state } => {
+                        match state {
+                            EncryptionState::MissingKey | EncryptionState::DecryptionFailed | EncryptionState::InternalError => {
+                                tracing::warn!(%mid, ?state, "frame cryptor of a remote track: its frames are dropped until the key fits")
+                            }
+                            _ => tracing::info!(%mid, ?state, "frame cryptor of a remote track"),
+                        }
+                        None
+                    }
                     // ICE's own state is inside the connection state; the far
                     // end's video speaks through its frames (the size above);
-                    // renegotiation never happens in a 1:1 call; the
-                    // cryptors come with the groups.
-                    SessionEvent::IceState(_)
-                    | SessionEvent::RemoteVideo
-                    | SessionEvent::NegotiationNeeded
-                    | SessionEvent::Encryption { .. } => None,
+                    // renegotiation never happens in a 1:1 call, and in a
+                    // room the node offers over `ctl`; the state of my own
+                    // cryptor is for the log.
+                    SessionEvent::IceState(_) | SessionEvent::RemoteVideo | SessionEvent::NegotiationNeeded => None,
+                    SessionEvent::Encryption { participant, state } => {
+                        match state {
+                            EncryptionState::MissingKey | EncryptionState::EncryptionFailed | EncryptionState::InternalError => {
+                                tracing::warn!(%participant, ?state, "frame cryptor of my tracks: nothing of mine goes out until the key is set")
+                            }
+                            _ => tracing::info!(%participant, ?state, "frame cryptor of my tracks"),
+                        }
+                        None
+                    }
                 };
                 if let Some(ev) = translated {
                     if out.send(ev).await.is_err() {
@@ -631,6 +782,7 @@ async fn pump(
                     let pair = (kind, path.local_addr.clone(), path.remote_addr.clone());
                     if told_pair.as_ref() != Some(&pair) {
                         told_pair = Some(pair);
+                        let _ = ends.via.send(Some(kind));
                         if out.send(CoreEvent::SelectedPair(kind)).await.is_err() {
                             break;
                         }
@@ -639,6 +791,14 @@ async fn pump(
                 let level = stats.audio_level_in.clamp(0.0, 1.0) as f32;
                 if out.send(CoreEvent::AudioLevel(level)).await.is_err() {
                     break;
+                }
+                if room {
+                    for track in stats.inbound.iter().filter(|t| t.kind == Some(TrackKind::Audio)) {
+                        let level = track.audio_level.clamp(0.0, 1.0) as f32;
+                        if out.send(CoreEvent::RemoteLevel { mid: track.mid.clone(), level }).await.is_err() {
+                            return;
+                        }
+                    }
                 }
                 if readings.is_multiple_of(STATS_TOLD_EVERY) {
                     let told = SessionStats {
@@ -665,6 +825,13 @@ fn connection_state(s: ConnectionState) -> CoreState {
         ConnectionState::Disconnected => CoreState::Disconnected,
         ConnectionState::Failed => CoreState::Failed,
         ConnectionState::Closed => CoreState::Closed,
+    }
+}
+
+fn media_of(kind: TrackKind) -> Media {
+    match kind {
+        TrackKind::Audio => Media::Audio,
+        TrackKind::Video => Media::Video,
     }
 }
 

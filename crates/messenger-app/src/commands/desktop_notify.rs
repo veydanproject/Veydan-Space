@@ -20,7 +20,15 @@
 //! (`call.incoming`), with the caller's name and face as a message would
 //! have them and the buttons Answer and Decline; it goes when the call is
 //! answered or over (`call.state`, `call.ended`), here or on another device.
-//! The ring of the app itself is the page's.
+//! The ring of the app itself is the page's. A call that rings while I sit
+//! in the room of a group call (`busy_with_group`) is not rung: its answer
+//! would be refused.
+//!
+//! A call that somebody else starts in a group while the window is away
+//! (`group_call.started`) is a quiet notification, without a sound and
+//! without buttons: the group's name, "a call is on", once per call; a
+//! click opens the group's chat, whose banner has the button to join. It
+//! goes when the call ends (`group_call.ended`) or I join it.
 //!
 //! The notifier lives as long as the process: a messenger that is switched
 //! off has no runtime to raise a `notify`, and its notifications are taken
@@ -33,7 +41,11 @@ use std::time::Duration;
 
 use desktop_notify::{Action, AppInfo, Handlers, Kind, Notifier, Toast};
 use messenger_notify::{Body, ChatKind, DesktopSettings, LinkKind, Outcome};
-use messenger_runtime::{CallMedia, CallPhase, CallView, MessengerRuntime, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_STATE};
+use messenger_runtime::calls::INCOMING_BUSY_WITH_GROUP;
+use messenger_runtime::{
+    CallMedia, CallPhase, CallView, GroupCallAnnounced, MessengerRuntime, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING,
+    UI_EVENT_CALL_STATE, UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_STARTED,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager};
@@ -92,6 +104,9 @@ pub struct Words {
     /// Its buttons.
     pub call_answer: String,
     pub call_decline: String,
+    /// The body of the notification of a call on in a group.
+    pub group_call_audio: String,
+    pub group_call_video: String,
 }
 
 impl Default for Words {
@@ -121,6 +136,8 @@ impl Default for Words {
             call_video: "Incoming video call".into(),
             call_answer: "Answer".into(),
             call_decline: "Decline".into(),
+            group_call_audio: "A call is on".into(),
+            group_call_video: "A video call is on".into(),
         }
     }
 }
@@ -417,12 +434,66 @@ pub fn call_notice(name: &str, payload: &serde_json::Value) -> CallNotice {
     let Some(call) = payload.get("call").and_then(|c| Ringing::deserialize(c).ok()) else {
         return CallNotice::Nothing;
     };
+    // Ringing in while I sit in the room of a group call: its answer
+    // would be refused (one call at a time), so no buttons to press.
+    let busy = payload.get(INCOMING_BUSY_WITH_GROUP).and_then(|b| b.as_bool()).unwrap_or(false);
     match name {
-        UI_EVENT_CALL_INCOMING if call.phase == CallPhase::Incoming => CallNotice::Ring(call),
+        UI_EVENT_CALL_INCOMING if call.phase == CallPhase::Incoming && !busy => CallNotice::Ring(call),
+        UI_EVENT_CALL_INCOMING => CallNotice::Nothing,
         UI_EVENT_CALL_STATE if call.phase != CallPhase::Incoming => CallNotice::Gone(call.call_id),
         UI_EVENT_CALL_ENDED => CallNotice::Gone(call.call_id),
         _ => CallNotice::Nothing,
     }
+}
+
+// ─── A call on in a group ───────────────────────────────────────────────────
+
+/// The key of the notification of a call on in a group: `gcall:<chat_id>`
+/// (one per group; a click opens the group's chat).
+const GROUP_CALL_KEY: &str = "gcall:";
+
+fn group_call_key(chat_id: &str) -> String {
+    format!("{GROUP_CALL_KEY}{chat_id}")
+}
+
+/// Calls of groups remembered at most (which were noticed, which were
+/// not): a call is forgotten when it ends, this is for the ones whose
+/// end is never heard.
+const GROUP_CALLS_KEPT: usize = 256;
+
+/// What a `group_call.*` event means for the notifications.
+#[derive(Debug, PartialEq, Eq)]
+pub enum GroupCallNotice {
+    /// A call is on in a group, started by somebody else, and I am not
+    /// in it.
+    On(GroupCallAnnounced),
+    /// The call is over, or I am in it (the room is my screen): its
+    /// notification goes.
+    Gone(String),
+    Nothing,
+}
+
+/// `me`: my key, hex; a call I started myself is no news.
+pub fn group_call_notice(name: &str, payload: &serde_json::Value, me: Option<&str>) -> GroupCallNotice {
+    let Some(call) = payload.get("call").and_then(|c| GroupCallAnnounced::deserialize(c).ok()) else {
+        return GroupCallNotice::Nothing;
+    };
+    let mine = me.is_some_and(|m| m == call.started_by);
+    match name {
+        UI_EVENT_GROUP_CALL_STARTED if call.joined || mine => GroupCallNotice::Gone(call.call_id),
+        UI_EVENT_GROUP_CALL_STARTED => GroupCallNotice::On(call),
+        UI_EVENT_GROUP_CALL_ENDED => GroupCallNotice::Gone(call.call_id),
+        _ => GroupCallNotice::Nothing,
+    }
+}
+
+/// The group's chat as a notification needs it: its name, its picture.
+fn group_call_toast(call: &GroupCallAnnounced, title: String, image: Option<PathBuf>, words: &Words) -> Toast {
+    let body = match call.media {
+        CallMedia::Audio => &words.group_call_audio,
+        CallMedia::Video => &words.group_call_video,
+    };
+    Toast { key: group_call_key(&call.chat_id), title, body: body.clone(), image, silent: true, ..Toast::default() }
 }
 
 /// Who calls, as a message of theirs would name them: a PIN on the app or
@@ -513,6 +584,11 @@ pub struct DesktopNotify {
     /// what is taken away goes under this lock, so a call that ended while
     /// its face was fetched is not shown after.
     ringing: Mutex<HashSet<String>>,
+    /// The calls of groups heard of, by call id, with the key of the
+    /// notification when one is up or being made: one notification per
+    /// call, however often its composition changes, and none for a call
+    /// first seen with the window on the screen.
+    group_calls: Mutex<HashMap<String, Option<String>>>,
 }
 
 impl DesktopNotify {
@@ -543,6 +619,7 @@ impl DesktopNotify {
             stacks: Mutex::new(HashMap::new()),
             avatars,
             ringing: Mutex::new(HashSet::new()),
+            group_calls: Mutex::new(HashMap::new()),
         })
     }
 
@@ -556,6 +633,7 @@ impl DesktopNotify {
     pub fn withdraw(&self) {
         self.stacks.lock().unwrap().clear();
         self.ringing.lock().unwrap().clear();
+        self.group_calls.lock().unwrap().clear();
         self.notifier.shutdown();
     }
 
@@ -669,6 +747,89 @@ impl DesktopNotify {
         let mut ringing = self.ringing.lock().unwrap();
         if ringing.remove(call_id) {
             self.notifier.clear(&call_key(call_id));
+        }
+    }
+
+    /// Takes a `group_call.*` event: a call somebody else started in a
+    /// group while the window is away is a quiet notification, once per
+    /// call; it goes when the call ends or I join it.
+    pub async fn take_group_call(self: &Arc<Self>, rt: &Arc<MessengerRuntime>, name: &str, payload: &serde_json::Value) {
+        let me = rt.session_pubkey().await.map(|p| p.as_hex().to_string());
+        match group_call_notice(name, payload, me.as_deref()) {
+            GroupCallNotice::On(call) => self.group_call_on(rt, call).await,
+            GroupCallNotice::Gone(call_id) => self.group_call_gone(&call_id),
+            GroupCallNotice::Nothing => {}
+        }
+    }
+
+    async fn group_call_on(self: &Arc<Self>, rt: &Arc<MessengerRuntime>, call: GroupCallAnnounced) {
+        let settings = rt.desktop_notify_settings().await.unwrap_or_default();
+        let shown = route(WindowSeen::of(&self.app), settings.enabled, self.available()) == Route::System;
+        {
+            let mut calls = self.group_calls.lock().unwrap();
+            // Heard of before (its composition changed): nothing new.
+            if calls.contains_key(&call.call_id) {
+                return;
+            }
+            if calls.len() >= GROUP_CALLS_KEPT {
+                calls.clear();
+            }
+            // With the window on the screen the banner of the chat says
+            // it, now and for the rest of the call.
+            calls.insert(call.call_id.clone(), shown.then(|| group_call_key(&call.chat_id)));
+        }
+        if !shown {
+            return;
+        }
+        let (me, rt) = (self.clone(), rt.clone());
+        tauri::async_runtime::spawn(async move { me.show_group_call(&rt, call).await });
+    }
+
+    async fn show_group_call(&self, rt: &MessengerRuntime, call: GroupCallAnnounced) {
+        let words = self.words.read().unwrap().clone();
+        let group = match rt.chat(&call.chat_id).await {
+            Ok(Some(chat)) => chat.title,
+            Ok(None) => String::new(),
+            Err(e) => {
+                eprintln!("messenger notify: group call: {e}");
+                String::new()
+            }
+        };
+        // Named and pictured as a message of the group would be: the
+        // settings and a PIN on the app have their say.
+        let notice = messenger_core::Notice {
+            title: group,
+            body: None,
+            chat_id: Some(call.chat_id.clone()),
+            sender: Some(call.started_by.clone()),
+            request: false,
+        };
+        let (title, picture) = match rt.live_notice(&notice, self.locked().await).await {
+            Ok(Outcome::Show(n)) if !n.title.is_empty() => (n.title, n.picture),
+            Ok(Outcome::Plain(p)) => (p.title.filter(|t| !t.is_empty()).unwrap_or_else(|| words.app.clone()), None),
+            Ok(_) => (words.app.clone(), None),
+            Err(e) => {
+                eprintln!("messenger notify: group call: {e}");
+                (words.app.clone(), None)
+            }
+        };
+        let image = match &picture {
+            Some(url) => self.avatar(url).await,
+            None => None,
+        };
+        let toast = group_call_toast(&call, title, image, &words);
+        let calls = self.group_calls.lock().unwrap();
+        // Over, or joined, while its name was looked up.
+        if calls.get(&call.call_id).is_some_and(|key| key.is_some()) {
+            self.notifier.show(toast);
+        }
+    }
+
+    /// The call of a group is over, or I am in it: its notification goes.
+    fn group_call_gone(&self, call_id: &str) {
+        let mut calls = self.group_calls.lock().unwrap();
+        if let Some(Some(key)) = calls.remove(call_id) {
+            self.notifier.clear(&key);
         }
     }
 
@@ -818,14 +979,22 @@ fn png_of(icon: &tauri::image::Image<'_>) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// A click: the window comes up and the page opens the chat.
+/// A click: the window comes up and the page opens the chat (of the
+/// group, for the notification of a call on in it).
 fn clicked(app: &tauri::AppHandle, key: String) {
     app.state::<Shell>().show_main_window();
-    let chat = (key.starts_with("dm:") || key.starts_with("group:")).then_some(key.clone());
+    let chat = chat_of_key(&key).map(String::from);
     if let Some(d) = app.try_state::<MessengerState>().and_then(|s| s.desktop()) {
         d.stacks.lock().unwrap().remove(&key);
     }
     let _ = app.emit(EVENT_NOTICE_TAP, serde_json::json!({ "chat": chat }));
+}
+
+/// The chat a click on the notification `key` opens: the chat's own key,
+/// or the group's behind the notification of a call on in it.
+fn chat_of_key(key: &str) -> Option<&str> {
+    let chat = key.strip_prefix(GROUP_CALL_KEY).unwrap_or(key);
+    (chat.starts_with("dm:") || chat.starts_with("group:")).then_some(chat)
 }
 
 /// A button on a call's notification, which is gone by then: Answer takes
@@ -1136,6 +1305,50 @@ mod tests {
         assert_eq!(call_notice(UI_EVENT_CALL_INCOMING, &call_payload("outgoing", "audio")), CallNotice::Nothing);
         assert_eq!(call_notice("call.level", &serde_json::json!({ "call_id": "c1", "level": 0.5 })), CallNotice::Nothing);
         assert_eq!(call_notice(UI_EVENT_CALL_ENDED, &serde_json::json!({})), CallNotice::Nothing);
+        // Ringing in while I sit in the room of a group call: not rung,
+        // its answer would be refused.
+        let mut busy = call_payload("incoming", "audio");
+        busy[INCOMING_BUSY_WITH_GROUP] = serde_json::json!(true);
+        assert_eq!(call_notice(UI_EVENT_CALL_INCOMING, &busy), CallNotice::Nothing);
+        busy[INCOMING_BUSY_WITH_GROUP] = serde_json::json!(false);
+        assert!(matches!(call_notice(UI_EVENT_CALL_INCOMING, &busy), CallNotice::Ring(_)));
+    }
+
+    fn group_call_payload(started_by: &str, joined: bool, media: &str) -> serde_json::Value {
+        serde_json::json!({ "call": {
+            "call_id": "g1", "group_id": "g".repeat(64), "chat_id": format!("group:{}", "g".repeat(64)),
+            "media": media, "started_by": started_by, "started_at": 1_700_000_000,
+            "participants": [started_by], "joined": joined,
+        }})
+    }
+
+    /// A call somebody else started in a group is news once; mine, one I
+    /// am in, and its end take the notification away. A click on it opens
+    /// the group's chat.
+    #[test]
+    fn a_call_on_in_a_group_is_news_unless_it_is_mine_or_i_am_in_it() {
+        let (alice, me) = ("ab".repeat(32), "cd".repeat(32));
+        let on = group_call_notice(UI_EVENT_GROUP_CALL_STARTED, &group_call_payload(&alice, false, "video"), Some(&me));
+        let GroupCallNotice::On(call) = on else { panic!("{on:?}") };
+        assert_eq!((call.call_id.as_str(), call.media), ("g1", CallMedia::Video));
+        assert_eq!(group_call_notice(UI_EVENT_GROUP_CALL_STARTED, &group_call_payload(&me, false, "audio"), Some(&me)), GroupCallNotice::Gone("g1".into()));
+        assert_eq!(group_call_notice(UI_EVENT_GROUP_CALL_STARTED, &group_call_payload(&alice, true, "audio"), Some(&me)), GroupCallNotice::Gone("g1".into()));
+        let ended = serde_json::json!({ "call": group_call_payload(&alice, false, "audio")["call"], "outcome": "ended", "duration_secs": 5 });
+        assert_eq!(group_call_notice(UI_EVENT_GROUP_CALL_ENDED, &ended, Some(&me)), GroupCallNotice::Gone("g1".into()));
+        assert_eq!(group_call_notice("group_call.state", &serde_json::json!({ "call": {} }), Some(&me)), GroupCallNotice::Nothing);
+        assert_eq!(group_call_notice("group_call.level", &serde_json::json!({ "call_id": "g1", "participant": 1, "level": 0.5 }), Some(&me)), GroupCallNotice::Nothing);
+
+        let w = Words { group_call_video: "Идёт видеозвонок".into(), ..words() };
+        let t = group_call_toast(&call, "Team".into(), None, &w);
+        assert_eq!((t.key.as_str(), t.title.as_str(), t.body.as_str()), (format!("gcall:group:{}", "g".repeat(64)).as_str(), "Team", "Идёт видеозвонок"));
+        assert!(t.silent && t.actions.is_empty() && t.kind == Kind::Message, "quiet, no buttons: {t:?}");
+        let audio = GroupCallAnnounced { media: CallMedia::Audio, ..call };
+        assert_eq!(group_call_toast(&audio, "Team".into(), None, &w).body, "A call is on");
+        assert_eq!(chat_of_key(&t.key), Some(format!("group:{}", "g".repeat(64))).as_deref());
+        assert_eq!(chat_of_key("group:g"), Some("group:g"));
+        assert_eq!(chat_of_key("dm:d"), Some("dm:d"));
+        assert_eq!(chat_of_key("call:c1"), None);
+        assert_eq!(chat_of_key("dm"), None);
     }
 
     #[test]

@@ -82,8 +82,21 @@ internal data class CallInfo(
 }
 
 /**
+ * A call on in a group, as its quiet notification shows it: the group's
+ * name (`hidden`: off the lock screen), the chat a tap opens.
+ */
+internal data class GroupCallNotice(
+  val callId: String,
+  val chatId: String,
+  val name: String,
+  val video: Boolean,
+  val hidden: Boolean = true,
+)
+
+/**
  * The notifications of a call: the ringing one (Answer, Decline, and the
- * screen over the lock screen) and the ongoing one (Hang up).
+ * screen over the lock screen), the ongoing one (Hang up), and the quiet
+ * one of a call on in a group (`groupCall`).
  *
  * Both are `CallStyle`: the system shows them as calls, first in the shade,
  * with the buttons in its own words. Android wants such a notification to
@@ -106,6 +119,8 @@ internal object CallNotices {
   private const val CHANNEL_CALLS_OLD = "calls"
   /** The call that goes on: in the shade, never popping up. */
   const val CHANNEL_ONGOING = "call_ongoing"
+  /** A call on in a group: news in the shade, quiet (no sound, no vibration); the user may turn it off. */
+  const val CHANNEL_GROUP = "call_group"
 
   /**
    * One notification for the call, whatever phase it is in, untagged: the
@@ -113,6 +128,8 @@ internal object CallNotices {
    * service takes the same place.
    */
   const val ID = 0x5ca11
+  /** The notifications of calls on in groups: one per call, tagged with the call's id. */
+  const val ID_GROUP = 0x5ca12
 
   fun ensureChannels(context: Context) {
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -125,8 +142,81 @@ internal object CallNotices {
       enableVibration(false)
       setShowBadge(false)
     }
-    manager.createNotificationChannels(listOf(calls, ongoing))
+    val group = NotificationChannel(CHANNEL_GROUP, context.getString(R.string.veydan_call_channel_group), NotificationManager.IMPORTANCE_DEFAULT).apply {
+      setSound(null, null)
+      enableVibration(false)
+    }
+    manager.createNotificationChannels(listOf(calls, ongoing, group))
     if (manager.getNotificationChannel(CHANNEL_CALLS_OLD) != null) manager.deleteNotificationChannel(CHANNEL_CALLS_OLD)
+  }
+
+  /**
+   * A call on in a group (`GroupCallNotice`): the group's name over "A
+   * call is on", quiet, gone with a tap, which opens the group's chat the
+   * way a tap on a message's notification does (the push plugin's
+   * extras on the app's launch intent: the messenger follows them to the
+   * chat). Hidden on the lock screen it shows only that a call is on.
+   */
+  fun groupCall(context: Context, notice: GroupCallNotice): Notification {
+    ensureChannels(context)
+    val text = context.getString(if (notice.video) R.string.veydan_call_group_video_on else R.string.veydan_call_group_on)
+    val face = CallInfo(notice.callId, notice.name, null, notice.video)
+    val builder = NotificationCompat.Builder(context, CHANNEL_GROUP)
+      .setSmallIcon(R.drawable.ic_stat_call)
+      .setContentTitle(label(context, face))
+      .setContentText(text)
+      .setLargeIcon(face(face))
+      .setCategory(NotificationCompat.CATEGORY_STATUS)
+      .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+      .setSilent(true)
+      .setOnlyAlertOnce(true)
+      .setAutoCancel(true)
+      .setShowWhen(true)
+      .setContentIntent(openChat(context, notice.chatId))
+    if (notice.hidden) {
+      val onLock = NotificationCompat.Builder(context, CHANNEL_GROUP)
+        .setSmallIcon(R.drawable.ic_stat_call)
+        .setContentTitle(text)
+        .setCategory(NotificationCompat.CATEGORY_STATUS)
+        .setContentIntent(openChat(context, notice.chatId))
+        .build()
+      builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(onLock)
+    } else {
+      builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+    }
+    return builder.build()
+  }
+
+  /** Shows the notification of a call on in a group `callId`; false when the user allows none. */
+  fun postGroupCall(context: Context, callId: String, notification: Notification): Boolean =
+    try {
+      NotificationManagerCompat.from(context).notify(callId, ID_GROUP, notification)
+      true
+    } catch (e: SecurityException) {
+      false
+    }
+
+  fun cancelGroupCall(context: Context, callId: String) {
+    NotificationManagerCompat.from(context).cancel(callId, ID_GROUP)
+  }
+
+  /** The extras of the push plugin's notifications: the messenger opens the chat a tap names. */
+  private const val EXTRA_PUSH_TYPE = "veydan_push_type"
+  private const val EXTRA_PUSH_CHAT = "veydan_push_chat"
+  private const val PUSH_TYPE_GROUP = "group"
+
+  /** The app's own start, with the chat of the group to open (as the push plugin's `open`). */
+  private fun openChat(context: Context, chatId: String): PendingIntent? {
+    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return null
+    intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    intent.putExtra(EXTRA_PUSH_TYPE, PUSH_TYPE_GROUP)
+    intent.putExtra(EXTRA_PUSH_CHAT, chatId)
+    return PendingIntent.getActivity(
+      context,
+      chatId.hashCode(),
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
   }
 
   fun allowed(context: Context): Boolean =

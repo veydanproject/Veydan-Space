@@ -89,6 +89,14 @@ pub enum OpBody {
         picture: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         history_for_new: Option<bool>,
+        /// The call node pinned to the group (`address:port#id`), for its
+        /// group calls; an empty string takes it away.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        call_node: Option<String>,
+        /// The access key of that node when it is private; an empty
+        /// string takes it away.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        call_node_key: Option<String>,
     },
     /// The owner becomes an admin, `to` becomes the owner.
     TransferOwnership { to: PubKey },
@@ -203,7 +211,7 @@ mod tests {
 
     #[test]
     fn absent_fields_are_not_written() {
-        let op = Op::new("g", &pk("a"), vec![], 1, OpBody::EditSettings { name: Some("n".into()), about: None, picture: None, history_for_new: None });
+        let op = Op::new("g", &pk("a"), vec![], 1, OpBody::EditSettings { name: Some("n".into()), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None });
         let json = op.canonical();
         assert!(!json.contains("about") && !json.contains("\"key\""), "{json}");
     }

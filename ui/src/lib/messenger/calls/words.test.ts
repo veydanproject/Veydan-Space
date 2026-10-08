@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { MessengerMessage } from '../api';
-import { callErrorText, callLineOf, callLineWords, clock, duration, elapsed, endedKey, isMissed, phaseKey } from './words';
+import { callErrorText, callLineOf, callLineWords, clock, duration, elapsed, endedKey, groupLineWords, isMissed, phaseKey } from './words';
 
 /** The key itself, with its parameters: what the words are made of. */
 const tr = (key: string, params?: Record<string, string>) => (params ? `${key}(${Object.values(params).join(',')})` : key);
@@ -65,7 +65,26 @@ describe('the line of a call in the chat', () => {
     expect(callLineOf(line({}, { id: 'abc' }))).toBeNull();
     expect(callLineOf(line({}, { content_type: 'text' }))).toBeNull();
     const l = callLineOf(line({ call_id: 'c1', direction: 'out', media: 'video', outcome: 'ended', duration_secs: 75, via: 'relay', started_at: 90 }));
-    expect(l).toEqual({ callId: 'c1', direction: 'out', media: 'video', outcome: 'ended', duration: 75, via: 'relay', startedAt: 90 });
+    expect(l).toEqual({
+      kind: 'dm', callId: 'c1', direction: 'out', media: 'video', outcome: 'ended', duration: 75, via: 'relay', startedAt: 90, startedBy: null, participants: 0,
+    });
+  });
+
+  it('reads the line of a group call: who started it, how many were in it', () => {
+    const l = callLineOf(line({ kind: 'group', call_id: 'g1', direction: 'in', media: 'audio', started_by: 'b0b', participants: 3, outcome: 'ended', duration_secs: 600, started_at: 90 }, { sender_pubkey: 'b0b' }))!;
+    expect(l).toMatchObject({ kind: 'group', callId: 'g1', startedBy: 'b0b', participants: 3, duration: 600 });
+    const people = (n: number) => `people(${n})`;
+    expect(groupLineWords(l, tr, { live: false, starter: 'Boris', people })).toEqual({ title: 'msg_gcall_line', detail: 'Boris · 10:00 · people(3)' });
+    // On now: no length yet; mine: no starter's name.
+    const now = callLineOf(line({ kind: 'group', media: 'video', participants: 2, outcome: null }))!;
+    expect(groupLineWords(now, tr, { live: true, starter: null, people })).toEqual({ title: 'msg_gcall_line_video', detail: 'msg_gcall_detail_live · people(2)' });
+    // Over without anybody else: nothing about people; a failed one says so.
+    const alone = callLineOf(line({ kind: 'group', participants: 1, outcome: 'ended', duration_secs: 5 }))!;
+    expect(groupLineWords(alone, tr, { live: false, starter: null, people }).detail).toBe('0:05');
+    const failed = callLineOf(line({ kind: 'group', participants: 2, outcome: 'failed' }))!;
+    expect(groupLineWords(failed, tr, { live: false, starter: null, people }).detail).toBe('msg_call_detail_failed');
+    // A line that is not on and has no end (its call ended unseen): the title alone.
+    expect(groupLineWords(callLineOf(line({ kind: 'group', outcome: null }))!, tr, { live: false, starter: null, people }).detail).toBeNull();
   });
 
   it('takes nothing it does not know', () => {
@@ -107,5 +126,15 @@ describe('a refusal of a call', () => {
     expect(callErrorText({ code: 'other', message: 'no camera on this machine' }, tr)).toBe('msg_call_err_no_camera');
     expect(callErrorText('/dev/video0: no uncompressed format (YUYV or NV12); it offers MJPG', tr)).toMatch(/^msg_call_err_camera\(/);
     expect(callErrorText('the screen cannot be captured here (no display)', tr)).toMatch(/^msg_call_err_screen\(/);
+  });
+
+  it('words the refusals of a group call', () => {
+    expect(callErrorText({ code: 'invalid', message: 'a call is on in this group already: join it' }, tr)).toBe('msg_gcall_err_on');
+    expect(callErrorText({ code: 'invalid', message: 'no call is on in this group' }, tr)).toBe('msg_gcall_err_gone');
+    expect(callErrorText({ code: 'transport', message: 'POST /v1/rooms/ab/join: 404 room_not_found' }, tr)).toBe('msg_gcall_err_gone');
+    expect(callErrorText({ code: 'transport', message: 'join: 409 room_full' }, tr)).toBe('msg_gcall_err_full');
+    expect(callErrorText({ code: 'invalid', message: 'a group call is under way' }, tr)).toBe('msg_call_err_busy');
+    expect(callErrorText({ code: 'transport', message: 'no call node with an SFU answered' }, tr)).toBe('msg_gcall_err_no_node');
+    expect(callErrorText({ code: 'transport', message: 'the way to the node is lost' }, tr)).toBe('msg_gcall_err_node_lost');
   });
 });

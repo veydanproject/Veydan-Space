@@ -96,12 +96,18 @@ internal object Calls {
       Log.i(CallState.TAG, "ringing ${called.callId} already ($phase)")
       return (lastShown ?: JSObject()).put("inFront", inFront())
     }
-    if (phase == Phase.ONGOING) {
-      // A second call while one goes on is the app's to answer "busy"
-      // before it rings here; a call that rings anyway takes the phone over.
-      Log.w(CallState.TAG, "a call rings while ${call?.callId} goes on; it takes the phone over")
-      AudioRoutes.end()
-      setProximity(false)
+    val ongoing = call?.callId?.takeIf { phase == Phase.ONGOING }
+    if (!RingRules.appRings(ongoing)) {
+      // The phone is the call's that goes on (see `RingRules.appRings`):
+      // not rung, nothing of the phone changes, and the app is told.
+      Log.w(CallState.TAG, "a call ${called.callId} rings while $ongoing goes on; not rung, the phone stays $ongoing's")
+      return JSObject()
+        .put("foreground", false)
+        .put("fullScreen", CallNotices.fullScreenAllowed(ctx))
+        .put("notifications", CallNotices.allowed(ctx))
+        .put("ringing", false)
+        .put("inFront", inFront())
+        .put("busyWith", ongoing)
     }
     closeScreen()
     Ringer.stop()
@@ -149,6 +155,59 @@ internal object Calls {
     return true
   }
 
+  /**
+   * The calls on in groups this phone showed or was in, across its
+   * processes (see `GroupCallMemory`), in the app's preferences.
+   */
+  private const val PREFS = "veydan_call"
+  private const val PREF_GROUP_CALLS = "group_calls"
+  /** How long a call on in a group is remembered: longer than any call goes on. */
+  private const val GROUP_CALLS_KEPT_MS = 24 * 60 * 60 * 1000L
+  private var groupCalls: GroupCallMemory? = null
+
+  private fun groupCalls(ctx: Context): GroupCallMemory =
+    groupCalls ?: GroupCallMemory.decode(prefs(ctx).getString(PREF_GROUP_CALLS, null), GROUP_CALLS_KEPT_MS).also { groupCalls = it }
+
+  private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+  private fun saveGroupCalls(ctx: Context) {
+    groupCalls?.let { prefs(ctx).edit().putString(PREF_GROUP_CALLS, it.encode()).apply() }
+  }
+
+  /**
+   * A call is on in a group (`GroupCallNotice`): a quiet notification of
+   * it, unless the app is what the user looks at (the chat's banner says
+   * it there), or the phone knows the call already: shown before, or I
+   * was in it (a process that died in between forgets neither). Answers
+   * whether it was shown.
+   */
+  fun showGroupCall(context: Context, notice: GroupCallNotice): Boolean {
+    val ctx = context.applicationContext
+    val memory = groupCalls(ctx)
+    if (!memory.isNews(notice.callId, System.currentTimeMillis())) {
+      Log.i(CallState.TAG, "a call is on in a group (${notice.callId}); known here already, not shown")
+      return false
+    }
+    if (inFront()) {
+      Log.i(CallState.TAG, "a call is on in a group (${notice.callId}); the app is in front, not shown")
+      return false
+    }
+    val shown = CallNotices.allowed(ctx) && CallNotices.postGroupCall(ctx, notice.callId, CallNotices.groupCall(ctx, notice))
+    if (shown) {
+      memory.shown(notice.callId, System.currentTimeMillis())
+      saveGroupCalls(ctx)
+    }
+    Log.i(CallState.TAG, "a call is on in a group (${notice.callId}, video=${notice.video}, hidden=${notice.hidden}): shown=$shown")
+    return shown
+  }
+
+  /** The notice of a call on in a group goes: the call is over, or I am in it. */
+  fun dismissGroupCall(context: Context, callId: String) {
+    val ctx = context.applicationContext
+    CallNotices.cancelGroupCall(ctx, callId)
+    if (groupCalls(ctx).dismissed(callId)) saveGroupCalls(ctx)
+  }
+
   /** The user looks at the app: its process is the one in front. */
   private fun inFront(): Boolean {
     val state = ActivityManager.RunningAppProcessInfo()
@@ -159,11 +218,22 @@ internal object Calls {
   /**
    * The process starts (the plugin loads) knowing no call: a call
    * notification still there was left by a process that died, with its
-   * limits and its ringing. It goes; the app shows a live call again.
+   * limits and its ringing. It goes; the app shows a live call again. So
+   * do the notices of calls on in groups that process showed: the call
+   * may have ended while no process lived to take the notice down, and
+   * the app announces a call still on anew.
    */
   fun loaded(context: Context) {
+    val ctx = context.applicationContext
+    val memory = groupCalls(ctx)
+    val leftovers = memory.leftovers()
+    if (leftovers.isNotEmpty()) {
+      Log.i(CallState.TAG, "the notices of calls on in groups left by a dead process go: $leftovers")
+      for (id in leftovers) CallNotices.cancelGroupCall(ctx, id)
+      saveGroupCalls(ctx)
+    }
     if (phase != null || call != null) return
-    CallNotices.cancel(context.applicationContext)
+    CallNotices.cancel(ctx)
   }
 
   /**
@@ -281,6 +351,12 @@ internal object Calls {
     val plain = { CallNotices.ongoing(ctx, info, since, styled = false) }
     if (!CallService.show(ctx, notification, types, plain)) CallNotices.post(ctx, notification, plain)
     updateProximity()
+    // A call that went on here is one I was in: no news of it later,
+    // whatever process hears of it (a room of a group call is announced
+    // again at every seat taken, also after I leave it). A call of two
+    // lands here too, which nothing ever asks about.
+    groupCalls(ctx).joined(info.callId, System.currentTimeMillis())
+    saveGroupCalls(ctx)
     Log.i(CallState.TAG, "ongoing ${info.callId} (video=${info.video})")
   }
 

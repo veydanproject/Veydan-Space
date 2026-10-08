@@ -157,6 +157,20 @@ pub struct InviteView {
     pub expires_at: i64,
 }
 
+/// Where the `call.*` notes of a group go (the core of group calls,
+/// `messenger-calls`): a member wrote it, as the log here knows, and it
+/// is no message of the chat. A note of a muted member counts: muting
+/// is of words, not of calls.
+#[async_trait::async_trait]
+pub trait GroupCallSink: Send + Sync {
+    async fn on_group_call(&self, group_id: &str, author: &PubKey, envelope: &Envelope, created_at: i64, historical: bool);
+
+    /// The members of `group_id` changed (somebody was removed, left,
+    /// came in, or I am out of it): the core of calls looks at who is in
+    /// its room again. Said after the change is in the log here.
+    async fn on_members_changed(&self, _group_id: &str) {}
+}
+
 #[derive(Clone)]
 pub struct GroupService {
     pub(crate) store: Store,
@@ -168,6 +182,7 @@ pub struct GroupService {
     pub(crate) lined: Arc<Mutex<HashMap<String, std::collections::HashSet<String>>>>,
     signer: Arc<std::sync::Mutex<Option<Keys>>>,
     locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    call_sink: Arc<std::sync::Mutex<Option<Arc<dyn GroupCallSink>>>>,
 }
 
 fn key_ref(group_id: &str, key_id: &KeyId) -> String {
@@ -187,6 +202,15 @@ pub(crate) fn rejection(r: Rejection) -> MessengerError {
     MessengerError::Invalid(format!("group_{}", code.unwrap_or_else(|| "rejected".into())))
 }
 
+/// An operation that changes who is in the group: the core of calls is
+/// told of it ([`GroupCallSink::on_members_changed`]).
+pub(crate) fn changes_members(body: &OpBody) -> bool {
+    matches!(
+        body,
+        OpBody::Admit { .. } | OpBody::Join | OpBody::Leave | OpBody::Remove { .. } | OpBody::Ban { .. } | OpBody::Unban { .. } | OpBody::Disband
+    )
+}
+
 fn new_group_id() -> Result<String> {
     let mut b = [0u8; 32];
     getrandom::fill(&mut b).map_err(|e| MessengerError::Crypto(e.to_string()))?;
@@ -195,7 +219,17 @@ fn new_group_id() -> Result<String> {
 
 impl GroupService {
     pub fn new(store: Store, secrets: Arc<dyn SecretStore>, clock: Arc<dyn Clock>, dm: DmService) -> Self {
-        Self { store, secrets, clock, dm, logs: Arc::default(), lined: Arc::default(), signer: Arc::default(), locks: Arc::default() }
+        Self {
+            store,
+            secrets,
+            clock,
+            dm,
+            logs: Arc::default(),
+            lined: Arc::default(),
+            signer: Arc::default(),
+            locks: Arc::default(),
+            call_sink: Arc::default(),
+        }
     }
 
     /// Keys of the running session: handlers act with them.
@@ -205,6 +239,67 @@ impl GroupService {
 
     pub fn signer(&self) -> Option<Keys> {
         self.signer.lock().unwrap().clone()
+    }
+
+    /// Where the `call.*` notes of the groups go; without one they are
+    /// dropped (a build without calls).
+    pub fn set_call_sink(&self, sink: Option<Arc<dyn GroupCallSink>>) {
+        *self.call_sink.lock().unwrap() = sink;
+    }
+
+    pub(crate) fn call_sink(&self) -> Option<Arc<dyn GroupCallSink>> {
+        self.call_sink.lock().unwrap().clone()
+    }
+
+    /// The members of `group_id` as the log here has them, me among
+    /// them; an error when the group is unknown or I am not in it. For
+    /// the core of group calls (who may be in a room).
+    pub async fn members_of(&self, group_id: &str, me: &PubKey) -> Result<Vec<PubKey>> {
+        let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
+        let log = self.need_log(group_id).await?;
+        let s = log.state();
+        if row.membership != MEMBERSHIP_JOINED || !s.is_member(me) {
+            return Err(MessengerError::Invalid("group_not_member".into()));
+        }
+        Ok(s.members.keys().filter_map(|k| PubKey::parse(k)).collect())
+    }
+
+    /// The call node pinned to the group in its settings
+    /// (`EditSettings::call_node`, `address:port#id`) with its access key,
+    /// or `None` when there is none. For the core of group calls.
+    pub async fn call_node_of(&self, group_id: &str) -> Result<Option<(String, Option<String>)>> {
+        let log = self.need_log(group_id).await?;
+        let s = log.state();
+        if s.call_node.is_empty() {
+            return Ok(None);
+        }
+        let key = Some(s.call_node_key.clone()).filter(|k| !k.is_empty());
+        Ok(Some((s.call_node.clone(), key)))
+    }
+
+    /// A `call.*` note of mine to the group (the signalling of a group
+    /// call): signed by me like a message, sealed quietly with the group
+    /// key, kept nowhere here. A muted member may still say it.
+    pub async fn prepare_call_note(&self, keys: &Keys, group_id: &str, envelope: &Envelope) -> Result<Outbound> {
+        if !envelope.is_call() {
+            return Err(MessengerError::Invalid("not a word of a call".into()));
+        }
+        let me = me_of(keys);
+        let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
+        let log = self.need_log(group_id).await?;
+        let s = log.state();
+        if row.membership != MEMBERSHIP_JOINED || s.member(&me).is_none() {
+            return Err(MessengerError::Invalid("group_not_member".into()));
+        }
+        let key = match &s.current_key {
+            Some(id) => self.key(group_id, id).await?,
+            None => None,
+        }
+        .ok_or_else(|| MessengerError::Invalid("group_no_key".into()))?;
+        let signed = wire::sign_message(keys, group_id, &envelope.encode(), self.now(), None)?;
+        let grace = self.grace_key(group_id, s).await?;
+        let sealed = wire::seal_note(group_id, &key, grace.as_ref(), &signed, keys)?;
+        Ok(Self::scoped(group_id, sealed))
     }
 
     /// Whoever changes a group holds its lock: what the user does and what
@@ -761,6 +856,11 @@ impl GroupService {
         }
         outcome.events.push(Self::updated(group_id));
         outcome.resubscribe = matches!(op.body, OpBody::Leave | OpBody::Disband | OpBody::Join);
+        if changes_members(&op.body) {
+            if let Some(sink) = self.call_sink() {
+                sink.on_members_changed(group_id).await;
+            }
+        }
         Ok((op, outcome))
     }
 
@@ -1345,4 +1445,98 @@ impl GroupService {
 /// so people see events in the order they happened.
 fn before_time(log: &OpLog) -> i64 {
     log.ordered().map(|o| o.created_at).max().unwrap_or(0)
+}
+
+#[cfg(test)]
+mod call_note_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use messenger_contacts::{ContactService, ProfileService};
+    use messenger_core::inbound::Envelope as WireEnvelope;
+    use messenger_core::{Context, EventSource, GroupInbound, Timestamp};
+    use std::sync::atomic::{AtomicI64, Ordering};
+    use zeroize::Zeroizing;
+
+    struct TestClock(AtomicI64);
+    impl Clock for TestClock {
+        fn now(&self) -> Timestamp {
+            Timestamp(self.0.load(Ordering::SeqCst))
+        }
+    }
+
+    #[derive(Default)]
+    struct Secrets(std::sync::Mutex<HashMap<String, Vec<u8>>>);
+    #[async_trait]
+    impl SecretStore for Secrets {
+        async fn get(&self, key: &str) -> Result<Option<Zeroizing<Vec<u8>>>> {
+            Ok(self.0.lock().unwrap().get(key).cloned().map(Zeroizing::new))
+        }
+        async fn put(&self, key: &str, value: &[u8]) -> Result<()> {
+            self.0.lock().unwrap().insert(key.into(), value.to_vec());
+            Ok(())
+        }
+        async fn delete(&self, key: &str) -> Result<()> {
+            self.0.lock().unwrap().remove(key);
+            Ok(())
+        }
+        async fn is_unlocked(&self) -> bool {
+            true
+        }
+    }
+
+    #[derive(Default)]
+    struct Sink(std::sync::Mutex<Vec<(String, String, String, bool)>>);
+    #[async_trait]
+    impl GroupCallSink for Sink {
+        async fn on_group_call(&self, group_id: &str, author: &PubKey, envelope: &Envelope, _created_at: i64, historical: bool) {
+            self.0.lock().unwrap().push((group_id.into(), author.as_hex().into(), envelope.t.clone(), historical));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_word_of_a_call_is_sealed_quietly_and_goes_to_the_sink_not_the_chat() {
+        let clock = Arc::new(TestClock(AtomicI64::new(2_000)));
+        let store = Store::open_in_memory().await.unwrap();
+        let profiles = ProfileService::new(store.clone());
+        let contacts = ContactService::new(store.clone(), profiles.clone());
+        let dm = DmService::new(store.clone(), contacts, profiles, clock.clone());
+        let keys = Keys::generate();
+        dm.set_signer(Some(keys.clone()));
+        let svc = GroupService::new(store, Arc::new(Secrets::default()), clock.clone(), dm.clone());
+        let sink = Arc::new(Sink::default());
+        svc.set_call_sink(Some(sink.clone()));
+        let (view, _) = svc.create(&keys, GroupKind::Private, "Team", "", true, &RelayUrl::parse("wss://relay.example").unwrap()).await.unwrap();
+        let me = me_of(&keys);
+        assert_eq!(svc.members_of(&view.id, &me).await.unwrap(), vec![me.clone()]);
+        assert!(svc.members_of("nope", &me).await.is_err());
+
+        assert!(svc.prepare_call_note(&keys, &view.id, &Envelope::text("hi")).await.is_err(), "only a word of a call");
+        let note = Envelope::call_join(&"ab".repeat(16), 3);
+        let out = svc.prepare_call_note(&keys, &view.id, &note).await.unwrap();
+        let Outbound::PublishScoped { scope: Scope::Group { id }, event } = &out else { panic!("{out:?}") };
+        assert_eq!(id, &view.id);
+        let ev: Event = serde_json::from_value(event.json.clone()).unwrap();
+        assert!(ev.tags.iter().any(|t| t.kind() == "silent"), "quiet: it wakes nobody");
+        assert!(!event.json.to_string().contains("call.join"), "sealed");
+
+        // Delivered as the relay would: the sink hears it, the chat does not.
+        let tag = |name: &str| ev.tags.iter().filter(|t| t.kind() == name).filter_map(|t| t.as_slice().get(1)).next().cloned();
+        let url = RelayUrl::parse("wss://relay.example").unwrap();
+        let msg = GroupInbound {
+            envelope: WireEnvelope { wire_id: event.id.clone(), source: EventSource::Relay { url }, wire_created_at: Timestamp(2_000) },
+            group_id: tag("h").unwrap(),
+            sender: PubKey::parse(&ev.pubkey.to_hex()).unwrap(),
+            created_at: Timestamp(ev.created_at.as_secs() as i64),
+            kind: 9,
+            key_id: tag("k"),
+            ciphertext: ev.content.clone(),
+            reply_to: None,
+        };
+        let ctx = Context { my_pubkey: me.clone(), session_started_at: Timestamp(1_000), clock: clock.clone() };
+        let outcome = svc.on_event(&keys, msg, &ctx).await.unwrap();
+        assert!(outcome.events.is_empty() && outcome.publish.is_empty(), "{outcome:?}");
+        assert_eq!(*sink.0.lock().unwrap(), vec![(view.id.clone(), me.as_hex().to_string(), "call.join".to_string(), false)]);
+        let messages = dm.messages(&repo::group_chat_id(&view.id), None, 50).await.unwrap();
+        assert!(messages.iter().all(|m| m.content_type != "text" && m.text.as_deref() != Some("call")), "no line of it: {messages:?}");
+    }
 }

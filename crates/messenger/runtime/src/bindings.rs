@@ -11,9 +11,10 @@
 
 use crate::avatars::AvatarPreview;
 use crate::calls::{
-    CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState,
-    CallStats, CallVia, CallView, CameraInfo, ReconnectReason, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoSize,
-    VideoTrack,
+    CallDirection, CallEnded, CallIncoming, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState,
+    CallStats, CallVia, CallView, CameraInfo, GroupCallAnnounced, GroupCallEnded, GroupCallLevel, GroupCallPhase,
+    GroupCallState, GroupCallView, GroupParticipant, ReconnectReason, RelayPolicy, ScreenInfo, VideoInput, VideoQuality,
+    VideoSize, VideoTrack,
 };
 use crate::cards::{ContactPrivateView, OwnPrivateView};
 use crate::links::{GroupMembership, LinkGroupKind, LinkView};
@@ -128,11 +129,19 @@ pub fn calls_ts() -> String {
     out += &export::<CameraInfo>(&cfg, "A camera the engine can open, as `messenger_call_list_cameras` lists them; `id` is what `VideoInput` and `messenger_call_switch_camera` take.");
     out += &export::<ScreenInfo>(&cfg, "A screen or a window that can be shared, as `messenger_call_list_screens` lists them.");
     out += &export::<CallView>(&cfg, "The call as the screen shows it: the `call` of every `call.*` event and the answer of the call commands.");
+    out += &export::<CallIncoming>(&cfg, "The payload of the runtime event `call.incoming`; `busy_with_group` says I sit in the room of a group call as it rings: its `accept` is refused, the screen shows \"busy\" instead of \"answer\".");
     out += &export::<CallEnded>(&cfg, "The payload of the runtime event `call.ended`.");
     out += &export::<CallStats>(&cfg, "The `stats` of the runtime event `call.stats`, as the engine tells them.");
     out += &export::<CallNodeView>(&cfg, "A call node the client may use, as the settings list it.");
     out += &export::<CallNodeInput>(&cfg, "One own node, as `messenger_call_set_nodes` takes it.");
     out += &export::<CallState>(&cfg, "The call under way, the policy and the nodes, as `messenger_call_get_state` answers.");
+    out += &export::<GroupCallPhase>(&cfg, "Where I am with the room of a group call: making it, joining it, in it, restoring the way to the node, out of it.");
+    out += &export::<GroupParticipant>(&cfg, "One seat of the room of a group call; only a verified seat is a person and is heard. `video_mid` is what `messenger_group_call_video_subscribe` takes.");
+    out += &export::<GroupCallView>(&cfg, "The room of a group call I am in: the `call` of `group_call.state` and the answer of the group call commands.");
+    out += &export::<GroupCallAnnounced>(&cfg, "A call announced in a group, for the banner of its chat: the `call` of `group_call.started` and `group_call.ended`.");
+    out += &export::<GroupCallEnded>(&cfg, "The payload of the runtime event `group_call.ended`.");
+    out += &export::<GroupCallLevel>(&cfg, "The payload of the runtime event `group_call.level`: how loud one seat is.");
+    out += &export::<GroupCallState>(&cfg, "The room I am in and the call announced in a group, as `messenger_group_call_get_state` answers.");
     out
 }
 

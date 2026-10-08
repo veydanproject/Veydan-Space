@@ -18,7 +18,9 @@ async-trait.workspace = true
 # The engine. Its C++ bridge, webrtc-sys, is the vendored copy in
 # vendor/webrtc-sys ([patch.crates-io] of the workspace; PATCH.md there).
 libwebrtc.workspace = true
-tokio = { workspace = true, features = ["sync", "rt", "time"] }
+# `macros` for the `select!` of the pump (adapter.rs) and of an audio
+# output's end (audio.rs).
+tokio = { workspace = true, features = ["sync", "rt", "time", "macros"] }
 futures-util.workspace = true
 serde.workspace = true
 thiserror.workspace = true

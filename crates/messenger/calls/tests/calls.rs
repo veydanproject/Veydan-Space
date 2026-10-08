@@ -835,7 +835,7 @@ async fn a_loss_on_the_callers_side_and_a_loss_during_the_restart() {
     *bob.deaf.lock().unwrap() = true;
     w.advance(LOSS_CONFIRM.as_secs() + 1).await;
     assert_eq!(w.session(0).record().restarts, 1);
-    let offer = alice.wraps_to(bob).into_iter().filter(|e| open_dm(&bob.keys, e, false).is_some_and(|m| Envelope::parse(&m.content).unwrap().t == "call.invite")).next_back().unwrap();
+    let offer = alice.wraps_to(bob).into_iter().rfind(|e| open_dm(&bob.keys, e, false).is_some_and(|m| Envelope::parse(&m.content).unwrap().t == "call.invite")).unwrap();
 
     // The way goes again while the offer is out, and flickers back: no
     // second offer, and the answer is still awaited.
@@ -904,7 +904,7 @@ async fn a_late_request_does_not_restart_a_restored_call_and_a_restart_while_con
     let kind = |e: &WireEvent| Envelope::parse(&open_dm(&alice.keys, e, false).unwrap().content).unwrap().t;
     let held: Vec<WireEvent> = bob.wraps_to(alice).into_iter().filter(|e| matches!(kind(e).as_str(), "call.restart" | "call.answer")).collect();
     let request = held.iter().find(|e| kind(e) == "call.restart").unwrap().clone();
-    let answer = held.iter().filter(|e| kind(e) == "call.answer").next_back().unwrap().clone();
+    let answer = held.iter().rfind(|e| kind(e) == "call.answer").unwrap().clone();
     *alice.deaf.lock().unwrap() = false;
     w.deliver(alice, &answer, false).await;
     w.settle().await;

@@ -69,7 +69,10 @@ pub struct Payload {
     pub keys: Vec<String>,
 }
 
-/// What a payload turned out to be, authors verified.
+/// What a payload turned out to be, authors verified. An operation carries
+/// its settings (the node of calls among them), so that variant is the big one;
+/// a payload is opened once and dropped, the size is not worth a box.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum Opened {
     Message(InnerMessage),

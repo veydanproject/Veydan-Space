@@ -113,6 +113,30 @@ pub const T_CALL_RESTART: &str = "call.restart";
 /// simply start or stop (internal/messenger-wire.md §10, "Видео").
 pub const T_CALL_VIDEO: &str = "call.video";
 
+/// The signalling of a group call goes as quiet notes of the group,
+/// sealed with the group key like a message (`t = msg` of
+/// `messenger-groups::wire`), so only the members read it. See
+/// internal/messenger-wire.md §10, "Групповые звонки".
+///
+/// `{"t":"call.start","call_id":"<32 hex>","room_id":"<32 hex>","node":"<addr:port#id>",
+/// "key":"<access key>"?,"join_token":"<48 hex>","epoch":1,"secret":"<base64 32 bytes>",
+/// "media":"audio"|"video","expires_at":<secs>}` — I made a room on a node
+/// for this group; come in. The secret of the first epoch rides inside
+/// (the note is under the group key already).
+pub const T_CALL_START: &str = "call.start";
+/// `{"t":"call.join","call_id":"…","participant":<seat>}` — I am in the
+/// room as this seat (the node's participant id), so the others can put a
+/// name to it.
+pub const T_CALL_JOIN: &str = "call.join";
+/// `{"t":"call.leave","call_id":"…","participant":<seat>}` — I left the room.
+pub const T_CALL_LEAVE: &str = "call.leave";
+/// `{"t":"call.epoch","call_id":"…","epoch":N,"secret":"<base64>","join_token":"…"?}`
+/// — a new epoch of the frame keys, made when somebody left the room, a
+/// seat never proved who it is, or the group lost a member; whoever is
+/// in the room moves its keys to it. `join_token` comes from the creator
+/// alone, when it changed the token of the room (a member was removed).
+pub const T_CALL_EPOCH: &str = "call.epoch";
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
     pub v: u32,
@@ -243,6 +267,50 @@ impl Envelope {
 
     pub fn call_video(call_id: &str, on: bool) -> Self {
         Self::new(T_CALL_VIDEO).with("call_id", call_id).with("on", on)
+    }
+
+    /// `node` is the reference of the call node (`address:port#id`); `key`
+    /// the access key of a private node, left out when there is none.
+    #[allow(clippy::too_many_arguments)]
+    pub fn call_start(
+        call_id: &str,
+        room_id: &str,
+        node: &str,
+        key: Option<&str>,
+        join_token: &str,
+        secret_b64: &str,
+        media: &str,
+        expires_at: i64,
+    ) -> Self {
+        let e = Self::new(T_CALL_START)
+            .with("call_id", call_id)
+            .with("room_id", room_id)
+            .with("node", node)
+            .with("join_token", join_token)
+            .with("epoch", 1u32)
+            .with("secret", secret_b64)
+            .with("media", media)
+            .with("expires_at", expires_at);
+        match key {
+            Some(k) => e.with("key", k),
+            None => e,
+        }
+    }
+
+    pub fn call_join(call_id: &str, participant: u32) -> Self {
+        Self::new(T_CALL_JOIN).with("call_id", call_id).with("participant", participant)
+    }
+
+    pub fn call_leave(call_id: &str, participant: u32) -> Self {
+        Self::new(T_CALL_LEAVE).with("call_id", call_id).with("participant", participant)
+    }
+
+    pub fn call_epoch(call_id: &str, epoch: u32, secret_b64: &str, join_token: Option<&str>) -> Self {
+        let e = Self::new(T_CALL_EPOCH).with("call_id", call_id).with("epoch", epoch).with("secret", secret_b64);
+        match join_token {
+            Some(t) => e.with("join_token", t),
+            None => e,
+        }
     }
 
     /// Is this the signalling of a call (`t` starts with `call.`).
@@ -465,6 +533,36 @@ mod tests {
         assert_eq!(Envelope::parse(&Envelope::call_video(&id, false).encode()).unwrap().fields.get("on"), Some(&serde_json::json!(false)));
         assert!(!Envelope::text("call.invite").is_call(), "text that names a type is text");
         assert!(Envelope::parse(&invite).unwrap().as_text().is_none(), "a call is not text");
+    }
+
+    #[test]
+    fn group_call_golden_vectors() {
+        let (id, room) = ("ab".repeat(16), "cd".repeat(16));
+        let node = format!("203.0.113.7:8443#{}", "ef".repeat(32));
+        let start = Envelope::call_start(&id, &room, &node, None, &"12".repeat(24), "c2VjcmV0", "audio", 1_760_043_200);
+        assert_eq!(
+            start.encode(),
+            format!(
+                r#"{{"v":1,"t":"call.start","call_id":"{id}","epoch":1,"expires_at":1760043200,"join_token":"{}","media":"audio","node":"{node}","room_id":"{room}","secret":"c2VjcmV0"}}"#,
+                "12".repeat(24)
+            )
+        );
+        assert!(start.is_call());
+        assert!(start.fields.get("key").is_none(), "no key for a public node");
+        let keyed = Envelope::call_start(&id, &room, &node, Some("k1"), "t", "s", "video", 1);
+        assert_eq!(keyed.str_field("key"), Some("k1"));
+        assert_eq!(Envelope::parse(&keyed.encode()).unwrap(), keyed);
+        assert_eq!(Envelope::call_join(&id, 3).encode(), format!(r#"{{"v":1,"t":"call.join","call_id":"{id}","participant":3}}"#));
+        assert_eq!(Envelope::call_leave(&id, 3).encode(), format!(r#"{{"v":1,"t":"call.leave","call_id":"{id}","participant":3}}"#));
+        assert_eq!(
+            Envelope::call_epoch(&id, 2, "bmV4dA==", None).encode(),
+            format!(r#"{{"v":1,"t":"call.epoch","call_id":"{id}","epoch":2,"secret":"bmV4dA=="}}"#)
+        );
+        assert_eq!(
+            Envelope::call_epoch(&id, 3, "bmV4dA==", Some("t2")).encode(),
+            format!(r#"{{"v":1,"t":"call.epoch","call_id":"{id}","epoch":3,"join_token":"t2","secret":"bmV4dA=="}}"#)
+        );
+        assert_eq!(Envelope::parse(&Envelope::call_epoch(&id, 2, "x", None).encode()).unwrap().fields.get("epoch"), Some(&serde_json::json!(2)));
     }
 
     #[test]

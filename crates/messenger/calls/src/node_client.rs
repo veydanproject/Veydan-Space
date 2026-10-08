@@ -42,6 +42,9 @@ pub const PROTOCOL_MAX: u16 = 1;
 pub const ALPN: &[u8] = b"vcall/1";
 const PATH_HELLO: &str = "/v1/hello";
 const PATH_TURN: &str = "/v1/turn";
+const PATH_ROOMS: &str = "/v1/rooms";
+/// What a node with an SFU says in `capabilities`.
+pub const CAP_SFU: &str = "sfu";
 /// A request or an answer is a few hundred bytes; more is not one.
 const MAX_BODY: usize = 64 * 1024;
 
@@ -140,6 +143,192 @@ pub struct Refusal {
     pub message: String,
 }
 
+/// What a node allows a room: the creator may lower the node's limits,
+/// never raise them (`None` is the node's own).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaLimits {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_participants: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kbps_per_participant: Option<u32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoomRequest {
+    #[serde(default)]
+    pub access: Access,
+    #[serde(default)]
+    pub media_limits: MediaLimits,
+}
+
+/// The room as made: the label, the two tokens and the limits as set
+/// (the node's, not the client's: shown, never carried as numbers of
+/// the client's own).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoomCreated {
+    pub room_id: String,
+    pub join_token: String,
+    pub admin_token: String,
+    /// Unix seconds by the node's clock: the room ends then whatever goes on.
+    pub expires_at: u64,
+    #[serde(default)]
+    pub idle_secs: u32,
+    #[serde(default)]
+    pub max_participants: u32,
+    #[serde(default)]
+    pub kbps_per_participant: u32,
+    #[serde(default)]
+    pub sfu_udp: String,
+    #[serde(default)]
+    pub sfu_tcp: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JoinRequest {
+    pub token: String,
+    pub sdp_offer: String,
+    #[serde(default)]
+    pub caps: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Joined {
+    pub sdp_answer: String,
+    /// My seat: what the others see me as.
+    pub participant_id: u32,
+    /// For `leave` alone.
+    pub participant_token: String,
+    /// Who is in the room already.
+    #[serde(default)]
+    pub participants: Vec<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeaveRequest {
+    pub participant_id: u32,
+    pub token: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenRequest {
+    pub admin_token: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenChanged {
+    pub join_token: String,
+}
+
+/// Why a request to a node failed: the node refused it with a word
+/// (`404 room_not_found`, `403 bad_token`, `409 room_full`, `429
+/// rooms_full`…), or the way to it did not work.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NodeError {
+    Refused { status: u16, error: String, message: String },
+    Unreachable(String),
+}
+
+impl NodeError {
+    /// The node's word, when it refused.
+    pub fn word(&self) -> Option<&str> {
+        match self {
+            Self::Refused { error, .. } => Some(error),
+            Self::Unreachable(_) => None,
+        }
+    }
+
+    pub fn status(&self) -> Option<u16> {
+        match self {
+            Self::Refused { status, .. } => Some(*status),
+            Self::Unreachable(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for NodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused { status, error, message } => write!(f, "{status} {error}: {message}"),
+            Self::Unreachable(e) => f.write_str(e),
+        }
+    }
+}
+
+impl From<NodeError> for MessengerError {
+    fn from(e: NodeError) -> Self {
+        MessengerError::Transport(format!("call node: {e}"))
+    }
+}
+
+/// The rooms of an SFU, as a client sees them (services/call/spec/protocol.md,
+/// "Комнаты"). Implemented over the control channel here; the tests give
+/// a fake node.
+#[async_trait::async_trait]
+pub trait RoomApi: Send + Sync {
+    /// `POST /v1/rooms`: a room on `node` with the access it needs.
+    async fn create(&self, node: &CallNode, limits: MediaLimits) -> std::result::Result<RoomCreated, NodeError>;
+    /// `POST /v1/rooms/{id}/join` with my one offer; the node's answer
+    /// carries its candidates.
+    async fn join(&self, node: &CallNode, room_id: &str, token: &str, sdp_offer: &str) -> std::result::Result<Joined, NodeError>;
+    /// `POST /v1/rooms/{id}/leave`: my own token gives my seat up, the
+    /// admin's gives anybody's.
+    async fn leave(&self, node: &CallNode, room_id: &str, participant_id: u32, token: &str) -> std::result::Result<(), NodeError>;
+    /// `POST /v1/rooms/{id}/token`: a new join token; the old one lets
+    /// nobody in from now on.
+    async fn change_token(&self, node: &CallNode, room_id: &str, admin_token: &str) -> std::result::Result<String, NodeError>;
+}
+
+/// The rooms over the control channel of the node.
+pub struct HttpRooms {
+    client_name: String,
+}
+
+impl HttpRooms {
+    pub fn new(client_name: &str) -> Self {
+        Self { client_name: client_name.to_string() }
+    }
+
+    async fn session(&self, node: &CallNode) -> std::result::Result<h2::client::SendRequest<Bytes>, NodeError> {
+        let send = connect(node).await.map_err(|e| NodeError::Unreachable(e.to_string()))?;
+        let short = node.node.id.short();
+        let access = Access { key: node.access_key.clone() };
+        let welcome: Welcome = post(&send, PATH_HELLO, &hello(access, &self.client_name), short.as_str()).await?;
+        if welcome.node_id != node.node.id.to_string() {
+            return Err(NodeError::Unreachable(format!("node {short}: says it is another node")));
+        }
+        Ok(send)
+    }
+}
+
+#[async_trait::async_trait]
+impl RoomApi for HttpRooms {
+    async fn create(&self, node: &CallNode, limits: MediaLimits) -> std::result::Result<RoomCreated, NodeError> {
+        let send = self.session(node).await?;
+        let request = RoomRequest { access: Access { key: node.access_key.clone() }, media_limits: limits };
+        post(&send, PATH_ROOMS, &request, node.node.id.short().as_str()).await
+    }
+
+    async fn join(&self, node: &CallNode, room_id: &str, token: &str, sdp_offer: &str) -> std::result::Result<Joined, NodeError> {
+        let send = self.session(node).await?;
+        let request = JoinRequest { token: token.to_string(), sdp_offer: sdp_offer.to_string(), caps: vec![] };
+        post(&send, &format!("{PATH_ROOMS}/{room_id}/join"), &request, node.node.id.short().as_str()).await
+    }
+
+    async fn leave(&self, node: &CallNode, room_id: &str, participant_id: u32, token: &str) -> std::result::Result<(), NodeError> {
+        let send = self.session(node).await?;
+        let request = LeaveRequest { participant_id, token: token.to_string() };
+        let _: serde_json::Value = post(&send, &format!("{PATH_ROOMS}/{room_id}/leave"), &request, node.node.id.short().as_str()).await?;
+        Ok(())
+    }
+
+    async fn change_token(&self, node: &CallNode, room_id: &str, admin_token: &str) -> std::result::Result<String, NodeError> {
+        let send = self.session(node).await?;
+        let request = TokenRequest { admin_token: admin_token.to_string() };
+        let changed: TokenChanged = post(&send, &format!("{PATH_ROOMS}/{room_id}/token"), &request, node.node.id.short().as_str()).await?;
+        Ok(changed.join_token)
+    }
+}
+
 /// What this client says of itself in HELLO.
 pub fn hello(access: Access, client: &str) -> Hello {
     Hello {
@@ -207,9 +396,9 @@ pub struct Picked {
 }
 
 /// What `fetch` gives: WELCOME, the credentials, the round trip.
-type Fetched = (Welcome, TurnCredentials, Duration);
-/// The way to a node; the tests put a fake one in.
-type Fetch = Arc<dyn Fn(CallNode, String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Fetched>> + Send>> + Send + Sync>;
+pub type Fetched = (Welcome, TurnCredentials, Duration);
+/// The way to a node; the tests put a fake one in (`NodeClient::with_fetch`).
+pub type Fetch = Arc<dyn Fn(CallNode, String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Fetched>> + Send>> + Send + Sync>;
 
 struct Inner {
     client_name: String,
@@ -228,7 +417,8 @@ impl NodeClient {
         Self::with_fetch(client_name, Arc::new(|node, name| Box::pin(async move { fetch(&node, &name).await })))
     }
 
-    fn with_fetch(client_name: &str, fetch: Fetch) -> Self {
+    /// A client whose way to every node is `fetch`: the fakes of the tests.
+    pub fn with_fetch(client_name: &str, fetch: Fetch) -> Self {
         Self { inner: Arc::new(Inner { client_name: client_name.to_string(), cache: Mutex::new(HashMap::new()), fetch }) }
     }
 
@@ -296,6 +486,37 @@ impl NodeClient {
             limits: chosen.first().map(|a| a.welcome.limits.clone()),
         })
     }
+
+    /// The node a group call makes its room on: of the first class of
+    /// `nodes` (in order of priority) with a node that answers and has an
+    /// SFU, the nearest. The classes are asked one after another, as in
+    /// `pick`. `None` when no node with an SFU answers.
+    pub async fn pick_sfu(&self, nodes: &[CallNode], now: i64) -> Option<NodeAccess> {
+        let mut classes: Vec<NodeClass> = nodes.iter().map(|n| n.class).collect();
+        classes.sort_unstable();
+        classes.dedup();
+        let deadline = tokio::time::Instant::now() + PICK_TIMEOUT;
+        for class in classes {
+            let mut tasks = tokio::task::JoinSet::new();
+            for node in nodes.iter().filter(|n| n.class == class) {
+                let (client, node) = (self.clone(), node.clone());
+                tasks.spawn(async move { client.access(&node, now).await });
+            }
+            let class_deadline = deadline.min(tokio::time::Instant::now() + CLASS_TIMEOUT);
+            let mut answered: Vec<NodeAccess> = Vec::new();
+            while let Ok(Some(joined)) = tokio::time::timeout_at(class_deadline, tasks.join_next()).await {
+                if let Ok(Ok(access)) = joined {
+                    if access.welcome.capabilities.iter().any(|c| c == CAP_SFU) {
+                        answered.push(access);
+                    }
+                }
+            }
+            if let Some(best) = answered.into_iter().min_by_key(|a| a.rtt) {
+                return Some(best);
+            }
+        }
+        None
+    }
 }
 
 fn transport(e: impl std::fmt::Display) -> MessengerError {
@@ -319,6 +540,31 @@ fn client_config(id: BridgeId) -> Result<rustls::ClientConfig> {
 async fn fetch(node: &CallNode, client_name: &str) -> Result<Fetched> {
     let short = node.node.id.short();
     let short = short.as_str();
+    let send = connect(node).await?;
+    let access = Access { key: node.access_key.clone() };
+    let started = Instant::now();
+    let welcome: Welcome = post(&send, PATH_HELLO, &hello(access.clone(), client_name), short).await?;
+    let hello_rtt = started.elapsed();
+    let low = PROTOCOL_MIN.max(welcome.protocol_min);
+    let high = PROTOCOL_MAX.min(welcome.protocol_max);
+    if low > high {
+        return Err(MessengerError::Transport(format!("node {short}: no protocol version in common")));
+    }
+    if welcome.node_id != node.node.id.to_string() {
+        return Err(MessengerError::Transport(format!("node {short}: says it is another node")));
+    }
+    let credentials: TurnCredentials = post(&send, PATH_TURN, &TurnRequest { access }, short).await?;
+    let rtt = match stun_addr(&credentials) {
+        Some(addr) => stun_rtt(addr).await.unwrap_or(hello_rtt),
+        None => hello_rtt,
+    };
+    Ok((welcome, credentials, rtt))
+}
+
+/// The control channel of `node`: TLS with its id pinned, h2.
+async fn connect(node: &CallNode) -> Result<h2::client::SendRequest<Bytes>> {
+    let short = node.node.id.short();
+    let short = short.as_str();
     let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(node.node.addr))
         .await
         .map_err(|_| MessengerError::Transport(format!("node {short}: no connection in time")))?
@@ -340,25 +586,7 @@ async fn fetch(node: &CallNode, client_name: &str) -> Result<Fetched> {
     tokio::spawn(async move {
         let _ = connection.await;
     });
-
-    let access = Access { key: node.access_key.clone() };
-    let started = Instant::now();
-    let welcome: Welcome = post(&send, PATH_HELLO, &hello(access.clone(), client_name), short).await?;
-    let hello_rtt = started.elapsed();
-    let low = PROTOCOL_MIN.max(welcome.protocol_min);
-    let high = PROTOCOL_MAX.min(welcome.protocol_max);
-    if low > high {
-        return Err(MessengerError::Transport(format!("node {short}: no protocol version in common")));
-    }
-    if welcome.node_id != node.node.id.to_string() {
-        return Err(MessengerError::Transport(format!("node {short}: says it is another node")));
-    }
-    let credentials: TurnCredentials = post(&send, PATH_TURN, &TurnRequest { access }, short).await?;
-    let rtt = match stun_addr(&credentials) {
-        Some(addr) => stun_rtt(addr).await.unwrap_or(hello_rtt),
-        None => hello_rtt,
-    };
-    Ok((welcome, credentials, rtt))
+    Ok(send)
 }
 
 /// One request; a status other than 200 is the node's refusal.
@@ -367,29 +595,34 @@ async fn post<T: Serialize, R: DeserializeOwned>(
     path: &str,
     body: &T,
     short: &str,
-) -> Result<R> {
-    let mut send = send.clone().ready().await.map_err(transport)?;
+) -> std::result::Result<R, NodeError> {
+    let unreachable = |e: MessengerError| NodeError::Unreachable(e.to_string());
+    let mut send = send.clone().ready().await.map_err(transport).map_err(unreachable)?;
     let request = http::Request::builder()
         .method(http::Method::POST)
         .uri(path)
         .header("content-type", "application/json")
         .body(())
-        .map_err(transport)?;
-    let (response, mut stream) = send.send_request(request, false).map_err(transport)?;
-    stream.send_data(Bytes::from(serde_json::to_vec(body)?), true).map_err(transport)?;
+        .map_err(transport)
+        .map_err(unreachable)?;
+    let (response, mut stream) = send.send_request(request, false).map_err(transport).map_err(unreachable)?;
+    let json = serde_json::to_vec(body).map_err(|e| NodeError::Unreachable(e.to_string()))?;
+    stream.send_data(Bytes::from(json), true).map_err(transport).map_err(unreachable)?;
     let response = tokio::time::timeout(REQUEST_TIMEOUT, response)
         .await
-        .map_err(|_| MessengerError::Transport(format!("node {short}: no answer in time")))?
-        .map_err(transport)?;
+        .map_err(|_| NodeError::Unreachable(format!("node {short}: no answer in time")))?
+        .map_err(transport)
+        .map_err(unreachable)?;
     let status = response.status().as_u16();
     let body = tokio::time::timeout(REQUEST_TIMEOUT, read_body(response.into_body()))
         .await
-        .map_err(|_| MessengerError::Transport(format!("node {short}: no answer in time")))??;
+        .map_err(|_| NodeError::Unreachable(format!("node {short}: no answer in time")))?
+        .map_err(unreachable)?;
     if status == 200 {
-        return serde_json::from_slice(&body).map_err(|e| MessengerError::Transport(format!("node {short}: {e}")));
+        return serde_json::from_slice(&body).map_err(|e| NodeError::Unreachable(format!("node {short}: {e}")));
     }
     let refusal: Refusal = serde_json::from_slice(&body).unwrap_or(Refusal { error: "http".into(), message: format!("status {status}") });
-    Err(MessengerError::Transport(format!("node {short}: {status} {}: {}", refusal.error, refusal.message)))
+    Err(NodeError::Refused { status, error: refusal.error, message: format!("node {short}: {}", refusal.message) })
 }
 
 async fn read_body(mut body: h2::RecvStream) -> Result<Vec<u8>> {
@@ -508,7 +741,8 @@ mod tests {
                         protocol_max: 1,
                         node_id: node.node.id.to_string(),
                         version: String::new(),
-                        capabilities: vec![],
+                        // Nodes on a port below 100 have an SFU.
+                        capabilities: if port < 100 { vec![CAP_SFU.into()] } else { vec![] },
                         codecs: vec![],
                         private: false,
                         limits: Limits { turn_lifetime_secs: 600, ..Limits::default() },
@@ -550,6 +784,26 @@ mod tests {
         let mut all = asked.lock().unwrap().clone();
         all.sort_unstable();
         assert_eq!(all, vec![3100, 3200, 3300]);
+    }
+
+    #[tokio::test]
+    async fn a_room_is_made_on_the_nearest_node_with_an_sfu() {
+        // Port 2 answers with an SFU, 3000 without (see `fake_client`):
+        // my own node has no SFU, so the project's is taken; nobody
+        // answers with one among two classes: none.
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = fake_client(asked.clone());
+        let nodes = [node(NodeClass::Own, 3000), node(NodeClass::Project, 2), node(NodeClass::Project, 4)];
+        let picked = client.pick_sfu(&nodes, 0).await.unwrap();
+        assert_eq!(picked.node.node.addr.port(), 2, "the nearest of the two with an SFU");
+        assert!(client.pick_sfu(&[node(NodeClass::Own, 3000), node(NodeClass::Volunteer, 1)], 0).await.is_none());
+        let e = NodeError::Refused { status: 404, error: "room_not_found".into(), message: "x".into() };
+        assert_eq!((e.word(), e.status()), (Some("room_not_found"), Some(404)));
+        assert!(MessengerError::from(e).to_string().contains("room_not_found"));
+        assert!(NodeError::Unreachable("down".into()).word().is_none());
+        assert_eq!(serde_json::to_value(RoomRequest::default()).unwrap(), serde_json::json!({ "access": {}, "media_limits": {} }));
+        let joined: Joined = serde_json::from_str(r#"{"sdp_answer":"v=0","participant_id":2,"participant_token":"t"}"#).unwrap();
+        assert!(joined.participants.is_empty());
     }
 
     #[tokio::test]

@@ -37,17 +37,29 @@
 //!    prints the size and the rate of what the far end sends; `video on`, `video off` and `camera` on stdin as well)
 //! messenger-cli [--data-dir DIR] call-answer [--wait N] [the flags of call]   (one incoming call: answered, held until it ends)
 //! messenger-cli [--data-dir DIR] call-wait [the flags of call]                (every incoming call, until Ctrl-C)
+//! messenger-cli [--data-dir DIR] gcall <group:ID> [the flags of call]          (start a call in the group, stay in its room)
+//! messenger-cli [--data-dir DIR] gcall-join <group:ID> [--wait N] [the flags of call]   (join the call that is on in the group)
+//! messenger-cli [--data-dir DIR] gcall-wait <group:ID> [the flags of call]     (join every call of the group, until Ctrl-C)
+//! messenger-cli [--data-dir DIR] group-node <group:ID> <address:port#id|none> [--key K]   (pin a call node to the group)
 //! messenger-cli manifest-keygen <secret-file>
 //! messenger-cli manifest-sign --key-file <secret-file> <doc.json> <signed.json>
 //! ```
 //!
 //! A call lives in the process that holds it: `call` and `call-answer`
 //! stay in the call and read `end`, `mute`, `unmute` and `state` from
-//! stdin until it is over. The sound goes through the engine's pushed
+//! stdin until it is over; `gcall` and `gcall-join` stay in the room and
+//! read `leave`, `mute`, `unmute`, `video on|off`, `layer <seat> <rid>`
+//! and `state`, print the seats of the room as they change (who, verified,
+//! speaking, the m-lines of their sound and video), the way to the node,
+//! and at the end what came from every seat: the tones in its sound, the
+//! frames of its video. The sound goes through the engine's pushed
 //! path, 48 kHz mono: a tone or a WAV file in, a WAV file out, and the
 //! received tail is measured for the tones of the other side (440 and
 //! 660 Hz, the ones the live checks send) so that a run without a sound
-//! card still says whether the sound came through.
+//! card still says whether the sound came through. `gcall-wait` joins
+//! the calls of the group one after another: never again the call it
+//! left (the others may stay in it) or one it failed to join three
+//! times, only the next one announced.
 //!
 //! Secrets live in `<data-dir>/secrets.json` in plaintext: development only.
 
@@ -63,7 +75,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -110,7 +122,7 @@ async fn main() {
     // keeps what comes out (no sound card involved); every other command
     // leaves the engine of the runtime alone.
     let mut call_engine = None;
-    let rt = if cmd.starts_with("call") {
+    let rt = if cmd.starts_with("call") || cmd.starts_with("gcall") {
         let engine = Arc::new(RtcEngine::new(AudioMode::Pushed(AudioProcessing::NONE)).unwrap_or_else(die));
         call_engine = Some(engine.clone());
         MessengerRuntime::start_with_engine(config, secrets, engine).await.unwrap_or_else(die)
@@ -1125,7 +1137,7 @@ async fn main() {
                 _ => {
                     rt.group_act(
                         &id,
-                        messenger_runtime::GroupOp::EditSettings { name: Some(args[1..].join(" ")), about: None, picture: None, history_for_new: None },
+                        messenger_runtime::GroupOp::EditSettings { name: Some(args[1..].join(" ")), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None },
                     )
                     .await
                 }
@@ -1152,6 +1164,40 @@ async fn main() {
                 }
                 "call-answer" => call_in(&rt, &engine, &plan, true).await,
                 _ => call_in(&rt, &engine, &plan, false).await,
+            }
+        }
+        "gcall" | "gcall-join" | "gcall-wait" => {
+            let engine = call_engine.take().expect("the engine of the call commands");
+            let plan = CallPlan::take(&mut args, &cmd);
+            let Some(group) = args.first() else { usage() };
+            let group = group_id(&rt, group.trim_start_matches("group:")).await;
+            match cmd.as_str() {
+                "gcall" => gcall_start(&rt, &engine, &group, &plan).await,
+                "gcall-join" => gcall_wait(&rt, &engine, &group, &plan, true).await,
+                _ => gcall_wait(&rt, &engine, &group, &plan, false).await,
+            }
+        }
+        "group-node" => {
+            let key = take_flag(&mut args, "--key");
+            if args.len() < 2 {
+                usage();
+            }
+            let id = group_id(&rt, args[0].trim_start_matches("group:")).await;
+            let node = if args[1] == "none" { String::new() } else { args[1].clone() };
+            settle(&rt, 3).await;
+            let op = messenger_runtime::GroupOp::EditSettings {
+                name: None,
+                about: None,
+                picture: None,
+                history_for_new: None,
+                call_node: Some(node),
+                call_node_key: Some(key.unwrap_or_default()),
+            };
+            rt.group_act(&id, op).await.unwrap_or_else(die);
+            flush(&rt).await;
+            match rt.groups().call_node_of(&id).await.unwrap_or_else(die) {
+                Some((node, key)) => println!("call node {node}{}", if key.is_some() { " (with a key)" } else { "" }),
+                None => println!("call node none"),
             }
         }
         _ => usage(),
@@ -1512,9 +1558,10 @@ fn body_line(m: &messenger_runtime::MessageView) -> String {
 
 // ─── Calls ───────────────────────────────────────────────────────────────────
 
-/// The tones the live checks send each way; the received tail is
-/// measured for both, whichever side this is.
-const TONES: [f64; 2] = [440.0, 660.0];
+/// The tones the live checks send: the caller the first, the called side
+/// the second, a third participant of a room the third; the received
+/// tail is measured for all of them, whichever side this is.
+const TONES: [f64; 3] = [440.0, 660.0, 880.0];
 /// How much of the end of the received sound is measured: past the ramp
 /// of the jitter buffer.
 const TAIL_SECS: usize = 2;
@@ -1544,8 +1591,9 @@ impl CallPlan {
         let relay_only = take_switch(args, "--relay-only");
         let nodes = take_flag(args, "--node").map(|s| s.split(',').map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).collect()).unwrap_or_default();
         let source = match take_flag(args, "--audio-in").as_deref() {
-            // The caller sends the first tone, the answering side the second.
-            None | Some("tone") => AudioSource::Tone(if cmd == "call" { TONES[0] } else { TONES[1] }),
+            // The caller sends the first tone, the answering side the second
+            // (a third seat of a room says `--audio-in tone:880`).
+            None | Some("tone") => AudioSource::Tone(if cmd == "call" || cmd == "gcall" { TONES[0] } else { TONES[1] }),
             Some(spec) if spec.starts_with("tone:") => AudioSource::Tone(spec[5..].parse().unwrap_or_else(|_| usage())),
             Some(path) => AudioSource::Wav(read_wav(path)),
         };
@@ -1852,7 +1900,14 @@ fn pump_video(source: VideoSource, mut wanted: tokio::sync::watch::Receiver<bool
 
 /// Counts the far end's frames by the second and says so, with the size
 /// and the rotation whenever they change.
-fn watch_video(mut remote: tokio::sync::broadcast::Receiver<Arc<VideoFrame>>, got: Arc<std::sync::Mutex<VideoGot>>) -> tokio::task::JoinHandle<()> {
+fn watch_video(remote: tokio::sync::broadcast::Receiver<Arc<VideoFrame>>, got: Arc<std::sync::Mutex<VideoGot>>) -> tokio::task::JoinHandle<()> {
+    watch_video_of("", remote, got)
+}
+
+/// [`watch_video`] of one video among several: `label` names it in what
+/// is printed (the seat of a room and the m-line of its video).
+fn watch_video_of(label: &str, mut remote: tokio::sync::broadcast::Receiver<Arc<VideoFrame>>, got: Arc<std::sync::Mutex<VideoGot>>) -> tokio::task::JoinHandle<()> {
+    let label = if label.is_empty() { String::new() } else { format!("{label}: ") };
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         let mut in_second = 0u32;
@@ -1870,7 +1925,7 @@ fn watch_video(mut remote: tokio::sync::broadcast::Receiver<Arc<VideoFrame>>, go
                         if size != Some(s) {
                             size = Some(s);
                             g.sizes.push(s);
-                            println!("{} video: frames of {}x{} rotation {} ({})", stamp(), s.0, s.1, s.2, if pattern { "the test pattern" } else { "not the test pattern" });
+                            println!("{} video: {label}frames of {}x{} rotation {} ({})", stamp(), s.0, s.1, s.2, if pattern { "the test pattern" } else { "not the test pattern" });
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
@@ -1881,7 +1936,7 @@ fn watch_video(mut remote: tokio::sync::broadcast::Receiver<Arc<VideoFrame>>, go
                         let mut g = got.lock().unwrap();
                         g.peak_fps = g.peak_fps.max(in_second);
                         if let Some((w, h, _)) = size {
-                            println!("{} video: {in_second} fps {w}x{h}", stamp());
+                            println!("{} video: {label}{in_second} fps {w}x{h}", stamp());
                         }
                     }
                     in_second = 0;
@@ -1934,11 +1989,17 @@ fn pump_audio(input: messenger_rtc::AudioInput, source: &AudioSource) -> tokio::
 /// What came from the far end: how much, how loud its tail was and how
 /// much of the tail is each of the tones; the whole of it to a file.
 fn report_received(got: &[i16], out: Option<&std::path::Path>) {
+    report_received_of("", got, out);
+}
+
+/// [`report_received`] of one sound among several (`label`: whose).
+fn report_received_of(label: &str, got: &[i16], out: Option<&std::path::Path>) {
     let secs = got.len() as f64 / SAMPLE_RATE as f64;
     let tail = &got[got.len().saturating_sub(TAIL_SECS * SAMPLE_RATE as usize)..];
     let rms = if tail.is_empty() { 0.0 } else { (tail.iter().map(|&x| (x as f64).powi(2)).sum::<f64>() / tail.len() as f64).sqrt() };
     let tones: Vec<String> = TONES.iter().map(|hz| format!("{hz} Hz {:.3}", tone_ratio(tail, *hz))).collect();
-    println!("{} audio received {secs:.1} s; tail rms {rms:.0}; tone {}", stamp(), tones.join(", "));
+    let label = if label.is_empty() { String::new() } else { format!("{label}: ") };
+    println!("{} audio received {label}{secs:.1} s; tail rms {rms:.0}; tone {}", stamp(), tones.join(", "));
     if let Some(path) = out {
         match write_wav(path, got) {
             Ok(()) => println!("{} audio written to {}", stamp(), path.display()),
@@ -2049,6 +2110,444 @@ fn write_wav(path: &std::path::Path, samples: &[i16]) -> std::io::Result<()> {
         out.extend_from_slice(&s.to_le_bytes());
     }
     std::fs::write(path, out)
+}
+
+// ─── Group calls ─────────────────────────────────────────────────────────────
+
+/// `gcall <group>`: start a call in the group, stay in its room until I
+/// leave or it ends.
+async fn gcall_start(rt: &MessengerRuntime, engine: &RtcEngine, group: &str, plan: &CallPlan) {
+    wait_connect(rt).await;
+    plan.apply(rt).await;
+    let mut events = rt.ui_events();
+    let mut taps = engine.audio_taps().expect("the taps of the engine, once");
+    let media = if plan.video { messenger_runtime::CallMedia::Video } else { messenger_runtime::CallMedia::Audio };
+    let issued = std::time::Instant::now();
+    println!("{} gcall group:{} {media:?}", stamp(), &group[..12]);
+    let view = rt.group_call_start(group, media).await.unwrap_or_else(die);
+    println!("{} started {} phase {:?} node {} seat {:?}", stamp(), view.call_id, view.phase, view.node, view.participant);
+    in_room(rt, &mut events, &mut taps, plan, &view.call_id, issued).await;
+    flush(rt).await;
+}
+
+/// How many times `gcall-wait` tries to join one call before it gives
+/// that call up and waits for the next one.
+const JOIN_TRIES: u32 = 3;
+
+/// The call `gcall-wait` is done with: the one it just left (the others
+/// may stay in it, so the group still announces it with `joined: false`)
+/// or the one whose join failed `JOIN_TRIES` times (a stable reason).
+/// That call is not joined again; the next `group_call.started` with a
+/// new id is.
+#[derive(Default)]
+struct DoneWith {
+    call_id: Option<String>,
+    /// The call whose joins failed so far, and how many times.
+    failing: Option<(String, u32)>,
+}
+
+impl DoneWith {
+    /// Whether the announced `call_id` is to be waited past.
+    fn skips(&self, call_id: &str) -> bool {
+        self.call_id.as_deref() == Some(call_id)
+    }
+
+    /// Left `call_id` (or it ended): not again.
+    fn left(&mut self, call_id: &str) {
+        self.call_id = Some(call_id.to_string());
+        self.failing = None;
+    }
+
+    /// A join of `call_id` failed: `true` to try it again, `false` once
+    /// it failed `JOIN_TRIES` times (then it is skipped like a left one).
+    fn failed(&mut self, call_id: &str) -> bool {
+        let tries = match self.failing.take() {
+            Some((id, n)) if id == call_id => n + 1,
+            _ => 1,
+        };
+        if tries >= JOIN_TRIES {
+            self.left(call_id);
+            return false;
+        }
+        self.failing = Some((call_id.to_string(), tries));
+        true
+    }
+}
+
+/// `gcall-join` (one call) and `gcall-wait` (every call of the group):
+/// join the call announced in the group, waiting for the announcement
+/// when there is none yet.
+async fn gcall_wait(rt: &MessengerRuntime, engine: &RtcEngine, group: &str, plan: &CallPlan, once: bool) {
+    wait_connect(rt).await;
+    plan.apply(rt).await;
+    let mut events = rt.ui_events();
+    let mut taps = engine.audio_taps().expect("the taps of the engine, once");
+    let me = rt.identity().get().await.unwrap_or_else(die).map(|i| i.npub).unwrap_or_default();
+    println!(
+        "{} waiting for a call in group:{} as {me}{}",
+        stamp(),
+        &group[..12],
+        if once { format!(" (up to {} s)", plan.wait) } else { " — Ctrl-C to stop".into() }
+    );
+    let mut done = DoneWith::default();
+    loop {
+        let deadline = tokio::time::sleep(Duration::from_secs(if once { plan.wait } else { u64::MAX / 4 }));
+        tokio::pin!(deadline);
+        // Announced already (the notes came before this command), or
+        // announced while we wait; never the call I left or gave up.
+        let mut announced = rt.group_call_state(Some(group)).await.announced.filter(|a| !a.joined && !done.skips(&a.call_id));
+        if announced.is_none() {
+            announced = loop {
+                tokio::select! {
+                    ev = events.recv() => match ev {
+                        Ok(e) if e.name == messenger_runtime::UI_EVENT_GROUP_CALL_STARTED => {
+                            let call = &e.payload["call"];
+                            if call["group_id"] != group || call["joined"] == true || call["call_id"].as_str().is_some_and(|id| done.skips(id)) {
+                                continue;
+                            }
+                            println!(
+                                "{} group_call.started {} by {} media {} participants {}",
+                                stamp(),
+                                call["call_id"].as_str().unwrap_or("?"),
+                                call["started_by"].as_str().map(|s| &s[..12]).unwrap_or("?"),
+                                call["media"],
+                                call["participants"]
+                            );
+                            break serde_json::from_value::<messenger_runtime::GroupCallAnnounced>(call.clone()).ok();
+                        }
+                        Ok(e) if e.name == messenger_runtime::UI_EVENT_GROUP_CALL_ENDED => {
+                            println!("{} group_call.ended {} ({})", stamp(), e.payload["call"]["call_id"].as_str().unwrap_or("?"), e.payload["outcome"]);
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => eprintln!("(lagged {n})"),
+                        Err(_) => return,
+                    },
+                    _ = &mut deadline => {
+                        println!("{} no call came in {} s", stamp(), plan.wait);
+                        return;
+                    }
+                    _ = tokio::signal::ctrl_c() => return,
+                }
+            };
+        }
+        let Some(announced) = announced else { continue };
+        let joining = std::time::Instant::now();
+        match rt.group_call_join(group).await {
+            Ok(view) => println!("{} joined {} phase {:?} node {} seat {:?}", stamp(), view.call_id, view.phase, view.node, view.participant),
+            Err(e) => {
+                eprintln!("{} join failed: {e}", stamp());
+                if once {
+                    return;
+                }
+                if done.failed(&announced.call_id) {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                } else {
+                    println!("{} giving up {} after {JOIN_TRIES} tries; waiting for the next call — Ctrl-C to stop", stamp(), announced.call_id);
+                }
+                continue;
+            }
+        }
+        in_room(rt, &mut events, &mut taps, plan, &announced.call_id, joining).await;
+        flush(rt).await;
+        if once {
+            return;
+        }
+        // The call may go on without me: it is not mine to join again.
+        done.left(&announced.call_id);
+        println!("{} waiting for the next call — Ctrl-C to stop", stamp());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DoneWith, JOIN_TRIES};
+
+    /// The call `gcall-wait` left is not joined again while the group
+    /// still announces it; the next call (a new id) is.
+    #[test]
+    fn a_left_call_is_waited_past_until_a_new_one() {
+        let mut done = DoneWith::default();
+        assert!(!done.skips("call-1"), "nothing left yet: the first call is joined");
+        done.left("call-1");
+        assert!(done.skips("call-1"), "the call I left, still live for the others, is not rejoined");
+        assert!(!done.skips("call-2"), "a new call of the group is joined");
+        done.left("call-2");
+        assert!(!done.skips("call-1"), "only the last one left is skipped: a call started anew is new");
+        assert!(done.skips("call-2"));
+    }
+
+    /// A join that fails is retried a bounded number of times, then the
+    /// call is given up like a left one: no retry of the same call forever.
+    #[test]
+    fn a_failing_join_is_retried_then_given_up() {
+        let mut done = DoneWith::default();
+        for n in 1..JOIN_TRIES {
+            assert!(done.failed("call-1"), "try {n} of {JOIN_TRIES}: retried");
+            assert!(!done.skips("call-1"), "still wanted while retried");
+        }
+        assert!(!done.failed("call-1"), "the last try: given up");
+        assert!(done.skips("call-1"), "the given-up call is waited past");
+        assert!(!done.skips("call-2"), "the next call is joined");
+        // The failures of one call do not count against another.
+        for _ in 1..JOIN_TRIES {
+            assert!(done.failed("call-2"), "the new call gets its own tries");
+        }
+        assert!(!done.skips("call-2"), "still wanted: its own tries are not out");
+        assert!(done.failed("call-3"), "a third call starts its count afresh");
+        assert!(!done.skips("call-2") && !done.skips("call-3"));
+    }
+}
+
+/// What came of the sound and the video of every seat: by the m-lines
+/// of their tracks, with the seat the room's state named for each.
+#[derive(Default)]
+struct RoomGot {
+    /// The sound by its m-line.
+    audio: std::collections::BTreeMap<String, Vec<i16>>,
+    /// The video by its m-line.
+    video: std::collections::BTreeMap<String, Arc<std::sync::Mutex<VideoGot>>>,
+    /// Whose m-line each is, as the state last said.
+    seats: std::collections::BTreeMap<String, u32>,
+}
+
+/// In the room from here to my leaving or the end of the call: the sound
+/// pumped, the sound of every seat kept by its m-line, the video pushed
+/// while wanted and the video of every seat counted, the seats printed
+/// as they change (who, verified, speaking, their m-lines), the way to
+/// the node, stdin read for `leave`, `mute`, `unmute`, `video on|off`,
+/// `layer <seat> <rid>`, `state`; `--secs` leaves after that long in the
+/// room; Ctrl-C leaves.
+async fn in_room(
+    rt: &MessengerRuntime,
+    events: &mut tokio::sync::broadcast::Receiver<messenger_core::traits::UiEvent>,
+    taps: &mut tokio::sync::mpsc::UnboundedReceiver<AudioTap>,
+    plan: &CallPlan,
+    call_id: &str,
+    since: std::time::Instant,
+) {
+    let mut pump: Option<tokio::task::JoinHandle<()>> = None;
+    let mut tasks: Vec<tokio::task::JoinHandle<()>> = vec![];
+    let got: Arc<std::sync::Mutex<RoomGot>> = Arc::default();
+    let mut room_audio: Option<tokio::sync::mpsc::UnboundedReceiver<(String, messenger_rtc::AudioOutput)>> = None;
+    let mut via: Option<tokio::sync::watch::Receiver<Option<messenger_calls::PairKind>>> = None;
+    let mut in_room_at: Option<std::time::Instant> = None;
+    let hang_up = tokio::time::sleep(Duration::from_secs(u64::MAX / 4));
+    tokio::pin!(hang_up);
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = tokio::io::AsyncBufReadExt::lines(stdin);
+    let mut stdin_open = true;
+    let mut last_line = String::new();
+    let mut outcome = None;
+    loop {
+        tokio::select! {
+            tap = taps.recv() => {
+                let Some(tap) = tap else { continue };
+                println!("{} audio: the engine took the sound of this side", stamp());
+                pump = Some(pump_audio(tap.input, &plan.source));
+                let VideoTap { source, wanted, .. } = tap.video;
+                tasks.push(pump_video(source, wanted));
+                room_audio = Some(tap.room_audio);
+                via = Some(tap.via);
+            }
+            came = async { room_audio.as_mut().expect("checked").recv().await }, if room_audio.is_some() => {
+                match came {
+                    Some((mid, mut output)) => {
+                        println!("{} audio: the sound on mid {mid} arrived", stamp());
+                        let got = got.clone();
+                        tasks.push(tokio::spawn(async move {
+                            while let Some(frame) = output.next().await {
+                                got.lock().unwrap().audio.entry(mid.clone()).or_default().extend_from_slice(&frame);
+                            }
+                        }));
+                    }
+                    None => room_audio = None,
+                }
+            }
+            changed = async { via.as_mut().expect("checked").changed().await }, if via.is_some() => {
+                match changed {
+                    Ok(()) => {
+                        let way = *via.as_ref().expect("checked").borrow();
+                        println!("{} via {}", stamp(), way.map(|w| w.as_str()).unwrap_or("-"));
+                    }
+                    Err(_) => via = None,
+                }
+            }
+            ev = events.recv() => match ev {
+                Ok(e) if e.name.starts_with("group_call.") => {
+                    if e.payload["call"]["call_id"] != call_id && e.payload["call_id"] != call_id {
+                        continue;
+                    }
+                    match e.name.as_str() {
+                        messenger_runtime::UI_EVENT_GROUP_CALL_STATE => {
+                            let c = &e.payload["call"];
+                            let seats: Vec<String> = c["participants"]
+                                .as_array()
+                                .map(|list| list.iter().map(seat_line).collect())
+                                .unwrap_or_default();
+                            let speaking: Vec<String> = c["participants"]
+                                .as_array()
+                                .map(|list| list.iter().filter(|p| p["speaking"] == true).map(|p| p["id"].to_string()).collect())
+                                .unwrap_or_default();
+                            let line = format!(
+                                "phase {} muted {} epoch {} video mine {} seat {} speaking [{}] seats {}",
+                                c["phase"].as_str().unwrap_or("?"),
+                                c["muted"],
+                                c["epoch"],
+                                c["video_local"],
+                                c["participant"],
+                                speaking.join(" "),
+                                seats.join(" | ")
+                            );
+                            if line != last_line {
+                                println!("{} group_call.state {line} (+{:.2} s)", stamp(), since.elapsed().as_secs_f32());
+                                last_line = line;
+                            }
+                            // The m-lines of the others: whose they are, and
+                            // the frames of every video as it appears.
+                            if let Some(list) = c["participants"].as_array() {
+                                // The videos not watched yet, noted under the
+                                // lock; asked for without it.
+                                let mut fresh: Vec<(u32, String)> = vec![];
+                                {
+                                    let mut g = got.lock().unwrap();
+                                    for p in list.iter().filter(|p| p["me"] != true) {
+                                        let Some(seat) = p["id"].as_u64() else { continue };
+                                        for key in ["audio_mid", "video_mid"] {
+                                            if let Some(mid) = p[key].as_str() {
+                                                g.seats.insert(mid.to_string(), seat as u32);
+                                            }
+                                        }
+                                        if let Some(mid) = p["video_mid"].as_str() {
+                                            if !g.video.contains_key(mid) {
+                                                let per = Arc::new(std::sync::Mutex::new(VideoGot::default()));
+                                                g.video.insert(mid.to_string(), per);
+                                                fresh.push((seat as u32, mid.to_string()));
+                                            }
+                                        }
+                                    }
+                                }
+                                for (seat, mid) in fresh {
+                                    if let Some(frames) = rt.group_call_video_frames(&mid).await {
+                                        let per = got.lock().unwrap().video.get(&mid).cloned().expect("noted above");
+                                        tasks.push(watch_video_of(&format!("seat {seat} mid {mid}"), frames, per));
+                                    }
+                                }
+                            }
+                            if c["phase"] == "in_room" && in_room_at.is_none() {
+                                in_room_at = Some(std::time::Instant::now());
+                                if let Some(secs) = plan.secs {
+                                    hang_up.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(secs));
+                                }
+                            }
+                            if c["phase"] == "left" {
+                                outcome.get_or_insert(("\"left\"".to_string(), "null".to_string()));
+                                break;
+                            }
+                        }
+                        messenger_runtime::UI_EVENT_GROUP_CALL_ENDED => {
+                            outcome = Some((e.payload["outcome"].to_string(), e.payload["duration_secs"].to_string()));
+                            break;
+                        }
+                        messenger_runtime::UI_EVENT_GROUP_CALL_STARTED => {
+                            let c = &e.payload["call"];
+                            println!("{} group_call.started participants {} joined {}", stamp(), c["participants"], c["joined"]);
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(e) if e.name == "error" && e.payload["scope"] == "group_calls" => {
+                    println!("{} error {}", stamp(), e.payload["error"]);
+                }
+                Ok(_) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => eprintln!("(lagged {n})"),
+                Err(_) => break,
+            },
+            line = lines.next_line(), if stdin_open => match line {
+                Ok(Some(line)) => {
+                    let words: Vec<&str> = line.split_whitespace().collect();
+                    match words.as_slice() {
+                        ["leave"] | ["end"] => { let _ = rt.group_call_leave().await.map_err(|e| eprintln!("leave: {e}")); }
+                        ["mute"] => { let _ = rt.group_call_set_mute(true).await.map_err(|e| eprintln!("mute: {e}")); }
+                        ["unmute"] => { let _ = rt.group_call_set_mute(false).await.map_err(|e| eprintln!("unmute: {e}")); }
+                        ["video", "on"] => { let _ = rt.group_call_set_video(VideoInput::Camera { id: None }).await.map_err(|e| eprintln!("video on: {e}")); }
+                        ["video", "off"] => { let _ = rt.group_call_set_video(VideoInput::Off).await.map_err(|e| eprintln!("video off: {e}")); }
+                        ["layer", seat, rid] => match seat.parse::<u32>() {
+                            Ok(seat) => { let _ = rt.group_call_set_layer(seat, rid).await.map_err(|e| eprintln!("layer: {e}")); }
+                            Err(_) => eprintln!("layer: a seat is a number"),
+                        },
+                        ["state"] => println!("{} {}", stamp(), serde_json::to_string(&rt.group_call_state(None).await).unwrap_or_default()),
+                        [] => {}
+                        _ => eprintln!("(unknown: {line}; leave, mute, unmute, video on, video off, layer <seat> <q|h|f>, state)"),
+                    }
+                }
+                // No stdin (a pipe that closed, /dev/null): the call goes on without it.
+                _ => stdin_open = false,
+            },
+            _ = &mut hang_up => {
+                hang_up.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(u64::MAX / 4));
+                println!("{} leaving after {} s", stamp(), plan.secs.unwrap_or(0));
+                let _ = rt.group_call_leave().await.map_err(|e| eprintln!("leave: {e}"));
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("{} Ctrl-C: leaving", stamp());
+                let _ = rt.group_call_leave().await.map_err(|e| eprintln!("leave: {e}"));
+            }
+        }
+    }
+    if let Some(p) = pump {
+        p.abort();
+    }
+    // A moment for the last frames, then the streams are let go.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    for t in tasks {
+        t.abort();
+    }
+    let (outcome, duration) = outcome.unwrap_or_else(|| ("\"?\"".into(), "null".into()));
+    println!(
+        "{} group call over: outcome {outcome} duration {duration} s{}",
+        stamp(),
+        in_room_at.map(|a| format!(" (in the room for {:.1} s here)", a.elapsed().as_secs_f32())).unwrap_or_default()
+    );
+    let got = std::mem::take(&mut *got.lock().unwrap());
+    let seat_of = |mid: &str| got.seats.get(mid).map(|s| format!("seat {s}")).unwrap_or_else(|| "seat ?".into());
+    for (mid, samples) in &got.audio {
+        // One file per seat: `<out>` with the seat before the extension.
+        let path = plan.out_path.as_ref().map(|p| {
+            let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("audio");
+            let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("wav");
+            p.with_file_name(format!("{stem}-{}.{ext}", seat_of(mid).replace(' ', "")))
+        });
+        report_received_of(&format!("{} mid {mid}", seat_of(mid)), samples, path.as_deref());
+    }
+    if got.audio.is_empty() {
+        println!("{} audio received nothing from any seat", stamp());
+    }
+    for (mid, v) in &got.video {
+        let v = v.lock().unwrap();
+        println!(
+            "{} video received {} mid {mid}: {} frames; sizes (width x height, rotation) {:?}; best second {} fps; the test pattern seen: {}",
+            stamp(),
+            seat_of(mid),
+            v.frames,
+            v.sizes,
+            v.peak_fps,
+            v.pattern
+        );
+    }
+}
+
+/// One seat of the room on a line: `#2 npub1abc… ok speaking a:1 v:2 (me)`.
+fn seat_line(p: &serde_json::Value) -> String {
+    format!(
+        "#{} {} {}{}{}{}{}",
+        p["id"],
+        p["npub"].as_str().map(|n| n[..12].to_string()).unwrap_or_else(|| "?".into()),
+        if p["verified"] == true { "ok" } else { "unverified" },
+        if p["speaking"] == true { " speaking" } else { "" },
+        p["audio_mid"].as_str().map(|m| format!(" a:{m}")).unwrap_or_default(),
+        p["video_mid"].as_str().map(|m| format!(" v:{m}")).unwrap_or_default(),
+        if p["me"] == true { " (me)" } else { "" },
+    )
 }
 
 /// The wall clock in milliseconds, for lines compared across processes
