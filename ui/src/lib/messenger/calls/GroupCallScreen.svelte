@@ -19,7 +19,7 @@
   import { groupStore } from '../groups/groupStore.svelte';
   import CallFace from './CallFace.svelte';
   import CallIcon from './CallIcon.svelte';
-  import { groupStatusText, nodeHost, peopleIn } from './group';
+  import { groupStatusText, peopleIn, roomPathText } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import GroupRoster from './GroupRoster.svelte';
   import GroupStage from './GroupStage.svelte';
@@ -39,11 +39,12 @@
   const group = $derived(shown ? groupStore.groups[shown.group_id] ?? null : null);
   const name = $derived(group?.name || (shown ? chatStore.chats.find((c) => c.id === shown.chat_id)?.title : '') || '');
   const face = $derived({ name, picture: group?.picture || null, seed: shown?.group_id ?? '' });
-  const status = $derived(groupStatusText(call, over?.how ?? null, groupCallStore.now, tr));
+  const moving = $derived(!!call && groupCallStore.moving);
+  const status = $derived(groupStatusText(call, over?.how ?? null, groupCallStore.now, tr, moving));
   const people = $derived(call ? peopleIn(call) : 0);
   const count = $derived(people ? $t(countKey('msg_gcall_people', people, $locale), { n: String(people) }) : '');
   const error = $derived(groupCallStore.error && call ? callErrorText(groupCallStore.error, tr) : '');
-  const node = $derived(call?.node ? nodeHost(call.node) : '');
+  const path = $derived(call ? roomPathText(call, tr) : '');
   const speaker = $derived(groupCallStore.routes?.current === 'speaker');
   const hasSpeaker = $derived(!!groupCallStore.routes?.available.includes('speaker'));
   const cameraOn = $derived(!!call?.video_local && !groupCallStore.screen);
@@ -81,7 +82,7 @@
     </header>
     {#if call}
       <div class="chips">
-        {#if node}<span class="chip"><CallIcon name="server" size={11} />{$t('msg_gcall_via_node', { node })}</span>{/if}
+        {#if path}<span class="chip" class:moving><CallIcon name="server" size={11} />{path}</span>{/if}
         <span class="chip quiet"><Icon name="lock" size={11} />{$t('msg_call_e2e')}</span>
         {#if call.muted}<span class="chip warn"><CallIcon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
       </div>
@@ -90,6 +91,9 @@
     <div class="stage">
       {#if call}
         <GroupStage {call} phone />
+        {#if moving}
+          <div class="moving-note" role="status"><span class="spin" aria-hidden="true"></span><span><b>{$t('msg_gcall_phase_moving')}</b>{$t('msg_gcall_moving_hint')}</span></div>
+        {/if}
       {:else}
         <div class="over"><CallFace peer={face} size={112} /><span>{status}</span></div>
       {/if}
@@ -170,6 +174,15 @@
   }
   .chip.quiet { color: rgba(255, 255, 255, 0.65); }
   .chip.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .chip.moving { opacity: 0.55; }
+  .moving-note {
+    position: absolute; z-index: 5; left: 16px; right: 16px; top: 8px; margin: 0 auto; max-width: 420px;
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius); font-size: var(--fs-sm); line-height: 1.35;
+    background: rgba(18, 22, 27, 0.92); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8); box-shadow: var(--shadow);
+  }
+  .moving-note b { display: block; color: #fff; font-weight: var(--fw-semibold); }
+  .spin { width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; animation: spin 900ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .stage { position: relative; flex: 1; min-height: 0; }
   .over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: var(--fs-md); color: rgba(255, 255, 255, 0.85); }
   .error {
@@ -199,5 +212,5 @@
     box-shadow: var(--shadow-lg); animation: up 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
   }
   @keyframes up { from { transform: translateY(40px); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .sheet, .spin { animation: none; } }
 </style>

@@ -13,7 +13,7 @@
   import { groupStore } from '../groups/groupStore.svelte';
   import CallFace from './CallFace.svelte';
   import CallIcon from './CallIcon.svelte';
-  import { groupStatusText, peopleIn } from './group';
+  import { peopleIn } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
 
   interface Props {
@@ -27,7 +27,7 @@
   const group = $derived(call ? groupStore.groups[call.group_id] ?? null : null);
   const name = $derived(group?.name || (call ? chatStore.chats.find((c) => c.id === call.chat_id)?.title : '') || '');
   const face = $derived({ name, picture: group?.picture || null, seed: call?.group_id ?? '' });
-  const status = $derived(groupStatusText(call, null, groupCallStore.now, tr));
+  const status = $derived(call ? groupCallStore.statusText(tr) : '');
   const people = $derived(call ? peopleIn(call) : 0);
   const talking = $derived(call?.participants.some((p) => p.speaking && p.verified && !p.me) ?? false);
 </script>

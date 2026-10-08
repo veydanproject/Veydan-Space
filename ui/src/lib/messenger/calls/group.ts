@@ -142,8 +142,32 @@ export function nodeHost(reference: string): string {
   return addr.replace(/:\d+$/, '');
 }
 
-/** The words under the group's name while the room is not talking; `null` while it is (the clock shows then). */
-export function groupPhaseKey(call: Pick<GroupCallView, 'phase'>): string | null {
+/**
+ * The way to the room, for its chip: `via` is my node when I sit in the
+ * room through it (the cascade: my nearest node forwards to the room's),
+ * `null` when I am on the room's node itself. Hosts only, as `nodeHost`.
+ */
+export function roomPath(call: Pick<GroupCallView, 'node' | 'home'>): { via: string | null; home: string } | null {
+  const node = call.node || '';
+  const home = call.home || node;
+  if (!home) return null;
+  return { via: node && node !== home ? nodeHost(node) : null, home: nodeHost(home) };
+}
+
+/** The words of the chip of the way to the room: one node, or mine and the room's. */
+export function roomPathText(call: Pick<GroupCallView, 'node' | 'home'>, tr: Translate): string {
+  const p = roomPath(call);
+  if (!p) return '';
+  return p.via ? tr('msg_gcall_via_cascade', { via: p.via, home: p.home }) : tr('msg_gcall_via_node', { node: p.home });
+}
+
+/**
+ * The words under the group's name while the room is not talking; `null`
+ * while it is (the clock shows then). `moving`: the room is on its way to
+ * another node (its node went), told apart from a way merely lost.
+ */
+export function groupPhaseKey(call: Pick<GroupCallView, 'phase'>, moving = false): string | null {
+  if (moving && call.phase !== 'in_room' && call.phase !== 'left') return 'msg_gcall_phase_moving';
   switch (call.phase) {
     case 'starting': return 'msg_gcall_phase_starting';
     case 'joining': return 'msg_gcall_phase_joining';
@@ -168,9 +192,9 @@ export function groupElapsed(call: Pick<GroupCallView, 'joined_at' | 'started_at
 }
 
 /** The phase, or the clock while I am in the room; for a call just over, how it ended. */
-export function groupStatusText(call: GroupCallView | null, over: GroupOver | null, now: number, tr: Translate): string {
+export function groupStatusText(call: GroupCallView | null, over: GroupOver | null, now: number, tr: Translate, moving = false): string {
   if (call) {
-    const key = groupPhaseKey(call);
+    const key = groupPhaseKey(call, moving);
     return key ? tr(key) : clock(groupElapsed(call, now));
   }
   return over ? tr(overKey(over)) : '';

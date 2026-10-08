@@ -59,7 +59,8 @@ type Dict = Record<string, string>;
  * after the owner's check of 5.1.2, the question before a call and the
  * settings of this device (calls ring here, ask before calling). Then the
  * calls of groups: the header's buttons, the banner of a call on, the room
- * and its list of who is in, the line of a group call in the chat.
+ * and its list of who is in, the line of a group call in the chat; then the
+ * way to the room through two nodes (the cascade) and its move to another.
  */
 const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
   desktop: {
@@ -812,6 +813,8 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_gcall_people_few: '{n} participants',
       msg_gcall_phase_starting: 'Starting the call…',
       msg_gcall_phase_joining: 'Joining…',
+      msg_gcall_phase_moving: 'Moving to another node…',
+      msg_gcall_moving_hint: 'The node of the call stopped answering. The call goes on through another one.',
       msg_gcall_over_left: 'You left the call',
       msg_gcall_over_ended: 'The call ended',
       msg_gcall_leave: 'Leave',
@@ -830,6 +833,8 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_gcall_camera_on: 'Your camera is on',
       msg_gcall_via_node: 'Via node {node}',
       msg_gcall_via_node_hint: 'A group call goes through a call node. It forwards encrypted frames and can neither see nor hear them.',
+      msg_gcall_via_cascade: 'Via node {via} → {home}',
+      msg_gcall_via_cascade_hint: 'You are connected to your nearest call node, and it forwards the encrypted frames to the node of the call. Neither can see or hear them.',
       msg_gcall_e2e_hint: 'Sound and video are encrypted end to end with keys that only the members of the group have.',
       msg_gcall_line: 'Group call',
       msg_gcall_line_video: 'Group video call',
@@ -1586,6 +1591,8 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_gcall_people_few: '{n} участника',
       msg_gcall_phase_starting: 'Начинаем звонок…',
       msg_gcall_phase_joining: 'Входим…',
+      msg_gcall_phase_moving: 'Переезжаем на другой узел…',
+      msg_gcall_moving_hint: 'Узел звонка перестал отвечать. Звонок продолжится через другой.',
       msg_gcall_over_left: 'Вы вышли из звонка',
       msg_gcall_over_ended: 'Звонок окончен',
       msg_gcall_leave: 'Выйти',
@@ -1604,6 +1611,8 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_gcall_camera_on: 'Ваша камера включена',
       msg_gcall_via_node: 'Через узел {node}',
       msg_gcall_via_node_hint: 'Групповой звонок идёт через узел звонков. Он пересылает зашифрованные кадры и не может их ни увидеть, ни услышать.',
+      msg_gcall_via_cascade: 'Через узел {via} → {home}',
+      msg_gcall_via_cascade_hint: 'Вы подключены к ближайшему узлу звонков, а он пересылает зашифрованные кадры узлу звонка. Ни один из них не может их ни увидеть, ни услышать.',
       msg_gcall_e2e_hint: 'Звук и видео зашифрованы из конца в конец ключами, которые есть только у участников группы.',
       msg_gcall_line: 'Групповой звонок',
       msg_gcall_line_video: 'Групповой видеозвонок',

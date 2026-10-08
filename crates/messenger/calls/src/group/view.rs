@@ -31,7 +31,9 @@ pub enum GroupPhase {
     Joining,
     /// In the room.
     InRoom,
-    /// The way to the node was lost; the engine tries on.
+    /// The way to the node was lost: the engine tries on, the core judges
+    /// the node and joins again, or the room moves to another node
+    /// (`call.move`) and I follow. One phase for all of it.
     Reconnecting,
     /// Out of the room (the end of my part of the call).
     Left,
@@ -95,8 +97,14 @@ pub struct GroupCallView {
     /// When I got into the room.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joined_at: Option<i64>,
-    /// The node the room is on.
+    /// The node I am connected to (`address:port#id`): the node of the
+    /// room, or my own nearest node when I sit in the room through it
+    /// (the cascade, services/call/spec/cascade.md).
     pub node: String,
+    /// The node the room is on (its home); equal to `node` when I sit
+    /// there directly. For the log and the CLI; no screen shows it yet.
+    #[serde(default)]
+    pub home: String,
     /// My seat, once the node gave it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub participant: Option<u32>,

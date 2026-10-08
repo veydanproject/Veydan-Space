@@ -28,10 +28,13 @@ const { groupCallStore } = await import('./groupCallStore.svelte');
 const me: GroupParticipant = { id: 1, npub: 'ab'.repeat(32), verified: true, speaking: false, audio: true, me: true };
 const boris: GroupParticipant = { id: 2, npub: '2b'.repeat(32), verified: true, speaking: false, audio: true, audio_mid: '1', video_mid: '2', me: false };
 
+const A = '1.2.3.4:8443#' + 'cd'.repeat(32);
+const B = '5.6.7.8:8443#' + 'ef'.repeat(32);
+
 function view(over: Partial<GroupCallView> = {}): GroupCallView {
   return {
     call_id: 'g1', group_id: 'grp', chat_id: 'group:grp', phase: 'in_room', media: 'audio', muted: false, video_local: false,
-    started_by: me.npub!, started_at: 1000, joined_at: 1001, node: '1.2.3.4:8443#' + 'cd'.repeat(32), participant: 1, epoch: 1,
+    started_by: me.npub!, started_at: 1000, joined_at: 1001, node: A, home: A, participant: 1, epoch: 1,
     participants: [me, boris], kbps_per_participant: 0, max_participants: 0, ...over,
   };
 }
@@ -209,6 +212,87 @@ describe('the room I am in', () => {
     expect(groupCallStore.screen).toBe(false);
     await groupCallStore.toggleCamera();
     expect(groupCalls.setVideo).toHaveBeenLastCalledWith({ kind: 'off' });
+  });
+});
+
+describe('the move of a room', () => {
+  it('is told from a way merely lost, keeps the screen, asks the new seats anew', async () => {
+    state(view());
+    groupCallStore.shown = false;
+    await groupCallStore.setLayer(2, 'f');
+    expect(groupCalls.setLayer).toHaveBeenCalledTimes(1);
+    // The way lost: the same home, no move (yet).
+    state(view({ phase: 'reconnecting' }));
+    expect(groupCallStore.moving).toBe(false);
+    // Through my node B into the same room: no move either.
+    state(view({ phase: 'joining', node: B, home: A }));
+    expect(groupCallStore.moving).toBe(false);
+    state(view({ phase: 'in_room', node: B, home: A }));
+    // The room's node went: a room on B under the same call.
+    state(view({ phase: 'reconnecting', node: B, home: A }));
+    expect(groupCallStore.moving).toBe(false);
+    state(view({ phase: 'joining', node: B, home: B, epoch: 2, participants: [me] }));
+    expect(groupCallStore.moving).toBe(true);
+    expect(groupCallStore.call?.call_id).toBe('g1');
+    expect(groupCallStore.over).toBeNull();
+    expect(groupCallStore.shown).toBe(false);
+    // Seat 2 of the new room is somebody else: asked again.
+    await groupCallStore.setLayer(2, 'f');
+    expect(groupCalls.setLayer).toHaveBeenCalledTimes(2);
+    state(view({ phase: 'in_room', node: B, home: B, epoch: 2 }));
+    expect(groupCallStore.moving).toBe(false);
+  });
+
+  it('says the same in every place that shows the room: the move, not a join', () => {
+    const tr = (key: string) => key;
+    state(view());
+    expect(groupCallStore.statusText(tr)).not.toMatch(/^msg_/);
+    state(view({ phase: 'reconnecting' }));
+    expect(groupCallStore.statusText(tr)).toBe('msg_call_phase_reconnecting');
+    // After the move the runtime says `joining` under the new home.
+    state(view({ phase: 'joining', node: B, home: B, participants: [] }));
+    expect(groupCallStore.statusText(tr)).toBe('msg_gcall_phase_moving');
+    state(view({ phase: 'joining', node: B, home: B, participants: [me] }));
+    expect(groupCallStore.statusText(tr)).toBe('msg_gcall_phase_moving');
+    state(view({ phase: 'in_room', node: B, home: B }));
+    expect(groupCallStore.statusText(tr)).not.toMatch(/^msg_/);
+    groupCallStore.reset();
+    expect(groupCallStore.statusText(tr)).toBe('');
+  });
+
+  it('is told by a new room on the same node too (a double move): the seats asked anew', async () => {
+    state(view({ node: B, home: B }));
+    await groupCallStore.setLayer(2, 'f');
+    groupCallStore.setShowing(2, true);
+    expect(groupCallStore.showing[2]).toBe(true);
+    // The winner's room is on B as well: the runtime leaves my room for it,
+    // `joining` with no seat at all.
+    state(view({ phase: 'joining', node: B, home: B, participants: [] }));
+    expect(groupCallStore.moving).toBe(true);
+    expect(groupCallStore.showing).toEqual({});
+    state(view({ phase: 'joining', node: B, home: B, participant: 3, participants: [{ ...me, id: 3 }] }));
+    expect(groupCallStore.moving).toBe(true);
+    // Seat 2 of the winner's room is somebody else: asked again.
+    await groupCallStore.setLayer(2, 'f');
+    expect(groupCalls.setLayer.mock.calls).toEqual([[2, 'f'], [2, 'f']]);
+    state(view({ phase: 'in_room', node: B, home: B, participant: 3, participants: [{ ...me, id: 3 }, boris] }));
+    expect(groupCallStore.moving).toBe(false);
+    // A way merely lost afterwards is no move, and keeps what was asked.
+    await groupCallStore.setLayer(2, 'q');
+    state(view({ phase: 'reconnecting', node: B, home: B, participant: 3, participants: [{ ...me, id: 3 }, boris] }));
+    state(view({ phase: 'joining', node: B, home: B, participant: 3, participants: [{ ...me, id: 3 }] }));
+    expect(groupCallStore.moving).toBe(false);
+    await groupCallStore.setLayer(2, 'q');
+    expect(groupCalls.setLayer).toHaveBeenCalledTimes(3);
+  });
+
+  it('is not seen in a room I never talked in, nor without a home (an older runtime)', () => {
+    state(view({ phase: 'joining', node: B, home: A, participants: [me] }));
+    state(view({ phase: 'joining', node: B, home: B, participants: [me] }));
+    expect(groupCallStore.moving).toBe(false);
+    state(view({ phase: 'in_room', node: A, home: '' }));
+    state(view({ phase: 'reconnecting', node: A, home: '' }));
+    expect(groupCallStore.moving).toBe(false);
   });
 });
 

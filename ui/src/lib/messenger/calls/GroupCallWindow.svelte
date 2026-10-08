@@ -4,7 +4,9 @@
 <!--
   The room of a group call on a computer: a window over the page in the
   bottom right corner, or (enlarged) over the whole page. Its top: the
-  group, the clock, how many are in, the node the call goes through; the
+  group, the clock, how many are in, the node the call goes through (mine
+  and the room's, when I sit in it through my nearest); a note while the
+  room moves to another node (the screen stays); the
   seats in the middle (GroupStage), who is in beside them (GroupRoster);
   its bar: the microphone, my camera, my screen, the list, the size, Leave.
   Folded, it gives way to the capsule at the top of the window
@@ -23,7 +25,7 @@
   import CallFace from './CallFace.svelte';
   import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
-  import { groupStatusText, nodeHost, peopleIn } from './group';
+  import { groupStatusText, peopleIn, roomPath, roomPathText } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import GroupRoster from './GroupRoster.svelte';
   import GroupStage from './GroupStage.svelte';
@@ -45,13 +47,15 @@
   const group = $derived(shown ? groupStore.groups[shown.group_id] ?? null : null);
   const name = $derived(group?.name || (shown ? chatStore.chats.find((c) => c.id === shown.chat_id)?.title : '') || '');
   const face = $derived({ name, picture: group?.picture || null, seed: shown?.group_id ?? '' });
-  const status = $derived(groupStatusText(call, over?.how ?? null, groupCallStore.now, tr));
+  const moving = $derived(!!call && groupCallStore.moving);
+  const status = $derived(groupStatusText(call, over?.how ?? null, groupCallStore.now, tr, moving));
   const people = $derived(call ? peopleIn(call) : 0);
   const count = $derived(people ? $t(countKey('msg_gcall_people', people, $locale), { n: String(people) }) : '');
   const cameraOn = $derived(!!call?.video_local && !groupCallStore.screen);
   const sharing = $derived(!!call?.video_local && groupCallStore.screen);
   const error = $derived(groupCallStore.error && call ? callErrorText(groupCallStore.error, tr) : '');
-  const node = $derived(call?.node ? nodeHost(call.node) : '');
+  const path = $derived(call ? roomPathText(call, tr) : '');
+  const cascade = $derived(!!call && !!roomPath(call)?.via);
 
   const KEY = 'messenger.gcall.window';
   let dx = $state(0);
@@ -153,8 +157,8 @@
           {#if count}<span class="dotsep">·</span><span>{count}</span>{/if}
         </span>
       </span>
-      {#if node}
-        <span class="chip" title={$t('msg_gcall_via_node_hint')}><CallIcon name="server" size={11} />{$t('msg_gcall_via_node', { node })}</span>
+      {#if path}
+        <span class="chip" class:moving title={$t(cascade ? 'msg_gcall_via_cascade_hint' : 'msg_gcall_via_node_hint')}><CallIcon name="server" size={11} />{path}</span>
       {/if}
       <span class="chip quiet" title={$t('msg_gcall_e2e_hint')}><Icon name="lock" size={11} />{$t('msg_call_e2e')}</span>
       {#if call}
@@ -170,6 +174,9 @@
       <div class="stage">
         {#if call}
           <GroupStage {call} />
+          {#if moving}
+            <div class="moving-note" role="status"><span class="spin" aria-hidden="true"></span><span><b>{$t('msg_gcall_phase_moving')}</b>{$t('msg_gcall_moving_hint')}</span></div>
+          {/if}
         {:else if over}
           <div class="over"><CallFace peer={face} size={72} /><span>{status}</span></div>
         {/if}
@@ -252,6 +259,15 @@
     background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-2xs); white-space: nowrap; cursor: help;
   }
   .chip.quiet { color: rgba(255, 255, 255, 0.65); }
+  .chip.moving { opacity: 0.55; }
+  .moving-note {
+    position: absolute; z-index: 5; left: 50%; top: 10px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px);
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius); font-size: var(--fs-xs); line-height: 1.35;
+    background: rgba(18, 22, 27, 0.92); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8); box-shadow: var(--shadow);
+  }
+  .moving-note b { display: block; color: #fff; font-weight: var(--fw-semibold); }
+  .spin { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; animation: spin 900ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .win:not(.big) .chip.quiet { display: none; }
   .hbtn {
     width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
@@ -299,5 +315,5 @@
   .item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item-kind { font-size: var(--fs-2xs); color: var(--text-3); }
   @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
-  @media (prefers-reduced-motion: reduce) { .win { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .win, .spin { animation: none; } }
 </style>

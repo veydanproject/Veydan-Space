@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import type { GroupCallView, GroupParticipant } from '../generated/calls';
 import {
-  MY_VIDEO_MID, bannerKey, focusOf, gridShape, groupElapsed, groupStatusText, layerFor, mirrorsMine, nodeHost, overKey, seatMuted, seatSendsVideo,
-  seatsInOrder,
+  MY_VIDEO_MID, bannerKey, focusOf, gridShape, groupElapsed, groupStatusText, layerFor, mirrorsMine, nodeHost, overKey, roomPath, roomPathText, seatMuted,
+  seatSendsVideo, seatsInOrder,
 } from './group';
 import { callErrorText } from './words';
 
@@ -18,7 +18,8 @@ function seat(id: number, over: Partial<GroupParticipant> = {}): GroupParticipan
 function room(over: Partial<GroupCallView> = {}): GroupCallView {
   return {
     call_id: 'g1', group_id: 'g', chat_id: 'group:g', phase: 'in_room', media: 'audio', muted: false, video_local: false,
-    started_by: 'ab', started_at: 1000, joined_at: 1010, node: '108.61.171.68:8443#' + 'ab'.repeat(32), participant: 1, epoch: 1,
+    started_by: 'ab', started_at: 1000, joined_at: 1010, node: '108.61.171.68:8443#' + 'ab'.repeat(32),
+    home: '108.61.171.68:8443#' + 'ab'.repeat(32), participant: 1, epoch: 1,
     participants: [], kbps_per_participant: 0, max_participants: 0, ...over,
   };
 }
@@ -80,6 +81,24 @@ describe('the words of a room', () => {
     expect(overKey('failed')).toBe('msg_call_ended_failed');
     expect(overKey('ended')).toBe('msg_gcall_over_ended');
     expect(groupStatusText(null, null, 0, tr)).toBe('');
+  });
+
+  it('say the move while the room is on its way to another node, the clock once it is there', () => {
+    expect(groupStatusText(room({ phase: 'reconnecting' }), null, 2000, tr, true)).toBe('msg_gcall_phase_moving');
+    expect(groupStatusText(room({ phase: 'joining' }), null, 2000, tr, true)).toBe('msg_gcall_phase_moving');
+    expect(groupStatusText(room(), null, 1075, tr, true)).toBe('1:05');
+  });
+
+  it('name the way to the room: one node, or mine and the room\'s', () => {
+    const B = '149.28.37.154:8443#' + 'cd'.repeat(32);
+    const words = (key: string, p?: Record<string, string>) => `${key}(${Object.values(p ?? {}).join(',')})`;
+    expect(roomPath(room())).toEqual({ via: null, home: '108.61.171.68' });
+    expect(roomPathText(room(), words)).toBe('msg_gcall_via_node(108.61.171.68)');
+    expect(roomPath(room({ node: B }))).toEqual({ via: '149.28.37.154', home: '108.61.171.68' });
+    expect(roomPathText(room({ node: B }), words)).toBe('msg_gcall_via_cascade(149.28.37.154,108.61.171.68)');
+    // A runtime without the cascade says no home: the node is the room's.
+    expect(roomPathText(room({ node: B, home: '' }), words)).toBe('msg_gcall_via_node(149.28.37.154)');
+    expect(roomPath(room({ node: '', home: '' }))).toBeNull();
   });
 
   it('name the node by its address alone', () => {

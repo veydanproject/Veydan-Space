@@ -45,7 +45,7 @@ function room(phase: GroupCallView['phase']): GroupCallView {
   const me = 'ab'.repeat(32);
   return {
     call_id: 'g1', group_id: 'grp', chat_id: 'group:grp', phase, media: 'audio', muted: false, video_local: false,
-    started_by: me, started_at: 900, joined_at: 901, node: '1.2.3.4:8443#' + 'cd'.repeat(32), participant: 1, epoch: 1,
+    started_by: me, started_at: 900, joined_at: 901, node: '1.2.3.4:8443#' + 'cd'.repeat(32), home: '1.2.3.4:8443#' + 'cd'.repeat(32), participant: 1, epoch: 1,
     participants: [{ id: 1, npub: me, verified: true, speaking: false, audio: true, me: true }], kbps_per_participant: 0, max_participants: 0,
   };
 }

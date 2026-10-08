@@ -8,11 +8,12 @@
 //! over later, in order or reversed, as the relays would.
 
 use messenger_calls::engine::ConnectionState;
+use messenger_calls::group::ctl::Message;
 use messenger_calls::group::keys::{sender_key, slot};
 use messenger_calls::group::service::Timing;
 use messenger_calls::{
-    GroupAccess, GroupCallService, GroupCallView, GroupPhase, Media, NodeError, SessionEvent, StaticServerSets, UI_EVENT_GROUP_CALL_ENDED,
-    UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
+    CallNode, DataPayload, GroupAccess, GroupCallService, GroupCallView, GroupPhase, Media, MediaLimits, NodeClass, NodeError, RoomApi,
+    SessionEvent, StaticServerSets, CTL_LABEL, UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 use messenger_contacts::{ContactService, ProfileService};
 use messenger_core::traits::UiEvent;
@@ -58,13 +59,23 @@ impl Party {
     async fn new(name: &'static str, clock: Arc<TestClock>, engine: FakeEngine, node: FakeNode) -> Self {
         let keys = Keys::generate();
         let store = Store::open_in_memory().await.unwrap();
-        Self::over(name, keys, store, clock, engine, node).await
+        let servers = vec![node.as_call_node()];
+        Self::over(name, keys, store, clock, engine, node, servers).await
     }
 
     /// The party over `store` with `keys`: a fresh core, as after a
     /// restart of the app (nothing of the old one is in memory; the
-    /// record is).
-    async fn over(name: &'static str, keys: Keys, store: Store, clock: Arc<TestClock>, engine: FakeEngine, node: FakeNode) -> Self {
+    /// record is). `servers` is its sets of servers (the cascade tests
+    /// give it an own node of its own).
+    async fn over(
+        name: &'static str,
+        keys: Keys,
+        store: Store,
+        clock: Arc<TestClock>,
+        engine: FakeEngine,
+        node: FakeNode,
+        servers: Vec<messenger_calls::CallNode>,
+    ) -> Self {
         let profiles = ProfileService::new(store.clone());
         let contacts = ContactService::new(store.clone(), profiles.clone());
         let dm = DmService::new(store.clone(), contacts, profiles, clock.clone());
@@ -76,7 +87,7 @@ impl Party {
             dm,
             groups.clone(),
             Arc::new(engine),
-            Arc::new(StaticServerSets(vec![node.as_call_node()])),
+            Arc::new(StaticServerSets(servers)),
             node.client(),
             Arc::new(node),
             clock,
@@ -158,7 +169,8 @@ impl World {
     async fn restart(&mut self, i: usize) {
         let old = self.parties[i].clone();
         let members: Vec<PubKey> = old.groups.members(GROUP).await.unwrap_or_default();
-        let fresh = Party::over(old.name, old.keys.clone(), old.store.clone(), self.clock.clone(), self.engine.clone(), self.node.clone()).await;
+        let servers = vec![self.node.as_call_node()];
+        let fresh = Party::over(old.name, old.keys.clone(), old.store.clone(), self.clock.clone(), self.engine.clone(), self.node.clone(), servers).await;
         fresh.groups.set_members(GROUP, members);
         self.parties[i] = Arc::new(fresh);
     }
@@ -169,10 +181,29 @@ impl World {
         let old = self.parties[i].clone();
         let members: Vec<PubKey> = old.groups.members(GROUP).await.unwrap_or_default();
         let store = Store::open_in_memory().await.unwrap();
-        let fresh = Party::over(name, old.keys.clone(), store, self.clock.clone(), self.engine.clone(), self.node.clone()).await;
+        let servers = vec![self.node.as_call_node()];
+        let fresh = Party::over(name, old.keys.clone(), store, self.clock.clone(), self.engine.clone(), self.node.clone(), servers).await;
         fresh.groups.set_members(GROUP, members);
         self.parties.push(Arc::new(fresh));
         self.parties.len() - 1
+    }
+
+    /// Rebuild a party with the sets of servers given (for the cascade and
+    /// move tests: an own node of its own, more than one node to move to),
+    /// keeping its record, keys and group membership. The timing passed is
+    /// kept too.
+    async fn with_servers(&mut self, i: usize, servers: Vec<messenger_calls::CallNode>, timing: Timing) {
+        let old = self.parties[i].clone();
+        let members: Vec<PubKey> = old.groups.members(GROUP).await.unwrap_or_default();
+        let pinned = old.groups.pinned_node(GROUP).await.ok().flatten();
+        let fresh =
+            Party::over(old.name, old.keys.clone(), old.store.clone(), self.clock.clone(), self.engine.clone(), self.node.clone(), servers).await;
+        fresh.groups.set_members(GROUP, members);
+        if let Some(node) = pinned {
+            fresh.groups.pin(GROUP, node);
+        }
+        fresh.calls.set_timing(timing);
+        self.parties[i] = Arc::new(fresh);
     }
 
     /// Every note of the group sent so far, with its author and when it
@@ -245,9 +276,17 @@ impl World {
         }
     }
 
-    /// Carry everything until nothing moves for a few passes.
+    /// Carry everything until nothing moves for a few passes. An event
+    /// shown again unchanged (the same name, the same payload as the last
+    /// of that name) is no movement: verified seats answer each other's
+    /// words of identity a quarter of `hello_retry` apart, and under the
+    /// load of a whole suite that gap always elapses, so the states they
+    /// show again would never let the world settle.
     async fn settle(&self) {
         let mut quiet = 0;
+        // What kept moving, for the panic below: the last effects seen.
+        let mut last: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+        let mut shown: HashMap<(&'static str, String), serde_json::Value> = HashMap::new();
         for _ in 0..500 {
             let mut moved = false;
             for _ in 0..4 {
@@ -264,7 +303,21 @@ impl World {
                     out
                 };
                 for e in effects {
-                    moved = true;
+                    let again = match &e {
+                        Effect::Emit(ev) => shown.insert((party.name, ev.name.clone()), ev.payload.clone()).is_some_and(|before| before == ev.payload),
+                        _ => false,
+                    };
+                    if !again {
+                        moved = true;
+                    }
+                    if last.len() == 12 {
+                        last.pop_front();
+                    }
+                    last.push_back(match &e {
+                        Effect::Emit(ev) => format!("{}: {} {}", party.name, ev.name, ev.payload.to_string().chars().take(160).collect::<String>()),
+                        Effect::Notify(_) => format!("{}: notify", party.name),
+                        Effect::Send(out) => format!("{}: send {:?}", party.name, FakeGroups::open_note(out).map(|(_, _, e)| e.t)),
+                    });
                     match e {
                         Effect::Emit(ev) => party.ui.lock().unwrap().push(ev),
                         Effect::Notify(_) => {}
@@ -285,7 +338,7 @@ impl World {
                 }
             }
         }
-        panic!("the world does not settle");
+        panic!("the world does not settle; the last effects:\n{}", last.iter().map(|s| format!("  {s}")).collect::<Vec<_>>().join("\n"));
     }
 
     /// Let the timers of the rooms run (the move of the sending to a new
@@ -691,14 +744,16 @@ async fn the_way_to_the_node_is_judged_by_the_engine() {
     alice.calls.set_mute(true).await.unwrap();
     assert!(alice.last_state().is_some_and(|v| v.muted) || alice.calls.current().await.unwrap().muted);
     assert!(alice.calls.set_layer(2, "h").await.is_err(), "the fake node has no simulcast");
+    // `Failed` after the way was once there is a sign the node may be
+    // lost, not the end of the call (wave 5): the home is asked, answers,
+    // and Alice joins it again rather than ending alone.
     s.inject(SessionEvent::ConnectionState(ConnectionState::Failed));
     w.settle().await;
-    assert_eq!(alice.last_state().unwrap().phase, GroupPhase::Left);
-    assert!(alice.notes().contains(&"call.end".to_string()), "alone in the room: the call is over");
-    assert_eq!(repo::get(&alice.store, &alice.notes().len().to_string()).await.unwrap(), None);
-    let ended = alice.events(UI_EVENT_GROUP_CALL_ENDED);
-    assert_eq!(ended.len(), 1);
-    assert_eq!(ended[0]["outcome"], "failed");
+    assert_eq!(alice.last_state().unwrap().phase, GroupPhase::InRoom, "the home answered: joined again");
+    assert!(!alice.notes().contains(&"call.end".to_string()), "the node was there: the call did not end");
+    assert!(alice.calls.announced(GROUP).await.is_some());
+    assert!(alice.events(UI_EVENT_GROUP_CALL_ENDED).is_empty());
+    assert!(alice.errors().is_empty(), "{:?}", alice.errors());
 }
 
 // ─── The findings of the review ──────────────────────────────────────────────
@@ -1622,4 +1677,866 @@ async fn a_seat_that_says_nothing_after_my_channel_opened_is_put_out_in_its_time
     assert_eq!(w.node.seats(&room).len(), 1, "the creator put the seat out");
     assert_eq!(bob.last_state().unwrap().phase, GroupPhase::Left);
     assert_eq!(bob.count("call.epoch"), 0, "and the seat, deaf, turned no keys: {:?}", bob.notes());
+}
+
+// ─── The cascade and the move (wave 5) ───────────────────────────────────────
+
+/// The delays of the cascade and the move, in these tests: short enough
+/// that one `settle` (its own small sleeps let the timers fire) carries a
+/// whole move through.
+fn cascade_timing() -> Timing {
+    Timing {
+        send_switch_delay: SWITCH,
+        // A short retry of the word of identity, as in life: a word lost
+        // in the churn of a move is said again before the room settles.
+        hello_retry: Duration::from_millis(20),
+        lost_after: Duration::from_millis(10),
+        hello_check: Duration::from_millis(20),
+        rejoin_connect: Duration::from_millis(80),
+        rejoin_retry: Duration::from_millis(15),
+        move_backup: Duration::from_millis(250),
+        move_wait: Duration::from_millis(600),
+        ..Timing::default()
+    }
+}
+
+/// A joiner sits on its own nearest node in a cascade: the room stays on
+/// the home, its own node seats it there through a proxy seat (a pass
+/// from the home), and the two still confirm each other through it.
+#[tokio::test]
+async fn a_joiner_sits_through_its_own_node_in_a_cascade() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_rtt(0, 80);
+    w.node.set_rtt(1, 10);
+    w.group(&[0, 1]);
+    // The room is pinned to node 0 (the home for everyone).
+    for i in [0, 1] {
+        w.p(i).groups.pin(GROUP, w.node.as_call_node());
+    }
+    // Bob's own nearest node is node 1, with the cascade.
+    w.with_servers(1, vec![w.node.node(n1, NodeClass::Own)], cascade_timing()).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    let home_room = w.node.rooms_on(0)[0].clone();
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+
+    let bv = bob.last_state().unwrap();
+    assert_eq!(bv.phase, GroupPhase::InRoom);
+    assert_eq!(bv.node, w.node.node(n1, NodeClass::Own).node.to_string(), "bob is on his own node");
+    assert_eq!(bv.home, w.node.as_call_node().node.to_string(), "the room is on the home");
+    assert!(w.node.seats_via(&home_room).iter().any(|(_, via)| *via == Some(n1)), "a proxy seat of node 1: {:?}", w.node.seats_via(&home_room));
+    assert!(w.node.delegated().iter().any(|(_, r)| *r == home_room), "a pass was asked of the home: {:?}", w.node.delegated());
+    assert_eq!(w.node.rooms_on(1), Vec::<String>::new(), "no room is made on bob's own node");
+    for p in [&alice, &bob] {
+        let v = p.last_state().unwrap();
+        assert!(!verified_seats(&v).is_empty() && verified_seats(&v).iter().all(|(_, ok)| *ok), "{}: {:?}", p.name, v.participants);
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+    assert_eq!(alice.last_state().unwrap().home, alice.last_state().unwrap().node, "alice is home directly");
+}
+
+/// My own node refusing the cascade (503) is no error to me: I fall back
+/// to the home and sit there directly.
+#[tokio::test]
+async fn a_cascade_refused_falls_back_to_the_home() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.group(&[0, 1]);
+    for i in [0, 1] {
+        w.p(i).groups.pin(GROUP, w.node.as_call_node());
+    }
+    w.with_servers(1, vec![w.node.node(n1, NodeClass::Own)], cascade_timing()).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    let home_room = w.node.rooms_on(0)[0].clone();
+
+    w.node.refuse_next_via(NodeError::Refused { status: 503, error: "cascade_refused".into(), message: "off".into() });
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+
+    let bv = bob.last_state().unwrap();
+    assert_eq!(bv.phase, GroupPhase::InRoom);
+    assert_eq!(bv.node, w.node.as_call_node().node.to_string(), "bob fell back to the home");
+    assert_eq!(bv.home, bv.node);
+    assert!(w.node.seats_via(&home_room).iter().all(|(_, via)| via.is_none()), "no proxy seat: {:?}", w.node.seats_via(&home_room));
+    assert!(bob.errors().is_empty(), "a 503 is no error to me: {:?}", bob.errors());
+}
+
+/// The node of the room dies: the creator (the first of the room) makes a
+/// room on another node, tells `call.move` with a new epoch, and everybody
+/// joins it under the same call — one record, the banner unbroken.
+#[tokio::test]
+async fn the_room_moves_when_its_node_dies() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_rtt(0, 20);
+    w.node.set_rtt(1, 50);
+    w.group(&[0, 1, 2]);
+    let servers = vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)];
+    for i in [0, 1, 2] {
+        w.with_servers(i, servers.clone(), cascade_timing()).await;
+    }
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+
+    let view = alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let home_room = w.node.rooms_on(0)[0].clone();
+    assert_eq!(w.node.seats(&home_room).len(), 3);
+    assert!(w.node.seats_via(&home_room).iter().all(|(_, via)| via.is_none()), "all directly on the home");
+    let epoch_before = alice.last_state().unwrap().epoch;
+
+    // The home dies: every sitter is cut off.
+    w.node.kill(0);
+    w.settle().await;
+
+    assert_eq!(w.node.rooms_on(0), Vec::<String>::new(), "the home's rooms are gone");
+    let moved = w.node.rooms_on(1);
+    assert_eq!(moved.len(), 1, "one new room on the other node");
+    let moved = moved[0].clone();
+    assert_eq!(w.node.seats(&moved).len(), 3, "all three came over");
+    assert_eq!(alice.count("call.move"), 1, "the creator moved the room");
+    assert_eq!(bob.count("call.move"), 0);
+    assert_eq!(carol.count("call.move"), 0);
+    for p in [&alice, &bob, &carol] {
+        let v = p.last_state().unwrap();
+        assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
+        assert_eq!(v.call_id, view.call_id, "{}: the same call", p.name);
+        assert_eq!(v.home, w.node.node(n1, NodeClass::Project).node.to_string(), "{}: the new home", p.name);
+        assert!(v.epoch > epoch_before, "{}: the epoch turned ({} > {})", p.name, v.epoch, epoch_before);
+        assert!(!verified_seats(&v).is_empty() && verified_seats(&v).iter().all(|(_, ok)| *ok), "{}: all verified again: {:?}", p.name, v.participants);
+        assert_eq!(repo::get(&p.store, &view.call_id).await.unwrap().unwrap().outcome, None, "{}: the call is live, one record", p.name);
+    }
+    for p in [&alice, &bob, &carol] {
+        assert!(p.errors().iter().all(|e| !e.contains("nobody moved")), "{}: {:?}", p.name, p.errors());
+    }
+}
+
+/// Two moves from one room at once: the first (the creator) and the
+/// second both move while none has heard the other (all deaf through the
+/// death of the home), each to a node of its own. Then everybody hears
+/// both: the newer holds on every device (by `created_at`, then room),
+/// the loser's author moves on into it, and all end in one room under one
+/// call and one epoch.
+#[tokio::test]
+async fn two_moves_from_one_room_settle_on_one() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    let n2 = w.node.add_node();
+    w.node.set_rtt(0, 10);
+    w.node.set_rtt(1, 20);
+    w.node.set_rtt(2, 30);
+    w.group(&[0, 1, 2]);
+    // A short backup so the second moves; a long wait so the third does
+    // not move within the test (it holds, deaf, for the moves to arrive).
+    let timing = Timing { move_backup: Duration::from_millis(15), move_wait: Duration::from_secs(50), ..cascade_timing() };
+    // The creator's spare node is node 1, the second's is node 2: the two
+    // moves go to plainly distinct rooms.
+    w.with_servers(0, vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)], timing).await;
+    w.with_servers(1, vec![w.node.as_call_node(), w.node.node(n2, NodeClass::Project)], timing).await;
+    w.with_servers(2, vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)], timing).await;
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+    let view = alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+
+    // Nobody hears anybody while the home dies: the creator (first) and
+    // the second each move the room, to a node of their own.
+    for i in [0, 1, 2] {
+        w.deafen(i);
+    }
+    w.node.kill(0);
+    w.settle().await;
+    assert_eq!(alice.count("call.move"), 1, "the creator moved");
+    assert_eq!(bob.count("call.move"), 1, "the second moved too (deaf to the first)");
+    assert_eq!(carol.count("call.move"), 0, "the third waits");
+
+    // Now everybody hears everything: the moves meet and the newer holds.
+    for i in [0, 1, 2] {
+        w.hear(i).await;
+    }
+    w.settle().await;
+
+    let (a, b, c) = (alice.last_state().unwrap(), bob.last_state().unwrap(), carol.last_state().unwrap());
+    assert_eq!(a.phase, GroupPhase::InRoom, "{:?}", a);
+    assert_eq!((b.phase, c.phase), (GroupPhase::InRoom, GroupPhase::InRoom));
+    assert_eq!((a.call_id.as_str(), b.call_id.as_str(), c.call_id.as_str()), (view.call_id.as_str(), view.call_id.as_str(), view.call_id.as_str()));
+    // The home is the winning room's node everywhere (a follower may sit
+    // on its own node through a cascade, so `node` can differ; `home` is
+    // the room).
+    assert_eq!(a.home, b.home, "the same winning room everywhere");
+    assert_eq!(b.home, c.home);
+    assert_eq!(a.epoch, b.epoch, "one epoch everywhere");
+    assert_eq!(b.epoch, c.epoch);
+    // The winner holds everywhere: each confirms the other two, which can
+    // happen only in one shared room (a split would leave fewer peers).
+    for p in [&alice, &bob, &carol] {
+        let v = p.last_state().unwrap();
+        let seen = verified_seats(&v);
+        assert_eq!(seen.len(), 2, "{}: two peers, so one room: {:?}", p.name, v.participants);
+        assert!(seen.iter().all(|(_, ok)| *ok), "{}: both verified: {:?}", p.name, v.participants);
+    }
+    assert_eq!(repo::get(&alice.store, &view.call_id).await.unwrap().unwrap().outcome, None, "one live call");
+}
+
+/// A client that does not understand `call.move` (a 5.1.6 one) is modelled
+/// by the rule it relies on: after a move, a note of the old room — and a
+/// `call.end` without any `room_id`, which it writes — is of a room left
+/// behind and does not touch the call.
+#[tokio::test]
+async fn a_note_of_the_room_left_behind_after_a_move_is_stale() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_rtt(0, 20);
+    w.node.set_rtt(1, 50);
+    w.group(&[0, 1, 2]);
+    let servers = vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)];
+    for i in [0, 1, 2] {
+        w.with_servers(i, servers.clone(), cascade_timing()).await;
+    }
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+    let view = alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let start_room = w.node.rooms_on(0)[0].clone();
+
+    w.node.kill(0);
+    w.settle().await;
+    assert_eq!(carol.last_state().unwrap().phase, GroupPhase::InRoom, "carol came over");
+
+    // A 5.1.6 client, lost in the old room, writes `call.end` with no
+    // `room_id` (the room of the start). It must not end the moved call.
+    let stale_end = Envelope::call_end(&view.call_id, "ended", None);
+    carol.calls.on_group_note(GROUP, &alice.pk(), &stale_end, w.now()).await.unwrap();
+    // And a `call.epoch` of the room left behind, likewise.
+    let stale_epoch = GroupSignalRaw::epoch(&view.call_id, 9, &start_room);
+    carol.calls.on_group_note(GROUP, &bob.pk(), &stale_epoch, w.now()).await.unwrap();
+    w.settle().await;
+
+    let v = carol.last_state().unwrap();
+    assert_eq!(v.phase, GroupPhase::InRoom, "the stale call.end did not end the moved call");
+    assert!(v.epoch < 9, "the stale call.epoch of the old room did not apply: {}", v.epoch);
+    assert!(carol.calls.announced(GROUP).await.is_some(), "the banner stands");
+    assert_eq!(repo::get(&carol.store, &view.call_id).await.unwrap().unwrap().outcome, None);
+}
+
+/// A tail of wave 4: the banner of "a call is on" outlived `call.end`.
+/// When the node's `left` for a peer never reached me (my channel stalled)
+/// but that peer's own `call.leave` did, I know the room is empty on my
+/// way out and send `call.end`; the banner goes.
+#[tokio::test]
+async fn call_end_goes_out_when_a_peer_left_by_its_own_note_though_the_node_was_silent() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    let (alice, bob) = (w.p(0), w.p(1));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let alice_session = w.engine.sessions()[0].id();
+    assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(2, true)], "alice sees bob");
+
+    // Alice's channel stalls: the node's words (bob's `left`) no longer
+    // reach her. Bob leaves — his `call.leave` note still reaches her.
+    w.node.freeze_ctl(alice_session);
+    bob.calls.leave().await.unwrap();
+    w.settle().await;
+    assert!(bob.notes().contains(&"call.leave".to_string()));
+    assert!(!bob.notes().contains(&"call.end".to_string()), "bob was not the last");
+
+    // Alice leaves last: she knows bob is gone by his note, so `call.end`
+    // goes and the banner is cleared for everybody.
+    alice.calls.leave().await.unwrap();
+    w.settle().await;
+    assert!(alice.notes().contains(&"call.end".to_string()), "call.end goes: the call is over: {:?}", alice.notes());
+    assert!(alice.calls.announced(GROUP).await.is_none(), "alice's banner is gone");
+    assert!(bob.calls.announced(GROUP).await.is_none(), "bob's banner is gone too");
+    assert_eq!(bob.events(UI_EVENT_GROUP_CALL_ENDED).len(), 1);
+}
+
+/// A helper to write a `call.epoch` naming a room, for the stale-note test
+/// (the core's own signal writer is not public to the tests).
+struct GroupSignalRaw;
+impl GroupSignalRaw {
+    fn epoch(call_id: &str, epoch: u32, room_id: &str) -> Envelope {
+        Envelope::call_epoch(call_id, epoch, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", None).in_room(Some(room_id))
+    }
+}
+
+/// The home is a node of the wave before the cascade (no `delegate`): the
+/// core understands it and joins directly, even with an own node that
+/// could cascade.
+#[tokio::test]
+async fn a_home_of_the_wave_before_the_cascade_is_joined_directly() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_wave4(0, true); // the home has no cascade and no delegate
+    w.group(&[0, 1]);
+    for i in [0, 1] {
+        w.p(i).groups.pin(GROUP, w.node.as_call_node());
+    }
+    w.with_servers(1, vec![w.node.node(n1, NodeClass::Own)], cascade_timing()).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    let home_room = w.node.rooms_on(0)[0].clone();
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+
+    let bv = bob.last_state().unwrap();
+    assert_eq!(bv.phase, GroupPhase::InRoom);
+    assert_eq!(bv.node, w.node.as_call_node().node.to_string(), "bob is on the home directly");
+    assert_eq!(bv.home, bv.node);
+    assert!(w.node.seats_via(&home_room).iter().all(|(_, via)| via.is_none()), "no proxy seat on a wave-4 home");
+    assert_eq!(w.node.rooms_on(1), Vec::<String>::new(), "no room on bob's own node");
+    assert!(bob.errors().is_empty(), "{:?}", bob.errors());
+}
+
+// ─── The findings of the review of the move ──────────────────────────────────
+
+/// A secret of all zeros: the smallest there is, so that the rule of
+/// `call.epoch` (the smaller secret holds) would surely take it.
+const ZERO_SECRET: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+/// The session of `seat` in `room_id` on the fake node.
+fn session_of_seat(w: &World, room_id: &str, seat: u32) -> u32 {
+    w.node.seats(room_id).into_iter().find(|(s, _)| *s == seat).map(|(_, session)| session).unwrap_or_else(|| panic!("no seat {seat} in {room_id}"))
+}
+
+/// The last key the session `id` sends with in the slot of `epoch`.
+fn sending_key_of(w: &World, id: u32, epoch: u32) -> Option<Vec<u8>> {
+    w.engine.sessions().into_iter().find(|h| h.id() == id).and_then(|h| sender_key_in(&h.record(), slot(epoch)))
+}
+
+/// The secret a party's `call.move` carried.
+fn moved_secret_of(p: &Party) -> [u8; 32] {
+    use base64::Engine as _;
+    let e = p.envelopes().into_iter().find(|e| e.t == "call.move").expect("a call.move");
+    base64::engine::general_purpose::STANDARD.decode(e.str_field("secret").unwrap()).unwrap().try_into().unwrap()
+}
+
+/// A `call.move` written by hand: from `from` to a room the test made on
+/// `node`, by the author's `seat` in the room left, to `epoch` with the
+/// zero secret.
+async fn crafted_move(w: &World, call_id: &str, from: &str, node: &CallNode, seat: u32, epoch: u32) -> (Envelope, String) {
+    let created = RoomApi::create(&w.node, node, MediaLimits::default()).await.unwrap();
+    let e = Envelope::call_move(
+        call_id,
+        from,
+        &created.room_id,
+        &node.node.to_string(),
+        None,
+        &created.join_token,
+        created.expires_at as i64,
+        seat,
+        epoch,
+        ZERO_SECRET,
+    );
+    (e, created.room_id)
+}
+
+/// Three in a room of the first node, each with the sets of servers given
+/// (the home first in each) and the timing given.
+async fn three_in_a_room(w: &mut World, servers: [Vec<CallNode>; 3], timing: Timing) -> (GroupCallView, String) {
+    w.group(&[0, 1, 2]);
+    for (i, s) in servers.into_iter().enumerate() {
+        w.with_servers(i, s, timing).await;
+    }
+    let view = w.p(0).calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.p(1).calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    w.p(2).calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms_on(0)[0].clone();
+    assert_eq!(w.node.seats(&room).len(), 3);
+    (view, room)
+}
+
+/// Finding: the move that holds sets the epoch. Two moves from one room
+/// carry one epoch number with secrets of their own; the loser's is the
+/// smallest there is, so the rule of `call.epoch` would leave every
+/// follower on it while the winner (who never takes the loser's note)
+/// kept its own, and nobody could read anybody. Now the winner's secret
+/// holds everywhere, whatever the loser said and in whatever order the
+/// two notes came.
+#[tokio::test]
+async fn the_move_that_holds_sets_the_epoch_whatever_the_loser_said() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    let n2 = w.node.add_node();
+    w.node.set_rtt(0, 10);
+    w.node.set_rtt(1, 20);
+    w.node.set_rtt(2, 30);
+    let timing = Timing { move_backup: Duration::from_secs(50), move_wait: Duration::from_secs(50), ..cascade_timing() };
+    let (home, p1, p2) = (w.node.as_call_node(), w.node.node(n1, NodeClass::Project), w.node.node(n2, NodeClass::Project));
+    let (view, r0) = three_in_a_room(&mut w, [vec![home.clone(), p1.clone()], vec![home.clone(), p2.clone()], vec![home.clone(), p1.clone()]], timing).await;
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+
+    // Everybody deaf, the home dies: the creator moves to node 1.
+    for i in [0, 1, 2] {
+        w.deafen(i);
+    }
+    w.node.kill(0);
+    w.settle().await;
+    assert_eq!(alice.count("call.move"), 1, "the creator moved");
+    assert_eq!(bob.count("call.move"), 0, "the second holds (a long backup in this test)");
+    let r_a = w.node.rooms_on(1)[0].clone();
+
+    // Bob's move, said a moment before Alice's (it loses), to a room on
+    // node 2 with the zero secret for the same epoch number. Everybody
+    // gets it first — the followers apply it and go there.
+    let (loser, r_b) = crafted_move(&w, &view.call_id, &r0, &p2, 2, 2).await;
+    for i in [0, 1, 2] {
+        w.p(i).calls.on_group_note(GROUP, &bob.pk(), &loser, START - 1).await.unwrap();
+    }
+    w.settle().await;
+    assert_eq!(w.node.seats(&r_b).len(), 2, "bob and carol went to the losing room first: {:?}", w.node.seats(&r_b));
+    assert_eq!(alice.last_state().unwrap().home, p1.node.to_string(), "alice keeps her own newer room");
+
+    // Then Alice's: the newer holds, over the loser, everywhere.
+    for i in [0, 1, 2] {
+        w.hear(i).await;
+    }
+    w.wait(Duration::from_millis(100)).await;
+
+    let winner = moved_secret_of(&alice);
+    for p in [&alice, &bob, &carol] {
+        let v = p.last_state().unwrap();
+        assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
+        assert_eq!(v.home, p1.node.to_string(), "{}: in the winner's room", p.name);
+        assert_eq!(v.epoch, 2, "{}: the epoch of the move", p.name);
+        let seat = v.participant.unwrap();
+        let session = session_of_seat(&w, &r_a, seat);
+        assert_eq!(
+            sending_key_of(&w, session, 2),
+            Some(sender_key(&winner, &view.call_id, seat, 2)),
+            "{}: sends under the winner's secret, not the smaller one of the loser",
+            p.name
+        );
+        let seen = verified_seats(&v);
+        assert_eq!(seen.len(), 2, "{}: two peers: {:?}", p.name, v.participants);
+        assert!(seen.iter().all(|(_, ok)| *ok), "{}: both read: {:?}", p.name, v.participants);
+    }
+    assert_eq!(w.node.seats(&r_b), vec![], "the losing room is empty");
+}
+
+/// Finding: a move held for the HELLO check (the receiver sitting well) is
+/// judged against its rival again when it is applied. Carol sits well in
+/// the room (its node silent to requests, her channel open) and gets the
+/// newer move first and the older one a moment later; both HELLOs time
+/// out, the older one's last. The newer holds all the same: the order of
+/// the checks does not decide.
+#[tokio::test]
+async fn a_move_held_for_the_hello_check_still_loses_to_the_newer_one() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    let n2 = w.node.add_node();
+    w.node.set_rtt(0, 10);
+    w.node.set_rtt(1, 20);
+    w.node.set_rtt(2, 30);
+    let timing = Timing {
+        hello_check: Duration::from_millis(60),
+        move_backup: Duration::from_millis(300),
+        move_wait: Duration::from_secs(50),
+        ..cascade_timing()
+    };
+    let (home, p1, p2) = (w.node.as_call_node(), w.node.node(n1, NodeClass::Project), w.node.node(n2, NodeClass::Project));
+    // Carol sits through node 2 (her own), the others on the home directly.
+    let own2 = w.node.node(n2, NodeClass::Own);
+    let (_view, r0) = three_in_a_room(&mut w, [vec![home.clone(), p1.clone()], vec![home.clone(), p2.clone()], vec![own2.clone()]], timing).await;
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+    let (sa, sb, sc) = (session_of_seat(&w, &r0, 1), session_of_seat(&w, &r0, 2), session_of_seat(&w, &r0, 3));
+    assert_eq!(carol.last_state().unwrap().node, own2.node.to_string(), "carol sits through node 2");
+
+    // The home answers nothing any more, but Carol's way stays: she is
+    // well. Its words stall too (a dead home says no `left`), so that the
+    // composition everybody judges the right and the order to move by
+    // stays whole.
+    w.node.set_silent(0, true);
+    for s in [sa, sb, sc] {
+        w.node.freeze_ctl(s);
+    }
+    for i in [0, 1, 2] {
+        w.deafen(i);
+    }
+    // Alice and Bob lose their way: the first moves at once, the second
+    // on its backup, each to a node of its own; Bob's note is the newer.
+    w.engine.inject_into(sa, SessionEvent::ConnectionState(ConnectionState::Disconnected));
+    w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Disconnected));
+    w.wait(Duration::from_millis(150)).await;
+    assert_eq!(alice.count("call.move"), 1, "alice moved first");
+    assert_eq!(bob.count("call.move"), 0, "bob not yet");
+    w.clock.0.store(START + 5, Ordering::SeqCst);
+    w.wait(Duration::from_millis(450)).await;
+    assert_eq!(bob.count("call.move"), 1, "bob moved too, deaf to alice");
+    let alice_move = alice.envelopes().into_iter().find(|e| e.t == "call.move").unwrap();
+    let bob_move = bob.envelopes().into_iter().find(|e| e.t == "call.move").unwrap();
+
+    // Carol, sitting well: Bob's newer move first, Alice's older one a
+    // moment later; each is held for a HELLO that times out, the older
+    // one's last.
+    carol.calls.on_group_note(GROUP, &bob.pk(), &bob_move, START + 5).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    carol.calls.on_group_note(GROUP, &alice.pk(), &alice_move, START).await.unwrap();
+    // Carol hears nothing else: each move once, as in life (a repeat of
+    // the newer one later would mend a wrong choice by itself).
+    for i in [0, 1] {
+        w.hear(i).await;
+    }
+    w.wait(Duration::from_millis(250)).await;
+
+    for p in [&alice, &bob, &carol] {
+        let v = p.last_state().unwrap();
+        assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
+        assert_eq!(v.home, p2.node.to_string(), "{}: the newer move holds, whichever check ended last", p.name);
+    }
+}
+
+/// Finding: no time window on the glare of moves. A move from a room the
+/// group left two minutes ago, said after the one that holds, is a
+/// straggler's: it does not uproot the room everybody sits in.
+#[tokio::test]
+async fn a_straggler_move_long_after_the_one_that_holds_changes_nothing() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    let n2 = w.node.add_node();
+    w.node.set_rtt(0, 20);
+    w.node.set_rtt(1, 50);
+    w.node.set_rtt(2, 50);
+    let (home, p1, p2) = (w.node.as_call_node(), w.node.node(n1, NodeClass::Project), w.node.node(n2, NodeClass::Project));
+    let servers = vec![home.clone(), p1.clone()];
+    let (view, r0) = three_in_a_room(&mut w, [servers.clone(), servers.clone(), servers], cascade_timing()).await;
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+    w.node.kill(0);
+    w.settle().await;
+    for p in [&alice, &bob, &carol] {
+        assert_eq!(p.last_state().unwrap().home, p1.node.to_string(), "{}: moved to node 1", p.name);
+    }
+    let epoch = carol.last_state().unwrap().epoch;
+
+    // Two minutes later: a move of the dead room by its second (Bob's seat
+    // 2, a right he had), to a room on node 2. Newer than the move that
+    // holds, but long after it.
+    w.clock.0.store(START + 120, Ordering::SeqCst);
+    let (straggler, r_x) = crafted_move(&w, &view.call_id, &r0, &p2, 2, 3).await;
+    for i in [0, 1, 2] {
+        w.p(i).calls.on_group_note(GROUP, &bob.pk(), &straggler, w.now()).await.unwrap();
+    }
+    w.wait(Duration::from_millis(100)).await;
+
+    for p in [&alice, &bob, &carol] {
+        let v = p.last_state().unwrap();
+        assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
+        assert_eq!(v.home, p1.node.to_string(), "{}: still in the room that holds", p.name);
+        assert_eq!(v.epoch, epoch, "{}: the epoch did not turn", p.name);
+    }
+    assert_eq!(w.node.seats(&r_x), vec![], "nobody went to the straggler's room");
+}
+
+/// Finding: the mover ordered two moves by the time its task began, not by
+/// the time its note was said (`created_at`, stamped after the room was
+/// made and joined). Alice's room is slow to make; Bob's move is said in
+/// between. Everybody else orders Alice's note (said later) over Bob's —
+/// and so does Alice now, instead of abandoning her own room.
+#[tokio::test]
+async fn the_mover_orders_two_moves_by_the_time_its_note_is_said() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    let n2 = w.node.add_node();
+    w.node.set_rtt(0, 20);
+    w.node.set_rtt(1, 50);
+    w.node.set_rtt(2, 50);
+    let timing = Timing { move_backup: Duration::from_millis(100), move_wait: Duration::from_secs(50), ..cascade_timing() };
+    let (home, p1, p2) = (w.node.as_call_node(), w.node.node(n1, NodeClass::Project), w.node.node(n2, NodeClass::Project));
+    let (_view, _r0) = three_in_a_room(&mut w, [vec![home.clone(), p1.clone()], vec![home.clone(), p2.clone()], vec![home.clone(), p2.clone()]], timing).await;
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+
+    for i in [0, 1, 2] {
+        w.deafen(i);
+    }
+    // Alice's room (the next one made) waits at the gate; the home dies.
+    let gate = w.node.hold_next_create();
+    w.node.kill(0);
+    // Alice is at the gate, her task begun at START; Bob's backup is not
+    // due yet.
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    w.clock.0.store(START + 5, Ordering::SeqCst);
+    w.wait(Duration::from_millis(200)).await;
+    assert_eq!(bob.count("call.move"), 1, "bob moved on his backup, his note said at START+5");
+    assert_eq!(alice.count("call.move"), 0, "alice still waits for her room");
+    // Alice's room is made now, her note said at START+10: the newer.
+    w.clock.0.store(START + 10, Ordering::SeqCst);
+    gate.notify_one();
+    w.wait(Duration::from_millis(200)).await;
+    assert_eq!(alice.count("call.move"), 1, "alice moved");
+
+    for i in [0, 1, 2] {
+        w.hear(i).await;
+    }
+    w.wait(Duration::from_millis(200)).await;
+    for p in [&alice, &bob, &carol] {
+        let v = p.last_state().unwrap();
+        assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
+        assert_eq!(v.home, p1.node.to_string(), "{}: alice's room, said later, holds — for alice too", p.name);
+    }
+}
+
+/// Finding: a join after a move that never connects was never timed out.
+/// Bob follows the move and his way to the new node never comes: in
+/// `rejoin_connect` the loss is judged (the home answers), he joins again,
+/// and the way then comes.
+#[tokio::test]
+async fn a_join_after_a_move_that_never_connects_is_judged_in_its_time() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_rtt(0, 20);
+    w.node.set_rtt(1, 50);
+    w.group(&[0, 1]);
+    let servers = vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)];
+    let timing = Timing { move_backup: Duration::from_secs(2), ..cascade_timing() };
+    for i in [0, 1] {
+        w.with_servers(i, servers.clone(), timing).await;
+    }
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+
+    w.deafen(1);
+    w.node.kill(0);
+    w.settle().await;
+    assert_eq!(alice.count("call.move"), 1);
+    let hellos_before = w.node.hellos(1);
+
+    // Bob hears the move; his way to the new node never comes.
+    w.engine.set_connects(false);
+    w.hear(1).await;
+    w.settle().await;
+    assert_eq!(bob.last_state().unwrap().phase, GroupPhase::Joining, "{:?}", bob.last_state());
+    assert_eq!(w.node.hellos(1), hellos_before, "nothing judged yet");
+    // Before his time is up the way opens again: his join again connects.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    w.engine.set_connects(true);
+    w.wait(Duration::from_millis(250)).await;
+
+    let v = bob.last_state().unwrap();
+    assert_eq!(v.phase, GroupPhase::InRoom, "judged in its time and joined again: {v:?}");
+    assert!(w.node.hellos(1) > hellos_before, "the home was asked from his point");
+    assert_eq!(v.home, w.node.node(n1, NodeClass::Project).node.to_string());
+    assert!(!bob.notes().contains(&"call.end".to_string()));
+    assert!(alice.last_state().unwrap().phase == GroupPhase::InRoom);
+}
+
+/// Finding: the second point of the judgement (a join through my own node,
+/// after a pass from the home) was not bounded like the HELLO: a home
+/// whose packets are black-holed holds the pass request until the connect
+/// times out, seconds later. Now the judgement ends in `hello_check` from
+/// both points, and the creator moves within the budget.
+#[tokio::test]
+async fn the_second_point_of_the_judgement_is_bounded_like_the_hello() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_rtt(0, 80);
+    w.node.set_rtt(1, 10);
+    w.group(&[0, 1]);
+    for i in [0, 1] {
+        w.p(i).groups.pin(GROUP, w.node.as_call_node());
+    }
+    let timing = Timing { move_backup: Duration::from_millis(300), ..cascade_timing() };
+    // Alice's own node is node 1 (nearer, with the cascade): the second
+    // point of her judgement.
+    w.with_servers(0, vec![w.node.node(n1, NodeClass::Own)], timing).await;
+    w.with_servers(1, vec![w.node.as_call_node()], timing).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(alice.last_state().unwrap().node, w.node.as_call_node().node.to_string(), "the creator sits on the home");
+
+    // The home's VM is gone with its packets: nothing answers, nothing
+    // refuses.
+    w.node.set_silent(0, true);
+    w.node.kill(0);
+    w.wait(Duration::from_millis(150)).await;
+
+    assert_eq!(alice.count("call.move"), 1, "the creator moved within the budget: {:?}", alice.notes());
+    assert_eq!(bob.count("call.move"), 0, "the second had no need to");
+    for p in [&alice, &bob] {
+        let v = p.last_state().unwrap();
+        assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
+        assert_eq!(v.home, w.node.node(n1, NodeClass::Own).node.to_string(), "{}: on node 1", p.name);
+    }
+}
+
+/// Finding: the time of a loss ran from the first `Disconnected`, not the
+/// latest. A way that comes back and goes again (a handover) is judged
+/// from its latest outage: no loss sign while each outage is shorter than
+/// `lost_after`.
+#[tokio::test]
+async fn a_way_that_came_back_and_went_again_is_judged_from_its_latest_outage() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    w.timing(Timing { lost_after: Duration::from_millis(200), hello_check: Duration::from_millis(20), send_switch_delay: SWITCH, ..Timing::default() });
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms()[0].clone();
+    let sb = session_of_seat(&w, &room, 2);
+    let hellos_before = w.node.hellos(0);
+
+    // Out at 0, back at 100, out at 150, back at 250: no outage lasts 200.
+    w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Disconnected));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Connected));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Disconnected));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Connected));
+    w.wait(Duration::from_millis(300)).await;
+
+    let v = bob.last_state().unwrap();
+    assert_eq!(v.phase, GroupPhase::InRoom, "{v:?}");
+    assert_eq!(v.participant, Some(2), "the same seat: no join again");
+    assert_eq!(w.node.hellos(0), hellos_before, "no judgement began");
+    assert_eq!(w.node.seats(&room).len(), 2);
+    assert_eq!(bob.count("call.leave"), 0);
+}
+
+/// Finding: after a join again, my own node's earlier `home_lost` was
+/// still remembered, and the next loss was judged from one point only.
+/// Bob sits through his own node; it says the home is lost though it is
+/// not; the home answers, Bob joins it again directly. Later his direct
+/// way breaks: judged from both points again, his own node seats him.
+#[tokio::test]
+async fn after_a_join_again_the_next_loss_is_judged_from_both_points() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_rtt(0, 80);
+    w.node.set_rtt(1, 10);
+    w.group(&[0, 1]);
+    for i in [0, 1] {
+        w.p(i).groups.pin(GROUP, w.node.as_call_node());
+    }
+    w.with_servers(1, vec![w.node.node(n1, NodeClass::Own)], cascade_timing()).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms_on(0)[0].clone();
+    let own = w.node.node(n1, NodeClass::Own).node.to_string();
+    let home = w.node.as_call_node().node.to_string();
+    assert_eq!(bob.last_state().unwrap().node, own, "bob sits through his own node");
+
+    // His own node says the home is lost; it is not: the home answers
+    // and Bob joins it again directly.
+    let sb = session_of_seat(&w, &room, bob.last_state().unwrap().participant.unwrap());
+    w.engine.inject_into(sb, SessionEvent::Data { label: CTL_LABEL.into(), payload: DataPayload::Text(Message::HomeLost.encode()) });
+    w.wait(Duration::from_millis(100)).await;
+    let v = bob.last_state().unwrap();
+    assert_eq!((v.phase, v.node.as_str()), (GroupPhase::InRoom, home.as_str()), "joined the home again directly: {v:?}");
+    let passes_before = w.node.delegated().len();
+
+    // His direct way breaks while the home is fine: both points judge,
+    // and the join through his own node is the join again.
+    let sb = session_of_seat(&w, &room, v.participant.unwrap());
+    w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Disconnected));
+    w.wait(Duration::from_millis(150)).await;
+    let v = bob.last_state().unwrap();
+    assert_eq!(v.phase, GroupPhase::InRoom, "{v:?}");
+    assert_eq!(v.node, own, "judged from his own node too: seated through it again");
+    assert!(w.node.delegated().len() > passes_before, "a pass was asked of the home for the second point");
+    assert_eq!(v.home, home);
+}
+
+/// Finding: a move that did not work out took the mover out of the call
+/// with `call.leave`. The creator's room is refused by the node; she tells
+/// the group nothing and waits; the second moves on its backup, and she
+/// follows.
+#[tokio::test]
+async fn a_move_that_did_not_work_out_waits_for_the_seconds_move() {
+    let mut w = World::new(&["alice", "bob", "carol"]).await;
+    let n1 = w.node.add_node();
+    let n2 = w.node.add_node();
+    w.node.set_rtt(0, 20);
+    w.node.set_rtt(1, 50);
+    w.node.set_rtt(2, 50);
+    let timing = Timing { move_backup: Duration::from_millis(60), ..cascade_timing() };
+    let (home, p1, p2) = (w.node.as_call_node(), w.node.node(n1, NodeClass::Project), w.node.node(n2, NodeClass::Project));
+    let (view, _r0) = three_in_a_room(&mut w, [vec![home.clone(), p1.clone()], vec![home.clone(), p2.clone()], vec![home.clone(), p2.clone()]], timing).await;
+    let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
+
+    // The next room asked for (the creator's) is refused.
+    w.node.refuse_next(NodeError::Refused { status: 503, error: "overloaded".into(), message: "fake node: overloaded".into() });
+    w.node.kill(0);
+    w.wait(Duration::from_millis(250)).await;
+
+    assert_eq!(alice.count("call.move"), 0, "the creator's room was refused");
+    assert_eq!(alice.count("call.leave"), 0, "she told the group nothing and did not leave: {:?}", alice.notes());
+    assert_eq!(bob.count("call.move"), 1, "the second moved on his backup");
+    for p in [&alice, &bob, &carol] {
+        let v = p.last_state().unwrap();
+        assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
+        assert_eq!(v.call_id, view.call_id);
+        assert_eq!(v.home, p2.node.to_string(), "{}: in the second's room", p.name);
+    }
+    assert_eq!(repo::get(&alice.store, &view.call_id).await.unwrap().unwrap().outcome, None, "the call is live for the creator too");
+}
+
+/// Finding, the other end: a move that did not work out leaves the mover
+/// waiting with its seat in the dead room as it was claimed. Nobody else
+/// moves in time, so it leaves `failed` — with the `call.leave` of the
+/// dead room, which its claim still owes, and never `call.end`.
+#[tokio::test]
+async fn a_move_that_did_not_work_out_still_owes_the_leave_of_the_dead_room() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_rtt(0, 20);
+    w.node.set_rtt(1, 50);
+    w.group(&[0, 1]);
+    let servers = vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)];
+    // The second moves long after the creator gives up waiting.
+    w.with_servers(0, servers.clone(), Timing { move_wait: Duration::from_millis(200), ..cascade_timing() }).await;
+    w.with_servers(1, servers, Timing { move_backup: Duration::from_secs(50), ..cascade_timing() }).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let r0 = w.node.rooms_on(0)[0].clone();
+    assert_eq!(alice.count("call.join"), 1, "her seat in the room is claimed");
+
+    w.node.refuse_next(NodeError::Refused { status: 503, error: "overloaded".into(), message: "fake node: overloaded".into() });
+    w.node.kill(0);
+    w.wait(Duration::from_millis(150)).await;
+    assert_eq!(alice.count("call.move"), 0, "the creator's room was refused");
+    assert_eq!(alice.count("call.leave"), 0, "she waits for the second's move: {:?}", alice.notes());
+    assert_eq!(alice.last_state().unwrap().phase, GroupPhase::Reconnecting);
+
+    w.wait(Duration::from_millis(300)).await;
+    assert_eq!(alice.last_state().unwrap().phase, GroupPhase::Left, "nobody moved the room in time: out");
+    let leaves: Vec<Envelope> = alice.envelopes().into_iter().filter(|e| e.t == "call.leave").collect();
+    assert_eq!(leaves.len(), 1, "the leave of her claimed seat: {:?}", alice.notes());
+    assert_eq!(leaves[0].str_field("room_id"), Some(r0.as_str()), "of the dead room");
+    assert_eq!(leaves[0].fields.get("participant").and_then(serde_json::Value::as_u64), Some(1), "her seat there");
+    assert_eq!(alice.count("call.end"), 0, "an empty dead room is no knowledge of the end");
 }

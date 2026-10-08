@@ -21,7 +21,7 @@ import {
   type MessengerUiEvent,
   type VideoInput,
 } from '../api';
-import { seatSendsVideo, type GroupOver, type Layer } from './group';
+import { groupStatusText, seatSendsVideo, type GroupOver, type Layer } from './group';
 
 /** How long the screen shows how a group call ended for me. */
 export const GROUP_OVER_SHOWN_MS = 2500;
@@ -37,6 +37,9 @@ export interface GroupCallOver {
 
 /** How far the room has come: an answer older than an event does not take it back. */
 const PHASE_ORDER: Record<GroupCallView['phase'], number> = { starting: 0, joining: 1, in_room: 2, reconnecting: 2, left: 3 };
+
+/** The node of the room (`home`; the node I am on when a runtime without the cascade says none). */
+const homeOf = (view: Pick<GroupCallView, 'node' | 'home'>) => view.home || view.node;
 
 class GroupCallStore {
   /** The room I am in; `null` when none. */
@@ -65,7 +68,22 @@ class GroupCallStore {
   showing = $state<Record<number, boolean>>({});
   /** A phone: where the sound of the room can go and where it goes; `null` on a computer, or before the room holds the sound. */
   routes = $state<CallAudioRoutes | null>(null);
+  /**
+   * The room is moving to another node: its node went, and the room I am
+   * entering again has another home than the one I talked in. The runtime
+   * says `reconnecting`/`joining` under the same call; the screen stays and
+   * says so until I am in the room again.
+   */
+  moving = $state(false);
 
+  /** The home of the room I last talked in (`in_room`), to tell a move from a way merely lost. */
+  private settledHome: string | null = null;
+  /**
+   * The room changed under the same call on the same node: a double move
+   * (cascade.md «Переезд» п.4) can put the loser's room and the winner's on
+   * one node, so the home alone does not tell it. Until I am in the room.
+   */
+  private anotherRoom = false;
   /** My camera was on when my screen went on: stopping the screen brings it back. */
   private cameraBeforeScreen = false;
   /** The room this page is leaving: its end is mine. */
@@ -97,6 +115,15 @@ class GroupCallStore {
   /** The call on in `groupId`, for its banner. */
   announcedIn(groupId: string | null | undefined): GroupCallAnnounced | null {
     return groupId ? (this.announced[groupId] ?? null) : null;
+  }
+
+  /**
+   * What the room I am in says of itself in a line (the clock, a phase, or
+   * that it moves): for every place that shows the room going, so that the
+   * chat's banner, the phone's bar and the capsule say the same.
+   */
+  statusText(tr: (key: string, params?: Record<string, string>) => string): string {
+    return groupStatusText(this.call, null, this.now, tr, !!this.call && this.moving);
   }
 
   /** The room has video to show: mine goes, or the pictures of a seat come. */
@@ -366,11 +393,19 @@ class GroupCallStore {
   }
 
   private setCall(view: GroupCallView | null) {
-    const before = this.call?.call_id;
+    const last = this.call;
+    const before = last?.call_id;
     this.epoch++;
     this.call = view;
     if (view) {
+      const home = homeOf(view);
+      // Another room of the same call: the runtime says `joining` with no
+      // seat (not even mine) once it leaves the room I sat in for the one
+      // the room moved to, also on the node of the old one.
+      const newRoom = !!last && view.call_id === before && view.phase === 'joining' && view.participants.length === 0 && last.participants.length > 0;
       if (view.call_id !== before) {
+        this.settledHome = null;
+        this.anotherRoom = false;
         this.levels = {};
         this.showing = {};
         this.speaker = null;
@@ -382,11 +417,29 @@ class GroupCallStore {
         this.simulcast = true;
         this.routes = null;
         this.dropOver();
+      } else if (last && (homeOf(last) !== home || newRoom)) {
+        // The same call in another room (it moved, mostly to another node):
+        // its seats are numbered anew, what was asked of the old ones is
+        // asked again. The screen, my camera and my screen stay.
+        if (newRoom) this.anotherRoom = true;
+        this.levels = {};
+        this.showing = {};
+        this.speaker = null;
+        this.layers.clear();
+        this.simulcast = true;
       }
+      if (view.phase === 'in_room') {
+        this.settledHome = home;
+        this.anotherRoom = false;
+      }
+      this.moving = view.phase !== 'in_room' && this.settledHome != null && (home !== this.settledHome || this.anotherRoom);
       const talking = view.participants.find((p) => p.speaking && !p.me && p.verified);
       if (talking) this.speaker = talking.id;
       else if (this.speaker != null && !view.participants.some((p) => p.id === this.speaker)) this.speaker = null;
     } else {
+      this.settledHome = null;
+      this.anotherRoom = false;
+      this.moving = false;
       this.levels = {};
       this.showing = {};
       this.speaker = null;

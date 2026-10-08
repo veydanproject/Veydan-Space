@@ -751,8 +751,16 @@ pub struct GroupCallView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "number")]
     pub joined_at: Option<i64>,
-    /// The node the room is on, `address:port#id`.
+    /// The node I am connected to, `address:port#id`: the node of the
+    /// room, or my own nearest node when I sit in the room through it
+    /// (the cascade, services/call/spec/cascade.md).
     pub node: String,
+    /// The node the room is on (its home), `address:port#id`; equal to
+    /// `node` when I sit there directly. When the home dies the room
+    /// moves (`call.move`): both change, and the phase goes
+    /// `reconnecting` → `in_room` again under the same `call_id`.
+    #[serde(default)]
+    pub home: String,
     /// My seat, once the node gave it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -847,6 +855,7 @@ impl From<CoreGroupView> for GroupCallView {
             started_at: v.started_at,
             joined_at: v.joined_at,
             node: v.node,
+            home: v.home,
             participant: v.participant,
             epoch: v.epoch,
             participants: v
@@ -1557,6 +1566,7 @@ mod tests {
             started_at: 100,
             joined_at: Some(103),
             node: NODE.into(),
+            home: NODE.into(),
             participant: Some(2),
             epoch: 3,
             participants: vec![messenger_calls::ParticipantView {
@@ -1638,6 +1648,7 @@ mod tests {
         let view = rt.group_call_start(&group.id, CallMedia::Audio).await.unwrap();
         assert_eq!((view.group_id.as_str(), view.media, view.participant), (group.id.as_str(), CallMedia::Audio, Some(1)));
         assert_eq!(view.node, node.reference().to_string());
+        assert_eq!(view.home, view.node, "the room is on the node I made it on: no cascade");
         assert_eq!(view.participants.len(), 1, "me: {:?}", view.participants);
         assert!(view.participants[0].me && view.participants[0].verified);
         // The fake node's answer connects at once; the core hears of it

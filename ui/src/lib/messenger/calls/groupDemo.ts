@@ -14,7 +14,10 @@
 // Boris and Alice are in it; `in`: I am in it too, with video), and
 // `window.veydanDemoGroupCall(kind)` plays at once: `announce`,
 // `announce-video`, `in`, `come` (a member comes in), `go` (one leaves),
-// `video` (Boris's camera on or off), `reconnect`, `end` (everybody leaves).
+// `video` (Boris's camera on or off), `reconnect`, `cascade` (my way to the
+// room through my nearest node, or straight again), `move` (the room's node
+// goes: the room moves to another under the same call, its seats anew),
+// `end` (everybody leaves).
 //
 // The video of a seat is the test picture of calls/video.ts, at the size
 // of the layer its tile asked for (`messenger_group_call_set_layer`):
@@ -36,6 +39,7 @@ export interface DemoFrames {
 }
 
 const NODE = '108.61.171.68:8443#fda09da75199c4e04601a9df309710fab15cd7b2b806ca3b2bbab202582a6dca';
+const NODE_2 = '149.28.37.154:8443#68367a61a90c3efafa3a0d4aec481be7c8c21f266864871ecbe9e8ff139bfb03';
 const LAYERS: Record<string, [number, number]> = { q: [320, 180], h: [640, 360], f: [1280, 720] };
 const FPS = 15;
 
@@ -69,6 +73,9 @@ interface Room {
   /** How many people the room saw, me included. */
   seen: Set<string>;
   epoch: number;
+  /** The node I am on; the node of the room (`home`): another one when I sit in it through mine. */
+  node: string;
+  home: string;
 }
 
 const nowSecs = () => Math.floor(Date.now() / 1000);
@@ -107,7 +114,7 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
   function view(r: Room): GroupCallView {
     return {
       call_id: r.call_id, group_id: r.group_id, chat_id: chatOf(r.group_id), phase: r.phase, media: r.media, muted: r.muted,
-      video_local: r.video_local, camera: r.camera, started_by: r.started_by, started_at: r.started_at, joined_at: r.joined_at, node: NODE,
+      video_local: r.video_local, camera: r.camera, started_by: r.started_by, started_at: r.started_at, joined_at: r.joined_at, node: r.node, home: r.home,
       participant: r.mine, epoch: r.epoch, participants: r.phase === 'starting' ? [] : participants(r),
       limits: { turn_lifetime_secs: 600, turn_kbps_per_allocation: 2000, credentials_ttl_secs: 600 },
       kbps_per_participant: 2500, max_participants: 12,
@@ -203,6 +210,30 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
     host.emit('group_call.ended', { call: { ...announced(r), joined: false }, outcome: 'ended', duration_secs: nowSecs() - r.started_at });
   }
 
+  /**
+   * The room's node goes: the way is lost a moment, then the room is on
+   * another node (the nearest of mine, so straight on it) under the same
+   * call, a new epoch, every seat numbered anew; the group hears of it again.
+   */
+  function move() {
+    const r = room;
+    if (!r?.joined || r.phase !== 'in_room') return;
+    r.phase = 'reconnecting';
+    emitState();
+    later(1500, () => {
+      if (room !== r || r.phase !== 'reconnecting') return;
+      r.home = r.home === NODE ? NODE_2 : NODE;
+      r.node = r.home;
+      r.mine = 1;
+      r.seats.forEach((s, i) => { s.id = i + 2; });
+      r.epoch += 1;
+      r.phase = 'joining';
+      emitState();
+      emitAnnounced();
+      later(1800, () => { if (room === r && r.phase === 'joining') { r.phase = 'in_room'; emitState(); } });
+    });
+  }
+
   /** In the room: the others speak in turns, their voices come as levels. */
   function talk() {
     if (pulse) clearInterval(pulse);
@@ -228,7 +259,7 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
   function newRoom(groupId: string, media: CallMedia, by: string, ago = 0): Room {
     return {
       call_id: hexId(), group_id: groupId, media, started_by: by, started_at: nowSecs() - ago, seats: [], joined: false, mine: 0,
-      phase: 'joining', muted: false, video_local: false, seen: new Set([by]), epoch: 1,
+      phase: 'joining', muted: false, video_local: false, seen: new Set([by]), epoch: 1, node: NODE, home: NODE,
     };
   }
 
@@ -301,6 +332,14 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
         later(2500, () => { if (room === r && r.phase === 'reconnecting') { r.phase = 'in_room'; emitState(); } });
         break;
       }
+      case 'cascade': {
+        const r = room;
+        if (!r?.joined) break;
+        r.node = r.node === r.home ? (r.home === NODE ? NODE_2 : NODE) : r.home;
+        emitState();
+        break;
+      }
+      case 'move': move(); break;
       case 'end': end(); break;
     }
   }

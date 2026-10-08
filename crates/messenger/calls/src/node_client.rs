@@ -25,7 +25,7 @@
 //! client of VLink (scripts/boundaries.sh).
 
 use crate::engine::{IceServer, RelayPolicy};
-use crate::servers::{CallNode, NodeClass};
+use crate::servers::{CallNode, NodeClass, NodeRef};
 use bytes::Bytes;
 use messenger_core::{MessengerError, Result};
 use messenger_vlink::proto::{io as h2io, pin, BridgeId};
@@ -45,11 +45,22 @@ const PATH_TURN: &str = "/v1/turn";
 const PATH_ROOMS: &str = "/v1/rooms";
 /// What a node with an SFU says in `capabilities`.
 pub const CAP_SFU: &str = "sfu";
+/// What a node that seats its participants in the rooms of other nodes
+/// says in `capabilities` (services/call/spec/cascade.md): a client may
+/// join the room of a home node through it (`join` with `home`).
+pub const CAP_CASCADE: &str = "cascade";
 /// A request or an answer is a few hundred bytes; more is not one.
 const MAX_BODY: usize = 64 * 1024;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// A join through my own node into the room of another takes longer:
+/// its HELLO to the home (2 s), the join there (2 s), the ICE between
+/// them (4 s), with a margin (`CASCADE_JOIN_TIMEOUT` of the cascade).
+pub const CASCADE_JOIN_TIMEOUT: Duration = Duration::from_secs(10);
+/// A HELLO that judges whether a node is there at all: a short one
+/// (`HELLO_CHECK` of the cascade).
+pub const HELLO_CHECK: Duration = Duration::from_secs(2);
 /// A STUN binding that takes longer than this says nothing useful of the
 /// distance; HELLO's time is used then.
 const STUN_TIMEOUT: Duration = Duration::from_secs(1);
@@ -183,12 +194,28 @@ pub struct RoomCreated {
     pub sfu_tcp: String,
 }
 
+/// The home of a room, in a join through another node: `node` is the
+/// reference of the node the room is on (`address:port#id`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JoinHome {
+    pub node: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinRequest {
+    /// The join token of the room; in a join with `home`, the one-time
+    /// pass of a seat the home gave (`delegate`).
     pub token: String,
     pub sdp_offer: String,
     #[serde(default)]
     pub caps: Vec<String>,
+    /// The key of the node asked, when it is private and the join is
+    /// through it into the room of another (read with `home` alone).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<Access>,
+    /// The room is on another node: seat me there through this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<JoinHome>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,6 +228,25 @@ pub struct Joined {
     /// Who is in the room already.
     #[serde(default)]
     pub participants: Vec<u32>,
+    /// In a join through another node: the token of my seat on the home
+    /// (the proxy seat of my node there), to give it up myself when my
+    /// node is gone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home_token: Option<String>,
+}
+
+/// `POST /v1/rooms/{id}/delegate`: a one-time pass of a seat for a join
+/// through another node, by the join token.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DelegateRequest {
+    pub token: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Delegated {
+    pub proxy_token: String,
+    #[serde(default)]
+    pub expires_at: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,6 +289,17 @@ impl NodeError {
             Self::Unreachable(_) => None,
         }
     }
+
+    /// The node has no such room (`404 room_not_found`), or no such path
+    /// at all (a 404 page of a node before the cascade).
+    pub fn is_not_found(&self) -> bool {
+        self.status() == Some(404)
+    }
+
+    /// The room is full (`409 room_full`).
+    pub fn is_room_full(&self) -> bool {
+        self.status() == Some(409)
+    }
 }
 
 impl std::fmt::Display for NodeError {
@@ -276,6 +333,25 @@ pub trait RoomApi: Send + Sync {
     /// `POST /v1/rooms/{id}/token`: a new join token; the old one lets
     /// nobody in from now on.
     async fn change_token(&self, node: &CallNode, room_id: &str, admin_token: &str) -> std::result::Result<String, NodeError>;
+    /// `POST /v1/rooms/{id}/delegate` on the home of the room: a one-time
+    /// pass of a seat by the join token, for a join through my own node
+    /// (services/call/spec/cascade.md). A node before the cascade answers
+    /// 404 (`NodeError::is_not_found`): the join goes to the home directly.
+    async fn delegate(&self, home: &CallNode, room_id: &str, join_token: &str) -> std::result::Result<Delegated, NodeError>;
+    /// `POST /v1/rooms/{id}/join` on `via`, my own node, with `home`: it
+    /// seats me in the room of the home through a seat of its own there.
+    /// `proxy_token` is the pass from `delegate`; the key of `via` goes
+    /// in `access` when it has one. Waits [`CASCADE_JOIN_TIMEOUT`].
+    async fn join_via(
+        &self,
+        via: &CallNode,
+        home: &NodeRef,
+        room_id: &str,
+        proxy_token: &str,
+        sdp_offer: &str,
+    ) -> std::result::Result<Joined, NodeError>;
+    /// HELLO alone, within [`HELLO_CHECK`]: is the node there.
+    async fn hello(&self, node: &CallNode) -> std::result::Result<Welcome, NodeError>;
 }
 
 /// The rooms over the control channel of the node.
@@ -288,7 +364,7 @@ impl HttpRooms {
         Self { client_name: client_name.to_string() }
     }
 
-    async fn session(&self, node: &CallNode) -> std::result::Result<h2::client::SendRequest<Bytes>, NodeError> {
+    async fn session(&self, node: &CallNode) -> std::result::Result<(h2::client::SendRequest<Bytes>, Welcome), NodeError> {
         let send = connect(node).await.map_err(|e| NodeError::Unreachable(e.to_string()))?;
         let short = node.node.id.short();
         let access = Access { key: node.access_key.clone() };
@@ -296,36 +372,70 @@ impl HttpRooms {
         if welcome.node_id != node.node.id.to_string() {
             return Err(NodeError::Unreachable(format!("node {short}: says it is another node")));
         }
-        Ok(send)
+        Ok((send, welcome))
     }
 }
 
 #[async_trait::async_trait]
 impl RoomApi for HttpRooms {
     async fn create(&self, node: &CallNode, limits: MediaLimits) -> std::result::Result<RoomCreated, NodeError> {
-        let send = self.session(node).await?;
+        let (send, _) = self.session(node).await?;
         let request = RoomRequest { access: Access { key: node.access_key.clone() }, media_limits: limits };
         post(&send, PATH_ROOMS, &request, node.node.id.short().as_str()).await
     }
 
     async fn join(&self, node: &CallNode, room_id: &str, token: &str, sdp_offer: &str) -> std::result::Result<Joined, NodeError> {
-        let send = self.session(node).await?;
-        let request = JoinRequest { token: token.to_string(), sdp_offer: sdp_offer.to_string(), caps: vec![] };
+        let (send, _) = self.session(node).await?;
+        let request = JoinRequest { token: token.to_string(), sdp_offer: sdp_offer.to_string(), caps: vec![], access: None, home: None };
         post(&send, &format!("{PATH_ROOMS}/{room_id}/join"), &request, node.node.id.short().as_str()).await
     }
 
     async fn leave(&self, node: &CallNode, room_id: &str, participant_id: u32, token: &str) -> std::result::Result<(), NodeError> {
-        let send = self.session(node).await?;
+        let (send, _) = self.session(node).await?;
         let request = LeaveRequest { participant_id, token: token.to_string() };
         let _: serde_json::Value = post(&send, &format!("{PATH_ROOMS}/{room_id}/leave"), &request, node.node.id.short().as_str()).await?;
         Ok(())
     }
 
     async fn change_token(&self, node: &CallNode, room_id: &str, admin_token: &str) -> std::result::Result<String, NodeError> {
-        let send = self.session(node).await?;
+        let (send, _) = self.session(node).await?;
         let request = TokenRequest { admin_token: admin_token.to_string() };
         let changed: TokenChanged = post(&send, &format!("{PATH_ROOMS}/{room_id}/token"), &request, node.node.id.short().as_str()).await?;
         Ok(changed.join_token)
+    }
+
+    async fn delegate(&self, home: &CallNode, room_id: &str, join_token: &str) -> std::result::Result<Delegated, NodeError> {
+        let (send, _) = self.session(home).await?;
+        let request = DelegateRequest { token: join_token.to_string() };
+        post(&send, &format!("{PATH_ROOMS}/{room_id}/delegate"), &request, home.node.id.short().as_str()).await
+    }
+
+    async fn join_via(
+        &self,
+        via: &CallNode,
+        home: &NodeRef,
+        room_id: &str,
+        proxy_token: &str,
+        sdp_offer: &str,
+    ) -> std::result::Result<Joined, NodeError> {
+        let (send, _) = self.session(via).await?;
+        let request = JoinRequest {
+            token: proxy_token.to_string(),
+            sdp_offer: sdp_offer.to_string(),
+            caps: vec![],
+            access: via.access_key.as_ref().map(|k| Access { key: Some(k.clone()) }),
+            home: Some(JoinHome { node: home.to_string() }),
+        };
+        post_within(&send, &format!("{PATH_ROOMS}/{room_id}/join"), &request, via.node.id.short().as_str(), CASCADE_JOIN_TIMEOUT).await
+    }
+
+    async fn hello(&self, node: &CallNode) -> std::result::Result<Welcome, NodeError> {
+        let short = node.node.id.short();
+        match tokio::time::timeout(HELLO_CHECK, self.session(node)).await {
+            Ok(Ok((_, welcome))) => Ok(welcome),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(NodeError::Unreachable(format!("node {short}: no answer to hello in time"))),
+        }
     }
 }
 
@@ -596,6 +706,17 @@ async fn post<T: Serialize, R: DeserializeOwned>(
     body: &T,
     short: &str,
 ) -> std::result::Result<R, NodeError> {
+    post_within(send, path, body, short, REQUEST_TIMEOUT).await
+}
+
+/// One request that may take `wait` to be answered.
+async fn post_within<T: Serialize, R: DeserializeOwned>(
+    send: &h2::client::SendRequest<Bytes>,
+    path: &str,
+    body: &T,
+    short: &str,
+    wait: Duration,
+) -> std::result::Result<R, NodeError> {
     let unreachable = |e: MessengerError| NodeError::Unreachable(e.to_string());
     let mut send = send.clone().ready().await.map_err(transport).map_err(unreachable)?;
     let request = http::Request::builder()
@@ -608,7 +729,7 @@ async fn post<T: Serialize, R: DeserializeOwned>(
     let (response, mut stream) = send.send_request(request, false).map_err(transport).map_err(unreachable)?;
     let json = serde_json::to_vec(body).map_err(|e| NodeError::Unreachable(e.to_string()))?;
     stream.send_data(Bytes::from(json), true).map_err(transport).map_err(unreachable)?;
-    let response = tokio::time::timeout(REQUEST_TIMEOUT, response)
+    let response = tokio::time::timeout(wait, response)
         .await
         .map_err(|_| NodeError::Unreachable(format!("node {short}: no answer in time")))?
         .map_err(transport)

@@ -42,6 +42,10 @@ pub enum Message {
     /// it). With more participants than the node forwards the sound of,
     /// only theirs comes.
     Speaking { participants: Vec<u32> },
+    /// From my own node, when I sit in a room of another node through it
+    /// (the cascade): the node of the room stopped answering it. A close
+    /// of the channel follows; the room moves (services/call/spec/cascade.md).
+    HomeLost,
 }
 
 impl Message {
@@ -80,6 +84,8 @@ mod tests {
         assert_eq!(offer, Message::Offer { seq: 1, sdp: "v=0".into(), tracks: vec![Track { id: 2, kind: "audio".into(), mid: "3".into() }] });
         assert_eq!(Message::Answer { seq: 1, sdp: "v=1".into() }.encode(), r#"{"t":"answer","seq":1,"sdp":"v=1"}"#);
         assert_eq!(Message::parse(r#"{"t":"speaking","participants":[2]}"#), Some(Message::Speaking { participants: vec![2] }));
+        assert_eq!(Message::parse(r#"{"t":"home_lost"}"#), Some(Message::HomeLost));
+        assert_eq!(Message::HomeLost.encode(), r#"{"t":"home_lost"}"#);
         assert_eq!(Message::parse(r#"{"t":"wave","id":2}"#), None, "a word of a newer node");
         assert_eq!(Message::parse("not json"), None);
         assert_eq!(from_relayed(&relayed(7, b"bytes")), Some((7, &b"bytes"[..])));

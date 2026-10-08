@@ -39,6 +39,8 @@
 //! messenger-cli [--data-dir DIR] call-wait [the flags of call]                (every incoming call, until Ctrl-C)
 //! messenger-cli [--data-dir DIR] gcall <group:ID> [the flags of call]          (start a call in the group, stay in its room)
 //! messenger-cli [--data-dir DIR] gcall-join <group:ID> [--wait N] [the flags of call]   (join the call that is on in the group)
+//!   (--node <ref>: my own node; the room of another node is joined through it — the cascade, services/call/spec/cascade.md —
+//!    and the lines say `via node B → home A`; a move of the room to another node is printed with the time out of it)
 //! messenger-cli [--data-dir DIR] gcall-wait <group:ID> [the flags of call]     (join every call of the group, until Ctrl-C)
 //! messenger-cli [--data-dir DIR] group-node <group:ID> <address:port#id|none> [--key K]   (pin a call node to the group)
 //! messenger-cli manifest-keygen <secret-file>
@@ -2125,7 +2127,7 @@ async fn gcall_start(rt: &MessengerRuntime, engine: &RtcEngine, group: &str, pla
     let issued = std::time::Instant::now();
     println!("{} gcall group:{} {media:?}", stamp(), &group[..12]);
     let view = rt.group_call_start(group, media).await.unwrap_or_else(die);
-    println!("{} started {} phase {:?} node {} seat {:?}", stamp(), view.call_id, view.phase, view.node, view.participant);
+    println!("{} started {} phase {:?} {} seat {:?}", stamp(), view.call_id, view.phase, where_of(&view.node, &view.home), view.participant);
     in_room(rt, &mut events, &mut taps, plan, &view.call_id, issued).await;
     flush(rt).await;
 }
@@ -2233,7 +2235,7 @@ async fn gcall_wait(rt: &MessengerRuntime, engine: &RtcEngine, group: &str, plan
         let Some(announced) = announced else { continue };
         let joining = std::time::Instant::now();
         match rt.group_call_join(group).await {
-            Ok(view) => println!("{} joined {} phase {:?} node {} seat {:?}", stamp(), view.call_id, view.phase, view.node, view.participant),
+            Ok(view) => println!("{} joined {} phase {:?} {} seat {:?}", stamp(), view.call_id, view.phase, where_of(&view.node, &view.home), view.participant),
             Err(e) => {
                 eprintln!("{} join failed: {e}", stamp());
                 if once {
@@ -2260,7 +2262,26 @@ async fn gcall_wait(rt: &MessengerRuntime, engine: &RtcEngine, group: &str, plan
 
 #[cfg(test)]
 mod tests {
-    use super::{DoneWith, JOIN_TRIES};
+    use super::{DoneWith, Way, JOIN_TRIES};
+
+    /// The first state of `gcall` (phase `starting`, no node yet) prints
+    /// no way: no `node ` line with an empty address for a grep to take
+    /// as the node of the room. The way is printed once known, once per
+    /// change, and a change of home is a move.
+    #[test]
+    fn the_way_is_printed_once_known_and_once_per_change() {
+        let mut way = Way::default();
+        assert_eq!(way.moved("", ""), None, "starting: no node yet, nothing printed");
+        assert_eq!(way.here(), "", "nothing known to repeat");
+        assert_eq!(way.moved("a:8443", "").as_deref(), Some("node a:8443"), "the node answered: the way, home not yet told");
+        assert_eq!(way.moved("a:8443", "a:8443"), None, "the home named as my own node: the same line, not repeated");
+        assert_eq!(way.moved("a:8443", "a:8443"), None, "the same state again: silent");
+        assert_eq!(way.moved("b:8443", "a:8443").as_deref(), Some("via node b:8443 → home a:8443"), "through my own node: the cascade");
+        assert_eq!(way.moved("b:8443", "c:8443").as_deref(), Some("room moved: home a:8443 → via node b:8443 → home c:8443"), "the home died: the move is named");
+        assert_eq!(way.here(), "via node b:8443 → home c:8443");
+        assert_eq!(way.moved("", "c:8443"), None, "a state without a node forgets nothing");
+        assert_eq!(way.here(), "via node b:8443 → home c:8443", "the last known way stays for the `back in the room` line");
+    }
 
     /// The call `gcall-wait` left is not joined again while the group
     /// still announces it; the next call (a new id) is.
@@ -2338,6 +2359,10 @@ async fn in_room(
     let mut stdin_open = true;
     let mut last_line = String::new();
     let mut outcome = None;
+    // Where I sit (the node I am connected to, the home of the room) as
+    // the state last said, and since when the way to the room is lost.
+    let mut way = Way::default();
+    let mut lost_at: Option<std::time::Instant> = None;
     loop {
         tokio::select! {
             tap = taps.recv() => {
@@ -2401,6 +2426,31 @@ async fn in_room(
                             if line != last_line {
                                 println!("{} group_call.state {line} (+{:.2} s)", stamp(), since.elapsed().as_secs_f32());
                                 last_line = line;
+                            }
+                            // Where I sit: through my own node or on the
+                            // home itself, and the room moving to another
+                            // node when its home died (cascade.md).
+                            if let Some(moved) = way.moved(c["node"].as_str().unwrap_or(""), c["home"].as_str().unwrap_or("")) {
+                                println!("{} group_call.state {moved} (+{:.2} s)", stamp(), since.elapsed().as_secs_f32());
+                            }
+                            match c["phase"].as_str() {
+                                Some("reconnecting") if lost_at.is_none() => {
+                                    lost_at = Some(std::time::Instant::now());
+                                    println!("{} group_call.state the way to the room is lost: reconnecting (+{:.2} s)", stamp(), since.elapsed().as_secs_f32());
+                                }
+                                Some("in_room") => {
+                                    if let Some(t) = lost_at.take() {
+                                        println!(
+                                            "{} group_call.state back in the room after {:.1} s out of it ({}, epoch {}, seat {})",
+                                            stamp(),
+                                            t.elapsed().as_secs_f32(),
+                                            way.here(),
+                                            c["epoch"],
+                                            c["participant"]
+                                        );
+                                    }
+                                }
+                                _ => {}
                             }
                             // The m-lines of the others: whose they are, and
                             // the frames of every video as it appears.
@@ -2510,12 +2560,19 @@ async fn in_room(
     );
     let got = std::mem::take(&mut *got.lock().unwrap());
     let seat_of = |mid: &str| got.seats.get(mid).map(|s| format!("seat {s}")).unwrap_or_else(|| "seat ?".into());
+    let mut written: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for (mid, samples) in &got.audio {
-        // One file per seat: `<out>` with the seat before the extension.
+        // One file per seat: `<out>` with the seat before the extension;
+        // a seat with a second m-line (the room moved, or I joined it
+        // again) gets the m-line after the seat, not the first file over.
         let path = plan.out_path.as_ref().map(|p| {
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("audio");
             let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("wav");
-            p.with_file_name(format!("{stem}-{}.{ext}", seat_of(mid).replace(' ', "")))
+            let seat = seat_of(mid).replace(' ', "");
+            let first = p.with_file_name(format!("{stem}-{seat}.{ext}"));
+            let path = if written.contains(&first) { p.with_file_name(format!("{stem}-{seat}-{mid}.{ext}")) } else { first };
+            written.insert(path.clone());
+            path
         });
         report_received_of(&format!("{} mid {mid}", seat_of(mid)), samples, path.as_deref());
     }
@@ -2533,6 +2590,54 @@ async fn in_room(
             v.peak_fps,
             v.pattern
         );
+    }
+}
+
+/// Where I sit as the state last said: the node I am connected to and
+/// the home of the room. A line only when a known way changed: nothing
+/// while the call is `starting` and no node is named yet (`gcall` of the
+/// creator before the node answered), `node A` when the way is first
+/// known, `room moved: …` when the home changed (cascade.md).
+#[derive(Default)]
+struct Way {
+    at: Option<(String, String)>,
+}
+
+impl Way {
+    /// The line to print for the state that just came, or nothing when
+    /// the way is the same, or still unknown (no node named).
+    fn moved(&mut self, node: &str, home: &str) -> Option<String> {
+        if node.is_empty() {
+            // Not connected yet: no way to print, and nothing to forget.
+            return None;
+        }
+        let here = where_of(node, home);
+        let line = match &self.at {
+            Some((_, old_home)) if !old_home.is_empty() && *old_home != home => Some(format!("room moved: home {old_home} → {here}")),
+            // The same line as before (the home named later as my own
+            // node): remembered, so that a later move is seen, not repeated.
+            Some(_) if self.here() == here => None,
+            _ => Some(here),
+        };
+        self.at = Some((node.to_string(), home.to_string()));
+        line
+    }
+
+    /// Where I sit now, or empty while unknown.
+    fn here(&self) -> String {
+        self.at.as_ref().map(|(n, h)| where_of(n, h)).unwrap_or_default()
+    }
+}
+
+/// Where I sit, on a line: `node A` when the room is on the node I am
+/// connected to, `via node B → home A` when I sit in the room of A
+/// through my own node B (the cascade); `home` empty before the join
+/// was answered, or from a runtime before the cascade.
+fn where_of(node: &str, home: &str) -> String {
+    if home.is_empty() || home == node {
+        format!("node {node}")
+    } else {
+        format!("via node {node} → home {home}")
     }
 }
 

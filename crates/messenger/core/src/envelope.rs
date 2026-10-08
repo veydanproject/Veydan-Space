@@ -136,6 +136,15 @@ pub const T_CALL_LEAVE: &str = "call.leave";
 /// in the room moves its keys to it. `join_token` comes from the creator
 /// alone, when it changed the token of the room (a member was removed).
 pub const T_CALL_EPOCH: &str = "call.epoch";
+/// `{"t":"call.move","call_id":"…","from_room_id":"<32 hex>","room_id":"<32 hex>",
+/// "node":"<addr:port#id>","key":"…"?,"join_token":"…","expires_at":<secs>,
+/// "seat":<my seat in from_room_id>,"epoch":N,"secret":"<base64>"}` — the
+/// node of the room is gone: I made a new room on another node for the
+/// same call, with a new epoch of the keys; everybody comes over
+/// (internal/messenger-wire.md §10, "Каскад и переезд"). `call.join`,
+/// `call.leave`, `call.epoch` and `call.end` carry `room_id` since the
+/// same wave: a note without it is of the room of the start.
+pub const T_CALL_MOVE: &str = "call.move";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
@@ -309,6 +318,48 @@ impl Envelope {
         let e = Self::new(T_CALL_EPOCH).with("call_id", call_id).with("epoch", epoch).with("secret", secret_b64);
         match join_token {
             Some(t) => e.with("join_token", t),
+            None => e,
+        }
+    }
+
+    /// The room a `call.join`, `call.leave`, `call.epoch` or `call.end`
+    /// speaks of; `None` adds nothing, as a client before the moves
+    /// wrote (its note is of the room of the start).
+    pub fn in_room(self, room_id: Option<&str>) -> Self {
+        match room_id {
+            Some(r) => self.with("room_id", r),
+            None => self,
+        }
+    }
+
+    /// The room of the call moved from `from_room_id` to `room_id` on
+    /// `node`; `seat` is the author's seat in the room left, `epoch` and
+    /// `secret_b64` the epoch the keys turn to.
+    #[allow(clippy::too_many_arguments)]
+    pub fn call_move(
+        call_id: &str,
+        from_room_id: &str,
+        room_id: &str,
+        node: &str,
+        key: Option<&str>,
+        join_token: &str,
+        expires_at: i64,
+        seat: u32,
+        epoch: u32,
+        secret_b64: &str,
+    ) -> Self {
+        let e = Self::new(T_CALL_MOVE)
+            .with("call_id", call_id)
+            .with("from_room_id", from_room_id)
+            .with("room_id", room_id)
+            .with("node", node)
+            .with("join_token", join_token)
+            .with("expires_at", expires_at)
+            .with("seat", seat)
+            .with("epoch", epoch)
+            .with("secret", secret_b64);
+        match key {
+            Some(k) => e.with("key", k),
             None => e,
         }
     }
@@ -563,6 +614,24 @@ mod tests {
             format!(r#"{{"v":1,"t":"call.epoch","call_id":"{id}","epoch":3,"join_token":"t2","secret":"bmV4dA=="}}"#)
         );
         assert_eq!(Envelope::parse(&Envelope::call_epoch(&id, 2, "x", None).encode()).unwrap().fields.get("epoch"), Some(&serde_json::json!(2)));
+        // The room of a note after a move; nothing added for the start's.
+        assert_eq!(
+            Envelope::call_join(&id, 3).in_room(Some(&room)).encode(),
+            format!(r#"{{"v":1,"t":"call.join","call_id":"{id}","participant":3,"room_id":"{room}"}}"#)
+        );
+        assert_eq!(Envelope::call_leave(&id, 3).in_room(None).encode(), Envelope::call_leave(&id, 3).encode());
+        let new_room = "ef".repeat(16);
+        let moved = Envelope::call_move(&id, &room, &new_room, &node, None, &"34".repeat(24), 1_760_050_000, 2, 3, "bmV4dA==");
+        assert_eq!(
+            moved.encode(),
+            format!(
+                r#"{{"v":1,"t":"call.move","call_id":"{id}","epoch":3,"expires_at":1760050000,"from_room_id":"{room}","join_token":"{}","node":"{node}","room_id":"{new_room}","seat":2,"secret":"bmV4dA=="}}"#,
+                "34".repeat(24)
+            )
+        );
+        assert!(moved.is_call());
+        assert_eq!(Envelope::parse(&moved.encode()).unwrap(), moved);
+        assert_eq!(Envelope::call_move(&id, &room, &new_room, &node, Some("k1"), "t", 1, 1, 2, "s").str_field("key"), Some("k1"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "veydanspace"
-version = "5.1.6"
+version = "5.1.7"
 description = "Workspace for multi-accounting: browser profiles, proxies, SSH, notes, passwords and chat"
 authors = ["Veydan Project"]
 edition = "2021"

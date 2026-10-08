@@ -43,7 +43,7 @@ pub use group::{
     UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_LEVEL, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 pub use handler::CallDmHandler;
-pub use node_client::{HttpRooms, Joined, MediaLimits, NodeClient, NodeError, Picked, RoomApi, RoomCreated};
+pub use node_client::{Delegated, HttpRooms, Joined, MediaLimits, NodeClient, NodeError, Picked, RoomApi, RoomCreated, CAP_CASCADE, CAP_SFU};
 pub use servers::{CallNode, NodeClass, NodeRef, ServerSets, SettingsServerSets, StaticServerSets, KEY_CALL_NODES, KEY_RELAY_POLICY};
 pub use service::{
     CallService, VideoQuality, ANSWERED_ELSEWHERE, CONNECT_TIMEOUT, GATHER_WAIT, ICE_DEBOUNCE, KEY_INCOMING_ENABLED,

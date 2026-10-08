@@ -230,9 +230,18 @@ started_at: number,
  */
 joined_at?: number, 
 /**
- * The node the room is on, `address:port#id`.
+ * The node I am connected to, `address:port#id`: the node of the
+ * room, or my own nearest node when I sit in the room through it
+ * (the cascade, services/call/spec/cascade.md).
  */
 node: string, 
+/**
+ * The node the room is on (its home), `address:port#id`; equal to
+ * `node` when I sit there directly. When the home dies the room
+ * moves (`call.move`): both change, and the phase goes
+ * `reconnecting` → `in_room` again under the same `call_id`.
+ */
+home: string, 
 /**
  * My seat, once the node gave it.
  */

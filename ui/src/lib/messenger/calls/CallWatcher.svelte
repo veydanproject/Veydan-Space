@@ -18,7 +18,6 @@
   import CallIcon from './CallIcon.svelte';
   import CallSounds from './CallSounds.svelte';
   import { callStore } from './callStore.svelte';
-  import { groupStatusText } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import { groupStore } from '../groups/groupStore.svelte';
   import { callPeer } from './peer';
@@ -58,7 +57,7 @@
   });
   const roomBar = $derived(messengerStore.visible && room && !onRoomPage && !bar ? room : null);
   const roomName = $derived(roomBar ? (groupStore.groups[roomBar.group_id]?.name ?? '') : '');
-  const roomStatus = $derived(roomBar ? groupStatusText(roomBar, null, groupCallStore.now, tr) : '');
+  const roomStatus = $derived(roomBar ? groupCallStore.statusText(tr) : '');
 </script>
 
 {#if messengerStore.visible}

@@ -20,7 +20,7 @@
   import { messengerStore } from '../store.svelte';
   import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
-  import { bannerKey, groupStatusText, peopleIn } from './group';
+  import { bannerKey, peopleIn } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import { openGroupRoom } from './room';
   import { callErrorText } from './words';
@@ -43,7 +43,7 @@
       : !sessionActive ? $t('msg_call_err_locked')
       : '',
   );
-  const status = $derived(mine ? groupStatusText(mine, null, groupCallStore.now, tr) : '');
+  const status = $derived(mine ? groupCallStore.statusText(tr) : '');
   const count = $derived(people > 0 ? $t(countKey('msg_gcall_people', people, $locale), { n: String(people) }) : '');
   const what = $derived(mine || live ? tr(bannerKey(!!mine, (mine ?? live)?.media)) : '');
 
