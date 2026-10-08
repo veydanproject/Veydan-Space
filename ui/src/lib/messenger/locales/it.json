@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "Qualità del mio video",
     "msg_calls_video_360p": "Standard · 360p",
     "msg_calls_video_720p": "Alta · 720p",
-    "msg_calls_video_hint": "Vale dalla prossima volta che attivi la fotocamera. L’alta qualità richiede una connessione più veloce; tramite un nodo di chiamata, il suo limite può ridurla."
+    "msg_calls_video_hint": "Vale dalla prossima volta che attivi la fotocamera. L’alta qualità richiede una connessione più veloce; tramite un nodo di chiamata, il suo limite può ridurla.",
+    "msg_call_confirm_audio": "Avviare una chiamata vocale?",
+    "msg_call_confirm_video": "Avviare una videochiamata?",
+    "msg_call_confirm_never": "Non chiedere più",
+    "msg_call_confirm_never_hint": "D’ora in poi la chiamata parte subito. Per tornare a ricevere la domanda, attivala in Impostazioni → Chiamate; tenere premuto un pulsante di chiamata le apre.",
+    "msg_calls_device_title": "Su questo dispositivo",
+    "msg_calls_incoming": "Accetta chiamate su questo dispositivo",
+    "msg_calls_incoming_hint": "Le chiamate squillano qui e sugli altri tuoi dispositivi con questo account.",
+    "msg_calls_incoming_off_hint": "Qui le chiamate non squillano. Gli altri tuoi dispositivi con questo account squillano comunque, e da qui puoi continuare a chiamare.",
+    "msg_calls_confirm": "Chiedi prima di chiamare",
+    "msg_calls_confirm_hint": "Un pulsante di chiamata chiede prima se avviare una chiamata vocale o una videochiamata, così nessuna parte per sbaglio. Tenere premuto un pulsante di chiamata apre queste impostazioni."
   },
   "mobile": {}
 }

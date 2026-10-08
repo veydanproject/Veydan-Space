@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "Jakość mojego wideo",
     "msg_calls_video_360p": "Standardowa · 360p",
     "msg_calls_video_720p": "Wysoka · 720p",
-    "msg_calls_video_hint": "Obowiązuje od następnego włączenia kamery. Wysoka jakość wymaga szybszego łącza; przez węzeł połączeń jego limit może ją obniżyć."
+    "msg_calls_video_hint": "Obowiązuje od następnego włączenia kamery. Wysoka jakość wymaga szybszego łącza; przez węzeł połączeń jego limit może ją obniżyć.",
+    "msg_call_confirm_audio": "Rozpocząć połączenie głosowe?",
+    "msg_call_confirm_video": "Rozpocząć połączenie wideo?",
+    "msg_call_confirm_never": "Nie pytaj więcej",
+    "msg_call_confirm_never_hint": "Od teraz połączenie zaczyna się od razu. Aby pytanie wróciło, włącz je w Ustawieniach → Połączenia; przytrzymanie przycisku połączenia je otwiera.",
+    "msg_calls_device_title": "Na tym urządzeniu",
+    "msg_calls_incoming": "Odbieraj połączenia na tym urządzeniu",
+    "msg_calls_incoming_hint": "Połączenia dzwonią tutaj i na innych Twoich urządzeniach z tym kontem.",
+    "msg_calls_incoming_off_hint": "Tutaj połączenia nie dzwonią. Inne Twoje urządzenia z tym kontem nadal dzwonią, a stąd wciąż możesz dzwonić.",
+    "msg_calls_confirm": "Pytaj przed połączeniem",
+    "msg_calls_confirm_hint": "Przycisk połączenia najpierw pyta, czy rozpocząć połączenie głosowe czy wideo, aby żadne nie zaczęło się przypadkiem. Przytrzymanie przycisku połączenia otwiera te ustawienia."
   },
   "mobile": {}
 }

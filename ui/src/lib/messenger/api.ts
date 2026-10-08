@@ -18,6 +18,13 @@ import type {
   CallMedia, CallNodeInput, CallState, CallView, CameraInfo, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoTrack,
 } from './generated/calls';
 
+/**
+ * The state of calls as the runtime says it. `incoming_enabled` (calls ring
+ * on this device) comes with a runtime that has `messenger_call_set_incoming`;
+ * a runtime without it says nothing, and the settings do not offer it.
+ */
+export type CallStateView = CallState & { incoming_enabled?: boolean };
+
 export interface MessengerIngressCounters {
   received: number;
   duplicates: number;
@@ -1683,11 +1690,16 @@ export const messengerApi = {
     end: (callId: string) => invoke<void>('messenger_call_end', { callId }),
     mute: (muted: boolean) => invoke<CallView>('messenger_call_mute', { muted }),
     /** For the next call; the one under way keeps its way. */
-    setPolicy: (policy: RelayPolicy) => invoke<CallState>('messenger_call_set_policy', { policy }),
+    setPolicy: (policy: RelayPolicy) => invoke<CallStateView>('messenger_call_set_policy', { policy }),
     /** My own nodes, replacing the list (`address:port#id`, a key for a private one). */
-    setNodes: (nodes: CallNodeInput[]) => invoke<CallState>('messenger_call_set_nodes', { nodes }),
-    /** The call under way, the policy, the nodes, whether this build can call. */
-    state: () => invoke<CallState>('messenger_call_get_state'),
+    setNodes: (nodes: CallNodeInput[]) => invoke<CallStateView>('messenger_call_set_nodes', { nodes }),
+    /** The call under way, the policy, the nodes, whether this build can call, whether calls ring here. */
+    state: () => invoke<CallStateView>('messenger_call_get_state'),
+    /**
+     * Calls ring on this device, or not: off, a call does not ring or show
+     * here; my other devices still ring.
+     */
+    setIncoming: (enabled: boolean) => invoke<CallStateView>('messenger_call_set_incoming', { enabled }),
     /**
      * A phone: where the sound of the call goes. `list` answers the routes
      * there are and the one in use; `set` sends the sound to `route`. A
@@ -1712,7 +1724,7 @@ export const messengerApi = {
     /** A computer: my screen (or the window `screen`) instead of my camera. */
     shareScreen: (screen?: string) => invoke<CallView>('messenger_call_share_screen', { screen: screen ?? null }),
     /** How big my video goes, from the next time it goes on. */
-    setVideoQuality: (quality: VideoQuality) => invoke<CallState>('messenger_call_set_video_quality', { quality }),
+    setVideoQuality: (quality: VideoQuality) => invoke<CallStateView>('messenger_call_set_video_quality', { quality }),
     /**
      * The frames of `track` of the call under way: `onframe` gets each
      * message of the channel as it came (calls/video.ts reads them) until

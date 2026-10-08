@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "Kualitas video saya",
     "msg_calls_video_360p": "Standar · 360p",
     "msg_calls_video_720p": "Tinggi · 720p",
-    "msg_calls_video_hint": "Berlaku saat kamera Anda menyala berikutnya. Kualitas tinggi butuh koneksi yang lebih cepat; lewat node panggilan, batas node dapat menurunkannya."
+    "msg_calls_video_hint": "Berlaku saat kamera Anda menyala berikutnya. Kualitas tinggi butuh koneksi yang lebih cepat; lewat node panggilan, batas node dapat menurunkannya.",
+    "msg_call_confirm_audio": "Mulai panggilan suara?",
+    "msg_call_confirm_video": "Mulai panggilan video?",
+    "msg_call_confirm_never": "Jangan tanya lagi",
+    "msg_call_confirm_never_hint": "Mulai sekarang panggilan langsung dimulai. Agar ditanya lagi, nyalakan pertanyaannya di Setelan → Panggilan; menahan tombol panggilan membukanya.",
+    "msg_calls_device_title": "Di perangkat ini",
+    "msg_calls_incoming": "Terima panggilan di perangkat ini",
+    "msg_calls_incoming_hint": "Panggilan berdering di sini dan di perangkat Anda yang lain dengan akun ini.",
+    "msg_calls_incoming_off_hint": "Panggilan tidak berdering di sini. Perangkat Anda yang lain dengan akun ini tetap berdering, dan Anda tetap bisa menelepon dari sini.",
+    "msg_calls_confirm": "Tanya sebelum menelepon",
+    "msg_calls_confirm_hint": "Tombol panggilan terlebih dulu menanyakan apakah akan memulai panggilan suara atau video, agar tidak ada yang dimulai tanpa sengaja. Menahan tombol panggilan membuka setelan ini."
   },
   "mobile": {}
 }

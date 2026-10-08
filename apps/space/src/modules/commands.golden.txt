@@ -51,6 +51,8 @@ messenger_call_get_state messenger all
 messenger_call_list_cameras messenger all
 messenger_call_list_screens messenger desktop
 messenger_call_mute messenger all
+messenger_call_network_changed messenger all
+messenger_call_set_incoming messenger all
 messenger_call_set_nodes messenger all
 messenger_call_set_policy messenger all
 messenger_call_set_video messenger all

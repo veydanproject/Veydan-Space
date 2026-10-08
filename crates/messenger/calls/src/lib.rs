@@ -28,8 +28,8 @@ pub mod service;
 pub mod signal;
 
 pub use call::{
-    CallView, Direction, Outcome, Phase, VideoSize, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_LEVEL,
-    UI_EVENT_CALL_STATE, UI_EVENT_CALL_STATS,
+    CallView, Direction, Outcome, Phase, ReconnectReason, VideoSize, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING,
+    UI_EVENT_CALL_LEVEL, UI_EVENT_CALL_STATE, UI_EVENT_CALL_STATS,
 };
 pub use engine::{
     CameraInfo, ConnectionState, IceCandidate, IceServer, Media, MediaEngine, PairKind, PixelFormat, PushedFrame, RelayPolicy,
@@ -39,7 +39,7 @@ pub use handler::CallDmHandler;
 pub use node_client::{NodeClient, Picked};
 pub use servers::{CallNode, NodeClass, NodeRef, ServerSets, SettingsServerSets, StaticServerSets, KEY_CALL_NODES, KEY_RELAY_POLICY};
 pub use service::{
-    CallService, VideoQuality, ANSWERED_ELSEWHERE, CONNECT_TIMEOUT, GATHER_WAIT, ICE_DEBOUNCE, KEY_VIDEO_QUALITY, RING_TIMEOUT,
-    VIDEO_FPS,
+    CallService, VideoQuality, ANSWERED_ELSEWHERE, CONNECT_TIMEOUT, GATHER_WAIT, ICE_DEBOUNCE, KEY_INCOMING_ENABLED,
+    KEY_VIDEO_QUALITY, LOSS_CONFIRM, RESTART_SETTLE, RING_TIMEOUT, VIDEO_FPS,
 };
 pub use signal::{Signal, INVITE_TTL_SECS};

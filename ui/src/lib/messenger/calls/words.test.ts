@@ -47,7 +47,7 @@ describe('the phase of a call', () => {
     expect(phaseKey({ phase: 'outgoing', media: 'audio' })).toBe('msg_call_phase_outgoing');
     expect(phaseKey({ phase: 'incoming', media: 'video' })).toBe('msg_call_phase_incoming_video');
     expect(phaseKey({ phase: 'connecting', media: 'audio' })).toBe('msg_call_phase_connecting');
-    expect(phaseKey({ phase: 'connecting', media: 'audio', answered_at: 10 })).toBe('msg_call_phase_reconnecting');
+    expect(phaseKey({ phase: 'reconnecting', media: 'audio', answered_at: 10 })).toBe('msg_call_phase_reconnecting');
     expect(phaseKey({ phase: 'active', media: 'audio', answered_at: 10 })).toBeNull();
   });
 

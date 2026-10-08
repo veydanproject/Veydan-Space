@@ -422,21 +422,30 @@
       {#if phone}<button class="icon back" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
       {:else}<button class="icon back narrow-only" onclick={onback} title={$t('msg_back')}><Icon name="arrow-left" size={16} /></button>{/if}
     {/if}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="ident" class:clickable={!!ontitle} onclick={() => ontitle?.()}>
-    <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={36} online={presence === 'online'} />
-    <div class="who">
-      <div class="title">{chat.title}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
-      <div class="sub">
-        {#if !sessionActive}{$t('msg_chat_locked')}
-        {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
-        {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
-        {:else if subtitle}{@render subtitle()}
-        {:else if presenceText}<span class:online={presence === 'online'}>{presenceText}</span>
-        {:else}<code>{chat.peer_npub ? `${chat.peer_npub.slice(0, 14)}…${chat.peer_npub.slice(-6)}` : ''}</code>{/if}
+    {#snippet identity()}
+      <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={36} online={presence === 'online'} />
+      <div class="who">
+        <div class="title">{chat.title}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
+        <div class="sub">
+          {#if !sessionActive}{$t('msg_chat_locked')}
+          {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
+          {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
+          {:else if subtitle}{@render subtitle()}
+          {:else if presenceText}<span class:online={presence === 'online'}>{presenceText}</span>
+          {:else}<code>{chat.peer_npub ? `${chat.peer_npub.slice(0, 14)}…${chat.peer_npub.slice(-6)}` : ''}</code>{/if}
+        </div>
       </div>
-    </div>
-    </div>
+    {/snippet}
+    <!-- The face and the name open the panel about the chat (the header has no other button for it);
+         a key opens it too. -->
+    {#if ontitle}
+      <div class="ident clickable" role="button" tabindex="0" onclick={() => ontitle?.()}
+        onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); ontitle?.(); } }}>
+        {@render identity()}
+      </div>
+    {:else}
+      <div class="ident">{@render identity()}</div>
+    {/if}
     <TransfersChip {phone} />
     {#if actions}{@render actions()}{/if}
     <button class="icon" onclick={openChatMenu} title={$t("msg_chat_menu")}><Icon name="more-vertical" size={16} /></button>
@@ -494,7 +503,8 @@
   .head.phone { background: var(--m-nav, var(--surface)); padding-left: var(--sp-1); }
   .head.phone .back { color: var(--text); padding: 10px; }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1; }
-  .ident.clickable { cursor: pointer; }
+  .ident.clickable { cursor: pointer; border-radius: var(--radius-sm); }
+  .ident.clickable:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dim { color: var(--text-3); display: inline-flex; }

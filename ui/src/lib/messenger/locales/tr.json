@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "Görüntümün kalitesi",
     "msg_calls_video_360p": "Standart · 360p",
     "msg_calls_video_720p": "Yüksek · 720p",
-    "msg_calls_video_hint": "Kamera bir dahaki açılışında geçerli olur. Yüksek kalite daha hızlı bir bağlantı ister; bir arama düğümü üzerinden düğümün sınırı onu düşürebilir."
+    "msg_calls_video_hint": "Kamera bir dahaki açılışında geçerli olur. Yüksek kalite daha hızlı bir bağlantı ister; bir arama düğümü üzerinden düğümün sınırı onu düşürebilir.",
+    "msg_call_confirm_audio": "Sesli arama başlatılsın mı?",
+    "msg_call_confirm_video": "Görüntülü arama başlatılsın mı?",
+    "msg_call_confirm_never": "Bir daha sorma",
+    "msg_call_confirm_never_hint": "Artık arama hemen başlar. Yeniden sorulması için soruyu Ayarlar → Aramalar bölümünden açın; bir arama düğmesine basılı tutmak orayı açar.",
+    "msg_calls_device_title": "Bu cihazda",
+    "msg_calls_incoming": "Bu cihazda aramaları kabul et",
+    "msg_calls_incoming_hint": "Aramalar burada ve bu hesaba sahip diğer cihazlarınızda çalar.",
+    "msg_calls_incoming_off_hint": "Aramalar burada çalmaz. Bu hesaba sahip diğer cihazlarınız çalmaya devam eder ve buradan arama yapmaya devam edebilirsiniz.",
+    "msg_calls_confirm": "Aramadan önce sor",
+    "msg_calls_confirm_hint": "Bir arama düğmesi önce sesli mi görüntülü mü arama başlatılacağını sorar, böylece hiçbiri yanlışlıkla başlamaz. Bir arama düğmesine basılı tutmak bu ayarları açar."
   },
   "mobile": {}
 }

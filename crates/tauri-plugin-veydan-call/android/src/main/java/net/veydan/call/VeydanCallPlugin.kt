@@ -92,6 +92,9 @@ class VeydanCallPlugin(private val activity: Activity) : Plugin(activity) {
     Engine.start(activity)
     // A call notification a dead process left goes before anything rings.
     main.post { Calls.loaded(activity) }
+    // A change of the network is told to the app at once (a lost way is
+    // restarted without waiting for the engine to notice).
+    NetworkWatch.start(activity)
   }
 
   /** Runs `work` on the main thread, where the call's state lives, and answers with what it returns. */

@@ -15,7 +15,11 @@
 //!   the engine answers `stats()` when asked, so a task of the adapter
 //!   asks it every second while the session lives and tells the core of
 //!   what changed;
-//! - a restart of ICE is an offer made with `ice_restart`.
+//! - a restart of ICE is an offer made with `ice_restart`;
+//! - the core expects `NetworkChanged` when the network changes under
+//!   the engine. libwebrtc tells nobody in so many words, but with
+//!   continual gathering (session.rs) a new interface shows up as a new
+//!   local candidate after gathering was complete: that is the word.
 //!
 //! The rule of the core holds: nothing here calls into it; every event
 //! goes on the channel the core takes once.
@@ -258,6 +262,10 @@ struct RtcSession {
     /// Where a capture that ended by itself says why; the pump carries
     /// it to the core.
     lost: mpsc::UnboundedSender<String>,
+    /// Gathering for the current description is complete: a candidate
+    /// that comes after that is of a network that just came up. Reset by
+    /// every new description of this side (an offer, an answer, a restart).
+    gathering_done: Arc<AtomicBool>,
 }
 
 impl RtcSession {
@@ -272,8 +280,9 @@ impl RtcSession {
     ) -> Self {
         let (tx, rx) = mpsc::channel(EVENTS_QUEUE);
         let closed = Arc::new(AtomicBool::new(false));
-        let pump = tokio::spawn(pump(Arc::downgrade(&inner), events, tx, output_slot, closed.clone(), lost_rx));
-        Self { inner, events: Mutex::new(Some(rx)), closed, pump, captures, capture: Mutex::new(None), wanted, lost }
+        let gathering_done = Arc::new(AtomicBool::new(false));
+        let pump = tokio::spawn(pump(Arc::downgrade(&inner), events, tx, output_slot, closed.clone(), lost_rx, gathering_done.clone()));
+        Self { inner, events: Mutex::new(Some(rx)), closed, pump, captures, capture: Mutex::new(None), wanted, lost, gathering_done }
     }
 
     /// Whatever captured this side's video, taken out of the session (a
@@ -303,10 +312,12 @@ impl RtcSession {
 #[async_trait]
 impl CoreSession for RtcSession {
     async fn create_offer(&self) -> Result<String> {
+        self.gathering_done.store(false, Ordering::SeqCst);
         self.inner.create_offer(false).await.map_err(engine_error)
     }
 
     async fn create_answer(&self) -> Result<String> {
+        self.gathering_done.store(false, Ordering::SeqCst);
         self.inner.create_answer().await.map_err(engine_error)
     }
 
@@ -328,6 +339,7 @@ impl CoreSession for RtcSession {
     }
 
     async fn restart_ice(&self) -> Result<String> {
+        self.gathering_done.store(false, Ordering::SeqCst);
         self.inner.create_offer(true).await.map_err(engine_error)
     }
 
@@ -479,13 +491,16 @@ impl SizeTold {
 }
 
 /// Carries the engine's events to the core and asks the session for its
-/// statistics every second: the pair in use when it changed (and again
-/// after every loss of the connection, so that a restored call is told
-/// its way anew), the level of the far end's sound, the counters every
-/// other reading. Watches the frames of both videos for their size
-/// ([`SizeTold`]), and carries the word of a capture that ended by
-/// itself. Holds the session weakly: it ends when the session is gone,
-/// and is aborted when it is closed.
+/// statistics every second: the pair in use when it changed (a new pair
+/// of addresses as well as a new kind: after a restart of ICE the call
+/// is told its way anew, whether the state ever changed or not), the
+/// level of the far end's sound, the counters every other reading.
+/// Watches the frames of both videos for their size ([`SizeTold`]), and
+/// carries the word of a capture that ended by itself. A local candidate
+/// after gathering was complete is a network that came up: told to the
+/// core as `NetworkChanged`, once per gathering. Holds the session
+/// weakly: it ends when the session is gone, and is aborted when it is
+/// closed.
 async fn pump(
     session: Weak<Session>,
     mut events: mpsc::UnboundedReceiver<SessionEvent>,
@@ -493,10 +508,12 @@ async fn pump(
     mut output_slot: Option<oneshot::Sender<AudioOutput>>,
     closed: Arc<AtomicBool>,
     mut lost: mpsc::UnboundedReceiver<String>,
+    gathering_done: Arc<AtomicBool>,
 ) {
     let mut tick = tokio::time::interval(STATS_EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut told_pair: Option<PairKind> = None;
+    // The pair told last: its kind and its two addresses.
+    let mut told_pair: Option<(PairKind, String, String)> = None;
     let mut readings: u32 = 0;
     let mut connected = false;
     let (mut local, mut remote) = match session.upgrade() {
@@ -543,12 +560,33 @@ async fn pump(
             ev = events.recv() => {
                 let Some(ev) = ev else { break };
                 let translated = match ev {
-                    SessionEvent::LocalCandidate(c) => Some(CoreEvent::LocalCandidate(IceCandidate {
-                        candidate: c.candidate,
-                        mid: Some(c.sdp_mid),
-                        index: u16::try_from(c.sdp_mline_index).ok(),
-                    })),
-                    SessionEvent::GatheringComplete => Some(CoreEvent::GatheringComplete),
+                    SessionEvent::LocalCandidate(c) => {
+                        if gathering_done.swap(false, Ordering::SeqCst) {
+                            // Gathering was complete: this one is of a network
+                            // that just came up. The candidate itself goes too
+                            // (first), and the core restarts ICE on the word.
+                            tracing::info!(candidate = %c.candidate, "ice: a candidate after gathering was complete: the network changed");
+                            let candidate = CoreEvent::LocalCandidate(IceCandidate {
+                                candidate: c.candidate,
+                                mid: Some(c.sdp_mid),
+                                index: u16::try_from(c.sdp_mline_index).ok(),
+                            });
+                            if out.send(candidate).await.is_err() {
+                                break;
+                            }
+                            Some(CoreEvent::NetworkChanged)
+                        } else {
+                            Some(CoreEvent::LocalCandidate(IceCandidate {
+                                candidate: c.candidate,
+                                mid: Some(c.sdp_mid),
+                                index: u16::try_from(c.sdp_mline_index).ok(),
+                            }))
+                        }
+                    }
+                    SessionEvent::GatheringComplete => {
+                        gathering_done.store(true, Ordering::SeqCst);
+                        Some(CoreEvent::GatheringComplete)
+                    }
                     SessionEvent::ConnectionState(s) => {
                         let state = connection_state(s);
                         connected = state == CoreState::Connected;
@@ -590,8 +628,9 @@ async fn pump(
                 readings = readings.wrapping_add(1);
                 if let Some(path) = &stats.path {
                     let kind = if path.is_relayed() { PairKind::Relay } else { PairKind::Direct };
-                    if told_pair != Some(kind) {
-                        told_pair = Some(kind);
+                    let pair = (kind, path.local_addr.clone(), path.remote_addr.clone());
+                    if told_pair.as_ref() != Some(&pair) {
+                        told_pair = Some(pair);
                         if out.send(CoreEvent::SelectedPair(kind)).await.is_err() {
                             break;
                         }

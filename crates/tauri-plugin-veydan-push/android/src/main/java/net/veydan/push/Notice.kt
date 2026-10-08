@@ -19,6 +19,12 @@ internal sealed class Outcome {
   /** Somebody calls: the phone rings with the call plugin's notification. */
   data class Call(val call: CallNotice) : Outcome()
 
+  /**
+   * A call the phone may be ringing for is over (taken on another device,
+   * declined, given up by the caller): the ringing stops.
+   */
+  data class CallEnd(val callId: String) : Outcome()
+
   /** The core could not answer. */
   data class Error(val error: String) : Outcome()
 
@@ -28,10 +34,14 @@ internal sealed class Outcome {
       "plain" -> Plain(PlainNotice.from(json))
       "quiet" -> Quiet(json.optString("reason", "?"))
       "call" -> CallNotice.from(json)?.let { Call(it) } ?: Error("a call without an id")
+      "call_end" -> json.str("call_id")?.takeIf { CALL_ID.matches(it) }?.let { CallEnd(it) } ?: Error("an end without a call id")
       else -> Error(json.optString("error", "unknown outcome"))
     }
   }
 }
+
+/** A call id as the core of calls makes it: 16 random bytes, hex. */
+internal val CALL_ID = Regex("^[0-9a-f]{32}$")
 
 /** An invitation to a call that came by push (`messenger-notify`, `CallNotice`). */
 internal data class CallNotice(
@@ -48,8 +58,6 @@ internal data class CallNotice(
   val hideOnLockscreen: Boolean,
 ) {
   companion object {
-    private val CALL_ID = Regex("^[0-9a-f]{32}$")
-
     fun from(json: JSONObject): CallNotice? {
       val callId = json.str("call_id")?.takeIf { CALL_ID.matches(it) } ?: return null
       return CallNotice(

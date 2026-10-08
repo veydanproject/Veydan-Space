@@ -12,6 +12,9 @@
 
   It fills the box it is put in: the desk's video window, the phone's call
   screen. Both subscriptions live as long as the stage, whatever is on.
+  With `route`, its top left corner says the way the call takes (direct or
+  through a relay) and its round trip, as the capsule of a voice call does;
+  the phone's screen says it in its own caption.
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
@@ -31,8 +34,12 @@
     level?: number;
     /** What the call is doing, said in the peer's place until it talks. */
     status?: string;
+    /** Say the way the call takes and its round trip (the desk's window). */
+    route?: boolean;
+    /** The round trip, milliseconds, as the engine last told it. */
+    rtt?: number | null;
   }
-  let { call, peer, phone = false, level = 0, status = '' }: Props = $props();
+  let { call, peer, phone = false, level = 0, status = '', route = false, rtt = null }: Props = $props();
 
   let swapped = $state(false);
   let remoteLive = $state(false);
@@ -60,6 +67,8 @@
       : (localOn ? $t('msg_call_video_waiting') : $t('msg_call_video_my_off')),
   );
   const info = $derived(mainLive && mainInfo ? $t('msg_call_video_info', { size: `${mainInfo.width}×${mainInfo.height}`, fps: String(mainInfo.fps) }) : '');
+  /** The way, once the call talks: while it (re)connects the way is not known yet. */
+  const via = $derived(route && call.phase === 'active' ? (call.via ?? null) : null);
 </script>
 
 <div class="stage" class:phone>
@@ -94,7 +103,18 @@
     </button>
   {/if}
 
-  {#if info}<span class="info">{info}</span>{/if}
+  {#if via || (info && !phone)}
+    <div class="badges">
+      {#if via}
+        <span class="badge" class:relay={via === 'relay'} title={$t(via === 'relay' ? 'msg_call_via_relay_hint' : 'msg_call_via_direct_hint')}>
+          <CallIcon name={via} size={11} />{$t(via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
+          {#if rtt != null}<span class="rtt">{$t('msg_call_rtt', { ms: String(rtt) })}</span>{/if}
+        </span>
+      {/if}
+      {#if info && !phone}<span class="badge quiet">{info}</span>{/if}
+    </div>
+  {/if}
+  {#if info && phone}<span class="info">{info}</span>{/if}
 </div>
 
 <style>
@@ -133,11 +153,21 @@
   }
   .pip-tag-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-  .info {
-    position: absolute; z-index: 2; left: 10px; top: 10px; padding: 2px 8px; border-radius: var(--radius-pill);
-    background: rgba(0, 0, 0, 0.45); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums;
-    pointer-events: none;
+  .badges {
+    position: absolute; z-index: 2; left: 10px; top: 10px; right: calc(var(--pip-w) + 24px);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; pointer-events: none;
   }
-  .phone .info { top: auto; bottom: calc(var(--sab, 0px) + 150px); left: 50%; transform: translateX(-50%); }
+  .badge, .info {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
+    background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.9); font-size: var(--fs-2xs); white-space: nowrap;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  /* The tooltip of the way, the one thing here a pointer reads. */
+  .badge[title] { pointer-events: auto; cursor: help; }
+  .badge.relay { background: color-mix(in srgb, var(--accent) 55%, rgba(0, 0, 0, 0.5)); color: #fff; }
+  .badge.quiet, .rtt { font-variant-numeric: tabular-nums; }
+  .badge.quiet { color: rgba(255, 255, 255, 0.8); }
+  .rtt { margin-left: 2px; padding-left: 6px; border-left: 1px solid rgba(255, 255, 255, 0.3); opacity: 0.85; }
+  .info { position: absolute; z-index: 2; bottom: calc(var(--sab, 0px) + 150px); left: 50%; transform: translateX(-50%); pointer-events: none; }
   @media (prefers-reduced-motion: reduce) { .tile-place { transition: none; } }
 </style>

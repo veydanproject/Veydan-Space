@@ -12,7 +12,8 @@
 use crate::avatars::AvatarPreview;
 use crate::calls::{
     CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState,
-    CallStats, CallVia, CallView, CameraInfo, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoSize, VideoTrack,
+    CallStats, CallVia, CallView, CameraInfo, ReconnectReason, RelayPolicy, ScreenInfo, VideoInput, VideoQuality, VideoSize,
+    VideoTrack,
 };
 use crate::cards::{ContactPrivateView, OwnPrivateView};
 use crate::links::{GroupMembership, LinkGroupKind, LinkView};
@@ -114,7 +115,8 @@ pub fn calls_ts() -> String {
     let mut out = String::from(HEADER);
     out += &export::<CallMedia>(&cfg, "What a call carries.");
     out += &export::<CallDirection>(&cfg, "Who called whom.");
-    out += &export::<CallPhase>(&cfg, "Where a call is: ringing on their side, ringing here, ICE looking for a way, talking, over.");
+    out += &export::<CallPhase>(&cfg, "Where a call is: ringing on their side, ringing here, ICE looking for a way, talking, restoring a lost way while talking, over.");
+    out += &export::<ReconnectReason>(&cfg, "Why a call is `reconnecting`: the way went, my network changed, or the peer lost the way.");
     out += &export::<CallVia>(&cfg, "How the media goes: directly between the two, or through a relay.");
     out += &export::<CallOutcome>(&cfg, "How a call ended; `answered_elsewhere` means another device of mine took it.");
     out += &export::<RelayPolicy>(&cfg, "Which way a call may take: `auto` (directly when it works), `relay_only` (my address stays behind a relay).");

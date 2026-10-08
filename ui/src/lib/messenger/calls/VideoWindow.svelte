@@ -130,7 +130,7 @@
     role="group" aria-label={peer.name}
     onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}
   >
-    <VideoStage {call} {peer} {status} level={callStore.level} />
+    <VideoStage {call} {peer} {status} level={callStore.level} route rtt={callStore.stats?.rtt_ms ?? null} />
 
     <div class="bar">
       <button class="ctl" class:off={call.muted} disabled={callStore.busy || call.phase === 'outgoing'} onclick={() => callStore.toggleMute()}

@@ -456,3 +456,22 @@ pub async fn messenger_call_set_nodes(
 pub async fn messenger_call_get_state(messenger: tauri::State<'_, MessengerState>) -> CmdResult<CallState> {
     messenger.runtime()?.call_state().await.map_err(map_err)
 }
+
+/// Whether this device takes calls (`call.incoming_enabled`, on by
+/// default). Off: every invitation is ignored here without a word (no
+/// ring, no decline, no busy), my other devices ring for it, and this
+/// device keeps no record of it. A call ringing now goes on ringing.
+#[tauri::command]
+pub async fn messenger_call_set_incoming(enabled: bool, messenger: tauri::State<'_, MessengerState>) -> CmdResult<CallState> {
+    messenger.runtime()?.call_set_incoming(enabled).await.map_err(map_err)
+}
+
+/// The platform saw the network change (the phone's connectivity
+/// callback, the page's `online` event): the call under way restarts ICE
+/// at once instead of waiting for the engine to notice the way is gone.
+/// Nothing without a call.
+#[tauri::command]
+pub async fn messenger_call_network_changed(messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    messenger.runtime()?.call_network_changed().await;
+    Ok(())
+}

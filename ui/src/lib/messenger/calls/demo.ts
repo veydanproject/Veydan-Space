@@ -10,8 +10,9 @@
 //   localStorage['messenger.demo.call'] = 'incoming' | 'active' | 'relay' | 'outgoing'
 //     | 'video' (a video call rings) | 'video-active' | 'video-outgoing'
 // plays it a moment after the page loads, and `window.veydanDemoCall(kind)`
-// plays it at once (also `'end'`, and `'peer-video'` that turns Alice's
-// camera off or on).
+// plays it at once (also `'end'`, `'peer-video'` that turns Alice's camera
+// off or on, and `'reconnect'` that loses the line for a few seconds). With
+// "Accept calls on this device" off, a call from Alice does not ring.
 //
 // Video is a test picture (calls/video.ts `testPattern`) sent to the page's
 // channel as the runtime sends frames: the peer's 640×360, mine 640×360 as
@@ -20,9 +21,9 @@
 // runtime does, the next frame goes only once the page acknowledged the
 // last one (`messenger_call_video_ack`).
 
-import type { MessengerChat, MessengerMessage } from '../api';
+import type { CallStateView, MessengerChat, MessengerMessage } from '../api';
 import type {
-  CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallState, CallView, RelayPolicy, VideoInput, VideoQuality, VideoTrack,
+  CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallView, RelayPolicy, VideoInput, VideoQuality, VideoTrack,
 } from '../generated/calls';
 import { HEADER_BYTES, testPattern } from './video';
 
@@ -65,6 +66,8 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   /** The phone of the demo: its earpiece and loudspeaker. */
   let route: 'earpiece' | 'speaker' = 'earpiece';
   let quality: VideoQuality = '360p';
+  /** Calls ring on this device. */
+  let incoming = true;
   /**
    * The page's channels, by subscription: each gets the test picture of its
    * track. `sent`: the `seq` of the frame the page has not acknowledged yet;
@@ -79,7 +82,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
     ...own.map((n) => ({ reference: n.reference, id: n.reference.split('#')[1].toLowerCase(), class: 'own', has_key: n.key })),
     ...(own.some((n) => n.reference === NODE) ? [] : [{ reference: NODE, id: NODE.split('#')[1], class: 'project', has_key: false }]),
   ];
-  const state = (): CallState => ({ call, policy, nodes: nodes(), available: true, video_quality: quality });
+  const state = (): CallStateView => ({ call, policy, nodes: nodes(), available: true, video_quality: quality, incoming_enabled: incoming });
   const later = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
   const stopAll = () => {
     while (timers.length) clearTimeout(timers.pop());
@@ -191,9 +194,18 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   function play(kind: string) {
     if (kind === 'end') { finish(call?.answered_at ? 'ended' : 'missed'); return; }
     if (kind === 'peer-video') { if (call) put({ ...call, video_remote: !call.video_remote }); return; }
+    if (kind === 'reconnect') {
+      const c = call;
+      if (!c || c.phase !== 'active') return;
+      put({ ...c, phase: 'reconnecting', reconnect_reason: 'connection_lost', via: undefined });
+      later(2500, () => { if (call?.call_id === c.call_id) put({ ...call, phase: 'active', reconnect_reason: undefined, via: c.via }); });
+      return;
+    }
     if (call) return;
     if (kind === 'outgoing' || kind === 'video-outgoing') { start({ peer: ALICE, media: kind === 'outgoing' ? 'audio' : 'video' }, true); return; }
     const media: CallMedia = kind.startsWith('video') ? 'video' : 'audio';
+    // Calls do not ring here: Alice's goes to my other devices.
+    if (!incoming) return;
     const view = newCall(ALICE, 'in', media);
     line(view, null, null);
     put(view, 'call.incoming');
@@ -293,6 +305,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
       put({ ...call, video_local: true, video_screen: true });
       return call;
     },
+    messenger_call_set_incoming: (a) => { incoming = a?.enabled !== false; return state(); },
     messenger_call_set_video_quality: (a) => { quality = a?.quality === '720p' ? '720p' : '360p'; return state(); },
     messenger_call_video_subscribe: (a) => {
       const id = nextSub++;

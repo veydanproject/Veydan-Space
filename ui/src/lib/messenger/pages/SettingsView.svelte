@@ -14,6 +14,7 @@
   import PrivacyPanel from '../privacy/PrivacyPanel.svelte';
   import CallsPanel from '../calls/CallsPanel.svelte';
   import DebugFeed from '../debug/DebugFeed.svelte';
+  import { SETTINGS_TABS, settingsRequest, type SettingsTab } from './settingsTab.svelte';
 
   interface Props {
     /** The host screen already shows the title (phone). */
@@ -21,8 +22,17 @@
   }
   let { compact = false }: Props = $props();
 
-  type Tab = 'profile' | 'network' | 'notifications' | 'privacy' | 'calls' | 'diagnostics';
-  let tab = $state<Tab>('profile');
+  let tab = $state<SettingsTab>('profile');
+  let chips = $state<HTMLElement | null>(null);
+
+  // Asked for from elsewhere (a long press on a call button): that tab, its chip in view.
+  $effect(() => {
+    const want = settingsRequest.tab;
+    if (!want) return;
+    settingsRequest.tab = null;
+    tab = want;
+    void tick().then(() => chips?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
+  });
   const s = $derived(messengerStore.status);
 
   let media = $state<HTMLElement | null>(null);
@@ -39,8 +49,8 @@
   {#if compact}
     <!-- The phone: the sections as the shell's segment chips, kept in view
          while the section scrolls; a chip cut at the edge says the row scrolls. -->
-    <div class="m-seg seg-sticky" role="tablist">
-      {#each ['profile', 'network', 'notifications', 'privacy', 'calls', 'diagnostics'] as const as id}
+    <div class="m-seg seg-sticky" role="tablist" bind:this={chips}>
+      {#each SETTINGS_TABS as id}
         <button role="tab" class="m-seg-btn" class:active={tab === id} aria-selected={tab === id}
           onclick={(e) => { tab = id; (e.currentTarget as HTMLElement).scrollIntoView({ inline: 'nearest', block: 'nearest' }); }}>
           {$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')}
@@ -50,7 +60,7 @@
   {:else}
     <h2>{$t('msg_settings_title_full')}</h2>
     <div class="tabs" role="tablist">
-      {#each ['profile', 'network', 'notifications', 'privacy', 'calls', 'diagnostics'] as const as id}
+      {#each SETTINGS_TABS as id}
         <button role="tab" class="tab" class:active={tab === id} aria-selected={tab === id} onclick={() => (tab = id)}>
           {$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')}
         </button>

@@ -23,8 +23,8 @@ pub mod push;
 pub mod settings;
 
 pub use bundle::{GroupKeyEntry, KeyBundle};
-pub use describe::{describe, invite_times, CALL_INVITE_TTL_SECS};
+pub use describe::{call_over, describe, invite_expired, invite_times, CALL_INVITE_TTL_SECS};
 pub use live::{live, Face};
-pub use notice::{Body, CallNotice, ChatKind, LinkKind, Notice, Outcome, Plain, Reason};
+pub use notice::{Body, CallEnd, CallNotice, ChatKind, LinkKind, Notice, Outcome, Plain, Reason};
 pub use push::{PushData, PushKind};
 pub use settings::{Content, DesktopSettings, Settings};

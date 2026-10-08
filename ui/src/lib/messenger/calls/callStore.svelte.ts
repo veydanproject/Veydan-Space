@@ -34,10 +34,34 @@ export interface EndedCall {
   outcome: CallOutcome;
   /** Seconds it was answered; `null` for one that never was. */
   duration: number | null;
+  /**
+   * Ended by this device's own hang-up or refusal (not by the peer, a
+   * timeout or a failure), from this page or from outside it (the call's
+   * notification, a headset button).
+   */
+  local: boolean;
 }
 
-/** How far a call has come; a reconnection goes back to `connecting`, but only after `active`. */
-const PHASE_ORDER: Record<CallView['phase'], number> = { incoming: 0, outgoing: 0, connecting: 1, active: 2, ended: 3 };
+/** How long my call rings before the runtime gives it up as not answered (`RING_TIMEOUT` of the calls crate, the invite's 45 s). */
+export const RING_TIMEOUT_SECS = 45;
+
+/**
+ * My call that nobody answered, ended as "missed" before its ring ran out:
+ * I gave it up myself. The runtime's `call.ended` does not say who ended a
+ * call, and a hang-up from the notification or a headset never passes this
+ * page; but an unanswered call of mine is "missed" only by my own end or by
+ * the ring's timeout (a peer declines or is busy, a line fails), and the
+ * timeout comes no sooner than `RING_TIMEOUT_SECS` after the call began.
+ */
+export function gaveUp(view: CallView, outcome: CallOutcome, now: number): boolean {
+  return view.direction === 'out' && view.answered_at == null && outcome === 'missed' && now - view.started_at < RING_TIMEOUT_SECS;
+}
+
+/** Where the choice "ask before a call" is kept: this device only, like the place of the call's window. */
+export const CONFIRM_KEY = 'messenger.calls.confirm';
+
+/** How far a call has come; `reconnecting` is as far as `active` (a talk whose way is being restored), so that the two go back and forth. */
+const PHASE_ORDER: Record<CallView['phase'], number> = { incoming: 0, outgoing: 0, connecting: 1, active: 2, reconnecting: 2, ended: 3 };
 
 class CallStore {
   /** The call under way; `null` when there is none. */
@@ -73,6 +97,13 @@ class CallStore {
   routes = $state<CallAudioRoutes | null>(null);
   /** How big my video goes, from the next time it goes on. */
   videoQuality = $state<VideoQuality>('360p');
+  /**
+   * Calls ring on this device. `null`: the runtime does not say (a build
+   * without the setting), and the settings do not offer it.
+   */
+  incoming = $state<boolean | null>(null);
+  /** A call button asks "voice call?" / "video call?" first, so that none is made by accident. Kept on this device. */
+  confirm = $state(readConfirm());
   /** A computer's cameras, as last asked; empty on a phone. */
   cameras = $state<CameraInfo[]>([]);
   /** The screens and windows that can be shown, as last asked. */
@@ -80,6 +111,9 @@ class CallStore {
 
   /** My camera was on when my screen went on: stopping the screen brings it back. */
   private cameraBeforeScreen = false;
+
+  /** The call this page is hanging up or refusing: its end is mine, whichever word of it comes first. */
+  private leaving: string | null = null;
 
   private endedTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -120,6 +154,7 @@ class CallStore {
     this.nodes = s.nodes;
     this.available = s.available;
     this.videoQuality = s.video_quality ?? '360p';
+    this.incoming = typeof s.incoming_enabled === 'boolean' ? s.incoming_enabled : null;
     this.loaded = true;
     // The call changed here while the snapshot was on its way: the events
     // are the runtime's word as it changes, and any change after them comes
@@ -169,6 +204,7 @@ class CallStore {
   async decline() {
     const c = this.call;
     if (!c) return;
+    this.leaving = c.call_id;
     await this.ender(async () => {
       await messengerApi.calls.decline(c.call_id);
       // The runtime says `call.ended` too; the screen goes at once.
@@ -180,6 +216,7 @@ class CallStore {
   async hangUp() {
     const c = this.call;
     if (!c) return;
+    this.leaving = c.call_id;
     await this.ender(async () => {
       await messengerApi.calls.end(c.call_id);
       const duration = c.answered_at ? Math.max(0, Math.floor(Date.now() / 1000) - c.answered_at) : null;
@@ -269,6 +306,20 @@ class CallStore {
       this.error = e;
       return null;
     }
+  }
+
+  /** Calls ring on this device, or do not (the other devices of mine still ring). */
+  async setIncoming(enabled: boolean) {
+    await this.run(async () => {
+      const s = await messengerApi.calls.setIncoming(enabled);
+      this.incoming = typeof s.incoming_enabled === 'boolean' ? s.incoming_enabled : enabled;
+    });
+  }
+
+  /** Ask before a call, or not; kept on this device. */
+  setConfirm(on: boolean) {
+    this.confirm = on;
+    try { localStorage.setItem(CONFIRM_KEY, on ? '1' : '0'); } catch { /* kept until the page closes */ }
   }
 
   async setVideoQuality(quality: VideoQuality) {
@@ -374,6 +425,7 @@ class CallStore {
     } catch (e) {
       this.error = e;
       failed = true;
+      this.leaving = null;
     } finally {
       this.ending = false;
     }
@@ -453,7 +505,9 @@ class CallStore {
     if (this.call?.call_id === view.call_id) this.setCall(null);
     this.epoch++;
     if (!this.isOver(view.call_id)) this.over = [...this.over.slice(-15), view.call_id];
-    this.ended ={ call: { ...view, phase: 'ended' }, outcome, duration };
+    const local = guess || this.leaving === view.call_id || gaveUp(view, outcome, Date.now() / 1000);
+    if (this.leaving === view.call_id) this.leaving = null;
+    this.ended = { call: { ...view, phase: 'ended' }, outcome, duration, local };
     if (this.endedTimer) clearTimeout(this.endedTimer);
     this.endedTimer = setTimeout(() => this.dropEnded(), ENDED_SHOWN_MS);
   }
@@ -490,6 +544,17 @@ class CallStore {
     this.ending = false;
     this.error = null;
     this.over = [];
+    this.incoming = null;
+    this.leaving = null;
+  }
+}
+
+/** "Ask before a call" as kept on this device; on unless turned off. */
+function readConfirm(): boolean {
+  try {
+    return localStorage.getItem(CONFIRM_KEY) !== '0';
+  } catch {
+    return true;
   }
 }
 

@@ -45,7 +45,7 @@ use messenger_runtime::{CallView, MessengerRuntime};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 #[cfg(target_os = "android")]
-use tauri_plugin_veydan_call::{Action, AudioRoute, CallAction, Incoming, Ongoing, Routes, VeydanCall};
+use tauri_plugin_veydan_call::{Action, AudioRoute, CallAction, Incoming, NetworkChange, Ongoing, Routes, VeydanCall};
 
 /// The event of the developer's command and of what the plugin reports.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -366,6 +366,107 @@ async fn pressed(app: &tauri::AppHandle, press: CallAction) {
     }
 }
 
+/// How long the restart of a call waits for a relay to be connected again
+/// after the connections were made anew: `nostr-sdk` tries a dropped relay
+/// again after 3 s, and the handshake on the new network follows. Past
+/// this, the restart goes without: its signal waits in the outbox.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const RELAYS_BACK_WITHIN: Duration = Duration::from_secs(10);
+/// How long the drop of the connections is given to show in the state of
+/// the relays (the stream of a closed socket ends at once, and `nostr-sdk`
+/// marks the relay within milliseconds). A state that stays `Connected`
+/// this long had nothing to close.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const RELAYS_DROP_SEEN_WITHIN: Duration = Duration::from_secs(1);
+/// How often the state of the relays is looked at meanwhile.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const RELAYS_BACK_EVERY: Duration = Duration::from_millis(100);
+
+/// What the wait for the relays came to.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RelaysBack {
+    /// A relay dropped and is connected again: the sockets are live.
+    Reconnected,
+    /// No relay dropped within [`RELAYS_DROP_SEEN_WITHIN`]: there was nothing
+    /// to make anew, and the relays stand as they are.
+    Unchanged,
+    /// No relay came back within [`RELAYS_BACK_WITHIN`].
+    TimedOut,
+}
+
+/// Waits, after the relay connections were closed, until one is connected
+/// again. `connected` says whether any relay is connected now. Right after
+/// the close the relays still read `Connected` for a moment (the close is
+/// seen by `nostr-sdk` when the stream ends), so a relay counts as back
+/// only after it was seen down: a signal queued on the stale reading would
+/// hit a dead socket and wait out the outbox's backoff.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+async fn relays_back<F, Fut>(mut connected: F, within: Duration, drop_seen_within: Duration, every: Duration) -> RelaysBack
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    let start = Instant::now();
+    let mut seen_down = false;
+    loop {
+        let up = connected().await;
+        let since = start.elapsed();
+        if up && seen_down {
+            return RelaysBack::Reconnected;
+        }
+        if !up {
+            seen_down = true;
+        } else if since >= drop_seen_within {
+            return RelaysBack::Unchanged;
+        }
+        if since >= within {
+            return RelaysBack::TimedOut;
+        }
+        tokio::time::sleep(every).await;
+    }
+}
+
+/// The phone's network changed (`how`: `back` after none, `other` for
+/// another one): the relay connections are made anew, the restart of the
+/// call waits for the first of them to be back, and only then the core is
+/// told.
+///
+/// The order matters. A closed socket fails a send at once, and the
+/// outbox then holds the signal back for its first backoff (5 s): the
+/// signals of a restart queued before the relays are back would leave
+/// later than the relays took to come back. Queued once a relay is
+/// connected again, they leave with the outbox's kick, at once. Without a
+/// call, or with the relays silenced, the core is told at once: it does
+/// nothing without a call, and nothing leaves in silence.
+#[cfg(target_os = "android")]
+async fn network_changed(app: &tauri::AppHandle, how: &str) {
+    use messenger_core::traits::RelayState;
+    let Some(rt) = runtime(app) else { return };
+    let pool = rt.relays().pool().await;
+    pool.reopen();
+    let in_call = rt.call_state().await.ok().and_then(|s| s.call).is_some();
+    if !in_call || pool.is_silent() {
+        eprintln!("messenger call: the network changed ({how}); the relay connections are made anew");
+        rt.call_network_changed().await;
+        return;
+    }
+    let started = Instant::now();
+    let status = {
+        let pool = pool.clone();
+        move || {
+            let pool = pool.clone();
+            async move { messenger_core::Transport::status(&*pool).await.relays.iter().any(|r| r.state == RelayState::Connected) }
+        }
+    };
+    let back = relays_back(status, RELAYS_BACK_WITHIN, RELAYS_DROP_SEEN_WITHIN, RELAYS_BACK_EVERY).await;
+    eprintln!(
+        "messenger call: the network changed ({how}); the relay connections made anew: {back:?} after {} ms; the call restarts",
+        started.elapsed().as_millis()
+    );
+    rt.call_network_changed().await;
+}
+
 /// Registers the listeners once in the process and takes the presses made
 /// before: the press that started the app came before any listener.
 #[cfg(target_os = "android")]
@@ -393,6 +494,22 @@ async fn listen(app: &tauri::AppHandle) {
         .await
     {
         eprintln!("messenger call: cannot listen for the routes: {e}");
+    }
+    // The phone's word that its network changed: the relay connections,
+    // which sat on the old network and may look open for a long while,
+    // are made anew, and the call's way is restarted as soon as one of
+    // them is back (the engine would notice the loss only after seconds
+    // of silence, and a signal queued before the relays are back waits
+    // out the outbox's backoff).
+    let network = app.clone();
+    if let Err(e) = call
+        .on_network_changed(move |change: NetworkChange| {
+            let app = network.clone();
+            tauri::async_runtime::spawn(async move { network_changed(&app, &change.how).await });
+        })
+        .await
+    {
+        eprintln!("messenger call: cannot listen for the network: {e}");
     }
     match call.take_actions().await {
         Ok(waiting) => {
@@ -491,7 +608,7 @@ async fn on_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str
             }
         }
         n if n == UI_EVENT_CALL_STATE => {
-            if !matches!(view.phase, CallPhase::Outgoing | CallPhase::Connecting | CallPhase::Active) {
+            if !matches!(view.phase, CallPhase::Outgoing | CallPhase::Connecting | CallPhase::Active | CallPhase::Reconnecting) {
                 return;
             }
             // The service holds the camera only when told so at its start
@@ -940,6 +1057,7 @@ mod tests {
         assert_eq!(incoming_step(true, Some(CallPhase::Incoming)), IncomingStep::Accept);
         assert_eq!(incoming_step(false, Some(CallPhase::Connecting)), IncomingStep::Skip);
         assert_eq!(incoming_step(false, Some(CallPhase::Active)), IncomingStep::Skip);
+        assert_eq!(incoming_step(true, Some(CallPhase::Reconnecting)), IncomingStep::Skip);
         assert_eq!(incoming_step(true, Some(CallPhase::Ended)), IncomingStep::Skip);
         assert_eq!(incoming_step(false, None), IncomingStep::Skip, "over, or another call is current");
         assert_eq!(incoming_step(true, None), IncomingStep::Skip);
@@ -983,5 +1101,52 @@ mod tests {
         assert!(lock(&CAMERA).is_none());
         assert!(!take_expected("x"), "the answer expected before the stop is dropped");
         assert_eq!(forget(), (None, None));
+    }
+
+    /// The readings of the relays after `reopen`, one per look, and how
+    /// the wait came out: the restart of a call is asked only once a relay
+    /// is back, never on the stale `Connected` of a socket just closed.
+    async fn relays_back_after(readings: &'static [bool]) -> (RelaysBack, usize) {
+        let looks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = looks.clone();
+        let connected = move || {
+            let i = counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let up = readings[i.min(readings.len() - 1)];
+            async move { up }
+        };
+        let every = Duration::from_millis(2);
+        let back = relays_back(connected, every * 40, every * 10, every).await;
+        (back, looks.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// A socket just closed still reads `Connected` for a moment, then the
+    /// relay drops and comes back after its retry: the wait ends at that
+    /// moment, well within its limit. Relays that read down from the first
+    /// look (the drop was seen before the look) end it the same way.
+    #[tokio::test]
+    async fn the_restart_waits_for_a_relay_seen_down_and_back() {
+        let (back, looks) = relays_back_after(&[true, true, false, false, false, false, true]).await;
+        assert_eq!((back, looks), (RelaysBack::Reconnected, 7), "the stale reading is not a relay back");
+        let (back, looks) = relays_back_after(&[false, false, true]).await;
+        assert_eq!((back, looks), (RelaysBack::Reconnected, 3));
+    }
+
+    /// Relays that never drop had no socket to close (none was open):
+    /// after a short while the restart goes on their reading as it is.
+    /// Relays that never come back are given the whole time, no more.
+    #[tokio::test]
+    async fn the_restart_goes_on_without_a_drop_or_after_the_time() {
+        let started = Instant::now();
+        let (back, looks) = relays_back_after(&[true]).await;
+        assert_eq!(back, RelaysBack::Unchanged);
+        // A look every 2 ms until 20 ms: 11 looks at most, fewer when a
+        // sleep overshoots; never the whole wait of 80 ms (41 looks).
+        assert!((2..=12).contains(&looks), "about the drop's time, not the whole wait: {looks}");
+        assert!(started.elapsed() >= Duration::from_millis(20) && started.elapsed() < Duration::from_millis(80));
+        let started = Instant::now();
+        let (back, looks) = relays_back_after(&[false]).await;
+        assert_eq!(back, RelaysBack::TimedOut);
+        assert!((12..=41).contains(&looks), "the whole wait: {looks}");
+        assert!(started.elapsed() >= Duration::from_millis(80));
     }
 }

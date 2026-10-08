@@ -1694,9 +1694,10 @@ async fn in_call(
                             let c = &e.payload["call"];
                             let size = |s: &serde_json::Value| if s.is_null() { "-".to_string() } else { format!("{}x{}", s["width"], s["height"]) };
                             println!(
-                                "{} call.state {} via {} muted {} nodes {} video mine {}{} {} theirs {} {} (+{:.2} s)",
+                                "{} call.state {}{} via {} muted {} nodes {} video mine {}{} {} theirs {} {} (+{:.2} s)",
                                 stamp(),
                                 c["phase"].as_str().unwrap_or("?"),
+                                c["reconnect_reason"].as_str().map(|r| format!(" ({r})")).unwrap_or_default(),
                                 c["via"].as_str().unwrap_or("-"),
                                 c["muted"],
                                 c["nodes"],
@@ -1748,8 +1749,14 @@ async fn in_call(
                         Err(e) => eprintln!("camera: {e}"),
                     },
                     "state" => println!("{} {}", stamp(), serde_json::to_string(&rt.call_state().await.unwrap_or_else(die)).unwrap_or_default()),
+                    // What the platform says on a change of the network: an
+                    // ICE restart at once (the caller offers, the called side asks).
+                    "restart" => {
+                        println!("{} restart: the network changed", stamp());
+                        rt.call_network_changed().await;
+                    }
                     "" => {}
-                    other => eprintln!("(unknown: {other}; end, mute, unmute, video on, video off, camera, state)"),
+                    other => eprintln!("(unknown: {other}; end, mute, unmute, video on, video off, camera, state, restart)"),
                 },
                 // No stdin (a pipe that closed, /dev/null): the call goes on without it.
                 _ => stdin_open = false,

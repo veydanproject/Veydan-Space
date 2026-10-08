@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "我的视频画质",
     "msg_calls_video_360p": "标准 · 360p",
     "msg_calls_video_720p": "高清 · 720p",
-    "msg_calls_video_hint": "下次打开摄像头时生效。高画质需要更快的网络；经通话节点转发时，节点的限额可能会降低画质。"
+    "msg_calls_video_hint": "下次打开摄像头时生效。高画质需要更快的网络；经通话节点转发时，节点的限额可能会降低画质。",
+    "msg_call_confirm_audio": "开始语音通话？",
+    "msg_call_confirm_video": "开始视频通话？",
+    "msg_call_confirm_never": "不再询问",
+    "msg_call_confirm_never_hint": "此后通话会立即开始。如需再次询问，请在“设置 → 通话”中开启；长按通话按钮可打开该页面。",
+    "msg_calls_device_title": "在此设备上",
+    "msg_calls_incoming": "在此设备上接听通话",
+    "msg_calls_incoming_hint": "来电会在这里以及你使用此账号的其他设备上响铃。",
+    "msg_calls_incoming_off_hint": "来电不会在这里响铃。你使用此账号的其他设备仍会响铃，你也仍可从这里拨打电话。",
+    "msg_calls_confirm": "通话前询问",
+    "msg_calls_confirm_hint": "通话按钮会先询问要开始语音通话还是视频通话，以免误拨。长按通话按钮可打开这些设置。"
   },
   "mobile": {}
 }

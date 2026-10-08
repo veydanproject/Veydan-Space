@@ -37,6 +37,7 @@
 //! [`Session::local_video_frames`], both as broadcasts a late reader
 //! skips along.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -249,16 +250,48 @@ struct EncryptionShared {
     receivers: Mutex<Vec<FrameCryptor>>,
 }
 
-/// The far end's candidates that came before its description, and whether
-/// the description is there. libwebrtc answers a candidate added before
-/// the remote description with an error (`AddIceCandidate` fails with
-/// "no remote description", `api/uma_metrics.h`) and forgets it, so the
-/// session keeps such candidates until a description is set and adds them
-/// then.
+/// The far end's candidates that came before the description they belong
+/// to, and what is known of its descriptions. libwebrtc answers a
+/// candidate added before the remote description with an error
+/// (`AddIceCandidate` fails with "no remote description",
+/// `api/uma_metrics.h`) and forgets it; a candidate of an ICE generation
+/// it does not know yet (its `ufrag` is of a restart offer or answer
+/// still on its way: the signaling keeps no order) it drops without a
+/// word (`P2PTransportChannel::AddRemoteCandidate`, "unknown ufrag"). So
+/// the session keeps such candidates until the description with that
+/// ufrag is set, and adds them then.
 #[derive(Default)]
 struct Remote {
     described: bool,
+    /// The `a=ice-ufrag` of every remote description set so far (one per
+    /// ICE generation; libwebrtc keeps the older ones too).
+    ufrags: HashSet<String>,
     pending: Vec<Candidate>,
+}
+
+impl Remote {
+    /// Whether libwebrtc would take this candidate now: a description is
+    /// there, and the generation it names (if it names one) is known.
+    fn takes(&self, candidate: &Candidate) -> bool {
+        self.described && candidate_ufrag(&candidate.candidate).is_none_or(|u| self.ufrags.contains(u))
+    }
+}
+
+/// The `ufrag` a candidate line names (libwebrtc writes `... generation 0
+/// ufrag abcd network-id 1`), if any.
+fn candidate_ufrag(line: &str) -> Option<&str> {
+    let mut words = line.split_ascii_whitespace();
+    while let Some(w) = words.next() {
+        if w == "ufrag" {
+            return words.next();
+        }
+    }
+    None
+}
+
+/// Every `a=ice-ufrag:` of an SDP (the same for every bundled m-line).
+fn sdp_ufrags(sdp: &str) -> impl Iterator<Item = String> + '_ {
+    sdp.lines().filter_map(|l| l.trim_end().strip_prefix("a=ice-ufrag:")).map(|u| u.trim().to_string())
 }
 
 /// One PeerConnection with its audio track and its video track. Dropping
@@ -472,7 +505,7 @@ impl Session {
     pub async fn set_remote_offer(&self, sdp: &str) -> Result<()> {
         let offer = SessionDescription::parse(sdp, SdpType::Offer)?;
         self.pc.set_remote_description(offer).await?;
-        self.flush_remote_candidates().await;
+        self.flush_remote_candidates(sdp).await;
         Ok(())
     }
 
@@ -496,7 +529,7 @@ impl Session {
     pub async fn set_remote_answer(&self, sdp: &str) -> Result<()> {
         let answer = SessionDescription::parse(sdp, SdpType::Answer)?;
         self.pc.set_remote_description(answer).await?;
-        self.flush_remote_candidates().await;
+        self.flush_remote_candidates(sdp).await;
         Ok(())
     }
 
@@ -507,15 +540,18 @@ impl Session {
     }
 
     /// A candidate of the other side. Fine before its description arrived
-    /// (the signaling may deliver the candidates first): the session keeps
-    /// it and adds it once [`Session::set_remote_offer`] or
-    /// [`Session::set_remote_answer`] went through. A candidate that does
-    /// not parse is refused at once, kept or not.
+    /// (the signaling may deliver the candidates first), and fine before
+    /// the restart offer or answer of its ICE generation did (the `ufrag`
+    /// it names is not known yet): the session keeps it and adds it once
+    /// [`Session::set_remote_offer`] or [`Session::set_remote_answer`]
+    /// brought that description. A candidate that does not parse is
+    /// refused at once, kept or not.
     pub async fn add_remote_candidate(&self, candidate: &Candidate) -> Result<()> {
         let c = IceCandidate::parse(&candidate.sdp_mid, candidate.sdp_mline_index, &candidate.candidate)?;
         {
             let mut remote = self.remote.lock().unwrap_or_else(|e| e.into_inner());
-            if !remote.described {
+            if !remote.takes(candidate) {
+                tracing::debug!(candidate = %candidate.candidate, "ice: a remote candidate waits for its description");
                 remote.pending.push(candidate.clone());
                 return Ok(());
             }
@@ -530,13 +566,17 @@ impl Session {
     }
 
     /// After a remote description was set: the candidates that waited for
-    /// it go in, in the order they came. One libwebrtc refuses is logged
-    /// and skipped, not an error of the description, which is in place.
-    async fn flush_remote_candidates(&self) {
+    /// it go in, in the order they came; those of a generation still
+    /// unknown keep waiting. One libwebrtc refuses is logged and skipped,
+    /// not an error of the description, which is in place.
+    async fn flush_remote_candidates(&self, sdp: &str) {
         let pending = {
             let mut remote = self.remote.lock().unwrap_or_else(|e| e.into_inner());
             remote.described = true;
-            std::mem::take(&mut remote.pending)
+            remote.ufrags.extend(sdp_ufrags(sdp));
+            let (now, later): (Vec<Candidate>, Vec<Candidate>) = std::mem::take(&mut remote.pending).into_iter().partition(|c| remote.takes(c));
+            remote.pending = later;
+            now
         };
         for candidate in pending {
             let parsed = IceCandidate::parse(&candidate.sdp_mid, candidate.sdp_mline_index, &candidate.candidate);
@@ -885,6 +925,34 @@ mod tests {
         assert!(!direct.is_relayed());
         assert!(Path { remote: CandidateKind::Relay, ..direct.clone() }.is_relayed());
         assert!(Path { local: CandidateKind::Relay, ..direct }.is_relayed());
+    }
+
+    /// A candidate of a generation not described yet waits; one without
+    /// a ufrag, or of a known generation, goes in; a description brings
+    /// its generation and lets its candidates through, not the others'.
+    #[test]
+    fn candidates_wait_for_the_description_of_their_generation() {
+        let cand = |ufrag: Option<&str>| Candidate {
+            sdp_mid: "0".into(),
+            sdp_mline_index: 0,
+            candidate: match ufrag {
+                Some(u) => format!("candidate:1 1 udp 2 10.0.0.2 1 typ host generation 0 ufrag {u} network-id 1"),
+                None => "candidate:1 1 udp 2 10.0.0.2 1 typ host".into(),
+            },
+        };
+        assert_eq!(candidate_ufrag(&cand(Some("abcd")).candidate), Some("abcd"));
+        assert_eq!(candidate_ufrag(&cand(None).candidate), None);
+        let mut remote = Remote::default();
+        assert!(!remote.takes(&cand(None)), "nothing before a description");
+        remote.described = true;
+        remote.ufrags.extend(sdp_ufrags("v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=ice-ufrag:abcd\r\na=ice-pwd:x\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=ice-ufrag:abcd\r\n"));
+        assert_eq!(remote.ufrags.len(), 1);
+        assert!(remote.takes(&cand(None)));
+        assert!(remote.takes(&cand(Some("abcd"))));
+        assert!(!remote.takes(&cand(Some("wxyz"))), "the restart's generation is not here yet");
+        remote.ufrags.extend(sdp_ufrags("a=ice-ufrag:wxyz\n"));
+        assert!(remote.takes(&cand(Some("wxyz"))));
+        assert!(remote.takes(&cand(Some("abcd"))), "the old generation is still known");
     }
 
     #[test]

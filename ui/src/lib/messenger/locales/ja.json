@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "自分の映像の画質",
     "msg_calls_video_360p": "標準 · 360p",
     "msg_calls_video_720p": "高画質 · 720p",
-    "msg_calls_video_hint": "次にカメラをオンにしたときから適用されます。高画質にはより速い回線が必要です。通話ノード経由では、ノードの上限で下がることがあります。"
+    "msg_calls_video_hint": "次にカメラをオンにしたときから適用されます。高画質にはより速い回線が必要です。通話ノード経由では、ノードの上限で下がることがあります。",
+    "msg_call_confirm_audio": "音声通話を開始しますか？",
+    "msg_call_confirm_video": "ビデオ通話を開始しますか？",
+    "msg_call_confirm_never": "今後は確認しない",
+    "msg_call_confirm_never_hint": "今後は通話がすぐに始まります。確認を戻すには「設定 → 通話」でオンにしてください。通話ボタンを長押しすると開きます。",
+    "msg_calls_device_title": "このデバイス",
+    "msg_calls_incoming": "このデバイスで着信を受ける",
+    "msg_calls_incoming_hint": "着信はこのデバイスと、このアカウントを使うほかのデバイスで鳴ります。",
+    "msg_calls_incoming_off_hint": "このデバイスでは着信が鳴りません。このアカウントを使うほかのデバイスでは通常どおり鳴り、ここから発信することもできます。",
+    "msg_calls_confirm": "発信前に確認する",
+    "msg_calls_confirm_hint": "通話ボタンを押すと、音声通話とビデオ通話のどちらを始めるかを先に確認し、誤発信を防ぎます。通話ボタンを長押しするとこの設定が開きます。"
   },
   "mobile": {}
 }

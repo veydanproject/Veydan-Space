@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Asked for at run time on Android 13 and later (the push plugin asks). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- The service that keeps a call alive. A ringing call is of the type
          phoneCall, which Android 14 grants to an app that manages its own
          calls (MANAGE_OWN_CALLS, given at install; no Telecom connection

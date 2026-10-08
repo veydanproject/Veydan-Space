@@ -25,10 +25,12 @@ const calls = vi.hoisted(() => ({
   screens: vi.fn(),
   cameras: vi.fn(),
   setVideoQuality: vi.fn(),
+  setIncoming: vi.fn(),
 }));
 vi.mock('../api', () => ({ messengerApi: { calls } }));
 
-const { callStore } = await import('./callStore.svelte');
+const { callStore, CONFIRM_KEY, RING_TIMEOUT_SECS, gaveUp } = await import('./callStore.svelte');
+const { endSound } = await import('./sounds');
 
 function view(over: Partial<CallView> = {}): CallView {
   return {
@@ -296,5 +298,89 @@ describe('the call store against answers that come late', () => {
     const r = await callStore.dial('ab'.repeat(32));
     expect(r).toEqual({ view: null, refusal: { code: 'other', message: 'calls go to contacts only' } });
     expect(callStore.error).toBeNull();
+  });
+});
+
+describe('whose end it was, and the settings of this device', () => {
+  beforeEach(() => {
+    callStore.reset();
+    vi.clearAllMocks();
+  });
+
+  it('knows my own hang-up as mine, even when the runtime\'s word of it comes first', async () => {
+    callStore.handleEvent({ name: 'call.state', payload: { call: view({ direction: 'out', phase: 'outgoing' }) } });
+    calls.end.mockImplementationOnce(async () => {
+      callStore.handleEvent({ name: 'call.ended', payload: { call: view({ direction: 'out', phase: 'ended' }), outcome: 'missed', duration_secs: null } });
+    });
+    await callStore.hangUp();
+    expect(callStore.ended).toMatchObject({ outcome: 'missed', local: true });
+  });
+
+  it('knows my giving up from the notification or a headset as mine, though no command of this page ended it', () => {
+    const begun = Math.floor(Date.now() / 1000) - 10;
+    callStore.handleEvent({ name: 'call.state', payload: { call: view({ direction: 'out', phase: 'outgoing', started_at: begun }) } });
+    callStore.handleEvent({ name: 'call.ended', payload: { call: view({ direction: 'out', phase: 'ended', started_at: begun }), outcome: 'missed', duration_secs: null } });
+    expect(callStore.ended).toMatchObject({ outcome: 'missed', local: true });
+    expect(endSound(callStore.ended!), 'the falling chime, not the "no"').toBe('end');
+  });
+
+  it('knows a ring that ran out as not mine', () => {
+    const begun = Math.floor(Date.now() / 1000) - RING_TIMEOUT_SECS;
+    callStore.handleEvent({ name: 'call.state', payload: { call: view({ direction: 'out', phase: 'outgoing', started_at: begun }) } });
+    callStore.handleEvent({ name: 'call.ended', payload: { call: view({ direction: 'out', phase: 'ended', started_at: begun }), outcome: 'missed', duration_secs: null } });
+    expect(callStore.ended).toMatchObject({ outcome: 'missed', local: false });
+    expect(endSound(callStore.ended!), 'no answer').toBe('busy');
+  });
+
+  it('takes only my unanswered call, "missed" before its ring ran out, for one I gave up', () => {
+    const out = view({ direction: 'out', phase: 'ended', started_at: 1000 });
+    expect(gaveUp(out, 'missed', 1010)).toBe(true);
+    expect(gaveUp(out, 'missed', 1000 + RING_TIMEOUT_SECS), 'the ring ran out').toBe(false);
+    for (const o of ['declined', 'busy', 'failed', 'ended', 'answered_elsewhere'] as const) expect(gaveUp(out, o, 1010), o).toBe(false);
+    expect(gaveUp({ ...out, answered_at: 1005 }, 'missed', 1010), 'answered').toBe(false);
+    expect(gaveUp({ ...out, direction: 'in' }, 'missed', 1010), 'a call to me').toBe(false);
+  });
+
+  it('knows a refusal of the peer as not mine', () => {
+    callStore.handleEvent({ name: 'call.state', payload: { call: view({ direction: 'out', phase: 'outgoing' }) } });
+    callStore.handleEvent({ name: 'call.ended', payload: { call: view({ direction: 'out', phase: 'ended' }), outcome: 'declined', duration_secs: null } });
+    expect(callStore.ended).toMatchObject({ outcome: 'declined', local: false });
+  });
+
+  it('does not take the next end for mine after a hang-up that failed', async () => {
+    callStore.handleEvent({ name: 'call.state', payload: { call: view({ phase: 'active', answered_at: 1005 }) } });
+    calls.end.mockRejectedValueOnce({ code: 'other', message: 'boom' });
+    calls.state.mockResolvedValueOnce(state(view({ phase: 'active', answered_at: 1005 })));
+    await callStore.hangUp();
+    callStore.handleEvent({ name: 'call.ended', payload: { call: view({ phase: 'ended' }), outcome: 'ended', duration_secs: 9 } });
+    expect(callStore.ended).toMatchObject({ outcome: 'ended', local: false });
+  });
+
+  it('offers "calls ring here" only when the runtime says it, and sets it', async () => {
+    calls.state.mockResolvedValueOnce(state(null));
+    await callStore.load();
+    expect(callStore.incoming, 'a runtime without the setting').toBeNull();
+    calls.state.mockResolvedValueOnce({ ...state(null), incoming_enabled: true });
+    await callStore.load();
+    expect(callStore.incoming).toBe(true);
+    calls.setIncoming.mockResolvedValueOnce({ ...state(null), incoming_enabled: false });
+    await callStore.setIncoming(false);
+    expect(calls.setIncoming).toHaveBeenCalledWith(false);
+    expect(callStore.incoming).toBe(false);
+  });
+
+  it('keeps "ask before calling" on this device', () => {
+    const kept = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) });
+    try {
+      expect(callStore.confirm, 'on unless turned off').toBe(true);
+      callStore.setConfirm(false);
+      expect(callStore.confirm).toBe(false);
+      expect(kept.get(CONFIRM_KEY)).toBe('0');
+      callStore.setConfirm(true);
+      expect(kept.get(CONFIRM_KEY)).toBe('1');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -72,6 +72,10 @@ pub struct FakeEngine {
     records: Arc<Mutex<HashMap<u32, Record>>>,
     /// Off: an answer links nothing, as when ICE finds no way.
     connects: Arc<AtomicBool>,
+    /// On: an answer between two sessions linked already says nothing (no
+    /// `Connecting`, `Connected`, pair), as libwebrtc does on a restart of
+    /// ICE while the old way still works: the state never changed.
+    quiet_relink: Arc<AtomicBool>,
     /// On: a camera or a screen fails to open (`set_video` errs).
     camera_fails: Arc<AtomicBool>,
     /// The frames of every session, by its id: this side's own and the far
@@ -96,6 +100,7 @@ impl FakeEngine {
             fabric: Arc::default(),
             records: Arc::default(),
             connects: Arc::new(AtomicBool::new(true)),
+            quiet_relink: Arc::new(AtomicBool::new(false)),
             camera_fails: Arc::new(AtomicBool::new(false)),
             frames: Arc::default(),
         }
@@ -104,6 +109,14 @@ impl FakeEngine {
     /// Whether an answer connects the two sessions (it does by default).
     pub fn set_connects(&self, on: bool) {
         self.connects.store(on, Ordering::SeqCst);
+    }
+
+    /// Whether an answer between sessions linked already (a restart of
+    /// ICE) passes without a word of the state, as libwebrtc's does when
+    /// the old way still works (off by default: the state is told again,
+    /// as after a loss).
+    pub fn set_quiet_relink(&self, on: bool) {
+        self.quiet_relink.store(on, Ordering::SeqCst);
     }
 
     /// Whether a camera or a screen fails to open from now on (`set_video`
@@ -133,6 +146,10 @@ impl FakeEngine {
     fn connect(&self, a: u32, b: u32) {
         let mut fabric = self.fabric.lock().unwrap();
         let relay = fabric.sessions.get(&a).is_some_and(|p| p.relay_only) || fabric.sessions.get(&b).is_some_and(|p| p.relay_only);
+        let linked_already = fabric.sessions.get(&a).is_some_and(|p| p.linked == Some(b)) && fabric.sessions.get(&b).is_some_and(|p| p.linked == Some(a));
+        if linked_already && self.quiet_relink.load(Ordering::SeqCst) {
+            return;
+        }
         for (me, other) in [(a, b), (b, a)] {
             if let Some(p) = fabric.sessions.get_mut(&me) {
                 p.linked = Some(other);

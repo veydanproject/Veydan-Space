@@ -132,6 +132,16 @@ pub enum Action {
     Hangup,
 }
 
+/// The phone's default network changed: Wi-Fi gone and the mobile data
+/// taking over, or the other way round, or another Wi-Fi (the Kotlin side's
+/// `NetworkWatch`). The first network after the start is no change.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NetworkChange {
+    /// `back`: a network after none; `other`: another network than before.
+    #[serde(default)]
+    pub how: String,
+}
+
 /// A press on the ringing or the ongoing call.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,6 +172,8 @@ pub enum Event {
     CallAction,
     /// The route of the sound, or the routes there are, changed: [`Routes`].
     AudioRouteChanged,
+    /// The phone's default network changed: [`NetworkChange`].
+    NetworkChanged,
 }
 
 impl Event {
@@ -169,6 +181,7 @@ impl Event {
         match self {
             Self::CallAction => "call_action",
             Self::AudioRouteChanged => "audio_route_changed",
+            Self::NetworkChanged => "network_changed",
         }
     }
 }
@@ -308,6 +321,19 @@ impl<R: Runtime> VeydanCall<R> {
         self.listen(Event::AudioRouteChanged, move |value| {
             if let Ok(routes) = serde_json::from_value(value) {
                 handler(routes);
+            }
+        })
+        .await
+    }
+
+    /// [`Event::NetworkChanged`], read.
+    pub async fn on_network_changed<F>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(NetworkChange) + Send + Sync + 'static,
+    {
+        self.listen(Event::NetworkChanged, move |value| {
+            if let Ok(change) = serde_json::from_value(value) {
+                handler(change);
             }
         })
         .await

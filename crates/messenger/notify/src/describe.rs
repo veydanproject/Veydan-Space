@@ -8,11 +8,14 @@
 
 use crate::bundle::KeyBundle;
 use crate::fetch;
-use crate::notice::{Body, CallNotice, ChatKind, Notice, Outcome, Plain, Reason};
+use crate::notice::{Body, CallEnd, CallNotice, ChatKind, Notice, Outcome, Plain, Reason};
 use crate::push::{PushData, PushKind};
 use crate::settings::{Content, Settings};
 use messenger_contacts::{ContactService, ProfileService};
-use messenger_core::envelope::{T_CALL_INVITE, T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
+use messenger_core::envelope::{
+    KIND_PEER_NOTE_RUMOR, T_CALL_ANSWER, T_CALL_BUSY, T_CALL_DECLINE, T_CALL_END, T_CALL_INVITE, T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA,
+    T_TEXT,
+};
 use messenger_core::traits::{Clock, SystemClock};
 use messenger_core::{Envelope, EventSource, Inbound, MessengerConfig, MessengerError, PubKey, RawEvent, RelayUrl, Result, Timestamp};
 use messenger_dm::pushtags::{author_key, author_mark};
@@ -22,7 +25,7 @@ use messenger_dm::DmService;
 use messenger_groups::wire::{self, Opened, T_INVITE, T_JOIN_REQUEST, T_WELCOME};
 use messenger_groups::service::MEMBERSHIP_JOINED;
 use messenger_ingress::classify::KIND_DM_RUMOR;
-use messenger_store::{chats, groups, messages, Store};
+use messenger_store::{calls, chats, groups, messages, Store};
 use nostr::key::Keys;
 use std::path::Path;
 use std::sync::Arc;
@@ -31,7 +34,9 @@ use std::sync::Arc;
 /// directory, the one with `messenger.db` in it.
 /// Without keys (the app has a lock, or the settings want nothing said)
 /// only what the database knows of the chat is told: the group's name,
-/// whether it is muted.
+/// whether it is muted. A push the server marked as a call is the
+/// exception: without keys it says nothing at all ([`Reason::NoKeys`]),
+/// since "something came" is no call, and a call rings now or never.
 pub async fn describe(data_dir: &Path, bundle: Option<&KeyBundle>, push: &PushData) -> Result<Outcome> {
     let config = MessengerConfig::new(data_dir);
     let store = Store::open_read_only(&config).await?;
@@ -40,6 +45,7 @@ pub async fn describe(data_dir: &Path, bundle: Option<&KeyBundle>, push: &PushDa
             Ok(keys) => Describe::new(store.clone(), keys).run(bundle, push).await,
             Err(e) => Err(e),
         },
+        None if push.call => Ok(Outcome::Quiet { reason: Reason::NoKeys }),
         None => plain(&store, push).await.map(Outcome::Plain),
     };
     store.close().await;
@@ -66,24 +72,30 @@ impl Describe {
     async fn run(&self, bundle: &KeyBundle, push: &PushData) -> Result<Outcome> {
         let settings = Settings::load(&self.store).await?;
         let mut plain = plain(&self.store, push).await?;
-        if settings.content == Content::None {
+        if settings.content == Content::None || bundle.calls_only {
             // Nothing of a message is said, so no message is opened. A
             // call is the one thing that is: a ring is not a word of the
             // content, and a phone that says "only that something came"
-            // must still ring. The push says whether it carries a call
-            // (anyone can say so on the outside, so the wrap is opened
-            // and the call rings from a mutual contact only, with no
-            // name); whatever goes wrong in that says only that
-            // something came.
+            // must still ring (and stop ringing). The push says whether
+            // it carries a call (anyone can say so on the outside, so the
+            // wrap is opened and the call rings from a mutual contact
+            // only, with no name). A push so marked never says "something
+            // came": where a ring was due, that is the notification of
+            // nothing. What opens and is no call and no end of one is
+            // quiet (`NotACall`), what cannot be had is quiet
+            // (`Unreachable`), and what cannot be read is an error, as
+            // it is with the content shown.
             if push.call {
-                if let Ok(Some(outcome)) = self.call_only(&settings, push).await {
-                    return Ok(outcome);
-                }
+                let outcome = self.call_only(&settings, push).await?;
+                return Ok(outcome.unwrap_or(Outcome::Quiet { reason: Reason::NotACall }));
             }
             return Ok(Outcome::Plain(plain));
         }
 
         let Some(raw) = self.event_of(push).await? else {
+            if push.call {
+                return Ok(Outcome::Quiet { reason: Reason::Unreachable });
+            }
             return Ok(Outcome::Plain(plain));
         };
         if raw.kind == messenger_ingress::classify::KIND_GROUP_MESSAGE && self.written_by_me(&raw) {
@@ -107,11 +119,16 @@ impl Describe {
 
     /// The push opened for a call and nothing else: the invitation of a
     /// mutual contact rings (`Some`, with no name and no picture under
-    /// the settings that brought us here); any other content is left
-    /// unread (`None`).
+    /// the settings that brought us here), the end of a call stops the
+    /// ringing; any other content is left unread (`None`).
     async fn call_only(&self, settings: &Settings, push: &PushData) -> Result<Option<Outcome>> {
-        let Some(raw) = self.event_of(push).await? else { return Ok(None) };
+        let Some(raw) = self.event_of(push).await? else {
+            return Ok(Some(Outcome::Quiet { reason: Reason::Unreachable }));
+        };
         let Inbound::Dm(dm) = messenger_ingress::classify(&raw, Some(&self.keys)) else { return Ok(None) };
+        if dm.rumor_kind == KIND_PEER_NOTE_RUMOR {
+            return self.call_signal(&dm).await.map(Some);
+        }
         if dm.rumor_kind != KIND_DM_RUMOR || dm.sender == self.me {
             return Ok(None);
         }
@@ -122,7 +139,31 @@ impl Describe {
         if self.dm.load_relation(&dm.sender).await?.blocked {
             return Ok(Some(Outcome::Quiet { reason: Reason::Blocked }));
         }
-        self.call_notice(&dm.sender, &envelope, dm.created_at.0, settings).await.map(Some)
+        // No name and no picture, as nothing of the content is shown.
+        let settings = Settings { content: Content::None, ..*settings };
+        self.call_notice(&dm.sender, &envelope, dm.created_at.0, &settings).await.map(Some)
+    }
+
+    /// A note of a call (kind 30079) that reached the phone by push: the
+    /// ones that end a ringing (see [`CallEnd`]) say so; every other
+    /// signal of a call, and every other note, is the app's.
+    async fn call_signal(&self, dm: &messenger_core::DmInbound) -> Result<Outcome> {
+        let quiet = Ok(Outcome::Quiet { reason: Reason::NotAMessage });
+        let Ok(envelope) = Envelope::parse(&dm.content) else { return quiet };
+        let Some(call_id) = envelope.str_field("call_id").filter(|id| is_call_id(id)) else { return quiet };
+        let ends = if dm.sender == self.me {
+            // My other device took, declined or ended the call, or was
+            // busy with another: this phone stops ringing for it.
+            matches!(envelope.t.as_str(), T_CALL_ANSWER | T_CALL_DECLINE | T_CALL_BUSY | T_CALL_END)
+        } else {
+            // The caller gave up before I answered. The caller's other
+            // words (an answer, a refusal) are for the app that calls.
+            envelope.t == T_CALL_END && self.dm.calls_allowed(&dm.sender).await?
+        };
+        if !ends {
+            return quiet;
+        }
+        Ok(Outcome::CallEnd(CallEnd { call_id: call_id.to_string() }))
     }
 
     async fn event_of(&self, push: &PushData) -> Result<Option<RawEvent>> {
@@ -162,7 +203,11 @@ impl Describe {
 
     async fn dm_notice(&self, dm: messenger_core::DmInbound, settings: &Settings, count: u32) -> Result<Outcome> {
         // A note between my devices or from a peer (a receipt, a reaction)
-        // is for the app, whatever its type says.
+        // is for the app, whatever its type says; the one that ends a
+        // ringing is for the phone.
+        if dm.rumor_kind == KIND_PEER_NOTE_RUMOR {
+            return self.call_signal(&dm).await;
+        }
         if dm.rumor_kind != KIND_DM_RUMOR {
             return Ok(Outcome::Quiet { reason: Reason::NotAMessage });
         }
@@ -244,8 +289,13 @@ impl Describe {
     /// Somebody calls (`call.invite`). The same gate as the app's: only a
     /// peer we both chose to talk with may ring this phone, as a ring tells
     /// that the device is alive. A new offer inside a call (`restart`) is a
-    /// signal for the app. What the phone rings with is who calls, by the
-    /// chat's name (nobody under "no content"); the app shows the rest.
+    /// signal for the app. An invitation older than its life is a missed
+    /// call (the app's to show), and a call the app has on record as
+    /// answered or over (it was up, or caught up since) rings nothing
+    /// either: a push comes late as often as not, and a ring for a call
+    /// that is over is the "empty" notification of a phone. What the phone
+    /// rings with is who calls, by the chat's name (nobody under "no
+    /// content"); the app shows the rest.
     async fn call_notice(&self, peer: &PubKey, envelope: &Envelope, created_at: i64, settings: &Settings) -> Result<Outcome> {
         if envelope.fields.get("restart").and_then(serde_json::Value::as_bool).unwrap_or(false) {
             return Ok(Outcome::Quiet { reason: Reason::NotAMessage });
@@ -258,6 +308,14 @@ impl Describe {
         if !self.dm.calls_allowed(peer).await? {
             return Ok(Outcome::Quiet { reason: Reason::NotForMe });
         }
+        let now = SystemClock.now().secs();
+        let (created_at, expires_at) = invite_times(created_at, now);
+        if invite_expired(expires_at, now) {
+            return Ok(Outcome::Quiet { reason: Reason::Expired });
+        }
+        if calls::get(&self.store, call_id).await?.is_some_and(|row| call_over(&row)) {
+            return Ok(Outcome::Quiet { reason: Reason::Over });
+        }
         let chat_id = chats::dm_chat_id(peer.as_hex());
         let (name, picture) = if settings.content == Content::None {
             (String::new(), None)
@@ -267,7 +325,6 @@ impl Describe {
                 None => self.contacts.face_of(peer).await?,
             }
         };
-        let (created_at, expires_at) = invite_times(created_at, SystemClock.now().secs());
         Ok(Outcome::Call(CallNotice {
             call_id: call_id.to_string(),
             media: media.to_string(),
@@ -345,6 +402,21 @@ pub fn invite_times(created_at: i64, now: i64) -> (i64, i64) {
     (at, at.saturating_add(CALL_INVITE_TTL_SECS))
 }
 
+/// Whether an invitation good until `expires_at` is past at `now`: the
+/// core rings while `now - created_at <= INVITE_TTL_SECS`
+/// (`messenger_calls::service`), so the last second is still a ring.
+pub fn invite_expired(expires_at: i64, now: i64) -> bool {
+    expires_at < now
+}
+
+/// Whether the app's record of a call says it is answered or over: it was
+/// taken (here or on another device), declined, missed, busy, ended or
+/// failed. Open, with nothing of the kind, while the app rings for it or
+/// never heard of its end.
+pub fn call_over(row: &calls::CallRow) -> bool {
+    row.answered_at.is_some() || row.ended_at.is_some() || row.outcome.is_some()
+}
+
 /// A call id as the core of calls makes it: 16 random bytes, hex.
 fn is_call_id(s: &str) -> bool {
     s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
@@ -402,5 +474,34 @@ mod tests {
         assert_eq!(invite_times(1_000, 1_010), (1_000, 1_045));
         assert_eq!(invite_times(1_600, 1_010), (1_010, 1_055));
         assert_eq!(invite_times(i64::MAX, 1_010), (1_010, 1_055));
+    }
+
+    /// The last second of an invitation still rings, as in the core; the
+    /// one after is a missed call.
+    #[test]
+    fn an_invitation_expires_after_its_last_second() {
+        let (_, expires_at) = invite_times(1_000, 1_000);
+        assert!(!invite_expired(expires_at, 1_045));
+        assert!(invite_expired(expires_at, 1_046));
+    }
+
+    #[test]
+    fn a_call_on_record_is_over_once_answered_ended_or_judged() {
+        let open = calls::CallRow {
+            call_id: "c".into(),
+            chat_id: "dm:x".into(),
+            peer: "x".into(),
+            direction: "in".into(),
+            media: "audio".into(),
+            started_at: 1,
+            answered_at: None,
+            ended_at: None,
+            outcome: None,
+            via_relay: false,
+        };
+        assert!(!call_over(&open));
+        assert!(call_over(&calls::CallRow { answered_at: Some(2), ..open.clone() }));
+        assert!(call_over(&calls::CallRow { ended_at: Some(2), ..open.clone() }));
+        assert!(call_over(&calls::CallRow { outcome: Some("missed".into()), ..open.clone() }));
     }
 }

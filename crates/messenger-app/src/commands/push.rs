@@ -477,9 +477,12 @@ pub fn lock_changed() {
     KEYS_KICK.notify_one();
 }
 
-/// Gives the push handler the keys while the settings want it to have them
-/// and no lock guards the app; takes them away otherwise. Runs for as long
-/// as the runtime does, looking again every 20 s and whenever kicked.
+/// Gives the push handler the keys while no lock guards the app; takes
+/// them away otherwise. What the keys may open is the bundle's word: with
+/// the notifications set to show no content, the runtime gives a bundle
+/// for calls alone (`notify_bundle`), so the phone still rings. Runs for
+/// as long as the runtime does, looking again every 20 s and whenever
+/// kicked.
 #[cfg(target_os = "android")]
 async fn keep_handler_keys(app: tauri::AppHandle, rt: std::sync::Arc<messenger_runtime::MessengerRuntime>) {
     use std::time::Duration;
@@ -492,13 +495,7 @@ async fn keep_handler_keys(app: tauri::AppHandle, rt: std::sync::Arc<messenger_r
     let mut given: Option<Option<String>> = None;
     loop {
         let wanted = match app.try_state::<Lock>() {
-            Some(lock) => match rt.notify_wants_keys().await {
-                Ok(w) => w && !lock.enabled().await,
-                Err(e) => {
-                    eprintln!("messenger notify: {e}");
-                    false
-                }
-            },
+            Some(lock) => !lock.enabled().await,
             None => false,
         };
         let fingerprint = if wanted { rt.notify_fingerprint().await.unwrap_or(None) } else { None };

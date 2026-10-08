@@ -78,9 +78,14 @@
       <div class="caption">
         <span class="cap-name">{peer.name}</span>
         <span class="cap-status" class:clock={talking}>{status}</span>
-        {#if call?.via === 'relay' || call?.muted}
+        {#if (talking && call?.via) || call?.muted}
           <span class="cap-chips">
-            {#if call?.via === 'relay'}<span class="chip relay small"><CallIcon name="relay" size={11} />{$t('msg_call_via_relay')}</span>{/if}
+            {#if talking && call?.via}
+              <span class="chip small" class:relay={call.via === 'relay'}>
+                <CallIcon name={call.via} size={11} />{$t(call.via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
+              </span>
+            {/if}
+            {#if rtt != null}<span class="chip small quiet">{$t('msg_call_rtt', { ms: String(rtt) })}</span>{/if}
             {#if call?.muted}<span class="chip warn small"><CallIcon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
           </span>
         {/if}

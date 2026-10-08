@@ -192,7 +192,8 @@ pub enum CallDirection {
     Out,
 }
 
-/// Where a call is.
+/// Where a call is. `reconnecting` is `active` with the way lost: a
+/// restart of ICE is under way, and `reconnect_reason` says why.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum CallPhase {
@@ -200,7 +201,19 @@ pub enum CallPhase {
     Incoming,
     Connecting,
     Active,
+    Reconnecting,
     Ended,
+}
+
+/// Why a call is `reconnecting`: the engine saw the way go, my network
+/// changed under the call, or the peer lost the way (it asked for a new
+/// offer, or made one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ReconnectReason {
+    ConnectionLost,
+    NetworkChanged,
+    PeerLost,
 }
 
 /// How the media goes: directly between the two, or through a relay.
@@ -327,6 +340,10 @@ pub struct CallView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub via: Option<CallVia>,
+    /// Why the call is `reconnecting`; absent in every other phase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reconnect_reason: Option<ReconnectReason>,
     pub muted: bool,
     /// When the invitation was made, unix seconds.
     #[ts(type = "number")]
@@ -435,6 +452,15 @@ pub struct CallState {
     /// How big my video is sent, for the next time it goes on.
     #[serde(default)]
     pub video_quality: VideoQuality,
+    /// This device takes calls (on by default). Off: every invitation is
+    /// ignored here without a word, so that my other devices ring for it;
+    /// nothing goes on record on this device.
+    #[serde(default = "yes")]
+    pub incoming_enabled: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl From<CoreQuality> for VideoQuality {
@@ -521,11 +547,17 @@ impl From<CoreView> for CallView {
                 Phase::Incoming => CallPhase::Incoming,
                 Phase::Connecting => CallPhase::Connecting,
                 Phase::Active => CallPhase::Active,
+                Phase::Reconnecting => CallPhase::Reconnecting,
                 Phase::Ended => CallPhase::Ended,
             },
             via: v.via.map(|p| match p {
                 PairKind::Direct => CallVia::Direct,
                 PairKind::Relay => CallVia::Relay,
+            }),
+            reconnect_reason: v.reconnect_reason.map(|r| match r {
+                messenger_calls::ReconnectReason::ConnectionLost => ReconnectReason::ConnectionLost,
+                messenger_calls::ReconnectReason::NetworkChanged => ReconnectReason::NetworkChanged,
+                messenger_calls::ReconnectReason::PeerLost => ReconnectReason::PeerLost,
             }),
             muted: v.muted,
             started_at: v.started_at,
@@ -640,7 +672,25 @@ impl MessengerRuntime {
             nodes: nodes.iter().map(node_view).collect(),
             available: self.calls.available,
             video_quality: self.calls.service.video_quality().await?.into(),
+            incoming_enabled: self.calls.service.incoming_enabled().await?,
         })
+    }
+
+    /// Whether this device takes calls (`call.incoming_enabled`). Off:
+    /// every invitation is ignored here without a word (no ring, no
+    /// decline, no busy), my other devices ring for it, and this device
+    /// keeps no record of it. A call ringing now goes on ringing.
+    pub async fn call_set_incoming(&self, enabled: bool) -> Result<CallState> {
+        self.calls.service.set_incoming_enabled(enabled).await?;
+        self.call_state().await
+    }
+
+    /// The platform saw the network change (an interface came or went:
+    /// the phone's connectivity callback, the page's `online` event): the
+    /// call under way restarts ICE at once instead of waiting for the
+    /// engine to notice the way is gone. Nothing without a call.
+    pub async fn call_network_changed(&self) {
+        self.calls.service.network_changed().await;
     }
 
     /// For the next call; the current one keeps its way.
@@ -724,8 +774,9 @@ mod tests {
             chat_id: format!("dm:{}", "ab".repeat(32)),
             direction: messenger_calls::Direction::In,
             media: Media::Video,
-            phase: messenger_calls::Phase::Active,
+            phase: messenger_calls::Phase::Reconnecting,
             via: Some(PairKind::Relay),
+            reconnect_reason: Some(messenger_calls::ReconnectReason::NetworkChanged),
             muted: true,
             started_at: 100,
             answered_at: Some(105),
@@ -745,6 +796,8 @@ mod tests {
         // Without the optional parts the JSON is the same too.
         let bare = CoreView {
             via: None,
+            reconnect_reason: None,
+            phase: messenger_calls::Phase::Active,
             answered_at: None,
             limits: None,
             nodes: vec![],
@@ -756,6 +809,7 @@ mod tests {
         let json = serde_json::to_value(&bare).unwrap();
         assert_eq!(serde_json::to_value(CallView::from(bare)).unwrap(), json);
         assert!(json.get("via").is_none());
+        assert!(json.get("reconnect_reason").is_none());
         // The words of the outcomes and the policies are the core's.
         for (o, word) in [
             (CallOutcome::Missed, messenger_calls::Outcome::Missed.as_str()),
@@ -800,8 +854,14 @@ mod tests {
         assert!(st.nodes.iter().all(|n| n.class == "project"), "{:?}", st.nodes);
         assert!(st.available, "the engine was given");
         assert_eq!(st.video_quality, VideoQuality::Sd);
+        assert!(st.incoming_enabled, "a device takes calls unless told otherwise");
         let st = rt.call_set_video_quality(VideoQuality::Hd).await.unwrap();
         assert_eq!(st.video_quality, VideoQuality::Hd);
+        let st = rt.call_set_incoming(false).await.unwrap();
+        assert!(!st.incoming_enabled);
+        assert!(rt.call_set_incoming(true).await.unwrap().incoming_enabled);
+        // Without a call a change of the network is nothing.
+        rt.call_network_changed().await;
         // Video without a call: nothing to turn on, no frames, no cameras
         // on the fake (a phone's plugin lists them), no screens either.
         assert!(matches!(rt.call_set_video(VideoInput::Camera { id: None }).await, Err(MessengerError::Invalid(_))));

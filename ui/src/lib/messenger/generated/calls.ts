@@ -10,8 +10,11 @@ export type CallMedia = "audio" | "video";
 /** Who called whom. */
 export type CallDirection = "in" | "out";
 
-/** Where a call is: ringing on their side, ringing here, ICE looking for a way, talking, over. */
-export type CallPhase = "outgoing" | "incoming" | "connecting" | "active" | "ended";
+/** Where a call is: ringing on their side, ringing here, ICE looking for a way, talking, restoring a lost way while talking, over. */
+export type CallPhase = "outgoing" | "incoming" | "connecting" | "active" | "reconnecting" | "ended";
+
+/** Why a call is `reconnecting`: the way went, my network changed, or the peer lost the way. */
+export type ReconnectReason = "connection_lost" | "network_changed" | "peer_lost";
 
 /** How the media goes: directly between the two, or through a relay. */
 export type CallVia = "direct" | "relay";
@@ -65,7 +68,11 @@ peer: string, chat_id: string, direction: CallDirection, media: CallMedia, phase
 /**
  * How the media goes, once ICE settled.
  */
-via?: CallVia, muted: boolean, 
+via?: CallVia, 
+/**
+ * Why the call is `reconnecting`; absent in every other phase.
+ */
+reconnect_reason?: ReconnectReason, muted: boolean, 
 /**
  * When the invitation was made, unix seconds.
  */
@@ -160,4 +167,10 @@ available: boolean,
 /**
  * How big my video is sent, for the next time it goes on.
  */
-video_quality: VideoQuality, };
+video_quality: VideoQuality, 
+/**
+ * This device takes calls (on by default). Off: every invitation is
+ * ignored here without a word, so that my other devices ring for it;
+ * nothing goes on record on this device.
+ */
+incoming_enabled: boolean, };

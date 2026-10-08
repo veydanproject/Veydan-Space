@@ -20,7 +20,7 @@ function view(over: Partial<CallView> = {}): CallView {
 describe('what a screen reader is told of a call', () => {
   it('tells the phases', () => {
     expect(liveText(view(), null, tr)).toBe('msg_call_phase_outgoing');
-    expect(liveText(view({ phase: 'connecting', answered_at: 1003 }), null, tr)).toBe('msg_call_phase_reconnecting');
+    expect(liveText(view({ phase: 'reconnecting', answered_at: 1003 }), null, tr)).toBe('msg_call_phase_reconnecting');
   });
 
   it('does not tell the clock that the screen shows while the call talks', () => {
@@ -32,7 +32,7 @@ describe('what a screen reader is told of a call', () => {
   });
 
   it('tells how the call ended, once', () => {
-    const ended = { call: view({ phase: 'ended' }), outcome: 'ended' as const, duration: 65 };
+    const ended = { call: view({ phase: 'ended' }), outcome: 'ended' as const, duration: 65, local: false };
     expect(liveText(null, ended, tr)).toBe('msg_call_ended · 1:05');
   });
 });

@@ -31,11 +31,38 @@ pub struct KeyBundle {
     pub nsec: String,
     #[serde(default)]
     pub groups: Vec<GroupKeyEntry>,
+    /// The keys serve calls and nothing else: a message is not opened, and
+    /// a notification says only that something came, as without keys; an
+    /// invitation to a call (in a push the server marked as one) rings,
+    /// with no name, and the end of a call stops the ringing. The app
+    /// hands such a bundle over while its notifications show no content:
+    /// on a phone the ringing comes by push, and a phone that gets no
+    /// keys would never ring (a computer rings in the same case,
+    /// nameless, `desktop_notify`).
+    ///
+    /// The limit is a word to the handler, not a narrower key: the
+    /// invitation is a gift wrap to the identity, which only the
+    /// identity's key opens, so the bundle holds the same `nsec` as a
+    /// full one and could open every message. That is why a PIN on the
+    /// app gives the handler no bundle at all, this one included
+    /// (`Lock::enabled()`, internal/platform-spec.md: the keys are not
+    /// handed to the background process), and a phone under a PIN rings
+    /// for no push; the app shows the missed call when it is unlocked.
+    #[serde(default)]
+    #[zeroize(skip)]
+    pub calls_only: bool,
 }
 
 impl KeyBundle {
     pub fn new(keys: &Keys, groups: Vec<GroupKeyEntry>) -> Self {
-        Self { v: BUNDLE_VERSION, nsec: keys.secret_key().to_secret_hex(), groups }
+        Self { v: BUNDLE_VERSION, nsec: keys.secret_key().to_secret_hex(), groups, calls_only: false }
+    }
+
+    /// The identity's key alone, for calls alone (see `calls_only`): no
+    /// keys of groups, since nothing of a group is opened with it. Never
+    /// under a PIN: the key inside is the identity's whole key.
+    pub fn for_calls_only(keys: &Keys) -> Self {
+        Self { v: BUNDLE_VERSION, nsec: keys.secret_key().to_secret_hex(), groups: Vec::new(), calls_only: true }
     }
 
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
@@ -95,6 +122,21 @@ mod tests {
         entry.key_id = "ffffffffffffffffffffffffffffffff".into();
         let bundle = KeyBundle::new(&keys, vec![entry]);
         assert!(bundle.group_key("g1", "ffffffffffffffffffffffffffffffff").is_none());
+    }
+
+    /// A bundle for calls alone says so, and one written before the word
+    /// existed reads as a full one.
+    #[test]
+    fn a_bundle_for_calls_alone_says_so() {
+        let keys = Keys::generate();
+        let bundle = KeyBundle::for_calls_only(&keys);
+        assert!(bundle.calls_only);
+        assert!(bundle.groups.is_empty());
+        assert!(KeyBundle::from_json(&bundle.to_json()).unwrap().calls_only);
+        let full = KeyBundle::new(&keys, vec![]);
+        assert!(!full.calls_only);
+        let old = serde_json::json!({ "v": 1, "nsec": keys.secret_key().to_secret_hex(), "groups": [] });
+        assert!(!KeyBundle::from_json(old.to_string().as_bytes()).unwrap().calls_only);
     }
 
     #[test]

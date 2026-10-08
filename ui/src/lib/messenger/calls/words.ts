@@ -44,14 +44,15 @@ export function elapsed(call: Pick<CallView, 'answered_at'>, now: number): numbe
 
 /**
  * The words under the name while the call is not talking; `null` while it
- * is (the screen shows the clock then). A connection being restored has
- * `answered_at` set: it was talking a moment ago.
+ * is (the screen shows the clock then). `reconnecting`: it was talking a
+ * moment ago and its way is being restored.
  */
 export function phaseKey(call: Pick<CallView, 'phase' | 'media' | 'answered_at'>): string | null {
   switch (call.phase) {
     case 'outgoing': return 'msg_call_phase_outgoing';
     case 'incoming': return call.media === 'video' ? 'msg_call_phase_incoming_video' : 'msg_call_phase_incoming';
-    case 'connecting': return call.answered_at ? 'msg_call_phase_reconnecting' : 'msg_call_phase_connecting';
+    case 'connecting': return 'msg_call_phase_connecting';
+    case 'reconnecting': return 'msg_call_phase_reconnecting';
     case 'ended': return 'msg_call_ended';
     default: return null;
   }

@@ -3,13 +3,16 @@
 
 <!--
   What a call sounds like in the page, for as long as it is mounted: the
-  ring of a call that comes in, the line's tone while the peer's device
-  rings, three beeps when a talk ends. `ring` off: something else rings
-  for the page (the phone's call service and its notification).
+  ring of a call that comes in, the caller's motif while the peer's device
+  rings, a chime when the call connects, a falling one when it ends, and a
+  "no" when the peer declines, is busy or does not answer (sounds.ts picks,
+  tones.ts plays). `ring` off: something else rings for the page (the
+  phone's call service and its notification).
 -->
 <script lang="ts">
   import { callStore } from './callStore.svelte';
-  import { hangupTone, ringback, ringtone } from './tones';
+  import { connectedSound, endSound } from './sounds';
+  import { busyTone, connectedTone, endTone, ringback, ringtone } from './tones';
 
   let { ring = true }: { ring?: boolean } = $props();
 
@@ -21,13 +24,23 @@
     return sound === 'ring' ? ringtone() : ringback();
   });
 
-  // A talk that ended, or a call the peer refused: beeps once.
-  let beeped = '';
+  // The first time a call talks: a chime, once (not again after a reconnection).
+  let chimed = '';
+  $effect(() => {
+    const c = callStore.call;
+    if (!c || c.phase !== 'active' || c.call_id === chimed) return;
+    chimed = c.call_id;
+    if (connectedSound(c, Math.floor(Date.now() / 1000))) connectedTone();
+  });
+
+  // A call that ended: once.
+  let sounded = '';
   $effect(() => {
     const e = callStore.ended;
-    if (!e || e.call.call_id === beeped) return;
-    beeped = e.call.call_id;
-    const refused = e.call.direction === 'out' && (e.outcome === 'declined' || e.outcome === 'busy');
-    if (e.call.answered_at || refused) hangupTone();
+    if (!e || e.call.call_id === sounded) return;
+    sounded = e.call.call_id;
+    const s = endSound(e);
+    if (s === 'end') endTone();
+    else if (s === 'busy') busyTone();
   });
 </script>

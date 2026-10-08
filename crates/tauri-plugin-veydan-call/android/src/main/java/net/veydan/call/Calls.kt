@@ -193,6 +193,21 @@ internal object Calls {
   }
 
   /**
+   * A push says the call is over (`CallActionReceiver.DISMISS`): taken on
+   * another device, declined there, or given up by the caller. The same
+   * as `dismissIncoming`, and besides: a process that knows no call at
+   * all was started by this very push, and a call notification still
+   * there is a leftover of the process that rang and died (as `loaded`
+   * reasons); it goes. The ringing of another call, and a call that goes
+   * on, are not touched: the app ends those itself.
+   */
+  fun dismissFromPush(context: Context, callId: String) {
+    Log.i(CallState.TAG, "a push ends the ringing of $callId (${phase ?: "nothing"} here${call?.let { ", ${it.callId}" } ?: ""})")
+    if (phase == null && call == null) CallNotices.cancel(context.applicationContext)
+    dismissIncoming(context, callId)
+  }
+
+  /**
    * Answer pressed, on the notification or on the ringing screen.
    *
    * A press on a call this process does not know comes from a notification

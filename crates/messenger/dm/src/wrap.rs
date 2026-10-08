@@ -37,14 +37,29 @@ pub enum Wake {
     /// not a day (`["call", "1"]` on the outside; services/push/spec). The
     /// price: a relay sees that the wrap is a call, not what call.
     Call,
+    /// The end of a ringing: a phone that rings for a call from a push,
+    /// with the app not up, must hear that the call was taken on another
+    /// device, declined, or given up by the caller, or it rings on until
+    /// the invitation expires. The push server sends such a wrap at once
+    /// too, past the throttle, for a minute, in place of the ringing it
+    /// still holds (`["call", "0"]` on the outside); the phone opens it
+    /// and stops ringing. For the copy to my own devices of `call.answer`,
+    /// `call.decline`, `call.busy` and `call.end`, and for the peer's copy
+    /// of `call.end`, `call.decline` and `call.busy`
+    /// (`messenger-calls::service`). The price is the same as a call's:
+    /// a relay sees that a call ended, not which or how.
+    CallEnd,
 }
 
-/// `["call", "1"]`: the tag of a call on the outside of a wrap. Spelled
-/// here and in `vpush-server::pipeline::classify`; the two must agree.
+/// `["call", "1"]`: the tag of a call on the outside of a wrap, and
+/// `["call", "0"]` the end of one. Spelled here and in
+/// `vpush-server::pipeline::classify`; the two must agree.
 pub const CALL_TAG: &str = "call";
+pub const CALL_RING: &str = "1";
+pub const CALL_END: &str = "0";
 
-fn call_tag() -> Result<Tag> {
-    Tag::parse([CALL_TAG, "1"]).map_err(crypto)
+fn call_tag(value: &str) -> Result<Tag> {
+    Tag::parse([CALL_TAG, value]).map_err(crypto)
 }
 
 fn crypto(e: impl std::fmt::Display) -> MessengerError {
@@ -64,7 +79,7 @@ pub fn wrap_as(
     reply_to: Option<&str>,
     wake: Wake,
 ) -> Result<Wrapped> {
-    wrap_kind(keys, peer, Kind::PrivateDirectMessage.as_u16(), content, created_at, reply_to, wake, true, None)
+    wrap_kind(keys, peer, Kind::PrivateDirectMessage.as_u16(), content, created_at, reply_to, wake, Some(Wake::Nobody), None)
 }
 
 /// A message to `peer` that wakes the peer as a call ([`Wake::Call`]) and
@@ -72,7 +87,7 @@ pub fn wrap_as(
 /// both wraps): the invitation to a call, which rings a phone now or not
 /// at all. With a self-copy, so my other devices know I called.
 pub fn wrap_expiring(keys: &Keys, peer: &PubKey, content: &str, created_at: i64, expiration: i64) -> Result<Wrapped> {
-    wrap_kind(keys, peer, Kind::PrivateDirectMessage.as_u16(), content, created_at, None, Wake::Call, true, Some(expiration))
+    wrap_kind(keys, peer, Kind::PrivateDirectMessage.as_u16(), content, created_at, None, Wake::Call, Some(Wake::Nobody), Some(expiration))
 }
 
 /// A note to `peer` that is not a message (a receipt, a reaction, a key): a
@@ -88,9 +103,35 @@ pub fn wrap_note(
     self_copy: bool,
     expiration: Option<i64>,
 ) -> Result<Wrapped> {
-    wrap_kind(keys, peer, KIND_PEER_NOTE_RUMOR, content, created_at, None, Wake::Nobody, self_copy, expiration)
+    wrap_note_as(keys, peer, content, created_at, expiration, Wake::Nobody, self_copy.then_some(Wake::Nobody))
 }
 
+/// A note to `peer` ([`wrap_note`]) with a word for the push server on
+/// each copy: `peer_wake` on the peer's, `self_copy` on mine (`None`: no
+/// copy). For the signals of a call that end a ringing ([`Wake::CallEnd`]):
+/// the end of a call, my refusal or busy to the peer (both copies marked:
+/// the peer's phone may hold the ringing from a push, my other devices
+/// ring), my answer (the peer's copy quiet, since the peer's app that
+/// calls is up, mine marked). A note never wakes as a message
+/// ([`Wake::Peer`]): it is one of the protocol, and such a word is taken
+/// as [`Wake::Nobody`].
+pub fn wrap_note_as(
+    keys: &Keys,
+    peer: &PubKey,
+    content: &str,
+    created_at: i64,
+    expiration: Option<i64>,
+    peer_wake: Wake,
+    self_copy: Option<Wake>,
+) -> Result<Wrapped> {
+    let as_note = |wake: Wake| if wake == Wake::Peer { Wake::Nobody } else { wake };
+    wrap_kind(keys, peer, KIND_PEER_NOTE_RUMOR, content, created_at, None, as_note(peer_wake), self_copy.map(as_note), expiration)
+}
+
+/// `self_copy`: whether my other devices get a copy, and with what word
+/// for the push server on it; the copy of a message or an invitation is
+/// quiet ([`Wake::Nobody`]), the copy of a signal that ends a ringing is
+/// marked ([`Wake::CallEnd`]).
 #[allow(clippy::too_many_arguments)]
 fn wrap_kind(
     keys: &Keys,
@@ -100,7 +141,7 @@ fn wrap_kind(
     created_at: i64,
     reply_to: Option<&str>,
     wake: Wake,
-    self_copy: bool,
+    self_copy: Option<Wake>,
     expiration: Option<i64>,
 ) -> Result<Wrapped> {
     let receiver = PublicKey::from_hex(peer.as_hex()).map_err(crypto)?;
@@ -119,22 +160,24 @@ fn wrap_kind(
         .ok_or_else(|| MessengerError::Crypto("rumor has no id".into()))?;
 
     let expiration = expiration.map(|at| Tag::expiration(nostr::types::Timestamp::from_secs(at.max(0) as u64)));
-    let seal = |to: PublicKey, quiet: bool| -> Result<WireEvent> {
+    let seal = |to: PublicKey, wake: Wake| -> Result<WireEvent> {
         let mut outside = Vec::new();
-        if quiet {
-            outside.push(pushtags::silent_tag()?);
-        } else if wake == Wake::Call {
-            // The peer's copy of a call, and only that: the copy for my
-            // own devices is quiet like any other.
-            outside.push(call_tag()?);
+        match wake {
+            Wake::Peer => {}
+            Wake::Nobody => outside.push(pushtags::silent_tag()?),
+            Wake::Call => outside.push(call_tag(CALL_RING)?),
+            Wake::CallEnd => outside.push(call_tag(CALL_END)?),
         }
         outside.extend(expiration.clone());
         let gift = GiftWrapBuilder::new(to, rumor.clone()).extra_tags(outside);
         wire(gift.finalize(keys).map_err(crypto)?)
     };
-    // A note to oneself is one's own copy, and nothing else.
-    let to_peer = seal(receiver, wake == Wake::Nobody || receiver == me)?;
-    let to_self = if receiver == me || !self_copy { None } else { Some(seal(me, true)?) };
+    // A note to oneself is one's own copy, and nothing else: quiet.
+    let to_peer = seal(receiver, if receiver == me { Wake::Nobody } else { wake })?;
+    let to_self = match self_copy {
+        Some(wake) if receiver != me => Some(seal(me, wake)?),
+        _ => None,
+    };
     Ok(Wrapped { rumor_id, to_peer, to_self })
 }
 
@@ -325,6 +368,43 @@ mod tests {
         let mine = wrap_expiring(&alice, &pk(&alice), "x", 1, 60).unwrap();
         assert!(silent(&mine.to_peer));
         assert_eq!(tag_value(&mine.to_peer, CALL_TAG), None);
+    }
+
+    /// The signals that end a ringing are marked `["call", "0"]` on the
+    /// copy the phone that rings would get, and quiet on the other: my
+    /// answer (refusal, busy) wakes my own devices and not the peer's,
+    /// the end of a call to the peer wakes the peer's devices and not
+    /// mine. A note never wakes as a message, and a note to myself is
+    /// one quiet copy, whatever was asked.
+    #[test]
+    fn the_end_of_a_ringing_is_marked_on_the_copy_that_needs_it() {
+        let (alice, bob) = (Keys::generate(), Keys::generate());
+        let answer = wrap_note_as(&alice, &pk(&bob), r#"{"v":1,"t":"call.answer"}"#, 1_700_000_000, Some(1_700_000_300), Wake::Nobody, Some(Wake::CallEnd)).unwrap();
+        assert!(silent(&answer.to_peer), "the caller's app is up");
+        assert_eq!(tag_value(&answer.to_peer, CALL_TAG), None);
+        let copy = answer.to_self.as_ref().expect("my other devices ring");
+        assert!(!silent(copy));
+        assert_eq!(tag_value(copy, CALL_TAG).as_deref(), Some(CALL_END));
+        assert_eq!(tag_value(copy, "expiration").as_deref(), Some("1700000300"));
+        assert_eq!(recipient(copy), alice.public_key().to_hex());
+        let opened = UnwrappedGift::from_gift_wrap(&alice, &serde_json::from_value(copy.json.clone()).unwrap()).unwrap();
+        assert_eq!(opened.rumor.kind.as_u16(), KIND_PEER_NOTE_RUMOR);
+        assert!(!opened.rumor.tags.iter().any(|t| t.kind() == CALL_TAG), "the mark is on the outside");
+
+        let end = wrap_note_as(&alice, &pk(&bob), r#"{"v":1,"t":"call.end"}"#, 1_700_000_000, None, Wake::CallEnd, Some(Wake::Nobody)).unwrap();
+        assert_eq!(tag_value(&end.to_peer, CALL_TAG).as_deref(), Some(CALL_END));
+        assert!(!silent(&end.to_peer));
+        assert!(silent(end.to_self.as_ref().unwrap()));
+        assert_ne!(CALL_END, CALL_RING, "an end is not a ring");
+
+        let ice = wrap_note_as(&alice, &pk(&bob), "x", 1_700_000_000, None, Wake::Peer, None).unwrap();
+        assert!(silent(&ice.to_peer), "a note is never a message");
+        assert!(ice.to_self.is_none());
+
+        let mine = wrap_note_as(&alice, &pk(&alice), "x", 1, None, Wake::CallEnd, Some(Wake::CallEnd)).unwrap();
+        assert!(silent(&mine.to_peer));
+        assert_eq!(tag_value(&mine.to_peer, CALL_TAG), None);
+        assert!(mine.to_self.is_none());
     }
 
     #[test]

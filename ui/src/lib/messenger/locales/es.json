@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "Calidad de mi video",
     "msg_calls_video_360p": "Estándar · 360p",
     "msg_calls_video_720p": "Alta · 720p",
-    "msg_calls_video_hint": "Se aplica la próxima vez que enciendas la cámara. La calidad alta necesita una conexión más rápida; a través de un nodo de llamadas, su límite puede reducirla."
+    "msg_calls_video_hint": "Se aplica la próxima vez que enciendas la cámara. La calidad alta necesita una conexión más rápida; a través de un nodo de llamadas, su límite puede reducirla.",
+    "msg_call_confirm_audio": "¿Iniciar una llamada de voz?",
+    "msg_call_confirm_video": "¿Iniciar una videollamada?",
+    "msg_call_confirm_never": "No volver a preguntar",
+    "msg_call_confirm_never_hint": "A partir de ahora la llamada empieza al instante. Para que vuelva a preguntarse, actívalo en Configuración → Llamadas; mantener pulsado un botón de llamada la abre.",
+    "msg_calls_device_title": "En este dispositivo",
+    "msg_calls_incoming": "Aceptar llamadas en este dispositivo",
+    "msg_calls_incoming_hint": "Las llamadas suenan aquí y en tus otros dispositivos con esta cuenta.",
+    "msg_calls_incoming_off_hint": "Aquí no suenan las llamadas. Tus otros dispositivos con esta cuenta siguen sonando, y desde aquí puedes seguir llamando.",
+    "msg_calls_confirm": "Preguntar antes de llamar",
+    "msg_calls_confirm_hint": "Un botón de llamada pregunta primero si iniciar una llamada de voz o una videollamada, para que ninguna empiece por error. Mantener pulsado un botón de llamada abre estos ajustes."
   },
   "mobile": {}
 }

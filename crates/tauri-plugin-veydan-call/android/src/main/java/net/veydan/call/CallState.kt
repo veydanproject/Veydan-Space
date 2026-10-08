@@ -27,6 +27,7 @@ internal object CallState {
 
   const val EVENT_ACTION = "call_action"
   const val EVENT_ROUTE = "audio_route_changed"
+  const val EVENT_NETWORK = "network_changed"
 
   /** The presses nobody heard; a few at most, the oldest go first. */
   private const val MAX_WAITING = 8
@@ -70,5 +71,14 @@ internal object CallState {
   /** The routes of the sound changed; nothing is kept, the app asks when it starts. */
   fun routesChanged(routes: JSObject) {
     plugin()?.trigger(EVENT_ROUTE, routes)
+  }
+
+  /**
+   * The phone's default network changed (`NetworkWatch`): `how` is `back`
+   * after a loss, `other` for another network. Nothing is kept: a change
+   * nobody listens for is one the app sees for itself when it starts.
+   */
+  fun networkChanged(how: String) {
+    plugin()?.trigger(EVENT_NETWORK, JSObject().put("how", how))
   }
 }

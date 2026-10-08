@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "Qualité de ma vidéo",
     "msg_calls_video_360p": "Standard · 360p",
     "msg_calls_video_720p": "Haute · 720p",
-    "msg_calls_video_hint": "S’applique à la prochaine activation de la caméra. La haute qualité demande une connexion plus rapide ; via un nœud d’appels, sa limite peut la réduire."
+    "msg_calls_video_hint": "S’applique à la prochaine activation de la caméra. La haute qualité demande une connexion plus rapide ; via un nœud d’appels, sa limite peut la réduire.",
+    "msg_call_confirm_audio": "Démarrer un appel vocal ?",
+    "msg_call_confirm_video": "Démarrer un appel vidéo ?",
+    "msg_call_confirm_never": "Ne plus demander",
+    "msg_call_confirm_never_hint": "Désormais, un appel démarre aussitôt. Pour que la question revienne, activez-la dans Paramètres → Appels ; un appui long sur un bouton d’appel les ouvre.",
+    "msg_calls_device_title": "Sur cet appareil",
+    "msg_calls_incoming": "Accepter les appels sur cet appareil",
+    "msg_calls_incoming_hint": "Les appels sonnent ici et sur vos autres appareils avec ce compte.",
+    "msg_calls_incoming_off_hint": "Les appels ne sonnent pas ici. Vos autres appareils avec ce compte sonnent toujours, et vous pouvez toujours appeler d’ici.",
+    "msg_calls_confirm": "Demander avant d’appeler",
+    "msg_calls_confirm_hint": "Un bouton d’appel demande d’abord s’il faut démarrer un appel vocal ou vidéo, pour qu’aucun ne parte par erreur. Un appui long sur un bouton d’appel ouvre ces paramètres."
   },
   "mobile": {}
 }

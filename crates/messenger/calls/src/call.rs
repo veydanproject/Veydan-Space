@@ -44,11 +44,13 @@ pub enum Phase {
     Outgoing,
     /// The peer calls; my phone rings.
     Incoming,
-    /// Answered on both sides; ICE is looking for a way. Also while a lost
-    /// connection is being restored (`answered_at` is set then).
+    /// Answered on both sides; ICE is looking for a way.
     Connecting,
     /// Talking.
     Active,
+    /// Talking, and the way was lost (or the network changed under one
+    /// side): a restart of ICE is under way. `reconnect_reason` says why.
+    Reconnecting,
     Ended,
 }
 
@@ -59,9 +61,23 @@ impl Phase {
             Self::Incoming => "incoming",
             Self::Connecting => "connecting",
             Self::Active => "active",
+            Self::Reconnecting => "reconnecting",
             Self::Ended => "ended",
         }
     }
+}
+
+/// Why a call is `Reconnecting`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReconnectReason {
+    /// The engine saw the way go (no answer from the peer for a while).
+    ConnectionLost,
+    /// My network changed under the call (a new interface came up).
+    NetworkChanged,
+    /// The peer lost the way or changed its network: it asked for a new
+    /// offer, or made one.
+    PeerLost,
 }
 
 /// How a call ended, as the record keeps it (`msg_calls.outcome`).
@@ -120,6 +136,9 @@ pub struct CallView {
     /// How the media goes, once ICE settled: `direct` | `relay`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub via: Option<PairKind>,
+    /// Why the call is `Reconnecting`; `None` in every other phase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconnect_reason: Option<ReconnectReason>,
     pub muted: bool,
     /// When the invitation was made (the time inside the rumor).
     pub started_at: i64,
@@ -166,6 +185,7 @@ impl CallView {
             media,
             phase,
             via: None,
+            reconnect_reason: None,
             muted: false,
             started_at,
             answered_at: None,
@@ -195,6 +215,8 @@ mod tests {
         }
         assert_eq!(Outcome::parse("lost"), None);
         assert_eq!(serde_json::to_string(&Phase::Connecting).unwrap(), "\"connecting\"");
+        assert_eq!(serde_json::to_string(&Phase::Reconnecting).unwrap(), "\"reconnecting\"");
+        assert_eq!(serde_json::to_string(&ReconnectReason::PeerLost).unwrap(), "\"peer_lost\"");
         assert_eq!(Direction::Out.as_str(), "out");
     }
 }

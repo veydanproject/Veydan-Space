@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "내 영상 화질",
     "msg_calls_video_360p": "표준 · 360p",
     "msg_calls_video_720p": "고화질 · 720p",
-    "msg_calls_video_hint": "다음에 카메라를 켤 때부터 적용됩니다. 고화질에는 더 빠른 연결이 필요하며, 통화 노드를 거치면 노드 한도 때문에 낮아질 수 있습니다."
+    "msg_calls_video_hint": "다음에 카메라를 켤 때부터 적용됩니다. 고화질에는 더 빠른 연결이 필요하며, 통화 노드를 거치면 노드 한도 때문에 낮아질 수 있습니다.",
+    "msg_call_confirm_audio": "음성 통화를 시작할까요?",
+    "msg_call_confirm_video": "영상 통화를 시작할까요?",
+    "msg_call_confirm_never": "다시 묻지 않기",
+    "msg_call_confirm_never_hint": "이제부터 통화가 바로 시작됩니다. 다시 확인받으려면 설정 → 통화에서 켜세요. 통화 버튼을 길게 누르면 열립니다.",
+    "msg_calls_device_title": "이 기기에서",
+    "msg_calls_incoming": "이 기기에서 전화 받기",
+    "msg_calls_incoming_hint": "전화가 이 기기와 이 계정을 쓰는 다른 기기에서 울립니다.",
+    "msg_calls_incoming_off_hint": "이 기기에서는 전화가 울리지 않습니다. 이 계정을 쓰는 다른 기기에서는 계속 울리며, 여기서 전화를 거는 것도 계속 할 수 있습니다.",
+    "msg_calls_confirm": "걸기 전에 묻기",
+    "msg_calls_confirm_hint": "통화 버튼을 누르면 음성 통화와 영상 통화 중 무엇을 시작할지 먼저 물어 실수로 걸리지 않게 합니다. 통화 버튼을 길게 누르면 이 설정이 열립니다."
   },
   "mobile": {}
 }

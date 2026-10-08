@@ -6,8 +6,9 @@
 //! `messenger-core` read into one typed [`Signal`], and written back.
 //!
 //! The invitation goes as a message (kind 14, it wakes the peer's phone);
-//! everything else as a note (kind 30079, `wrap_note`): quiet, and gone
-//! from the relays after `expiration`. Every piece carries the `call_id`,
+//! everything else as a note (kind 30079, `wrap_note_as`): quiet, but for
+//! the ones that end a ringing (`["call", "0"]` outside; `service::send`),
+//! and gone from the relays after `expiration`. Every piece carries the `call_id`,
 //! 16 random bytes as hex, made by the caller.
 
 use crate::engine::{IceCandidate, Media};
@@ -43,14 +44,24 @@ pub mod reason {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Signal {
-    Invite { call_id: String, media: Media, sdp: String, ice: Vec<IceCandidate>, restart: bool },
-    Answer { call_id: String, sdp: String, ice: Vec<IceCandidate> },
+    /// `live_restart`: the sender takes a restart of ICE while the way
+    /// still works, staying on the call through it (5.1.3+). A client
+    /// without the word (5.1.2) moves to `connecting` on such a restart
+    /// and gives up when no `Connected` comes, so the peer makes none
+    /// while its way is live. Said in the first invitation and in every
+    /// answer; a restart offer carries no word of it.
+    Invite { call_id: String, media: Media, sdp: String, ice: Vec<IceCandidate>, restart: bool, live_restart: bool },
+    Answer { call_id: String, sdp: String, ice: Vec<IceCandidate>, live_restart: bool },
     Ice { call_id: String, ice: Vec<IceCandidate> },
     Decline { call_id: String, reason: String },
     End { call_id: String, reason: String, answer: Option<String> },
     Busy { call_id: String },
     /// The called side asks the caller for a new offer (ICE restart).
-    Restart { call_id: String },
+    /// `seen` is how many offers of the caller it has taken so far: the
+    /// caller drops a request made before its latest offer reached the
+    /// called side (that offer answers it). `None` from a client that
+    /// does not count (5.1.2), always honoured.
+    Restart { call_id: String, seen: Option<u32> },
     /// My video (camera or screen) went on or off within the call.
     Video { call_id: String, on: bool },
 }
@@ -64,7 +75,7 @@ impl Signal {
             | Self::Decline { call_id, .. }
             | Self::End { call_id, .. }
             | Self::Busy { call_id }
-            | Self::Restart { call_id }
+            | Self::Restart { call_id, .. }
             | Self::Video { call_id, .. } => call_id,
         }
     }
@@ -83,8 +94,9 @@ impl Signal {
                 sdp: sdp()?,
                 ice: ice(),
                 restart: e.fields.get("restart").and_then(Value::as_bool).unwrap_or(false),
+                live_restart: flag(e, "live_restart"),
             },
-            T_CALL_ANSWER => Signal::Answer { call_id, sdp: sdp()?, ice: ice() },
+            T_CALL_ANSWER => Signal::Answer { call_id, sdp: sdp()?, ice: ice(), live_restart: flag(e, "live_restart") },
             T_CALL_ICE => Signal::Ice { call_id, ice: ice() },
             T_CALL_DECLINE => Signal::Decline { call_id, reason: word(e.str_field("reason"), reason::DECLINED) },
             T_CALL_END => Signal::End {
@@ -93,7 +105,10 @@ impl Signal {
                 answer: e.str_field("answer").filter(|a| is_hex(a, 64)).map(String::from),
             },
             T_CALL_BUSY => Signal::Busy { call_id },
-            T_CALL_RESTART => Signal::Restart { call_id },
+            T_CALL_RESTART => Signal::Restart {
+                call_id,
+                seen: e.fields.get("seen").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()),
+            },
             T_CALL_VIDEO => Signal::Video { call_id, on: e.fields.get("on").and_then(Value::as_bool)? },
             _ => return None,
         })
@@ -101,15 +116,20 @@ impl Signal {
 
     pub fn to_envelope(&self) -> Envelope {
         match self {
-            Self::Invite { call_id, media, sdp, ice, restart } => {
-                Envelope::call_invite(call_id, media.as_str(), sdp, candidates_json(ice), *restart)
+            Self::Invite { call_id, media, sdp, ice, restart, live_restart } => {
+                with_flag(Envelope::call_invite(call_id, media.as_str(), sdp, candidates_json(ice), *restart), "live_restart", *live_restart)
             }
-            Self::Answer { call_id, sdp, ice } => Envelope::call_answer(call_id, sdp, candidates_json(ice)),
+            Self::Answer { call_id, sdp, ice, live_restart } => {
+                with_flag(Envelope::call_answer(call_id, sdp, candidates_json(ice)), "live_restart", *live_restart)
+            }
             Self::Ice { call_id, ice } => Envelope::call_ice(call_id, candidates_json(ice)),
             Self::Decline { call_id, reason } => Envelope::call_decline(call_id, reason),
             Self::End { call_id, reason, answer } => Envelope::call_end(call_id, reason, answer.as_deref()),
             Self::Busy { call_id } => Envelope::call_busy(call_id),
-            Self::Restart { call_id } => Envelope::call_restart(call_id),
+            Self::Restart { call_id, seen } => match seen {
+                Some(n) => Envelope::call_restart(call_id).with("seen", *n),
+                None => Envelope::call_restart(call_id),
+            },
             Self::Video { call_id, on } => Envelope::call_video(call_id, *on),
         }
     }
@@ -146,6 +166,21 @@ fn word(s: Option<&str>, default: &str) -> String {
     }
 }
 
+/// A boolean field that is `false` when absent (or not a boolean).
+fn flag(e: &Envelope, key: &str) -> bool {
+    e.fields.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// A boolean field written only when it is `true`: absent means `false`,
+/// as an older client, which never writes it, says nothing.
+fn with_flag(e: Envelope, key: &str, on: bool) -> Envelope {
+    if on {
+        e.with(key, true)
+    } else {
+        e
+    }
+}
+
 fn candidates(v: Option<&Value>) -> Vec<IceCandidate> {
     let Some(Value::Array(items)) = v else { return Vec::new() };
     items
@@ -173,15 +208,17 @@ mod tests {
         let id = new_call_id();
         assert!(is_call_id(&id));
         let all = vec![
-            Signal::Invite { call_id: id.clone(), media: Media::Video, sdp: "v=0".into(), ice: vec![cand(1), cand(2)], restart: false },
-            Signal::Invite { call_id: id.clone(), media: Media::Audio, sdp: "v=0".into(), ice: vec![], restart: true },
-            Signal::Answer { call_id: id.clone(), sdp: "v=1".into(), ice: vec![cand(3)] },
+            Signal::Invite { call_id: id.clone(), media: Media::Video, sdp: "v=0".into(), ice: vec![cand(1), cand(2)], restart: false, live_restart: true },
+            Signal::Invite { call_id: id.clone(), media: Media::Audio, sdp: "v=0".into(), ice: vec![], restart: true, live_restart: false },
+            Signal::Answer { call_id: id.clone(), sdp: "v=1".into(), ice: vec![cand(3)], live_restart: true },
+            Signal::Answer { call_id: id.clone(), sdp: "v=1".into(), ice: vec![], live_restart: false },
             Signal::Ice { call_id: id.clone(), ice: vec![cand(4)] },
             Signal::Decline { call_id: id.clone(), reason: reason::DECLINED.into() },
             Signal::End { call_id: id.clone(), reason: reason::ANSWERED_ELSEWHERE.into(), answer: Some("ab".repeat(32)) },
             Signal::End { call_id: id.clone(), reason: reason::ENDED.into(), answer: None },
             Signal::Busy { call_id: id.clone() },
-            Signal::Restart { call_id: id.clone() },
+            Signal::Restart { call_id: id.clone(), seen: None },
+            Signal::Restart { call_id: id.clone(), seen: Some(2) },
             Signal::End { call_id: id.clone(), reason: reason::SUPERSEDED.into(), answer: None },
             Signal::Video { call_id: id.clone(), on: true },
             Signal::Video { call_id: id.clone(), on: false },
@@ -204,6 +241,13 @@ mod tests {
         assert!(Signal::parse(&Envelope::call_invite(&id, "hologram", "v=0", vec![], false)).is_none());
         assert!(Signal::parse(&Envelope::call_invite(&id, "audio", "", vec![], false)).is_none(), "an empty offer");
         assert!(Signal::parse(&Envelope::call_answer(&id, &"x".repeat(MAX_SDP_BYTES + 1), vec![])).is_none());
+        // An older client says nothing of live restarts: read as none;
+        // and the word is written only when it is said.
+        let plain = Signal::parse(&Envelope::call_answer(&id, "v=1", vec![])).unwrap();
+        assert_eq!(plain, Signal::Answer { call_id: id.clone(), sdp: "v=1".into(), ice: vec![], live_restart: false });
+        assert!(!plain.to_envelope().encode().contains("live_restart"));
+        let said = Signal::Answer { call_id: id.clone(), sdp: "v=1".into(), ice: vec![], live_restart: true }.to_envelope();
+        assert_eq!(said.fields.get("live_restart"), Some(&Value::Bool(true)));
         assert!(Signal::parse(&Envelope::new("call.wave").with("call_id", id.as_str())).is_none(), "a type of a newer client");
         assert!(Signal::parse(&Envelope::new("call.video").with("call_id", id.as_str())).is_none(), "video without on or off");
         assert!(Signal::parse(&Envelope::new("call.video").with("call_id", id.as_str()).with("on", "yes")).is_none());

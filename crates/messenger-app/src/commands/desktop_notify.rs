@@ -369,8 +369,9 @@ pub fn word(outcome: Outcome, words: &Words) -> Option<Worded> {
         }),
         Outcome::Quiet { .. } => None,
         // An invitation by push is the phone's way to a ringing call; a
-        // computer hears of calls from its runtime (`call.incoming`).
-        Outcome::Call(_) => None,
+        // computer hears of calls from its runtime (`call.incoming`), and
+        // of their end too.
+        Outcome::Call(_) | Outcome::CallEnd(_) => None,
     }
 }
 

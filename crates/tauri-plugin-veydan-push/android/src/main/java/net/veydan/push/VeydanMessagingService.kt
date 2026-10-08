@@ -50,7 +50,8 @@ class VeydanMessagingService : FirebaseMessagingService() {
     if (push.type == Push.TYPE_SYNC) {
       return if (Notifier.showMore(this, push.count)) "shown, ${push.count} more" else "not shown, notifications are off"
     }
-    // Without keys the core still names the chat; nothing else.
+    // Without keys the core still names the chat; nothing else (and
+    // nothing at all of a call: the core answers `quiet`, `no_keys`).
     val bundle = Keys.read(this) ?: ByteArray(0)
     val answer = try {
       Core.describe(this, bundle, push.asData())
@@ -58,17 +59,30 @@ class VeydanMessagingService : FirebaseMessagingService() {
       bundle.fill(0)
     }
     return when (val outcome = answer?.let { Outcome.from(it) }) {
-      null -> plain(push, "no answer from the core")
+      null -> plain(push, PlainNotice.of(push), "no answer from the core")
       is Outcome.Show -> if (Notifier.show(this, outcome.notice)) "shown" else "not shown, notifications are off"
-      is Outcome.Plain -> if (Notifier.showPlain(this, outcome.plain)) "shown plain" else "not shown, notifications are off"
+      is Outcome.Plain -> plain(push, outcome.plain, "the core says only that something came")
       is Outcome.Quiet -> "quiet: ${outcome.reason}"
       is Outcome.Call -> Notifier.ring(this, outcome.call)
-      is Outcome.Error -> plain(push, outcome.error)
+      is Outcome.CallEnd -> Notifier.endRinging(this, outcome.callId)
+      is Outcome.Error -> plain(push, PlainNotice.of(push), outcome.error)
     }
   }
 
-  private fun plain(push: Push, why: String): String =
-    if (Notifier.showPlain(this, PlainNotice.of(push))) "shown plain ($why)" else "not shown, notifications are off ($why)"
+  /**
+   * Something came, and that is all that can be said: `notice` is what
+   * the core said of it, or what the push alone says when the core did
+   * not answer. Not of a call: the server marked the push as one, and a
+   * call rings now or never. A "New message" for it would be the
+   * notification of nothing (the phone had no keys, the event could not
+   * be had, or the core found no call in it); the app shows a missed
+   * call when it runs. The core answers `quiet` for every such case it
+   * sees; this is the phone's word on the ones it does not.
+   */
+  private fun plain(push: Push, notice: PlainNotice, why: String): String {
+    if (push.call) return "not shown, a call that could not be opened ($why)"
+    return if (Notifier.showPlain(this, notice)) "shown plain ($why)" else "not shown, notifications are off ($why)"
+  }
 
   override fun onNewToken(token: String) {
     Log.i(PushState.TAG, "the push service gave a new token")

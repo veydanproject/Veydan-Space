@@ -3,11 +3,11 @@
 
 <!--
   A conversation of two: the chat window and, when asked for, the panel
-  about the person beside it.
+  about the person beside it (a tap on the face or the name in the header,
+  or its entry in the menu of the chat).
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
-  import Icon from '$lib/core/Icon.svelte';
   import type { MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import ChatWindow from './ChatWindow.svelte';
   import PeerInfo from './PeerInfo.svelte';
@@ -34,7 +34,6 @@
 
 {#snippet actions()}
   <CallButton {chat} />
-  <button class="icon" class:active={info} onclick={() => (info = !info)} title={$t('msg_peer_info')}><Icon name="user" size={16} /></button>
 {/snippet}
 
 {#snippet window()}
@@ -46,10 +45,3 @@
 {/snippet}
 
 <WithInfo open={info} chat={window} info={panel} />
-
-<style>
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
-  .icon:hover { color: var(--text); background: var(--surface-3); }
-  .icon.active { color: var(--accent-text-2); background: var(--accent-tint); }
-  @media (pointer: coarse) { .icon { padding: 10px; } }
-</style>

@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "Chất lượng video của tôi",
     "msg_calls_video_360p": "Tiêu chuẩn · 360p",
     "msg_calls_video_720p": "Cao · 720p",
-    "msg_calls_video_hint": "Áp dụng từ lần bật camera tiếp theo. Chất lượng cao cần kết nối nhanh hơn; khi qua nút cuộc gọi, giới hạn của nút có thể hạ nó xuống."
+    "msg_calls_video_hint": "Áp dụng từ lần bật camera tiếp theo. Chất lượng cao cần kết nối nhanh hơn; khi qua nút cuộc gọi, giới hạn của nút có thể hạ nó xuống.",
+    "msg_call_confirm_audio": "Bắt đầu cuộc gọi thoại?",
+    "msg_call_confirm_video": "Bắt đầu cuộc gọi video?",
+    "msg_call_confirm_never": "Không hỏi lại",
+    "msg_call_confirm_never_hint": "Từ giờ cuộc gọi bắt đầu ngay. Để được hỏi lại, hãy bật câu hỏi trong Cài đặt → Cuộc gọi; nhấn giữ nút gọi sẽ mở mục đó.",
+    "msg_calls_device_title": "Trên thiết bị này",
+    "msg_calls_incoming": "Nhận cuộc gọi trên thiết bị này",
+    "msg_calls_incoming_hint": "Cuộc gọi đổ chuông ở đây và trên các thiết bị khác của bạn dùng tài khoản này.",
+    "msg_calls_incoming_off_hint": "Cuộc gọi không đổ chuông ở đây. Các thiết bị khác của bạn dùng tài khoản này vẫn đổ chuông, và bạn vẫn có thể gọi từ đây.",
+    "msg_calls_confirm": "Hỏi trước khi gọi",
+    "msg_calls_confirm_hint": "Nút gọi sẽ hỏi trước nên bắt đầu cuộc gọi thoại hay video, để không cuộc gọi nào bắt đầu do vô tình. Nhấn giữ nút gọi sẽ mở phần cài đặt này."
   },
   "mobile": {}
 }

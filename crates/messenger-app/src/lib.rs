@@ -99,6 +99,8 @@ pub fn module() -> Module {
                 commands::calls::messenger_call_set_policy,
                 commands::calls::messenger_call_set_nodes,
                 commands::calls::messenger_call_get_state,
+                commands::calls::messenger_call_set_incoming,
+                commands::calls::messenger_call_network_changed,
                 commands::messenger_privacy_get,
                 commands::messenger_privacy_set,
                 commands::messenger_presence_list,

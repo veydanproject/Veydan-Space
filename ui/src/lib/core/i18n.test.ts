@@ -55,7 +55,9 @@ type Dict = Record<string, string>;
  * off, the empty history and the question before the history is cleared
  * (in the desktop dictionary since the desktop generator asks it too).
  * Then the calls of two: the screens of a call, its line in the chat, the
- * settings of calls; their video (the camera, the screen, the quality).
+ * settings of calls; their video (the camera, the screen, the quality);
+ * after the owner's check of 5.1.2, the question before a call and the
+ * settings of this device (calls ring here, ask before calling).
  */
 const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
   desktop: {
@@ -781,6 +783,16 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_calls_video_360p: 'Standard · 360p',
       msg_calls_video_720p: 'High · 720p',
       msg_calls_video_hint: 'Applies the next time your camera turns on. High quality needs a faster connection; through a call node, the node’s limit may lower it.',
+      msg_call_confirm_audio: 'Start a voice call?',
+      msg_call_confirm_video: 'Start a video call?',
+      msg_call_confirm_never: 'Don’t ask again',
+      msg_call_confirm_never_hint: 'From now on a call starts at once. To be asked again, turn the question on in Settings → Calls; holding a call button opens them.',
+      msg_calls_device_title: 'On this device',
+      msg_calls_incoming: 'Accept calls on this device',
+      msg_calls_incoming_hint: 'Calls ring here and on your other devices with this account.',
+      msg_calls_incoming_off_hint: 'Calls do not ring here. Your other devices with this account still ring, and you can still call from here.',
+      msg_calls_confirm: 'Ask before calling',
+      msg_calls_confirm_hint: 'A call button first asks whether to start a voice or a video call, so that none starts by accident. Holding a call button opens these settings.',
     },
     ru: {
       settings_camoufox_title: 'Camoufox',
@@ -1499,6 +1511,16 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_calls_video_360p: 'Обычное · 360p',
       msg_calls_video_720p: 'Высокое · 720p',
       msg_calls_video_hint: 'Действует со следующего включения камеры. Высокому качеству нужна связь быстрее; через узел звонков его может снизить лимит узла.',
+      msg_call_confirm_audio: 'Начать голосовой звонок?',
+      msg_call_confirm_video: 'Начать видеозвонок?',
+      msg_call_confirm_never: 'Больше не спрашивать',
+      msg_call_confirm_never_hint: 'Теперь звонок начнётся сразу. Вернуть вопрос можно в настройках, вкладка «Звонки»; удержание кнопки звонка открывает её.',
+      msg_calls_device_title: 'На этом устройстве',
+      msg_calls_incoming: 'Принимать звонки на этом устройстве',
+      msg_calls_incoming_hint: 'Входящие звонки приходят сюда и на другие ваши устройства с этим аккаунтом.',
+      msg_calls_incoming_off_hint: 'Сюда звонки не приходят. Другие ваши устройства с этим аккаунтом звонят как обычно, а звонить отсюда по-прежнему можно.',
+      msg_calls_confirm: 'Спрашивать перед звонком',
+      msg_calls_confirm_hint: 'Кнопка звонка сначала спросит, начать голосовой звонок или видеозвонок, — чтобы не позвонить случайно. Удержание кнопки звонка открывает эти настройки.',
     },
   },
   mobile: {

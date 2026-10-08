@@ -68,7 +68,7 @@ pub use messenger_groups::{GroupKind, GroupView, InviteView, KeyView as GroupKey
 pub use links::LinkView;
 pub use calls::{
     CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState,
-    CallStats, CallVia, CallView, MediaEngine, RelayPolicy, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING,
+    CallStats, CallVia, CallView, MediaEngine, ReconnectReason, RelayPolicy, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING,
     UI_EVENT_CALL_STATE,
 };
 pub use privacy::PrivacySettings;

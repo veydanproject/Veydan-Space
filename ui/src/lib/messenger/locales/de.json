@@ -943,7 +943,17 @@
     "msg_calls_video_quality": "Qualität meines Videos",
     "msg_calls_video_360p": "Standard · 360p",
     "msg_calls_video_720p": "Hoch · 720p",
-    "msg_calls_video_hint": "Gilt ab dem nächsten Einschalten der Kamera. Hohe Qualität braucht eine schnellere Verbindung; über einen Anrufknoten kann dessen Limit sie senken."
+    "msg_calls_video_hint": "Gilt ab dem nächsten Einschalten der Kamera. Hohe Qualität braucht eine schnellere Verbindung; über einen Anrufknoten kann dessen Limit sie senken.",
+    "msg_call_confirm_audio": "Sprachanruf starten?",
+    "msg_call_confirm_video": "Videoanruf starten?",
+    "msg_call_confirm_never": "Nicht mehr fragen",
+    "msg_call_confirm_never_hint": "Ab jetzt beginnt ein Anruf sofort. Um wieder gefragt zu werden, schalte die Frage unter Einstellungen → Anrufe ein; langes Drücken einer Anruftaste öffnet sie.",
+    "msg_calls_device_title": "Auf diesem Gerät",
+    "msg_calls_incoming": "Anrufe auf diesem Gerät annehmen",
+    "msg_calls_incoming_hint": "Anrufe klingeln hier und auf deinen anderen Geräten mit diesem Konto.",
+    "msg_calls_incoming_off_hint": "Hier klingeln keine Anrufe. Deine anderen Geräte mit diesem Konto klingeln weiter, und von hier aus kannst du weiterhin anrufen.",
+    "msg_calls_confirm": "Vor dem Anrufen fragen",
+    "msg_calls_confirm_hint": "Eine Anruftaste fragt zuerst, ob ein Sprach- oder ein Videoanruf beginnen soll, damit keiner aus Versehen startet. Langes Drücken einer Anruftaste öffnet diese Einstellungen."
   },
   "mobile": {}
 }

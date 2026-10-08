@@ -27,6 +27,11 @@ class CallActionReceiver : BroadcastReceiver() {
     const val DECLINE = "net.veydan.call.DECLINE"
     const val HANGUP = "net.veydan.call.HANGUP"
     const val RING = "net.veydan.call.RING"
+    /**
+     * From the push handler too: the call is over (taken on another
+     * device, declined, given up), and a ringing for it stops.
+     */
+    const val DISMISS = "net.veydan.call.DISMISS"
     /** With `RING`: when the invitation is no longer good, unix milliseconds. */
     const val EXTRA_EXPIRES_AT_WALL = "veydan_call_expires_at_wall"
 
@@ -50,6 +55,7 @@ class CallActionReceiver : BroadcastReceiver() {
       DECLINE -> Calls.declined(context, callId)
       HANGUP -> Calls.hungUp(context, callId)
       RING -> ringFromPush(context, intent)
+      DISMISS -> Calls.dismissFromPush(context, callId)
     }
   }
 

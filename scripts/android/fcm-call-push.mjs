@@ -86,11 +86,13 @@ async function newestWrap() {
   if (!wraps.length) throw new Error(`no kind-1059 for ${to} on ${relay} in the last ${since} s`);
   // The relay lists by the time on the outside of the wrap, which is random
   // (up to two days back), so the first is not the one sent last. A call's
-  // wrap is marked `call` and expires a short while after its making: of
-  // the ones marked, the one that expires last was sent last. Without any
+  // wrap is marked `["call", "1"]` and expires a short while after its
+  // making: of the ones marked, the one that expires last was sent last.
+  // The ends of calls (`["call", "0"]`, the answer or the end as a note,
+  // which expire later than the invitation) are not it. Without any
   // marked, the first listed.
   const expiry = (w) => Number((w.tags || []).find((t) => t[0] === "expiration")?.[1] ?? 0);
-  const calls = wraps.filter((w) => (w.tags || []).some((t) => t[0] === "call"));
+  const calls = wraps.filter((w) => (w.tags || []).some((t) => t[0] === "call" && t[1] === "1"));
   const wrap = calls.length ? calls.sort((a, b) => expiry(b) - expiry(a))[0] : wraps[0];
   const call = calls.length > 0;
   console.error(`${wraps.length} wraps listed; wrap ${wrap.id.slice(0, 8)}… created_at=${wrap.created_at} tags=${JSON.stringify(wrap.tags)}${call ? " (a call)" : " (not marked as a call)"}`);
@@ -127,6 +129,9 @@ if (dry) {
 const sa = JSON.parse(readFileSync(account, "utf8"));
 const trace = Math.random().toString(16).slice(2, 10);
 const marked = (wrap.tags || []).some((t) => t[0] === "call");
+// A ring replaces the ring before it, an end the end before it; an end
+// never takes the place of a ring (spec/protocol.md, `["call", "0"]`).
+const end = (wrap.tags || []).some((t) => t[0] === "call" && t[1] === "0");
 const size = (data) => Object.entries(data).reduce((n, [k, v]) => n + k.length + v.length, 0);
 // The two forms of the protocol: the event inside when the whole push fits
 // in 3900 bytes, else its id and the relay to take it from (an invitation
@@ -141,7 +146,7 @@ const message = {
   message: {
     token,
     data,
-    android: { priority: "HIGH", ttl: "60s", collapse_key: "call" },
+    android: { priority: "HIGH", ttl: "60s", collapse_key: end ? "call_end" : "call" },
   },
 };
 const bytes = size(data);

@@ -31,9 +31,32 @@
 //! - The peer answered from two devices: the caller takes the first
 //!   answer and tells the other device with `call.end` naming its answer.
 //! - Timeouts: 45 s for an answer, 30 s for ICE to connect (also after a
-//!   restart). One ICE restart per loss of connection; the network
-//!   changing under the engine is a restart too. Only the caller makes
-//!   offers within a call; the called side asks with `call.restart`.
+//!   restart). One ICE restart per loss of connection: the engine's
+//!   `Disconnected` (not `Failed`, which comes much later), confirmed by
+//!   a short timer ([`LOSS_CONFIRM`]) in case the way comes back by
+//!   itself; the network changing under the engine is a restart at once.
+//!   Only the caller makes offers within a call; the called side asks
+//!   with `call.restart`. The pieces of a restart leave without waiting
+//!   for candidates (the first offer and answer wait [`GATHER_WAIT`]):
+//!   the candidates trickle after them in `call.ice`. A restart whose
+//!   pieces have not come within [`RESTART_SETTLE`] was lost on the
+//!   relays: the call talks on when the way still works, or is
+//!   restarted once more when it does not (the connect timer judges
+//!   that one). A request of the called side that overtakes its first
+//!   answer is kept and honoured once that answer is taken.
+//! - A restart may run while the engine is still connected (the peer's
+//!   request came late, a network changed but the old way still works):
+//!   the engine then never says `Connected` again, so the call is
+//!   `Active` as soon as the new description is in place, and
+//!   `Reconnecting` only while the engine says the way is gone. Such a
+//!   restart is made on one's own word (the network changed) only for a
+//!   peer that said `live_restart` (5.1.3+): an older one would wait for
+//!   a `Connected` that never comes and give up; with it the loss, when
+//!   the old way goes, gets its restart as any.
+//! - A device with `call.incoming_enabled` off ignores every invitation
+//!   it is not itself calling about: it neither rings nor answers (not
+//!   even `call.busy`, which would stop my other devices from ringing),
+//!   and writes nothing down.
 //! - The relays keep no order: what came of a call before its invitation
 //!   did (an answer, an end) waits for the invitation and is written
 //!   with it.
@@ -53,7 +76,10 @@
 //! never calls back (its events come on a channel), so that is safe, and
 //! it keeps every transition whole.
 
-use crate::call::{CallView, Direction, Outcome, Phase, VideoSize, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_LEVEL, UI_EVENT_CALL_STATE, UI_EVENT_CALL_STATS};
+use crate::call::{
+    CallView, Direction, Outcome, Phase, ReconnectReason, VideoSize, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_LEVEL, UI_EVENT_CALL_STATE,
+    UI_EVENT_CALL_STATS,
+};
 use crate::engine::{
     CameraInfo, ConnectionState, IceCandidate, Media, MediaEngine, PairKind, PushedFrame, RelayPolicy, ScreenInfo, SdpKind, Session,
     SessionEvent, VideoFrame, VideoInput, VideoSettings, VideoTrack,
@@ -64,7 +90,7 @@ use crate::servers::{ServerSets, KEY_RELAY_POLICY};
 use crate::signal::{self, new_call_id, Signal, INVITE_EXPIRATION_SECS, INVITE_TTL_SECS, NOTE_EXPIRATION_SECS};
 use messenger_core::traits::UiEvent;
 use messenger_core::{Clock, Context, DmInbound, Effect, Envelope, MessengerError, Outbound, PubKey, Result};
-use messenger_dm::wrap::{wrap_expiring, wrap_note};
+use messenger_dm::wrap::{wrap_expiring, wrap_note_as, Wake};
 use messenger_dm::DmService;
 use messenger_store::{calls as repo, settings, Store};
 use nostr::key::Keys;
@@ -76,6 +102,10 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 
 /// The setting of the size of my video: `360p` (the default) or `720p`.
 pub const KEY_VIDEO_QUALITY: &str = "call.video_quality";
+/// The setting of whether this device takes calls at all: `true` (the
+/// default) or `false`, when it ignores every invitation without a word,
+/// leaving it to my other devices.
+pub const KEY_INCOMING_ENABLED: &str = "call.incoming_enabled";
 
 /// How big my video is sent. The numbers are what a camera is asked for
 /// and the most the encoder may spend at that size; the engine scales
@@ -123,9 +153,16 @@ pub const VIDEO_FPS: u32 = 30;
 /// none: switching goes between these two.
 const PHONE_CAMERAS: [&str; 2] = ["front", "back"];
 
-/// How long an offer or an answer waits for candidates before it leaves.
-/// Later ones follow in `call.ice`.
+/// How long the first offer or answer of a call waits for candidates
+/// before it leaves. Later ones follow in `call.ice`. The pieces of a
+/// restart do not wait: every second counts then, and the candidates
+/// trickle.
 pub const GATHER_WAIT: Duration = Duration::from_millis(1500);
+/// How long a lost connection (`Disconnected` from the engine) is given to
+/// come back by itself before a restart is made. Short: the engine has
+/// waited for the peer's answers for seconds already by the time it says
+/// so, and a restart costs a round trip through the relays.
+pub const LOSS_CONFIRM: Duration = Duration::from_secs(1);
 /// Candidates found after the first piece left are sent in batches this
 /// far apart.
 pub const ICE_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -133,6 +170,13 @@ pub const ICE_DEBOUNCE: Duration = Duration::from_millis(200);
 pub const RING_TIMEOUT: Duration = Duration::from_secs(INVITE_TTL_SECS as u64);
 /// ICE that found no way in this time has failed.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a restart is given to have its pieces exchanged (the called
+/// side's request, the caller's offer, the answer) before it is taken as
+/// lost on the relays: a round trip through them takes a second or two.
+/// With the way still there the call talks on and the next loss gets its
+/// own restart; without it one more restart is made, and then the
+/// connect timer judges.
+pub const RESTART_SETTLE: Duration = Duration::from_secs(10);
 
 /// Calls that ended lately, whose late signals are dropped unread.
 const RECENT_KEPT: usize = 64;
@@ -161,6 +205,13 @@ enum Timer {
     /// Armed at every attempt to connect; an older attempt's timer says
     /// nothing of a newer one.
     Connect { attempt: u32 },
+    /// The way was lost this long ago ([`LOSS_CONFIRM`]); a restart is due
+    /// unless it came back. `loss` counts the losses: an older loss's
+    /// timer says nothing of a newer one.
+    Lost { loss: u32 },
+    /// The restart of this attempt had [`RESTART_SETTLE`] to settle; one
+    /// still awaited then was lost on the relays.
+    Settle { attempt: u32 },
 }
 
 struct Current {
@@ -187,10 +238,39 @@ struct Current {
     /// Caller: a restart offer left, the next answer is for it. Callee: a
     /// restart was asked for, the caller's offer is awaited.
     awaiting_restart: bool,
-    /// One restart per loss of the connection.
+    /// One restart per loss of the connection: set when a restart is made
+    /// for a loss, cleared when the engine connects (or a restart made
+    /// while it was connected is complete).
     restart_tried: bool,
+    /// The restart of this loss was made a second time, its first having
+    /// settled nothing within [`RESTART_SETTLE`]; cleared when the engine
+    /// connects. There is no third: the connect timer judges.
+    retried: bool,
+    /// The peer takes a restart while its way still works (it said
+    /// `live_restart`, or counted its offers in `call.restart`). Without
+    /// it no restart is made on my own word while my way is live.
+    peer_live_restart: bool,
+    /// Caller: the called side asked for a restart before its first answer
+    /// came (its network changed as it answered): honoured with the answer.
+    asked_early: bool,
+    /// Caller: how many of my offers were answered. A request of the
+    /// called side that saw fewer is older than that answer, and stale.
+    answered_offers: u32,
     /// How many times this call set out to connect (see `Timer::Connect`).
     connect_attempt: u32,
+    /// The engine's last word: the way is there. A restart made while it
+    /// is (the peer asked late, the network changed but the old way still
+    /// works) never gets a `Connected` of its own.
+    connected: bool,
+    /// How many times the way was lost (see `Timer::Lost`).
+    loss: u32,
+    /// Caller: offers made (the first, then every restart). Callee: offers
+    /// taken. The called side says its count in `call.restart` (`seen`),
+    /// and the caller drops a request older than its latest offer.
+    offers: u32,
+    /// Why the restart under way was made, for the screen when the way
+    /// goes during it.
+    restarting_for: Option<ReconnectReason>,
     /// What the peer believes of my video: the invitation's word at first
     /// (a video call has both cameras on), then every `call.video` sent.
     told_video: bool,
@@ -361,6 +441,27 @@ impl CallService {
         self.inner.state.lock().await.current.as_ref().map(|c| c.view.clone())
     }
 
+    /// Whether this device takes calls (`call.incoming_enabled`, on by
+    /// default). Off: every invitation is ignored without a word, so
+    /// that my other devices ring for it; nothing goes on record here.
+    pub async fn incoming_enabled(&self) -> Result<bool> {
+        self.inner.incoming_enabled().await
+    }
+
+    /// For the invitations to come; a call ringing now goes on ringing.
+    pub async fn set_incoming_enabled(&self, enabled: bool) -> Result<()> {
+        settings::set(&self.inner.store, KEY_INCOMING_ENABLED, if enabled { "true" } else { "false" }).await
+    }
+
+    /// The platform saw the network change (an interface came or went):
+    /// the call under way restarts ICE at once, as it does when the
+    /// engine says so itself. Nothing without a call that talks.
+    pub async fn network_changed(&self) {
+        let inner = &self.inner;
+        let mut st = inner.state.lock().await;
+        inner.on_network_changed(&mut st).await;
+    }
+
     pub async fn video_quality(&self) -> Result<VideoQuality> {
         self.inner.video_quality().await
     }
@@ -497,6 +598,7 @@ impl CallService {
         };
         let cur = st.current.as_mut().expect("checked above");
         cur.session = Some(session);
+        cur.offers = 1;
         cur.first = Some((FirstPiece::Invite { restart: false }, offer));
         inner.schedule(GATHER_WAIT, Timer::Gather, gen);
         if media == Media::Video {
@@ -551,6 +653,7 @@ impl CallService {
                 }
             };
             cur.session = Some(session);
+            cur.offers = 1;
             cur.first = Some((FirstPiece::Answer, answer));
             inner.schedule(GATHER_WAIT, Timer::Gather, gen);
             // The caller may be gone by now: the answer has its time too.
@@ -695,10 +798,31 @@ impl Current {
             my_answer: None,
             awaiting_restart: false,
             restart_tried: false,
+            retried: false,
+            peer_live_restart: false,
+            asked_early: false,
+            answered_offers: 0,
             connect_attempt: 0,
+            connected: false,
+            loss: 0,
+            offers: 0,
+            restarting_for: None,
             told_video: view.media == Media::Video,
             view,
         }
+    }
+
+    /// The call shows as restoring its way (the engine says it is gone).
+    fn show_reconnecting(&mut self, reason: ReconnectReason) {
+        self.view.phase = Phase::Reconnecting;
+        self.view.reconnect_reason = Some(reason);
+        self.view.via = None;
+    }
+
+    /// The call shows as talking again.
+    fn show_active(&mut self) {
+        self.view.phase = Phase::Active;
+        self.view.reconnect_reason = None;
     }
 
     /// The most my video may spend here: the size's own, and no more
@@ -713,7 +837,7 @@ impl Current {
     }
 
     fn in_call(&self) -> bool {
-        matches!(self.view.phase, Phase::Connecting | Phase::Active) && self.session.is_some()
+        matches!(self.view.phase, Phase::Connecting | Phase::Active | Phase::Reconnecting) && self.session.is_some()
     }
 
     /// Whether the engine has the peer's description to put candidates
@@ -747,6 +871,10 @@ impl Inner {
 
     async fn video_quality(&self) -> Result<VideoQuality> {
         Ok(settings::get(&self.store, KEY_VIDEO_QUALITY).await?.as_deref().and_then(VideoQuality::parse).unwrap_or_default())
+    }
+
+    async fn incoming_enabled(&self) -> Result<bool> {
+        Ok(settings::get(&self.store, KEY_INCOMING_ENABLED).await?.as_deref() != Some("false"))
     }
 
     /// My video as `input`, in the call under way: the engine is asked,
@@ -825,6 +953,11 @@ impl Inner {
         self.schedule(CONNECT_TIMEOUT, Timer::Connect { attempt: cur.connect_attempt }, cur.gen);
     }
 
+    /// The time the restart of the current attempt has to settle.
+    fn arm_settle(self: &Arc<Self>, cur: &Current) {
+        self.schedule(RESTART_SETTLE, Timer::Settle { attempt: cur.connect_attempt }, cur.gen);
+    }
+
     fn pump(self: &Arc<Self>, mut events: mpsc::Receiver<SessionEvent>, gen: u64) {
         let inner = self.clone();
         tokio::spawn(async move {
@@ -836,8 +969,15 @@ impl Inner {
 
     /// Wrap and queue `signal` for the peer of the current call. The
     /// invitation goes as a message that wakes the peer and expires in
-    /// a minute; the rest as notes that expire in five. Errors are logged
-    /// as effects of nothing: a call cannot do more than try.
+    /// a minute; the rest as notes that expire in five. A note that ends
+    /// a ringing is marked so on the outside (`["call", "0"]`,
+    /// [`Wake::CallEnd`]): the copy to my own devices of an answer, a
+    /// refusal, a busy and an end (they ring for the same invitation),
+    /// and the peer's copy of a refusal, a busy and an end (the peer's
+    /// phone may hold the ringing from a push, with the app not up). The
+    /// rest (`call.ice`, `call.restart`, `call.video`, a restart offer)
+    /// is quiet. Errors are logged as effects of nothing: a call cannot
+    /// do more than try.
     async fn send(&self, st: &mut State, signal: &Signal, self_copy: bool) -> Option<String> {
         let peer = PubKey::parse(&st.current.as_ref()?.view.peer)?;
         self.send_to(st, &peer, signal, self_copy).await
@@ -849,7 +989,13 @@ impl Inner {
         let content = signal.to_envelope().encode();
         let wrapped = match signal {
             Signal::Invite { restart: false, .. } => wrap_expiring(&keys, peer, &content, now, now + INVITE_EXPIRATION_SECS),
-            _ => wrap_note(&keys, peer, &content, now, self_copy, Some(now + NOTE_EXPIRATION_SECS)),
+            _ => {
+                let ends_mine = matches!(signal, Signal::Answer { .. } | Signal::Decline { .. } | Signal::Busy { .. } | Signal::End { .. });
+                let ends_theirs = matches!(signal, Signal::Decline { .. } | Signal::Busy { .. } | Signal::End { .. });
+                let word = |ends: bool| if ends { Wake::CallEnd } else { Wake::Nobody };
+                let mine = self_copy.then_some(word(ends_mine));
+                wrap_note_as(&keys, peer, &content, now, Some(now + NOTE_EXPIRATION_SECS), word(ends_theirs), mine)
+            }
         };
         let w = match wrapped {
             Ok(w) => w,
@@ -912,7 +1058,9 @@ impl Inner {
         match piece {
             FirstPiece::Invite { restart } => {
                 let media = cur.view.media;
-                let sig = Signal::Invite { call_id, media, sdp, ice, restart };
+                // The first invitation says I take a restart while the way
+                // still works; a restart offer says nothing of it.
+                let sig = Signal::Invite { call_id, media, sdp, ice, restart, live_restart: !restart };
                 self.send(st, &sig, !restart).await;
                 if let Some(cur) = st.current.as_mut() {
                     cur.invite_sent = true;
@@ -922,7 +1070,7 @@ impl Inner {
                 self.tell_video(st).await;
             }
             FirstPiece::Answer => {
-                let sig = Signal::Answer { call_id, sdp, ice };
+                let sig = Signal::Answer { call_id, sdp, ice, live_restart: true };
                 let rumor = self.send(st, &sig, true).await;
                 if let Some(cur) = st.current.as_mut() {
                     if cur.my_answer.is_none() {
@@ -946,30 +1094,58 @@ impl Inner {
     /// The connection was lost, or the network changed: the caller makes
     /// a new offer for the same call; the called side asks the caller for
     /// one. Two offers at once would need a rollback in the engine, so
-    /// only one side ever makes them.
-    async fn restart(self: &Arc<Self>, st: &mut State) {
+    /// only one side ever makes them. The offer (and the request) leave
+    /// at once, without waiting for candidates: they trickle after.
+    ///
+    /// The screen sees `Reconnecting` only when the engine says the way
+    /// is gone; while it still works (a late request of the peer, a new
+    /// interface beside the old one) the call stays `Active` and the
+    /// restart goes on underneath.
+    async fn restart(self: &Arc<Self>, st: &mut State, reason: ReconnectReason) {
         let Some(cur) = st.current.as_mut().filter(|c| c.in_call()) else { return };
         let Some(session) = cur.session.as_ref() else { return };
+        if cur.connected && reason == ReconnectReason::NetworkChanged && !cur.peer_live_restart {
+            // The old way still works, and the peer (5.1.2) would move to
+            // `connecting` on a restart and give up when no `Connected`
+            // comes to it: none is made on my word alone. When the old
+            // way goes, the loss gets its restart, and the peer, whose
+            // way went too, connects anew.
+            return;
+        }
+        // One restart per loss: the next comes after the engine connected
+        // (or this one settled on a way that never went).
+        cur.restart_tried = true;
+        cur.restarting_for = Some(reason);
+        // Shown as restoring only when the way went: a restart while the
+        // first way is still being made keeps `Connecting`.
+        let show = !cur.connected && cur.view.phase != Phase::Connecting;
         if cur.view.direction == Direction::In {
             cur.awaiting_restart = true;
-            cur.view.phase = Phase::Connecting;
-            cur.view.via = None;
-            let (id, view) = (cur.view.call_id.clone(), cur.view.clone());
+            if show {
+                cur.show_reconnecting(reason);
+            }
+            let (id, seen, view) = (cur.view.call_id.clone(), cur.offers, cur.view.clone());
             self.arm_connect(cur);
-            self.send(st, &Signal::Restart { call_id: id }, false).await;
+            self.arm_settle(cur);
+            self.send(st, &Signal::Restart { call_id: id, seen: Some(seen) }, false).await;
             self.emit(vec![state_event(&view)]);
             return;
         }
         match session.restart_ice().await {
             Ok(offer) => {
+                cur.offers += 1;
                 cur.first = Some((FirstPiece::Invite { restart: true }, offer));
+                // Candidates of the old way, not yet sent, are of no use now.
                 cur.gathered.clear();
+                cur.pending_ice.clear();
                 cur.awaiting_restart = true;
-                cur.view.phase = Phase::Connecting;
-                cur.view.via = None;
-                let (gen, view) = (cur.gen, cur.view.clone());
-                self.schedule(GATHER_WAIT, Timer::Gather, gen);
+                if show {
+                    cur.show_reconnecting(reason);
+                }
+                let view = cur.view.clone();
                 self.arm_connect(cur);
+                self.arm_settle(cur);
+                self.flush_first(st).await;
                 self.emit(vec![state_event(&view)]);
             }
             Err(_) => {
@@ -977,6 +1153,29 @@ impl Inner {
                 self.send(st, &Signal::End { call_id: id, reason: signal::reason::FAILED.into(), answer: None }, true).await;
                 self.end_locally(st, Outcome::Failed).await;
             }
+        }
+    }
+
+    /// The restart's description is in place (the caller took the answer,
+    /// the called side sent its own): with the way still there, the call
+    /// talks on as if nothing happened; without it, the engine's
+    /// `Connected` (or the connect timer) is the judge.
+    fn restart_settled(cur: &mut Current) {
+        cur.awaiting_restart = false;
+        cur.restarting_for = None;
+        cur.answered_offers = cur.offers;
+        if cur.connected {
+            cur.restart_tried = false;
+            cur.show_active();
+        }
+    }
+
+    /// The network changed under the call (the engine or the platform
+    /// says so): a restart at once, unless one is on its way already.
+    async fn on_network_changed(self: &Arc<Self>, st: &mut State) {
+        let Some(cur) = st.current.as_mut() else { return };
+        if cur.in_call() && !cur.awaiting_restart {
+            self.restart(st, ReconnectReason::NetworkChanged).await;
         }
     }
 
@@ -998,11 +1197,45 @@ impl Inner {
                 _ => {}
             },
             Timer::Connect { attempt } => {
-                if cur.view.phase == Phase::Connecting && cur.connect_attempt == attempt {
+                if matches!(cur.view.phase, Phase::Connecting | Phase::Reconnecting) && cur.connect_attempt == attempt {
                     let id = cur.view.call_id.clone();
                     self.send(&mut st, &Signal::End { call_id: id, reason: signal::reason::FAILED.into(), answer: None }, true).await;
                     self.end_locally(&mut st, Outcome::Failed).await;
                 }
+            }
+            Timer::Lost { loss } => {
+                // Still gone, and no restart on its way: one is due.
+                if cur.loss == loss && !cur.connected && !cur.awaiting_restart && !cur.restart_tried && cur.in_call() {
+                    self.restart(&mut st, ReconnectReason::ConnectionLost).await;
+                }
+            }
+            Timer::Settle { attempt } => {
+                // The pieces of the restart had their time: one still
+                // awaited was lost on the relays (or dropped by the peer),
+                // and nothing is on its way any more.
+                if cur.connect_attempt != attempt || !cur.awaiting_restart || !cur.in_call() {
+                    return;
+                }
+                cur.awaiting_restart = false;
+                cur.restarting_for = None;
+                // The peer's candidates kept for the description that never
+                // came go to the engine, which holds those of a generation
+                // it does not know.
+                if let Some(session) = cur.session.as_ref() {
+                    for c in cur.remote_ice.drain(..) {
+                        let _ = session.add_ice(&c).await;
+                    }
+                }
+                if cur.connected {
+                    // The old way still works: the call talks on, and the
+                    // next loss gets its own restart.
+                    cur.restart_tried = false;
+                } else if !cur.retried {
+                    // The way is gone and nothing is on its way: once more.
+                    cur.retried = true;
+                    self.restart(&mut st, ReconnectReason::ConnectionLost).await;
+                }
+                // Otherwise the connect timer of this attempt judges.
             }
         }
     }
@@ -1026,9 +1259,27 @@ impl Inner {
             SessionEvent::ConnectionState(state) => match state {
                 ConnectionState::Connected => {
                     let now = self.clock.now().secs();
-                    cur.view.phase = Phase::Active;
-                    cur.awaiting_restart = false;
+                    cur.connected = true;
                     cur.restart_tried = false;
+                    cur.retried = false;
+                    if cur.view.direction == Direction::In && cur.awaiting_restart {
+                        // The called side asked, and a way is there (the old
+                        // one came back, or the caller's own offer made a
+                        // new one): the offer, if it still comes, is taken
+                        // all the same, and the caller's candidates no
+                        // longer wait for it.
+                        cur.awaiting_restart = false;
+                        cur.restarting_for = None;
+                        if let Some(session) = cur.session.as_ref() {
+                            for c in cur.remote_ice.drain(..) {
+                                let _ = session.add_ice(&c).await;
+                            }
+                        }
+                    }
+                    // The caller's restart offer on its way stays on its
+                    // way: its answer is still to be taken, whatever the
+                    // old way does meanwhile.
+                    cur.show_active();
                     if cur.view.answered_at.is_none() {
                         cur.view.answered_at = Some(now);
                     }
@@ -1037,20 +1288,43 @@ impl Inner {
                     self.emit(vec![state_event(&view)]);
                 }
                 ConnectionState::Disconnected | ConnectionState::Failed => {
-                    // Once answered, a loss gets one restart; before that the
-                    // connect timeout is the judge. While a restart is on its
-                    // way the old path may well die: the timeout judges that too.
-                    let answered = cur.view.answered_at.is_some() && matches!(cur.view.phase, Phase::Active | Phase::Connecting);
-                    let restarting = cur.awaiting_restart;
-                    if restarting {
-                        // Nothing: the connect timeout is armed.
-                    } else if answered && !cur.restart_tried {
-                        cur.restart_tried = true;
-                        self.restart(&mut st).await;
-                    } else if state == ConnectionState::Failed && cur.in_call() {
+                    cur.connected = false;
+                    // Once talking, a loss gets one restart, after a moment
+                    // to see whether the way comes back by itself; before
+                    // that the connect timeout is the judge. While a restart
+                    // is on its way the old way may well die: the timeout
+                    // judges that too.
+                    if !cur.in_call() {
+                        // Ringing, or the offer still on its way: no way yet.
+                    } else if cur.awaiting_restart {
+                        // The restart on its way is the answer; shown now.
+                        if cur.view.phase != Phase::Reconnecting {
+                            let reason = cur.restarting_for.unwrap_or(ReconnectReason::ConnectionLost);
+                            cur.show_reconnecting(reason);
+                            let view = cur.view.clone();
+                            self.emit(vec![state_event(&view)]);
+                        }
+                    } else if !cur.restart_tried {
+                        if cur.view.phase != Phase::Reconnecting {
+                            cur.show_reconnecting(ReconnectReason::ConnectionLost);
+                            let view = cur.view.clone();
+                            self.emit(vec![state_event(&view)]);
+                        }
+                        cur.loss += 1;
+                        let (loss, gen) = (cur.loss, cur.gen);
+                        self.schedule(LOSS_CONFIRM, Timer::Lost { loss }, gen);
+                    } else if state == ConnectionState::Failed {
+                        // The one restart of this loss did not help.
                         let id = cur.view.call_id.clone();
                         self.send(&mut st, &Signal::End { call_id: id, reason: signal::reason::FAILED.into(), answer: None }, true).await;
                         self.end_locally(&mut st, Outcome::Failed).await;
+                    } else if cur.view.phase != Phase::Reconnecting {
+                        // Restarted, not connected yet: the way went again
+                        // before it came; the connect timer judges.
+                        let reason = cur.restarting_for.unwrap_or(ReconnectReason::ConnectionLost);
+                        cur.show_reconnecting(reason);
+                        let view = cur.view.clone();
+                        self.emit(vec![state_event(&view)]);
                     }
                 }
                 ConnectionState::New | ConnectionState::Connecting | ConnectionState::Closed => {}
@@ -1100,11 +1374,7 @@ impl Inner {
                     payload: serde_json::json!({ "call_id": id, "level": level }),
                 })]);
             }
-            SessionEvent::NetworkChanged => {
-                if cur.in_call() && !cur.awaiting_restart {
-                    self.restart(&mut st).await;
-                }
-            }
+            SessionEvent::NetworkChanged => self.on_network_changed(&mut st).await,
             SessionEvent::VideoLost { reason } => {
                 // My camera or screen went away in the middle: the video
                 // is off as if I had turned it off (the engine is told so
@@ -1124,8 +1394,19 @@ impl Inner {
         let now = self.clock.now().secs();
         let peer_hex = peer.as_hex().to_string();
         match sig {
-            Signal::Invite { call_id, media, sdp, ice, restart: false } => {
+            Signal::Invite { call_id, media, sdp, ice, restart: false, live_restart } => {
                 if st.recent.contains(&call_id) || st.current_of(&call_id).is_some() {
+                    return Ok(Followup::None);
+                }
+                // This device takes no calls: the invitation is nobody's
+                // business here, not even on record (my other devices ring
+                // for it, and the one that takes it keeps the record); not
+                // a word back, which would stop them ringing. Unless I am
+                // calling the same peer: that is my own call coming back
+                // (both called at once), settled below as any glare.
+                let glare = st.current.as_ref().is_some_and(|c| c.view.peer == peer_hex && c.view.direction == Direction::Out);
+                if !glare && !self.incoming_enabled().await? {
+                    State::remember(&mut st.recent, call_id, RECENT_KEPT);
                     return Ok(Followup::None);
                 }
                 // The time inside the rumor is when the call began; a clock
@@ -1199,6 +1480,7 @@ impl Inner {
                 let mut cur = Current::new(view.clone(), gen, policy);
                 cur.remote_offer = Some(sdp);
                 cur.remote_ice = ice;
+                cur.peer_live_restart = live_restart;
                 st.current = Some(cur);
                 let mut effects = self.feed.begin(&call_id, &peer_hex, Direction::In, media, at).await?;
                 effects.push(Effect::Emit(UiEvent { name: UI_EVENT_CALL_INCOMING.into(), payload: serde_json::json!({ "call": view }) }));
@@ -1213,36 +1495,70 @@ impl Inner {
                 let Some(cur) = st.current_of(&call_id).filter(|c| c.in_call() && c.view.direction == Direction::In) else {
                     return Ok(Followup::None);
                 };
-                cur.awaiting_restart = false;
                 cur.first = None;
                 let session = cur.session.as_ref().expect("in_call");
                 if session.set_remote(&sdp, SdpKind::Offer).await.is_err() {
                     return Ok(Followup::None);
                 }
+                cur.offers += 1;
                 for c in ice.iter().chain(cur.remote_ice.iter()) {
                     let _ = session.add_ice(c).await;
                 }
                 cur.remote_ice.clear();
                 if let Ok(answer) = session.create_answer().await {
                     cur.first = Some((FirstPiece::Answer, answer));
+                    // Candidates of the old way, not yet sent, are of no use.
                     cur.gathered.clear();
-                    cur.view.phase = Phase::Connecting;
-                    cur.view.via = None;
-                    let (gen, view) = (cur.gen, cur.view.clone());
-                    self.schedule(GATHER_WAIT, Timer::Gather, gen);
+                    cur.pending_ice.clear();
+                    // One restart per loss, whoever made it: a loss this
+                    // side saw too (its timer still to come) asks for no
+                    // second one. With the way still here the restart is
+                    // complete at once (`restart_settled`).
+                    cur.restart_tried = true;
+                    cur.loss += 1;
+                    Self::restart_settled(cur);
+                    if !cur.connected && cur.view.phase != Phase::Reconnecting {
+                        // The caller's loss, and the way is gone here too
+                        // (or not told as such by the engine yet): restoring.
+                        cur.show_reconnecting(ReconnectReason::PeerLost);
+                    }
+                    let view = cur.view.clone();
                     self.arm_connect(cur);
+                    // The answer leaves now; its candidates trickle after it.
+                    self.flush_first(st).await;
                     self.emit(vec![state_event(&view)]);
                 }
                 Ok(Followup::None)
             }
-            Signal::Restart { call_id } => {
+            Signal::Restart { call_id, seen } => {
                 // The called side lost the way: a new offer, unless one is
-                // on its way already.
-                let Some(cur) = st.current_of(&call_id).filter(|c| c.in_call() && c.view.direction == Direction::Out) else {
+                // on its way already, or the request is older than my
+                // latest offer (which answers it: the relays keep no order,
+                // and a request made before that offer reached the called
+                // side would otherwise restart a call just restored).
+                let Some(cur) = st.current_of(&call_id).filter(|c| c.view.direction == Direction::Out) else {
                     return Ok(Followup::None);
                 };
-                if !cur.awaiting_restart {
-                    self.restart(st).await;
+                if seen.is_some() {
+                    // A called side that counts takes a restart while its
+                    // way still works.
+                    cur.peer_live_restart = true;
+                }
+                if !cur.in_call() {
+                    // The called side's network changed as it answered: the
+                    // request overtook its answer (which waits for
+                    // candidates). Kept, and honoured with the answer.
+                    if cur.view.phase == Phase::Outgoing && cur.invite_sent {
+                        cur.asked_early = true;
+                    }
+                    return Ok(Followup::None);
+                }
+                // Older than my latest answered offer: that offer answered
+                // it. An offer never answered (lost) settles nothing, and a
+                // request made before it is honoured.
+                let stale = seen.is_some_and(|n| n < cur.answered_offers);
+                if !cur.awaiting_restart && !stale {
+                    self.restart(st, ReconnectReason::PeerLost).await;
                 }
                 Ok(Followup::None)
             }
@@ -1266,7 +1582,7 @@ impl Inner {
                 }
                 Ok(Followup::None)
             }
-            Signal::Answer { call_id, sdp, ice } => {
+            Signal::Answer { call_id, sdp, ice, live_restart } => {
                 let Some(cur) = st.current_of(&call_id) else {
                     // Another device of mine called, and the peer took it:
                     // on record here too.
@@ -1276,6 +1592,9 @@ impl Inner {
                 if cur.view.direction != Direction::Out {
                     return Ok(Followup::None);
                 }
+                if live_restart {
+                    cur.peer_live_restart = true;
+                }
                 if cur.awaiting_restart {
                     if let Some(session) = cur.session.as_ref() {
                         let _ = session.set_remote(&sdp, SdpKind::Answer).await;
@@ -1284,7 +1603,9 @@ impl Inner {
                         }
                     }
                     cur.remote_ice.clear();
-                    cur.awaiting_restart = false;
+                    Self::restart_settled(cur);
+                    let view = cur.view.clone();
+                    self.emit(vec![state_event(&view)]);
                     return Ok(Followup::None);
                 }
                 if cur.taken_answer.is_some() {
@@ -1305,12 +1626,19 @@ impl Inner {
                 }
                 cur.remote_ice.clear();
                 cur.taken_answer = Some(rumor.to_string());
+                cur.answered_offers = cur.offers;
                 cur.view.phase = Phase::Connecting;
                 cur.view.answered_at = Some(now);
-                let view = cur.view.clone();
+                let (view, asked_early) = (cur.view.clone(), cur.asked_early);
                 self.feed.answered(&call_id, now).await?;
                 self.arm_connect(cur);
                 self.emit(vec![state_event(&view)]);
+                if asked_early {
+                    // The called side's network changed as it answered: the
+                    // offer it asked for, now that there is a call to make
+                    // it in.
+                    self.restart(st, ReconnectReason::PeerLost).await;
+                }
                 Ok(Followup::None)
             }
             Signal::Ice { call_id, ice } => {
@@ -1490,6 +1818,10 @@ impl Inner {
     async fn note_end(&self, st: &mut State, call_id: &str, outcome: Outcome, at: i64) -> Result<()> {
         if self.feed.get(call_id).await?.is_some() {
             self.close_record(call_id, outcome, at).await
+        } else if st.recent.iter().any(|id| id == call_id) {
+            // Held here and closed, or ignored on purpose (this device
+            // takes no calls): nothing of it is kept.
+            Ok(())
         } else {
             st.early_mut(call_id).ended(outcome, at);
             Ok(())

@@ -65,6 +65,43 @@ pub enum Reason {
     NotForMe,
     /// The event is not what the push said, or not valid.
     Invalid,
+    /// An invitation to a call older than its life (45 s from its making):
+    /// a missed call, which the app shows when it runs; nothing rings.
+    Expired,
+    /// A call the app has on record as answered or over already (taken on
+    /// another device, declined, ended, missed): nothing rings for it.
+    Over,
+    /// A push the server marked as a call, whose event could not be had
+    /// (not carried, and the relay did not give it in time): a call rings
+    /// now or never, and "something came" is not a call. The app finds the
+    /// invitation, or the missed call, when it runs.
+    Unreachable,
+    /// A push the server marked as a call came to a phone with no keys to
+    /// open it (a PIN guards the app, which then hands the push handler
+    /// nothing, `Lock::enabled()`; or the keys are not handed over yet):
+    /// nothing can be opened, so nothing rings and nothing is said, for
+    /// the reason of `Unreachable`. The app shows the missed call when it
+    /// runs.
+    NoKeys,
+    /// A push the server marked as a call, whose event opened and is no
+    /// invitation and no end of a ringing: the mark is anyone's to put on
+    /// a wrap. Under the settings that open nothing but calls nothing is
+    /// said of it; the app takes the event, whatever it is, when it runs.
+    NotACall,
+}
+
+/// A signal that ends a ringing, come by push: the phone may ring for
+/// `call_id` from a push while the app is not up, and so cannot hear from
+/// the relays that the call is over. The signal is my own device's word (I
+/// answered, declined or ended the call there: the copy for my devices of
+/// `call.answer`, `call.decline`, `call.busy`, `call.end`) or the caller's
+/// `call.end` (gave up, or the call was superseded). Both are marked
+/// `["call", "0"]` on the outside so that the push server sends them at
+/// once (internal/messenger-wire.md §6, §10; `messenger_dm::wrap::Wake`).
+/// The phone stops ringing for the call if it rings; otherwise nothing.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallEnd {
+    pub call_id: String,
 }
 
 /// Somebody calls: the invitation to a call (`call.invite`,
@@ -99,4 +136,5 @@ pub enum Outcome {
     Plain(Plain),
     Quiet { reason: Reason },
     Call(CallNotice),
+    CallEnd(CallEnd),
 }

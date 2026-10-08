@@ -296,9 +296,30 @@ internal object Notifier {
     }
   }
 
-  /** The receiver and the action of the call plugin, as its CallActionReceiver spells them. */
+  /**
+   * A call the phone may be ringing for from a push is over: taken on
+   * another device of the user, declined there, or given up by the
+   * caller. The call plugin stops the ringing of that call, if it rings
+   * (`CallActionReceiver`, action `DISMISS`), and remembers the call as
+   * over, so that a ring of it that comes late rings nothing. A phone that
+   * does not ring for it does nothing.
+   */
+  fun endRinging(context: Context, callId: String): String {
+    val intent = Intent(CALL_DISMISS)
+      .setClassName(context.packageName, CALL_RECEIVER)
+      .putExtra("veydan_call_id", callId)
+    return try {
+      context.sendBroadcast(intent)
+      "ends the ringing (call ${callId.take(8)})"
+    } catch (e: Exception) {
+      "the ringing was not ended: ${e.javaClass.simpleName}"
+    }
+  }
+
+  /** The receiver and the actions of the call plugin, as its CallActionReceiver spells them. */
   private const val CALL_RECEIVER = "net.veydan.call.CallActionReceiver"
   private const val CALL_RING = "net.veydan.call.RING"
+  private const val CALL_DISMISS = "net.veydan.call.DISMISS"
 
   /** `12400` → `0:12`; an hour and more as `1:02:03`. */
   private fun duration(ms: Long): String {
