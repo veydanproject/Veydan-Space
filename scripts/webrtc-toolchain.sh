@@ -34,6 +34,7 @@ webrtc_sha256() {
     linux-arm64)   echo "f716b10eade18dd11b03b9f93b50cee2ca2eec73b975a63f2ae9ea2a35706420" ;;
     android-arm64) echo "81880a4cda27474497ac5277e841ae110ede73e81d0e767606de4bdace8ac82c" ;;
     win-x64)       echo "5c2349c960bae4f06f71c102f58552d0d09c912a142811acfcadfb7c883cbf58" ;;
+    win-arm64)     echo "b07a3a23fc7f98a7335e0f2334767fa4f0ed1c505e120c9b28ce114fb6fe12f4" ;;
     mac-x64)       echo "04eea79951eaefc1054099464f949f6dcfab9bc7460c16004811abc4f9ec15d4" ;;
     mac-arm64)     echo "9f25fea48588deac18d68e120d18b33af7ef10f921f74b7c57f66b642262c348" ;;
     *) return 1 ;;

@@ -9,3 +9,14 @@
 # data/target-android/<product> (internal/platform-spec.md 4.1, 13.4).
 [build]
 target-dir = "data/target"
+
+# The Windows archive of libwebrtc (livekit/rust-sdks) is built against the
+# static C runtime (/MT). Everything linked into one binary with it has to use
+# the same runtime, or the linker refuses (LNK2038 RuntimeLibrary mismatch),
+# so the whole Windows build of every product is static-CRT; cc compiles the
+# C++ of webrtc-sys with /MT when it sees this feature.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
