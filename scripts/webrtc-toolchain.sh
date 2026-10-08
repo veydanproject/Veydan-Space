@@ -20,7 +20,7 @@
 # layout, built from one commit of WebRTC (WEBRTC_SOURCE):
 #   veydan   the releases of veydanproject/Veydan-WebRTC (services/webrtc)
 #            at WEBRTC_VEYDAN_TAG — our build without the software H.264
-#            (no FFmpeg, no OpenH264); the default since 1.0.7;
+#            (no FFmpeg, no OpenH264); the default since 1.0.10;
 #   livekit  the releases of livekit/rust-sdks at WEBRTC_TAG — the archives
 #            the stage-0 spike was measured with; they hold FFmpeg and
 #            OpenH264, so a product is not shipped on them.
@@ -35,7 +35,7 @@
 VEYDAN_ROOT="${VEYDAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 WEBRTC_TAG="webrtc-89d790b"
 WEBRTC_SOURCE="${WEBRTC_SOURCE:-veydan}"
-WEBRTC_VEYDAN_TAG="v1.0.7"
+WEBRTC_VEYDAN_TAG="v1.0.10"
 WEBRTC_DIR="$VEYDAN_ROOT/data/toolchains/webrtc"
 export VEYDAN_WEBRTC_DIR="$WEBRTC_DIR"
 
@@ -44,13 +44,13 @@ export VEYDAN_WEBRTC_DIR="$WEBRTC_DIR"
 # refused rather than taken on trust.
 webrtc_veydan_sha256() {
   case "$1" in
-    linux-x64)     echo "eaf42ca72a5a2c50ca15d449640155549fa959c3bc71cd2570886f67413f69fb" ;;
-    linux-arm64)   echo "1a98060b02b9521951bbc8de54c1408fe532a301d11947082612333d43ccb574" ;;
-    android-arm64) echo "52d93c84fe665d4313c7b30d8c313e2b5fb177d4b5000fecfee08d12ddb17dc1" ;;
-    win-x64)       echo "6b3050c924e41c6dde2128417a54b919039c2a7f6b2334d9633d5b76337e6784" ;;
-    win-arm64)     echo "570b0bacc59ef2cefe12ab5398ac8fd21489e50b3ea621ffd95d21304e87d693" ;;
-    mac-x64)       echo "60a61fc8745b03f2481195dde744dcd1ed206b9f34abd57478f058cab35f17e3" ;;
-    mac-arm64)     echo "5c4fbbd29acd9a0855e35b164616fe2cb960163de8399a5afcb369a41b8243d6" ;;
+    linux-x64)     echo "ab8a85ee303fc3a3b30c04b162f8b81cbf44c69c733faf8173f3d39d3598d658" ;;
+    linux-arm64)   echo "ef777c06aff50cd0800d6dbc33f3841d02301d36e884ef23552191442e906d42" ;;
+    android-arm64) echo "99785c71b842036ee25bcd52896d5519b4b41851cdf0d68918f3cf72e6693347" ;;
+    win-x64)       echo "24e38264d6d005a6c78e1391c1495b00dffd98dd1ef8869d81080377ab1504c7" ;;
+    win-arm64)     echo "f40cef8e24bbeba111fca4178739cba4edbcf8a2275e029d68348677cfe21c93" ;;
+    mac-x64)       echo "838ec87de7dd35693970660bd2007ebb0fce31c27ac4929fd25ccfcd2f014f1f" ;;
+    mac-arm64)     echo "97b206139d082da6bbf20417eec1c60c112474e05d0e6fcb5cb8db7d967dd008" ;;
     *) return 1 ;;
   esac
 }
@@ -62,13 +62,13 @@ webrtc_veydan_sha256() {
 # webrtc-sys-build's webrtc_triple(): win, mac, linux, android; x64, arm64.
 webrtc_livekit_sha256() {
   case "$1" in
-    linux-x64)     echo "b167adad5291cea0e4d66a0454d9d52d2ad714e6b0ed70f4410317d3ebde70c5" ;;
-    linux-arm64)   echo "f716b10eade18dd11b03b9f93b50cee2ca2eec73b975a63f2ae9ea2a35706420" ;;
-    android-arm64) echo "81880a4cda27474497ac5277e841ae110ede73e81d0e767606de4bdace8ac82c" ;;
-    win-x64)       echo "5c2349c960bae4f06f71c102f58552d0d09c912a142811acfcadfb7c883cbf58" ;;
-    win-arm64)     echo "b07a3a23fc7f98a7335e0f2334767fa4f0ed1c505e120c9b28ce114fb6fe12f4" ;;
-    mac-x64)       echo "04eea79951eaefc1054099464f949f6dcfab9bc7460c16004811abc4f9ec15d4" ;;
-    mac-arm64)     echo "9f25fea48588deac18d68e120d18b33af7ef10f921f74b7c57f66b642262c348" ;;
+    linux-x64)     echo "ab8a85ee303fc3a3b30c04b162f8b81cbf44c69c733faf8173f3d39d3598d658" ;;
+    linux-arm64)   echo "ef777c06aff50cd0800d6dbc33f3841d02301d36e884ef23552191442e906d42" ;;
+    android-arm64) echo "99785c71b842036ee25bcd52896d5519b4b41851cdf0d68918f3cf72e6693347" ;;
+    win-x64)       echo "24e38264d6d005a6c78e1391c1495b00dffd98dd1ef8869d81080377ab1504c7" ;;
+    win-arm64)     echo "f40cef8e24bbeba111fca4178739cba4edbcf8a2275e029d68348677cfe21c93" ;;
+    mac-x64)       echo "838ec87de7dd35693970660bd2007ebb0fce31c27ac4929fd25ccfcd2f014f1f" ;;
+    mac-arm64)     echo "97b206139d082da6bbf20417eec1c60c112474e05d0e6fcb5cb8db7d967dd008" ;;
     *) return 1 ;;
   esac
 }

@@ -202,7 +202,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: data/toolchains/webrtc
-          key: webrtc-veydan-v1.0.7-${{ env.WEBRTC_TARGET }}
+          key: webrtc-veydan-v1.0.10-${{ env.WEBRTC_TARGET }}
       - name: libwebrtc
         if: needs.meta.outputs.messenger == 'true'
         shell: bash
@@ -362,7 +362,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: data/toolchains/webrtc
-          key: webrtc-veydan-v1.0.7-android-arm64
+          key: webrtc-veydan-v1.0.10-android-arm64
       - name: libwebrtc
         if: needs.meta.outputs.messenger == 'true'
         env:

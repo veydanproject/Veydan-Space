@@ -1160,7 +1160,7 @@ Thank you to the authors of the following npm packages:
 The engine of calls of the messenger (`crates/messenger/rtc`, in the products
 with the messenger) links **libwebrtc**, the WebRTC library of Google, as the
 prebuilt static archives of **Veydan WebRTC** (`services/webrtc`, release
-`v1.0.7` of github.com/veydanproject/Veydan-WebRTC: the build scripts of
+`v1.0.10` of github.com/veydanproject/Veydan-WebRTC: the build scripts of
 livekit/rust-sdks at the commit `89d790b` of webrtc-sdk/webrtc, with the
 software H.264 left out; one archive per platform, pinned by SHA-256 in
 `scripts/webrtc-toolchain.sh`).
@@ -1186,7 +1186,7 @@ build scripts after arcas-io, MIT; Implib.so, MIT).
 
 The full notices are the `LICENSE.md` of each archive and
 `THIRD-PARTY-LICENSES.md` of the release
-(https://github.com/veydanproject/Veydan-WebRTC/releases/tag/v1.0.7).
+(https://github.com/veydanproject/Veydan-WebRTC/releases/tag/v1.0.10).
 
 ---
 

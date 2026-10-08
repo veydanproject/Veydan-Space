@@ -102,7 +102,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: data/toolchains/webrtc
-          key: webrtc-veydan-v1.0.7-linux-x64
+          key: webrtc-veydan-v1.0.10-linux-x64
       - name: libwebrtc and clang 21
         run: |
           bash scripts/webrtc-toolchain.sh linux-x64
@@ -142,7 +142,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: data/toolchains/webrtc
-          key: webrtc-veydan-v1.0.7-linux-x64
+          key: webrtc-veydan-v1.0.10-linux-x64
       - name: libwebrtc and clang 21
         run: |
           bash scripts/webrtc-toolchain.sh linux-x64
