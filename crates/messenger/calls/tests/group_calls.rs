@@ -1334,3 +1334,292 @@ async fn a_newer_start_heard_while_the_node_was_asked_wins_over_mine() {
         assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
     }
 }
+
+// ─── Probes of 2026-10-08 (Android ↔ Windows, both seats unconfirmed) ────────
+//
+// The fake node of before opened the newcomer's `ctl` inside its join and
+// relayed every frame to every seat; the real node says `joined` to the
+// others first, the newcomer's channel opens later, and a frame to a
+// closed channel is dropped (`set_real_ctl_order`). Each probe is one
+// hypothesis of track B.
+
+/// Two devices of one npub (the owner's phone and PC) in the real order
+/// of the node: the creator's word on `joined` is lost to the closed
+/// channel of the newcomer; the newcomer's own word, once its channel is
+/// open, is answered, and both are confirmed. The hello path itself holds
+/// for twins.
+#[tokio::test]
+async fn probe_twins_confirm_each_other_in_the_real_order_of_the_node() {
+    let mut w = World::new(&["phone"]).await;
+    let pc = w.twin(0, "pc").await;
+    w.group(&[0, pc]);
+    let (phone, pc) = (w.p(0).clone(), w.p(pc).clone());
+    phone.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.node.set_real_ctl_order(true);
+    let view = pc.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let pc_seat = view.participant.unwrap();
+    // The way is there (the fake answer connects), the channel is not:
+    // nobody is confirmed yet, on either side.
+    assert_eq!(pc.last_state().unwrap().phase, GroupPhase::InRoom);
+    assert_eq!(verified_seats(&pc.last_state().unwrap()), vec![(1, false)], "the creator's word on `joined` never reached the closed channel");
+    assert_eq!(verified_seats(&phone.last_state().unwrap()), vec![(pc_seat, false)]);
+    let room = w.node.rooms()[0].clone();
+    w.node.open_ctl(&room, pc_seat);
+    w.settle().await;
+    assert_eq!(verified_seats(&pc.last_state().unwrap()), vec![(1, true)], "the PC's word was answered");
+    assert_eq!(verified_seats(&phone.last_state().unwrap()), vec![(pc_seat, true)]);
+    for p in [&phone, &pc] {
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+}
+
+/// The Windows screen of the owner: the join over HTTP gives a seat and
+/// the others' seats (`participants`), the way to the node never comes.
+/// The phase stays `joining`, no word of identity goes either way, the
+/// creator shows the seat unconfirmed, and nothing says why until the
+/// connect timer gives up with `failed` and frees the seat.
+#[tokio::test]
+async fn probe_a_joiner_whose_way_never_comes_is_the_windows_screen() {
+    let mut w = World::new(&["phone"]).await;
+    let pc = w.twin(0, "pc").await;
+    w.group(&[0, pc]);
+    let (phone, pc) = (w.p(0).clone(), w.p(pc).clone());
+    phone.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.timing(Timing { connect_timeout: Duration::from_millis(120), verify_deadline: Duration::from_secs(30), send_switch_delay: SWITCH, ..Timing::default() });
+    w.node.set_real_ctl_order(true);
+    w.engine.set_connects(false);
+    let view = pc.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(view.phase, GroupPhase::Joining);
+    assert_eq!(view.participants.len(), 2, "me and the creator, from the HTTP join");
+    assert_eq!(pc.last_state().unwrap().phase, GroupPhase::Joining);
+    assert_eq!(verified_seats(&pc.last_state().unwrap()), vec![(1, false)]);
+    assert_eq!(verified_seats(&phone.last_state().unwrap()), vec![(2, false)], "the creator sees a seat without a word");
+    assert!(pc.errors().is_empty(), "nothing on the screen says why: {:?}", pc.errors());
+    w.wait(Duration::from_millis(250)).await;
+    assert_eq!(pc.last_state().unwrap().phase, GroupPhase::Left);
+    assert!(pc.events(UI_EVENT_GROUP_CALL_ENDED).is_empty(), "a joiner's leave ends nothing: the call goes on for the creator");
+    assert!(phone.calls.announced(GROUP).await.is_some_and(|a| a.joined), "the creator is still in");
+    assert!(pc.notes().contains(&"call.leave".to_string()));
+    assert!(verified_seats(&phone.last_state().unwrap()).is_empty(), "the node said `left`");
+    assert!(pc.errors().iter().any(|e| e.contains("no way to the node in time")), "{:?}", pc.errors());
+    w.engine.set_connects(true);
+}
+
+/// The third seat of the screenshot: a seat that never connected (an
+/// earlier attempt) sits in the room when the PC joins. The creator puts
+/// it out at the deadline and the epoch turns; the pair confirms each
+/// other all the same, under the new epoch too.
+#[tokio::test]
+async fn probe_a_stale_seat_at_join_time_is_put_out_and_the_pair_still_confirms() {
+    let mut w = World::new(&["phone", "ghost"]).await;
+    let pc = w.twin(0, "pc").await;
+    w.group(&[0, 1, pc]);
+    let (phone, ghost, pc) = (w.p(0).clone(), w.p(1).clone(), w.p(pc).clone());
+    phone.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.timing(Timing { connect_timeout: Duration::from_secs(30), verify_deadline: Duration::from_millis(150), send_switch_delay: SWITCH, ..Timing::default() });
+    w.node.set_real_ctl_order(true);
+    w.engine.set_connects(false);
+    ghost.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    w.engine.set_connects(true);
+    let view = pc.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(view.participants.len(), 3, "me, the creator and the stale seat");
+    let pc_seat = view.participant.unwrap();
+    let room = w.node.rooms()[0].clone();
+    w.node.open_ctl(&room, pc_seat);
+    w.wait(Duration::from_millis(400)).await;
+    // The creator's `call.epoch` is carried in the settle above; the PC
+    // moves its sending (and its `epoch` on the screen) `SWITCH` later.
+    w.wait(SWITCH * 3).await;
+    let phone_view = phone.last_state().unwrap();
+    let pc_view = pc.last_state().unwrap();
+    assert_eq!(phone_view.phase, GroupPhase::InRoom);
+    assert_eq!(pc_view.phase, GroupPhase::InRoom);
+    assert_eq!(verified_seats(&phone_view), vec![(pc_seat, true)], "the ghost was put out, the PC confirmed: {phone_view:?}");
+    assert_eq!(verified_seats(&pc_view), vec![(1, true)], "{pc_view:?}");
+    assert_eq!(phone_view.epoch, 2, "the keys turned after the ghost left");
+    assert_eq!(pc_view.epoch, 2);
+    assert!(phone.count("call.epoch") >= 1);
+    for p in [&phone, &pc] {
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+}
+
+/// A word of identity from an npub that is not in my member list is
+/// dropped without a word: the seat stays unconfirmed, no error, nothing
+/// in the log. (Two devices of one npub never meet this: `me` is always
+/// a member; two identities with diverging group logs do.)
+#[tokio::test]
+async fn probe_a_word_from_outside_my_member_list_is_dropped_in_silence() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    // Bob's log of the group does not know Alice as a member.
+    bob.groups.set_members(GROUP, vec![bob.pk()]);
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(2, true)], "Alice knows Bob");
+    assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, false)], "Bob does not know Alice: unconfirmed for good");
+    assert!(bob.errors().is_empty(), "and nothing says so: {:?}", bob.errors());
+}
+
+/// A joiner whose way never came judges none of the seats it saw in the
+/// HTTP join: deaf (its channel never opened), it would count itself the
+/// oldest and turn the keys once per seat without a word (two
+/// `call.epoch` from a seat that was never in the room, as it did before
+/// 2026-10-09). The connect timer judges it instead.
+#[tokio::test]
+async fn a_joiner_without_a_way_turns_no_keys_at_the_deadline() {
+    let mut w = World::new(&["phone", "ghost"]).await;
+    let pc = w.twin(0, "pc").await;
+    w.group(&[0, 1, pc]);
+    let (phone, ghost, pc) = (w.p(0).clone(), w.p(1).clone(), w.p(pc).clone());
+    phone.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.node.set_real_ctl_order(true);
+    w.engine.set_connects(false);
+    // The creator's deadline is long: it does not put anybody out here.
+    phone.calls.set_timing(Timing { connect_timeout: Duration::from_secs(30), verify_deadline: Duration::from_secs(30), send_switch_delay: SWITCH, ..Timing::default() });
+    ghost.calls.set_timing(Timing { connect_timeout: Duration::from_secs(30), verify_deadline: Duration::from_secs(30), send_switch_delay: SWITCH, ..Timing::default() });
+    ghost.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    pc.calls.set_timing(Timing { connect_timeout: Duration::from_secs(30), verify_deadline: Duration::from_millis(100), send_switch_delay: SWITCH, ..Timing::default() });
+    let view = pc.calls.join(GROUP).await.unwrap();
+    assert_eq!(view.phase, GroupPhase::Joining);
+    assert_eq!(view.participants.len(), 3);
+    w.wait(Duration::from_millis(300)).await;
+    assert_eq!(pc.last_state().unwrap().phase, GroupPhase::Joining, "still no way");
+    assert_eq!(pc.count("call.epoch"), 0, "deaf, the PC judged nobody: {:?}", pc.notes());
+    assert!(pc.errors().is_empty(), "and said nothing in vain: {:?}", pc.errors());
+    w.engine.set_connects(true);
+}
+
+// ─── The word of identity, said again (2026-10-09) ───────────────────────────
+//
+// What the node of 2026-10-08 showed: a word of identity is lost on the
+// way (the channel of the newcomer stalled for fifteen seconds; a frame
+// to a channel that is not open is dropped), and a word lost was a seat
+// unconfirmed for good on one side, then put out by the creator. The word
+// is said again until everybody is confirmed, every word is answered, and
+// a seat is judged from when I could hear it.
+
+/// Bob's first word, on the opening of his channel, is lost on the way;
+/// the one he says again confirms him, and Alice's answer confirms her.
+#[tokio::test]
+async fn a_word_lost_on_the_way_is_said_again_until_the_seat_is_confirmed() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    w.timing(Timing { hello_retry: Duration::from_millis(40), verify_deadline: Duration::from_secs(30), send_switch_delay: SWITCH, ..Timing::default() });
+    let (alice, bob) = (w.p(0), w.p(1));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.node.set_real_ctl_order(true);
+    // Alice's word on `joined` goes to Bob's closed channel; Bob's first
+    // word, on the opening of his channel, is lost on the way.
+    w.node.drop_relayed(2, 0, 1);
+    let view = bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let seat = view.participant.unwrap();
+    let room = w.node.rooms()[0].clone();
+    w.node.open_ctl(&room, seat);
+    // Bob's first word is lost (the drop above); the one he says again
+    // `hello_retry` later comes within the wait.
+    w.wait(Duration::from_millis(120)).await;
+    assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(seat, true)], "Bob said it again");
+    assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, true)], "and Alice answered");
+    assert_eq!(alice.count("call.epoch") + bob.count("call.epoch"), 0, "nobody turned the keys: {:?} {:?}", alice.notes(), bob.notes());
+    for p in [alice, bob] {
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+}
+
+/// Alice's answer to Bob's word is lost: Bob says his word again (he has
+/// not confirmed her), and Alice, who has confirmed him already, answers
+/// it all the same.
+#[tokio::test]
+async fn every_word_is_answered_so_that_a_lost_answer_is_given_again() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    w.timing(Timing { hello_retry: Duration::from_millis(40), verify_deadline: Duration::from_secs(30), send_switch_delay: SWITCH, ..Timing::default() });
+    let (alice, bob) = (w.p(0), w.p(1));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.node.set_real_ctl_order(true);
+    // Alice's word on `joined` goes to nobody; her first word with
+    // somebody to hear it, the answer to Bob's word, is lost.
+    w.node.drop_relayed(1, 0, 1);
+    let view = bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let seat = view.participant.unwrap();
+    let room = w.node.rooms()[0].clone();
+    w.node.open_ctl(&room, seat);
+    w.settle().await;
+    assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(seat, true)], "Alice took Bob's word");
+    assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, false)], "her answer was lost");
+    w.wait(Duration::from_millis(120)).await;
+    assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, true)], "Bob said it again and was answered again");
+    for p in [alice, bob] {
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+}
+
+/// A seat seen in the join, before my channel opened, has its time from
+/// the opening: deaf, I would judge a seat whose word I could not have
+/// heard. Bob's channel opens long after his deadline would have passed;
+/// he turns no keys, puts nobody out, and the pair confirms each other.
+#[tokio::test]
+async fn a_seat_seen_before_my_channel_opened_has_its_time_from_the_opening() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    let (alice, bob) = (w.p(0), w.p(1));
+    alice.calls.set_timing(Timing { verify_deadline: Duration::from_secs(30), send_switch_delay: SWITCH, ..Timing::default() });
+    bob.calls.set_timing(Timing { verify_deadline: Duration::from_millis(60), hello_retry: Duration::from_millis(40), send_switch_delay: SWITCH, ..Timing::default() });
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.node.set_real_ctl_order(true);
+    let view = bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let seat = view.participant.unwrap();
+    assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, false)], "Alice's seat, from the join");
+    w.wait(Duration::from_millis(200)).await;
+    assert_eq!(bob.count("call.epoch"), 0, "deaf, Bob judged nobody: {:?}", bob.notes());
+    assert_eq!(bob.last_state().unwrap().epoch, 1);
+    assert!(bob.errors().is_empty(), "nothing was said in vain: {:?}", bob.errors());
+    let room = w.node.rooms()[0].clone();
+    w.node.open_ctl(&room, seat);
+    w.wait(Duration::from_millis(40)).await;
+    assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, true)]);
+    assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(seat, true)]);
+    w.wait(Duration::from_millis(150)).await;
+    assert_eq!(bob.count("call.epoch"), 0, "confirmed in time, from the opening: {:?}", bob.notes());
+}
+
+/// With the channel open, a seat that says nothing in its time is judged
+/// as before: the creator puts it out.
+#[tokio::test]
+async fn a_seat_that_says_nothing_after_my_channel_opened_is_put_out_in_its_time() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    w.timing(Timing { verify_deadline: Duration::from_millis(80), hello_retry: Duration::from_millis(30), send_switch_delay: SWITCH, ..Timing::default() });
+    let (alice, bob) = (w.p(0), w.p(1));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    w.node.set_real_ctl_order(true);
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms()[0].clone();
+    assert_eq!(w.node.seats(&room).len(), 2);
+    // Bob's channel never opens: his word never comes.
+    w.wait(Duration::from_millis(160)).await;
+    assert_eq!(w.node.seats(&room).len(), 1, "the creator put the seat out");
+    assert_eq!(bob.last_state().unwrap().phase, GroupPhase::Left);
+    assert_eq!(bob.count("call.epoch"), 0, "and the seat, deaf, turned no keys: {:?}", bob.notes());
+}

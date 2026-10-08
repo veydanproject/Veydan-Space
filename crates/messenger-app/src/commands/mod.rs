@@ -28,6 +28,9 @@ pub mod desktop_notify;
 pub mod notify_jni;
 // Calls: the commands of the page, forwarded to the runtime.
 pub mod calls;
+/// The calls log of a computer (`calls.log` in the messenger's data folder).
+#[cfg(desktop)]
+pub mod calls_log;
 // Calls on a phone: the call plugin, driven from Rust. Its decisions that
 // need no phone are tested on a computer, where the module is otherwise
 // absent.
@@ -208,6 +211,9 @@ impl MessengerState {
     /// take the host down.
     pub async fn start(&self) -> CmdResult<()> {
         let secrets: Arc<dyn SecretStore> = Arc::new(HostSecretStore { app: self.app.clone() });
+        // The calls log of a computer, before the engine says anything.
+        #[cfg(desktop)]
+        calls_log::install(self.config.data_dir());
         #[cfg(desktop)]
         let desktop = self
             .desktop

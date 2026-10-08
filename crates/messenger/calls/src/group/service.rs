@@ -31,11 +31,21 @@
 //!   the DTLS fingerprint of its description. Until then the seat is
 //!   shown as nobody and not listened to: no key is set for its m-lines.
 //!   The word is sent when the channel opens, again whenever somebody
-//!   joins, so that a newcomer gets everybody's, and again whenever the
-//!   epoch changes. A word under a secret not here yet (the note of its
-//!   epoch is on its way) is kept and opened when the note comes. A seat
-//!   that has said nothing for [`VERIFY_DEADLINE`] is nobody for good: the
-//!   creator puts it out of the room, or the keys turn without it.
+//!   joins, so that a newcomer gets everybody's, again whenever the
+//!   epoch changes, in answer to every word of another seat, and again
+//!   every [`HELLO_RETRY`] for as long as a seat of the room is not
+//!   confirmed: the node drops a frame to a channel that is not open yet
+//!   (the word sent on `joined` never reaches the newcomer), a channel
+//!   may stall, and a word under a secret the other does not hold opens
+//!   nothing — one more word costs nothing, a word lost costs the seat.
+//!   A word under a secret not here yet (the note of its epoch is on its
+//!   way) is kept and opened when the note comes. A seat that has said
+//!   nothing for [`VERIFY_DEADLINE`] after I could hear it (my own
+//!   channel open; a seat seen before that has its time from the
+//!   opening) is nobody for good: the creator puts it out of the room,
+//!   or the keys turn without it. Nobody judges a seat while deaf: a
+//!   participant whose channel never opened kicks nobody and turns no
+//!   keys; the connect timer judges it.
 //! - The seats of my room are the node's word alone (`hello`, `joined`,
 //!   `left`, the tracks of its offers): a note of the group names a seat
 //!   the node spoke of, never makes one.
@@ -92,7 +102,7 @@ use messenger_store::{settings, Store};
 use nostr::key::Keys;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Mutex};
 
 /// Calls announced lately that are over, kept so that a late note of
@@ -103,10 +113,18 @@ const EARLY_KEPT: usize = 64;
 /// The word a client asks a node for, in a layer request; the node says
 /// it in `capabilities` when it has it.
 const CAP_SIMULCAST: &str = "simulcast";
-/// A seat that has not said who it is this long after the node spoke of
-/// it is nobody for good: the creator puts it out of the room; without
-/// the creator, the oldest verified seat turns the keys.
-pub const VERIFY_DEADLINE: Duration = Duration::from_secs(15);
+/// A seat that has not said who it is this long after I could hear it
+/// (the node spoke of it with my channel open, or my channel opened
+/// after) is nobody for good: the creator puts it out of the room;
+/// without the creator, the oldest verified seat turns the keys. Longer
+/// than the worst handshake of the channel (dcSCTP tries its INIT at 1,
+/// 2, 4 and 8 seconds: a fifth try at 15 s, seen on a node), so that a
+/// seat whose channel came late is not put out as it opens.
+pub const VERIFY_DEADLINE: Duration = Duration::from_secs(20);
+/// My word of identity is said again this often while a seat of the room
+/// is not confirmed, from when my channel opens; and at most this often
+/// in answer to the words of the others.
+pub const HELLO_RETRY: Duration = Duration::from_secs(2);
 /// A new epoch is sent with this much after it is learned: the others
 /// have read the note and keyed my m-lines for it by then, and hear me
 /// throughout.
@@ -138,11 +156,14 @@ pub struct Timing {
     /// How long the way to the node may take to come at all
     /// ([`CONNECT_TIMEOUT`] of a call between two).
     pub connect_timeout: Duration,
+    /// How often my word of identity is said again while a seat is not
+    /// confirmed ([`HELLO_RETRY`]).
+    pub hello_retry: Duration,
 }
 
 impl Default for Timing {
     fn default() -> Self {
-        Self { verify_deadline: VERIFY_DEADLINE, send_switch_delay: SEND_SWITCH_DELAY, connect_timeout: CONNECT_TIMEOUT }
+        Self { verify_deadline: VERIFY_DEADLINE, send_switch_delay: SEND_SWITCH_DELAY, connect_timeout: CONNECT_TIMEOUT, hello_retry: HELLO_RETRY }
     }
 }
 
@@ -153,6 +174,10 @@ enum Timer {
     Verify { seat: u32 },
     /// Move my sending to the epoch.
     Switch { epoch: u32 },
+    /// Say my word again when somebody is not confirmed yet; `opening`
+    /// counts the openings of my channel: the chain of an earlier
+    /// opening ends when the channel opens anew.
+    Hello { opening: u32 },
 }
 
 /// Whom to tell on the way out of a room.
@@ -277,6 +302,15 @@ struct Room {
     sending: Option<(u32, Secret)>,
     /// The members of the group as last seen: who is gone when they change.
     members: Vec<PubKey>,
+    /// My control channel is open: I hear the words of the others and the
+    /// node relays mine. The time of a seat to say who it is runs from
+    /// here at the earliest.
+    ctl_open: bool,
+    /// How many times my channel opened: the chain of `Timer::Hello` of
+    /// an earlier opening ends when it opens anew.
+    openings: u32,
+    /// When my word of identity last went out.
+    last_hello: Option<Instant>,
 }
 
 impl Room {
@@ -298,7 +332,16 @@ impl Room {
             simulcast: false,
             sending: None,
             members,
+            ctl_open: false,
+            openings: 0,
+            last_hello: None,
         }
+    }
+
+    /// A seat of the room is not confirmed and not spoiled: my word may
+    /// still be wanted.
+    fn somebody_unconfirmed(&self) -> bool {
+        self.peers.values().any(|p| !p.verified && !p.expelled)
     }
 }
 
@@ -1089,13 +1132,58 @@ impl Inner {
     }
 
     /// A seat the node spoke of is in my room: nobody until its word of
-    /// identity comes, and its time to say it runs from now.
+    /// identity comes, and its time to say it runs from now when my
+    /// channel is open — from the opening otherwise (`channel_opened`):
+    /// deaf, I would judge a seat whose word I could not have heard.
     fn seat_appeared(self: &Arc<Self>, room: &mut Room, seat: u32) {
         if seat == room.seat || room.peers.contains_key(&seat) {
             return;
         }
         room.peers.insert(seat, Peer::default());
-        self.schedule(self.timing().verify_deadline, Timer::Verify { seat }, room.gen);
+        if room.ctl_open {
+            self.schedule(self.timing().verify_deadline, Timer::Verify { seat }, room.gen);
+        }
+    }
+
+    /// My channel is open: every seat not confirmed yet has its time
+    /// from now, my word goes out, and goes again every `hello_retry`
+    /// while somebody is not confirmed (`Timer::Hello`).
+    async fn channel_opened(self: &Arc<Self>, st: &mut State) {
+        let Some(room) = st.room.as_mut() else { return };
+        room.ctl_open = true;
+        room.openings += 1;
+        let (gen, opening) = (room.gen, room.openings);
+        let timing = self.timing();
+        let unconfirmed: Vec<u32> = room.peers.iter().filter(|(_, p)| !p.verified).map(|(s, _)| *s).collect();
+        for seat in unconfirmed {
+            self.schedule(timing.verify_deadline, Timer::Verify { seat }, gen);
+        }
+        tracing::debug!(seat = room.seat, "group call: the control channel is open");
+        self.say_hello(st).await;
+        self.schedule(timing.hello_retry, Timer::Hello { opening }, gen);
+    }
+
+    /// My channel closed: nobody is judged, no word is said, until it
+    /// opens again.
+    fn channel_closed(&self, st: &mut State) {
+        if let Some(room) = st.room.as_mut() {
+            room.ctl_open = false;
+            tracing::debug!(seat = room.seat, "group call: the control channel closed");
+        }
+    }
+
+    /// My word in answer to the word of another seat: it proves its
+    /// channel is open now, and the word I sent it before may have been
+    /// lost (sent on `joined`, before its channel was open; dropped by a
+    /// stalled channel; under a secret it did not hold). Every word is
+    /// answered, a quarter of `hello_retry` apart at least: two words a
+    /// pair in the common case, a few more when the way is bad.
+    async fn answer_hello(&self, st: &mut State) {
+        let gap = self.timing().hello_retry / 4;
+        let recent = st.room.as_ref().and_then(|r| r.last_hello).is_some_and(|at| at.elapsed() < gap);
+        if !recent {
+            self.say_hello(st).await;
+        }
     }
 
     /// How many people the record of the call has seen: the seats that
@@ -1153,8 +1241,22 @@ impl Inner {
             dtls_fp: room.dtls_fp.clone(),
         };
         let frame = keys::seal_hello(&keys, &hello, secret);
-        if let Err(e) = session.send_data(CTL_LABEL, DataPayload::Binary(frame)).await {
-            self.emit(vec![error_event(&e)]);
+        tracing::debug!(seat = room.seat, epoch, "group call: my word of identity goes out");
+        let sent = session.send_data(CTL_LABEL, DataPayload::Binary(frame)).await;
+        match sent {
+            Ok(()) => {
+                if let Some(room) = st.room.as_mut() {
+                    room.last_hello = Some(Instant::now());
+                }
+            }
+            // A channel that is not open yet takes no word: the word
+            // goes again when it opens. Anything else is told.
+            Err(e) => {
+                tracing::debug!(error = %e, "group call: my word of identity did not go out");
+                if st.room.as_ref().is_some_and(|r| r.ctl_open) {
+                    self.emit(vec![error_event(&e)]);
+                }
+            }
         }
     }
 
@@ -1627,26 +1729,41 @@ impl Inner {
         match timer {
             Timer::Connect => {
                 if !room.ever_connected {
+                    tracing::warn!(seat = room.seat, "group call: no way to the node in time");
                     self.emit(vec![error_event(&MessengerError::Transport("no way to the node in time".into()))]);
                     self.leave_room(&mut st, Outcome::Failed, Tell::All).await;
                 }
             }
             Timer::Verify { seat } => {
-                if !room.peers.get(&seat).is_some_and(|p| !p.verified) {
+                // Deaf, I judge nobody: the time of the seat runs again
+                // from the opening of my channel.
+                if !room.ctl_open || !room.peers.get(&seat).is_some_and(|p| !p.verified) {
                     return;
                 }
                 // Nobody, after its time. The creator puts it out (the node
                 // says `left`, the keys turn then); without the creator,
                 // the keys turn around it and it stays deaf.
+                tracing::info!(seat, "group call: the seat said nothing in its time: nobody");
                 if let Some(admin) = room.admin_token.clone() {
                     let (node, room_id) = (room.node.clone(), room.room_id.clone());
-                    if self.rooms.leave(&node, &room_id, seat, &admin).await.is_ok() {
-                        return;
+                    match self.rooms.leave(&node, &room_id, seat, &admin).await {
+                        Ok(()) => return,
+                        Err(e) => tracing::warn!(seat, error = %e, "group call: the node did not put the seat out"),
                     }
                 }
                 self.rotate(&mut st, None, false).await;
             }
             Timer::Switch { epoch } => self.switch_sending(&mut st, epoch).await,
+            Timer::Hello { opening } => {
+                if !room.ctl_open || room.openings != opening {
+                    return;
+                }
+                let (gen, again) = (room.gen, room.somebody_unconfirmed());
+                if again {
+                    self.say_hello(&mut st).await;
+                }
+                self.schedule(self.timing().hello_retry, Timer::Hello { opening }, gen);
+            }
         }
     }
 
@@ -1657,6 +1774,7 @@ impl Inner {
         match ev {
             SessionEvent::ConnectionState(state) => {
                 use crate::engine::ConnectionState as C;
+                tracing::debug!(seat = room.seat, ?state, "group call: the way to the node");
                 match state {
                     C::Connected => {
                         room.connected = true;
@@ -1687,7 +1805,8 @@ impl Inner {
                     C::New | C::Connecting => {}
                 }
             }
-            SessionEvent::DataOpen { label } if label == CTL_LABEL => self.say_hello(&mut st).await,
+            SessionEvent::DataOpen { label } if label == CTL_LABEL => self.channel_opened(&mut st).await,
+            SessionEvent::DataClosed { label } if label == CTL_LABEL => self.channel_closed(&mut st),
             SessionEvent::Data { label, payload } if label == CTL_LABEL => match payload {
                 DataPayload::Text(text) => self.on_ctl(&mut st, &me_hex, text).await,
                 DataPayload::Binary(bytes) => self.on_ctl_frame(&mut st, &me_hex, &bytes).await,
@@ -1846,12 +1965,16 @@ impl Inner {
         let hello = match secret.map(|s| keys::open_hello(bytes, from, &call_id, &room_id, &s)) {
             Some(Ok(h)) => h,
             None | Some(Err(HelloError::Unreadable)) => {
+                tracing::debug!(from, epoch, held = secret.is_some(), "group call: a word of identity kept: not under the secret held for its epoch");
                 if let Some(p) = room.peers.get_mut(&from) {
                     p.pending_hello = Some(bytes.to_vec());
                 }
                 return;
             }
-            Some(Err(_)) => return,
+            Some(Err(e)) => {
+                tracing::warn!(from, epoch, ?e, "group call: a word of identity refused");
+                return;
+            }
         };
         if let Some(p) = room.peers.get_mut(&from) {
             p.pending_hello = None;
@@ -1861,6 +1984,7 @@ impl Inner {
         if !members.contains(&npub) {
             // A seat that is not a member of the group: never shown, never
             // listened to.
+            tracing::warn!(from, npub = %npub.as_hex(), "group call: a word of identity of somebody who is no member here");
             return;
         }
         let Some(room) = st.room.as_mut() else { return };
@@ -1869,6 +1993,7 @@ impl Inner {
         peer.npub = Some(npub.clone());
         peer.verified = true;
         peer.expelled = false;
+        tracing::info!(from, npub = %npub.as_hex(), first, "group call: the seat is confirmed");
         if let Some(a) = st.announced.get_mut(&call_id) {
             // The word of identity is the last word on who sits there.
             a.seats.insert(from, npub);
@@ -1878,14 +2003,18 @@ impl Inner {
         self.key_everything(st).await;
         self.count_people(st, &call_id).await;
         self.emit(vec![state_event(&view)]);
+        // Every word of a seat is answered with mine: the node says
+        // `joined` before the newcomer's channel is open and relays
+        // nothing to a channel that is not, so the word sent on `joined`
+        // never reaches it; its own first word proves its channel is open
+        // now, and is answered at once. A word said again is a seat that
+        // has not confirmed me yet (my earlier word was lost on the way,
+        // or sent under a secret it did not hold): answered too, a
+        // quarter of `hello_retry` apart at least.
         if first {
-            // The first word of a seat is answered with mine: the node says
-            // `joined` before the newcomer's channel is open and relays
-            // nothing to a channel that is not, so the word sent on
-            // `joined` never reaches it; its own word proves its channel
-            // is open now. A seat verified already is not answered: two
-            // words a pair at most.
             self.say_hello(st).await;
+        } else {
+            self.answer_hello(st).await;
         }
     }
 

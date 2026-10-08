@@ -22,6 +22,12 @@ async-trait = "0.1.89"
 base64 = "0.22"
 # Wipes the messenger's secrets from memory
 zeroize = "1"
+# The calls log of a computer (commands/calls_log.rs): the lines of the
+# engine and the core of calls come through the `log` bridge of tracing
+# (no subscriber of tracing is installed in a product), those of libwebrtc
+# through the sink of its crate.
+log = "0.4"
+tracing = { version = "0.1", features = ["log"] }
 # A file saved to a content:// URI on Android goes through the fs plugin.
 tauri-plugin-fs = "2"
 # The process holds two rustls crypto providers (aws-lc-rs from the host

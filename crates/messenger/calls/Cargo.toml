@@ -37,6 +37,9 @@ http.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "net", "rt", "macros"] }
+# The log of a group call (the way to the node, the words of identity,
+# the judgments of the seats): what a product writes to its calls log.
+tracing.workspace = true
 
 [dev-dependencies]
 messenger-testkit.workspace = true

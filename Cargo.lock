@@ -3981,6 +3981,7 @@ dependencies = [
  "sha2 0.11.0",
  "tokio",
  "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
@@ -8622,6 +8623,7 @@ dependencies = [
  "desktop-notify",
  "futures-util",
  "jni 0.21.1",
+ "log",
  "messenger-core",
  "messenger-notify",
  "messenger-runtime",
@@ -8639,6 +8641,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
  "veydan-build-cfg",
  "veydan-core",
  "veydan-lock",
@@ -8801,7 +8804,7 @@ dependencies = [
 
 [[package]]
 name = "veydanspace"
-version = "5.1.5"
+version = "5.1.6"
 dependencies = [
  "age",
  "anyhow",

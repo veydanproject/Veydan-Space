@@ -34,6 +34,12 @@ struct Seat {
     video: bool,
     /// Offers made to this seat so far (`seq` of the next is one more).
     offers: u32,
+    /// The seat's `ctl` is open: the node writes to it. In the real order
+    /// (`set_real_ctl_order`) a newcomer's channel opens after its join
+    /// (`open_ctl`), and a frame to a closed channel is dropped.
+    ctl_open: bool,
+    /// The offer of the others' tracks, kept while the channel is closed.
+    pending_offer: Vec<Track>,
 }
 
 struct FakeRoom {
@@ -64,6 +70,16 @@ struct NodeState {
     /// The node's clock when a room is made: its `expires_at` is twelve
     /// hours from here (the lifetime of a room of the protocol).
     now: u64,
+    /// The order of the real node: the others hear `joined` before the
+    /// newcomer's `ctl` is open, and nothing is relayed to a closed
+    /// channel; the test opens the channel with `open_ctl`.
+    real_ctl_order: bool,
+    /// Binary frames of one seat that are lost on the way
+    /// (`drop_relayed`): of those with somebody to hear them, so many are
+    /// passed first, then so many dropped.
+    relay_from: u32,
+    relay_pass: u32,
+    relay_drop: u32,
 }
 
 /// A fake call node: the rooms, and the `ctl` of their participants.
@@ -149,6 +165,45 @@ impl FakeNode {
     /// The token a room is joined with now (the creator may change it).
     pub fn join_token(&self, room_id: &str) -> Option<String> {
         self.state.lock().unwrap().rooms.get(room_id).map(|r| r.join_token.clone())
+    }
+
+    /// The newcomers' `ctl` opens only when the test says so (`open_ctl`),
+    /// as on the real node, where `joined` reaches the others before the
+    /// newcomer's channel is open and a frame to a closed channel is
+    /// dropped (the word of identity the others send on `joined` never
+    /// reaches the newcomer).
+    pub fn set_real_ctl_order(&self, on: bool) {
+        self.state.lock().unwrap().real_ctl_order = on;
+    }
+
+    /// The seat's `ctl` opens now: `DataOpen`, the node's `hello`, and the
+    /// offer of the others' tracks that waited for the channel.
+    pub fn open_ctl(&self, room_id: &str, seat: u32) {
+        let mut st = self.state.lock().unwrap();
+        let Some(room) = st.rooms.get_mut(room_id) else { return };
+        let participants: Vec<u32> = room.seats.keys().filter(|k| **k != seat).copied().collect();
+        let Some(s) = room.seats.get_mut(&seat) else { return };
+        if s.ctl_open {
+            return;
+        }
+        s.ctl_open = true;
+        let session = s.session;
+        let tracks = std::mem::take(&mut s.pending_offer);
+        self.engine.inject_into(session, SessionEvent::DataOpen { label: CTL_LABEL.into() });
+        self.text(session, &Message::Hello { you: seat, participants });
+        self.offer(&mut st, room_id, seat, tracks);
+    }
+
+    /// Of the binary frames the seat `from` sends from now on that have
+    /// somebody to hear them (a channel open), the next `pass` are
+    /// relayed and the `drop` after them are lost on the way (a stalled
+    /// channel, the node's limit on frames): a word of identity that
+    /// never arrives.
+    pub fn drop_relayed(&self, from: u32, pass: u32, drop: u32) {
+        let mut st = self.state.lock().unwrap();
+        st.relay_from = from;
+        st.relay_pass = pass;
+        st.relay_drop = drop;
     }
 
     pub fn set_max_participants(&self, n: u32) {
@@ -327,8 +382,10 @@ impl RoomApi for FakeNode {
         let seat = room.next_seat;
         let others: Vec<(u32, bool)> = room.seats.iter().map(|(s, p)| (*s, p.video)).collect();
         let token = format!("seat-{seat}");
-        room.seats.insert(seat, Seat { session, token: token.clone(), video, offers: 0 });
         let _ = room.expires_at;
+        let real_order = st.real_ctl_order;
+        let room = st.rooms.get_mut(room_id).expect("the room is there");
+        room.seats.insert(seat, Seat { session, token: token.clone(), video, offers: 0, ctl_open: !real_order, pending_offer: vec![] });
         let joined = Joined {
             sdp_answer: format!("{NODE_ANSWER}{seat}"),
             participant_id: seat,
@@ -336,11 +393,15 @@ impl RoomApi for FakeNode {
             participants: others.iter().map(|(s, _)| *s).collect(),
         };
         // The channel opens, the node says hello, the others hear of the
-        // newcomer, and the offers go both ways.
-        self.engine.inject_into(session, SessionEvent::DataOpen { label: CTL_LABEL.into() });
-        self.text(session, &Message::Hello { you: seat, participants: joined.participants.clone() });
+        // newcomer, and the offers go both ways. In the real order the
+        // others hear `joined` now and the newcomer's channel opens later
+        // (`open_ctl`); a seat whose channel is closed hears nothing.
+        if !real_order {
+            self.engine.inject_into(session, SessionEvent::DataOpen { label: CTL_LABEL.into() });
+            self.text(session, &Message::Hello { you: seat, participants: joined.participants.clone() });
+        }
         let other_sessions: Vec<(u32, u32)> =
-            st.rooms[room_id].seats.iter().filter(|(s, _)| **s != seat).map(|(s, p)| (*s, p.session)).collect();
+            st.rooms[room_id].seats.iter().filter(|(s, p)| **s != seat && p.ctl_open).map(|(s, p)| (*s, p.session)).collect();
         for (_, s) in &other_sessions {
             self.text(*s, &Message::Joined { id: seat });
         }
@@ -348,7 +409,13 @@ impl RoomApi for FakeNode {
         for (s, v) in &others {
             tracks.extend(Self::tracks_of(*s, *v));
         }
-        self.offer(&mut st, room_id, seat, tracks);
+        if real_order {
+            if let Some(s) = st.rooms.get_mut(room_id).and_then(|r| r.seats.get_mut(&seat)) {
+                s.pending_offer = tracks;
+            }
+        } else {
+            self.offer(&mut st, room_id, seat, tracks);
+        }
         for (other, _) in other_sessions {
             self.offer(&mut st, room_id, other, Self::tracks_of(seat, video));
         }
@@ -398,7 +465,16 @@ impl RoomHook for FakeNode {
             },
             DataPayload::Binary(bytes) => {
                 let frame = ctl::relayed(seat, &bytes);
-                let others: Vec<u32> = st.rooms[&room_id].seats.iter().filter(|(s, _)| **s != seat).map(|(_, p)| p.session).collect();
+                // The real node relays nothing to a closed channel.
+                let others: Vec<u32> = st.rooms[&room_id].seats.iter().filter(|(s, p)| **s != seat && p.ctl_open).map(|(_, p)| p.session).collect();
+                if seat == st.relay_from && !others.is_empty() {
+                    if st.relay_pass > 0 {
+                        st.relay_pass -= 1;
+                    } else if st.relay_drop > 0 {
+                        st.relay_drop -= 1;
+                        return;
+                    }
+                }
                 for s in others {
                     self.engine.inject_into(s, SessionEvent::Data { label: CTL_LABEL.into(), payload: DataPayload::Binary(frame.clone()) });
                 }
