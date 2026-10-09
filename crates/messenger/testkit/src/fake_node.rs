@@ -164,13 +164,15 @@ struct NodeState {
     nodes: Vec<NodeInfo>,
     rooms: HashMap<String, FakeRoom>,
     /// The next request is refused so.
-    refuse_next: Option<NodeError>,
+    /// The next request (of the node named, or of any) is refused so.
+    refuse_next: Option<(Option<String>, NodeError)>,
     /// The next join is refused so (the room is made, the door is shut).
     refuse_next_join: Option<NodeError>,
     /// The next join through a node (`join_via`) is refused so.
     refuse_next_via: Option<NodeError>,
-    /// The next room is made only when this gate is opened.
-    hold_create: Option<Arc<tokio::sync::Notify>>,
+    /// The next room (on the node named, or on any) is made only when
+    /// this gate is opened.
+    hold_create: Option<(Option<String>, Arc<tokio::sync::Notify>)>,
     /// Answers the sessions gave to offers: session, `seq`.
     answers: Vec<(u32, u32)>,
     /// Texts of the sessions that are not answers (a layer request).
@@ -477,7 +479,14 @@ impl FakeNode {
 
     /// Refuse the next request with `error`.
     pub fn refuse_next(&self, error: NodeError) {
-        self.state.lock().unwrap().refuse_next = Some(error);
+        self.state.lock().unwrap().refuse_next = Some((None, error));
+    }
+
+    /// Refuse the next request of the node `i` alone with `error`: a
+    /// request of another node meanwhile is served (two movers on a slow
+    /// machine come in either order).
+    pub fn refuse_next_on(&self, i: usize, error: NodeError) {
+        self.state.lock().unwrap().refuse_next = Some((Some(reference_of(i).id.to_string()), error));
     }
 
     /// Refuse the next join with `error`, whatever else is asked before.
@@ -495,8 +504,24 @@ impl FakeNode {
     /// reaches the creator while it waits.
     pub fn hold_next_create(&self) -> Arc<tokio::sync::Notify> {
         let gate = Arc::new(tokio::sync::Notify::new());
-        self.state.lock().unwrap().hold_create = Some(gate.clone());
+        self.state.lock().unwrap().hold_create = Some((None, gate.clone()));
         gate
+    }
+
+    /// As [`Self::hold_next_create`], for the next room on the node `i`
+    /// alone: a room asked of another node meanwhile is made at once
+    /// (two movers on a slow machine come in either order).
+    pub fn hold_next_create_on(&self, i: usize) -> Arc<tokio::sync::Notify> {
+        let gate = Arc::new(tokio::sync::Notify::new());
+        self.state.lock().unwrap().hold_create = Some((Some(reference_of(i).id.to_string()), gate.clone()));
+        gate
+    }
+
+    /// Whether the room held by [`Self::hold_next_create`] has been asked
+    /// for: its maker waits at the gate (a test waits for this, not for
+    /// a time).
+    pub fn at_the_gate(&self) -> bool {
+        self.state.lock().unwrap().hold_create.is_none()
     }
 
     /// The token a room is joined with now (the creator may change it).
@@ -663,9 +688,14 @@ impl FakeNode {
         }
     }
 
-    fn take_refusal(st: &mut NodeState) -> std::result::Result<(), NodeError> {
+    /// The refusal held for a request of `node` (or of any), taken.
+    fn take_refusal(st: &mut NodeState, node: &NodeRef) -> std::result::Result<(), NodeError> {
+        let held_here = st.refuse_next.as_ref().is_some_and(|(on, _)| on.as_ref().is_none_or(|id| *id == node.id.to_string()));
+        if !held_here {
+            return Ok(());
+        }
         match st.refuse_next.take() {
-            Some(e) => Err(e),
+            Some((_, e)) => Err(e),
             None => Ok(()),
         }
     }
@@ -774,12 +804,20 @@ fn session_of(sdp_offer: &str) -> std::result::Result<u32, NodeError> {
 impl RoomApi for FakeNode {
     async fn create(&self, node: &CallNode, _limits: MediaLimits) -> std::result::Result<RoomCreated, NodeError> {
         self.gate(&node.node).await;
-        let gate = self.state.lock().unwrap().hold_create.take();
+        let gate = {
+            let mut st = self.state.lock().unwrap();
+            let held_here = st.hold_create.as_ref().is_some_and(|(on, _)| on.as_ref().is_none_or(|id| *id == node.node.id.to_string()));
+            if held_here {
+                st.hold_create.take().map(|(_, gate)| gate)
+            } else {
+                None
+            }
+        };
         if let Some(gate) = gate {
             gate.notified().await;
         }
         let mut st = self.state.lock().unwrap();
-        Self::take_refusal(&mut st)?;
+        Self::take_refusal(&mut st, &node.node)?;
         Self::alive(&st, &node.node)?;
         if !Self::lets_in(&st, node) {
             return Err(refused(401, "access_key_required"));
@@ -817,7 +855,7 @@ impl RoomApi for FakeNode {
     async fn join(&self, node: &CallNode, room_id: &str, token: &str, sdp_offer: &str) -> std::result::Result<Joined, NodeError> {
         self.gate(&node.node).await;
         let mut st = self.state.lock().unwrap();
-        Self::take_refusal(&mut st)?;
+        Self::take_refusal(&mut st, &node.node)?;
         if let Some(e) = st.refuse_next_join.take() {
             return Err(e);
         }
@@ -838,7 +876,7 @@ impl RoomApi for FakeNode {
     async fn leave(&self, node: &CallNode, room_id: &str, participant_id: u32, token: &str) -> std::result::Result<(), NodeError> {
         self.gate(&node.node).await;
         let mut st = self.state.lock().unwrap();
-        Self::take_refusal(&mut st)?;
+        Self::take_refusal(&mut st, &node.node)?;
         Self::alive(&st, &node.node)?;
         let room = st.rooms.get(room_id).ok_or_else(|| refused(404, "room_not_found"))?;
         let seat = room.seats.get(&participant_id).ok_or_else(|| refused(404, "room_not_found"))?;
@@ -858,7 +896,7 @@ impl RoomApi for FakeNode {
     async fn change_token(&self, node: &CallNode, room_id: &str, admin_token: &str) -> std::result::Result<String, NodeError> {
         self.gate(&node.node).await;
         let mut st = self.state.lock().unwrap();
-        Self::take_refusal(&mut st)?;
+        Self::take_refusal(&mut st, &node.node)?;
         Self::alive(&st, &node.node)?;
         let room = st.rooms.get_mut(room_id).ok_or_else(|| refused(404, "room_not_found"))?;
         if room.admin_token != admin_token {

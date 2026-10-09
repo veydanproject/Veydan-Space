@@ -1496,7 +1496,10 @@ async fn a_glare_with_other_media_rings_instead_of_answering() {
     w.settle().await;
     let mine = alice.calls.start(&bob.pk(), Media::Audio).await.unwrap();
     w.settle().await;
-    let theirs = "01".repeat(16);
+    // His id below every random one again (the first, all zeros, is
+    // remembered as declined): "01…" would lose to a call id of mine
+    // that begins with "00", one in 256.
+    let theirs = format!("{}01", "00".repeat(15));
     w.carry_made(bob, alice, &Envelope::call_invite(&theirs, "audio", "fake-offer:9:0", vec![], false), w.now()).await;
     w.settle().await;
     assert_eq!(alice.last_state().unwrap().call_id, theirs);

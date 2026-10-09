@@ -41,6 +41,10 @@ const GROUP: &str = "00000000000000000000000000000000000000000000000000000000000
 /// The sending moves to a new epoch this much after it is learned, in
 /// these tests (a second and a half in life).
 const SWITCH: Duration = Duration::from_millis(30);
+/// How long [`World::until`] gives a timer of the rooms to bring what is
+/// waited for: generous, for a loaded machine, and never reached when
+/// the core is right (what is waited for comes in tens of milliseconds).
+const UNTIL: Duration = Duration::from_secs(10);
 
 struct Party {
     name: &'static str,
@@ -112,6 +116,11 @@ impl Party {
             .iter()
             .rfind(|e| e.name == UI_EVENT_GROUP_CALL_STATE)
             .map(|e| serde_json::from_value(e.payload["call"].clone()).unwrap())
+    }
+
+    /// Whether the last state shown says `what` (nothing shown: no).
+    fn shows(&self, what: impl Fn(&GroupCallView) -> bool) -> bool {
+        self.last_state().is_some_and(|v| what(&v))
     }
 
     fn notes(&self) -> Vec<String> {
@@ -349,6 +358,23 @@ impl World {
         self.settle().await;
     }
 
+    /// Carry everything until `done` holds, settling between looks: for
+    /// what a timer of the rooms brings after a quiet (a judgement of
+    /// loss after `lost_after`, a move on its backup), which no quiet of
+    /// [`Self::settle`] bounds on a loaded machine. Panics with `what`
+    /// when it does not come within [`UNTIL`].
+    async fn until(&self, what: &str, done: impl Fn() -> bool) {
+        let started = std::time::Instant::now();
+        loop {
+            self.settle().await;
+            if done() {
+                return;
+            }
+            assert!(started.elapsed() < UNTIL, "{what}: not within {UNTIL:?}");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
     /// A note of the group to every party that counts itself a member
     /// (the author's own copy too); held for a deaf one.
     async fn carry(&self, out: Outbound) {
@@ -441,7 +467,9 @@ async fn a_call_of_three_with_identities_and_a_rotation_on_leaving() {
 
     // Bob leaves: Alice, the oldest seat, makes epoch 2; Carol moves to it.
     bob.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    // Alice rotates on the node's `left`; the sending, and the epoch on
+    // the screen with it, moves `SWITCH` later: waited for.
+    w.until("epoch 2 everywhere", || alice.shows(|v| v.epoch == 2) && carol.shows(|v| v.epoch == 2)).await;
     assert_eq!(bob.last_state().unwrap().phase, GroupPhase::Left);
     assert!(bob.notes().contains(&"call.leave".to_string()));
     assert!(!bob.notes().contains(&"call.end".to_string()), "not the last one out");
@@ -461,7 +489,7 @@ async fn a_call_of_three_with_identities_and_a_rotation_on_leaving() {
 
     // Carol leaves, then Alice: the last one out ends the call.
     carol.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    w.until("another epoch as carol left", || alice.count("call.epoch") >= 2).await;
     assert!(alice.notes().iter().filter(|t| *t == "call.epoch").count() >= 2, "another epoch as carol left");
     alice.calls.leave().await.unwrap();
     w.settle().await;
@@ -641,7 +669,7 @@ async fn a_call_over_on_record_is_not_announced_again_after_a_restart() {
     bob.calls.join(GROUP).await.unwrap();
     w.settle().await;
     bob.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    w.until("the epoch of bob's leave", || alice.count("call.epoch") >= 1).await;
     alice.calls.leave().await.unwrap();
     w.settle().await;
     assert!(alice.notes().contains(&"call.end".to_string()), "the last one out ended it");
@@ -809,7 +837,7 @@ async fn the_connect_timer_does_not_throw_out_a_participant_whose_way_was_there(
     // No way at all: out after the time, as before.
     w.engine.set_connects(false);
     alice.calls.start(GROUP, Media::Audio).await.unwrap();
-    w.wait(Duration::from_millis(120)).await;
+    w.until("out after the connect time", || alice.shows(|v| v.phase == GroupPhase::Left)).await;
     assert_eq!(alice.last_state().unwrap().phase, GroupPhase::Left);
     assert!(alice.errors().iter().any(|e| e.contains("no way to the node in time")), "{:?}", alice.errors());
 }
@@ -832,7 +860,7 @@ async fn a_late_join_note_raises_no_ghost_seat() {
     w.settle().await;
     assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(2, true)]);
     bob.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    w.until("alice's rotation", || alice.count("call.epoch") == 1).await;
     assert_eq!(alice.count("call.epoch"), 1, "alice rotated on bob's leaving");
     assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![]);
     // Now Bob's notes come: his join after his leave for Carol, in order
@@ -913,7 +941,7 @@ async fn a_seat_of_nobody_does_not_block_the_rotation() {
     assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, true), (2, false)]);
     // Alice leaves: Bob (seat 3) is the oldest verified seat and rotates.
     alice.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    w.until("bob's rotation and switch", || bob.shows(|v| v.epoch == 2)).await;
     assert_eq!(bob.count("call.epoch"), 1, "{:?}", bob.notes());
     assert_eq!(bob.last_state().unwrap().epoch, 2);
     let sb = w.engine.sessions()[2].record();
@@ -942,9 +970,10 @@ async fn a_seat_that_never_says_who_it_is_is_put_out_or_keyed_around() {
         mallory.calls.on_group_note(&g, &author, &envelope, w.now()).await.unwrap();
     }
     mallory.calls.join(GROUP).await.unwrap();
-    w.settle().await;
+    // Her seat is there as the join returns (before her time runs out on
+    // a slow machine).
     assert_eq!(w.node.seats(&room).len(), 3);
-    w.wait(Duration::from_millis(160)).await;
+    w.until("the seat put out at the deadline", || mallory.shows(|v| v.phase == GroupPhase::Left) && alice.count("call.epoch") == 1).await;
     assert_eq!(w.node.seats(&room).len(), 2, "the creator put the seat out");
     assert_eq!(mallory.last_state().unwrap().phase, GroupPhase::Left);
     assert_eq!(alice.count("call.epoch"), 1, "the keys turned as the seat left: {:?}", alice.notes());
@@ -953,10 +982,10 @@ async fn a_seat_that_never_says_who_it_is_is_put_out_or_keyed_around() {
     // Without the creator: Alice leaves (Bob rotates), Mallory comes
     // again, and after her time Bob turns the keys around her.
     alice.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    w.until("bob's rotation", || bob.count("call.epoch") == 1).await;
     assert_eq!(bob.count("call.epoch"), 1);
     mallory.calls.join(GROUP).await.unwrap();
-    w.wait(Duration::from_millis(160)).await;
+    w.until("the keys turned around her", || bob.count("call.epoch") == 2).await;
     assert_eq!(w.node.seats(&room).len(), 2, "nobody can put her out");
     assert_eq!(bob.count("call.epoch"), 2, "{:?}", bob.notes());
     assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(4, false)]);
@@ -988,7 +1017,10 @@ async fn a_member_removed_from_the_group_is_out_of_the_call() {
         p.groups.set_members(GROUP, vec![alice.pk(), bob.pk()]);
         p.calls.on_members_changed(GROUP).await;
     }
-    w.wait(SWITCH * 3).await;
+    w.until("her seat out, the keys turned on both screens", || {
+        carol.shows(|v| v.phase == GroupPhase::Left) && alice.last_state().zip(bob.last_state()).is_some_and(|(a, b)| a.epoch >= 2 && a.epoch == b.epoch)
+    })
+    .await;
     assert_eq!(w.node.seats(&room).len(), 2, "the creator put her out");
     assert_ne!(w.node.join_token(&room).unwrap(), token_before, "and changed the token");
     assert_eq!(carol.last_state().unwrap().phase, GroupPhase::Left);
@@ -1035,7 +1067,7 @@ async fn a_word_of_identity_under_an_epoch_not_here_yet_waits_for_its_note() {
     // Dave hears nothing for a while; Bob leaves, Alice makes epoch 2.
     w.deafen(3);
     bob.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    w.until("alice on epoch 2", || alice.shows(|v| v.epoch == 2)).await;
     assert_eq!(alice.last_state().unwrap().epoch, 2);
     // Dave joins with epoch 1 alone: his word is under 1, theirs under 2.
     dave.calls.join(GROUP).await.unwrap();
@@ -1043,7 +1075,7 @@ async fn a_word_of_identity_under_an_epoch_not_here_yet_waits_for_its_note() {
     assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(3, true), (4, true)], "dave's word under epoch 1 opens for them");
     assert_eq!(verified_seats(&dave.last_state().unwrap()), vec![(1, false), (3, false)], "their words wait for the note");
     w.hear(3).await;
-    w.wait(SWITCH * 3).await;
+    w.until("their words opened for dave", || dave.shows(|v| v.epoch == 2 && verified_seats(v) == vec![(1, true), (3, true)])).await;
     let d = dave.last_state().unwrap();
     assert_eq!(verified_seats(&d), vec![(1, true), (3, true)], "the note came: their words opened");
     assert_eq!(d.epoch, 2);
@@ -1055,13 +1087,13 @@ async fn a_word_of_identity_under_an_epoch_not_here_yet_waits_for_its_note() {
     // the newest epoch.
     w.deafen(2);
     dave.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    w.until("alice on epoch 3", || alice.shows(|v| v.epoch == 3)).await;
     assert_eq!(alice.last_state().unwrap().epoch, 3);
     bob.calls.join(GROUP).await.unwrap();
     w.settle().await;
     assert_eq!(verified_seats(&carol.last_state().unwrap()), vec![(1, true), (5, false)], "a word under epoch 3 waits at carol");
     w.hear(2).await;
-    w.wait(SWITCH * 3).await;
+    w.until("the word under epoch 3 opened for carol", || carol.shows(|v| verified_seats(v) == vec![(1, true), (5, true)])).await;
     assert_eq!(verified_seats(&carol.last_state().unwrap()), vec![(1, true), (5, true)]);
     assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, true), (3, true)]);
 }
@@ -1101,7 +1133,13 @@ async fn two_rotations_on_one_number_settle_on_the_smaller_secret() {
     // Dave hears Bob's first, Carol hers (her own copy) after Bob's.
     w.hear(3).await;
     w.hear(2).await;
-    w.wait(SWITCH * 3).await;
+    w.until("one secret on both ends", || {
+        let (sc, sd) = (w.engine.sessions()[2].record(), w.engine.sessions()[3].record());
+        sender_key_in(&sc, slot(2)).is_some()
+            && receiver_key(&sd, "a3", slot(2)) == sender_key_in(&sc, slot(2))
+            && receiver_key(&sc, "a4", slot(2)) == sender_key_in(&sd, slot(2))
+    })
+    .await;
     let (sc, sd) = (w.engine.sessions()[2].record(), w.engine.sessions()[3].record());
     assert_eq!(receiver_key(&sd, "a3", slot(2)), sender_key_in(&sc, slot(2)), "dave hears carol");
     assert_eq!(receiver_key(&sc, "a4", slot(2)), sender_key_in(&sd, slot(2)), "carol hears dave");
@@ -1138,7 +1176,7 @@ async fn the_sending_moves_to_a_new_epoch_after_the_others_had_time_to_read_it()
     assert_eq!(alice.last_state().unwrap().epoch, 1);
     assert!(receiver_key(&sc, "a1", slot(2)).is_some(), "carol can already hear epoch 2");
     assert!(receiver_key(&sa, "a3", slot(2)).is_some());
-    w.wait(Duration::from_millis(350)).await;
+    w.until("the sending moved to epoch 2", || alice.shows(|v| v.epoch == 2) && carol.shows(|v| v.epoch == 2)).await;
     let (sa, sc) = (w.engine.sessions()[0].record(), w.engine.sessions()[2].record());
     assert_eq!(sa.sender_keys.last().unwrap().0, slot(2));
     assert_eq!(sc.sender_keys.last().unwrap().0, slot(2));
@@ -1167,7 +1205,7 @@ async fn a_call_without_an_end_is_closed_when_its_room_expires() {
     assert!(alice.notes().iter().all(|t| t != "call.end"));
     assert!(carol.calls.announced(GROUP).await.is_some());
     w.clock.0.store(START + 3, Ordering::SeqCst);
-    w.wait(Duration::from_millis(2400)).await;
+    w.until("the call closed on record as its room expired", || [alice, bob, carol].into_iter().all(|p| p.events(UI_EVENT_GROUP_CALL_ENDED).len() == 1)).await;
     for p in [alice, bob, carol] {
         assert!(p.calls.announced(GROUP).await.is_none(), "{}", p.name);
         let row = repo::get(&p.store, &view.call_id).await.unwrap().unwrap();
@@ -1213,7 +1251,7 @@ async fn two_starts_of_one_moment_are_one_call() {
     for i in [2, 1, 0] {
         w.hear(i).await;
     }
-    w.wait(Duration::from_millis(50)).await;
+    w.until("alice went over to the newer", || alice.shows(|v| v.call_id == newer.call_id && v.phase == GroupPhase::InRoom)).await;
     for p in [alice, bob, carol] {
         let banner = p.calls.announced(GROUP).await.unwrap();
         assert_eq!(banner.call_id, newer.call_id, "{}", p.name);
@@ -1257,7 +1295,7 @@ async fn the_loser_of_a_glare_is_no_ghost_after_a_restart() {
     for i in [2, 1, 0] {
         w.hear(i).await;
     }
-    w.wait(Duration::from_millis(50)).await;
+    w.until("alice went over to the newer", || alice.shows(|v| v.call_id == newer.call_id && v.phase == GroupPhase::InRoom)).await;
     assert_eq!(carol.calls.announced(GROUP).await.unwrap().call_id, newer.call_id);
     // The winner ends: everybody out.
     w.clock.0.fetch_add(30, Ordering::SeqCst);
@@ -1332,7 +1370,7 @@ async fn my_other_device_is_on_the_banner_and_my_own_old_seat_is_not() {
     assert_eq!(repo::group_info(&alice.store, &view.call_id).await.unwrap().unwrap().participants, 2, "two people still");
     // The phone leaves: its seat goes too.
     phone.calls.leave().await.unwrap();
-    w.wait(SWITCH * 3).await;
+    w.until("the phone left", || phone.shows(|v| v.phase == GroupPhase::Left)).await;
     let banner = alice.calls.announced(GROUP).await.unwrap();
     assert_eq!(banner.participants, vec![bob.pk().as_hex().to_string()], "{:?}", banner.participants);
     for p in [&alice, &bob, &phone] {
@@ -1454,7 +1492,7 @@ async fn probe_a_joiner_whose_way_never_comes_is_the_windows_screen() {
     assert_eq!(verified_seats(&pc.last_state().unwrap()), vec![(1, false)]);
     assert_eq!(verified_seats(&phone.last_state().unwrap()), vec![(2, false)], "the creator sees a seat without a word");
     assert!(pc.errors().is_empty(), "nothing on the screen says why: {:?}", pc.errors());
-    w.wait(Duration::from_millis(250)).await;
+    w.until("the connect timer gave up", || pc.shows(|v| v.phase == GroupPhase::Left)).await;
     assert_eq!(pc.last_state().unwrap().phase, GroupPhase::Left);
     assert!(pc.events(UI_EVENT_GROUP_CALL_ENDED).is_empty(), "a joiner's leave ends nothing: the call goes on for the creator");
     assert!(phone.calls.announced(GROUP).await.is_some_and(|a| a.joined), "the creator is still in");
@@ -1488,10 +1526,13 @@ async fn probe_a_stale_seat_at_join_time_is_put_out_and_the_pair_still_confirms(
     let pc_seat = view.participant.unwrap();
     let room = w.node.rooms()[0].clone();
     w.node.open_ctl(&room, pc_seat);
-    w.wait(Duration::from_millis(400)).await;
-    // The creator's `call.epoch` is carried in the settle above; the PC
-    // moves its sending (and its `epoch` on the screen) `SWITCH` later.
-    w.wait(SWITCH * 3).await;
+    // The ghost is put out at the deadline, the creator's `call.epoch` is
+    // carried, and the PC moves its sending (and its `epoch` on the
+    // screen) `SWITCH` later: waited for.
+    w.until("the ghost out, the pair confirmed on epoch 2", || {
+        phone.shows(|v| v.epoch == 2 && verified_seats(v) == vec![(pc_seat, true)]) && pc.shows(|v| v.epoch == 2 && verified_seats(v) == vec![(1, true)])
+    })
+    .await;
     let phone_view = phone.last_state().unwrap();
     let pc_view = pc.last_state().unwrap();
     assert_eq!(phone_view.phase, GroupPhase::InRoom);
@@ -1586,8 +1627,8 @@ async fn a_word_lost_on_the_way_is_said_again_until_the_seat_is_confirmed() {
     let room = w.node.rooms()[0].clone();
     w.node.open_ctl(&room, seat);
     // Bob's first word is lost (the drop above); the one he says again
-    // `hello_retry` later comes within the wait.
-    w.wait(Duration::from_millis(120)).await;
+    // `hello_retry` later is waited for.
+    w.until("the word said again and answered", || alice.shows(|v| verified_seats(v) == vec![(seat, true)]) && bob.shows(|v| verified_seats(v) == vec![(1, true)])).await;
     assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(seat, true)], "Bob said it again");
     assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, true)], "and Alice answered");
     assert_eq!(alice.count("call.epoch") + bob.count("call.epoch"), 0, "nobody turned the keys: {:?} {:?}", alice.notes(), bob.notes());
@@ -1603,7 +1644,9 @@ async fn a_word_lost_on_the_way_is_said_again_until_the_seat_is_confirmed() {
 async fn every_word_is_answered_so_that_a_lost_answer_is_given_again() {
     let w = World::new(&["alice", "bob"]).await;
     w.group(&[0, 1]);
-    w.timing(Timing { hello_retry: Duration::from_millis(40), verify_deadline: Duration::from_secs(30), send_switch_delay: SWITCH, ..Timing::default() });
+    // The word is said again late enough for the loss of the answer to be
+    // seen first, on a slow machine too.
+    w.timing(Timing { hello_retry: Duration::from_millis(300), verify_deadline: Duration::from_secs(30), send_switch_delay: SWITCH, ..Timing::default() });
     let (alice, bob) = (w.p(0), w.p(1));
     alice.calls.start(GROUP, Media::Audio).await.unwrap();
     w.settle().await;
@@ -1619,7 +1662,7 @@ async fn every_word_is_answered_so_that_a_lost_answer_is_given_again() {
     w.settle().await;
     assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(seat, true)], "Alice took Bob's word");
     assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, false)], "her answer was lost");
-    w.wait(Duration::from_millis(120)).await;
+    w.until("the answer given again", || bob.shows(|v| verified_seats(v) == vec![(1, true)])).await;
     assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, true)], "Bob said it again and was answered again");
     for p in [alice, bob] {
         assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
@@ -1650,7 +1693,7 @@ async fn a_seat_seen_before_my_channel_opened_has_its_time_from_the_opening() {
     assert!(bob.errors().is_empty(), "nothing was said in vain: {:?}", bob.errors());
     let room = w.node.rooms()[0].clone();
     w.node.open_ctl(&room, seat);
-    w.wait(Duration::from_millis(40)).await;
+    w.until("confirmed from the opening", || bob.shows(|v| verified_seats(v) == vec![(1, true)]) && alice.shows(|v| verified_seats(v) == vec![(seat, true)])).await;
     assert_eq!(verified_seats(&bob.last_state().unwrap()), vec![(1, true)]);
     assert_eq!(verified_seats(&alice.last_state().unwrap()), vec![(seat, true)]);
     w.wait(Duration::from_millis(150)).await;
@@ -1673,7 +1716,7 @@ async fn a_seat_that_says_nothing_after_my_channel_opened_is_put_out_in_its_time
     let room = w.node.rooms()[0].clone();
     assert_eq!(w.node.seats(&room).len(), 2);
     // Bob's channel never opens: his word never comes.
-    w.wait(Duration::from_millis(160)).await;
+    w.until("the seat put out in its time", || bob.shows(|v| v.phase == GroupPhase::Left)).await;
     assert_eq!(w.node.seats(&room).len(), 1, "the creator put the seat out");
     assert_eq!(bob.last_state().unwrap().phase, GroupPhase::Left);
     assert_eq!(bob.count("call.epoch"), 0, "and the seat, deaf, turned no keys: {:?}", bob.notes());
@@ -1794,9 +1837,15 @@ async fn the_room_moves_when_its_node_dies() {
     assert!(w.node.seats_via(&home_room).iter().all(|(_, via)| via.is_none()), "all directly on the home");
     let epoch_before = alice.last_state().unwrap().epoch;
 
-    // The home dies: every sitter is cut off.
+    // The home dies: every sitter is cut off. The loss is judged after
+    // `lost_after`, from two points; then the creator moves and the
+    // others follow her note: waited for, confirmed again in the new room.
     w.node.kill(0);
-    w.settle().await;
+    let new_home = w.node.node(n1, NodeClass::Project).node.to_string();
+    w.until("everybody in the moved room, confirmed", || {
+        [&alice, &bob, &carol].into_iter().all(|p| p.shows(|v| v.phase == GroupPhase::InRoom && v.home == new_home && verified_seats(v).len() == 2 && verified_seats(v).iter().all(|(_, ok)| *ok)))
+    })
+    .await;
 
     assert_eq!(w.node.rooms_on(0), Vec::<String>::new(), "the home's rooms are gone");
     let moved = w.node.rooms_on(1);
@@ -1837,7 +1886,10 @@ async fn two_moves_from_one_room_settle_on_one() {
     w.group(&[0, 1, 2]);
     // A short backup so the second moves; a long wait so the third does
     // not move within the test (it holds, deaf, for the moves to arrive).
-    let timing = Timing { move_backup: Duration::from_millis(15), move_wait: Duration::from_secs(50), ..cascade_timing() };
+    // The joins after the moves are not to be judged lost on a slow
+    // machine (a judged join seats one again: a stale seat besides).
+    let timing =
+        Timing { move_backup: Duration::from_millis(15), move_wait: Duration::from_secs(50), rejoin_connect: Duration::from_secs(10), ..cascade_timing() };
     // The creator's spare node is node 1, the second's is node 2: the two
     // moves go to plainly distinct rooms.
     w.with_servers(0, vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)], timing).await;
@@ -1857,16 +1909,27 @@ async fn two_moves_from_one_room_settle_on_one() {
         w.deafen(i);
     }
     w.node.kill(0);
-    w.settle().await;
-    assert_eq!(alice.count("call.move"), 1, "the creator moved");
-    assert_eq!(bob.count("call.move"), 1, "the second moved too (deaf to the first)");
+    // The creator moves once the loss is judged (`lost_after`, then the
+    // judgement from two points), the second on his backup: timers of
+    // real time, waited for by their notes, not by a quiet of the world.
+    w.until("the creator's move", || alice.count("call.move") == 1).await;
+    w.until("the second's move", || bob.count("call.move") == 1).await;
+    assert_eq!(alice.count("call.move"), 1, "the creator moved once");
     assert_eq!(carol.count("call.move"), 0, "the third waits");
 
     // Now everybody hears everything: the moves meet and the newer holds.
     for i in [0, 1, 2] {
         w.hear(i).await;
     }
-    w.settle().await;
+    // The winner holds everywhere: each confirms the other two, which can
+    // happen only in one shared room (a split would leave fewer peers).
+    // The words of identity are said again on `hello_retry`: waited for.
+    let all_verified = || {
+        [&alice, &bob, &carol].iter().all(|p| {
+            p.last_state().is_some_and(|v| v.phase == GroupPhase::InRoom && verified_seats(&v).len() == 2 && verified_seats(&v).iter().all(|(_, ok)| *ok))
+        })
+    };
+    w.until("one room, everybody confirmed", all_verified).await;
 
     let (a, b, c) = (alice.last_state().unwrap(), bob.last_state().unwrap(), carol.last_state().unwrap());
     assert_eq!(a.phase, GroupPhase::InRoom, "{:?}", a);
@@ -1879,8 +1942,6 @@ async fn two_moves_from_one_room_settle_on_one() {
     assert_eq!(b.home, c.home);
     assert_eq!(a.epoch, b.epoch, "one epoch everywhere");
     assert_eq!(b.epoch, c.epoch);
-    // The winner holds everywhere: each confirms the other two, which can
-    // happen only in one shared room (a split would leave fewer peers).
     for p in [&alice, &bob, &carol] {
         let v = p.last_state().unwrap();
         let seen = verified_seats(&v);
@@ -1915,7 +1976,8 @@ async fn a_note_of_the_room_left_behind_after_a_move_is_stale() {
     let start_room = w.node.rooms_on(0)[0].clone();
 
     w.node.kill(0);
-    w.settle().await;
+    let new_home = w.node.node(n1, NodeClass::Project).node.to_string();
+    w.until("carol came over", || carol.shows(|v| v.phase == GroupPhase::InRoom && v.home == new_home)).await;
     assert_eq!(carol.last_state().unwrap().phase, GroupPhase::InRoom, "carol came over");
 
     // A 5.1.6 client, lost in the old room, writes `call.end` with no
@@ -2092,7 +2154,7 @@ async fn the_move_that_holds_sets_the_epoch_whatever_the_loser_said() {
         w.deafen(i);
     }
     w.node.kill(0);
-    w.settle().await;
+    w.until("the creator's move", || alice.count("call.move") == 1).await;
     assert_eq!(alice.count("call.move"), 1, "the creator moved");
     assert_eq!(bob.count("call.move"), 0, "the second holds (a long backup in this test)");
     let r_a = w.node.rooms_on(1)[0].clone();
@@ -2112,9 +2174,23 @@ async fn the_move_that_holds_sets_the_epoch_whatever_the_loser_said() {
     for i in [0, 1, 2] {
         w.hear(i).await;
     }
-    w.wait(Duration::from_millis(100)).await;
-
     let winner = moved_secret_of(&alice);
+    // In the winner's room, confirmed, and sending under its secret (the
+    // switch of the sending comes `SWITCH` after the note): waited for.
+    let settled = |p: &Party| {
+        p.shows(|v| {
+            v.phase == GroupPhase::InRoom
+                && v.home == p1.node.to_string()
+                && verified_seats(v).len() == 2
+                && verified_seats(v).iter().all(|(_, ok)| *ok)
+                && v.participant.is_some_and(|seat| {
+                    let session = w.node.seats(&r_a).into_iter().find(|(s, _)| *s == seat).map(|(_, session)| session);
+                    session.is_some_and(|s| sending_key_of(&w, s, 2) == Some(sender_key(&winner, &view.call_id, seat, 2)))
+                })
+        })
+    };
+    w.until("everybody in the winner's room under its secret", || [&alice, &bob, &carol].into_iter().all(|p| settled(p))).await;
+
     for p in [&alice, &bob, &carol] {
         let v = p.last_state().unwrap();
         assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
@@ -2178,11 +2254,11 @@ async fn a_move_held_for_the_hello_check_still_loses_to_the_newer_one() {
     // on its backup, each to a node of its own; Bob's note is the newer.
     w.engine.inject_into(sa, SessionEvent::ConnectionState(ConnectionState::Disconnected));
     w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Disconnected));
-    w.wait(Duration::from_millis(150)).await;
+    w.until("alice's move", || alice.count("call.move") == 1).await;
     assert_eq!(alice.count("call.move"), 1, "alice moved first");
     assert_eq!(bob.count("call.move"), 0, "bob not yet");
     w.clock.0.store(START + 5, Ordering::SeqCst);
-    w.wait(Duration::from_millis(450)).await;
+    w.until("bob's move on his backup", || bob.count("call.move") == 1).await;
     assert_eq!(bob.count("call.move"), 1, "bob moved too, deaf to alice");
     let alice_move = alice.envelopes().into_iter().find(|e| e.t == "call.move").unwrap();
     let bob_move = bob.envelopes().into_iter().find(|e| e.t == "call.move").unwrap();
@@ -2198,7 +2274,10 @@ async fn a_move_held_for_the_hello_check_still_loses_to_the_newer_one() {
     for i in [0, 1] {
         w.hear(i).await;
     }
-    w.wait(Duration::from_millis(250)).await;
+    w.until("everybody in the newer room", || [&alice, &bob, &carol].into_iter().all(|p| p.shows(|v| v.phase == GroupPhase::InRoom && v.home == p2.node.to_string()))).await;
+    // The older one's check ends `hello_check` after it was held: the
+    // room must stay the newer one's after it too.
+    w.wait(Duration::from_millis(150)).await;
 
     for p in [&alice, &bob, &carol] {
         let v = p.last_state().unwrap();
@@ -2223,7 +2302,10 @@ async fn a_straggler_move_long_after_the_one_that_holds_changes_nothing() {
     let (view, r0) = three_in_a_room(&mut w, [servers.clone(), servers.clone(), servers], cascade_timing()).await;
     let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
     w.node.kill(0);
-    w.settle().await;
+    w.until("everybody moved to node 1, on the epoch of the move", || {
+        [&alice, &bob, &carol].into_iter().all(|p| p.shows(|v| v.phase == GroupPhase::InRoom && v.home == p1.node.to_string() && v.epoch == 2))
+    })
+    .await;
     for p in [&alice, &bob, &carol] {
         assert_eq!(p.last_state().unwrap().home, p1.node.to_string(), "{}: moved to node 1", p.name);
     }
@@ -2270,25 +2352,28 @@ async fn the_mover_orders_two_moves_by_the_time_its_note_is_said() {
         w.deafen(i);
     }
     // Alice's room (the next one made) waits at the gate; the home dies.
-    let gate = w.node.hold_next_create();
+    // The gate holds Alice's room alone (hers goes on node 1, Bob's on
+    // node 2): on a slow machine his backup may come before she gets
+    // there, and his room is not to wait at her gate.
+    let gate = w.node.hold_next_create_on(n1);
     w.node.kill(0);
     // Alice is at the gate, her task begun at START; Bob's backup is not
     // due yet.
-    tokio::time::sleep(Duration::from_millis(40)).await;
+    w.until("alice at the gate", || w.node.at_the_gate()).await;
     w.clock.0.store(START + 5, Ordering::SeqCst);
-    w.wait(Duration::from_millis(200)).await;
+    w.until("bob's move on his backup", || bob.count("call.move") == 1).await;
     assert_eq!(bob.count("call.move"), 1, "bob moved on his backup, his note said at START+5");
     assert_eq!(alice.count("call.move"), 0, "alice still waits for her room");
     // Alice's room is made now, her note said at START+10: the newer.
     w.clock.0.store(START + 10, Ordering::SeqCst);
     gate.notify_one();
-    w.wait(Duration::from_millis(200)).await;
+    w.until("alice's move", || alice.count("call.move") == 1).await;
     assert_eq!(alice.count("call.move"), 1, "alice moved");
 
     for i in [0, 1, 2] {
         w.hear(i).await;
     }
-    w.wait(Duration::from_millis(200)).await;
+    w.until("everybody in alice's room", || [&alice, &bob, &carol].into_iter().all(|p| p.shows(|v| v.phase == GroupPhase::InRoom && v.home == p1.node.to_string()))).await;
     for p in [&alice, &bob, &carol] {
         let v = p.last_state().unwrap();
         assert_eq!(v.phase, GroupPhase::InRoom, "{}: {:?}", p.name, v);
@@ -2308,7 +2393,9 @@ async fn a_join_after_a_move_that_never_connects_is_judged_in_its_time() {
     w.node.set_rtt(1, 50);
     w.group(&[0, 1]);
     let servers = vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)];
-    let timing = Timing { move_backup: Duration::from_secs(2), ..cascade_timing() };
+    // His time to connect is short still, but not shorter than a slow
+    // machine's pause between his join and the way opening again.
+    let timing = Timing { move_backup: Duration::from_secs(2), rejoin_connect: Duration::from_millis(400), ..cascade_timing() };
     for i in [0, 1] {
         w.with_servers(i, servers.clone(), timing).await;
     }
@@ -2320,7 +2407,7 @@ async fn a_join_after_a_move_that_never_connects_is_judged_in_its_time() {
 
     w.deafen(1);
     w.node.kill(0);
-    w.settle().await;
+    w.until("the creator's move", || alice.count("call.move") == 1 && alice.shows(|v| v.phase == GroupPhase::InRoom)).await;
     assert_eq!(alice.count("call.move"), 1);
     let hellos_before = w.node.hellos(1);
 
@@ -2333,7 +2420,7 @@ async fn a_join_after_a_move_that_never_connects_is_judged_in_its_time() {
     // Before his time is up the way opens again: his join again connects.
     tokio::time::sleep(Duration::from_millis(20)).await;
     w.engine.set_connects(true);
-    w.wait(Duration::from_millis(250)).await;
+    w.until("judged in its time and joined again", || bob.shows(|v| v.phase == GroupPhase::InRoom)).await;
 
     let v = bob.last_state().unwrap();
     assert_eq!(v.phase, GroupPhase::InRoom, "judged in its time and joined again: {v:?}");
@@ -2374,7 +2461,8 @@ async fn the_second_point_of_the_judgement_is_bounded_like_the_hello() {
     // refuses.
     w.node.set_silent(0, true);
     w.node.kill(0);
-    w.wait(Duration::from_millis(150)).await;
+    let own1 = w.node.node(n1, NodeClass::Own).node.to_string();
+    w.until("the creator's move, both on node 1", || alice.count("call.move") == 1 && [&alice, &bob].into_iter().all(|p| p.shows(|v| v.phase == GroupPhase::InRoom && v.home == own1))).await;
 
     assert_eq!(alice.count("call.move"), 1, "the creator moved within the budget: {:?}", alice.notes());
     assert_eq!(bob.count("call.move"), 0, "the second had no need to");
@@ -2451,7 +2539,7 @@ async fn after_a_join_again_the_next_loss_is_judged_from_both_points() {
     // and Bob joins it again directly.
     let sb = session_of_seat(&w, &room, bob.last_state().unwrap().participant.unwrap());
     w.engine.inject_into(sb, SessionEvent::Data { label: CTL_LABEL.into(), payload: DataPayload::Text(Message::HomeLost.encode()) });
-    w.wait(Duration::from_millis(100)).await;
+    w.until("joined the home again directly", || bob.shows(|v| v.phase == GroupPhase::InRoom && v.node == home)).await;
     let v = bob.last_state().unwrap();
     assert_eq!((v.phase, v.node.as_str()), (GroupPhase::InRoom, home.as_str()), "joined the home again directly: {v:?}");
     let passes_before = w.node.delegated().len();
@@ -2460,7 +2548,7 @@ async fn after_a_join_again_the_next_loss_is_judged_from_both_points() {
     // and the join through his own node is the join again.
     let sb = session_of_seat(&w, &room, v.participant.unwrap());
     w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Disconnected));
-    w.wait(Duration::from_millis(150)).await;
+    w.until("seated through his own node again", || bob.shows(|v| v.phase == GroupPhase::InRoom && v.node == own)).await;
     let v = bob.last_state().unwrap();
     assert_eq!(v.phase, GroupPhase::InRoom, "{v:?}");
     assert_eq!(v.node, own, "judged from his own node too: seated through it again");
@@ -2480,15 +2568,29 @@ async fn a_move_that_did_not_work_out_waits_for_the_seconds_move() {
     w.node.set_rtt(0, 20);
     w.node.set_rtt(1, 50);
     w.node.set_rtt(2, 50);
-    let timing = Timing { move_backup: Duration::from_millis(60), ..cascade_timing() };
+    // Nobody is to give up waiting here, nor to judge the second's live
+    // room lost on a pause of a slow machine (the creator of a room
+    // judged lost would move it herself).
+    let timing = Timing {
+        move_backup: Duration::from_millis(60),
+        move_wait: Duration::from_secs(50),
+        hello_check: Duration::from_millis(500),
+        rejoin_connect: Duration::from_secs(5),
+        ..cascade_timing()
+    };
     let (home, p1, p2) = (w.node.as_call_node(), w.node.node(n1, NodeClass::Project), w.node.node(n2, NodeClass::Project));
     let (view, _r0) = three_in_a_room(&mut w, [vec![home.clone(), p1.clone()], vec![home.clone(), p2.clone()], vec![home.clone(), p2.clone()]], timing).await;
     let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
 
-    // The next room asked for (the creator's) is refused.
-    w.node.refuse_next(NodeError::Refused { status: 503, error: "overloaded".into(), message: "fake node: overloaded".into() });
+    // The creator's room (on node 1; the second's goes on node 2) is
+    // refused — hers alone, in whatever order the two come on a slow
+    // machine.
+    w.node.refuse_next_on(n1, NodeError::Refused { status: 503, error: "overloaded".into(), message: "fake node: overloaded".into() });
     w.node.kill(0);
-    w.wait(Duration::from_millis(250)).await;
+    w.until("the second's move, everybody in his room", || {
+        bob.count("call.move") == 1 && [&alice, &bob, &carol].into_iter().all(|p| p.shows(|v| v.phase == GroupPhase::InRoom && v.home == p2.node.to_string()))
+    })
+    .await;
 
     assert_eq!(alice.count("call.move"), 0, "the creator's room was refused");
     assert_eq!(alice.count("call.leave"), 0, "she told the group nothing and did not leave: {:?}", alice.notes());
@@ -2527,12 +2629,13 @@ async fn a_move_that_did_not_work_out_still_owes_the_leave_of_the_dead_room() {
 
     w.node.refuse_next(NodeError::Refused { status: 503, error: "overloaded".into(), message: "fake node: overloaded".into() });
     w.node.kill(0);
-    w.wait(Duration::from_millis(150)).await;
+    // Her room refused, she says so on the screen and waits.
+    w.until("the refusal on the screen", || !alice.errors().is_empty()).await;
     assert_eq!(alice.count("call.move"), 0, "the creator's room was refused");
     assert_eq!(alice.count("call.leave"), 0, "she waits for the second's move: {:?}", alice.notes());
     assert_eq!(alice.last_state().unwrap().phase, GroupPhase::Reconnecting);
 
-    w.wait(Duration::from_millis(300)).await;
+    w.until("out when nobody moved in time", || alice.shows(|v| v.phase == GroupPhase::Left)).await;
     assert_eq!(alice.last_state().unwrap().phase, GroupPhase::Left, "nobody moved the room in time: out");
     let leaves: Vec<Envelope> = alice.envelopes().into_iter().filter(|e| e.t == "call.leave").collect();
     assert_eq!(leaves.len(), 1, "the leave of her claimed seat: {:?}", alice.notes());
