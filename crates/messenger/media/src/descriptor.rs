@@ -229,15 +229,26 @@ pub fn valid_thumb(thumb: &str) -> bool {
         && B64.decode(thumb).is_ok_and(|b| b.len() <= MAX_THUMB_BYTES && b.starts_with(&[0xff, 0xd8, 0xff]))
 }
 
+const MAX_NAME_CHARS: usize = 120;
+const MAX_EXT_CHARS: usize = 12;
+
 /// A file name that cannot escape a directory: no separators, no leading
-/// dots, no control characters, bounded length. Empty becomes `file`.
+/// dots, no control characters, bounded length (a long name is cut in the
+/// middle: its extension of up to 12 characters stays). Empty becomes `file`.
 pub fn safe_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
         .map(|c| if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
         .collect();
     let trimmed = cleaned.trim().trim_start_matches('.').trim();
-    let mut out: String = trimmed.chars().take(120).collect();
+    let mut out: String = if trimmed.chars().count() <= MAX_NAME_CHARS {
+        trimmed.to_string()
+    } else {
+        // Without its extension a saved file is not a photo any more.
+        let ext = trimmed.rfind('.').map(|i| &trimmed[i..]).filter(|e| (2..=MAX_EXT_CHARS + 1).contains(&e.chars().count())).unwrap_or("");
+        let stem = &trimmed[..trimmed.len() - ext.len()];
+        stem.chars().take(MAX_NAME_CHARS - ext.chars().count()).chain(ext.chars()).collect()
+    };
     if out.is_empty() {
         out = "file".into();
     }
@@ -437,6 +448,15 @@ pub(crate) mod tests {
         assert_eq!(safe_name("a\u{0}b:c.txt"), "a_b_c.txt");
         assert_eq!(safe_name(""), "file");
         assert_eq!(safe_name(&"я".repeat(300)).chars().count(), 120);
+        // A long name loses its middle, not its extension.
+        let long = safe_name(&format!("{}.jpg", "я".repeat(300)));
+        assert!(long.ends_with("я.jpg") && long.chars().count() == 120, "{long}");
+        assert_eq!(safe_name(&long), long, "cutting twice changes nothing");
+        let long = safe_name(&format!("{}.JPEG", "a".repeat(200)));
+        assert!(long.ends_with("a.JPEG") && long.len() == 120);
+        // An "extension" too long to be one is cut like the rest.
+        assert_eq!(safe_name(&format!("a.{}", "b".repeat(200))).chars().count(), 120);
+        assert_eq!(safe_name(&format!("{}.jpg", "x".repeat(100))), format!("{}.jpg", "x".repeat(100)));
         assert_eq!(chunk_size_for(1), 4 << 20);
         assert_eq!(chunk_size_for(300 << 20), 8 << 20);
         assert_eq!(chunk_size_for(2 << 30), 16 << 20);

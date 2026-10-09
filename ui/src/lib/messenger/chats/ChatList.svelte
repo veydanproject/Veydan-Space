@@ -11,6 +11,8 @@
   import { listStamp } from '../shared/time';
   import { confirmStore } from '../shared/confirm.svelte';
   import { longpress } from '../shared/longpress';
+  import { chatMatches, contactHaystacks } from '../shared/search';
+  import { messengerStore } from '../store.svelte';
   import type { MessengerChat } from '../api';
 
   interface Props {
@@ -22,9 +24,9 @@
   let showArchived = $state(false);
   let menu = $state<{ open: boolean; x: number; y: number; chat: MessengerChat | null }>({ open: false, x: 0, y: 0, chat: null });
 
-  const q = $derived(query.trim().toLowerCase());
-  const matches = (c: MessengerChat) =>
-    !q || c.title.toLowerCase().includes(q) || (c.peer_npub ?? '').includes(q) || (c.last_preview ?? '').toLowerCase().includes(q);
+  const q = $derived(query.trim());
+  const haystacks = $derived(contactHaystacks(messengerStore.contacts));
+  const matches = (c: MessengerChat) => chatMatches(c, q, haystacks);
   const visible = $derived(chatStore.chats.filter((c) => !c.archived && matches(c)));
   const archived = $derived(chatStore.chats.filter((c) => c.archived && matches(c)));
 

@@ -39,7 +39,7 @@ pub use own::{
 };
 pub use reactions::{PreparedReaction, Refusal, MAX_DISTINCT_PER_MESSAGE, MAX_MINE_PER_MESSAGE};
 pub use handler::{DmHandler, DmRoutesHandler, UI_EVENT_CHATS_UPDATED, UI_EVENT_DM_MESSAGE, UI_EVENT_DM_UPDATED};
-pub use relations::{ActionResult, RelationView, UI_EVENT_DM_RELATIONSHIP};
+pub use relations::{contacts_updated, ActionResult, RelationView, UI_EVENT_DM_RELATIONSHIP};
 pub use relationship::Action;
 pub use service::{DmService, Prepared};
 pub use cards::StoredCard;

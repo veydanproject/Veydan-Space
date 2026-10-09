@@ -11,7 +11,7 @@
   import { t, locale, localeTag } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { isTauriHost, mediaOf, messengerApi, type MessengerMessage, type MessengerTransferProgress, type TransferStatus as Status } from '../api';
-  import { bytes, fileIcon } from '../shared/format';
+  import { bytes, fileIcon, saveFilters } from '../shared/format';
   import { mediaErrorText } from './errors';
   import { bubblePhase } from './phase';
   import { transferStore } from './transferStore.svelte';
@@ -179,7 +179,7 @@
     if (!isTauriHost || !media) return;
     await act(async () => {
       const { save } = await import('@tauri-apps/plugin-dialog');
-      const dest = await save({ defaultPath: media.name });
+      const dest = await save({ defaultPath: media.name, filters: saveFilters(media.name, $t('msg_media_all_files')) });
       if (dest) await messengerApi.media.saveAs(m.id, dest);
     });
   }

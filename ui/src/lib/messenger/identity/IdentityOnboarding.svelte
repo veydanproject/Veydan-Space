@@ -30,8 +30,8 @@
 
   async function create() {
     error = '';
-    if (password.length < 8) { error = $t('msg_id_err_password_short'); return; }
-    if (password !== password2) { error = $t('msg_id_err_password_mismatch'); return; }
+    if ([...password.normalize('NFKC')].length < 8) { error = $t('msg_id_err_password_short'); return; }
+    if (password.normalize('NFKC') !== password2.normalize('NFKC')) { error = $t('msg_id_err_password_mismatch'); return; }
     busy = true;
     try {
       await messengerStore.createIdentity(password);

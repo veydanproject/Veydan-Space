@@ -10,6 +10,7 @@
   import { notesStore } from '$lib/notes/store/notes.svelte';
   import { compareLabel } from '$lib/core/label-order';
   import { t } from '$lib/core/i18n';
+  import { findTag } from '$lib/notes/tag-name';
 
   const TAG_COLORS = [
     '#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6',
@@ -87,9 +88,10 @@
     popupPrefix = '';
   }
 
+  // "Работа" typed when "работа" exists is that tag, not a new one (tag-name.ts).
   const popupIsNew = $derived(
     popupInput.trim().length > 0 &&
-    !allTags.some(t => t.name === popupInput.trim())
+    !findTag(allTags, popupInput)
   );
 
   const popupSuggestions = $derived(
@@ -101,6 +103,13 @@
   async function createTag() {
     const name = popupInput.trim();
     if (!name || creating) return;
+    // Enter on a name that exists in any case filters by that tag and keeps its color.
+    const existing = findTag(allTags, name);
+    if (existing) {
+      closePopup();
+      onfilter({ type: 'tag', id: existing.name });
+      return;
+    }
     creating = true;
     try {
       const tag = await notesStore.createTag(name, popupColor);

@@ -18,10 +18,11 @@ import {
   type CallMedia,
   type GroupCallAnnounced,
   type GroupCallView,
+  type GroupParticipant,
   type MessengerUiEvent,
   type VideoInput,
 } from '../api';
-import { focusOf, groupStatusText, holdFocus, seatSendsVideo, FOCUS_HOLD_MS, type GroupOver, type Layer } from './group';
+import { focusOf, groupStatusText, holdFocus, seatSendsVideo, seatVideoWord, FOCUS_HOLD_MS, type GroupOver, type Layer } from './group';
 import { VIDEO_LOST_MS } from './video';
 
 /** How long the screen shows how a group call ended for me. */
@@ -29,6 +30,24 @@ export const GROUP_OVER_SHOWN_MS = 2500;
 
 /** How long a failure the room told of (not a command's refusal) stays on the screen. */
 export const ERROR_SHOWN_MS = 6000;
+
+/**
+ * A seat's pictures come this moment (`flowing`): one was drawn this long
+ * ago or less. A tile made anew waits dark for its next picture then; it
+ * shows the face otherwise.
+ */
+export const PICTURE_FLOWING_MS = 1500;
+
+/**
+ * How long a word of state carried over a rejoin (the way restored, the
+ * room moved) stands for a confirmed seat whose own word has not come: the
+ * word follows the word of identity at once (messenger-wire §10), so a
+ * seat that says none by then says none at all (an older client on that
+ * device), and is judged by its frames.
+ */
+export const CARRIED_WORD_MS = 10_000;
+
+type Word = Pick<GroupParticipant, 'camera' | 'mic' | 'screen'>;
 
 export interface GroupCallOver {
   /** The room as it was last seen (its seats included). */
@@ -66,11 +85,12 @@ class GroupCallStore {
   /** A computer: the room's window is open, not folded into its capsule. Open again for every new room. */
   shown = $state(true);
   /**
-   * The seats whose camera is taken as on, by seat, for the order of the
-   * screen (calls/group.ts `seatSendsVideo`): on with the first picture a
-   * tile drew of it (`seatPicture`), off once its pictures have been
-   * missing for `VIDEO_LOST_MS` or their stream ended (`seatEnded`); the
-   * room does not say whether another's camera is on. The clock of each
+   * The seats whose pictures come, by seat: for the order of the screen
+   * where a seat says nothing of its camera (an older client: calls/group.ts
+   * `seatSendsVideo`; a seat that says it is believed, `seatVideoWord`;
+   * a tile made anew goes by `flowing` and `stale`). On with the first picture a tile drew of it
+   * (`seatPicture`), off once its pictures have been missing for
+   * `VIDEO_LOST_MS` or their stream ended (`seatEnded`). The clock of each
    * seat is here, not in its tile: a tile that moves (between the large
    * place, the row and the grid) or comes again (the window unfolded) is
    * made anew, and a camera that is off would count from naught with each.
@@ -78,6 +98,21 @@ class GroupCallStore {
    * picture. Let go with the seat, and with the m-line of its video.
    */
   showing = $state<Record<number, boolean>>({});
+  /**
+   * The seats a picture of which was drawn a moment ago
+   * (`PICTURE_FLOWING_MS`), by seat: a tile made anew of such a seat waits
+   * dark for the next one, which is on its way; of another, it shows the
+   * face at once (calls/group.ts `tileWait`).
+   */
+  flowing = $state<Record<number, boolean>>({});
+  /**
+   * The seats whose camera (or screen) is on by their own word and whose
+   * pictures have been missing for `VIDEO_LOST_MS` (since the last one, or
+   * since the word said on when none came after), by seat: "No signal" by
+   * the seat's clock, not by that of a tile made anew (calls/group.ts
+   * `tileWait`). Nothing of the order of the screen follows it.
+   */
+  stale = $state<Record<number, boolean>>({});
   /**
    * The seat the voices give the large place (not a tap: the screen keeps
    * that), held against a quick change (calls/group.ts `holdFocus`).
@@ -129,6 +164,29 @@ class GroupCallStore {
   private voiceTimer: ReturnType<typeof setTimeout> | null = null;
   /** When a tile last drew a picture of each seat taken as on (`Date.now()`). */
   private pictureAt = new Map<number, number>();
+  /** When a tile last drew a picture of each seat, taken as on or not (`Date.now()`): `flowing`, `stale`. */
+  private lastPicture = new Map<number, number>();
+  /** Since when each seat says its camera (or screen) is on (`Date.now()`): `stale`. */
+  private toldAt = new Map<number, number>();
+  /**
+   * The last word of state of each person with one seat in the room (by
+   * npub): what a rejoin carries over (`carried`). A person in the room
+   * from two devices at once has two seats, each with its own word or
+   * none (an older client): theirs is not kept, as nothing tells which
+   * device said it. Let go with the room, and with a person who left it.
+   */
+  private words = new Map<string, Word>();
+  /**
+   * The words carried over the last rejoin (the way restored, the room
+   * moved: the runtime knows the seats anew, their words follow their
+   * words of identity), by npub: given to the one confirmed seat of the
+   * person until its own word comes, for `CARRIED_WORD_MS` at most, so the
+   * screen does not fall back to the frames for that moment. Never
+   * outside a rejoin, and never to a person with two seats.
+   */
+  private carried = new Map<string, { word: Word; until: number | null }>();
+  /** The room as the runtime said it last, before `carried` filled it: looked at again when a carried word lapses. */
+  private raw: GroupCallView | null = null;
 
   /** The room I am in when it is the call of `groupId`. */
   inGroup(groupId: string | null | undefined): GroupCallView | null {
@@ -349,14 +407,30 @@ class GroupCallStore {
   seatPicture(mid: string) {
     const seat = this.seatOf(mid);
     if (seat == null) return;
-    this.pictureAt.set(seat, Date.now());
+    const now = Date.now();
+    this.pictureAt.set(seat, now);
+    this.lastPicture.set(seat, now);
+    this.flag('flowing', seat, true);
+    this.flag('stale', seat, false);
     if (!this.showing[seat]) this.setShowing(seat, true);
   }
 
   /** The stream of the seat's video (by its m-line) ended: its camera is off at once. */
   seatEnded(mid: string) {
     const seat = this.seatOf(mid);
-    if (seat != null) this.setShowing(seat, false);
+    if (seat == null) return;
+    this.flag('flowing', seat, false);
+    this.setShowing(seat, false);
+  }
+
+  /** A flag of a seat (`flowing`, `stale`), written only when it changes. */
+  private flag(name: 'flowing' | 'stale', seat: number, on: boolean) {
+    if ((this[name][seat] ?? false) === on) return;
+    if (on) this[name] = { ...this[name], [seat]: true };
+    else {
+      const { [seat]: _gone, ...rest } = this[name];
+      this[name] = rest;
+    }
   }
 
   /** Another's seat whose video has the m-line `mid`, in the room I am in. */
@@ -383,6 +457,22 @@ class GroupCallStore {
     for (const [seat, at] of [...this.pictureAt]) {
       if (now - at >= VIDEO_LOST_MS) this.setShowing(seat, false);
     }
+    for (const [seat, at] of this.lastPicture) {
+      if (now - at >= PICTURE_FLOWING_MS) this.flag('flowing', seat, false);
+    }
+    for (const [seat, since] of this.toldAt) {
+      this.flag('stale', seat, now - Math.max(since, this.lastPicture.get(seat) ?? 0) >= VIDEO_LOST_MS);
+    }
+    // A carried word whose seat said none of its own in time: the seat is
+    // judged by its frames from now on.
+    let lapsed = false;
+    for (const [npub, c] of [...this.carried]) {
+      if (c.until != null && now >= c.until) {
+        this.carried.delete(npub);
+        lapsed = true;
+      }
+    }
+    if (lapsed && this.raw) this.setCall(this.raw);
   }
 
   /**
@@ -483,6 +573,12 @@ class GroupCallStore {
   private setCall(view: GroupCallView | null) {
     const last = this.call;
     const before = last?.call_id;
+    if (!view || view.call_id !== before) {
+      this.words.clear();
+      this.carried.clear();
+    }
+    this.raw = view;
+    if (view) view = this.remember(view, last);
     this.epoch++;
     this.call = view;
     if (view) {
@@ -495,7 +591,7 @@ class GroupCallStore {
         this.settledHome = null;
         this.anotherRoom = false;
         this.levels = {};
-        this.showing = {};
+        this.forgetSeats();
         this.speaker = null;
         this.error = null;
         this.screen = false;
@@ -511,7 +607,7 @@ class GroupCallStore {
         // asked again. The screen, my camera and my screen stay.
         if (newRoom) this.anotherRoom = true;
         this.levels = {};
-        this.showing = {};
+        this.forgetSeats();
         this.speaker = null;
         this.layers.clear();
         this.simulcast = true;
@@ -527,12 +623,13 @@ class GroupCallStore {
       // A seat that left, or whose video has no m-line now, has no camera on.
       const kept = Object.entries(this.showing).filter(([seat]) => view.participants.some((p) => p.id === Number(seat) && p.video_mid));
       if (kept.length !== Object.keys(this.showing).length) this.showing = Object.fromEntries(kept);
+      this.followWords(view, last);
     } else {
       this.settledHome = null;
       this.anotherRoom = false;
       this.moving = false;
       this.levels = {};
-      this.showing = {};
+      this.forgetSeats();
       this.speaker = null;
       this.screen = false;
       this.cameraBeforeScreen = false;
@@ -543,6 +640,101 @@ class GroupCallStore {
     for (const seat of [...this.pictureAt.keys()]) if (!this.showing[seat]) this.pictureAt.delete(seat);
     this.refocus();
     this.tick();
+  }
+
+  /** The clocks and flags of the seats let go: another room, or the seats numbered anew. */
+  private forgetSeats() {
+    this.showing = {};
+    this.flowing = {};
+    this.stale = {};
+    this.lastPicture.clear();
+    this.toldAt.clear();
+  }
+
+  /**
+   * The words of state kept (`words`) and carried over a rejoin
+   * (`carried`): a confirmed seat that says none now is given the one its
+   * person said before the rejoin, while that person has this one seat and
+   * the carried word has not lapsed; the view as it came when none is.
+   * Outside a rejoin a seat that says nothing is judged by its frames,
+   * whatever another seat of the same person says.
+   */
+  private remember(view: GroupCallView, last: GroupCallView | null): GroupCallView {
+    // A rejoin (the core leaves the room for a new session of it: the way
+    // restored, the room moved): the seats come anew, their words after
+    // their words of identity. What the people said goes over with them.
+    if (last?.call_id === view.call_id && last.phase !== 'joining' && view.phase === 'joining') {
+      for (const [npub, word] of this.words) this.carried.set(npub, { word, until: null });
+    }
+    const seats = new Map<string, number>();
+    for (const p of view.participants) if (!p.me && p.verified && p.npub) seats.set(p.npub, (seats.get(p.npub) ?? 0) + 1);
+    const now = Date.now();
+    let filled = false;
+    const participants = view.participants.map((p) => {
+      if (p.me || !p.verified || !p.npub) return p;
+      const one = seats.get(p.npub) === 1;
+      if (p.camera != null || p.mic != null || p.screen != null) {
+        if (one) this.words.set(p.npub, { camera: p.camera, mic: p.mic, screen: p.screen });
+        else this.words.delete(p.npub);
+        this.carried.delete(p.npub);
+        return p;
+      }
+      // Two seats of one person: a word does not tell which device said it.
+      if (!one) {
+        this.words.delete(p.npub);
+        this.carried.delete(p.npub);
+        return p;
+      }
+      const c = this.carried.get(p.npub);
+      if (!c) return p;
+      if (c.until == null) c.until = now + CARRIED_WORD_MS;
+      else if (now >= c.until) {
+        this.carried.delete(p.npub);
+        return p;
+      }
+      filled = true;
+      return { ...p, ...c.word };
+    });
+    // A person who left: every seat is confirmed and none is theirs. (A
+    // seat not confirmed yet may be theirs come again.)
+    if (view.phase === 'in_room' && view.participants.every((p) => p.verified)) {
+      const here = new Set(view.participants.map((p) => p.npub));
+      for (const npub of [...this.words.keys()]) if (!here.has(npub)) this.words.delete(npub);
+      for (const npub of [...this.carried.keys()]) if (!here.has(npub)) this.carried.delete(npub);
+    }
+    return filled ? { ...view, participants } : view;
+  }
+
+  /**
+   * The clock of `stale` follows each seat's word: it runs from when the
+   * word says the seat's video is on, and stops when it says off. A camera
+   * on again after its word said off waits for its pictures anew: none is
+   * on its way (a tile draws nothing while the word says off), and a tile
+   * made anew shows the face, not a dark box (`flowing`).
+   */
+  private followWords(view: GroupCallView, last: GroupCallView | null) {
+    const before = new Map(last?.call_id === view.call_id ? last.participants.map((p) => [p.id, p]) : []);
+    const now = Date.now();
+    for (const seat of [...this.lastPicture.keys()]) {
+      if (view.participants.some((p) => p.id === seat && p.video_mid)) continue;
+      this.lastPicture.delete(seat);
+      this.flag('flowing', seat, false);
+    }
+    for (const seat of [...this.toldAt.keys()]) if (!view.participants.some((p) => p.id === seat)) this.toldAt.delete(seat);
+    for (const p of view.participants) {
+      if (p.me) continue;
+      if (seatVideoWord(p) !== true) {
+        this.toldAt.delete(p.id);
+        continue;
+      }
+      if (this.toldAt.has(p.id)) continue;
+      this.toldAt.set(p.id, now);
+      if (before.get(p.id) && seatVideoWord(before.get(p.id)!) === false) {
+        this.lastPicture.delete(p.id);
+        this.flag('flowing', p.id, false);
+      }
+    }
+    for (const seat of Object.keys(this.stale).map(Number)) if (!this.toldAt.has(seat)) this.flag('stale', seat, false);
   }
 
   /**

@@ -134,11 +134,27 @@ pub async fn last_created_at(store: &Store, chat_id: &str) -> Result<Option<i64>
         .map_err(storage)
 }
 
-/// Visible incoming rows in the chat (relationship matrix: "at most one
-/// visible message before approval").
-pub async fn count_visible_incoming(store: &Store, chat_id: &str) -> Result<i64> {
+/// Visible incoming rows in the chat newer than `floor` (relationship
+/// matrix: "at most one visible message before approval", counted from
+/// where the last episode of the relationship ended).
+pub async fn count_visible_incoming_since(store: &Store, chat_id: &str, floor: i64) -> Result<i64> {
     sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM msg_messages WHERE chat_id = ? AND direction = 'in' AND is_hidden = 0 AND content_type != 'system'",
+        "SELECT COUNT(*) FROM msg_messages
+         WHERE chat_id = ? AND direction = 'in' AND is_hidden = 0 AND content_type != 'system' AND created_at > ?",
+    )
+    .bind(chat_id)
+    .bind(floor)
+    .fetch_one(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// Rumor time of the newest visible incoming row: the peer's clock, so it
+/// can mark where an episode that I end now stops.
+pub async fn last_visible_incoming_at(store: &Store, chat_id: &str) -> Result<Option<i64>> {
+    sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT MAX(created_at) FROM msg_messages
+         WHERE chat_id = ? AND direction = 'in' AND is_hidden = 0 AND content_type != 'system'",
     )
     .bind(chat_id)
     .fetch_one(store.pool())
@@ -351,7 +367,10 @@ mod tests {
         let older = list(&s, "c", Some(40), 10).await.unwrap();
         assert_eq!(older.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), vec!["1", "2", "3"], "hidden rows never listed");
         assert_eq!(last_created_at(&s, "c").await.unwrap(), Some(50));
-        assert_eq!(count_visible_incoming(&s, "c").await.unwrap(), 5);
+        assert_eq!(count_visible_incoming_since(&s, "c", 0).await.unwrap(), 5);
+        assert_eq!(count_visible_incoming_since(&s, "c", 30).await.unwrap(), 2, "only what came after the floor");
+        assert_eq!(last_visible_incoming_at(&s, "c").await.unwrap(), Some(50));
+        assert_eq!(last_visible_incoming_at(&s, "nobody").await.unwrap(), None);
         assert_eq!(pending_for_target(&s, "3").await.unwrap().len(), 1);
 
         set_text(&s, "3", "changed", 99).await.unwrap();
@@ -361,7 +380,7 @@ mod tests {
         mark_deleted(&s, "3", 100).await.unwrap();
         let m = get(&s, "3").await.unwrap().unwrap();
         assert!(m.text.is_none() && m.deleted_at == Some(100));
-        assert_eq!(count_visible_incoming(&s, "c").await.unwrap(), 5, "a retracted request still was a request");
+        assert_eq!(count_visible_incoming_since(&s, "c", 0).await.unwrap(), 5, "a retracted request still was a request");
         assert_eq!(count_visible_outgoing(&s, "c").await.unwrap(), 0);
     }
 

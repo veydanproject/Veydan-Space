@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "Esta ventana recibió la interfaz de teléfono de {app}: la app se compiló con las páginas de la compilación para Android.",
     "start_error_wrong_ui_desktop": "Este dispositivo recibió la interfaz de escritorio de {app}: la app se compiló con las páginas de la compilación de escritorio.",
     "start_error_wrong_ui_fix": "No se cambió nada. Vuelve a compilar la app o instala una compilación de versión publicada.",
+    "screen_failed": "No se pudo mostrar esta pantalla.",
+    "screen_to_start": "Ir a la pantalla de inicio",
     "modules_section": "Módulos",
     "modules_hint": "Lo que muestra este dispositivo. Un módulo desactivado conserva sus datos, y sus datos se siguen sincronizando.",
     "modules_last": "Al menos un módulo debe quedar activado.",

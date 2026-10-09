@@ -8,6 +8,7 @@
   import { messengerStore } from '../store.svelte';
   import { contactLabel, messengerError, type MessengerContact } from '../api';
   import { chatStore } from './chatStore.svelte';
+  import { contactHaystacks, matchesQuery } from '../shared/search';
 
   interface Props { open: boolean; onopened?: () => void }
   let { open = $bindable(), onopened }: Props = $props();
@@ -16,11 +17,10 @@
   let busy = $state(false);
   let error = $state('');
 
-  const q = $derived(key.trim().toLowerCase());
-  const looksLikeKey = $derived(/^(npub1[0-9a-z]{20,}|[0-9a-f]{64})$/i.test(key.trim()));
-  const contacts = $derived(
-    messengerStore.contacts.filter((c) => !q || contactLabel(c).toLowerCase().includes(q) || c.npub.includes(q)),
-  );
+  const q = $derived(key.trim());
+  const looksLikeKey = $derived(/^(npub1[0-9a-z]{20,}|[0-9a-f]{64})$/i.test(q));
+  const haystacks = $derived(contactHaystacks(messengerStore.contacts));
+  const contacts = $derived(messengerStore.contacts.filter((c) => matchesQuery(haystacks.get(c.pubkey) ?? '', q)));
 
   async function start(peer: string) {
     error = ''; busy = true;
@@ -33,12 +33,19 @@
   }
 
   const pick = (c: MessengerContact) => start(c.pubkey);
+
+  /** A key starts its chat; a name does when it leaves one contact. */
+  function enter() {
+    if (busy) return;
+    if (looksLikeKey) start(q);
+    else if (contacts.length === 1) pick(contacts[0]);
+  }
 </script>
 
 <Dialog bind:open title={$t('msg_newchat_title')} width="min(440px, calc(100vw - 24px))">
   <div class="body">
     <input type="text" bind:value={key} placeholder={$t('msg_newchat_placeholder')} spellcheck="false" disabled={busy}
-      onkeydown={(e) => { if (e.key === 'Enter' && looksLikeKey) start(key.trim()); }} />
+      onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) enter(); }} />
     {#if looksLikeKey}
       <button class="btn btn-primary" disabled={busy} onclick={() => start(key.trim())}>{$t('msg_newchat_start')}</button>
     {/if}
@@ -57,8 +64,10 @@
           </li>
         {/each}
       </ul>
-    {:else if !looksLikeKey}
+    {:else if !q}
       <p class="hint">{$t('msg_newchat_hint')}</p>
+    {:else if !looksLikeKey}
+      <p class="hint">{$t('msg_chats_nothing_found')}</p>
     {/if}
   </div>
 </Dialog>

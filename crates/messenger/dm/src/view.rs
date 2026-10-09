@@ -36,6 +36,16 @@ pub struct ReplyPreview {
     pub id: String,
     pub sender_pubkey: String,
     pub text: Option<String>,
+    /// Taken back for everyone. A quoted photo has no text either, so
+    /// "no text" alone cannot mean "deleted".
+    #[serde(default)]
+    pub deleted: bool,
+    #[serde(default)]
+    pub content_type: String,
+    /// Of a quoted media message that is not deleted: `kind`, `name`,
+    /// `duration_ms`, enough to say "Photo" or "Voice message".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

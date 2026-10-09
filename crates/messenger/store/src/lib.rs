@@ -16,6 +16,7 @@ pub mod chats;
 pub mod contact_private;
 pub mod contacts;
 pub mod cursors;
+pub mod dm_held;
 pub mod dm_relations;
 pub mod dm_routes;
 pub mod emoji_usage;

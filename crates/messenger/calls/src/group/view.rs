@@ -74,6 +74,19 @@ pub struct ParticipantView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video_mid: Option<String>,
     pub me: bool,
+    /// The seat's camera is on, by its own word of state (wire §10,
+    /// «Состояние медиа места»); mine from my own state. `None`: not
+    /// known — the seat is not verified, its word has not come, or its
+    /// client is of before the word (5.1.11 and older).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<bool>,
+    /// The seat's microphone is on (not muted), the same way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mic: Option<bool>,
+    /// The seat shares its screen (its video is the screen, not the
+    /// camera), the same way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen: Option<bool>,
 }
 
 /// The room I am in, as the screen shows it. Plain data, no secrets.
@@ -149,8 +162,24 @@ mod tests {
     fn the_words_of_the_phases() {
         assert_eq!(serde_json::to_string(&GroupPhase::InRoom).unwrap(), "\"in_room\"");
         assert_eq!(GroupPhase::Reconnecting.as_str(), "reconnecting");
-        let p = ParticipantView { id: 1, npub: None, verified: false, speaking: false, audio: true, audio_mid: None, video_mid: None, me: false };
+        let p = ParticipantView {
+            id: 1,
+            npub: None,
+            verified: false,
+            speaking: false,
+            audio: true,
+            audio_mid: None,
+            video_mid: None,
+            me: false,
+            camera: None,
+            mic: None,
+            screen: None,
+        };
         let json = serde_json::to_value(&p).unwrap();
         assert!(json.get("npub").is_none() && json.get("video_mid").is_none());
+        assert!(json.get("camera").is_none() && json.get("mic").is_none() && json.get("screen").is_none(), "unknown is absent");
+        let p = ParticipantView { camera: Some(false), mic: Some(true), ..p };
+        let json = serde_json::to_value(&p).unwrap();
+        assert_eq!((json["camera"].as_bool(), json["mic"].as_bool()), (Some(false), Some(true)));
     }
 }

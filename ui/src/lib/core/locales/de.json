@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "Dieses Fenster hat die Smartphone-Oberfläche von {app} erhalten: Die App wurde mit den Seiten des Android-Builds gebaut.",
     "start_error_wrong_ui_desktop": "Dieses Gerät hat die Desktop-Oberfläche von {app} erhalten: Die App wurde mit den Seiten des Desktop-Builds gebaut.",
     "start_error_wrong_ui_fix": "Nichts wurde geändert. Baue die App neu oder installiere einen Release-Build.",
+    "screen_failed": "Dieser Bildschirm konnte nicht angezeigt werden.",
+    "screen_to_start": "Zum Startbildschirm",
     "modules_section": "Module",
     "modules_hint": "Was dieses Gerät anzeigt. Ein ausgeschaltetes Modul behält seine Daten, und diese werden weiter synchronisiert.",
     "modules_last": "Mindestens ein Modul bleibt eingeschaltet.",

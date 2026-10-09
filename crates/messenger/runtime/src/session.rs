@@ -4,7 +4,8 @@
 //! A session = a signer + a live ingress loop + an outbox pump + one
 //! history catch-up + a loop that sends the receipts this device owes + the
 //! presence loop (`crate::presence`) + the keeper of my avatar
-//! (`crate::avatars`). It exists only while the runtime holds signing keys;
+//! (`crate::avatars`) + the follower of profiles (`crate::meta`). It
+//! exists only while the runtime holds signing keys;
 //! the runtime restarts it when the signer or the relay pool changes.
 
 use async_trait::async_trait;
@@ -69,6 +70,8 @@ pub struct Session {
     presence: JoinHandle<()>,
     /// Looks after my avatar (`crate::avatars`).
     avatars: JoinHandle<()>,
+    /// Follows the profiles of whom the relays bring (`crate::meta`).
+    meta: JoinHandle<()>,
 }
 
 impl Session {
@@ -86,6 +89,7 @@ impl Session {
         groups: GroupService,
         presence: Arc<crate::presence::PresenceDriver>,
         avatars: crate::avatars::Avatars,
+        meta: crate::meta::MetaFollow,
     ) -> Result<Self> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let started_at = clock.now();
@@ -111,6 +115,8 @@ impl Session {
         let sink: Arc<dyn EffectSink> =
             Arc::new(RuntimeSink { pool: pool.clone(), outbox: outbox.clone(), ui: ui.clone() });
         let ctx = Context { my_pubkey: me.clone(), session_started_at: started_at, clock };
+        // Listening before ingress starts, so nothing it emits is missed.
+        let meta = tokio::spawn(meta.follow_loop(me.clone(), ui.subscribe()));
         let ingress = IngressLoop::spawn(pool.events(), store.clone(), Some(keys.clone()), dispatcher, ctx, sink);
 
         let receipts = tokio::spawn(crate::receipts::receipt_loop(dm.clone(), groups, outbox.clone(), keys.clone()));
@@ -120,7 +126,7 @@ impl Session {
         avatars.session_started();
         let avatars = tokio::spawn(crate::avatars::keeper_loop(avatars, keys.clone(), move || quiet.is_silent()));
         let history = tokio::spawn(history_catch_up(store, pool, me, started_at, ui));
-        Ok(Self { keys, started_at, ingress, pump, history, receipts, presence, avatars })
+        Ok(Self { keys, started_at, ingress, pump, history, receipts, presence, avatars, meta })
     }
 
     pub fn stats(&self) -> (u64, u64, u64, u64, u64) {
@@ -134,6 +140,7 @@ impl Session {
         self.receipts.abort();
         self.presence.abort();
         self.avatars.abort();
+        self.meta.abort();
     }
 }
 

@@ -129,4 +129,24 @@ mod tests {
         assert!(decrypt_ncryptsec("nsec1abc", "x").is_err());
         assert!(encrypt_ncryptsec(&k, "", 8).is_err());
     }
+
+    // The backup password is normalized (NIP-49, NFKC) on both sides, so a
+    // keyboard that types a letter composed or decomposed, or in fullwidth
+    // form, still opens the backup. Pinned here in case the nostr crate is
+    // bumped or replaced.
+    #[test]
+    fn ncryptsec_password_is_unicode_normalized() {
+        let k = generate();
+        let composed = "пароль-\u{0439}";
+        let decomposed = "пароль-\u{0438}\u{0306}";
+        assert_ne!(composed, decomposed);
+        let enc = encrypt_ncryptsec(&k, composed, 8).unwrap();
+        let back = decrypt_ncryptsec(&enc, decomposed).unwrap();
+        assert_eq!(back.public_key(), k.public_key());
+
+        let enc = encrypt_ncryptsec(&k, "\u{ff50}\u{ff41}\u{ff53}\u{ff53}word123", 8).unwrap();
+        let back = decrypt_ncryptsec(&enc, "password123").unwrap();
+        assert_eq!(back.public_key(), k.public_key());
+        assert!(decrypt_ncryptsec(&enc, "Password123").is_err());
+    }
 }

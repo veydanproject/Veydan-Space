@@ -73,6 +73,48 @@ str_enum!(Signal {
     ContactRemoved => "contact_removed", RequestCancelled => "request_cancelled",
 });
 
+impl Signal {
+    /// From the peer, it closes the current episode (a no, a removal, a
+    /// withdrawn request): what they write after it is a new request.
+    pub fn ends_episode(self) -> bool {
+        matches!(self, Signal::Decline | Signal::ContactRemoved | Signal::RequestCancelled)
+    }
+
+    /// From me (another device of mine), it closes the episode: a removal
+    /// or a withdrawal, also the one that ends an unblock of a stranger.
+    /// Not my no: the peer I declined gets no further message through.
+    pub fn ends_episode_for_me(self) -> bool {
+        matches!(self, Signal::ContactRemoved | Signal::RequestCancelled)
+    }
+}
+
+/// How far ahead of my clock a request floor may go. The floor is in the
+/// peer's clock, so an honest skew is allowed; a far-future time is not,
+/// or a row dated in the future would fall behind the floor and one forged
+/// time would lift the one-message limit for good.
+pub const FLOOR_SKEW_SECS: i64 = 300;
+
+/// The request floor raised toward `candidate` (the time of a stored
+/// message of the peer, never a bare signal time), capped at my clock plus
+/// the skew. It never goes down.
+pub fn raise_floor(floor: i64, candidate: i64, now: i64) -> i64 {
+    floor.max(candidate.min(now.saturating_add(FLOOR_SKEW_SECS)))
+}
+
+/// The floor once a message of the peer dated `at` is stored, while the end
+/// of an episode at `pending` waits for one (the peer ended it before any
+/// message of it was stored here; 0 = none waits). A message dated before
+/// that end belonged to it: the floor goes up to the message. A newer one
+/// is the next request and leaves the floor. Either way the wait is over,
+/// so one signal moves the floor once.
+pub fn floor_after_pending_end(floor: i64, pending: i64, at: i64, now: i64) -> i64 {
+    if pending > 0 && at < pending {
+        raise_floor(floor, at, now)
+    } else {
+        floor
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Relationship {
     pub my_contact: MyContact,
@@ -83,6 +125,9 @@ pub struct Relationship {
     pub last_signal_at: i64,
     /// Rumor time of my newest action.
     pub last_my_signal_at: i64,
+    /// Where the last episode ended, in the peer's clock: only the peer's
+    /// messages after it count toward "one message before approval".
+    pub request_floor: i64,
 }
 
 impl Default for Relationship {
@@ -94,6 +139,7 @@ impl Default for Relationship {
             was_ever_mutual: false,
             last_signal_at: 0,
             last_my_signal_at: 0,
+            request_floor: 0,
         }
     }
 }
@@ -181,8 +227,12 @@ pub enum DropReason {
 ///
 /// `enforced` is false for restored history (older than this device was
 /// last online): it is stored as it was. `visible_incoming` counts the
-/// messages of this peer already shown in the chat.
-pub fn inbound_decision(r: &Relationship, enforced: bool, visible_incoming: i64) -> InboundDecision {
+/// messages of this peer already shown in the chat after `request_floor`;
+/// `at` is the message's rumor time. A message dated up to the floor
+/// belongs to an ended episode and is dropped. The caller holds (does not
+/// discard) a second message before approval: a later end of the episode
+/// may let it through.
+pub fn inbound_decision(r: &Relationship, enforced: bool, visible_incoming: i64, at: i64) -> InboundDecision {
     use InboundDecision as D;
     if !enforced {
         return D::Save;
@@ -197,7 +247,15 @@ pub fn inbound_decision(r: &Relationship, enforced: bool, visible_incoming: i64)
         // Whatever the peer's last signal was, they are my contact: deliver.
         return D::Save;
     }
-    if r.peer_signal == PeerSignal::Left {
+    // Written before the peer left: that connection is over. Written after
+    // it: a new request, counted like any other.
+    if r.peer_signal == PeerSignal::Left && at <= r.last_signal_at {
+        return D::Drop(DropReason::ConnectionEnded);
+    }
+    // Not after the floor: it belongs to an episode that ended, which had
+    // its message. (Counting only what is above the floor, a message dated
+    // below it was let in each time, as many as the peer backdated.)
+    if r.request_floor > 0 && at <= r.request_floor {
         return D::Drop(DropReason::ConnectionEnded);
     }
     if visible_incoming == 0 {
@@ -239,13 +297,15 @@ pub enum DenyReason {
     RequestDeclined,
     RemovedByPeer,
     FirstMessageMustBeText,
+    /// I declined their request; "Add" is the way back, not a message.
+    DeclinedByMe,
 }
 
 str_enum!(DenyReason {
     Blocked => "dm_blocked", BlockedByPeer => "dm_blocked_by_peer",
     AnswerRequestFirst => "dm_answer_request_first", WaitingApproval => "dm_waiting_approval",
     RequestDeclined => "dm_request_declined", RemovedByPeer => "dm_contact_removed_by_peer",
-    FirstMessageMustBeText => "dm_first_message_must_be_text",
+    FirstMessageMustBeText => "dm_first_message_must_be_text", DeclinedByMe => "dm_declined_by_me",
 });
 
 /// May I send a regular message now? `visible_outgoing` counts my messages
@@ -262,6 +322,11 @@ pub fn outbound_permission(r: &Relationship, visible_outgoing: i64, is_text: boo
         PeerSignal::Declined if r.my_contact == MyContact::Approved => return O::Deny(DenyReason::RequestDeclined),
         PeerSignal::Left if r.my_contact == MyContact::Approved => return O::Deny(DenyReason::RemovedByPeer),
         _ => {}
+    }
+    // I said no: "Add" (Action::Request) takes it back and tells the peer at
+    // once; a typed message must not undo my decision behind my back.
+    if r.my_contact == MyContact::Declined {
+        return O::Deny(DenyReason::DeclinedByMe);
     }
     // No approval from the peer (none, revoked, or a negative signal that I
     // answered by removing them): one text message may go out as a request.
@@ -318,6 +383,8 @@ pub fn apply_peer_signal(r: &Relationship, signal: Signal, at: i64, live: bool) 
     if at < r.last_signal_at {
         return unchanged;
     }
+    // The request floor is not moved here: `at` is whatever the peer chose.
+    // The caller raises it from what is stored (see `raise_floor`).
     let target = match signal {
         Signal::Accept => Some(P::Approved),
         Signal::Decline if r.peer_signal != P::Approved => Some(P::Declined),
@@ -557,40 +624,127 @@ mod tests {
     fn inbound_table() {
         use DropReason as R;
         use InboundDecision as D;
-        let cases: &[(M, bool, P, bool, i64, D)] = &[
+        // The newest peer signal is at 100; `at` is the message's time.
+        let cases: &[(M, bool, P, bool, i64, i64, D)] = &[
             // Restored history is stored as it was, whatever the state.
-            (M::None, true, P::Blocked, false, 9, D::Save),
-            (M::None, false, P::Left, false, 3, D::Save),
+            (M::None, true, P::Blocked, false, 9, 150, D::Save),
+            (M::None, false, P::Left, false, 3, 90, D::Save),
             // Blocks, mine first.
-            (M::Approved, true, P::Approved, true, 0, D::Drop(R::BlockedByMe)),
-            (M::None, true, P::Blocked, true, 0, D::Drop(R::BlockedByMe)),
-            (M::Approved, false, P::Blocked, true, 0, D::Drop(R::BlockedByPeer)),
-            (M::None, false, P::Blocked, true, 0, D::Drop(R::BlockedByPeer)),
+            (M::Approved, true, P::Approved, true, 0, 150, D::Drop(R::BlockedByMe)),
+            (M::None, true, P::Blocked, true, 0, 150, D::Drop(R::BlockedByMe)),
+            (M::Approved, false, P::Blocked, true, 0, 150, D::Drop(R::BlockedByPeer)),
+            (M::None, false, P::Blocked, true, 0, 150, D::Drop(R::BlockedByPeer)),
             // My contact: always delivered.
-            (M::Approved, false, P::Approved, true, 5, D::Save),
-            (M::Approved, false, P::None, true, 0, D::Save),
-            (M::Approved, false, P::Left, true, 2, D::Save),
-            (M::Approved, false, P::Declined, true, 2, D::Save),
-            (M::Approved, false, P::Revoked, true, 2, D::Save),
-            // Not my contact.
-            (M::None, false, P::Left, true, 0, D::Drop(R::ConnectionEnded)),
-            (M::Declined, false, P::Left, true, 0, D::Drop(R::ConnectionEnded)),
-            (M::None, false, P::None, true, 0, D::SaveAsRequest),
-            (M::None, false, P::Approved, true, 0, D::SaveAsRequest),
-            (M::None, false, P::Approved, true, 1, D::Drop(R::SecondMessageBeforeApproval)),
-            (M::None, false, P::None, true, 4, D::Drop(R::SecondMessageBeforeApproval)),
-            (M::Declined, false, P::None, true, 1, D::Drop(R::SecondMessageBeforeApproval)),
-            (M::Declined, false, P::Approved, true, 0, D::SaveAsRequest),
-            (M::None, false, P::Revoked, true, 0, D::SaveAsRequest),
-            (M::None, false, P::Declined, true, 1, D::Drop(R::SecondMessageBeforeApproval)),
+            (M::Approved, false, P::Approved, true, 5, 150, D::Save),
+            (M::Approved, false, P::None, true, 0, 150, D::Save),
+            (M::Approved, false, P::Left, true, 2, 90, D::Save),
+            (M::Approved, false, P::Declined, true, 2, 150, D::Save),
+            (M::Approved, false, P::Revoked, true, 2, 150, D::Save),
+            // Not my contact. Written before the peer left: over.
+            (M::None, false, P::Left, true, 0, 90, D::Drop(R::ConnectionEnded)),
+            (M::None, false, P::Left, true, 0, 100, D::Drop(R::ConnectionEnded)),
+            (M::Declined, false, P::Left, true, 0, 90, D::Drop(R::ConnectionEnded)),
+            // Written after it: a new request, one message like any other.
+            (M::None, false, P::Left, true, 0, 150, D::SaveAsRequest),
+            (M::Declined, false, P::Left, true, 0, 150, D::SaveAsRequest),
+            (M::None, false, P::Left, true, 1, 150, D::Drop(R::SecondMessageBeforeApproval)),
+            (M::None, false, P::None, true, 0, 150, D::SaveAsRequest),
+            (M::None, false, P::Approved, true, 0, 150, D::SaveAsRequest),
+            (M::None, false, P::Approved, true, 1, 150, D::Drop(R::SecondMessageBeforeApproval)),
+            (M::None, false, P::None, true, 4, 150, D::Drop(R::SecondMessageBeforeApproval)),
+            // I declined (floor 0: my no never raises it): the declined
+            // request still counts, a bare text after it is dropped.
+            (M::Declined, false, P::None, true, 1, 150, D::Drop(R::SecondMessageBeforeApproval)),
+            (M::Declined, false, P::Approved, true, 0, 150, D::SaveAsRequest),
+            (M::None, false, P::Revoked, true, 0, 150, D::SaveAsRequest),
+            (M::None, false, P::Declined, true, 1, 150, D::Drop(R::SecondMessageBeforeApproval)),
         ];
-        for (m, b, p, enforced, seen, want) in cases {
+        for (m, b, p, enforced, seen, at, want) in cases {
+            let r = Relationship { last_signal_at: 100, ..rel(*m, *b, *p, false) };
             assert_eq!(
-                inbound_decision(&rel(*m, *b, *p, false), *enforced, *seen),
+                inbound_decision(&r, *enforced, *seen, *at),
                 *want,
-                "({m:?}, blocked={b}, {p:?}, enforced={enforced}, seen={seen})"
+                "({m:?}, blocked={b}, {p:?}, enforced={enforced}, seen={seen}, at={at})"
             );
         }
+
+        // A floor at 120: what is dated up to it belonged to an ended
+        // episode, whatever the count above it says; my contact still gets
+        // everything, and restored history is stored as it was.
+        let cases: &[(M, P, bool, i64, i64, D)] = &[
+            (M::None, P::Revoked, true, 0, 119, D::Drop(R::ConnectionEnded)),
+            (M::None, P::None, true, 0, 120, D::Drop(R::ConnectionEnded)),
+            (M::Declined, P::Approved, true, 0, 60, D::Drop(R::ConnectionEnded)),
+            (M::None, P::Revoked, true, 0, 121, D::SaveAsRequest),
+            (M::None, P::Approved, true, 1, 121, D::Drop(R::SecondMessageBeforeApproval)),
+            (M::Approved, P::Left, true, 0, 60, D::Save),
+            (M::None, P::None, false, 0, 60, D::Save),
+        ];
+        for (m, p, enforced, seen, at, want) in cases {
+            let r = Relationship { last_signal_at: 100, request_floor: 120, ..rel(*m, false, *p, false) };
+            assert_eq!(inbound_decision(&r, *enforced, *seen, *at), *want, "floor 120: ({m:?}, {p:?}, seen={seen}, at={at})");
+        }
+    }
+
+    #[test]
+    fn an_episode_end_that_waited_moves_the_floor_once_and_only_to_an_older_message() {
+        // Nothing waits: the floor stays.
+        assert_eq!(floor_after_pending_end(10, 0, 50, 1_000), 10);
+        // The old request (before the end at 80) is accounted for by it.
+        assert_eq!(floor_after_pending_end(10, 80, 50, 1_000), 50);
+        // The new request (after the end) leaves the floor where it is.
+        assert_eq!(floor_after_pending_end(10, 80, 90, 1_000), 10);
+        assert_eq!(floor_after_pending_end(10, 80, 80, 1_000), 10);
+        // Never down, never past my clock plus the skew.
+        assert_eq!(floor_after_pending_end(60, 80, 50, 1_000), 60);
+        assert_eq!(floor_after_pending_end(0, YEAR_2100, YEAR_2100 - 1, 1_000), 1_000 + FLOOR_SKEW_SECS);
+    }
+
+    const YEAR_2100: i64 = 4_102_444_800;
+
+    #[test]
+    fn an_ended_episode_sets_the_floor_for_the_next_request() {
+        // Removal, withdrawal and a no from the peer each end an episode;
+        // from me, only a removal or a withdrawal: after my no, the peer
+        // gets nothing more through.
+        for sig in [Signal::ContactRemoved, Signal::RequestCancelled, Signal::Decline] {
+            assert!(sig.ends_episode(), "{sig:?}");
+        }
+        for (sig, mine) in [
+            (Signal::ContactRemoved, true),
+            (Signal::RequestCancelled, true),
+            (Signal::Decline, false),
+            (Signal::Accept, false),
+            (Signal::Block, false),
+            (Signal::Unblock, false),
+        ] {
+            assert_eq!(sig.ends_episode_for_me(), mine, "{sig:?}");
+        }
+        // The signal itself never moves the floor: its time is whatever the
+        // peer chose. The caller raises it from what is stored.
+        let r = Relationship { request_floor: 30, ..rel(M::None, false, P::None, false) };
+        for sig in [Signal::ContactRemoved, Signal::RequestCancelled, Signal::Decline] {
+            assert_eq!(apply_peer_signal(&r, sig, 4_102_444_800, true).next.request_floor, 30, "{sig:?}");
+        }
+
+        // Raised toward a stored time, capped at my clock plus the skew,
+        // never down.
+        assert_eq!(raise_floor(0, 90, 1_000), 90);
+        assert_eq!(raise_floor(200, 90, 1_000), 200, "never down");
+        assert_eq!(raise_floor(0, 4_102_444_800, 1_000), 1_000 + FLOOR_SKEW_SECS, "a far-future row stays above it");
+        assert_eq!(raise_floor(5_000, 4_102_444_800, 1_000), 5_000);
+        assert_eq!(raise_floor(0, 10, i64::MAX), 10);
+
+        // Both removed: the old text is behind the floor, the new request
+        // (newer than their removal) goes through once.
+        let left = apply_peer_signal(&rel(M::None, false, P::Approved, true), Signal::ContactRemoved, 100, true).next;
+        assert_eq!(inbound_decision(&left, true, 0, 101), InboundDecision::SaveAsRequest);
+        assert_eq!(inbound_decision(&left, true, 0, 99), InboundDecision::Drop(DropReason::ConnectionEnded));
+        // After my no with nothing from the peer since, the request I
+        // declined still counts (the floor is not raised on my no).
+        let declined = apply_my_action(&rel(M::None, false, P::Approved, false), Action::Decline, true, false).next;
+        assert_eq!((declined.my_contact, declined.peer_signal, declined.request_floor), (M::Declined, P::None, 0));
+        assert_eq!(inbound_decision(&declined, true, 1, 150), InboundDecision::Drop(DropReason::SecondMessageBeforeApproval));
     }
 
     #[test]
@@ -627,11 +781,17 @@ mod tests {
             (M::Approved, false, P::None, 1, true, O::Deny(R::WaitingApproval)),
             (M::Approved, false, P::Revoked, 1, true, O::Deny(R::WaitingApproval)),
             (M::Approved, false, P::Revoked, 0, true, O::AllowAsRequest),
-            // Stranger: the first message is the request, whatever was before.
+            // I declined their request: only "Add" opens the chat again.
+            (M::Declined, false, P::None, 0, true, O::Deny(R::DeclinedByMe)),
+            (M::Declined, false, P::None, 0, false, O::Deny(R::DeclinedByMe)),
+            (M::Declined, false, P::None, 2, true, O::Deny(R::DeclinedByMe)),
+            (M::Declined, false, P::Revoked, 0, true, O::Deny(R::DeclinedByMe)),
+            (M::Declined, false, P::Left, 0, true, O::Deny(R::DeclinedByMe)),
+            // Stranger (not a contact, not declined by me): the first message
+            // is the request, whatever was before.
             (M::None, false, P::None, 0, true, O::AllowAsRequest),
             (M::None, false, P::None, 0, false, O::Deny(R::FirstMessageMustBeText)),
             (M::None, false, P::None, 4, true, O::AllowAsRequest),
-            (M::Declined, false, P::None, 2, true, O::AllowAsRequest),
             (M::None, false, P::Left, 2, true, O::AllowAsRequest),
             (M::None, false, P::Declined, 1, true, O::AllowAsRequest),
             (M::None, false, P::Revoked, 0, true, O::AllowAsRequest),
@@ -781,9 +941,9 @@ mod tests {
         // and drops A's messages too.
         let a = apply_my_action(&rel(M::Approved, false, P::Approved, true), Action::Block, true, false).next;
         let b = apply_peer_signal(&rel(M::Approved, false, P::Approved, true), Signal::Block, 10, true).next;
-        assert!(matches!(inbound_decision(&a, true, 3), InboundDecision::Drop(DropReason::BlockedByMe)));
+        assert!(matches!(inbound_decision(&a, true, 3, 20), InboundDecision::Drop(DropReason::BlockedByMe)));
         assert!(matches!(outbound_permission(&a, 3, true), OutboundPermission::Deny(DenyReason::Blocked)));
-        assert!(matches!(inbound_decision(&b, true, 3), InboundDecision::Drop(DropReason::BlockedByPeer)));
+        assert!(matches!(inbound_decision(&b, true, 3, 20), InboundDecision::Drop(DropReason::BlockedByPeer)));
         assert!(matches!(outbound_permission(&b, 3, true), OutboundPermission::Deny(DenyReason::BlockedByPeer)));
         assert_eq!(screen_mode(&a), S::Blocked);
         assert_eq!(screen_mode(&b), S::BlockedByPeer);
@@ -809,5 +969,6 @@ mod tests {
         assert_eq!(Signal::parse("nope"), None);
         assert_eq!(ScreenMode::RequestDeclinedByMe.as_str(), "request_declined_by_me");
         assert_eq!(DenyReason::WaitingApproval.as_str(), "dm_waiting_approval");
+        assert_eq!(DenyReason::DeclinedByMe.as_str(), "dm_declined_by_me");
     }
 }

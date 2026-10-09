@@ -27,7 +27,7 @@ pub mod social;
 
 pub use book::{ContactPatch, ContactService, ContactView};
 pub use card::{CardView, ContactCard};
-pub use handler::{MetaHandler, UI_EVENT_FOLLOWS_UPDATED, UI_EVENT_PROFILE_UPDATED};
+pub use handler::{MetaHandler, UI_EVENT_CONTACTS_UPDATED, UI_EVENT_FOLLOWS_UPDATED, UI_EVENT_PROFILE_UPDATED};
 pub use nip05::{Nip05Fetcher, Nip05Service, ReqwestFetcher};
 pub use phone::normalize_phone;
 pub use profile::{Picture, ProfileInput, ProfileService, ProfileView};

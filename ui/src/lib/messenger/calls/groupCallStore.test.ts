@@ -23,8 +23,8 @@ const groupCalls = vi.hoisted(() => ({
 }));
 vi.mock('../api', () => ({ messengerApi: { groupCalls } }));
 
-const { groupCallStore } = await import('./groupCallStore.svelte');
-const { FOCUS_HOLD_MS } = await import('./group');
+const { groupCallStore, CARRIED_WORD_MS } = await import('./groupCallStore.svelte');
+const { FOCUS_HOLD_MS, tileWait } = await import('./group');
 const { VIDEO_LOST_MS } = await import('./video');
 
 const me: GroupParticipant = { id: 1, npub: 'ab'.repeat(32), verified: true, speaking: false, audio: true, me: true };
@@ -452,6 +452,163 @@ describe('the large place of the room', () => {
     vi.advanceTimersByTime(5000);
     expect(groupCallStore.voice).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('the word of state of a seat', () => {
+  const alice: GroupParticipant = { id: 3, npub: '3c'.repeat(32), verified: true, speaking: false, audio: true, audio_mid: '3', video_mid: '4', me: false };
+  const word = (p: GroupParticipant, camera: boolean, mic = true): GroupParticipant => ({ ...p, camera, mic, screen: false });
+  const seatOf = (id: number) => groupCallStore.call?.participants.find((p) => p.id === id);
+
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('keeps a camera that says it is on, however long its frames pause: nothing of the screen moves', () => {
+    state(view({ participants: [me, word(boris, true), alice] }));
+    // On by its word before a first picture: the room has video, Boris speaking is large.
+    expect(groupCallStore.video).toBe(true);
+    state(view({ participants: [me, { ...word(boris, true), speaking: true }, alice] }));
+    expect(groupCallStore.voice).toBe(2);
+    groupCallStore.seatPicture('2');
+    // His frames stop for far longer than VIDEO_LOST_MS: his tile says "No
+    // signal" over its last picture, the screen stays as it is.
+    vi.advanceTimersByTime(VIDEO_LOST_MS * 3);
+    state(view({ participants: [me, word(boris, true), alice] }));
+    expect(groupCallStore.voice).toBe(2);
+    expect(groupCallStore.video).toBe(true);
+    // Alice (an older client) speaks without a picture: Boris stays large.
+    state(view({ participants: [me, word(boris, true), { ...alice, speaking: true }] }));
+    vi.advanceTimersByTime(FOCUS_HOLD_MS * 2);
+    expect(groupCallStore.voice).toBe(2);
+  });
+
+  it('lets the large place go at once when the seat says its camera is off, its pictures or not', () => {
+    state(view({ participants: [me, { ...word(boris, true), speaking: true }, alice] }));
+    groupCallStore.seatPicture('2');
+    expect(groupCallStore.voice).toBe(2);
+    state(view({ participants: [me, { ...word(boris, false), speaking: true }, alice] }));
+    expect(groupCallStore.voice).toBeNull();
+    expect(groupCallStore.video).toBe(false);
+    // A late picture of his changes nothing: his word is believed.
+    groupCallStore.seatPicture('2');
+    expect(groupCallStore.video).toBe(false);
+  });
+
+  it('judges a seat that says nothing (5.1.11) by its pictures, as before', () => {
+    state(view({ participants: [me, boris, { ...alice, speaking: true }] }));
+    expect(groupCallStore.video).toBe(false);
+    groupCallStore.seatPicture('4');
+    expect(groupCallStore.voice).toBe(3);
+    vi.advanceTimersByTime(VIDEO_LOST_MS + 1000);
+    expect(groupCallStore.voice).toBeNull();
+  });
+
+  it('is kept by person through a move of the room until the seat says it again', () => {
+    state(view({ participants: [me, word(boris, true, false), alice] }));
+    // The room moves: its seats anew, my peers not confirmed yet.
+    state(view({ phase: 'reconnecting' }));
+    state(view({ phase: 'joining', node: B, home: B, epoch: 2, participants: [] }));
+    state(view({ phase: 'in_room', node: B, home: B, epoch: 2, participants: [{ ...me, id: 1 }, { ...boris, id: 5, verified: false, npub: undefined }] }));
+    expect(seatOf(5)?.camera, 'not confirmed: no word').toBeUndefined();
+    // Confirmed again, his word not come again yet: the last one he said.
+    state(view({ phase: 'in_room', node: B, home: B, epoch: 2, participants: [me, { ...boris, id: 5 }] }));
+    expect(seatOf(5)).toMatchObject({ camera: true, mic: false, screen: false });
+    expect(groupCallStore.video).toBe(true);
+    // His word again: it is what counts.
+    state(view({ phase: 'in_room', node: B, home: B, epoch: 2, participants: [me, word({ ...boris, id: 5 }, false)] }));
+    expect(seatOf(5)?.camera).toBe(false);
+  });
+
+  it('is never given from one seat of a person to another: two devices, each its own word or none', () => {
+    const desk: GroupParticipant = { ...boris, id: 7, audio_mid: '7', video_mid: '8' };
+    // Boris on his phone (camera and microphone off) and on a desktop of 5.1.11 whose camera sends.
+    state(view({ participants: [me, word(boris, false, false), desk] }));
+    expect(seatOf(7)?.camera).toBeUndefined();
+    expect(seatOf(7)?.mic, 'no crossed microphone of the phone\'s').toBeUndefined();
+    groupCallStore.seatPicture('8');
+    expect(groupCallStore.video, 'the desktop judged by its frames').toBe(true);
+    // The reverse: the phone says its camera is on, the desktop sends nothing: it lapses as before.
+    state(view({ participants: [me, word(boris, true), { ...desk, speaking: true }] }));
+    expect(seatOf(7)?.camera).toBeUndefined();
+    expect(groupCallStore.voice).toBe(7);
+    vi.advanceTimersByTime(VIDEO_LOST_MS + 1000);
+    expect(groupCallStore.voice, 'the desktop no more large').not.toBe(7);
+    // A move with both: nothing is carried for either seat.
+    state(view({ phase: 'reconnecting' }));
+    state(view({ phase: 'joining', node: B, home: B, epoch: 2, participants: [] }));
+    state(view({ phase: 'in_room', node: B, home: B, epoch: 2, participants: [me, { ...boris, id: 5 }, { ...desk, id: 6 }] }));
+    expect(seatOf(5)?.camera).toBeUndefined();
+    expect(seatOf(6)?.camera).toBeUndefined();
+  });
+
+  it('judges a seat that stops saying its word, with no rejoin, by its frames (the demo\'s `old`)', () => {
+    state(view({ participants: [me, { ...word(boris, true), speaking: true }, alice] }));
+    groupCallStore.seatPicture('2');
+    state(view({ participants: [me, { ...boris, speaking: true }, alice] }));
+    expect(seatOf(2)?.camera, 'no word of before').toBeUndefined();
+    expect(groupCallStore.voice).toBe(2);
+    // His camera off: the frames stop; 10 s later he is a face, the screen rebuilt.
+    vi.advanceTimersByTime(VIDEO_LOST_MS + 1000);
+    expect(groupCallStore.voice).toBeNull();
+    expect(groupCallStore.video).toBe(false);
+  });
+
+  it('lets a word carried over a rejoin go once the seat has said none of its own for a while', () => {
+    state(view({ participants: [me, word(boris, true), alice] }));
+    state(view({ phase: 'joining', node: B, home: B, epoch: 2, participants: [] }));
+    state(view({ phase: 'in_room', node: B, home: B, epoch: 2, participants: [me, { ...boris, id: 5 }] }));
+    expect(seatOf(5)?.camera).toBe(true);
+    vi.advanceTimersByTime(CARRIED_WORD_MS + 1000);
+    expect(seatOf(5)?.camera, 'judged by its frames from now on').toBeUndefined();
+    expect(groupCallStore.video).toBe(false);
+  });
+
+  it('keeps the clock of a seat\'s pictures beyond its tiles: a tile made anew in a pause shows the face, "No signal" 10 s after the last picture', () => {
+    const remade = () => tileWait({ me: false, told: true, live: false, lost: false, flowing: !!groupCallStore.flowing[2], stale: !!groupCallStore.stale[2] });
+    state(view({ participants: [me, word(boris, true), alice] }));
+    groupCallStore.seatPicture('2');
+    expect(remade(), 'the frames come: dark until the next picture').toBe('dark');
+    // The frames stop; at 5 s another voice moves his tile, which is made anew.
+    vi.advanceTimersByTime(5000);
+    expect(remade()).toBe('waiting');
+    vi.advanceTimersByTime(VIDEO_LOST_MS - 5000);
+    expect(groupCallStore.stale[2]).toBe(true);
+    expect(remade(), 'at 10 s after the last picture, not 10 s after the tile').toBe('lost');
+    // A picture again: the clock starts anew.
+    groupCallStore.seatPicture('2');
+    expect(groupCallStore.stale[2]).toBeFalsy();
+    expect(remade()).toBe('dark');
+    // A camera that never sent since its word said on: "No signal" 10 s after the word.
+    state(view({ participants: [me, word(boris, true), word(alice, true)] }));
+    vi.advanceTimersByTime(VIDEO_LOST_MS - 1000);
+    expect(groupCallStore.stale[3]).toBeFalsy();
+    vi.advanceTimersByTime(2000);
+    expect(groupCallStore.stale[3]).toBe(true);
+  });
+
+  it('shows the face of a camera on again soon after it went off, not a dark tile', () => {
+    const remade = () => tileWait({ me: false, told: true, live: false, lost: false, flowing: !!groupCallStore.flowing[2], stale: !!groupCallStore.stale[2] });
+    state(view({ participants: [me, word(boris, true)] }));
+    groupCallStore.seatPicture('2');
+    state(view({ participants: [me, word(boris, false)] }));
+    vi.advanceTimersByTime(300);
+    state(view({ participants: [me, word(boris, true)] }));
+    expect(groupCallStore.flowing[2]).toBeFalsy();
+    expect(remade()).toBe('waiting');
+    // Its pictures waited for from the word: none for 10 s, "No signal".
+    vi.advanceTimersByTime(VIDEO_LOST_MS + 1000);
+    expect(remade()).toBe('lost');
+  });
+
+  it('is let go with a person who left, and with the room', () => {
+    state(view({ participants: [me, word(boris, true), word(alice, true)] }));
+    // Boris leaves; he comes back on a client that says nothing.
+    state(view({ participants: [me, word(alice, true)] }));
+    state(view({ participants: [me, { ...boris, id: 6 }, word(alice, true)] }));
+    expect(seatOf(6)?.camera).toBeUndefined();
+    // Another room: nothing of the last one's words.
+    state(view({ call_id: 'g2', participants: [me, alice] }));
+    expect(seatOf(3)?.camera).toBeUndefined();
   });
 });
 

@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "이 창에 {app}의 휴대폰 인터페이스가 표시되었습니다. 앱이 Android 빌드의 페이지로 빌드되었습니다.",
     "start_error_wrong_ui_desktop": "이 기기에 {app}의 데스크톱 인터페이스가 표시되었습니다. 앱이 데스크톱 빌드의 페이지로 빌드되었습니다.",
     "start_error_wrong_ui_fix": "아무것도 변경되지 않았습니다. 앱을 다시 빌드하거나 릴리스 빌드를 설치하세요.",
+    "screen_failed": "이 화면을 표시할 수 없습니다.",
+    "screen_to_start": "시작 화면으로",
     "modules_section": "모듈",
     "modules_hint": "이 기기에 표시할 항목입니다. 꺼진 모듈도 데이터를 유지하며, 그 데이터는 계속 동기화됩니다.",
     "modules_last": "모듈은 하나 이상 켜져 있어야 합니다.",

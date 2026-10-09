@@ -102,8 +102,8 @@
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-5); }
   .card-top { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; }
-  .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); letter-spacing: -0.2px; overflow-wrap: anywhere; }
-  .sub { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); letter-spacing: -0.2px; overflow-wrap: anywhere; word-break: break-word; }
+  .sub { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; word-break: break-word; }
   .sub.online { color: var(--accent); }
   .nip05.ok { color: var(--success-text, var(--success)); }
   .about { color: var(--text-body); }

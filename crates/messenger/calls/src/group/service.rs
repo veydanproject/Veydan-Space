@@ -46,6 +46,11 @@
 //!   or the keys turn without it. Nobody judges a seat while deaf: a
 //!   participant whose channel never opened kicks nobody and turns no
 //!   keys; the connect timer judges it.
+//! - What a seat sends (camera, microphone, screen) is its own **word of
+//!   state** on the channel, said whenever it changes and right after
+//!   every word of identity (so a newcomer and a new epoch get it at
+//!   once), taken from a verified seat alone, the newest by `seq`; a
+//!   seat of a client of before the word has none (`None` on the view).
 //! - The seats of my room are the node's word alone (`hello`, `joined`,
 //!   `left`, the tracks of its offers): a note of the group names a seat
 //!   the node spoke of, never makes one.
@@ -128,7 +133,7 @@ use crate::engine::{
 use crate::group::access::GroupAccess;
 use crate::group::ctl::{self, Message, Track};
 use crate::group::feed::GroupFeed;
-use crate::group::keys::{self, Hello, HelloError};
+use crate::group::keys::{self, Hello, HelloError, MediaState};
 use crate::group::signal::{new_secret, GroupSignal, Secret};
 use crate::group::view::{
     AnnouncedCall, GroupCallView, GroupPhase, ParticipantView, UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_LEVEL,
@@ -352,6 +357,10 @@ struct Announced {
     said_at: i64,
     /// The secrets of the epochs, by epoch.
     epochs: BTreeMap<u32, Secret>,
+    /// The newest epoch held when a member of my room went out of the
+    /// group (the latest such moment): what it kept of the secrets up to
+    /// it opens no word of state once the keys turned ([`Self::state_floor`]).
+    member_out_at: Option<u32>,
     /// The seats this device itself took, by its own start or join, in
     /// any room of the call: my `call.join` on one of them, come back
     /// when I sit there no more, is this device's own echo, not a word of
@@ -395,6 +404,20 @@ impl Announced {
 
     fn current_epoch(&self) -> u32 {
         self.epochs.keys().next_back().copied().unwrap_or(1)
+    }
+
+    /// The oldest epoch a word of state is taken under (wire §10,
+    /// «Состояние медиа места»). A member of my room went out of the
+    /// group while `out` was the newest epoch held: once an epoch after it
+    /// is here (the keys turned for that), the first of them is the floor,
+    /// and what the one gone kept of the secrets opens no word of state;
+    /// until then the words under `out` hold, as its frames do. No member
+    /// went out: no floor.
+    fn state_floor(&self) -> u32 {
+        match self.member_out_at {
+            None => 0,
+            Some(out) => self.epochs.range(out + 1..).next().map(|(e, _)| *e).unwrap_or(out),
+        }
     }
 
     fn expires(&self) -> i64 {
@@ -448,6 +471,9 @@ impl Announced {
         let same = self.epochs.get(&epoch) == Some(&secret) && self.current_epoch() == epoch;
         self.epochs.retain(|e, _| *e < epoch);
         self.epochs.insert(epoch, secret);
+        // The move's epoch is the newest now, whatever the number held,
+        // and a fresh secret: the words of state under it are taken.
+        self.member_out_at = self.member_out_at.map(|out| out.min(epoch.saturating_sub(1)));
         !same
     }
 }
@@ -496,6 +522,18 @@ struct Peer {
     /// Its word of identity under a secret I do not have yet (the note of
     /// its epoch is on its way): opened when the note comes.
     pending_hello: Option<Vec<u8>>,
+    /// What it sends, by its own word of state, the newest by `seq`:
+    /// `None` until a word of it is taken (a client of before never
+    /// says one).
+    media: Option<MediaState>,
+    /// Its latest word of state not taken yet: the seat is not verified
+    /// yet, or the secret of the word's epoch is not here. Tried again
+    /// when the seat is verified and when an epoch comes.
+    pending_state: Option<Vec<u8>>,
+    /// The epoch its word of state held (`media`) was sealed under: a
+    /// word under an older one is refused, one under a newer one holds
+    /// whatever its `seq`.
+    media_epoch: u32,
     /// Was a member and is one no more: its keys are spoiled, it is
     /// nobody until it proves itself a member again.
     expelled: bool,
@@ -577,6 +615,11 @@ struct Room {
     rejoins: u32,
     /// I am making the new room of the call myself.
     moving: bool,
+    /// My video is the screen, not the camera (with `view.video_local`).
+    screen: bool,
+    /// The screen or window my video shows when it is the screen (`None`:
+    /// the first screen): given again to a new session of the room.
+    screen_id: Option<String>,
 }
 
 impl Room {
@@ -612,6 +655,25 @@ impl Room {
             home_lost_by_node: false,
             rejoins: 0,
             moving: false,
+            screen: false,
+            screen_id: None,
+        }
+    }
+
+    /// What I send now, as my word of state says it (without `seq`/`ts`):
+    /// camera, microphone, screen.
+    fn my_media(&self) -> (bool, bool, bool) {
+        let video = self.view.video_local;
+        (video && !self.screen, !self.view.muted, video && self.screen)
+    }
+
+    /// The video a new session of the room is given (a join again, a
+    /// move): what the session before sent.
+    fn carried_video(&self) -> VideoInput {
+        match (self.view.video_local, self.screen) {
+            (false, _) => VideoInput::Off,
+            (true, true) => VideoInput::Screen { id: self.screen_id.clone() },
+            (true, false) => VideoInput::Camera { id: self.view.camera.clone() },
         }
     }
 
@@ -680,6 +742,11 @@ struct State {
     gen: u64,
     /// Nodes judged gone, and when: not chosen for [`BAD_NODE_HOLD`].
     bad_nodes: HashMap<BridgeId, Instant>,
+    /// The `seq` of my word of state and what it said: the number grows
+    /// when what I send changes, and only then; it never goes back while
+    /// the core lives (a seat is one session of it).
+    state_seq: u64,
+    state_said: Option<(bool, bool, bool)>,
 }
 
 impl State {
@@ -920,6 +987,7 @@ impl GroupCallService {
                 started_at: now,
                 said_at: now,
                 epochs: BTreeMap::from([(1, secret)]),
+                member_out_at: None,
                 my_seats: BTreeSet::new(),
                 left_at: None,
                 ended: false,
@@ -1098,8 +1166,14 @@ impl GroupCallService {
             s.set_mute(muted).await?;
         }
         room.view.muted = muted;
+        if room.session.is_some() {
+            // My seat is there: its line shows my microphone.
+            let me = inner.me().unwrap_or_default();
+            room.refresh(&me);
+        }
         let view = room.view.clone();
         inner.emit(vec![state_event(&view)]);
+        inner.say_state(&mut st).await;
         Ok(view)
     }
 
@@ -1123,11 +1197,18 @@ impl GroupCallService {
         let settings = VideoSettings { width, height, fps: VIDEO_FPS, max_kbps: Some(cap) };
         let outcome = session.set_video(input.clone(), settings).await;
         room.view.video_local = outcome.is_ok() && input != VideoInput::Off;
+        room.screen = room.view.video_local && matches!(input, VideoInput::Screen { .. });
         if let (Ok(()), VideoInput::Camera { id: Some(id) }) = (&outcome, &input) {
             room.view.camera = Some(id.clone());
         }
+        if let (Ok(()), VideoInput::Screen { id }) = (&outcome, &input) {
+            room.screen_id = id.clone();
+        }
+        let me = inner.me().unwrap_or_default();
+        room.refresh(&me);
         let view = room.view.clone();
         inner.emit(vec![state_event(&view)]);
+        inner.say_state(&mut st).await;
         outcome.map(|()| view)
     }
 
@@ -1273,6 +1354,7 @@ fn error_event(e: &MessengerError) -> Effect {
 
 impl Room {
     fn participants(&self, me: &str) -> Vec<ParticipantView> {
+        let (camera, mic, screen) = self.my_media();
         let mut out = vec![ParticipantView {
             id: self.seat,
             npub: Some(me.to_string()),
@@ -1282,9 +1364,17 @@ impl Room {
             audio_mid: None,
             video_mid: None,
             me: true,
+            camera: Some(camera),
+            mic: Some(mic),
+            screen: Some(screen),
         }];
         for (id, p) in &self.peers {
+            // The word of state of a seat counts while the seat is a person.
+            let media = p.media.filter(|_| p.verified);
             out.push(ParticipantView {
+                camera: media.map(|m| m.camera),
+                mic: media.map(|m| m.mic),
+                screen: media.map(|m| m.screen),
                 id: *id,
                 npub: p.npub.as_ref().map(|n| n.as_hex().to_string()).filter(|_| p.verified),
                 verified: p.verified,
@@ -1662,21 +1752,55 @@ impl Inner {
         }
         self.count_people(st, call_id).await;
         self.emit(vec![state_event(&view)]);
-        if media == Media::Video {
-            let quality = settings::get(&self.store, KEY_VIDEO_QUALITY).await.ok().flatten().as_deref().and_then(VideoQuality::parse).unwrap_or_default();
-            let (width, height, kbps) = quality.profile();
-            if let Some(room) = st.room.as_mut() {
+        // What I send: the camera of a video call at a first join; after a
+        // loss or a move, what the session before sent (`carry_media`).
+        let input = match st.room.as_ref() {
+            Some(room) if again => room.carried_video(),
+            Some(room) if media == Media::Video => VideoInput::Camera { id: room.view.camera.clone() },
+            _ => VideoInput::Off,
+        };
+        self.carry_media(st, &keys.public_key().to_hex(), input).await;
+        Ok(())
+    }
+
+    /// A new session of my room (a first join, a join again, a move) is
+    /// given what I send: my microphone muted when it is, and `input` as
+    /// my video. What it took is what my view and my word of state say
+    /// from here on — a camera that does not open is off, a mute the
+    /// engine refused is no mute — so that the others are never told of a
+    /// camera or a mute this session does not have. The others learn it
+    /// with my first word of identity, when my channel opens.
+    async fn carry_media(&self, st: &mut State, me_hex: &str, input: VideoInput) {
+        let quality = settings::get(&self.store, KEY_VIDEO_QUALITY).await.ok().flatten().as_deref().and_then(VideoQuality::parse).unwrap_or_default();
+        let (width, height, kbps) = quality.profile();
+        let Some(room) = st.room.as_mut() else { return };
+        let Some(s) = room.session.as_ref() else { return };
+        let mut effects = vec![];
+        if room.view.muted {
+            if let Err(e) = s.set_mute(true).await {
+                room.view.muted = false;
+                effects.push(error_event(&e));
+            }
+        }
+        let video = match &input {
+            VideoInput::Off => false,
+            input => {
                 let cap = if room.view.kbps_per_participant > 0 { kbps.min(room.view.kbps_per_participant) } else { kbps };
                 let settings = VideoSettings { width, height, fps: VIDEO_FPS, max_kbps: Some(cap) };
-                if let Some(s) = room.session.as_ref() {
-                    match s.set_video(VideoInput::Camera { id: room.view.camera.clone() }, settings).await {
-                        Ok(()) => room.view.video_local = true,
-                        Err(e) => self.emit(vec![error_event(&e)]),
+                match s.set_video(input.clone(), settings).await {
+                    Ok(()) => true,
+                    Err(e) => {
+                        effects.push(error_event(&e));
+                        false
                     }
                 }
             }
-        }
-        Ok(())
+        };
+        room.view.video_local = video;
+        room.screen = video && matches!(input, VideoInput::Screen { .. });
+        room.refresh(me_hex);
+        effects.push(state_event(&room.view));
+        self.emit(effects);
     }
 
     /// My seat told to the group (`call.join` of the room I am in) and
@@ -1831,6 +1955,42 @@ impl Inner {
                 }
             }
         }
+        // My word of state goes with it, right after: whoever takes my
+        // word of identity knows what I send at once (the newcomer, the
+        // seat I answer, everybody after a new epoch).
+        self.say_state(st).await;
+    }
+
+    /// My word of state on the control channel (wire §10, «Состояние
+    /// медиа места»): what I send, under the newest epoch known, bound to
+    /// my seat and room. The `seq` grows when what I send changed since
+    /// the last word; a word said again carries the same. Said when what
+    /// I send changes and with every word of identity; a channel not open
+    /// takes nothing, and the word goes with my first word of identity
+    /// when it opens.
+    async fn say_state(&self, st: &mut State) {
+        let Some(room) = st.room.as_ref() else { return };
+        if room.session.is_none() {
+            return;
+        }
+        let Some(a) = st.announced.get(&room.view.call_id) else { return };
+        let epoch = a.current_epoch();
+        let Some(secret) = a.epochs.get(&epoch).copied() else { return };
+        let now = room.my_media();
+        if st.state_said != Some(now) {
+            st.state_seq += 1;
+            st.state_said = Some(now);
+        }
+        let (camera, mic, screen) = now;
+        let state = MediaState { camera, mic, screen, seq: st.state_seq, ts: self.clock.now().secs() };
+        let Some(room) = st.room.as_ref() else { return };
+        let Some(session) = room.session.as_ref() else { return };
+        let frame = keys::seal_state(&state, &secret, &room.view.call_id, &room.room_id, room.seat, epoch);
+        if let Err(e) = session.send_data(CTL_LABEL, DataPayload::Binary(frame)).await {
+            // Not open yet, or closing: the word goes again with my next
+            // word of identity.
+            tracing::debug!(error = %e, "group call: my word of state did not go out");
+        }
     }
 
     /// The keys of every verified seat's m-lines for the latest epochs
@@ -1979,6 +2139,7 @@ impl Inner {
                 started_at,
                 said_at: at,
                 epochs: BTreeMap::from([(1, secret)]),
+                member_out_at: None,
                 my_seats,
                 left_at: None,
                 ended: over_on_record,
@@ -2598,8 +2759,13 @@ impl Inner {
         room.view.epoch = epoch;
         room.refresh(&keys.public_key().to_hex());
         let view = room.view.clone();
+        let input = room.carried_video();
         self.schedule(self.timing().rejoin_connect, Timer::Connect, gen);
         self.emit(vec![state_event(&view)]);
+        // The new session sends what the one before did, and my word of
+        // state (with my first word of identity) says what it took.
+        self.carry_media(st, &keys.public_key().to_hex(), input).await;
+        let Some(room) = st.room.as_mut() else { return };
         if room.seat != old_seat {
             // Another seat of the same room: the old one's leave, the new
             // one's claim.
@@ -2972,11 +3138,21 @@ impl Inner {
             return;
         }
         let call_id = room.view.call_id.clone();
+        if let Some(a) = st.announced.get_mut(&call_id) {
+            // What the one gone kept of the secrets opens no word of state
+            // once the keys turn (below, or by the oldest seat): the floor
+            // is the first epoch after the newest held now.
+            a.member_out_at = Some(a.current_epoch().max(a.member_out_at.unwrap_or(0)));
+        }
+        let Some(room) = st.room.as_mut() else { return };
         let mut expelled: Vec<u32> = vec![];
         for (seat, p) in room.peers.iter_mut() {
             if p.verified && p.npub.as_ref().is_some_and(|n| gone.contains(n)) {
                 p.verified = false;
                 p.expelled = true;
+                p.media = None;
+                p.media_epoch = 0;
+                p.pending_state = None;
                 p.speaking = false;
                 expelled.push(*seat);
             }
@@ -3205,8 +3381,12 @@ impl Inner {
             SessionEvent::VideoLost { reason } => {
                 if room.view.video_local {
                     room.view.video_local = false;
+                    room.screen = false;
+                    room.refresh(&me_hex);
                     let view = room.view.clone();
                     self.emit(vec![error_event(&MessengerError::Transport(format!("the video stopped: {reason}"))), state_event(&view)]);
+                    // The others see my camera off, not a frozen tile.
+                    self.say_state(&mut st).await;
                 }
             }
             SessionEvent::RemoteTrack { .. }
@@ -3320,14 +3500,80 @@ impl Inner {
         }
     }
 
-    /// Bytes of another seat: a word of identity, or nothing this version
-    /// reads.
+    /// Bytes of another seat: a word of identity, a word of state, or
+    /// nothing this version reads.
     async fn on_ctl_frame(self: &Arc<Self>, st: &mut State, me_hex: &str, frame: &[u8]) {
         let Some((from, bytes)) = ctl::from_relayed(frame) else { return };
-        if keys::hello_epoch(bytes).is_none() {
+        if keys::hello_epoch(bytes).is_some() {
+            self.take_hello(st, me_hex, from, bytes).await;
+        } else if keys::state_epoch(bytes).is_some() {
+            self.take_state(st, me_hex, from, bytes).await;
+        }
+    }
+
+    /// A word of state of the seat `from`: taken from a verified seat
+    /// alone, when it opens under the secret of its epoch bound to that
+    /// seat and this room, under one of the newest epochs and none behind
+    /// the floor, and is newer than the one held by epoch, then by `seq`.
+    /// One of a seat not verified yet, or under a secret not here, is
+    /// kept (the latest) and tried again when the seat is verified or an
+    /// epoch comes; one that does not open, or under an epoch too old, is
+    /// nothing.
+    async fn take_state(self: &Arc<Self>, st: &mut State, me_hex: &str, from: u32, bytes: &[u8]) {
+        let Some(epoch) = keys::state_epoch(bytes) else { return };
+        let Some(room) = st.room.as_mut() else { return };
+        if from == room.seat {
             return;
         }
-        self.take_hello(st, me_hex, from, bytes).await;
+        let (call_id, room_id) = (room.view.call_id.clone(), room.room_id.clone());
+        // The node put the seat in front of the frame: it is in the room.
+        self.seat_appeared(room, from);
+        let Some(a) = st.announced.get(&call_id) else { return };
+        let secret = a.epochs.get(&epoch).copied();
+        // The epochs a word is taken under: the newest the frames are keyed
+        // for, none behind the floor (a member went out since). A word
+        // under an older one is nothing, not kept: what an old secret
+        // opens is no news of what the seat sends now.
+        let held_too_old = secret.is_some() && !a.epochs.keys().rev().take(EPOCHS_KEYED).any(|e| *e == epoch);
+        let floor = a.state_floor();
+        if epoch < floor || held_too_old {
+            tracing::debug!(from, epoch, floor, "group call: a word of state under an epoch too old: refused");
+            return;
+        }
+        let Some(peer) = room.peers.get_mut(&from) else { return };
+        let opened = secret.and_then(|s| keys::open_state(bytes, from, &call_id, &room_id, &s));
+        let state = match opened {
+            Some(state) if peer.verified => state,
+            _ => {
+                // Not a person yet, or not readable yet: kept for later. A
+                // word that never opens (another seat's, another room's)
+                // stays as harmless as it came.
+                peer.pending_state = Some(bytes.to_vec());
+                return;
+            }
+        };
+        peer.pending_state = None;
+        // Newer by epoch first, then by `seq`: a word under a newer epoch
+        // holds whatever its `seq` (the sender says its word again under
+        // every new epoch), so a word with a `seq` too large, sealed by
+        // somebody who held the secret of an older one, stands only until
+        // the keys turn.
+        if peer.media.is_some_and(|held| (peer.media_epoch, held.seq) >= (epoch, state.seq)) {
+            return;
+        }
+        tracing::debug!(from, epoch, seq = state.seq, camera = state.camera, mic = state.mic, screen = state.screen, "group call: the state of a seat");
+        peer.media = Some(state);
+        peer.media_epoch = epoch;
+        room.refresh(me_hex);
+        let view = room.view.clone();
+        self.emit(vec![state_event(&view)]);
+    }
+
+    /// The word of state kept of a seat, tried again: the seat was
+    /// verified, or an epoch came.
+    async fn retry_state(self: &Arc<Self>, st: &mut State, me_hex: &str, seat: u32) {
+        let Some(bytes) = st.room.as_mut().and_then(|r| r.peers.get_mut(&seat)).and_then(|p| p.pending_state.take()) else { return };
+        self.take_state(st, me_hex, seat, &bytes).await;
     }
 
     /// A word of identity of the seat `from`. One under a secret not here
@@ -3389,6 +3635,8 @@ impl Inner {
         self.key_everything(st).await;
         self.count_people(st, &call_id).await;
         self.emit(vec![state_event(&view)]);
+        // Its word of state, when it came before the seat was a person.
+        self.retry_state(st, me_hex, from).await;
         // Every word of a seat is answered with mine: the node says
         // `joined` before the newcomer's channel is open and relays
         // nothing to a channel that is not, so the word sent on `joined`
@@ -3414,6 +3662,12 @@ impl Inner {
             .unwrap_or_default();
         for (seat, bytes) in pending {
             self.take_hello(st, me_hex, seat, &bytes).await;
+        }
+        // And the words of state kept for the same reason.
+        let pending: Vec<u32> =
+            st.room.as_ref().map(|r| r.peers.iter().filter(|(_, p)| p.pending_state.is_some()).map(|(s, _)| *s).collect()).unwrap_or_default();
+        for seat in pending {
+            self.retry_state(st, me_hex, seat).await;
         }
     }
 }

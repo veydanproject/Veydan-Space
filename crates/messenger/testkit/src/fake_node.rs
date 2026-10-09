@@ -189,12 +189,15 @@ struct NodeState {
     /// newcomer's `ctl` is open, and nothing is relayed to a closed
     /// channel; the test opens the channel with `open_ctl`.
     real_ctl_order: bool,
-    /// Binary frames of one seat that are lost on the way
+    /// Words of identity of one seat that are lost on the way
     /// (`drop_relayed`): of those with somebody to hear them, so many are
     /// passed first, then so many dropped.
     relay_from: u32,
     relay_pass: u32,
     relay_drop: u32,
+    /// Seats whose words of state are not relayed: clients of before
+    /// the word (5.1.11 and older) never say one.
+    no_state_from: Vec<u32>,
 }
 
 /// A fake call node (or several): the rooms, and the `ctl` of their
@@ -569,8 +572,9 @@ impl FakeNode {
         }
     }
 
-    /// Of the binary frames the seat `from` sends from now on that have
-    /// somebody to hear them (a channel open), the next `pass` are
+    /// Of the words of identity (binary frames `0x01 …`) the seat `from`
+    /// sends from now on that have somebody to hear them (a channel
+    /// open), the next `pass` are
     /// relayed and the `drop` after them are lost on the way (a stalled
     /// channel, the node's limit on frames): a word of identity that
     /// never arrives.
@@ -579,6 +583,12 @@ impl FakeNode {
         st.relay_from = from;
         st.relay_pass = pass;
         st.relay_drop = drop;
+    }
+
+    /// The seat `from` says no word of state (`0x02 …`) from now on, as a
+    /// client of 5.1.11 and older: its frames of the kind go nowhere.
+    pub fn no_state_from(&self, from: u32) {
+        self.state.lock().unwrap().no_state_from.push(from);
     }
 
     pub fn set_max_participants(&self, n: u32) {
@@ -1005,7 +1015,10 @@ impl RoomHook for FakeNode {
                 // The real node relays nothing to a closed channel.
                 let others: Vec<u32> =
                     st.rooms[&room_id].seats.iter().filter(|(s, p)| **s != seat && p.ctl_open && !p.frozen).map(|(_, p)| p.session).collect();
-                if seat == st.relay_from && !others.is_empty() {
+                if bytes.first() == Some(&0x02) && st.no_state_from.contains(&seat) {
+                    return;
+                }
+                if seat == st.relay_from && bytes.first() == Some(&0x01) && !others.is_empty() {
                     if st.relay_pass > 0 {
                         st.relay_pass -= 1;
                     } else if st.relay_drop > 0 {

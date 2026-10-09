@@ -21,6 +21,7 @@ pub mod calls;
 pub mod cards;
 pub mod groups;
 pub mod link;
+pub mod meta;
 pub mod links;
 pub mod net;
 pub mod preview;
@@ -139,6 +140,8 @@ pub struct MessengerRuntime {
     manifest_remote: std::sync::RwLock<ManifestRemote>,
     net: net::NetService,
     link: link::LinkWatch,
+    /// Whose profiles and inbox relays are followed (`crate::meta`).
+    meta: meta::MetaFollow,
     /// Presence: whom to tell my key, whom to watch, when to beat.
     presence: Arc<presence::PresenceDriver>,
     /// My avatar and those of others (`crate::avatars`).
@@ -266,6 +269,7 @@ impl MessengerRuntime {
             groups::GroupsDriver::new(group_service, store.clone(), relays.clone(), outbox.clone(), ui.clone());
         let group_signals = tokio::spawn(group_driver.clone().run(signals_rx));
         let presence = Arc::new(presence::PresenceDriver::new(store.clone(), dm.clone(), contacts.clone(), outbox.clone()));
+        let meta = meta::MetaFollow::new(contacts.clone(), dm.clone(), relays.clone());
         let rt = Self {
             config,
             store,
@@ -289,6 +293,7 @@ impl MessengerRuntime {
             ))),
             net,
             link: link::LinkWatch::default(),
+            meta,
             presence,
             avatars,
             photo_slots: Arc::new(tokio::sync::Semaphore::new(media::PHOTO_SLOTS)),
@@ -378,6 +383,7 @@ impl MessengerRuntime {
             self.group_driver.groups.clone(),
             self.presence.clone(),
             self.avatars.clone(),
+            self.meta.clone(),
         )
         .await?;
         self.group_driver.groups.set_signer(Some(keys_for_dm.clone()));
@@ -385,6 +391,14 @@ impl MessengerRuntime {
         self.group_calls.service.set_signer(Some(keys_for_dm.clone()));
         self.dm.set_signer(Some(keys_for_dm));
         *self.session.lock().await = Some(session);
+        // Who was approved on another device before the book followed it.
+        match self.dm.fill_book_once().await {
+            Ok(added) if !added.is_empty() => {
+                let _ = self.ui.send(messenger_dm::contacts_updated(None));
+            }
+            Ok(_) => {}
+            Err(e) => eprintln!("messenger contacts: the book was not filled from the chats: {e}"),
+        }
         self.resubscribe_meta().await?;
         self.group_driver.session_started().await;
         if let Err(e) = self.publish_dm_relays(false).await {
@@ -433,45 +447,12 @@ impl MessengerRuntime {
         Ok(())
     }
 
-    /// Profiles of everyone we care about (contacts + me) and my follow list.
+    /// Profiles and inbox relays of whom we care about (`MetaFollow::peers`)
+    /// and my follow list, sent now. What comes from the relays is followed
+    /// up by the session's own loop (`meta::MetaFollow::follow_loop`).
     async fn resubscribe_meta(&self) -> Result<()> {
         let Some(me) = self.session_pubkey().await else { return Ok(()) };
-        let mut authors: Vec<PubKey> = self
-            .contacts
-            .list()
-            .await?
-            .into_iter()
-            .filter_map(|c| PubKey::parse(&c.pubkey))
-            .collect();
-        authors.push(me.clone());
-        let pool = self.relays.pool().await;
-        pool.send(Outbound::Subscribe {
-            id: SubId(filters::SUB_PROFILES.into()),
-            filter: filters::profiles(&authors),
-            scope: Scope::Own,
-        })
-        .await?;
-        pool.send(Outbound::Subscribe {
-            id: SubId(filters::SUB_MY_FOLLOWS.into()),
-            filter: filters::my_follows(&me),
-            scope: Scope::Own,
-        })
-        .await?;
-        // Where contacts and chat peers want their DMs delivered.
-        let mut peers = authors;
-        for c in self.dm.list_chats(true).await? {
-            if let Some(pk) = c.peer_pubkey.as_deref().and_then(PubKey::parse) {
-                if !peers.contains(&pk) {
-                    peers.push(pk);
-                }
-            }
-        }
-        pool.send(Outbound::Subscribe {
-            id: SubId(filters::SUB_DM_RELAYS.into()),
-            filter: filters::dm_relays(&peers),
-            scope: Scope::Own,
-        })
-        .await?;
+        self.meta.resubscribe(&me, true).await?;
         Ok(())
     }
 
@@ -482,14 +463,18 @@ impl MessengerRuntime {
     }
 
     /// Open (creating if needed) the chat with `peer` (hex or npub) and
-    /// start following the peer's profile and inbox relays.
+    /// start following the peer's profile and inbox relays. The profile is
+    /// asked again at every opening, as the UI does for a chat opened from
+    /// the list (`profiles.request`).
     pub async fn chat_open(&self, peer: &str) -> Result<ChatView> {
         let pk = messenger_contacts::book::parse_key(peer)?;
         let existed = self.dm.chat(&messenger_store::chats::dm_chat_id(pk.as_hex())).await?.is_some();
         let view = self.dm.open_chat(&pk).await?;
-        if !existed && self.session.lock().await.is_some() {
+        if self.session.lock().await.is_some() {
             let _ = self.request_profile(&pk).await;
-            let _ = self.resubscribe_meta().await;
+            if !existed {
+                let _ = self.resubscribe_meta().await;
+            }
         }
         Ok(view)
     }
@@ -510,7 +495,9 @@ impl MessengerRuntime {
         }
         if p.became_contact {
             if let (Some(me), Some(peer)) = (self.session_pubkey().await, &peer) {
-                let _ = self.contacts.add(&me, peer.as_hex(), None).await;
+                if self.contacts.add(&me, peer.as_hex(), None).await.is_ok() {
+                    let _ = self.ui.send(messenger_dm::contacts_updated(Some(peer)));
+                }
                 let _ = self.resubscribe_meta().await;
             }
         }
@@ -553,7 +540,7 @@ impl MessengerRuntime {
     }
 
     /// `for_everyone` retracts our own message at the peer too; otherwise
-    /// the message is only hidden on this device.
+    /// the message is hidden on my devices only.
     pub async fn dm_delete(&self, message_id: &str, for_everyone: bool) -> Result<()> {
         if for_everyone && self.is_group_message(message_id).await? {
             return self.group_delete(message_id).await;
@@ -563,6 +550,10 @@ impl MessengerRuntime {
             let prepared = self.dm.prepare_delete(&keys, message_id).await?;
             self.publish_prepared(prepared).await?;
         } else {
+            // Without a session the note to my other devices cannot leave,
+            // and the message would stay on them for good: refused rather
+            // than hidden here alone.
+            self.session_keys().await?;
             let note = self.dm.delete_local(message_id).await?;
             self.tell_own_devices(&note).await;
         }
@@ -618,12 +609,17 @@ impl MessengerRuntime {
         match action {
             Action::Accept | Action::Request => {
                 if !is_contact {
-                    let _ = self.contacts.add(&me, pk.as_hex(), None).await;
+                    if self.contacts.add(&me, pk.as_hex(), None).await.is_ok() {
+                        let _ = self.ui.send(messenger_dm::contacts_updated(Some(&pk)));
+                    }
                     let _ = self.request_profile(&pk).await;
                     let _ = self.resubscribe_meta().await;
                 }
             }
-            Action::Remove if is_contact => self.contacts.remove(&pk).await?,
+            Action::Remove if is_contact => {
+                self.contacts.remove(&pk).await?;
+                let _ = self.ui.send(messenger_dm::contacts_updated(Some(&pk)));
+            }
             _ => {}
         }
         // Whoever was told my presence key may no longer watch it, and the
@@ -1022,5 +1018,333 @@ mod tests {
         assert!(rt.refresh_signer().await.unwrap());
         assert!(!rt.status().await.unwrap().session_active);
         rt.shutdown().await;
+    }
+
+    // ─── Who is followed: chat peers, not only the book ─────────────────────
+
+    use messenger_core::inbound::Envelope as WireEnvelope;
+    use messenger_core::{Context, DmInbound, EventSource, RelayUrl, Timestamp};
+    use messenger_transport::{RelayConfig, RelayPool};
+    use nostr_sdk::local_relay::LocalRelay;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
+
+    static NEXT_RUMOR: AtomicU64 = AtomicU64::new(1);
+
+    /// A rumor from `sender` to `to` at `at`, as ingress hands it to the DM service.
+    pub(crate) fn dm_inbound(sender: &PubKey, to: &PubKey, content: String, at: i64) -> DmInbound {
+        let n = NEXT_RUMOR.fetch_add(1, Ordering::SeqCst);
+        DmInbound {
+            envelope: WireEnvelope {
+                wire_id: EventId::parse(&format!("{:064x}", n << 1)).unwrap(),
+                source: EventSource::Relay { url: RelayUrl::parse("wss://r.example").unwrap() },
+                wire_created_at: Timestamp(at),
+            },
+            rumor_id: EventId::parse(&format!("{:064x}", (n << 1) | 1)).unwrap(),
+            sender: sender.clone(),
+            recipients: vec![to.clone()],
+            created_at: Timestamp(at),
+            content,
+            reply_to: None,
+            rumor_kind: 14,
+        }
+    }
+
+    /// The context of a session of `me` that began just before `now`.
+    pub(crate) fn ctx_of(me: &PubKey, now: i64) -> Context {
+        Context { my_pubkey: me.clone(), session_started_at: Timestamp(now - 10), clock: Arc::new(SystemClock) }
+    }
+
+    pub(crate) fn pk_of(k: &Keys) -> PubKey {
+        PubKey::parse(&k.public_key().to_hex()).unwrap()
+    }
+
+    async fn connected(pool: &RelayPool) {
+        for _ in 0..50 {
+            if pool.status().await.relays.iter().all(|r| r.state == RelayState::Connected) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("the local relay was not reached");
+    }
+
+    /// A runtime with a session on one local relay of its own.
+    async fn on_a_local_relay() -> (tempfile::TempDir, LocalRelay, MessengerRuntime, PubKey) {
+        let relay = LocalRelay::builder().build();
+        relay.run().await.unwrap();
+        let url = relay.url().await.as_str_without_trailing_slash().to_string();
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+        rt.relays().add_user(&url, None).await.unwrap();
+        rt.servers_use_own().await.unwrap();
+        rt.identity().create("pw").await.unwrap();
+        assert!(rt.refresh_signer().await.unwrap());
+        connected(&*rt.relays().pool().await).await;
+        let me = rt.session_pubkey().await.unwrap();
+        (dir, relay, rt, me)
+    }
+
+    /// `who` publishes a kind 0 named `name` to `relay`.
+    async fn publish_name(relay: &LocalRelay, who: &Keys, name: &str) {
+        let url = RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
+        let pool = RelayPool::new(None);
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        connected(&pool).await;
+        let event = EventBuilder::new(Kind::Metadata, serde_json::json!({ "name": name }).to_string()).finalize(who).unwrap();
+        let event = WireEvent { id: EventId::parse(&event.id.to_hex()).unwrap(), json: serde_json::to_value(&event).unwrap() };
+        pool.send(Outbound::PublishOwn { event }).await.unwrap();
+        pool.shutdown().await;
+    }
+
+    /// The name the cache has for `pk` once it is `want`, or after 5 s whatever it is.
+    async fn name_when(rt: &MessengerRuntime, pk: &PubKey, want: &str) -> Option<String> {
+        let mut name = None;
+        for _ in 0..50 {
+            name = rt.profiles().get(pk).await.unwrap().and_then(|p| p.name);
+            if name.as_deref() == Some(want) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        name
+    }
+
+    #[tokio::test]
+    async fn a_peer_known_only_from_a_chat_has_the_profile_followed() {
+        let (_dir, relay, rt, me) = on_a_local_relay().await;
+        let bob = Keys::generate();
+        let bob_pk = pk_of(&bob);
+        // The chat came with Bob's message; he is a contact on my phone, not here.
+        let now = SystemClock.now().secs();
+        let hi = dm_inbound(&bob_pk, &me, messenger_core::Envelope::text("hi").encode(), now);
+        rt.dm().apply_inbound(hi, &ctx_of(&me, now)).await.unwrap();
+        assert!(!rt.contacts().is_contact(&bob_pk).await.unwrap());
+
+        // What a start subscribes.
+        assert!(rt.meta.peers(&me).await.unwrap().contains(&bob_pk), "profiles and inbox relays of chat peers too");
+        rt.resubscribe_meta().await.unwrap();
+        publish_name(&relay, &bob, "Bob v2").await;
+        assert_eq!(name_when(&rt, &bob_pk, "Bob v2").await.as_deref(), Some("Bob v2"));
+        assert_eq!(rt.dm().open_chat(&bob_pk).await.unwrap().title, "Bob v2");
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn the_contacts_come_first_and_the_chats_fill_up_to_the_cap() {
+        let (_dir, _relay, rt, me) = on_a_local_relay().await;
+        let carol = pk_of(&Keys::generate());
+        rt.contacts().add(&me, carol.as_hex(), None).await.unwrap();
+        let now = SystemClock.now().secs();
+        for _ in 0..groups::MAX_PROFILE_AUTHORS {
+            let peer = pk_of(&Keys::generate());
+            rt.dm().apply_inbound(dm_inbound(&peer, &me, messenger_core::Envelope::text("hi").encode(), now), &ctx_of(&me, now)).await.unwrap();
+        }
+        let peers = rt.meta.peers(&me).await.unwrap();
+        assert_eq!(peers.len(), groups::MAX_PROFILE_AUTHORS);
+        assert_eq!(&peers[..2], &[carol, me]);
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn opening_a_chat_asks_for_the_peers_profile_again() {
+        let (_dir, relay, rt, me) = on_a_local_relay().await;
+        let bob = Keys::generate();
+        let bob_pk = pk_of(&bob);
+        // The start has settled (history synced) when the chat comes in, and
+        // nothing hands its event to the follower: nobody follows Bob, and
+        // the name known is an old one.
+        settled(&rt).await;
+        let now = SystemClock.now().secs();
+        let hi = dm_inbound(&bob_pk, &me, messenger_core::Envelope::text("hi").encode(), now);
+        rt.dm().apply_inbound(hi, &ctx_of(&me, now)).await.unwrap();
+        rt.profiles().apply_event(&bob_pk, Timestamp(now - 100), r#"{"name":"Bob v1"}"#).await.unwrap();
+        publish_name(&relay, &bob, "Bob v2").await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(rt.profiles().get(&bob_pk).await.unwrap().unwrap().name.as_deref(), Some("Bob v1"), "nobody asked");
+
+        rt.chat_open(bob_pk.as_hex()).await.unwrap();
+        assert_eq!(name_when(&rt, &bob_pk, "Bob v2").await.as_deref(), Some("Bob v2"));
+        rt.shutdown().await;
+    }
+
+    /// What the session's follower of profiles did, once what a start sent has settled.
+    async fn settled(rt: &MessengerRuntime) -> u64 {
+        tokio::time::sleep(Duration::from_millis(1_000)).await;
+        rt.meta.sent()
+    }
+
+    #[tokio::test]
+    async fn a_contact_my_other_device_approves_mid_session_has_the_profile_followed() {
+        let (_dir, relay, rt, me) = on_a_local_relay().await;
+        rt.dm().set_gate(true);
+        let bob = Keys::generate();
+        let bob_pk = pk_of(&bob);
+        publish_name(&relay, &bob, "Bob").await;
+        let before = settled(&rt).await;
+        // Bob asked while the app ran; my phone accepted, this device hears its copy.
+        let now = SystemClock.now().secs();
+        let ctx = ctx_of(&me, now);
+        let control = |a: &str| messenger_core::Envelope::control(a).encode();
+        rt.dm().apply_inbound(dm_inbound(&bob_pk, &me, messenger_core::Envelope::text("hi").encode(), now - 2), &ctx).await.unwrap();
+        rt.dm().apply_inbound(dm_inbound(&bob_pk, &me, control("dm_accept"), now - 1), &ctx).await.unwrap();
+        assert!(!rt.meta.followed().contains(bob_pk.as_hex()), "not followed yet");
+        let fx = rt.dm().apply_inbound(dm_inbound(&me, &bob_pk, control("dm_accept"), now), &ctx).await.unwrap();
+        // As ingress hands the effects of my own copy to the session's sink.
+        let sink = RuntimeSink { pool: rt.relays.pool().await, outbox: rt.outbox.clone(), ui: rt.ui.clone() };
+        for e in fx {
+            if let messenger_core::Effect::Emit(ev) = e {
+                messenger_ingress::EffectSink::emit(&sink, ev);
+            }
+        }
+        assert!(rt.contacts().is_contact(&bob_pk).await.unwrap());
+
+        assert_eq!(name_when(&rt, &bob_pk, "Bob").await.as_deref(), Some("Bob"), "his profile is asked in the same session");
+        assert!(rt.meta.followed().contains(bob_pk.as_hex()), "in the next SUB_PROFILES");
+        assert_eq!(rt.meta.sent(), before + 1);
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_burst_of_new_peers_costs_one_subscribe() {
+        let (_dir, _relay, rt, me) = on_a_local_relay().await;
+        let before = settled(&rt).await;
+        let mut peers = Vec::new();
+        for _ in 0..30 {
+            let pk = pk_of(&Keys::generate());
+            rt.contacts().add(&me, pk.as_hex(), None).await.unwrap();
+            let _ = rt.ui.send(messenger_dm::contacts_updated(Some(&pk)));
+            peers.push(pk);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let _ = rt.ui.send(UiEvent { name: session::UI_EVENT_HISTORY_SYNCED.into(), payload: serde_json::json!({}) });
+        assert_eq!(settled(&rt).await, before + 1, "one REQ for the whole burst");
+        let followed = rt.meta.followed();
+        assert!(peers.iter().all(|p| followed.contains(p.as_hex())));
+        // Nothing new: nothing sent.
+        let _ = rt.ui.send(UiEvent { name: session::UI_EVENT_HISTORY_SYNCED.into(), payload: serde_json::json!({}) });
+        let _ = rt.ui.send(messenger_dm::contacts_updated(Some(&peers[0])));
+        assert_eq!(settled(&rt).await, before + 1);
+        rt.shutdown().await;
+    }
+
+    // ─── Delete for me: on all my devices ───────────────────────────────────
+
+    use crate::session::RuntimeSink;
+    use messenger_core::envelope::{KIND_OWN_RUMOR, T_OWN_HIDE};
+    use messenger_core::RawEvent;
+    use nostr::nips::nip17::PrivateDirectMessageBuilder;
+    use nostr::nips::nip19::ToBech32;
+    use nostr::nips::nip59::UnwrappedGift;
+
+    /// One of my devices, kept off the network: a new key, or `nsec`.
+    async fn device(nsec: Option<&str>) -> (tempfile::TempDir, MessengerRuntime, Arc<MemorySecretStore>, Keys) {
+        let dir = tempfile::tempdir().unwrap();
+        let secrets = Arc::new(MemorySecretStore::unlocked());
+        let rt = MessengerRuntime::start(MessengerConfig::new(dir.path().join("messenger")), secrets.clone()).await.unwrap();
+        rt.relays().set_silent(true).await.unwrap();
+        servers::use_veydan_offline(&rt).await;
+        match nsec {
+            Some(nsec) => {
+                rt.identity().import_nsec(nsec).await.unwrap();
+            }
+            None => {
+                rt.identity().create("pw").await.unwrap();
+            }
+        }
+        assert!(rt.refresh_signer().await.unwrap());
+        rt.dm().set_gate(false);
+        let keys = rt.session_keys().await.unwrap();
+        (dir, rt, secrets, keys)
+    }
+
+    /// `event` as `rt` hears it from a relay: the same classify and dispatch.
+    async fn hear(rt: &MessengerRuntime, event: &nostr::prelude::Event) {
+        let keys = rt.session_keys().await.unwrap();
+        let ctx = Context { my_pubkey: pk_of(&keys), session_started_at: Timestamp(0), clock: Arc::new(SystemClock) };
+        let sink = RuntimeSink { pool: rt.relays.pool().await, outbox: rt.outbox.clone(), ui: rt.ui.clone() };
+        let raw = RawEvent {
+            id: EventId::parse(&event.id.to_hex()).unwrap(),
+            kind: event.kind.as_u16(),
+            pubkey: PubKey::parse(&event.pubkey.to_hex()).unwrap(),
+            created_at: Timestamp(event.created_at.as_secs() as i64),
+            json: serde_json::to_value(event).unwrap(),
+            source: EventSource::Relay { url: RelayUrl::parse("wss://relay.example").unwrap() },
+        };
+        assert!(rt.dispatcher.dispatch(messenger_ingress::classify(&raw, Some(&keys)), &ctx, &sink).await, "applied");
+    }
+
+    /// The `own.hide` notes `rt` queued for my other devices.
+    async fn hide_notes(rt: &MessengerRuntime, me: &Keys) -> Vec<nostr::prelude::Event> {
+        let mut out = Vec::new();
+        for row in messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap() {
+            let Ok(Outbound::PublishOwn { event }) = row.outbound() else { continue };
+            let ev: nostr::prelude::Event = serde_json::from_value(event.json.clone()).unwrap();
+            let Ok(u) = UnwrappedGift::from_gift_wrap(me, &ev) else { continue };
+            if u.rumor.kind.as_u16() == KIND_OWN_RUMOR && messenger_core::Envelope::parse(&u.rumor.content).unwrap().t == T_OWN_HIDE {
+                out.push(ev);
+            }
+        }
+        out
+    }
+
+    /// The newest message of the direct chat with `peer`.
+    async fn last_from(rt: &MessengerRuntime, peer: &Keys) -> MessageView {
+        let chat = messenger_store::chats::dm_chat_id(&peer.public_key().to_hex());
+        rt.dm().messages(&chat, None, 50).await.unwrap().pop().expect("a message")
+    }
+
+    #[tokio::test]
+    async fn delete_for_me_reaches_my_other_devices_whatever_comes_first() {
+        let (_a, laptop, _, me) = device(None).await;
+        let nsec = me.secret_key().to_bech32().unwrap();
+        let (_b, phone, _, _) = device(Some(&nsec)).await;
+        let (_c, tablet, _, _) = device(Some(&nsec)).await;
+        let bob = Keys::generate();
+        let hi = PrivateDirectMessageBuilder::new(me.public_key(), "hi").finalize(&bob).unwrap();
+        hear(&laptop, &hi).await;
+        hear(&phone, &hi).await;
+        let id = last_from(&laptop, &bob).await.id;
+        assert_eq!(last_from(&phone, &bob).await.id, id, "one id on every device");
+
+        laptop.dm_delete(&id, false).await.unwrap();
+        assert!(laptop.dm().message(&id).await.unwrap().unwrap().deleted);
+        let notes = hide_notes(&laptop, &me).await;
+        assert_eq!(notes.len(), 1, "one note for my other devices");
+
+        let mut ui = phone.ui.subscribe();
+        hear(&phone, &notes[0]).await;
+        assert!(phone.dm().message(&id).await.unwrap().unwrap().deleted, "gone on the phone too");
+        let mut names = Vec::new();
+        while let Ok(e) = ui.try_recv() {
+            names.push(e.name);
+        }
+        assert!(names.iter().any(|n| n == messenger_dm::UI_EVENT_DM_UPDATED), "{names:?}");
+
+        // The tablet hears the note first and the message after it.
+        hear(&tablet, &notes[0]).await;
+        hear(&tablet, &hi).await;
+        assert!(tablet.dm().message(&id).await.unwrap().unwrap().deleted, "hidden as it comes");
+
+        for rt in [laptop, phone, tablet] {
+            rt.shutdown().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_for_me_is_refused_without_a_session() {
+        let (_a, laptop, secrets, me) = device(None).await;
+        let bob = Keys::generate();
+        let hi = PrivateDirectMessageBuilder::new(me.public_key(), "hi").finalize(&bob).unwrap();
+        hear(&laptop, &hi).await;
+        let id = last_from(&laptop, &bob).await.id;
+
+        secrets.set_unlocked(false);
+        assert!(laptop.refresh_signer().await.unwrap(), "locked: the session stops");
+        assert!(matches!(laptop.dm_delete(&id, false).await, Err(MessengerError::NotLoggedIn)));
+        assert!(!laptop.dm().message(&id).await.unwrap().unwrap().deleted, "not hidden here alone");
+        assert!(hide_notes(&laptop, &me).await.is_empty());
+        laptop.shutdown().await;
     }
 }

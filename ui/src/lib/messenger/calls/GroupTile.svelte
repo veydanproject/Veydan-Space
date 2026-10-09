@@ -3,15 +3,17 @@
 
 <!--
   One seat of a group call: its video while its camera is on, its face
-  with a halo that follows its voice otherwise. Another's camera is taken
-  as on with its first picture and as off once its pictures have been
-  missing for `VIDEO_LOST_MS` (the room does not say it: groupCallStore
-  `showing`); a shorter pause keeps the last picture, the tile and the
-  screen as they are. My own camera is on as my call says; its pictures
-  missing that long, the last one stays dimmed under "No signal". Over
-  it: its name, "speaking", a crossed
-  microphone when its microphone is off (mine; another's once the room
-  says it: calls/group.ts `seatMuted`). A seat whose word of identity was not
+  with a halo that follows its voice otherwise. My own camera is on as my
+  call says; another's as its own word of state says (calls/group.ts
+  `seatVideoWord`): while it is on, a pause of its frames keeps the last
+  picture, the tile and the screen as they are; missing for
+  `VIDEO_LOST_MS`, the last picture stays dimmed under "No signal" (its
+  face says it before a first picture). A seat that says nothing of its
+  camera (an older client) is taken as on with its first picture and as
+  off once its pictures have been missing that long (groupCallStore
+  `showing`). Over it: its name, "speaking", a crossed microphone when
+  its microphone is off (mine; another's by its word: calls/group.ts
+  `seatMuted`). A seat whose word of identity was not
   checked yet has no name and is not heard (messenger-wire §10): it shows
   as such. A tap picks the seat for the large place (and again lets go).
   My own seat shows what I send (the frames of my camera or screen, by
@@ -27,7 +29,7 @@
   import { nameStore } from '../groups/names.svelte';
   import CallFace from './CallFace.svelte';
   import CallIcon from './CallIcon.svelte';
-  import { MY_VIDEO_MID, layerFor, seatMuted } from './group';
+  import { MY_VIDEO_MID, layerFor, seatMuted, seatSendsVideo, seatVideoWord, tileWait } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import VideoTile, { type TileInfo } from './VideoTile.svelte';
 
@@ -67,8 +69,8 @@
   /** A small tile (a row under the large one, a crowded grid): a smaller face, its notes as icons. */
   const compact = $derived(h > 0 && h < 130);
 
-  // Another's camera, for the order of the screen (calls/group.ts
-  // `seatSendsVideo`): every picture drawn and the end of the stream go to
+  // Another's pictures (calls/group.ts `seatSendsVideo` for a seat that
+  // says nothing of its camera): every picture drawn and the end of the stream go to
   // the store by the m-line of the subscription that brought them, and the
   // store keeps the seat's clock (groupCallStore `showing`). Not this tile's
   // `live` and `lost`: they start anew with every tile (one that moved
@@ -76,10 +78,24 @@
   // given another seat, holds those of the last one for a moment.
   const picture = (mid: string) => groupCallStore.seatPicture(mid);
   const ended = (mid: string) => groupCallStore.seatEnded(mid);
-  /** The seat's video is on for this tile: mine as my call says, another's as the store takes it. */
-  const on = $derived(p.me ? sending : !!groupCallStore.showing[p.id]);
-  /** My camera is on and its pictures have been missing for long: the last one stays, dimmed, and says so. */
-  const noSignal = $derived(p.me && !!video && live && lost);
+  /** Another's own word of its video: on, off, or `null` (not known: judged by its pictures). */
+  const word = $derived(p.me ? null : seatVideoWord(p));
+  /** The seat's video is on for this tile: mine as my call says, another's by its word or, without one, as the store takes it. */
+  const on = $derived(p.me ? sending : seatSendsVideo(p, { video_local: false }, (seat) => !!groupCallStore.showing[seat]));
+  /** The video is on as the seat itself says (mine: my call): its tile is held through any pause, and says when the pause is long. */
+  const told = $derived(p.me ? sending : word === true);
+  /**
+   * No picture here (the tile made anew, the camera on again): dark while
+   * the seat's pictures come this moment, its face otherwise, saying it
+   * waits for one or, by the seat's clock (groupCallStore `stale`), that
+   * none came for long (calls/group.ts `tileWait`).
+   */
+  const wait = $derived(
+    tileWait({ me: p.me, told, live, lost, flowing: !!groupCallStore.flowing[p.id], stale: !!groupCallStore.stale[p.id] }),
+  );
+  const waiting = $derived(wait === 'waiting' || wait === 'lost');
+  /** The video is on and its pictures have been missing for long: the last one stays, dimmed, and says so. */
+  const noSignal = $derived(told && !!video && live && lost);
 
   // The layer for the size of the tile, once it stood still for a moment:
   // a window being dragged larger asks once, not at every pixel. My own
@@ -99,16 +115,19 @@
   bind:clientWidth={w} bind:clientHeight={h} role="button" tabindex={onpick ? 0 : -1} aria-label={name} aria-pressed={pinned}
   onclick={onpick} onkeydown={(e) => { if (onpick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onpick(); } }}>
   {#if video}
-    <VideoTile track={p.me ? 'local' : 'remote'} mid={video} {callId} mirror={p.me && mirror} fit="cover" bind:live bind:lost bind:info
+    <!-- Off by the seat's word: nothing is held, a picture comes back only with a frame after it went on. -->
+    <VideoTile track={p.me ? 'local' : 'remote'} mid={video} {callId} mirror={p.me && mirror} fit="cover" on={word !== false} bind:live bind:lost bind:info
       onpicture={p.me ? undefined : picture} onended={p.me ? undefined : ended} />
   {/if}
-  <!-- Another's camera on whose tile has no picture yet (it only came): dark
-       for the moment, not its face, or the tile would blink. Mine shows its
-       face until my camera's first picture. -->
-  {#if !video || !on || (p.me && !live)}
+  <!-- A camera on whose tile has no picture yet while its pictures come this
+       moment (the tile is only made anew): dark for that moment, not its
+       face, or the tile would blink. Its face until a first picture
+       otherwise, saying it waits for one, or that none came for long. -->
+  {#if !video || !on || waiting}
     <span class="face">
       <CallFace peer={face} size={big && !compact ? 96 : compact ? 34 : 56} level={p.verified ? level : 0} />
       {#if !p.verified}<span class="checking" title={$t('msg_gcall_checking')}><CallIcon name="shield-question" size={13} />{#if !compact}{$t('msg_gcall_checking')}{/if}</span>{/if}
+      {#if !p.me && waiting && video}<span class="checking mine" role="status" title={$t(wait === 'lost' ? 'msg_call_video_lost' : 'msg_call_video_waiting')}><CallIcon name={wait === 'lost' ? 'video-off' : p.screen ? 'screen-share' : 'video'} size={13} />{#if !compact}{$t(wait === 'lost' ? 'msg_call_video_lost' : 'msg_call_video_waiting')}{/if}</span>{/if}
       {#if p.me && sending}<span class="checking mine" title={$t(groupCallStore.screen ? 'msg_call_sharing' : 'msg_gcall_camera_on')}><CallIcon name={groupCallStore.screen ? 'screen-share' : 'video'} size={13} />{#if !compact}{$t(groupCallStore.screen ? 'msg_call_sharing' : 'msg_gcall_camera_on')}{/if}</span>{/if}
     </span>
   {/if}

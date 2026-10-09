@@ -6,7 +6,7 @@
 
 import { goto } from '$app/navigation';
 import { isTauriHost, messengerApi, PUSH_TAP_EVENT } from '../api';
-import { BASE, chatHref } from '../mobile/routes';
+import { BASE, chatHref, shouldFollow } from '../mobile/routes';
 import { pushStore } from './pushStore.svelte';
 
 /** What came from outside the app is checked before it is used as a route. */
@@ -54,7 +54,10 @@ export async function followRoute(route: string, replace = false) {
 
 async function followTap() {
   const route = await takeRoute();
-  if (route) await followRoute(route);
+  if (!route) return;
+  // The chat of the tap is on the screen already: nothing to go to.
+  if (!shouldFollow(route, location)) return done();
+  await followRoute(route);
 }
 
 let launch: Promise<string | null> | null = null;

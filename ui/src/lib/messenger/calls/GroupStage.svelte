@@ -8,8 +8,10 @@
   large with the others in a row under it otherwise; a tap picks only a
   seat whose camera is on (a voice gains nothing large). The large place
   by the voices is held a while against a quick change, and none of it
-  moves while a camera that is on sends no frames for a moment
-  (groupCallStore `voice`, `showing`). Each tile asks the node for the
+  moves while a camera that is on sends no frames: on by the seat's own
+  word, as long as it says so; for a seat that says nothing of it (an
+  older client), for `VIDEO_LOST_MS` (calls/group.ts `seatSendsVideo`,
+  groupCallStore `voice`, `showing`). Each tile asks the node for the
   layer of video its size needs (GroupTile).
 -->
 <script lang="ts">

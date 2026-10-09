@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">Połączenia</string>
+    <string name="veydan_call_channel_ongoing">Trwa połączenie</string>
+    <string name="veydan_call_incoming">Połączenie przychodzące</string>
+    <string name="veydan_call_incoming_video">Przychodzące połączenie wideo</string>
+    <string name="veydan_call_ongoing">Trwa połączenie</string>
+    <string name="veydan_call_answer">Odbierz</string>
+    <string name="veydan_call_decline">Odrzuć</string>
+    <string name="veydan_call_hangup">Rozłącz</string>
+    <string name="veydan_call_unknown">Nieznany</string>
+    <string name="veydan_call_channel_group">Połączenia grupowe</string>
+    <string name="veydan_call_group_on">Trwa połączenie</string>
+    <string name="veydan_call_group_video_on">Trwa połączenie wideo</string>
+    <string name="veydan_call_swipe_answer">Przesuń w lewo, aby odebrać</string>
+    <string name="veydan_call_swipe_decline">Przesuń w prawo, aby odrzucić</string>
+</resources>

@@ -101,3 +101,19 @@ export function fileIcon(name: string, mime: string): string {
   if (DOCUMENTS.has(ext) || mime === 'application/pdf' || /word|document|text\//.test(mime)) return 'file-text';
   return 'file';
 }
+
+/**
+ * Filters of the save dialog for a file called `name`: its own extension
+ * first, then every file. Windows and macOS drop the extension of a name
+ * that no filter says; none for a name without one. On macOS rfd merges
+ * the lists into one, where `*` matches nothing: the own extension stays
+ * first, so the panel adds it to a name typed without one.
+ */
+export function saveFilters(name: string, allFiles: string): { name: string; extensions: string[] }[] {
+  const ext = /\.([a-z0-9]{1,12})$/i.exec(name)?.[1];
+  if (!ext) return [];
+  return [
+    { name: ext.toUpperCase(), extensions: [ext.toLowerCase()] },
+    { name: allFiles, extensions: ['*'] },
+  ];
+}

@@ -21,8 +21,17 @@
   import ModulesPicker from '$lib/core/ModulesPicker.svelte';
   import ConfirmHost from '$lib/core/ui/ConfirmHost.svelte';
   import { startUpdateCheck } from '$lib/core/store/update-check.svelte';
+  import { t } from '$lib/core/mobile/i18n';
 
   let { children }: { children: Snippet } = $props();
+
+  // A screen that failed to show: the way out is the start screen of the
+  // product, in its place, so back does not lead to it again.
+  const home = (registry.only && registry.homeRoute(registry.only)) ?? '/';
+  async function goHome(reset: () => void) {
+    await goto(home, { replaceState: true }).catch(() => {});
+    reset();
+  }
 
   let hubOpen = $state(false);
   // The hub chooses between the product's apps: a product of one module has
@@ -71,7 +80,17 @@
 <div class="shell" class:home={page.url.pathname === '/'}>
   <AppLockGate>
     <div class="screen">
-      {@render children()}
+      <svelte:boundary onerror={(e) => console.error('screen failed', e)}>
+        {@render children()}
+        {#snippet failed(_error, reset)}
+          <div class="m-page">
+            <div class="m-empty">
+              <p>{$t('screen_failed')}</p>
+              <button type="button" class="m-btn-grad" onclick={() => goHome(reset)}>{$t('nav_home')}</button>
+            </div>
+          </div>
+        {/snippet}
+      </svelte:boundary>
     </div>
     {#if items}
       <BottomNav {items} activeId={active} hub={withHub} hubActive={hubOpen} onhub={() => (hubOpen = true)} />

@@ -12,4 +12,6 @@
     <string name="veydan_call_channel_group">Group calls</string>
     <string name="veydan_call_group_on">A call is on</string>
     <string name="veydan_call_group_video_on">A video call is on</string>
+    <string name="veydan_call_swipe_answer">Swipe left to answer</string>
+    <string name="veydan_call_swipe_decline">Swipe right to decline</string>
 </resources>

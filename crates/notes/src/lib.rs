@@ -421,6 +421,12 @@ fn setup(app: &mut tauri::App) -> SetupResult {
     let custom_dir = None;
     app.manage(NotesState::new(custom_dir.clone()));
 
+    // Tags stored with capitals before 5.1.12 join their lowercase twins.
+    let db = app.state::<Core>().db.clone();
+    if let Err(e) = tauri::async_runtime::block_on(tags::merge_tag_case_twins(&db)) {
+        eprintln!("notes: tag names not lowercased: {e}");
+    }
+
     // Attachments are served through the asset protocol from both dirs.
     #[cfg(desktop)]
     {

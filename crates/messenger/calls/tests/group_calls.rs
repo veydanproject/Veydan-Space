@@ -8,12 +8,12 @@
 //! over later, in order or reversed, as the relays would.
 
 use messenger_calls::engine::ConnectionState;
-use messenger_calls::group::ctl::Message;
-use messenger_calls::group::keys::{sender_key, slot};
+use messenger_calls::group::ctl::{self, Message};
+use messenger_calls::group::keys::{seal_state, sender_key, slot, MediaState};
 use messenger_calls::group::service::Timing;
 use messenger_calls::{
     CallNode, DataPayload, GroupAccess, GroupCallService, GroupCallView, GroupPhase, Media, MediaLimits, NodeClass, NodeError, RoomApi,
-    SessionEvent, StaticServerSets, CTL_LABEL, UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
+    SessionEvent, StaticServerSets, VideoInput, CTL_LABEL, UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 use messenger_contacts::{ContactService, ProfileService};
 use messenger_core::traits::UiEvent;
@@ -2937,4 +2937,373 @@ async fn a_room_goes_where_the_group_can_follow_before_my_invited_node() {
     assert_eq!(w.node.created_on().len(), made_before + 1);
     assert_eq!(w.node.created_on().last().unwrap(), &private.to_string(), "the room went on my invited node");
     assert_eq!(alice.last_state().unwrap().phase, GroupPhase::InRoom);
+}
+
+// ─── The word of state of a seat (wire §10, «Состояние медиа места») ─────────
+
+/// The camera, the microphone and the screen of a seat, as the view shows
+/// them (`None`: not known).
+fn media_of(v: &GroupCallView, seat: u32) -> (Option<bool>, Option<bool>, Option<bool>) {
+    v.participants.iter().find(|p| p.id == seat).map(|p| (p.camera, p.mic, p.screen)).unwrap_or((None, None, None))
+}
+
+/// What a seat sends reaches everybody as it changes, a newcomer knows
+/// everybody's at once, and the word is read under a new epoch too.
+#[tokio::test]
+async fn the_state_of_a_seat_reaches_everybody_and_a_newcomer_at_once() {
+    let w = World::new(&["alice", "bob", "carol"]).await;
+    w.group(&[0, 1, 2]);
+    let (alice, bob, carol) = (w.p(0), w.p(1), w.p(2));
+    alice.calls.start(GROUP, Media::Video).await.unwrap();
+    w.settle().await;
+    let on = (Some(true), Some(true), Some(false));
+    assert_eq!(media_of(&alice.last_state().unwrap(), 1), on, "my own line, from my own state");
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), on, "alice knows bob's camera and microphone");
+    assert_eq!(media_of(&bob.last_state().unwrap(), 1), on, "and bob hers");
+
+    // Bob's camera goes off, then his microphone: Alice knows at once,
+    // whatever the frames do.
+    bob.calls.set_video(VideoInput::Off).await.unwrap();
+    w.settle().await;
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), (Some(false), Some(true), Some(false)));
+    bob.calls.set_mute(true).await.unwrap();
+    w.settle().await;
+    let off = (Some(false), Some(false), Some(false));
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), off);
+    assert_eq!(media_of(&bob.last_state().unwrap(), 2), off, "bob's own line");
+
+    // Carol comes late: she knows both at once, though nobody changed
+    // anything since.
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let c = carol.last_state().unwrap();
+    assert_eq!((media_of(&c, 1), media_of(&c, 2)), (on, off), "{:?}", c.participants);
+    assert_eq!(media_of(&alice.last_state().unwrap(), 3), on);
+
+    // Bob shares his screen: his video is on, and it is no camera.
+    bob.calls.set_video(VideoInput::Screen { id: None }).await.unwrap();
+    w.settle().await;
+    for p in [alice, carol] {
+        assert_eq!(media_of(&p.last_state().unwrap(), 2), (Some(false), Some(false), Some(true)), "{}", p.name);
+    }
+
+    // The keys turn (Carol leaves): Bob's word goes under the new epoch
+    // and is read there.
+    carol.calls.leave().await.unwrap();
+    w.until("epoch 2", || alice.shows(|v| v.epoch == 2) && bob.shows(|v| v.epoch == 2)).await;
+    bob.calls.set_mute(false).await.unwrap();
+    w.settle().await;
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), (Some(false), Some(true), Some(true)));
+    for p in [alice, bob, carol] {
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+}
+
+/// A word of state is bound to the seat the node puts in front of it:
+/// a member who holds the secret cannot speak for another seat, nor a
+/// node move a word to another seat. The newest by `seq` holds, whatever
+/// comes late.
+#[tokio::test]
+async fn a_word_of_state_is_bound_to_its_seat_and_the_newest_by_seq_holds() {
+    let w = World::new(&["alice", "bob", "carol"]).await;
+    w.group(&[0, 1, 2]);
+    let (alice, bob, carol) = (w.p(0), w.p(1), w.p(2));
+    let view = alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let quiet = (Some(false), Some(true), Some(false));
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), quiet, "an audio call: no camera");
+    let room = w.node.rooms()[0].clone();
+    let secret = secret_of(alice, &view.call_id);
+    let sa = my_session(&w, alice, &room);
+    // A word as the node hands it to Alice: `from` in front, bound to `seat`.
+    let say = |from: u32, seat: u32, camera: bool, seq: u64| {
+        let state = MediaState { camera, mic: true, screen: false, seq, ts: 0 };
+        let frame = seal_state(&state, &secret, &view.call_id, &room, seat, 1);
+        w.engine.inject_into(sa, SessionEvent::Data { label: CTL_LABEL.into(), payload: DataPayload::Binary(ctl::relayed(from, &frame)) });
+    };
+
+    // Carol, who holds the secret, speaks for Bob: the node puts her own
+    // seat in front, and a word bound to seat 2 does not open as seat 3's.
+    say(3, 2, true, 1000);
+    w.settle().await;
+    let a = alice.last_state().unwrap();
+    assert_eq!((media_of(&a, 2), media_of(&a, 3)), (quiet, quiet), "nothing changed");
+    // A node that puts seat 2 in front of Carol's own word: nothing either.
+    say(2, 3, true, 1000);
+    w.settle().await;
+    let a = alice.last_state().unwrap();
+    assert_eq!((media_of(&a, 2), media_of(&a, 3)), (quiet, quiet), "nothing changed");
+
+    // Bob's words in the wrong order: the newer holds.
+    say(2, 2, true, 1000);
+    w.settle().await;
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), (Some(true), Some(true), Some(false)));
+    say(2, 2, false, 999);
+    w.settle().await;
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), (Some(true), Some(true), Some(false)), "an older word came late");
+    for p in [alice, bob, carol] {
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+}
+
+/// A seat that is nobody (no member's word of identity) has no state,
+/// whatever it says; a client of before the word (5.1.11 and older) is a
+/// person without one — the screen keeps its old way for it — and hears
+/// ours all the same.
+#[tokio::test]
+async fn an_unconfirmed_seat_and_a_client_of_before_have_no_state() {
+    let w = World::new(&["alice", "bob", "mallory"]).await;
+    w.group(&[0, 1]);
+    let (alice, bob, mallory) = (w.p(0), w.p(1), w.p(2));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    // Mallory has the notes (a leaked key) and counts herself a member.
+    mallory.groups.set_members(GROUP, vec![alice.pk(), bob.pk(), mallory.pk()]);
+    let out = alice.sent.lock().unwrap().clone();
+    for o in out {
+        let (g, author, envelope) = FakeGroups::open_note(&o).unwrap();
+        mallory.calls.on_group_note(&g, &author, &envelope, w.now()).await.unwrap();
+    }
+    mallory.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    mallory.calls.set_mute(true).await.unwrap();
+    w.settle().await;
+    let a = alice.last_state().unwrap();
+    assert_eq!(verified_seats(&a), vec![(2, false)]);
+    assert_eq!(media_of(&a, 2), (None, None, None), "nobody's seat has no state");
+
+    // Bob's client is of before the word: his seat (3) never says one.
+    w.node.no_state_from(3);
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    bob.calls.set_mute(true).await.unwrap();
+    w.settle().await;
+    let a = alice.last_state().unwrap();
+    assert_eq!(verified_seats(&a), vec![(2, false), (3, true)]);
+    assert_eq!(media_of(&a, 3), (None, None, None), "a person, state unknown");
+    assert_eq!(media_of(&bob.last_state().unwrap(), 1), (Some(false), Some(true), Some(false)), "bob hears alice's word");
+    assert_eq!(media_of(&bob.last_state().unwrap(), 2), (None, None, None), "and not mallory's");
+}
+
+/// A word of state under an epoch whose note has not come waits for it,
+/// as the word of identity does, and is read when the note comes.
+#[tokio::test]
+async fn a_word_of_state_under_an_epoch_not_here_yet_waits_for_its_note() {
+    let w = World::new(&["alice", "bob", "carol", "dave"]).await;
+    w.group(&[0, 1, 2, 3]);
+    let (alice, bob, carol, dave) = (w.p(0), w.p(1), w.p(2), w.p(3));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    bob.calls.set_mute(true).await.unwrap();
+    dave.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    // Carol hears nothing for a while; Dave leaves, Alice makes epoch 2.
+    w.deafen(2);
+    dave.calls.leave().await.unwrap();
+    w.until("epoch 2", || alice.shows(|v| v.epoch == 2) && bob.shows(|v| v.epoch == 2)).await;
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let c = carol.last_state().unwrap();
+    assert_eq!(verified_seats(&c), vec![(1, false), (2, false)], "their words wait for the note");
+    assert_eq!(media_of(&c, 2), (None, None, None));
+    w.hear(2).await;
+    w.until("their words opened for carol", || carol.shows(|v| media_of(v, 2) == (Some(false), Some(false), Some(false)))).await;
+    let c = carol.last_state().unwrap();
+    assert_eq!(verified_seats(&c), vec![(1, true), (2, true)]);
+    assert_eq!(media_of(&c, 1), (Some(false), Some(true), Some(false)));
+    assert_eq!(media_of(&c, 2), (Some(false), Some(false), Some(false)), "bob is muted");
+}
+
+/// The record of the engine's session `id`.
+fn record_of(w: &World, id: u32) -> messenger_testkit::fake_engine::Record {
+    w.engine.sessions().into_iter().find(|h| h.id() == id).unwrap_or_else(|| panic!("no session {id}")).record()
+}
+
+/// Finding: a join again (the way lost, the home there) opened a new
+/// session and gave it neither my mute nor my video, yet my word of state
+/// still said what the session before sent: the others kept a camera on
+/// a tile that showed nothing ("Нет сигнала" for good) and a microphone
+/// crossed out that they heard. The new session is given what the one
+/// before sent, and the word says what it took.
+#[tokio::test]
+async fn a_join_again_sends_what_the_session_before_sent_and_says_what_it_took() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    w.timing(cascade_timing());
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Video).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms()[0].clone();
+    bob.calls.set_mute(true).await.unwrap();
+    w.settle().await;
+    let seat = bob.last_state().unwrap().participant.unwrap();
+    assert_eq!(media_of(&alice.last_state().unwrap(), seat), (Some(true), Some(false), Some(false)), "bob's camera on, muted");
+
+    // His way fails; the home answers: he joins it again.
+    let lose = |seat: u32| {
+        let sb = session_of_seat(&w, &room, seat);
+        w.engine.inject_into(sb, SessionEvent::ConnectionState(ConnectionState::Failed));
+        sb
+    };
+    let old = lose(seat);
+    w.until("bob joined again, confirmed by alice", || {
+        bob.shows(|v| v.phase == GroupPhase::InRoom && v.participant.is_some_and(|s| s != seat))
+            && alice.shows(|v| verified_seats(v).iter().any(|(s, ok)| *s != seat && *ok))
+    })
+    .await;
+    let seat = bob.last_state().unwrap().participant.unwrap();
+    let sb = session_of_seat(&w, &room, seat);
+    assert_ne!(sb, old, "a new session");
+    let r = record_of(&w, sb);
+    assert!(r.muted, "the new session is muted as the one before was");
+    assert!(matches!(r.video.last(), Some(VideoInput::Camera { .. })), "and sends the camera: {:?}", r.video);
+    let b = bob.last_state().unwrap();
+    assert!(b.muted && b.video_local, "{b:?}");
+    w.until("alice knows bob's new seat", || alice.shows(|v| media_of(v, seat) == (Some(true), Some(false), Some(false)))).await;
+
+    // He unmutes; his camera will not open in the next session: after the
+    // next join again it is off, and so the word says.
+    bob.calls.set_mute(false).await.unwrap();
+    w.settle().await;
+    w.engine.set_camera_fails(true);
+    lose(seat);
+    w.until("bob joined again once more", || {
+        bob.shows(|v| v.phase == GroupPhase::InRoom && v.participant.is_some_and(|s| s != seat))
+            && alice.shows(|v| verified_seats(v).iter().any(|(s, ok)| *s != seat && *ok))
+    })
+    .await;
+    let seat = bob.last_state().unwrap().participant.unwrap();
+    let r = record_of(&w, session_of_seat(&w, &room, seat));
+    assert!(!r.muted, "unmuted as before");
+    let b = bob.last_state().unwrap();
+    assert!(!b.muted && !b.video_local, "the camera did not open: it is off: {b:?}");
+    assert_eq!(media_of(&b, seat), (Some(false), Some(true), Some(false)), "my own line");
+    w.until("alice sees bob's camera off", || alice.shows(|v| media_of(v, seat) == (Some(false), Some(true), Some(false)))).await;
+    assert!(bob.errors().iter().any(|e| !e.is_empty()), "the camera that failed is told");
+}
+
+/// The same for a move: what I sent goes on in the moved room — muted,
+/// and a camera I had turned off stays off — and my word says so.
+#[tokio::test]
+async fn a_move_keeps_what_i_send_and_my_word_says_so() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let n1 = w.node.add_node();
+    w.node.set_rtt(0, 20);
+    w.node.set_rtt(1, 50);
+    w.group(&[0, 1]);
+    let servers = vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)];
+    for i in [0, 1] {
+        w.with_servers(i, servers.clone(), cascade_timing()).await;
+    }
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+    alice.calls.start(GROUP, Media::Video).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    alice.calls.set_mute(true).await.unwrap();
+    bob.calls.set_video(VideoInput::Off).await.unwrap();
+    w.settle().await;
+    assert_eq!(media_of(&bob.last_state().unwrap(), 1), (Some(true), Some(false), Some(false)));
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), (Some(false), Some(true), Some(false)));
+
+    w.node.kill(0);
+    let new_home = w.node.node(n1, NodeClass::Project).node.to_string();
+    w.until("both in the moved room, confirmed", || {
+        [&alice, &bob].into_iter().all(|p| p.shows(|v| v.phase == GroupPhase::InRoom && v.home == new_home && verified_seats(v).iter().all(|(_, ok)| *ok) && verified_seats(v).len() == 1))
+    })
+    .await;
+    let moved = w.node.rooms_on(1)[0].clone();
+    let (a, b) = (alice.last_state().unwrap(), bob.last_state().unwrap());
+    let (sa, sb) = (a.participant.unwrap(), b.participant.unwrap());
+    let (ra, rb) = (record_of(&w, session_of_seat(&w, &moved, sa)), record_of(&w, session_of_seat(&w, &moved, sb)));
+    assert!(ra.muted, "alice is muted in the moved room too");
+    assert!(matches!(ra.video.last(), Some(VideoInput::Camera { .. })), "her camera goes on: {:?}", ra.video);
+    assert!(!rb.muted);
+    assert!(rb.video.iter().all(|v| *v == VideoInput::Off), "bob's camera, off, is not turned on by the move: {:?}", rb.video);
+    assert!(a.muted && a.video_local && !b.muted && !b.video_local, "{a:?} {b:?}");
+    w.until("each knows the other's in the moved room", || {
+        bob.shows(|v| media_of(v, sa) == (Some(true), Some(false), Some(false))) && alice.shows(|v| media_of(v, sb) == (Some(false), Some(true), Some(false)))
+    })
+    .await;
+}
+
+/// Finding: a word of state was taken under any epoch still held, and by
+/// `seq` alone: one who went out of the group, with the node, sealed a
+/// word under an old secret with the largest `seq`, and no true word of
+/// that seat was taken again for the life of the room. Now the newer
+/// epoch holds whatever its `seq` (and every seat says its word again
+/// under a new epoch), and once the keys turned after a member went out,
+/// the epochs it knew open no word of state.
+#[tokio::test]
+async fn a_word_of_state_under_an_old_secret_does_not_stick() {
+    let w = World::new(&["alice", "bob", "carol", "dave"]).await;
+    w.group(&[0, 1, 2, 3]);
+    let (alice, bob, carol, dave) = (w.p(0), w.p(1), w.p(2), w.p(3));
+    let view = alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    // Dave's client is of before the word: his seat (4) has no state.
+    w.node.no_state_from(4);
+    dave.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms()[0].clone();
+    let quiet = (Some(false), Some(true), Some(false));
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), quiet);
+    let first = secret_of(alice, &view.call_id);
+    let sa = my_session(&w, alice, &room);
+    // Carol, with the node, speaks for seat `seat` under the secret of
+    // epoch 1 (the node puts the seat in front).
+    let forge = |seat: u32, seq: u64| {
+        let state = MediaState { camera: true, mic: true, screen: false, seq, ts: 0 };
+        let frame = seal_state(&state, &first, &view.call_id, &room, seat, 1);
+        w.engine.inject_into(sa, SessionEvent::Data { label: CTL_LABEL.into(), payload: DataPayload::Binary(ctl::relayed(seat, &frame)) });
+    };
+    // While she is a member it is taken (the model of the frames)...
+    forge(2, u64::MAX);
+    w.settle().await;
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), (Some(true), Some(true), Some(false)));
+
+    // ...and holds only until the keys turn: she goes out of the group,
+    // epoch 2 comes, and Bob's word under it is taken whatever its `seq`.
+    w.deafen(2);
+    for p in [alice, bob] {
+        p.groups.set_members(GROUP, vec![alice.pk(), bob.pk(), dave.pk()]);
+        p.calls.on_members_changed(GROUP).await;
+    }
+    dave.groups.set_members(GROUP, vec![alice.pk(), bob.pk(), dave.pk()]);
+    dave.calls.on_members_changed(GROUP).await;
+    w.until("the keys turned, bob's true word taken", || {
+        alice.shows(|v| v.epoch >= 2 && media_of(v, 2) == quiet) && bob.shows(|v| v.epoch >= 2)
+    })
+    .await;
+
+    // Under epoch 1 nothing opens any more, whatever the `seq`.
+    forge(2, u64::MAX);
+    w.settle().await;
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), quiet, "the old secret opens no word of state");
+    forge(4, 1);
+    w.settle().await;
+    let a = alice.last_state().unwrap();
+    assert_eq!(verified_seats(&a), vec![(2, true), (4, true)], "{:?}", a.participants);
+    assert_eq!(media_of(&a, 4), (None, None, None), "nor for a seat that never said one");
+    // Bob's own changes are taken as before.
+    bob.calls.set_mute(true).await.unwrap();
+    w.settle().await;
+    assert_eq!(media_of(&alice.last_state().unwrap(), 2), (Some(false), Some(false), Some(false)));
+    for p in [alice, bob, dave] {
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
 }

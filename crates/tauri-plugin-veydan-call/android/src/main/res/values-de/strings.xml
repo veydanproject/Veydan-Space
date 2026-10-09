@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">Anrufe</string>
+    <string name="veydan_call_channel_ongoing">Laufender Anruf</string>
+    <string name="veydan_call_incoming">Eingehender Anruf</string>
+    <string name="veydan_call_incoming_video">Eingehender Videoanruf</string>
+    <string name="veydan_call_ongoing">Laufender Anruf</string>
+    <string name="veydan_call_answer">Annehmen</string>
+    <string name="veydan_call_decline">Ablehnen</string>
+    <string name="veydan_call_hangup">Auflegen</string>
+    <string name="veydan_call_unknown">Unbekannt</string>
+    <string name="veydan_call_channel_group">Gruppenanrufe</string>
+    <string name="veydan_call_group_on">Ein Anruf läuft</string>
+    <string name="veydan_call_group_video_on">Ein Videoanruf läuft</string>
+    <string name="veydan_call_swipe_answer">Nach links wischen zum Annehmen</string>
+    <string name="veydan_call_swipe_decline">Nach rechts wischen zum Ablehnen</string>
+</resources>

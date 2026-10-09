@@ -13,7 +13,8 @@
   import { edgeHold } from '../shared/edge-hold';
   import { HOLD_MS, IDLE, step, type Gesture, type GestureEvent } from './record-gesture';
   import { captureSupported, type Captured } from '../media/capture';
-  import type { MessengerMessage, MessengerRecording } from '../api';
+  import { mediaOf, type MessengerMessage, type MessengerRecording } from '../api';
+  import { replyLine, replyThumb } from '../push/wording';
 
   interface Props {
     disabled?: boolean;
@@ -244,9 +245,13 @@
   {#if editing || replyTo}
     <div class="context">
       <Icon name={editing ? 'pencil' : 'reply'} size={14} />
+      {#if !editing && replyTo}
+        {@const thumb = replyThumb({ text: replyTo.text, deleted: replyTo.deleted, media: { ...mediaOf(replyTo) } })}
+        {#if thumb}<img class="ctx-thumb" src={thumb} alt="" aria-hidden="true" />{/if}
+      {/if}
       <span class="ctx-body">
         <span class="ctx-title">{editing ? $t('msg_composer_editing') : $t('msg_composer_reply_to', { name: replyTo!.direction === 'out' ? $t('msg_you') : peerTitle })}</span>
-        <span class="ctx-text">{(editing ?? replyTo)!.text ?? (replyTo?.card ? `👤 ${replyTo.card.label}` : '')}</span>
+        <span class="ctx-text">{editing ? (editing.text ?? '') : replyLine({ text: replyTo!.text, deleted: replyTo!.deleted, media: { ...mediaOf(replyTo!) } }, replyTo!.card?.label ?? null, $t)}</span>
       </span>
       <button class="icon" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('msg_back')}><Icon name="x" size={14} /></button>
     </div>
@@ -332,6 +337,7 @@
 <style>
   .composer { position: relative; border-top: 1px solid var(--border); background: var(--surface); padding: var(--sp-2) var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
   .context { display: flex; align-items: center; gap: var(--sp-2); padding: 4px 8px; border-left: 2px solid var(--accent); background: var(--surface-2); border-radius: 4px; color: var(--accent-text-2); }
+  .ctx-thumb { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; border-radius: 4px; background: var(--surface-3); }
   .ctx-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .ctx-title { font-size: var(--fs-2xs); font-weight: var(--fw-bold); }
   .ctx-text { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

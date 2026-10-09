@@ -143,7 +143,7 @@ pub fn calls_ts() -> String {
     out += &export::<CallNodeInfo>(&cfg, "One call node of the settings: whose, from where, how near and how full, whether a call may use it now.");
     out += &export::<CallNodesView>(&cfg, "The call nodes and the trust level, as the `messenger_call_nodes_*` commands answer.");
     out += &export::<GroupCallPhase>(&cfg, "Where I am with the room of a group call: making it, joining it, in it, restoring the way to the node, out of it.");
-    out += &export::<GroupParticipant>(&cfg, "One seat of the room of a group call; only a verified seat is a person and is heard. `video_mid` is what `messenger_group_call_video_subscribe` takes.");
+    out += &export::<GroupParticipant>(&cfg, "One seat of the room of a group call; only a verified seat is a person and is heard. `video_mid` is what `messenger_group_call_video_subscribe` takes; `camera`, `mic`, `screen` are the seat's own word of state, absent when not known (a client of 5.1.11 and before).");
     out += &export::<GroupCallView>(&cfg, "The room of a group call I am in: the `call` of `group_call.state` and the answer of the group call commands.");
     out += &export::<GroupCallAnnounced>(&cfg, "A call announced in a group, for the banner of its chat: the `call` of `group_call.started` and `group_call.ended`.");
     out += &export::<GroupCallEnded>(&cfg, "The payload of the runtime event `group_call.ended`.");

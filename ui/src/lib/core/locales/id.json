@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "Jendela ini mendapat antarmuka ponsel {app}: aplikasi dibuat dengan halaman dari build Android.",
     "start_error_wrong_ui_desktop": "Perangkat ini mendapat antarmuka desktop {app}: aplikasi dibuat dengan halaman dari build desktop.",
     "start_error_wrong_ui_fix": "Tidak ada yang diubah. Build ulang aplikasi, atau instal build rilis.",
+    "screen_failed": "Layar ini tidak dapat ditampilkan.",
+    "screen_to_start": "Ke layar awal",
     "modules_section": "Modul",
     "modules_hint": "Yang ditampilkan perangkat ini. Modul yang nonaktif tetap menyimpan datanya, dan datanya tetap tersinkron.",
     "modules_last": "Setidaknya satu modul tetap aktif.",

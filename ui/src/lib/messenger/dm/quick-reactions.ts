@@ -26,3 +26,13 @@ export function quickSet(popular: string[]): string[] {
 export function reactionTarget<M>(pressed: M, album?: readonly M[]): M {
   return album?.length ? album[album.length - 1] : pressed;
 }
+
+/**
+ * The part of an album a press on its bubble belongs to: the one whose
+ * tile or caption carries `id`. Anything else in the bubble (its padding,
+ * the author, the time, the reactions, the gaps between tiles) gives
+ * `fallback`.
+ */
+export function pressedPart<M extends { id: string }>(parts: readonly M[], id: string | null | undefined, fallback: M): M {
+  return (id && parts.find((m) => m.id === id)) || fallback;
+}

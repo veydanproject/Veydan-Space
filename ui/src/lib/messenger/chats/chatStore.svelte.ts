@@ -17,6 +17,29 @@ import { usageStore } from '../shared/emoji/usageStore.svelte';
 
 const PAGE = 50;
 
+/**
+ * The runtime adds a contact on its own (the first message to a stranger, a
+ * request or an accept) and says nothing of it, so the new chat dialog would
+ * not find that person. The module store imports this one: reached late.
+ */
+function refreshContacts() {
+  import('../store.svelte').then((m) => m.messengerStore.refreshContacts()).catch(() => {});
+}
+
+/**
+ * The peer's profile is asked again at every opening of a chat of two, from
+ * the list, a notification or a link alike: a name changed since the start
+ * comes in while the chat is shown. In the background; the reply is a
+ * `profile.updated` the names follow.
+ */
+function askProfile(chatId: string) {
+  if (!chatId.startsWith('dm:')) return;
+  const peer = chatId.slice(3);
+  Promise.resolve()
+    .then(() => messengerApi.profiles.request(peer))
+    .catch(() => {});
+}
+
 class ChatStore {
   chats = $state<MessengerChat[]>([]);
   activeId = $state<string | null>(null);
@@ -28,6 +51,8 @@ class ChatStore {
   tailTick = $state(0);
   /** A message to bring into view once its chat shows it (the list of transfers asks). */
   jumpTo = $state<{ chatId: string; messageId: string } | null>(null);
+  /** Bumped when the store is emptied (lock, logout): a page showing a chat loads it again. */
+  resets = $state(0);
   private _refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private _reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -61,7 +86,9 @@ class ChatStore {
     }, 150);
   }
 
-  async open(chatId: string) {
+  /** `askProfile: false` when the runtime asked already (`openPeer`). */
+  async open(chatId: string, opts: { askProfile?: boolean } = {}) {
+    if (opts.askProfile !== false) askProfile(chatId);
     this.activeId = chatId;
     this.messages = [];
     this.hasMore = false;
@@ -81,7 +108,9 @@ class ChatStore {
   async openPeer(peer: string) {
     const chat = await messengerApi.chats.open(peer);
     await this.loadChats();
-    await this.open(chat.id);
+    // `messenger_chat_open` asked the profile.
+    await this.open(chat.id, { askProfile: false });
+    refreshContacts();
     return chat;
   }
 
@@ -166,6 +195,7 @@ class ChatStore {
     const m = await messengerApi.dm.sendText(to, text, replyTo);
     if (this.activeId === chat.id) this.upsert(m);
     this.scheduleChatsRefresh();
+    if (chat.kind === 'dm' && !chat.is_contact) refreshContacts();
     return m;
   }
 
@@ -174,6 +204,7 @@ class ChatStore {
     const m = await messengerApi.dm.sendText(this.target(chat), text);
     if (this.activeId === chat.id) this.upsert(m);
     this.scheduleChatsRefresh();
+    if (chat.kind === 'dm' && !chat.is_contact) refreshContacts();
     return m;
   }
 
@@ -257,6 +288,7 @@ class ChatStore {
     await messengerApi.dm.action(chat.peer_pubkey, action);
     await this.loadChats();
     if (this.activeId === chatId) await this.reloadWindow();
+    refreshContacts();
   }
 
   async setPinned(chatId: string, pinned: boolean) {
@@ -326,6 +358,7 @@ class ChatStore {
   reset() {
     this.chats = [];
     this.close();
+    this.resets++;
   }
 }
 

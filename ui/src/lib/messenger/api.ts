@@ -167,6 +167,11 @@ export interface MessengerReplyPreview {
   id: string;
   sender_pubkey: string;
   text: string | null;
+  /** Taken back for everyone; a photo without a caption has no text either. */
+  deleted?: boolean;
+  content_type?: string;
+  /** Of a quoted media message: `kind`, `name`, `duration_ms`. */
+  media?: Record<string, unknown> | null;
 }
 
 export type MessageStatus = 'queued' | 'sent' | 'failed' | 'received' | 'uploading' | 'paused';
@@ -1143,7 +1148,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const c = mockChat(String(a?.to));
     const now = Math.floor(Date.now() / 1000);
     const target = a?.replyTo ? mockFind(String(a.replyTo)) : undefined;
-    const m: MessengerMessage = { id: `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'text', text: String(a?.text), sender_pubkey: 'ab'.repeat(32), reply_to: target ? { id: target.id, sender_pubkey: target.sender_pubkey, text: target.text } : null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null };
+    const m: MessengerMessage = { id: `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'text', text: String(a?.text), sender_pubkey: 'ab'.repeat(32), reply_to: target ? { id: target.id, sender_pubkey: target.sender_pubkey, text: target.text, deleted: target.deleted, content_type: target.content_type, media: target.content_type === 'media' && !target.deleted && target.media ? { kind: target.media.kind, name: target.media.name, duration_ms: target.media.duration_ms } : null } : null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
     mockChats = mockChats.map((x) => x.id === c.id ? { ...x, last_message_at: now, last_preview: m.text } : x);
     return m;

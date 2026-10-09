@@ -112,3 +112,47 @@ export function albumLine(album: Album, t: Tr): string {
     : `🖼 ${t('msg_notice_album', { n: String(album.n) })}`;
   return album.caption ? `${head} · ${album.caption}` : head;
 }
+
+/** What the quote of a message may say of it (`MessengerReplyPreview`). */
+export interface QuoteOf {
+  text: string | null;
+  deleted?: boolean;
+  media?: Record<string, unknown> | null;
+}
+
+/**
+ * The small picture of a quoted photo or video, as an image source, or null.
+ * Only a JPEG preview that came with the media (base64, "/9j/…") is shown;
+ * a message taken back has none.
+ */
+export function replyThumb(quote: QuoteOf): string | null {
+  if (quote.deleted) return null;
+  const m = quote.media;
+  if (!m || !['image', 'video', 'circle'].includes(m.kind as string)) return null;
+  const thumb = m.thumb;
+  return typeof thumb === 'string' && thumb.startsWith('/9j/') ? `data:image/jpeg;base64,${thumb}` : null;
+}
+
+/**
+ * The line under a reply: the quoted message in a few words. A message
+ * taken back is told first; a photo with no caption is a photo, never
+ * "deleted"; what cannot be told is left empty.
+ */
+export function replyLine(quote: QuoteOf, cardLabel: string | null, t: Tr): string {
+  if (quote.deleted) return t('msg_message_deleted');
+  if (quote.text) return quote.text;
+  if (cardLabel) return `👤 ${cardLabel}`;
+  const m = quote.media;
+  if (m && typeof m.kind === 'string') {
+    return bodyLine(
+      {
+        t: 'media',
+        kind: m.kind,
+        name: typeof m.name === 'string' ? m.name : '',
+        duration_ms: typeof m.duration_ms === 'number' ? m.duration_ms : undefined,
+      },
+      t,
+    );
+  }
+  return '';
+}

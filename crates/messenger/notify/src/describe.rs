@@ -220,7 +220,9 @@ impl Describe {
         let envelope = Envelope::parse(&dm.content).unwrap_or_else(|_| Envelope::text(&dm.content));
 
         // What the app would do with this message, decided from the same rows.
-        // A copy of something already stored was let in when it came.
+        // A copy of something stored and shown was let in when it came; a row
+        // stored hidden (a request held back until the old episode ends, or
+        // one removed for me elsewhere) was never shown, so nothing is told.
         let relation = self.dm.load_relation(&peer).await?;
         if relation.blocked {
             return Ok(Outcome::Quiet { reason: Reason::Blocked });
@@ -228,9 +230,13 @@ impl Describe {
         if envelope.t == T_CALL_INVITE {
             return self.call_notice(&peer, &envelope, dm.created_at.0, settings).await;
         }
-        let stored = messages::get(&self.store, dm.rumor_id.as_hex()).await?.is_some();
-        let seen = messages::count_visible_incoming(&self.store, &chat_id).await?;
-        let kind = match inbound_decision(&relation, !stored, seen) {
+        let row = messages::get(&self.store, dm.rumor_id.as_hex()).await?;
+        if row.as_ref().is_some_and(|r| r.is_hidden) {
+            return Ok(Outcome::Quiet { reason: Reason::NotForMe });
+        }
+        let stored = row.is_some();
+        let seen = messages::count_visible_incoming_since(&self.store, &chat_id, relation.request_floor).await?;
+        let kind = match inbound_decision(&relation, !stored, seen, dm.created_at.0) {
             InboundDecision::Save => ChatKind::Dm,
             InboundDecision::SaveAsRequest => ChatKind::Request,
             InboundDecision::Drop(_) => return Ok(Outcome::Quiet { reason: Reason::NotForMe }),

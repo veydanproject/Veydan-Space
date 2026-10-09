@@ -11,6 +11,7 @@
   import { longpress } from '../shared/longpress';
   import { tint } from '../shared/tint';
   import { mediaOf, type MessengerMessage } from '../api';
+  import { replyLine, replyThumb } from '../push/wording';
   import { chatStore } from '../chats/chatStore.svelte';
   import { logSendFailure, sendFailureKey } from './send-failure';
   import { lateAt, shownStatus } from './delivery';
@@ -48,7 +49,7 @@
     const r = m.reply_to;
     if (!r || r.text) return null;
     const card = chatStore.messages.find((x) => x.id === r.id)?.card;
-    return card ? `👤 ${card.label}` : null;
+    return card ? card.label : null;
   });
   // A circle is its own shape: no bubble under it.
   const bare = $derived(!m.deleted && !m.reply_to && !m.text && m.content_type === 'media' && mediaOf(m)?.kind === 'circle');
@@ -77,9 +78,13 @@
     use:longpress={{ onpress: (p) => onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), m) }}>
     {#if author && showAuthor}<span class="author" style="color: {tint(m.sender_pubkey)}">{author(m.sender_pubkey)}</span>{/if}
     {#if m.reply_to && !m.deleted}
+      {@const thumb = replyThumb(m.reply_to)}
       <button class="reply" onclick={() => onreplyclick(m.reply_to!.id)}>
-        <span class="reply-who">{author ? author(m.reply_to.sender_pubkey) : m.reply_to.sender_pubkey === m.sender_pubkey && out || m.reply_to.sender_pubkey !== m.sender_pubkey && !out ? $t("msg_you") : peerTitle}</span>
-        <span class="reply-text">{#if m.reply_to.text}<MessageContent text={m.reply_to.text} plain />{:else if replyCard}{replyCard}{:else}{$t('msg_message_deleted')}{/if}</span>
+        {#if thumb}<img class="reply-thumb" src={thumb} alt="" aria-hidden="true" />{/if}
+        <span class="reply-body">
+          <span class="reply-who">{author ? author(m.reply_to.sender_pubkey) : m.reply_to.sender_pubkey === m.sender_pubkey && out || m.reply_to.sender_pubkey !== m.sender_pubkey && !out ? $t("msg_you") : peerTitle}</span>
+          <span class="reply-text">{#if m.reply_to.text && !m.reply_to.deleted}<MessageContent text={m.reply_to.text} plain />{:else}{replyLine(m.reply_to, replyCard, $t)}{/if}</span>
+        </span>
       </button>
     {/if}
 
@@ -145,11 +150,13 @@
   .status.read { color: var(--accent); }
   .status.failed { color: var(--danger-text); }
   .reply {
-    display: flex; flex-direction: column; gap: 1px; text-align: left; width: 100%;
+    display: flex; align-items: center; gap: 8px; text-align: left; width: 100%;
     border: none; border-left: 2px solid var(--accent); border-radius: 4px; background: var(--surface-3);
     padding: 3px 8px; color: inherit; font: inherit; cursor: pointer; min-width: 0;
   }
   .line.out .reply { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .reply-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+  .reply-thumb { flex: 0 0 auto; width: 36px; height: 36px; object-fit: cover; border-radius: 4px; background: var(--surface-3); }
   .reply-who { font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--accent-text-2); }
   .reply-text { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
   .reply-text :global(.text) { font-size: inherit; line-height: inherit; white-space: inherit; user-select: none; }

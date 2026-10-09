@@ -106,6 +106,7 @@ class LinkStore {
       case 'group.updated':
       case 'profile.updated':
       case 'follows.updated':
+      case 'contacts.updated':
       case 'dm.relationship':
       case 'chats.updated':
         if (Object.keys(this.views).length) this.refresh();

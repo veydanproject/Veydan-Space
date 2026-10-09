@@ -9,7 +9,7 @@ use super::attachments::attachments_dir_for;
 use super::binding::is_scope_binding;
 use super::files::resolve_note_abs_path;
 use super::models::{NoteFilter, NoteFolder, NoteRow, NoteTagInfo};
-use super::tags::{fetch_all_note_folder_ids_map, fetch_all_note_tags_map};
+use super::tags::{fetch_all_note_folder_ids_map, fetch_all_note_tags_map, normalize_tag_name};
 use std::collections::{HashMap, HashSet};
 use veydan_core::AppError;
 use veydan_core::Core;
@@ -123,27 +123,33 @@ impl FilterContext {
 
         let empty = Vec::new();
         let tags = self.tags.get(&row.id).unwrap_or(&empty);
+        // A saved view may name a tag with the capitals it had before 5.1.12.
+        let has = |name: &str| {
+            let name = normalize_tag_name(name);
+            tags.iter().any(|t| t.name == name)
+        };
         if let Some(name) = &filter.tag_name {
-            if !tags.iter().any(|t| &t.name == name) {
+            if !has(name) {
                 return false;
             }
         }
         if let Some(prefix) = &filter.tag_prefix {
+            let prefix = normalize_tag_name(prefix);
             let sub = format!("{prefix}/");
             if !tags
                 .iter()
-                .any(|t| &t.name == prefix || t.name.starts_with(&sub))
+                .any(|t| t.name == prefix || t.name.starts_with(&sub))
             {
                 return false;
             }
         }
         if let Some(any) = &filter.tags_any {
-            if !any.is_empty() && !any.iter().any(|n| tags.iter().any(|t| &t.name == n)) {
+            if !any.is_empty() && !any.iter().any(|n| has(n)) {
                 return false;
             }
         }
         if let Some(all) = &filter.tags_all {
-            if !all.iter().all(|n| tags.iter().any(|t| &t.name == n)) {
+            if !all.iter().all(|n| has(n)) {
                 return false;
             }
         }

@@ -541,7 +541,10 @@ impl GroupService {
             })
             .unwrap_or_default();
         let requests = if manager {
-            repo::requests(&self.store, &row.id, "in", "pending").await?.into_iter().map(|r| r.requester).collect()
+            // One that the log has answered already (another manager let
+            // them in or banned them) is no question any more.
+            let open = |r: &repo::RequestRow| state.is_some_and(|s| PubKey::parse(&r.requester).is_some_and(|p| !s.is_member(&p) && !s.is_banned(&p)));
+            repo::requests(&self.store, &row.id, "in", "pending").await?.into_iter().filter(|r| open(r)).map(|r| r.requester).collect()
         } else {
             vec![]
         };
@@ -1155,6 +1158,11 @@ impl GroupService {
     }
 
     pub async fn approve_request(&self, keys: &Keys, group_id: &str, requester: &PubKey) -> Result<Outcome> {
+        if self.need_log(group_id).await?.state().is_member(requester) {
+            // Let in already, by another manager or my other device: a
+            // late click only closes the request here.
+            return self.answered_request(group_id, requester).await;
+        }
         let req = repo::request(&self.store, group_id, requester.as_hex(), "in")
             .await?
             .filter(|r| r.status == "pending")
@@ -1170,6 +1178,10 @@ impl GroupService {
         if !log.state().role_of(&me).is_some_and(Role::is_manager) {
             return Err(MessengerError::Invalid("group_not_permitted".into()));
         }
+        if log.state().is_member(requester) {
+            // Another manager let them in first: no "rejected" to a member.
+            return self.answered_request(group_id, requester).await;
+        }
         let req = repo::request(&self.store, group_id, requester.as_hex(), "in")
             .await?
             .filter(|r| r.status == "pending")
@@ -1178,6 +1190,35 @@ impl GroupService {
         let body = wire::Rejected { group_id: group_id.to_string() };
         let publish = self.dm(keys, requester, wire::dm_envelope(wire::T_REJECTED, &body)?, false, Wake::Nobody).await?;
         Ok(Outcome { publish, events: vec![Self::updated(group_id)], ..Default::default() })
+    }
+
+    /// A request whose requester is a member already: closed as approved
+    /// here, nothing sent.
+    async fn answered_request(&self, group_id: &str, requester: &PubKey) -> Result<Outcome> {
+        if let Some(req) = repo::request(&self.store, group_id, requester.as_hex(), "in").await?.filter(|r| r.status == "pending") {
+            repo::put_request(&self.store, &repo::RequestRow { status: "approved".into(), ..req }).await?;
+        }
+        Ok(Outcome { events: vec![Self::updated(group_id)], ..Default::default() })
+    }
+
+    /// Requests here that the log has answered meanwhile (another manager
+    /// or my other device let them in or banned them) are closed too, so
+    /// that the lists of all managers agree. Whether one was.
+    pub(crate) async fn close_answered_requests(&self, group_id: &str, s: &GroupState) -> Result<bool> {
+        let mut changed = false;
+        for req in repo::requests(&self.store, group_id, "in", "pending").await? {
+            let Some(who) = PubKey::parse(&req.requester) else { continue };
+            let status = if s.is_member(&who) {
+                "approved"
+            } else if s.is_banned(&who) {
+                "rejected"
+            } else {
+                continue;
+            };
+            repo::put_request(&self.store, &repo::RequestRow { status: status.into(), ..req }).await?;
+            changed = true;
+        }
+        Ok(changed)
     }
 
     /// Remove a group from this device (after leaving it, or a request
@@ -1411,8 +1452,8 @@ impl GroupService {
             return Err(MessengerError::Invalid("message is empty or too long".into()));
         }
         let row = msgs::get(&self.store, message_id).await?.filter(|r| !r.is_hidden).ok_or_else(|| MessengerError::Invalid("unknown message".into()))?;
-        if row.sender_pubkey != me.as_hex() || row.deleted_at.is_some() || row.content_type != msgs::CT_TEXT {
-            return Err(MessengerError::Invalid("only your own text messages can be edited".into()));
+        if row.sender_pubkey != me.as_hex() || row.deleted_at.is_some() || !messenger_dm::service::editable_row(&row) {
+            return Err(MessengerError::Invalid("only your own text messages and captions can be edited".into()));
         }
         let group_id = Self::group_of(&row.chat_id)?.to_string();
         let (hidden, out) = self.prepare_message(keys, &group_id, Envelope::edit(message_id, text), msgs::CT_EDIT, None, None, None).await?;

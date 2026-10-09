@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "Cette fenêtre a reçu l'interface pour téléphone de {app} : l'application a été compilée avec les pages de la version Android.",
     "start_error_wrong_ui_desktop": "Cet appareil a reçu l'interface pour ordinateur de {app} : l'application a été compilée avec les pages de la version pour ordinateur.",
     "start_error_wrong_ui_fix": "Rien n'a été modifié. Recompilez l'application ou installez une version publiée.",
+    "screen_failed": "Impossible d'afficher cet écran.",
+    "screen_to_start": "Aller à l'écran de démarrage",
     "modules_section": "Modules",
     "modules_hint": "Ce que cet appareil affiche. Un module désactivé conserve ses données, et celles-ci continuent d'être synchronisées.",
     "modules_last": "Au moins un module reste activé.",

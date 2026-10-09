@@ -65,10 +65,13 @@ impl Feed {
     /// A call begins, or I learn of one: the record and the line, once.
     /// Nothing when the call is on record already (a copy).
     pub async fn begin(&self, call_id: &str, peer: &str, direction: Direction, media: Media, started_at: i64) -> Result<Vec<Effect>> {
-        let chat = chats::ensure_dm(&self.store, peer).await?;
+        // The chat is made only for a line that is really new: a copy of a
+        // call on record, or one from before the chat was deleted here,
+        // does not bring the chat back.
+        let chat_id = chats::dm_chat_id(peer);
         let new = NewCall {
             call_id: call_id.to_string(),
-            chat_id: chat.id.clone(),
+            chat_id: chat_id.clone(),
             peer: peer.to_string(),
             direction: direction.as_str().to_string(),
             media: media.as_str().to_string(),
@@ -77,13 +80,17 @@ impl Feed {
         if !repo::insert(&self.store, &new).await? {
             return Ok(vec![]);
         }
+        // Before the deletion (a call I start at once may share its second).
+        if started_at < chats::cleared_at(&self.store, &chat_id).await? {
+            return Ok(vec![]);
+        }
         let row = repo::get(&self.store, call_id).await?.ok_or_else(|| messenger_core::MessengerError::Storage("call vanished".into()))?;
         let id = system_id(call_id);
         let inserted = msgs::insert(
             &self.store,
             &NewMessage {
                 id: id.clone(),
-                chat_id: chat.id.clone(),
+                chat_id: chat_id.clone(),
                 wire_id: None,
                 direction: direction.as_str().to_string(),
                 status: msgs::STATUS_SENT.into(),
@@ -103,11 +110,12 @@ impl Feed {
         if !inserted {
             return Ok(vec![]);
         }
-        chats::touch(&self.store, &chat.id, started_at, Some(PREVIEW), false).await?;
+        chats::ensure_dm(&self.store, peer).await?;
+        chats::touch(&self.store, &chat_id, started_at, Some(PREVIEW), false).await?;
         let Some(view) = self.dm.message(&id).await? else { return Ok(vec![]) };
         Ok(vec![Effect::Emit(UiEvent {
             name: UI_EVENT_DM_MESSAGE.into(),
-            payload: serde_json::json!({ "chat_id": chat.id, "message": view, "historical": true }),
+            payload: serde_json::json!({ "chat_id": chat_id, "message": view, "historical": true }),
         })])
     }
 
@@ -174,5 +182,36 @@ impl Feed {
             name: UI_EVENT_DM_UPDATED.into(),
             payload: serde_json::json!({ "chat_id": row.chat_id, "message_id": id }),
         })])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use messenger_contacts::{ContactService, ProfileService};
+    use messenger_core::traits::SystemClock;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn a_call_from_before_the_chat_was_deleted_does_not_bring_it_back() {
+        let store = Store::open_in_memory().await.unwrap();
+        let profiles = ProfileService::new(store.clone());
+        let contacts = ContactService::new(store.clone(), profiles.clone());
+        let dm = DmService::new(store.clone(), contacts, profiles, Arc::new(SystemClock));
+        let feed = Feed::new(store.clone(), dm.clone());
+        let peer = "b".repeat(64);
+        let chat_id = chats::dm_chat_id(&peer);
+
+        assert_eq!(feed.begin("c1", &peer, Direction::In, Media::Audio, 100).await.unwrap().len(), 1);
+        dm.delete_chat(&chat_id).await.unwrap();
+        // A copy of the call on record, then one this device never saw.
+        assert!(feed.begin("c1", &peer, Direction::In, Media::Audio, 100).await.unwrap().is_empty());
+        assert!(feed.begin("c2", &peer, Direction::Out, Media::Audio, 200).await.unwrap().is_empty());
+        assert!(chats::get(&store, &chat_id).await.unwrap().is_none());
+
+        // A call after the deletion is a line, and the chat is there for it.
+        let later = chats::cleared_at(&store, &chat_id).await.unwrap() + 10;
+        assert_eq!(feed.begin("c3", &peer, Direction::In, Media::Video, later).await.unwrap().len(), 1);
+        assert!(chats::get(&store, &chat_id).await.unwrap().is_some());
     }
 }

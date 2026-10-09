@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import { bytes as rawBytes, eta as rawEta, fileIcon, rate as rawRate } from './format';
+import { bytes as rawBytes, eta as rawEta, fileIcon, rate as rawRate, saveFilters } from './format';
 
 describe('fileIcon', () => {
   it('knows a file by its type, then by its extension', () => {
@@ -76,5 +76,19 @@ describe('bytes, rate and eta', () => {
     expect(eta(130, 'en')).toBe('~2 min');
     expect(eta(null, 'ru')).toBe('');
     expect(eta(0, 'ru')).toBe('');
+  });
+});
+
+describe('saveFilters', () => {
+  it('names the extension of the file, then every file', () => {
+    expect(saveFilters('Holiday.JPG', 'All files')).toEqual([
+      { name: 'JPG', extensions: ['jpg'] },
+      { name: 'All files', extensions: ['*'] },
+    ]);
+    expect(saveFilters('backup.tar.gz', 'All')[0]).toEqual({ name: 'GZ', extensions: ['gz'] });
+  });
+
+  it('has none for a name without an extension, or one that is no extension', () => {
+    for (const name of ['README', '', 'photo.', 'a.b c', 'x.' + 'e'.repeat(13)]) expect(saveFilters(name, 'All files'), name).toEqual([]);
   });
 });

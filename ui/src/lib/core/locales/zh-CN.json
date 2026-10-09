@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "此窗口加载了 {app} 的手机界面：应用在构建时使用了 Android 版本的页面。",
     "start_error_wrong_ui_desktop": "此设备加载了 {app} 的桌面界面：应用在构建时使用了桌面版本的页面。",
     "start_error_wrong_ui_fix": "未做任何更改。请重新构建应用，或安装正式发布版本。",
+    "screen_failed": "无法显示此页面。",
+    "screen_to_start": "返回启动页面",
     "modules_section": "模块",
     "modules_hint": "此设备上显示的内容。关闭的模块会保留其数据，数据也会继续同步。",
     "modules_last": "至少需要保留一个模块处于开启状态。",

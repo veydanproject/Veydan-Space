@@ -629,6 +629,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_contact_approved_on_my_other_device_is_watched_and_shown_here() {
+        use crate::tests::{ctx_of, dm_inbound, pk_of};
+        let (_dir, rt, me) = started().await;
+        rt.dm().set_gate(true);
+        let (me_pk, bob) = (pk_of(&me), Keys::generate());
+        let bob_pk = pk_of(&bob);
+        // Bob asked, my phone accepted: this device only sees the copies.
+        let now = SystemClock.now().secs();
+        let ctx = ctx_of(&me_pk, now);
+        let control = |a: &str| Envelope::control(a).encode();
+        rt.dm().apply_inbound(dm_inbound(&bob_pk, &me_pk, Envelope::text("hi").encode(), now - 3), &ctx).await.unwrap();
+        rt.dm().apply_inbound(dm_inbound(&bob_pk, &me_pk, control("dm_accept"), now - 2), &ctx).await.unwrap();
+        rt.dm().apply_inbound(dm_inbound(&me_pk, &bob_pk, control("dm_accept"), now - 1), &ctx).await.unwrap();
+        assert_eq!(rt.dm().relation(&bob_pk).await.unwrap().mode, "full_chat");
+        assert!(rt.contacts().is_contact(&bob_pk).await.unwrap(), "in this device's book too");
+
+        // Bob's key (what his `presence.key` note leaves) and a beat of it.
+        let bobs = key::derive(&bob, 0).public_key().to_hex();
+        presence::put_key(rt.store(), bob_pk.as_hex(), Some(&bobs), 1).await.unwrap();
+        presence::seen(rt.store(), &bobs, now, now + 80).await.unwrap();
+        assert_eq!(rt.presence().approved(me_pk.as_hex()).await.unwrap(), vec![bob_pk.clone()], "his key is watched");
+        assert_eq!(
+            rt.presence_list().await.unwrap(),
+            vec![PresenceView { peer: bob_pk.as_hex().to_string(), seen_at: now, online_until: now + 80 }]
+        );
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_contact_i_removed_stays_unwatched_after_the_book_is_filled() {
+        use crate::tests::pk_of;
+        use messenger_store::dm_relations::{self, RelationRow};
+        let (_dir, rt, me) = started().await;
+        let bob = Keys::generate();
+        // Removed from Contacts before the matrix; migration 007 still made
+        // the relation approved from the chat.
+        add_contact(&rt, &bob).await;
+        rt.contacts().remove(&pk_of(&bob)).await.unwrap();
+        let row = RelationRow {
+            peer_pubkey: bob.public_key().to_hex(),
+            my_contact: "approved".into(),
+            blocked: false,
+            peer_signal: "approved".into(),
+            was_ever_mutual: true,
+            last_signal_at: 0,
+            last_my_signal_at: 0,
+            request_floor: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        dm_relations::put(rt.store(), &row).await.unwrap();
+        // The first start after the update: the fill has not run yet.
+        messenger_store::settings::set_bool(rt.store(), "contacts.filled_from_relations", false).await.unwrap();
+
+        assert!(rt.dm().fill_book_once().await.unwrap().is_empty());
+        assert!(!rt.contacts().is_contact(&pk_of(&bob)).await.unwrap());
+        assert!(rt.presence().approved(&me.public_key().to_hex()).await.unwrap().is_empty());
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn a_move_made_without_a_session_is_told_to_my_devices_at_the_next_look() {
         let (_dir, rt, me) = started().await;
         // As `presence_rotate` does with no session: the epoch moves, no note goes.

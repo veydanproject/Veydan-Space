@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">Cuộc gọi</string>
+    <string name="veydan_call_channel_ongoing">Cuộc gọi đang diễn ra</string>
+    <string name="veydan_call_incoming">Cuộc gọi đến</string>
+    <string name="veydan_call_incoming_video">Cuộc gọi video đến</string>
+    <string name="veydan_call_ongoing">Cuộc gọi đang diễn ra</string>
+    <string name="veydan_call_answer">Trả lời</string>
+    <string name="veydan_call_decline">Từ chối</string>
+    <string name="veydan_call_hangup">Kết thúc</string>
+    <string name="veydan_call_unknown">Không xác định</string>
+    <string name="veydan_call_channel_group">Cuộc gọi nhóm</string>
+    <string name="veydan_call_group_on">Đang có cuộc gọi</string>
+    <string name="veydan_call_group_video_on">Đang có cuộc gọi video</string>
+    <string name="veydan_call_swipe_answer">Vuốt sang trái để trả lời</string>
+    <string name="veydan_call_swipe_decline">Vuốt sang phải để từ chối</string>
+</resources>

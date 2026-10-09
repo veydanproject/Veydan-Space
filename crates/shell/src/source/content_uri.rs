@@ -83,12 +83,52 @@ fn query(
         .l()?;
     let fallback = uri.rsplit('/').next().unwrap_or("file").to_string();
     if cursor.is_null() || !env.call_method(&cursor, "moveToFirst", "()Z", &[])?.z()? {
-        return Ok((fallback, None));
+        let name = with_extension(env, &resolver, &uri_obj, fallback);
+        return Ok((name, None));
     }
     let name = column_string(env, &cursor, DISPLAY_NAME)?.unwrap_or(fallback);
     let size = column_long(env, &cursor, SIZE)?;
     env.call_method(&cursor, "close", "()V", &[])?;
+    let name = with_extension(env, &resolver, &uri_obj, name);
     Ok((name, size))
+}
+
+/// A name without a dot gets the extension of the file's content type:
+/// some providers give a bare name, and without the extension the file
+/// goes out, and is saved, as an unknown one. Never fails the pick.
+fn with_extension(env: &mut JNIEnv, resolver: &JObject, uri: &JObject, name: String) -> String {
+    if name.contains('.') {
+        return name;
+    }
+    match extension_of(env, resolver, uri) {
+        Ok(Some(ext)) => format!("{name}.{ext}"),
+        Ok(None) => name,
+        Err(_) => {
+            let _ = env.exception_clear();
+            name
+        }
+    }
+}
+
+/// `ContentResolver.getType` through `MimeTypeMap`.
+fn extension_of(env: &mut JNIEnv, resolver: &JObject, uri: &JObject) -> jni::errors::Result<Option<String>> {
+    let mime = env
+        .call_method(resolver, "getType", "(Landroid/net/Uri;)Ljava/lang/String;", &[JValue::Object(uri)])?
+        .l()?;
+    if mime.is_null() {
+        return Ok(None);
+    }
+    let map = env
+        .call_static_method("android/webkit/MimeTypeMap", "getSingleton", "()Landroid/webkit/MimeTypeMap;", &[])?
+        .l()?;
+    let ext = env
+        .call_method(&map, "getExtensionFromMimeType", "(Ljava/lang/String;)Ljava/lang/String;", &[JValue::Object(&mime)])?
+        .l()?;
+    if ext.is_null() {
+        return Ok(None);
+    }
+    let ext: String = env.get_string(&JString::from(ext))?.into();
+    Ok((!ext.is_empty()).then_some(ext))
 }
 
 fn column_index(

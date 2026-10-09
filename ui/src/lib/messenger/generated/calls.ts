@@ -278,7 +278,7 @@ registry_paused: boolean, };
 /** Where I am with the room of a group call: making it, joining it, in it, restoring the way to the node, out of it. */
 export type GroupCallPhase = "starting" | "joining" | "in_room" | "reconnecting" | "left";
 
-/** One seat of the room of a group call; only a verified seat is a person and is heard. `video_mid` is what `messenger_group_call_video_subscribe` takes. */
+/** One seat of the room of a group call; only a verified seat is a person and is heard. `video_mid` is what `messenger_group_call_video_subscribe` takes; `camera`, `mic`, `screen` are the seat's own word of state, absent when not known (a client of 5.1.11 and before). */
 export type GroupParticipant = { 
 /**
  * The seat: the node's participant id.
@@ -305,7 +305,24 @@ audio_mid?: string,
  * The m-line of the seat's video when it sends one: what
  * `messenger_group_call_video_subscribe` takes.
  */
-video_mid?: string, me: boolean, };
+video_mid?: string, me: boolean, 
+/**
+ * The seat's camera is on, by its own word of state (mine: my own
+ * state). Absent: not known — the seat is not verified, its word has
+ * not come yet, or its client is of before the word (5.1.11 and
+ * older); the screen judges such a seat by its frames, as before.
+ */
+camera?: boolean, 
+/**
+ * The seat's microphone is on (not muted), the same way.
+ */
+mic?: boolean, 
+/**
+ * The seat shares its screen (its video is the screen, not the
+ * camera), the same way. The seat's video is on when `camera` or
+ * `screen` is.
+ */
+screen?: boolean, };
 
 /** The room of a group call I am in: the `call` of `group_call.state` and the answer of the group call commands. */
 export type GroupCallView = { call_id: string, group_id: string, chat_id: string, phase: GroupCallPhase, media: CallMedia, muted: boolean, video_local: boolean, 

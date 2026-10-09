@@ -56,7 +56,8 @@
 //! stdin until it is over; `gcall` and `gcall-join` stay in the room and
 //! read `leave`, `mute`, `unmute`, `video on|off`, `layer <seat> <rid>`
 //! and `state`, print the seats of the room as they change (who, verified,
-//! speaking, the m-lines of their sound and video), the way to the node,
+//! speaking, the m-lines of their sound and video, camera and microphone
+//! by their word of state), the way to the node,
 //! and at the end what came from every seat: the tones in its sound, the
 //! frames of its video. The sound goes through the engine's pushed
 //! path, 48 kHz mono: a tone or a WAV file in, a WAV file out, and the
@@ -2417,7 +2418,8 @@ struct RoomGot {
 /// In the room from here to my leaving or the end of the call: the sound
 /// pumped, the sound of every seat kept by its m-line, the video pushed
 /// while wanted and the video of every seat counted, the seats printed
-/// as they change (who, verified, speaking, their m-lines), the way to
+/// as they change (who, verified, speaking, their m-lines, `cam`/`mic` of
+/// their word of state), the way to
 /// the node, stdin read for `leave`, `mute`, `unmute`, `video on|off`,
 /// `layer <seat> <rid>`, `state`; `--secs` leaves after that long in the
 /// room; Ctrl-C leaves.
@@ -2724,16 +2726,27 @@ fn where_of(node: &str, home: &str) -> String {
     }
 }
 
-/// One seat of the room on a line: `#2 npub1abc… ok speaking a:1 v:2 (me)`.
+/// One seat of the room on a line: `#2 npub1abc… ok speaking a:1 v:2
+/// cam:on mic:off (me)`. `cam`/`mic` (and `screen:on`) are the seat's own
+/// word of state; `?` — not known (not verified, not come yet, or a
+/// client of before the word).
 fn seat_line(p: &serde_json::Value) -> String {
+    let flag = |key: &str| match p[key].as_bool() {
+        Some(true) => "on",
+        Some(false) => "off",
+        None => "?",
+    };
     format!(
-        "#{} {} {}{}{}{}{}",
+        "#{} {} {}{}{}{} cam:{} mic:{}{}{}",
         p["id"],
         p["npub"].as_str().map(|n| n[..12].to_string()).unwrap_or_else(|| "?".into()),
         if p["verified"] == true { "ok" } else { "unverified" },
         if p["speaking"] == true { " speaking" } else { "" },
         p["audio_mid"].as_str().map(|m| format!(" a:{m}")).unwrap_or_default(),
         p["video_mid"].as_str().map(|m| format!(" v:{m}")).unwrap_or_default(),
+        flag("camera"),
+        flag("mic"),
+        if p["screen"] == true { " screen:on" } else { "" },
         if p["me"] == true { " (me)" } else { "" },
     )
 }

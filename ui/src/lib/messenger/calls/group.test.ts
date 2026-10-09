@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { GroupCallView, GroupParticipant } from '../generated/calls';
 import {
   FOCUS_HOLD_MS, MY_VIDEO_MID, bannerKey, focusOf, holdFocus, gridShape, groupElapsed, groupStatusText, layerFor, mirrorsMine, nodeHost, overKey, roomPath, roomPathText, seatMuted,
-  seatSendsVideo, seatsInOrder,
+  seatSendsVideo, seatVideoWord, seatsInOrder, tileWait,
 } from './group';
 import { callErrorText } from './words';
 
@@ -46,6 +46,12 @@ describe('the seats of a room', () => {
     // A track that sends no pictures is no video to show large.
     expect(focusOf(talking, null, 2, (id) => id !== 4)).toBe(2);
     expect(focusOf(talking, null, null, () => false)).toBeNull();
+    // A seat that says its camera is on is large while it speaks, its frames
+    // or none; one that says it is off is not, its pictures or not.
+    const told = [seat(2, { video_mid: 'v2', camera: true, speaking: true }), seat(4, { video_mid: 'v4', camera: false })];
+    expect(focusOf(told, null, null, () => false)).toBe(2);
+    expect(focusOf(told, null, 4, () => true)).toBe(2);
+    expect(focusOf([told[1]], null, 4, () => true)).toBeNull();
   });
 
   it('keep the large place by the voices a while, so two who talk in turns do not throw the screen to and fro', () => {
@@ -140,15 +146,52 @@ describe('what a seat shows', () => {
     expect(seatSendsVideo(seat(1, { me: true, video_mid: '9' }), room(), pictures([1]))).toBe(false);
   });
 
-  it('a crossed microphone for mine when off; never for another from its m-line of sound', () => {
+  it('a camera as the seat itself says, whether its pictures come or not; by its pictures when it says nothing', () => {
+    expect(seatVideoWord(seat(2))).toBeNull();
+    expect(seatVideoWord(seat(2, { camera: true, mic: true, screen: false }))).toBe(true);
+    expect(seatVideoWord(seat(2, { camera: false, mic: true, screen: true })), 'its screen').toBe(true);
+    expect(seatVideoWord(seat(2, { camera: false, mic: true, screen: false }))).toBe(false);
+    expect(seatVideoWord({ camera: null, screen: null } as unknown as GroupParticipant), 'null is not known either').toBeNull();
+    const on = seat(2, { video_mid: '2', camera: true, screen: false });
+    const off = seat(2, { video_mid: '2', camera: false, screen: false });
+    // On: no picture for long changes nothing; off: at once, pictures or not.
+    expect(seatSendsVideo(on, room(), pictures([]))).toBe(true);
+    expect(seatSendsVideo(off, room(), pictures([2]))).toBe(false);
+    expect(seatSendsVideo(seat(2, { video_mid: '2', camera: false, screen: true }), room(), pictures([]))).toBe(true);
+    // A client of 5.1.11 says nothing: its pictures, as before.
+    expect(seatSendsVideo(seat(2, { video_mid: '2' }), room(), pictures([2]))).toBe(true);
+    expect(seatSendsVideo(seat(2, { video_mid: '2' }), room(), pictures([]))).toBe(false);
+    // Still nothing without a confirmed seat or the m-line of its video.
+    expect(seatSendsVideo({ ...on, verified: false }, room(), pictures([2]))).toBe(false);
+    expect(seatSendsVideo({ ...on, video_mid: undefined }, room(), pictures([2]))).toBe(false);
+  });
+
+  it('a tile without a picture of a camera on: dark only while its pictures come, its face otherwise, "No signal" by the seat\'s clock', () => {
+    const other = { me: false, told: true, live: false, lost: false, flowing: false, stale: false };
+    // Made anew while the frames come: dark for the moment, the next picture is on its way.
+    expect(tileWait({ ...other, flowing: true })).toBe('dark');
+    // Made anew in a pause (another's voice moved it), or the camera on again: its face, waiting.
+    expect(tileWait(other)).toBe('waiting');
+    // Missing for VIDEO_LOST_MS by the seat's clock, however young the tile.
+    expect(tileWait({ ...other, stale: true })).toBe('lost');
+    expect(tileWait({ ...other, lost: true }), 'by the tile\'s own clock too').toBe('lost');
+    // A picture on the tile, or no word that the video is on: not this.
+    expect(tileWait({ ...other, live: true, stale: true })).toBeNull();
+    expect(tileWait({ ...other, told: false, stale: true })).toBeNull();
+    // Mine: my face until my camera's first picture.
+    expect(tileWait({ ...other, me: true, flowing: true })).toBe('waiting');
+  });
+
+  it('a crossed microphone for mine when off, for another\'s by its word; never from its m-line of sound', () => {
     expect(seatMuted(seat(1, { me: true }), room({ muted: true }))).toBe(true);
     expect(seatMuted(seat(1, { me: true }), room())).toBe(false);
     // `audio` false is a track not come yet, not a microphone off.
     expect(seatMuted(seat(2, { audio: false }), room())).toBe(false);
     expect(seatMuted(seat(2), room({ muted: true })), 'my mute is not theirs').toBe(false);
-    // Once the room says another's microphone is off.
-    expect(seatMuted({ ...seat(2), muted: true } as GroupParticipant, room())).toBe(true);
-    expect(seatMuted({ ...seat(2, { verified: false }), muted: true } as GroupParticipant, room())).toBe(false);
+    // Another's by its word of state; nothing said (an older client) is no microphone off.
+    expect(seatMuted(seat(2, { mic: false }), room())).toBe(true);
+    expect(seatMuted(seat(2, { mic: true }), room({ muted: true }))).toBe(false);
+    expect(seatMuted(seat(2, { verified: false, mic: false }), room())).toBe(false);
   });
 });
 

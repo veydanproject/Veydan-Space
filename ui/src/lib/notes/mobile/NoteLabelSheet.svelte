@@ -7,6 +7,7 @@
   import { t, type MobileKey } from '$lib/core/mobile/i18n';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import { labelPickerText } from '$lib/notes/label-kinds';
+  import { findTag, normalizeTagName } from '$lib/notes/tag-name';
 
   /** Entity kinds looked up in the backend; workspace/profile come from nav props. */
   const ENTITY_SEARCH = ['proxy', 'ssh', 'totp', 'password'] as const;
@@ -56,8 +57,9 @@
   });
 
   const q = $derived(query.trim().toLowerCase());
+  const selectedKeys = $derived(new Set(selectedTags.map((n) => normalizeTagName(n))));
   const tagHits = $derived(
-    tags.filter((t) => !selectedTags.includes(t.name) && t.name.toLowerCase().includes(q)),
+    tags.filter((t) => !selectedKeys.has(normalizeTagName(t.name)) && t.name.toLowerCase().includes(q)),
   );
   const folderHits = $derived(
     q ? folders.filter((f) => !folderIds.includes(f.id) && f.name.toLowerCase().includes(q)) : [],
@@ -72,7 +74,8 @@
   const noteHits = $derived(
     notes.filter((n) => !bindings.includes(`note:${n.id}`) && n.title.toLowerCase().includes(q)).slice(0, 6),
   );
-  const canCreate = $derived(query.trim().length > 0 && !tags.some((t) => t.name === query.trim()));
+  // "Работа" when "работа" exists is that tag: no color to pick.
+  const canCreate = $derived(query.trim().length > 0 && !findTag(tags, query.trim().replace(/^#/, '')));
 
   // Proxy / SSH / TOTP hits come from the backend, debounced
   let entityHits = $state<BindingSummary[]>([]);

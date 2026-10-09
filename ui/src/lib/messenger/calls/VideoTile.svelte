@@ -16,10 +16,11 @@
   `VIDEO_LOST_MS` (or the stream ended): the picture is dimmed, and the
   screen around says so where the call says the video is on. The clock of
   `lost` is the tile's and starts again with a new tile; a seat of a group
-  call, whose camera the room does not tell of, is judged where its clock
-  outlives its tiles (groupCallStore `showing`), from what the tile tells
-  (`onpicture`, `onended`, by the m-line of its subscription). `on`: the
-  video is on as the call says (my camera, the peer's in a call of two);
+  call that says nothing of its camera (an older client) is judged where
+  its clock outlives its tiles (groupCallStore `showing`), from what the
+  tile tells (`onpicture`, `onended`, by the m-line of its subscription).
+  `on`: the video is on as the call says (my camera, the peer's in a call
+  of two, a seat's of a group call by its own word);
   while it is off nothing is held, so a picture shows again only with a
   frame that came after it went on.
 -->
@@ -49,7 +50,7 @@
     mirror?: boolean;
     /** `auto`: cropped to fill when the picture stands as the tile does, whole otherwise. */
     fit?: 'cover' | 'contain' | 'auto';
-    /** The video is on as the call says; without a word of the call (a seat of a group call), on. */
+    /** The video is on as the call says; without a word of the call (a seat of an older client), on. */
     on?: boolean;
     /** A picture is there to show: the last one stays through a pause of the frames. */
     live?: boolean;

@@ -11,6 +11,7 @@
   import { parseBinding } from '$lib/core/bindings';
   import { hexColor } from '$lib/core/foreign-labels.svelte';
   import { isSystemTag, mergeTags, systemTags, userLabels } from '$lib/core/entity-tags';
+  import { findTag, tagChoice } from '$lib/notes/tag-name';
 
   interface Props {
     tags: string[];
@@ -83,7 +84,7 @@
   }
 
   function tagColor(name: string): string | undefined {
-    return allTags.find((tag) => tag.name === name)?.color;
+    return findTag(allTags, name)?.color;
   }
 
   function remove(tag: string) {
@@ -92,18 +93,19 @@
 
   async function addTag(name: string, color?: string) {
     const value = name.trim().replace(/^#/, '');
-    if (!value || isSystemTag(value) || labels.includes(value)) {
+    // "Работа" is the tag "работа": the new tag and the label get one name.
+    const choice = isSystemTag(value) ? null : tagChoice(value, allTags, labels);
+    if (!choice) {
       open = false;
       return;
     }
     error = '';
-    const existing = allTags.find((tag) => tag.name === value);
     try {
-      if (!existing && color) {
-        const created = await api.notes.tagCreate(value, color);
+      if (!choice.existing && color) {
+        const created = await api.notes.tagCreate(choice.name, color);
         allTags = [...allTags, created];
       }
-      onchange(mergeTags([], bindings, [...labels, existing?.name ?? value]));
+      onchange(mergeTags([], bindings, [...labels, choice.name]));
       open = false;
     } catch (err) {
       error = formatError(err);

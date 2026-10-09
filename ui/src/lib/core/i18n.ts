@@ -468,6 +468,9 @@ const translations = {
     start_error_wrong_ui_phone: 'This window was given the phone interface of {app}: the app was built with the pages of the Android build.',
     start_error_wrong_ui_desktop: 'This device was given the desktop interface of {app}: the app was built with the pages of the desktop build.',
     start_error_wrong_ui_fix: 'Nothing was changed. Build the app again, or install a release build.',
+    // A screen that failed to show, and the address without a page
+    screen_failed: 'This screen could not be shown.',
+    screen_to_start: 'To the start screen',
     // The switches of the modules (Space)
     modules_section: 'Modules',
     modules_hint: 'What this device shows. A module that is off keeps its data, and its data keeps syncing.',
@@ -916,6 +919,9 @@ const translations = {
     start_error_wrong_ui_phone: 'Этому окну достался телефонный интерфейс {app}: приложение собрано со страницами сборки для Android.',
     start_error_wrong_ui_desktop: 'Этому устройству достался десктопный интерфейс {app}: приложение собрано со страницами десктопной сборки.',
     start_error_wrong_ui_fix: 'Ничего не изменено. Соберите приложение заново или установите релизную сборку.',
+    // A screen that failed to show, and the address without a page
+    screen_failed: 'Не удалось показать этот экран.',
+    screen_to_start: 'На стартовый экран',
     // The switches of the modules (Space)
     modules_section: 'Модули',
     modules_hint: 'Что показывает это устройство. Выключенный модуль сохраняет свои данные, и они продолжают синхронизироваться.',

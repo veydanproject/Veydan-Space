@@ -51,7 +51,7 @@
 <style>
   .bio {
     font-size: var(--fs-sm); color: var(--text-body, var(--text)); line-height: 1.45;
-    white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0;
+    white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; min-width: 0;
   }
   .clamp { max-height: calc(var(--lines) * 1.45em); overflow: hidden; }
   .clamp.over { mask-image: linear-gradient(to bottom, #000 calc(100% - 1.45em), transparent); }

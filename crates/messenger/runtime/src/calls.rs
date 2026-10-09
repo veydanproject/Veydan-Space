@@ -851,6 +851,23 @@ pub struct GroupParticipant {
     #[ts(optional)]
     pub video_mid: Option<String>,
     pub me: bool,
+    /// The seat's camera is on, by its own word of state (mine: my own
+    /// state). Absent: not known — the seat is not verified, its word has
+    /// not come yet, or its client is of before the word (5.1.11 and
+    /// older); the screen judges such a seat by its frames, as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub camera: Option<bool>,
+    /// The seat's microphone is on (not muted), the same way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mic: Option<bool>,
+    /// The seat shares its screen (its video is the screen, not the
+    /// camera), the same way. The seat's video is on when `camera` or
+    /// `screen` is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub screen: Option<bool>,
 }
 
 /// The room of a group call I am in, as the screen shows it: the `call`
@@ -997,6 +1014,9 @@ impl From<CoreGroupView> for GroupCallView {
                     audio_mid: p.audio_mid,
                     video_mid: p.video_mid,
                     me: p.me,
+                    camera: p.camera,
+                    mic: p.mic,
+                    screen: p.screen,
                 })
                 .collect(),
             limits: v.limits.map(|l| CallLimits {
@@ -1724,6 +1744,9 @@ mod tests {
                 audio_mid: Some("1".into()),
                 video_mid: Some("2".into()),
                 me: false,
+                camera: Some(true),
+                mic: Some(false),
+                screen: None,
             }],
             limits: Some(messenger_calls::node_client::Limits { turn_lifetime_secs: 3600, turn_kbps_per_allocation: 2000, credentials_ttl_secs: 600 }),
             kbps_per_participant: 2500,

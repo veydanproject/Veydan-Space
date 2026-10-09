@@ -24,7 +24,7 @@
   import { logSendFailure, sendFailureKey } from './send-failure';
   import { lateAt, shownStatus, worstOf } from './delivery';
   import Reactions from './Reactions.svelte';
-  import { reactionTarget } from './quick-reactions';
+  import { pressedPart, reactionTarget } from './quick-reactions';
 
   interface Props {
     messages: MessengerMessage[];
@@ -86,9 +86,17 @@
   /** While parts of an album of mine go up: how many of them are there already. */
   const uploaded = $derived(out && messages.length > 1 && messages.some(sending) ? { k: messages.filter((m) => !notYet(m)).length, n: messages.length } : null);
 
-  const press = (m: MessengerMessage) => ({
-    onpress: (p: { x: number; y: number }) => onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), m),
-  });
+  // The whole bubble opens the menu, not only its tiles. A tile or a
+  // caption names its part; the rest of the bubble opens the menu of the
+  // part with the words, if any, else of the last part.
+  const partAt = (t: EventTarget | null) => {
+    const el = t instanceof Element ? t.closest('[data-mid],[data-part]') : null;
+    return pressedPart(messages, el?.getAttribute('data-mid') ?? el?.getAttribute('data-part'), captions[0] ?? tail);
+  };
+  const press = {
+    onpress: (p: { x: number; y: number; target: EventTarget | null }) =>
+      onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), partAt(p.target)),
+  };
 </script>
 
 {#snippet meta(onPicture: boolean)}
@@ -100,7 +108,9 @@
 {/snippet}
 
 <div class="line" class:out class:first class:last class:highlighted={messages.some((m) => m.id === highlighted)}>
-  <div class="bubble {variant}" class:failed={failed.length > 0} class:bare={overlay && !author}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="bubble {variant}" class:failed={failed.length > 0} class:bare={overlay && !author}
+    oncontextmenu={(e) => onmenu(e, partAt(e.target))} use:longpress={press}>
     {#if author}<span class="author" style="color: {authorTint}">{author}</span>{/if}
 
     {#if pictures.length}
@@ -109,8 +119,7 @@
           {@const h = rowHeight(row.length, rows.length)}
           <div class="row" style={h ? `height:${h}px` : ''}>
             {#each row as m (m.id)}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div class="cell" data-mid={m.id} oncontextmenu={(e) => onmenu(e, m)} use:longpress={press(m)}>
+              <div class="cell" data-mid={m.id}>
                 <MediaBubble message={m} variant="tile" fit={h ? 'cover' : 'natural'} />
               </div>
             {/each}
@@ -124,8 +133,7 @@
         {#each fileRows as row, r (r)}
           <div class="card-row">
             {#each row as m (m.id)}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div class="card-cell" data-mid={m.id} oncontextmenu={(e) => onmenu(e, m)} use:longpress={press(m)}>
+              <div class="card-cell" data-mid={m.id}>
                 <MediaBubble message={m} variant="card" wide={row.length === 1} />
               </div>
             {/each}
@@ -140,7 +148,7 @@
       </div>
     {/if}
     {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} /></div>{/if}
-    {#each captions as m (m.id)}<div class="caption"><MessageContent text={m.text ?? ''} /></div>{/each}
+    {#each captions as m (m.id)}<div class="caption" data-part={m.id}><MessageContent text={m.text ?? ''} /></div>{/each}
     {#if !overlay}{@render meta(false)}{/if}
   </div>
   {#each failed.filter((m) => out && !m.deleted && !m.id.startsWith('local:')) as m (m.id)}

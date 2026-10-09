@@ -135,15 +135,15 @@
 <ShareDialog bind:open={sharing} card={{ pubkey: null }} />
 
 <style>
-  .own { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .own { min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: var(--sp-3); }
   .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
   .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .btn :global(svg) { margin-right: 2px; }
   .head { display: flex; gap: var(--sp-3); align-items: center; min-width: 0; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow-wrap: anywhere; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow-wrap: anywhere; word-break: break-word; }
   .name.unnamed { color: var(--text-3); font-weight: var(--fw-semibold); }
-  .meta { color: var(--text-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+  .meta { color: var(--text-3); font-size: var(--fs-xs); overflow-wrap: anywhere; word-break: break-word; }
   .nip05 { display: inline-flex; align-items: center; gap: 4px; }
   .nip05.ok { color: var(--success-text); }
   .facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -152,10 +152,10 @@
     width: 28px; height: 28px; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-2);
     display: inline-flex; align-items: center; justify-content: center;
   }
-  .value { padding-top: 5px; overflow-wrap: anywhere; color: var(--text-body); }
+  .value { padding-top: 5px; overflow-wrap: anywhere; word-break: break-word; color: var(--text-body); }
   .link {
     padding: 5px 0 0; border: none; background: none; cursor: pointer; font: inherit; text-align: left;
-    color: var(--accent-text-3); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; min-width: 0;
+    color: var(--accent-text-3); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-word; min-width: 0;
   }
   .link.plain { color: var(--text); text-decoration: none; font-variant-numeric: tabular-nums; }
   .link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

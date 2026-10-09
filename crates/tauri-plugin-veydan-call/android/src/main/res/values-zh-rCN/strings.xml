@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">通话</string>
+    <string name="veydan_call_channel_ongoing">通话中</string>
+    <string name="veydan_call_incoming">来电</string>
+    <string name="veydan_call_incoming_video">视频来电</string>
+    <string name="veydan_call_ongoing">通话中</string>
+    <string name="veydan_call_answer">接听</string>
+    <string name="veydan_call_decline">拒绝</string>
+    <string name="veydan_call_hangup">挂断</string>
+    <string name="veydan_call_unknown">未知</string>
+    <string name="veydan_call_channel_group">群组通话</string>
+    <string name="veydan_call_group_on">正在通话</string>
+    <string name="veydan_call_group_video_on">正在进行视频通话</string>
+    <string name="veydan_call_swipe_answer">向左滑动接听</string>
+    <string name="veydan_call_swipe_decline">向右滑动拒绝</string>
+</resources>

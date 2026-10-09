@@ -239,15 +239,76 @@ pub async fn is_muted(store: &Store, id: &str) -> Result<bool> {
     Ok(get(store, id).await?.map(|c| c.muted).unwrap_or(false))
 }
 
+/// How far ahead of the clock `cleared_at` may sit (seconds).
+pub const CLEARED_SKEW_SECS: i64 = 300;
+
 /// Remove the chat, every message in it and every reaction that came in it
-/// (local only; relays keep the ciphertext, and history sync would bring
-/// visible rows back unless the caller also records the retraction).
-pub async fn delete(store: &Store, id: &str) -> Result<()> {
+/// (local only). Relays keep the ciphertext, so a tombstone keeps it gone.
+/// My own copies are dropped by time (`cleared_at`): my rumors can run ahead
+/// of the clock (`next_created_at`), so it is never earlier than my newest
+/// message, and never more than `CLEARED_SKEW_SECS` past the clock, so one
+/// row dated in the future cannot hold back all that comes before it. The
+/// rows themselves are remembered by id (`was_deleted`): that is all that
+/// keeps the peer's messages out, so one of theirs this device never had
+/// still comes in, whatever their clock says.
+pub async fn delete(store: &Store, id: &str, now: i64) -> Result<()> {
     let mut tx = store.pool().begin().await.map_err(storage)?;
+    sqlx::query(
+        "INSERT INTO msg_chat_cleared (chat_id, cleared_at)
+         VALUES (?1, MAX(?2, MIN(?2 + ?3, COALESCE(
+             (SELECT MAX(created_at) FROM msg_messages WHERE chat_id = ?1 AND direction = 'out'), 0))))
+         ON CONFLICT(chat_id) DO UPDATE SET cleared_at = MAX(msg_chat_cleared.cleared_at, excluded.cleared_at)",
+    )
+    .bind(id)
+    .bind(now)
+    .bind(CLEARED_SKEW_SECS)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
+    // Held rows of the DM gate were never shown: gone as if dropped, not
+    // remembered (as `dm_held::purge`).
+    sqlx::query("DELETE FROM msg_messages WHERE id IN (SELECT message_id FROM msg_dm_held WHERE chat_id = ?) AND is_hidden = 1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?;
+    sqlx::query("DELETE FROM msg_dm_held WHERE chat_id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
+    // Every row, mine too: an own row dated past the cap stays gone by id.
+    // System lines and placeholders have local ids no rumor carries.
+    sqlx::query(
+        "INSERT OR IGNORE INTO msg_chat_deleted_ids (message_id, chat_id, deleted_at)
+         SELECT id, chat_id, ?2 FROM msg_messages WHERE chat_id = ?1",
+    )
+    .bind(id)
+    .bind(now)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
     sqlx::query("DELETE FROM msg_messages WHERE chat_id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
     sqlx::query("DELETE FROM msg_reactions WHERE chat_id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
     sqlx::query("DELETE FROM msg_chats WHERE id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
     tx.commit().await.map_err(storage)
+}
+
+/// The rumor was in a chat when that chat was deleted here.
+pub async fn was_deleted(store: &Store, message_id: &str) -> Result<bool> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT 1 FROM msg_chat_deleted_ids WHERE message_id = ?")
+        .bind(message_id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)?
+        .is_some())
+}
+
+/// Up to when (rumor time, inclusive) the chat was deleted on this device;
+/// `0` when it never was.
+pub async fn cleared_at(store: &Store, id: &str) -> Result<i64> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT cleared_at FROM msg_chat_cleared WHERE chat_id = ?")
+        .bind(id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)?
+        .unwrap_or(0))
 }
 
 /// What the app counts as waiting: a muted or archived chat keeps its own
@@ -301,17 +362,21 @@ mod tests {
         touch(&s, "dm:aa", t0 + 100, Some("back"), false).await.unwrap();
         assert!(!get(&s, "dm:aa").await.unwrap().unwrap().archived, "activity unarchives");
 
-        delete(&s, "dm:aa").await.unwrap();
+        delete(&s, "dm:aa", crate::now()).await.unwrap();
         assert!(get(&s, "dm:aa").await.unwrap().is_none());
     }
 
     async fn incoming(s: &Store, id: &str, at: i64, text: &str) {
+        row(s, id, at, text, "in").await
+    }
+
+    async fn row(s: &Store, id: &str, at: i64, text: &str, direction: &str) {
         let m = crate::messages::NewMessage {
             id: id.into(),
             chat_id: "dm:aa".into(),
             wire_id: None,
-            direction: "in".into(),
-            status: "received".into(),
+            direction: direction.into(),
+            status: if direction == "in" { "received" } else { "sent" }.into(),
             content_type: "text".into(),
             text: Some(text.into()),
             envelope_json: "{}".into(),
@@ -373,6 +438,69 @@ mod tests {
         crate::messages::insert(&s, &card("c3", 400, r#"{"pubkey":"bb"}"#)).await.unwrap();
         recompute_last(&s, "dm:aa").await.unwrap();
         assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().last_preview.as_deref(), Some("👤 "));
+    }
+
+    #[tokio::test]
+    async fn a_deleted_chat_leaves_a_tombstone_that_never_goes_back() {
+        let s = Store::open_in_memory().await.unwrap();
+        assert_eq!(cleared_at(&s, "dm:aa").await.unwrap(), 0, "never deleted");
+        ensure_dm(&s, "aa").await.unwrap();
+        incoming(&s, "m1", 100, "one").await;
+        row(&s, "m2", 600, "mine, ahead of the clock", "out").await;
+        incoming(&s, "m3", 650, "theirs, further ahead").await;
+        delete(&s, "dm:aa", 500).await.unwrap();
+        assert!(get(&s, "dm:aa").await.unwrap().is_none());
+        assert_eq!(cleared_at(&s, "dm:aa").await.unwrap(), 600, "my newest message when it is later than the clock");
+        for id in ["m1", "m2", "m3"] {
+            assert!(was_deleted(&s, id).await.unwrap(), "{id} is remembered");
+        }
+        assert!(!was_deleted(&s, "m4").await.unwrap());
+        delete(&s, "dm:aa", 550).await.unwrap();
+        assert_eq!(cleared_at(&s, "dm:aa").await.unwrap(), 600, "a second delete never lowers it");
+        delete(&s, "dm:aa", 700).await.unwrap();
+        assert_eq!(cleared_at(&s, "dm:aa").await.unwrap(), 700, "a later one raises it");
+
+        ensure_dm(&s, "bb").await.unwrap();
+        delete(&s, "dm:bb", 500).await.unwrap();
+        assert_eq!(cleared_at(&s, "dm:bb").await.unwrap(), 500, "an empty chat: the clock");
+        assert_eq!(cleared_at(&s, "dm:cc").await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_future_dated_row_moves_the_tombstone_only_so_far() {
+        let s = Store::open_in_memory().await.unwrap();
+        let now = 1_000_000;
+        ensure_dm(&s, "aa").await.unwrap();
+        incoming(&s, "theirs", now + 1_000_000, "from a clock far ahead").await;
+        delete(&s, "dm:aa", now).await.unwrap();
+        assert_eq!(cleared_at(&s, "dm:aa").await.unwrap(), now, "the peer's rows never move it");
+        assert!(was_deleted(&s, "theirs").await.unwrap(), "that row stays gone by its id");
+
+        ensure_dm(&s, "aa").await.unwrap();
+        row(&s, "mine", now + 1_000_000, "pushed ahead by such a row", "out").await;
+        delete(&s, "dm:aa", now).await.unwrap();
+        let cleared = cleared_at(&s, "dm:aa").await.unwrap();
+        assert!(cleared <= now + 300);
+        assert_eq!(cleared, now + CLEARED_SKEW_SECS);
+        assert!(was_deleted(&s, "mine").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn migration_025_caps_a_future_tombstone() {
+        let s = Store::open_in_memory().await.unwrap();
+        let now = crate::now();
+        for (chat, at) in [("dm:past", 500_i64), ("dm:future", 4_102_444_800)] {
+            sqlx::query("INSERT INTO msg_chat_cleared (chat_id, cleared_at) VALUES (?, ?)")
+                .bind(chat)
+                .bind(at)
+                .execute(s.pool())
+                .await
+                .unwrap();
+        }
+        sqlx::raw_sql(include_str!("../migrations/025_chat_deleted_ids.sql")).execute(s.pool()).await.unwrap();
+        assert_eq!(cleared_at(&s, "dm:past").await.unwrap(), 500);
+        let future = cleared_at(&s, "dm:future").await.unwrap();
+        assert!((now + CLEARED_SKEW_SECS..=now + CLEARED_SKEW_SECS + 5).contains(&future), "{future}");
     }
 
     #[tokio::test]

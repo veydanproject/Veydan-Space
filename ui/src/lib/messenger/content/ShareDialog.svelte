@@ -19,6 +19,7 @@
   import { nameStore } from '../groups/names.svelte';
   import { messengerStore } from '../store.svelte';
   import { dmErrorCode, messengerError, profileErrorCode, type MessengerChat } from '../api';
+  import { chatMatches, contactHaystacks } from '../shared/search';
 
   interface Props {
     open: boolean;
@@ -70,9 +71,9 @@
     wasOpen = open;
   });
 
-  const q = $derived(query.trim().toLowerCase());
+  const haystacks = $derived(contactHaystacks(messengerStore.contacts));
   const chats = $derived(
-    chatStore.chats.filter((c) => c.can_send && !c.archived && c.id !== exclude && (!q || c.title.toLowerCase().includes(q))),
+    chatStore.chats.filter((c) => c.can_send && !c.archived && c.id !== exclude && chatMatches(c, query, haystacks)),
   );
 
   /** Whose card, as the dialog shows it. */

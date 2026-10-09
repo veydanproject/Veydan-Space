@@ -11,6 +11,7 @@ import { isEntityBinding } from '$lib/core/bindings';
 import { HardBreak } from '@tiptap/extension-hard-break';
 import { Paragraph } from '@tiptap/extension-paragraph';
 import { Image, type ImageOptions } from '@tiptap/extension-image';
+import { OrderedList, ORDERED_LIST_MARKER_PATTERN } from '@tiptap/extension-list';
 import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
@@ -205,9 +206,98 @@ const NoteParagraph = Paragraph.extend({
   },
 });
 
+/** An ordered-list item line: indent, marker, separator (the upstream tokenizer's pattern). */
+const ORDERED_ITEM_RE = new RegExp(`^(\\s*)(${ORDERED_LIST_MARKER_PATTERN})([.)])\\s+`);
+
+const stockOrderedTokenizer = OrderedList.config.markdownTokenizer!;
+
+const leadingWs = (line: string) => line.length - line.trimStart().length;
+
+/**
+ * Lines that end an ordered list item even without a blank line before them: a copy of
+ * PARAGRAPH_INTERRUPTERS in @tiptap/extension-list 3.31.3 (src/ordered-list/utils.ts),
+ * which is not exported. Keep it in step with upstream.
+ */
+const PARAGRAPH_INTERRUPTERS = [
+  /^#{1,6}(?:\s|$)/, // heading
+  /^[-+*]\s+/, // bullet item
+  /^(?:```|~~~)/, // code fence
+  /^\$\$/, // block math
+  /^(?:(?:-[ \t]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})$/, // thematic break
+];
+const interruptsLazy = (line: string) => PARAGRAPH_INTERRUPTERS.some((re) => re.test(line));
+
+/**
+ * Ordered list that reads back what it writes. The upstream tokenizer (3.31.3) strips
+ * indent + marker + 1 from an item's continuation lines, whatever the item's content
+ * indent is, so a task list nested under "1. " with 3 spaces (what we write), or with 4
+ * (tab size 4 elsewhere), or under "1.  A" keeps stray spaces and only its first checkbox
+ * survives; the next save writes the rest as text. Before delegating, take off how far
+ * each item's continuation block overshoots that width, so deeper lines keep their
+ * relative indent. Drop this once upstream measures the content indent.
+ */
+const NoteOrderedList = OrderedList.extend({
+  markdownTokenizer: {
+    ...stockOrderedTokenizer,
+    tokenize(src, tokens, lexer) {
+      if (!ORDERED_ITEM_RE.test(src)) return stockOrderedTokenizer.tokenize(src, tokens, lexer);
+      const lines = src.split('\n');
+      const fixed = lines.slice();
+      // The items as upstream collects them: every item line, at any indent, starts one;
+      // its indented lines up to the next item line are its block; an unindented line
+      // after a blank line, or one that opens a heading, bullet, fence, $$ or break, ends
+      // the list; any other unindented line is lazy text of the item.
+      let i = 0;
+      let end = false;
+      while (i < lines.length && !end) {
+        const m = lines[i].match(ORDERED_ITEM_RE);
+        if (!m) break;
+        // What upstream strips from this item's continuation lines.
+        const width = m[1].length + m[2].length + 1;
+        const block: number[] = [];
+        let least = Infinity;
+        let sawBlank = false;
+        let j = i + 1;
+        for (; j < lines.length && !ORDERED_ITEM_RE.test(lines[j]); j++) {
+          if (!lines[j].trim()) sawBlank = true;
+          else if (leadingWs(lines[j]) > 0) {
+            block.push(j);
+            least = Math.min(least, leadingWs(lines[j]));
+          } else if (sawBlank || interruptsLazy(lines[j])) {
+            end = true;
+            break;
+          }
+        }
+        // How far the whole block sits deeper than that; every line of it has at least this
+        // much to spare, and deeper lines keep their relative indent.
+        const extra = least - width;
+        if (block.length && extra > 0) for (const k of block) fixed[k] = lines[k].slice(extra);
+        i = j;
+      }
+      const tok = stockOrderedTokenizer.tokenize(fixed.join('\n'), tokens, lexer);
+      // marked advances by raw.length: give back the original lines, not the shortened ones.
+      if (tok && tok.raw !== undefined) tok.raw = lines.slice(0, tok.raw.split('\n').length).join('\n');
+      return tok;
+    },
+  },
+});
+
+/** StarterKit with our own paragraph, hard break and ordered list. */
+const noteStarterKit = () =>
+  StarterKit.configure({ hardBreak: false, paragraph: false, orderedList: false, link: { openOnClick: false } });
+
+/**
+ * The nodes that decide how a note's Markdown is read and written, without NodeViews or UI
+ * strings, so a test can build a MarkdownManager from them.
+ */
+export function noteMarkdownExtensions(): Extensions {
+  return [noteStarterKit(), NoteOrderedList, SoftBreak, NoteParagraph, TaskList, TaskItem.configure({ nested: true }), TableKit, WikiLink];
+}
+
 export function noteExtensions(resolveSrc: ResolveSrc): Extensions {
   return [
-    StarterKit.configure({ hardBreak: false, paragraph: false, link: { openOnClick: false } }),
+    noteStarterKit(),
+    NoteOrderedList,
     SoftBreak,
     NoteParagraph,
     NoteImage.configure({ resolveSrc }),

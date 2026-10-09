@@ -496,6 +496,56 @@ async fn request_through_a_private_link() {
 }
 
 #[tokio::test]
+async fn a_request_answered_by_one_manager_leaves_the_others() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let dave = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let dave2 = w.device(w.devices[dave].keys.clone()).await;
+    let g = w.create(alice, GroupKind::Private, "Club", true).await;
+    w.bring(alice, &g, dave).await;
+    w.act(alice, &g, OpBody::SetRole { who: w.pk(dave), role: Role::Admin }).await.unwrap();
+    w.catch_up(dave2).await;
+    assert_eq!(w.devices[dave2].group(&g).await.unwrap().my_role.as_deref(), Some("admin"));
+    let link = w.devices[alice].group(&g).await.unwrap().link.expect("managers have the link");
+
+    w.open_link(bob, &link).await;
+    let bob_hex = w.pk(bob).as_hex().to_string();
+    for d in [alice, dave, dave2] {
+        assert_eq!(w.devices[d].group(&g).await.unwrap().requests, vec![bob_hex.clone()], "device {d}");
+    }
+    w.tick();
+    let d = &w.devices[dave];
+    let o = d.svc.approve_request(&d.keys, &g, &w.pk(bob)).await.unwrap();
+    w.run(dave, o).await;
+    assert_eq!(w.devices[bob].group(&g).await.unwrap().membership, "joined");
+    for d in [alice, dave, dave2] {
+        assert!(w.devices[d].group(&g).await.unwrap().requests.is_empty(), "device {d}");
+    }
+    let row = messenger_store::groups::request(&w.devices[alice].svc.store, &g, &bob_hex, "in").await.unwrap().unwrap();
+    assert_eq!(row.status, "approved", "the owner's device closed it by itself");
+
+    // A late click on the owner's device changes nothing and sends nothing.
+    let a = &w.devices[alice];
+    let o = a.svc.approve_request(&a.keys, &g, &w.pk(bob)).await.unwrap();
+    assert!(o.publish.is_empty());
+    let o = a.svc.reject_request(&a.keys, &g, &w.pk(bob)).await.unwrap();
+    assert!(o.publish.is_empty(), "no \"rejected\" to a member");
+    assert_eq!(w.devices[bob].group(&g).await.unwrap().membership, "joined");
+    assert_eq!(w.devices[alice].group(&g).await.unwrap().members.len(), 3);
+
+    // A ban by one manager closes the request on the other too.
+    w.open_link(carol, &link).await;
+    assert_eq!(w.devices[alice].group(&g).await.unwrap().requests, vec![w.pk(carol).as_hex().to_string()]);
+    w.act(dave, &g, OpBody::Ban { who: w.pk(carol) }).await.unwrap();
+    assert!(w.devices[alice].group(&g).await.unwrap().requests.is_empty());
+    let row = messenger_store::groups::request(&w.devices[alice].svc.store, &g, w.pk(carol).as_hex(), "in").await.unwrap().unwrap();
+    assert_eq!(row.status, "rejected");
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
 async fn nobody_is_put_into_a_group_unasked() {
     let mut w = World::new();
     let mallory = w.person().await;
@@ -1092,5 +1142,114 @@ async fn cards_in_a_group_keep_a_phone_only_from_its_owner() {
     let (_, out) = d.svc.prepare_message(&d.keys, &g, junk, msgs::CT_CONTACT, None, None, None).await.unwrap();
     w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
     assert_eq!(w.devices[bob].visible(&g).await.len(), before);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+// ─── Quotes of media ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn a_quote_of_a_captionless_photo_in_a_group_says_photo_and_a_taken_back_one_says_deleted() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Photos", true).await;
+    w.bring(alice, &g, bob).await;
+
+    w.tick();
+    let fields = serde_json::json!({ "name": "cat.png", "mime": "image/png", "size": 10, "kind": "image" });
+    let d = &w.devices[alice];
+    let ph = d.svc.media_placeholder(&d.keys, &g, fields.clone(), None).await.unwrap();
+    let envelope = Envelope::new("media").with("kind", "image").with("name", "cat.png").with("key", "k");
+    let (photo, out) = d.svc.media_finish(&d.keys, &ph.id, envelope, fields).await.unwrap();
+    w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
+    assert!(photo.text.is_none());
+
+    w.tick();
+    let d = &w.devices[bob];
+    let (reply, out) = d.svc.prepare_text(&d.keys, &g, "nice", Some(&photo.id)).await.unwrap();
+    w.run(bob, Outcome { publish: vec![out], ..Default::default() }).await;
+    for (who, quote) in [(bob, reply.reply_to.clone().unwrap()), (alice, {
+        let list = w.devices[alice].visible(&g).await;
+        list.iter().find(|m| m.id == reply.id).and_then(|m| m.reply_to.clone()).expect("the quote")
+    })] {
+        assert_eq!(quote.id, photo.id, "device {who}");
+        assert!(quote.text.is_none() && !quote.deleted, "device {who}");
+        assert_eq!(quote.content_type, "media");
+        assert_eq!(quote.media.unwrap()["kind"], "image");
+    }
+
+    // Taken back for everyone: the quote says so and carries no file.
+    w.tick();
+    let d = &w.devices[alice];
+    let (_, _, out) = d.svc.prepare_delete(&d.keys, &photo.id).await.unwrap();
+    w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
+    let list = w.devices[bob].visible(&g).await;
+    let quote = list.iter().find(|m| m.id == reply.id).and_then(|m| m.reply_to.clone()).expect("the quote");
+    assert!(quote.deleted && quote.media.is_none());
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+// ─── Captions ───────────────────────────────────────────────────────────────
+
+impl World {
+    async fn send_photo(&mut self, who: usize, group: &str, caption: &str) -> String {
+        self.tick();
+        let fields = serde_json::json!({ "name": "cat.png", "mime": "image/png", "size": 10, "kind": "image" });
+        let d = &self.devices[who];
+        let ph = d.svc.media_placeholder(&d.keys, group, fields.clone(), Some(caption)).await.unwrap();
+        // The placeholder's id is replaced once the file is up: nobody would see an edit of it.
+        assert!(d.svc.prepare_edit(&d.keys, &ph.id, "too early").await.is_err());
+        let envelope = Envelope::new("media").with("kind", "image").with("name", "cat.png").with("caption", caption).with("key", "k");
+        let (photo, out) = d.svc.media_finish(&d.keys, &ph.id, envelope, fields).await.unwrap();
+        self.run(who, Outcome { publish: vec![out], ..Default::default() }).await;
+        photo.id
+    }
+
+    async fn edit(&mut self, who: usize, message_id: &str, text: &str) {
+        self.tick();
+        let d = &self.devices[who];
+        let (_, _, out) = d.svc.prepare_edit(&d.keys, message_id, text).await.unwrap();
+        self.run(who, Outcome { publish: vec![out], ..Default::default() }).await;
+    }
+
+    async fn caption(&self, who: usize, group: &str, message_id: &str) -> (Option<String>, bool) {
+        let list = self.devices[who].visible(group).await;
+        let m = list.iter().find(|m| m.id == message_id).expect("the photo");
+        assert_eq!(m.content_type, "media");
+        (m.text.clone(), m.edited_at.is_some())
+    }
+}
+
+#[tokio::test]
+async fn the_caption_of_my_photo_is_edited_for_members_and_my_other_device() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let alice2 = w.device(w.devices[alice].keys.clone()).await;
+    let g = w.create(alice, GroupKind::Private, "Photos", true).await;
+    w.bring(alice, &g, bob).await;
+
+    let photo = w.send_photo(alice, &g, "look").await;
+    w.edit(alice, &photo, "a cat").await;
+    for d in [alice, alice2, bob] {
+        assert_eq!(w.caption(d, &g, &photo).await, (Some("a cat".into()), true), "device {d}");
+    }
+    let chat = w.devices[bob].dm.chat(&format!("group:{g}")).await.unwrap().unwrap();
+    assert_eq!(chat.last_preview.as_deref(), Some("📎 a cat"));
+    // Not mine: no edit.
+    let d = &w.devices[bob];
+    assert!(d.svc.prepare_edit(&d.keys, &photo, "mine now").await.is_err());
+
+    // The edit comes before its photo: it waits and is applied on arrival.
+    w.offline(bob);
+    let late = w.send_photo(alice, &g, "one").await;
+    w.edit(alice, &late, "two").await;
+    w.online(bob).await;
+    assert_eq!(w.caption(bob, &g, &late).await, (Some("two".into()), true));
+
+    // A card has no text to edit.
+    let card = w.send_card(alice, &g, serde_json::json!({ "pubkey": w.pk(alice).as_hex(), "name": "alice" })).await;
+    let d = &w.devices[alice];
+    assert!(d.svc.prepare_edit(&d.keys, &card, "text").await.is_err());
     assert!(w.notes.is_empty(), "{:?}", w.notes);
 }

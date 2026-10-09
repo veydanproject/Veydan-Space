@@ -166,6 +166,14 @@ async fn a_stranger_is_a_request_once_and_nothing_the_second_time() {
     assert_eq!(shown(phone.describe(dm_push(&first)).await).kind, ChatKind::Dm, "a copy of what is stored is shown as stored");
     let second = dm_from(&stranger, &phone, &Envelope::text("hi again"), 1_000_001);
     assert_eq!(quiet(phone.describe(dm_push(&second)).await), Reason::NotForMe);
+
+    // The app holds the second one back, hidden, until the old episode ends:
+    // a copy of a held row is stored but was never shown, so the push is quiet too.
+    phone.app_received(&second).await;
+    let messenger_core::Inbound::Dm(held) = messenger_ingress::classify(&raw(&second), Some(&phone.keys)) else { panic!("a dm") };
+    let row = messenger_store::messages::get(&phone.store, held.rumor_id.as_hex()).await.unwrap();
+    assert!(row.is_some_and(|r| r.is_hidden), "the second message is stored, hidden");
+    assert_eq!(quiet(phone.describe(dm_push(&second)).await), Reason::NotForMe);
 }
 
 #[tokio::test]

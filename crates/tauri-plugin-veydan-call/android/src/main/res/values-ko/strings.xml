@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">통화</string>
+    <string name="veydan_call_channel_ongoing">통화 중</string>
+    <string name="veydan_call_incoming">수신 전화</string>
+    <string name="veydan_call_incoming_video">영상 통화 수신</string>
+    <string name="veydan_call_ongoing">통화 중</string>
+    <string name="veydan_call_answer">받기</string>
+    <string name="veydan_call_decline">거절</string>
+    <string name="veydan_call_hangup">끊기</string>
+    <string name="veydan_call_unknown">알 수 없음</string>
+    <string name="veydan_call_channel_group">그룹 통화</string>
+    <string name="veydan_call_group_on">통화가 진행 중입니다</string>
+    <string name="veydan_call_group_video_on">영상 통화가 진행 중입니다</string>
+    <string name="veydan_call_swipe_answer">왼쪽으로 밀어서 받기</string>
+    <string name="veydan_call_swipe_decline">오른쪽으로 밀어서 거절</string>
+</resources>

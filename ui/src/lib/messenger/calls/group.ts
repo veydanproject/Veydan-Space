@@ -28,8 +28,8 @@ export function seatsInOrder(participants: GroupParticipant[]): GroupParticipant
  * The seat shown large, or `null` for a grid of equals. A seat picked by a
  * tap stays large while it is there. Otherwise the one who speaks (or last
  * spoke) when their video goes: a voice without a picture gains nothing
- * from a large tile, nor does a track that sends no pictures (`showing`:
- * the seat's camera is taken as on, `seatSendsVideo`). My own tile is never
+ * from a large tile, nor does a camera that is off (`showing`: for a
+ * seat that says nothing of its camera, `seatSendsVideo`). My own tile is never
  * large: I see myself small. What this names is held a while against a
  * quick change before the large place follows it (`holdFocus`).
  */
@@ -79,15 +79,29 @@ export function holdFocus(
 }
 
 /**
+ * The seat's own word of its video (its `camera` and `screen`, the word of
+ * state of messenger-wire §10): `true` while its camera or its screen
+ * goes, `false` once it says both are off, `null` while nothing is known
+ * (the seat is not confirmed yet, its word has not come, or its client is
+ * of before the word: 5.1.11 and older).
+ */
+export function seatVideoWord(p: Pick<GroupParticipant, 'camera' | 'screen'>): boolean | null {
+  if (p.camera == null && p.screen == null) return null;
+  return p.camera === true || p.screen === true;
+}
+
+/**
  * The seat sends a picture, for the order of the screen (the large place,
- * the grid, what a tap picks): my camera (or screen) goes, or another's is
- * taken as on (`showing`: its pictures came and have not been missing for
- * `VIDEO_LOST_MS`, groupCallStore `showing`; the room does not say whether
- * another's camera is on). Not whether a frame came a moment ago: the
- * frames of a camera that is on pause now and then, and the screen does
- * not move for it. Not the m-line of its video alone either: every seat of
- * a room has one from the start, its track disabled until the camera goes
- * on, and kept while the camera is off.
+ * the grid, what a tap picks): my camera (or screen) goes; another's camera
+ * (or screen) is on by its own word (`seatVideoWord`), whether its frames
+ * come or not: while it is on nothing of the screen moves, its tile keeps
+ * the last picture and says "No signal" once they have been missing for
+ * `VIDEO_LOST_MS`; off by its word, at once. A seat that says nothing of
+ * it (an older client) is taken as on by its pictures (`showing`: they
+ * came and have not been missing for `VIDEO_LOST_MS`, groupCallStore
+ * `showing`); a shorter pause moves nothing either. Never by the m-line of
+ * its video alone: every seat of a room has one from the start, its track
+ * disabled until the camera goes on, and kept while it is off.
  */
 export function seatSendsVideo(
   p: GroupParticipant,
@@ -95,18 +109,39 @@ export function seatSendsVideo(
   showing: (seat: number) => boolean,
 ): boolean {
   if (p.me) return call.video_local;
-  return p.verified && !!p.video_mid && showing(p.id);
+  if (!p.verified || !p.video_mid) return false;
+  return seatVideoWord(p) ?? showing(p.id);
+}
+
+/**
+ * What a tile shows of a seat whose video is on by its own word (mine: as
+ * my call says) while the tile has no picture of it (`live` false: made
+ * anew, as it is with every move between the large place, the row and the
+ * grid, or the camera on again): `dark` while the seat's pictures come
+ * this moment (another's: `flowing`, the next one is on its way, the tile
+ * would blink with its face); its face otherwise, saying it waits for a
+ * picture (`waiting`) or, once they have been missing for
+ * `VIDEO_LOST_MS`, "No signal" (`lost`): by the seat's clock (`stale`,
+ * groupCallStore), which outlives its tiles, or by the tile's own
+ * (`lost`). `null`: the tile has a picture, or the seat's video is not on
+ * by a word (the order of the screen and the face decide then).
+ */
+export function tileWait(s: { me: boolean; told: boolean; live: boolean; lost: boolean; flowing: boolean; stale: boolean }): 'dark' | 'waiting' | 'lost' | null {
+  if (!s.told || s.live) return null;
+  if (s.me) return 'waiting';
+  if (s.stale || s.lost) return 'lost';
+  return s.flowing ? 'dark' : 'waiting';
 }
 
 /**
  * The seat's microphone is off, as far as this side knows: mine from my
- * own state; another's only when the room says so (a `muted` of the seat,
- * once the core carries one). Not `!audio`: that is the m-line of its
- * sound, there for every seat whether its microphone is on or off.
+ * own state; another's by its own word of state (`mic` false). Not
+ * `!audio`: that is the m-line of its sound, there for every seat whether
+ * its microphone is on or off; nor a seat that says nothing of it.
  */
 export function seatMuted(p: GroupParticipant, call: Pick<GroupCallView, 'muted'>): boolean {
   if (p.me) return call.muted;
-  return p.verified && (p as GroupParticipant & { muted?: boolean }).muted === true;
+  return p.verified && p.mic === false;
 }
 
 /**

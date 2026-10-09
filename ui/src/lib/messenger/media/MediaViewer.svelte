@@ -6,6 +6,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { isTauriHost, messengerApi } from '../api';
+  import { saveFilters } from '../shared/format';
   import { viewer } from './viewer.svelte';
 
   let zoomed = $state(false);
@@ -22,7 +23,7 @@
     const it = viewer.item;
     if (!it || !isTauriHost) return;
     const { save } = await import('@tauri-apps/plugin-dialog');
-    const dest = await save({ defaultPath: it.name });
+    const dest = await save({ defaultPath: it.name, filters: saveFilters(it.name, $t('msg_media_all_files')) });
     if (dest) await messengerApi.media.saveAs(it.messageId, dest).catch(() => {});
   }
 </script>

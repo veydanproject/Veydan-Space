@@ -615,6 +615,32 @@ impl UploadJob {
     }
 }
 
+/// `dest` with the extension of `src` when it has none of its own.
+fn with_source_extension(dest: &Path, src: &Path) -> PathBuf {
+    match (dest.extension(), src.extension()) {
+        (None, Some(ext)) if dest.file_name().is_some() => {
+            let mut name = dest.as_os_str().to_owned();
+            name.push(".");
+            name.push(ext);
+            PathBuf::from(name)
+        }
+        _ => dest.to_path_buf(),
+    }
+}
+
+/// Copy `src` to `dest`, which must not exist yet (`AlreadyExists` then);
+/// a copy that fails half way is removed.
+fn copy_to_new(src: &Path, dest: &Path) -> std::io::Result<()> {
+    let mut from = std::fs::File::open(src)?;
+    let mut to = std::fs::OpenOptions::new().write(true).create_new(true).open(dest)?;
+    let copied = std::io::copy(&mut from, &mut to).and_then(|_| to.sync_all());
+    if copied.is_err() {
+        drop(to);
+        let _ = std::fs::remove_file(dest);
+    }
+    copied
+}
+
 impl MessengerRuntime {
     pub fn media(&self) -> &MediaService {
         &self.media
@@ -1192,12 +1218,28 @@ impl MessengerRuntime {
         }
     }
 
-    /// Copy the attachment somewhere the user chose.
+    /// Copy the attachment somewhere the user chose. A name chosen without
+    /// an extension gets the file's own: a dialog may drop it, and a photo
+    /// without it opens nowhere. The dialog asked about overwriting only
+    /// the name it returned, so the name with the extension is written
+    /// only when no file has it yet; else the copy goes to `dest` as chosen.
     pub async fn media_save_as(&self, message_id: &str, dest: &Path) -> Result<()> {
         let src = self
             .media_local_path(message_id)
             .await?
             .ok_or_else(|| MessengerError::Invalid("err.not_downloaded".into()))?;
+        let target = with_source_extension(dest, &src);
+        if target != dest {
+            let (from, to) = (src.clone(), target);
+            let made = tokio::task::spawn_blocking(move || copy_to_new(&from, &to))
+                .await
+                .map_err(std::io::Error::other)?;
+            match made {
+                Ok(()) => return Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
         tokio::fs::copy(&src, dest).await?;
         Ok(())
     }
@@ -1511,6 +1553,52 @@ mod tests {
         let id = rt.media.transfer(transfer).await.unwrap().unwrap().message_id.unwrap();
         assert!(!id.starts_with("local:"), "the message went out");
         rt.dm.message(&id).await.unwrap().unwrap().media.unwrap()
+    }
+
+    /// A file saved under a name without an extension keeps its own; one
+    /// saved under another extension is the user's choice.
+    #[tokio::test]
+    async fn save_as_keeps_the_extension_of_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let mut rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        let backend = MemoryBackend::new("https://mem.example/a");
+        use_memory(&mut rt, &backend);
+        with_session(&rt).await;
+        let peer = Keys::generate().public_key().to_hex();
+
+        let file = dir.path().join("notes.txt");
+        tokio::fs::write(&file, b"hello").await.unwrap();
+        let ph = rt.dm_send_file(&peer, &file, None, None, true).await.unwrap();
+        let t = transfer_of(&ph);
+        until(async || status_of(&rt, &t).await == "done").await;
+        let id = rt.media.transfer(&t).await.unwrap().unwrap().message_id.unwrap();
+
+        rt.media_save_as(&id, &dir.path().join("bare")).await.unwrap();
+        assert_eq!(tokio::fs::read(dir.path().join("bare.txt")).await.unwrap(), b"hello");
+        assert!(!dir.path().join("bare").exists());
+        rt.media_save_as(&id, &dir.path().join("chosen.md")).await.unwrap();
+        assert!(dir.path().join("chosen.md").exists() && !dir.path().join("chosen.md.txt").exists());
+
+        // The dialog confirmed only "taken": a "taken.txt" already there
+        // stays as it was, and the copy goes to the name as chosen.
+        tokio::fs::write(dir.path().join("taken.txt"), b"old").await.unwrap();
+        rt.media_save_as(&id, &dir.path().join("taken")).await.unwrap();
+        assert_eq!(tokio::fs::read(dir.path().join("taken.txt")).await.unwrap(), b"old");
+        assert_eq!(tokio::fs::read(dir.path().join("taken")).await.unwrap(), b"hello");
+        // The name the dialog returned is overwritten: it asked about that one.
+        tokio::fs::write(dir.path().join("taken"), b"older").await.unwrap();
+        rt.media_save_as(&id, &dir.path().join("taken")).await.unwrap();
+        assert_eq!(tokio::fs::read(dir.path().join("taken")).await.unwrap(), b"hello");
+        rt.shutdown().await;
+    }
+
+    #[test]
+    fn a_name_without_extension_takes_the_one_of_the_source() {
+        let src = Path::new("/c/abc/photo.jpg");
+        assert_eq!(with_source_extension(Path::new("/d/pic"), src), Path::new("/d/pic.jpg"));
+        assert_eq!(with_source_extension(Path::new("/d/pic.png"), src), Path::new("/d/pic.png"));
+        assert_eq!(with_source_extension(Path::new("/d/pic"), Path::new("/c/abc/noext")), Path::new("/d/pic"));
     }
 
     /// A photo is made smaller before its upload (the preparing stage) and
@@ -1886,6 +1974,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        // Delete for me tells my other devices: it needs a session.
+        rt.identity().create("pw").await.unwrap();
+        assert!(rt.refresh_signer().await.unwrap());
         let path = dir.path().join("a.bin");
         tokio::fs::write(&path, b"0123456789").await.unwrap();
         let ph = placeholder(&rt, 0).await;

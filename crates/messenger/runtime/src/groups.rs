@@ -23,7 +23,7 @@ const WAIT_FOR_RELAY: Duration = Duration::from_secs(60);
 /// After the history was asked for: time for it to be read before the
 /// keys are looked after.
 const SETTLE_AFTER_SYNC: Duration = Duration::from_secs(4);
-const MAX_PROFILE_AUTHORS: usize = 500;
+pub(crate) const MAX_PROFILE_AUTHORS: usize = 500;
 const KIND_GROUP_EVENT: u16 = 9;
 
 /// Everything the groups need from the runtime, cloneable into tasks.

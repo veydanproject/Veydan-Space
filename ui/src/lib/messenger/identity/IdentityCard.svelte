@@ -25,7 +25,7 @@
 
   async function doExport() {
     error = '';
-    if (exportPassword.length < 8) { error = $t('msg_id_err_password_short'); return; }
+    if ([...exportPassword.normalize('NFKC')].length < 8) { error = $t('msg_id_err_password_short'); return; }
     busy = true;
     try { exported = await messengerStore.exportIdentity(exportPassword); exportPassword = ''; }
     catch (e) { error = messengerError(e); }

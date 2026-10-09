@@ -120,10 +120,12 @@ pub(crate) fn current_docs_dir(core: &Core, notes: &NotesState) -> std::path::Pa
 
 /// Write the note file, insert the DB row, index FTS and refresh the manifest.
 pub(crate) async fn insert_note(
-    new: NewNote,
+    mut new: NewNote,
     core: &Core,
     notes: &NotesState,
 ) -> Result<Note, AppError> {
+    // The file names the tags as the database stores them.
+    new.tags = normalize_tag_names(&new.tags);
     let bindings_json = serde_json::to_string(&new.bindings).map_err(AppError::other)?;
     let abs_path = current_docs_dir(core, notes).join(format!("{}.{}", new.id, new.format));
     let stored_path = abs_path.to_string_lossy().to_string();
@@ -580,7 +582,7 @@ pub async fn note_set_tags(
     core: tauri::State<'_, Core>,
 ) -> CmdResult<()> {
     let now = Utc::now().to_rfc3339();
-    set_note_tag_links(&id, &tag_names, &core.db).await?;
+    let tag_names = set_note_tag_links(&id, &tag_names, &core.db).await?;
 
     sqlx::query("UPDATE notes SET updated_at=? WHERE id=?")
         .bind(&now)

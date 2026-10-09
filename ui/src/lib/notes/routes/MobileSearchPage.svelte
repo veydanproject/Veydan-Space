@@ -3,7 +3,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { leave } from '$lib/core/ui/back';
   import Icon from '$lib/core/Icon.svelte';
   import { api, formatError, type NoteSearchResult, type NoteTag } from '$lib/notes/mobile/api';
   import { locale, t } from '$lib/core/mobile/i18n';
@@ -66,8 +66,7 @@
   }
 
   function cancel() {
-    if (history.length > 1) history.back();
-    else void goto('/');
+    void leave('/');
   }
 
   onMount(() => {

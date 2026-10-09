@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "Questa finestra ha ricevuto l’interfaccia per telefono di {app}: l’app è stata compilata con le pagine della build per Android.",
     "start_error_wrong_ui_desktop": "Questo dispositivo ha ricevuto l’interfaccia desktop di {app}: l’app è stata compilata con le pagine della build desktop.",
     "start_error_wrong_ui_fix": "Non è stato modificato nulla. Compila di nuovo l’app o installa una build di release.",
+    "screen_failed": "Impossibile mostrare questa schermata.",
+    "screen_to_start": "Vai alla schermata iniziale",
     "modules_section": "Moduli",
     "modules_hint": "Cosa mostra questo dispositivo. Un modulo disattivato conserva i suoi dati, che continuano a essere sincronizzati.",
     "modules_last": "Almeno un modulo deve restare attivo.",

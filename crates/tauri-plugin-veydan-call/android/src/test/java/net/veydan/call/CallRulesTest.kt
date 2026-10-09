@@ -338,4 +338,56 @@ class CallRulesTest {
     o.bound(0)
     assertEquals(3, o.follow(3))
   }
+
+  // ─── SwipeRule: the circles of the ringing screen ────────────────────────
+
+  /** Answer is pulled to the left: past the threshold it answers, short of it it goes back. */
+  @Test
+  fun answerIsASwipeToTheLeft() {
+    val a = SwipeRule.Circle.ANSWER
+    assertEquals(a, SwipeRule.decide(-61f, a, 60f, 100f))
+    assertEquals(a, SwipeRule.decide(-60f, a, 60f, 100f))
+    assertNull(SwipeRule.decide(-59f, a, 60f, 100f))
+    // The other way it does not move at all.
+    assertNull(SwipeRule.decide(200f, a, 60f, 100f))
+    assertEquals(0f, SwipeRule.offset(200f, a, 100f), 0f)
+  }
+
+  /** Decline is the mirror: pulled to the right. */
+  @Test
+  fun declineIsASwipeToTheRight() {
+    val d = SwipeRule.Circle.DECLINE
+    assertEquals(d, SwipeRule.decide(61f, d, 60f, 100f))
+    assertNull(SwipeRule.decide(59f, d, 60f, 100f))
+    assertNull(SwipeRule.decide(-200f, d, 60f, 100f))
+    assertEquals(0f, SwipeRule.offset(-200f, d, 100f), 0f)
+  }
+
+  /** A circle stops at the middle (the travel), whatever the finger does; the release there still acts. */
+  @Test
+  fun aCircleStopsAtItsTravel() {
+    val a = SwipeRule.Circle.ANSWER
+    val d = SwipeRule.Circle.DECLINE
+    assertEquals(-100f, SwipeRule.offset(-500f, a, 100f), 0f)
+    assertEquals(100f, SwipeRule.offset(500f, d, 100f), 0f)
+    assertEquals(1f, SwipeRule.progress(-500f, a, 100f), 0f)
+    assertEquals(0.5f, SwipeRule.progress(50f, d, 100f), 0f)
+    assertEquals(a, SwipeRule.decide(-500f, a, 60f, 100f))
+    // A threshold beyond the travel of a narrow screen is the travel.
+    assertEquals(d, SwipeRule.decide(80f, d, 120f, 80f))
+    // No room to move: nothing acts.
+    assertNull(SwipeRule.decide(50f, d, 0f, 0f))
+  }
+
+  /** A tap moves nothing and decides nothing: only a swipe answers or declines. */
+  @Test
+  fun aTapIsNoSwipe() {
+    val a = SwipeRule.Circle.ANSWER
+    assertNull(SwipeRule.decide(0f, a, 60f, 100f))
+    assertNull(SwipeRule.decide(-3f, a, 60f, 100f))
+    // Even with a threshold of nothing, a finger that did not move does not act.
+    assertNull(SwipeRule.decide(0f, a, 0f, 100f))
+    assertTrue(SwipeRule.isTap(3f, 8f))
+    assertFalse(SwipeRule.isTap(8f, 8f))
+  }
 }

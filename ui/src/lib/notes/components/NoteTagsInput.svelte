@@ -10,6 +10,7 @@
   import { binding, type EntityKind } from '$lib/core/bindings';
   import { entityKind, entityKinds, ensureEntitiesLoaded, searchEntities, type EntitySummary } from '$lib/notes/context';
   import { labelPickerText } from '$lib/notes/label-kinds';
+  import { findTag, normalizeTagName, tagChoice } from '$lib/notes/tag-name';
 
   interface ContextChip {
     kind: string;
@@ -43,11 +44,12 @@
   let inputEl: HTMLInputElement | null = $state(null);
   let wrapEl: HTMLDivElement | null = $state(null);
 
-  const selectedNames = $derived(new Set(selectedTags.map((t) => t.name)));
+  /** Lowercase, as stored; a tag named in an old file may still have capitals. */
+  const selectedNames = $derived(new Set(selectedTags.map((t) => normalizeTagName(t.name))));
 
   const suggestions = $derived(
     allTags
-      .filter((t) => !selectedNames.has(t.name) && t.name.toLowerCase().includes(inputValue.toLowerCase()))
+      .filter((t) => !selectedNames.has(normalizeTagName(t.name)) && t.name.toLowerCase().includes(inputValue.toLowerCase()))
       .slice(0, 6)
   );
 
@@ -79,7 +81,7 @@
   const pickerText = $derived(labelPickerText(entityKinds().filter((d) => d.list().length > 0).map((d) => d.kind), $t));
 
   const isNew = $derived(
-    inputValue.trim().length > 0 && !allTags.some((t) => t.name === inputValue.trim())
+    inputValue.trim().length > 0 && !findTag(allTags, inputValue)
   );
 
   /** The popup opens leftwards when the + is too close to the right edge of the editor (which clips it). */
@@ -103,20 +105,21 @@
   }
 
   async function addTag(name: string, color?: string) {
-    const trimmed = name.trim();
-    if (!trimmed || selectedNames.has(trimmed)) { close(); return; }
+    // "Работа" is the tag "работа": the new tag and the note get one name.
+    const choice = tagChoice(name, allTags, [...selectedNames]);
+    if (!choice) { close(); return; }
 
-    const existing = allTags.find((t) => t.name === trimmed);
-    if (!existing && color) {
-      await api.notes.tagCreate(trimmed, color);
+    if (!choice.existing && color) {
+      await api.notes.tagCreate(choice.name, color);
     }
 
-    onchange([...selectedNames, trimmed]);
+    onchange([...selectedNames, choice.name]);
     close();
   }
 
   function removeTag(name: string) {
-    onchange([...selectedNames].filter((n) => n !== name));
+    const key = normalizeTagName(name);
+    onchange([...selectedNames].filter((n) => n !== key));
   }
 
   function onKeydown(e: KeyboardEvent) {

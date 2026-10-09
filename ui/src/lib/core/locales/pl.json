@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "To okno otrzymało telefoniczny interfejs {app}: aplikację zbudowano ze stronami kompilacji na Androida.",
     "start_error_wrong_ui_desktop": "To urządzenie otrzymało desktopowy interfejs {app}: aplikację zbudowano ze stronami kompilacji desktopowej.",
     "start_error_wrong_ui_fix": "Nic nie zostało zmienione. Zbuduj aplikację ponownie lub zainstaluj kompilację wydania.",
+    "screen_failed": "Nie udało się wyświetlić tego ekranu.",
+    "screen_to_start": "Do ekranu startowego",
     "modules_section": "Moduły",
     "modules_hint": "Co pokazuje to urządzenie. Wyłączony moduł zachowuje swoje dane, a jego dane nadal się synchronizują.",
     "modules_last": "Co najmniej jeden moduł musi pozostać włączony.",

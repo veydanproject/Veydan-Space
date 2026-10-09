@@ -12,4 +12,6 @@
     <string name="veydan_call_channel_group">Групповые звонки</string>
     <string name="veydan_call_group_on">Идёт звонок</string>
     <string name="veydan_call_group_video_on">Идёт видеозвонок</string>
+    <string name="veydan_call_swipe_answer">Проведите влево, чтобы ответить</string>
+    <string name="veydan_call_swipe_decline">Проведите вправо, чтобы отклонить</string>
 </resources>

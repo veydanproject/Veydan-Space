@@ -338,7 +338,9 @@ impl RelayPool {
             }
             return Err(MessengerError::Transport("no relay connected".into()));
         }
-        let res = self.client.send_event(ev).to(targets).await;
+        // Not into the client's store either (see `send`): a wrap to me (a
+        // note to self) must come back to ingress.
+        let res = self.client.send_event(ev).to(targets).save_into_database(false).await;
         for url in &ephemeral {
             let _ = self.client.remove_relay(url.as_str()).await;
         }
@@ -396,10 +398,15 @@ impl Transport for RelayPool {
             Outbound::PublishOwn { event } | Outbound::PublishScoped { event, .. } => {
                 let ev = Self::parse_event(&event.json)?;
                 let targets = self.connected_write_targets().await?;
+                // Not into the client's store: an event found there is not
+                // told again, so our own copy coming back on our
+                // subscription would never reach ingress and be fetched
+                // again by every new session.
                 let res = self
                     .client
                     .send_event(&ev)
                     .to(targets)
+                    .save_into_database(false)
                     .await
                     .map_err(|e| MessengerError::Transport(e.to_string()))?;
                 Ok(ack_from(&res))
@@ -519,6 +526,32 @@ mod tests {
 
         sender.shutdown().await;
         receiver.shutdown().await;
+    }
+
+    /// What we publish comes back on our own subscription: the copy for my
+    /// devices must reach ingress, or every new session fetches it again.
+    #[tokio::test]
+    async fn our_own_event_comes_back_on_our_subscription() {
+        let (_relay, url) = local_relay().await;
+        let alice = Keys::generate();
+        let pool = RelayPool::new(Some(alice.clone()));
+        let mut inbox = pool.events();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        for _ in 0..50 {
+            if pool.status().await.relays.iter().all(|r| r.state == RelayState::Connected) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let filter = CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()] }));
+        pool.send(Outbound::Subscribe { id: SubId("own".into()), filter, scope: Scope::Own }).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let note = signed_note(&alice, "to myself");
+        assert!(pool.send(Outbound::PublishOwn { event: note.clone() }).await.unwrap().is_delivered());
+        let got = tokio::time::timeout(Duration::from_secs(5), inbox.recv()).await.expect("our copy comes back").unwrap();
+        assert_eq!(got.id, note.id);
+        pool.shutdown().await;
     }
 
     /// A group joined while the app runs is added to the subscription that

@@ -15,11 +15,16 @@
 // `window.veydanDemoGroupCall(kind)` plays at once: `announce`,
 // `announce-video`, `in`, `come` (a member comes in), `go` (one leaves),
 // `video` (Boris's camera on or off: as in the runtime, the m-line of his
-// video stays and only its frames stop), `video-gone` (his camera off with
-// the m-line of his video gone), `pause` (the frames of the first seat with
-// video held back for 15 seconds, its camera on), `blink` (the same for 2
-// seconds, as a change of layer or of the way's bandwidth does),
-// `reconnect`, `cascade` (my way to the
+// video stays and only its frames stop; his word of state says it, so the
+// screen changes at once), `video-gone` (his camera off with the m-line of
+// his video gone), `pause` (the frames of the first seat with video held
+// back for 15 seconds, its camera on by its word: the screen stays, its
+// tile says "No signal" after 10 seconds), `blink` (the same for 2
+// seconds, as a change of layer or of the way's bandwidth does), `mute`
+// (Boris's microphone off or on, by his word), `old` (Boris's client is
+// of before the word of state, 5.1.11, or again of now: the screen judges
+// his camera by its frames, as 5.1.11 did; his last word does not stand in
+// for it, the store carries a word over a rejoin alone), `reconnect`, `cascade` (my way to the
 // room through my nearest node, or straight again), `move` (the room's node
 // goes: the room moves to another under the same call, its seats anew),
 // `end` (everybody leaves).
@@ -57,6 +62,10 @@ interface Seat {
   mid: boolean;
   /** The seat's frames are held back until then (`Date.now()`), its camera on. */
   pausedUntil?: number;
+  /** The seat's microphone is off. */
+  muted?: boolean;
+  /** The seat's client is of before the word of state (5.1.11): it says nothing of its camera and microphone. */
+  old?: boolean;
   speaking: boolean;
   /** The layer the page asked for. */
   layer: string;
@@ -77,6 +86,8 @@ interface Room {
   joined_at?: number;
   muted: boolean;
   video_local: boolean;
+  /** What my video sends is my screen. */
+  screen?: boolean;
   /** The camera in use (or for the next time): `front`, `back`, as a phone names them. */
   camera?: string;
   /** How many people the room saw, me included. */
@@ -110,12 +121,17 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
   const nextSeat = (r: Room) => Math.max(r.joined ? r.mine : 0, ...r.seats.map((s) => s.id)) + 1;
 
   function participants(r: Room): GroupParticipant[] {
-    const me: GroupParticipant = { id: r.mine, npub: host.me(), verified: true, speaking: false, audio: true, me: true };
+    const me: GroupParticipant = {
+      id: r.mine, npub: host.me(), verified: true, speaking: false, audio: true, me: true,
+      camera: r.video_local && !r.screen, mic: !r.muted, screen: r.video_local && !!r.screen,
+    };
     return [
       me,
       ...r.seats.map((s) => ({
         id: s.id, npub: s.verified ? s.pk : undefined, verified: s.verified, speaking: s.verified && s.speaking, audio: true,
         audio_mid: `a${s.id}`, video_mid: s.mid ? `v${s.id}` : undefined, me: false,
+        // The word of state, as the runtime has it: of a confirmed seat whose client says it.
+        ...(s.verified && !s.old ? { camera: s.video, mic: !s.muted, screen: false } : {}),
       })),
     ];
   }
@@ -255,7 +271,7 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
       const turn = people.length ? people[Math.floor(t / 22) % people.length] : null;
       let changed = false;
       for (const s of r.seats) {
-        const now = s === turn && Math.sin(t / 3) > -0.6;
+        const now = s === turn && !s.muted && Math.sin(t / 3) > -0.6;
         if (s.speaking !== now) { s.speaking = now; changed = true; }
         if (!s.verified) continue;
         const level = s.speaking ? 0.3 + 0.6 * Math.abs(Math.sin(t * 1.7)) * Math.random() : 0.02 + Math.random() * 0.03;
@@ -336,6 +352,16 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
       case 'video-gone': {
         const s = room?.seats[0];
         if (s) { s.video = !s.video; s.mid = s.video; emitState(); }
+        break;
+      }
+      case 'mute': {
+        const s = room?.seats[0];
+        if (s) { s.muted = !s.muted; emitState(); }
+        break;
+      }
+      case 'old': {
+        const s = room?.seats[0];
+        if (s) { s.old = !s.old; emitState(); }
         break;
       }
       case 'pause':
@@ -444,6 +470,7 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
       if (!room?.joined) throw refuse('no group call');
       const input = (a?.input ?? { kind: 'off' }) as VideoInput;
       room.video_local = input.kind !== 'off';
+      room.screen = input.kind === 'screen';
       emitState();
       return view(room);
     },

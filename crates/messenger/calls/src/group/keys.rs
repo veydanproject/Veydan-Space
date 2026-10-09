@@ -23,9 +23,17 @@
 //! member, that the seat is the one the node put in front of the frame;
 //! a seat not confirmed so is neither shown nor listened to (no key is
 //! set for its m-lines).
+//!
+//! The **word of state** says what a seat sends — camera, microphone,
+//! screen ([`MediaState`]) — sealed under another key of the epoch, with
+//! the call, the room and the seat in the associated data: it opens only
+//! as the word of the seat the node put in front of it. Not signed: the
+//! seat is bound as the keys of the frames are (wire §10, «Состояние
+//! медиа места»). Its first byte (`0x02`) tells it from a word of
+//! identity (`0x01`); a client of before drops it unread.
 
 use crate::group::signal::Secret;
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use hmac::{Hmac, Mac};
 use messenger_core::PubKey;
@@ -45,6 +53,13 @@ const HELLO_TAG: u8 = 0x01;
 const NONCE_LEN: usize = 12;
 /// A word of identity is a few hundred bytes; more is not one.
 const MAX_HELLO: usize = 4096;
+const STATE_INFO: &[u8] = b"veydan-state";
+const STATE_CONTEXT: &[u8] = b"veydan.call.state.v1\0";
+/// The first byte of a word of state on the wire: told from a word of
+/// identity by it (a client of before reads `0x01` alone and drops it).
+pub const STATE_TAG: u8 = 0x02;
+/// A word of state is under a hundred bytes; more is not one.
+const MAX_STATE: usize = 1024;
 
 /// HKDF-SHA256 (RFC 5869): extract with `salt`, expand `info` to `len` bytes.
 pub fn hkdf(salt: &[u8], ikm: &[u8], info: &[u8], len: usize) -> Vec<u8> {
@@ -194,6 +209,90 @@ pub fn open_hello(frame: &[u8], from: u32, call_id: &str, room_id: &str, secret:
     Ok(hello)
 }
 
+/// What a seat sends, by its own word (the **word of state**): the
+/// camera, the microphone, the screen. `seq` grows with every change of
+/// the sender (a word said again carries the same); `ts` is the sender's
+/// clock, unix seconds, for the log alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaState {
+    pub camera: bool,
+    pub mic: bool,
+    #[serde(default)]
+    pub screen: bool,
+    pub seq: u64,
+    pub ts: i64,
+}
+
+/// The key the words of state of an epoch are sealed with: of the
+/// secret of the epoch, apart from the key of the words of identity and
+/// of the frames.
+fn state_key(secret: &Secret, call_id: &str, epoch: u32) -> [u8; 32] {
+    let mut info = Vec::with_capacity(STATE_INFO.len() + call_id.len() + 4);
+    info.extend_from_slice(STATE_INFO);
+    info.extend_from_slice(call_id.as_bytes());
+    info.extend_from_slice(&epoch.to_be_bytes());
+    hkdf(call_id.as_bytes(), secret, &info, 32).try_into().expect("32 bytes asked")
+}
+
+/// What a word of state is bound to, outside its ciphertext: the call,
+/// the room, the seat that says it, the epoch. A word relayed under the
+/// number of another seat, or carried into another room, does not open.
+fn state_aad(call_id: &str, room_id: &str, seat: u32, epoch: u32) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(STATE_CONTEXT.len() + call_id.len() + room_id.len() + 16);
+    aad.extend_from_slice(STATE_CONTEXT);
+    for part in [call_id, room_id] {
+        aad.extend_from_slice(&(part.len() as u32).to_be_bytes());
+        aad.extend_from_slice(part.as_bytes());
+    }
+    aad.extend_from_slice(&seat.to_be_bytes());
+    aad.extend_from_slice(&epoch.to_be_bytes());
+    aad
+}
+
+/// The word of state of the seat `seat` as it goes on the channel:
+/// `0x02 ‖ epoch ‖ nonce ‖ AES-256-GCM(state key, JSON, aad = call, room,
+/// seat, epoch)`. Not signed: the secret of the epoch is the group's, and
+/// the seat is bound as the keys of the frames are (wire §10, «Состояние
+/// медиа места»).
+pub fn seal_state(state: &MediaState, secret: &Secret, call_id: &str, room_id: &str, seat: u32, epoch: u32) -> Vec<u8> {
+    let plain = serde_json::to_vec(state).expect("plain data");
+    let key = state_key(secret, call_id, epoch);
+    let mut nonce = [0u8; NONCE_LEN];
+    getrandom::fill(&mut nonce).expect("the system has random bytes");
+    let cipher = Aes256Gcm::new_from_slice(&key).expect("32 bytes");
+    let aad = state_aad(call_id, room_id, seat, epoch);
+    let ct = cipher.encrypt(&Nonce::from(nonce), Payload { msg: plain.as_slice(), aad: &aad }).expect("sealing plain data");
+    let mut out = Vec::with_capacity(1 + 4 + NONCE_LEN + ct.len());
+    out.push(STATE_TAG);
+    out.extend_from_slice(&epoch.to_be_bytes());
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&ct);
+    out
+}
+
+/// The epoch a sealed word of state names on the outside. `None` for a
+/// frame of another shape.
+pub fn state_epoch(frame: &[u8]) -> Option<u32> {
+    if frame.len() < 1 + 4 + NONCE_LEN + 16 || frame.len() > MAX_STATE || frame[0] != STATE_TAG {
+        return None;
+    }
+    Some(u32::from_be_bytes(frame[1..5].try_into().ok()?))
+}
+
+/// Open a word of state that came from the seat `from` (the node's
+/// number in front of the frame) in the call `call_id`, room `room_id`,
+/// under the secret of the epoch it names. `None` when it does not open:
+/// another secret, another seat, another room, or not such a word.
+pub fn open_state(frame: &[u8], from: u32, call_id: &str, room_id: &str, secret: &Secret) -> Option<MediaState> {
+    let epoch = state_epoch(frame)?;
+    let nonce: [u8; NONCE_LEN] = frame[5..5 + NONCE_LEN].try_into().ok()?;
+    let key = state_key(secret, call_id, epoch);
+    let cipher = Aes256Gcm::new_from_slice(&key).expect("32 bytes");
+    let aad = state_aad(call_id, room_id, from, epoch);
+    let plain = cipher.decrypt(&Nonce::from(nonce), Payload { msg: &frame[5 + NONCE_LEN..], aad: &aad }).ok()?;
+    serde_json::from_slice(&plain).ok()
+}
+
 /// The DTLS fingerprint in an SDP (`a=fingerprint:sha-256 AB:CD…`), or
 /// when there is none (an engine without DTLS, the fake of the tests)
 /// the hash of the description itself: what matters is that the far
@@ -278,6 +377,35 @@ mod tests {
         let frame = seal_hello(&alice, &later, &secret);
         assert_eq!(hello_epoch(&frame), Some(2));
         assert_eq!(open_hello(&frame, 2, "c", "r", &secret).unwrap().epoch, 2);
+    }
+
+    #[test]
+    fn a_word_of_state_opens_for_its_own_seat_room_and_secret_alone() {
+        let secret = new_secret();
+        let state = MediaState { camera: true, mic: false, screen: false, seq: 3, ts: 1_760_000_000 };
+        let frame = seal_state(&state, &secret, "c", "r", 2, 4);
+        assert_eq!(state_epoch(&frame), Some(4));
+        assert_eq!(hello_epoch(&frame), None, "not a word of identity: a client of before drops it");
+        assert!(!String::from_utf8_lossy(&frame).contains("camera"), "the state is sealed");
+        assert_eq!(open_state(&frame, 2, "c", "r", &secret), Some(state));
+        assert_eq!(open_state(&frame, 3, "c", "r", &secret), None, "the node says seat 3 sent it: it is not seat 3's");
+        assert_eq!(open_state(&frame, 2, "c", "other", &secret), None, "another room");
+        assert_eq!(open_state(&frame, 2, "other", "r", &secret), None, "another call");
+        assert_eq!(open_state(&frame, 2, "c", "r", &new_secret()), None, "another secret");
+        let mut epoch_changed = frame.clone();
+        epoch_changed[4] ^= 1;
+        assert_eq!(open_state(&epoch_changed, 2, "c", "r", &secret), None, "the epoch outside is bound too");
+        let hello = Hello { npub: "x".into(), participant: 2, call_id: "c".into(), room_id: "r".into(), epoch: 4, dtls_fp: "f".into() };
+        assert_eq!(state_epoch(&seal_hello(&Keys::generate(), &hello, &secret)), None, "a word of identity is no word of state");
+        // A field this version does not know is no harm; `screen` may be missing.
+        let plain = br#"{"camera":false,"mic":true,"seq":1,"ts":0,"hand":true}"#;
+        let cipher = Aes256Gcm::new_from_slice(&state_key(&secret, "c", 1)).unwrap();
+        let aad = state_aad("c", "r", 5, 1);
+        let ct = cipher.encrypt(&Nonce::from([7u8; NONCE_LEN]), Payload { msg: plain, aad: &aad }).unwrap();
+        let mut frame = vec![STATE_TAG, 0, 0, 0, 1];
+        frame.extend_from_slice(&[7u8; NONCE_LEN]);
+        frame.extend_from_slice(&ct);
+        assert_eq!(open_state(&frame, 5, "c", "r", &secret), Some(MediaState { camera: false, mic: true, screen: false, seq: 1, ts: 0 }));
     }
 
     #[test]

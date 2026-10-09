@@ -61,7 +61,10 @@ type Dict = Record<string, string>;
  * calls of groups: the header's buttons, the banner of a call on, the room
  * and its list of who is in, the line of a group call in the chat; then the
  * way to the room through two nodes (the cascade) and its move to another;
- * then the mark of a video whose frames have been missing for long.
+ * then the mark of a video whose frames have been missing for long. Then
+ * the way out of a phone screen that failed to show or of an address
+ * without a page. Then the refusal of the one who declined a request, and
+ * the "All files" entry of the save dialog.
  */
 const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
   desktop: {
@@ -893,6 +896,10 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_gcall_err_no_node: 'No call node for a group call answered. Try again later.',
       msg_gcall_err_node_lost: 'The connection to the call node was lost.',
       msg_call_busy_in_group: 'Busy: you are in a group call',
+      screen_failed: 'This screen could not be shown.',
+      screen_to_start: 'To the start screen',
+      msg_err_dm_declined_by_me: 'You declined the request from {name}. Add them to contacts to write.',
+      msg_media_all_files: 'All files',
     },
     ru: {
       settings_camoufox_title: 'Camoufox',
@@ -1717,6 +1724,10 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_gcall_err_no_node: 'Не ответил ни один узел для группового звонка. Попробуйте позже.',
       msg_gcall_err_node_lost: 'Связь с узлом звонков потеряна.',
       msg_call_busy_in_group: 'Занято: вы в групповом звонке',
+      screen_failed: 'Не удалось показать этот экран.',
+      screen_to_start: 'На стартовый экран',
+      msg_err_dm_declined_by_me: 'Вы отклонили запрос от {name}. Чтобы написать, добавьте в контакты.',
+      msg_media_all_files: 'Все файлы',
     },
   },
   mobile: {

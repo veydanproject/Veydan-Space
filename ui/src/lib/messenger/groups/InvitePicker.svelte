@@ -12,6 +12,7 @@
   import { messengerStore } from '../store.svelte';
   import { groupStore } from './groupStore.svelte';
   import { contactLabel, type MessengerGroup } from '../api';
+  import { contactHaystacks, matchesQuery } from '../shared/search';
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as "msg_you", params);
 
@@ -25,12 +26,12 @@
 
   $effect(() => { if (!open) { key = ''; error = ''; sent = []; } });
 
-  const q = $derived(key.trim().toLowerCase());
   const looksLikeKey = $derived(/^(npub1[0-9a-z]{20,}|[0-9a-f]{64})$/i.test(key.trim()));
   const inGroup = $derived(new Set(group.members.map((m) => m.pubkey)));
   const banned = $derived(new Set(group.banned));
+  const haystacks = $derived(contactHaystacks(messengerStore.contacts));
   const contacts = $derived(
-    messengerStore.contacts.filter((c) => !inGroup.has(c.pubkey) && !banned.has(c.pubkey) && (!q || contactLabel(c).toLowerCase().includes(q) || c.npub.includes(q))),
+    messengerStore.contacts.filter((c) => !inGroup.has(c.pubkey) && !banned.has(c.pubkey) && matchesQuery(haystacks.get(c.pubkey) ?? '', key)),
   );
 
   async function invite(who: string) {

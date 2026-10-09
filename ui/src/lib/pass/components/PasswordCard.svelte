@@ -217,7 +217,7 @@
         {@const color = tagColor(tag)}
         <span class="chip tinted" title={tagKind(tag)} style:--chip={color}>
           <ChipMark kind={parseBinding(tag)?.kind ?? 'tag'} caption={tagKind(tag)} />
-          {tagLabel(tag)}
+          <span class="chip-text">{tagLabel(tag)}</span>
         </span>
       {/each}
     </div>
@@ -251,10 +251,13 @@
 
 <style>
   .card { display: flex; flex-direction: column; gap: var(--sp-3); }
-  h2 { margin: 0; font-size: 1.05rem; }
+  /* A long value without spaces wraps inside the card instead of running past its border */
+  h2 { margin: 0; font-size: 1.05rem; min-width: 0; overflow-wrap: anywhere; }
   .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: 0.85rem; }
   /* The row label only (the pin mark is a span too) */
   .line > span:first-child { color: var(--text-2); min-width: 72px; }
+  .line > strong, .line > a, .line > p { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .line > p { white-space: pre-wrap; }
   .totp-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .primary { display: inline-flex; color: var(--accent); }
   a { color: var(--text); }
@@ -280,6 +283,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* The chip is inline-flex, so the ellipsis goes on the label itself */
+  .chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* Not a toggle: the hover of the global .chip changes nothing here. */
   .chip:hover:not([style*='--chip']) { border-color: var(--border); color: var(--text-2); }
 </style>

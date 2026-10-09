@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">Aramalar</string>
+    <string name="veydan_call_channel_ongoing">Süren arama</string>
+    <string name="veydan_call_incoming">Gelen arama</string>
+    <string name="veydan_call_incoming_video">Gelen görüntülü arama</string>
+    <string name="veydan_call_ongoing">Arama sürüyor</string>
+    <string name="veydan_call_answer">Yanıtla</string>
+    <string name="veydan_call_decline">Reddet</string>
+    <string name="veydan_call_hangup">Kapat</string>
+    <string name="veydan_call_unknown">Bilinmeyen</string>
+    <string name="veydan_call_channel_group">Grup aramaları</string>
+    <string name="veydan_call_group_on">Bir arama sürüyor</string>
+    <string name="veydan_call_group_video_on">Bir görüntülü arama sürüyor</string>
+    <string name="veydan_call_swipe_answer">Yanıtlamak için sola kaydırın</string>
+    <string name="veydan_call_swipe_decline">Reddetmek için sağa kaydırın</string>
+</resources>

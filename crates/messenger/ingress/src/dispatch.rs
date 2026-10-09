@@ -63,7 +63,11 @@ impl Dispatcher {
 
     /// Handle one inbound and run its effects. Handler errors are reported
     /// through the sink as `error` events and never abort the loop.
-    pub async fn dispatch(&self, inbound: Inbound, ctx: &Context, sink: &dyn EffectSink) {
+    ///
+    /// Returns `false` only when a handler failed: the event was not
+    /// applied, and the loop leaves it unseen so that a later copy (the
+    /// next history sync, another relay) is taken again.
+    pub async fn dispatch(&self, inbound: Inbound, ctx: &Context, sink: &dyn EffectSink) -> bool {
         let family = inbound.family();
         let result = match inbound {
             Inbound::Dm(dm) => match &self.dm {
@@ -88,18 +92,24 @@ impl Dispatcher {
                     name: "ignored".into(),
                     payload: serde_json::json!({ "kind": kind, "reason": reason }),
                 });
-                return;
+                return true;
             }
         };
         match result {
-            None => sink.emit(UiEvent {
-                name: "ignored".into(),
-                payload: serde_json::json!({ "family": family, "reason": "no handler registered" }),
-            }),
-            Some(Err(e)) => sink.emit(UiEvent {
-                name: "error".into(),
-                payload: serde_json::json!({ "family": family, "error": e.to_string() }),
-            }),
+            None => {
+                sink.emit(UiEvent {
+                    name: "ignored".into(),
+                    payload: serde_json::json!({ "family": family, "reason": "no handler registered" }),
+                });
+                true
+            }
+            Some(Err(e)) => {
+                sink.emit(UiEvent {
+                    name: "error".into(),
+                    payload: serde_json::json!({ "family": family, "error": e.to_string() }),
+                });
+                false
+            }
             Some(Ok(effects)) => {
                 for effect in effects {
                     match effect {
@@ -115,6 +125,9 @@ impl Dispatcher {
                         Effect::Notify(notice) => sink.notify(notice),
                     }
                 }
+                // A send that failed is the outbox's to retry; what the
+                // handler did stays done.
+                true
             }
         }
     }

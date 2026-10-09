@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">Panggilan</string>
+    <string name="veydan_call_channel_ongoing">Panggilan berlangsung</string>
+    <string name="veydan_call_incoming">Panggilan masuk</string>
+    <string name="veydan_call_incoming_video">Panggilan video masuk</string>
+    <string name="veydan_call_ongoing">Panggilan berlangsung</string>
+    <string name="veydan_call_answer">Jawab</string>
+    <string name="veydan_call_decline">Tolak</string>
+    <string name="veydan_call_hangup">Akhiri</string>
+    <string name="veydan_call_unknown">Tidak dikenal</string>
+    <string name="veydan_call_channel_group">Panggilan grup</string>
+    <string name="veydan_call_group_on">Ada panggilan berlangsung</string>
+    <string name="veydan_call_group_video_on">Ada panggilan video berlangsung</string>
+    <string name="veydan_call_swipe_answer">Geser ke kiri untuk menjawab</string>
+    <string name="veydan_call_swipe_decline">Geser ke kanan untuk menolak</string>
+</resources>

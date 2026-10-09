@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "Bu pencereye {app} uygulamasının telefon arayüzü verildi: uygulama, Android derlemesinin sayfalarıyla derlenmiş.",
     "start_error_wrong_ui_desktop": "Bu cihaza {app} uygulamasının masaüstü arayüzü verildi: uygulama, masaüstü derlemesinin sayfalarıyla derlenmiş.",
     "start_error_wrong_ui_fix": "Hiçbir şey değiştirilmedi. Uygulamayı yeniden derleyin veya bir sürüm derlemesi kurun.",
+    "screen_failed": "Bu ekran gösterilemedi.",
+    "screen_to_start": "Başlangıç ekranına git",
     "modules_section": "Modüller",
     "modules_hint": "Bu cihazın gösterdikleri. Kapalı bir modül verilerini korur ve verileri eşitlenmeye devam eder.",
     "modules_last": "En az bir modül açık kalır.",

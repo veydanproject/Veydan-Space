@@ -358,7 +358,7 @@ mod tests {
         put(&s, &row("m1", "dm:bb", "bb", "👍", 100, false), 0).await.unwrap();
         put(&s, &row("x1", "dm:bb", "bb", "👍", 100, false), 0).await.unwrap();
         put(&s, &row("m1", "dm:cc", "cc", "👍", 100, false), 0).await.unwrap();
-        crate::chats::delete(&s, "dm:bb").await.unwrap();
+        crate::chats::delete(&s, "dm:bb", 1_000).await.unwrap();
         assert!(get(&s, "m1", "bb", "👍").await.unwrap().is_none());
         assert!(get(&s, "x1", "bb", "👍").await.unwrap().is_none());
         assert!(get(&s, "m1", "cc", "👍").await.unwrap().is_some(), "another chat's stays");

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { messengerTranslations } from '../i18n';
-import { albumLine, albumOf, bodyLine, duration, joinAlbum, type NoticeBody } from './wording';
+import { albumLine, albumOf, bodyLine, duration, joinAlbum, replyLine, replyThumb, type NoticeBody } from './wording';
 
 const en = messengerTranslations.en as Record<string, string>;
 const t = (key: string, vars?: Record<string, string>) => {
@@ -54,5 +54,39 @@ describe('a notification line', () => {
     expect(duration(0)).toBe('0:00');
     expect(duration(59_600)).toBe('1:00');
     expect(duration(3_723_000)).toBe('1:02:03');
+  });
+});
+
+describe('the picture of a quote', () => {
+  it('shows the JPEG preview of a photo or a video, nothing else', () => {
+    const thumb = '/9j/4AECAw==';
+    expect(replyThumb({ text: null, media: { kind: 'image', thumb } })).toBe(`data:image/jpeg;base64,${thumb}`);
+    expect(replyThumb({ text: 'look', media: { kind: 'video', thumb } })).toBe(`data:image/jpeg;base64,${thumb}`);
+    expect(replyThumb({ text: null, deleted: true, media: { kind: 'image', thumb } })).toBeNull();
+    expect(replyThumb({ text: null, media: { kind: 'file', thumb } })).toBeNull();
+    expect(replyThumb({ text: null, media: { kind: 'image' } })).toBeNull();
+    expect(replyThumb({ text: null, media: { kind: 'image', thumb: 'iVBORw0KGgo=' } })).toBeNull();
+    expect(replyThumb({ text: 'hi' })).toBeNull();
+  });
+});
+
+describe('the line under a reply', () => {
+  it('tells a message taken back first, then the text, a card, a file', () => {
+    expect(replyLine({ text: null, deleted: true }, null, t)).toBe('Message deleted');
+    expect(replyLine({ text: 'hello' }, null, t)).toBe('hello');
+    expect(replyLine({ text: null }, 'Carol', t)).toBe('👤 Carol');
+    expect(replyLine({ text: null, media: { kind: 'image', name: 'cat.png' } }, null, t)).toBe('📷 Photo');
+    expect(replyLine({ text: null, media: { kind: 'voice', name: 'v.webm', duration_ms: 12_400 } }, null, t)).toBe('🎤 Voice message (0:12)');
+    expect(replyLine({ text: null, media: { kind: 'file', name: 'report.pdf' } }, null, t)).toBe('📎 report.pdf');
+  });
+
+  it('never calls a photo without a caption deleted, and leaves the unknown empty', () => {
+    expect(replyLine({ text: null, deleted: false, media: { kind: 'video' } }, null, t)).not.toBe('Message deleted');
+    expect(replyLine({ text: null }, null, t)).toBe('');
+    expect(replyLine({ text: null, media: {} }, null, t)).toBe('');
+  });
+
+  it('an old runtime that sends no flag shows the text it has', () => {
+    expect(replyLine({ text: 'hi', deleted: undefined }, null, t)).toBe('hi');
   });
 });

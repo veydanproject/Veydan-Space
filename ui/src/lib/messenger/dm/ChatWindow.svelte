@@ -11,6 +11,7 @@
   import AlbumBubble from './AlbumBubble.svelte';
   import QuickReactions from './QuickReactions.svelte';
   import { reactionTarget } from './quick-reactions';
+  import { canEdit, editTarget } from './editable';
   import Timeline from '../content/Timeline.svelte';
   import type { TimelineItem } from '../content/types';
   import { tint } from '../shared/tint';
@@ -70,8 +71,11 @@
   let error = $state('');
   let atBottom = $state(true);
   let highlighted = $state<string | null>(null);
-  /** `m`: the message pressed, what the items act on. `target`: what a reaction from the menu lands on (an album's last part). */
-  let menu = $state<{ open: boolean; x: number; y: number; m: MessengerMessage | null; target: MessengerMessage | null }>({ open: false, x: 0, y: 0, m: null, target: null });
+  /**
+   * `m`: the message pressed, what the items act on. `target`: what a reaction from the menu lands on (an album's last part).
+   * `caption`: what Edit changes (an album's part that carries its caption).
+   */
+  let menu = $state<{ open: boolean; x: number; y: number; m: MessengerMessage | null; target: MessengerMessage | null; caption: MessengerMessage | null }>({ open: false, x: 0, y: 0, m: null, target: null, caption: null });
   /** The menu of a message shows the whole emoji picker instead of the quick strip. */
   let menuMore = $state(false);
   let chatMenu = $state<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
@@ -189,7 +193,8 @@
     list.push({ type: "separator" });
     list.push({ label: chat.pinned ? $t("msg_chat_unpin") : $t("msg_chat_pin"), icon: "pin", onselect: () => chatStore.setPinned(chat.id, !chat.pinned) });
     list.push({ label: chat.is_muted ? $t("msg_chat_unmute") : $t("msg_chat_mute"), icon: chat.is_muted ? "bell" : "bell-off", onselect: () => chatStore.setMuted(chat.id, !chat.is_muted) });
-    list.push({ label: chat.archived ? $t("msg_chat_unarchive") : $t("msg_chat_archive"), icon: "archive", onselect: () => chatStore.setArchived(chat.id, !chat.archived) });
+    // An archived chat is closed (as a deleted one): its page is left with it.
+    list.push({ label: chat.archived ? $t("msg_chat_unarchive") : $t("msg_chat_archive"), icon: "archive", onselect: async () => { const archive = !chat.archived; await chatStore.setArchived(chat.id, archive); if (archive) onback?.(); } });
     // A group is left, not deleted: its own entries say how.
     if (!isGroup) list.push({ label: $t("msg_chat_delete"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_chat_delete_confirm", { name: chat.title }), $t("msg_chat_delete"), true)) { await chatStore.deleteChat(chat.id); onback?.(); } } });
     return list;
@@ -229,7 +234,7 @@
   }
 
   function editLast() {
-    const mine = [...chatStore.messages].reverse().find((m) => m.direction === 'out' && m.content_type === 'text' && !m.deleted);
+    const mine = [...chatStore.messages].reverse().find((m) => canEdit(m, chat.can_send) && (m.content_type === 'text' || !!m.text));
     if (mine) { replyTo = null; editing = mine; }
   }
 
@@ -311,7 +316,7 @@
   function openMenu(e: MouseEvent, m: MessengerMessage, album?: MessengerMessage[]) {
     e.preventDefault();
     menuMore = false;
-    menu = { open: true, x: e.clientX, y: e.clientY, m, target: reactionTarget(m, album) };
+    menu = { open: true, x: e.clientX, y: e.clientY, m, target: reactionTarget(m, album), caption: editTarget(m, album) };
   }
 
   /** A message one may react to: it is there, it left this device, and this chat takes words from me. */
@@ -344,9 +349,11 @@
     const own = m.direction === 'out';
     const list: MenuEntry[] = [];
     if (!m.deleted) {
-      if (chat.can_send) list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => { editing = null; replyTo = m; } });
+      // An upload on its way is swapped for a message with another id: a quote of it would point at nothing.
+      if (chat.can_send && !m.id.startsWith('local:') && m.status !== 'uploading' && m.status !== 'paused') list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => { editing = null; replyTo = m; } });
       if (m.text) list.push({ label: $t('msg_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').catch(() => {}) });
-      if (own && m.content_type === 'text' && chat.can_send) list.push({ label: $t('msg_message_edit'), icon: 'pencil', onselect: () => { replyTo = null; editing = m; } });
+      const caption = menu.caption ?? m;
+      if (canEdit(caption, chat.can_send)) list.push({ label: $t('msg_message_edit'), icon: 'pencil', onselect: () => { replyTo = null; editing = caption; } });
       if (own && m.status === 'failed') list.push({ label: $t('msg_message_retry'), icon: 'refresh-cw', onselect: () => guard(() => chatStore.retry(m.id)) });
       if (own && isGroup && m.seen_by?.length) {
         const { x, y } = menu;

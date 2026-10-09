@@ -12,6 +12,10 @@ use messenger_core::{Context, Effect, Handler, MetaInbound, Result};
 
 pub const UI_EVENT_PROFILE_UPDATED: &str = "profile.updated";
 pub const UI_EVENT_FOLLOWS_UPDATED: &str = "follows.updated";
+/// The address book changed without the page asking for it (another
+/// device of mine approved someone, a request sent from a chat):
+/// `{"pubkey": "<hex>"}`, or `{}` for several at once.
+pub const UI_EVENT_CONTACTS_UPDATED: &str = "contacts.updated";
 
 pub struct MetaHandler {
     profiles: ProfileService,

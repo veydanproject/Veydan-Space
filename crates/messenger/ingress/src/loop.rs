@@ -4,7 +4,7 @@
 //! `IngressLoop`: consumes a transport's event stream, dedups, classifies,
 //! dispatches. One per session; dropping the handle stops it.
 
-use crate::classify::{classify, KIND_PRESENCE};
+use crate::classify::{classify, KIND_GIFT_WRAP, KIND_PRESENCE};
 use crate::dispatch::{Dispatcher, EffectSink};
 use messenger_core::{Context, Inbound, RawEvent};
 use messenger_store::{events_raw, Store};
@@ -68,10 +68,11 @@ impl IngressLoop {
         let handle = tokio::spawn(async move {
             while let Some(raw) = events.recv().await {
                 st.received.fetch_add(1, Ordering::Relaxed);
-                if !is_transient(raw.kind) {
-                    match events_raw::insert_if_new(&store, &raw).await {
-                        Ok(true) => {}
-                        Ok(false) => {
+                let kept = !is_transient(raw.kind);
+                if kept {
+                    match events_raw::contains(&store, &raw.id).await {
+                        Ok(false) => {}
+                        Ok(true) => {
                             st.duplicates.fetch_add(1, Ordering::Relaxed);
                             continue;
                         }
@@ -81,6 +82,9 @@ impl IngressLoop {
                         }
                     }
                 }
+                // A gift wrap that came while locked was not read: it stays
+                // unseen, and the history sync after unlock brings it again.
+                let unread = keys.is_none() && raw.kind == KIND_GIFT_WRAP;
                 let inbound = classify(&raw, keys.as_ref());
                 match &inbound {
                     Inbound::Dm(_) => {
@@ -92,7 +96,15 @@ impl IngressLoop {
                     _ => {}
                 }
                 st.dispatched.fetch_add(1, Ordering::Relaxed);
-                dispatcher.dispatch(inbound, &ctx, sink.as_ref()).await;
+                // Seen only once applied: an event whose handler failed is
+                // taken again from the next copy. Events come one at a
+                // time, so a duplicate still finds the row of the first.
+                let applied = dispatcher.dispatch(inbound, &ctx, sink.as_ref()).await;
+                if kept && applied && !unread {
+                    if let Err(e) = events_raw::insert_if_new(&store, &raw).await {
+                        eprintln!("messenger ingress: dedup store failed: {e}");
+                    }
+                }
             }
         });
         Self { handle, stats }
@@ -206,6 +218,86 @@ mod tests {
         let (received, dups, dispatched, _, _) = lp.stats.snapshot();
         assert_eq!((received, dups, dispatched), (3, 0, 3));
         assert_eq!(events_raw::count(&store).await.unwrap(), 1, "only the kind-1 note is kept");
+        drop(lp);
+    }
+
+    /// A DM handler that fails its first `fail` calls, then takes them.
+    struct Flaky {
+        calls: std::sync::atomic::AtomicUsize,
+        fail: usize,
+    }
+
+    #[async_trait]
+    impl messenger_core::Handler<messenger_core::DmInbound> for Flaky {
+        async fn handle(&self, _: messenger_core::DmInbound, _: &Context) -> Result<Vec<messenger_core::Effect>> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) < self.fail {
+                return Err(messenger_core::MessengerError::Storage("busy".into()));
+            }
+            Ok(vec![])
+        }
+    }
+
+    fn ctx_of(k: &Keys) -> Context {
+        Context {
+            my_pubkey: PubKey::parse(&k.public_key().to_hex()).unwrap(),
+            session_started_at: Timestamp(0),
+            clock: Arc::new(SystemClock),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_gift_wrap_that_came_while_locked_is_read_after_unlock() {
+        let store = Store::open_in_memory().await.unwrap();
+        let alice = Keys::generate();
+        let bob = Keys::generate();
+        let handler = Arc::new(Flaky { calls: Default::default(), fail: 0 });
+        let dispatcher = Arc::new(Dispatcher::new().with_dm(handler.clone()));
+        let sink = Arc::new(Sink(Mutex::new(vec![])));
+        let wrap = PrivateDirectMessageBuilder::new(bob.public_key(), "x").finalize(&alice).unwrap();
+
+        // Locked: nothing opens the wrap, and nothing marks it seen.
+        let (tx, rx) = mpsc::channel(8);
+        let lp = IngressLoop::spawn(rx, store.clone(), None, dispatcher.clone(), ctx_of(&bob), sink.clone());
+        tx.send(raw_of(&wrap)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(lp.stats.snapshot().4, 1, "ignored without a signer");
+        assert_eq!(events_raw::count(&store).await.unwrap(), 0, "not seen");
+        drop(lp);
+
+        // Unlocked: the loop is restarted and the next copy is read, once.
+        let (tx, rx) = mpsc::channel(8);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink);
+        tx.send(raw_of(&wrap)).await.unwrap();
+        tx.send(raw_of(&wrap)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let (received, dups, _, dm, _) = lp.stats.snapshot();
+        assert_eq!((received, dups, dm), (2, 1, 1));
+        assert_eq!(handler.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(events_raw::count(&store).await.unwrap(), 1);
+        drop(lp);
+    }
+
+    #[tokio::test]
+    async fn an_event_whose_handler_failed_is_taken_again() {
+        let store = Store::open_in_memory().await.unwrap();
+        let alice = Keys::generate();
+        let bob = Keys::generate();
+        let handler = Arc::new(Flaky { calls: Default::default(), fail: 1 });
+        let dispatcher = Arc::new(Dispatcher::new().with_dm(handler.clone()));
+        let sink = Arc::new(Sink(Mutex::new(vec![])));
+        let (tx, rx) = mpsc::channel(8);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink.clone());
+
+        let wrap = PrivateDirectMessageBuilder::new(bob.public_key(), "x").finalize(&alice).unwrap();
+        tx.send(raw_of(&wrap)).await.unwrap(); // fails
+        tx.send(raw_of(&wrap)).await.unwrap(); // taken
+        tx.send(raw_of(&wrap)).await.unwrap(); // a duplicate now
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(handler.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(lp.stats.snapshot().1, 1, "one duplicate");
+        assert_eq!(events_raw::count(&store).await.unwrap(), 1);
+        assert!(sink.0.lock().unwrap().iter().any(|e| e.name == "error"), "the failure is still reported");
         drop(lp);
     }
 }

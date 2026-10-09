@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">Chamadas</string>
+    <string name="veydan_call_channel_ongoing">Chamada em andamento</string>
+    <string name="veydan_call_incoming">Chamada recebida</string>
+    <string name="veydan_call_incoming_video">Chamada de vídeo recebida</string>
+    <string name="veydan_call_ongoing">Chamada em andamento</string>
+    <string name="veydan_call_answer">Atender</string>
+    <string name="veydan_call_decline">Recusar</string>
+    <string name="veydan_call_hangup">Desligar</string>
+    <string name="veydan_call_unknown">Desconhecido</string>
+    <string name="veydan_call_channel_group">Chamadas em grupo</string>
+    <string name="veydan_call_group_on">Há uma chamada em andamento</string>
+    <string name="veydan_call_group_video_on">Há uma chamada de vídeo em andamento</string>
+    <string name="veydan_call_swipe_answer">Deslize para a esquerda para atender</string>
+    <string name="veydan_call_swipe_decline">Deslize para a direita para recusar</string>
+</resources>

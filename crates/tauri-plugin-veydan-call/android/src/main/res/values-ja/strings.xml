@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">通話</string>
+    <string name="veydan_call_channel_ongoing">通話中</string>
+    <string name="veydan_call_incoming">着信</string>
+    <string name="veydan_call_incoming_video">ビデオ通話の着信</string>
+    <string name="veydan_call_ongoing">通話中</string>
+    <string name="veydan_call_answer">応答</string>
+    <string name="veydan_call_decline">拒否</string>
+    <string name="veydan_call_hangup">終了</string>
+    <string name="veydan_call_unknown">不明</string>
+    <string name="veydan_call_channel_group">グループ通話</string>
+    <string name="veydan_call_group_on">通話が進行中です</string>
+    <string name="veydan_call_group_video_on">ビデオ通話が進行中です</string>
+    <string name="veydan_call_swipe_answer">左にスワイプして応答</string>
+    <string name="veydan_call_swipe_decline">右にスワイプして拒否</string>
+</resources>

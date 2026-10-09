@@ -4,8 +4,9 @@
 <!--
   Who is in the room of a group call: each seat with its name and whether
   its identity was confirmed (its word of identity, signed by a member's
-  key, checked here), whether its pictures come, whether it speaks; my
-  own microphone when it is off (another's is not known here yet). A seat not
+  key, checked here), whether its camera (or its screen) is on, whether it
+  speaks, whether its microphone is off (another's by its own word of
+  state; a seat of an older client says nothing of it). A seat not
   confirmed yet is nameless and not heard. The count says the room's
   limit when the node gave one.
 -->
@@ -52,7 +53,10 @@
         </span>
         <span class="marks">
           {#if p.speaking && p.verified}<span class="talk" title={$t('msg_gcall_speaking')}><CallIcon name="speaking" size={13} /></span>{/if}
-          {#if seatSendsVideo(p, call, (seat) => !!groupCallStore.showing[seat])}<span class="mark" title={$t('msg_call_camera')}><CallIcon name="video" size={13} /></span>{/if}
+          {#if seatSendsVideo(p, call, (seat) => !!groupCallStore.showing[seat])}
+            {@const screen = p.screen === true || (p.me && groupCallStore.screen)}
+            <span class="mark" title={$t(screen ? 'msg_call_screen_kind_screen' : 'msg_call_camera')}><CallIcon name={screen ? 'screen-share' : 'video'} size={13} /></span>
+          {/if}
           {#if seatMuted(p, call)}<span class="mark off" title={$t('msg_call_muted')}><CallIcon name="mic-off" size={13} /></span>{/if}
         </span>
       </li>

@@ -414,6 +414,8 @@
     "start_error_wrong_ui_phone": "Cửa sổ này nhận giao diện điện thoại của {app}: ứng dụng được dựng cùng các trang của bản dựng Android.",
     "start_error_wrong_ui_desktop": "Thiết bị này nhận giao diện máy tính của {app}: ứng dụng được dựng cùng các trang của bản dựng cho máy tính.",
     "start_error_wrong_ui_fix": "Không có gì bị thay đổi. Hãy dựng lại ứng dụng hoặc cài một bản phát hành.",
+    "screen_failed": "Không thể hiển thị màn hình này.",
+    "screen_to_start": "Về màn hình khởi động",
     "modules_section": "Mô-đun",
     "modules_hint": "Những gì thiết bị này hiển thị. Mô-đun đã tắt vẫn giữ dữ liệu, và dữ liệu đó vẫn tiếp tục được đồng bộ.",
     "modules_last": "Phải bật ít nhất một mô-đun.",

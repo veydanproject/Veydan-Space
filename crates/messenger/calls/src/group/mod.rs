@@ -8,7 +8,8 @@
 //! - `signal`: the `call.start`, `call.join`, `call.leave`, `call.epoch`
 //!   and `call.end` notes of a group, read and written.
 //! - `keys`: the keys of the frames from the secret of an epoch, and the
-//!   signed and sealed word of identity on the control channel.
+//!   signed and sealed word of identity and the sealed word of state
+//!   (camera, microphone, screen) on the control channel.
 //! - `ctl`: the control channel of the room, as the node speaks it.
 //! - `access`: the door to the groups ([`GroupAccess`]).
 //! - `service`: [`GroupCallService`], the room I am in and the calls the

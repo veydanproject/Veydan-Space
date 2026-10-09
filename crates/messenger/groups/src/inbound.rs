@@ -772,7 +772,12 @@ impl GroupService {
         let gone = before.membership == MEMBERSHIP_JOINED && !log.state().is_member(me) && !log.state().disbanded;
         let row = self.refresh_row(group_id, me, gone.then(|| departure(&log, me))).await?;
         let Some(row) = row else { return Ok(()) };
-        if row.membership != before.membership || row.name != before.name || row.members != before.members || row.my_role != before.my_role {
+        let mut changed =
+            row.membership != before.membership || row.name != before.name || row.members != before.members || row.my_role != before.my_role;
+        if row.membership == MEMBERSHIP_JOINED && log.state().role_of(me).is_some_and(Role::is_manager) {
+            changed |= self.close_answered_requests(group_id, log.state()).await?;
+        }
+        if changed {
             out.events.push(Self::updated(group_id));
         }
         if row.membership != before.membership {
@@ -1005,7 +1010,11 @@ impl GroupService {
         }
         match content_type {
             msgs::CT_EDIT => {
-                if row.sender_pubkey != actor.as_hex() || row.content_type != msgs::CT_TEXT || row.edited_at.is_some_and(|e| e > at) {
+                // Text and captions only: a card has no text to replace.
+                if row.sender_pubkey != actor.as_hex()
+                    || !messenger_dm::service::editable_type(&row.content_type)
+                    || row.edited_at.is_some_and(|e| e > at)
+                {
                     return Ok(false);
                 }
                 let Some(t) = new_text.filter(|t| !t.is_empty() && t.len() <= messenger_dm::service::MAX_TEXT_BYTES) else {

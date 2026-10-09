@@ -5,7 +5,8 @@
 // once after the finger rested on the element; moving or lifting cancels.
 
 export interface LongPressOptions {
-  onpress: (point: { x: number; y: number }) => void;
+  /** `target` is what the finger went down on: a shared parent finds the part pressed. */
+  onpress: (point: { x: number; y: number; target: EventTarget | null }) => void;
   /** Milliseconds the finger must rest. */
   delay?: number;
 }
@@ -16,6 +17,7 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
   let opts = options;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let start = { x: 0, y: 0 };
+  let target: EventTarget | null = null;
   let fired = false;
 
   const clear = () => {
@@ -27,12 +29,13 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
     if (e.pointerType === 'mouse') return; // the mouse has a right button
     fired = false;
     start = { x: e.clientX, y: e.clientY };
+    target = e.target;
     clear();
     timer = setTimeout(() => {
       timer = null;
       fired = true;
       navigator.vibrate?.(12);
-      opts.onpress({ x: start.x, y: start.y });
+      opts.onpress({ x: start.x, y: start.y, target });
     }, opts.delay ?? 450);
   };
 

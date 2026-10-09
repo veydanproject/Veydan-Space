@@ -313,3 +313,41 @@ internal class CameraOrientation {
   /** The display has `rotation` now: the rotation to set, or null when the use case has it already. */
   fun follow(rotation: Int): Int? = if (rotation == applied) null else rotation.also { applied = it }
 }
+
+/**
+ * The swipe of the two circles of the ringing screen. Decline stands on the
+ * left and is pulled to the right; Answer stands on the right and is pulled
+ * to the left: each toward the middle, as far as `maxTravel` (the distance
+ * to the middle, so that the two never cross). A circle follows the finger
+ * its own way only. Let go at `threshold` or further it acts; short of it
+ * it goes back. A press that hardly moved is a tap (`isTap`): it acts on
+ * nothing, the screen only shows which way to swipe.
+ */
+internal object SwipeRule {
+  enum class Circle { DECLINE, ANSWER }
+
+  /** The way `circle` goes: -1 to the left, 1 to the right. */
+  fun way(circle: Circle): Float = if (circle == Circle.ANSWER) -1f else 1f
+
+  /** Where `circle` stands for a drag of `dx` (pixels, right is positive). */
+  fun offset(dx: Float, circle: Circle, maxTravel: Float): Float =
+    (dx * way(circle)).coerceIn(0f, maxOf(maxTravel, 0f)) * way(circle)
+
+  /** How far along its way `circle` is, 0 to 1. */
+  fun progress(dx: Float, circle: Circle, maxTravel: Float): Float =
+    if (maxTravel <= 0f) 0f else Math.abs(offset(dx, circle, maxTravel)) / maxTravel
+
+  /**
+   * What a release after a drag of `dx` does: the circle acts, or (null)
+   * goes back. A threshold beyond the travel is the travel: a narrow screen
+   * still lets the swipe through.
+   */
+  fun decide(dx: Float, circle: Circle, threshold: Float, maxTravel: Float): Circle? {
+    if (maxTravel <= 0f) return null
+    val along = Math.abs(offset(dx, circle, maxTravel))
+    return if (along > 0f && along >= minOf(threshold, maxTravel)) circle else null
+  }
+
+  /** A press whose finger never went `slop` from where it came down. */
+  fun isTap(farthest: Float, slop: Float): Boolean = farthest < slop
+}

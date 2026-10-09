@@ -19,6 +19,7 @@
   import { markdownDestination, repairAttachmentLinks } from '$lib/notes/markdown';
   import { fmtDateTime, fmtSize, loadEditorMode, saveEditorMode, type EditorMode } from '$lib/notes/mobile/notes-editor';
   import { onKeyboard } from '$lib/core/mobile/keyboard';
+  import { leave } from '$lib/core/ui/back';
   import NoteRichEditor from '$lib/notes/mobile/NoteRichEditor.svelte';
   import NoteFormatBar from '$lib/notes/mobile/NoteFormatBar.svelte';
   import { applyAction, type EditAction } from '$lib/notes/markdown-edit';
@@ -40,6 +41,7 @@
   import { canBindEntities, contextKeys } from '$lib/notes/context';
   import { directory } from '$lib/core/directory';
   import { TEMPLATES_FOLDER } from '$lib/notes/filter';
+  import { findTag, tagChoice } from '$lib/notes/tag-name';
   import NoteContextSheet from '$lib/notes/mobile/NoteContextSheet.svelte';
   import PlaceholderSheet from '$lib/notes/mobile/PlaceholderSheet.svelte';
 
@@ -666,18 +668,18 @@
   // ── Tags, folders, workspaces ──
 
   async function addTag(name: string, color?: string) {
-    const n = name.trim().replace(/^#/, '');
-    if (!n || tags.includes(n)) {
+    // "Работа" is the tag "работа": the new tag and the note get one name.
+    const choice = tagChoice(name.trim().replace(/^#/, ''), allTags, tags);
+    if (!choice) {
       sheet = 'none';
       return;
     }
-    const existing = allTags.find((t) => t.name === n);
     try {
-      if (!existing && color) {
-        const created = await api.notes.tagCreate(n, color);
+      if (!choice.existing && color) {
+        const created = await api.notes.tagCreate(choice.name, color);
         allTags = [...allTags, created];
       }
-      tags = [...tags, existing?.name ?? n];
+      tags = [...tags, choice.name];
       onEdit();
       sheet = 'none';
     } catch (e) {
@@ -1000,8 +1002,7 @@
   }
 
   function back() {
-    if (history.length > 1) history.back();
-    else void goto('/notes');
+    void leave('/notes');
   }
 
   // Flush a pending edit when the user navigates away.
@@ -1078,7 +1079,7 @@
         {/if}
       {/each}
       {#each tags as name (name)}
-        {@render removable('tag', name, allTags.find((t) => t.name === name)?.color, () => removeTag(name))}
+        {@render removable('tag', name, findTag(allTags, name)?.color, () => removeTag(name))}
       {/each}
       <button class="m-chip add" onclick={() => (sheet = 'labels')} aria-label={$t('notes_tags_add')}>
         <Icon name="plus" size={14} />

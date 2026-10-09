@@ -10,8 +10,8 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
+  import { leaveOnce } from '$lib/core/ui/back';
   import { messengerStore } from '../store.svelte';
   import { callStore } from '../calls/callStore.svelte';
   import CallScreen from '../calls/CallScreen.svelte';
@@ -39,13 +39,9 @@
     if (c) chatId = c.chat_id;
   });
 
-  let left = false;
-  function leave() {
-    if (left) return;
-    left = true;
-    if (history.length > 1) history.back();
-    else void goto(chatId ? chatHref(chatId) : BASE, { replaceState: true });
-  }
+  // Once: the arrow and the end of the call both ask. A back that went
+  // nowhere goes to the chat instead, and the arrow stays alive.
+  const leave = leaveOnce(() => (chatId ? chatHref(chatId) : BASE));
 
   // Nothing to show any more: the ending was shown, or no call was ever here.
   $effect(() => {

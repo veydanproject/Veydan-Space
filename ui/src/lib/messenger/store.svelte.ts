@@ -254,7 +254,9 @@ class MessengerStore {
           const pk = (e.payload.payload as { pubkey?: string } | null)?.pubkey;
           if (pk) nameStore.refresh(pk);
         }
-        if (e.payload.name === 'profile.updated' || e.payload.name === 'follows.updated') {
+        // `contacts.updated`: the book changed without this page asking
+        // (another device of mine approved someone, a request from a chat).
+        if (e.payload.name === 'profile.updated' || e.payload.name === 'follows.updated' || e.payload.name === 'contacts.updated') {
           this.refreshContacts().catch(() => {});
         }
       }),

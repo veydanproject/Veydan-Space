@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="veydan_call_channel">Дзвінки</string>
+    <string name="veydan_call_channel_ongoing">Триває дзвінок</string>
+    <string name="veydan_call_incoming">Вхідний дзвінок</string>
+    <string name="veydan_call_incoming_video">Вхідний відеодзвінок</string>
+    <string name="veydan_call_ongoing">Триває дзвінок</string>
+    <string name="veydan_call_answer">Відповісти</string>
+    <string name="veydan_call_decline">Відхилити</string>
+    <string name="veydan_call_hangup">Завершити</string>
+    <string name="veydan_call_unknown">Невідомий</string>
+    <string name="veydan_call_channel_group">Групові дзвінки</string>
+    <string name="veydan_call_group_on">Триває дзвінок</string>
+    <string name="veydan_call_group_video_on">Триває відеодзвінок</string>
+    <string name="veydan_call_swipe_answer">Проведіть ліворуч, щоб відповісти</string>
+    <string name="veydan_call_swipe_decline">Проведіть праворуч, щоб відхилити</string>
+</resources>
