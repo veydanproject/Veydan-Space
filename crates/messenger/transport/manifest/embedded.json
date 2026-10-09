@@ -1,8 +1,8 @@
 {
   "format": "veydan-messenger-manifest",
   "v": 1,
-  "serial": 7,
-  "issued_at": 1791388787,
+  "serial": 8,
+  "issued_at": 1791508155,
   "regions": [
     "default",
     "eu",
@@ -84,6 +84,15 @@
     },
     {
       "ref": "149.28.37.154:8443#68367a61a90c3efafa3a0d4aec481be7c8c21f266864871ecbe9e8ff139bfb03",
+      "turn_port": 3478,
+      "sfu_port": 3479,
+      "class": "project",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "ref": "45.93.201.244:8443#14ade721f0af9d760f40cbe29facb10b918cf8cf75a101c0e47c7b7447cac170",
       "turn_port": 3478,
       "sfu_port": 3479,
       "class": "project",

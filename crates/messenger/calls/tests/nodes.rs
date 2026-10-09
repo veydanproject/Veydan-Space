@@ -5,15 +5,73 @@
 //! testkit): the trust level, the signed list, what is cached and when
 //! it is asked for again.
 
+use messenger_calls::engine::RelayPolicy;
 use messenger_calls::registry::{ListFetch, Registry, KEY_REGISTRY_CHECKED};
 use messenger_calls::{CallNode, NodeClass, NodeRef, NodeSource, ServerSets, SettingsServerSets, TrustLevel, KEY_CALL_NODES};
 use messenger_store::{settings, Store};
-use messenger_testkit::FakeRegistry;
+use messenger_testkit::{FakeEngine, FakeNode, FakeRegistry};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 fn node(seed: u8, addr: &str) -> NodeRef {
     format!("{addr}#{}", format!("{seed:02x}").repeat(32)).parse().unwrap()
+}
+
+/// The sets with the fakes of the nodes and of the registry (the owner's
+/// decision of 2026-10-09, «берём ближайший быстрый»): under `any` the
+/// project's and the volunteers' nodes are one tier, and the nearest of
+/// them carries the call and hosts the room; under `project_and_own` a
+/// volunteer is not in the sets, so not even spoken to; a volunteer the
+/// registry lists as degraded is not in them while an active one is.
+#[tokio::test]
+async fn under_any_the_nearest_of_the_project_and_the_volunteers_carries_the_call() {
+    let store = Store::open_in_memory().await.unwrap();
+    let sets = Arc::new(SettingsServerSets::new(store.clone()));
+    let fake = FakeNode::new(FakeEngine::new());
+    let (project, near, degraded) = (0, fake.add_node(), fake.add_node());
+    fake.set_rtt(project, 60);
+    fake.set_rtt(near, 10);
+    fake.set_rtt(degraded, 5);
+    sets.set_manifest(vec![fake.reference()]);
+    let registry = FakeRegistry::new();
+    registry.list(vec![(fake.node(near, NodeClass::Volunteer).node, "eu", 20), (fake.node(degraded, NodeClass::Volunteer).node, "eu", 5)]);
+    registry.degrade(&fake.node(degraded, NodeClass::Volunteer).node);
+    sets.set_registry(Arc::new(registry.registry(store.clone())));
+    sets.call_nodes().await.unwrap();
+    sets.registry().unwrap().settle().await;
+
+    let nodes = sets.call_nodes().await.unwrap();
+    assert_eq!(nodes.iter().map(|n| n.class).collect::<Vec<_>>(), vec![NodeClass::Project, NodeClass::Volunteer], "the degraded volunteer is left out");
+    let client = fake.client();
+    let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+    let id = |i: usize| fake.node(i, NodeClass::Project).node.id.to_string();
+    assert_eq!(picked.nodes, vec![id(near), id(project)], "the volunteer at 10 ms before the project's at 60 ms; the project's is the spare");
+    assert_eq!(client.pick_sfu(&nodes, 0).await.unwrap().node.node.id.to_string(), id(near), "the room goes to the nearest too");
+    let known: Vec<String> = client.known().into_iter().map(|k| k.id).collect();
+    assert!(known.contains(&id(near)) && known.contains(&id(project)) && !known.contains(&id(degraded)), "{known:?}");
+
+    // The project's and own: the volunteer is not in the sets, and a
+    // fresh client speaks to nobody but the project's.
+    sets.set_trust(TrustLevel::ProjectAndOwn).await.unwrap();
+    let nodes = sets.call_nodes().await.unwrap();
+    assert_eq!(nodes.iter().map(|n| n.class).collect::<Vec<_>>(), vec![NodeClass::Project]);
+    let client = fake.client();
+    let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+    assert_eq!(picked.nodes, vec![id(project)]);
+    assert_eq!(client.known().len(), 1, "no volunteer was asked");
+
+    // Any, with my own node in the sets: it is first, however far, and
+    // the tier below is not spoken to.
+    sets.set_trust(TrustLevel::Any).await.unwrap();
+    let own = fake.add_node();
+    fake.set_rtt(own, 90);
+    settings::set(&store, KEY_CALL_NODES, &format!(r#"["{}"]"#, fake.node(own, NodeClass::Own).node)).await.unwrap();
+    let nodes = sets.call_nodes().await.unwrap();
+    assert_eq!(nodes[0].class, NodeClass::Own);
+    let client = fake.client();
+    let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+    assert_eq!(picked.nodes, vec![id(own)]);
+    assert_eq!(client.known().len(), 1, "my own node answered: nobody else saw the call");
 }
 
 #[tokio::test]

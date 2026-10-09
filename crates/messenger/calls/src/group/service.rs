@@ -1497,8 +1497,9 @@ impl Inner {
     /// "Клиент → Выбор узла при входе"): the credentials of the home
     /// and, at the same time, my own nearest node from my sets. Through
     /// my own node when it is another node with the cascade and either
-    /// stands higher in my sets than the home (a home not in them stands
-    /// below all: my own node keeps my address from it) or is nearer by
+    /// stands higher in my sets than the home, by tiers (a home not in
+    /// them stands below all: my own node keeps my address from it; the
+    /// project's and a volunteer's are one tier) or is nearer by
     /// [`CASCADE_GAIN`] — and the home gives a pass for it. A private
     /// home is joined directly: its key goes to no other node. A home
     /// that invited me is joined directly too, with the credentials of
@@ -1522,7 +1523,9 @@ impl Inner {
             return Ok(Plan { home: home_access, via: None });
         };
         let has_cascade = own.welcome.capabilities.iter().any(|c| c == CAP_CASCADE);
-        let higher = home_class.is_none_or(|hc| own.node.class < hc);
+        // By tiers: the project's and a volunteer's stand as one, and
+        // between them only the round trip decides.
+        let higher = home_class.is_none_or(|hc| own.node.class.tier() < hc.tier());
         let nearer = own.rtt + CASCADE_GAIN < home_access.rtt;
         if own.node.node.id == home.node.id || !has_cascade || !(higher || nearer) {
             tracing::debug!(own = %own.node.node.id.short(), has_cascade, higher, nearer, "group call: joining the home directly");

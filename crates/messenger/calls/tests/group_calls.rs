@@ -1782,6 +1782,57 @@ async fn a_joiner_sits_through_its_own_node_in_a_cascade() {
     assert_eq!(alice.last_state().unwrap().home, alice.last_state().unwrap().node, "alice is home directly");
 }
 
+/// Under the level «any» the project's and the volunteers' nodes are one
+/// tier (the owner's decision of 2026-10-09): a joiner sits through the
+/// nearest of them — a volunteer's — before a farther node of the
+/// project, and a room without a pinned node is made on the nearest of
+/// them too.
+#[tokio::test]
+async fn a_near_volunteer_carries_the_call_before_a_far_node_of_the_project() {
+    let mut w = World::new(&["alice", "bob"]).await;
+    let (far, near) = (w.node.add_node(), w.node.add_node());
+    w.node.set_rtt(0, 80);
+    w.node.set_rtt(far, 60);
+    w.node.set_rtt(near, 10);
+    w.group(&[0, 1]);
+    // Alice has the project's node 0 alone: the room is made there.
+    // Bob's sets: the home, a far node of the project, a near volunteer
+    // — one tier, none higher than the home; only the volunteer is
+    // nearer by the gain of the cascade (the far node of the project,
+    // which a choice by classes would have taken, is not).
+    w.with_servers(0, vec![w.node.as_call_node()], cascade_timing()).await;
+    let servers = vec![w.node.as_call_node(), w.node.node(far, NodeClass::Project), w.node.node(near, NodeClass::Volunteer)];
+    w.with_servers(1, servers.clone(), cascade_timing()).await;
+    let (alice, bob) = (w.p(0).clone(), w.p(1).clone());
+
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    let home_room = w.node.rooms_on(0)[0].clone();
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+
+    let bv = bob.last_state().unwrap();
+    assert_eq!(bv.phase, GroupPhase::InRoom);
+    assert_eq!(bv.node, w.node.node(near, NodeClass::Volunteer).node.to_string(), "bob sits through the near volunteer");
+    assert_eq!(bv.home, w.node.as_call_node().node.to_string());
+    assert!(w.node.seats_via(&home_room).iter().any(|(_, via)| *via == Some(near)), "a proxy seat of the volunteer: {:?}", w.node.seats_via(&home_room));
+    assert!(bob.errors().is_empty(), "{:?}", bob.errors());
+    alice.calls.leave().await.unwrap();
+    bob.calls.leave().await.unwrap();
+    w.settle().await;
+
+    // The sets of the far node and the near volunteer, no pinned node:
+    // the room is made on the nearest of the tier, the volunteer's.
+    let servers = vec![w.node.node(far, NodeClass::Project), w.node.node(near, NodeClass::Volunteer)];
+    w.with_servers(0, servers.clone(), cascade_timing()).await;
+    let alice = w.p(0).clone();
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    assert_eq!(w.node.rooms_on(near).len(), 1, "the room is on the volunteer: {:?}", w.node.created_on());
+    assert_eq!(w.node.rooms_on(far).len(), 0);
+    assert_eq!(alice.last_state().unwrap().home, w.node.node(near, NodeClass::Volunteer).node.to_string());
+}
+
 /// My own node refusing the cascade (503) is no error to me: I fall back
 /// to the home and sit there directly.
 #[tokio::test]

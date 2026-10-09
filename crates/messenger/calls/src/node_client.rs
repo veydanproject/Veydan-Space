@@ -11,14 +11,19 @@
 //! nothing.
 //!
 //! Which nodes a call uses is decided here too ([`NodeClient::pick`]):
-//! the classes are asked in order of priority, one after another, and
-//! the first class with a node answering is the one; in it the one or
-//! two nearest by the round trip of a STUN binding (or of HELLO, when the
-//! node's STUN does not answer over UDP). A class lower down is not even
+//! the tiers (`NodeClass::tier`: own, the group's, the cloud's, then the
+//! project's and the volunteers' as one) are asked in order of priority,
+//! one after another, and the first tier with a node answering is the
+//! one; in it the one or two nearest by the round trip of a STUN binding
+//! (or of HELLO, when the node's STUN does not answer over UDP), the
+//! less loaded among nodes as near. A tier lower down is not even
 //! spoken to while a higher one answers: whoever runs their own node
 //! does not want the project's, or a volunteer's, to see their address
-//! and the time of every call. The media never passes through here:
-//! libwebrtc takes the ICE servers and speaks STUN and TURN itself.
+//! and the time of every call. In the shared tier not every volunteer
+//! is probed ([`PROBED_PER_TIER`]): the project's nodes all, the
+//! volunteers already known to the cache for free, and a few more in
+//! the order of the registry's list. The media never passes through
+//! here: libwebrtc takes the ICE servers and speaks STUN and TURN itself.
 //!
 //! The types of the wire are spelled again here rather than taken from
 //! `vcall-proto`: the messenger takes no crate from `services/` but the
@@ -66,11 +71,21 @@ pub const HELLO_CHECK: Duration = Duration::from_secs(2);
 /// A STUN binding that takes longer than this says nothing useful of the
 /// distance; HELLO's time is used then.
 const STUN_TIMEOUT: Duration = Duration::from_secs(1);
-/// How long a pick waits for the nodes to answer, all classes together.
+/// How long a pick waits for the nodes to answer, all tiers together.
 const PICK_TIMEOUT: Duration = Duration::from_secs(6);
-/// How long one class gets before the next is asked: a node that neither
+/// How long one tier gets before the next is asked: a node that neither
 /// answers nor refuses should not keep the whole pick waiting.
-const CLASS_TIMEOUT: Duration = Duration::from_secs(3);
+const TIER_TIMEOUT: Duration = Duration::from_secs(3);
+/// Nodes of one tier probed at most, when there are volunteers to cut:
+/// every node of the project (and of the manifest) is asked, and
+/// volunteers fill the rest — those the cache already knows for free
+/// (no probe), then the first of the registry's list (least loaded
+/// first) up to this many in all, never fewer than
+/// [`PROBED_VOLUNTEERS_MIN`] of them, so that a project with many nodes
+/// still lets a near volunteer be found.
+pub const PROBED_PER_TIER: usize = 6;
+/// Volunteers probed at least, however many nodes the project has.
+pub const PROBED_VOLUNTEERS_MIN: usize = 2;
 /// Credentials this close to expiry are fetched again rather than used:
 /// the allocation would outlive them, but a call started on them would
 /// not get an allocation.
@@ -647,12 +662,12 @@ pub struct KnownNode {
 /// as each other, and the less loaded of them is preferred.
 const RTT_STEP: Duration = Duration::from_millis(50);
 
-/// The order of the nodes of one class that answered (the rule of the
+/// The order of the nodes of one tier that answered (the rule of the
 /// choice, written once): not full before full; nearer before farther,
 /// by steps of [`RTT_STEP`]; within a step the less loaded by the node's
 /// own word first (a node that says nothing counts as empty); then the
-/// order the sets gave (the registry's list is least loaded first); the
-/// exact round trip last.
+/// order the sets gave (the project's before the volunteers', the
+/// registry's list least loaded first); the exact round trip last.
 fn rank(a: &NodeAccess, index: usize) -> (bool, u128, u8, usize, Duration) {
     (a.full(), a.rtt.as_millis() / RTT_STEP.as_millis(), a.load().unwrap_or(0), index, a.rtt)
 }
@@ -806,19 +821,55 @@ impl NodeClient {
         Ok(access)
     }
 
-    /// Asks every node of `class` among `nodes` at once, within
-    /// [`CLASS_TIMEOUT`] and `deadline`: the ones that answered and let
+    /// Whether the cache holds a good access to `node` (the same key,
+    /// not run out): asking it costs no probe.
+    fn cached_good(&self, node: &CallNode) -> bool {
+        let now = Instant::now();
+        self.inner.cache.lock().unwrap().get(&node.node.id).is_some_and(|kept| kept.node.access_key == node.access_key && kept.good_until > now)
+    }
+
+    /// The nodes of `tier` among `nodes` that are probed, with their
+    /// places in `nodes` (the order of the sets, for the rule): every
+    /// node of the tier that is not a volunteer; of the volunteers,
+    /// those the cache knows for free, and the first of the rest in the
+    /// order of the list up to [`PROBED_PER_TIER`] in all (never fewer
+    /// than [`PROBED_VOLUNTEERS_MIN`]).
+    fn probed(&self, nodes: &[CallNode], tier: u8) -> Vec<(usize, CallNode)> {
+        let of_tier = || nodes.iter().enumerate().filter(move |(_, n)| n.class.tier() == tier);
+        let mut out: Vec<(usize, CallNode)> = of_tier().filter(|(_, n)| n.class != NodeClass::Volunteer).map(|(i, n)| (i, n.clone())).collect();
+        let mut fresh = PROBED_PER_TIER.saturating_sub(out.len()).max(PROBED_VOLUNTEERS_MIN);
+        for (i, n) in of_tier().filter(|(_, n)| n.class == NodeClass::Volunteer) {
+            if self.cached_good(n) {
+                out.push((i, n.clone()));
+            } else if fresh > 0 {
+                fresh -= 1;
+                out.push((i, n.clone()));
+            }
+        }
+        out
+    }
+
+    /// The tiers of `nodes`, in order of priority.
+    fn tiers(nodes: &[CallNode]) -> Vec<u8> {
+        let mut tiers: Vec<u8> = nodes.iter().map(|n| n.class.tier()).collect();
+        tiers.sort_unstable();
+        tiers.dedup();
+        tiers
+    }
+
+    /// Asks the probed nodes of `tier` among `nodes` at once, within
+    /// [`TIER_TIMEOUT`] and `deadline`: the ones that answered and let
     /// me in (`keep` says which answers count), in the order of the rule
     /// ([`rank`]).
-    async fn ask_class(&self, nodes: &[CallNode], class: NodeClass, deadline: tokio::time::Instant, now: i64, keep: fn(&NodeAccess) -> bool) -> Vec<NodeAccess> {
+    async fn ask_tier(&self, nodes: &[CallNode], tier: u8, deadline: tokio::time::Instant, now: i64, keep: fn(&NodeAccess) -> bool) -> Vec<NodeAccess> {
         let mut tasks = tokio::task::JoinSet::new();
-        for (index, node) in nodes.iter().enumerate().filter(|(_, n)| n.class == class) {
-            let (client, node) = (self.clone(), node.clone());
+        for (index, node) in self.probed(nodes, tier) {
+            let client = self.clone();
             tasks.spawn(async move { (index, client.access(&node, now).await) });
         }
-        let class_deadline = deadline.min(tokio::time::Instant::now() + CLASS_TIMEOUT);
+        let tier_deadline = deadline.min(tokio::time::Instant::now() + TIER_TIMEOUT);
         let mut answered: Vec<(usize, NodeAccess)> = Vec::new();
-        while let Ok(Some(joined)) = tokio::time::timeout_at(class_deadline, tasks.join_next()).await {
+        while let Ok(Some(joined)) = tokio::time::timeout_at(tier_deadline, tasks.join_next()).await {
             if let Ok((index, Ok(access))) = joined {
                 if access.authorized && keep(&access) {
                     answered.push((index, access));
@@ -831,22 +882,21 @@ impl NodeClient {
         answered.into_iter().map(|(_, a)| a).collect()
     }
 
-    /// The ICE servers of a call: of the first class of `nodes` (which
+    /// The ICE servers of a call: of the first tier of `nodes` (which
     /// come in order of priority) that has a node answering and letting
     /// me in, the one or two first by the rule of [`rank`]: nearest by
     /// steps of 50 ms, the less loaded within a step, a node at its caps
-    /// only when no other answered. The classes are asked one after
-    /// another, and a class is not spoken to while a higher one answers.
+    /// only when no other answered. The tiers are asked one after
+    /// another, and a tier is not spoken to while a higher one answers;
+    /// the project's and the volunteers' are one tier, so a near
+    /// volunteer carries the call before a far node of the project.
     /// Without a node a call under `Auto` goes with host candidates
     /// alone; under `RelayOnly` there is nothing to relay through, and
     /// that is an error.
     pub async fn pick(&self, nodes: &[CallNode], policy: RelayPolicy, now: i64) -> Result<Picked> {
-        let mut classes: Vec<NodeClass> = nodes.iter().map(|n| n.class).collect();
-        classes.sort_unstable();
-        classes.dedup();
         let deadline = tokio::time::Instant::now() + PICK_TIMEOUT;
-        for class in classes {
-            let answered = self.ask_class(nodes, class, deadline, now, |_| true).await;
+        for tier in Self::tiers(nodes) {
+            let answered = self.ask_tier(nodes, tier, deadline, now, |_| true).await;
             if answered.is_empty() {
                 continue;
             }
@@ -864,18 +914,15 @@ impl NodeClient {
         }
     }
 
-    /// The node a group call makes its room on: of the first class of
+    /// The node a group call makes its room on: of the first tier of
     /// `nodes` (in order of priority) with a node that answers, lets me
-    /// in and has an SFU, the first by the rule of [`rank`]. The classes
+    /// in and has an SFU, the first by the rule of [`rank`]. The tiers
     /// are asked one after another, as in `pick`. `None` when no node
     /// with an SFU answers.
     pub async fn pick_sfu(&self, nodes: &[CallNode], now: i64) -> Option<NodeAccess> {
-        let mut classes: Vec<NodeClass> = nodes.iter().map(|n| n.class).collect();
-        classes.sort_unstable();
-        classes.dedup();
         let deadline = tokio::time::Instant::now() + PICK_TIMEOUT;
-        for class in classes {
-            let answered = self.ask_class(nodes, class, deadline, now, |a| a.welcome.capabilities.iter().any(|c| c == CAP_SFU)).await;
+        for tier in Self::tiers(nodes) {
+            let answered = self.ask_tier(nodes, tier, deadline, now, |a| a.welcome.capabilities.iter().any(|c| c == CAP_SFU)).await;
             if let Some(best) = answered.into_iter().next() {
                 return Some(best);
             }
@@ -1304,14 +1351,17 @@ mod tests {
         assert_eq!(picked.servers[0].urls, vec!["turn:127.0.0.1:2000?transport=udp"]);
         assert_eq!(*asked.lock().unwrap(), vec![2000], "my own node answered: nobody else saw the call");
 
-        // My own node is down: the project's is asked then, and the
-        // volunteer's still not.
+        // My own node is down: the project's and the volunteer's are
+        // asked together then (one tier), and the nearer is taken.
         let asked = Arc::new(Mutex::new(vec![]));
         let client = fake_client(asked.clone());
         let nodes = [node(NodeClass::Own, 1), node(NodeClass::Project, 3000), node(NodeClass::Volunteer, 4000)];
         let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
         assert_eq!(picked.servers[0].urls, vec!["turn:127.0.0.1:3000?transport=udp"]);
-        assert_eq!(*asked.lock().unwrap(), vec![1, 3000]);
+        assert_eq!(picked.servers[1].urls, vec!["turn:127.0.0.1:4000?transport=udp"], "the volunteer is the spare");
+        let mut all = asked.lock().unwrap().clone();
+        all.sort_unstable();
+        assert_eq!(all, vec![1, 3000, 4000]);
 
         // Within a class every node is asked, and the nearest two are taken.
         let asked = Arc::new(Mutex::new(vec![]));
@@ -1324,6 +1374,83 @@ mod tests {
         let mut all = asked.lock().unwrap().clone();
         all.sort_unstable();
         assert_eq!(all, vec![3100, 3200, 3300]);
+    }
+
+    /// The project's and the volunteers' nodes are one tier (the owner's
+    /// decision of 2026-10-09): asked together, the nearest taken, the
+    /// load breaking a tie, a full node last, my own node still first —
+    /// and not every volunteer is probed.
+    #[tokio::test]
+    async fn the_project_and_the_volunteers_are_one_tier_and_the_nearest_wins() {
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = fake_client(asked.clone());
+        // A volunteer at 100 ms against the project's at 300 ms.
+        let nodes = [node(NodeClass::Project, 300), node(NodeClass::Volunteer, 100)];
+        let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.servers[0].urls, vec!["turn:127.0.0.1:100?transport=udp"], "the volunteer, nearer, carries the call");
+        assert_eq!(picked.servers[1].urls, vec!["turn:127.0.0.1:300?transport=udp"]);
+        let mut all = asked.lock().unwrap().clone();
+        all.sort_unstable();
+        assert_eq!(all, vec![100, 300], "both asked at once");
+
+        // As near (one step): the less loaded wins, whoever runs it;
+        // equal loads: the project's first (the order of the sets).
+        let p = |port: u16| {
+            let (client, nodes) = (client.clone(), [node(NodeClass::Project, port), node(NodeClass::Volunteer, 13)]);
+            async move { client.pick_sfu(&nodes, 0).await.unwrap().node.node.addr.port() }
+        };
+        assert_eq!(p(17).await, 13, "the volunteer at 30 % before the project's at 70 %");
+        assert_eq!(p(12).await, 12, "the project's at 20 % before the volunteer at 30 %");
+        assert_eq!(p(23).await, 23, "equal loads: the project's");
+
+        // A volunteer at its caps loses to an active node of the project,
+        // however far; alone with an SFU it is still taken.
+        let picked = client.pick(&[node(NodeClass::Project, 300), node(NodeClass::Volunteer, 19)], RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.nodes[0], node(NodeClass::Project, 300).node.id.to_string());
+        assert_eq!(client.pick_sfu(&[node(NodeClass::Project, 45), node(NodeClass::Volunteer, 19)], 0).await.unwrap().node.node.addr.port(), 45);
+        assert_eq!(client.pick_sfu(&[node(NodeClass::Project, 300), node(NodeClass::Volunteer, 19)], 0).await.unwrap().node.node.addr.port(), 19);
+
+        // My own node answers: nobody of the tier below is asked, near
+        // as a volunteer may be.
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = fake_client(asked.clone());
+        let picked = client.pick(&[node(NodeClass::Volunteer, 13), node(NodeClass::Own, 2000)], RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.nodes, vec![node(NodeClass::Own, 2000).node.id.to_string()]);
+        assert_eq!(*asked.lock().unwrap(), vec![2000]);
+
+        // Two of the project's and eight volunteers: the project's all,
+        // the first four volunteers of the list (six in all), no more.
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = fake_client(asked.clone());
+        let mut nodes = vec![node(NodeClass::Project, 31), node(NodeClass::Project, 32)];
+        nodes.extend((41..=48).map(|port| node(NodeClass::Volunteer, port)));
+        let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.nodes, vec![node(NodeClass::Project, 31).node.id.to_string(), node(NodeClass::Volunteer, 41).node.id.to_string()]);
+        let mut all = asked.lock().unwrap().clone();
+        all.sort_unstable();
+        assert_eq!(all, vec![31, 32, 41, 42, 43, 44]);
+
+        // A volunteer the cache knows costs no probe and is in the
+        // choice; the cut still falls on the unknown ones.
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = fake_client(asked.clone());
+        client.access(&node(NodeClass::Volunteer, 48), 0).await.unwrap();
+        client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        let mut all = asked.lock().unwrap().clone();
+        all.sort_unstable();
+        assert_eq!(all, vec![31, 32, 41, 42, 43, 44, 48], "48 was asked once, by hand; 45–47 never");
+        let known = client.known();
+        assert!(known.iter().any(|k| k.id.starts_with("30") && k.good), "48 = 0x30: known and good");
+
+        // A project of six nodes still lets two volunteers be probed.
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = fake_client(asked.clone());
+        let mut nodes: Vec<CallNode> = (11..=16).map(|port| node(NodeClass::Project, port)).collect();
+        nodes.extend([node(NodeClass::Volunteer, 21), node(NodeClass::Volunteer, 22), node(NodeClass::Volunteer, 23)]);
+        client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        let mut all = asked.lock().unwrap().clone();
+        all.sort_unstable();
+        assert_eq!(all, vec![11, 12, 13, 14, 15, 16, 21, 22]);
     }
 
     #[tokio::test]

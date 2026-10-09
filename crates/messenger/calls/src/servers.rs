@@ -24,6 +24,15 @@
 //! only → 1; the project's and own → 1–3 without volunteers; any → all.
 //! The node pinned to a group (class `Group`) is the group's choice and
 //! passes every level; the group service puts it in itself.
+//!
+//! The order of the list is the priority, by **tiers** ([`NodeClass::tier`]):
+//! own, the group's, the cloud's each a tier of its own, asked one after
+//! another; the project's and the volunteers' **one tier** (the owner's
+//! decision of 2026-10-09, «берём ближайший быстрый»): asked together,
+//! the nearest by the round trip taken, the load breaking a tie. So
+//! under `any` a volunteer near me carries the call before a far node
+//! of the project, and under `project_and_own` the tier has no
+//! volunteer in it. How the tier is asked is with `NodeClient::pick`.
 
 use crate::registry::Registry;
 use async_trait::async_trait;
@@ -37,7 +46,8 @@ use std::sync::{Arc, RwLock};
 pub type NodeRef = BridgeRef;
 
 /// Whose node it is. The order is the priority: a set earlier in the
-/// list is tried before a set later in it.
+/// list is tried before a set later in it — by tiers ([`Self::tier`]),
+/// where the project's and the volunteers' are one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeClass {
@@ -72,6 +82,21 @@ impl NodeClass {
             "project" => Some(Self::Project),
             "volunteer" => Some(Self::Volunteer),
             _ => None,
+        }
+    }
+
+    /// The tier the class is asked in: the nodes of one tier are asked
+    /// together and the nearest of them taken; a lower tier is asked
+    /// only when no node of a higher one answers (whoever runs their
+    /// own node does not want the others to see the call). The
+    /// project's and the volunteers' are one tier: among them the
+    /// nearest wins, whoever runs it.
+    pub fn tier(self) -> u8 {
+        match self {
+            Self::Own => 0,
+            Self::Group => 1,
+            Self::Cloud => 2,
+            Self::Project | Self::Volunteer => 3,
         }
     }
 }
@@ -606,7 +631,10 @@ pub fn parse_own_nodes(json: &str) -> Vec<CallNode> {
 impl ServerSets for SettingsServerSets {
     /// Own (invited, then the setting) → cloud → manifest → registry,
     /// cut by the trust level, one entry per node (the first wins). The
-    /// registry is not even read under `own_only`.
+    /// registry is not even read under `own_only`. The manifest's and
+    /// the registry's nodes are one tier for the choice: the order here
+    /// (the project's first, the registry's least loaded first) only
+    /// breaks the ties of the round trip and the load.
     async fn call_nodes(&self) -> Result<Vec<CallNode>> {
         let trust = self.trust().await?;
         let mut out: Vec<CallNode> = self.device_nodes().await?;
