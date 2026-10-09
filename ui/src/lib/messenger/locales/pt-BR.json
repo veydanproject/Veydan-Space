@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Câmera desligada",
     "msg_call_video_my_off": "Sua câmera está desligada",
     "msg_call_video_waiting": "Aguardando vídeo…",
+    "msg_call_video_lost": "Sem sinal",
     "msg_call_video_info": "{size} · {fps} fps",
     "msg_call_answer_audio": "Atender sem vídeo",
     "msg_call_answer_voice": "Sem vídeo",

@@ -11,7 +11,10 @@
 //     | 'video' (a video call rings) | 'video-active' | 'video-outgoing'
 // plays it a moment after the page loads, and `window.veydanDemoCall(kind)`
 // plays it at once (also `'end'`, `'peer-video'` that turns Alice's camera
-// off or on, and `'reconnect'` that loses the line for a few seconds). With
+// off or on, `'peer-pause'` that holds her frames back for 15 seconds while
+// her camera stays on, `'peer-blink'` for 2 seconds, as a change of the
+// way's bandwidth does, and `'reconnect'` that loses the line for a few
+// seconds). With
 // "Accept calls on this device" off, a call from Alice does not ring.
 //
 // Video is a test picture (calls/video.ts `testPattern`) sent to the page's
@@ -81,6 +84,8 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   let quality: VideoQuality = '360p';
   /** Calls ring on this device. */
   let incoming = true;
+  /** The peer's frames are held back until then (`Date.now()`), the camera on. */
+  let peerPausedUntil = 0;
   /**
    * The page's channels, by subscription: each gets the test picture of its
    * track. `sent`: the `seq` of the frame the page has not acknowledged yet;
@@ -145,7 +150,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   function frame(track: VideoTrack, seq: number): ArrayBuffer | null {
     const c = call;
     if (!c || c.phase === 'incoming') return null;
-    if (track === 'remote') return c.video_remote && c.phase === 'active' ? testPattern(640, 360, seq, 2.2) : null;
+    if (track === 'remote') return c.video_remote && c.phase === 'active' && Date.now() >= peerPausedUntil ? testPattern(640, 360, seq, 2.2) : null;
     if (!c.video_local) return null;
     if (c.video_screen) return testPattern(960, 540, seq, 0.6);
     const back = c.camera === 'back' || c.camera === CAMERAS[1].id;
@@ -241,6 +246,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   function play(kind: string) {
     if (kind === 'end') { finish(call?.answered_at ? 'ended' : 'missed'); return; }
     if (kind === 'peer-video') { if (call) put({ ...call, video_remote: !call.video_remote }); return; }
+    if (kind === 'peer-pause' || kind === 'peer-blink') { peerPausedUntil = Date.now() + (kind === 'peer-pause' ? 15_000 : 2000); return; }
     if (kind === 'reconnect') {
       const c = call;
       if (!c || c.phase !== 'active') return;

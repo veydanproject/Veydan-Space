@@ -425,6 +425,95 @@ export class FpsMeter {
 }
 
 /**
+ * No frame for this long: the signal of a video is taken as lost. A pause
+ * of a second or two is ordinary (the node changes the layer of a
+ * simulcast at a key frame, asks one at most once a second, starts a new
+ * subscriber on the smallest layer; the way's bandwidth floats): the last
+ * picture stays through it, and nothing on the screen moves.
+ */
+export const VIDEO_LOST_MS = 10_000;
+
+/**
+ * The signal of a video is lost at `now`: no frame since the last one
+ * (`last`), or since the video was asked for (`since`: subscribed, or
+ * turned on) when none came after, for `lostMs`. Times of one clock
+ * (`performance.now()`); 0 is "never".
+ */
+export function signalLost(now: number, last: number, since: number, lostMs = VIDEO_LOST_MS): boolean {
+  return now - Math.max(last, since) >= lostMs;
+}
+
+/**
+ * What a tile of video has to show, as its frames come (VideoTile):
+ * `live`, a picture (a frame was drawn since the video was asked for and
+ * its stream did not end; a pause keeps it, the last picture stays);
+ * `lost`, no frame for `lostMs` while the video is on, or the stream ended.
+ * `on` is the word of the call (my camera, the peer's in a call of two):
+ * while off nothing is held and no frame is to be drawn. Times of one
+ * clock (`performance.now()`).
+ */
+export class PictureWatch {
+  live = false;
+  lost = false;
+  private on = true;
+  private last = 0;
+  private since: number;
+  private ended = false;
+
+  constructor(now: number, private readonly lostMs = VIDEO_LOST_MS) {
+    this.since = now;
+  }
+
+  /** Asked for anew (a new subscription): nothing is held, the frames are waited for from `now`. */
+  restart(now: number) {
+    this.since = now;
+    this.last = 0;
+    this.ended = false;
+    this.live = false;
+    this.lost = false;
+  }
+
+  /** The call says the video is on or off. Off: the picture is let go; on again: only a frame after `now` shows. */
+  turn(on: boolean, now: number) {
+    if (on === this.on) return;
+    this.on = on;
+    this.lost = false;
+    if (on) {
+      this.since = now;
+      this.last = 0;
+    } else {
+      this.live = false;
+    }
+  }
+
+  /** A frame is to be drawn: not while the call says the video is off. */
+  get wanted(): boolean {
+    return this.on;
+  }
+
+  /** A frame was drawn at `now`. */
+  frame(now: number) {
+    this.last = now;
+    this.ended = false;
+    this.live = true;
+    this.lost = false;
+  }
+
+  /** The stream ended (its last message): no picture, lost. */
+  end() {
+    this.last = 0;
+    this.ended = true;
+    this.live = false;
+    this.lost = true;
+  }
+
+  /** The clock moved on to `now`. */
+  tick(now: number) {
+    this.lost = this.ended || (this.on && signalLost(now, this.last, this.since, this.lostMs));
+  }
+}
+
+/**
  * How a picture fills its box: whole (`contain`) when the box and the
  * picture stand differently (a landscape screen on an upright phone),
  * cropped to fill it (`cover`) when they are about alike.

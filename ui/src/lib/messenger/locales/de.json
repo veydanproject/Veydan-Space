@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Kamera aus",
     "msg_call_video_my_off": "Deine Kamera ist aus",
     "msg_call_video_waiting": "Warte auf Video…",
+    "msg_call_video_lost": "Kein Signal",
     "msg_call_video_info": "{size} · {fps} fps",
     "msg_call_answer_audio": "Ohne Video annehmen",
     "msg_call_answer_voice": "Ohne Video",

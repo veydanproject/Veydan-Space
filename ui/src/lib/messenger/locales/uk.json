@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Камеру вимкнено",
     "msg_call_video_my_off": "Вашу камеру вимкнено",
     "msg_call_video_waiting": "Чекаємо на відео…",
+    "msg_call_video_lost": "Немає сигналу",
     "msg_call_video_info": "{size} · {fps} к/с",
     "msg_call_answer_audio": "Відповісти без відео",
     "msg_call_answer_voice": "Без відео",

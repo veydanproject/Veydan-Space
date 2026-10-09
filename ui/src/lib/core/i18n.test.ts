@@ -60,7 +60,8 @@ type Dict = Record<string, string>;
  * settings of this device (calls ring here, ask before calling). Then the
  * calls of groups: the header's buttons, the banner of a call on, the room
  * and its list of who is in, the line of a group call in the chat; then the
- * way to the room through two nodes (the cascade) and its move to another.
+ * way to the room through two nodes (the cascade) and its move to another;
+ * then the mark of a video whose frames have been missing for long.
  */
 const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
   desktop: {
@@ -756,6 +757,7 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_call_video_peer_off: 'Camera off',
       msg_call_video_my_off: 'Your camera is off',
       msg_call_video_waiting: 'Waiting for video…',
+      msg_call_video_lost: 'No signal',
       msg_call_video_info: '{size} · {fps} fps',
       msg_call_answer_audio: 'Answer without video',
       msg_call_answer_voice: 'No video',
@@ -1579,6 +1581,7 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_call_video_peer_off: 'Камера выключена',
       msg_call_video_my_off: 'Ваша камера выключена',
       msg_call_video_waiting: 'Ждём видео…',
+      msg_call_video_lost: 'Нет сигнала',
       msg_call_video_info: '{size} · {fps} к/с',
       msg_call_answer_audio: 'Ответить без видео',
       msg_call_answer_voice: 'Без видео',

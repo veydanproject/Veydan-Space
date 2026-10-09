@@ -8,9 +8,20 @@
   they come (calls/video.ts). The canvas holds the picture upright and, for
   my own camera, mirrored; it fills the tile cropped or whole (`fit`).
 
-  `live`: a frame came within the last moment. A video turned off stops
-  its frames, so the screen around shows a placeholder instead of the last
-  picture frozen.
+  `live`: there is a picture to show: a frame came (since the video went
+  on) and its stream did not end. A pause of the frames is ordinary (the
+  node changes the layer of a simulcast at a key frame, the way's bandwidth
+  floats): the last picture stays on the canvas through it and `live`
+  stays, so nothing around it moves. `lost`: no frame for
+  `VIDEO_LOST_MS` (or the stream ended): the picture is dimmed, and the
+  screen around says so where the call says the video is on. The clock of
+  `lost` is the tile's and starts again with a new tile; a seat of a group
+  call, whose camera the room does not tell of, is judged where its clock
+  outlives its tiles (groupCallStore `showing`), from what the tile tells
+  (`onpicture`, `onended`, by the m-line of its subscription). `on`: the
+  video is on as the call says (my camera, the peer's in a call of two);
+  while it is off nothing is held, so a picture shows again only with a
+  frame that came after it went on.
 -->
 <script lang="ts" module>
   export interface TileInfo {
@@ -23,7 +34,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { messengerApi, type VideoTrack } from '../api';
-  import { FpsMeter, FrameAcks, FrameRenderer, fitFor, frameSeq, parseFrame, shownSize, type I420Frame } from './video';
+  import { FpsMeter, FrameAcks, FrameRenderer, PictureWatch, fitFor, frameSeq, parseFrame, shownSize, type I420Frame } from './video';
 
   interface Props {
     track: VideoTrack;
@@ -38,14 +49,42 @@
     mirror?: boolean;
     /** `auto`: cropped to fill when the picture stands as the tile does, whole otherwise. */
     fit?: 'cover' | 'contain' | 'auto';
+    /** The video is on as the call says; without a word of the call (a seat of a group call), on. */
+    on?: boolean;
+    /** A picture is there to show: the last one stays through a pause of the frames. */
     live?: boolean;
+    /** No frame for `VIDEO_LOST_MS`, or the stream ended. */
+    lost?: boolean;
     /** The size the picture shows at and the frames a second, for the screen to tell. */
     info?: TileInfo | null;
+    /**
+     * A seat of a group call: a picture of the video with the m-line `mid`
+     * was drawn. The m-line is the one this tile's subscription has, not
+     * the one of a seat the tile was given since.
+     */
+    onpicture?: (mid: string) => void;
+    /** A seat of a group call: the stream of the video with the m-line `mid` ended. */
+    onended?: (mid: string) => void;
   }
-  let { track, callId, mid = null, mirror = false, fit = 'auto', live = $bindable(false), info = $bindable(null) }: Props = $props();
+  let {
+    track, callId, mid = null, mirror = false, fit = 'auto', on = true,
+    live = $bindable(false), lost = $bindable(false), info = $bindable(null), onpicture, onended,
+  }: Props = $props();
 
-  /** No frame for this long: the video is taken as stopped. */
-  const STALE_MS = 1200;
+  /** Whether there is a picture and whether its signal is lost (calls/video.ts `PictureWatch`). */
+  const watch = new PictureWatch(performance.now());
+  /** What the watch says, to the screen around; written only when it changes. */
+  const sync = () => {
+    if (live !== watch.live) live = watch.live;
+    if (lost !== watch.lost) lost = watch.lost;
+  };
+
+  // The video went off: nothing is held, its last picture is let go. On
+  // again: the frames are waited for anew, the old ones do not count.
+  $effect(() => {
+    watch.turn(on, performance.now());
+    untrack(sync);
+  });
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   let boxW = $state(0);
@@ -73,7 +112,8 @@
       return;
     }
     const meter = new FpsMeter();
-    let lastAt = 0;
+    watch.restart(performance.now());
+    untrack(sync);
     let gone = false;
     let sub: number | null = null;
     // The runtime sends the next frame once this one is acknowledged: every
@@ -84,13 +124,16 @@
       if (gone) return;
       const frame = parseFrame(data);
       if (frame === 'end') {
-        lastAt = 0;
-        live = false;
+        watch.end();
+        sync();
+        if (seat) onended?.(seat);
         return;
       }
       const seq = frameSeq(data);
       try {
-        if (frame) show(frame);
+        // A video the call says is off draws nothing: its picture would
+        // stay behind for when it goes on again.
+        if (frame && watch.wanted) show(frame);
       } finally {
         if (seq != null) acks.took(seq);
       }
@@ -106,8 +149,9 @@
       }
       const now = performance.now();
       meter.frame(now);
-      lastAt = now;
-      if (!live) live = true;
+      watch.frame(now);
+      sync();
+      if (seat) onpicture?.(seat);
       const shown = shownSize(frame);
       if (!info || info.width !== shown.width || info.height !== shown.height) info = { ...shown, fps: meter.fps(now) };
     };
@@ -115,8 +159,8 @@
     // The counts of the screen change twice a second, not with every frame.
     const timer = setInterval(() => {
       const now = performance.now();
-      const fresh = lastAt > 0 && now - lastAt < STALE_MS;
-      if (live !== fresh) live = fresh;
+      watch.tick(now);
+      sync();
       if (info) {
         const fps = meter.fps(now);
         if (fps !== info.fps) info = { ...info, fps };
@@ -140,7 +184,8 @@
       clearInterval(timer);
       if (sub != null) messengerApi.calls.videoUnsubscribe(sub).catch(() => {});
       renderer.destroy();
-      live = false;
+      watch.restart(performance.now());
+      sync();
       info = null;
     };
   });
@@ -150,7 +195,7 @@
      context go when it is done, and a canvas gives its context once. -->
 <div class="tile" bind:clientWidth={boxW} bind:clientHeight={boxH}>
   {#key `${mid ?? track}:${callId}:${noGl}`}
-    <canvas bind:this={canvas} width="2" height="2" style:object-fit={objectFit} class:shown={live}></canvas>
+    <canvas bind:this={canvas} width="2" height="2" style:object-fit={objectFit} class:shown={live} class:dim={live && lost}></canvas>
   {/key}
 </div>
 
@@ -158,4 +203,6 @@
   .tile { position: absolute; inset: 0; overflow: hidden; background: #000; }
   canvas { display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 160ms ease-out; }
   canvas.shown { opacity: 1; }
+  /* The signal lost: the last picture stays, dimmed, under the words of the screen around. */
+  canvas.dim { filter: brightness(0.45) saturate(0.6); transition: opacity 160ms ease-out, filter 400ms ease-out; }
 </style>

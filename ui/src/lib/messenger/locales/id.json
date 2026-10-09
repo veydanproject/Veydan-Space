@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Kamera mati",
     "msg_call_video_my_off": "Kamera Anda mati",
     "msg_call_video_waiting": "Menunggu video…",
+    "msg_call_video_lost": "Tidak ada sinyal",
     "msg_call_video_info": "{size} · {fps} fps",
     "msg_call_answer_audio": "Jawab tanpa video",
     "msg_call_answer_voice": "Tanpa video",

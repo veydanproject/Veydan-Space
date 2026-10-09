@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GroupCallView, GroupParticipant } from '../generated/calls';
 import {
-  MY_VIDEO_MID, bannerKey, focusOf, gridShape, groupElapsed, groupStatusText, layerFor, mirrorsMine, nodeHost, overKey, roomPath, roomPathText, seatMuted,
+  FOCUS_HOLD_MS, MY_VIDEO_MID, bannerKey, focusOf, holdFocus, gridShape, groupElapsed, groupStatusText, layerFor, mirrorsMine, nodeHost, overKey, roomPath, roomPathText, seatMuted,
   seatSendsVideo, seatsInOrder,
 } from './group';
 import { callErrorText } from './words';
@@ -46,6 +46,23 @@ describe('the seats of a room', () => {
     // A track that sends no pictures is no video to show large.
     expect(focusOf(talking, null, 2, (id) => id !== 4)).toBe(2);
     expect(focusOf(talking, null, null, () => false)).toBeNull();
+  });
+
+  it('keep the large place by the voices a while, so two who talk in turns do not throw the screen to and fro', () => {
+    const fits = (seat: number) => seat === 2 || seat === 4;
+    let held = holdFocus({ seat: null, since: 0 }, 2, fits, 1000);
+    // The first video that speaks takes the place at once.
+    expect(held).toEqual({ seat: 2, since: 1000 });
+    // Another speaks a moment later: the place stays.
+    expect(holdFocus(held, 4, fits, 1000 + FOCUS_HOLD_MS - 1)).toBe(held);
+    // The hold over: it goes.
+    held = holdFocus(held, 4, fits, 1000 + FOCUS_HOLD_MS);
+    expect(held).toEqual({ seat: 4, since: 1000 + FOCUS_HOLD_MS });
+    // Nobody with a picture named (a voice alone speaks): the last picture stays large.
+    expect(holdFocus(held, null, fits, 60_000)).toBe(held);
+    // The held seat left, or its camera went off: let go at once.
+    expect(holdFocus(held, 2, (seat) => seat === 2, held.since + 10)).toEqual({ seat: 2, since: held.since + 10 });
+    expect(holdFocus(held, null, () => false, held.since + 10)).toEqual({ seat: null, since: held.since + 10 });
   });
 
   it('are cut into the grid that makes the tiles largest', () => {

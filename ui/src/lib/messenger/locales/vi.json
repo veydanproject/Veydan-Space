@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Camera đã tắt",
     "msg_call_video_my_off": "Camera của bạn đang tắt",
     "msg_call_video_waiting": "Đang chờ video…",
+    "msg_call_video_lost": "Không có tín hiệu",
     "msg_call_video_info": "{size} · {fps} khung/giây",
     "msg_call_answer_audio": "Trả lời không có video",
     "msg_call_answer_voice": "Không video",

@@ -14,7 +14,12 @@
 // Boris and Alice are in it; `in`: I am in it too, with video), and
 // `window.veydanDemoGroupCall(kind)` plays at once: `announce`,
 // `announce-video`, `in`, `come` (a member comes in), `go` (one leaves),
-// `video` (Boris's camera on or off), `reconnect`, `cascade` (my way to the
+// `video` (Boris's camera on or off: as in the runtime, the m-line of his
+// video stays and only its frames stop), `video-gone` (his camera off with
+// the m-line of his video gone), `pause` (the frames of the first seat with
+// video held back for 15 seconds, its camera on), `blink` (the same for 2
+// seconds, as a change of layer or of the way's bandwidth does),
+// `reconnect`, `cascade` (my way to the
 // room through my nearest node, or straight again), `move` (the room's node
 // goes: the room moves to another under the same call, its seats anew),
 // `end` (everybody leaves).
@@ -48,6 +53,10 @@ interface Seat {
   pk: string;
   verified: boolean;
   video: boolean;
+  /** The m-line of the seat's video is there: from the start, kept while the camera is off (as the node has it). */
+  mid: boolean;
+  /** The seat's frames are held back until then (`Date.now()`), its camera on. */
+  pausedUntil?: number;
   speaking: boolean;
   /** The layer the page asked for. */
   layer: string;
@@ -106,7 +115,7 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
       me,
       ...r.seats.map((s) => ({
         id: s.id, npub: s.verified ? s.pk : undefined, verified: s.verified, speaking: s.verified && s.speaking, audio: true,
-        audio_mid: `a${s.id}`, video_mid: s.video ? `v${s.id}` : undefined, me: false,
+        audio_mid: `a${s.id}`, video_mid: s.mid ? `v${s.id}` : undefined, me: false,
       })),
     ];
   }
@@ -164,7 +173,7 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
     const inside = new Set([...r.seats.map((s) => s.pk), ...(r.joined ? [host.me()] : [])]);
     const who = pk ?? host.members(r.group_id).find((m) => !inside.has(m));
     if (!who) return;
-    const seat: Seat = { id: nextSeat(r), pk: who, verified: !r.joined, video, speaking: false, layer: 'h' };
+    const seat: Seat = { id: nextSeat(r), pk: who, verified: !r.joined, video, mid: true, speaking: false, layer: 'h' };
     r.seats.push(seat);
     emitState();
     if (r.joined) {
@@ -280,8 +289,8 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
     const others = host.members(g).filter((m) => m !== host.me());
     const r = newRoom(g, media, others[0], 190);
     room = r;
-    r.seats.push({ id: 1, pk: others[0], verified: true, video: media === 'video', speaking: false, layer: 'h' });
-    if (others[1]) r.seats.push({ id: 2, pk: others[1], verified: true, video: false, speaking: false, layer: 'h' });
+    r.seats.push({ id: 1, pk: others[0], verified: true, video: media === 'video', mid: true, speaking: false, layer: 'h' });
+    if (others[1]) r.seats.push({ id: 2, pk: others[1], verified: true, video: false, mid: true, speaking: false, layer: 'h' });
     for (const s of r.seats) r.seen.add(s.pk);
     line(r, null);
     emitAnnounced();
@@ -321,7 +330,18 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
       case 'go': go(); break;
       case 'video': {
         const s = room?.seats[0];
-        if (s) { s.video = !s.video; emitState(); }
+        if (s) { s.video = !s.video; s.mid = true; emitState(); }
+        break;
+      }
+      case 'video-gone': {
+        const s = room?.seats[0];
+        if (s) { s.video = !s.video; s.mid = s.video; emitState(); }
+        break;
+      }
+      case 'pause':
+      case 'blink': {
+        const s = room?.seats.find((x) => x.video);
+        if (s) s.pausedUntil = Date.now() + (kind === 'pause' ? 15_000 : 2000);
         break;
       }
       case 'reconnect': {
@@ -451,7 +471,7 @@ export function demoGroupCallMocks(host: DemoCallHost, frames: DemoFrames): {
       const id = Number(mid.slice(1));
       return frames.subscribe(channel, (seq) => {
         const s = r.seats.find((x) => x.id === id);
-        if (room !== r || !s?.video || !s.verified) return null;
+        if (room !== r || !s?.video || !s.mid || !s.verified || Date.now() < (s.pausedUntil ?? 0)) return null;
         const [w, h] = LAYERS[s.layer] ?? LAYERS.h;
         return testPattern(w, h, seq, 1.2 + id * 1.3);
       }, FPS);

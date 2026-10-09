@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "摄像头已关闭",
     "msg_call_video_my_off": "你的摄像头已关闭",
     "msg_call_video_waiting": "正在等待视频…",
+    "msg_call_video_lost": "无信号",
     "msg_call_video_info": "{size} · {fps} 帧/秒",
     "msg_call_answer_audio": "不开视频接听",
     "msg_call_answer_voice": "不开视频",

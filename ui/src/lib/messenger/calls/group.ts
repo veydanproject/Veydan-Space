@@ -29,8 +29,9 @@ export function seatsInOrder(participants: GroupParticipant[]): GroupParticipant
  * tap stays large while it is there. Otherwise the one who speaks (or last
  * spoke) when their video goes: a voice without a picture gains nothing
  * from a large tile, nor does a track that sends no pictures (`showing`:
- * the frames of the seat's video come). My own tile is never large: I see
- * myself small.
+ * the seat's camera is taken as on, `seatSendsVideo`). My own tile is never
+ * large: I see myself small. What this names is held a while against a
+ * quick change before the large place follows it (`holdFocus`).
  */
 export function focusOf(
   participants: GroupParticipant[],
@@ -46,11 +47,47 @@ export function focusOf(
   return withVideo(speaker)?.id ?? null;
 }
 
+/** The least time the large place stays with a seat the voices gave it before it goes to another. */
+export const FOCUS_HOLD_MS = 3000;
+
+/** The seat the voices gave the large place, and since when (ms of one clock). */
+export interface HeldFocus {
+  seat: number | null;
+  since: number;
+}
+
 /**
- * The seat sends a picture now: my camera (or screen) goes, or the frames
- * of another's video come (`showing`, from its tile). Not the m-line of its
- * video alone: every seat of a room has one from the start, its track
- * disabled until the camera goes on, and kept while the camera is off.
+ * The large place by the voices, held against a quick change: two who
+ * talk in turns do not throw the screen to and fro. `candidate` is what
+ * `focusOf` names now (no tap). A seat that still fits the place (`fits`:
+ * it is there and its video is on) keeps it for `hold` after it got it,
+ * and after that too while nobody else is named (one without a picture
+ * speaks: the last picture stays large). A seat that no longer fits (it
+ * left, its camera went off) gives the place up at once.
+ */
+export function holdFocus(
+  held: HeldFocus,
+  candidate: number | null,
+  fits: (seat: number) => boolean,
+  now: number,
+  hold = FOCUS_HOLD_MS,
+): HeldFocus {
+  if (candidate === held.seat) return held;
+  if (held.seat == null || !fits(held.seat)) return { seat: candidate, since: now };
+  if (candidate == null || now - held.since < hold) return held;
+  return { seat: candidate, since: now };
+}
+
+/**
+ * The seat sends a picture, for the order of the screen (the large place,
+ * the grid, what a tap picks): my camera (or screen) goes, or another's is
+ * taken as on (`showing`: its pictures came and have not been missing for
+ * `VIDEO_LOST_MS`, groupCallStore `showing`; the room does not say whether
+ * another's camera is on). Not whether a frame came a moment ago: the
+ * frames of a camera that is on pause now and then, and the screen does
+ * not move for it. Not the m-line of its video alone either: every seat of
+ * a room has one from the start, its track disabled until the camera goes
+ * on, and kept while the camera is off.
  */
 export function seatSendsVideo(
   p: GroupParticipant,

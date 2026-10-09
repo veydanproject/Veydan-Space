@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Cámara apagada",
     "msg_call_video_my_off": "Tu cámara está apagada",
     "msg_call_video_waiting": "Esperando video…",
+    "msg_call_video_lost": "Sin señal",
     "msg_call_video_info": "{size} · {fps} fps",
     "msg_call_answer_audio": "Contestar sin video",
     "msg_call_answer_voice": "Sin video",

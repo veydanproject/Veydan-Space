@@ -2,8 +2,14 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  One seat of a group call: its video when it sends one, its face with a
-  halo that follows its voice otherwise; its name, "speaking", a crossed
+  One seat of a group call: its video while its camera is on, its face
+  with a halo that follows its voice otherwise. Another's camera is taken
+  as on with its first picture and as off once its pictures have been
+  missing for `VIDEO_LOST_MS` (the room does not say it: groupCallStore
+  `showing`); a shorter pause keeps the last picture, the tile and the
+  screen as they are. My own camera is on as my call says; its pictures
+  missing that long, the last one stays dimmed under "No signal". Over
+  it: its name, "speaking", a crossed
   microphone when its microphone is off (mine; another's once the room
   says it: calls/group.ts `seatMuted`). A seat whose word of identity was not
   checked yet has no name and is not heard (messenger-wire §10): it shows
@@ -52,26 +58,28 @@
   const video = $derived(p.me ? (sending ? MY_VIDEO_MID : null) : p.verified && p.video_mid ? p.video_mid : null);
   const silent = $derived(seatMuted(p, { muted }));
 
+  /** A picture to show (the last one stays through a pause), and no frame for long. */
   let live = $state(false);
+  let lost = $state(false);
   let info = $state<TileInfo | null>(null);
   let w = $state(0);
   let h = $state(0);
   /** A small tile (a row under the large one, a crowded grid): a smaller face, its notes as icons. */
   const compact = $derived(h > 0 && h < 130);
 
-  // Whether pictures come, for the large place (calls/group.ts `focusOf`):
-  // said when they start, and when they stop while the tile shows them. A
-  // tile that only came (moved between the large place and the row) says
-  // nothing until its first frame, or the large place would bounce.
-  let wasLive = false;
-  $effect(() => {
-    const now = live;
-    const seat = p.id;
-    if (p.me) return;
-    if (now) groupCallStore.setShowing(seat, true);
-    else if (wasLive) groupCallStore.setShowing(seat, false);
-    wasLive = now;
-  });
+  // Another's camera, for the order of the screen (calls/group.ts
+  // `seatSendsVideo`): every picture drawn and the end of the stream go to
+  // the store by the m-line of the subscription that brought them, and the
+  // store keeps the seat's clock (groupCallStore `showing`). Not this tile's
+  // `live` and `lost`: they start anew with every tile (one that moved
+  // between the large place, the row and the grid), and the large tile,
+  // given another seat, holds those of the last one for a moment.
+  const picture = (mid: string) => groupCallStore.seatPicture(mid);
+  const ended = (mid: string) => groupCallStore.seatEnded(mid);
+  /** The seat's video is on for this tile: mine as my call says, another's as the store takes it. */
+  const on = $derived(p.me ? sending : !!groupCallStore.showing[p.id]);
+  /** My camera is on and its pictures have been missing for long: the last one stays, dimmed, and says so. */
+  const noSignal = $derived(p.me && !!video && live && lost);
 
   // The layer for the size of the tile, once it stood still for a moment:
   // a window being dragged larger asks once, not at every pixel. My own
@@ -91,9 +99,13 @@
   bind:clientWidth={w} bind:clientHeight={h} role="button" tabindex={onpick ? 0 : -1} aria-label={name} aria-pressed={pinned}
   onclick={onpick} onkeydown={(e) => { if (onpick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onpick(); } }}>
   {#if video}
-    <VideoTile track={p.me ? 'local' : 'remote'} mid={video} {callId} mirror={p.me && mirror} fit="cover" bind:live bind:info />
+    <VideoTile track={p.me ? 'local' : 'remote'} mid={video} {callId} mirror={p.me && mirror} fit="cover" bind:live bind:lost bind:info
+      onpicture={p.me ? undefined : picture} onended={p.me ? undefined : ended} />
   {/if}
-  {#if !video || !live}
+  <!-- Another's camera on whose tile has no picture yet (it only came): dark
+       for the moment, not its face, or the tile would blink. Mine shows its
+       face until my camera's first picture. -->
+  {#if !video || !on || (p.me && !live)}
     <span class="face">
       <CallFace peer={face} size={big && !compact ? 96 : compact ? 34 : 56} level={p.verified ? level : 0} />
       {#if !p.verified}<span class="checking" title={$t('msg_gcall_checking')}><CallIcon name="shield-question" size={13} />{#if !compact}{$t('msg_gcall_checking')}{/if}</span>{/if}
@@ -106,7 +118,8 @@
     {#if silent}<span class="mark" title={$t('msg_call_muted')}><CallIcon name="mic-off" size={12} /></span>{/if}
     {#if p.speaking && p.verified}<span class="talk" title={$t('msg_gcall_speaking')}><CallIcon name="speaking" size={12} />{#if !compact}{$t('msg_gcall_speaking')}{/if}</span>{/if}
   </span>
-  {#if big && live && info}<span class="info">{$t('msg_call_video_info', { size: `${info.width}×${info.height}`, fps: String(info.fps) })}</span>{/if}
+  {#if noSignal}<span class="lost" role="status"><CallIcon name="video-off" size={13} />{#if !compact}{$t('msg_call_video_lost')}{/if}</span>{/if}
+  {#if big && live && !lost && info}<span class="info">{$t('msg_call_video_info', { size: `${info.width}×${info.height}`, fps: String(info.fps) })}</span>{/if}
   {#if pinned}<span class="pin" title={$t('msg_gcall_pinned')}><CallIcon name="pip" size={12} /></span>{/if}
 </div>
 
@@ -151,6 +164,11 @@
     background: var(--success); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
   .pin { position: absolute; z-index: 2; top: 6px; right: 6px; }
+  .lost {
+    position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.9);
+    font-size: var(--fs-2xs); white-space: nowrap; pointer-events: none;
+  }
   .info {
     position: absolute; z-index: 2; top: 6px; left: 6px; padding: 2px 8px; border-radius: var(--radius-pill);
     background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums;

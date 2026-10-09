@@ -7,7 +7,10 @@
 // texture coordinates the renderer draws with.
 
 import { describe, expect, it } from 'vitest';
-import { FpsMeter, FrameAcks, FrameRenderer, HEADER_BYTES, WINDOW_CORNER, WINDOW_MARGIN, chromaSize, clampShift, fitFor, frameSeq, mirrorsLocal, parseFrame, quadCoords, shownSize, sourcePoint, testPattern } from './video';
+import {
+  FpsMeter, FrameAcks, FrameRenderer, HEADER_BYTES, PictureWatch, VIDEO_LOST_MS, WINDOW_CORNER, WINDOW_MARGIN, chromaSize, clampShift, fitFor, frameSeq,
+  mirrorsLocal, parseFrame, quadCoords, shownSize, signalLost, sourcePoint, testPattern,
+} from './video';
 
 /** A frame as the runtime packs it. */
 function packed(width: number, height: number, rotation: number, seq: number, fill = 7): Uint8Array {
@@ -343,5 +346,66 @@ describe('the acknowledgements of the frames', () => {
     // An unhandled rejection would fail the run.
     await new Promise((r) => setTimeout(r, 0));
     expect(calls).toBe(3);
+  });
+});
+
+describe('the picture of a tile while its frames pause', () => {
+  it('is lost only after VIDEO_LOST_MS without a frame, counted from the last one or from the ask', () => {
+    expect(VIDEO_LOST_MS).toBe(10_000);
+    expect(signalLost(5000, 4000, 0)).toBe(false);
+    // A pause of a change of layer, of the way's bandwidth: nothing is lost.
+    expect(signalLost(4000 + 9999, 4000, 0)).toBe(false);
+    expect(signalLost(4000 + 10_000, 4000, 0)).toBe(true);
+    // No frame yet: from when the video was asked for.
+    expect(signalLost(12_000, 0, 3000)).toBe(false);
+    expect(signalLost(13_000, 0, 3000)).toBe(true);
+  });
+
+  it('keeps the last picture through a pause, says it lost after long, and is live again with the next frame', () => {
+    const w = new PictureWatch(0);
+    expect([w.live, w.lost]).toEqual([false, false]);
+    w.frame(100);
+    expect([w.live, w.lost]).toEqual([true, false]);
+    // Two seconds without a frame (a layer changed at a key frame): nothing changes.
+    w.tick(2100);
+    expect([w.live, w.lost]).toEqual([true, false]);
+    w.tick(9000);
+    expect([w.live, w.lost]).toEqual([true, false]);
+    // Ten seconds: the picture stays (dimmed by the tile), the signal is lost.
+    w.tick(10_100);
+    expect([w.live, w.lost]).toEqual([true, true]);
+    w.frame(15_000);
+    expect([w.live, w.lost]).toEqual([true, false]);
+  });
+
+  it('lets the picture go when the call says the video went off, and waits for a new frame when it is on again', () => {
+    const w = new PictureWatch(0);
+    w.frame(100);
+    w.turn(false, 200);
+    expect([w.live, w.lost, w.wanted]).toEqual([false, false, false]);
+    // Off is no lost signal, however long.
+    w.tick(60_000);
+    expect(w.lost).toBe(false);
+    w.turn(true, 60_000);
+    expect([w.live, w.wanted]).toEqual([false, true]);
+    w.tick(65_000);
+    expect(w.lost, 'counted from when it went on').toBe(false);
+    w.tick(70_000);
+    expect(w.lost).toBe(true);
+    w.frame(70_100);
+    expect([w.live, w.lost]).toEqual([true, false]);
+  });
+
+  it('is gone at the end of the stream, and starts anew with a new subscription', () => {
+    const w = new PictureWatch(0);
+    w.frame(100);
+    w.end();
+    expect([w.live, w.lost]).toEqual([false, true]);
+    w.tick(200);
+    expect(w.lost, 'an ended stream stays lost').toBe(true);
+    w.restart(300);
+    expect([w.live, w.lost]).toEqual([false, false]);
+    w.tick(5000);
+    expect(w.lost).toBe(false);
   });
 });

@@ -98,8 +98,9 @@ describe('the group calls of the demo', () => {
     m.messenger_group_call_start({ groupId: GROUP, media: 'video' });
     vi.advanceTimersByTime(9000);
     const s = m.messenger_group_call_get_state({}) as { call: { participants: { id: number; video_mid?: string }[] } };
-    const seat = s.call.participants.find((p) => p.video_mid)!;
-    expect(seat).toBeTruthy();
+    // Every seat has a video m-line, as the node gives them; the last one came with its camera on.
+    expect(s.call.participants.filter((p) => p.id !== 1).every((p) => p.video_mid)).toBe(true);
+    const seat = s.call.participants[s.call.participants.length - 1];
     m.messenger_group_call_set_layer({ participant: seat.id, rid: 'q' });
     const got: ArrayBuffer[] = [];
     const id = m.messenger_group_call_video_subscribe({ mid: seat.video_mid, channel: { onmessage: (d: ArrayBuffer) => got.push(d) } }) as number;

@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Kamera wyłączona",
     "msg_call_video_my_off": "Twoja kamera jest wyłączona",
     "msg_call_video_waiting": "Czekamy na obraz…",
+    "msg_call_video_lost": "Brak sygnału",
     "msg_call_video_info": "{size} · {fps} kl./s",
     "msg_call_answer_audio": "Odbierz bez wideo",
     "msg_call_answer_voice": "Bez wideo",

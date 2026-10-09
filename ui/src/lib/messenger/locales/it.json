@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Fotocamera spenta",
     "msg_call_video_my_off": "La tua fotocamera è spenta",
     "msg_call_video_waiting": "In attesa del video…",
+    "msg_call_video_lost": "Nessun segnale",
     "msg_call_video_info": "{size} · {fps} fps",
     "msg_call_answer_audio": "Rispondi senza video",
     "msg_call_answer_voice": "Senza video",

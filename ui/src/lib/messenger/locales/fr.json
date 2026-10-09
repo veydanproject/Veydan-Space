@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Caméra coupée",
     "msg_call_video_my_off": "Votre caméra est coupée",
     "msg_call_video_waiting": "En attente de la vidéo…",
+    "msg_call_video_lost": "Pas de signal",
     "msg_call_video_info": "{size} · {fps} i/s",
     "msg_call_answer_audio": "Répondre sans vidéo",
     "msg_call_answer_voice": "Sans vidéo",

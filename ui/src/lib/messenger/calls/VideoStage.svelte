@@ -4,9 +4,11 @@
 <!--
   The videos of a call of two: the peer's large, mine small in a corner; a
   tap on the small one swaps them. Until the call talks my own camera is
-  the large one (the peer's has nothing to show yet). While a video is off (or its frames have
-  not come yet) its place shows the face and why: a frozen last picture
-  would look like a live one. My camera is mirrored, as people expect to see
+  the large one (the peer's has nothing to show yet). While a video is off
+  as the call says (or its first frame has not come yet) its place shows
+  the face and why. While it is on, a pause of its frames changes nothing:
+  the last picture stays; missing for `VIDEO_LOST_MS`, it is dimmed and
+  the large place says "No signal". My camera is mirrored, as people expect to see
   themselves; a phone's back camera (it shows the world) and my screen are
   not.
 
@@ -44,6 +46,8 @@
   let swapped = $state(false);
   let remoteLive = $state(false);
   let localLive = $state(false);
+  let remoteLost = $state(false);
+  let localLost = $state(false);
   let remoteInfo = $state<TileInfo | null>(null);
   let localInfo = $state<TileInfo | null>(null);
 
@@ -57,6 +61,8 @@
   const main = $derived(swapped || preview ? 'local' : 'remote');
   const mainLive = $derived(main === 'remote' ? remoteOn && remoteLive : localOn && localLive);
   const mainInfo = $derived(main === 'remote' ? remoteInfo : localInfo);
+  /** The large video is on and shown, its frames missing for long: its last picture stays, dimmed, and says so. */
+  const mainLost = $derived(mainLive && (main === 'remote' ? remoteLost : localLost));
   /** The small place: mine while my video goes; the peer's (or their face) when swapped. */
   const small = $derived(!preview && (swapped || localOn));
   const smallLive = $derived(main === 'remote' ? localOn && localLive : remoteOn && remoteLive);
@@ -66,7 +72,7 @@
       ? (call.phase !== 'active' && status ? status : remoteOn ? $t('msg_call_video_waiting') : $t('msg_call_video_peer_off'))
       : (localOn ? $t('msg_call_video_waiting') : $t('msg_call_video_my_off')),
   );
-  const info = $derived(mainLive && mainInfo ? $t('msg_call_video_info', { size: `${mainInfo.width}×${mainInfo.height}`, fps: String(mainInfo.fps) }) : '');
+  const info = $derived(mainLive && !mainLost && mainInfo ? $t('msg_call_video_info', { size: `${mainInfo.width}×${mainInfo.height}`, fps: String(mainInfo.fps) }) : '');
   /** The way, once the call talks: while it (re)connects the way is not known yet. */
   const via = $derived(route && call.phase === 'active' ? (call.via ?? null) : null);
 </script>
@@ -80,14 +86,15 @@
         <span class="note">{main === 'local' ? $t('msg_call_video_you') + ' · ' : ''}{mainNote}</span>
       </div>
     {/if}
+    {#if mainLost}<span class="lost" role="status"><CallIcon name="video-off" size={15} />{$t('msg_call_video_lost')}</span>{/if}
   </div>
 
   <!-- The two tiles move between the places; their canvases stay where they are drawn. -->
   <div class="tile-place" class:big={main === 'remote'} class:small={main !== 'remote'} class:hidden={main !== 'remote' && !small}>
-    <VideoTile track="remote" callId={call.call_id} fit={main === 'remote' ? 'auto' : 'cover'} bind:live={remoteLive} bind:info={remoteInfo} />
+    <VideoTile track="remote" callId={call.call_id} on={remoteOn} fit={main === 'remote' ? 'auto' : 'cover'} bind:live={remoteLive} bind:lost={remoteLost} bind:info={remoteInfo} />
   </div>
   <div class="tile-place" class:big={main === 'local'} class:small={main !== 'local'} class:hidden={main !== 'local' && !small}>
-    <VideoTile track="local" callId={call.call_id} mirror={mirrorsLocal(call)} fit={main === 'local' ? 'auto' : 'cover'} bind:live={localLive} bind:info={localInfo} />
+    <VideoTile track="local" callId={call.call_id} on={localOn} mirror={mirrorsLocal(call)} fit={main === 'local' ? 'auto' : 'cover'} bind:live={localLive} bind:lost={localLost} bind:info={localInfo} />
   </div>
 
   {#if small}
@@ -122,6 +129,10 @@
   .slot.main { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; }
   .placeholder { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-4); text-align: center; }
   .note { font-size: var(--fs-sm); color: rgba(255, 255, 255, 0.72); }
+  .lost {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: var(--radius-pill);
+    background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.9); font-size: var(--fs-sm); pointer-events: none;
+  }
 
   .tile-place { position: absolute; z-index: 0; transition: inset 220ms cubic-bezier(0.2, 0.8, 0.3, 1), border-radius 220ms; overflow: hidden; }
   .tile-place.big { inset: 0; }

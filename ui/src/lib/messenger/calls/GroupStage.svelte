@@ -6,12 +6,15 @@
   window, the phone's page). A grid of equals while nobody's video is to
   be seen large; the video of who speaks (or of the seat a tap picked)
   large with the others in a row under it otherwise; a tap picks only a
-  seat whose pictures come (a voice gains nothing large). Each tile asks the
-  node for the layer of video its size needs (GroupTile).
+  seat whose camera is on (a voice gains nothing large). The large place
+  by the voices is held a while against a quick change, and none of it
+  moves while a camera that is on sends no frames for a moment
+  (groupCallStore `voice`, `showing`). Each tile asks the node for the
+  layer of video its size needs (GroupTile).
 -->
 <script lang="ts">
   import type { GroupCallView } from '../api';
-  import { focusOf, gridShape, mirrorsMine, seatSendsVideo, seatsInOrder } from './group';
+  import { gridShape, mirrorsMine, seatSendsVideo, seatsInOrder } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import GroupTile from './GroupTile.svelte';
 
@@ -29,7 +32,8 @@
 
   const seats = $derived(seatsInOrder(call.participants));
   const showing = (seat: number) => !!groupCallStore.showing[seat];
-  const focus = $derived(focusOf(call.participants, pinned, groupCallStore.speaker, showing));
+  /** The seat a tap picked while it is there; the one the voices give otherwise. */
+  const focus = $derived(pinned != null && call.participants.some((p) => p.id === pinned) ? pinned : groupCallStore.voice);
   const main = $derived(focus != null ? seats.find((p) => p.id === focus) ?? null : null);
   const rest = $derived(main ? seats.filter((p) => p.id !== main.id) : seats);
   const shape = $derived(gridShape(seats.length, w, h, phone ? 3 / 4 : 16 / 10, 8));
@@ -47,8 +51,11 @@
 <div class="stage" class:phone class:focused={!!main} bind:clientWidth={w} bind:clientHeight={h}>
   {#if main}
     <div class="main">
-      <GroupTile p={main} callId={call.call_id} level={groupCallStore.levels[main.id] ?? 0} big pinned={pinned === main.id}
-        muted={call.muted} sending={call.video_local} {mirror} onpick={main.me ? undefined : pick(main.id)} />
+      <!-- A tile of its own for each seat: what a tile holds of its seat (its picture, its size) is not the next one's. -->
+      {#key main.id}
+        <GroupTile p={main} callId={call.call_id} level={groupCallStore.levels[main.id] ?? 0} big pinned={pinned === main.id}
+          muted={call.muted} sending={call.video_local} {mirror} onpick={main.me ? undefined : pick(main.id)} />
+      {/key}
     </div>
     <div class="strip">
       {#each rest as p (p.id)}

@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "Kamera kapalı",
     "msg_call_video_my_off": "Kameranız kapalı",
     "msg_call_video_waiting": "Görüntü bekleniyor…",
+    "msg_call_video_lost": "Sinyal yok",
     "msg_call_video_info": "{size} · {fps} fps",
     "msg_call_answer_audio": "Görüntüsüz yanıtla",
     "msg_call_answer_voice": "Görüntüsüz",

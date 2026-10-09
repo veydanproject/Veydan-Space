@@ -32,7 +32,7 @@
     "createUpdaterArtifacts": false,
     "android": {
       "minSdkVersion": 26,
-      "versionCode": 2050110
+      "versionCode": 2050111
     }
   }
 }

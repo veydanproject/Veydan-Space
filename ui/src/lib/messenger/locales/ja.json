@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "カメラはオフです",
     "msg_call_video_my_off": "あなたのカメラはオフです",
     "msg_call_video_waiting": "映像を待っています…",
+    "msg_call_video_lost": "信号なし",
     "msg_call_video_info": "{size} · {fps} fps",
     "msg_call_answer_audio": "ビデオなしで応答",
     "msg_call_answer_voice": "ビデオなし",

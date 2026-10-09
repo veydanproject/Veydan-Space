@@ -914,6 +914,7 @@
     "msg_call_video_peer_off": "카메라 꺼짐",
     "msg_call_video_my_off": "내 카메라가 꺼져 있습니다",
     "msg_call_video_waiting": "영상을 기다리는 중…",
+    "msg_call_video_lost": "신호 없음",
     "msg_call_video_info": "{size} · {fps} fps",
     "msg_call_answer_audio": "영상 없이 받기",
     "msg_call_answer_voice": "영상 없이",

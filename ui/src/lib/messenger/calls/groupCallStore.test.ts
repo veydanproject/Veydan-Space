@@ -8,7 +8,7 @@
 // a call left (or failed to enter) is entered again under the same id; a
 // phone's Hang up on the notification is my leaving.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupCallAnnounced, GroupCallView, GroupParticipant } from '../generated/calls';
 
 const groupCalls = vi.hoisted(() => ({
@@ -24,6 +24,8 @@ const groupCalls = vi.hoisted(() => ({
 vi.mock('../api', () => ({ messengerApi: { groupCalls } }));
 
 const { groupCallStore } = await import('./groupCallStore.svelte');
+const { FOCUS_HOLD_MS } = await import('./group');
+const { VIDEO_LOST_MS } = await import('./video');
 
 const me: GroupParticipant = { id: 1, npub: 'ab'.repeat(32), verified: true, speaking: false, audio: true, me: true };
 const boris: GroupParticipant = { id: 2, npub: '2b'.repeat(32), verified: true, speaking: false, audio: true, audio_mid: '1', video_mid: '2', me: false };
@@ -91,7 +93,7 @@ describe('the room I am in', () => {
     expect(groupCallStore.levels[2]).toBe(1);
     // Every seat has a video m-line from the start: video only once its pictures come.
     expect(groupCallStore.video).toBe(false);
-    groupCallStore.setShowing(2, true);
+    groupCallStore.seatPicture('2');
     expect(groupCallStore.video).toBe(true);
   });
 
@@ -263,7 +265,7 @@ describe('the move of a room', () => {
   it('is told by a new room on the same node too (a double move): the seats asked anew', async () => {
     state(view({ node: B, home: B }));
     await groupCallStore.setLayer(2, 'f');
-    groupCallStore.setShowing(2, true);
+    groupCallStore.seatPicture('2');
     expect(groupCallStore.showing[2]).toBe(true);
     // The winner's room is on B as well: the runtime leaves my room for it,
     // `joining` with no seat at all.
@@ -313,10 +315,143 @@ describe('a failure the room tells of', () => {
 
   it('keeps which seats show pictures, from their tiles', () => {
     state(view());
-    groupCallStore.setShowing(2, true);
+    groupCallStore.seatPicture('2');
     expect(groupCallStore.showing[2]).toBe(true);
     state(view({ call_id: 'g9' }));
     expect(groupCallStore.showing[2], 'a new room starts with none').toBeUndefined();
+  });
+});
+
+describe('the large place of the room', () => {
+  const alice: GroupParticipant = { id: 3, npub: '3c'.repeat(32), verified: true, speaking: false, audio: true, audio_mid: '3', video_mid: '4', me: false };
+  const vera: GroupParticipant = { id: 4, npub: '4d'.repeat(32), verified: true, speaking: false, audio: true, audio_mid: '5', video_mid: '6', me: false };
+  const talk = (...ids: number[]) => state(view({ participants: [me, boris, alice, vera].map((p) => ({ ...p, speaking: ids.includes(p.id) })) }));
+
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('stays with a camera that is on while its frames pause: off only after VIDEO_LOST_MS without a picture', () => {
+    talk();
+    groupCallStore.seatPicture('2');
+    talk(2);
+    expect(groupCallStore.voice).toBe(2);
+    // The frames of Boris pause (a layer changes, the way's bandwidth): his
+    // tile keeps its last picture, the room's words go on, nothing moves.
+    vi.advanceTimersByTime(VIDEO_LOST_MS - 1500);
+    talk();
+    talk(2);
+    expect(groupCallStore.voice).toBe(2);
+    expect(groupCallStore.video).toBe(true);
+    // A picture again: his clock starts anew.
+    groupCallStore.seatPicture('2');
+    vi.advanceTimersByTime(VIDEO_LOST_MS - 1500);
+    expect(groupCallStore.showing[2]).toBe(true);
+    // Missing for long: his camera is taken as off, the large place let go.
+    vi.advanceTimersByTime(2000);
+    expect(groupCallStore.showing[2]).toBe(false);
+    expect(groupCallStore.voice).toBeNull();
+    expect(groupCallStore.video).toBe(false);
+    // His next picture: on again.
+    groupCallStore.seatPicture('2');
+    expect(groupCallStore.showing[2]).toBe(true);
+  });
+
+  it('counts a camera off from its last picture, not from its tile: two who talk in turns do not keep it on', () => {
+    // Boris and Alice, both cameras on; Alice large.
+    talk();
+    groupCallStore.seatPicture('2');
+    groupCallStore.seatPicture('4');
+    talk(3);
+    expect(groupCallStore.voice).toBe(3);
+    // Alice turns her camera off at 0 (her m-line stays, her pictures
+    // stop); Boris's keep coming. Every change of the large place makes
+    // the tiles of both anew: the clock of a seat is not theirs.
+    for (let s = 1; s <= 12; s++) {
+      vi.advanceTimersByTime(1000);
+      groupCallStore.seatPicture('2');
+      if (s === 4) talk(2);
+      if (s === 8) talk(3);
+      if (s === 4) expect(groupCallStore.voice).toBe(2);
+      if (s === 8) expect(groupCallStore.voice, 'still on, short of VIDEO_LOST_MS').toBe(3);
+    }
+    // Ten seconds after her last picture her camera is off, whoever spoke meanwhile.
+    expect(groupCallStore.showing[3]).toBe(false);
+    talk(2);
+    talk(3);
+    vi.advanceTimersByTime(FOCUS_HOLD_MS);
+    expect(groupCallStore.voice, 'Alice speaks without a picture: Boris stays large').toBe(2);
+  });
+
+  it('takes the word of a tile by the m-line of its subscription, not by the seat it shows now', () => {
+    talk();
+    groupCallStore.seatPicture('2');
+    groupCallStore.seatPicture('4');
+    talk(3);
+    expect(groupCallStore.voice).toBe(3);
+    // Alice's stream ends: her camera is off at once, the large place goes
+    // to Boris; the end said by the m-line of Alice touches no other seat.
+    groupCallStore.seatEnded('4');
+    expect(groupCallStore.showing[3]).toBe(false);
+    talk(2);
+    expect(groupCallStore.voice).toBe(2);
+    groupCallStore.seatEnded('4');
+    expect(groupCallStore.showing[2]).toBe(true);
+    expect(groupCallStore.voice).toBe(2);
+    // An m-line of no seat (a room that moved on), or mine, says nothing.
+    groupCallStore.seatPicture('99');
+    groupCallStore.seatEnded('99');
+    expect(groupCallStore.showing).toEqual({ 2: true, 3: false });
+  });
+
+  it('holds the speaker a while: two who talk in turns do not throw the screen to and fro', () => {
+    talk();
+    groupCallStore.seatPicture('2');
+    groupCallStore.seatPicture('4');
+    talk(2);
+    expect(groupCallStore.voice).toBe(2);
+    vi.advanceTimersByTime(1000);
+    talk(3);
+    expect(groupCallStore.voice, 'held').toBe(2);
+    talk(2);
+    talk(3);
+    expect(groupCallStore.voice).toBe(2);
+    // The hold over, with Alice still speaking: the place goes to her by itself.
+    vi.advanceTimersByTime(2000);
+    expect(groupCallStore.voice).toBe(3);
+    // A voice without a picture speaks: the last picture stays large.
+    talk(4);
+    vi.advanceTimersByTime(5000);
+    expect(groupCallStore.voice).toBe(3);
+  });
+
+  it('lets a seat go at once when it leaves, or when the m-line of its video goes', () => {
+    talk();
+    groupCallStore.seatPicture('2');
+    groupCallStore.seatPicture('4');
+    talk(2);
+    talk(3);
+    expect(groupCallStore.voice).toBe(2);
+    // Boris leaves: no hold for a seat that is not there.
+    state(view({ participants: [me, { ...alice, speaking: true }, vera] }));
+    expect(groupCallStore.voice).toBe(3);
+    expect(groupCallStore.showing[2], 'his seat is let go').toBeUndefined();
+    // Alice's video has no m-line any more: her camera is off, the room changes at once.
+    state(view({ participants: [me, { ...alice, video_mid: undefined, speaking: true }, vera] }));
+    expect(groupCallStore.showing[3]).toBeUndefined();
+    expect(groupCallStore.voice).toBeNull();
+    expect(groupCallStore.video).toBe(false);
+  });
+
+  it('is let go with the room, its look again too', () => {
+    talk();
+    groupCallStore.seatPicture('2');
+    groupCallStore.seatPicture('4');
+    talk(2);
+    talk(3);
+    groupCallStore.reset();
+    vi.advanceTimersByTime(5000);
+    expect(groupCallStore.voice).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

@@ -21,7 +21,8 @@ import {
   type MessengerUiEvent,
   type VideoInput,
 } from '../api';
-import { groupStatusText, seatSendsVideo, type GroupOver, type Layer } from './group';
+import { focusOf, groupStatusText, holdFocus, seatSendsVideo, FOCUS_HOLD_MS, type GroupOver, type Layer } from './group';
+import { VIDEO_LOST_MS } from './video';
 
 /** How long the screen shows how a group call ended for me. */
 export const GROUP_OVER_SHOWN_MS = 2500;
@@ -64,8 +65,24 @@ class GroupCallStore {
   screen = $state(false);
   /** A computer: the room's window is open, not folded into its capsule. Open again for every new room. */
   shown = $state(true);
-  /** The seats whose video frames come now, by seat (their tiles say so): only a picture is shown large. */
+  /**
+   * The seats whose camera is taken as on, by seat, for the order of the
+   * screen (calls/group.ts `seatSendsVideo`): on with the first picture a
+   * tile drew of it (`seatPicture`), off once its pictures have been
+   * missing for `VIDEO_LOST_MS` or their stream ended (`seatEnded`); the
+   * room does not say whether another's camera is on. The clock of each
+   * seat is here, not in its tile: a tile that moves (between the large
+   * place, the row and the grid) or comes again (the window unfolded) is
+   * made anew, and a camera that is off would count from naught with each.
+   * A shorter pause of the frames moves nothing: the tile keeps its last
+   * picture. Let go with the seat, and with the m-line of its video.
+   */
   showing = $state<Record<number, boolean>>({});
+  /**
+   * The seat the voices give the large place (not a tap: the screen keeps
+   * that), held against a quick change (calls/group.ts `holdFocus`).
+   */
+  voice = $state<number | null>(null);
   /** A phone: where the sound of the room can go and where it goes; `null` on a computer, or before the room holds the sound. */
   routes = $state<CallAudioRoutes | null>(null);
   /**
@@ -106,6 +123,12 @@ class GroupCallStore {
   private layers = new Map<number, Layer>();
   private simulcast = true;
   private errorTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Since when `voice` has its seat (`Date.now()`). */
+  private voiceSince = 0;
+  /** A look again at the large place once its hold is over. */
+  private voiceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When a tile last drew a picture of each seat taken as on (`Date.now()`). */
+  private pictureAt = new Map<number, number>();
 
   /** The room I am in when it is the call of `groupId`. */
   inGroup(groupId: string | null | undefined): GroupCallView | null {
@@ -317,9 +340,74 @@ class GroupCallStore {
     this.errorTimer = setTimeout(() => { if (this.error === error) this.error = null; }, ERROR_SHOWN_MS);
   }
 
-  /** A tile tells whether the frames of its seat's video come. */
+  /**
+   * A tile drew a picture of the seat whose video has the m-line `mid`:
+   * its camera is on, and its clock starts again. Told by the m-line of
+   * the tile's subscription, not by the seat its tile shows now: a tile
+   * given another seat says nothing of the new one with words of the old.
+   */
+  seatPicture(mid: string) {
+    const seat = this.seatOf(mid);
+    if (seat == null) return;
+    this.pictureAt.set(seat, Date.now());
+    if (!this.showing[seat]) this.setShowing(seat, true);
+  }
+
+  /** The stream of the seat's video (by its m-line) ended: its camera is off at once. */
+  seatEnded(mid: string) {
+    const seat = this.seatOf(mid);
+    if (seat != null) this.setShowing(seat, false);
+  }
+
+  /** Another's seat whose video has the m-line `mid`, in the room I am in. */
+  private seatOf(mid: string): number | null {
+    return this.call?.participants.find((p) => !p.me && p.video_mid === mid)?.id ?? null;
+  }
+
+  /** Whether the seat's camera is taken as on (`showing`); on, its clock runs from now if it did not. */
   setShowing(seat: number, on: boolean) {
-    if ((this.showing[seat] ?? false) !== on) this.showing = { ...this.showing, [seat]: on };
+    if (!on) this.pictureAt.delete(seat);
+    else if (!this.pictureAt.has(seat)) this.pictureAt.set(seat, Date.now());
+    if ((this.showing[seat] ?? false) === on) return;
+    this.showing = { ...this.showing, [seat]: on };
+    this.refocus();
+  }
+
+  /**
+   * The seats whose pictures have been missing for `VIDEO_LOST_MS` have
+   * their camera off: looked at by the clock of the room, once a second,
+   * whether a tile of theirs is there or not.
+   */
+  private lapse() {
+    const now = Date.now();
+    for (const [seat, at] of [...this.pictureAt]) {
+      if (now - at >= VIDEO_LOST_MS) this.setShowing(seat, false);
+    }
+  }
+
+  /**
+   * The large place by the voices, again: what `focusOf` names now, held
+   * (`holdFocus`); a change held back is looked at again once its hold is over.
+   */
+  private refocus() {
+    if (this.voiceTimer) clearTimeout(this.voiceTimer);
+    this.voiceTimer = null;
+    const c = this.call;
+    if (!c) {
+      this.voice = null;
+      this.voiceSince = 0;
+      return;
+    }
+    const showing = (seat: number) => !!this.showing[seat];
+    const fits = (seat: number) => c.participants.some((p) => p.id === seat && !p.me && seatSendsVideo(p, c, showing));
+    const candidate = focusOf(c.participants, null, this.speaker, showing);
+    const now = Date.now();
+    const next = holdFocus({ seat: this.voice, since: this.voiceSince }, candidate, fits, now);
+    if (this.voice !== next.seat) this.voice = next.seat;
+    this.voiceSince = next.since;
+    if (candidate != null && candidate !== next.seat) {
+      this.voiceTimer = setTimeout(() => this.refocus(), Math.max(0, next.since + FOCUS_HOLD_MS - now));
+    }
   }
 
   /** Runtime event → state. Called by the module store. */
@@ -436,6 +524,9 @@ class GroupCallStore {
       const talking = view.participants.find((p) => p.speaking && !p.me && p.verified);
       if (talking) this.speaker = talking.id;
       else if (this.speaker != null && !view.participants.some((p) => p.id === this.speaker)) this.speaker = null;
+      // A seat that left, or whose video has no m-line now, has no camera on.
+      const kept = Object.entries(this.showing).filter(([seat]) => view.participants.some((p) => p.id === Number(seat) && p.video_mid));
+      if (kept.length !== Object.keys(this.showing).length) this.showing = Object.fromEntries(kept);
     } else {
       this.settledHome = null;
       this.anotherRoom = false;
@@ -448,6 +539,9 @@ class GroupCallStore {
       this.layers.clear();
       this.routes = null;
     }
+    // The clock of a seat let go goes with it.
+    for (const seat of [...this.pictureAt.keys()]) if (!this.showing[seat]) this.pictureAt.delete(seat);
+    this.refocus();
     this.tick();
   }
 
@@ -487,11 +581,14 @@ class GroupCallStore {
     this.over = null;
   }
 
-  /** The clock runs while I am in a room. */
+  /** The clock runs while I am in a room; it lets go the cameras whose pictures stopped (`lapse`). */
   private tick() {
     this.now = Math.floor(Date.now() / 1000);
     if (this.call && !this.ticker) {
-      this.ticker = setInterval(() => (this.now = Math.floor(Date.now() / 1000)), 1000);
+      this.ticker = setInterval(() => {
+        this.now = Math.floor(Date.now() / 1000);
+        this.lapse();
+      }, 1000);
     } else if (!this.call && this.ticker) {
       clearInterval(this.ticker);
       this.ticker = null;
