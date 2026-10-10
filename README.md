@@ -206,6 +206,8 @@ choose **Open**.
 The app updates itself when a new version comes out. Installed from a
 `.deb` or `.rpm`? The app tells you about the new version, and you install it
 from the releases page.
+Every release comes with a short note of what is new, improved and fixed:
+read it on the releases page before you update.
 
 ## Privacy and security
 

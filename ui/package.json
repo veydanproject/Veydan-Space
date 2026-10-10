@@ -5,6 +5,7 @@
   "description": "A workspace for multi-accounting.",
   "author": "Veydan Project",
   "type": "module",
+  "packageManager": "pnpm@12.4.2",
   "scripts": {
     "dev": "node ../scripts/ui.mjs space dev",
     "build": "node ../scripts/ui.mjs space build",

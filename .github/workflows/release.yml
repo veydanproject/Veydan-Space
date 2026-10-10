@@ -1,70 +1,37 @@
 name: Release
-run-name: >-
-  ${{ contains(github.ref_name, '-alpha.') && format('Alpha {0}', github.ref_name)
-      || contains(github.ref_name, '-beta.') && format('Beta {0}', github.ref_name)
-      || contains(github.ref_name, '-rc.') && format('RC {0}', github.ref_name)
-      || format('Release {0}', github.ref_name) }}
+run-name: ${{ contains(github.ref_name, '-rc.') && 'RC' || 'Release' }} ${{ github.ref_name }}
 
-# One run builds ONE product (internal/platform-spec.md 14.1, 14.3; 20.14):
+# The Windows and macOS bundles of ONE product, built in the product's own
+# public repository on GitHub (docs/ci-cd.md, "Releases"). This file lives
+# in the monorepo and reaches the repository of each product with its
+# snapshot (products.json, publish.shared); nothing ever runs it in the
+# monorepo.
 #
-#   make push <product> alpha|beta|rc [p…]   <product>-vX.Y.Z-<channel>.N[-<platform>]…
-#                                            → the platforms named, or the three
-#                                            desktop ones; a CHANNEL build
-#   vX.Y.Z in a product's own repository  → every platform; a RELEASE there
+#   make push <product> rc|release   (the owner, in the monorepo)
+#     → the release workflow of Gitea (veydanproject/release) publishes the
+#       snapshot of the tagged commit here under vX.Y.Z-rc.N or vX.Y.Z; THIS
+#       workflow builds Windows and macOS (two architectures) and puts the
+#       bundles and their updater signatures into a DRAFT release under the
+#       tag. It publishes nothing: Gitea builds Linux and Android, waits for
+#       this draft, checks every signature, writes latest.json and publishes
+#       it — an rc as a pre-release, a release as the latest.
+#   make push <product> dev
+#     → a dev build, on Gitea alone: nothing comes here.
 #
-# The tag names the product; the version must equal apps/<product>/VERSION
-# at the tagged commit. There is one job per platform, and it builds the
-# tagged product: the Rust cache of a platform is shared by the products,
-# so a product built after another reuses most of it.
-#
-# Where it is published (the owner's decisions of 2026-10-04 and 2026-10-05):
-#
-# - A channel build stays in THIS repository, the private monorepo: a
-#   prerelease under the tag that was pushed (notes-v5.0.0-alpha.1), with
-#   every bundle, the updater signatures and a latest.json, published with
-#   the run's own token by the job `publish-channel`, the only job with
-#   `contents: write`. A prerelease is never what /releases/latest answers.
-# - A release is built by the PRODUCT's own repository, from its snapshot:
-#   `make push <product> release` publishes the snapshot there under vX.Y.Z,
-#   and this same workflow, carried by the snapshot, runs there on that tag
-#   (kind=own) and publishes the release there with that run's token. The
-#   tag <product>-vX.Y.Z of the monorepo only marks the commit of the
-#   release: it matches no trigger below and starts nothing here. Nothing
-#   in this repository writes to another one.
-#
-# Hence the shape: the build jobs only build, sign and hand their files
-# over as artifacts of the run. They hold no token that writes anywhere and
-# know nothing of where the release goes; what they need from the monorepo
-# is the checkout, scripts/release/ and the signing secrets, so the same
-# steps can later run on a snapshot (14.3, "What a snapshot lacks").
-#
-# Several products at once (20.14): one `make push <product> …` per
-# product. Each pushes its own tag on its own (GitHub starts nothing when
-# one `git push` carries more than three tags), and each tag starts its own
-# run. Run workflow by hand (Actions → Release) is for running a tag
-# again: on the product's tag, never on a branch.
-#
-# In a product's own repository (its snapshot, products.json with one
-# product) the tag is vX.Y.Z: kind=own, built there and published there as
-# its release with the run's token (the owner's decision of 2026-10-05).
-#
-# ios is accepted on a tag but not built.
-
+# The build jobs only build and sign; the draft is written with the run's
+# own token by the job `draft`, the only one with `contents: write`.
 on:
   push:
-    # A channel build here (<product>-vX.Y.Z-<channel>.N…: a hyphen after the
-    # version); vX.Y.Z in a product's own repository. <product>-vX.Y.Z of a
-    # release matches neither and starts nothing.
-    tags: ['space-v*-*', 'notes-v*-*', 'pass-v*-*', 'chat-v*-*', 'v*']
-  # Again, by hand, on a product's tag.
+    tags: ['v*']
+  # Again, by hand, on a release tag.
   workflow_dispatch:
 
-# Read-only for every job; `publish-channel` alone asks for more.
+# Read-only for every job; `draft` alone asks for more.
 permissions:
   contents: read
 
 # One run per tag at a time; a second one waits, it does not cancel a
-# release half published.
+# release half built.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -77,44 +44,31 @@ jobs:
     outputs:
       product: ${{ steps.meta.outputs.product }}
       version: ${{ steps.meta.outputs.version }}
-      kind: ${{ steps.meta.outputs.kind }}
       release_tag: ${{ steps.meta.outputs.release_tag }}
       release_name: ${{ steps.meta.outputs.release_name }}
-      product_repo: ${{ steps.meta.outputs.product_repo }}
       product_name: ${{ steps.meta.outputs.product_name }}
       asset_prefix: ${{ steps.meta.outputs.asset_prefix }}
       messenger: ${{ steps.meta.outputs.messenger }}
-      lib_name: ${{ steps.meta.outputs.lib_name }}
-      prerelease: ${{ steps.meta.outputs.prerelease }}
       matrix: ${{ steps.meta.outputs.matrix }}
       updater_keys: ${{ steps.meta.outputs.updater_keys }}
       updater_pubkey: ${{ steps.meta.outputs.updater_pubkey }}
       build_desktop: ${{ steps.meta.outputs.build_desktop }}
-      build_android: ${{ steps.meta.outputs.build_android }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # kind=channel (the monorepo) or kind=own (a product's repository), the
-      # platforms, the names of the files. A release tag of the monorepo stops here.
+      # The product, the version (it must equal VERSION at the tagged
+      # commit), the desktop platforms and the names of the files.
       - id: meta
         name: Parse the tag and verify VERSION
         run: bash scripts/release/meta.sh
 
-  checks:
-    needs: meta
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci.yml
-
   # The desktop bundles of the product, signed for the updater, as an
   # artifact of the run. No token: this job publishes nothing.
   build:
-    needs: [meta, checks]
-    if: >-
-      !cancelled() && needs.meta.result == 'success' && needs.checks.result == 'success' &&
-      needs.meta.outputs.build_desktop == 'true'
+    needs: meta
+    if: needs.meta.outputs.build_desktop == 'true'
     permissions:
       contents: read
     strategy:
@@ -128,13 +82,12 @@ jobs:
       # runner, and each needs its own.
       WEBRTC_TARGET: ${{ matrix.artifact == 'linux-x86_64' && 'linux-x64' || matrix.artifact == 'windows-x86_64' && 'win-x64' || matrix.artifact == 'darwin-aarch64' && 'mac-arm64' || 'mac-x64' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # As in the rust job of ci.yml: a release build of a product, with
-      # three Linux bundles, on a runner whose disk the image mostly fills
-      # with toolchains this job never uses.
+      # A release build of a product, with three Linux bundles, on a runner
+      # whose disk the image mostly fills with toolchains this job never uses.
       - name: Free disk space
         if: startsWith(matrix.platform, 'ubuntu')
         run: |
@@ -158,13 +111,13 @@ jobs:
             build-essential \
             curl wget file
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11
+          package_json_file: ui/package.json
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: ui/.node-version
           cache: pnpm
           cache-dependency-path: ui/pnpm-lock.yaml
 
@@ -177,9 +130,7 @@ jobs:
           case "${{ matrix.platform }}" in macos*) rustup target add aarch64-apple-darwin x86_64-apple-darwin ;; esac
           rustc -V
 
-      # One cache per platform, shared by the products: they are built from
-      # the same crates of one workspace.
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: . -> data/target
           key: ${{ matrix.platform }}${{ matrix.args }}
@@ -192,14 +143,15 @@ jobs:
       # (vendor/webrtc-sys/PATCH.md, patch 2). A product without the
       # messenger links no engine: these steps are skipped for it, and it
       # downloads nothing. On Linux the C++ bridge needs clang 21 for the
-      # hermetic libc++ of libwebrtc, which jammy has not: apt.llvm.org, as
-      # in ci.yml. On Windows and macOS the system's compiler (MSVC, Xcode)
-      # builds it. VEYDAN_WEBRTC_DIR is the workspace as the runner names it
-      # (D:\a\… on Windows): the $PWD of Git Bash there is /d/a/…, which
-      # cargo, run from pwsh, would read as a folder of the current drive.
+      # hermetic libc++ of libwebrtc, which jammy has not: apt.llvm.org with
+      # its key kept in the repository (scripts/ci/clang.sh). On Windows and
+      # macOS the system's compiler (MSVC, Xcode) builds it. VEYDAN_WEBRTC_DIR
+      # is the workspace as the runner names it (D:\a\… on Windows): the $PWD
+      # of Git Bash there is /d/a/…, which cargo, run from pwsh, would read
+      # as a folder of the current drive.
       - name: libwebrtc (cache)
         if: needs.meta.outputs.messenger == 'true'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: data/toolchains/webrtc
           key: webrtc-veydan-v1.0.10-${{ env.WEBRTC_TARGET }}
@@ -214,7 +166,7 @@ jobs:
       - name: clang 21 (Linux)
         if: needs.meta.outputs.messenger == 'true' && startsWith(matrix.platform, 'ubuntu')
         run: |
-          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+          bash scripts/ci/clang.sh 21
           echo "VEYDAN_WEBRTC_CLANGXX=/usr/bin/clang++-21" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies
@@ -265,7 +217,7 @@ jobs:
           node scripts/release/assets.mjs collect --bundle "$BUNDLE" \
             --name "$PRODUCT_NAME" --version "$VERSION" --target "$TARGET" --pubkey "$PUBKEY" --out release-assets
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bundles-${{ matrix.artifact }}
           path: release-assets/
@@ -278,253 +230,41 @@ jobs:
         shell: bash
         run: df -h . && du -sh data/target 2>/dev/null || true
 
-  # Same SDK/NDK pins as scripts/android/android-env.sh. The build is the one
-  # of scripts/android/apk.sh: the product's env from scripts/product.sh, its
-  # own target directory data/target-android/<product> (13.4). The signed
-  # APK is an artifact of the run; no token here either.
-  build-android:
-    needs: [meta, checks]
-    if: >-
-      !cancelled() && needs.meta.result == 'success' && needs.checks.result == 'success' &&
-      needs.meta.outputs.build_android == 'true'
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    env:
-      NDK_VERSION: 30.0.16248370
-      PRODUCT: ${{ needs.meta.outputs.product }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      # The same, except the Android SDK, which this job builds with.
-      - name: Free disk space
-        run: |
-          df -h /
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/share/swift
-          sudo docker image prune --all --force >/dev/null 2>&1 || true
-          df -h /
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: ui/pnpm-lock.yaml
-
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - uses: android-actions/setup-android@v4
-        with:
-          packages: platform-tools platforms;android-36 build-tools;36.0.0 ndk;30.0.16248370
-          log-accepted-android-sdk-licenses: false
-
-      - name: Export NDK paths
-        run: |
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
-
-      # The version and the components rust-toolchain.toml names.
-      - name: Rust toolchain (rust-toolchain.toml)
-        shell: bash
-        run: |
-          rustup toolchain install
-          rustup target add aarch64-linux-android
-          rustc -V
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: '. -> data/target-android/${{ needs.meta.outputs.product }}'
-          key: android-aarch64-${{ needs.meta.outputs.product }}
-
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ needs.meta.outputs.product }}-${{ hashFiles(format('apps/{0}/gen/android/**/*.gradle*', needs.meta.outputs.product)) }}
-
-      # The engine of calls for the phone, as scripts/android/android-env.sh
-      # fetches it. Only arm64 is pinned, and the APK is built for aarch64
-      # alone (Build Android APK). The C++ bridge is compiled by the NDK's
-      # clang, which the Tauri CLI sets for the Android target. Products with
-      # the messenger only, as in the desktop job.
-      - name: libwebrtc (cache)
-        if: needs.meta.outputs.messenger == 'true'
-        uses: actions/cache@v6
-        with:
-          path: data/toolchains/webrtc
-          key: webrtc-veydan-v1.0.10-android-arm64
-      - name: libwebrtc
-        if: needs.meta.outputs.messenger == 'true'
-        env:
-          WORKSPACE: ${{ github.workspace }}
-        run: |
-          bash scripts/webrtc-toolchain.sh android-arm64
-          echo "VEYDAN_WEBRTC_DIR=$WORKSPACE/data/toolchains/webrtc" >> "$GITHUB_ENV"
-
-      - name: Install frontend dependencies
-        run: pnpm --dir ui install --frozen-lockfile
-
-      # Firebase settings for the messenger's pushes (products with the
-      # messenger). The file is gitignored and must hold a client for the
-      # product's applicationId: one google-services.json of the Firebase
-      # project with an Android app per product.
-      - name: Write google-services.json
-        if: needs.meta.outputs.messenger == 'true'
-        env:
-          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: |
-          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
-            echo "::error::GOOGLE_SERVICES_JSON secret (base64 of google-services.json) is required"
-            exit 1
-          fi
-          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -d > "apps/$PRODUCT/gen/android/app/google-services.json"
-
-      - name: Build Android APK
-        run: |
-          set -euo pipefail
-          ROOT_DIR="$GITHUB_WORKSPACE"
-          source scripts/product.sh
-          product_env "$PRODUCT"
-          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/data/target-android/$PRODUCT"
-          tauri_cli_ready
-          "$TAURI_CLI" android build --target aarch64
-
-      # 14.3, step 3: the push handler of the messenger is called by name from
-      # Java; a library that lost the symbol builds and fails on the phone.
-      # The list of llvm-nm is taken whole and searched afterwards. Piped into
-      # `grep -q` under pipefail, the check failed the first alphas of Space
-      # and Chat on a library that had the symbol: grep leaves at the match,
-      # llvm-nm fails on the closed pipe, and its status became the answer.
-      - name: The JNI symbol of the push handler
-        if: needs.meta.outputs.messenger == 'true'
-        env:
-          LIB_NAME: ${{ needs.meta.outputs.lib_name }}
-        run: |
-          set -euo pipefail
-          LIB="data/target-android/$PRODUCT/aarch64-linux-android/release/lib$LIB_NAME.so"
-          NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
-          SYMBOL=Java_net_veydan_push_Core_describe
-          if ! SYMBOLS="$("$NM" -D "$LIB")"; then
-            echo "::error::llvm-nm could not list the symbols of $LIB"
-            exit 1
-          fi
-          if ! grep " T $SYMBOL\$" <<<"$SYMBOLS"; then
-            echo "::error::$LIB does not export $SYMBOL"
-            echo "The Java_ symbols it exports:"
-            grep ' Java_' <<<"$SYMBOLS" || echo "  (none)"
-            exit 1
-          fi
-
-      # The passwords reach apksigner through the environment (env:NAME),
-      # never through a command line.
-      - name: Sign the APK
-        env:
-          ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
-          VERSION: ${{ needs.meta.outputs.version }}
-          ANDROID_RELEASE_KEYSTORE: ${{ secrets.ANDROID_RELEASE_KEYSTORE }}
-          ANDROID_RELEASE_KS_PASS: ${{ secrets.ANDROID_RELEASE_KS_PASS }}
-          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
-        run: |
-          set -euo pipefail
-          if [ -z "$ANDROID_RELEASE_KEYSTORE" ] || [ -z "$ANDROID_RELEASE_KS_PASS" ]; then
-            echo "::error::ANDROID_RELEASE_KEYSTORE and ANDROID_RELEASE_KS_PASS secrets are required"
-            exit 1
-          fi
-          ALIAS="${ANDROID_RELEASE_KEY_ALIAS:-veydan}"
-          KS="$RUNNER_TEMP/android-release.keystore"
-          printf '%s' "$ANDROID_RELEASE_KEYSTORE" | base64 -d > "$KS"
-
-          UNSIGNED="$(find "apps/$PRODUCT/gen/android/app/build/outputs/apk" \
-            -name '*-unsigned.apk' -printf '%T@\t%p\n' | sort -nr | sed -n '1s/^[^\t]*\t//p')"
-          if [ -z "$UNSIGNED" ]; then
-            rm -f "$KS"
-            echo "::error::No unsigned APK after tauri android build"
-            exit 1
-          fi
-
-          SIGNER="$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner | tail -n1)"
-          # Named after the product, like its desktop bundles: Veydan.Notes_5.0.0_android.apk
-          mkdir -p release-assets
-          SIGNED="release-assets/${ASSET_PREFIX}_${VERSION}_android.apk"
-          # Without the v4 scheme: it serves incremental installs over adb and
-          # is written as a second file, <apk>.idsig, which was uploaded and
-          # published next to the APK (the first alpha of Notes).
-          "$SIGNER" sign --ks "$KS" --ks-key-alias "$ALIAS" \
-            --ks-pass env:ANDROID_RELEASE_KS_PASS --key-pass env:ANDROID_RELEASE_KS_PASS \
-            --v4-signing-enabled false \
-            --out "$SIGNED" "$UNSIGNED"
-          rm -f "$KS"
-          "$SIGNER" verify "$SIGNED"
-          # The job hands over the signed APK and nothing else.
-          if [ "$(ls -A release-assets)" != "$(basename "$SIGNED")" ]; then
-            echo "::error::release-assets holds more than the signed APK"
-            ls -A release-assets
-            exit 1
-          fi
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: bundles-android
-          path: release-assets/
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Disk (after the job)
-        if: always()
-        shell: bash
-        run: df -h . && du -sh data/target-android 2>/dev/null || true
-
-  # Publishes in THIS repository, under the tag that was pushed, with the
-  # run's own token: a channel build of the monorepo as a prerelease, a
-  # release of a product's own repository (kind=own) as its release.
-  publish-channel:
-    needs: [meta, build, build-android]
-    # Run when every requested platform succeeded; skipped jobs are fine.
-    if: |
-      !cancelled() &&
-      (needs.meta.outputs.kind == 'channel' || needs.meta.outputs.kind == 'own') &&
-      needs.build.result != 'failure' &&
-      needs.build-android.result != 'failure' &&
-      (needs.build.result == 'success' || needs.build-android.result == 'success')
+  # The draft release under the tag, with every desktop bundle and
+  # signature and nothing else: no latest.json, not published. Gitea takes
+  # it from here. A run started again replaces the files of the draft.
+  draft:
+    needs: [meta, build]
+    if: needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       # scripts/release/, and gh calls git even when --repo is set.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: bundles-*
           path: release-assets
           merge-multiple: true
 
-      - name: Publish in this repository
+      - name: The draft release of this repository
         env:
           GH_TOKEN: ${{ github.token }}
+          MODE: draft
           REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.meta.outputs.release_tag }}
           RELEASE_NAME: ${{ needs.meta.outputs.release_name }}
-          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
           ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
           VERSION: ${{ needs.meta.outputs.version }}
           UPDATER_KEYS: ${{ needs.meta.outputs.updater_keys }}
           ASSETS_DIR: release-assets
         run: |
           if [ "$RELEASE_TAG" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::A build of this repository is published under its own tag $GITHUB_REF_NAME, not $RELEASE_TAG"
+            echo "::error::The draft of this repository goes under its own tag $GITHUB_REF_NAME, not $RELEASE_TAG"
             exit 1
           fi
           bash scripts/release/publish.sh

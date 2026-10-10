@@ -5,7 +5,7 @@
 # build/<product>/, the toolchains (with the Android release keystore), the
 # WebKit dev prefix, the pnpm store. tmp/ holds anything temporary: the work
 # folders of the scripts, clones, screenshots, the root's strays.
-/data/
+/data
 /tmp/
 
 # The two generated folders that stay in the UI project: pnpm puts

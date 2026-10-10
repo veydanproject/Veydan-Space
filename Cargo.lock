@@ -8806,7 +8806,7 @@ dependencies = [
 
 [[package]]
 name = "veydanspace"
-version = "5.1.12"
+version = "5.1.13"
 dependencies = [
  "age",
  "anyhow",
@@ -8857,8 +8857,8 @@ dependencies = [
 
 [[package]]
 name = "vlink-client"
-version = "0.2.0"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.2.0#0ac61ad8a45f56efb620df8f2bf3fcd262e26a72"
+version = "0.2.1"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.2.1#070d12154696c6aad0667bc3bc8998ac4d46c13f"
 dependencies = [
  "bytes",
  "h2",
@@ -8872,8 +8872,8 @@ dependencies = [
 
 [[package]]
 name = "vlink-proto"
-version = "0.2.0"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.2.0#0ac61ad8a45f56efb620df8f2bf3fcd262e26a72"
+version = "0.2.1"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.2.1#070d12154696c6aad0667bc3bc8998ac4d46c13f"
 dependencies = [
  "bytes",
  "h2",

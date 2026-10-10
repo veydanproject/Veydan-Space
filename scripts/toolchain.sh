@@ -17,7 +17,10 @@ TC_DIR="$VEYDAN_ROOT/data/toolchains"
 export RUSTUP_HOME="$TC_DIR/rustup"
 export CARGO_HOME="$TC_DIR/cargo"
 NODE_DIR="$TC_DIR/node"
-NODE_VERSION="v24.18.0"
+# Node and pnpm: the versions CI installs too, one place each (ui/.node-version,
+# packageManager of ui/package.json).
+NODE_VERSION="v$(tr -d "[:space:]" < "$VEYDAN_ROOT/ui/.node-version")"
+PNPM_VERSION="$(sed -n "s/.*\"packageManager\": *\"pnpm@\([^\"]*\)\".*/\1/p" "$VEYDAN_ROOT/ui/package.json")"
 
 mkdir -p "$TC_DIR"
 
@@ -40,7 +43,7 @@ if ! (cd "$VEYDAN_ROOT" && rustup which rustc >/dev/null 2>&1); then
 fi
 
 # --- Node (portable tarball) ---
-if [ ! -x "$NODE_DIR/bin/node" ]; then
+if [ ! -x "$NODE_DIR/bin/node" ] || [ "$("$NODE_DIR/bin/node" -v 2>/dev/null)" != "$NODE_VERSION" ]; then
   echo ">> Installing Node $NODE_VERSION into data/toolchains/ ..."
   tarball="node-$NODE_VERSION-linux-x64"
   curl -sSL "https://nodejs.org/dist/$NODE_VERSION/$tarball.tar.xz" -o /tmp/_rb_node.tar.xz
@@ -51,9 +54,9 @@ fi
 export PATH="$NODE_DIR/bin:$PATH"
 
 # --- pnpm (installed globally *inside* the portable Node prefix) ---
-if [ ! -x "$NODE_DIR/bin/pnpm" ]; then
-  echo ">> Installing pnpm into data/toolchains/node ..."
-  npm install -g pnpm@latest >/dev/null 2>&1
+if [ ! -x "$NODE_DIR/bin/pnpm" ] || [ "$("$NODE_DIR/bin/pnpm" -v 2>/dev/null)" != "$PNPM_VERSION" ]; then
+  echo ">> Installing pnpm $PNPM_VERSION into data/toolchains/node ..."
+  npm install -g "pnpm@$PNPM_VERSION" >/dev/null 2>&1
 fi
 
 # Keep the pnpm content-addressable store inside the project too, in data/.
