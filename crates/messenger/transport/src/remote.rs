@@ -17,13 +17,18 @@ use std::time::Duration;
 /// Public key (hex) of the project key that signs remote manifests.
 pub const PROJECT_MANIFEST_PUBKEY: &str = "9a3df86b487832646de015da85813b568fe3419e5d3d7a6c9a234592a66c6871";
 
-/// Where the project publishes the signed manifest, in the order tried.
-///
-/// Empty for now: the manifest built into the app is the only one, and the
-/// app asks nowhere. Where the signed manifest will live (one place to change
-/// it, reachable from Russia, where connections to Cloudflare are cut after
-/// ~16 KB) is still to be decided.
-pub const MANIFEST_URLS: &[&str] = &[];
+/// Where the project publishes the signed manifest, in the order tried: its
+/// own hosts first (a host with the agent of vcloud serves `/manifest.json`),
+/// then the repository of manifests on GitHub, which answers when the
+/// project's own hosts are closed or have changed
+/// (internal/vcloud-plan.md 3.3). A place with no manifest yet answers 404
+/// and the next one is asked; the first signed one wins, so a new manifest
+/// is laid at every place at once.
+pub const MANIFEST_URLS: &[&str] = &[
+    "https://eu-1-media.veydan.net/manifest.json",
+    "https://us-1-media.veydan.net/manifest.json",
+    "https://raw.githubusercontent.com/veydanproject/Veydan-Manifest/main/manifest.json",
+];
 
 /// A manifest is a few kilobytes; anything much larger is not one.
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
@@ -194,5 +199,14 @@ mod tests {
             urls(&["https://a/m", "https://b/m", "https://high/m", "https://low/m"])
         );
         assert_eq!(candidate_urls(MANIFEST_URLS, None).len(), MANIFEST_URLS.len());
+    }
+
+    #[test]
+    fn the_places_of_the_project_are_https_and_end_in_the_manifest() {
+        // candidate_urls drops what is not https or is named twice: every
+        // built-in place has to survive it.
+        assert!(!MANIFEST_URLS.is_empty());
+        assert_eq!(candidate_urls(MANIFEST_URLS, None), urls(MANIFEST_URLS));
+        assert!(MANIFEST_URLS.iter().all(|u| u.ends_with("/manifest.json")));
     }
 }

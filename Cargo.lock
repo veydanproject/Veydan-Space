@@ -8975,7 +8975,7 @@ dependencies = [
 
 [[package]]
 name = "veydanspace"
-version = "5.1.14"
+version = "5.1.15"
 dependencies = [
  "age",
  "anyhow",
