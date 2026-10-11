@@ -28,8 +28,8 @@ pub use crypto::SecretKey;
 pub use error::{Error, Result};
 pub use secrets::SecretBox;
 pub use vault::{
-    decrypt_field, encrypt_field, key_id, store_lock_meta, synced_lock, LockMeta, SyncedLock,
-    DEFAULT_SECRET, ERR_JOIN_OWN_LOCK, ROW_ID,
+    decrypt_field, encrypt_field, key_id, recovery_wrap, store_lock_meta, synced_lock, LockMeta,
+    SyncedLock, DEFAULT_SECRET, ERR_JOIN_OWN_LOCK, ROW_ID,
 };
 
 use argon2::password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier};
@@ -76,6 +76,10 @@ pub const SCHEMA_STEPS: &[&str] = &[
             value TEXT NOT NULL,
             PRIMARY KEY (box, key)
         )",
+    // What the second wrap is made from: 1 a code of 24 chars, 2 the
+    // Recovery Key of 12 words (platform-spec 8.1). Synced with the wrap; a
+    // row from a client without the column keeps the default.
+    "ALTER TABLE password_vault ADD COLUMN recovery_version INTEGER NOT NULL DEFAULT 1",
 ];
 
 /// A table as sync carries it: the entity type, the table and its key, the
@@ -88,7 +92,8 @@ pub struct SyncTable {
 }
 
 /// The key row as a sync entity. Part of the frozen vault format: the
-/// columns are those 4.0.7 publishes and reads.
+/// columns are those 4.0.7 publishes and reads, plus `recovery_version`
+/// (platform-spec 8.1, 9.5: a column with a default may be added).
 pub const SYNC_TABLE: SyncTable = SyncTable {
     entity: "password_vault",
     table: "password_vault",
@@ -104,6 +109,7 @@ pub const SYNC_TABLE: SyncTable = SyncTable {
         "wrapped_key",
         "recovery_salt",
         "recovery_wrapped_key",
+        "recovery_version",
         "lock_hash",
         "lock_kind",
         "lock_hint",
@@ -118,10 +124,28 @@ const MIN_SECRET_LEN: usize = 4;
 /// Minutes of inactivity before the lock closes, until the shell says otherwise.
 pub const DEFAULT_TIMEOUT_MIN: u32 = 5;
 
-const ERR_WRONG: &str = "Wrong password";
-const ERR_CURRENT: &str = "Current password is incorrect";
+/// The secret given is not the lock's (`unlock`, `verify`): the text of
+/// `Error::Other` the commands had before, kept for the screens. Callers
+/// ask [`Error::is_wrong_secret`] rather than compare the text.
+pub const ERR_WRONG: &str = "Wrong password";
+/// `current` of [`Lock::set`] is not the secret in force; see [`ERR_WRONG`].
+pub const ERR_CURRENT: &str = "Current password is incorrect";
 const ERR_NOT_TAKEN_OVER: &str =
     "The lock of an earlier version could not be read; restart the app";
+/// `recover` on a row whose second wrap is the Recovery Key: that key is
+/// kept, so the path is [`Lock::recover_keep`] (platform-spec 8.1).
+pub const ERR_RECOVERY_V2: &str = "recovery key v2: use recover_keep";
+/// `recovery_regenerate` on a row of version 2: a new Recovery Key goes
+/// through the reissue flow of the module `cloud`, or the escrow and the
+/// shares would silently die (cloud-recovery.md §3).
+pub const ERR_REGENERATE_V2: &str = "recovery key v2: reissue it with recovery_prepare_v2 and recovery_store_v2";
+
+/// The second wrap is made from a 24-char code.
+pub const RECOVERY_VERSION_CODE: u8 = recovery::VERSION_CODE;
+/// The second wrap is made from the Recovery Key of 12 words.
+pub const RECOVERY_VERSION_WORDS: u8 = recovery::VERSION_WORDS;
+/// The entropy of a Recovery Key.
+pub const RK_LEN: usize = recovery::RK_LEN;
 
 /// What the caller of [`Lock::reset`] removes in its transaction: its own
 /// rows under the old key. They go together with the key or not at all.
@@ -183,6 +207,39 @@ pub struct LockStatus {
     pub kind: String,
     pub hint: Option<String>,
     pub has_recovery: bool,
+    /// What the second wrap is made from: `1` a code of 24 chars, `2` the
+    /// Recovery Key of 12 words; `None` without a second wrap. The screen of
+    /// the lock labels its field by it (platform-spec 8.1).
+    pub recovery_version: Option<u8>,
+}
+
+/// The wrap of version 2 of the vault key under a Recovery Key the module
+/// `cloud` drew, prepared in memory by [`Lock::recovery_prepare_v2`] and
+/// written by [`Lock::recovery_store_v2`] (platform-spec 8.1).
+pub struct RecoveryPreparedV2 {
+    /// The key row the wrap belongs to.
+    vault_id: String,
+    prepared: vault::RecoveryPrepared,
+}
+
+impl RecoveryPreparedV2 {
+    /// The 12 words of the Recovery Key the wrap was made under.
+    pub fn words(&self) -> &str {
+        &self.prepared.code
+    }
+
+    /// The key row the wrap is for.
+    pub fn vault_id(&self) -> &str {
+        &self.vault_id
+    }
+}
+
+impl std::fmt::Debug for RecoveryPreparedV2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecoveryPreparedV2")
+            .field("vault_id", &self.vault_id)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The lock of the app: the key row in the data file, the key in memory,
@@ -314,6 +371,7 @@ impl Lock {
             Some(meta) => (meta.kind.unwrap_or_else(|| KIND_PASSWORD.into()), meta.hint),
             None => (KIND_PASSWORD.into(), None),
         };
+        let recovery_version = vault::recovery_version(&self.db).await.unwrap_or(None);
         LockStatus {
             enabled,
             locked,
@@ -321,7 +379,8 @@ impl Lock {
             vault: self.vault_label().await,
             kind,
             hint,
-            has_recovery: vault::has_recovery(&self.db).await.unwrap_or(false),
+            has_recovery: recovery_version.is_some(),
+            recovery_version,
         }
     }
 
@@ -467,8 +526,9 @@ impl Lock {
         Ok(recovery_key)
     }
 
-    /// Create the recovery key once the key row exists and has none yet.
-    /// A mismatched vault leaves recovery to the device that owns it.
+    /// Create the Recovery Key (12 words) once the key row exists and has no
+    /// second wrap yet. A mismatched vault leaves recovery to the device
+    /// that owns it.
     async fn ensure_recovery(&self) -> Result<Option<String>> {
         let Ok((key, vault_id)) = self.ensure_key().await else {
             return Ok(None);
@@ -476,9 +536,8 @@ impl Lock {
         if vault::has_recovery(&self.db).await? {
             return Ok(None);
         }
-        Ok(Some(
-            vault::install_recovery(&self.db, &key, &vault_id).await?,
-        ))
+        let words = vault::install_recovery(&self.db, &key, &vault_id).await?;
+        Ok(Some(words.to_string()))
     }
 
     /// Open the session with `password`. False when there is no lock to open.
@@ -555,18 +614,28 @@ impl Lock {
         }
     }
 
-    /// Replace the recovery key. The old one stops working.
+    /// A row of version 1 moves to the Recovery Key: the 12 words are
+    /// returned, the old code stops working. A row of version 2 is refused
+    /// with [`ERR_REGENERATE_V2`]: its key is reissued only by the flow of
+    /// the module `cloud` ([`Lock::recovery_prepare_v2`] and
+    /// [`Lock::recovery_store_v2`]), or the escrow and the shares would
+    /// silently die.
     pub async fn recovery_regenerate(&self, current: &str) -> Result<String> {
         self.session.throttle().await;
         if let Err(e) = self.verify(current).await {
             self.session.record_failure();
             return Err(e);
         }
+        if vault::recovery_version(&self.db).await? == Some(RECOVERY_VERSION_WORDS) {
+            return Err(Error::other(ERR_REGENERATE_V2));
+        }
         let (key, vault_id) = self.ensure_key().await?;
-        vault::install_recovery(&self.db, &key, &vault_id).await
+        let words = vault::install_recovery(&self.db, &key, &vault_id).await?;
+        Ok(words.to_string())
     }
 
-    /// Step 1 of recovery: confirm the code opens the vault, nothing changes.
+    /// Step 1 of recovery: confirm the code or the words open the vault,
+    /// nothing changes. The version is the row's (platform-spec 8.1).
     pub async fn recovery_check(&self, code: &str) -> Result<()> {
         self.session.throttle().await;
         match vault::open_with_recovery(&self.db, code).await {
@@ -578,8 +647,11 @@ impl Lock {
         }
     }
 
-    /// Step 2 of recovery: set a new secret with the code, unlock, and hand
-    /// out a fresh recovery key. The used code stops working.
+    /// Step 2 of recovery for a row of version 1: set a new secret with the
+    /// code, unlock, and hand out the Recovery Key (12 words) that replaces
+    /// the used code; the row is of version 2 from here. A row of version 2
+    /// is refused with [`ERR_RECOVERY_V2`]: its key is kept by
+    /// [`Lock::recover_keep`].
     pub async fn recover(
         &self,
         code: &str,
@@ -588,6 +660,9 @@ impl Lock {
         hint: Option<String>,
     ) -> Result<String> {
         self.session.throttle().await;
+        if vault::recovery_version(&self.db).await? == Some(RECOVERY_VERSION_WORDS) {
+            return Err(Error::other(ERR_RECOVERY_V2));
+        }
         let (key, vault_id) = match vault::open_with_recovery(&self.db, code).await {
             Ok(opened) => opened,
             Err(e) => {
@@ -595,15 +670,7 @@ impl Lock {
                 return Err(e);
             }
         };
-        let kind = parse_kind(kind)?;
-        let password = validate_secret(&kind, &password)?;
-        let meta = LockMeta {
-            hash: hash_password(&password)?,
-            kind: Some(kind),
-            hint: clean_hint(hint),
-        };
-        let prepared =
-            vault::prepare_rewrap_key(key.clone_key(), vault_id.clone(), password).await?;
+        let (meta, prepared) = self.prepare_new_secret(&key, &vault_id, password, kind, hint).await?;
         let recovery = vault::prepare_recovery(&key, &vault_id).await?;
 
         let mut tx = self.db.begin().await.map_err(Error::db)?;
@@ -612,12 +679,154 @@ impl Lock {
         store_lock_meta(&mut *tx, Some(&meta)).await?;
         tx.commit().await.map_err(Error::db)?;
 
+        self.finish_recovery(prepared, meta).await;
+        Ok(recovery.code.to_string())
+    }
+
+    /// Step 2 of recovery for a row of version 2 (cloud-recovery.md §5, §7):
+    /// open the key with the 12 words, rewrap it under the new secret, open
+    /// the session. The second wrap and its version stay as they are: the
+    /// same Recovery Key, the same generation, the escrow and the shares
+    /// remain in force. A row of version 1 fails like a wrong key.
+    pub async fn recover_keep(
+        &self,
+        words: &str,
+        password: String,
+        kind: Option<String>,
+        hint: Option<String>,
+    ) -> Result<()> {
+        self.session.throttle().await;
+        if vault::recovery_version(&self.db).await? != Some(RECOVERY_VERSION_WORDS) {
+            self.session.record_failure();
+            return Err(Error::RecoveryInvalid);
+        }
+        let (key, vault_id) = match vault::open_with_recovery(&self.db, words).await {
+            Ok(opened) => opened,
+            Err(e) => {
+                self.session.record_failure();
+                return Err(e);
+            }
+        };
+        let (meta, prepared) = self.prepare_new_secret(&key, &vault_id, password, kind, hint).await?;
+
+        let mut tx = self.db.begin().await.map_err(Error::db)?;
+        vault::apply_rewrap(&mut tx, &prepared).await?;
+        store_lock_meta(&mut *tx, Some(&meta)).await?;
+        tx.commit().await.map_err(Error::db)?;
+
+        self.finish_recovery(prepared, meta).await;
+        Ok(())
+    }
+
+    /// The new lock of a recovery: its parameters and the wrap of the key
+    /// under the new secret, in memory.
+    async fn prepare_new_secret(
+        &self,
+        key: &SecretKey,
+        vault_id: &str,
+        password: String,
+        kind: Option<String>,
+        hint: Option<String>,
+    ) -> Result<(LockMeta, vault::RewrapPrepared)> {
+        let kind = parse_kind(kind)?;
+        let password = validate_secret(&kind, &password)?;
+        let meta = LockMeta {
+            hash: hash_password(&password)?,
+            kind: Some(kind),
+            hint: clean_hint(hint),
+        };
+        let prepared =
+            vault::prepare_rewrap_key(key.clone_key(), vault_id.to_string(), password).await?;
+        Ok((meta, prepared))
+    }
+
+    /// After the transaction of a recovery: the key in memory, the session open.
+    async fn finish_recovery(&self, prepared: vault::RewrapPrepared, meta: LockMeta) {
         self.vault.apply(prepared.memory);
         self.drop_legacy().await;
         self.reopen_replaced_keys(DEFAULT_SECRET).await;
         self.session.open(meta);
         self.emit(Event::Unlocked);
-        Ok(recovery.code)
+    }
+
+    /// Step 3 of the reissue of the Recovery Key (platform-spec 8.1): the
+    /// wrap of version 2 of the key under the 16 bytes `rk` the module
+    /// `cloud` drew, in memory only; `current` is the secret of the lock,
+    /// the confirmation of the owner. Nothing is written until
+    /// [`Lock::recovery_store_v2`]. Also the way a row of version 1 moves to
+    /// version 2 when the cloud is switched on.
+    pub async fn recovery_prepare_v2(
+        &self,
+        current: &str,
+        rk: &[u8; RK_LEN],
+    ) -> Result<RecoveryPreparedV2> {
+        self.session.throttle().await;
+        if let Err(e) = self.verify(current).await {
+            self.session.record_failure();
+            return Err(e);
+        }
+        let (key, vault_id) = self.ensure_key().await?;
+        let prepared = vault::prepare_recovery_with(&key, &vault_id, rk).await?;
+        Ok(RecoveryPreparedV2 {
+            vault_id,
+            prepared,
+        })
+    }
+
+    /// Step 6 of the reissue: one transaction puts the prepared wrap in
+    /// place of the second wrap and sets `recovery_version = 2`; the first
+    /// wrap and the lock fields stay. Refused when the key row changed
+    /// since the wrap was prepared. The row goes to sync as usual.
+    pub async fn recovery_store_v2(&self, prepared: &RecoveryPreparedV2) -> Result<()> {
+        let current = key_id(&self.db).await?;
+        if current.as_deref() != Some(prepared.vault_id.as_str()) {
+            return Err(Error::other("the key row changed since the wrap was prepared"));
+        }
+        vault::store_recovery(&self.db, &prepared.prepared).await?;
+        self.emit(Event::Changed);
+        Ok(())
+    }
+
+    /// The lock of a restore whose key row did not open with the words
+    /// (cloud-recovery.md §7, «строка не совпала»): the key the escrow
+    /// carries, `vault_key` under its `vault_id`, takes the place of the key
+    /// row — wrapped by `password`, with its second wrap under the Recovery
+    /// Key `rk` — in one transaction, and the secret boxes of this device
+    /// are emptied as at a reset. What the vault holds encrypted under that
+    /// key (`decrypt_field`) still reads; the row goes to sync as usual.
+    pub async fn install_key(
+        &self,
+        vault_key: SecretKey,
+        vault_id: &str,
+        rk: &[u8; RK_LEN],
+        password: String,
+        kind: Option<String>,
+        hint: Option<String>,
+    ) -> Result<()> {
+        let kind = parse_kind(kind)?;
+        let password = validate_secret(&kind, &password)?;
+        let meta = LockMeta {
+            hash: hash_password(&password)?,
+            kind: Some(kind),
+            hint: clean_hint(hint),
+        };
+        let fresh = vault::fresh_key_of(&password, vault_key, vault_id.to_string()).await?;
+        let recovery = vault::prepare_recovery_with(&fresh.key, vault_id, rk).await?;
+        let mut tx = self.db.begin().await.map_err(Error::db)?;
+        vault::replace_row(&mut tx, &fresh, Some(&meta)).await?;
+        vault::store_recovery(&mut *tx, &recovery).await?;
+        sqlx::query("DELETE FROM lock_secrets")
+            .execute(&mut *tx)
+            .await
+            .map_err(Error::db)?;
+        vault::delete_setting(&mut *tx, vault::REPLACED_KEYS).await?;
+        tx.commit().await.map_err(Error::db)?;
+        self.vault.lock();
+        self.vault.set_open(fresh.kek, fresh.key, fresh.vault_id);
+        self.drop_legacy().await;
+        self.session.open(meta);
+        self.emit(Event::Reset);
+        Ok(())
     }
 
     /// Check `secret`, then put a new key in place of the old one: the key
@@ -822,6 +1031,31 @@ pub(crate) mod testing {
             })
         },
     };
+
+    /// The second wrap of version 1 as 4.0.7 and 5.x before C3 wrote it: a
+    /// code of 24 chars, the production KDF, no version column written (the
+    /// default of the column is 1). Returns the code in display form.
+    pub(crate) async fn install_recovery_v1(
+        db: &Pool<Sqlite>,
+        key: &SecretKey,
+        vault_id: &str,
+    ) -> String {
+        let code = crate::recovery::generate();
+        let canonical = crate::recovery::normalize_code(&code).unwrap();
+        let salt = random_salt();
+        let kek = derive_kek(&canonical, &KdfParams::production(salt)).unwrap();
+        let wrapped = wrap_key(key, &kek, vault_id).unwrap();
+        sqlx::query(
+            "UPDATE password_vault SET recovery_salt = ?, recovery_wrapped_key = ? WHERE id = ?",
+        )
+        .bind(B64.encode(salt))
+        .bind(wrapped)
+        .bind(ROW_ID)
+        .execute(db)
+        .await
+        .unwrap();
+        code
+    }
 
     /// A key row wrapped by `secret` that says nothing about the lock, with a
     /// KDF cheap enough for a test.
@@ -1067,44 +1301,214 @@ mod tests {
         db.close().await;
     }
 
+    /// The first lock issues the Recovery Key of 12 words (version 2); a
+    /// forgotten secret is replaced with the words, and the words stay: the
+    /// same wrap, the same version, nothing a code could do.
     #[tokio::test]
-    async fn the_recovery_key_sets_a_new_secret() {
+    async fn the_recovery_key_of_12_words_sets_a_new_secret_and_stays() {
         let (db, _dir) = pool().await;
         let lock = Lock::new(db.clone());
         lock.open_default().await.unwrap();
-        let code = lock
+        let words = lock
             .set(Some(PIN.into()), None, Some("pin".into()), None)
             .await
             .unwrap()
             .expect("recovery key");
+        assert_eq!(words.split(' ').count(), 12);
+        let status = lock.status().await;
+        assert!(status.has_recovery);
+        assert_eq!(status.recovery_version, Some(RECOVERY_VERSION_WORDS));
+        let wrap_before: (String, String, i64) = sqlx::query_as(
+            "SELECT recovery_salt, recovery_wrapped_key, recovery_version FROM password_vault",
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(wrap_before.2, 2);
         lock.lock();
 
+        // A code, wrong words, right words.
         assert_eq!(
             lock.recovery_check("0000-0000").await.unwrap_err(),
             Error::RecoveryInvalid
         );
+        assert_eq!(
+            lock.recovery_check(&recovery::generate()).await.unwrap_err(),
+            Error::RecoveryInvalid
+        );
+        lock.recovery_check(&words.to_uppercase()).await.unwrap();
+
+        // The old path is closed for a row of version 2, before any KDF.
+        assert_eq!(
+            lock.recover(&words, "7777".into(), Some("pin".into()), None)
+                .await
+                .unwrap_err(),
+            Error::other(ERR_RECOVERY_V2)
+        );
+        assert!(lock.status().await.locked);
+
+        lock.recover_keep(&words, "7777".into(), Some("pin".into()), None)
+            .await
+            .unwrap();
+        assert!(!lock.status().await.locked);
+        let wrap_after: (String, String, i64) = sqlx::query_as(
+            "SELECT recovery_salt, recovery_wrapped_key, recovery_version FROM password_vault",
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(wrap_after, wrap_before, "recover_keep changed the second wrap");
+        lock.recovery_check(&words).await.unwrap();
+        lock.lock();
+        assert!(lock.unlock(PIN).await.is_err());
+        assert!(lock.unlock("7777").await.unwrap());
+
+        // No regeneration of a version 2 key outside the reissue flow.
+        assert_eq!(
+            lock.recovery_regenerate("7777").await.unwrap_err(),
+            Error::other(ERR_REGENERATE_V2)
+        );
+        assert!(lock.recovery_regenerate("0000").await.is_err());
+        lock.recovery_check(&words).await.unwrap();
+        db.close().await;
+    }
+
+    /// A row a client wrote before C3 (or 4.0.7): the second wrap is a code
+    /// of 24 chars and the column holds its default. The code still opens
+    /// it; `recover` replaces it with the words, and the row is of version 2
+    /// from then on; words against a row of version 1 fail like a wrong code.
+    #[tokio::test]
+    async fn a_row_of_version_1_recovers_with_its_code_and_moves_to_words() {
+        let (db, _dir) = pool().await;
+        let lock = Lock::new(db.clone());
+        lock.open_default().await.unwrap();
+        lock.set(Some(PIN.into()), None, Some("pin".into()), None)
+            .await
+            .unwrap();
+        let (key, vault_id) = lock.require_open().unwrap();
+        // The wrap 4.0.7 would have written, under its own code.
+        sqlx::query("UPDATE password_vault SET recovery_version = 1")
+            .execute(&db)
+            .await
+            .unwrap();
+        let code = testing::install_recovery_v1(&db, &key, &vault_id).await;
+        assert_eq!(lock.status().await.recovery_version, Some(RECOVERY_VERSION_CODE));
+        lock.lock();
+
+        let (_, words_elsewhere) = recovery::generate_words();
+        assert_eq!(
+            lock.recovery_check(&words_elsewhere).await.unwrap_err(),
+            Error::RecoveryInvalid
+        );
+        assert_eq!(
+            lock.recover_keep(&code, "7777".into(), Some("pin".into()), None)
+                .await
+                .unwrap_err(),
+            Error::RecoveryInvalid
+        );
         lock.recovery_check(&code).await.unwrap();
-        let next = lock
+        let words = lock
             .recover(&code, "7777".into(), Some("pin".into()), None)
             .await
             .unwrap();
         assert!(!lock.status().await.locked);
+        assert_eq!(words.split(' ').count(), 12);
+        assert_eq!(lock.status().await.recovery_version, Some(RECOVERY_VERSION_WORDS));
         assert_eq!(
             lock.recovery_check(&code).await.unwrap_err(),
             Error::RecoveryInvalid
         );
-        lock.recovery_check(&next).await.unwrap();
+        lock.recovery_check(&words).await.unwrap();
 
-        assert!(lock.recovery_regenerate("0000").await.is_err());
-        let third = lock.recovery_regenerate("7777").await.unwrap();
+        // `recovery_regenerate` of a row of version 1 hands out the words as well.
+        testing::install_recovery_v1(&db, &key, &vault_id).await;
+        sqlx::query("UPDATE password_vault SET recovery_version = 1")
+            .execute(&db)
+            .await
+            .unwrap();
+        let regenerated = lock.recovery_regenerate("7777").await.unwrap();
+        assert_eq!(regenerated.split(' ').count(), 12);
+        assert_eq!(lock.status().await.recovery_version, Some(RECOVERY_VERSION_WORDS));
+        lock.recovery_check(&regenerated).await.unwrap();
+        db.close().await;
+    }
+
+    /// The reissue flow of the module `cloud`: the wrap under a key it drew
+    /// is prepared in memory and written in one step; between the two the
+    /// old words still open the row, after it the new ones do.
+    #[tokio::test]
+    async fn a_wrap_under_a_given_key_is_prepared_in_memory_and_stored_at_once() {
+        let (db, _dir) = pool().await;
+        let lock = Lock::new(db.clone());
+        lock.open_default().await.unwrap();
+        let old = lock
+            .set(Some(PIN.into()), None, Some("pin".into()), None)
+            .await
+            .unwrap()
+            .expect("recovery key");
+        let (entropy, words) = recovery::generate_words();
+
+        assert!(lock.recovery_prepare_v2("0000", &entropy).await.is_err());
+        let prepared = lock.recovery_prepare_v2(PIN, &entropy).await.unwrap();
+        assert_eq!(prepared.words(), words.as_str());
+        assert_eq!(prepared.vault_id(), lock.require_open().unwrap().1);
+        assert!(!format!("{prepared:?}").contains(words.split(' ').next().unwrap()));
+        lock.recovery_check(&old).await.unwrap();
         assert_eq!(
-            lock.recovery_check(&next).await.unwrap_err(),
+            lock.recovery_check(&words).await.unwrap_err(),
             Error::RecoveryInvalid
         );
-        lock.lock();
-        assert!(lock.unlock(PIN).await.is_err());
-        assert!(lock.unlock("7777").await.unwrap());
-        lock.recovery_check(&third).await.unwrap();
+
+        let mut events = lock.subscribe();
+        lock.recovery_store_v2(&prepared).await.unwrap();
+        assert_eq!(drain(&mut events), [Event::Changed]);
+        lock.recovery_check(&words).await.unwrap();
+        assert_eq!(
+            lock.recovery_check(&old).await.unwrap_err(),
+            Error::RecoveryInvalid
+        );
+        assert_eq!(lock.status().await.recovery_version, Some(RECOVERY_VERSION_WORDS));
+
+        // A wrap prepared for a row that is gone is not written.
+        let (other_entropy, _) = recovery::generate_words();
+        let stale = lock.recovery_prepare_v2(PIN, &other_entropy).await.unwrap();
+        lock.reset(PIN, |_| Box::pin(async { Ok(()) })).await.unwrap();
+        assert!(lock.recovery_store_v2(&stale).await.is_err());
+        db.close().await;
+    }
+
+    /// The column comes by the schema step with its default: a data file of
+    /// 5.x before C3 opens, and its row is of version 1.
+    #[tokio::test]
+    async fn the_version_column_is_added_by_the_schema_step_with_its_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!("sqlite:{}?mode=rwc", dir.path().join("app.db").display());
+        let db = sqlx::sqlite::SqlitePoolOptions::new()
+            .connect(&url)
+            .await
+            .unwrap();
+        for step in &SCHEMA_STEPS[..2] {
+            sqlx::query(*step).execute(&db).await.unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO password_vault (id, vault_id, kdf_salt, kdf_memory, kdf_iterations,
+             kdf_parallelism, wrapped_key, created_at, updated_at, recovery_salt, recovery_wrapped_key)
+             VALUES ('default', 'v', 's', 8, 1, 1, 'w', 't', 't', 'rs', 'rw')",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+        sqlx::query(SCHEMA_STEPS[2]).execute(&db).await.unwrap();
+        let version: i64 = sqlx::query_scalar("SELECT recovery_version FROM password_vault")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(version, 1);
+        assert_eq!(
+            vault::recovery_version(&db).await.unwrap(),
+            Some(RECOVERY_VERSION_CODE)
+        );
+        assert!(SYNC_TABLE.columns.contains(&"recovery_version"));
         db.close().await;
     }
 
@@ -1189,6 +1593,53 @@ mod tests {
         assert_eq!(drain(&mut events), [Event::Changed]);
         assert!(!lock.status().await.locked);
         assert!(lock.require_open().is_ok());
+        db.close().await;
+    }
+
+    /// A restore whose row did not open installs the key of the escrow:
+    /// the row is made anew around that key under the new PIN, its second
+    /// wrap under the words of the restore, and what another device
+    /// encrypted under the key still reads; the boxes are emptied.
+    #[tokio::test]
+    async fn the_key_of_the_escrow_is_installed_as_the_lock_of_a_restore() {
+        let (db_a, _dir_a) = pool().await;
+        let a = Lock::new(db_a.clone());
+        a.open_default().await.unwrap();
+        a.set(Some(PIN.into()), None, Some("pin".into()), None)
+            .await
+            .unwrap();
+        let (key, vault_id) = a.require_open().unwrap();
+        let field = encrypt_field(&key, "row-1", "password", "hunter2").unwrap();
+        db_a.close().await;
+
+        let (db, _dir) = pool().await;
+        let b = Lock::new(db.clone());
+        b.open_default().await.unwrap();
+        b.secret_box("messenger").put("x", b"old").await.unwrap();
+        let mut events = b.subscribe();
+        let (entropy, words) = recovery::generate_words();
+        assert!(b
+            .install_key(key.clone_key(), &vault_id, &entropy, "12".into(), Some("pin".into()), None)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("at least 4"));
+        b.install_key(key.clone_key(), &vault_id, &entropy, "7777".into(), Some("pin".into()), None)
+            .await
+            .unwrap();
+
+        assert_eq!(drain(&mut events), [Event::Reset]);
+        let (open, id) = b.require_open().unwrap();
+        assert_eq!(id, vault_id);
+        assert_eq!(decrypt_field(&open, "row-1", "password", &field).unwrap(), "hunter2");
+        assert!(b.secret_box("messenger").get("x").await.unwrap().is_none());
+        assert_eq!(b.status().await.recovery_version, Some(RECOVERY_VERSION_WORDS));
+        b.recovery_check(&words).await.unwrap();
+        b.lock();
+        assert!(b.unlock(PIN).await.unwrap_err().is_wrong_secret());
+        assert!(b.unlock("7777").await.unwrap());
+        assert!(Error::other(ERR_CURRENT).is_wrong_secret());
+        assert!(!Error::RecoveryInvalid.is_wrong_secret());
         db.close().await;
     }
 }

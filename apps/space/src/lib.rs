@@ -53,7 +53,8 @@ const PRODUCT: veydan_shell::Product = veydan_shell::Product {
 /// sync starts once all are set up. `browser`, `ssh`, `notes` is the order
 /// of their pages in the tray; `pass` before `notes` puts the password
 /// generator above the quick note; `browser` before `messenger` stops the
-/// browsers before the messenger takes its notices back.
+/// browsers before the messenger takes its notices back; `cloud` after
+/// `messenger`, whose seams it takes.
 pub(crate) fn module_list() -> Vec<Module> {
     let mut list = vec![
         veydan_pass::module(),
@@ -68,6 +69,7 @@ pub(crate) fn module_list() -> Vec<Module> {
         veydan_tor::module(),
     ]);
     list.push(veydan_messenger_app::module());
+    list.push(veydan_cloud::module());
     list
 }
 

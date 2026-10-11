@@ -16,9 +16,11 @@
 //!   reactions, presence keys).
 //! - `reactions`: reactions on messages, the limits, and making one.
 //! - `cards`: contact cards sent and received as messages.
+//! - `botcard`: the cards of the pinned bot of Veydan Cloud in its chat.
 //! - `view`: what the host shows; `body`: what a notification tells of a message.
 
 pub mod body;
+pub mod botcard;
 pub mod cards;
 pub mod handler;
 pub mod media;
@@ -31,6 +33,8 @@ pub mod service;
 pub mod view;
 pub mod pushtags;
 pub mod wrap;
+/// Notes to a key that is not a contact (the linking of devices).
+pub mod keynotes;
 
 pub use notes::{presence_proof, presence_proof_ok, KEY_READ_RECEIPTS, RECEIPT_WINDOW_SECS, UI_EVENT_PRESENCE_KEYS_CHANGED};
 pub use own::{
@@ -38,6 +42,7 @@ pub use own::{
     UI_EVENT_CONTACT_PRIVATE_UPDATED, UI_EVENT_EMOJI_UPDATED, UI_EVENT_OWN_PRIVATE_UPDATED, UI_EVENT_PRESENCE_EPOCH_CHANGED,
 };
 pub use reactions::{PreparedReaction, Refusal, MAX_DISTINCT_PER_MESSAGE, MAX_MINE_PER_MESSAGE};
+pub use botcard::{BotCard, UI_EVENT_BOT_CARD};
 pub use handler::{DmHandler, DmRoutesHandler, UI_EVENT_CHATS_UPDATED, UI_EVENT_DM_MESSAGE, UI_EVENT_DM_UPDATED};
 pub use relations::{contacts_updated, ActionResult, RelationView, UI_EVENT_DM_RELATIONSHIP};
 pub use relationship::Action;

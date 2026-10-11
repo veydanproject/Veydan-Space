@@ -29,6 +29,8 @@ veydan-core = { path = "../core" }
 veydan-lock = { path = "../lock" }
 # E2E-encrypted sync core (folder / S3 / WebDAV), Tauri-free.
 veydan-sync = { path = "../sync" }
+# The passphrase of the backend `cloud` is wiped when dropped.
+zeroize = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

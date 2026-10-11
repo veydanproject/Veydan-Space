@@ -8,6 +8,7 @@
   import { clock } from '../shared/time';
   import MessageContent from '../content/MessageContent.svelte';
   import ContactCardMessage from '../content/ContactCardMessage.svelte';
+  import BotCardMessage from '../content/BotCardMessage.svelte';
   import { longpress } from '../shared/longpress';
   import { tint } from '../shared/tint';
   import { mediaOf, type MessengerMessage } from '../api';
@@ -92,6 +93,9 @@
       <span class="tomb"><Icon name="ban" size={12} /> {$t('msg_message_deleted')}</span>
     {:else if m.content_type === 'contact'}
       <ContactCardMessage message={m} />
+    {:else if m.bot_card}
+      <!-- Only what the runtime calls a card of the bot is one; the same words from anyone else are a message. -->
+      <BotCardMessage card={m.bot_card} id={m.id} at={m.created_at} />
     {:else if m.content_type === 'media' && media}
       {@render media(m)}
       {#if m.text}<MessageContent text={m.text} />{/if}

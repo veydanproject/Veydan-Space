@@ -23,6 +23,7 @@ secp256k1.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 async-trait.workspace = true
+ts-rs.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

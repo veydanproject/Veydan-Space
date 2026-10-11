@@ -7,12 +7,15 @@
   import { api, LARGE_FILE_LIMITS, largeFilePeakMib } from '$lib/core/api';
   import type { SyncConfig, SyncStatus } from '$lib/core/api';
   import { syncStore } from '$lib/core/store/sync.svelte';
-  import { formatDateTime, formatError } from '$lib/core/utils';
+  import { formatBytes, formatDateTime, formatError } from '$lib/core/utils';
   import { joinErrorKey } from '$lib/core/join-error';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { directory } from '$lib/core/directory';
   import { registry } from '$lib/core/registry';
+  import { goto } from '$app/navigation';
+  import { ask } from '$lib/core/ui/confirm.svelte';
+  import { CLOUD_BACKEND, asksForProfileFiles, filesLimit, fullestPool, loadCloud, usageTone, type CloudView } from '$lib/core/sync/cloud';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -43,11 +46,50 @@
   let confirmLeave = $state(false);
   let unlisten: (() => void) | null = null;
 
+  /** Veydan Cloud as the module cloud tells it; nothing where the module is off. */
+  let cloud = $state<CloudView>({ choice: 'none', plan: null, usage: null });
+  const onCloud = $derived(cfg.backend === CLOUD_BACKEND);
+  const fullest = $derived(fullestPool(cloud.usage));
+  const tone = $derived(fullest ? usageTone(fullest.level) : 'none');
+  const usageLine = $derived.by(() => {
+    if (!fullest || tone === 'none') return '';
+    const args = { used: formatBytes(fullest.used), limit: formatBytes(fullest.limit), percent: String(fullest.percent) };
+    if (tone === 'full') return $t('settings_sync_cloud_full', args);
+    if (tone === 'warn') return $t('settings_sync_cloud_almost_full', args);
+    return $t('settings_sync_cloud_used', args);
+  });
+
   const backendOptions = $derived([
     { value: 'folder', label: $t('settings_sync_backend_folder') },
     { value: 's3', label: $t('settings_sync_backend_s3') },
     { value: 'webdav', label: $t('settings_sync_backend_webdav') },
+    // Offered with an account; kept in the list while it is the backend in use.
+    ...(cloud.choice === 'option' || onCloud ? [{ value: CLOUD_BACKEND, label: $t('settings_sync_backend_cloud') }] : []),
   ]);
+
+  function chooseBackend(value: string | null | undefined) {
+    const next = value ?? 'folder';
+    // The free plan: the files of profiles stay off until the user says yes (plan 4.7).
+    if (next !== cfg.backend && asksForProfileFiles(next, cloud.plan)) cfg.profile_files = false;
+    cfg.backend = next;
+  }
+
+  async function toggleProfileFiles() {
+    if (!cfg.profile_files && asksForProfileFiles(cfg.backend, cloud.plan)) {
+      const limit = filesLimit(cloud.usage);
+      const yes = await ask({
+        title: $t('settings_sync_cloud_profiles_title'),
+        message: $t('settings_sync_cloud_profiles_ask', {
+          size: formatBytes(cloud.usage?.profile_files_estimate ?? 0),
+          limit: limit ? formatBytes(limit) : '—',
+        }),
+        confirmLabel: $t('settings_sync_cloud_profiles_yes'),
+        variant: 'primary',
+      });
+      if (!yes) return;
+    }
+    cfg.profile_files = !cfg.profile_files;
+  }
 
   const MAX_INTERVAL_SEC = 86400;
   // Show minutes when the stored value is a whole number of minutes.
@@ -205,6 +247,7 @@
       cfg = await api.sync.getConfig();
       intervalUnit = unitFor(cfg.interval_sec);
     } catch {}
+    void loadCloud().then((view) => (cloud = view));
     await refreshStatus();
     if (isTauri) {
       const { listen } = await import('@tauri-apps/api/event');
@@ -225,7 +268,13 @@
 <div class="sync">
   <div class="field">
     <span class="field-label">{$t('settings_sync_backend')}</span>
-    <CustomSelect options={backendOptions} value={cfg.backend} onchange={(v) => (cfg.backend = v ?? 'folder')} />
+    <CustomSelect options={backendOptions} value={cfg.backend} onchange={chooseBackend} />
+    {#if cloud.choice === 'activate' && !onCloud}
+      <div class="row">
+        <span class="hint">{$t('settings_sync_cloud_activate_hint')}</span>
+        <button class="btn btn-ghost btn-sm" onclick={() => goto('/cloud')}>{$t('settings_sync_cloud_activate')}</button>
+      </div>
+    {/if}
   </div>
 
   {#if cfg.backend === 'folder'}
@@ -256,6 +305,16 @@
         <span class="hint">{$t('settings_sync_s3_path_style_hint')}</span>
       </div>
       <button class="toggle" class:on={cfg.s3.path_style} onclick={() => (cfg.s3.path_style = !cfg.s3.path_style)} aria-pressed={cfg.s3.path_style} aria-label={$t('settings_sync_s3_path_style')}></button>
+    </div>
+  {:else if onCloud}
+    <div class="field">
+      <p class="hint">{$t('settings_sync_cloud_hint')}</p>
+      {#if usageLine}
+        <p class={tone === 'quiet' ? 'hint' : 'warn'}>{usageLine}</p>
+      {/if}
+      {#if status?.joined}
+        <p class="hint">{$t('settings_sync_cloud_move_hint')}</p>
+      {/if}
     </div>
   {:else}
     <div class="grid">
@@ -288,7 +347,7 @@
         <span>{$t('settings_sync_profile_files')}</span>
         <span class="hint">{$t('settings_sync_profile_files_hint')}</span>
       </div>
-      <button class="toggle" class:on={cfg.profile_files} onclick={() => (cfg.profile_files = !cfg.profile_files)} aria-pressed={cfg.profile_files} aria-label={$t('settings_sync_profile_files')}></button>
+      <button class="toggle" class:on={cfg.profile_files} onclick={toggleProfileFiles} aria-pressed={cfg.profile_files} aria-label={$t('settings_sync_profile_files')}></button>
     </div>
   {/if}
 
@@ -351,7 +410,16 @@
     {#if saved}<span class="ok">✓</span>{/if}
   </div>
 
-  {#if !status?.joined}
+  {#if !status?.joined && onCloud}
+    <!-- The passphrase of Veydan Cloud comes from the identity: the backend derives it. -->
+    <div class="field">
+      <div class="row">
+        <button class="btn btn-primary btn-sm" disabled={busy || !isTauri} onclick={createVault}>{$t('settings_sync_create')}</button>
+        <button class="btn btn-ghost btn-sm" disabled={busy || !isTauri} onclick={joinVault}>{$t('settings_sync_join')}</button>
+      </div>
+      <p class="hint">{$t('settings_sync_cloud_passphrase_hint')}</p>
+    </div>
+  {:else if !status?.joined}
     <div class="field">
       <span class="field-label">{$t('settings_sync_passphrase')}</span>
       <div class="row">
@@ -454,7 +522,7 @@
       </div>
     {/if}
 
-    {#if status.joined}
+    {#if status.joined && !onCloud}
       <details class="passphrase">
         <summary>{$t('settings_sync_change_passphrase')}</summary>
         <p class="hint">{$t('settings_sync_change_passphrase_hint')}</p>

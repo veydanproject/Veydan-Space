@@ -191,11 +191,19 @@ pub struct MessengerState {
     desktop: OnceLock<Arc<desktop_notify::DesktopNotify>>,
 }
 
+/// The configuration of the messenger whose data lie in `data_dir`, as
+/// this build has it: with the pinned key of the bot of Veydan Cloud. One
+/// for the runtime and for the push handler, which runs without the app
+/// (`notify_jni`), so both take the bot's messages the same way.
+pub(crate) fn config_at(data_dir: impl Into<std::path::PathBuf>) -> MessengerConfig {
+    MessengerConfig::new(data_dir).with_bot(crate::cloud_seams::VCLOUD_BOT_PUBKEY)
+}
+
 impl MessengerState {
     pub fn new(app: tauri::AppHandle, app_data_dir: &Path) -> Self {
         Self {
             app,
-            config: MessengerConfig::new(app_data_dir.join(DATA_SUBDIR)),
+            config: config_at(app_data_dir.join(DATA_SUBDIR)),
             slot: Slot::default(),
             #[cfg(desktop)]
             desktop: OnceLock::new(),
@@ -310,6 +318,8 @@ fn serve(
     // window is not on screen (calls.rs).
     #[cfg(desktop)]
     tasks.push(calls::spawn_desktop_ring(rt.clone(), desktop.clone()));
+    // The service notes of the module cloud, to its seam (cloud_notes.rs).
+    tasks.push(crate::cloud_notes::spawn_forwarder(app.clone(), rt.clone()));
     tasks.push(spawn_ui_event_forwarder(
         app.clone(),
         rt.clone(),

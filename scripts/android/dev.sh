@@ -32,5 +32,18 @@ fi
 adb reverse "tcp:$port" "tcp:$port"
 adb reverse "tcp:$hmr" "tcp:$hmr"
 
+# The debug build takes the key of the app on the phone when that is the key
+# of the releases (signing.sh): app/build.gradle.kts of the product reads the
+# three variables. Without them Gradle signs with its debug key, as before.
+source "$ANDROID_SCRIPTS_DIR/signing.sh"
+if phone_has_release_key; then
+  echo ">> The app on the phone is signed by the key of the releases: the dev build is signed by it too"
+  # shellcheck disable=SC1090
+  source "$RELEASE_KEYSTORE_ENV"
+  export VEYDAN_ANDROID_DEV_KEYSTORE="$RELEASE_KEYSTORE"
+  export VEYDAN_ANDROID_DEV_KEYSTORE_PASS="$ANDROID_RELEASE_KS_PASS"
+  export VEYDAN_ANDROID_DEV_KEY_ALIAS="${ANDROID_RELEASE_KEY_ALIAS:-veydan}"
+fi
+
 tauri_cli_ready
 exec "$TAURI_CLI" android dev --host 127.0.0.1 "$@"

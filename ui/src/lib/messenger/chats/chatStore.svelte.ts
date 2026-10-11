@@ -6,6 +6,7 @@
 
 import {
   messengerApi,
+  type BotCard,
   type DmAction,
   type MessengerChat,
   type MessengerMessage,
@@ -16,6 +17,14 @@ import {
 import { usageStore } from '../shared/emoji/usageStore.svelte';
 
 const PAGE = 50;
+/** How many of the newest messages are read to find the card a chat ends with (system lines stand among them). */
+const TAIL_PAGE = 8;
+
+/** The card of the bot a chat ends with, and when it was written. */
+export interface TailCard {
+  at: number;
+  card: BotCard;
+}
 
 /**
  * The runtime adds a contact on its own (the first message to a stranger, a
@@ -53,6 +62,14 @@ class ChatStore {
   jumpTo = $state<{ chatId: string; messageId: string } | null>(null);
   /** Bumped when the store is emptied (lock, logout): a page showing a chat loads it again. */
   resets = $state(0);
+  /**
+   * Chats whose newest message is a card of the bot of Veydan Cloud. A card
+   * has no text, so the runtime gives the list no preview of it: the list
+   * and a notice word it by its type from here.
+   */
+  tailCards = $state<Record<string, TailCard>>({});
+  /** The newest message of a chat without a preview, as last looked at: asked once per message. */
+  private _tailsSeen = new Map<string, number>();
   private _refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private _reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -67,6 +84,64 @@ class ChatStore {
 
   async loadChats() {
     this.chats = await messengerApi.chats.list(true);
+    this.readTails().catch(() => {});
+  }
+
+  /**
+   * The card `chat` ends with, when its newest message is one. A chat whose
+   * newest message has words of its own has its preview and no card here.
+   */
+  tailCard(chat: Pick<MessengerChat, 'id' | 'last_preview' | 'last_message_at'>): BotCard | null {
+    if (chat.last_preview != null || chat.last_message_at == null) return null;
+    const tail = this.tailCards[chat.id];
+    return tail && tail.at === chat.last_message_at ? tail.card : null;
+  }
+
+  /**
+   * Chats of two that end with a message without a preview: their newest
+   * messages are read once to see whether that message is a card. Only the
+   * chat with the bot (and a message of a kind this app does not know) is
+   * ever asked.
+   */
+  private async readTails() {
+    for (const c of this.chats) {
+      const at = c.last_message_at;
+      if (c.kind !== 'dm' || c.last_preview != null || at == null) continue;
+      if (this.tailCards[c.id]?.at === at || this._tailsSeen.get(c.id) === at) continue;
+      this._tailsSeen.set(c.id, at);
+      let page: MessengerMessage[];
+      try {
+        page = await messengerApi.chats.messages(c.id, undefined, TAIL_PAGE);
+      } catch {
+        this._tailsSeen.delete(c.id);
+        continue;
+      }
+      // A message came while the chat was read: this page is of a moment before it.
+      if (this._tailsSeen.get(c.id) !== at) continue;
+      // What was read is what the chat ends with: a card kept of a later
+      // message, removed since, gives way to it.
+      const newest = page.findLast((m) => m.content_type !== 'system' && !m.deleted);
+      this.setTail(c.id, newest?.bot_card ? { at: newest.created_at, card: newest.bot_card } : null);
+    }
+  }
+
+  /** A message as it comes: a card of the bot is kept as the end of its chat, anything later than a kept card drops it. */
+  private noteTail(m: MessengerMessage) {
+    if (m.content_type === 'system') return;
+    // The chat moved: what was read of its end is of another moment, and
+    // is read again if the list comes back to it (the message removed).
+    this._tailsSeen.delete(m.chat_id);
+    const kept = this.tailCards[m.chat_id];
+    if (m.bot_card && !m.deleted) {
+      if (!kept || m.created_at >= kept.at) this.setTail(m.chat_id, { at: m.created_at, card: m.bot_card });
+    } else if (kept && m.created_at >= kept.at) {
+      this.setTail(m.chat_id, null);
+    }
+  }
+
+  private setTail(chatId: string, tail: TailCard | null) {
+    const { [chatId]: _was, ...rest } = this.tailCards;
+    this.tailCards = tail ? { ...rest, [chatId]: tail } : rest;
   }
 
   /** Coalesce bursts (history sync delivers hundreds of events). */
@@ -319,6 +394,8 @@ class ChatStore {
     switch (ev.name) {
       case 'dm.message': {
         const m = p.message as MessengerMessage | undefined;
+        // Before the notice of the same message: a card is worded by its type there.
+        if (m) this.noteTail(m);
         if (m && m.chat_id === this.activeId) {
           this.upsert(m);
           if (m.direction === 'in' && document.visibilityState === 'visible') {
@@ -357,6 +434,8 @@ class ChatStore {
 
   reset() {
     this.chats = [];
+    this.tailCards = {};
+    this._tailsSeen.clear();
     this.close();
     this.resets++;
   }

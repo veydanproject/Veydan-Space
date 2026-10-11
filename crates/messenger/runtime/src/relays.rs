@@ -434,6 +434,7 @@ mod tests {
             sources: vec![],
             push: vec![],
             calls: vec![],
+            storage: vec![],
         }
     }
 

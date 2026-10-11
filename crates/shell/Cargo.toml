@@ -29,6 +29,10 @@ veydan-sync = { path = "../sync" }
 semver = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["sync", "time"] }
+# The temporary key of a seam between modules (src/seams.rs) is wiped when
+# dropped, and made from the random source of the system.
+zeroize = "1"
+getrandom = "0.3"
 
 # The product names each plugin below as its own dependency too: tauri-build
 # learns a plugin's permissions only from the direct dependencies of the

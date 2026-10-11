@@ -1,6 +1,6 @@
 [package]
 name = "veydanspace"
-version = "5.1.13"
+version = "5.1.14"
 description = "Workspace for multi-accounting: browser profiles, proxies, SSH, notes, passwords and chat"
 authors = ["Veydan Project"]
 edition = "2021"
@@ -50,6 +50,8 @@ veydan-notes = { path = "../../crates/notes" }
 veydan-messenger-app = { path = "../../crates/messenger-app" }
 # The service Tor: the tor daemon of the Tor Expert Bundle and its installation (desktop).
 veydan-tor = { path = "../../crates/tor" }
+# The module Cloud: Veydan Cloud, on with the messenger (internal/vcloud-plan.md 2.2).
+veydan-cloud = { path = "../../crates/cloud" }
 
 [dev-dependencies]
 # Mock runtime: tests call commands through the IPC handler, the way the webview does.

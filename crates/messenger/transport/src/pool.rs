@@ -349,6 +349,41 @@ impl RelayPool {
     }
 }
 
+impl RelayPool {
+    /// How many relays of the pool are connected right now.
+    pub async fn connected(&self) -> usize {
+        self.client
+            .relays()
+            .await
+            .values()
+            .filter(|relay| relay.status() == nostr_sdk::relay::RelayStatus::Connected)
+            .count()
+    }
+
+    /// One REQ to the connected relays, answered until each says EOSE or
+    /// `patience` runs out: the events found, each checked, as JSON. For a
+    /// lookup that wants its answer here and not on the event stream (the
+    /// code of a device link, messenger-wire.md §3).
+    pub async fn fetch(&self, filter: &messenger_core::outbound::Filter, patience: Duration) -> Result<Vec<serde_json::Value>> {
+        self.guard_send()?;
+        let f = Self::parse_filter(filter)?;
+        if self.connected().await == 0 {
+            return Err(MessengerError::Transport("no relay connected".into()));
+        }
+        let events = self
+            .client
+            .fetch_events(f)
+            .timeout(patience)
+            .await
+            .map_err(|e| MessengerError::Transport(e.to_string()))?;
+        Ok(events
+            .iter()
+            .filter(|ev| ev.verify().is_ok())
+            .filter_map(|ev| serde_json::to_value(ev).ok())
+            .collect())
+    }
+}
+
 /// Core relay identity is the base url: the `?key=` query used for gated
 /// relays is stripped so keys never travel into status, events or logs.
 fn to_core_url(u: &nostr::types::url::RelayUrl) -> RelayUrl {

@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 878
+- **Rust / Cargo crates:** 887
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 1034
+- **Total third-party components:** 1043
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -38,10 +38,10 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 | License | Count |
 |---|---:|
-| MIT OR Apache-2.0 | 316 |
-| MIT | 161 |
+| MIT OR Apache-2.0 | 320 |
+| MIT | 163 |
 | MIT OR Apache-2.0 (platform dep) | 115 |
-| Apache-2.0 OR MIT | 109 |
+| Apache-2.0 OR MIT | 111 |
 | MIT (platform dep) | 28 |
 | Unicode-3.0 | 18 |
 | Zlib OR Apache-2.0 OR MIT (platform dep) | 16 |
@@ -84,6 +84,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | CDLA-Permissive-2.0 (platform dep) | 1 |
 | ISC AND (Apache-2.0 OR ISC) | 1 |
 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) | 1 |
+| MIT AND BSD-3-Clause | 1 |
 | MIT OR Zlib OR Apache-2.0 | 1 |
 | Unlicense | 1 |
 | Unlicense OR MIT (platform dep) | 1 |
@@ -103,7 +104,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (878)
+## Full acknowledgements — Rust crates (887)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -147,6 +148,8 @@ Thank you to the authors of the following Cargo crates:
 | autocfg | 1.5.1 | Apache-2.0 OR MIT |
 | aws-lc-rs | 1.17.1 | ISC AND (Apache-2.0 OR ISC) |
 | aws-lc-sys | 0.42.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
+| axum | 0.8.9 | MIT |
+| axum-core | 0.5.6 | MIT |
 | base16ct | 1.0.0 | Apache-2.0 OR MIT |
 | base32 | 0.5.1 | MIT OR Apache-2.0 |
 | base64 | 0.21.7 | MIT OR Apache-2.0 |
@@ -302,6 +305,7 @@ Thank you to the authors of the following Cargo crates:
 | ed25519-dalek | 3.0.0-rc.1 | BSD-3-Clause |
 | either | 1.16.0 | MIT OR Apache-2.0 |
 | elliptic-curve | 0.14.1 | Apache-2.0 OR MIT |
+| elliptic-curve-tools | 0.3.0 | Apache-2.0 OR MIT |
 | embed_plist | 1.2.2 | MIT OR Apache-2.0 * |
 | embed-resource | 3.0.11 | MIT |
 | encoding_rs | 0.8.35 | (Apache-2.0 OR MIT) AND BSD-3-Clause |
@@ -396,6 +400,7 @@ Thank you to the authors of the following Cargo crates:
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 |
 | hashlink | 0.11.1 | MIT OR Apache-2.0 |
 | heapless | 0.8.0 | MIT OR Apache-2.0 |
+| heapless | 0.9.3 | MIT OR Apache-2.0 |
 | heck | 0.4.1 | MIT OR Apache-2.0 |
 | heck | 0.5.0 | MIT OR Apache-2.0 |
 | hermit-abi | 0.5.3 | MIT OR Apache-2.0 * |
@@ -413,6 +418,7 @@ Thank you to the authors of the following Cargo crates:
 | http-body-util | 0.1.3 | MIT |
 | http-range | 0.1.5 | MIT |
 | httparse | 1.10.1 | MIT OR Apache-2.0 |
+| httpdate | 1.0.3 | MIT OR Apache-2.0 |
 | hybrid-array | 0.4.13 | MIT OR Apache-2.0 |
 | hyper | 1.10.1 | MIT |
 | hyper-rustls | 0.27.9 | Apache-2.0 OR ISC OR MIT |
@@ -490,6 +496,7 @@ Thank you to the authors of the following Cargo crates:
 | lzma-rust2 | 0.16.4 | Apache-2.0 |
 | malloc_buf | 0.0.6 | MIT * |
 | markup5ever | 0.38.0 | MIT OR Apache-2.0 |
+| matchit | 0.8.4 | MIT AND BSD-3-Clause |
 | md-5 | 0.11.0 | MIT OR Apache-2.0 |
 | md5 | 0.8.0 | Apache-2.0 OR MIT |
 | memchr | 2.8.2 | Unlicense OR MIT |
@@ -526,6 +533,7 @@ Thank you to the authors of the following Cargo crates:
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 * |
 | num_enum_derive | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 * |
 | num-bigint | 0.4.7 | MIT OR Apache-2.0 |
+| num-bigint | 0.5.1 | MIT OR Apache-2.0 |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 |
 | num-integer | 0.1.46 | MIT OR Apache-2.0 |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 |
@@ -695,6 +703,7 @@ Thank you to the authors of the following Cargo crates:
 | serde_derive | 1.0.228 | MIT OR Apache-2.0 |
 | serde_derive_internals | 0.29.1 | MIT OR Apache-2.0 |
 | serde_json | 1.0.150 | MIT OR Apache-2.0 |
+| serde_path_to_error | 0.1.20 | MIT OR Apache-2.0 |
 | serde_repr | 0.1.20 | MIT OR Apache-2.0 |
 | serde_spanned | 0.6.9 | MIT OR Apache-2.0 |
 | serde_spanned | 1.1.1 | MIT OR Apache-2.0 |
@@ -853,6 +862,7 @@ Thank you to the authors of the following Cargo crates:
 | vcpkg | 0.2.15 | MIT OR Apache-2.0 |
 | version_check | 0.9.5 | MIT OR Apache-2.0 |
 | version-compare | 0.2.1 | MIT |
+| vsss-rs | 6.0.1 | Apache-2.0 OR MIT |
 | vswhom | 0.1.0 | MIT * |
 | vswhom-sys | 0.1.3 | MIT * |
 | walkdir | 2.5.0 | Unlicense OR MIT |

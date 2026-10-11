@@ -47,6 +47,18 @@ impl SecretKey {
         Self(Zeroizing::new(*self.0))
     }
 
+    /// The key of 32 bytes the escrow carried (`lock.vault_key`), for a
+    /// restore that installs it; the caller wipes its copy.
+    pub fn from_bytes(bytes: &[u8; 32]) -> Self {
+        Self(Zeroizing::new(*bytes))
+    }
+
+    /// The 32 bytes of the key in a wiped buffer: what the escrow of the
+    /// module `cloud` carries as `lock.vault_key` (cloud-recovery.md §4).
+    pub fn to_bytes(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(*self.0)
+    }
+
     fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }

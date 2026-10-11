@@ -10,7 +10,19 @@
 
   type Mode = 'choose' | 'create' | 'import';
 
-  let mode = $state<Mode>('choose');
+  let {
+    importing = false,
+    onback,
+  }: {
+    /** The card opens at the form of an existing key (the wizard of the first start asks for that form alone). */
+    importing?: boolean;
+    /** Back leaves the card instead of returning to its choice. */
+    onback?: () => void;
+  } = $props();
+
+  const existing: Mode = 'import';
+  // svelte-ignore state_referenced_locally
+  let mode = $state<Mode>(importing ? existing : 'choose');
   let busy = $state(false);
   let error = $state('');
 
@@ -52,7 +64,11 @@
     finally { busy = false; }
   }
 
-  function back() { mode = 'choose'; error = ''; }
+  function back() {
+    error = '';
+    if (onback) onback();
+    else mode = 'choose';
+  }
 </script>
 
 <div class="card onboarding">
@@ -76,6 +92,12 @@
         <Icon name="upload" size={14} />{$t('msg_id_import_btn')}
       </button>
     </div>
+    <!-- The account from another device of mine, over the relays (module cloud, /cloud/link). -->
+    {#if !locked}<a class="link-device" href="/cloud/link">{$t('msg_id_link_device')}</a>{/if}
+    <!-- Lost every device, kept the 12 words: the escrow of the module cloud (cloud-recovery.md §7, /cloud/restore). -->
+    {#if !locked}<a class="link-device" href="/cloud/restore">{$t('msg_id_restore_account')}</a>{/if}
+    <!-- Lost everything, no words: the trusted people of the module cloud (cloud-recovery.md §8.5, /cloud/recover). -->
+    {#if !locked}<a class="link-device" href="/cloud/recover">{$t('cloud_recover_entry')}</a>{/if}
   {:else if mode === 'create'}
     <div class="card-title">{$t('msg_id_create_title')}</div>
     <p class="muted">{$t('msg_id_create_text')}</p>
@@ -133,6 +155,7 @@
     background: var(--surface-2); border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3);
   }
   .choice-row, .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .link-device { align-self: flex-start; font-size: var(--fs-sm); color: var(--accent-text); }
   .actions { justify-content: flex-end; }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
   .field span { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }

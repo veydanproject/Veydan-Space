@@ -19,6 +19,8 @@ export interface LockStatus {
   hint: string | null;
   /** A recovery key wraps the vault; a lost PIN/password can be replaced with it. */
   has_recovery: boolean;
+  /** What the recovery wrap is made from: 1 a 24-character code, 2 the Recovery Key of 12 words; null without one. */
+  recovery_version: 1 | 2 | null;
 }
 
 export type LockKind = 'pin' | 'password';

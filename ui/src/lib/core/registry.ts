@@ -15,7 +15,18 @@
 
 import { redirect } from '@sveltejs/kit';
 import { modulesStore } from './store/modules.svelte';
-import type { EntityViewDef, ModuleDef, ModuleId, NavItem, OverlayDef, SettingsSection, ToolItem } from './module';
+import type {
+  AccountSource,
+  EntityViewDef,
+  ModuleDef,
+  ModuleId,
+  NavItem,
+  OnboardingStep,
+  OverlayDef,
+  SettingsSection,
+  SetupItem,
+  ToolItem,
+} from './module';
 
 const DEFAULT_APP_KEY = 'm_default_app';
 
@@ -56,9 +67,22 @@ class Registry {
     return this.defs.some((m) => m.id === id);
   }
 
-  /** Whether the module is in the product and switched on (`modules_enabled`, section 12). */
+  /**
+   * Whether the module is in the product and switched on (`modules_enabled`,
+   * section 12), and so is every module it requires (`ModuleDef.requires`):
+   * the shell lists a follower without a switch, and it is off with them.
+   */
   enabled(id: ModuleId): boolean {
-    return this.has(id) && modulesStore.isOn(id);
+    return this.on(id, new Set());
+  }
+
+  private on(id: ModuleId, path: Set<ModuleId>): boolean {
+    const def = this.get(id);
+    if (!def || !modulesStore.isOn(id) || path.has(id)) return false;
+    path.add(id);
+    const ok = (def.requires ?? []).every((r) => this.on(r, path));
+    path.delete(id);
+    return ok;
   }
 
   /**
@@ -119,6 +143,26 @@ class Registry {
   /** Cards of the settings pages of the modules that are on. */
   settings(): SettingsSection[] {
     return this.active.flatMap((m) => m.settings);
+  }
+
+  /** The account of the product at the top of the settings, where a module shows one. */
+  accountSections(): SettingsSection[] {
+    return this.settings().filter((s) => s.into === 'account' && (s.visible?.() ?? true));
+  }
+
+  /** The steps the modules that are on add to the first start, in their order. */
+  onboarding(): OnboardingStep[] {
+    return this.active.flatMap((m) => m.onboarding ?? []).sort((a, b) => a.order - b.order);
+  }
+
+  /** What the modules that are on leave to set up after the first start. */
+  setup(): SetupItem[] {
+    return this.active.flatMap((m) => m.setup ?? []);
+  }
+
+  /** The answers of the module that owns the key of the account, where one is on. */
+  account(): AccountSource | undefined {
+    return this.active.find((m) => m.account)?.account;
   }
 
   /** Overlays of one place, in their declared order (ties keep the registry order). */

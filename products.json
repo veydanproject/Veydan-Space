@@ -61,6 +61,19 @@
         "crates/tauri-plugin-veydan-push"
       ]
     },
+    "cloud": {
+      "ui": "ui/src/lib/cloud",
+      "routes": [
+        "ui/src/routes/cloud"
+      ],
+      "crates": [
+        "crates/cloud",
+        "crates/recovery"
+      ],
+      "requires": [
+        "messenger"
+      ]
+    },
     "backup": {
       "ui": "ui/src/lib/backup",
       "routes": [],
@@ -112,7 +125,8 @@
         "pass",
         "messenger",
         "backup",
-        "tor"
+        "tor",
+        "cloud"
       ],
       "identifier": "net.veydan.space",
       "androidIdentifier": "net.veydan.mobile",

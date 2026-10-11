@@ -138,6 +138,11 @@ impl DmService {
         if envelope.t == T_OWN_CARD {
             return self.contact_private_elsewhere(envelope).await;
         }
+        // A note of the module `cloud` to my devices (`recovery.cancel`): the
+        // module hears it through the seam (messenger-wire.md §3).
+        if envelope.t.starts_with(crate::notes::T_RECOVERY_PREFIX) {
+            return Ok(vec![crate::notes::cloud_note_event(&envelope.t, &envelope.fields, &msg.sender)]);
+        }
         let Some(chat_id) = envelope.str_field("chat") else { return Ok(vec![]) };
         match envelope.t.as_str() {
             T_OWN_READ => {

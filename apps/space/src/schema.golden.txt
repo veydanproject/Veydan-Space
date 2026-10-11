@@ -1,7 +1,7 @@
 pragma application_id = 1447385412
 module browser = 1
 module core = 2
-module lock = 2
+module lock = 3
 module notes = 1
 module pass = 1
 module ssh = 1
@@ -188,6 +188,7 @@ table password_vault
   column lock_hash TEXT notnull=0 default=- pk=0
   column lock_kind TEXT notnull=0 default=- pk=0
   column lock_hint TEXT notnull=0 default=- pk=0
+  column recovery_version INTEGER notnull=1 default=1 pk=0
   index sqlite_autoindex_password_vault_1 (id) unique=1 origin=pk
 table passwords
   column id TEXT notnull=1 default=- pk=1

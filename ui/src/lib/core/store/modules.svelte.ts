@@ -67,6 +67,16 @@ class ModulesStore {
   async choose(enabled: string[]) {
     this.apply(await api.modules.choose(enabled));
   }
+
+  /** The first start is over where there was no choice of modules to make. */
+  async endFirstRun() {
+    if (!this.firstRun) return;
+    if (!isTauri) {
+      this.firstRun = false;
+      return;
+    }
+    this.apply(await api.modules.firstRunDone());
+  }
 }
 
 export const modulesStore = new ModulesStore();

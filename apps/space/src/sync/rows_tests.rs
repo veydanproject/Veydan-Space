@@ -29,6 +29,17 @@ use {
 /// What Space syncs, built once for the tests of this file.
 static REGISTRY: LazyLock<Registry> = LazyLock::new(crate::modules::sync_registry);
 
+/// A key row as 4.0.7 read it: without `recovery_version`, the column 5.x adds
+/// (platform-spec 8.1) and 4.0.7 does not know; every other row as it is.
+fn without_version(row: Option<Value>) -> Option<Value> {
+    row.map(|mut row| {
+        if let Some(map) = row.as_object_mut() {
+            map.remove("recovery_version");
+        }
+        row
+    })
+}
+
 fn spec_for(entity: &str) -> Option<&'static Table> {
     REGISTRY.table_of(entity)
 }
@@ -380,7 +391,7 @@ async fn rows_written_by_4_0_7_apply_and_lose_nothing() {
     for (entity, id, payload) in rows_of_4_0_7() {
         let outcome = put(&db, &dir, entity, id, &payload).await;
         assert!(done_as(&outcome, id), "{entity} {id}");
-        let stored = read_row(&db, spec_for(entity).unwrap(), id).await.unwrap();
+        let stored = without_version(read_row(&db, spec_for(entity).unwrap(), id).await.unwrap());
         assert_eq!(stored, Some(payload), "{entity} {id}");
     }
 
@@ -402,7 +413,7 @@ async fn keys_this_schema_has_no_column_for_are_ignored() {
         map.entry("workspace_id").or_insert(json!("ws-1"));
         let outcome = put(&db, &dir, entity, id, &extended).await;
         assert!(done_as(&outcome, id), "{entity} {id}");
-        let stored = read_row(&db, spec_for(entity).unwrap(), id).await.unwrap();
+        let stored = without_version(read_row(&db, spec_for(entity).unwrap(), id).await.unwrap());
         assert_eq!(stored, Some(payload), "{entity} {id}");
     }
 
@@ -436,7 +447,7 @@ async fn every_password_vault_form_of_4_0_7_is_accepted() {
         let stored = read_row(&db, spec_for("password_vault").unwrap(), "default")
             .await
             .unwrap();
-        assert_eq!(stored, Some(payload));
+        assert_eq!(without_version(stored), Some(payload));
     }
 
     // No lock on any device: the vault is wrapped with the built-in secret.
@@ -463,7 +474,7 @@ async fn every_password_vault_form_of_4_0_7_is_accepted() {
     let stored = read_row(&db, spec_for("password_vault").unwrap(), "default")
         .await
         .unwrap();
-    assert_eq!(stored, Some(payload));
+    assert_eq!(without_version(stored), Some(payload));
 
     db.close().await;
     let _ = std::fs::remove_dir_all(&dir);
@@ -727,7 +738,7 @@ async fn a_put_newer_than_a_tombstone_of_the_same_pull_wins() {
 
     for (entity, id, payload) in &rows {
         let spec = spec_for(entity).unwrap();
-        let stored = read_row(&state.core.db, spec, id).await.unwrap();
+        let stored = without_version(read_row(&state.core.db, spec, id).await.unwrap());
         assert_eq!(stored.as_ref(), Some(payload), "{entity} {id}");
     }
     assert_eq!(next_push(&state, &rows).await, Vec::new());
@@ -768,7 +779,7 @@ async fn every_op_of_4_0_7_applies_through_the_registry_of_space() {
 
     for (entity, id, payload) in &rows {
         let spec = spec_for(entity).unwrap();
-        let stored = read_row(db, spec, id).await.unwrap();
+        let stored = without_version(read_row(db, spec, id).await.unwrap());
         assert_eq!(stored.as_ref(), Some(payload), "{entity} {id}");
         let st = load_row_state(db, entity, id).await.unwrap();
         assert_eq!(
@@ -798,7 +809,7 @@ async fn every_op_of_4_0_7_applies_through_the_registry_of_space() {
         .await;
         let spec = spec_for("password_vault").unwrap();
         assert_eq!(
-            read_row(db, spec, "default").await.unwrap().as_ref(),
+            without_version(read_row(db, spec, "default").await.unwrap()).as_ref(),
             Some(payload)
         );
         let st = load_row_state(db, "password_vault", "default")

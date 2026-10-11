@@ -13,6 +13,8 @@
   import { longpress } from '../shared/longpress';
   import { chatMatches, contactHaystacks } from '../shared/search';
   import { messengerStore } from '../store.svelte';
+  import { botCardLineKey } from '../content/botCard';
+  import { botCards } from '../seams/cards.svelte';
   import type { MessengerChat } from '../api';
 
   interface Props {
@@ -29,6 +31,13 @@
   const matches = (c: MessengerChat) => chatMatches(c, q, haystacks);
   const visible = $derived(chatStore.chats.filter((c) => !c.archived && matches(c)));
   const archived = $derived(chatStore.chats.filter((c) => c.archived && matches(c)));
+
+  /** The line under the name: the newest message, or a card of the bot of Veydan Cloud worded by its type. */
+  function preview(c: MessengerChat): string {
+    if (c.last_preview != null) return c.last_preview;
+    const card = chatStore.tailCard(c);
+    return card ? $t(botCardLineKey(card, botCards.host)) : $t('msg_chat_no_messages');
+  }
 
   function openMenu(e: MouseEvent, chat: MessengerChat) {
     e.preventDefault();
@@ -67,7 +76,7 @@
           <span class="stamp">{listStamp(c.last_message_at)}</span>
         </span>
         <span class="bottom">
-          <span class="preview">{c.last_preview ?? $t('msg_chat_no_messages')}</span>
+          <span class="preview">{preview(c)}</span>
           {#if c.unread > 0}<span class="badge" class:muted={c.is_muted}>{c.unread > 99 ? '99+' : c.unread}</span>{/if}
         </span>
       </span>

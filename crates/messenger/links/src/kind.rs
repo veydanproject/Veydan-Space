@@ -13,6 +13,9 @@ pub enum LinkType {
     Bridge,
     /// A private call node and an invitation to it, written `call-node`.
     CallNode,
+    /// A request of recovery through the trusted people, written `recover`
+    /// (internal/cloud-recovery.md §8.5).
+    Recover,
     Unknown(String),
 }
 
@@ -25,6 +28,7 @@ impl LinkType {
             "contact" => Self::Contact,
             "vlink" => Self::Bridge,
             "call-node" => Self::CallNode,
+            "recover" => Self::Recover,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -35,6 +39,7 @@ impl LinkType {
             Self::Contact => "contact",
             Self::Bridge => "vlink",
             Self::CallNode => "call-node",
+            Self::Recover => "recover",
             Self::Unknown(w) => w,
         }
     }

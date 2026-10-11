@@ -72,6 +72,10 @@ input, textarea, [contenteditable] {
 html.scanning, html.scanning body, html.scanning .shell, html.scanning .screen {
   background: transparent !important;
 }
+/* A scanner over the whole screen (cloud/QrScanner) lives outside the shell:
+   the shell goes while it scans, and only the camera and the scanner's own
+   frame are left. */
+html.scan-cover .shell { visibility: hidden; }
 
 /* ── Page frame ── */
 .m-page {

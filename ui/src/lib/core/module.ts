@@ -77,9 +77,105 @@ export interface SettingsSection {
   /**
    * Rendered inside the core's card of this id instead of as a card of its
    * own: `sync` — a module's part of the sync settings form (mobile), whose
-   * component exports `save()` for the form's Save.
+   * component exports `save()` for the form's Save; `account` — the
+   * account of the product at the very top of the settings of a phone,
+   * before the core's blocks and without a title of its own. Where one is
+   * shown it also leads to sync, and the phone leaves out its own row to
+   * it. (On a computer the same card is an ordinary one of a low order.)
    */
-  into?: 'sync';
+  into?: 'sync' | 'account';
+}
+
+/**
+ * A step of the first start (`core/onboarding`) a module adds among the
+ * core's own — the welcome (0), the modules (10), sync (30): the account
+ * and the profile of the messenger (20, 25), the Recovery Key of the cloud
+ * (40). The component draws the step's body
+ * and its buttons (`.ob-main`, `.ob-foot` of `onboarding.css`) and moves
+ * the wizard by what it is given (`OnboardingStepProps`), so a module that
+ * imports nothing of the core but this description can give one.
+ */
+export interface OnboardingStepProps {
+  /** The step is done, or passed by: the wizard goes on. */
+  next: () => void;
+  /** Sends the person to a screen of the app; the wizard comes back when they leave it. */
+  detour: (href: string) => void;
+  /** What the step was asked to open with (`have`: the account the person has already). */
+  intent: string | null;
+  /** The product is this module alone: the step cannot be passed by. */
+  only: boolean;
+  /**
+   * A step of more than one screen takes the wizard's Back while it is on
+   * an inner one: the handler answers true when it went back itself, false
+   * to let the wizard go to the step before. Null gives Back back.
+   */
+  onback: (handler: (() => boolean) | null) => void;
+}
+
+export interface OnboardingStep {
+  /** `account` for the step that makes the account: the other steps lead to it by this name. */
+  id: string;
+  /** The name of the step in the list of steps a computer shows. */
+  title: Key;
+  order: number;
+  /** Given `OnboardingStepProps`; the core's own steps read the wizard's store instead. */
+  component: Component<any>;
+  /** Shown only while true. Default: always. */
+  visible?: () => boolean;
+}
+
+/** Who the account of the product is on this device. */
+export interface AccountProfile {
+  npub: string;
+  /** The name of the profile; empty while the person gave none. */
+  name: string;
+}
+
+/** A row of the page «Account» that leads to a screen of the key's owner. */
+export interface AccountLink {
+  id: string;
+  title: Key;
+  icon: string;
+  href: string;
+  /** What the row says on its right (whose servers), as a key of the dictionary. */
+  value?: Key;
+}
+
+/**
+ * The account of the product, as the module that owns its key answers for
+ * it (the messenger): the card at the top of the settings and the page
+ * «Account» name the person and lead to what the owner keeps — the
+ * profile, the servers, the copy of the key.
+ */
+export interface AccountSource {
+  /** The account of this device; null while there is none. */
+  profile: () => Promise<AccountProfile | null>;
+  /** Where an account is made or signed into. */
+  createHref: string;
+  /** The rows of the owner on the page «Account»; none without an account. */
+  links: () => Promise<AccountLink[]>;
+}
+
+/** A thing left to set up after the first start: a line of the card «Finish setting up». */
+export interface SetupItem {
+  id: string;
+  order: number;
+  title: Key;
+  /** One line under the title. */
+  hint?: Key;
+  icon: string;
+  /** Where it is set up. */
+  href: () => string;
+  /**
+   * The step of the first start that sets it up: the card opens the wizard
+   * again at that step, and `href` is the way only where the product has
+   * no such step.
+   */
+  step?: string;
+  /** Whether it is set up already. */
+  done: () => Promise<boolean>;
+  /** Listed only while true. Default: always. */
+  visible?: () => boolean | Promise<boolean>;
 }
 
 /** A component the shell mounts once, outside any page. */
@@ -347,8 +443,20 @@ export interface ModuleDef {
    */
   service?: boolean;
   /**
+   * The modules this one requires (`requires` in products.json, 11.3): it is
+   * on only while each of them is (`Switch::Follows` of the shell), so its
+   * entries, routes and start follow theirs without a check of its own.
+   */
+  requires?: ModuleId[];
+  /**
    * Mobile: the screen Home's search bar opens (the notes' search). Without
    * one Home shows no search bar.
    */
   search?: string;
+  /** The module's steps of the first start (the account of the messenger). */
+  onboarding?: OnboardingStep[];
+  /** What of the module is left to set up after the first start. */
+  setup?: SetupItem[];
+  /** The module owns the key of the product's account and answers for it. */
+  account?: AccountSource;
 }

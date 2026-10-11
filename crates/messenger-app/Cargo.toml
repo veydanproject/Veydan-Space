@@ -45,6 +45,16 @@ veydan-lock = { path = "../lock" }
 messenger-core = { path = "../messenger/core" }
 messenger-runtime = { path = "../messenger/runtime" }
 messenger-notify = { path = "../messenger/notify" }
+# The seam Http of the module cloud (src/cloud_seams.rs): the messenger's HTTPS
+# client and its way through a bridge, to the hosts of the project.
+messenger-http = { path = "../messenger/http" }
+# The seams of the module cloud (src/cloud_seams.rs): NIP-98 and NIP-44 with
+# the keys the identity service loads; the version of the messenger's workspace.
+nostr = { version = "0.45", default-features = false, features = ["std", "nip44", "os-rng"] }
+# derive_secret of the seam Signer: HKDF of the nsec for one purpose
+# (cloud-recovery.md §3), on every platform.
+hkdf = "0.13"
+sha2 = "0.11"
 
 # ── Desktop only: the notifications of the system, links and files opened ────
 [target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
@@ -71,6 +81,8 @@ jni = "0.21"
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
+# The body a NIP-98 event of the seams is signed for, as a server hashes it.
+sha2 = "0.11"
 # The relay of the test that stops and starts the messenger: a socket that
 # takes the handshake and keeps the connection, as a relay does.
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }

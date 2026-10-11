@@ -8,6 +8,8 @@
 // Types the runtime writes for itself (`make msg-types`); never by hand.
 export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView } from './generated/links';
 export type { SharedCounts, SharedSection } from './generated/shared';
+export type { BotCard } from './generated/bot';
+import type { BotCard } from './generated/bot';
 export type { BridgeView, NetCheck, NetMode, NetStatus, Verdict } from './generated/net';
 import type { NetCheck, NetMode, NetStatus } from './generated/net';
 export type {
@@ -161,6 +163,12 @@ export interface MessengerChat {
   archived: boolean;
   mode: ChatMode;
   can_send: boolean;
+  /**
+   * The chat with the pinned bot of Veydan Cloud: a full chat where nothing
+   * but messages goes (the runtime gives the bot no call, no reaction and
+   * no receipt), so none of that is offered in it, nor «add to contacts».
+   */
+  bot?: boolean;
 }
 
 export interface MessengerReplyPreview {
@@ -202,6 +210,12 @@ export interface MessengerMessage {
   reactions: MessengerReaction[];
   /** A contact card (`content_type` `contact`), as the runtime checked it; its `media` is then empty. */
   card?: CardView | null;
+  /**
+   * A card of the bot of Veydan Cloud (`content_type` `bot_card`): set by the
+   * runtime only on what the pinned key sealed, with the typed values of its
+   * type and nothing else. Such a message has no text.
+   */
+  bot_card?: BotCard | null;
 }
 
 /** One emoji on a message: how many put it, and whether I am among them. */
@@ -1071,6 +1085,11 @@ function mockInspect(text: string): LinkView {
     const node = demoNodeOf(link);
     if (typeof node === 'string') return { kind: 'invalid', code: 'link_bad_param' };
     return { kind: 'call_node', link, id: node.id, addr: node.addr, has_token: node.token !== null, added: demoNodeIsMine(node.id, node.token !== null) };
+  }
+  if (m[1] === 'recover') {
+    const code = new URLSearchParams(m[3] ?? '').get('c') ?? '';
+    const c = mockContacts.find((x) => x.pubkey === m[2]);
+    return /^[0-9a-f]{64}$/.test(m[2]) && code ? { kind: 'recover', link, npub: m[2], code: code.toUpperCase(), name: c ? contactLabel(c) : '' } : { kind: 'invalid', code: 'link_bad_param' };
   }
   if (m[1] === 'vlink') {
     const bridge = mockBridgeOf(link);

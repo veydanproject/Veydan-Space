@@ -2,6 +2,9 @@
 # Is the APK signed by the same key as the app on the phone?
 #
 #   scripts/android/check-signing.sh <apk>
+#   scripts/android/check-signing.sh --installed   # only prints the key of the
+#                                # app on the phone (the SHA-256 of its
+#                                # certificate); nothing when it is not there
 #
 # Android installs over an app only when the signatures match. When they do
 # not, the way out that `adb` suggests is to uninstall first, and that wipes
@@ -15,8 +18,8 @@ set -euo pipefail
 APK="${1:-}"
 PACKAGE="${ANDROID_PACKAGE:-net.veydan.mobile}"
 
-if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-  echo ">> usage: check-signing.sh <apk>" >&2
+if [ "$APK" != "--installed" ] && { [ -z "$APK" ] || [ ! -f "$APK" ]; }; then
+  echo ">> usage: check-signing.sh <apk> | --installed" >&2
   exit 2
 fi
 
@@ -39,10 +42,13 @@ digest() {
   sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"$out"
 }
 
-new="$(digest "$APK")"
-if [ -z "$new" ]; then
-  echo ">> $APK is not signed" >&2
-  exit 2
+new=""
+if [ "$APK" != "--installed" ]; then
+  new="$(digest "$APK")"
+  if [ -z "$new" ]; then
+    echo ">> $APK is not signed" >&2
+    exit 2
+  fi
 fi
 
 # "No answer from the phone" must not pass for "the app is not installed".
@@ -64,7 +70,7 @@ if [ -z "$installed_path" ] && grep -qx "package:$PACKAGE" <<<"$packages"; then
   exit 2
 fi
 if [ -z "$installed_path" ]; then
-  echo ">> $PACKAGE is not on the phone yet: nothing to compare with"
+  [ "$APK" = "--installed" ] || echo ">> $PACKAGE is not on the phone yet: nothing to compare with"
   exit 0
 fi
 
@@ -78,6 +84,11 @@ old="$(digest "$tmp/installed.apk")"
 if [ -z "$old" ]; then
   echo ">> cannot read the signature of the installed app" >&2
   exit 2
+fi
+
+if [ "$APK" = "--installed" ]; then
+  echo "$old"
+  exit 0
 fi
 
 if [ "$old" = "$new" ]; then

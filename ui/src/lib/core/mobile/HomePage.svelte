@@ -9,6 +9,7 @@
   import { page } from '$app/state';
   import { loadDefaultApp, registry } from '$lib/core/registry';
   import { product } from '$lib/core/product';
+  import SetupCard from '$lib/core/onboarding/SetupCard.svelte';
 
   type Greeting = 'home_morning' | 'home_day' | 'home_evening' | 'home_night';
 
@@ -71,6 +72,8 @@
       </a>
     {/if}
 
+    <!-- What the first start left to set up. -->
+    <SetupCard />
     <div class="m-grid">
       <!-- No tile is highlighted: nothing is selected on Home. -->
       {#each registry.nav() as app (app.id)}

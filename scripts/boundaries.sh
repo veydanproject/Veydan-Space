@@ -187,20 +187,22 @@ MATRIX='
 crates/build-cfg                 veydan-build-cfg          lib      no
 crates/lock                      veydan-lock               lib      no
 crates/sync                      veydan-sync               lib      no
+crates/recovery                  veydan-recovery           lib      no
 crates/desktop-notify            desktop-notify            lib      no
 crates/core                      veydan-core               lib      yes  crates/build-cfg crates/lock
 crates/sync-host                 veydan-sync-host          lib      yes  crates/build-cfg crates/core crates/lock crates/sync
 crates/shell                     veydan-shell              lib      yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host
 crates/pass                      veydan-pass               module   yes  crates/build-cfg crates/core crates/lock crates/sync-host crates/shell
 crates/notes                     veydan-notes              module   yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host crates/shell
-crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/messenger/http crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
 crates/tor                       veydan-tor                module   yes  crates/build-cfg crates/core crates/shell
+crates/cloud                     veydan-cloud              module   yes  crates/build-cfg crates/core crates/shell crates/sync crates/recovery crates/lock crates/sync-host
 crates/tauri-plugin-veydan-push  tauri-plugin-veydan-push  plugin   yes  crates/build-cfg
 crates/tauri-plugin-veydan-call  tauri-plugin-veydan-call  plugin   yes  crates/build-cfg crates/messenger/rtc
-apps/space                       veydanspace               product  yes  crates/build-cfg crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/tor crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+apps/space                       veydanspace               product  yes  crates/build-cfg crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/tor crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
 apps/notes                       veydannotes               product  yes  crates/shell crates/notes
 apps/pass                        veydanpass                product  yes  crates/shell crates/pass
-apps/chat                        veydanchat                product  yes  crates/build-cfg crates/shell crates/messenger-app crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+apps/chat                        veydanchat                product  yes  crates/build-cfg crates/shell crates/messenger-app crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
 '
 # A snapshot holds the rows of its product only.
 if [ -n "$snapshot" ]; then
@@ -365,6 +367,7 @@ owner() {
     ssh_*|sftp_*|fs_*) echo ssh ;;
     backup_*) echo backup ;;
     tor_*) echo tor ;;
+    cloud_*) echo cloud ;;
     *) echo "" ;;
   esac
 }
@@ -505,6 +508,14 @@ fi
 #    hub is built on the crates of the bridge, the push server on nothing —
 #    and none of them knows Tauri. A folder that has moved to a repository
 #    of its own is not checked here.
+#
+#    The other way, from the app into an infra folder, only the path of
+#    rule 5 (the messenger's vlink to the crates of the bridge) is allowed.
+#    Veydan Cloud adds one more with its stage C0: its crate cloud-proto,
+#    to crates/cloud and crates/sync alone. That path then goes into the
+#    rows of those two crates in MATRIX above, and is_package() learns the
+#    packages of $infra_deps for it: the check after the matrix refuses a
+#    path dependency that no workspace of this script holds.
 while IFS=$'\t' read -r infra_name infra_dir infra_on; do
   [ -n "$infra_name" ] || continue
   while IFS=$'\t' read -r pkg dir dep kind path; do

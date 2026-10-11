@@ -16,6 +16,7 @@ class LockStore {
     kind: 'password',
     hint: null,
     has_recovery: false,
+    recovery_version: null,
   });
   ready = $state(false);
   /** The lock screen shows the recovery flow (steps 1–3, AppLockGate). */
@@ -91,6 +92,16 @@ class LockStore {
     if (epoch === this._epoch) this.status = status;
     this.newRecoveryKey = recovery_key ?? '';
     return this.newRecoveryKey;
+  }
+
+  /**
+   * Replace the lock secret with the Recovery Key of 12 words (a lock of
+   * recovery version 2): the words stay valid, nothing is shown afterwards.
+   */
+  async recoverKeep(words: string, secret: LockSecret): Promise<void> {
+    const epoch = ++this._epoch;
+    const status = await api.lock.recoverKeep(words, secret);
+    if (epoch === this._epoch) this.status = status;
   }
 
   /** Step 3 of the recovery was confirmed: the app opens. */

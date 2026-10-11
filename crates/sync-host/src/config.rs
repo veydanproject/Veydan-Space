@@ -6,10 +6,14 @@
 use crate::Registry;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
-use veydan_core::{settings, AppError, CmdResult};
+use std::sync::{Arc, RwLock};
+use veydan_core::{settings, AppError, BoxFuture, CmdResult};
+use veydan_sync::storage_cloud::VaultTransport;
 use veydan_sync::{
-    LargeFileConfig, LocalDir, S3Config, S3Storage, Storage, WebDavConfig, WebDavStorage,
+    CloudStorage, LargeFileConfig, LocalDir, RequestSigner, S3Config, S3Storage, Storage,
+    WebDavConfig, WebDavStorage,
 };
+use zeroize::Zeroizing;
 
 pub const DEFAULT_INTERVAL_SEC: u64 = 60;
 const MIN_INTERVAL_SEC: u64 = 1;
@@ -94,6 +98,10 @@ pub struct SyncConfig {
     pub device_name: String,
     #[serde(default)]
     pub large_files: LargeFileSettings,
+    /// The hosts of the backend `cloud` (`sync_cloud_hosts`): written by the
+    /// module `cloud` from `storage[]` of the manifest, never by the form.
+    #[serde(skip)]
+    pub cloud_hosts: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -113,6 +121,7 @@ impl Default for SyncConfig {
             profile_files: cfg!(desktop),
             device_name: String::new(),
             large_files: LargeFileSettings::default(),
+            cloud_hosts: Vec::new(),
         }
     }
 }
@@ -206,6 +215,7 @@ pub async fn load_config(db: &Pool<Sqlite>) -> SyncConfig {
                 .unwrap_or(d.large_files.parallelism),
             resume: settings::get(db, "sync_lf_resume").await.as_deref() != Some("0"),
         },
+        cloud_hosts: load_cloud_hosts(db).await,
     }
 }
 
@@ -275,6 +285,8 @@ pub async fn save_config(db: &Pool<Sqlite>, cfg: &SyncConfig) -> CmdResult<()> {
         if cfg.large_files.resume { "1" } else { "0" },
     )
     .await?;
+    // Where the vault lives may have changed: the escrow carries it.
+    binding_changed();
     Ok(())
 }
 
@@ -303,7 +315,38 @@ pub async fn load_binding(db: &Pool<Sqlite>) -> Option<VaultBinding> {
 
 pub async fn save_binding(db: &Pool<Sqlite>, b: &VaultBinding) -> CmdResult<()> {
     settings::set(db, "sync_vault_id", &b.vault_id).await?;
-    settings::set(db, "sync_vault_key", &b.vmk_b64).await
+    settings::set(db, "sync_vault_key", &b.vmk_b64).await?;
+    binding_changed();
+    Ok(())
+}
+
+/// Who hears that the binding of this device to a vault was saved or
+/// cleared, or that the settings of sync — where the vault lives — were
+/// saved: the module `cloud` writes its escrow again (cloud-recovery.md
+/// §4). The listener returns at once; the work is its own.
+pub type BindingListener = Arc<dyn Fn() + Send + Sync>;
+
+fn binding_slot() -> &'static RwLock<Vec<BindingListener>> {
+    static SLOT: RwLock<Vec<BindingListener>> = RwLock::new(Vec::new());
+    &SLOT
+}
+
+/// Called in the setup of a module; every listener hears every change.
+pub fn on_binding_changed(listener: BindingListener) {
+    binding_slot()
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(listener);
+}
+
+fn binding_changed() {
+    let listeners = binding_slot()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    for listener in listeners {
+        listener();
+    }
 }
 
 /// Start a fresh device log: new id, empty own chain. Peer heads, entity
@@ -372,12 +415,156 @@ pub async fn clear_binding(db: &Pool<Sqlite>, registry: &Registry) -> CmdResult<
     for key in keys.into_iter().chain(registry.hold_keys()) {
         settings::delete(db, key).await?;
     }
+    binding_changed();
     Ok(())
+}
+
+// ── The backend `cloud` (internal/vcloud-plan.md 4.8, spec/vstore.md §14) ──
+
+/// The value of `sync_backend` for Veydan Cloud.
+pub const CLOUD_BACKEND: &str = "cloud";
+/// The `public_url`s of `storage[]`, a JSON array in the order to try them.
+pub const CLOUD_HOSTS_KEY: &str = "sync_cloud_hosts";
+
+/// What the backend `cloud` takes from the module `cloud`: the signature of
+/// the identity and the passphrase of the vault derived from it. The module
+/// registers it with [`register_sync_cloud_credentials`]; sync knows neither
+/// the messenger nor the recovery crate.
+pub trait CloudCredentials: Send + Sync {
+    /// Signs the requests of the storage with the identity (NIP-98).
+    fn signer(&self) -> Arc<dyn RequestSigner>;
+    /// Writes the hosts of `storage[]` of the manifest in use to
+    /// [`CLOUD_HOSTS_KEY`]; none when the servers are not the project's.
+    fn refresh_hosts(&self) -> BoxFuture<'_, CmdResult<()>>;
+    /// The passphrase of the vault: base64 of HKDF of the nsec (plan 4.8),
+    /// the same on every device of the identity.
+    fn passphrase(&self) -> BoxFuture<'_, CmdResult<Zeroizing<String>>>;
+    /// The way of the requests to the hosts (the messenger's, with its
+    /// bridges); none sends them directly.
+    fn transport(&self) -> Option<Arc<dyn VaultTransport>> {
+        None
+    }
+    /// Why no host is known, in the module's words, after a refresh that
+    /// found none (own servers, no `storage[]` for the region).
+    fn why_no_host(&self) -> Option<String> {
+        None
+    }
+}
+
+/// The credentials of the process: one app, one module `cloud`.
+fn cloud_slot() -> &'static RwLock<Option<Arc<dyn CloudCredentials>>> {
+    static SLOT: RwLock<Option<Arc<dyn CloudCredentials>>> = RwLock::new(None);
+    &SLOT
+}
+
+/// Called by the setup of the module `cloud`; a later call replaces it.
+pub fn register_sync_cloud_credentials(credentials: Arc<dyn CloudCredentials>) {
+    *cloud_slot().write().unwrap_or_else(|e| e.into_inner()) = Some(credentials);
+}
+
+/// The credentials of the backend `cloud`, when the product has the module.
+pub fn sync_cloud_credentials() -> Option<Arc<dyn CloudCredentials>> {
+    cloud_slot()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+fn no_cloud() -> AppError {
+    AppError::other("Veydan Cloud is not available in this app")
+}
+
+/// The hosts the module `cloud` wrote; a value that does not read is none.
+pub async fn load_cloud_hosts(db: &Pool<Sqlite>) -> Vec<String> {
+    settings::get(db, CLOUD_HOSTS_KEY)
+        .await
+        .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+        .unwrap_or_default()
+}
+
+/// Keeps the hosts of `storage[]`; returns whether they changed.
+pub async fn save_cloud_hosts(db: &Pool<Sqlite>, hosts: &[String]) -> CmdResult<bool> {
+    if load_cloud_hosts(db).await == hosts {
+        return Ok(false);
+    }
+    let json = serde_json::to_string(hosts).map_err(AppError::other)?;
+    settings::set(db, CLOUD_HOSTS_KEY, &json).await?;
+    Ok(true)
+}
+
+/// The passphrase a create or a join uses: the one the user typed, or, on
+/// the backend `cloud`, the one derived from the identity (whatever was
+/// typed). The hosts are refreshed first, so the storage built after it
+/// goes where the manifest says.
+pub async fn vault_passphrase(db: &Pool<Sqlite>, typed: String) -> CmdResult<Zeroizing<String>> {
+    if !on_cloud(db).await {
+        return Ok(Zeroizing::new(typed));
+    }
+    let credentials = sync_cloud_credentials().ok_or_else(no_cloud)?;
+    credentials.refresh_hosts().await?;
+    credentials.passphrase().await
+}
+
+/// Whether the configured backend is `cloud`.
+pub async fn on_cloud(db: &Pool<Sqlite>) -> bool {
+    settings::get(db, "sync_backend").await.as_deref() == Some(CLOUD_BACKEND)
+}
+
+/// On the backend `cloud`, the hosts of the manifest in use before the
+/// storage is built (a probe); nothing on another backend.
+pub async fn refresh_cloud_hosts(db: &Pool<Sqlite>) -> CmdResult<()> {
+    if !on_cloud(db).await {
+        return Ok(());
+    }
+    sync_cloud_credentials()
+        .ok_or_else(no_cloud)?
+        .refresh_hosts()
+        .await
+}
+
+/// The bytes of the browser profiles' files on this device: what turning
+/// on `profile_files` would send at most. An upper bound: the caches the
+/// snapshot leaves out are counted too.
+pub fn profile_files_estimate(data_dir: &std::path::Path) -> u64 {
+    fn walk(dir: &std::path::Path) -> u64 {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return 0;
+        };
+        entries
+            .flatten()
+            .map(|e| match e.file_type() {
+                Ok(t) if t.is_dir() => walk(&e.path()),
+                Ok(t) if t.is_file() => e.metadata().map(|m| m.len()).unwrap_or(0),
+                _ => 0,
+            })
+            .sum()
+    }
+    let Ok(profiles) = std::fs::read_dir(data_dir.join("profiles")) else {
+        return 0;
+    };
+    profiles
+        .flatten()
+        .map(|p| walk(&p.path().join("firefox-profile")))
+        .sum()
 }
 
 /// Storage adapter for the configured backend.
 pub fn build_storage(cfg: &SyncConfig) -> CmdResult<Box<dyn Storage>> {
     match cfg.backend.as_str() {
+        CLOUD_BACKEND => {
+            let credentials = sync_cloud_credentials().ok_or_else(no_cloud)?;
+            if cfg.cloud_hosts.is_empty() {
+                return Err(AppError::other(credentials.why_no_host().unwrap_or_else(
+                    || "no host of Veydan Cloud is known on this device yet".into(),
+                )));
+            }
+            let mut storage = CloudStorage::new(&cfg.cloud_hosts, credentials.signer())
+                .map_err(AppError::other)?;
+            if let Some(transport) = credentials.transport() {
+                storage = storage.with_transport(transport);
+            }
+            Ok(Box::new(storage))
+        }
         "folder" => {
             if cfg.folder_path.trim().is_empty() {
                 return Err(AppError::other("sync folder is not set"));
@@ -437,5 +624,147 @@ mod tests {
         assert_eq!(usable_hostname("localhost"), "");
         assert_eq!(usable_hostname("Localhost.localdomain"), "");
         assert_eq!(usable_hostname(""), "");
+    }
+}
+
+#[cfg(test)]
+mod cloud_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use veydan_sync::SignFuture;
+
+    struct Signs;
+
+    impl RequestSigner for Signs {
+        fn authorization<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: Option<[u8; 32]>,
+            _: u64,
+        ) -> SignFuture<'a> {
+            Box::pin(async { Ok("Nostr e30=".to_string()) })
+        }
+    }
+
+    /// The module `cloud` as the tests see it: hosts to write, a passphrase.
+    struct Fake {
+        db: Pool<Sqlite>,
+        refreshed: AtomicUsize,
+        why: RwLock<Option<String>>,
+    }
+
+    impl CloudCredentials for Fake {
+        fn signer(&self) -> Arc<dyn RequestSigner> {
+            Arc::new(Signs)
+        }
+        fn refresh_hosts(&self) -> BoxFuture<'_, CmdResult<()>> {
+            Box::pin(async move {
+                self.refreshed.fetch_add(1, Ordering::Relaxed);
+                let hosts = ["https://media-eu.example.com/vault".to_string()];
+                save_cloud_hosts(&self.db, &hosts).await.map(|_| ())
+            })
+        }
+        fn passphrase(&self) -> BoxFuture<'_, CmdResult<Zeroizing<String>>> {
+            Box::pin(async { Ok(Zeroizing::new("derived-from-the-identity".to_string())) })
+        }
+        fn why_no_host(&self) -> Option<String> {
+            self.why.read().ok()?.clone()
+        }
+    }
+
+    async fn db(dir: &tempfile::TempDir) -> Pool<Sqlite> {
+        veydan_core::db::open(&dir.path().join("app.db"), &[veydan_core::SCHEMA])
+            .await
+            .expect("db")
+    }
+
+    /// One test owns the slot of the process: the credentials are global.
+    #[tokio::test]
+    async fn the_backend_cloud_takes_its_hosts_and_passphrase_from_the_module() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db(&dir).await;
+        let mut cfg = SyncConfig {
+            backend: CLOUD_BACKEND.into(),
+            ..SyncConfig::default()
+        };
+        // Before the module registers: the product has no Veydan Cloud.
+        assert!(sync_cloud_credentials().is_none());
+        let err = build_storage(&cfg)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("not available"), "{err}");
+        settings::set(&db, "sync_backend", CLOUD_BACKEND)
+            .await
+            .unwrap();
+        assert!(vault_passphrase(&db, "typed".into()).await.is_err());
+
+        let fake = Arc::new(Fake {
+            db: db.clone(),
+            refreshed: AtomicUsize::new(0),
+            why: RwLock::new(None),
+        });
+        register_sync_cloud_credentials(fake.clone());
+        // Registered, but no host known yet.
+        let err = build_storage(&cfg)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("no host"), "{err}");
+        // The module knows why: its words, not the generic ones.
+        *fake.why.write().unwrap() = Some("no_host: not with your own servers".into());
+        let err = build_storage(&cfg)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("own servers"), "{err}");
+        *fake.why.write().unwrap() = None;
+
+        // A create or a join on the backend cloud: the hosts first, then the
+        // derived passphrase, whatever was typed.
+        let pass = vault_passphrase(&db, "typed".into()).await.unwrap();
+        assert_eq!(pass.as_str(), "derived-from-the-identity");
+        assert_eq!(fake.refreshed.load(Ordering::Relaxed), 1);
+        cfg = load_config(&db).await;
+        assert_eq!(cfg.backend, CLOUD_BACKEND);
+        assert_eq!(cfg.cloud_hosts, ["https://media-eu.example.com/vault"]);
+        assert!(build_storage(&cfg).is_ok());
+
+        // The form never writes the hosts, and does not erase them.
+        save_config(&db, &cfg).await.unwrap();
+        let json = serde_json::to_value(&cfg).unwrap();
+        assert!(json.get("cloud_hosts").is_none());
+        assert_eq!(load_cloud_hosts(&db).await.len(), 1);
+        assert!(!save_cloud_hosts(&db, &cfg.cloud_hosts).await.unwrap());
+        assert!(save_cloud_hosts(&db, &[]).await.unwrap());
+        assert!(load_config(&db).await.cloud_hosts.is_empty());
+
+        // Another backend keeps the passphrase the user typed.
+        settings::set(&db, "sync_backend", "folder").await.unwrap();
+        let pass = vault_passphrase(&db, "typed by the user".into())
+            .await
+            .unwrap();
+        assert_eq!(pass.as_str(), "typed by the user");
+        assert_eq!(fake.refreshed.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn the_estimate_of_profile_files_counts_their_folders_only() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(profile_files_estimate(dir.path()), 0);
+        let p1 = dir.path().join("profiles/p1/firefox-profile/storage");
+        std::fs::create_dir_all(&p1).unwrap();
+        std::fs::write(p1.join("a.sqlite"), vec![0u8; 1000]).unwrap();
+        std::fs::write(
+            dir.path().join("profiles/p1/firefox-profile/prefs.js"),
+            b"12345",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("profiles/p1/meta.json"), b"not the profile").unwrap();
+        std::fs::create_dir_all(dir.path().join("profiles/p2/firefox-profile")).unwrap();
+        std::fs::write(dir.path().join("profiles/p2/firefox-profile/x"), b"12").unwrap();
+        std::fs::write(dir.path().join("app.db-other"), b"elsewhere").unwrap();
+        assert_eq!(profile_files_estimate(dir.path()), 1007);
     }
 }

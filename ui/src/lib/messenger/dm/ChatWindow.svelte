@@ -187,7 +187,8 @@
     else if (chat.mode === "blocked") list.push({ label: $t("msg_rel_cta_unblock"), icon: "lock-open", onselect: () => act("unblock") });
     else {
       if (chat.is_contact) list.push({ label: $t("msg_rel_cta_remove"), icon: "user", onselect: () => act("remove") });
-      else if (chat.mode !== "request_received") list.push({ label: $t("msg_rel_cta_add"), icon: "user-plus", onselect: () => act("request") });
+      // The bot of Veydan Cloud is approved by the build and is nobody's contact.
+      else if (chat.mode !== "request_received" && !chat.bot) list.push({ label: $t("msg_rel_cta_add"), icon: "user-plus", onselect: () => act("request") });
       list.push({ label: $t("msg_rel_cta_block"), icon: "ban", danger: true, onselect: () => act("block") });
     }
     list.push({ type: "separator" });
@@ -319,9 +320,14 @@
     menu = { open: true, x: e.clientX, y: e.clientY, m, target: reactionTarget(m, album), caption: editTarget(m, album) };
   }
 
-  /** A message one may react to: it is there, it left this device, and this chat takes words from me. */
+  /**
+   * A message one may react to: it is there, it left this device, and this chat takes words from me.
+   * Nothing in the chat with the bot of Veydan Cloud is one, a card or its words: the bot reads
+   * nothing sent to it, and the runtime sends it no reaction («wait until it accepts», of a chat
+   * that never had a request).
+   */
   const reactable = (m: MessengerMessage | null): m is MessengerMessage =>
-    !!m && !m.deleted && chat.can_send && m.content_type !== 'system' && !m.id.startsWith('local:') && m.status !== 'failed';
+    !!m && !m.deleted && chat.can_send && !chat.bot && m.content_type !== 'system' && !m.bot_card && !m.id.startsWith('local:') && m.status !== 'failed';
 
   function react(m: MessengerMessage, emoji: string) {
     menu.open = false;
@@ -350,7 +356,8 @@
     const list: MenuEntry[] = [];
     if (!m.deleted) {
       // An upload on its way is swapped for a message with another id: a quote of it would point at nothing.
-      if (chat.can_send && !m.id.startsWith('local:') && m.status !== 'uploading' && m.status !== 'paused') list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => { editing = null; replyTo = m; } });
+      // A card of the bot has no words of its own to quote.
+      if (chat.can_send && !m.bot_card && !m.id.startsWith('local:') && m.status !== 'uploading' && m.status !== 'paused') list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => { editing = null; replyTo = m; } });
       if (m.text) list.push({ label: $t('msg_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').catch(() => {}) });
       const caption = menu.caption ?? m;
       if (canEdit(caption, chat.can_send)) list.push({ label: $t('msg_message_edit'), icon: 'pencil', onselect: () => { replyTo = null; editing = caption; } });

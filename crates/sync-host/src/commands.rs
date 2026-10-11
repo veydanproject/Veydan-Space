@@ -30,6 +30,7 @@ pub async fn sync_set_config(cfg: SyncConfig, core: tauri::State<'_, Core>) -> C
 /// What the configured storage holds: "empty" | "vault" | "foreign".
 #[tauri::command]
 pub async fn sync_probe(core: tauri::State<'_, Core>) -> CmdResult<String> {
+    config::refresh_cloud_hosts(&core.db).await?;
     let cfg = load_config(&core.db).await;
     let storage = build_storage(&cfg)?;
     Ok(match Engine::probe(storage.as_ref())
@@ -51,10 +52,12 @@ pub async fn sync_create_vault(
     core: tauri::State<'_, Core>,
     sync: tauri::State<'_, SyncManager>,
 ) -> CmdResult<SyncStatus> {
+    let db = &core.db;
+    // On the backend `cloud` the passphrase comes from the identity.
+    let passphrase = config::vault_passphrase(db, passphrase).await?;
     if passphrase.len() < 8 {
         return Err(AppError::other("passphrase must be at least 8 characters"));
     }
-    let db = &core.db;
     let cfg = load_config(db).await;
     let device = config::device_id(db).await?;
     let storage = build_storage(&cfg)?;
@@ -75,6 +78,7 @@ pub async fn sync_join_vault(
     sync: tauri::State<'_, SyncManager>,
 ) -> CmdResult<SyncStatus> {
     let host = Host::App(&app);
+    let passphrase = config::vault_passphrase(&core.db, passphrase).await?;
     if join::join(&host, &core, sync.registry(), &passphrase).await? {
         join::key_row_changed(&host).await;
     }
@@ -111,6 +115,12 @@ pub async fn sync_change_passphrase(
     }
     let db = &core.db;
     let cfg = load_config(db).await;
+    if cfg.backend == config::CLOUD_BACKEND {
+        // Every device derives it from the identity: a new one would lock them out.
+        return Err(AppError::other(
+            "the passphrase of Veydan Cloud comes from the identity and does not change",
+        ));
+    }
     let binding = load_binding(db)
         .await
         .ok_or_else(|| AppError::other("no vault joined"))?;

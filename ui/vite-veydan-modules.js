@@ -6,6 +6,7 @@
 // products.json says which modules a product has; VEYDAN_PRODUCT (set by
 // scripts/ui.mjs) says which product is built. This file gives
 //  - productFromEnv(): the product, its modules, output directories and ports;
+//    a product that lists a module without one it requires (`requires`) fails;
 //  - veydanModules(): a Vite plugin that
 //      * generates `virtual:veydan-modules/i18n`, `/desktop` and `/mobile`,
 //        which import only the entries of the product's modules, and
@@ -71,7 +72,7 @@ const rel = (/** @type {string} */ p) => posix(path.relative(ROOT, p));
 const relUi = (/** @type {string} */ p) => posix(path.relative(UI, p));
 
 /**
- * @typedef {{ id: string, ui: string, routes: string[], entries: Record<string, string>, platforms: string[] }} ModuleEntry
+ * @typedef {{ id: string, ui: string, routes: string[], entries: Record<string, string>, platforms: string[], requires: string[] }} ModuleEntry
  * @typedef {{
  *   name: string, title: string, tagline: { en: string, ru: string } & Record<string, string>, repo: string, platform: 'desktop' | 'android',
  *   present: ModuleEntry[], absent: ModuleEntry[], brand: Record<string, string>,
@@ -84,16 +85,18 @@ export function readManifest() {
   return JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
 }
 
-export function productNames() {
-  const manifest = readManifest();
+export function productNames(manifest = readManifest()) {
   return Object.keys(manifest.targets).filter((t) => manifest.targets[t].kind === 'product');
 }
 
-/** @param {NodeJS.ProcessEnv} [env] @returns {Product} */
-export function productFromEnv(env = process.env) {
-  const manifest = readManifest();
+/**
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {any} [manifest] products.json as read; tests pass their own
+ * @returns {Product}
+ */
+export function productFromEnv(env = process.env, manifest = readManifest()) {
   const name = env[PRODUCT_ENV];
-  const names = productNames();
+  const names = productNames(manifest);
   if (!name || !names.includes(name)) {
     throw new Error(
       `${PRODUCT_ENV}=${name ?? '<unset>'}: not a product of ${rel(MANIFEST)} (have: ${names.join(', ')}). ` +
@@ -118,14 +121,40 @@ export function productFromEnv(env = process.env) {
       routes: m.routes.map((/** @type {string} */ r) => path.resolve(ROOT, r)),
       entries,
       platforms: m.platforms ?? ['desktop', 'android'],
+      requires: m.requires ?? [],
     };
   });
   for (const id of target.modules) {
     if (!manifest.modules[id]) throw new Error(`product ${name}: unknown module "${id}" in ${rel(MANIFEST)}`);
   }
-  // A module is in a build when the product has it and it exists on the platform
-  // (browser and ssh are desktop-only, platform-spec 1.2).
-  const inBuild = (/** @type {ModuleEntry} */ m) => target.modules.includes(m.id) && m.platforms.includes(platform);
+  // A module that requires others (cloud: the messenger signs and sends for
+  // it) is in a product only together with them (11.3).
+  for (const id of target.modules) {
+    for (const need of manifest.modules[id].requires ?? []) {
+      if (!manifest.modules[need]) throw new Error(`module ${id}: requires unknown module "${need}" in ${rel(MANIFEST)}`);
+      if (!target.modules.includes(need)) {
+        throw new Error(
+          `product ${name}: module "${id}" requires "${need}", which the product does not list in ${rel(MANIFEST)}; ` +
+            `add "${need}" to the product or take "${id}" out`,
+        );
+      }
+    }
+  }
+  // A module is in a build when the product has it, it exists on the platform
+  // (browser and ssh are desktop-only, platform-spec 1.2) and so does every
+  // module it requires: one whose requirement is left out of the platform
+  // is left out with it.
+  const listed = new Set(all.filter((m) => target.modules.includes(m.id) && m.platforms.includes(platform)).map((m) => m.id));
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const m of all) {
+      if (listed.has(m.id) && !m.requires.every((r) => listed.has(r))) {
+        listed.delete(m.id);
+        changed = true;
+      }
+    }
+  }
+  const inBuild = (/** @type {ModuleEntry} */ m) => listed.has(m.id);
   const port = platform === 'android' ? target.androidDevPort : target.devPort;
   // The name the user reads: productName of the product's Tauri config (13.1),
   // the Android config's where it has one (Space is "Veydan" on a phone).

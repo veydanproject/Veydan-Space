@@ -2,16 +2,38 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
   import { messengerApi, messengerError, type MessengerManifestCheck } from '../api';
   import RelayAddForm from '../relays/RelayAddForm.svelte';
   import MediaServersPanel from '../media/MediaServersPanel.svelte';
+  import { cloudOnboarding } from './cloud.svelte';
 
-  type Phase = 'choose' | 'veydan' | 'own';
+  // 'cloud': the screen «Your free Veydan Cloud» after the project's servers
+  // (internal/vcloud-plan.md 4.5); the own servers never see it.
+  type Phase = 'choose' | 'veydan' | 'own' | 'cloud';
 
-  let phase = $state<Phase>('choose');
+  let {
+    start = 'choose',
+    wizard = false,
+    ondone,
+  }: {
+    /** Where the step opens: at the choice, or at the person's own servers when that is chosen already. */
+    start?: 'choose' | 'own';
+    /** Inside the wizard of the first start: its own steps follow, so the screen of the free cloud is not shown. */
+    wizard?: boolean;
+    /** The servers are chosen. */
+    ondone?: () => void;
+  } = $props();
+
+  // svelte-ignore state_referenced_locally
+  let phase = $state<Phase>(start);
+  onMount(() => {
+    if (start === 'own') void chooseOwn();
+  });
   let busy = $state(false);
   let error = $state('');
   let check = $state<MessengerManifestCheck | null>(null);
@@ -34,9 +56,29 @@
     phase = 'veydan';
     error = '';
     busy = true;
-    try { check = await messengerApi.relays.useVeydan(); }
+    try {
+      check = await messengerApi.relays.useVeydan();
+      // The free plan's proof of work runs while the result is read.
+      void cloudOnboarding.start();
+    }
     catch (e) { error = explain(e); }
     finally { busy = false; }
+  }
+
+  /** After the project's servers: the screen of the free cloud, where the module is. */
+  async function doneVeydan() {
+    if (!wizard && cloudOnboarding.available) {
+      phase = 'cloud';
+      return;
+    }
+    await messengerStore.refresh();
+    ondone?.();
+  }
+
+  async function finishCloud(recovery: boolean) {
+    cloudOnboarding.stop();
+    await messengerStore.refresh();
+    if (recovery) await goto('/cloud?section=recovery-key');
   }
 
   async function chooseOwn() {
@@ -51,6 +93,7 @@
     try {
       await messengerApi.relays.useOwn();
       await messengerStore.refresh();
+      ondone?.();
     } catch (e) { error = explain(e); }
     finally { busy = false; }
   }
@@ -100,8 +143,16 @@
       <button class="btn btn-ghost" onclick={back}>{$t('msg_back')}</button>
       <button class="btn btn-primary" onclick={chooseVeydan}>{$t('msg_srv_veydan_title')}</button>
     {:else}
-      <button class="btn btn-primary" disabled={busy || !check} onclick={() => messengerStore.refresh()}>{$t('msg_srv_done')}</button>
+      <button class="btn btn-primary" disabled={busy || !check} onclick={doneVeydan}>{$t('msg_srv_done')}</button>
     {/if}
+  </div>
+{:else if phase === 'cloud'}
+  <div class="card-title">{$t('msg_cloud_free_title')}</div>
+  <p class="muted">{$t('msg_cloud_free_text')}</p>
+  {#if cloudOnboarding.phase === 'failed'}<p class="meta">{$t('msg_cloud_free_failed')}</p>{/if}
+  <div class="actions">
+    <button class="btn btn-ghost" onclick={() => finishCloud(false)}>{$t('msg_cloud_later')}</button>
+    <button class="btn btn-primary" onclick={() => finishCloud(true)}>{$t('msg_cloud_setup_recovery')}</button>
   </div>
 {:else}
   <div class="card-title">{$t('msg_srv_own_title')}</div>

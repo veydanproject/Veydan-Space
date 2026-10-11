@@ -97,6 +97,9 @@ export const api = {
     recoveryCheck: (code: string) => call<void>('lock_recovery_check', { code }),
     recover: (code: string, secret: LockSecret) =>
       call<LockSetResult>('lock_recover', { code, ...secret }),
+    /** A lock whose recovery wrap is the Recovery Key of 12 words: the words stay valid. */
+    recoverKeep: (words: string, secret: LockSecret) =>
+      call<LockStatus>('lock_recover_keep', { words, ...secret }),
     timeoutSet: (minutes: number) => call<LockStatus>('lock_timeout_set', { minutes }),
     unlock: (password: string) => call<LockStatus>('lock_unlock', { password }),
     lock: () => call<LockStatus>('lock_lock'),
@@ -183,6 +186,8 @@ export const api = {
     setEnabled: (id: string, enabled: boolean) => call<ModulesView>('modules_set_enabled', { id, enabled }),
     /** The answer to the first start's question: the modules to keep on. */
     choose: (enabled: string[]) => call<ModulesView>('modules_choose', { enabled }),
+    /** The first start is over where there was no choice of modules to make. */
+    firstRunDone: () => call<ModulesView>('modules_first_run_done'),
   },
 };
 

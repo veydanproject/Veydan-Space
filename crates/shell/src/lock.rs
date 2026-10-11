@@ -193,6 +193,21 @@ pub async fn lock_recover(
     })
 }
 
+/// Step 2 of recovery for a lock whose second wrap is the Recovery Key of
+/// 12 words (platform-spec 8.1, cloud-recovery.md §5): set a new secret
+/// with the words and unlock. The words stay valid: nothing is handed out.
+#[tauri::command]
+pub async fn lock_recover_keep(
+    words: String,
+    password: String,
+    kind: Option<String>,
+    hint: Option<String>,
+    lock: tauri::State<'_, Lock>,
+) -> CmdResult<LockStatus> {
+    lock.recover_keep(&words, password, kind, hint).await?;
+    Ok(lock.status().await)
+}
+
 #[tauri::command]
 pub async fn lock_timeout_set(
     minutes: u32,

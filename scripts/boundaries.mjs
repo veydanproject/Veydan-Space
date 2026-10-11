@@ -21,7 +21,8 @@
 //   imports <dir>
 //       what the UI files of a directory import: <file>:<line> TAB <path>
 //   ui <products.json>
-//       the matrix of the frontend (platform-spec 6.3): where a UI file
+//       the matrix of the frontend (platform-spec 6.3), and the `requires`
+//       of products.json (11.3): where a UI file
 //       imports what its directory may not
 //   ui-selftest
 //       the ui scan against a scratch tree of planted imports: what it
@@ -470,7 +471,9 @@ function tables(kind, dir, others) {
   const problems = [];
   const lits = builtLiterals(dir);
   const own = created(lits);
-  const statement = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|WITH|REPLACE|ALTER|DROP)\b/i;
+  // A keyword with more after it: the word alone is an HTTP method or the
+  // word a screen asks for (`DELETE`, cloud-api.md 4.4), not a statement.
+  const statement = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|WITH|REPLACE|ALTER|DROP)\b(?=\s+\S)/i;
   // A module that keeps nothing in the data file (the messenger has a
   // database of its own) creates no table, and has no SQL to name one.
   if (kind === 'module' && own.size === 0 && lits.some((lit) => statement.test(lit.text))) {
@@ -557,7 +560,10 @@ function imports(dir) {
  *
  *  - core imports itself, the virtual modules, Svelte, `$app/*`,
  *    `@tauri-apps/*` and packages — never a module, not even a type;
- *  - a module imports itself, `$lib/core/**` and packages; the messenger
+ *  - a module imports itself, `$lib/core/**` and packages, and of a module
+ *    it requires (`requires` in products.json: cloud → messenger) only the
+ *    seams, `$lib/<that module>/seams` (a file or a folder) — never its
+ *    stores or what reads its tables; the messenger
  *    only `$lib/core/ui/*`, `$lib/core/i18n`, `$lib/core/Icon.svelte` and
  *    `$lib/core/module` of the core, and `svelte`, `$app/*`,
  *    `@tauri-apps/*`, `vitest` from outside;
@@ -566,6 +572,9 @@ function imports(dir) {
  *
  * Every form the `imports` scan reads counts, imports of types included;
  * an `import()` of a computed path cannot be checked and is an error.
+ *
+ * The manifest itself: a module requires only modules of the manifest, not
+ * itself, and a product that lists a module lists every module it requires.
  */
 function ui(manifestFile) {
   const manifest = JSON.parse(read(manifestFile));
@@ -576,6 +585,24 @@ function ui(manifestFile) {
   const routeOwner = [];
   for (const id of modules) for (const r of manifest.modules[id].routes) routeOwner.push([path.join(root, r) + path.sep, id]);
   const uiDir = (id) => path.join(root, manifest.modules[id].ui);
+  const requires = (id) => manifest.modules[id].requires ?? [];
+  /** A file of a module's seams: `seams.ts`, `seams` or anything under `seams/`. */
+  const seam = (rel) => /^seams(\.ts|\/.+)?$/.test(rel);
+
+  const problems = [];
+  for (const id of modules) {
+    for (const need of requires(id)) {
+      if (need === id || !modules.includes(need)) problems.push(`${manifestFile}: module ${id} requires ${JSON.stringify(need)}, which is not another module of the manifest`);
+    }
+  }
+  for (const [name, target] of Object.entries(manifest.targets ?? {})) {
+    if (target.kind !== 'product') continue;
+    for (const id of target.modules ?? []) {
+      for (const need of manifest.modules[id] ? requires(id) : []) {
+        if (!target.modules.includes(need)) problems.push(`${manifestFile}: product ${name} lists module ${id}, which requires ${need}, and not ${need}`);
+      }
+    }
+  }
 
   /** The owner of a file: 'core', a module id, or a shared route ('shared'). */
   function ownerOf(file) {
@@ -604,7 +631,6 @@ function ui(manifestFile) {
   const external = (spec) => spec === 'svelte' || spec.startsWith('svelte/') || spec.startsWith('$app/') || spec.startsWith('@tauri-apps/') || spec.startsWith('virtual:veydan-modules');
   const messengerCore = (rel) => rel.startsWith('ui/') || ['i18n', 'i18n.ts', 'Icon.svelte', 'module', 'module.ts'].includes(rel);
 
-  const problems = [];
   let seen = 0;
   for (const line of imports(path.relative(process.cwd(), path.join(project, 'src')) || '.')) {
     seen++;
@@ -623,7 +649,9 @@ function ui(manifestFile) {
     if (from === 'core') {
       say(`the core may not import a module (${to.owner}); modules reach the core through the registry and the catalog`);
     } else if (modules.includes(from)) {
-      if (to.owner !== 'core') say(`module ${from} may import only itself and $lib/core; ${to.owner} is another module`);
+      if (to.owner !== 'core' && requires(from).includes(to.owner)) {
+        if (!seam(to.rel)) say(`module ${from} requires ${to.owner} and may import only its seams ($lib/${to.owner}/seams), not its stores or tables`);
+      } else if (to.owner !== 'core') say(`module ${from} may import only itself and $lib/core; ${to.owner} is another module`);
       else if (from === 'messenger' && !messengerCore(to.rel)) say('the messenger UI may import from the core only $lib/core/ui/*, $lib/core/i18n, $lib/core/Icon.svelte and $lib/core/module');
     } else if (from.startsWith('routes:')) {
       const mod = from.slice('routes:'.length);
@@ -736,6 +764,9 @@ function uiSelftest() {
     'ui/src/lib/messenger/package.ts': "import DOMPurify from 'dompurify';",
     'ui/src/routes/notes/+page.svelte': "<script>\n  import P from '$lib/pass/P.svelte';\n</script>",
     'ui/src/routes/settings/+page.svelte': "<script>\n  import N from '$lib/notes/N.svelte';\n</script>",
+    'ui/src/lib/cloud/store.ts': "import { messengerStore } from '$lib/messenger/store.svelte';",
+    'ui/src/lib/cloud/seams-alike.ts': "import { s } from '$lib/messenger/seamsy';",
+    'ui/src/lib/notes/seam.ts': "import { signer } from '$lib/messenger/seams';",
   };
   const good = {
     'ui/src/lib/core/ok.ts': "import { writable } from 'svelte/store';\nimport { a } from './a';\nexport const l = () => import('$lib/core/lazy');\nimport type { ModuleDef } from '$lib/core/module';\nimport { modules } from 'virtual:veydan-modules/desktop';",
@@ -743,6 +774,7 @@ function uiSelftest() {
     'ui/src/lib/notes/ok.ts': "import { call } from '$lib/core/api';\nexport const l = () => import('./lazy');\nimport { n } from '/src/lib/notes/n';",
     'ui/src/lib/messenger/ok.ts': "import { t } from '$lib/core/i18n';\nimport Icon from '$lib/core/Icon.svelte';\nimport { goto } from '$app/navigation';",
     'ui/src/routes/notes/[id]/+page.svelte': "<script>\n  import N from '$lib/notes/N.svelte';\n  import { t } from '$lib/core/i18n';\n</script>",
+    'ui/src/lib/cloud/ok.ts': "import { signer } from '$lib/messenger/seams';\nimport type { Card } from '$lib/messenger/seams/cards';\nimport { call } from '$lib/core/api';",
   };
   const computed = ['ui/src/lib/core/dynamic-joined.ts', 'ui/src/lib/core/dynamic-template.ts', 'ui/src/lib/core/dynamic-name.ts'];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'boundaries-ui-'));
@@ -752,8 +784,10 @@ function uiSelftest() {
         notes: { ui: 'ui/src/lib/notes', routes: ['ui/src/routes/notes'], crates: [] },
         pass: { ui: 'ui/src/lib/pass', routes: ['ui/src/routes/passwords'], crates: [] },
         messenger: { ui: 'ui/src/lib/messenger', routes: [], crates: [] },
+        cloud: { ui: 'ui/src/lib/cloud', routes: [], crates: [], requires: ['messenger'] },
       },
-      targets: {},
+      // A product with the cloud and without the messenger.
+      targets: { lonely: { kind: 'product', modules: ['notes', 'cloud'] } },
     };
     fs.writeFileSync(path.join(dir, 'products.json'), JSON.stringify(manifest));
     for (const [file, text] of Object.entries({ ...bad, ...good })) {
@@ -767,6 +801,8 @@ function uiSelftest() {
     }
     const problems = [];
     for (const file of Object.keys(bad)) if (!reported.has(file)) problems.push(`ui self-test: the planted import in ${file} was not reported`);
+    if (!reported.get('products.json')?.includes('product lonely lists module cloud, which requires messenger')) problems.push('ui self-test: a product without a module its module requires was not reported');
+    reported.delete('products.json');
     for (const file of computed) if (!reported.get(file)?.includes('not a literal')) problems.push(`ui self-test: the import() in ${file} was not taken for a computed path`);
     for (const [file, line] of reported) if (!(file in bad)) problems.push(`ui self-test: a permitted import was reported: ${line}`);
     return problems;

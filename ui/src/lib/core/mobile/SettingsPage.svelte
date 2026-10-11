@@ -68,6 +68,8 @@
   // The modules' sections, after the main list; a section that goes inside a
   // core form (`into`) is rendered there instead.
   const sections = $derived(registry.settings().filter((s) => !s.into && (s.visible?.() ?? true)));
+  // The account of the product, where a module shows one: first on the page, and the way to sync.
+  const accountSections = $derived(registry.accountSections());
   // The Modules section: in a product of more than one module (section 12).
   const defaultAppLabel = $derived(appOptions.find((o) => o.id === startValue)?.label ?? '');
   const themeLabel = $derived(themeOptions.find((o) => o.id === $theme)?.label ?? '');
@@ -177,6 +179,12 @@
     </div>
   {/if}
 
+  {#each accountSections as section (section.id)}
+    <div class="m-list account">
+      <section.component />
+    </div>
+  {/each}
+
   <div class="m-section">{$t('settings_main')}</div>
   <div class="m-list">
     {#if startChoice}
@@ -222,14 +230,17 @@
     </a>
   </div>
 
-  <div class="m-section">{$t('settings_data')}</div>
-  <div class="m-list">
-    <a class="m-row" href="/settings/sync">
-      <span class="m-row-label">{$t('settings_sync_section')}</span>
-      <span class="m-row-value" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
-      <span class="chev"><Icon name="chevron-right" size={16} /></span>
-    </a>
-  </div>
+  <!-- With an account on the page, its card leads to sync. -->
+  {#if accountSections.length === 0}
+    <div class="m-section">{$t('settings_data')}</div>
+    <div class="m-list">
+      <a class="m-row" href="/settings/sync">
+        <span class="m-row-label">{$t('settings_sync_section')}</span>
+        <span class="m-row-value" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
+        <span class="chev"><Icon name="chevron-right" size={16} /></span>
+      </a>
+    </div>
+  {/if}
 
   <div class="m-section">{$t('settings_about')}</div>
   <div class="m-list">
@@ -328,6 +339,7 @@
 
 <style>
   .ok { color: var(--success-text); font-weight: 600; }
+  .account { margin-top: var(--sp-3); }
   .new { color: var(--accent); font-weight: 600; }
   .update-card {
     display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2);

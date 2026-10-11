@@ -124,6 +124,11 @@ impl DmService {
             return Ok((ScreenMode::FullChat, true));
         }
         let r = self.load_relation(peer).await?;
+        // The pinned bot is approved beforehand (`with_bot`): a full chat
+        // unless I blocked it.
+        if self.is_bot(peer) && !r.blocked {
+            return Ok((ScreenMode::FullChat, true));
+        }
         let sent = repo::count_visible_outgoing(&self.store, chat_id).await?;
         let can = !matches!(outbound_permission(&r, sent, true), OutboundPermission::Deny(_));
         Ok((screen_mode(&r), can))
@@ -390,6 +395,11 @@ impl DmService {
             return Ok(OutboundGate { request: false });
         }
         let r = self.load_relation(peer).await?;
+        // To the pinned bot a message is a message, never a request: no
+        // accept follows it and the bot does not join the address book.
+        if self.is_bot(peer) && !r.blocked {
+            return Ok(OutboundGate { request: false });
+        }
         let sent = repo::count_visible_outgoing(&self.store, chat_id).await?;
         match outbound_permission(&r, sent, is_text) {
             OutboundPermission::Allow => Ok(OutboundGate { request: false }),
@@ -402,6 +412,13 @@ impl DmService {
     pub(crate) async fn gate_inbound(&self, chat_id: &str, peer: &PubKey, at: i64, historical: bool) -> Result<InboundGate> {
         if !self.gate_enabled() {
             return Ok(InboundGate::Pass { effects: vec![], regate: false });
+        }
+        // The pinned bot needs no approval and asks for none: no request,
+        // no one-message limit, no signal implied, nothing saved about it.
+        // My block is the one thing that stops it.
+        if self.is_bot(peer) {
+            let blocked = self.load_relation(peer).await?.blocked;
+            return Ok(if blocked { InboundGate::Drop } else { InboundGate::Pass { effects: vec![], regate: false } });
         }
         let floor = self.unread_floor.load(Ordering::SeqCst);
         let enforced = !historical || (floor >= 0 && at >= floor);

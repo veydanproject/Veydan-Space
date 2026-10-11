@@ -21,6 +21,8 @@
   import { chatStore } from '../chats/chatStore.svelte';
   import { nameStore } from '../groups/names.svelte';
   import { BASE, chatHref } from '../mobile/routes';
+  import { botCardLineKey } from '../content/botCard';
+  import { botCards } from '../seams/cards.svelte';
   import { albumLine, albumOf, bodyLine, joinAlbum, type Album, type NoticeBody } from './wording';
 
   /** `os`: a computer's system shows it already (the window was not on the screen). */
@@ -80,7 +82,9 @@
     // One more of an album that is coming: the card counts them.
     const joined = joinAlbum(old?.album, albumOf(n.body));
     const album = joined ?? albumOf(n.body);
-    const text = joined ? albumLine(joined, $t) : bodyLine(n.body, $t);
+    // A card of the bot of Veydan Cloud comes without a body: its message, just taken, says which card it is.
+    const botCard = !n.body && n.chat_id ? chatStore.tailCards[n.chat_id]?.card : undefined;
+    const text = joined ? albumLine(joined, $t) : botCard ? $t(botCardLineKey(botCard, botCards.host)) : bodyLine(n.body, $t);
     const card: Card = {
       key,
       chatId: n.chat_id,

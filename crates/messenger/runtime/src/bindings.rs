@@ -24,6 +24,7 @@ use crate::shared::{SharedCounts, SharedSection};
 use messenger_avatar::CropRect;
 use messenger_media::{Progress, TransferStage, TransferView};
 use messenger_contacts::{CardView, ProfileInput, ProfileView, SocialLink, SocialPlatform, SocialView};
+use messenger_dm::BotCard;
 use messenger_preview::Preview;
 use messenger_richtext::{Color, Span, Style};
 use ts_rs::{Config, TS};
@@ -35,6 +36,7 @@ pub const NET_FILE: &str = "../../../ui/src/lib/messenger/generated/net.ts";
 pub const PROFILE_FILE: &str = "../../../ui/src/lib/messenger/generated/profile.ts";
 pub const TRANSFER_FILE: &str = "../../../ui/src/lib/messenger/generated/transfer.ts";
 pub const CALLS_FILE: &str = "../../../ui/src/lib/messenger/generated/calls.ts";
+pub const BOT_FILE: &str = "../../../ui/src/lib/messenger/generated/bot.ts";
 
 const HEADER: &str = "// SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
@@ -152,8 +154,16 @@ pub fn calls_ts() -> String {
     out
 }
 
+/// A card of the bot of Veydan Cloud, as the chat with the bot draws it.
+pub fn bot_ts() -> String {
+    let cfg = Config::new();
+    let mut out = String::from(HEADER);
+    out += &export::<BotCard>(&cfg, "A card of the bot of Veydan Cloud: the `bot_card` of a message whose `content_type` is `bot_card`, set only on what the pinned key sealed. The words of a card are the app's own, by `t`; the values are numbers (unix seconds, bytes) or short words without a space, a dot or a slash, `null` when absent or not what they should be. `unknown`: a type this app does not know, drawn without text.");
+    out
+}
+
 /// Every generated file and what it should hold.
-pub fn files() -> [(&'static str, String); 6] {
+pub fn files() -> [(&'static str, String); 7] {
     [
         (LINKS_FILE, links_ts()),
         (SHARED_FILE, shared_ts()),
@@ -161,6 +171,7 @@ pub fn files() -> [(&'static str, String); 6] {
         (PROFILE_FILE, profile_ts()),
         (TRANSFER_FILE, transfer_ts()),
         (CALLS_FILE, calls_ts()),
+        (BOT_FILE, bot_ts()),
     ]
 }
 

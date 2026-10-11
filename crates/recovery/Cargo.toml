@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-recovery"
+description = "Recovery of access to Veydan Cloud: the Recovery Key and its labels, the escrow, Shamir shares over GF(256), the device-link wrap and the proof of work"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+# A pure crate: no crate of the repository, no messenger, no Tauri. The
+# module `cloud` of the products and the servers take the same code, and
+# the formats are tested without the app.
+[dependencies]
+# The key of the escrow and of the device-link wrap, as in crates/lock.
+argon2 = "0.6.0-rc.8"
+chacha20poly1305 = "0.10"
+sha2 = "0.11"
+hmac = "0.13"
+hkdf = "0.13"
+# Constant-time comparison of commits, macs and codes.
+subtle = "2"
+zeroize = { version = "1", features = ["derive"] }
+# The system random source: shares, salts, nonces, the key itself.
+getrandom = "0.3"
+# The English word list; the checksum of the 12 words.
+bip39 = { version = "2", features = ["zeroize"] }
+# The escrow-auth key and the npub of an nsec.
+secp256k1 = "0.30"
+base64 = "0.22"
+hex = "0.4"
+thiserror = "2"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The cross-check of the shares (cloud-recovery.md §13): an independent
+# Shamir over the same field, with its rng trait.
+vsss-rs = { version = "6.0.1", default-features = false, features = ["std"] }
+rand_core = "0.10"

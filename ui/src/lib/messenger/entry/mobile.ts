@@ -4,7 +4,7 @@
 // The messenger as the mobile shell sees it (platform-spec 11.1).
 
 import type { ModuleDef } from '$lib/core/module';
-import { common, navItem } from './common';
+import { accountOf, common, navItem } from './common';
 import { messengerStore } from '../store.svelte';
 import { followRoute, launchRoute, startPushBridge } from '../push/bridge';
 import { BASE } from '../mobile/routes';
@@ -14,6 +14,8 @@ import CallWatcher from '../calls/CallWatcher.svelte';
 export const module: ModuleDef = {
   ...common,
   nav: [navItem],
+  // The settings are a screen of their own here.
+  account: accountOf(`${BASE}/settings`),
   // The module's switch is in the Modules section of the core (section 12).
   settings: [],
   // A call opens its page from any screen, and stays a tap away when left.

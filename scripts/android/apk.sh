@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Standalone Android APK of a product (internal/platform-spec.md 13.4):
-#   scripts/android/apk.sh [product] test      # debug-signed, installed on the phone
+#   scripts/android/apk.sh [product] test      # signed by the key of the app on the
+#                                              # phone (signing.sh), installed there
 #   scripts/android/apk.sh [product] build     # debug-signed, not installed
 #   scripts/android/apk.sh [product] release   # release-signed
 # The product is space when none is given. Arguments after the mode go to
@@ -37,6 +38,7 @@ if [ ! -d "$GEN_ANDROID" ]; then
   exit 1
 fi
 export CARGO_TARGET_DIR="$ROOT_DIR/data/target-android/$PRODUCT"
+source "$ANDROID_SCRIPTS_DIR/signing.sh"
 
 newest_apk() {
   find "$GEN_ANDROID/app/build/outputs/apk" \
@@ -61,8 +63,8 @@ ensure_debug_keystore() {
 }
 
 ensure_release_keystore() {
-  local ks="$ROOT_DIR/data/toolchains/android-release.keystore"
-  local envf="$ROOT_DIR/data/toolchains/android-release.env"
+  local ks="$RELEASE_KEYSTORE"
+  local envf="$RELEASE_KEYSTORE_ENV"
   mkdir -p "$ROOT_DIR/data/toolchains"
   if [ ! -f "$ks" ] || [ ! -f "$envf" ]; then
     local pass
@@ -96,10 +98,17 @@ if [ -z "$signer" ]; then
   exit 1
 fi
 
-if [ "$MODE" = "release" ]; then
+# A build for the phone takes the key of the app that is there (signing.sh).
+key="$MODE"
+if [ "$MODE" = "test" ] && phone_has_release_key; then
+  echo ">> The app on the phone is signed by the key of the releases: this build is signed by it too"
+  key=release
+fi
+
+if [ "$key" = "release" ]; then
   ks="$(ensure_release_keystore)"
-  # shellcheck disable=SC1091
-  source "$ROOT_DIR/data/toolchains/android-release.env"
+  # shellcheck disable=SC1090
+  source "$RELEASE_KEYSTORE_ENV"
   alias="${ANDROID_RELEASE_KEY_ALIAS:-veydan}"
   storepass="${ANDROID_RELEASE_KS_PASS:?missing ANDROID_RELEASE_KS_PASS}"
   keypass="$storepass"

@@ -6,7 +6,8 @@
 import { get } from 'svelte/store';
 import type { ModuleDef } from '$lib/core/module';
 import { t } from '$lib/core/i18n';
-import { common, navItem } from './common';
+import { accountOf, common, navItem } from './common';
+import { BASE } from '../mobile/routes';
 import { messengerStore } from '../store.svelte';
 import { startDesktopNotices } from '../push/desktop';
 import DesktopNotices from '../push/DesktopNotices.svelte';
@@ -20,6 +21,8 @@ let stopNotices: (() => void) | null = null;
 export const module: ModuleDef = {
   ...common,
   nav: [navItem],
+  // The settings are a pane of the messenger's page here.
+  account: accountOf(`${BASE}?view=settings`),
   // The module's switch is in the Modules section of the core (section 12).
   settings: [],
   // The card of a ringing call and the panel of the call under way float over any page.

@@ -5,7 +5,8 @@
 
 pub use messenger_contacts::CardView;
 use messenger_contacts::ContactCard;
-use messenger_store::messages::{MessageRow, CT_CONTACT};
+use crate::botcard::BotCard;
+use messenger_store::messages::{MessageRow, CT_BOT_CARD, CT_CONTACT, DIR_IN};
 pub use messenger_store::reactions::ReactionView;
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +30,11 @@ pub struct ChatView {
     pub mode: String,
     /// Whether the composer may be used right now.
     pub can_send: bool,
+    /// The chat with the pinned bot of Veydan Cloud (`DmService::with_bot`):
+    /// a full chat where nothing but messages goes, so the UI offers no
+    /// call, no reaction and no «add to contacts» in it.
+    #[serde(default)]
+    pub bot: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,7 +62,8 @@ pub struct MessageView {
     pub direction: String,
     /// `queued` | `sent` | `failed` | `received`
     pub status: String,
-    /// `text` | `system` | `media` | anything newer clients invent
+    /// `text` | `system` | `media` | `contact` | `bot_card` | anything
+    /// newer clients invent
     pub content_type: String,
     pub text: Option<String>,
     pub sender_pubkey: String,
@@ -89,11 +96,27 @@ pub struct MessageView {
     /// `media` is then empty.
     #[serde(default)]
     pub card: Option<CardView>,
+    /// A card of the bot of Veydan Cloud (`content_type` `bot_card`): its
+    /// type and the values the app words it from; `text` and `media` are
+    /// then empty. Only on a message the pinned key sealed.
+    #[serde(default)]
+    pub bot_card: Option<BotCard>,
 }
 
 impl MessageView {
     pub fn from_row(r: MessageRow, reply_to: Option<ReplyPreview>) -> Self {
         let is_card = r.content_type == CT_CONTACT;
+        // The row of a card is written for the pinned key alone
+        // (`DmService::apply_inbound`), in its direct chat, and always with
+        // the card it read. Anything else under that type is no card: a
+        // build before the cards kept the type of the wire as it came, so
+        // a row without a card is a stranger's `{"t":"bot_card"}` and stays
+        // a message of a type this app does not know.
+        let is_bot_card =
+            r.content_type == CT_BOT_CARD && r.direction == DIR_IN && r.chat_id.strip_prefix("dm:") == Some(r.sender_pubkey.as_str());
+        let bot_card = if is_bot_card { r.media_json.as_deref().map(BotCard::stored) } else { None };
+        // What `media_json` holds of a card is not a file.
+        let typed = is_card || r.content_type == CT_BOT_CARD;
         Self {
             id: r.id,
             chat_id: r.chat_id,
@@ -107,13 +130,14 @@ impl MessageView {
             edited_at: r.edited_at,
             deleted: r.deleted_at.is_some(),
             failure_reason: r.failure_reason,
-            media: r.media_json.filter(|_| !is_card).and_then(|j| serde_json::from_str(&j).ok()),
+            media: r.media_json.filter(|_| !typed).and_then(|j| serde_json::from_str(&j).ok()),
             queued_at: None,
             delivered_at: None,
             read_at: None,
             seen_by: vec![],
             reactions: vec![],
             card: None,
+            bot_card,
         }
     }
 }

@@ -197,9 +197,13 @@ fn setup(app: &mut tauri::App) -> SetupResult {
     app.state::<Core>()
         .deletions
         .subscribe(KIND_NOTE, passwords::forget_note);
-    // The camera reads the QR code of a TOTP secret.
+    // The camera reads the QR code of a TOTP secret. The module cloud reads
+    // the code of a device with the same plugin: whichever is set up first
+    // registers it.
     #[cfg(mobile)]
-    app.handle().plugin(tauri_plugin_barcode_scanner::init())?;
+    if app.try_state::<tauri_plugin_barcode_scanner::BarcodeScanner<tauri::Wry>>().is_none() {
+        app.handle().plugin(tauri_plugin_barcode_scanner::init())?;
+    }
     Ok(())
 }
 

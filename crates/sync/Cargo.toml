@@ -20,6 +20,7 @@ argon2 = "0.6.0-rc.8"
 rand = { version = "0.10", features = ["thread_rng"] }
 zstd = "0.13"
 hex = "0.4"
+zeroize = "1"
 base64 = "0.22"
 chrono = "0.4"
 reqwest = "0.13"
@@ -31,7 +32,9 @@ percent-encoding = "2"
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+# The fake of vstore the backend `cloud` is tested against.
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -9,7 +9,8 @@
 //! before the modules start, routes every command to the module that
 //! declared it, draws the tray around the modules' entries, puts the demo
 //! data together from their parts, starts the modules the user keeps on and
-//! stops them when they are switched off and when the app exits.
+//! stops them when they are switched off and when the app exits. Modules
+//! offer each other services through it (`seams`).
 //! It knows no module by name.
 
 mod app;
@@ -19,6 +20,7 @@ mod lock;
 mod module;
 mod plan;
 mod router;
+pub mod seams;
 mod services;
 mod source;
 mod start;
@@ -42,6 +44,7 @@ pub use module::{
     TrayGroup, TrayItem, TrayLabels, TrayPart,
 };
 pub use router::{unknown_command, DuplicateCommand, Router};
+pub use seams::{provide, seam, CloudError, Seam};
 pub use services::{Product, Shell};
 pub use source::{FileSource, Opener};
 pub use start::{StartError, StartState};
@@ -52,3 +55,6 @@ pub use tray::TraySettings;
 
 // A product names the plan of its sync through the shell.
 pub use veydan_sync_host::{Plan, Step};
+// The module cloud registers the backend `cloud` of sync and keeps its hosts
+// through the shell: it does not depend on sync-host.
+pub use veydan_sync_host::config as sync_config;

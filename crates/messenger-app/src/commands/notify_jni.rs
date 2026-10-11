@@ -12,7 +12,7 @@
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
-use messenger_notify::{describe, KeyBundle, PushData};
+use messenger_notify::{describe_as, KeyBundle, PushData};
 use std::path::PathBuf;
 use std::time::Duration;
 use zeroize::Zeroize;
@@ -71,8 +71,11 @@ fn run(data_dir: PathBuf, bundle: &[u8], push: &str) -> String {
         Ok(rt) => rt,
         Err(e) => return error(format!("runtime: {e}")),
     };
+    // The same configuration as the app's: the pinned bot of Veydan Cloud
+    // is no stranger to the push handler either.
+    let config = super::config_at(data_dir);
     let out = rt.block_on(async {
-        match describe(&data_dir, bundle.as_ref(), &push).await {
+        match describe_as(&config, bundle.as_ref(), &push).await {
             Ok(outcome) => serde_json::to_string(&outcome).unwrap_or_else(error),
             Err(e) => error(e),
         }

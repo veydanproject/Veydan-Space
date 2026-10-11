@@ -34,6 +34,11 @@
     messengerStore.refresh().catch(() => {});
     messengerStore.startListeners().catch(() => {});
   });
+  // A link from outside the module asks for a pane (`?view=settings`: the page «Account»).
+  onMount(() => {
+    const asked = new URLSearchParams(window.location.search).get('view');
+    if (asked === 'settings' || asked === 'contacts') view = asked;
+  });
   // A chat opened from elsewhere (a link, a notification) is shown here.
   onMount(() => onChatOpened(() => { view = 'chat'; }));
 

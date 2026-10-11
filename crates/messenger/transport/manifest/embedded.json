@@ -1,8 +1,8 @@
 {
   "format": "veydan-messenger-manifest",
   "v": 1,
-  "serial": 8,
-  "issued_at": 1791508155,
+  "serial": 9,
+  "issued_at": 1791636014,
   "regions": [
     "default",
     "eu",
@@ -99,6 +99,22 @@
       "regions": [
         "*"
       ]
+    }
+  ],
+  "storage": [
+    {
+      "url": "https://eu-1-media.veydan.net/vault",
+      "regions": [
+        "*"
+      ],
+      "priority": 0
+    },
+    {
+      "url": "https://us-1-media.veydan.net/vault",
+      "regions": [
+        "*"
+      ],
+      "priority": 1
     }
   ]
 }

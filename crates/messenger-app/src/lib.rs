@@ -10,7 +10,14 @@
 //! `messenger` and its events); its data is the folder `messenger/` of the
 //! data directory. The shell switches it on and off (`Module::start`,
 //! `Module::stop`): off, the runtime is shut down and holds no connection.
+//! What it offers other modules goes through the seams of the shell
+//! (`cloud_seams`: signing, service notes and the cards of the vcloud bot).
 
+pub mod cloud_seams;
+/// The messenger's side of the linking of devices (the seam `DeviceLink`).
+pub mod cloud_link;
+/// The service notes of the module cloud to and from the contacts, and its seam `Contacts`.
+pub mod cloud_notes;
 mod commands;
 mod media_server;
 
@@ -223,6 +230,9 @@ fn setup(app: &mut tauri::App) -> SetupResult {
     ))?;
     app.manage(MessengerState::new(app.handle().clone(), &core.app_data_dir));
     app.manage(media_server::MediaServer::default());
+    // Signing, service notes and the cards of the vcloud bot, for the module
+    // cloud (cloud_seams.rs).
+    cloud_seams::offer(app.handle());
     Ok(())
 }
 

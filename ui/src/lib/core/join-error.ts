@@ -3,6 +3,7 @@
 
 import type { AppError } from '$lib/core/types';
 import type { TranslationKey } from '$lib/core/i18n';
+import { cloudNotReady } from '$lib/core/sync/cloud';
 
 /**
  * Mirrors `ERR_JOIN_OWN_LOCK` in crates/lock/src/vault.rs. The refusal has no
@@ -16,5 +17,7 @@ export function joinErrorKey(e: unknown): TranslationKey | null {
   if (e == null || typeof e !== 'object') return null;
   const { code, message } = e as AppError;
   if (code === 'other' && message === ERR_JOIN_OWN_LOCK) return 'settings_sync_join_own_lock';
+  // The storage of Veydan Cloud does not know the account yet: the words of the wait, not of the host.
+  if (cloudNotReady(e)) return 'settings_sync_cloud_not_ready';
   return null;
 }

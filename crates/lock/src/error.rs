@@ -25,6 +25,13 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
+    /// The secret given is not the lock's: `unlock`, `verify` and the
+    /// `current` of `set` say so with the texts [`crate::ERR_WRONG`] and
+    /// [`crate::ERR_CURRENT`]; this is the one place that knows them.
+    pub fn is_wrong_secret(&self) -> bool {
+        matches!(self, Self::Other(m) if m == crate::ERR_WRONG || m == crate::ERR_CURRENT)
+    }
+
     pub fn db(e: impl std::fmt::Display) -> Self {
         Self::Db(e.to_string())
     }

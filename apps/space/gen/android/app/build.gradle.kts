@@ -13,6 +13,10 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// The key of the debug build, when scripts/android/dev.sh names one: Android
+// installs over the app on the phone only an APK signed by the same key.
+val devKeystore: String? = System.getenv("VEYDAN_ANDROID_DEV_KEYSTORE")
+
 android {
     compileSdk = 36
     namespace = "net.veydan.mobile"
@@ -24,8 +28,21 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+    signingConfigs {
+        if (devKeystore != null) {
+            create("dev") {
+                storeFile = file(devKeystore)
+                storePassword = System.getenv("VEYDAN_ANDROID_DEV_KEYSTORE_PASS")
+                keyAlias = System.getenv("VEYDAN_ANDROID_DEV_KEY_ALIAS")
+                keyPassword = System.getenv("VEYDAN_ANDROID_DEV_KEYSTORE_PASS")
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
+            if (devKeystore != null) {
+                signingConfig = signingConfigs.getByName("dev")
+            }
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true

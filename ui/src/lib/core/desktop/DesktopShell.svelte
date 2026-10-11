@@ -21,7 +21,8 @@
   import CommandPalette from '$lib/core/desktop/CommandPalette.svelte';
   import { commands, registerDirectoryCommands } from '$lib/core/commands';
   import { leavesOff, registry } from '$lib/core/registry';
-  import ModulesPicker from '$lib/core/ModulesPicker.svelte';
+  import SetupCard from '$lib/core/onboarding/SetupCard.svelte';
+  import Wizard from '$lib/core/onboarding/Wizard.svelte';
   import ConfirmHost from '$lib/core/ui/ConfirmHost.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
@@ -460,8 +461,9 @@
   {#each windowOverlays as overlay (overlay.key)}
     <overlay.component />
   {/each}
-  <!-- A new data file: which modules to use (section 12). -->
-  <ModulesPicker />
+  <!-- A new data file: the first start (section 12), and what it left to set up. -->
+  <Wizard />
+  <SetupCard floating />
 {/if}
 <!-- The app's confirmation questions (ui/confirm.svelte.ts), above everything else. -->
 <ConfirmHost />

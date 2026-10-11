@@ -34,6 +34,10 @@ pub mod relays;
 pub mod servers;
 pub mod session;
 pub mod shared;
+/// The linking of devices on the relays of the project: keys that are not the session's.
+pub mod tempkey;
+/// The service notes of the module `cloud` to a contact (messenger-wire.md §3).
+pub mod cloudnotes;
 
 use messenger_core::outbound::WireEvent;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
@@ -205,7 +209,10 @@ impl MessengerRuntime {
         let profiles = ProfileService::new(store.clone());
         let contacts = ContactService::new(store.clone(), profiles.clone());
         let nip05 = Nip05Service::new(Arc::new(ReqwestFetcher::new()));
-        let dm = DmService::new(store.clone(), contacts.clone(), profiles.clone(), Arc::new(SystemClock));
+        // The DM service knows the pinned bot of Veydan Cloud: its messages
+        // and cards land in its chat without a request (`DmService::with_bot`).
+        let dm = DmService::new(store.clone(), contacts.clone(), profiles.clone(), Arc::new(SystemClock))
+            .with_bot(config.bot_pubkey.as_deref());
         let group_service =
             messenger_groups::GroupService::new(store.clone(), secrets.clone(), Arc::new(SystemClock), dm.clone());
         let (signals, signals_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1346,5 +1353,44 @@ mod tests {
         assert!(!laptop.dm().message(&id).await.unwrap().unwrap().deleted, "not hidden here alone");
         assert!(hide_notes(&laptop, &me).await.is_empty());
         laptop.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn the_pinned_bot_of_the_config_lands_in_its_chat_and_tells_the_module() {
+        let bot = Keys::generate();
+        let dir = tempfile::tempdir().unwrap();
+        let config = MessengerConfig::new(dir.path().join("messenger")).with_bot(Some(&bot.public_key().to_hex()));
+        let rt = MessengerRuntime::start(config, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+        rt.relays().set_silent(true).await.unwrap();
+        servers::use_veydan_offline(&rt).await;
+        rt.identity().create("pw").await.unwrap();
+        assert!(rt.refresh_signer().await.unwrap());
+        let me = rt.session_keys().await.unwrap();
+        let chat = messenger_store::chats::dm_chat_id(&bot.public_key().to_hex());
+
+        // The gate is on, as in the app: a card and an alert in plain words
+        // come through the whole chain into one chat, with no request.
+        let mut ui = rt.ui.subscribe();
+        let card = r#"{"v":1,"t":"recovery.requested","request_id":"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c","expires_at":1791014145}"#;
+        hear(&rt, &PrivateDirectMessageBuilder::new(me.public_key(), card).finalize(&bot).unwrap()).await;
+        let shown = last_from(&rt, &bot).await;
+        assert_eq!(shown.content_type, "bot_card");
+        assert_eq!(
+            shown.bot_card,
+            Some(messenger_dm::BotCard::RecoveryRequested { request_id: Some("9c".repeat(16)), created_at: None, expires_at: Some(1_791_014_145) })
+        );
+        hear(&rt, &PrivateDirectMessageBuilder::new(me.public_key(), "eu-1: the disk is 91% full").finalize(&bot).unwrap()).await;
+        let view = rt.dm().chat(&chat).await.unwrap().expect("the chat with the bot");
+        assert_eq!((view.mode.as_str(), view.can_send, view.unread), ("full_chat", true, 2));
+        let mut cards = Vec::new();
+        while let Ok(e) = ui.try_recv() {
+            if e.name == crate::cloudnotes::UI_EVENT_BOT_CARD {
+                cards.push(e.payload);
+            }
+        }
+        assert_eq!(cards.len(), 1, "the card, not the alert");
+        assert_eq!((cards[0]["id"].as_str(), cards[0]["t"].as_str()), (Some(shown.id.as_str()), Some("recovery.requested")));
+        assert_eq!(cards[0]["from"], bot.public_key().to_hex());
+        rt.shutdown().await;
     }
 }

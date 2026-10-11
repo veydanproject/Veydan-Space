@@ -30,7 +30,8 @@
 
   const tr = (key: string, params?: Record<string, string>) => $t(key as 'msg_title', params);
 
-  const callable = $derived(chat.kind === 'dm' && chat.mode === 'full_chat' && !!chat.peer_pubkey);
+  // The chat with the bot of Veydan Cloud is a full one, and no call goes to the bot.
+  const callable = $derived(chat.kind === 'dm' && chat.mode === 'full_chat' && !chat.bot && !!chat.peer_pubkey);
   const sessionActive = $derived(!!messengerStore.status?.runtime?.session_active);
   const reason = $derived(
     callStore.loaded && !callStore.available ? $t('msg_call_unavailable')

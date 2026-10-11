@@ -162,14 +162,31 @@
             <Icon name="key" size={14} />
             {$t('settings_lock_recovery')}:
             <strong class:missing={!appLock.status.has_recovery}>
-              {appLock.status.has_recovery ? $t('settings_lock_recovery_has') : $t('settings_lock_recovery_none')}
+              {#if appLock.status.recovery_version === 2}
+                {$t('settings_lock_recovery_words')}
+              {:else if appLock.status.recovery_version === 1}
+                {$t('settings_lock_recovery_code')}
+              {:else}
+                {$t('settings_lock_recovery_none')}
+              {/if}
             </strong>
           </span>
-          <span class="sub">{$t('settings_lock_recovery_new_hint')}</span>
+          <!-- The Recovery Key of 12 words is reissued only by the cloud (platform-spec 8.1): the escrow and the shares follow it. -->
+          <span class="sub">
+            {#if appLock.status.recovery_version === 2}
+              {$t('settings_lock_recovery_v2_hint')}
+            {:else if appLock.status.recovery_version === 1}
+              {$t('settings_lock_recovery_v1_hint')}
+            {:else}
+              {$t('settings_lock_recovery_new_hint')}
+            {/if}
+          </span>
         </div>
-        <button class="btn btn-ghost btn-sm" disabled={busy || !current} onclick={regenerate}>
-          {$t('settings_lock_recovery_new')}
-        </button>
+        {#if appLock.status.recovery_version !== 2}
+          <button class="btn btn-ghost btn-sm" disabled={busy || !current} onclick={regenerate}>
+            {$t('settings_lock_recovery_new')}
+          </button>
+        {/if}
       </div>
 
       {#if appLock.status.vault === 'mismatch' && vaultReset}

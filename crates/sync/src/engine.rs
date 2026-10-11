@@ -15,6 +15,7 @@ use crate::{sha256_hex, Result, SyncError};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use std::collections::BTreeSet;
+use zeroize::Zeroizing;
 
 /// What a storage location contains before we touch it.
 #[derive(Debug)]
@@ -79,6 +80,22 @@ fn planned_gets(peer: &str, head: &PeerHead, all: &[String]) -> Vec<String> {
     keys
 }
 
+/// The key of a passphrase is Argon2id over 64 MiB: seconds of one core on
+/// a phone. It runs on the blocking pool, as the lock's does
+/// (`crates/lock/src/vault.rs`): on a worker of the async runtime every
+/// other task of that worker — a command of the UI among them — would wait
+/// for it.
+async fn off_runtime<T: Send + 'static>(
+    job: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    match tokio::task::spawn_blocking(job).await {
+        Ok(done) => done,
+        Err(e) => Err(SyncError::Crypto(format!(
+            "the key of the passphrase was not derived: {e}"
+        ))),
+    }
+}
+
 impl Engine {
     pub async fn probe(storage: &dyn Storage) -> Result<Probe> {
         if let Some(bytes) = storage.get(MANIFEST_KEY).await? {
@@ -102,7 +119,8 @@ impl Engine {
             Probe::Vault(_) => return Err(SyncError::VaultExists),
             Probe::Foreign => return Err(SyncError::ForeignStorage),
         }
-        let (manifest, vmk) = Manifest::create(passphrase)?;
+        let pass = Zeroizing::new(passphrase.to_owned());
+        let (manifest, vmk) = off_runtime(move || Manifest::create(&pass)).await?;
         storage.put(MANIFEST_KEY, &manifest.to_json()?).await?;
         let engine = Self::with_key(storage, &vmk, &manifest.vault_id, device_id);
         Ok((engine, vmk))
@@ -119,7 +137,12 @@ impl Engine {
             Probe::Empty => return Err(SyncError::NoVault),
             Probe::Foreign => return Err(SyncError::ForeignStorage),
         };
-        let vmk = manifest.unlock(passphrase)?;
+        let pass = Zeroizing::new(passphrase.to_owned());
+        let (manifest, vmk) = off_runtime(move || {
+            let vmk = manifest.unlock(&pass)?;
+            Ok((manifest, vmk))
+        })
+        .await?;
         let engine = Self::with_key(storage, &vmk, &manifest.vault_id, device_id);
         Ok((engine, vmk))
     }
@@ -159,8 +182,17 @@ impl Engine {
         if manifest.vault_id != self.vault_id {
             return Err(SyncError::VaultMismatch);
         }
-        manifest.unlock(old)?;
-        manifest.rewrap(vmk, new)?;
+        let (old, new, vmk) = (
+            Zeroizing::new(old.to_owned()),
+            Zeroizing::new(new.to_owned()),
+            vmk.clone(),
+        );
+        let manifest = off_runtime(move || {
+            manifest.unlock(&old)?;
+            manifest.rewrap(&vmk, &new)?;
+            Ok(manifest)
+        })
+        .await?;
         self.storage.put(MANIFEST_KEY, &manifest.to_json()?).await
     }
 

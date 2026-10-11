@@ -115,12 +115,17 @@ fn classify_gift_wrap(event: &Event, envelope: WireEnvelope, keys: Option<&Keys>
     if rumor.pubkey != unwrapped.sender {
         return Inbound::ignored(KIND_GIFT_WRAP, "rumor author does not match seal signer");
     }
-    let rumor_id = match rumor.id.map(|id| id.to_hex()).and_then(|h| EventId::parse(&h)) {
-        Some(id) => id,
-        None => match EventId::parse(&rumor_id_of(&rumor)) {
-            Some(id) => id,
-            None => return Inbound::ignored(KIND_GIFT_WRAP, "rumor has no id"),
-        },
+    // The id of a rumor is the hash of its fields (NIP-01), never the id
+    // written beside them: messages are kept and deduplicated by it, so a
+    // rumor that claims the id of somebody else's message would take its
+    // place in the store before that message comes. With the author inside
+    // the hash, and the author the signer of the seal, no other key can
+    // own the id of a message. A rumor whose id is not its hash is nobody's.
+    if rumor.verify_id().is_err() {
+        return Inbound::ignored(KIND_GIFT_WRAP, "rumor id is not the hash of the rumor");
+    }
+    let Some(rumor_id) = EventId::parse(&rumor.compute_id().to_hex()) else {
+        return Inbound::ignored(KIND_GIFT_WRAP, "rumor has no id");
     };
     let recipients: Vec<PubKey> = rumor
         .tags
@@ -185,7 +190,6 @@ fn classify_group(event: &Event, envelope: WireEnvelope) -> Inbound {
     })
 }
 
-/// Id of an unsigned rumor per NIP-01 (sha256 of the canonical array).
 /// A beat of our own `d` only: other clients use the same kind for a song
 /// or a mood. The expiration is kept as given; the handler decides what a
 /// missing one means.
@@ -202,12 +206,6 @@ fn classify_presence(event: &Event) -> Inbound {
         .and_then(|s| s.parse::<i64>().ok())
         .map(Timestamp);
     Inbound::Meta(MetaInbound::Presence { author: pk(&event.pubkey), created_at: ts(event.created_at), expires_at })
-}
-
-fn rumor_id_of(rumor: &UnsignedEvent) -> String {
-    let mut r = rumor.clone();
-    r.ensure_id();
-    r.id.map(|id| id.to_hex()).unwrap_or_default()
 }
 
 fn pk(p: &PublicKey) -> PubKey {
@@ -309,6 +307,50 @@ mod tests {
             matches!(classify(&raw_of(&rumor_of_kind(15, &stranger, &me)), Some(&me)), Inbound::Ignored { .. }),
             "any other kind is not a DM"
         );
+    }
+
+    /// A message of `author` to `to` whose rumor is `rumor`, as its wrap.
+    fn wrapped(author: &Keys, to: &Keys, rumor: UnsignedEvent) -> Event {
+        nostr::nips::nip59::GiftWrapBuilder::new(to.public_key(), rumor).finalize(author).unwrap()
+    }
+
+    #[test]
+    fn the_id_of_a_rumor_is_its_hash_and_a_claimed_one_is_ignored() {
+        let bot = Keys::generate();
+        let eve = Keys::generate();
+        let me = Keys::generate();
+        let message = |author: &Keys, content: &str| {
+            EventBuilder::new(Kind::from(KIND_DM_RUMOR), content)
+                .tag(Tag::public_key(me.public_key()))
+                .custom_created_at(nostr::types::Timestamp::from(1_791_012_345u64))
+                .finalize_unsigned(author.public_key())
+        };
+        // A card of the bot, and the id only the bot's key can give it.
+        let card = message(&bot, r#"{"v":1,"t":"recovery.requested","request_id":"9c"}"#);
+        let card_id = card.compute_id();
+        match classify(&raw_of(&wrapped(&bot, &me, card.clone())), Some(&me)) {
+            Inbound::Dm(dm) => assert_eq!(dm.rumor_id.as_hex(), card_id.to_hex()),
+            other => panic!("expected Dm, got {other:?}"),
+        }
+        // Somebody else claims that id for a rumor of their own, to stand in
+        // the store where the card would: not a message at all.
+        let mut forged = message(&eve, r#"{"v":1,"t":"delete","target":"x"}"#);
+        forged.id = Some(card_id);
+        match classify(&raw_of(&wrapped(&eve, &me, forged)), Some(&me)) {
+            Inbound::Ignored { reason, .. } => assert!(reason.contains("hash"), "{reason}"),
+            other => panic!("expected Ignored, got {other:?}"),
+        }
+        // The bot's own rumor under a wrong id is not taken either, and one
+        // sent without an id gets the hash.
+        let mut wrong = card.clone();
+        wrong.id = Some(message(&eve, "x").compute_id());
+        assert!(matches!(classify(&raw_of(&wrapped(&bot, &me, wrong)), Some(&me)), Inbound::Ignored { .. }));
+        let mut bare = card;
+        bare.id = None;
+        match classify(&raw_of(&wrapped(&bot, &me, bare)), Some(&me)) {
+            Inbound::Dm(dm) => assert_eq!(dm.rumor_id.as_hex(), card_id.to_hex()),
+            other => panic!("expected Dm, got {other:?}"),
+        }
     }
 
     #[test]

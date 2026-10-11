@@ -59,6 +59,25 @@ pub struct Manifest {
     /// from the registry and its own settings only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub calls: Vec<ManifestCall>,
+    /// The hosts of `/vault/`, the storage of Veydan Cloud
+    /// (internal/vcloud-plan.md 3.3, 4.8). Absent in manifests written
+    /// before it; a client then has no host for the backend `cloud`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub storage: Vec<ManifestStorage>,
+}
+
+/// A host of `/vault/` (vstore), as a manifest names it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManifestStorage {
+    /// The `public_url` of vstore, `https://…/vault`, without a trailing
+    /// slash: the tag `u` of NIP-98 starts with it.
+    pub url: String,
+    /// Regions served, `*` for any (internal/vcloud-plan.md 3.3).
+    #[serde(default)]
+    pub regions: Vec<String>,
+    /// Lower is tried first; equal keeps the manifest's order.
+    #[serde(default)]
+    pub priority: u32,
 }
 
 /// Who runs a call node, and so how far it is trusted (the "trust level"
@@ -317,7 +336,35 @@ impl Manifest {
                 return Err(MessengerError::Invalid(format!("call node '{}' is of the class own", c.node)));
             }
         }
+        let mut storage_urls = BTreeSet::new();
+        for s in &self.storage {
+            // A signed NIP-98 event goes there: https only and no userinfo, as for `/cloud/`.
+            let plain = reqwest::Url::parse(&s.url)
+                .is_ok_and(|u| u.username().is_empty() && u.password().is_none() && u.host_str().is_some());
+            if !s.url.starts_with("https://")
+                || !plain
+                || s.url.ends_with('/')
+                || s.url.contains(['?', '#'])
+                || s.url.chars().any(char::is_whitespace)
+            {
+                return Err(MessengerError::Invalid(format!("storage host '{}' is not an https URL without a trailing slash", s.url)));
+            }
+            if !storage_urls.insert(s.url.as_str()) {
+                return Err(MessengerError::Invalid(format!("storage host '{}' is listed twice", s.url)));
+            }
+        }
         Ok(())
+    }
+
+    /// Hosts of `/vault/` for `region`, by the rule of the media servers,
+    /// lower `priority` first and the manifest's order among equals.
+    pub fn storage_for_region(&self, region: &str) -> Vec<&ManifestStorage> {
+        let has = self.storage.iter().any(|s| s.regions.iter().any(|g| g == region));
+        let tag = if has || region == REGION_DEFAULT { region } else { REGION_DEFAULT };
+        let mut hosts: Vec<&ManifestStorage> =
+            self.storage.iter().filter(|s| s.regions.iter().any(|g| g == tag || g == REGION_ANY)).collect();
+        hosts.sort_by_key(|s| s.priority);
+        hosts
     }
 
     /// `true` when this manifest may replace one with `last_serial`.
@@ -447,7 +494,66 @@ mod tests {
                 call("198.51.100.9:443", 'b', CallNodeClass::Volunteer, &["ru"]),
                 call("192.0.2.1:443", 'c', CallNodeClass::Cloud, &["*"]),
             ],
+            storage: vec![],
         }
+    }
+
+    fn vault(url: &str, regions: &[&str], priority: u32) -> ManifestStorage {
+        ManifestStorage { url: url.into(), regions: regions.iter().map(|r| r.to_string()).collect(), priority }
+    }
+
+    #[test]
+    fn storage_hosts_come_by_region_and_priority_and_old_manifests_have_none() {
+        // A manifest written before `storage[]` reads, with no host; written
+        // again it is the same document.
+        let old = serde_json::to_string(&sample()).unwrap();
+        assert!(!old.contains("storage"));
+        assert!(Manifest::parse_content(&old).unwrap().storage.is_empty());
+
+        let mut m = sample();
+        m.storage = vec![
+            vault("https://media-us.example.com/vault", &["default"], 20),
+            vault("https://media-eu.example.com/vault", &["default"], 10),
+            vault("https://media-ru.example.com/vault", &["ru"], 0),
+            vault("https://media-any.example.com/vault", &["*"], 30),
+        ];
+        m.validate().unwrap();
+        let urls = |region: &str| m.storage_for_region(region).iter().map(|s| s.url.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            urls("default"),
+            ["https://media-eu.example.com/vault", "https://media-us.example.com/vault", "https://media-any.example.com/vault"]
+        );
+        assert_eq!(urls("ru"), ["https://media-ru.example.com/vault", "https://media-any.example.com/vault"]);
+        assert_eq!(urls("mars"), urls("default"), "unknown region falls back to default");
+
+        // Signed and read back; a field of a later entry is skipped.
+        let keys = Keys::generate();
+        assert_eq!(Manifest::parse_signed(&m.sign(&keys).unwrap(), None).unwrap(), m);
+        let json = serde_json::to_string(&m).unwrap().replace("\"priority\":0", "\"priority\":0,\"weight\":7");
+        assert_eq!(Manifest::parse_content(&json).unwrap(), m);
+        let bare = serde_json::to_string(&m).unwrap().replace(",\"priority\":0", "");
+        assert_eq!(Manifest::parse_content(&bare).unwrap().storage[2].priority, 0, "priority defaults to 0");
+    }
+
+    #[test]
+    fn storage_hosts_are_validated() {
+        let bad = |url: &str| {
+            let mut m = sample();
+            m.storage = vec![vault(url, &["*"], 0)];
+            m.validate().is_err()
+        };
+        assert!(bad("ftp://media.example.com/vault"));
+        assert!(bad("https://media.example.com/vault/"), "a trailing slash breaks the tag u");
+        assert!(bad("https://media.example.com/vault?x=1"));
+        assert!(bad("https://media.example.com/va ult"));
+        assert!(bad("http://media.example.com/vault"), "a signed request never goes in clear text");
+        assert!(bad("https://user@evil.example.com/vault"), "no userinfo");
+        assert!(bad("https://user:pass@media.example.com/vault"));
+        assert!(!bad("https://media.example.com/vault"));
+        assert!(!bad("https://media.example.com:8443/vault"));
+        let mut m = sample();
+        m.storage = vec![vault("https://a.example.com/vault", &["*"], 0), vault("https://a.example.com/vault", &["ru"], 1)];
+        assert!(m.validate().is_err(), "the same host twice");
     }
 
     fn call(addr: &str, id: char, class: CallNodeClass, regions: &[&str]) -> ManifestCall {

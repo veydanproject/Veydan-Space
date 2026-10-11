@@ -1,0 +1,137 @@
+/* SPDX-FileCopyrightText: 2026 Veydan Project */
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 */
+
+/* The first start (core/onboarding): the frame of the wizard and the parts a
+ * step is made of. A step — the core's or a module's — draws `.ob-main` and
+ * `.ob-foot`; the frame gives them their place on a phone (the whole
+ * screen, the buttons at the bottom) and on a computer (a window with the
+ * list of steps at its left). */
+
+.ob {
+  position: fixed;
+  inset: var(--overlay-inset, 0);
+  border-radius: var(--overlay-radius, 0);
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  background: var(--backdrop);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: var(--text);
+}
+.ob.m {
+  /* Under the sheets of the phone (50), over its screens and its bar. */
+  z-index: 40;
+  inset: 0;
+  padding: var(--sat, 0px) 0 var(--sab, 0px);
+  align-items: stretch;
+  justify-content: stretch;
+  flex-direction: column;
+  background: var(--bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* ── A computer: a window, the steps at its left ── */
+.ob-win {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  width: min(880px, 100%);
+  height: min(600px, 100%);
+  background: var(--surface-drawer);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.ob-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-5) var(--sp-4);
+  background: var(--chrome);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+.ob-brand { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); font-weight: var(--fw-bold); font-size: var(--fs-md); }
+.ob-brand img { width: 32px; height: 32px; object-fit: contain; }
+.ob-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; }
+.ob-steps li { display: flex; align-items: center; gap: var(--sp-3); min-height: 36px; padding: 0 var(--sp-2); border-radius: var(--radius-sm); color: var(--text-3); font-weight: var(--fw-semibold); font-size: var(--fs-base); }
+.ob-steps .num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; border: 1px solid var(--border-2); font-size: var(--fs-xs); }
+.ob-steps li.done { color: var(--text-2); }
+.ob-steps li.done .num { background: var(--accent-tint); border-color: transparent; color: var(--accent-text); }
+.ob-steps li.on { background: var(--accent-bg); color: var(--text); }
+.ob-steps li.on .num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ob-step { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ob-win .ob-step { padding: var(--sp-8) var(--sp-8) var(--sp-6); }
+.ob-win .ob-backrow { min-height: 28px; margin: calc(var(--sp-4) * -1) 0 var(--sp-2) calc(var(--sp-2) * -1); }
+
+/* ── A phone: the whole screen ── */
+.ob-top { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: var(--sp-2); min-height: 48px; padding: var(--sp-1) var(--sp-3) 0 var(--sp-1); flex-shrink: 0; }
+.ob-back { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--text); cursor: pointer; }
+.ob-back.text { width: auto; height: 28px; padding: 0 var(--sp-2); gap: 4px; border-radius: var(--radius-sm); color: var(--text-2); font: inherit; font-size: var(--fs-sm); }
+.ob-back.text:hover { color: var(--text); }
+.ob-dots { display: flex; gap: 6px; justify-content: center; }
+.ob-dots i { width: 22px; height: 4px; border-radius: 2px; background: var(--border-2); }
+.ob-dots i.on { background: var(--accent); }
+.ob.m .ob-step { flex: 1; }
+
+/* ── The parts of a step ── */
+.ob-main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.ob.m .ob-main { padding: var(--sp-4) var(--sp-5) 0; }
+.ob-main.center { align-items: center; justify-content: center; text-align: center; }
+.ob-logo { width: 88px; height: 88px; object-fit: contain; margin-bottom: var(--sp-5); }
+.ob-tile { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; flex-shrink: 0; border-radius: 16px; background: var(--accent-tint); color: var(--accent); margin-bottom: var(--sp-4); }
+.ob-title { margin: 0 0 var(--sp-2); font-size: 24px; line-height: 1.2; font-weight: 800; letter-spacing: -0.02em; }
+.ob-main.center .ob-title { font-size: 28px; }
+.ob-text { margin: 0 0 var(--sp-5); color: var(--text-2); font-size: 15px; line-height: 1.45; }
+.ob-main.center .ob-text { max-width: 320px; }
+.ob-gives { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
+.ob-gives li { display: flex; align-items: flex-start; gap: var(--sp-3); font-size: 15px; line-height: 1.4; }
+.ob-gives svg { color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+
+.ob-opts { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ob-opt { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 14px; border-radius: var(--m-radius, var(--radius-md)); border: 1.5px solid var(--m-card-border, var(--border)); background: var(--m-card, var(--surface-2)); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.ob-opt:disabled { cursor: default; opacity: 0.6; }
+.ob-opt.on { border-color: var(--accent); background: var(--accent-bg); }
+.ob-opt-ic { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex-shrink: 0; border-radius: 11px; background: var(--accent-tint); color: var(--accent); }
+.ob-opt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ob-opt-t { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 15px; font-weight: var(--fw-bold); }
+.ob-opt-s { font-size: 13px; line-height: 1.35; color: var(--text-2); }
+.ob-radio { width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--border-2); }
+.ob-opt.on .ob-radio { border: 6px solid var(--accent); }
+.ob-check { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 7px; border: 1.5px solid var(--border-2); color: #fff; }
+.ob-opt.on .ob-check { background: var(--accent); border-color: var(--accent); }
+
+.ob-rows { display: flex; flex-direction: column; border-radius: var(--m-radius, var(--radius-md)); border: 1px solid var(--m-card-border, var(--border)); background: var(--m-card, var(--surface-2)); overflow: hidden; }
+.ob-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 56px; padding: var(--sp-2) var(--sp-4); border: 0; border-bottom: 1px solid var(--m-card-border, var(--border)); background: none; color: var(--text); font: inherit; font-size: 15px; text-align: left; text-decoration: none; cursor: pointer; }
+.ob-row:last-child { border-bottom: 0; }
+.ob-row > svg:first-child { color: var(--accent); flex-shrink: 0; }
+.ob-row-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ob-row-s { font-size: 13px; line-height: 1.35; color: var(--text-2); }
+.ob-row-v { color: var(--text-2); font-size: 14px; white-space: nowrap; }
+.ob-row-v.ok { color: var(--success-text); }
+.ob-row .chev { color: var(--text-3); display: inline-flex; flex-shrink: 0; }
+
+.ob-note { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); padding: var(--sp-3) var(--sp-4); border-radius: var(--m-radius, var(--radius-md)); background: var(--accent-tint); font-size: 14px; line-height: 1.35; }
+.ob-note > svg { color: var(--accent); flex-shrink: 0; }
+.ob-note-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ob-note-b small { font-size: 13px; color: var(--text-2); }
+.ob-note button { border: 0; background: none; color: var(--accent-text); font: inherit; font-weight: var(--fw-bold); cursor: pointer; padding: var(--sp-2); }
+.ob-wait { display: flex; align-items: center; gap: var(--sp-3); color: var(--text-2); font-size: 14px; }
+.ob-error { margin: var(--sp-3) 0 0; color: var(--danger-text); font-size: 14px; line-height: 1.4; }
+
+.ob-foot { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; padding-top: var(--sp-5); flex-wrap: wrap; }
+.ob.m .ob-foot { flex-direction: column; align-items: stretch; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5) var(--sp-5); }
+.ob.m .ob-foot .btn { min-height: 48px; justify-content: center; font-size: 15px; }
+.ob-skip { border: 0; background: none; color: var(--text-2); font: inherit; font-size: 14px; font-weight: var(--fw-semibold); min-height: 36px; padding: 0 var(--sp-3); cursor: pointer; }
+.ob-skip:hover { color: var(--text); }
+.ob-skip:disabled { opacity: 0.5; cursor: default; }
+.ob-foot-hint { margin: 0; color: var(--text-3); font-size: 13px; line-height: 1.35; }
+.ob.m .ob-foot-hint { text-align: center; }
+
+/* A module's own form inside a step (the key of the messenger) keeps its card without a second frame. */
+.ob-step .ob-embed { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ob-step .ob-embed > .card { border: 0; background: none; box-shadow: none; padding: 0; max-width: none; }

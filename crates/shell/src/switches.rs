@@ -24,9 +24,9 @@ use veydan_core::{settings, AppError, CmdResult, Core};
 /// The local setting: `{"<module>": true | false, …}` over the modules with
 /// a switch of their own.
 pub(crate) const KEY: &str = "modules_enabled";
-/// Set by the first start over a new data file of a product with more than
-/// one switch, and taken away once the user said which modules to use: until
-/// then the UI asks.
+/// Set by the first start over a new data file, and taken away once the
+/// user answered the first questions of the UI (which modules to use, in a
+/// product with a choice): until then the UI shows its first start.
 pub(crate) const FIRST_RUN_KEY: &str = "modules_first_run";
 /// Emitted with [`ModulesView`] whenever the set of modules that are on changes.
 pub const EVENT_MODULES_CHANGED: &str = "modules://changed";
@@ -245,6 +245,16 @@ impl Shell {
         Ok(())
     }
 
+    /// The first start is over without a choice of modules (a product of one
+    /// module has none to make): the UI shows it no more.
+    pub(crate) async fn end_first_run(&self) -> Result<(), AppError> {
+        let _changing = self.switches.changing.lock().await;
+        settings::delete(&self.app.state::<Core>().db, FIRST_RUN_KEY).await?;
+        self.switches.first_run.store(false, Ordering::SeqCst);
+        self.changed();
+        Ok(())
+    }
+
     /// Make the modules in `off` the ones that are off. The setting is kept
     /// first, so that a hook already sees the new state; a module that fails
     /// to start goes back off.
@@ -315,17 +325,17 @@ impl Shell {
     }
 
     /// Take over the switches the last run left, before the modules are set
-    /// up. Over a new data file (`fresh`) of a product with more than one
-    /// switch the UI is to ask which modules to use.
+    /// up. Over a new data file (`fresh`) the UI is to show its first start:
+    /// the language, the modules to use where the product has a choice, the
+    /// account, sync.
     pub(crate) async fn load_switches(&self, fresh: bool) {
         let db = &self.app.state::<Core>().db;
-        let choice = own(&self.parts).count() > 1;
-        if fresh && choice {
+        if fresh {
             if let Err(e) = settings::set(db, FIRST_RUN_KEY, "1").await {
                 eprintln!("modules: the first start was not noted: {e}");
             }
         }
-        let first_run = choice && settings::get(db, FIRST_RUN_KEY).await.is_some();
+        let first_run = settings::get(db, FIRST_RUN_KEY).await.is_some();
         self.switches.first_run.store(first_run, Ordering::SeqCst);
         let stored = settings::get_json(db, KEY).await;
         self.switches.set_off(parse(&self.parts, stored));
@@ -384,6 +394,13 @@ pub async fn modules_choose(
     shell: tauri::State<'_, Shell>,
 ) -> CmdResult<ModulesView> {
     shell.choose_modules(&enabled).await?;
+    Ok(shell.modules())
+}
+
+/// The first start of the UI is over; the modules stay as they are.
+#[tauri::command]
+pub async fn modules_first_run_done(shell: tauri::State<'_, Shell>) -> CmdResult<ModulesView> {
+    shell.end_first_run().await?;
     Ok(shell.modules())
 }
 

@@ -11,6 +11,8 @@
   import { LARGE_FILE_LIMITS, largeFilePeakMib } from '$lib/core/api';
   import { registry } from '$lib/core/registry';
   import { directory } from '$lib/core/directory';
+  import { formatBytes } from '$lib/core/utils';
+  import { CLOUD_BACKEND, asksForProfileFiles, fullestPool, loadCloud, usageTone, type CloudView } from '$lib/core/sync/cloud';
 
   let cfg = $state<SyncConfig | null>(null);
   /** The modules' parts of this form (the notes' attachment policy), saved with it. */
@@ -26,6 +28,8 @@
   let progress = $state<SyncProgress | null>(null);
   let passphrase = $state('');
   let busy = $state(false);
+  /** The check or the connection under way: its button shows it turning, for it takes seconds (the key of the vault, the storage). */
+  let working = $state<'probe' | 'create' | 'join' | null>(null);
   let error = $state('');
   let toast = $state('');
   let toastTimer: ReturnType<typeof setTimeout>;
@@ -41,6 +45,30 @@
       : running || syncBtnState === 'syncing' ? 'syncing'
         : 'idle',
   );
+
+  /** Veydan Cloud as the module cloud tells it; nothing where the module is off. */
+  let cloud = $state<CloudView>({ choice: 'none', plan: null, usage: null });
+  const onCloud = $derived(cfg?.backend === CLOUD_BACKEND);
+  // Offered with an account; kept among the choices while it is the backend in use.
+  const cloudOffered = $derived(cloud.choice === 'option' || onCloud);
+  const fullest = $derived(fullestPool(cloud.usage));
+  const tone = $derived(fullest ? usageTone(fullest.level) : 'none');
+  const usageLine = $derived.by(() => {
+    if (!fullest || tone === 'none') return '';
+    const args = { used: formatBytes(fullest.used), limit: formatBytes(fullest.limit), percent: String(fullest.percent) };
+    if (tone === 'full') return $t('settings_sync_cloud_full', args);
+    if (tone === 'warn') return $t('settings_sync_cloud_almost_full', args);
+    return $t('settings_sync_cloud_used', args);
+  });
+
+  function chooseBackend(next: string) {
+    if (!cfg || next === cfg.backend) return;
+    // The free plan: the files of profiles stay off until the user says yes (plan 4.7).
+    if (asksForProfileFiles(next, cloud.plan)) cfg.profile_files = false;
+    cfg.backend = next;
+    // What was found in the other storage says nothing of this one.
+    probe = null;
+  }
 
   const intervals = [30, 60, 300, 900, 3600];
 
@@ -87,13 +115,23 @@
     }
   }
 
+  /** `run` with the button of the work marked as turning. */
+  async function work(what: 'probe' | 'create' | 'join', fn: () => Promise<void>) {
+    working = what;
+    try {
+      await run(fn);
+    } finally {
+      working = null;
+    }
+  }
+
   const doProbe = () =>
-    run(async () => {
+    work('probe', async () => {
       probe = await api.sync.probe();
     });
 
   const doCreate = () =>
-    run(async () => {
+    work('create', async () => {
       status = await api.sync.createVault(passphrase);
       // The backend turned sync on: the form takes its config, or the next save would turn it off.
       cfg = await api.sync.getConfig();
@@ -103,7 +141,7 @@
     });
 
   const doJoin = () =>
-    run(async () => {
+    work('join', async () => {
       status = await api.sync.joinVault(passphrase);
       cfg = await api.sync.getConfig();
       passphrase = '';
@@ -171,6 +209,7 @@
 
   onMount(() => {
     load();
+    void loadCloud().then((view) => (cloud = view));
     const unStatus = onSyncStatus(() =>
       api.sync.status().then((s) => {
         status = s;
@@ -304,16 +343,36 @@
     {/if}
 
     <div class="m-section">{$t('settings_sync_backend')}</div>
-    <div class="seg backend group">
-      <button class="seg-btn" class:active={cfg.backend === 'webdav'} onclick={() => (cfg!.backend = 'webdav')} disabled={status.joined}>
+    <div class="seg backend group" class:three={cloudOffered}>
+      {#if cloudOffered}
+        <button class="seg-btn" class:active={onCloud} onclick={() => chooseBackend(CLOUD_BACKEND)} disabled={status.joined}>
+          {$t('settings_sync_backend_cloud')}
+        </button>
+      {/if}
+      <button class="seg-btn" class:active={cfg.backend === 'webdav'} onclick={() => chooseBackend('webdav')} disabled={status.joined}>
         {$t('settings_sync_backend_webdav')}
       </button>
-      <button class="seg-btn" class:active={cfg.backend === 's3'} onclick={() => (cfg!.backend = 's3')} disabled={status.joined}>
+      <button class="seg-btn" class:active={cfg.backend === 's3'} onclick={() => chooseBackend('s3')} disabled={status.joined}>
         {$t('settings_sync_backend_s3')}
       </button>
     </div>
+    {#if cloud.choice === 'activate' && !onCloud}
+      <p class="m-hint">{$t('settings_sync_cloud_activate_hint')}</p>
+      <a class="btn btn-ghost wide group" href="/cloud">
+        <Icon name="cloud" size={16} />
+        {$t('settings_sync_cloud_activate')}
+      </a>
+    {/if}
 
-    {#if cfg.backend === 'webdav'}
+    {#if onCloud}
+      <p class="m-hint">{$t('settings_sync_cloud_hint')}</p>
+      {#if usageLine}
+        <p class="m-hint" class:warn={tone !== 'quiet'}>{usageLine}</p>
+      {/if}
+      {#if status.joined}
+        <p class="m-hint">{$t('settings_sync_cloud_move_hint')}</p>
+      {/if}
+    {:else if cfg.backend === 'webdav'}
       <div class="m-field">
         <label for="dav-url">{$t('settings_sync_webdav_url')}</label>
         <input id="dav-url" type="url" bind:value={cfg.webdav.url} placeholder="https://cloud.example.com/remote.php/dav/files/user/veydan" autocomplete="off" autocapitalize="off" />
@@ -405,26 +464,29 @@
     {/each}
 
     {#if !status.joined}
-      <button class="btn btn-ghost wide" onclick={doProbe} disabled={busy}>
-        <Icon name="search" size={16} />
+      <button class="btn btn-ghost wide action-btn" class:busy-anim={working === 'probe'} onclick={doProbe} disabled={busy}>
+        <span class="action-icon" class:spin={working === 'probe'}><Icon name={working === 'probe' ? 'loader' : 'search'} size={16} /></span>
         {$t('settings_sync_probe')}
       </button>
 
       {#if probe}
-        <p class="probe" class:danger={probe === 'foreign'}>{$t(`settings_sync_probe_${probe}`)}</p>
+        <!-- The passphrase of Veydan Cloud comes from the identity: the backend derives it. -->
+        <p class="probe" class:danger={probe === 'foreign'}>{onCloud && probe !== 'foreign' ? $t('settings_sync_cloud_passphrase_hint') : $t(`settings_sync_probe_${probe}`)}</p>
         {#if probe !== 'foreign'}
-          <div class="m-field">
-            <label for="pass">{$t('settings_sync_passphrase')}</label>
-            <input id="pass" type="password" bind:value={passphrase} placeholder={$t('settings_sync_passphrase_placeholder')} autocomplete="off" />
-          </div>
+          {#if !onCloud}
+            <div class="m-field">
+              <label for="pass">{$t('settings_sync_passphrase')}</label>
+              <input id="pass" type="password" bind:value={passphrase} placeholder={$t('settings_sync_passphrase_placeholder')} autocomplete="off" />
+            </div>
+          {/if}
           {#if probe === 'empty'}
-            <button class="btn btn-primary wide" onclick={doCreate} disabled={busy || passphrase.length < 8}>
-              <Icon name="plus" size={16} />
+            <button class="btn btn-primary wide action-btn" class:busy-anim={working === 'create'} onclick={doCreate} disabled={busy || (!onCloud && passphrase.length < 8)}>
+              <span class="action-icon" class:spin={working === 'create'}><Icon name={working === 'create' ? 'loader' : 'plus'} size={16} /></span>
               {$t('settings_sync_create')}
             </button>
           {:else}
-            <button class="btn btn-primary wide" onclick={doJoin} disabled={busy || !passphrase}>
-              <Icon name="lock" size={16} />
+            <button class="btn btn-primary wide action-btn" class:busy-anim={working === 'join'} onclick={doJoin} disabled={busy || (!onCloud && !passphrase)}>
+              <span class="action-icon" class:spin={working === 'join'}><Icon name={working === 'join' ? 'loader' : 'lock'} size={16} /></span>
               {$t('settings_sync_join')}
             </button>
           {/if}
@@ -465,6 +527,8 @@
   .device-id { font-size: var(--fs-sm); color: var(--text-2); word-break: break-all; }
   .backend { display: flex; width: 100%; }
   .backend .seg-btn { flex: 1; justify-content: center; }
+  /* Three names: each cell takes the room its name needs, and on a narrow phone a name may take two lines. */
+  .backend.three .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; padding: var(--sp-1) var(--sp-2); white-space: normal; text-align: center; line-height: 1.2; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
   .actions { display: flex; gap: var(--sp-2); }
   .actions .btn { flex: 1; }

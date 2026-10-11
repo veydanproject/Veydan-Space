@@ -139,6 +139,45 @@ describe('the registry', () => {
     expect(leavesOff('/')).toBe(false);
   });
 
+  it('keeps a module that requires another off while that one is off (Switch::Follows)', async () => {
+    const calls: string[] = [];
+    const cloud: ModuleDef = {
+      id: 'cloud',
+      title: 'ctx_kind_note',
+      icon: 'upload',
+      routes: ['/cloud'],
+      nav: [{ id: 'cloud', title: 'ctx_kind_note', icon: 'upload', href: '/cloud' }],
+      settings: [],
+      service: true,
+      requires: ['messenger'],
+      start: async () => void calls.push('start cloud'),
+      stop: () => void calls.push('stop cloud'),
+    };
+    use(notes, chat, cloud);
+    // The shell lists only the modules with a switch: the follower is not among them.
+    switches(['notes', 'messenger']);
+    expect(registry.enabled('cloud')).toBe(true);
+    expect(registry.nav().map((n) => n.id)).toEqual(['notes', 'cloud']);
+    expect(leavesOff('/cloud')).toBe(false);
+    await registry.startAll();
+    expect(calls).toEqual(['start cloud']);
+    switches(['notes', 'messenger'], ['messenger']);
+    expect(registry.enabled('cloud')).toBe(false);
+    expect(registry.nav().map((n) => n.id)).toEqual(['notes']);
+    expect(registry.active.map((m) => m.id)).toEqual(['notes']);
+    expect(leavesOff('/cloud')).toBe(true);
+    await registry.follow();
+    expect(calls).toEqual(['start cloud', 'stop cloud']);
+    registry.stopAll();
+    // A product without the module it requires never has it on.
+    use(notes, cloud);
+    switches(['notes']);
+    expect(registry.enabled('cloud')).toBe(false);
+    // A cycle of requirements is off, not a loop.
+    use({ ...cloud, requires: ['loop'] }, { ...notes, id: 'loop', requires: ['cloud'] });
+    expect(registry.enabled('cloud')).toBe(false);
+  });
+
   it('starts a module switched on and stops one switched off, once a shell started them', async () => {
     const calls: string[] = [];
     const tracked = (m: ModuleDef): ModuleDef => ({

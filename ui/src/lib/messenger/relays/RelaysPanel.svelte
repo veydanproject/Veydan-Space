@@ -3,16 +3,20 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import { stamp } from '../shared/time';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
   import { messengerError, type RelayState } from '../api';
   import RelayAddForm from './RelayAddForm.svelte';
+  import { cloudOnboarding, hasAccount } from '../onboarding/cloud.svelte';
 
   let busy = $state(false);
   let error = $state('');
   let notice = $state('');
+  /** Before the own servers: the identity has a Veydan Cloud account (vcloud-plan.md 4.5). */
+  let cloudAccount = $state(false);
 
   onMount(() => { messengerStore.startListeners().catch(() => {}); });
 
@@ -52,9 +56,28 @@
     });
   }
 
-  function switchMode() {
+  async function switchMode() {
     notice = '';
-    run(() => (mode === 'own' ? messengerStore.useVeydanServers() : messengerStore.useOwnServers()));
+    if (mode === 'own') {
+      run(() => messengerStore.useVeydanServers());
+      return;
+    }
+    // With the own servers the app no longer reaches Veydan Cloud: an
+    // account is offered for deletion first; kept, it sleeps and goes after
+    // 180 days without use (vcloud-plan.md 4.5, 4.6).
+    busy = true;
+    const seen = await cloudOnboarding.seen();
+    busy = false;
+    if (hasAccount(seen)) {
+      cloudAccount = true;
+      return;
+    }
+    run(() => messengerStore.useOwnServers());
+  }
+
+  function keepCloudAndSwitch() {
+    cloudAccount = false;
+    run(() => messengerStore.useOwnServers());
   }
 </script>
 
@@ -87,6 +110,17 @@
         </button>
       </div>
     </div>
+    {#if cloudAccount}
+      <div class="cloud-offer" role="alert">
+        <b>{$t('msg_srv_cloud_title')}</b>
+        <span class="muted small">{$t('msg_srv_cloud_text')}</span>
+        <div class="servers-actions">
+          <button class="btn btn-ghost btn-sm" onclick={() => (cloudAccount = false)}>{$t('common_cancel')}</button>
+          <button class="btn btn-ghost btn-sm" disabled={busy} onclick={keepCloudAndSwitch}>{$t('msg_srv_cloud_keep')}</button>
+          <button class="btn btn-danger btn-sm" onclick={() => goto('/cloud?delete=1')}>{$t('msg_srv_cloud_delete')}</button>
+        </div>
+      </div>
+    {/if}
     {#if notice}<div class="meta">{notice}</div>{/if}
     <div class="controls">
       {#if mode === 'veydan'}
@@ -192,4 +226,8 @@
   .servers { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
   .servers-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .servers-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .cloud-offer {
+    display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-sm);
+    padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+  }
 </style>

@@ -43,6 +43,25 @@ pub const KEY_READ_RECEIPTS: &str = "privacy.read_receipts";
 /// `{"peer": "<hex>"}`. What to watch changed.
 pub const UI_EVENT_PRESENCE_KEYS_CHANGED: &str = "presence.keys_changed";
 
+/// A service note of the module `cloud` came (internal/messenger-wire.md §3,
+/// "Восстановление доступа"): `{"t", "fields", "from"}` — a `recovery.*`
+/// note from an approved contact (`from` the sealer) or from my other
+/// devices (`from` my own key). The module reads it through the seam
+/// `PeerNotes::incoming`; nothing is shown.
+pub const UI_EVENT_CLOUD_NOTE: &str = "cloud.note";
+
+/// The prefix of the types of the notes of the module `cloud`.
+pub const T_RECOVERY_PREFIX: &str = "recovery.";
+
+/// The event [`UI_EVENT_CLOUD_NOTE`] of a note of type `t` with `fields`
+/// sealed by `from`.
+pub fn cloud_note_event(t: &str, fields: &serde_json::Map<String, serde_json::Value>, from: &PubKey) -> Effect {
+    Effect::Emit(UiEvent {
+        name: UI_EVENT_CLOUD_NOTE.into(),
+        payload: serde_json::json!({ "t": t, "fields": fields, "from": from.as_hex() }),
+    })
+}
+
 impl DmService {
     /// Whether `peer` and I share presence: a contact in my book, and we
     /// both chose to talk (`notes_allowed`). Only such a peer is told my
@@ -63,6 +82,13 @@ impl DmService {
     /// Whether I send `peer` notes. Blocked either way: never. With the
     /// relationship gate off every chat counts as `full_chat`.
     pub(crate) async fn notes_allowed(&self, peer: &PubKey) -> Result<bool> {
+        // The pinned bot has its chat and nothing else, whatever the row of
+        // the relationship says: a device where a build without the pin
+        // took the bot for a stranger may have accepted it. No receipt, no
+        // reaction, no presence, no call for whoever holds its key.
+        if self.is_bot(peer) {
+            return Ok(false);
+        }
         let r = self.load_relation(peer).await?;
         if r.blocked || r.peer_signal == PeerSignal::Blocked {
             return Ok(false);
@@ -74,6 +100,13 @@ impl DmService {
     async fn blocked_either_way(&self, peer: &PubKey) -> Result<bool> {
         let r = self.load_relation(peer).await?;
         Ok(r.blocked || r.peer_signal == PeerSignal::Blocked)
+    }
+
+    /// Whether a service note of the module `cloud` goes to or comes from
+    /// `peer`: a contact in my book, and we both chose to talk (`full_chat`,
+    /// messenger-wire.md §3 "Кому шлю и от кого беру").
+    pub async fn recovery_notes_allowed(&self, peer: &PubKey) -> Result<bool> {
+        self.presence_allowed(peer).await
     }
 
     pub async fn read_receipts_on(&self) -> Result<bool> {
@@ -119,6 +152,16 @@ impl DmService {
             // A key speaks for the one who sent it; my devices learn my
             // epoch from `own.presence`, never from a copy.
             T_PRESENCE_KEY if !from_me => self.presence_key(&peer, &envelope, msg.created_at.secs()).await,
+            // A note of the module `cloud` (recovery.share, .ack, .ping, .pong,
+            // .revoke): only from a contact we both chose to talk with, as a
+            // stranger's share would tell them the device is alive; the module
+            // hears it through the seam and shows nothing (messenger-wire.md §3).
+            t if t.starts_with(T_RECOVERY_PREFIX) && !from_me => {
+                if !self.recovery_notes_allowed(&peer).await? {
+                    return Ok(vec![]);
+                }
+                Ok(vec![cloud_note_event(t, &envelope.fields, &peer)])
+            }
             _ => Ok(vec![]),
         }
     }

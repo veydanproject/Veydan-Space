@@ -42,6 +42,9 @@ pub(crate) struct VaultRow {
     wrapped_key: String,
     recovery_salt: Option<String>,
     recovery_wrapped_key: Option<String>,
+    /// What the second wrap is made from: 1 a code, 2 the Recovery Key
+    /// (platform-spec 8.1). Meaningful while `recovery_wrapped_key` is set.
+    recovery_version: i64,
     lock_hash: Option<String>,
     lock_kind: Option<String>,
     lock_hint: Option<String>,
@@ -110,6 +113,7 @@ type RawRow = (
     String,
     Option<String>,
     Option<String>,
+    i64,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -118,7 +122,8 @@ type RawRow = (
 pub(crate) async fn load_row(executor: impl SqliteExecutor<'_>) -> Result<Option<VaultRow>> {
     let row = sqlx::query_as::<_, RawRow>(
         "SELECT vault_id, crypto_version, kdf_memory, kdf_iterations, kdf_parallelism, kdf_salt,
-                wrapped_key, recovery_salt, recovery_wrapped_key, lock_hash, lock_kind, lock_hint
+                wrapped_key, recovery_salt, recovery_wrapped_key, recovery_version,
+                lock_hash, lock_kind, lock_hint
          FROM password_vault WHERE id = ?",
     )
     .bind(ROW_ID)
@@ -135,9 +140,10 @@ pub(crate) async fn load_row(executor: impl SqliteExecutor<'_>) -> Result<Option
         wrapped_key: r.6,
         recovery_salt: r.7,
         recovery_wrapped_key: r.8,
-        lock_hash: r.9,
-        lock_kind: r.10,
-        lock_hint: r.11,
+        recovery_version: r.9,
+        lock_hash: r.10,
+        lock_kind: r.11,
+        lock_hint: r.12,
     }))
 }
 
@@ -306,10 +312,18 @@ pub(crate) struct ReplacedKey {
     recovery_salt: Option<String>,
     #[serde(default)]
     recovery_wrapped_key: Option<String>,
+    /// The version of the recovery wrap; a wrap kept before the column
+    /// existed is one by a code.
+    #[serde(default = "version_code")]
+    recovery_version: i64,
     /// The row named a lock: its wrap is not one by the built-in secret,
     /// which is then not tried.
     #[serde(default)]
     behind_lock: bool,
+}
+
+fn version_code() -> i64 {
+    i64::from(recovery::VERSION_CODE)
 }
 
 impl ReplacedKey {
@@ -323,6 +337,7 @@ impl ReplacedKey {
             wrapped_key: row.wrapped_key.clone(),
             recovery_salt: row.recovery_salt.clone(),
             recovery_wrapped_key: row.recovery_wrapped_key.clone(),
+            recovery_version: row.recovery_version,
             behind_lock: row.lock_hash.is_some(),
         }
     }
@@ -347,15 +362,19 @@ impl ReplacedKey {
         .ok()
     }
 
-    /// The key itself, if `code` is the recovery key of the replaced row.
+    /// The key itself, if `code` is the recovery key of the replaced row:
+    /// the code or the words of the version the row's wrap was made with.
     async fn open_with_recovery(&self, code: &str) -> Option<SecretKey> {
-        let canonical = recovery::normalize(code)?;
+        let normalized = recovery::normalize(code)?;
+        if i64::from(normalized.version) != self.recovery_version {
+            return None;
+        }
         let salt_b64 = self.recovery_salt.clone()?;
         let wrapped = self.recovery_wrapped_key.clone()?;
         let vault_id = self.vault_id.clone();
         blocking(move || {
             let salt = decode_salt(&salt_b64)?;
-            let kek = derive_kek(&canonical, &KdfParams::production(salt))?;
+            let kek = derive_kek(&normalized.canonical, &KdfParams::production(salt))?;
             unwrap_key(&wrapped, &kek, &vault_id)
         })
         .await
@@ -393,6 +412,17 @@ async fn key_in_use(db: &Pool<Sqlite>, users: &[KeyUser], vault_id: &str) -> Res
         .await
         .map_err(Error::db)?;
     Ok(used.is_some())
+}
+
+/// The second wrap of the local row as stored, `(recovery_salt,
+/// recovery_wrapped_key)`; `None` without a row. What sync compares an
+/// incoming row with to tell whether its wrap changed (platform-spec 8.1).
+pub async fn recovery_wrap(
+    db: &Pool<Sqlite>,
+) -> Result<Option<(Option<String>, Option<String>)>> {
+    Ok(load_row(db)
+        .await?
+        .map(|row| (row.recovery_salt, row.recovery_wrapped_key)))
 }
 
 /// Vault id of the local row, if there is one.
@@ -569,45 +599,65 @@ pub(crate) async fn apply_rewrap(
     Ok(())
 }
 
-/// Recovery wrap ready to store. The code is shown once and never written.
+/// Recovery wrap ready to store: the second wrap of the key under the
+/// Recovery Key (version 2). The words are shown once and never written.
 pub(crate) struct RecoveryPrepared {
-    pub(crate) code: String,
+    /// The 12 words, one space between.
+    pub(crate) code: Zeroizing<String>,
     salt_b64: String,
     wrapped: String,
 }
 
-/// Derive a recovery wrap. No database access.
+/// Derive a recovery wrap under a fresh Recovery Key. No database access.
 pub(crate) async fn prepare_recovery(key: &SecretKey, vault_id: &str) -> Result<RecoveryPrepared> {
+    let (entropy, words) = recovery::generate_words();
+    let prepared = prepare_recovery_with(key, vault_id, &entropy).await?;
+    Ok(RecoveryPrepared {
+        code: words,
+        ..prepared
+    })
+}
+
+/// Derive the recovery wrap of version 2 under the Recovery Key `entropy`
+/// the caller holds (the reissue flow of the module `cloud`). No database
+/// access; `code` of the result is the words of that key.
+pub(crate) async fn prepare_recovery_with(
+    key: &SecretKey,
+    vault_id: &str,
+    entropy: &[u8; recovery::RK_LEN],
+) -> Result<RecoveryPrepared> {
     let key = key.clone_key();
     let vault_id = vault_id.to_string();
-    let (code, salt, wrapped) = blocking(move || {
-        let code = recovery::generate();
-        let canonical = recovery::normalize(&code).ok_or(CryptoError::Kdf)?;
+    let canonical = recovery::lock_wrap_input(entropy);
+    let words = recovery::words_of(entropy);
+    let (salt, wrapped) = blocking(move || {
         let salt = random_salt();
         let kek = derive_kek(&canonical, &KdfParams::production(salt))?;
         let wrapped = wrap_key(&key, &kek, &vault_id)?;
-        Ok((code, salt, wrapped))
+        Ok((salt, wrapped))
     })
     .await
     .map_err(|_| Error::DecryptFailed)?;
     Ok(RecoveryPrepared {
-        code,
+        code: words,
         salt_b64: B64.encode(salt),
         wrapped,
     })
 }
 
+/// Store a prepared wrap of version 2 as the second wrap of the row.
 pub(crate) async fn store_recovery(
     executor: impl SqliteExecutor<'_>,
     prepared: &RecoveryPrepared,
 ) -> Result<()> {
     sqlx::query(
         "UPDATE password_vault
-         SET recovery_salt = ?, recovery_wrapped_key = ?, updated_at = ?
+         SET recovery_salt = ?, recovery_wrapped_key = ?, recovery_version = ?, updated_at = ?
          WHERE id = ?",
     )
     .bind(&prepared.salt_b64)
     .bind(&prepared.wrapped)
+    .bind(i64::from(recovery::VERSION_WORDS))
     .bind(Utc::now().to_rfc3339())
     .bind(ROW_ID)
     .execute(executor)
@@ -616,25 +666,33 @@ pub(crate) async fn store_recovery(
     Ok(())
 }
 
-/// Wrap `key` under a fresh recovery code and store it as the second wrap.
-/// Returns the code in display form; it is never stored.
+/// Wrap `key` under a fresh Recovery Key and store it as the second wrap.
+/// Returns the 12 words; they are never stored.
 pub(crate) async fn install_recovery(
     executor: impl SqliteExecutor<'_>,
     key: &SecretKey,
     vault_id: &str,
-) -> Result<String> {
+) -> Result<Zeroizing<String>> {
     let prepared = prepare_recovery(key, vault_id).await?;
     store_recovery(executor, &prepared).await?;
     Ok(prepared.code)
 }
 
 pub(crate) async fn has_recovery(db: &Pool<Sqlite>) -> Result<bool> {
-    Ok(load_row(db)
-        .await?
-        .is_some_and(|row| row.recovery_wrapped_key.is_some()))
+    Ok(recovery_version(db).await?.is_some())
 }
 
-/// Unwrap the vault key with a recovery code. Wrong or malformed codes fail alike.
+/// The version of the second wrap of the row, `None` without one.
+pub(crate) async fn recovery_version(db: &Pool<Sqlite>) -> Result<Option<u8>> {
+    Ok(load_row(db).await?.and_then(|row| {
+        row.recovery_wrapped_key.as_ref()?;
+        u8::try_from(row.recovery_version).ok()
+    }))
+}
+
+/// Unwrap the vault key with a recovery code or the 12 words. The version
+/// is the row's: words to a row of version 1 and a code to one of version 2
+/// fail like a wrong code, before any KDF (platform-spec 8.1).
 pub(crate) async fn open_with_recovery(
     db: &Pool<Sqlite>,
     code: &str,
@@ -643,12 +701,15 @@ pub(crate) async fn open_with_recovery(
     let (Some(salt_b64), Some(wrapped)) = (row.recovery_salt, row.recovery_wrapped_key) else {
         return Err(Error::not_found("recovery key"));
     };
-    let canonical = recovery::normalize(code).ok_or(Error::RecoveryInvalid)?;
+    let normalized = recovery::normalize(code).ok_or(Error::RecoveryInvalid)?;
+    if i64::from(normalized.version) != row.recovery_version {
+        return Err(Error::RecoveryInvalid);
+    }
     let vault_id = row.vault_id;
     let id_job = vault_id.clone();
     let key = blocking(move || {
         let salt = decode_salt(&salt_b64)?;
-        let kek = derive_kek(&canonical, &KdfParams::production(salt))?;
+        let kek = derive_kek(&normalized.canonical, &KdfParams::production(salt))?;
         unwrap_key(&wrapped, &kek, &id_job)
     })
     .await
@@ -666,12 +727,21 @@ pub(crate) struct FreshKey {
 }
 
 pub(crate) async fn fresh_key(secret: &str) -> Result<FreshKey> {
+    fresh_key_of(secret, SecretKey::random(), Uuid::new_v4().to_string()).await
+}
+
+/// A given key under its vault id, wrapped by `secret` with a fresh salt:
+/// what a restore puts in place of the row when the escrow's key is the one
+/// the vault's rows are encrypted with (cloud-recovery.md §7).
+pub(crate) async fn fresh_key_of(
+    secret: &str,
+    key: SecretKey,
+    vault_id: String,
+) -> Result<FreshKey> {
     let secret = secret.to_string();
     blocking(move || {
         let salt = random_salt();
         let kek = derive_kek(&secret, &KdfParams::production(salt))?;
-        let key = SecretKey::random();
-        let vault_id = Uuid::new_v4().to_string();
         let wrapped = wrap_key(&key, &kek, &vault_id)?;
         Ok(FreshKey {
             kek,

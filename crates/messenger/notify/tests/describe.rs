@@ -800,3 +800,38 @@ async fn a_call_push_without_keys_rings_nothing_and_says_nothing() {
     assert_eq!(call.call_id, id);
     assert!(matches!(phone.describe(marked(&end)).await, Outcome::CallEnd(_)));
 }
+
+#[tokio::test]
+async fn the_pinned_bot_is_no_request_and_its_card_says_no_word_of_its_own() {
+    let phone = Phone::new().await;
+    let bot = Keys::generate();
+    let config = MessengerConfig::new(phone.dir.path().join("messenger")).with_bot(Some(&bot.public_key().to_hex()));
+    let bundle = phone.bundle().await;
+    let chat = format!("dm:{}", bot.public_key().to_hex());
+
+    // A card: a message of the bot's chat, and nothing of its envelope.
+    let card = Envelope::new("recovery.requested").with("request_id", "9c".repeat(16)).with("text", "go to evil.example");
+    let event = dm_from(&bot, &phone, &card, 1_000_000);
+    let n = shown(messenger_notify::describe_as(&config, Some(&bundle), &dm_push(&event)).await.unwrap());
+    assert_eq!((n.kind, n.chat.as_deref(), n.body.clone()), (ChatKind::Dm, Some(chat.as_str()), None));
+    // An alert in plain words is a message like any other, and a second
+    // one is not held back.
+    let alert = wrap(&bot, &phone.me(), "eu-1: the disk is 91% full", 1_000_001, None).unwrap().to_peer.json;
+    let n = shown(messenger_notify::describe_as(&config, Some(&bundle), &dm_push(&alert)).await.unwrap());
+    assert_eq!((n.kind, n.body), (ChatKind::Dm, Some(Body::Text { text: "eu-1: the disk is 91% full".into() })));
+    // A signal of the bot is no message; a call of it rings nothing.
+    let signal = dm_from(&bot, &phone, &Envelope::control("dm_accept"), 1_000_002);
+    assert_eq!(quiet(messenger_notify::describe_as(&config, Some(&bundle), &dm_push(&signal)).await.unwrap()), Reason::NotAMessage);
+    let ring = Envelope::call_invite(&"ab".repeat(16), "audio", "v=0", vec![], false);
+    let ring = dm_from(&bot, &phone, &ring, now());
+    assert_eq!(quiet(messenger_notify::describe_as(&config, Some(&bundle), &dm_push(&ring)).await.unwrap()), Reason::NotForMe);
+
+    // Without the pin the same key is a stranger: a request, told by what
+    // its envelope says.
+    let n = shown(phone.describe(dm_push(&event)).await);
+    assert_eq!((n.kind, n.body), (ChatKind::Request, Some(Body::Text { text: "go to evil.example".into() })));
+
+    // Blocked, the bot is as quiet as anybody.
+    phone.dm.act(&phone.keys, &pk(&bot), Action::Block).await.unwrap();
+    assert_eq!(quiet(messenger_notify::describe_as(&config, Some(&bundle), &dm_push(&event)).await.unwrap()), Reason::Blocked);
+}

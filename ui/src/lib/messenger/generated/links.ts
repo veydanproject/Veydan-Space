@@ -55,7 +55,19 @@ has_token: boolean,
  * on the node (an entry of my own list leaves the invitation to
  * be exchanged).
  */
-added: boolean, } | { "kind": "unknown", link_type: string, } | { "kind": "invalid", code: string, };
+added: boolean, } | { "kind": "recover", link: string, 
+/**
+ * The account to recover, 64 hex.
+ */
+npub: string, 
+/**
+ * The check code as shown, `AB7K-2QZD-9MXP`.
+ */
+code: string, 
+/**
+ * My name for the person, when they are a contact; empty otherwise.
+ */
+name: string, } | { "kind": "unknown", link_type: string, } | { "kind": "invalid", code: string, };
 
 /** What a page outside says about itself. */
 export type LinkPreview = { 

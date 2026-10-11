@@ -311,7 +311,15 @@ pub async fn collect_local_changes(
                 let Ok(raw) = std::fs::read(&path) else {
                     continue;
                 };
-                let blob = engine.put_blob(&raw).await.map_err(AppError::other)?;
+                // A full pool (`quota`) or a failed upload stops this file
+                // only: the rest of the cycle goes on, as for large files.
+                let blob = match engine.put_blob(&raw).await {
+                    Ok(blob) => blob,
+                    Err(e) => {
+                        out.errors.push(format!("{name}: {e}"));
+                        continue;
+                    }
+                };
                 (
                     make_op_v1(note_id, &name, clock.now(), blob.clone(), raw.len() as u64),
                     blob,
@@ -846,5 +854,71 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A vault on Veydan Cloud whose pool `files` is full: `blobs/` answers
+    /// `413 quota`, the journal still goes in (spec/vstore.md §9).
+    struct FullFiles(veydan_sync::LocalDir);
+
+    #[async_trait::async_trait]
+    impl veydan_sync::Storage for FullFiles {
+        async fn list(&self, prefix: &str) -> veydan_sync::Result<Vec<String>> {
+            self.0.list(prefix).await
+        }
+        async fn get(&self, key: &str) -> veydan_sync::Result<Option<Vec<u8>>> {
+            self.0.get(key).await
+        }
+        async fn put(&self, key: &str, data: &[u8]) -> veydan_sync::Result<()> {
+            if key.starts_with("blobs/") {
+                return Err(SyncError::Quota {
+                    pool: "files".into(),
+                    used: 10,
+                    limit: 10,
+                });
+            }
+            self.0.put(key, data).await
+        }
+        async fn delete(&self, key: &str) -> veydan_sync::Result<()> {
+            self.0.delete(key).await
+        }
+    }
+
+    /// Plan 4.7: a full pool stops the files, not the sync.
+    #[tokio::test]
+    async fn a_full_pool_stops_the_file_and_not_the_cycle() {
+        let state = crate::testing::States::new().await;
+        let vault = tempfile::tempdir().unwrap();
+        let storage = FullFiles(veydan_sync::LocalDir::new(vault.path()));
+        let (engine, _) = Engine::create(Box::new(storage), "passphrase", "dev-a")
+            .await
+            .unwrap();
+        let dir = docs_dir(&state.core, &state.notes)
+            .join("attachments")
+            .join("n1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("scan.txt"), b"a small file").unwrap();
+        let mut clock = HlcClock::new("dev-a", None);
+
+        let changes = collect_local_changes(
+            &engine,
+            None,
+            &state.core,
+            &state.sync,
+            &state.notes,
+            &mut clock,
+        )
+        .await
+        .expect("the cycle goes on");
+        assert!(changes.ops.is_empty() && changes.states.is_empty());
+        assert_eq!(changes.errors.len(), 1, "{:?}", changes.errors);
+        assert!(
+            changes.errors[0].starts_with("scan.txt: quota"),
+            "{:?}",
+            changes.errors
+        );
+        // The rest of the cycle: the journal is in the other pool.
+        let mut log = veydan_sync::LocalState::default();
+        let op = make_op_v1("n1", "other.txt", clock.now(), "b7".into(), 1);
+        engine.push(&mut log, vec![op]).await.expect("the journal goes");
     }
 }

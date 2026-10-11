@@ -267,6 +267,11 @@ fn op_json(op: &Op) -> serde_json::Value {
     })
 }
 
+/// The hash the state of a row keeps: of its payload as serde_json writes it.
+fn hash_of(payload: &serde_json::Value) -> String {
+    veydan_sync::sha256_hex(payload.to_string().as_bytes())
+}
+
 async fn row_states_json(state: &TestStates) -> serde_json::Value {
     let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
         "SELECT entity_type, entity_id, head_hlc, synced_hash, deleted FROM sync_row_state
@@ -317,27 +322,43 @@ async fn a_cycle_pushes_what_it_pushed_at_stage_3() {
     fixture(&state).await;
     let golden: serde_json::Value =
         serde_json::from_str(include_str!("collect.golden.json")).unwrap();
+    // The hashes of the key row: as 5.x pushed it, and as stage 3 did.
+    let mut key_hashes: Option<(String, String)> = None;
 
     for (round, expected) in golden["rounds"].as_array().unwrap().iter().enumerate() {
         if round == 1 {
             edit(&state).await;
             state.publish_labels().await;
         }
-        let ops: Vec<_> = collect(&state, &engine, &mut clock)
+        let mut ops: Vec<_> = collect(&state, &engine, &mut clock)
             .await
             .iter()
             .map(op_json)
             .collect();
+        // The key row carries `recovery_version` since 5.x (platform-spec 8.1):
+        // stage 3 knew no such column, and a row it wrote is of version 1.
+        for op in ops.iter_mut().filter(|op| op["entity_type"] == "password_vault") {
+            let ours = hash_of(&op["payload"]);
+            let version = op["payload"].as_object_mut().and_then(|m| m.remove("recovery_version"));
+            assert_eq!(version, Some(serde_json::Value::from(1)), "cycle {round}");
+            key_hashes = Some((ours, hash_of(&op["payload"])));
+        }
         let expected_ops = expected["ops"].as_array().unwrap();
         for (i, (got, want)) in ops.iter().zip(expected_ops).enumerate() {
             assert_eq!(got, want, "cycle {round}, op {i}");
         }
         assert_eq!(ops.len(), expected_ops.len(), "cycle {round}");
-        assert_eq!(
-            row_states_json(&state).await,
-            expected["row_states"],
-            "cycle {round}"
-        );
+        // The state of the key row keeps the hash of the row as pushed, with
+        // the column; the golden file keeps the hash of the same row without it.
+        let mut states = row_states_json(&state).await;
+        if let Some((ours, of_stage_3)) = &key_hashes {
+            let rows = states.as_array_mut().unwrap();
+            for row in rows.iter_mut().filter(|row| row["entity"] == "password_vault") {
+                assert_eq!(row["hash"], ours.as_str(), "cycle {round}");
+                row["hash"] = of_stage_3.as_str().into();
+            }
+        }
+        assert_eq!(states, expected["row_states"], "cycle {round}");
     }
 
     state.core.db.close().await;

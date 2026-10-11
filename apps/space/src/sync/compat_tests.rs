@@ -174,7 +174,13 @@ async fn holds(state: &TestStates) -> Value {
             continue;
         }
         let mut rows_of = Map::new();
-        for (id, payload) in rows::read_rows(db, table).await.unwrap() {
+        for (id, mut payload) in rows::read_rows(db, table).await.unwrap() {
+            // The column 5.x adds to the key row (platform-spec 8.1); 4.0.7 held none.
+            if table.spec.entity == "password_vault" {
+                if let Some(map) = payload.as_object_mut() {
+                    map.remove("recovery_version");
+                }
+            }
             rows_of.insert(id, payload);
         }
         tables.insert(table.spec.entity.into(), Value::Object(rows_of));
@@ -509,10 +515,17 @@ async fn what_space_publishes_carries_every_key_of_4_0_7() {
             if op.deleted || head_of(&space, &op).await.as_ref() != Some(&op.hlc) {
                 continue;
             }
-            let ours = published
+            let mut ours = published
                 .get(&id)
+                .cloned()
                 .unwrap_or_else(|| panic!("{entity} {id} is not published"));
-            assert_eq!(ours, &op.payload, "{entity} {id}");
+            // Every key of 4.0.7 plus `recovery_version` (platform-spec 8.1): the
+            // rows 4.0.7 wrote are of version 1, the default of the column.
+            if entity == "password_vault" {
+                let version = ours.as_object_mut().and_then(|m| m.remove("recovery_version"));
+                assert_eq!(version, Some(Value::from(1)), "{entity} {id}");
+            }
+            assert_eq!(ours, op.payload, "{entity} {id}");
         }
     }
 

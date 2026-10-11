@@ -18,4 +18,10 @@ describe('joinErrorKey', () => {
     expect(joinErrorKey('boom')).toBeNull();
     expect(joinErrorKey(null)).toBeNull();
   });
+
+  it('gives the words of the wait when the storage of Veydan Cloud does not know the account yet', () => {
+    const refusal = 'auth: get: 403 Forbidden no_account: the signer has no account of Veydan Cloud (request 0bc5)';
+    expect(joinErrorKey({ code: 'other', message: refusal })).toBe('settings_sync_cloud_not_ready');
+    expect(joinErrorKey({ code: 'other', message: 'auth: get: 403 Forbidden suspended' })).toBeNull();
+  });
 });

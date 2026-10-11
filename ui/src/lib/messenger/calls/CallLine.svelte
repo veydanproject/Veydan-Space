@@ -51,7 +51,7 @@
   });
   const chat = $derived(chatStore.chats.find((c) => c.id === message.chat_id) ?? null);
   const sessionActive = $derived(!!messengerStore.status?.runtime?.session_active);
-  const callable = $derived(!group && !live && !!chat?.peer_pubkey && chat.mode === 'full_chat' && callStore.canCall() && !callStore.busy);
+  const callable = $derived(!group && !live && !!chat?.peer_pubkey && chat.mode === 'full_chat' && !chat.bot && callStore.canCall() && !callStore.busy);
   /** A group call on now: joined from its line, as from the banner. */
   const joinable = $derived(on && callStore.available && callStore.canCall() && !groupCallStore.busy);
   const canPress = $derived(group ? (mine && !!groupCallStore.call) || (joinable && sessionActive) : callable && sessionActive);

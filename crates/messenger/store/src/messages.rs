@@ -25,6 +25,13 @@ pub const CT_MEDIA: &str = "media";
 /// A contact card (`messenger_contacts::card`): `media_json` holds the
 /// checked card, `text` is empty.
 pub const CT_CONTACT: &str = "contact";
+/// A card of the bot of Veydan Cloud (`messenger_dm::botcard`), written
+/// only for a message the pinned key sealed: `media_json` holds the card
+/// as it was read, `text` is empty. Never a type of the wire.
+pub const CT_BOT_CARD: &str = "bot_card";
+/// What a message is kept as when its wire type is a name only this side
+/// writes (`system`, `bot_card`): nobody else makes a line or a card.
+pub const CT_FOREIGN: &str = "unknown";
 
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
 pub struct MessageRow {

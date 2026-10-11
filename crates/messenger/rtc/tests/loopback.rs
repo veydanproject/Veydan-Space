@@ -339,7 +339,10 @@ async fn a_test_pattern_crosses_at_its_size_and_stops_with_the_video() {
     assert!(n >= 40, "b got {n} frames in 2 s (30 a second pushed)");
     assert_eq!(sizes, vec![(640, 360)]);
     let stats = a.session.stats().await.expect("stats");
-    assert!(stats.bytes_sent > 100_000, "video was sent: {stats:?}");
+    // Two seconds of the pattern at the full size are some 50 KB when the
+    // way gave the size at once (the loopback of the runner); a way that
+    // climbed for a while has sent more by now. Sound alone is far below.
+    assert!(stats.bytes_sent > 20_000, "video was sent: {stats:?}");
 
     // Off, as the adapter does it: the camera stops pushing and the track
     // is disabled; frames stop at b within a moment, and no offer was

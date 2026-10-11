@@ -8,6 +8,7 @@
 use crate::view::{preview, ChatView, MessageView, ReactionView, ReplyPreview};
 use crate::wrap::{wrap_as, Wake};
 use crate::view::CardView;
+use crate::botcard::BotCard;
 use crate::relations::InboundGate;
 use messenger_contacts::{ContactCard, ContactService, ProfileService};
 use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
@@ -97,6 +98,9 @@ pub struct DmService {
     /// Keys of the running session, for answers the handler must sign
     /// itself (confirm-back). `None` while locked: no answers are sent.
     pub(crate) signer: Arc<RwLock<Option<Keys>>>,
+    /// The pinned key of the bot of Veydan Cloud (`with_bot`). `None`: no
+    /// key is a bot.
+    pub(crate) bot: Option<PubKey>,
 }
 
 impl DmService {
@@ -109,7 +113,33 @@ impl DmService {
             unread_floor: Arc::new(AtomicI64::new(-1)),
             gate: Arc::new(AtomicBool::new(true)),
             signer: Arc::new(RwLock::new(None)),
+            bot: None,
         }
+    }
+
+    /// The pinned key of the bot of Veydan Cloud, 64 hex (messenger-wire.md
+    /// §3, "Карточки бота"). Its messages need no approval: the chat with
+    /// it is a full one from its first message, with no request to answer,
+    /// until I block it; an envelope of it that is no message of a chat is
+    /// a card (`botcard`). Nothing else is given to it: its signals are
+    /// not heard, and for notes, presence and calls it is whoever the
+    /// relationship says, a stranger.
+    pub fn with_bot(mut self, pubkey_hex: Option<&str>) -> Self {
+        self.bot = pubkey_hex.and_then(PubKey::parse);
+        self
+    }
+
+    /// Whether `peer` is the pinned bot.
+    pub fn is_bot(&self, peer: &PubKey) -> bool {
+        self.bot.as_ref() == Some(peer)
+    }
+
+    /// Whether what came at `at` is news to this device: it came with the
+    /// running session, or while the device was off (`unread_floor`). What
+    /// a fresh device restores from history is not.
+    fn is_news(&self, at: i64, historical: bool) -> bool {
+        let floor = self.unread_floor.load(Ordering::SeqCst);
+        !historical || (floor >= 0 && at >= floor)
     }
 
     pub fn set_gate(&self, on: bool) {
@@ -223,6 +253,7 @@ impl DmService {
             archived: r.archived,
             mode: mode.as_str().into(),
             can_send,
+            bot: peer.as_ref().is_some_and(|pk| self.is_bot(pk)),
         })
     }
 
@@ -644,6 +675,8 @@ impl DmService {
         let chat_id = chats::dm_chat_id(peer.as_hex());
         let id = msg.rumor_id.as_hex().to_string();
         let mut effects: Vec<Effect> = Vec::new();
+        // Sealed by the pinned bot of Veydan Cloud.
+        let from_bot = !from_me && self.is_bot(&msg.sender);
 
         // Other NIP-17 clients send bare text; read it as a text message.
         let mut envelope = Envelope::parse(&msg.content).unwrap_or_else(|_| Envelope::text(&msg.content));
@@ -660,6 +693,10 @@ impl DmService {
                 T_TEXT => (repo::CT_TEXT.into(), envelope.as_text().map(String::from), false, None, None),
                 T_EDIT => (repo::CT_EDIT.into(), None, true, envelope.str_field("target").map(String::from), None),
                 T_DELETE => (repo::CT_DELETE.into(), None, true, envelope.str_field("target").map(String::from), None),
+                // The bot is approved by the build, not by a signal: what
+                // its key says of the relationship changes nothing, so the
+                // key alone never makes a mutual contact.
+                T_CONTROL if from_bot => return Ok(vec![]),
                 T_CONTROL => (repo::CT_CONTROL.into(), None, true, None, None),
                 T_MEDIA => (
                     repo::CT_MEDIA.into(),
@@ -668,6 +705,16 @@ impl DmService {
                     None,
                     Some(serde_json::Value::Object(envelope.fields.clone()).to_string()),
                 ),
+                // Any other envelope of the bot is a card: kept as it was
+                // read, without a text of its own.
+                _ if from_bot => {
+                    (repo::CT_BOT_CARD.into(), None, false, None, Some(serde_json::to_string(&BotCard::read(&envelope))?))
+                }
+                // A name only this side writes is not taken from the wire:
+                // nobody sends a system line or a card of the bot.
+                repo::CT_SYSTEM | repo::CT_BOT_CARD => {
+                    (repo::CT_FOREIGN.into(), envelope.str_field("text").map(String::from), false, None, None)
+                }
                 other => (other.to_string(), envelope.str_field("text").map(String::from), false, None, None),
             };
         // A card is kept as it was checked, the envelope too.
@@ -719,7 +766,9 @@ impl DmService {
                 text: text.clone(),
                 envelope_json: content,
                 sender_pubkey: msg.sender.as_hex().to_string(),
-                reply_to_id: msg.reply_to.as_ref().map(|e| e.as_hex().to_string()),
+                // A card answers nothing: a quote above it would be free
+                // text of the sender inside the app's own words.
+                reply_to_id: if content_type == repo::CT_BOT_CARD { None } else { msg.reply_to.as_ref().map(|e| e.as_hex().to_string()) },
                 target_id: target.clone(),
                 created_at: msg.created_at.secs(),
                 is_hidden: hidden || held,
@@ -785,6 +834,12 @@ impl DmService {
             })
             .await?,
         );
+        // A card is in the chat now; the module `cloud` hears of it once,
+        // when it is news (a copy never gets here, restored history is not
+        // news): its banners are for what happens now.
+        if content_type == repo::CT_BOT_CARD && self.is_news(msg.created_at.secs(), historical) {
+            effects.push(crate::botcard::card_event(&msg, &envelope));
+        }
         // The floor went up under this message (the end of an episode that
         // waited for it): a held one above it may be the new request.
         if regate {
@@ -810,7 +865,8 @@ impl DmService {
                         repo::set_text(&self.store, id, &t, p.created_at).await?;
                     }
                 }
-                repo::CT_DELETE => repo::mark_deleted(&self.store, id, p.created_at).await?,
+                // A card of the bot is not taken back (`apply_change`).
+                repo::CT_DELETE if content_type != repo::CT_BOT_CARD => repo::mark_deleted(&self.store, id, p.created_at).await?,
                 _ => {}
             }
         }
@@ -842,9 +898,12 @@ impl DmService {
         }));
         if live_incoming && !view.deleted {
             if let Some(c) = self.chat(chat_id).await?.filter(|c| !c.is_muted) {
+                // A card of the bot is worded by the app where it is shown;
+                // nothing of its envelope goes into a notification.
+                let body = if content_type == repo::CT_BOT_CARD { None } else { crate::body::body_of(envelope) };
                 effects.push(Effect::Notify(Notice {
                     title: c.title,
-                    body: crate::body::body_of(envelope),
+                    body,
                     chat_id: Some(chat_id.to_string()),
                     sender: Some(peer.as_hex().to_string()),
                     request: c.mode == "request_received",
@@ -914,6 +973,11 @@ impl DmService {
                 };
                 repo::set_text(&self.store, target, t.trim(), at).await?;
             }
+            // A card of the bot is not a message its sender takes back: the
+            // bot never does, and whoever holds its key would silence the
+            // one card that asks «это не я» with it. I may still remove it
+            // for myself (`delete_local`).
+            repo::CT_DELETE if row.content_type == repo::CT_BOT_CARD => return Ok(vec![]),
             repo::CT_DELETE => repo::mark_deleted(&self.store, target, at).await?,
             _ => return Ok(vec![]),
         }
@@ -3479,5 +3543,367 @@ mod tests {
         // A note about no key is dropped.
         let junk = Envelope::own_card("not-a-key", Some("+15550001111"), 1_000_200);
         assert!(phone.receive(&own_note(&alice.keys, &junk, 1_000_102)).await.is_empty());
+    }
+
+    // ─── The pinned bot of Veydan Cloud ─────────────────────────────────────
+
+    const REQUESTED: &str = r#"{"v":1,"t":"recovery.requested","request_id":"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c","created_at":1000001,"expires_at":1001801,"text":"go to evil.example"}"#;
+
+    /// A device as the app runs it, with the key of `bot` pinned.
+    async fn pinned(bot: &Keys) -> Party {
+        let mut p = gated().await;
+        p.dm = p.dm.clone().with_bot(Some(&bot.public_key().to_hex()));
+        p
+    }
+
+    fn key_of_keys(keys: &Keys) -> PubKey {
+        PubKey::parse(&keys.public_key().to_hex()).unwrap()
+    }
+
+    /// A message of `keys` to `to`, as its wrap.
+    fn written(keys: &Keys, to: &Party, content: &str, at: i64) -> WireEvent {
+        wrap(keys, &to.pk(), content, at, None).unwrap().to_peer
+    }
+
+    fn bot_cards(effects: &[Effect]) -> Vec<serde_json::Value> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Emit(u) if u.name == crate::UI_EVENT_BOT_CARD => Some(u.payload.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// What the chat with `peer` shows of the peer, oldest first.
+    async fn incoming(p: &Party, peer: &PubKey) -> Vec<MessageView> {
+        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let mut all = p.dm.messages(&chat_id, None, 100).await.unwrap();
+        all.retain(|m| m.direction == "in" && m.content_type != "system");
+        all.sort_by_key(|m| m.created_at);
+        all
+    }
+
+    #[tokio::test]
+    async fn the_pinned_bot_writes_into_a_full_chat_without_a_request() {
+        let bot = Keys::generate();
+        let bot_pk = key_of_keys(&bot);
+        let me = pinned(&bot).await;
+        assert_eq!(me.dm.relation(&bot_pk).await.unwrap().mode, "full_chat", "approved before it ever wrote");
+
+        // A card: a message of the chat, a notification without a word of
+        // the envelope, and the event for the module `cloud`.
+        let fx = me.receive(&written(&bot, &me, REQUESTED, 1_000_001)).await;
+        assert_eq!(names(&fx), vec!["dm.message", "notify", "cloud.card"], "no request, no line of one");
+        let Some(Effect::Notify(notice)) = fx.iter().find(|e| matches!(e, Effect::Notify(_))) else { panic!() };
+        assert_eq!((notice.body.clone(), notice.request), (None, false));
+        let chat = me.dm.chat(&chats::dm_chat_id(bot_pk.as_hex())).await.unwrap().expect("the first card makes the chat");
+        assert_eq!((chat.mode.as_str(), chat.can_send, chat.unread), ("full_chat", true, 1));
+        assert!(chat.bot, "the UI is told whose chat it is");
+        assert!(!chat.is_contact, "the bot is not put into the address book");
+        assert_eq!(chat.last_preview, None, "a card has no line of its own");
+        let all = me.dm.messages(&chat.id, None, 50).await.unwrap();
+        assert_eq!(all.len(), 1, "the card alone: no system line");
+        let card = &all[0];
+        assert_eq!((card.content_type.as_str(), card.direction.as_str()), ("bot_card", "in"));
+        assert_eq!((card.text.clone(), card.media.clone()), (None, None), "the free text of the envelope is not kept as text");
+        assert_eq!(
+            card.bot_card,
+            Some(BotCard::RecoveryRequested { request_id: Some("9c".repeat(16)), created_at: Some(1_000_001), expires_at: Some(1_001_801) })
+        );
+        let Effect::Emit(shown) = &fx[0] else { panic!() };
+        assert_eq!(shown.payload["message"]["bot_card"]["t"], "recovery.requested", "the UI gets the card with the message");
+        let events = bot_cards(&fx);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["id"], card.id.as_str());
+        assert_eq!(events[0]["t"], "recovery.requested");
+        assert_eq!(
+            events[0]["fields"],
+            serde_json::json!({ "request_id": "9c".repeat(16), "created_at": 1_000_001, "expires_at": 1_001_801 }),
+            "the values of the card, not the envelope with its free text"
+        );
+        assert_eq!(events[0]["from"], bot_pk.as_hex());
+        assert_eq!(events[0]["at"], 1_000_001);
+
+        // A plain text (an alert to the owner) and a text envelope are
+        // ordinary messages, and there is no one-message limit.
+        let fx = me.receive(&written(&bot, &me, "eu-1: the disk is 91% full", 1_000_002)).await;
+        assert_eq!(names(&fx), vec!["dm.message", "notify"]);
+        assert_eq!(notice_body(&fx), Some(messenger_core::Body::Text { text: "eu-1: the disk is 91% full".into() }));
+        let fx = me.receive(&written(&bot, &me, &Envelope::text("eu-1: fine again").encode(), 1_000_003)).await;
+        assert_eq!(names(&fx), vec!["dm.message", "notify"]);
+        let shown = incoming(&me, &bot_pk).await;
+        assert_eq!(shown.len(), 3);
+        assert_eq!((shown[1].content_type.as_str(), shown[1].text.as_deref()), ("text", Some("eu-1: the disk is 91% full")));
+        assert_eq!(shown[1].bot_card, None);
+        assert_eq!(shown[2].text.as_deref(), Some("eu-1: fine again"));
+        let chat = me.dm.chat(&chat.id).await.unwrap().unwrap();
+        assert_eq!((chat.unread, chat.last_preview.as_deref()), (3, Some("eu-1: fine again")));
+
+        // An unknown type of the bot is a card too, without its type.
+        let fx = me.receive(&written(&bot, &me, r#"{"v":1,"t":"plan.renewed","text":"pay at evil.example"}"#, 1_000_004)).await;
+        assert_eq!(names(&fx), vec!["dm.message", "notify", "cloud.card"]);
+        let shown = incoming(&me, &bot_pk).await;
+        assert_eq!((shown[3].bot_card.clone(), shown[3].text.clone()), (Some(BotCard::Unknown), None));
+
+        // Nothing was decided about the bot, and it got nothing but its
+        // chat: for notes, presence and calls it is a stranger.
+        assert_eq!(me.dm.load_relation(&bot_pk).await.unwrap(), crate::relationship::Relationship::default());
+        assert!(!me.dm.notes_allowed(&bot_pk).await.unwrap());
+        assert!(!me.dm.calls_allowed(&bot_pk).await.unwrap());
+        assert!(!me.dm.presence_allowed(&bot_pk).await.unwrap());
+        assert!(me.dm.take_due_delivered(1_000_010).await.unwrap().is_empty(), "the bot is told of no delivery");
+    }
+
+    #[tokio::test]
+    async fn a_card_comes_once_and_restored_history_wakes_no_banner() {
+        let bot = Keys::generate();
+        let bot_pk = key_of_keys(&bot);
+        let me = pinned(&bot).await;
+        let live = written(&bot, &me, REQUESTED, 1_000_001);
+        assert_eq!(bot_cards(&me.receive(&live).await).len(), 1);
+        // The same card again: another relay, a sync, another wrap of it.
+        assert!(me.receive(&live).await.is_empty());
+        assert!(me.receive_from(&live, true).await.is_empty());
+        assert!(me.receive(&written(&bot, &me, REQUESTED, 1_000_001)).await.is_empty());
+        assert_eq!(incoming(&me, &bot_pk).await.len(), 1);
+
+        // What a fresh device restores is in the chat, and tells nobody.
+        let old = written(&bot, &me, r#"{"v":1,"t":"account.deleted","receipt":"AB7K-2QZD-9MXP","at":900000}"#, 900_000);
+        assert_eq!(names(&me.receive_from(&old, true).await), vec!["dm.message"]);
+        // What came while the device was off is news, though it is silent.
+        me.dm.set_unread_floor(950_000);
+        let missed = written(&bot, &me, r#"{"v":1,"t":"recovery.restored","at":960000}"#, 960_000);
+        let fx = me.receive_from(&missed, true).await;
+        assert_eq!(names(&fx), vec!["dm.message", "cloud.card"]);
+        assert_eq!(bot_cards(&fx)[0]["t"], "recovery.restored");
+        let shown = incoming(&me, &bot_pk).await;
+        assert_eq!(
+            shown.iter().map(|m| m.bot_card.clone().unwrap()).collect::<Vec<_>>(),
+            vec![
+                BotCard::AccountDeleted { receipt: Some("AB7K-2QZD-9MXP".into()), at: Some(900_000) },
+                BotCard::RecoveryRestored { at: Some(960_000) },
+                BotCard::RecoveryRequested { request_id: Some("9c".repeat(16)), created_at: Some(1_000_001), expires_at: Some(1_001_801) },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_blocked_bot_gets_nothing_through_and_an_unblocked_one_is_approved_again() {
+        let bot = Keys::generate();
+        let bot_pk = key_of_keys(&bot);
+        let me = pinned(&bot).await;
+        me.receive(&written(&bot, &me, REQUESTED, 1_000_001)).await;
+
+        let blocked = me.dm.act(&me.keys, &bot_pk, Action::Block).await.unwrap();
+        assert_eq!((blocked.relation.mode.as_str(), blocked.relation.can_send), ("blocked", false));
+        let card = r#"{"v":1,"t":"recovery.escrow_read","at":1000010}"#;
+        assert!(me.receive(&written(&bot, &me, card, 1_000_010)).await.is_empty(), "no message, no card for the banners");
+        assert!(me.receive(&written(&bot, &me, "an alert", 1_000_011)).await.is_empty());
+        assert_eq!(incoming(&me, &bot_pk).await.len(), 1);
+        assert_eq!(reason(me.dm.prepare_text(&me.keys, &bot_pk, "x", None).await.unwrap_err()), "dm_blocked");
+
+        let free = me.dm.act(&me.keys, &bot_pk, Action::Unblock).await.unwrap();
+        assert_eq!((free.relation.mode.as_str(), free.relation.can_send), ("full_chat", true));
+        let fx = me.receive(&written(&bot, &me, r#"{"v":1,"t":"recovery.escrow_read","at":1000020}"#, 1_000_020)).await;
+        assert_eq!(names(&fx), vec!["dm.message", "notify", "cloud.card"]);
+        assert_eq!(names(&me.receive(&written(&bot, &me, "an alert again", 1_000_021)).await), vec!["dm.message", "notify"]);
+    }
+
+    #[tokio::test]
+    async fn the_same_json_from_another_key_is_a_strangers_message() {
+        let bot = Keys::generate();
+        let stranger = Keys::generate();
+        let stranger_pk = key_of_keys(&stranger);
+        let me = pinned(&bot).await;
+        let fx = me.receive(&written(&stranger, &me, REQUESTED, 1_000_001)).await;
+        assert!(bot_cards(&fx).is_empty(), "not a card for the module");
+        assert_eq!(me.dm.relation(&stranger_pk).await.unwrap().mode, "request_received", "a request to answer");
+        let Some(Effect::Notify(notice)) = fx.iter().find(|e| matches!(e, Effect::Notify(_))) else { panic!() };
+        assert!(notice.request);
+        let shown = incoming(&me, &stranger_pk).await;
+        assert_eq!(shown.len(), 1);
+        assert_eq!((shown[0].content_type.as_str(), shown[0].bot_card.clone()), ("recovery.requested", None), "an unknown type, as before");
+        assert!(!me.dm.chat(&chats::dm_chat_id(stranger_pk.as_hex())).await.unwrap().unwrap().bot);
+        // One message until I answer, as for any stranger.
+        let second = r#"{"v":1,"t":"recovery.escrow_read","at":1000002}"#;
+        assert!(me.receive(&written(&stranger, &me, second, 1_000_002)).await.is_empty());
+        assert_eq!(incoming(&me, &stranger_pk).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn without_a_pin_the_bot_is_anybody() {
+        let bot = Keys::generate();
+        let bot_pk = key_of_keys(&bot);
+        let me = gated().await;
+        assert_eq!(me.dm.relation(&bot_pk).await.unwrap().mode, "first_contact");
+        let fx = me.receive(&written(&bot, &me, REQUESTED, 1_000_001)).await;
+        assert!(bot_cards(&fx).is_empty());
+        assert_eq!(me.dm.relation(&bot_pk).await.unwrap().mode, "request_received");
+        let shown = incoming(&me, &bot_pk).await;
+        assert_eq!((shown[0].content_type.as_str(), shown[0].bot_card.clone()), ("recovery.requested", None));
+        assert!(me.receive(&written(&bot, &me, "a second one", 1_000_002)).await.is_empty(), "held like a stranger's");
+    }
+
+    #[tokio::test]
+    async fn the_signals_of_the_bot_are_not_heard_and_writing_to_it_is_no_request() {
+        let bot = Keys::generate();
+        let bot_pk = key_of_keys(&bot);
+        let me = pinned(&bot).await;
+        me.receive(&written(&bot, &me, REQUESTED, 1_000_001)).await;
+        // Whoever holds the key of the bot cannot make it a mutual contact
+        // (calls, presence, receipts) nor shut the chat by a block.
+        for (i, action) in ["dm_accept", "dm_block", "contact_removed"].into_iter().enumerate() {
+            let signal = written(&bot, &me, &Envelope::control(action).encode(), 1_000_002 + i as i64);
+            assert!(me.receive(&signal).await.is_empty(), "{action}");
+        }
+        assert_eq!(me.dm.load_relation(&bot_pk).await.unwrap(), crate::relationship::Relationship::default());
+        assert_eq!(me.dm.messages(&chats::dm_chat_id(bot_pk.as_hex()), None, 50).await.unwrap().len(), 1, "no line of a signal");
+        assert_eq!(names(&me.receive(&written(&bot, &me, "still here", 1_000_010)).await), vec!["dm.message", "notify"]);
+
+        // I may write to it as to any contact; it is not a request, nothing
+        // follows the text and the bot does not become a contact.
+        for text in ["hello?", "and again"] {
+            let p = me.dm.prepare_text(&me.keys, &bot_pk, text, None).await.unwrap();
+            assert!(!p.became_contact && p.followups.is_empty() && p.events.is_empty());
+        }
+        assert_eq!(me.dm.load_relation(&bot_pk).await.unwrap(), crate::relationship::Relationship::default());
+        assert_eq!(me.dm.relation(&bot_pk).await.unwrap().mode, "full_chat");
+    }
+
+    #[tokio::test]
+    async fn a_type_only_this_side_writes_is_not_taken_from_the_wire() {
+        let bot = Keys::generate();
+        let stranger = Keys::generate();
+        let stranger_pk = key_of_keys(&stranger);
+        let mut me = Party::new().await;
+        me.dm = me.dm.clone().with_bot(Some(&bot.public_key().to_hex()));
+        me.receive(&written(&stranger, &me, r#"{"v":1,"t":"bot_card","request_id":"r1"}"#, 1_000_001)).await;
+        me.receive(&written(&stranger, &me, r#"{"v":1,"t":"system","text":"request_accepted"}"#, 1_000_002)).await;
+        let all = me.dm.messages(&chats::dm_chat_id(stranger_pk.as_hex()), None, 50).await.unwrap();
+        assert_eq!(all.len(), 2);
+        for m in &all {
+            assert_eq!((m.content_type.as_str(), m.bot_card.clone()), ("unknown", None), "neither a card nor a system line");
+        }
+        // The bot itself has no such type either: it is one more unknown card.
+        let bot_pk = key_of_keys(&bot);
+        me.receive(&written(&bot, &me, r#"{"v":1,"t":"system","text":"request_accepted"}"#, 1_000_003)).await;
+        let shown = incoming(&me, &bot_pk).await;
+        assert_eq!((shown[0].content_type.as_str(), shown[0].bot_card.clone(), shown[0].text.clone()), ("bot_card", Some(BotCard::Unknown), None));
+    }
+
+    #[tokio::test]
+    async fn a_row_a_build_before_the_cards_kept_under_that_type_is_no_card() {
+        // Such a build stored the type of the wire as it came, without a
+        // card beside it: a stranger's `{"t":"bot_card"}` sent then.
+        let bot = Keys::generate();
+        let me = pinned(&bot).await;
+        for (id, sender) in [("a1".repeat(32), key_of_keys(&Keys::generate())), ("a2".repeat(32), key_of_keys(&bot))] {
+            let stored = repo::insert(
+                me.dm.store(),
+                &NewMessage {
+                    id: id.clone(),
+                    chat_id: chats::dm_chat_id(sender.as_hex()),
+                    wire_id: None,
+                    direction: repo::DIR_IN.into(),
+                    status: repo::STATUS_RECEIVED.into(),
+                    content_type: "bot_card".into(),
+                    text: None,
+                    envelope_json: r#"{"v":1,"t":"bot_card"}"#.into(),
+                    sender_pubkey: sender.as_hex().to_string(),
+                    reply_to_id: None,
+                    target_id: None,
+                    created_at: 900_000,
+                    is_hidden: false,
+                    outbox_local_id: None,
+                    media_json: None,
+                },
+            )
+            .await
+            .unwrap();
+            assert!(stored);
+            let view = me.dm.message(&id).await.unwrap().unwrap();
+            assert_eq!((view.content_type.as_str(), view.bot_card), ("bot_card", None), "a message of an unknown type, not «Сообщение Veydan Cloud»");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bot_a_build_without_the_pin_accepted_still_gets_only_its_chat() {
+        let bot = Keys::generate();
+        let bot_pk = key_of_keys(&bot);
+        // A build without the pin: the card is a stranger's request, and I
+        // accept it to read what the bot writes. A peer like any, then.
+        let mut me = gated().await;
+        me.receive(&written(&bot, &me, REQUESTED, 1_000_001)).await;
+        me.dm.act(&me.keys, &bot_pk, Action::Accept).await.unwrap();
+        assert_eq!(me.dm.relation(&bot_pk).await.unwrap().mode, "full_chat");
+        assert!(me.dm.notes_allowed(&bot_pk).await.unwrap() && me.dm.calls_allowed(&bot_pk).await.unwrap());
+
+        // The same device with the pin: the row says "mutual", the rule
+        // says the bot has its chat and nothing else.
+        me.dm = me.dm.clone().with_bot(Some(&bot.public_key().to_hex()));
+        assert_eq!(me.dm.relation(&bot_pk).await.unwrap().mode, "full_chat");
+        assert!(!me.dm.notes_allowed(&bot_pk).await.unwrap(), "no receipts, no reactions");
+        assert!(!me.dm.calls_allowed(&bot_pk).await.unwrap(), "its key does not ring this device");
+        assert!(!me.dm.presence_allowed(&bot_pk).await.unwrap());
+        let fx = me.receive(&written(&bot, &me, "eu-1: the disk is 91% full", 1_000_002)).await;
+        assert_eq!(names(&fx), vec!["dm.message", "notify"]);
+        assert!(me.dm.take_due_delivered(1_000_010).await.unwrap().is_empty(), "the bot is told of no delivery");
+        let alert = incoming(&me, &bot_pk).await.pop().unwrap();
+        assert_eq!(reason(me.dm.prepare_reaction(&me.keys, &alert.id, "👍").await.unwrap_err()), "dm_waiting_approval");
+    }
+
+    #[tokio::test]
+    async fn a_card_is_not_taken_back_by_the_key_that_sent_it() {
+        let bot = Keys::generate();
+        let bot_pk = key_of_keys(&bot);
+        let me = pinned(&bot).await;
+        let delete = |target: &EventId, at: i64| written(&bot, &me, &Envelope::delete(target.as_hex()).encode(), at);
+
+        // A card in the chat, then a delete of it from the bot's key.
+        let card = wrap(&bot, &me.pk(), REQUESTED, 1_000_001, None).unwrap();
+        me.receive(&card.to_peer).await;
+        assert!(me.receive(&delete(&card.rumor_id, 1_000_002)).await.is_empty());
+        // A delete that overtook its card: the card lands whole, with its
+        // notification and the event for the banners.
+        let late = wrap(&bot, &me.pk(), r#"{"v":1,"t":"recovery.escrow_read","at":1000010}"#, 1_000_010, None).unwrap();
+        assert!(me.receive(&delete(&late.rumor_id, 1_000_011)).await.is_empty());
+        assert_eq!(names(&me.receive(&late.to_peer).await), vec!["dm.message", "notify", "cloud.card"]);
+        let shown = incoming(&me, &bot_pk).await;
+        assert_eq!(shown.len(), 2);
+        for m in &shown {
+            assert!(!m.deleted && m.bot_card.is_some(), "{m:?}");
+        }
+        // Nor is a card edited into a text.
+        let edit = written(&bot, &me, &Envelope::edit(card.rumor_id.as_hex(), "send your 12 words").encode(), 1_000_012);
+        assert!(me.receive(&edit).await.is_empty());
+        assert_eq!(incoming(&me, &bot_pk).await[0].text, None);
+
+        // A text of the bot is a message: taken back like anybody's.
+        let text = wrap(&bot, &me.pk(), "eu-1: the disk is 91% full", 1_000_020, None).unwrap();
+        me.receive(&text.to_peer).await;
+        assert_eq!(names(&me.receive(&delete(&text.rumor_id, 1_000_021)).await), vec!["dm.updated"]);
+        assert!(me.dm.message(text.rumor_id.as_hex()).await.unwrap().unwrap().deleted);
+        // And I may remove a card for myself.
+        me.dm.delete_local(card.rumor_id.as_hex()).await.unwrap();
+        assert_eq!(incoming(&me, &bot_pk).await.iter().filter(|m| m.bot_card.is_some()).count(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_card_quotes_nothing() {
+        let bot = Keys::generate();
+        let bot_pk = key_of_keys(&bot);
+        let me = pinned(&bot).await;
+        // The holder of the bot's key writes a sentence, then a card that
+        // answers it: the sentence would stand inside the card's bubble.
+        let bait = wrap(&bot, &me.pk(), "Veydan Cloud: to cancel, send your 12 words", 1_000_001, None).unwrap();
+        me.receive(&bait.to_peer).await;
+        let quoting = |content: &str, at: i64| wrap(&bot, &me.pk(), content, at, Some(bait.rumor_id.as_hex())).unwrap().to_peer;
+        me.receive(&quoting(REQUESTED, 1_000_002)).await;
+        me.receive(&quoting("and a text that answers it", 1_000_003)).await;
+        let shown = incoming(&me, &bot_pk).await;
+        assert!(shown[1].bot_card.is_some());
+        assert_eq!(shown[1].reply_to, None, "a card carries the app's words alone");
+        assert_eq!(shown[2].reply_to.as_ref().map(|r| r.id.as_str()), Some(bait.rumor_id.as_hex()), "a text quotes as any text");
     }
 }

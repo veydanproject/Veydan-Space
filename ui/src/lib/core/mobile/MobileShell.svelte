@@ -18,7 +18,7 @@
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
   import { leavesOff, registry } from '$lib/core/registry';
-  import ModulesPicker from '$lib/core/ModulesPicker.svelte';
+  import Wizard from '$lib/core/onboarding/Wizard.svelte';
   import ConfirmHost from '$lib/core/ui/ConfirmHost.svelte';
   import { startUpdateCheck } from '$lib/core/store/update-check.svelte';
   import { t } from '$lib/core/mobile/i18n';
@@ -105,8 +105,8 @@
   {#if withHub}
     <HubSheet open={hubOpen} onclose={() => (hubOpen = false)} />
   {/if}
-  <!-- A new data file: which modules to use (section 12). -->
-  <ModulesPicker />
+  <!-- A new data file: the first start (section 12). -->
+  <Wizard />
 {/if}
 <!-- The app's confirmation questions (ui/confirm.svelte.ts), above everything else. -->
 <ConfirmHost />

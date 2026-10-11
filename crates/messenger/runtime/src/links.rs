@@ -11,7 +11,7 @@ use crate::MessengerRuntime;
 use messenger_core::{MessengerError, PubKey, Result};
 use messenger_groups::{GroupKind, GroupLink};
 use messenger_links::contact::{npub_of, pubkey_of_npub};
-use messenger_links::{BridgeLink, CallNodeLink, ContactLink, LinkError, LinkType, Uri};
+use messenger_links::{BridgeLink, CallNodeLink, ContactLink, LinkError, LinkType, RecoverLink, Uri};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -118,6 +118,18 @@ pub enum LinkView {
         /// be exchanged).
         added: bool,
     },
+    /// A request of recovery through the trusted people
+    /// (`veydan://recover/<npub>?c=<code>`, cloud-recovery.md §8.5): the
+    /// card leads to «Помочь другу восстановить доступ» of the module cloud.
+    Recover {
+        link: String,
+        /// The account to recover, 64 hex.
+        npub: String,
+        /// The check code as shown, `AB7K-2QZD-9MXP`.
+        code: String,
+        /// My name for the person, when they are a contact; empty otherwise.
+        name: String,
+    },
     /// A well-formed link of a type a newer client knows.
     Unknown { link_type: String },
     Invalid { code: String },
@@ -177,6 +189,13 @@ impl MessengerRuntime {
                 Ok(n) => {
                     let added = self.call_node_is_mine(&n.id, n.token.is_some()).await?;
                     Ok(LinkView::CallNode { link: n.encode(), id: n.id.clone(), addr: n.addr.to_string(), has_token: n.token.is_some(), added })
+                }
+                Err(e) => Ok(LinkView::invalid(e)),
+            },
+            LinkType::Recover => match RecoverLink::from_uri(&uri) {
+                Ok(r) => {
+                    let name = self.contacts().get(&r.npub).await?.map(|c| c.label()).unwrap_or_default();
+                    Ok(LinkView::Recover { link: r.encode(), npub: r.npub.as_hex().into(), code: r.code, name })
                 }
                 Err(e) => Ok(LinkView::invalid(e)),
             },

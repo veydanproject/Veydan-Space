@@ -1,7 +1,14 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- Three steps: recovery key -> new PIN/password -> new recovery key. -->
+<!--
+  «Забыл пароль» (platform-spec 8.1, cloud-recovery.md §5). A lock whose
+  recovery wrap is the Recovery Key of 12 words: the words, a new PIN or
+  password, done — the words stay the same. An older lock with a code of 24
+  characters: the code, a new PIN or password, and the Recovery Key of 12
+  words that replaces the code, shown once. The version is the row's, never
+  the input's: one field takes both.
+-->
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
   import { api } from '$lib/core/api';
@@ -10,6 +17,7 @@
   import { formatError } from '$lib/core/utils';
   import { passwordErrorKey } from '$lib/core/password-error';
   import { lockSecretIssue } from '$lib/core/lock/secret';
+  import { looksLikeCode, looksLikeWords } from '$lib/core/lock/words';
   import type { LockKind } from '$lib/core/types';
   import LockSecretFields from './LockSecretFields.svelte';
   import RecoveryKeyCard from './RecoveryKeyCard.svelte';
@@ -17,7 +25,7 @@
 
   interface Props {
     onback: () => void;
-    /** Runs after the new recovery key is acknowledged; the app is unlocked by then. */
+    /** Runs after the last step is acknowledged; the app is unlocked by then. */
     ondone: () => void;
   }
 
@@ -35,9 +43,13 @@
   let busy = $state(false);
 
   const hasRecovery = $derived(appLock.status.has_recovery);
+  /** The row's wrap: 2 the words, 1 the code of an older lock. */
+  const version = $derived(appLock.status.recovery_version ?? 2);
+  const steps = $derived(version === 2 ? 2 : 3);
   const secretValid = $derived(lockSecretIssue(kind, password, confirm) === null);
+  const inputReady = $derived(version === 2 ? looksLikeWords(code) : looksLikeCode(code));
 
-  /** Uppercase groups of 4 while typing; the backend ignores dashes anyway. */
+  /** Uppercase groups of 4 while typing a code; the backend ignores dashes anyway. */
   function formatCode(raw: string): string {
     const clean = raw.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 24);
     return clean.replace(/(.{4})(?=.)/g, '$1-');
@@ -49,7 +61,8 @@
 
   async function paste() {
     try {
-      code = formatCode(await navigator.clipboard.readText());
+      const text = await navigator.clipboard.readText();
+      code = version === 2 ? text : formatCode(text);
     } catch {}
   }
 
@@ -74,8 +87,15 @@
 
   const recover = () =>
     run(async () => {
-      await appLock.recover(code, { password: password.trim(), kind, hint: hint.trim() || null });
-      step = 3;
+      const secret = { password: password.trim(), kind, hint: hint.trim() || null };
+      if (version === 2) {
+        // The words stay: nothing to show, the app is open.
+        await appLock.recoverKeep(code, secret);
+        step = 3;
+      } else {
+        await appLock.recover(code, secret);
+        step = 3;
+      }
     });
 </script>
 
@@ -86,28 +106,42 @@
     </button>
     <div class="titles">
       <h3>{$t('lock_recover_title')}</h3>
-      <span class="step">{$t('lock_recover_step', { n: String(step) })}</span>
+      <span class="step">
+        {steps === 2 ? $t('lock_recover_step_of_2', { n: String(step) }) : $t('lock_recover_step', { n: String(step) })}
+      </span>
     </div>
   </div>
 
   {#if step === 1}
     <p class="lead">{$t('lock_recover_step1')}</p>
     {#if hasRecovery}
-      <p class="sub">{$t('lock_recover_step1_hint')}</p>
-      <input
-        class="field code mono"
-        type="text"
-        value={code}
-        oninput={onCodeInput}
-        placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
-        autocomplete="off"
-        autocapitalize="characters"
-        spellcheck="false"
-        disabled={busy}
-      />
+      <p class="sub">{version === 2 ? $t('lock_recover_step1_words_hint') : $t('lock_recover_step1_hint')}</p>
+      {#if version === 2}
+        <textarea
+          class="field words mono"
+          rows="3"
+          bind:value={code}
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          disabled={busy}
+        ></textarea>
+      {:else}
+        <input
+          class="field code mono"
+          type="text"
+          value={code}
+          oninput={onCodeInput}
+          placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          disabled={busy}
+        />
+      {/if}
       <div class="row">
         <button class="btn btn-ghost" type="button" onclick={paste} disabled={busy}>{$t('lock_recover_paste')}</button>
-        <button class="btn btn-primary grow" type="button" onclick={check} disabled={busy || code.replace(/-/g, '').length !== 24}>
+        <button class="btn btn-primary grow" type="button" onclick={check} disabled={busy || !inputReady}>
           {$t('lock_recover_continue')}
         </button>
       </div>
@@ -121,6 +155,9 @@
     <button class="btn btn-primary wide" type="button" onclick={recover} disabled={busy || !secretValid}>
       {$t('lock_recover_continue')}
     </button>
+  {:else if version === 2}
+    <p class="lead kept"><Icon name="check" size={18} />{$t('lock_recover_kept')}</p>
+    <button class="btn btn-primary wide" type="button" onclick={ondone}>{$t('lock_recovery_done')}</button>
   {:else}
     <RecoveryKeyCard code={newCode} title={$t('lock_recover_step3')} intro={$t('lock_recover_step3_hint')} {ondone} />
   {/if}
@@ -148,6 +185,7 @@
   .titles h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
   .step { font-size: var(--fs-xs); color: var(--text-3); }
   .lead { margin: 0; font-size: var(--fs-base); font-weight: 600; color: var(--text); }
+  .lead.kept { display: flex; align-items: center; gap: var(--sp-2); color: var(--ok-text, var(--text)); }
   .sub { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
   .sub.none { color: var(--warn-text); }
   .field {
@@ -161,6 +199,7 @@
     color: var(--text);
   }
   .field.code { letter-spacing: 0.08em; text-align: center; }
+  .field.words { resize: vertical; line-height: 1.5; }
   .row { display: flex; gap: var(--sp-2); }
   .grow { flex: 1; justify-content: center; }
   .wide { width: 100%; justify-content: center; }

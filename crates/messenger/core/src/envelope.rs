@@ -79,6 +79,19 @@ pub const T_REACTION: &str = "reaction";
 /// contact, with a signature by that key that it is mine as of `since`;
 /// `pubkey: null` (no proof) says I stopped sharing. The later `since` wins.
 pub const T_PRESENCE_KEY: &str = "presence.key";
+/// `{"t":"device.link","blob":"<base64>"}` — the nsec of the old device in
+/// its inner wrap, to the temporary key T of a new one: a note to a key
+/// that is not a contact (internal/messenger-wire.md §3, "Восстановление
+/// доступа и связывание устройств").
+pub const T_DEVICE_LINK: &str = "device.link";
+/// `{"t":"device.link.done","t_pub":"<64 hex>"}` — a note to my own
+/// devices (`KIND_OWN_RUMOR`): the new device came in with my key, the
+/// wrap `device.link` to this T may go.
+pub const T_DEVICE_LINK_DONE: &str = "device.link.done";
+/// The open event of a typed link code (NIP-78, kind 30078, signed by T,
+/// `d` = hex sha256 of the code); the same kind as `KIND_OWN_RUMOR`, but
+/// never a rumor: it travels unwrapped.
+pub const KIND_LINK_CODE: u16 = 30078;
 
 /// Every type of the signalling of a call starts so. The invitation is a
 /// message (kind 14: it wakes the peer's phone); everything after it is a

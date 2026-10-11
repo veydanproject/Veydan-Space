@@ -38,11 +38,18 @@ use std::sync::Arc;
 /// exception: without keys it says nothing at all ([`Reason::NoKeys`]),
 /// since "something came" is no call, and a call rings now or never.
 pub async fn describe(data_dir: &Path, bundle: Option<&KeyBundle>, push: &PushData) -> Result<Outcome> {
-    let config = MessengerConfig::new(data_dir);
-    let store = Store::open_read_only(&config).await?;
+    describe_as(&MessengerConfig::new(data_dir), bundle, push).await
+}
+
+/// [`describe`] with the app's own configuration: its data directory and
+/// the pinned key of the bot of Veydan Cloud (`bot_pubkey`), whose messages
+/// are no request and whose cards are told without a word of theirs, as
+/// the app takes them (`DmService::with_bot`).
+pub async fn describe_as(config: &MessengerConfig, bundle: Option<&KeyBundle>, push: &PushData) -> Result<Outcome> {
+    let store = Store::open_read_only(config).await?;
     let out = match bundle {
         Some(bundle) => match bundle.keys() {
-            Ok(keys) => Describe::new(store.clone(), keys).run(bundle, push).await,
+            Ok(keys) => Describe::new(store.clone(), keys, config.bot_pubkey.as_deref()).run(bundle, push).await,
             Err(e) => Err(e),
         },
         None if push.call => Ok(Outcome::Quiet { reason: Reason::NoKeys }),
@@ -61,10 +68,10 @@ struct Describe {
 }
 
 impl Describe {
-    fn new(store: Store, keys: Keys) -> Self {
+    fn new(store: Store, keys: Keys, bot: Option<&str>) -> Self {
         let profiles = ProfileService::new(store.clone());
         let contacts = ContactService::new(store.clone(), profiles.clone());
-        let dm = DmService::new(store.clone(), contacts.clone(), profiles, Arc::new(SystemClock));
+        let dm = DmService::new(store.clone(), contacts.clone(), profiles, Arc::new(SystemClock)).with_bot(bot);
         let me = PubKey::parse(&keys.public_key().to_hex()).expect("a public key is 64 hex chars");
         Self { store, keys, me, contacts, dm }
     }
@@ -235,11 +242,19 @@ impl Describe {
             return Ok(Outcome::Quiet { reason: Reason::NotForMe });
         }
         let stored = row.is_some();
-        let seen = messages::count_visible_incoming_since(&self.store, &chat_id, relation.request_floor).await?;
-        let kind = match inbound_decision(&relation, !stored, seen, dm.created_at.0) {
-            InboundDecision::Save => ChatKind::Dm,
-            InboundDecision::SaveAsRequest => ChatKind::Request,
-            InboundDecision::Drop(_) => return Ok(Outcome::Quiet { reason: Reason::NotForMe }),
+        // The pinned bot of Veydan Cloud is approved beforehand: what it
+        // writes is a message of its chat, never a request, and its block
+        // was looked at above. Its signals are not heard.
+        let from_bot = self.dm.is_bot(&peer);
+        let kind = if from_bot {
+            ChatKind::Dm
+        } else {
+            let seen = messages::count_visible_incoming_since(&self.store, &chat_id, relation.request_floor).await?;
+            match inbound_decision(&relation, !stored, seen, dm.created_at.0) {
+                InboundDecision::Save => ChatKind::Dm,
+                InboundDecision::SaveAsRequest => ChatKind::Request,
+                InboundDecision::Drop(_) => return Ok(Outcome::Quiet { reason: Reason::NotForMe }),
+            }
         };
 
         let (body, chat) = match envelope.t.as_str() {
@@ -267,6 +282,9 @@ impl Describe {
                 (Some(Body::Welcome { group_name: group.name }), Some(groups::group_chat_id(&welcome.group_id)))
             }
             other if other.starts_with("group.") => return Ok(Outcome::Quiet { reason: Reason::NotAMessage }),
+            // A card of the bot: the app words it by its type where it is
+            // shown; nothing of its envelope is told here.
+            _ if from_bot => (None, Some(chat_id.clone())),
             // Types from a newer app: shown by the sender's name, the app will say more.
             _ => (body_of(&envelope), Some(chat_id.clone())),
         };

@@ -7,9 +7,10 @@
 #
 #   product_env <product>       # space, notes, pass or chat
 #
-# Refuses a name products.json does not hold as a product and a product
-# whose crate does not exist yet: the Tauri CLI silently builds another
-# product when TAURI_APP_PATH points nowhere. On success it exports
+# Refuses a name products.json does not hold as a product, a product
+# whose crate does not exist yet — the Tauri CLI silently builds another
+# product when TAURI_APP_PATH points nowhere — and a product that lists a
+# module without a module it requires (`requires`, 11.3). On success it exports
 # TAURI_APP_PATH (the product) and TAURI_FRONTEND_PATH (the UI project,
 # ui/: the CLI runs beforeDevCommand and beforeBuildCommand there and
 # reads the versions of the JS packages there), and sets:
@@ -47,6 +48,12 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, "products.json"), "u
 const products = Object.entries(manifest.targets).filter(([, t]) => t.kind === "product").map(([n]) => n);
 const t = manifest.targets[name];
 if (!t || t.kind !== "product") fail(`unknown product '${name}' (products: ${products.join(", ")})`);
+// A module comes only with the modules it requires (11.3): cloud with the messenger.
+for (const id of t.modules) {
+  for (const need of (manifest.modules[id] || {}).requires || []) {
+    if (!t.modules.includes(need)) fail(`products.json: the product '${name}' lists '${id}', which requires '${need}', and not '${need}'`);
+  }
+}
 const dir = path.join(root, t.app);
 const cargo = path.join(dir, "Cargo.toml");
 const conf = path.join(dir, "tauri.conf.json");

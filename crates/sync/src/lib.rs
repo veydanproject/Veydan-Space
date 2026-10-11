@@ -26,6 +26,7 @@ pub mod keys;
 pub mod large_files;
 pub mod log;
 pub mod storage;
+pub mod storage_cloud;
 pub mod storage_s3;
 pub mod storage_webdav;
 
@@ -39,6 +40,7 @@ pub use large_files::{
 };
 pub use log::{device_from_key, LocalState, Op, PeerHead};
 pub use storage::{LocalDir, Storage};
+pub use storage_cloud::{CloudStorage, RequestSigner, SignFuture};
 pub use storage_s3::{S3Config, S3Storage};
 pub use storage_webdav::{WebDavConfig, WebDavStorage};
 
@@ -77,6 +79,10 @@ pub enum SyncError {
     /// the caller must start a fresh device log.
     #[error("own log collision at seq {0}")]
     OwnLogCollision(u64),
+    /// The pool of the plan is full (`413 quota` of vstore, vstore.md §14):
+    /// what goes into it waits until room is made.
+    #[error("quota: the pool {pool} is full ({used} of {limit} bytes)")]
+    Quota { pool: String, used: u64, limit: u64 },
 }
 
 pub type Result<T> = std::result::Result<T, SyncError>;
@@ -93,7 +99,7 @@ impl From<std::io::Error> for SyncError {
     }
 }
 
-fn reqwest_msg(e: &reqwest::Error) -> String {
+pub(crate) fn reqwest_msg(e: &reqwest::Error) -> String {
     let mut msg = e.to_string();
     let mut src = std::error::Error::source(e);
     while let Some(err) = src {

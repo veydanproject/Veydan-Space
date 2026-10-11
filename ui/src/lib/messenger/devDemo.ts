@@ -5,7 +5,7 @@
 // `localStorage['messenger.demo'] = '1'`. Never used inside the app.
 
 import type {
-  CardView, ChatMode, Color, MessageStatus, MessengerChat, MessengerContact, MessengerGroup, MessengerGroupInvite, MessengerGroupMember, MessengerIdentity,
+  BotCard, CardView, ChatMode, Color, MessageStatus, MessengerChat, MessengerContact, MessengerGroup, MessengerGroupInvite, MessengerGroupMember, MessengerIdentity,
   MessengerMessage, MessengerProfile, MessengerTransfer, SocialLink, SocialView, Span, Style,
 } from './api';
 
@@ -285,6 +285,24 @@ export function buildDemo(): DemoData {
     msg(d, ME, now - day * 12 + 100, 'Обращайся.'),
     msg(d, '', now - day * 6, 'contact_left', { content_type: 'system', direction: 'out' }),
   );
+
+  // The bot of Veydan Cloud (messenger-wire.md §3): approved by the build and no contact; an
+  // alert to the owner of an installation is words, everything else a card, one of each type.
+  const cloudBot = hex('c1');
+  const cb = `dm:${cloudBot}`;
+  chats.push({ id: cb, kind: 'dm', peer_pubkey: cloudBot, peer_npub: npub(cloudBot, 'vcloud'), title: 'VCLOUD', picture: null, is_contact: false, is_muted: false, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'full_chat', can_send: true, bot: true });
+  const botCard = (at: number, bot_card: BotCard) => msg(cb, cloudBot, at, null, { content_type: 'bot_card', bot_card });
+  messages[cb] = [
+    msg(cb, cloudBot, now - day * 4, 'eu-1: the relay is fine again, 4 min down'),
+    botCard(now - day * 3, { t: 'plan.expiring', plan: 'plus', until: now + day * 4 }),
+    botCard(now - day * 3 + 600, { t: 'quota.90', pool: 'files', used: 1_932_735_283, limit: 2_147_483_648 }),
+    botCard(now - day * 2, { t: 'account.dormant', since: now - day * 182, delete_after: now + day * 28 }),
+    botCard(now - day * 2 + 600, { t: 'recovery.escrow_read', at: now - day * 2 + 600 }),
+    botCard(now - day, { t: 'recovery.restored', at: now - day }),
+    botCard(now - day + 600, { t: 'account.deleted', receipt: '7K2M-ABCD-EFGH', at: now - day + 600 }),
+    botCard(now - 7200, { t: 'unknown' }),
+    botCard(now - 120, { t: 'recovery.requested', request_id: '9c'.repeat(16), created_at: now - 120, expires_at: now + 1680 }),
+  ];
 
 
   // Groups: one private that I own, one public where I am a member.
