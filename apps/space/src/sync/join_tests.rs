@@ -11,7 +11,7 @@ use veydan_core::settings;
 use veydan_lock::{SyncedLock, ERR_JOIN_OWN_LOCK};
 use veydan_sync::{Engine, HlcClock};
 use veydan_sync_host::config::{self, build_storage, load_binding, load_config};
-use veydan_sync_host::{join, open_engine, rows, state, Step, Table};
+use veydan_sync_host::{join, open_engine, rows, state, Step, SyncConfig, Table};
 
 /// The tables of the step of the cycle that carries the key row.
 fn rows_of<'s>(state: &'s TestStates, steps: &[Step]) -> Vec<&'s Table> {
@@ -892,4 +892,95 @@ async fn a_lock_changed_in_the_vault_while_the_device_was_away_is_taken_at_the_j
     assert_eq!(reveal(&joiner, "pw-old").await.unwrap(), "kept since 4.x");
 
     close(vec![owner, joiner], dir).await;
+}
+
+/// The config of `state` with another folder, as the form sends it unsaved.
+async fn pointed_at(state: &TestStates, dir: &Path) -> SyncConfig {
+    SyncConfig {
+        folder_path: dir.to_string_lossy().into_owned(),
+        ..load_config(&state.core.db).await
+    }
+}
+
+/// `sync_change_storage` without the app.
+async fn change_storage(state: &TestStates, dir: &Path) -> &'static str {
+    let cfg = pointed_at(state, dir).await;
+    join::change_storage(&state.core.db, state.sync.registry(), cfg)
+        .await
+        .unwrap()
+}
+
+async fn joined_vault(state: &TestStates) -> Option<String> {
+    load_binding(&state.core.db).await.map(|b| b.vault_id)
+}
+
+#[tokio::test]
+async fn a_device_moved_to_an_empty_storage_fills_the_vault_it_creates_there() {
+    let old = crate::db::test_dir();
+    let new = crate::db::test_dir();
+    let (mover, _) = owner(&old, false).await;
+    let db = &mover.core.db;
+    let old_vault = joined_vault(&mover).await;
+    assert!(old_vault.is_some());
+
+    // Somebody's files: the device stays where it is.
+    let foreign = crate::db::test_dir();
+    std::fs::write(foreign.join("report.txt"), b"not a vault").unwrap();
+    assert_eq!(change_storage(&mover, &foreign).await, "foreign");
+    assert_eq!(joined_vault(&mover).await, old_vault);
+    assert_eq!(load_config(db).await.folder_path, old.to_string_lossy());
+
+    // Its own vault at another address: the address alone is saved.
+    let alias = old.join(".");
+    assert_eq!(change_storage(&mover, &alias).await, "same");
+    assert_eq!(joined_vault(&mover).await, old_vault);
+    assert_eq!(load_config(db).await.folder_path, alias.to_string_lossy());
+    assert!(load_config(db).await.enabled);
+
+    // An empty storage: the device leaves its vault, and nothing syncs
+    // until it has one there.
+    assert_eq!(change_storage(&mover, &new).await, "empty");
+    assert_eq!(joined_vault(&mover).await, None);
+    let cfg = load_config(db).await;
+    assert_eq!(cfg.folder_path, new.to_string_lossy());
+    assert!(!cfg.enabled);
+
+    // The vault it creates there gets everything the device holds.
+    create_vault(&mover).await;
+    cycle(&mover).await;
+    assert_ne!(joined_vault(&mover).await, old_vault);
+    let joiner = device(&new).await;
+    join_vault(&joiner).await.unwrap();
+    cycle(&joiner).await;
+    assert_eq!(reveal(&joiner, "pw-old").await.unwrap(), "kept since 4.x");
+    // The old storage keeps its vault.
+    assert!(old.join("manifest.json").exists());
+
+    let _ = std::fs::remove_dir_all(&foreign);
+    let _ = std::fs::remove_dir_all(&old);
+    close(vec![mover, joiner], new).await;
+}
+
+#[tokio::test]
+async fn a_device_moved_to_a_storage_with_a_vault_leaves_its_own_and_joins_that_one() {
+    let old = crate::db::test_dir();
+    let new = crate::db::test_dir();
+    let (there, key) = owner(&new, false).await;
+    let mover = device(&old).await;
+    create_vault(&mover).await;
+    cycle(&mover).await;
+    let old_vault = joined_vault(&mover).await;
+
+    assert_eq!(change_storage(&mover, &new).await, "vault");
+    assert_eq!(joined_vault(&mover).await, None);
+    join_vault(&mover).await.unwrap();
+    cycle(&mover).await;
+
+    assert_ne!(joined_vault(&mover).await, old_vault);
+    assert_eq!(joined_vault(&mover).await, joined_vault(&there).await);
+    assert_eq!(key_id(&mover).await, Some(key));
+    assert_eq!(reveal(&mover, "pw-old").await.unwrap(), "kept since 4.x");
+
+    let _ = std::fs::remove_dir_all(&old);
+    close(vec![there, mover], new).await;
 }

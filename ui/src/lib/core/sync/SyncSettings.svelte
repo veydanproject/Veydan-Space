@@ -15,6 +15,7 @@
   import { registry } from '$lib/core/registry';
   import { goto } from '$app/navigation';
   import { ask } from '$lib/core/ui/confirm.svelte';
+  import { storageOf } from '$lib/core/sync/storage';
   import { CLOUD_BACKEND, asksForProfileFiles, filesLimit, fullestPool, loadCloud, usageTone, type CloudView } from '$lib/core/sync/cloud';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -160,7 +161,15 @@
     } catch {}
   }
 
-  async function run(task: () => Promise<void>) {
+  /** The config as it is saved: the storage a joined device syncs through. */
+  let stored: SyncConfig | null = null;
+
+  async function loadConfig() {
+    cfg = await api.sync.getConfig();
+    stored = $state.snapshot(cfg);
+  }
+
+  async function run(task: () => Promise<unknown>) {
     busy = true;
     error = '';
     info = '';
@@ -175,11 +184,54 @@
     }
   }
 
-  async function saveConfig() {
-    await api.sync.setConfig($state.snapshot(cfg));
-    cfg = await api.sync.getConfig();
+  function showSaved() {
     saved = true;
     setTimeout(() => (saved = false), 2000);
+  }
+
+  /** Saves the form. False where the device still syncs as before, or has only now got its vault: no sync is to follow. */
+  async function saveConfig(): Promise<boolean> {
+    if (status?.joined && stored && storageOf(cfg) !== storageOf(stored)) return changeStorage();
+    await api.sync.setConfig($state.snapshot(cfg));
+    await loadConfig();
+    showSaved();
+    return true;
+  }
+
+  /**
+   * The form of a joined device names another storage. The device is bound
+   * to the vault of the old one: saved alone, the new storage would leave
+   * sync looking there for a vault that is not there. So the device leaves
+   * its vault and takes the one of the new storage, created where there is
+   * none. Veydan Cloud asks no passphrase and is finished here; another
+   * storage is finished in the form, which asks for one.
+   */
+  async function changeStorage(): Promise<boolean> {
+    const yes = await ask({
+      title: $t('settings_sync_move_title'),
+      message: $t('settings_sync_move_ask'),
+      confirmLabel: $t('settings_sync_move_yes'),
+      variant: 'primary',
+    });
+    if (!yes) return false;
+    const found = await api.sync.changeStorage($state.snapshot(cfg));
+    if (found === 'foreign') {
+      error = $t('settings_sync_probe_foreign');
+      return false;
+    }
+    await loadConfig();
+    if (found === 'same') {
+      showSaved();
+      return true;
+    }
+    if (!onCloud) {
+      info = $t(`settings_sync_probe_${found}`);
+      return false;
+    }
+    status = found === 'vault' ? await api.sync.joinVault('') : await api.sync.createVault('');
+    await loadConfig();
+    info = $t(found === 'vault' ? 'settings_sync_joined' : 'settings_sync_created');
+    return false;
   }
 
   const save = () => run(saveConfig);
@@ -196,7 +248,7 @@
       await saveConfig();
       status = await api.sync.createVault(passphrase);
       // The backend turned sync on: the form takes its config, or the next save would turn it off.
-      cfg = await api.sync.getConfig();
+      await loadConfig();
       passphrase = '';
       info = $t('settings_sync_created');
     });
@@ -205,14 +257,14 @@
     run(async () => {
       await saveConfig();
       status = await api.sync.joinVault(passphrase);
-      cfg = await api.sync.getConfig();
+      await loadConfig();
       passphrase = '';
       info = $t('settings_sync_joined');
     });
 
   const syncNow = () =>
     run(async () => {
-      await saveConfig();
+      if (!(await saveConfig())) return;
       status = await api.sync.runNow();
       info = $t('settings_sync_done');
     });
@@ -221,7 +273,7 @@
     run(async () => {
       confirmLeave = false;
       status = await api.sync.leave();
-      cfg = await api.sync.getConfig();
+      await loadConfig();
       info = $t('settings_sync_left');
     });
 
@@ -244,7 +296,7 @@
 
   onMount(async () => {
     try {
-      cfg = await api.sync.getConfig();
+      await loadConfig();
       intervalUnit = unitFor(cfg.interval_sec);
     } catch {}
     void loadCloud().then((view) => (cloud = view));

@@ -4,7 +4,7 @@
 //! Binding this device to a vault, and the key row of the lock a joining
 //! device takes from it.
 
-use crate::config::{self, build_storage, load_config, VaultBinding};
+use crate::config::{self, build_storage, load_config, SyncConfig, VaultBinding};
 use crate::rows::{put_row, read_row, Put};
 use crate::state::{self, load_row_state, save_row_state, RowSyncState};
 use crate::system::VAULT_KEY_ENTITY;
@@ -12,7 +12,7 @@ use crate::{Host, Registry};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use veydan_core::{settings, AppError, CmdResult, Core};
-use veydan_sync::{Engine, Vmk};
+use veydan_sync::{Engine, Probe, Vmk};
 
 /// Open the vault in the configured storage and bind this device to it. The
 /// vault is the authority for the password vault key: a device that has a key
@@ -69,6 +69,52 @@ pub async fn leave(db: &sqlx::Pool<sqlx::Sqlite>, registry: &Registry) -> CmdRes
     state::clear_all_states(db, registry).await?;
     config::clear_binding(db, registry).await?;
     settings::set(db, "sync_enabled", "0").await
+}
+
+/// Point this device at the storage of `cfg`, a config the form has not
+/// saved yet. The binding of a joined device is its vault's: saved alone,
+/// another storage leaves every cycle looking for that vault where it is
+/// not (`no vault in this storage`). So the device leaves its vault before
+/// the config is saved, and a create or a join in the new storage is the
+/// caller's next step. The storage is read first: one that does not answer
+/// is an error and one that holds somebody's files is `foreign`, and
+/// neither changes anything. Returns what the storage holds: `same` — the
+/// vault this device has joined, at another address: the config is saved
+/// and the binding stays; `empty`, `vault` — the device left its vault and
+/// the config is saved.
+pub async fn change_storage(
+    db: &sqlx::Pool<sqlx::Sqlite>,
+    registry: &Registry,
+    cfg: SyncConfig,
+) -> CmdResult<&'static str> {
+    let cfg = config::completed(db, cfg).await?;
+    let storage = build_storage(&cfg)?;
+    let joined = config::load_binding(db).await.map(|b| b.vault_id);
+    let found = match Engine::probe(storage.as_ref())
+        .await
+        .map_err(AppError::other)?
+    {
+        Probe::Foreign => return Ok("foreign"),
+        Probe::Vault(m) if joined.as_deref() == Some(m.vault_id.as_str()) => {
+            config::save_config(db, &cfg).await?;
+            return Ok("same");
+        }
+        Probe::Vault(_) => "vault",
+        Probe::Empty => "empty",
+    };
+    if joined.is_some() {
+        leave(db, registry).await?;
+    }
+    // Sync is off until the vault of the new storage is joined, as after a leave.
+    config::save_config(
+        db,
+        &SyncConfig {
+            enabled: false,
+            ..cfg
+        },
+    )
+    .await?;
+    Ok(found)
 }
 
 /// The key row is another one now: the lock reopens or closes the vault in

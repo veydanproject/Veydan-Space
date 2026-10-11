@@ -382,6 +382,7 @@ ssh_session_list ssh desktop
 ssh_session_remove ssh desktop
 sync_attachment_cancel notes all
 sync_change_passphrase shell all
+sync_change_storage shell all
 sync_conflict_get notes all
 sync_conflict_resolve notes all
 sync_create_vault shell all

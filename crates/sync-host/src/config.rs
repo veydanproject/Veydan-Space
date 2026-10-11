@@ -522,6 +522,28 @@ pub async fn refresh_cloud_hosts(db: &Pool<Sqlite>) -> CmdResult<()> {
         .await
 }
 
+/// A config as the form sends it, made whole. The form carries no secret it
+/// did not change and never the hosts of the backend `cloud`: both are what
+/// is stored, the hosts refreshed first as before a probe. For a storage
+/// that is read before its config is saved (`join::change_storage`).
+pub async fn completed(db: &Pool<Sqlite>, mut cfg: SyncConfig) -> CmdResult<SyncConfig> {
+    let stored = load_config(db).await;
+    if cfg.s3.secret_key.is_none() {
+        cfg.s3.secret_key = stored.s3.secret_key;
+    }
+    if cfg.webdav.password.is_none() {
+        cfg.webdav.password = stored.webdav.password;
+    }
+    if cfg.backend == CLOUD_BACKEND {
+        sync_cloud_credentials()
+            .ok_or_else(no_cloud)?
+            .refresh_hosts()
+            .await?;
+    }
+    cfg.cloud_hosts = load_cloud_hosts(db).await;
+    Ok(cfg)
+}
+
 /// The bytes of the browser profiles' files on this device: what turning
 /// on `profile_files` would send at most. An upper bound: the caches the
 /// snapshot leaves out are counted too.

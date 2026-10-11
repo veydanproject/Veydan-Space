@@ -70,6 +70,7 @@ export const api = {
     createVault: (passphrase: string) => shared.sync.createVault(passphrase),
     joinVault: (passphrase: string) => shared.sync.joinVault(passphrase),
     leave: () => shared.sync.leave(),
+    changeStorage: (cfg: SyncConfig) => shared.sync.changeStorage(cfg),
     status: () => shared.sync.status(),
     runNow: () => shared.sync.runNow(),
     trigger: () => shared.sync.trigger(),

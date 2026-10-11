@@ -144,6 +144,12 @@ export const api = {
     createVault: (passphrase: string) => call<SyncStatus>('sync_create_vault', { passphrase }),
     joinVault: (passphrase: string) => call<SyncStatus>('sync_join_vault', { passphrase }),
     leave: () => call<SyncStatus>('sync_leave'),
+    /**
+     * A joined device is pointed at the storage of `cfg`, not saved yet. `same`: its own vault at
+     * another address, the config is saved. `foreign`: nothing changed. `empty`, `vault`: the device
+     * left its vault and the config is saved; a create or a join there is next.
+     */
+    changeStorage: (cfg: SyncConfig) => call<'same' | 'foreign' | 'empty' | 'vault'>('sync_change_storage', { cfg }),
     changePassphrase: (old: string, newPassphrase: string) =>
       call<void>('sync_change_passphrase', { old, new: newPassphrase }),
     status: () => call<SyncStatus>('sync_status'),

@@ -12,6 +12,7 @@
   import { registry } from '$lib/core/registry';
   import { directory } from '$lib/core/directory';
   import { formatBytes } from '$lib/core/utils';
+  import { storageOf } from '$lib/core/sync/storage';
   import { CLOUD_BACKEND, asksForProfileFiles, fullestPool, loadCloud, usageTone, type CloudView } from '$lib/core/sync/cloud';
 
   let cfg = $state<SyncConfig | null>(null);
@@ -87,25 +88,87 @@
     return new Date(iso).toLocaleString($locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
+  /** The config as it is saved: the storage a joined device syncs through. */
+  let stored: SyncConfig | null = null;
+
+  async function loadConfig() {
+    cfg = await api.sync.getConfig();
+    stored = $state.snapshot(cfg);
+  }
+
   async function load() {
     try {
-      [cfg, status] = await Promise.all([api.sync.getConfig(), api.sync.status()]);
+      [, status] = await Promise.all([loadConfig(), api.sync.status()]);
     } catch (e) {
       error = formatError(e);
     }
   }
 
-  async function save() {
-    if (cfg) await api.sync.setConfig(cfg);
+  /** The form as it is, to the settings: the config and the modules' parts. */
+  async function store() {
+    if (cfg) {
+      await api.sync.setConfig(cfg);
+      stored = $state.snapshot(cfg);
+    }
+    await saveBlocks();
+  }
+
+  async function saveBlocks() {
     for (const block of Object.values(blockRefs) as ({ save?: () => Promise<void> } | undefined)[]) await block?.save?.();
   }
 
-  /** Save the form, then run `fn`; errors land in the banner. */
-  async function run(fn: () => Promise<void>) {
+  /** Saves the form. False where the device still syncs as before, or has only now got its vault: nothing is to follow. */
+  async function save(): Promise<boolean> {
+    if (!cfg || !status?.joined || !stored || storageOf(cfg) === storageOf(stored)) {
+      await store();
+      return true;
+    }
+    const go = await changeStorage();
+    await saveBlocks();
+    return go;
+  }
+
+  /**
+   * The form of a joined device names another storage. The device is bound
+   * to the vault of the old one: saved alone, the new storage would leave
+   * sync looking there for a vault that is not there. So the device leaves
+   * its vault and takes the one of the new storage, created where there is
+   * none. Veydan Cloud asks no passphrase and is finished here; another
+   * storage is finished below, where the page asks for one.
+   */
+  async function changeStorage(): Promise<boolean> {
+    if (!cfg) return false;
+    const yes = await ask({
+      title: $t('settings_sync_move_title'),
+      message: $t('settings_sync_move_ask'),
+      confirmLabel: $t('settings_sync_move_yes'),
+      variant: 'primary',
+    });
+    if (!yes) return false;
+    const found = await api.sync.changeStorage($state.snapshot(cfg));
+    if (found === 'foreign') {
+      error = $t('settings_sync_probe_foreign');
+      return false;
+    }
+    await loadConfig();
+    if (found === 'same') return true;
+    status = await api.sync.status();
+    if (cfg.backend !== CLOUD_BACKEND) {
+      probe = found;
+      return false;
+    }
+    status = found === 'vault' ? await api.sync.joinVault('') : await api.sync.createVault('');
+    await loadConfig();
+    showToast($t(found === 'vault' ? 'settings_sync_joined' : 'settings_sync_created'));
+    return false;
+  }
+
+  /** Save the form, then run `fn`; errors land in the banner. `saving` false: `fn` saves by itself. */
+  async function run(fn: () => Promise<void>, saving = true) {
     error = '';
     busy = true;
     try {
-      await save();
+      if (saving && !(await save())) return;
       await fn();
     } catch (e) {
       const key = joinErrorKey(e);
@@ -134,7 +197,7 @@
     work('create', async () => {
       status = await api.sync.createVault(passphrase);
       // The backend turned sync on: the form takes its config, or the next save would turn it off.
-      cfg = await api.sync.getConfig();
+      await loadConfig();
       passphrase = '';
       probe = null;
       showToast($t('settings_sync_created'));
@@ -143,7 +206,7 @@
   const doJoin = () =>
     work('join', async () => {
       status = await api.sync.joinVault(passphrase);
-      cfg = await api.sync.getConfig();
+      await loadConfig();
       passphrase = '';
       probe = null;
       showToast($t('settings_sync_joined'));
@@ -156,11 +219,15 @@
     syncBtnState = 'syncing';
     clearTimeout(syncResetTimer);
     try {
-      await save();
+      if (!(await save())) {
+        syncBtnState = 'idle';
+        return;
+      }
       status = await api.sync.runNow();
       if (!status.running) finishSyncBtn(status.last_error);
     } catch (e) {
-      error = formatError(e);
+      const key = joinErrorKey(e);
+      error = key ? $t(key) : formatError(e);
       syncBtnState = 'idle';
     } finally {
       busy = false;
@@ -176,13 +243,15 @@
     clearTimeout(syncResetTimer);
     syncResetTimer = setTimeout(() => (syncBtnState = 'idle'), 1500);
   }
+  // The form is saved once the device has left: another storage in it is never saved under the vault it leaves.
   const doLeave = () =>
     run(async () => {
       if (!(await ask({ title: $t('settings_sync_leave'), message: $t('settings_sync_leave_confirm'), confirmLabel: $t('settings_sync_leave') }))) return;
       status = await api.sync.leave();
       if (cfg) cfg.enabled = false;
+      await store();
       showToast($t('settings_sync_left'));
-    });
+    }, false);
 
   const toggleEnabled = () =>
     run(async () => {
@@ -196,11 +265,15 @@
     saveState = 'saving';
     clearTimeout(saveResetTimer);
     try {
-      await save();
+      if (!(await save())) {
+        saveState = 'idle';
+        return;
+      }
       saveState = 'saved';
       saveResetTimer = setTimeout(() => (saveState = 'idle'), 1500);
     } catch (e) {
-      error = formatError(e);
+      const key = joinErrorKey(e);
+      error = key ? $t(key) : formatError(e);
       saveState = 'idle';
     } finally {
       busy = false;
@@ -345,14 +418,14 @@
     <div class="m-section">{$t('settings_sync_backend')}</div>
     <div class="seg backend group" class:three={cloudOffered}>
       {#if cloudOffered}
-        <button class="seg-btn" class:active={onCloud} onclick={() => chooseBackend(CLOUD_BACKEND)} disabled={status.joined}>
+        <button class="seg-btn" class:active={onCloud} onclick={() => chooseBackend(CLOUD_BACKEND)}>
           {$t('settings_sync_backend_cloud')}
         </button>
       {/if}
-      <button class="seg-btn" class:active={cfg.backend === 'webdav'} onclick={() => chooseBackend('webdav')} disabled={status.joined}>
+      <button class="seg-btn" class:active={cfg.backend === 'webdav'} onclick={() => chooseBackend('webdav')}>
         {$t('settings_sync_backend_webdav')}
       </button>
-      <button class="seg-btn" class:active={cfg.backend === 's3'} onclick={() => chooseBackend('s3')} disabled={status.joined}>
+      <button class="seg-btn" class:active={cfg.backend === 's3'} onclick={() => chooseBackend('s3')}>
         {$t('settings_sync_backend_s3')}
       </button>
     </div>

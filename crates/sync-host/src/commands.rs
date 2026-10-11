@@ -10,12 +10,16 @@ use crate::cycle::{run_cycle, status, trigger_cycle, SyncStatus};
 use crate::debug::{ensure_debug_loaded, trace_skip, SyncDebugState, DEBUG_SETTING};
 use crate::{join, Host, SyncConfig, SyncManager, EVENT_STATUS};
 use chrono::Utc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use veydan_core::{settings, AppError, CmdResult, Core};
 use veydan_sync::{Engine, Probe, Vmk};
 
 /// Minimum gap between cycles started by `sync_trigger` (app resume, screen open).
 const MIN_TRIGGER_GAP_SEC: i64 = 15;
+
+/// How long `sync_change_storage` waits for a running cycle to end.
+const CHANGE_STORAGE_WAIT: Duration = Duration::from_secs(20);
 
 #[tauri::command]
 pub async fn sync_get_config(core: tauri::State<'_, Core>) -> CmdResult<SyncConfig> {
@@ -84,6 +88,26 @@ pub async fn sync_join_vault(
     }
     start_first_cycle(&app);
     status(&core, &sync).await
+}
+
+/// A joined device is pointed at another storage (`join::change_storage`):
+/// "same" | "foreign" | "empty" | "vault". The slot of the cycle is held: a
+/// cycle of the old vault that ended after the device joined the new one
+/// would write its positions under the new binding, and what it had pushed
+/// to the old storage would never reach the new one.
+#[tauri::command]
+pub async fn sync_change_storage(
+    cfg: SyncConfig,
+    app: AppHandle,
+    core: tauri::State<'_, Core>,
+    sync: tauri::State<'_, SyncManager>,
+) -> CmdResult<String> {
+    let _slot = sync.pause(CHANGE_STORAGE_WAIT).await.ok_or_else(|| {
+        AppError::other("a sync is running: wait until it ends, then change the storage")
+    })?;
+    let found = join::change_storage(&core.db, sync.registry(), cfg).await?;
+    let _ = app.emit(EVENT_STATUS, ());
+    Ok(found.to_string())
 }
 
 /// After a binding was saved: tell the UI, start a cycle without blocking the caller.

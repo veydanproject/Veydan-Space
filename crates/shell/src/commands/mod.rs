@@ -85,6 +85,7 @@ fn commands() -> Module {
             veydan_sync_host::commands::sync_create_vault,
             veydan_sync_host::commands::sync_join_vault,
             veydan_sync_host::commands::sync_leave,
+            veydan_sync_host::commands::sync_change_storage,
             veydan_sync_host::commands::sync_change_passphrase,
             veydan_sync_host::commands::sync_status,
             veydan_sync_host::commands::sync_debug_get,
