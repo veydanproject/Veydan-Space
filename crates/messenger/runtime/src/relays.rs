@@ -109,7 +109,10 @@ impl RelayService {
     /// a manifest newer than the applied one (an app update) is applied.
     /// Loads rows and connects (unless silent, or no servers chosen yet).
     pub async fn init(store: Store, signer: Option<Keys>) -> Result<Self> {
-        let svc = Self { store, pool: RwLock::new(Arc::new(RelayPool::new(signer))) };
+        let svc = Self {
+            store,
+            pool: RwLock::new(Arc::new(RelayPool::new(signer))),
+        };
         if svc.servers_mode().await? == Some(ServersMode::Veydan) {
             let (current, origin) = svc.current_manifest().await?;
             if current.passes_anti_rollback(svc.manifest_serial().await?) {
@@ -146,18 +149,24 @@ impl RelayService {
     // ─── Manifest ───────────────────────────────────────────────────────────
 
     pub async fn manifest_serial(&self) -> Result<Option<u64>> {
-        Ok(settings::get(&self.store, KEY_SERIAL).await?.and_then(|s| s.parse().ok()))
+        Ok(settings::get(&self.store, KEY_SERIAL)
+            .await?
+            .and_then(|s| s.parse().ok()))
     }
 
     pub async fn region(&self) -> Result<String> {
-        Ok(settings::get(&self.store, KEY_REGION).await?.unwrap_or_else(|| REGION_DEFAULT.to_string()))
+        Ok(settings::get(&self.store, KEY_REGION)
+            .await?
+            .unwrap_or_else(|| REGION_DEFAULT.to_string()))
     }
 
     pub async fn manifest_info(&self) -> Result<ManifestInfo> {
         let (current, origin) = self.current_manifest().await?;
         Ok(ManifestInfo {
             serial: self.manifest_serial().await?,
-            issued_at: settings::get(&self.store, KEY_ISSUED_AT).await?.and_then(|s| s.parse().ok()),
+            issued_at: settings::get(&self.store, KEY_ISSUED_AT)
+                .await?
+                .and_then(|s| s.parse().ok()),
             region: self.region().await?,
             regions: current.regions,
             silent_mode: self.is_silent().await?,
@@ -168,7 +177,10 @@ impl RelayService {
     }
 
     pub async fn servers_mode(&self) -> Result<Option<ServersMode>> {
-        Ok(settings::get(&self.store, KEY_MODE).await?.as_deref().and_then(ServersMode::parse))
+        Ok(settings::get(&self.store, KEY_MODE)
+            .await?
+            .as_deref()
+            .and_then(ServersMode::parse))
     }
 
     /// Record the choice. Applying what it means (manifest rows in or out)
@@ -182,10 +194,14 @@ impl RelayService {
     pub async fn current_manifest(&self) -> Result<(Manifest, String)> {
         let embedded = Manifest::parse_content(EMBEDDED_MANIFEST_JSON)?;
         // Stored only after its signature was checked, so the bare form is fine.
-        let stored = settings::get(&self.store, KEY_JSON).await?.and_then(|json| Manifest::parse_content(&json).ok());
+        let stored = settings::get(&self.store, KEY_JSON)
+            .await?
+            .and_then(|json| Manifest::parse_content(&json).ok());
         match stored {
             Some(m) if m.serial >= embedded.serial => {
-                let origin = settings::get(&self.store, KEY_ORIGIN).await?.unwrap_or_else(|| ORIGIN_EMBEDDED.into());
+                let origin = settings::get(&self.store, KEY_ORIGIN)
+                    .await?
+                    .unwrap_or_else(|| ORIGIN_EMBEDDED.into());
                 Ok((m, origin))
             }
             _ => Ok((embedded, ORIGIN_EMBEDDED.into())),
@@ -193,7 +209,12 @@ impl RelayService {
     }
 
     /// Apply `m` and remember it as the manifest in use.
-    pub async fn adopt_manifest(&self, m: &Manifest, origin: &str, force: bool) -> Result<RelayChanges> {
+    pub async fn adopt_manifest(
+        &self,
+        m: &Manifest,
+        origin: &str,
+        force: bool,
+    ) -> Result<RelayChanges> {
         let changes = self.apply_manifest(m, force).await?;
         settings::set(&self.store, KEY_JSON, &serde_json::to_string(m)?).await?;
         settings::set(&self.store, KEY_ORIGIN, origin).await?;
@@ -201,7 +222,9 @@ impl RelayService {
     }
 
     pub async fn manifest_checked_at(&self) -> Result<Option<i64>> {
-        Ok(settings::get(&self.store, KEY_CHECKED_AT).await?.and_then(|s| s.parse().ok()))
+        Ok(settings::get(&self.store, KEY_CHECKED_AT)
+            .await?
+            .and_then(|s| s.parse().ok()))
     }
 
     pub async fn set_manifest_checked_at(&self, at: i64) -> Result<()> {
@@ -233,7 +256,12 @@ impl RelayService {
             .await?
             .into_iter()
             .filter(|r| r.source == repo::SOURCE_MANIFEST)
-            .filter_map(|r| Some(StoredRelay { id: r.relay_id?, url: RelayUrl::parse(&r.url)? }))
+            .filter_map(|r| {
+                Some(StoredRelay {
+                    id: r.relay_id?,
+                    url: RelayUrl::parse(&r.url)?,
+                })
+            })
             .collect();
         let changes = diff_relays(&stored, &target);
 
@@ -243,11 +271,18 @@ impl RelayService {
         for url in &changes.removed {
             repo::delete(&self.store, url.as_str()).await?;
         }
-        for r in changes.added.iter().chain(changes.kept.iter()).chain(target_renamed(&changes, &target)) {
+        for r in changes
+            .added
+            .iter()
+            .chain(changes.kept.iter())
+            .chain(target_renamed(&changes, &target))
+        {
             repo::upsert(
                 &self.store,
                 &repo::RelayUpsert {
-                    url: RelayUrl::parse(&r.url).map(|u| u.as_str().to_string()).unwrap_or_else(|| r.url.clone()),
+                    url: RelayUrl::parse(&r.url)
+                        .map(|u| u.as_str().to_string())
+                        .unwrap_or_else(|| r.url.clone()),
                     relay_id: Some(r.id.clone()),
                     source: repo::SOURCE_MANIFEST.into(),
                     regions: r.regions.clone(),
@@ -270,8 +305,14 @@ impl RelayService {
     /// Change region and re-apply the manifest in use for it.
     pub async fn set_region(&self, region: &str) -> Result<()> {
         let region = region.trim();
-        if region.is_empty() || !region.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '*') {
-            return Err(MessengerError::Invalid("region must be alphanumeric".into()));
+        if region.is_empty()
+            || !region
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '*')
+        {
+            return Err(MessengerError::Invalid(
+                "region must be alphanumeric".into(),
+            ));
         }
         settings::set(&self.store, KEY_REGION, region).await?;
         if self.servers_mode().await? == Some(ServersMode::Veydan) {
@@ -311,9 +352,13 @@ impl RelayService {
     }
 
     pub async fn add_user(&self, url: &str, api_key: Option<String>) -> Result<RelayView> {
-        let parsed = RelayUrl::parse(url).ok_or_else(|| MessengerError::Invalid("relay url must be ws:// or wss:// with a host".into()))?;
+        let parsed = RelayUrl::parse(url).ok_or_else(|| {
+            MessengerError::Invalid("relay url must be ws:// or wss:// with a host".into())
+        })?;
         if repo::get(&self.store, parsed.as_str()).await?.is_some() {
-            return Err(MessengerError::Invalid("this relay is already configured".into()));
+            return Err(MessengerError::Invalid(
+                "this relay is already configured".into(),
+            ));
         }
         repo::upsert(
             &self.store,
@@ -341,9 +386,13 @@ impl RelayService {
 
     /// Only user relays can be removed; manifest relays are disabled instead.
     pub async fn remove_user(&self, url: &str) -> Result<()> {
-        let Some(row) = repo::get(&self.store, url).await? else { return Ok(()) };
+        let Some(row) = repo::get(&self.store, url).await? else {
+            return Ok(());
+        };
         if row.source != repo::SOURCE_USER {
-            return Err(MessengerError::Invalid("manifest relays cannot be removed; disable them".into()));
+            return Err(MessengerError::Invalid(
+                "manifest relays cannot be removed; disable them".into(),
+            ));
         }
         repo::delete(&self.store, url).await?;
         self.reload().await
@@ -379,7 +428,14 @@ impl RelayService {
             .await?
             .into_iter()
             .filter(|r| r.enabled)
-            .filter_map(|r| Some(RelayConfig { url: RelayUrl::parse(&r.url)?, read: r.read, write: r.write, api_key: r.auth_secret }))
+            .filter_map(|r| {
+                Some(RelayConfig {
+                    url: RelayUrl::parse(&r.url)?,
+                    read: r.read,
+                    write: r.write,
+                    api_key: r.auth_secret,
+                })
+            })
             .collect();
         self.pool.read().await.set_relays(relays).await
     }
@@ -435,6 +491,8 @@ mod tests {
             push: vec![],
             calls: vec![],
             storage: vec![],
+            registries: vec![],
+            bridges: vec![],
         }
     }
 
@@ -442,12 +500,18 @@ mod tests {
     async fn init_applies_embedded_manifest_once_and_upgrades_older_installs() {
         let store = veydan_store().await;
         let svc = RelayService::init(store.clone(), None).await.unwrap();
-        let embedded = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap().serial;
+        let embedded = Manifest::parse_content(EMBEDDED_MANIFEST_JSON)
+            .unwrap()
+            .serial;
         assert_eq!(svc.manifest_serial().await.unwrap(), Some(embedded));
         let n = svc.list().await.unwrap().len();
         assert!(n >= 1);
         let again = RelayService::init(store.clone(), None).await.unwrap();
-        assert_eq!(again.list().await.unwrap().len(), n, "second init does not duplicate rows");
+        assert_eq!(
+            again.list().await.unwrap().len(),
+            n,
+            "second init does not duplicate rows"
+        );
         svc.shutdown().await;
         again.shutdown().await;
 
@@ -468,18 +532,45 @@ mod tests {
     async fn apply_manifest_migrates_renames_and_keeps_user_rows_and_enabled_flags() {
         let store = veydan_store().await;
         let svc = RelayService::init(store.clone(), None).await.unwrap();
-        svc.apply_manifest(&manifest(10, vec![("a", "wss://a1.example", "default"), ("b", "wss://b.example", "default")]), false)
-            .await
-            .unwrap();
+        // Above the built-in manifest, whatever its serial is: a change of
+        // embedded.json is not a change of this test.
+        let base = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap().serial + 1;
+        svc.apply_manifest(
+            &manifest(
+                base,
+                vec![
+                    ("a", "wss://a1.example", "default"),
+                    ("b", "wss://b.example", "default"),
+                ],
+            ),
+            false,
+        )
+        .await
+        .unwrap();
         svc.add_user("wss://mine.example", None).await.unwrap();
         svc.set_enabled("wss://a1.example", false).await.unwrap();
 
         // Rollback refused, same serial refused.
-        assert!(svc.apply_manifest(&manifest(10, vec![]), false).await.is_err());
-        assert!(svc.apply_manifest(&manifest(9, vec![]), false).await.is_err());
+        assert!(svc
+            .apply_manifest(&manifest(base, vec![]), false)
+            .await
+            .is_err());
+        assert!(svc
+            .apply_manifest(&manifest(base - 1, vec![]), false)
+            .await
+            .is_err());
 
         let ch = svc
-            .apply_manifest(&manifest(11, vec![("a", "wss://a2.example", "default"), ("c", "wss://c.example", "default")]), false)
+            .apply_manifest(
+                &manifest(
+                    base + 1,
+                    vec![
+                        ("a", "wss://a2.example", "default"),
+                        ("c", "wss://c.example", "default"),
+                    ],
+                ),
+                false,
+            )
             .await
             .unwrap();
         assert_eq!(ch.renamed.len(), 1);
@@ -496,7 +587,7 @@ mod tests {
         let a2 = rows.iter().find(|r| r.url == "wss://a2.example").unwrap();
         assert!(!a2.enabled, "disabled flag survives the rename");
         assert_eq!(a2.relay_id.as_deref(), Some("a"));
-        assert_eq!(svc.manifest_serial().await.unwrap(), Some(11));
+        assert_eq!(svc.manifest_serial().await.unwrap(), Some(base + 1));
         svc.shutdown().await;
     }
 
@@ -505,14 +596,32 @@ mod tests {
         let store = veydan_store().await;
         let svc = RelayService::init(store, None).await.unwrap();
         assert!(svc.add_user("https://nope", None).await.is_err());
-        let v = svc.add_user("wss://mine.example/", Some("k1".into())).await.unwrap();
+        let v = svc
+            .add_user("wss://mine.example/", Some("k1".into()))
+            .await
+            .unwrap();
         assert_eq!(v.url, "wss://mine.example");
         assert_eq!(v.source, "user");
-        assert!(svc.add_user("wss://mine.example", None).await.is_err(), "duplicate");
-        let manifest_url = svc.list().await.unwrap().into_iter().find(|r| r.source == "manifest").unwrap().url;
+        assert!(
+            svc.add_user("wss://mine.example", None).await.is_err(),
+            "duplicate"
+        );
+        let manifest_url = svc
+            .list()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|r| r.source == "manifest")
+            .unwrap()
+            .url;
         assert!(svc.remove_user(&manifest_url).await.is_err());
         svc.remove_user("wss://mine.example").await.unwrap();
-        assert!(svc.list().await.unwrap().iter().all(|r| r.url != "wss://mine.example"));
+        assert!(svc
+            .list()
+            .await
+            .unwrap()
+            .iter()
+            .all(|r| r.url != "wss://mine.example"));
         svc.shutdown().await;
     }
 
@@ -532,7 +641,10 @@ mod tests {
         svc.shutdown().await;
 
         let again = RelayService::init(store, None).await.unwrap();
-        assert!(again.pool().await.is_silent(), "silent mode survives restart");
+        assert!(
+            again.pool().await.is_silent(),
+            "silent mode survives restart"
+        );
         again.shutdown().await;
     }
 }

@@ -1,8 +1,8 @@
 {
   "format": "veydan-messenger-manifest",
   "v": 1,
-  "serial": 9,
-  "issued_at": 1791636014,
+  "serial": 12,
+  "issued_at": 1791806077,
   "regions": [
     "default",
     "eu",
@@ -39,16 +39,16 @@
   "media": [
     {
       "id": "veydan-eu-1-media",
-      "type": "blossom",
       "url": "https://eu-1-media.veydan.net",
+      "type": "blossom",
       "regions": [
         "*"
       ]
     },
     {
       "id": "veydan-us-1-media",
-      "type": "blossom",
       "url": "https://us-1-media.veydan.net",
+      "type": "blossom",
       "regions": [
         "*"
       ]
@@ -83,7 +83,7 @@
       ]
     },
     {
-      "ref": "149.28.37.154:8443#68367a61a90c3efafa3a0d4aec481be7c8c21f266864871ecbe9e8ff139bfb03",
+      "ref": "2.28.123.208:8443#feb4cb32ae467efa7727139a2626ac28e650880e4cd53c79f87897e236d2396e",
       "turn_port": 3478,
       "sfu_port": 3479,
       "class": "project",
@@ -92,7 +92,7 @@
       ]
     },
     {
-      "ref": "45.93.201.244:8443#14ade721f0af9d760f40cbe29facb10b918cf8cf75a101c0e47c7b7447cac170",
+      "ref": "149.28.37.154:8443#68367a61a90c3efafa3a0d4aec481be7c8c21f266864871ecbe9e8ff139bfb03",
       "turn_port": 3478,
       "sfu_port": 3479,
       "class": "project",
@@ -116,5 +116,8 @@
       ],
       "priority": 1
     }
+  ],
+  "registries": [
+    "https://hub.veydan.net/vlink"
   ]
 }

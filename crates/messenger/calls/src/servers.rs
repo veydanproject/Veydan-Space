@@ -160,16 +160,28 @@ pub struct CallNode {
 
 impl CallNode {
     pub fn new(node: NodeRef, class: NodeClass) -> Self {
-        Self { node, class, access_key: None }
+        Self {
+            node,
+            class,
+            access_key: None,
+        }
     }
 
     pub fn with_key(node: NodeRef, class: NodeClass, access_key: Option<String>) -> Self {
-        Self { node, class, access_key }
+        Self {
+            node,
+            class,
+            access_key,
+        }
     }
 
     /// A node I was invited to: the credentials of this device as its key.
     pub fn with_device(class: NodeClass, creds: &DeviceCredentials) -> Self {
-        Self { node: creds.node.clone(), class, access_key: Some(creds.key()) }
+        Self {
+            node: creds.node.clone(),
+            class,
+            access_key: Some(creds.key()),
+        }
     }
 
     /// The credentials of this device, when the key is those: the
@@ -401,20 +413,30 @@ impl SettingsServerSets {
     /// The nodes of a subscription (class `cloud`): the door for Veydan
     /// Cloud. Nobody opens it today.
     pub fn set_cloud(&self, nodes: Vec<NodeRef>) {
-        *self.cloud.write().unwrap() = nodes.into_iter().map(|n| CallNode::new(n, NodeClass::Cloud)).collect();
+        *self.cloud.write().unwrap() = nodes
+            .into_iter()
+            .map(|n| CallNode::new(n, NodeClass::Cloud))
+            .collect();
     }
 
     /// Write the developer setting.
     pub async fn set_own(&self, nodes: &[CallNode]) -> Result<()> {
         let list: Vec<NodeEntry> = nodes
             .iter()
-            .map(|n| NodeEntry::Keyed { reference: n.node.to_string(), key: n.access_key.clone() })
+            .map(|n| NodeEntry::Keyed {
+                reference: n.node.to_string(),
+                key: n.access_key.clone(),
+            })
             .collect();
         settings::set(&self.store, KEY_CALL_NODES, &serde_json::to_string(&list)?).await
     }
 
     pub async fn trust(&self) -> Result<TrustLevel> {
-        Ok(settings::get(&self.store, KEY_CALL_TRUST).await?.as_deref().and_then(TrustLevel::parse).unwrap_or_default())
+        Ok(settings::get(&self.store, KEY_CALL_TRUST)
+            .await?
+            .as_deref()
+            .and_then(TrustLevel::parse)
+            .unwrap_or_default())
     }
 
     pub async fn set_trust(&self, level: TrustLevel) -> Result<()> {
@@ -425,16 +447,25 @@ impl SettingsServerSets {
 
     /// The index of `call.devices`.
     pub async fn devices(&self) -> Result<Vec<DeviceNodeEntry>> {
-        let Some(json) = settings::get(&self.store, KEY_CALL_DEVICES).await? else { return Ok(Vec::new()) };
+        let Some(json) = settings::get(&self.store, KEY_CALL_DEVICES).await? else {
+            return Ok(Vec::new());
+        };
         Ok(serde_json::from_str::<Vec<DeviceNodeEntry>>(&json).unwrap_or_default())
     }
 
     async fn set_devices(&self, entries: &[DeviceNodeEntry]) -> Result<()> {
-        settings::set(&self.store, KEY_CALL_DEVICES, &serde_json::to_string(entries)?).await
+        settings::set(
+            &self.store,
+            KEY_CALL_DEVICES,
+            &serde_json::to_string(entries)?,
+        )
+        .await
     }
 
     fn secrets(&self) -> Result<Arc<dyn SecretStore>> {
-        self.secrets.read().unwrap().clone().ok_or_else(|| MessengerError::Invalid("no secret store for the credentials of this device".into()))
+        self.secrets.read().unwrap().clone().ok_or_else(|| {
+            MessengerError::Invalid("no secret store for the credentials of this device".into())
+        })
     }
 
     /// Keep what a node gave this device: the secret in the `SecretStore`,
@@ -442,7 +473,9 @@ impl SettingsServerSets {
     /// replaces the first.
     pub async fn add_device(&self, creds: &DeviceCredentials) -> Result<()> {
         let secrets = self.secrets()?;
-        secrets.put(&secret_key_of(&creds.node), creds.secret.as_bytes()).await?;
+        secrets
+            .put(&secret_key_of(&creds.node), creds.secret.as_bytes())
+            .await?;
         let mut entries = self.devices().await?;
         entries.retain(|e| e.node().is_none_or(|n| n.id != creds.node.id));
         entries.push(DeviceNodeEntry {
@@ -462,7 +495,11 @@ impl SettingsServerSets {
         let id = id.to_ascii_lowercase();
         let mut entries = self.devices().await?;
         let before = entries.len();
-        let gone: Vec<NodeRef> = entries.iter().filter(|e| e.node().is_some_and(|n| n.id.to_string() == id)).filter_map(|e| e.node()).collect();
+        let gone: Vec<NodeRef> = entries
+            .iter()
+            .filter(|e| e.node().is_some_and(|n| n.id.to_string() == id))
+            .filter_map(|e| e.node())
+            .collect();
         entries.retain(|e| e.node().is_none_or(|n| n.id.to_string() != id));
         if entries.len() == before {
             return Ok(false);
@@ -480,10 +517,22 @@ impl SettingsServerSets {
 
     /// The credentials of this device on `node`, when it was invited there.
     pub async fn device_for(&self, node: &NodeRef) -> Result<Option<DeviceCredentials>> {
-        let Some(entry) = self.devices().await?.into_iter().find(|e| e.node().is_some_and(|n| n.id == node.id)) else { return Ok(None) };
-        let Ok(secrets) = self.secrets() else { return Ok(None) };
-        let Some(secret) = secrets.get(&secret_key_of(node)).await? else { return Ok(None) };
-        let secret = String::from_utf8(secret.to_vec()).map_err(|_| MessengerError::Crypto("the secret of the device is not text".into()))?;
+        let Some(entry) = self
+            .devices()
+            .await?
+            .into_iter()
+            .find(|e| e.node().is_some_and(|n| n.id == node.id))
+        else {
+            return Ok(None);
+        };
+        let Ok(secrets) = self.secrets() else {
+            return Ok(None);
+        };
+        let Some(secret) = secrets.get(&secret_key_of(node)).await? else {
+            return Ok(None);
+        };
+        let secret = String::from_utf8(secret.to_vec())
+            .map_err(|_| MessengerError::Crypto("the secret of the device is not text".into()))?;
         Ok(Some(DeviceCredentials {
             node: entry.node().unwrap_or_else(|| node.clone()),
             device_id: entry.device_id,
@@ -503,7 +552,10 @@ impl SettingsServerSets {
             return Ok(Vec::new());
         }
         let Ok(secrets) = self.secrets() else {
-            tracing::debug!("call nodes: {} invited node(s) and no secret store: not listed", entries.len());
+            tracing::debug!(
+                "call nodes: {} invited node(s) and no secret store: not listed",
+                entries.len()
+            );
             return Ok(Vec::new());
         };
         let mut out = Vec::with_capacity(entries.len());
@@ -511,11 +563,21 @@ impl SettingsServerSets {
             let Some(node) = e.node() else { continue };
             match secrets.get(&secret_key_of(&node)).await {
                 Ok(Some(secret)) => match std::str::from_utf8(&secret) {
-                    Ok(s) => out.push(CallNode::with_key(node, NodeClass::Own, Some(device_key(&e.device_id, s)))),
-                    Err(_) => tracing::warn!(node = %node.id.short(), "call nodes: the secret of the device is not text"),
+                    Ok(s) => out.push(CallNode::with_key(
+                        node,
+                        NodeClass::Own,
+                        Some(device_key(&e.device_id, s)),
+                    )),
+                    Err(_) => {
+                        tracing::warn!(node = %node.id.short(), "call nodes: the secret of the device is not text")
+                    }
                 },
-                Ok(None) => tracing::warn!(node = %node.id.short(), "call nodes: the secret of the device is gone"),
-                Err(err) => tracing::debug!(error = %err, node = %node.id.short(), "call nodes: the secret of the device cannot be read now"),
+                Ok(None) => {
+                    tracing::warn!(node = %node.id.short(), "call nodes: the secret of the device is gone")
+                }
+                Err(err) => {
+                    tracing::debug!(error = %err, node = %node.id.short(), "call nodes: the secret of the device cannot be read now")
+                }
             }
         }
         Ok(out)
@@ -576,9 +638,16 @@ impl SettingsServerSets {
             push(describe(n, NodeSource::Manifest));
         }
         if let Some(registry) = self.registry() {
-            let listed = if trust == TrustLevel::Any { registry.nodes().await } else { registry.cached().await };
+            let listed = if trust == TrustLevel::Any {
+                registry.nodes().await
+            } else {
+                registry.cached().await
+            };
             for r in listed.unwrap_or_default() {
-                let mut d = describe(&CallNode::new(r.node.clone(), NodeClass::Volunteer), NodeSource::Registry);
+                let mut d = describe(
+                    &CallNode::new(r.node.clone(), NodeClass::Volunteer),
+                    NodeSource::Registry,
+                );
                 d.region = Some(r.region).filter(|s| !s.is_empty());
                 d.caps = r.caps;
                 d.load = Some(r.load);
@@ -613,7 +682,9 @@ enum NodeEntry {
 /// Read the developer setting; entries that are not a node reference are
 /// skipped, so one typo does not take the rest with it.
 pub fn parse_own_nodes(json: &str) -> Vec<CallNode> {
-    let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(json) else { return Vec::new() };
+    let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(json) else {
+        return Vec::new();
+    };
     entries
         .into_iter()
         .filter_map(|e| {
@@ -622,7 +693,11 @@ pub fn parse_own_nodes(json: &str) -> Vec<CallNode> {
                 NodeEntry::Keyed { reference, key } => (reference, key.filter(|k| !k.is_empty())),
             };
             let node: NodeRef = reference.parse().ok()?;
-            Some(CallNode { node, class: NodeClass::Own, access_key: key })
+            Some(CallNode {
+                node,
+                class: NodeClass::Own,
+                access_key: key,
+            })
         })
         .collect()
 }
@@ -678,7 +753,9 @@ mod tests {
     const ID: &str = "fda09da75199c4e04601a9df309710fab15cd7b2b806ca3b2bbab202582a6dca";
 
     fn node(seed: u8, addr: &str) -> NodeRef {
-        format!("{addr}#{}", format!("{seed:02x}").repeat(32)).parse().unwrap()
+        format!("{addr}#{}", format!("{seed:02x}").repeat(32))
+            .parse()
+            .unwrap()
     }
 
     // The trust level and the registry are tried in tests/nodes.rs: the
@@ -691,13 +768,25 @@ mod tests {
         let sets = SettingsServerSets::new(store.clone());
         assert!(sets.call_nodes().await.unwrap().is_empty());
 
-        let json = format!(r#"["108.61.171.68:8443#{ID}", "garbage", {{"ref": "149.28.37.154:443#{}", "key": "k1"}}, 7]"#, "ab".repeat(32));
+        let json = format!(
+            r#"["108.61.171.68:8443#{ID}", "garbage", {{"ref": "149.28.37.154:443#{}", "key": "k1"}}, 7]"#,
+            "ab".repeat(32)
+        );
         settings::set(&store, KEY_CALL_NODES, &json).await.unwrap();
-        let project: NodeRef = format!("45.93.201.244:443#{}", "cd".repeat(32)).parse().unwrap();
-        sets.set_manifest(vec![project.clone(), format!("108.61.171.68:8443#{ID}").parse().unwrap()]);
+        let project: NodeRef = format!("198.51.100.9:443#{}", "cd".repeat(32))
+            .parse()
+            .unwrap();
+        sets.set_manifest(vec![
+            project.clone(),
+            format!("108.61.171.68:8443#{ID}").parse().unwrap(),
+        ]);
 
         let nodes = sets.call_nodes().await.unwrap();
-        assert_eq!(nodes.len(), 3, "two of mine, one of the project; the project's copy of mine is not listed twice");
+        assert_eq!(
+            nodes.len(),
+            3,
+            "two of mine, one of the project; the project's copy of mine is not listed twice"
+        );
         assert_eq!(nodes[0].class, NodeClass::Own);
         assert_eq!(nodes[0].node.id.to_string(), ID);
         assert_eq!(nodes[0].access_key, None);
@@ -708,7 +797,10 @@ mod tests {
         // Written back and read again the same.
         sets.set_own(&nodes[..2]).await.unwrap();
         assert_eq!(&sets.call_nodes().await.unwrap()[..2], &nodes[..2]);
-        assert!(NodeClass::Own < NodeClass::Project, "the order of the classes is the priority");
+        assert!(
+            NodeClass::Own < NodeClass::Project,
+            "the order of the classes is the priority"
+        );
     }
 
     #[tokio::test]
@@ -724,7 +816,10 @@ mod tests {
             name: "Veydan Chat, Android".into(),
             added_at: 5,
         };
-        assert!(sets.add_device(&creds).await.is_err(), "no secret store: nothing is kept");
+        assert!(
+            sets.add_device(&creds).await.is_err(),
+            "no secret store: nothing is kept"
+        );
         let secrets = Arc::new(MemorySecretStore::unlocked());
         sets.set_secrets(secrets.clone());
         sets.add_device(&creds).await.unwrap();
@@ -735,13 +830,41 @@ mod tests {
         assert_eq!(nodes[0].node, private);
         assert_eq!(nodes[0].class, NodeClass::Own);
         assert_eq!(nodes[0].device(), Some(("d-1", "s3cr3t")));
-        assert_eq!(nodes[0].shared_key(), None, "the credentials of this device are given to nobody");
+        assert_eq!(
+            nodes[0].shared_key(),
+            None,
+            "the credentials of this device are given to nobody"
+        );
         assert_eq!(nodes[0].access_key.as_deref(), Some("dev\nd-1\ns3cr3t"));
-        assert_eq!(sets.device_for(&private).await.unwrap(), Some(creds.clone()));
-        assert_eq!(secrets.get(&secret_key_of(&private)).await.unwrap().unwrap().as_slice(), b"s3cr3t");
+        assert_eq!(
+            sets.device_for(&private).await.unwrap(),
+            Some(creds.clone())
+        );
+        assert_eq!(
+            secrets
+                .get(&secret_key_of(&private))
+                .await
+                .unwrap()
+                .unwrap()
+                .as_slice(),
+            b"s3cr3t"
+        );
         let d = &sets.describe().await.unwrap()[0];
-        assert_eq!((d.source, d.device_id.as_deref(), d.label.as_deref(), d.has_key), (NodeSource::Device, Some("d-1"), Some("my phone"), true));
-        assert!(!serde_json::to_string(&sets.devices().await.unwrap()).unwrap().contains("s3cr3t"), "the index holds no secret");
+        assert_eq!(
+            (
+                d.source,
+                d.device_id.as_deref(),
+                d.label.as_deref(),
+                d.has_key
+            ),
+            (NodeSource::Device, Some("d-1"), Some("my phone"), true)
+        );
+        assert!(
+            !serde_json::to_string(&sets.devices().await.unwrap())
+                .unwrap()
+                .contains("s3cr3t"),
+            "the index holds no secret"
+        );
 
         // The vault is locked: the node is not listed, and listed again
         // when it opens.
@@ -751,17 +874,35 @@ mod tests {
         assert_eq!(sets.call_nodes().await.unwrap().len(), 2);
 
         // A shared key stays a shared key.
-        let shared = CallNode::with_key(node(2, "203.0.113.2:8443"), NodeClass::Own, Some("k".into()));
+        let shared = CallNode::with_key(
+            node(2, "203.0.113.2:8443"),
+            NodeClass::Own,
+            Some("k".into()),
+        );
         assert_eq!(shared.shared_key().as_deref(), Some("k"));
         assert_eq!(split_device_key("dev\n\nx"), None);
         assert_eq!(split_device_key("dev\na\n"), None);
-        assert_eq!(split_device_key("dev\na\nb\nc"), None, "a secret holds no newline");
-        assert_eq!(split_device_key(&device_key("a", "b:c")), Some(("a", "b:c")));
+        assert_eq!(
+            split_device_key("dev\na\nb\nc"),
+            None,
+            "a secret holds no newline"
+        );
+        assert_eq!(
+            split_device_key(&device_key("a", "b:c")),
+            Some(("a", "b:c"))
+        );
 
-        assert!(sets.remove_device(&private.id.to_string().to_uppercase()).await.unwrap());
+        assert!(sets
+            .remove_device(&private.id.to_string().to_uppercase())
+            .await
+            .unwrap());
         assert!(!sets.remove_device(&private.id.to_string()).await.unwrap());
         assert_eq!(sets.call_nodes().await.unwrap().len(), 1);
-        assert_eq!(secrets.get(&secret_key_of(&private)).await.unwrap(), None, "the secret went with the entry");
+        assert_eq!(
+            secrets.get(&secret_key_of(&private)).await.unwrap(),
+            None,
+            "the secret went with the entry"
+        );
     }
 
     /// A shared key of any shape is a shared key: an operator may hand
@@ -775,27 +916,55 @@ mod tests {
         use crate::node_client::Access;
         let store = Store::open_in_memory().await.unwrap();
         let sets = SettingsServerSets::new(store.clone());
-        let json = format!(r#"[{{"ref": "203.0.113.1:8443#{}", "key": "dev:team:2026"}}]"#, "01".repeat(32));
+        let json = format!(
+            r#"[{{"ref": "203.0.113.1:8443#{}", "key": "dev:team:2026"}}]"#,
+            "01".repeat(32)
+        );
         settings::set(&store, KEY_CALL_NODES, &json).await.unwrap();
         let nodes = sets.call_nodes().await.unwrap();
         assert_eq!(nodes[0].device(), None);
         assert!(!nodes[0].is_device());
-        assert_eq!(nodes[0].shared_key().as_deref(), Some("dev:team:2026"), "told to the group as it is");
+        assert_eq!(
+            nodes[0].shared_key().as_deref(),
+            Some("dev:team:2026"),
+            "told to the group as it is"
+        );
         let access = Access::of(&nodes[0]);
-        assert_eq!((access.key.as_deref(), access.device.is_none()), (Some("dev:team:2026"), true), "sent as a shared key");
+        assert_eq!(
+            (access.key.as_deref(), access.device.is_none()),
+            (Some("dev:team:2026"), true),
+            "sent as a shared key"
+        );
 
         // The same shape as a group's key, as a `call.start` carries it.
-        let carried = CallNode::with_key(node(2, "203.0.113.2:8443"), NodeClass::Group, Some("dev:a:b".into()));
+        let carried = CallNode::with_key(
+            node(2, "203.0.113.2:8443"),
+            NodeClass::Group,
+            Some("dev:a:b".into()),
+        );
         assert_eq!(Access::of(&carried).key.as_deref(), Some("dev:a:b"));
         assert_eq!(carried.shared_key().as_deref(), Some("dev:a:b"));
 
         // The credentials of this device are told apart by the form.
-        let creds = DeviceCredentials { node: node(3, "203.0.113.3:8443"), device_id: "d".into(), secret: "s".into(), label: String::new(), name: String::new(), added_at: 0 };
+        let creds = DeviceCredentials {
+            node: node(3, "203.0.113.3:8443"),
+            device_id: "d".into(),
+            secret: "s".into(),
+            label: String::new(),
+            name: String::new(),
+            added_at: 0,
+        };
         let mine = CallNode::with_device(NodeClass::Own, &creds);
         assert!(mine.is_device() && mine.shared_key().is_none());
         let access = Access::of(&mine);
         assert_eq!(access.key, None);
-        assert_eq!(access.device.map(|d| (d.id, d.secret)), Some(("d".into(), "s".into())));
-        assert!(!mine.access_key.as_deref().unwrap().contains("dev:"), "the readable prefix of before is no part of the form");
+        assert_eq!(
+            access.device.map(|d| (d.id, d.secret)),
+            Some(("d".into(), "s".into()))
+        );
+        assert!(
+            !mine.access_key.as_deref().unwrap().contains("dev:"),
+            "the readable prefix of before is no part of the form"
+        );
     }
 }

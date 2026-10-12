@@ -7,11 +7,11 @@ use std::collections::BTreeSet;
 use std::sync::atomic::Ordering;
 
 use http::StatusCode;
-use messenger_vlink::{trust, BridgeRef, Error, Net, NetConfig, Route};
 use messenger_vlink::testing::{
-    self as support, bridge, bridge_with, echo_server, id_of, there_and_back, Behaviour, CERT, KEY, OTHER_CERT, OTHER_KEY,
-    RENEWED_CERT, RENEWED_KEY,
+    self as support, bridge, bridge_with, echo_server, id_of, there_and_back, Behaviour, CERT, KEY,
+    OTHER_CERT, OTHER_KEY, RENEWED_CERT, RENEWED_KEY,
 };
+use messenger_vlink::{trust, BridgeRef, Error, Net, NetConfig, Route};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -19,14 +19,20 @@ const OURS: &str = "media.veydan.test";
 const THEIRS: &str = "example.org";
 
 fn config(active: bool, bridges: Vec<BridgeRef>) -> NetConfig {
-    NetConfig { active, hosts: BTreeSet::from([OURS.to_string()]), bridges }
+    NetConfig {
+        active,
+        hosts: BTreeSet::from([OURS.to_string()]),
+        bridges,
+    }
 }
 
 /// A bridge that carries to an echo, and a rule that uses it.
 async fn net_with_bridge() -> (Net, support::FakeBridge) {
     let fake = bridge(Behaviour::CarryTo(echo_server().await)).await;
     let net = Net::new();
-    net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
+    net.configure(config(true, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
     (net, fake)
 }
 
@@ -50,7 +56,9 @@ async fn nothing_is_bridged_until_asked_and_without_bridges() {
 
     // Bridges known, not in use: they can be tried, nothing is sent to them.
     let fake = bridge(Behaviour::CarryTo(echo_server().await)).await;
-    net.configure(config(false, vec![fake.bridge.clone()])).await.unwrap();
+    net.configure(config(false, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
     assert_eq!(net.route(OURS), Route::Direct);
     assert!(net.socks_url(OURS).is_none());
     assert!(net.client().is_some());
@@ -70,7 +78,10 @@ async fn a_stream_goes_through_the_bridge_and_names_its_host() {
     assert_eq!(net.current().await, Some(fake.bridge.clone()));
 
     // What the rule sends directly is not carried, even when asked.
-    assert!(matches!(net.open(THEIRS, 443).await, Err(Error::Refused(_))));
+    assert!(matches!(
+        net.open(THEIRS, 443).await,
+        Err(Error::Refused(_))
+    ));
     assert_eq!(fake.streams.load(Ordering::Relaxed), 1);
 }
 
@@ -79,12 +90,16 @@ async fn the_rule_changes_while_everything_runs() {
     let (net, fake) = net_with_bridge().await;
     let door = net.socks_url(OURS).unwrap();
 
-    net.configure(config(false, vec![fake.bridge.clone()])).await.unwrap();
+    net.configure(config(false, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
     assert_eq!(net.route(OURS), Route::Direct);
     assert!(net.socks_url(OURS).is_none());
     assert!(matches!(net.open(OURS, 443).await, Err(Error::Refused(_))));
 
-    net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
+    net.configure(config(true, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
     // The same door as before: clients that were told of it keep working.
     assert_eq!(net.socks_url(OURS).unwrap(), door);
     there_and_back(&mut net.open(OURS, 443).await.unwrap(), "on again").await;
@@ -93,9 +108,15 @@ async fn the_rule_changes_while_everything_runs() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dead_bridge_is_passed_over() {
     let fake = bridge(Behaviour::CarryTo(echo_server().await)).await;
-    let dead = BridgeRef { addr: "127.0.0.1:1".parse().unwrap(), id: fake.bridge.id, sni: None };
+    let dead = BridgeRef {
+        addr: "127.0.0.1:1".parse().unwrap(),
+        id: fake.bridge.id,
+        sni: None,
+    };
     let net = Net::new();
-    net.configure(config(true, vec![dead, fake.bridge.clone()])).await.unwrap();
+    net.configure(config(true, vec![dead, fake.bridge.clone()]))
+        .await
+        .unwrap();
     there_and_back(&mut net.open(OURS, 443).await.unwrap(), "the second one").await;
     assert_eq!(net.current().await, Some(fake.bridge));
 }
@@ -105,12 +126,24 @@ async fn an_address_that_shows_a_certificate_over_another_key_is_no_bridge() {
     // What is at the address has a key of its own: the id of the bridge
     // the user was given is of another key, and the chain shown, however
     // alike, is signed by the wrong one.
-    let fake = bridge_with(Behaviour::CarryTo(echo_server().await), OTHER_CERT, OTHER_KEY).await;
+    let fake = bridge_with(
+        Behaviour::CarryTo(echo_server().await),
+        OTHER_CERT,
+        OTHER_KEY,
+    )
+    .await;
     assert_eq!(fake.bridge.id, id_of(OTHER_CERT));
-    let wrong = BridgeRef { addr: fake.bridge.addr, id: id_of(CERT), sni: None };
+    let wrong = BridgeRef {
+        addr: fake.bridge.addr,
+        id: id_of(CERT),
+        sni: None,
+    };
     let net = Net::new();
     net.configure(config(true, vec![wrong])).await.unwrap();
-    assert!(matches!(net.open(OURS, 443).await, Err(Error::Unreachable(_))));
+    assert!(matches!(
+        net.open(OURS, 443).await,
+        Err(Error::Unreachable(_))
+    ));
     assert_eq!(fake.streams.load(Ordering::Relaxed), 0);
 }
 
@@ -120,13 +153,24 @@ async fn a_tls_certificate_the_bridges_key_did_not_sign_is_no_bridge() {
     // who called the bridge has it) but not its key: their own TLS
     // certificate, the bridge's key certificate put behind it. The id of
     // that certificate is the bridge's; the signature is not.
-    let cert_of = |chain: &str, n: usize| chain.split_inclusive("-----END CERTIFICATE-----\n").nth(n).unwrap().to_string();
+    let cert_of = |chain: &str, n: usize| {
+        chain
+            .split_inclusive("-----END CERTIFICATE-----\n")
+            .nth(n)
+            .unwrap()
+            .to_string()
+    };
     let forged = cert_of(OTHER_CERT, 0) + &cert_of(CERT, 1);
     let fake = bridge_with(Behaviour::CarryTo(echo_server().await), &forged, OTHER_KEY).await;
     assert_eq!(fake.bridge.id, id_of(CERT));
     let net = Net::new();
-    net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
-    assert!(matches!(net.open(OURS, 443).await, Err(Error::Unreachable(_))));
+    net.configure(config(true, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
+    assert!(matches!(
+        net.open(OURS, 443).await,
+        Err(Error::Unreachable(_))
+    ));
     assert_eq!(fake.streams.load(Ordering::Relaxed), 0);
 }
 
@@ -139,10 +183,21 @@ async fn a_bridge_with_a_renewed_certificate_is_the_bridge_the_user_knows() {
     assert_eq!(id_of(RENEWED_CERT), id_of(CERT));
     assert_ne!(RENEWED_CERT, CERT);
     assert_ne!(RENEWED_KEY, KEY);
-    let fake = bridge_with(Behaviour::CarryTo(echo_server().await), RENEWED_CERT, RENEWED_KEY).await;
-    let known = BridgeRef { addr: fake.bridge.addr, id: id_of(CERT), sni: None };
+    let fake = bridge_with(
+        Behaviour::CarryTo(echo_server().await),
+        RENEWED_CERT,
+        RENEWED_KEY,
+    )
+    .await;
+    let known = BridgeRef {
+        addr: fake.bridge.addr,
+        id: id_of(CERT),
+        sni: None,
+    };
     let net = Net::new();
-    net.configure(config(true, vec![known.clone()])).await.unwrap();
+    net.configure(config(true, vec![known.clone()]))
+        .await
+        .unwrap();
     let mut stream = net.open(OURS, 443).await.unwrap();
     there_and_back(&mut stream, "the same bridge, a new certificate").await;
     assert_eq!(net.current().await, Some(known));
@@ -151,10 +206,15 @@ async fn a_bridge_with_a_renewed_certificate_is_the_bridge_the_user_knows() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn what_the_bridge_answers_is_told_apart() {
-    for (status, expect_refused) in [(StatusCode::FORBIDDEN, true), (StatusCode::SERVICE_UNAVAILABLE, false)] {
+    for (status, expect_refused) in [
+        (StatusCode::FORBIDDEN, true),
+        (StatusCode::SERVICE_UNAVAILABLE, false),
+    ] {
         let fake = bridge(Behaviour::Answer(status)).await;
         let net = Net::new();
-        net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
+        net.configure(config(true, vec![fake.bridge.clone()]))
+            .await
+            .unwrap();
         match net.open(OURS, 443).await {
             // The hub does not carry this host: another bridge would say the same.
             Err(Error::Refused(_)) => assert!(expect_refused),
@@ -220,7 +280,12 @@ async fn the_door_serves_this_process_and_the_projects_servers() {
 
     // Whoever does not know the login is not served.
     assert_eq!(knock(&addr, None, OURS).await.unwrap_err(), "no method");
-    assert_eq!(knock(&addr, Some((&user, "guess")), OURS).await.unwrap_err(), "wrong login");
+    assert_eq!(
+        knock(&addr, Some((&user, "guess")), OURS)
+            .await
+            .unwrap_err(),
+        "wrong login"
+    );
 
     // With the login: a server of the project.
     let mut stream = knock(&addr, Some((&user, &password)), OURS).await.unwrap();
@@ -228,7 +293,12 @@ async fn the_door_serves_this_process_and_the_projects_servers() {
     assert_eq!(*fake.asked.lock().unwrap(), vec![format!("{OURS}:443")]);
 
     // With the login: somebody else's host. "Not allowed by the rules."
-    assert_eq!(knock(&addr, Some((&user, &password)), THEIRS).await.unwrap_err(), "reply 2");
+    assert_eq!(
+        knock(&addr, Some((&user, &password)), THEIRS)
+            .await
+            .unwrap_err(),
+        "reply 2"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -256,7 +326,9 @@ async fn the_door_closes_with_the_messenger_and_opens_with_it_again() {
     assert_eq!(net.route(OURS), Route::Bridge);
     assert!(net.socks_url(OURS).unwrap().ends_with("@127.0.0.1:0"));
 
-    net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
+    net.configure(config(true, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
     let (_, _, again) = door_of(&net.socks_url(OURS).unwrap());
     let mut stream = knock(&again, Some((&user, &password)), OURS).await.unwrap();
     there_and_back(&mut stream, "after").await;
@@ -269,21 +341,22 @@ async fn two_rules_have_two_logins() {
     let (user_a, password_a, _) = door_of(&a.socks_url(OURS).unwrap());
     let (user_b, password_b, addr_b) = door_of(&b.socks_url(OURS).unwrap());
     assert_ne!((&user_a, &password_a), (&user_b, &password_b));
-    assert_eq!(knock(&addr_b, Some((&user_a, &password_a)), OURS).await.unwrap_err(), "wrong login");
+    assert_eq!(
+        knock(&addr_b, Some((&user_a, &password_a)), OURS)
+            .await
+            .unwrap_err(),
+        "wrong login"
+    );
 }
 
 // --- what is built in -------------------------------------------------------
 
+/// The root's key alone: the registries and the first bridges are named by
+/// the manifest (`messenger_transport::Manifest`, `registries` and `bridges`).
 #[test]
 fn what_is_built_in_is_well_formed() {
     assert_eq!(trust::ROOT_PUB.len(), 64);
     assert!(trust::ROOT_PUB.bytes().all(|b| b.is_ascii_hexdigit()));
-    assert!(!trust::REGISTRIES.is_empty());
-    assert!(trust::REGISTRIES.iter().all(|r| r.starts_with("https://") && !r.ends_with('/')));
-    assert!(!trust::SEEDS.is_empty());
-    for seed in trust::SEEDS {
-        seed.parse::<BridgeRef>().unwrap_or_else(|e| panic!("{seed}: {e}"));
-    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -294,17 +367,23 @@ async fn whatever_is_under_way_hears_of_a_change_of_the_way() {
     let before = *changes.borrow_and_update();
 
     // Bridges given and in use: a change.
-    net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
+    net.configure(config(true, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
     assert!(changes.has_changed().unwrap());
     let on = *changes.borrow_and_update();
     assert!(on > before);
 
     // The same again: no change, nothing under way is disturbed.
-    net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
+    net.configure(config(true, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
     assert!(!changes.has_changed().unwrap());
 
     // Off: a change.
-    net.configure(config(false, vec![fake.bridge.clone()])).await.unwrap();
+    net.configure(config(false, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
     assert!(changes.has_changed().unwrap());
 }
 
@@ -315,7 +394,14 @@ async fn a_bridged_host_never_falls_back_to_the_direct_way() {
     // way is the door.
     let fake = bridge(Behaviour::CarryTo(echo_server().await)).await;
     let net = Net::new();
-    net.configure(config(true, vec![fake.bridge.clone()])).await.unwrap();
-    let url = net.socks_url(OURS).expect("a host of the project always has a proxy while bridged");
-    assert!(url.starts_with("socks5h://") && url.contains("@127.0.0.1:"), "{url}");
+    net.configure(config(true, vec![fake.bridge.clone()]))
+        .await
+        .unwrap();
+    let url = net
+        .socks_url(OURS)
+        .expect("a host of the project always has a proxy while bridged");
+    assert!(
+        url.starts_with("socks5h://") && url.contains("@127.0.0.1:"),
+        "{url}"
+    );
 }

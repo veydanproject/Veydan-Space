@@ -55,23 +55,27 @@
 //! [`MessengerRuntime::group_call_push_video_frame`], as into a call
 //! between two.
 
+use crate::relays::ServersMode;
 use crate::MessengerRuntime;
-use messenger_calls::engine::{Media, PairKind, RelayPolicy as CorePolicy, VideoInput as CoreVideoInput, VideoTrack as CoreTrack};
+use messenger_calls::engine::{
+    Media, PairKind, RelayPolicy as CorePolicy, VideoInput as CoreVideoInput,
+    VideoTrack as CoreTrack,
+};
 use messenger_calls::servers::{parse_own_nodes, CallNode, NodeClass, NodeRef};
 use messenger_calls::{
-    AnnouncedCall as CoreAnnounced, CallDmHandler, CallService, CallView as CoreView, GroupAccess, GroupCallService,
-    GroupCallView as CoreGroupView, GroupPhase as CoreGroupPhase, HttpRooms, NodeClient, Phase, RoomApi, ServerSets,
-    ListFetch, Registry, SettingsServerSets, VideoQuality as CoreQuality, KEY_CALL_NODES,
+    AnnouncedCall as CoreAnnounced, CallDmHandler, CallService, CallView as CoreView, GroupAccess,
+    GroupCallService, GroupCallView as CoreGroupView, GroupPhase as CoreGroupPhase, HttpRooms,
+    ListFetch, NodeClient, Phase, Registry, RoomApi, ServerSets, SettingsServerSets,
+    VideoQuality as CoreQuality, KEY_CALL_NODES,
 };
 use messenger_core::traits::UiEvent;
 use messenger_core::{Effect, Envelope, MessengerError, Outbound, PubKey, Result, SecretStore};
-use messenger_transport::manifest::CallNodeClass;
 use messenger_dm::DmService;
 use messenger_groups::{GroupCallSink, GroupService};
 use messenger_ingress::Outbox;
 use messenger_store::{settings, Store};
+use messenger_transport::manifest::CallNodeClass;
 use serde::{Deserialize, Serialize};
-use crate::relays::ServersMode;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -80,8 +84,9 @@ use ts_rs::TS;
 
 pub use messenger_calls::engine::{MediaEngine, PixelFormat, PushedFrame, VideoFrame};
 pub use messenger_calls::{
-    UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_LEVEL, UI_EVENT_CALL_STATE, UI_EVENT_CALL_STATS,
-    UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_LEVEL, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
+    UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_LEVEL, UI_EVENT_CALL_STATE,
+    UI_EVENT_CALL_STATS, UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_LEVEL,
+    UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 
 /// What this client says of itself to a call node.
@@ -106,10 +111,13 @@ pub struct CallBackends {
 /// Where the registry of volunteers' call nodes is asked
 /// (`messenger_calls::Registry`).
 pub enum RegistrySource {
-    /// The registries built into the client (`trust::REGISTRIES`), over
-    /// HTTPS with the roots of the web, through a bridge when bridges
-    /// are on ([`registry_fetch`]); asked only with the project's servers
-    /// and not in the silent mode ([`gated_registry_fetch`]).
+    /// The registries the manifest in use names (`registries`; none is
+    /// built into the client, and with none nothing is asked), put in by
+    /// [`MessengerRuntime::seed_call_nodes`] whenever the manifest
+    /// changes; over HTTPS with the roots of the web, through a bridge
+    /// when bridges are on ([`registry_fetch`]); asked only with the
+    /// project's servers and not in the silent mode
+    /// ([`gated_registry_fetch`]).
     Build,
     /// A registry the host makes over the store: the fake of the tests.
     Given(Box<dyn FnOnce(Store) -> Registry + Send>),
@@ -147,7 +155,10 @@ pub fn registry_fetch() -> ListFetch {
             let transport = |e: reqwest::Error| MessengerError::Transport(e.to_string());
             let response = client.get(&url).send().await.map_err(transport)?;
             if !response.status().is_success() {
-                return Err(MessengerError::Transport(format!("the registry answered {}", response.status())));
+                return Err(MessengerError::Transport(format!(
+                    "the registry answered {}",
+                    response.status()
+                )));
             }
             response.text().await.map_err(transport)
         })
@@ -161,9 +172,14 @@ pub fn registry_fetch() -> ListFetch {
 /// silent mode the device tells the registry nothing, whatever the trust
 /// level of calls.
 pub(crate) async fn registry_may_ask(store: &Store) -> bool {
-    let mode = settings::get(store, crate::relays::KEY_MODE).await.ok().flatten();
+    let mode = settings::get(store, crate::relays::KEY_MODE)
+        .await
+        .ok()
+        .flatten();
     let veydan = mode.as_deref().and_then(ServersMode::parse) == Some(ServersMode::Veydan);
-    let silent = settings::get_bool(store, crate::relays::KEY_SILENT, false).await.unwrap_or(true);
+    let silent = settings::get_bool(store, crate::relays::KEY_SILENT, false)
+        .await
+        .unwrap_or(true);
     veydan && !silent
 }
 
@@ -189,7 +205,9 @@ pub fn gated_registry_fetch(store: Store, fetch: ListFetch) -> ListFetch {
 /// the messenger as before and learns of it when it calls).
 #[cfg(feature = "rtc")]
 pub fn default_engine() -> Option<Arc<dyn MediaEngine>> {
-    Some(Arc::new(messenger_rtc::LazyRtcEngine::new(messenger_rtc::AudioMode::Device)))
+    Some(Arc::new(messenger_rtc::LazyRtcEngine::new(
+        messenger_rtc::AudioMode::Device,
+    )))
 }
 
 /// A build without the engine (`--no-default-features`) has none: the
@@ -204,8 +222,15 @@ struct NoEngine;
 
 #[async_trait::async_trait]
 impl MediaEngine for NoEngine {
-    async fn create_session(&self, _: Vec<messenger_calls::IceServer>, _: CorePolicy, _: Media) -> Result<Box<dyn messenger_calls::Session>> {
-        Err(MessengerError::Transport("this build has no media engine (feature rtc)".into()))
+    async fn create_session(
+        &self,
+        _: Vec<messenger_calls::IceServer>,
+        _: CorePolicy,
+        _: Media,
+    ) -> Result<Box<dyn messenger_calls::Session>> {
+        Err(MessengerError::Transport(
+            "this build has no media engine (feature rtc)".into(),
+        ))
     }
 }
 
@@ -233,6 +258,10 @@ pub struct CallsDriver {
     /// ask, asks at once if the list is due, whatever a refused ask left
     /// behind as a failure.
     pub(crate) registry_paused: AtomicBool,
+    /// The registry asks where the manifest in use says
+    /// ([`RegistrySource::Build`]): `seed_call_nodes` puts its registries
+    /// in. A registry the host gave keeps its own.
+    registries_of_manifest: bool,
     /// A media engine is here (of the build, or given by the host): a
     /// call can be made.
     available: bool,
@@ -261,7 +290,10 @@ fn drain_effects(
     outbox: Outbox,
     ui: broadcast::Sender<UiEvent>,
     busy: Option<Arc<std::sync::OnceLock<GroupCallService>>>,
-) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedSender<oneshot::Sender<()>>) {
+) -> (
+    tokio::task::JoinHandle<()>,
+    mpsc::UnboundedSender<oneshot::Sender<()>>,
+) {
     let (flush, mut flush_rx) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
     let effects = tokio::spawn(async move {
         loop {
@@ -328,10 +360,13 @@ impl CallsDriver {
     ) -> Self {
         let servers = Arc::new(SettingsServerSets::new(store.clone()));
         servers.set_secrets(secrets);
+        let registries_of_manifest = matches!(registry, RegistrySource::Build);
         match registry {
             RegistrySource::Build => {
                 let fetch = gated_registry_fetch(store.clone(), registry_fetch());
-                servers.set_registry(Arc::new(Registry::new(store.clone(), fetch)))
+                // No registry until the manifest is read (`seed_call_nodes`,
+                // right after the runtime is made).
+                servers.set_registry(Arc::new(Registry::new(store.clone(), fetch, Vec::new())))
             }
             RegistrySource::Given(make) => servers.set_registry(Arc::new(make(store.clone()))),
             RegistrySource::Off => {}
@@ -354,6 +389,7 @@ impl CallsDriver {
             manifest: std::sync::RwLock::new(Vec::new()),
             unreachable: std::sync::Mutex::new(std::collections::HashMap::new()),
             registry_paused: AtomicBool::new(true),
+            registries_of_manifest,
             available,
             effects,
             flush,
@@ -374,7 +410,10 @@ impl CallsDriver {
     }
 
     /// The door of the `call.*` envelopes in the chain of DM handlers.
-    pub fn handler(&self, next: Arc<dyn messenger_core::Handler<messenger_core::DmInbound>>) -> Arc<CallDmHandler> {
+    pub fn handler(
+        &self,
+        next: Arc<dyn messenger_core::Handler<messenger_core::DmInbound>>,
+    ) -> Arc<CallDmHandler> {
         Arc::new(CallDmHandler::new(self.service.clone(), next))
     }
 
@@ -421,17 +460,25 @@ impl GroupAccess for GroupsDoor {
     /// `group`, with its key. A reference the settings hold but this
     /// version cannot read is no node.
     async fn pinned_node(&self, group_id: &str) -> Result<Option<CallNode>> {
-        let Some((reference, key)) = self.groups.call_node_of(group_id).await? else { return Ok(None) };
+        let Some((reference, key)) = self.groups.call_node_of(group_id).await? else {
+            return Ok(None);
+        };
         let Ok(node) = reference.parse::<NodeRef>() else {
             eprintln!("messenger calls: the node pinned to the group {group_id} is not a node reference: {reference}");
             return Ok(None);
         };
-        Ok(Some(CallNode { node, class: NodeClass::Group, access_key: key }))
+        Ok(Some(CallNode {
+            node,
+            class: NodeClass::Group,
+            access_key: key,
+        }))
     }
 
     async fn seal_note(&self, group_id: &str, envelope: &Envelope) -> Result<Outbound> {
         let keys = self.keys()?;
-        self.groups.prepare_call_note(&keys, group_id, envelope).await
+        self.groups
+            .prepare_call_note(&keys, group_id, envelope)
+            .await
     }
 }
 
@@ -446,8 +493,19 @@ struct GroupNotes {
 
 #[async_trait::async_trait]
 impl GroupCallSink for GroupNotes {
-    async fn on_group_call(&self, group_id: &str, author: &PubKey, envelope: &Envelope, created_at: i64, _historical: bool) {
-        if let Err(e) = self.service.on_group_note(group_id, author, envelope, created_at).await {
+    async fn on_group_call(
+        &self,
+        group_id: &str,
+        author: &PubKey,
+        envelope: &Envelope,
+        created_at: i64,
+        _historical: bool,
+    ) {
+        if let Err(e) = self
+            .service
+            .on_group_note(group_id, author, envelope, created_at)
+            .await
+        {
             eprintln!("messenger calls: a note of the group {group_id} was not taken: {e}");
         }
     }
@@ -486,16 +544,24 @@ impl GroupCallsDriver {
         let (service, rx) = GroupCallService::new(
             store,
             dm,
-            Arc::new(GroupsDoor { groups: groups.clone() }),
+            Arc::new(GroupsDoor {
+                groups: groups.clone(),
+            }),
             engine.unwrap_or_else(|| Arc::new(NoEngine)),
             servers,
             nodes,
             rooms,
             Arc::new(messenger_core::traits::SystemClock),
         );
-        groups.set_call_sink(Some(Arc::new(GroupNotes { service: service.clone() })));
+        groups.set_call_sink(Some(Arc::new(GroupNotes {
+            service: service.clone(),
+        })));
         let (effects, flush) = drain_effects(rx, outbox, ui, None);
-        Self { service, effects, flush }
+        Self {
+            service,
+            effects,
+            flush,
+        }
     }
 
     /// Resolves once every effect the service gave before this call is
@@ -1154,14 +1220,25 @@ impl From<CoreView> for CallView {
             video_screen: v.video_screen,
             camera: v.camera,
             video_remote: v.video_remote,
-            video_local_size: v.video_local_size.map(|s| VideoSize { width: s.width, height: s.height }),
-            video_remote_size: v.video_remote_size.map(|s| VideoSize { width: s.width, height: s.height }),
+            video_local_size: v.video_local_size.map(|s| VideoSize {
+                width: s.width,
+                height: s.height,
+            }),
+            video_remote_size: v.video_remote_size.map(|s| VideoSize {
+                width: s.width,
+                height: s.height,
+            }),
         }
     }
 }
 
 fn node_view(n: &CallNode) -> CallNodeView {
-    CallNodeView { reference: n.node.to_string(), id: n.node.id.to_string(), class: n.class.as_str().into(), has_key: n.access_key.is_some() }
+    CallNodeView {
+        reference: n.node.to_string(),
+        id: n.node.id.to_string(),
+        class: n.class.as_str().into(),
+        has_key: n.access_key.is_some(),
+    }
 }
 
 // ─── The runtime's side ──────────────────────────────────────────────────────
@@ -1176,7 +1253,11 @@ impl MessengerRuntime {
     pub async fn call_start(&self, peer: &str, media: CallMedia) -> Result<CallView> {
         let pk = messenger_contacts::book::parse_key(peer)?;
         self.no_group_call().await?;
-        self.calls.service.start(&pk, media.into()).await.map(Into::into)
+        self.calls
+            .service
+            .start(&pk, media.into())
+            .await
+            .map(Into::into)
     }
 
     /// Take the ringing call. Refused while I am in the room of a group
@@ -1222,26 +1303,53 @@ impl MessengerRuntime {
     /// peer is told; nothing is renegotiated. A camera that will not open
     /// is an error, and the call goes on without the video.
     pub async fn call_set_video(&self, input: VideoInput) -> Result<CallView> {
-        self.calls.service.set_video(input.into()).await.map(Into::into)
+        self.calls
+            .service
+            .set_video(input.into())
+            .await
+            .map(Into::into)
     }
 
     /// The next camera of the engine's list (or the one `camera` names):
     /// switched at once when my camera is on, kept for when it goes on
     /// otherwise. On a phone the list is `front`, `back`.
     pub async fn call_switch_camera(&self, camera: Option<String>) -> Result<CallView> {
-        self.calls.service.switch_camera(camera).await.map(Into::into)
+        self.calls
+            .service
+            .switch_camera(camera)
+            .await
+            .map(Into::into)
     }
 
     /// The cameras the engine can open, the default first; empty on a
     /// phone (its plugin holds the camera) and on a machine without one.
     pub async fn call_cameras(&self) -> Vec<CameraInfo> {
-        self.calls.service.cameras().await.into_iter().map(|c| CameraInfo { id: c.id, name: c.name }).collect()
+        self.calls
+            .service
+            .cameras()
+            .await
+            .into_iter()
+            .map(|c| CameraInfo {
+                id: c.id,
+                name: c.name,
+            })
+            .collect()
     }
 
     /// The screens and windows the engine can share (a computer with a
     /// display); empty elsewhere.
     pub async fn call_screens(&self) -> Vec<ScreenInfo> {
-        self.calls.service.screens().await.into_iter().map(|s| ScreenInfo { id: s.id, title: s.title, window: s.window }).collect()
+        self.calls
+            .service
+            .screens()
+            .await
+            .into_iter()
+            .map(|s| ScreenInfo {
+                id: s.id,
+                title: s.title,
+                window: s.window,
+            })
+            .collect()
     }
 
     /// For the next time my video goes on; what is on keeps its size.
@@ -1254,7 +1362,10 @@ impl MessengerRuntime {
     /// them: `None` without a call or before its media is there. A reader
     /// that falls behind skips to the newest; the stream closes with the
     /// session.
-    pub async fn call_video_frames(&self, track: VideoTrack) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
+    pub async fn call_video_frames(
+        &self,
+        track: VideoTrack,
+    ) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
         self.calls.service.video_frames(track.into()).await
     }
 
@@ -1307,21 +1418,33 @@ impl MessengerRuntime {
     pub async fn call_set_nodes(&self, nodes: Vec<CallNodeInput>) -> Result<CallState> {
         let mut own = Vec::with_capacity(nodes.len());
         for n in nodes {
-            let node: NodeRef = n
-                .reference
-                .parse()
-                .map_err(|_| MessengerError::Invalid(format!("not a node reference (address:port#id): {}", n.reference)))?;
-            own.push(CallNode { node, class: NodeClass::Own, access_key: n.key.filter(|k| !k.is_empty()) });
+            let node: NodeRef = n.reference.parse().map_err(|_| {
+                MessengerError::Invalid(format!(
+                    "not a node reference (address:port#id): {}",
+                    n.reference
+                ))
+            })?;
+            own.push(CallNode {
+                node,
+                class: NodeClass::Own,
+                access_key: n.key.filter(|k| !k.is_empty()),
+            });
         }
         self.calls.servers.set_own(&own).await?;
         self.call_state().await
     }
 
     /// The project's call nodes for the region in use, from the manifest
-    /// in use, into the core's server sets. Called at the start and
-    /// whenever the servers changed.
+    /// in use, into the core's server sets, and its registries into the
+    /// registry of volunteers. Called at the start and whenever the
+    /// servers changed.
     pub(crate) async fn seed_call_nodes(&self) -> Result<()> {
         let (manifest, _) = self.relays.current_manifest().await?;
+        if self.calls.registries_of_manifest {
+            if let Some(registry) = self.calls.servers.registry() {
+                registry.set_registries(manifest.registries.clone());
+            }
+        }
         let region = self.relays.region().await?;
         let nodes: Vec<(NodeRef, NodeClass)> = manifest
             .calls_for_region(&region)
@@ -1333,7 +1456,9 @@ impl MessengerRuntime {
                     // `cloud` comes through a door of its own when there
                     // is one; `own` and unknown classes are no node of a
                     // manifest (`ManifestCall::usable` left them out).
-                    CallNodeClass::Own | CallNodeClass::Cloud | CallNodeClass::Unknown => return None,
+                    CallNodeClass::Own | CallNodeClass::Cloud | CallNodeClass::Unknown => {
+                        return None
+                    }
                 };
                 Some((c.node.parse().ok()?, class))
             })
@@ -1350,7 +1475,9 @@ impl MessengerRuntime {
     /// call still ringing in is left alone: a quit is no decline, the
     /// caller's own timer makes it a missed one.
     pub(crate) async fn end_call_before_leaving(&self) -> bool {
-        let Some(call) = self.calls.service.current().await else { return false };
+        let Some(call) = self.calls.service.current().await else {
+            return false;
+        };
         if call.phase == Phase::Incoming {
             return false;
         }
@@ -1382,16 +1509,28 @@ impl MessengerRuntime {
     /// pinned to the group, else the nearest with an SFU), me in it, the
     /// group told. Refused while a call of either kind is under way, and
     /// while a call is on in this group already (join it).
-    pub async fn group_call_start(&self, group_id: &str, media: CallMedia) -> Result<GroupCallView> {
+    pub async fn group_call_start(
+        &self,
+        group_id: &str,
+        media: CallMedia,
+    ) -> Result<GroupCallView> {
         self.no_dm_call().await?;
-        self.group_calls.service.start(group_id, media.into()).await.map(Into::into)
+        self.group_calls
+            .service
+            .start(group_id, media.into())
+            .await
+            .map(Into::into)
     }
 
     /// Join the call announced in the group `group_id`. Refused while a
     /// call of either kind is under way.
     pub async fn group_call_join(&self, group_id: &str) -> Result<GroupCallView> {
         self.no_dm_call().await?;
-        self.group_calls.service.join(group_id).await.map(Into::into)
+        self.group_calls
+            .service
+            .join(group_id)
+            .await
+            .map(Into::into)
     }
 
     /// Leave the room; the last one out ends the call for the group.
@@ -1400,19 +1539,31 @@ impl MessengerRuntime {
     }
 
     pub async fn group_call_set_mute(&self, muted: bool) -> Result<GroupCallView> {
-        self.group_calls.service.set_mute(muted).await.map(Into::into)
+        self.group_calls
+            .service
+            .set_mute(muted)
+            .await
+            .map(Into::into)
     }
 
     /// My video in the room: a camera, a screen, or off.
     pub async fn group_call_set_video(&self, input: VideoInput) -> Result<GroupCallView> {
-        self.group_calls.service.set_video(input.into()).await.map(Into::into)
+        self.group_calls
+            .service
+            .set_video(input.into())
+            .await
+            .map(Into::into)
     }
 
     /// The next camera of the engine's list (or the one `camera` names)
     /// in the room: switched at once when my camera is on, kept for when
     /// it goes on otherwise. On a phone the list is `front`, `back`.
     pub async fn group_call_switch_camera(&self, camera: Option<String>) -> Result<GroupCallView> {
-        self.group_calls.service.switch_camera(camera).await.map(Into::into)
+        self.group_calls
+            .service
+            .switch_camera(camera)
+            .await
+            .map(Into::into)
     }
 
     /// A frame the platform captured (the camera of a phone, through the
@@ -1434,7 +1585,10 @@ impl MessengerRuntime {
     /// The frames of the video of the seat whose m-line is `mid`
     /// (`GroupParticipant::video_mid`), as the engine hands them; `None`
     /// without a room or before its media is there.
-    pub async fn group_call_video_frames(&self, mid: &str) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
+    pub async fn group_call_video_frames(
+        &self,
+        mid: &str,
+    ) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
         self.group_calls.service.video_frames(mid).await
     }
 
@@ -1444,7 +1598,10 @@ impl MessengerRuntime {
             Some(g) => self.group_calls.service.announced(g).await.map(Into::into),
             None => None,
         };
-        GroupCallState { call: self.group_calls.service.current().await.map(Into::into), announced }
+        GroupCallState {
+            call: self.group_calls.service.current().await.map(Into::into),
+            announced,
+        }
     }
 
     /// The session is about to stop under a group call: the room is
@@ -1470,7 +1627,8 @@ mod tests {
     use messenger_core::MessengerConfig;
     use messenger_testkit::{FakeEngine, MemorySecretStore};
 
-    const NODE: &str = "108.61.171.68:8443#fda09da75199c4e04601a9df309710fab15cd7b2b806ca3b2bbab202582a6dca";
+    const NODE: &str =
+        "108.61.171.68:8443#fda09da75199c4e04601a9df309710fab15cd7b2b806ca3b2bbab202582a6dca";
 
     /// The view of the runtime is the view of the core, field for field:
     /// the events carry the core's JSON, the commands answer the runtime's.
@@ -1489,13 +1647,23 @@ mod tests {
             started_at: 100,
             answered_at: Some(105),
             nodes: vec!["n1".into()],
-            limits: Some(messenger_calls::node_client::Limits { turn_lifetime_secs: 3600, turn_kbps_per_allocation: 2000, credentials_ttl_secs: 600 }),
+            limits: Some(messenger_calls::node_client::Limits {
+                turn_lifetime_secs: 3600,
+                turn_kbps_per_allocation: 2000,
+                credentials_ttl_secs: 600,
+            }),
             video_local: true,
             video_screen: true,
             camera: Some("/dev/video1".into()),
             video_remote: true,
-            video_local_size: Some(messenger_calls::VideoSize { width: 1280, height: 720 }),
-            video_remote_size: Some(messenger_calls::VideoSize { width: 360, height: 640 }),
+            video_local_size: Some(messenger_calls::VideoSize {
+                width: 1280,
+                height: 720,
+            }),
+            video_remote_size: Some(messenger_calls::VideoSize {
+                width: 360,
+                height: 640,
+            }),
         };
         let json = serde_json::to_value(&core).unwrap();
         let view: CallView = core.clone().into();
@@ -1520,27 +1688,70 @@ mod tests {
         assert!(json.get("reconnect_reason").is_none());
         // The words of the outcomes and the policies are the core's.
         for (o, word) in [
-            (CallOutcome::Missed, messenger_calls::Outcome::Missed.as_str()),
-            (CallOutcome::Failed, messenger_calls::Outcome::Failed.as_str()),
-            (CallOutcome::AnsweredElsewhere, messenger_calls::ANSWERED_ELSEWHERE),
+            (
+                CallOutcome::Missed,
+                messenger_calls::Outcome::Missed.as_str(),
+            ),
+            (
+                CallOutcome::Failed,
+                messenger_calls::Outcome::Failed.as_str(),
+            ),
+            (
+                CallOutcome::AnsweredElsewhere,
+                messenger_calls::ANSWERED_ELSEWHERE,
+            ),
         ] {
             assert_eq!(serde_json::to_value(o).unwrap(), serde_json::json!(word));
         }
-        assert_eq!(serde_json::to_value(RelayPolicy::RelayOnly).unwrap(), serde_json::to_value(CorePolicy::RelayOnly).unwrap());
-        assert_eq!(serde_json::to_value(CallStats::default()).unwrap(), serde_json::to_value(messenger_calls::SessionStats::default()).unwrap());
+        assert_eq!(
+            serde_json::to_value(RelayPolicy::RelayOnly).unwrap(),
+            serde_json::to_value(CorePolicy::RelayOnly).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(CallStats::default()).unwrap(),
+            serde_json::to_value(messenger_calls::SessionStats::default()).unwrap()
+        );
         // The words of the video are the core's too.
         for (mine, core) in [
             (VideoInput::Off, CoreVideoInput::Off),
-            (VideoInput::Camera { id: None }, CoreVideoInput::Camera { id: None }),
-            (VideoInput::Screen { id: Some("screen:1".into()) }, CoreVideoInput::Screen { id: Some("screen:1".into()) }),
+            (
+                VideoInput::Camera { id: None },
+                CoreVideoInput::Camera { id: None },
+            ),
+            (
+                VideoInput::Screen {
+                    id: Some("screen:1".into()),
+                },
+                CoreVideoInput::Screen {
+                    id: Some("screen:1".into()),
+                },
+            ),
         ] {
-            assert_eq!(serde_json::to_value(&mine).unwrap(), serde_json::to_value(&core).unwrap());
+            assert_eq!(
+                serde_json::to_value(&mine).unwrap(),
+                serde_json::to_value(&core).unwrap()
+            );
             assert_eq!(CoreVideoInput::from(mine), core);
         }
-        assert_eq!(serde_json::to_value(VideoInput::Camera { id: Some("front".into()) }).unwrap(), serde_json::json!({ "kind": "camera", "id": "front" }));
-        assert_eq!(serde_json::to_value(VideoTrack::Remote).unwrap(), serde_json::to_value(CoreTrack::Remote).unwrap());
-        assert_eq!(serde_json::to_value(VideoQuality::Hd).unwrap(), serde_json::to_value(CoreQuality::Hd).unwrap());
-        assert_eq!(serde_json::to_value(VideoQuality::Sd).unwrap(), serde_json::json!("360p"));
+        assert_eq!(
+            serde_json::to_value(VideoInput::Camera {
+                id: Some("front".into())
+            })
+            .unwrap(),
+            serde_json::json!({ "kind": "camera", "id": "front" })
+        );
+        assert_eq!(
+            serde_json::to_value(VideoTrack::Remote).unwrap(),
+            serde_json::to_value(CoreTrack::Remote).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(VideoQuality::Hd).unwrap(),
+            serde_json::to_value(CoreQuality::Hd).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(VideoQuality::Sd).unwrap(),
+            serde_json::json!("360p")
+        );
     }
 
     #[tokio::test]
@@ -1549,8 +1760,13 @@ mod tests {
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let secrets = Arc::new(MemorySecretStore::unlocked());
         // No registry: what is listed is what the test put in.
-        let backends = CallBackends { registry: RegistrySource::Off, ..CallBackends::with_engine(Some(Arc::new(FakeEngine::new()))) };
-        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends).await.unwrap();
+        let backends = CallBackends {
+            registry: RegistrySource::Off,
+            ..CallBackends::with_engine(Some(Arc::new(FakeEngine::new())))
+        };
+        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends)
+            .await
+            .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
 
@@ -1558,13 +1774,28 @@ mod tests {
         assert!(st.call.is_none());
         assert_eq!(st.policy, RelayPolicy::Auto);
         // The embedded manifest names the nodes of the project; nothing of mine yet.
-        let embedded = messenger_transport::manifest::Manifest::parse_content(messenger_transport::manifest::EMBEDDED_MANIFEST_JSON).unwrap().calls.len();
-        assert!(embedded > 0, "the embedded manifest names the nodes of the project");
+        let embedded = messenger_transport::manifest::Manifest::parse_content(
+            messenger_transport::manifest::EMBEDDED_MANIFEST_JSON,
+        )
+        .unwrap()
+        .calls
+        .len();
+        assert!(
+            embedded > 0,
+            "the embedded manifest names the nodes of the project"
+        );
         assert_eq!(st.nodes.len(), embedded, "{:?}", st.nodes);
-        assert!(st.nodes.iter().all(|n| n.class == "project"), "{:?}", st.nodes);
+        assert!(
+            st.nodes.iter().all(|n| n.class == "project"),
+            "{:?}",
+            st.nodes
+        );
         assert!(st.available, "the engine was given");
         assert_eq!(st.video_quality, VideoQuality::Sd);
-        assert!(st.incoming_enabled, "a device takes calls unless told otherwise");
+        assert!(
+            st.incoming_enabled,
+            "a device takes calls unless told otherwise"
+        );
         let st = rt.call_set_video_quality(VideoQuality::Hd).await.unwrap();
         assert_eq!(st.video_quality, VideoQuality::Hd);
         let st = rt.call_set_incoming(false).await.unwrap();
@@ -1574,43 +1805,91 @@ mod tests {
         rt.call_network_changed().await;
         // Video without a call: nothing to turn on, no frames, no cameras
         // on the fake (a phone's plugin lists them), no screens either.
-        assert!(matches!(rt.call_set_video(VideoInput::Camera { id: None }).await, Err(MessengerError::Invalid(_))));
-        assert!(matches!(rt.call_switch_camera(None).await, Err(MessengerError::Invalid(_))));
+        assert!(matches!(
+            rt.call_set_video(VideoInput::Camera { id: None }).await,
+            Err(MessengerError::Invalid(_))
+        ));
+        assert!(matches!(
+            rt.call_switch_camera(None).await,
+            Err(MessengerError::Invalid(_))
+        ));
         assert!(rt.call_video_frames(VideoTrack::Remote).await.is_none());
         assert!(rt.call_cameras().await.is_empty() && rt.call_screens().await.is_empty());
-        let frame = PushedFrame { format: PixelFormat::Nv21, width: 2, height: 2, rotation: 0, timestamp_us: 0, data: vec![0; 6] };
-        assert!(matches!(rt.call_push_video_frame(frame).await, Err(MessengerError::Invalid(_))));
+        let frame = PushedFrame {
+            format: PixelFormat::Nv21,
+            width: 2,
+            height: 2,
+            rotation: 0,
+            timestamp_us: 0,
+            data: vec![0; 6],
+        };
+        assert!(matches!(
+            rt.call_push_video_frame(frame).await,
+            Err(MessengerError::Invalid(_))
+        ));
 
         let st = rt.call_set_policy(RelayPolicy::RelayOnly).await.unwrap();
         assert_eq!(st.policy, RelayPolicy::RelayOnly);
-        assert!(rt.call_set_nodes(vec![CallNodeInput { reference: "not a node".into(), key: None }]).await.is_err());
-        let st = rt.call_set_nodes(vec![CallNodeInput { reference: NODE.into(), key: Some("k".into()) }]).await.unwrap();
+        assert!(rt
+            .call_set_nodes(vec![CallNodeInput {
+                reference: "not a node".into(),
+                key: None
+            }])
+            .await
+            .is_err());
+        let st = rt
+            .call_set_nodes(vec![CallNodeInput {
+                reference: NODE.into(),
+                key: Some("k".into()),
+            }])
+            .await
+            .unwrap();
         // My node is the project's eu-1 too: mine takes its place in the list.
-        assert_eq!(st.nodes.len(), embedded, "mine first, then the project's others: {:?}", st.nodes);
-        assert_eq!((st.nodes[0].class.as_str(), st.nodes[0].has_key), ("own", true));
+        assert_eq!(
+            st.nodes.len(),
+            embedded,
+            "mine first, then the project's others: {:?}",
+            st.nodes
+        );
+        assert_eq!(
+            (st.nodes[0].class.as_str(), st.nodes[0].has_key),
+            ("own", true)
+        );
         assert_eq!(st.nodes[0].reference, NODE);
         assert_eq!(rt.call_own_nodes().await.unwrap(), st.nodes[..1]);
 
         // A manifest with a node of the project: listed after mine.
         let (mut manifest, origin) = rt.relays().current_manifest().await.unwrap();
         manifest.serial += 1;
-        manifest.calls.push(messenger_transport::manifest::ManifestCall {
-            node: format!("45.93.201.244:443#{}", "cd".repeat(32)),
-            turn_port: 3478,
-            sfu_port: 0,
-            class: messenger_transport::manifest::CallNodeClass::Project,
-            regions: vec!["*".into()],
-        });
-        rt.relays().adopt_manifest(&manifest, &origin, false).await.unwrap();
+        manifest
+            .calls
+            .push(messenger_transport::manifest::ManifestCall {
+                node: format!("198.51.100.9:443#{}", "cd".repeat(32)),
+                turn_port: 3478,
+                sfu_port: 0,
+                class: messenger_transport::manifest::CallNodeClass::Project,
+                regions: vec!["*".into()],
+            });
+        rt.relays()
+            .adopt_manifest(&manifest, &origin, false)
+            .await
+            .unwrap();
         rt.seed_call_nodes().await.unwrap();
         let st = rt.call_state().await.unwrap();
-        let classes = st.nodes.iter().map(|n| n.class.as_str()).collect::<Vec<_>>();
+        let classes = st
+            .nodes
+            .iter()
+            .map(|n| n.class.as_str())
+            .collect::<Vec<_>>();
         assert_eq!(classes[0], "own");
         assert_eq!(classes.len(), embedded + 1);
         assert!(classes[1..].iter().all(|c| *c == "project"), "{classes:?}");
 
         // No session: a call cannot be started, and says so.
-        assert!(matches!(rt.call_start(&"ab".repeat(32), CallMedia::Audio).await, Err(MessengerError::NotLoggedIn)));
+        assert!(matches!(
+            rt.call_start(&"ab".repeat(32), CallMedia::Audio).await,
+            Err(MessengerError::NotLoggedIn)
+        ));
         assert!(rt.call_end("nothing").await.is_err());
         rt.shutdown().await;
     }
@@ -1623,15 +1902,23 @@ mod tests {
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let secrets = Arc::new(MemorySecretStore::unlocked());
         let engine = FakeEngine::new();
-        let backends = CallBackends { registry: RegistrySource::Off, ..CallBackends::with_engine(Some(Arc::new(engine.clone()))) };
-        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends).await.unwrap();
+        let backends = CallBackends {
+            registry: RegistrySource::Off,
+            ..CallBackends::with_engine(Some(Arc::new(engine.clone())))
+        };
+        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends)
+            .await
+            .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
         rt.identity().create("pw").await.unwrap();
         rt.refresh_signer().await.unwrap();
         let peer = nostr::key::Keys::generate().public_key().to_hex();
         let refused = rt.call_start(&peer, CallMedia::Audio).await;
-        assert!(matches!(refused, Err(MessengerError::Invalid(_))), "{refused:?}");
+        assert!(
+            matches!(refused, Err(MessengerError::Invalid(_))),
+            "{refused:?}"
+        );
 
         // With the gate of the relationships off every chat is a full one.
         rt.dm().set_gate(false);
@@ -1639,32 +1926,66 @@ mod tests {
         assert!(rt.dm().calls_allowed(&pk).await.unwrap());
         let mut events = rt.ui_events();
         let view = rt.call_start(&peer, CallMedia::Audio).await.unwrap();
-        assert_eq!((view.phase, view.direction), (CallPhase::Outgoing, CallDirection::Out));
-        assert_eq!(rt.call_state().await.unwrap().call.as_ref().map(|c| c.call_id.as_str()), Some(view.call_id.as_str()));
+        assert_eq!(
+            (view.phase, view.direction),
+            (CallPhase::Outgoing, CallDirection::Out)
+        );
+        assert_eq!(
+            rt.call_state()
+                .await
+                .unwrap()
+                .call
+                .as_ref()
+                .map(|c| c.call_id.as_str()),
+            Some(view.call_id.as_str())
+        );
         // My video in the call: on, with the engine's door for pushed
         // frames open and the frames of both videos readable; then off.
         assert!(!view.video_local);
-        let on = rt.call_set_video(VideoInput::Camera { id: None }).await.unwrap();
+        let on = rt
+            .call_set_video(VideoInput::Camera { id: None })
+            .await
+            .unwrap();
         assert!(on.video_local && !on.video_screen);
-        let mut local = rt.call_video_frames(VideoTrack::Local).await.expect("the frames of my video");
+        let mut local = rt
+            .call_video_frames(VideoTrack::Local)
+            .await
+            .expect("the frames of my video");
         assert!(rt.call_video_frames(VideoTrack::Remote).await.is_some());
-        let frame = PushedFrame { format: PixelFormat::Nv21, width: 4, height: 2, rotation: 90, timestamp_us: 0, data: vec![0; 12] };
+        let frame = PushedFrame {
+            format: PixelFormat::Nv21,
+            width: 4,
+            height: 2,
+            rotation: 90,
+            timestamp_us: 0,
+            data: vec![0; 12],
+        };
         rt.call_push_video_frame(frame).await.unwrap();
-        let shown = local.try_recv().expect("the pushed frame shows as my own picture");
+        let shown = local
+            .try_recv()
+            .expect("the pushed frame shows as my own picture");
         assert_eq!((shown.width, shown.height, shown.rotation), (4, 2, 90));
         let switched = rt.call_switch_camera(None).await.unwrap();
-        assert_eq!(switched.camera.as_deref(), Some("back"), "a phone's cameras when the engine lists none");
+        assert_eq!(
+            switched.camera.as_deref(),
+            Some("back"),
+            "a phone's cameras when the engine lists none"
+        );
         let off = rt.call_set_video(VideoInput::Off).await.unwrap();
         assert!(!off.video_local);
         assert_eq!(engine.sessions()[0].record().video.len(), 3);
         // The fake gathers at once; the offer leaves after the gathering wait.
-        tokio::time::sleep(messenger_calls::GATHER_WAIT + std::time::Duration::from_millis(300)).await;
+        tokio::time::sleep(messenger_calls::GATHER_WAIT + std::time::Duration::from_millis(300))
+            .await;
         let mut seen = Vec::new();
         while let Ok(ev) = events.try_recv() {
             seen.push(ev.name);
         }
         assert!(seen.iter().any(|n| n == UI_EVENT_CALL_STATE), "{seen:?}");
-        assert!(rt.outbox().pending().await.unwrap() >= 1, "the invitation (and its copy) wait in the outbox");
+        assert!(
+            rt.outbox().pending().await.unwrap() >= 1,
+            "the invitation (and its copy) wait in the outbox"
+        );
         rt.call_end(&view.call_id).await.unwrap();
         assert!(rt.call_state().await.unwrap().call.is_none());
         assert_eq!(engine.sessions().len(), 1);
@@ -1682,8 +2003,13 @@ mod tests {
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let secrets = Arc::new(MemorySecretStore::unlocked());
         let engine = FakeEngine::new();
-        let backends = CallBackends { registry: RegistrySource::Off, ..CallBackends::with_engine(Some(Arc::new(engine.clone()))) };
-        let rt = MessengerRuntime::start_with_backends(cfg, secrets.clone(), backends).await.unwrap();
+        let backends = CallBackends {
+            registry: RegistrySource::Off,
+            ..CallBackends::with_engine(Some(Arc::new(engine.clone())))
+        };
+        let rt = MessengerRuntime::start_with_backends(cfg, secrets.clone(), backends)
+            .await
+            .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
         rt.identity().create("pw").await.unwrap();
@@ -1692,16 +2018,23 @@ mod tests {
         let peer = nostr::key::Keys::generate().public_key().to_hex();
         let view = rt.call_start(&peer, CallMedia::Audio).await.unwrap();
         // The invitation has left: the peer rings, and must be told to stop.
-        tokio::time::sleep(messenger_calls::GATHER_WAIT + std::time::Duration::from_millis(300)).await;
+        tokio::time::sleep(messenger_calls::GATHER_WAIT + std::time::Duration::from_millis(300))
+            .await;
         let before = rt.outbox().pending().await.unwrap();
         let mut events = rt.ui_events();
 
         secrets.set_unlocked(false);
-        assert!(rt.refresh_signer().await.unwrap(), "locked secrets stop the session");
+        assert!(
+            rt.refresh_signer().await.unwrap(),
+            "locked secrets stop the session"
+        );
         assert!(!rt.status().await.unwrap().session_active);
         assert!(rt.call_state().await.unwrap().call.is_none());
         let after = rt.outbox().pending().await.unwrap();
-        assert!(after > before, "the end for the peer (and its copy) wait in the outbox: {before} -> {after}");
+        assert!(
+            after > before,
+            "the end for the peer (and its copy) wait in the outbox: {before} -> {after}"
+        );
         assert!(engine.sessions()[0].record().closed);
         let mut ended = None;
         while let Ok(ev) = events.try_recv() {
@@ -1711,7 +2044,11 @@ mod tests {
         }
         let ended = ended.expect("call.ended was emitted");
         assert_eq!(ended["call"]["call_id"], serde_json::json!(view.call_id));
-        assert_eq!(ended["outcome"], serde_json::json!("missed"), "hung up before it was answered: {ended}");
+        assert_eq!(
+            ended["outcome"],
+            serde_json::json!("missed"),
+            "hung up before it was answered: {ended}"
+        );
         rt.shutdown().await;
     }
 
@@ -1748,7 +2085,11 @@ mod tests {
                 mic: Some(false),
                 screen: None,
             }],
-            limits: Some(messenger_calls::node_client::Limits { turn_lifetime_secs: 3600, turn_kbps_per_allocation: 2000, credentials_ttl_secs: 600 }),
+            limits: Some(messenger_calls::node_client::Limits {
+                turn_lifetime_secs: 3600,
+                turn_kbps_per_allocation: 2000,
+                credentials_ttl_secs: 600,
+            }),
             kbps_per_participant: 2500,
             max_participants: 12,
         };
@@ -1756,10 +2097,24 @@ mod tests {
         let view: GroupCallView = core.clone().into();
         assert_eq!(serde_json::to_value(&view).unwrap(), json);
         assert_eq!(serde_json::from_value::<GroupCallView>(json).unwrap(), view);
-        let bare = CoreGroupView { joined_at: None, participant: None, limits: None, participants: vec![], camera: None, ..core };
+        let bare = CoreGroupView {
+            joined_at: None,
+            participant: None,
+            limits: None,
+            participants: vec![],
+            camera: None,
+            ..core
+        };
         let json = serde_json::to_value(&bare).unwrap();
-        assert_eq!(serde_json::to_value(GroupCallView::from(bare)).unwrap(), json);
-        assert!(json.get("joined_at").is_none() && json.get("limits").is_none() && json.get("camera").is_none());
+        assert_eq!(
+            serde_json::to_value(GroupCallView::from(bare)).unwrap(),
+            json
+        );
+        assert!(
+            json.get("joined_at").is_none()
+                && json.get("limits").is_none()
+                && json.get("camera").is_none()
+        );
         let announced = CoreAnnounced {
             call_id: "c1".into(),
             group_id: "g".repeat(64),
@@ -1771,14 +2126,20 @@ mod tests {
             joined: true,
         };
         let json = serde_json::to_value(&announced).unwrap();
-        assert_eq!(serde_json::to_value(GroupCallAnnounced::from(announced)).unwrap(), json);
+        assert_eq!(
+            serde_json::to_value(GroupCallAnnounced::from(announced)).unwrap(),
+            json
+        );
         for (phase, core) in [
             (GroupCallPhase::Starting, CoreGroupPhase::Starting),
             (GroupCallPhase::InRoom, CoreGroupPhase::InRoom),
             (GroupCallPhase::Reconnecting, CoreGroupPhase::Reconnecting),
             (GroupCallPhase::Left, CoreGroupPhase::Left),
         ] {
-            assert_eq!(serde_json::to_value(phase).unwrap(), serde_json::to_value(core).unwrap());
+            assert_eq!(
+                serde_json::to_value(phase).unwrap(),
+                serde_json::to_value(core).unwrap()
+            );
         }
     }
 
@@ -1798,33 +2159,73 @@ mod tests {
         let node = FakeNode::new(engine.clone());
         // The runtime keeps the system clock: the fake node's rooms expire
         // twelve hours from now, not from the clock of the core's tests.
-        node.set_now(messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs() as u64);
-        let backends = CallBackends { engine: Some(Arc::new(engine.clone())), nodes: node.client(), rooms: Arc::new(node.clone()), registry: RegistrySource::Off };
-        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends).await.unwrap();
+        node.set_now(
+            messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs() as u64,
+        );
+        let backends = CallBackends {
+            engine: Some(Arc::new(engine.clone())),
+            nodes: node.client(),
+            rooms: Arc::new(node.clone()),
+            registry: RegistrySource::Off,
+        };
+        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends)
+            .await
+            .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
         rt.identity().create("pw").await.unwrap();
         rt.refresh_signer().await.unwrap();
         rt.dm().set_gate(false);
         // The fake node is my own: the sets of servers find its SFU first.
-        rt.call_set_nodes(vec![CallNodeInput { reference: node.reference().to_string(), key: None }]).await.unwrap();
-        let group = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true).await.unwrap();
-        assert!(rt.group_call_state(Some(&group.id)).await.announced.is_none());
-        assert!(matches!(rt.group_call_join(&group.id).await, Err(MessengerError::Invalid(_))), "nothing to join yet");
+        rt.call_set_nodes(vec![CallNodeInput {
+            reference: node.reference().to_string(),
+            key: None,
+        }])
+        .await
+        .unwrap();
+        let group = rt
+            .group_create(messenger_groups::GroupKind::Private, "Team", "", true)
+            .await
+            .unwrap();
+        assert!(rt
+            .group_call_state(Some(&group.id))
+            .await
+            .announced
+            .is_none());
+        assert!(
+            matches!(
+                rt.group_call_join(&group.id).await,
+                Err(MessengerError::Invalid(_))
+            ),
+            "nothing to join yet"
+        );
         let before = rt.outbox().pending().await.unwrap();
         let mut events = rt.ui_events();
 
-        let view = rt.group_call_start(&group.id, CallMedia::Audio).await.unwrap();
-        assert_eq!((view.group_id.as_str(), view.media, view.participant), (group.id.as_str(), CallMedia::Audio, Some(1)));
+        let view = rt
+            .group_call_start(&group.id, CallMedia::Audio)
+            .await
+            .unwrap();
+        assert_eq!(
+            (view.group_id.as_str(), view.media, view.participant),
+            (group.id.as_str(), CallMedia::Audio, Some(1))
+        );
         assert_eq!(view.node, node.reference().to_string());
-        assert_eq!(view.home, view.node, "the room is on the node I made it on: no cascade");
+        assert_eq!(
+            view.home, view.node,
+            "the room is on the node I made it on: no cascade"
+        );
         assert_eq!(view.participants.len(), 1, "me: {:?}", view.participants);
         assert!(view.participants[0].me && view.participants[0].verified);
         // The fake node's answer connects at once; the core hears of it
         // on its pump.
         tokio::time::sleep(Duration::from_millis(200)).await;
         let st = rt.group_call_state(Some(&group.id)).await;
-        assert_eq!(st.call.as_ref().map(|c| c.phase), Some(GroupCallPhase::InRoom), "{st:?}");
+        assert_eq!(
+            st.call.as_ref().map(|c| c.phase),
+            Some(GroupCallPhase::InRoom),
+            "{st:?}"
+        );
         let announced = st.announced.expect("the call is announced in the group");
         assert!(announced.joined && announced.participants == vec![view.started_by.clone()]);
         assert_eq!(node.rooms().len(), 1);
@@ -1832,35 +2233,66 @@ mod tests {
         let session = engine.sessions().pop().expect("the room session");
         assert!(session.record().room.is_some(), "a session of a room");
         assert_eq!(session.record().sender_keys.len(), 1, "my key of epoch 1");
-        assert!(rt.outbox().pending().await.unwrap() >= before + 2, "call.start and call.join wait in the outbox");
+        assert!(
+            rt.outbox().pending().await.unwrap() >= before + 2,
+            "call.start and call.join wait in the outbox"
+        );
         // One call at a time: a call between two is refused meanwhile.
         let peer = nostr::key::Keys::generate().public_key().to_hex();
         let refused = rt.call_start(&peer, CallMedia::Audio).await;
-        assert!(matches!(&refused, Err(MessengerError::Invalid(e)) if e.contains("group call")), "{refused:?}");
+        assert!(
+            matches!(&refused, Err(MessengerError::Invalid(e)) if e.contains("group call")),
+            "{refused:?}"
+        );
         assert!(rt.call_state().await.unwrap().call.is_none());
         // The seat's own controls.
         assert!(rt.group_call_set_mute(true).await.unwrap().muted);
-        assert!(matches!(rt.group_call_set_layer(2, "q").await, Err(MessengerError::Invalid(_))), "the fake node has no simulcast");
-        assert!(rt.group_call_video_frames("v9").await.is_some(), "the frames of a seat's video can be asked for");
+        assert!(
+            matches!(
+                rt.group_call_set_layer(2, "q").await,
+                Err(MessengerError::Invalid(_))
+            ),
+            "the fake node has no simulcast"
+        );
+        assert!(
+            rt.group_call_video_frames("v9").await.is_some(),
+            "the frames of a seat's video can be asked for"
+        );
 
         rt.group_call_leave().await.unwrap();
         assert!(rt.group_call_state(Some(&group.id)).await.call.is_none());
         assert!(session.record().closed);
-        assert!(node.seats(&node.rooms()[0]).is_empty(), "my seat is gone from the node");
+        assert!(
+            node.seats(&node.rooms()[0]).is_empty(),
+            "my seat is gone from the node"
+        );
         let mut seen = Vec::new();
         while let Ok(ev) = events.try_recv() {
             seen.push(ev.name);
         }
-        for name in [UI_EVENT_GROUP_CALL_STATE, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_ENDED] {
+        for name in [
+            UI_EVENT_GROUP_CALL_STATE,
+            UI_EVENT_GROUP_CALL_STARTED,
+            UI_EVENT_GROUP_CALL_ENDED,
+        ] {
             assert!(seen.iter().any(|n| n == name), "{name} among {seen:?}");
         }
-        assert!(rt.group_call_state(Some(&group.id)).await.announced.is_none(), "the last one out ended the call");
+        assert!(
+            rt.group_call_state(Some(&group.id))
+                .await
+                .announced
+                .is_none(),
+            "the last one out ended the call"
+        );
 
         // The other way round: a group call is refused while a call
         // between two is under way.
         let call = rt.call_start(&peer, CallMedia::Audio).await.unwrap();
         let refused = rt.group_call_start(&group.id, CallMedia::Audio).await;
-        assert!(matches!(&refused, Err(MessengerError::Invalid(e)) if e.contains("a call is under way")), "{refused:?}");
+        assert!(
+            matches!(&refused, Err(MessengerError::Invalid(e)) if e.contains("a call is under way")),
+            "{refused:?}"
+        );
         assert!(rt.group_call_state(None).await.call.is_none());
         rt.call_end(&call.call_id).await.unwrap();
 
@@ -1876,10 +2308,19 @@ mod tests {
             call_node_key: Some("k".into()),
         };
         rt.group_act(&group.id, op).await.unwrap();
-        assert_eq!(rt.groups().call_node_of(&group.id).await.unwrap(), Some((pinned.clone(), Some("k".into()))));
-        let view = rt.group_call_start(&group.id, CallMedia::Video).await.unwrap();
+        assert_eq!(
+            rt.groups().call_node_of(&group.id).await.unwrap(),
+            Some((pinned.clone(), Some("k".into())))
+        );
+        let view = rt
+            .group_call_start(&group.id, CallMedia::Video)
+            .await
+            .unwrap();
         assert_eq!(view.node, pinned);
-        assert_eq!(node.created_on().last().map(String::as_str), Some(pinned.as_str()));
+        assert_eq!(
+            node.created_on().last().map(String::as_str),
+            Some(pinned.as_str())
+        );
         rt.group_call_leave().await.unwrap();
         rt.shutdown().await;
     }
@@ -1898,34 +2339,78 @@ mod tests {
         let secrets = Arc::new(MemorySecretStore::unlocked());
         let engine = FakeEngine::new();
         let node = FakeNode::new(engine.clone());
-        node.set_now(messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs() as u64);
-        let backends = CallBackends { engine: Some(Arc::new(engine.clone())), nodes: node.client(), rooms: Arc::new(node.clone()), registry: RegistrySource::Off };
-        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends).await.unwrap();
+        node.set_now(
+            messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs() as u64,
+        );
+        let backends = CallBackends {
+            engine: Some(Arc::new(engine.clone())),
+            nodes: node.client(),
+            rooms: Arc::new(node.clone()),
+            registry: RegistrySource::Off,
+        };
+        let rt = MessengerRuntime::start_with_backends(cfg, secrets, backends)
+            .await
+            .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
         rt.identity().create("pw").await.unwrap();
         rt.refresh_signer().await.unwrap();
         rt.dm().set_gate(false);
-        rt.call_set_nodes(vec![CallNodeInput { reference: node.reference().to_string(), key: None }]).await.unwrap();
-        let group = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true).await.unwrap();
-        let frame = || PushedFrame { format: PixelFormat::Nv21, width: 4, height: 2, rotation: 90, timestamp_us: 0, data: vec![0; 12] };
-        assert!(matches!(rt.group_call_push_video_frame(frame()).await, Err(MessengerError::Invalid(_))), "no room, no frames");
-        assert!(matches!(rt.group_call_switch_camera(None).await, Err(MessengerError::Invalid(_))));
+        rt.call_set_nodes(vec![CallNodeInput {
+            reference: node.reference().to_string(),
+            key: None,
+        }])
+        .await
+        .unwrap();
+        let group = rt
+            .group_create(messenger_groups::GroupKind::Private, "Team", "", true)
+            .await
+            .unwrap();
+        let frame = || PushedFrame {
+            format: PixelFormat::Nv21,
+            width: 4,
+            height: 2,
+            rotation: 90,
+            timestamp_us: 0,
+            data: vec![0; 12],
+        };
+        assert!(
+            matches!(
+                rt.group_call_push_video_frame(frame()).await,
+                Err(MessengerError::Invalid(_))
+            ),
+            "no room, no frames"
+        );
+        assert!(matches!(
+            rt.group_call_switch_camera(None).await,
+            Err(MessengerError::Invalid(_))
+        ));
         let mut events = rt.ui_events();
 
         // A video call: the camera is on from the start, the plugin's
         // frames go in and show as my own picture, the other camera on a
         // switch.
-        let view = rt.group_call_start(&group.id, CallMedia::Video).await.unwrap();
+        let view = rt
+            .group_call_start(&group.id, CallMedia::Video)
+            .await
+            .unwrap();
         assert!(view.video_local && view.camera.is_none());
         let session = engine.sessions().pop().expect("the room session");
-        let mut local = session.frames(VideoTrack::Local.into()).expect("the frames of my own video");
+        let mut local = session
+            .frames(VideoTrack::Local.into())
+            .expect("the frames of my own video");
         rt.group_call_push_video_frame(frame()).await.unwrap();
         assert_eq!(session.record().pushed_frames, 1);
-        let shown = local.try_recv().expect("the pushed frame shows as my own picture");
+        let shown = local
+            .try_recv()
+            .expect("the pushed frame shows as my own picture");
         assert_eq!((shown.width, shown.height, shown.rotation), (4, 2, 90));
         let switched = rt.group_call_switch_camera(None).await.unwrap();
-        assert_eq!(switched.camera.as_deref(), Some("back"), "a phone's cameras when the engine lists none");
+        assert_eq!(
+            switched.camera.as_deref(),
+            Some("back"),
+            "a phone's cameras when the engine lists none"
+        );
         assert!(switched.video_local);
 
         // A call between two rings in: told as busy, its answer refused,
@@ -1958,7 +2443,11 @@ mod tests {
             reply_to: None,
             rumor_kind: 14,
         };
-        let ctx = messenger_core::Context { my_pubkey: me, session_started_at: now, clock: Arc::new(messenger_core::traits::SystemClock) };
+        let ctx = messenger_core::Context {
+            my_pubkey: me,
+            session_started_at: now,
+            clock: Arc::new(messenger_core::traits::SystemClock),
+        };
         rt.calls().on_dm(&msg, &invite, &ctx).await.unwrap();
         rt.calls.flush().await;
         let mut incoming = None;
@@ -1968,23 +2457,41 @@ mod tests {
             }
         }
         let incoming = incoming.expect("call.incoming was emitted");
-        assert_eq!(incoming["call"]["call_id"], serde_json::json!("ab".repeat(16)));
-        assert_eq!(incoming[INCOMING_BUSY_WITH_GROUP], serde_json::json!(true), "{incoming}");
+        assert_eq!(
+            incoming["call"]["call_id"],
+            serde_json::json!("ab".repeat(16))
+        );
+        assert_eq!(
+            incoming[INCOMING_BUSY_WITH_GROUP],
+            serde_json::json!(true),
+            "{incoming}"
+        );
         let refused = rt.call_accept(&"ab".repeat(16)).await;
-        assert!(matches!(&refused, Err(MessengerError::Invalid(e)) if e.contains("group call")), "{refused:?}");
-        assert!(rt.group_call_state(None).await.call.is_some(), "the room goes on");
+        assert!(
+            matches!(&refused, Err(MessengerError::Invalid(e)) if e.contains("group call")),
+            "{refused:?}"
+        );
+        assert!(
+            rt.group_call_state(None).await.call.is_some(),
+            "the room goes on"
+        );
         rt.call_decline(&"ab".repeat(16)).await.unwrap();
 
         // The group is disbanded under the call: the groups tell the core
         // of calls, which is out of the room, the banner gone, the record
         // closed.
-        rt.group_act(&group.id, messenger_groups::OpBody::Disband).await.unwrap();
+        rt.group_act(&group.id, messenger_groups::OpBody::Disband)
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
         let st = rt.group_call_state(Some(&group.id)).await;
         assert!(st.call.is_none(), "out of the room: {st:?}");
         assert!(st.announced.is_none(), "no banner: {st:?}");
         assert!(session.record().closed);
-        let row = messenger_store::calls::get(rt.store(), &view.call_id).await.unwrap().unwrap();
+        let row = messenger_store::calls::get(rt.store(), &view.call_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(row.outcome.as_deref(), Some("ended"));
         rt.shutdown().await;
     }

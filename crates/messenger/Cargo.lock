@@ -4007,8 +4007,8 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vlink-client"
-version = "0.2.2"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.2.2#c128fa6c661fb41508613298c2c031883c11fa96"
+version = "0.3.0"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.3.0#4e8a837d46891746748b13cd9673c3eeb256d02a"
 dependencies = [
  "bytes",
  "h2",
@@ -4022,8 +4022,8 @@ dependencies = [
 
 [[package]]
 name = "vlink-proto"
-version = "0.2.2"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.2.2#c128fa6c661fb41508613298c2c031883c11fa96"
+version = "0.3.0"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.3.0#4e8a837d46891746748b13cd9673c3eeb256d02a"
 dependencies = [
  "bytes",
  "h2",

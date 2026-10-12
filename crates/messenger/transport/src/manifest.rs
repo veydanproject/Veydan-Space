@@ -22,6 +22,7 @@
 //! is greater than the last applied one.
 
 use messenger_core::{MessengerError, RelayUrl, Result};
+use messenger_vlink::BridgeRef;
 use nostr::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -64,6 +65,19 @@ pub struct Manifest {
     /// before it; a client then has no host for the backend `cloud`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub storage: Vec<ManifestStorage>,
+    /// The registries of bridges and of volunteers' call nodes (VLink),
+    /// `https://…/vlink` without a trailing slash: a client asks
+    /// `<registry>/v1/list` and `<registry>/v1/calls`, the first that
+    /// answers. Nothing of this is built into the app. Absent in manifests
+    /// written before it; a client then fetches no list of bridges and no
+    /// volunteers' nodes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub registries: Vec<String>,
+    /// Bridges to start from before any list was fetched, a reference each
+    /// (`address:port#id`, as a bridge's `vlink id --addr` prints it). Tried
+    /// after the user's own and the listed ones. May be empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bridges: Vec<String>,
 }
 
 /// A host of `/vault/` (vstore), as a manifest names it.
@@ -131,7 +145,10 @@ impl ManifestCall {
     /// A node a client of today may call through: the classes it knows
     /// and does not hold back.
     pub fn usable(&self) -> bool {
-        matches!(self.class, CallNodeClass::Project | CallNodeClass::Volunteer)
+        matches!(
+            self.class,
+            CallNodeClass::Project | CallNodeClass::Volunteer
+        )
     }
 }
 
@@ -234,6 +251,18 @@ fn yes() -> bool {
     true
 }
 
+/// `https://host…` with no userinfo, query, fragment, space or trailing
+/// slash: a base that paths are appended to.
+fn plain_https_base(url: &str) -> bool {
+    let plain = reqwest::Url::parse(url)
+        .is_ok_and(|u| u.username().is_empty() && u.password().is_none() && u.host_str().is_some());
+    url.starts_with("https://")
+        && plain
+        && !url.ends_with('/')
+        && !url.contains(['?', '#'])
+        && !url.chars().any(char::is_whitespace)
+}
+
 impl Manifest {
     /// Parse a bare document. Use only for the embedded manifest.
     pub fn parse_content(json: &str) -> Result<Self> {
@@ -258,11 +287,15 @@ impl Manifest {
             )));
         }
         if event.tags.identifier().as_deref() != Some(MANIFEST_D) {
-            return Err(MessengerError::Invalid("manifest event has wrong d tag".into()));
+            return Err(MessengerError::Invalid(
+                "manifest event has wrong d tag".into(),
+            ));
         }
         if let Some(expected) = expected_pubkey {
             if event.pubkey.to_hex() != expected.to_ascii_lowercase() {
-                return Err(MessengerError::Invalid("manifest signed by an unexpected key".into()));
+                return Err(MessengerError::Invalid(
+                    "manifest signed by an unexpected key".into(),
+                ));
             }
         }
         Self::parse_content(&event.content)
@@ -283,86 +316,175 @@ impl Manifest {
 
     pub fn validate(&self) -> Result<()> {
         if self.format != FORMAT {
-            return Err(MessengerError::Invalid(format!("manifest format '{}' unsupported", self.format)));
+            return Err(MessengerError::Invalid(format!(
+                "manifest format '{}' unsupported",
+                self.format
+            )));
         }
         if self.v != VERSION {
-            return Err(MessengerError::Invalid(format!("manifest v{} unsupported", self.v)));
+            return Err(MessengerError::Invalid(format!(
+                "manifest v{} unsupported",
+                self.v
+            )));
         }
         let mut ids = BTreeSet::new();
         for r in &self.relays {
             if r.id.trim().is_empty() {
-                return Err(MessengerError::Invalid(format!("relay '{}' has an empty id", r.url)));
+                return Err(MessengerError::Invalid(format!(
+                    "relay '{}' has an empty id",
+                    r.url
+                )));
             }
             if !ids.insert(r.id.as_str()) {
-                return Err(MessengerError::Invalid(format!("duplicate relay id '{}'", r.id)));
+                return Err(MessengerError::Invalid(format!(
+                    "duplicate relay id '{}'",
+                    r.id
+                )));
             }
             if RelayUrl::parse(&r.url).is_none() {
-                return Err(MessengerError::Invalid(format!("relay '{}' has an invalid url '{}'", r.id, r.url)));
+                return Err(MessengerError::Invalid(format!(
+                    "relay '{}' has an invalid url '{}'",
+                    r.id, r.url
+                )));
             }
             if let Some(ManifestAuth::ApiKey { key }) = &r.auth {
-                if key.trim().is_empty() || key.chars().any(|c| c.is_whitespace() || c == '&' || c == '#') {
-                    return Err(MessengerError::Invalid(format!("relay '{}' has an invalid api key", r.id)));
+                if key.trim().is_empty()
+                    || key
+                        .chars()
+                        .any(|c| c.is_whitespace() || c == '&' || c == '#')
+                {
+                    return Err(MessengerError::Invalid(format!(
+                        "relay '{}' has an invalid api key",
+                        r.id
+                    )));
                 }
             }
         }
         let mut media_ids = BTreeSet::new();
         for m in &self.media {
             if m.id.trim().is_empty() || !media_ids.insert(m.id.as_str()) {
-                return Err(MessengerError::Invalid(format!("bad media server id '{}'", m.id)));
+                return Err(MessengerError::Invalid(format!(
+                    "bad media server id '{}'",
+                    m.id
+                )));
             }
             if !matches!(m.kind.as_str(), "blossom" | "s3") {
-                return Err(MessengerError::Invalid(format!("media server '{}' has an unknown type", m.id)));
+                return Err(MessengerError::Invalid(format!(
+                    "media server '{}' has an unknown type",
+                    m.id
+                )));
             }
             if m.kind == "s3" && m.bucket.as_deref().unwrap_or("").is_empty() {
-                return Err(MessengerError::Invalid(format!("media server '{}' needs a bucket", m.id)));
+                return Err(MessengerError::Invalid(format!(
+                    "media server '{}' needs a bucket",
+                    m.id
+                )));
             }
             if !(m.url.starts_with("https://") || m.url.starts_with("http://")) {
-                return Err(MessengerError::Invalid(format!("media server '{}' url must be http(s)", m.id)));
+                return Err(MessengerError::Invalid(format!(
+                    "media server '{}' url must be http(s)",
+                    m.id
+                )));
             }
         }
         let mut call_ids = BTreeSet::new();
         for c in &self.calls {
             let Some((_, id)) = c.parse_ref() else {
-                return Err(MessengerError::Invalid(format!("call node '{}' is not address:port#id", c.node)));
+                return Err(MessengerError::Invalid(format!(
+                    "call node '{}' is not address:port#id",
+                    c.node
+                )));
             };
             if !call_ids.insert(id) {
-                return Err(MessengerError::Invalid(format!("call node '{}' is listed twice", c.node)));
+                return Err(MessengerError::Invalid(format!(
+                    "call node '{}' is listed twice",
+                    c.node
+                )));
             }
             if c.turn_port == 0 {
-                return Err(MessengerError::Invalid(format!("call node '{}' has no turn port", c.node)));
+                return Err(MessengerError::Invalid(format!(
+                    "call node '{}' has no turn port",
+                    c.node
+                )));
             }
             // The project signs the manifest: it cannot name the user's own nodes.
             if c.class == CallNodeClass::Own {
-                return Err(MessengerError::Invalid(format!("call node '{}' is of the class own", c.node)));
+                return Err(MessengerError::Invalid(format!(
+                    "call node '{}' is of the class own",
+                    c.node
+                )));
             }
         }
         let mut storage_urls = BTreeSet::new();
         for s in &self.storage {
             // A signed NIP-98 event goes there: https only and no userinfo, as for `/cloud/`.
-            let plain = reqwest::Url::parse(&s.url)
-                .is_ok_and(|u| u.username().is_empty() && u.password().is_none() && u.host_str().is_some());
-            if !s.url.starts_with("https://")
-                || !plain
-                || s.url.ends_with('/')
-                || s.url.contains(['?', '#'])
-                || s.url.chars().any(char::is_whitespace)
-            {
-                return Err(MessengerError::Invalid(format!("storage host '{}' is not an https URL without a trailing slash", s.url)));
+            if !plain_https_base(&s.url) {
+                return Err(MessengerError::Invalid(format!(
+                    "storage host '{}' is not an https URL without a trailing slash",
+                    s.url
+                )));
             }
             if !storage_urls.insert(s.url.as_str()) {
-                return Err(MessengerError::Invalid(format!("storage host '{}' is listed twice", s.url)));
+                return Err(MessengerError::Invalid(format!(
+                    "storage host '{}' is listed twice",
+                    s.url
+                )));
+            }
+        }
+        let mut registries = BTreeSet::new();
+        for r in &self.registries {
+            // The paths of the registry are appended to it.
+            if !plain_https_base(r) {
+                return Err(MessengerError::Invalid(format!(
+                    "registry '{r}' is not an https URL without a trailing slash"
+                )));
+            }
+            if !registries.insert(r.as_str()) {
+                return Err(MessengerError::Invalid(format!(
+                    "registry '{r}' is listed twice"
+                )));
+            }
+        }
+        let mut bridges = BTreeSet::new();
+        for b in &self.bridges {
+            let Ok(bridge) = b.parse::<BridgeRef>() else {
+                return Err(MessengerError::Invalid(format!(
+                    "bridge '{b}' is not address:port#id"
+                )));
+            };
+            if !bridges.insert(bridge.id) {
+                return Err(MessengerError::Invalid(format!(
+                    "bridge '{b}' is listed twice"
+                )));
             }
         }
         Ok(())
     }
 
+    /// The bridges to start from ([`Manifest::bridges`]), in the manifest's
+    /// order. All of them: [`Manifest::validate`] refused a manifest with
+    /// one that does not read.
+    pub fn bridge_refs(&self) -> Vec<BridgeRef> {
+        self.bridges.iter().filter_map(|b| b.parse().ok()).collect()
+    }
+
     /// Hosts of `/vault/` for `region`, by the rule of the media servers,
     /// lower `priority` first and the manifest's order among equals.
     pub fn storage_for_region(&self, region: &str) -> Vec<&ManifestStorage> {
-        let has = self.storage.iter().any(|s| s.regions.iter().any(|g| g == region));
-        let tag = if has || region == REGION_DEFAULT { region } else { REGION_DEFAULT };
-        let mut hosts: Vec<&ManifestStorage> =
-            self.storage.iter().filter(|s| s.regions.iter().any(|g| g == tag || g == REGION_ANY)).collect();
+        let has = self
+            .storage
+            .iter()
+            .any(|s| s.regions.iter().any(|g| g == region));
+        let tag = if has || region == REGION_DEFAULT {
+            region
+        } else {
+            REGION_DEFAULT
+        };
+        let mut hosts: Vec<&ManifestStorage> = self
+            .storage
+            .iter()
+            .filter(|s| s.regions.iter().any(|g| g == tag || g == REGION_ANY))
+            .collect();
         hosts.sort_by_key(|s| s.priority);
         hosts
     }
@@ -385,7 +507,10 @@ impl Manifest {
                 .filter(|r| r.regions.iter().any(|g| g == tag || g == REGION_ANY))
                 .collect()
         };
-        let dedicated = self.relays.iter().any(|r| r.regions.iter().any(|g| g == region));
+        let dedicated = self
+            .relays
+            .iter()
+            .any(|r| r.regions.iter().any(|g| g == region));
         if dedicated || region == REGION_DEFAULT {
             pick(region)
         } else {
@@ -396,8 +521,15 @@ impl Manifest {
     /// Push servers for `region`, by the rule of the media servers: the
     /// region's own when it has any, the `default` ones otherwise.
     pub fn push_for_region(&self, region: &str) -> Vec<&ManifestPush> {
-        let has = self.push.iter().any(|p| p.regions.iter().any(|g| g == region));
-        let tag = if has || region == REGION_DEFAULT { region } else { REGION_DEFAULT };
+        let has = self
+            .push
+            .iter()
+            .any(|p| p.regions.iter().any(|g| g == region));
+        let tag = if has || region == REGION_DEFAULT {
+            region
+        } else {
+            REGION_DEFAULT
+        };
         self.push
             .iter()
             .filter(|p| p.regions.iter().any(|g| g == tag || g == REGION_ANY))
@@ -410,13 +542,26 @@ impl Manifest {
     pub fn calls_for_region(&self, region: &str) -> Vec<&ManifestCall> {
         let usable = || self.calls.iter().filter(|c| c.usable());
         let has = usable().any(|c| c.regions.iter().any(|g| g == region));
-        let tag = if has || region == REGION_DEFAULT { region } else { REGION_DEFAULT };
-        usable().filter(|c| c.regions.iter().any(|g| g == tag || g == REGION_ANY)).collect()
+        let tag = if has || region == REGION_DEFAULT {
+            region
+        } else {
+            REGION_DEFAULT
+        };
+        usable()
+            .filter(|c| c.regions.iter().any(|g| g == tag || g == REGION_ANY))
+            .collect()
     }
 
     pub fn media_for_region(&self, region: &str) -> Vec<&ManifestMedia> {
-        let has = self.media.iter().any(|m| m.regions.iter().any(|g| g == region));
-        let tag = if has || region == REGION_DEFAULT { region } else { REGION_DEFAULT };
+        let has = self
+            .media
+            .iter()
+            .any(|m| m.regions.iter().any(|g| g == region));
+        let tag = if has || region == REGION_DEFAULT {
+            region
+        } else {
+            REGION_DEFAULT
+        };
         self.media
             .iter()
             .filter(|m| m.regions.iter().any(|g| g == tag || g == REGION_ANY))
@@ -455,7 +600,9 @@ pub fn diff_relays(stored: &[StoredRelay], target: &[&ManifestRelay]) -> RelayCh
     let mut seen_ids = BTreeSet::new();
     for t in target {
         seen_ids.insert(t.id.as_str());
-        let Some(url) = RelayUrl::parse(&t.url) else { continue };
+        let Some(url) = RelayUrl::parse(&t.url) else {
+            continue;
+        };
         match by_id.get(t.id.as_str()) {
             Some(s) if s.url == url => out.kept.push((*t).clone()),
             Some(s) => out.renamed.push((t.id.clone(), s.url.clone(), url)),
@@ -482,24 +629,153 @@ mod tests {
             issued_at: 1_759_000_000,
             regions: vec!["default".into(), "ru".into()],
             relays: vec![
-                ManifestRelay { id: "eu-1".into(), url: "wss://eu1.example".into(), regions: vec!["default".into()], read: true, write: true, auth: None },
-                ManifestRelay { id: "ru-1".into(), url: "wss://ru1.example".into(), regions: vec!["ru".into()], read: true, write: true, auth: Some(ManifestAuth::Nip42) },
-                ManifestRelay { id: "any".into(), url: "wss://any.example".into(), regions: vec!["*".into()], read: true, write: false, auth: None },
+                ManifestRelay {
+                    id: "eu-1".into(),
+                    url: "wss://eu1.example".into(),
+                    regions: vec!["default".into()],
+                    read: true,
+                    write: true,
+                    auth: None,
+                },
+                ManifestRelay {
+                    id: "ru-1".into(),
+                    url: "wss://ru1.example".into(),
+                    regions: vec!["ru".into()],
+                    read: true,
+                    write: true,
+                    auth: Some(ManifestAuth::Nip42),
+                },
+                ManifestRelay {
+                    id: "any".into(),
+                    url: "wss://any.example".into(),
+                    regions: vec!["*".into()],
+                    read: true,
+                    write: false,
+                    auth: None,
+                },
             ],
-            media: vec![ManifestMedia { id: "m1".into(), url: "https://media.example".into(), regions: vec!["default".into()], kind: "blossom".into(), bucket: None, s3_region: None }],
-            sources: vec![ManifestSource::Http { url: "https://cfg.example/m.json".into(), regions: vec![], priority: 10 }],
-            push: vec![ManifestPush { id: "p1".into(), url: "https://push.example".into(), regions: vec!["default".into()] }],
+            media: vec![ManifestMedia {
+                id: "m1".into(),
+                url: "https://media.example".into(),
+                regions: vec!["default".into()],
+                kind: "blossom".into(),
+                bucket: None,
+                s3_region: None,
+            }],
+            sources: vec![ManifestSource::Http {
+                url: "https://cfg.example/m.json".into(),
+                regions: vec![],
+                priority: 10,
+            }],
+            push: vec![ManifestPush {
+                id: "p1".into(),
+                url: "https://push.example".into(),
+                regions: vec!["default".into()],
+            }],
             calls: vec![
-                call("203.0.113.7:8443", 'a', CallNodeClass::Project, &["default"]),
+                call(
+                    "203.0.113.7:8443",
+                    'a',
+                    CallNodeClass::Project,
+                    &["default"],
+                ),
                 call("198.51.100.9:443", 'b', CallNodeClass::Volunteer, &["ru"]),
                 call("192.0.2.1:443", 'c', CallNodeClass::Cloud, &["*"]),
             ],
             storage: vec![],
+            registries: vec![],
+            bridges: vec![],
         }
     }
 
+    const BRIDGE_ID: &str = "9c5f434def40ebc2879201642bab6c69063578c4a302aa92de5918b3663ffbfc";
+
+    #[test]
+    fn registries_and_bridges_come_from_the_manifest_and_old_manifests_have_none() {
+        // A manifest written before them reads, with none; written again it
+        // is the same document, so its signature is the same too.
+        let old = serde_json::to_string(&sample()).unwrap();
+        assert!(!old.contains("registries") && !old.contains("bridges"));
+        let read = Manifest::parse_content(&old).unwrap();
+        assert!(
+            read.registries.is_empty() && read.bridges.is_empty() && read.bridge_refs().is_empty()
+        );
+
+        let mut m = sample();
+        m.registries = vec![
+            "https://hub.example.com/vlink".into(),
+            "https://hub-2.example.com:8443/vlink".into(),
+        ];
+        m.bridges = vec![
+            format!("203.0.113.7:443#{BRIDGE_ID}"),
+            format!("[2001:db8::7]:8443#{}", "a".repeat(64)),
+        ];
+        m.validate().unwrap();
+        let refs = m.bridge_refs();
+        assert_eq!(
+            refs.iter().map(|b| b.addr.to_string()).collect::<Vec<_>>(),
+            ["203.0.113.7:443", "[2001:db8::7]:8443"]
+        );
+        assert_eq!(refs[0].id.to_string(), BRIDGE_ID);
+
+        // Signed and read back unchanged; a field of a later manifest is skipped.
+        let keys = Keys::generate();
+        assert_eq!(
+            Manifest::parse_signed(&m.sign(&keys).unwrap(), Some(&keys.public_key().to_hex()))
+                .unwrap(),
+            m
+        );
+        let json = serde_json::to_string(&m)
+            .unwrap()
+            .replace("\"bridges\":", "\"hubs\":[],\"bridges\":");
+        assert_eq!(Manifest::parse_content(&json).unwrap(), m);
+    }
+
+    #[test]
+    fn registries_and_bridges_are_validated() {
+        let bad = |registries: &[&str], bridges: &[&str]| {
+            let mut m = sample();
+            m.registries = registries.iter().map(|r| r.to_string()).collect();
+            m.bridges = bridges.iter().map(|b| b.to_string()).collect();
+            m.validate().is_err()
+        };
+        assert!(!bad(&["https://hub.example.com/vlink"], &[]));
+        assert!(bad(&["http://hub.example.com/vlink"], &[]), "https only");
+        assert!(
+            bad(&["https://hub.example.com/vlink/"], &[]),
+            "the paths are appended"
+        );
+        assert!(bad(&["https://hub.example.com/vlink?x=1"], &[]));
+        assert!(bad(&["https://user@hub.example.com/vlink"], &[]));
+        assert!(
+            bad(
+                &[
+                    "https://hub.example.com/vlink",
+                    "https://hub.example.com/vlink"
+                ],
+                &[]
+            ),
+            "twice"
+        );
+        let bridge = format!("203.0.113.7:443#{BRIDGE_ID}");
+        assert!(!bad(&[], &[&bridge]), "a bridge without a registry is fine");
+        assert!(bad(&[], &["203.0.113.7:443"]), "no id");
+        assert!(
+            bad(&[], &[&format!("bridge.example.com:443#{BRIDGE_ID}")]),
+            "a name, not an address"
+        );
+        assert!(
+            bad(&[], &[&bridge, &bridge.replace(":443", ":8443")]),
+            "the same id twice"
+        );
+    }
+
     fn vault(url: &str, regions: &[&str], priority: u32) -> ManifestStorage {
-        ManifestStorage { url: url.into(), regions: regions.iter().map(|r| r.to_string()).collect(), priority }
+        ManifestStorage {
+            url: url.into(),
+            regions: regions.iter().map(|r| r.to_string()).collect(),
+            priority,
+        }
     }
 
     #[test]
@@ -518,21 +794,51 @@ mod tests {
             vault("https://media-any.example.com/vault", &["*"], 30),
         ];
         m.validate().unwrap();
-        let urls = |region: &str| m.storage_for_region(region).iter().map(|s| s.url.clone()).collect::<Vec<_>>();
+        let urls = |region: &str| {
+            m.storage_for_region(region)
+                .iter()
+                .map(|s| s.url.clone())
+                .collect::<Vec<_>>()
+        };
         assert_eq!(
             urls("default"),
-            ["https://media-eu.example.com/vault", "https://media-us.example.com/vault", "https://media-any.example.com/vault"]
+            [
+                "https://media-eu.example.com/vault",
+                "https://media-us.example.com/vault",
+                "https://media-any.example.com/vault"
+            ]
         );
-        assert_eq!(urls("ru"), ["https://media-ru.example.com/vault", "https://media-any.example.com/vault"]);
-        assert_eq!(urls("mars"), urls("default"), "unknown region falls back to default");
+        assert_eq!(
+            urls("ru"),
+            [
+                "https://media-ru.example.com/vault",
+                "https://media-any.example.com/vault"
+            ]
+        );
+        assert_eq!(
+            urls("mars"),
+            urls("default"),
+            "unknown region falls back to default"
+        );
 
         // Signed and read back; a field of a later entry is skipped.
         let keys = Keys::generate();
-        assert_eq!(Manifest::parse_signed(&m.sign(&keys).unwrap(), None).unwrap(), m);
-        let json = serde_json::to_string(&m).unwrap().replace("\"priority\":0", "\"priority\":0,\"weight\":7");
+        assert_eq!(
+            Manifest::parse_signed(&m.sign(&keys).unwrap(), None).unwrap(),
+            m
+        );
+        let json = serde_json::to_string(&m)
+            .unwrap()
+            .replace("\"priority\":0", "\"priority\":0,\"weight\":7");
         assert_eq!(Manifest::parse_content(&json).unwrap(), m);
-        let bare = serde_json::to_string(&m).unwrap().replace(",\"priority\":0", "");
-        assert_eq!(Manifest::parse_content(&bare).unwrap().storage[2].priority, 0, "priority defaults to 0");
+        let bare = serde_json::to_string(&m)
+            .unwrap()
+            .replace(",\"priority\":0", "");
+        assert_eq!(
+            Manifest::parse_content(&bare).unwrap().storage[2].priority,
+            0,
+            "priority defaults to 0"
+        );
     }
 
     #[test]
@@ -543,16 +849,25 @@ mod tests {
             m.validate().is_err()
         };
         assert!(bad("ftp://media.example.com/vault"));
-        assert!(bad("https://media.example.com/vault/"), "a trailing slash breaks the tag u");
+        assert!(
+            bad("https://media.example.com/vault/"),
+            "a trailing slash breaks the tag u"
+        );
         assert!(bad("https://media.example.com/vault?x=1"));
         assert!(bad("https://media.example.com/va ult"));
-        assert!(bad("http://media.example.com/vault"), "a signed request never goes in clear text");
+        assert!(
+            bad("http://media.example.com/vault"),
+            "a signed request never goes in clear text"
+        );
         assert!(bad("https://user@evil.example.com/vault"), "no userinfo");
         assert!(bad("https://user:pass@media.example.com/vault"));
         assert!(!bad("https://media.example.com/vault"));
         assert!(!bad("https://media.example.com:8443/vault"));
         let mut m = sample();
-        m.storage = vec![vault("https://a.example.com/vault", &["*"], 0), vault("https://a.example.com/vault", &["ru"], 1)];
+        m.storage = vec![
+            vault("https://a.example.com/vault", &["*"], 0),
+            vault("https://a.example.com/vault", &["ru"], 1),
+        ];
         assert!(m.validate().is_err(), "the same host twice");
     }
 
@@ -570,15 +885,29 @@ mod tests {
     fn call_nodes_by_region_leave_out_what_a_client_of_today_does_not_use() {
         let m = sample();
         m.validate().unwrap();
-        let ids = |region: &str| m.calls_for_region(region).iter().map(|c| c.node.split(':').next().unwrap().to_string()).collect::<Vec<_>>();
+        let ids = |region: &str| {
+            m.calls_for_region(region)
+                .iter()
+                .map(|c| c.node.split(':').next().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
         assert_eq!(ids("default"), vec!["203.0.113.7"]);
         assert_eq!(ids("ru"), vec!["198.51.100.9"]);
-        assert_eq!(ids("mars"), vec!["203.0.113.7"], "unknown region falls back to default");
+        assert_eq!(
+            ids("mars"),
+            vec!["203.0.113.7"],
+            "unknown region falls back to default"
+        );
         let (addr, id) = m.calls[0].parse_ref().unwrap();
-        assert_eq!((addr.to_string(), id), ("203.0.113.7:8443".to_string(), "a".repeat(64)));
+        assert_eq!(
+            (addr.to_string(), id),
+            ("203.0.113.7:8443".to_string(), "a".repeat(64))
+        );
 
         // A class of a newer manifest is skipped, the manifest is taken.
-        let json = serde_json::to_string(&m).unwrap().replace("\"cloud\"", "\"satellite\"");
+        let json = serde_json::to_string(&m)
+            .unwrap()
+            .replace("\"cloud\"", "\"satellite\"");
         let newer = Manifest::parse_content(&json).unwrap();
         assert_eq!(newer.calls[2].class, CallNodeClass::Unknown);
         assert_eq!(newer.calls_for_region("default").len(), 1);
@@ -591,14 +920,35 @@ mod tests {
             change(&mut m);
             m.validate().is_err()
         };
-        assert!(bad(|m| m.calls[0].node = "eu-1.veydan.net:443#".to_string() + &"a".repeat(64)), "a name, not an address");
-        assert!(bad(|m| m.calls[0].node = "203.0.113.7:8443".into()), "no id");
-        assert!(bad(|m| m.calls[0].node = format!("203.0.113.7:8443#{}", "z".repeat(64))), "id not hex");
-        assert!(bad(|m| m.calls[0].node = format!("203.0.113.7:0#{}", "a".repeat(64))), "port 0");
-        assert!(bad(|m| m.calls[1].node = m.calls[0].node.replace("8443", "443")), "the same id twice");
+        assert!(
+            bad(|m| m.calls[0].node = "eu-1.veydan.net:443#".to_string() + &"a".repeat(64)),
+            "a name, not an address"
+        );
+        assert!(
+            bad(|m| m.calls[0].node = "203.0.113.7:8443".into()),
+            "no id"
+        );
+        assert!(
+            bad(|m| m.calls[0].node = format!("203.0.113.7:8443#{}", "z".repeat(64))),
+            "id not hex"
+        );
+        assert!(
+            bad(|m| m.calls[0].node = format!("203.0.113.7:0#{}", "a".repeat(64))),
+            "port 0"
+        );
+        assert!(
+            bad(|m| m.calls[1].node = m.calls[0].node.replace("8443", "443")),
+            "the same id twice"
+        );
         assert!(bad(|m| m.calls[0].turn_port = 0));
-        assert!(bad(|m| m.calls[0].class = CallNodeClass::Own), "the project cannot name own nodes");
-        assert!(!bad(|m| m.calls[0].node = format!("[2001:db8::7]:443#{}", "A".repeat(64))), "v6 and upper case are fine");
+        assert!(
+            bad(|m| m.calls[0].class = CallNodeClass::Own),
+            "the project cannot name own nodes"
+        );
+        assert!(
+            !bad(|m| m.calls[0].node = format!("[2001:db8::7]:443#{}", "A".repeat(64))),
+            "v6 and upper case are fine"
+        );
     }
 
     #[test]
@@ -610,7 +960,10 @@ mod tests {
         assert!(!json.contains("calls"));
         assert_eq!(Manifest::parse_content(&json).unwrap(), m);
         let keys = Keys::generate();
-        assert_eq!(Manifest::parse_signed(&sample().sign(&keys).unwrap(), None).unwrap(), sample());
+        assert_eq!(
+            Manifest::parse_signed(&sample().sign(&keys).unwrap(), None).unwrap(),
+            sample()
+        );
     }
 
     #[test]
@@ -621,32 +974,77 @@ mod tests {
         let m = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap();
         assert!(m.serial > 0);
         assert!(
-            m.relays.iter().map(|r| r.url.as_str()).chain(m.media.iter().map(|x| x.url.as_str())).chain(m.push.iter().map(|p| p.url.as_str()))
-                .all(|u| u.split("://").nth(1).and_then(|h| h.split(['/', ':']).next()).is_some_and(|h| h.ends_with(".veydan.net"))),
+            m.relays
+                .iter()
+                .map(|r| r.url.as_str())
+                .chain(m.media.iter().map(|x| x.url.as_str()))
+                .chain(m.push.iter().map(|p| p.url.as_str()))
+                .all(|u| u
+                    .split("://")
+                    .nth(1)
+                    .and_then(|h| h.split(['/', ':']).next())
+                    .is_some_and(|h| h.ends_with(".veydan.net"))),
             "the embedded manifest names only the project's own servers"
         );
-        assert!(m.relays.iter().any(|r| matches!(r.auth, Some(ManifestAuth::ApiKey { .. }))), "project relay is gated");
+        assert!(
+            m.relays
+                .iter()
+                .any(|r| matches!(r.auth, Some(ManifestAuth::ApiKey { .. }))),
+            "project relay is gated"
+        );
         // Call nodes, when the owner adds them, are the project's own.
-        assert!(m.calls.iter().all(|c| c.class == CallNodeClass::Project), "the embedded manifest names only the project's call nodes");
+        assert!(
+            m.calls.iter().all(|c| c.class == CallNodeClass::Project),
+            "the embedded manifest names only the project's call nodes"
+        );
         // Every region it names, the default one and an unknown one get a
         // relay, a media server and a push server.
-        let regions = m.regions.iter().map(String::as_str).chain([REGION_DEFAULT, "nowhere"]);
+        let regions = m
+            .regions
+            .iter()
+            .map(String::as_str)
+            .chain([REGION_DEFAULT, "nowhere"]);
         for region in regions {
-            assert!(!m.relays_for_region(region).is_empty(), "no relay for {region}");
-            assert!(!m.media_for_region(region).is_empty(), "no media server for {region}");
-            assert!(!m.push_for_region(region).is_empty(), "no push server for {region}");
+            assert!(
+                !m.relays_for_region(region).is_empty(),
+                "no relay for {region}"
+            );
+            assert!(
+                !m.media_for_region(region).is_empty(),
+                "no media server for {region}"
+            );
+            assert!(
+                !m.push_for_region(region).is_empty(),
+                "no push server for {region}"
+            );
         }
     }
 
     #[test]
     fn region_resolution() {
         let m = sample();
-        let d: Vec<_> = m.relays_for_region("default").iter().map(|r| r.id.as_str()).collect();
+        let d: Vec<_> = m
+            .relays_for_region("default")
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect();
         assert_eq!(d, vec!["eu-1", "any"]);
-        let ru: Vec<_> = m.relays_for_region("ru").iter().map(|r| r.id.as_str()).collect();
+        let ru: Vec<_> = m
+            .relays_for_region("ru")
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect();
         assert_eq!(ru, vec!["ru-1", "any"]);
-        let unknown: Vec<_> = m.relays_for_region("mars").iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(unknown, vec!["eu-1", "any"], "unknown region falls back to default");
+        let unknown: Vec<_> = m
+            .relays_for_region("mars")
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect();
+        assert_eq!(
+            unknown,
+            vec!["eu-1", "any"],
+            "unknown region falls back to default"
+        );
         assert_eq!(m.media_for_region("ru").len(), 1);
     }
 
@@ -659,12 +1057,21 @@ mod tests {
         assert_eq!(back, m);
 
         let other = Keys::generate();
-        assert!(Manifest::parse_signed(&signed, Some(&other.public_key().to_hex())).is_err(), "pinned key mismatch");
+        assert!(
+            Manifest::parse_signed(&signed, Some(&other.public_key().to_hex())).is_err(),
+            "pinned key mismatch"
+        );
 
         // `content` is a JSON string inside the event, so its quotes are escaped.
         let tampered = signed.replace("\\\"serial\\\":5", "\\\"serial\\\":9");
-        assert_ne!(tampered, signed, "the tamper pattern must match the serialized event");
-        assert!(Manifest::parse_signed(&tampered, None).is_err(), "content change breaks signature");
+        assert_ne!(
+            tampered, signed,
+            "the tamper pattern must match the serialized event"
+        );
+        assert!(
+            Manifest::parse_signed(&tampered, None).is_err(),
+            "content change breaks signature"
+        );
     }
 
     #[test]
@@ -676,7 +1083,9 @@ mod tests {
             .tag(Tag::identifier(MANIFEST_D))
             .finalize(&keys)
             .unwrap();
-        assert!(Manifest::parse_signed(&serde_json::to_string(&wrong_kind).unwrap(), None).is_err());
+        assert!(
+            Manifest::parse_signed(&serde_json::to_string(&wrong_kind).unwrap(), None).is_err()
+        );
         let wrong_d = EventBuilder::new(Kind::from(MANIFEST_KIND), content)
             .tag(Tag::identifier("other"))
             .finalize(&keys)
@@ -712,15 +1121,27 @@ mod tests {
     #[test]
     fn diff_detects_add_remove_rename_keep() {
         let stored = vec![
-            StoredRelay { id: "eu-1".into(), url: RelayUrl::parse("wss://old-eu1.example").unwrap() },
-            StoredRelay { id: "gone".into(), url: RelayUrl::parse("wss://gone.example").unwrap() },
-            StoredRelay { id: "any".into(), url: RelayUrl::parse("wss://any.example").unwrap() },
+            StoredRelay {
+                id: "eu-1".into(),
+                url: RelayUrl::parse("wss://old-eu1.example").unwrap(),
+            },
+            StoredRelay {
+                id: "gone".into(),
+                url: RelayUrl::parse("wss://gone.example").unwrap(),
+            },
+            StoredRelay {
+                id: "any".into(),
+                url: RelayUrl::parse("wss://any.example").unwrap(),
+            },
         ];
         let m = sample();
         let target = m.relays_for_region("default");
         let d = diff_relays(&stored, &target);
         assert_eq!(d.added.len(), 0);
-        assert_eq!(d.kept.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["any"]);
+        assert_eq!(
+            d.kept.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            vec!["any"]
+        );
         assert_eq!(d.renamed.len(), 1);
         assert_eq!(d.renamed[0].0, "eu-1");
         assert_eq!(d.renamed[0].1.as_str(), "wss://old-eu1.example");
@@ -730,7 +1151,13 @@ mod tests {
         assert!(!d.is_empty());
 
         let again = diff_relays(
-            &target.iter().map(|r| StoredRelay { id: r.id.clone(), url: RelayUrl::parse(&r.url).unwrap() }).collect::<Vec<_>>(),
+            &target
+                .iter()
+                .map(|r| StoredRelay {
+                    id: r.id.clone(),
+                    url: RelayUrl::parse(&r.url).unwrap(),
+                })
+                .collect::<Vec<_>>(),
             &target,
         );
         assert!(again.is_empty());

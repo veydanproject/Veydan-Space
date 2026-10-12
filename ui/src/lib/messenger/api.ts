@@ -764,7 +764,7 @@ let mockNet: NetStatus = {
 };
 function mockNetApply(): NetStatus {
   const active = mockNet.mode === 'on' || (mockNet.mode === 'auto' && mockRestricted);
-  mockNet = { ...mockNet, active, bridge: active ? '45.93.201.244:443' : null, bridges: 2 + mockNet.private.length, available: mockServersMode !== 'own' };
+  mockNet = { ...mockNet, active, bridge: active ? '203.0.113.7:443' : null, bridges: 2 + mockNet.private.length, available: mockServersMode !== 'own' };
   return mockNet;
 }
 function mockBridgeOf(text: string): { id: string; addr: string } | null {

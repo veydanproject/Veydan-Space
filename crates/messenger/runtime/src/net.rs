@@ -161,7 +161,9 @@ pub enum Step {
     /// `off`: tell the user a bridge would help.
     Offer,
     /// `auto`: use the bridge until `until`.
-    Hold { until: i64 },
+    Hold {
+        until: i64,
+    },
     /// `auto`: the direct way works again.
     Release,
     /// `off`: the trouble is gone, the offer with it.
@@ -176,7 +178,9 @@ pub fn step(mode: NetMode, verdict: Verdict, now: i64, dismissed_at: Option<i64>
             _ => Step::Offer,
         },
         (NetMode::Off, Verdict::Direct) => Step::Withdraw,
-        (NetMode::Auto, Verdict::Restricted) => Step::Hold { until: now + AUTO_HOLD_SECS },
+        (NetMode::Auto, Verdict::Restricted) => Step::Hold {
+            until: now + AUTO_HOLD_SECS,
+        },
         (NetMode::Auto, Verdict::Direct) => Step::Release,
         // No network at all says nothing about which way is better.
         (_, Verdict::Offline) => Step::Nothing,
@@ -190,9 +194,9 @@ fn host_of(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
-/// The servers of the project: everything the manifest names, and the
-/// registries of bridges (which stand behind servers of the manifest, but
-/// need not).
+/// The servers of the project: everything the manifest names, the
+/// registries of bridges among them (which stand behind servers of the
+/// manifest, but need not).
 pub fn project_hosts(manifest: &Manifest) -> BTreeSet<String> {
     let sources = manifest.sources.iter().filter_map(|s| match s {
         ManifestSource::Http { url, .. } => Some(url.as_str()),
@@ -205,9 +209,14 @@ pub fn project_hosts(manifest: &Manifest) -> BTreeSet<String> {
         .chain(manifest.media.iter().map(|m| m.url.as_str()))
         .chain(manifest.push.iter().map(|p| p.url.as_str()))
         .chain(sources)
-        .chain(trust::REGISTRIES.iter().copied())
+        .chain(manifest.registries.iter().map(String::as_str))
         .filter_map(host_of)
         .collect()
+}
+
+/// Asked of a registry when the manifest names none.
+fn no_registry() -> MessengerError {
+    MessengerError::Transport("no registry is known".into())
 }
 
 fn now() -> i64 {
@@ -235,7 +244,10 @@ impl NetService {
         let net = Net::global().clone();
         // A door that did not open fails what goes through a bridge, and
         // nothing else: the messenger starts all the same.
-        if let Err(e) = net.configure(messenger_notify::net::saved(&store).await?).await {
+        if let Err(e) = net
+            .configure(messenger_notify::net::saved(&store).await?)
+            .await
+        {
             eprintln!("messenger net: {e}");
         }
         Ok(Self {
@@ -253,15 +265,23 @@ impl NetService {
     }
 
     pub async fn mode(&self) -> Result<NetMode> {
-        Ok(settings::get(&self.store, KEY_MODE).await?.as_deref().and_then(NetMode::parse).unwrap_or(NetMode::Off))
+        Ok(settings::get(&self.store, KEY_MODE)
+            .await?
+            .as_deref()
+            .and_then(NetMode::parse)
+            .unwrap_or(NetMode::Off))
     }
 
     async fn stamp(&self, key: &str) -> Result<Option<i64>> {
-        Ok(settings::get(&self.store, key).await?.and_then(|s| s.parse().ok()))
+        Ok(settings::get(&self.store, key)
+            .await?
+            .and_then(|s| s.parse().ok()))
     }
 
     async fn private(&self) -> Result<Vec<BridgeRef>> {
-        let text = settings::get(&self.store, KEY_PRIVATE).await?.unwrap_or_else(|| "[]".into());
+        let text = settings::get(&self.store, KEY_PRIVATE)
+            .await?
+            .unwrap_or_else(|| "[]".into());
         let refs: Vec<String> = serde_json::from_str(&text).unwrap_or_default();
         Ok(refs.iter().filter_map(|r| r.parse().ok()).collect())
     }
@@ -273,19 +293,29 @@ impl NetService {
 
     /// The bridges of the last list, when its signatures still hold.
     async fn listed(&self) -> Result<Vec<BridgeRef>> {
-        let Some(text) = settings::get(&self.store, KEY_LIST).await? else { return Ok(Vec::new()) };
-        let Ok(signed) = serde_json::from_str::<SignedList>(&text) else { return Ok(Vec::new()) };
-        Ok(signed.verify(trust::ROOT_PUB, now().max(0) as u64).map(|l| l.bridges).unwrap_or_default())
+        let Some(text) = settings::get(&self.store, KEY_LIST).await? else {
+            return Ok(Vec::new());
+        };
+        let Ok(signed) = serde_json::from_str::<SignedList>(&text) else {
+            return Ok(Vec::new());
+        };
+        Ok(signed
+            .verify(trust::ROOT_PUB, now().max(0) as u64)
+            .map(|l| l.bridges)
+            .unwrap_or_default())
     }
 
     /// Every bridge known, the ones to try first at the front: the one
-    /// that carried last, the user's own, the registry's, the built-in.
-    pub async fn bridges(&self) -> Result<Vec<BridgeRef>> {
-        let last_good: Option<BridgeRef> =
-            settings::get(&self.store, KEY_LAST_GOOD).await?.and_then(|r| r.parse().ok());
+    /// that carried last, the user's own, the registry's, the manifest's
+    /// (`bridges` of `manifest`: where a client starts before any list was
+    /// fetched; none is built into the app).
+    pub async fn bridges(&self, manifest: &Manifest) -> Result<Vec<BridgeRef>> {
+        let last_good: Option<BridgeRef> = settings::get(&self.store, KEY_LAST_GOOD)
+            .await?
+            .and_then(|r| r.parse().ok());
         let mut known: Vec<BridgeRef> = self.private().await?;
         known.extend(self.listed().await?);
-        known.extend(trust::SEEDS.iter().filter_map(|s| s.parse().ok()));
+        known.extend(manifest.bridge_refs());
         let mut out: Vec<BridgeRef> = Vec::new();
         // The last good one leads only while it is still among the known:
         // a bridge that left the list is not held on to.
@@ -303,16 +333,24 @@ impl NetService {
     /// the old way can be made anew.
     pub async fn apply(&self, relays: &RelayService) -> Result<bool> {
         let was = self.net.is_active();
+        let (manifest, _) = relays.current_manifest().await?;
         let hosts = match relays.servers_mode().await? {
-            Some(ServersMode::Veydan) => project_hosts(&relays.current_manifest().await?.0),
+            Some(ServersMode::Veydan) => project_hosts(&manifest),
             _ => BTreeSet::new(),
         };
         let wanted = match self.mode().await? {
             NetMode::On => true,
             NetMode::Off => false,
-            NetMode::Auto => self.stamp(KEY_AUTO_UNTIL).await?.is_some_and(|until| now() < until),
+            NetMode::Auto => self
+                .stamp(KEY_AUTO_UNTIL)
+                .await?
+                .is_some_and(|until| now() < until),
         };
-        let config = NetConfig { active: wanted && !hosts.is_empty(), hosts, bridges: self.bridges().await? };
+        let config = NetConfig {
+            active: wanted && !hosts.is_empty(),
+            hosts,
+            bridges: self.bridges(&manifest).await?,
+        };
         messenger_notify::net::save(&self.store, &config).await?;
         self.net.configure(config).await?;
         Ok(self.net.is_active() != was)
@@ -330,12 +368,19 @@ impl NetService {
 
     pub async fn status(&self, relays: &RelayService) -> Result<NetStatus> {
         let private = self.private().await?;
+        let (manifest, _) = relays.current_manifest().await?;
         Ok(NetStatus {
             mode: self.mode().await?,
             active: self.net.is_active(),
             bridge: self.net.current().await.map(|b| b.addr.to_string()),
-            bridges: self.bridges().await?.len() as u32,
-            private: private.iter().map(|b| BridgeView { id: b.id.to_string(), addr: b.addr.to_string() }).collect(),
+            bridges: self.bridges(&manifest).await?.len() as u32,
+            private: private
+                .iter()
+                .map(|b| BridgeView {
+                    id: b.id.to_string(),
+                    addr: b.addr.to_string(),
+                })
+                .collect(),
             list_checked_at: self.stamp(KEY_LIST_CHECKED).await?,
             offer: settings::get_bool(&self.store, KEY_OFFER, false).await?,
             available: relays.servers_mode().await? == Some(ServersMode::Veydan),
@@ -360,16 +405,25 @@ impl NetService {
         self.set_private(&private).await
     }
 
-    /// Asks a registry for bridges and keeps the answer when its
-    /// signatures hold. Returns how many bridges it named.
-    pub async fn refresh_list(&self) -> Result<usize> {
+    /// Asks a registry `manifest` names for bridges and keeps the answer
+    /// when its signatures hold. Returns how many bridges it named. With
+    /// no registry named, nothing is asked: a list kept from before is used
+    /// while its signatures hold (the root's key is built in).
+    pub async fn refresh_list(&self, manifest: &Manifest) -> Result<usize> {
         let client = messenger_http::client(Duration::from_secs(6), Duration::from_secs(12))?;
-        let mut last = MessengerError::Transport("no registry is known".into());
-        for registry in trust::REGISTRIES {
+        let mut last = no_registry();
+        for registry in &manifest.registries {
             let asked = async {
-                let response = client.get(format!("{registry}/v1/list")).send().await.map_err(transport)?;
+                let response = client
+                    .get(format!("{registry}/v1/list"))
+                    .send()
+                    .await
+                    .map_err(transport)?;
                 if !response.status().is_success() {
-                    return Err(MessengerError::Transport(format!("the registry answered {}", response.status())));
+                    return Err(MessengerError::Transport(format!(
+                        "the registry answered {}",
+                        response.status()
+                    )));
                 }
                 let text = response.text().await.map_err(transport)?;
                 let signed: SignedList = serde_json::from_str(&text)?;
@@ -392,18 +446,30 @@ impl NetService {
 
     /// Whether the list is due: never asked, or asked long ago.
     pub async fn list_is_stale(&self) -> Result<bool> {
-        Ok(self.stamp(KEY_LIST_CHECKED).await?.is_none_or(|at| now() - at >= LIST_REFRESH_SECS))
+        Ok(self
+            .stamp(KEY_LIST_CHECKED)
+            .await?
+            .is_none_or(|at| now() - at >= LIST_REFRESH_SECS))
     }
 
-    /// Pushes bytes the direct way, whatever the rule says: a client of
-    /// its own, bound to a rule that sends nothing to a bridge.
-    async fn direct_carries(&self) -> bool {
-        let Ok(builder) = messenger_http::builder_on(Net::new(), Duration::from_secs(5), DIRECT_PATIENCE) else {
+    /// Pushes bytes the direct way to a registry `registries` names,
+    /// whatever the rule says: a client of its own, bound to a rule that
+    /// sends nothing to a bridge.
+    async fn direct_carries(&self, registries: &[String]) -> bool {
+        let Ok(builder) =
+            messenger_http::builder_on(Net::new(), Duration::from_secs(5), DIRECT_PATIENCE)
+        else {
             return false;
         };
-        let Ok(client) = builder.build() else { return false };
-        for registry in trust::REGISTRIES {
-            let sent = client.post(format!("{registry}/v1/canary")).body(vec![0x5au8; CHECK_BYTES]).send().await;
+        let Ok(client) = builder.build() else {
+            return false;
+        };
+        for registry in registries {
+            let sent = client
+                .post(format!("{registry}/v1/canary"))
+                .body(vec![0x5au8; CHECK_BYTES])
+                .send()
+                .await;
             if sent.is_ok_and(|r| r.status().is_success()) {
                 return true;
             }
@@ -414,8 +480,11 @@ impl NetService {
     /// Pushes bytes through a bridge, in use or not. The bridge that
     /// carried is remembered.
     async fn bridge_carries(&self) -> Result<bool> {
-        let Some(client) = self.net.client() else { return Ok(false) };
-        let carried = tokio::time::timeout(BRIDGE_PATIENCE, probe::run(&client, CHECK_BYTES as u64)).await;
+        let Some(client) = self.net.client() else {
+            return Ok(false);
+        };
+        let carried =
+            tokio::time::timeout(BRIDGE_PATIENCE, probe::run(&client, CHECK_BYTES as u64)).await;
         if !matches!(carried, Ok(Ok(_))) {
             return Ok(false);
         }
@@ -425,28 +494,48 @@ impl NetService {
         Ok(true)
     }
 
-    /// Tries both ways and acts on what was found, as the mode says.
-    pub async fn check(&self) -> Result<NetCheck> {
+    /// Tries both ways and acts on what was found, as the mode says. The
+    /// direct way is tried on the registries `manifest` names: with none,
+    /// there is nothing to measure it on, and nothing is decided.
+    pub async fn check(&self, manifest: &Manifest) -> Result<NetCheck> {
         settings::set(&self.store, KEY_CHECKED, &now().to_string()).await?;
-        let mut direct = self.direct_carries().await;
+        if manifest.registries.is_empty() {
+            return Err(no_registry());
+        }
+        let mut direct = self.direct_carries(&manifest.registries).await;
         // The bridge is asked only when it matters.
-        let bridge = if direct { false } else { self.bridge_carries().await? };
+        let bridge = if direct {
+            false
+        } else {
+            self.bridge_carries().await?
+        };
         if bridge {
             // The direct way is asked again before it is called restricted:
             // a network that was only coming up (a phone that just woke)
             // fails the first try and carries by the time a bridge did.
-            direct = self.direct_carries().await;
+            direct = self.direct_carries(&manifest.registries).await;
         }
         let verdict = decide(direct, bridge);
         eprintln!("messenger net: check: direct {direct}, bridge {bridge}");
-        match step(self.mode().await?, verdict, now(), self.stamp(KEY_OFFER_DISMISSED).await?) {
+        match step(
+            self.mode().await?,
+            verdict,
+            now(),
+            self.stamp(KEY_OFFER_DISMISSED).await?,
+        ) {
             Step::Nothing => {}
             Step::Offer => settings::set_bool(&self.store, KEY_OFFER, true).await?,
             Step::Withdraw => settings::delete(&self.store, KEY_OFFER).await?,
-            Step::Hold { until } => settings::set(&self.store, KEY_AUTO_UNTIL, &until.to_string()).await?,
+            Step::Hold { until } => {
+                settings::set(&self.store, KEY_AUTO_UNTIL, &until.to_string()).await?
+            }
             Step::Release => settings::delete(&self.store, KEY_AUTO_UNTIL).await?,
         }
-        Ok(NetCheck { direct, bridge, verdict })
+        Ok(NetCheck {
+            direct,
+            bridge,
+            verdict,
+        })
     }
 
     /// A sign of trouble was seen. Says whether a check is worth it now:
@@ -455,7 +544,10 @@ impl NetService {
         if self.mode().await? == NetMode::On {
             return Ok(false);
         }
-        Ok(self.stamp(KEY_CHECKED).await?.is_none_or(|at| now() - at >= CHECK_EVERY_SECS))
+        Ok(self
+            .stamp(KEY_CHECKED)
+            .await?
+            .is_none_or(|at| now() - at >= CHECK_EVERY_SECS))
     }
 
     /// Told every few seconds whether the relays are down while they should
@@ -488,9 +580,15 @@ impl NetService {
         if self.mode().await? == NetMode::On {
             return Ok(false);
         }
-        let every =
-            if settings::get_bool(&self.store, KEY_OFFER, false).await? { CHECK_EVERY_SECS } else { CHECK_QUIET_SECS };
-        Ok(self.stamp(KEY_CHECKED).await?.is_none_or(|at| now() - at >= every))
+        let every = if settings::get_bool(&self.store, KEY_OFFER, false).await? {
+            CHECK_EVERY_SECS
+        } else {
+            CHECK_QUIET_SECS
+        };
+        Ok(self
+            .stamp(KEY_CHECKED)
+            .await?
+            .is_none_or(|at| now() - at >= every))
     }
 
     /// Told every couple of seconds that the app runs. Returns how long it
@@ -510,7 +608,11 @@ impl NetService {
 
     /// In `auto`, with the bridge in use: is it time to try the direct way?
     pub async fn hold_is_over(&self) -> Result<bool> {
-        Ok(self.mode().await? == NetMode::Auto && self.stamp(KEY_AUTO_UNTIL).await?.is_some_and(|until| now() >= until))
+        Ok(self.mode().await? == NetMode::Auto
+            && self
+                .stamp(KEY_AUTO_UNTIL)
+                .await?
+                .is_some_and(|until| now() >= until))
     }
 
     pub async fn dismiss_offer(&self) -> Result<()> {
@@ -536,15 +638,20 @@ impl MessengerRuntime {
         if self.net.apply(&self.relays).await? {
             self.relays.pool().await.reopen();
         }
-        let _ = self.ui.send(UiEvent { name: "net".into(), payload: serde_json::json!({}) });
+        let _ = self.ui.send(UiEvent {
+            name: "net".into(),
+            payload: serde_json::json!({}),
+        });
         Ok(())
     }
 
     pub async fn net_set_mode(&self, mode: NetMode) -> Result<NetStatus> {
         self.net.set_mode(mode).await?;
+        // The registries of the manifest in use: none is built in.
+        let (manifest, _) = self.relays.current_manifest().await?;
         if mode != NetMode::Off {
             // Fresh bridges are worth a moment; the ones known do otherwise.
-            if let Err(e) = self.net.refresh_list().await {
+            if let Err(e) = self.net.refresh_list(&manifest).await {
                 eprintln!("messenger net: the list of bridges was not refreshed: {e}");
             }
         }
@@ -552,7 +659,7 @@ impl MessengerRuntime {
         if mode != NetMode::Off && self.net_status().await?.active {
             // Through the bridge now: a newer list may be had this way even
             // when the direct way gave none.
-            if self.net.list_is_stale().await? && self.net.refresh_list().await.is_ok() {
+            if self.net.list_is_stale().await? && self.net.refresh_list(&manifest).await.is_ok() {
                 self.net_apply().await?;
             }
         }
@@ -561,7 +668,8 @@ impl MessengerRuntime {
 
     /// Tries the direct way and a bridge now, and acts on it as the mode says.
     pub async fn net_check(&self) -> Result<NetCheck> {
-        let check = self.net.check().await?;
+        let (manifest, _) = self.relays.current_manifest().await?;
+        let check = self.net.check(&manifest).await?;
         self.net_apply().await?;
         Ok(check)
     }
@@ -618,17 +726,28 @@ impl MessengerRuntime {
             self.net.woke();
             self.presence.woke();
             self.link.reset();
-            self.outbox.hold_expiry(now() + crate::link::HOLD_EXPIRY_SECS);
+            self.outbox
+                .hold_expiry(now() + crate::link::HOLD_EXPIRY_SECS);
             if !pool.is_silent() {
                 let closed = pool.revive(REVIVE_PATIENCE).await;
-                eprintln!("messenger net: woke after {} s; {closed} silent relay connections made anew", gap.as_secs());
+                eprintln!(
+                    "messenger net: woke after {} s; {closed} silent relay connections made anew",
+                    gap.as_secs()
+                );
             }
         }
-        let up = messenger_core::Transport::status(&*pool).await.relays.iter().any(|r| r.state == messenger_core::traits::RelayState::Connected);
+        let up = messenger_core::Transport::status(&*pool)
+            .await
+            .relays
+            .iter()
+            .any(|r| r.state == messenger_core::traits::RelayState::Connected);
         let expected = self.session.lock().await.is_some() && !pool.is_silent();
         let seen = self.link.observe(Instant::now(), up, expected);
         if seen.changed {
-            let _ = self.ui.send(UiEvent { name: "link".into(), payload: serde_json::json!({ "state": seen.state }) });
+            let _ = self.ui.send(UiEvent {
+                name: "link".into(),
+                payload: serde_json::json!({ "state": seen.state }),
+            });
         }
         if seen.came_up {
             self.outbox.kick();
@@ -642,8 +761,11 @@ impl MessengerRuntime {
         if !status.available {
             return Ok(());
         }
-        if status.mode != NetMode::Off && self.net.list_is_stale().await? && self.net.refresh_list().await.is_ok() {
-            self.net_apply().await?;
+        if status.mode != NetMode::Off && self.net.list_is_stale().await? {
+            let (manifest, _) = self.relays.current_manifest().await?;
+            if self.net.refresh_list(&manifest).await.is_ok() {
+                self.net_apply().await?;
+            }
         }
         if self.net.hold_is_over().await? {
             self.net_check().await?;
@@ -669,7 +791,11 @@ impl MessengerRuntime {
     /// runtime, and this event is how their failures are heard of.
     pub async fn net_heard(&self, event: &UiEvent) {
         let media = event.name == "error" && event.payload["family"] == "media";
-        if media && event.payload["error"].as_str().is_some_and(|e| e.contains("err.network")) {
+        if media
+            && event.payload["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("err.network"))
+        {
             if let Err(e) = self.net_trouble().await {
                 eprintln!("messenger net: check after a failed transfer: {e}");
             }
@@ -678,7 +804,10 @@ impl MessengerRuntime {
 
     pub async fn net_offer_dismiss(&self) -> Result<()> {
         self.net.dismiss_offer().await?;
-        let _ = self.ui.send(UiEvent { name: "net".into(), payload: serde_json::json!({}) });
+        let _ = self.ui.send(UiEvent {
+            name: "net".into(),
+            payload: serde_json::json!({}),
+        });
         Ok(())
     }
 }
@@ -715,7 +844,11 @@ mod tests {
         let by_reference = bridge_of(&format!("203.0.113.7:443#{ID}")).unwrap();
         assert_eq!(by_link, by_reference);
         assert_eq!(by_link.to_string(), format!("203.0.113.7:443#{ID}"));
-        let v6 = bridge_of(&format!("veydan://vlink/{}?a=%5B2001%3Adb8%3A%3A1%5D%3A8443", ID.to_uppercase())).unwrap();
+        let v6 = bridge_of(&format!(
+            "veydan://vlink/{}?a=%5B2001%3Adb8%3A%3A1%5D%3A8443",
+            ID.to_uppercase()
+        ))
+        .unwrap();
         assert_eq!(v6.addr.to_string(), "[2001:db8::1]:8443");
         assert_eq!(v6.id.to_string(), ID);
     }
@@ -723,31 +856,145 @@ mod tests {
     #[test]
     fn a_link_of_another_type_is_told_from_a_broken_one() {
         // `bridge` is kept for bridges to other networks: no alias.
-        assert_eq!(bridge_of(&format!("veydan://bridge/{ID}?a=203.0.113.7%3A443")), Err("net_bridge_link_type"));
-        assert_eq!(bridge_of(&format!("veydan://group/{ID}")), Err("net_bridge_link_type"));
-        assert_eq!(bridge_of("veydan://vlink/abc?a=203.0.113.7%3A443"), Err("net_bridge_invalid"));
+        assert_eq!(
+            bridge_of(&format!("veydan://bridge/{ID}?a=203.0.113.7%3A443")),
+            Err("net_bridge_link_type")
+        );
+        assert_eq!(
+            bridge_of(&format!("veydan://group/{ID}")),
+            Err("net_bridge_link_type")
+        );
+        assert_eq!(
+            bridge_of("veydan://vlink/abc?a=203.0.113.7%3A443"),
+            Err("net_bridge_invalid")
+        );
         assert_eq!(bridge_of("not a bridge"), Err("net_bridge_invalid"));
         assert_eq!(bridge_of("veydan:/"), Err("net_bridge_invalid"));
     }
 
+    /// The embedded manifest with a registry and a bridge of its own: what
+    /// a manifest of the project names (none is built into the app).
+    fn manifest_with_registry() -> Manifest {
+        let mut manifest = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap();
+        manifest.registries = vec!["https://registry.example.org/vlink".into()];
+        manifest.bridges = vec![format!("198.51.100.9:8443#{}", "b".repeat(64))];
+        manifest.validate().unwrap();
+        manifest
+    }
+
+    /// The embedded manifest as one written before registries and bridges.
+    fn manifest_without_registry() -> Manifest {
+        let mut manifest = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap();
+        manifest.registries.clear();
+        manifest.bridges.clear();
+        manifest
+    }
+
+    async fn service() -> NetService {
+        NetService {
+            store: Store::open_in_memory().await.unwrap(),
+            net: Net::new(),
+            relays_down_since: std::sync::Mutex::new(None),
+            last_beat: std::sync::Mutex::new(None),
+        }
+    }
+
     #[test]
     fn the_projects_hosts_are_those_of_the_manifest_and_the_registries() {
-        let manifest = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap();
+        let manifest = manifest_with_registry();
         let hosts = project_hosts(&manifest);
-        for url in manifest.relays.iter().map(|r| &r.url).chain(manifest.media.iter().map(|m| &m.url)) {
+        for url in manifest
+            .relays
+            .iter()
+            .map(|r| &r.url)
+            .chain(manifest.media.iter().map(|m| &m.url))
+        {
             assert!(hosts.contains(&host_of(url).unwrap()), "{url}");
         }
-        for registry in trust::REGISTRIES {
-            assert!(hosts.contains(&host_of(registry).unwrap()), "{registry}");
-        }
+        assert!(hosts.contains("registry.example.org"));
         assert!(hosts.iter().all(|h| !h.contains('/') && !h.contains(':')));
+        // A manifest without registries names no host beyond its servers.
+        assert!(!project_hosts(&manifest_without_registry()).contains("registry.example.org"));
+    }
+
+    #[tokio::test]
+    async fn the_manifests_bridges_come_last_and_are_not_repeated() {
+        let net = service().await;
+        let manifest = manifest_with_registry();
+        let from_manifest: BridgeRef = manifest.bridges[0].parse().unwrap();
+        // Nothing of the user's: the manifest's bridge alone.
+        assert_eq!(
+            net.bridges(&manifest).await.unwrap(),
+            vec![from_manifest.clone()]
+        );
+
+        // The user's own come first, the manifest's after them; one the
+        // user added too is not named twice.
+        net.add_bridge(&format!("203.0.113.7:443#{ID}"))
+            .await
+            .unwrap();
+        net.add_bridge(&manifest.bridges[0]).await.unwrap();
+        let mine: BridgeRef = format!("203.0.113.7:443#{ID}").parse().unwrap();
+        assert_eq!(
+            net.bridges(&manifest).await.unwrap(),
+            vec![from_manifest.clone(), mine.clone()]
+        );
+        net.remove_bridge(&from_manifest.id.to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            net.bridges(&manifest).await.unwrap(),
+            vec![mine.clone(), from_manifest.clone()]
+        );
+
+        // The one that carried last leads while it is known.
+        settings::set(&net.store, KEY_LAST_GOOD, &manifest.bridges[0])
+            .await
+            .unwrap();
+        assert_eq!(
+            net.bridges(&manifest).await.unwrap(),
+            vec![from_manifest, mine.clone()]
+        );
+        assert_eq!(
+            net.bridges(&manifest_without_registry()).await.unwrap(),
+            vec![mine]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_manifest_without_registries_gives_no_registry_and_no_bridge() {
+        let net = service().await;
+        let manifest = manifest_without_registry();
+        assert!(
+            net.bridges(&manifest).await.unwrap().is_empty(),
+            "no bridge is built in"
+        );
+        // Nothing is asked, and nothing is decided about the way.
+        let refreshed = net.refresh_list(&manifest).await.unwrap_err().to_string();
+        assert!(refreshed.contains("no registry is known"), "{refreshed}");
+        let checked = net.check(&manifest).await.unwrap_err().to_string();
+        assert!(checked.contains("no registry is known"), "{checked}");
+        assert!(settings::get(&net.store, KEY_OFFER)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(settings::get(&net.store, KEY_LIST).await.unwrap().is_none());
     }
 
     #[test]
     fn hosts_are_read_out_of_addresses() {
-        assert_eq!(host_of("wss://Relay.Example.org").as_deref(), Some("relay.example.org"));
-        assert_eq!(host_of("https://m.example.org:8443/vlink?x=1").as_deref(), Some("m.example.org"));
-        assert_eq!(host_of("https://m.example.org?key=1").as_deref(), Some("m.example.org"));
+        assert_eq!(
+            host_of("wss://Relay.Example.org").as_deref(),
+            Some("relay.example.org")
+        );
+        assert_eq!(
+            host_of("https://m.example.org:8443/vlink?x=1").as_deref(),
+            Some("m.example.org")
+        );
+        assert_eq!(
+            host_of("https://m.example.org?key=1").as_deref(),
+            Some("m.example.org")
+        );
         assert_eq!(host_of("not an address"), None);
     }
 
@@ -762,20 +1009,45 @@ mod tests {
     #[test]
     fn off_offers_once_and_respects_not_now() {
         let now = 1_000_000;
-        assert_eq!(step(NetMode::Off, Verdict::Restricted, now, None), Step::Offer);
+        assert_eq!(
+            step(NetMode::Off, Verdict::Restricted, now, None),
+            Step::Offer
+        );
         // Declined an hour ago: quiet.
-        assert_eq!(step(NetMode::Off, Verdict::Restricted, now, Some(now - 3600)), Step::Nothing);
+        assert_eq!(
+            step(NetMode::Off, Verdict::Restricted, now, Some(now - 3600)),
+            Step::Nothing
+        );
         // Declined long ago: asked again.
-        assert_eq!(step(NetMode::Off, Verdict::Restricted, now, Some(now - OFFER_QUIET_SECS)), Step::Offer);
+        assert_eq!(
+            step(
+                NetMode::Off,
+                Verdict::Restricted,
+                now,
+                Some(now - OFFER_QUIET_SECS)
+            ),
+            Step::Offer
+        );
         // The trouble went away: so does the offer.
-        assert_eq!(step(NetMode::Off, Verdict::Direct, now, None), Step::Withdraw);
+        assert_eq!(
+            step(NetMode::Off, Verdict::Direct, now, None),
+            Step::Withdraw
+        );
     }
 
     #[test]
     fn auto_holds_the_bridge_and_lets_go() {
         let now = 1_000_000;
-        assert_eq!(step(NetMode::Auto, Verdict::Restricted, now, None), Step::Hold { until: now + AUTO_HOLD_SECS });
-        assert_eq!(step(NetMode::Auto, Verdict::Direct, now, None), Step::Release);
+        assert_eq!(
+            step(NetMode::Auto, Verdict::Restricted, now, None),
+            Step::Hold {
+                until: now + AUTO_HOLD_SECS
+            }
+        );
+        assert_eq!(
+            step(NetMode::Auto, Verdict::Direct, now, None),
+            Step::Release
+        );
     }
 
     #[test]

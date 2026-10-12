@@ -3,8 +3,9 @@
 
 //! The registry of volunteers' call nodes: the last set of servers.
 //!
-//! The registry (the same one the bridges report to) gives
-//! a signed list of its active nodes, the least loaded first (`GET
+//! The registry (the same one the bridges report to, named by the
+//! manifest in use: none is built in) gives a signed list of its active
+//! nodes, the least loaded first (`GET
 //! <registry>/v1/calls`; `messenger_vlink::call_list`). The list is
 //! checked as the list of bridges is: the root key built into every
 //! client (`trust::ROOT_PUB`) delegated the key that signed it, nothing
@@ -32,12 +33,13 @@ use messenger_vlink::trust;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 /// `GET` of one URL: the body as text when the answer was 200. The host
 /// builds it on its HTTP client.
-pub type ListFetch = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<String>> + Send>> + Send + Sync>;
+pub type ListFetch =
+    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<String>> + Send>> + Send + Sync>;
 
 /// The last list the registry gave, as it came: signed, checked again
 /// every time it is read.
@@ -77,25 +79,62 @@ impl RegistryNode {
 pub struct Registry {
     store: Store,
     fetch: ListFetch,
-    registries: Vec<String>,
+    /// Where the list is asked: the registries the manifest in use names
+    /// (`set_registries`). None is built into the client.
+    registries: RwLock<Vec<String>>,
     root: String,
     refreshing: AtomicBool,
     last_failed: Mutex<Option<Instant>>,
 }
 
 fn now() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 impl Registry {
-    /// The registries and the root built into every client.
-    pub fn new(store: Store, fetch: ListFetch) -> Self {
-        Self::with_trust(store, fetch, trust::REGISTRIES.iter().map(|r| r.to_string()).collect(), trust::ROOT_PUB.to_string())
+    /// The root built into every client, and the registries the manifest
+    /// in use names (`registries` of the manifest; the host puts them in
+    /// again whenever the manifest changes, [`Registry::set_registries`]).
+    /// With none, nothing is asked and a list kept from before is used
+    /// while its signatures hold.
+    pub fn new(store: Store, fetch: ListFetch, registries: Vec<String>) -> Self {
+        Self::with_trust(store, fetch, registries, trust::ROOT_PUB.to_string())
     }
 
     /// Registries and a root of one's own: the tests.
-    pub fn with_trust(store: Store, fetch: ListFetch, registries: Vec<String>, root: String) -> Self {
-        Self { store, fetch, registries, root, refreshing: AtomicBool::new(false), last_failed: Mutex::new(None) }
+    pub fn with_trust(
+        store: Store,
+        fetch: ListFetch,
+        registries: Vec<String>,
+        root: String,
+    ) -> Self {
+        Self {
+            store,
+            fetch,
+            registries: RwLock::new(registries),
+            root,
+            refreshing: AtomicBool::new(false),
+            last_failed: Mutex::new(None),
+        }
+    }
+
+    /// The registries of a new manifest. Other ones than before are asked
+    /// at once when the list is due, whatever pause a failure of the old
+    /// ones (or of none at all) left behind.
+    pub fn set_registries(&self, registries: Vec<String>) {
+        let mut current = self.registries.write().unwrap();
+        if *current != registries {
+            *current = registries;
+            *self.last_failed.lock().unwrap() = None;
+        }
+    }
+
+    /// Where the list is asked now.
+    pub fn registries(&self) -> Vec<String> {
+        self.registries.read().unwrap().clone()
     }
 
     /// The nodes of the cached list, while its signatures hold and it
@@ -111,23 +150,30 @@ impl Registry {
 
     /// The nodes of the cached list, checked again; nothing is asked.
     pub async fn cached(&self) -> Result<Vec<RegistryNode>> {
-        let Some(text) = settings::get(&self.store, KEY_REGISTRY_LIST).await? else { return Ok(Vec::new()) };
+        let Some(text) = settings::get(&self.store, KEY_REGISTRY_LIST).await? else {
+            return Ok(Vec::new());
+        };
         Ok(self.read(&text).map(nodes_of).unwrap_or_default())
     }
 
     fn read(&self, text: &str) -> Result<CallList> {
         let signed: SignedList = serde_json::from_str(text)?;
-        call_list::verify(&signed, &self.root, now().max(0) as u64).map_err(|e| MessengerError::Invalid(format!("the list of call nodes: {e}")))
+        call_list::verify(&signed, &self.root, now().max(0) as u64)
+            .map_err(|e| MessengerError::Invalid(format!("the list of call nodes: {e}")))
     }
 
     pub async fn checked_at(&self) -> Result<Option<i64>> {
-        Ok(settings::get(&self.store, KEY_REGISTRY_CHECKED).await?.and_then(|s| s.parse().ok()))
+        Ok(settings::get(&self.store, KEY_REGISTRY_CHECKED)
+            .await?
+            .and_then(|s| s.parse().ok()))
     }
 
     /// Whether the list is due: never asked, asked long ago, or what was
     /// kept no longer holds.
     pub async fn is_stale(&self) -> Result<bool> {
-        let Some(at) = self.checked_at().await? else { return Ok(true) };
+        let Some(at) = self.checked_at().await? else {
+            return Ok(true);
+        };
         if now() - at >= REFRESH_SECS {
             return Ok(true);
         }
@@ -141,7 +187,7 @@ impl Registry {
     /// list that holds; keeps it. How many nodes it named.
     pub async fn refresh(&self) -> Result<usize> {
         let mut last = MessengerError::Transport("no registry is known".into());
-        for registry in &self.registries {
+        for registry in self.registries() {
             let asked = async {
                 let text = (self.fetch)(format!("{registry}{PATH_CALLS}")).await?;
                 let list = self.read(&text)?;
@@ -174,7 +220,12 @@ impl Registry {
     /// `refresh` on a task of its own, one at a time, and not within
     /// [`RETRY_SECS`] of a try that failed. Nothing without a runtime.
     pub fn refresh_in_background(self: &Arc<Self>) {
-        if self.last_failed.lock().unwrap().is_some_and(|t| t.elapsed().as_secs() < RETRY_SECS) {
+        if self
+            .last_failed
+            .lock()
+            .unwrap()
+            .is_some_and(|t| t.elapsed().as_secs() < RETRY_SECS)
+        {
             return;
         }
         if self.refreshing.swap(true, Ordering::SeqCst) {
