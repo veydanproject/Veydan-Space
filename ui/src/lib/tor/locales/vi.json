@@ -99,7 +99,7 @@
     "tor_external_hint": "Tiến trình không chọn quốc gia lắng nghe trên cổng này của 127.0.0.1. Mọi chương trình trên máy tính này đều có thể dùng nó.",
     "tor_external_port": "Cổng",
     "tor_section_advanced": "Nâng cao",
-    "tor_torrc_warning": "Các dòng này được chuyển nguyên văn cho tor. Một dòng sai có thể khiến Tor không khởi động được hoặc làm suy yếu quyền riêng tư của bạn.",
+    "tor_torrc_warning": "Chỉ chấp nhận các dòng về việc chọn nút và mạch (ví dụ ExitNodes, StrictNodes, NumEntryGuards); các dòng khác bị từ chối. Một dòng sai có thể khiến Tor không khởi động được hoặc làm suy yếu quyền riêng tư của bạn.",
     "tor_torrc_label": "Dòng torrc bổ sung",
     "tor_err_countries": "Không phải mã quốc gia hai chữ cái: {list}.",
     "tor_err_ports": "Không phải cổng (1–65535): {list}.",

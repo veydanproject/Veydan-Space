@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import type { JSONContent } from '@tiptap/core';
+import { flattenExtensions, type JSONContent } from '@tiptap/core';
 import { MarkdownManager } from '@tiptap/markdown';
-import { noteMarkdownExtensions } from './tiptap-ext';
+import { noteExtensions, noteMarkdownExtensions } from './tiptap-ext';
 
 const mm = new MarkdownManager({ extensions: noteMarkdownExtensions(), markedOptions: { gfm: true, breaks: true } });
 const parse = (md: string) => mm.parse(md);
@@ -145,5 +145,22 @@ describe('note markdown: lists under a numbered item', () => {
       expect(nodes(doc).some((n) => (n.text ?? '').includes('[')), md).toBe(false);
       expect(parse(serialize(doc)), md).toEqual(doc);
     }
+  });
+});
+
+describe('note editor: no trailing node', () => {
+  const names = (exts: ReturnType<typeof noteMarkdownExtensions>) => flattenExtensions(exts).map((e) => e.name);
+
+  it('leaves out the trailing paragraph StarterKit adds after a closing list or heading', () => {
+    for (const exts of [noteMarkdownExtensions(), noteExtensions((src) => src)]) {
+      const all = names(exts);
+      expect(all).toContain('bulletList');
+      expect(all).not.toContain('trailingNode');
+    }
+  });
+
+  it('writes a note that ends with a list as it reads it', () => {
+    const md = 'Intro\n\n- item 1\n- item 2';
+    expect(serialize(parse(md))).toBe(md);
   });
 });

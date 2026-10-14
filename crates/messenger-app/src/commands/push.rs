@@ -465,6 +465,10 @@ pub struct NotifySettings {
     /// A PIN or password guards the app: the handler gets no keys, and a
     /// notification says only that something came, whatever `content` says.
     pub locked: bool,
+    /// Whether `lockscreen_hidden` does anything here: a phone marks the
+    /// notification private; a computer asks whether its session is locked,
+    /// which only Linux tells so far (`desktop_notify::session_locked`).
+    pub lockscreen_supported: bool,
 }
 
 #[cfg(target_os = "android")]
@@ -531,6 +535,7 @@ pub async fn messenger_notify_get(
         content: s.content.as_str().into(),
         lockscreen_hidden: s.lockscreen_hidden,
         locked: lock.enabled().await,
+        lockscreen_supported: cfg!(any(target_os = "android", target_os = "linux")),
     })
 }
 

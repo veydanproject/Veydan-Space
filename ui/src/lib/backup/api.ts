@@ -14,8 +14,18 @@ export const api = {
     setConfig: (cfg: BackupConfig) => call<void>('backup_set_config', { cfg }),
     list: () => call<BackupFileInfo[]>('backup_list'),
     runNow: () => call<void>('backup_run_now'),
-    /** Empty password = use the configured one. */
-    restore: (path: string, password: string) =>
-      call<void>('backup_restore', { path, password: password || null }),
+    /**
+     * Empty password = use the configured one. An archive older than the
+     * newest one of the data fails with `backup_older:<its date>|<the newest>`
+     * unless `acceptOlder` (read it with `olderBackup`).
+     */
+    restore: (path: string, password: string, acceptOlder = false) =>
+      call<void>('backup_restore', { path, password: password || null, acceptOlder }),
   },
 };
+
+/** The dates of a restore refused as older than the data, if the error is one. */
+export function olderBackup(message: string): { created: string; newest: string } | null {
+  const m = /^backup_older:([^|]*)\|(.*)$/.exec(message);
+  return m ? { created: m[1], newest: m[2] } : null;
+}

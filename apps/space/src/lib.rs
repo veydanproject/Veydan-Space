@@ -20,6 +20,7 @@ pub mod capture;
 // Public so integration smoke examples (examples/*.rs) can exercise command internals.
 pub mod commands;
 mod db;
+mod fsname;
 pub use veydan_core::error;
 #[cfg(desktop)]
 mod fingerprint;

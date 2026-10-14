@@ -8,13 +8,21 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
 
-  let { title, back, children }: { title: string; back: string; children: Snippet } = $props();
+  // `onback`: the page goes back its own way (the page it was opened from);
+  // `back` stays the address of the arrow.
+  let { title, back, onback, children }: { title: string; back: string; onback?: () => void; children: Snippet } = $props();
+
+  function arrow(e: MouseEvent) {
+    if (!onback) return;
+    e.preventDefault();
+    onback();
+  }
 </script>
 
 {#if isMobile}
   <div class="m-page">
     <div class="m-header">
-      <a class="m-ibtn" href={back} aria-label={$t('cloud_link_back')}>
+      <a class="m-ibtn" href={back} onclick={arrow} aria-label={$t('cloud_link_back')}>
         <Icon name="chevron-left" size={24} />
       </a>
       <h1 class="m-title" class:long={title.length > 24}>{title}</h1>
@@ -26,7 +34,7 @@
 {:else}
   <div class="page screen">
     <div class="page-header">
-      <a class="icon-btn" href={back} aria-label={$t('cloud_link_back')}><Icon name="chevron-left" size={18} /></a>
+      <a class="icon-btn" href={back} onclick={arrow} aria-label={$t('cloud_link_back')}><Icon name="chevron-left" size={18} /></a>
       <h1>{title}</h1>
     </div>
     <div class="card body">{@render children()}</div>

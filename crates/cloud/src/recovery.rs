@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 use veydan_core::{BoxFuture, Core};
 use veydan_lock::{Event, Lock};
 use veydan_recovery::{Storage, SyncKeys};
-use veydan_shell::seams::{code, CloudError, LockBox, SeamFuture, Signer, VaultHosts};
+use veydan_shell::seams::{code, CloudError, LockBox, PeerNotes, SeamFuture, Signer, VaultHosts};
 use veydan_sync::{CloudStorage, Engine, RequestSigner, SignFuture, SyncError, Vmk};
 use veydan_sync_host::{config, Host, SyncManager};
 
@@ -120,24 +120,33 @@ fn box_of<R: Runtime>(app: &AppHandle<R>) -> Arc<dyn LockBox> {
     veydan_shell::seams::lock_box(app, BOX)
 }
 
-/// An issue of the Recovery Key: the first, or a new one. A reissue that
-/// was interrupted is rolled back first (see `reissue`).
-async fn issue<R: Runtime>(
-    app: &AppHandle<R>,
-    current: Option<String>,
-    first: bool,
-) -> Result<RecoveryKeyIssued, CloudError> {
+/// Step 5 and the revoke of step 7: the trusted people of this device
+/// (social.rs); a product without the seam of the notes has none.
+async fn shares_of<R: Runtime>(app: &AppHandle<R>) -> Box<dyn reissue::ShareDelivery> {
+    match crate::social::social_of(app).await {
+        Ok(social) => Box::new(social),
+        Err(_) => Box::new(NoShares),
+    }
+}
+
+/// The pass of the start and of every hour: a reissue left under way is
+/// finished or rolled back ([`reissue::resume`]), and the escrows a
+/// reissue retired are deleted, their shares revoked ([`reissue::retire`]).
+/// How many retired escrows are left.
+pub async fn settle<R: Runtime>(app: &AppHandle<R>) -> Result<usize, CloudError> {
     let lock = lock_of(app)?;
     let core = core_of(app)?;
     let signer = seam::<dyn Signer, _>(app, "signer")?;
     let store = store_of(app)?;
     let boxed = box_of(app);
-    // Step 5 and the revoke of step 7: the trusted people of this device
-    // (social.rs); a product without the seam of the notes has none.
-    let shares: Box<dyn reissue::ShareDelivery> = match crate::social::social_of(app).await {
-        Ok(social) => Box::new(social),
-        Err(_) => Box::new(NoShares),
-    };
+    // A revoke marked done must have gone: with the seam of the notes in
+    // place, the trusted people are reached or the pass waits for the next.
+    let shares: Box<dyn reissue::ShareDelivery> =
+        if veydan_shell::seam::<dyn PeerNotes, _, _>(app).is_some() {
+            Box::new(crate::social::social_of(app).await?)
+        } else {
+            Box::new(NoShares)
+        };
     let env = Env {
         sources: Sources {
             lock: lock.inner(),
@@ -150,6 +159,43 @@ async fn issue<R: Runtime>(
     };
     let _lane = take_lane(app).await;
     reissue::resume(&env).await?;
+    reissue::retire(&env).await
+}
+
+/// An issue of the Recovery Key: the first, or a new one. A reissue that
+/// was interrupted is rolled back first (see `reissue`).
+async fn issue<R: Runtime>(
+    app: &AppHandle<R>,
+    current: Option<String>,
+    first: bool,
+    anyway: bool,
+) -> Result<RecoveryKeyIssued, CloudError> {
+    let lock = lock_of(app)?;
+    let core = core_of(app)?;
+    let signer = seam::<dyn Signer, _>(app, "signer")?;
+    let store = store_of(app)?;
+    let boxed = box_of(app);
+    let shares = shares_of(app).await;
+    let env = Env {
+        sources: Sources {
+            lock: lock.inner(),
+            db: &core.db,
+            signer: signer.as_ref(),
+        },
+        store: &store,
+        boxed: boxed.as_ref(),
+        shares: shares.as_ref(),
+    };
+    let _lane = take_lane(app).await;
+    reissue::resume(&env).await?;
+    if !anyway {
+        // An answer of the server that does not come is not a reason to refuse.
+        let configured = match crate::client(app).account().await {
+            Ok(account) => account.recovery.is_some_and(|r| r.configured),
+            Err(_) => false,
+        };
+        reissue::refuse_elsewhere(&env, configured).await?;
+    }
     let current = current.unwrap_or_default();
     let issued = if first {
         reissue::first_setup(&env, &current).await?
@@ -165,18 +211,20 @@ async fn issue<R: Runtime>(
 #[tauri::command]
 pub async fn cloud_recovery_key_show_once<R: Runtime>(
     current: Option<String>,
+    anyway: Option<bool>,
     app: AppHandle<R>,
 ) -> Result<RecoveryKeyIssued, CloudError> {
-    issue(&app, current, true).await
+    issue(&app, current, true, anyway.unwrap_or(false)).await
 }
 
 /// A new Recovery Key in place of the one in force, all or nothing (§3).
 #[tauri::command]
 pub async fn cloud_recovery_key_reissue<R: Runtime>(
     current: Option<String>,
+    anyway: Option<bool>,
     app: AppHandle<R>,
 ) -> Result<RecoveryKeyIssued, CloudError> {
-    issue(&app, current, false).await
+    issue(&app, current, false, anyway.unwrap_or(false)).await
 }
 
 /// What this device knows of the Recovery Key of the cloud.
@@ -528,12 +576,19 @@ pub fn watch(app: AppHandle) {
     });
 }
 
-/// Once a day (first an hour after the start): the escrow in vstore is
-/// compared by `HEAD` with the last write of this device (§4).
+/// At the start and then every hour, [`settle`]: a reissue left under way
+/// and the escrows retired, until none is left. Once a day (first an hour
+/// after the start): the escrow in vstore is compared by `HEAD` with the
+/// last write of this device (§4).
 pub fn start_daily(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut checked: Option<Instant> = None;
         loop {
+            if let Err(e) = settle(&app).await {
+                if !routine(&e) {
+                    eprintln!("cloud: the retired escrow of a reissue: {e}");
+                }
+            }
             tokio::time::sleep(LOOK_EVERY).await;
             if checked.is_some_and(|at| at.elapsed() < CHECK_EVERY) {
                 continue;
@@ -560,12 +615,12 @@ mod tests {
     async fn without_the_seams_of_the_messenger_the_commands_say_so() {
         let app = tauri::test::mock_app();
         let handle = app.handle().clone();
-        let e = cloud_recovery_key_show_once(Some("4821".into()), handle.clone())
+        let e = cloud_recovery_key_show_once(Some("4821".into()), None, handle.clone())
             .await
             .err()
             .map(|e| e.code);
         assert_eq!(e.as_deref(), Some(code::LOCKED), "no lock in the mock app");
-        let e = cloud_recovery_key_reissue(None, handle.clone())
+        let e = cloud_recovery_key_reissue(None, None, handle.clone())
             .await
             .err()
             .map(|e| e.code);

@@ -7,7 +7,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { api, formatError, onSyncProgress, onSyncStatus, syncProgressText, type SyncConfig, type SyncProbe, type SyncProgress, type SyncStatus } from '$lib/core/mobile/api';
   import { t, locale } from '$lib/core/mobile/i18n';
-  import { joinErrorKey } from '$lib/core/join-error';
+  import { joinErrorKey, storageErrorKey } from '$lib/core/join-error';
   import { LARGE_FILE_LIMITS, largeFilePeakMib } from '$lib/core/api';
   import { registry } from '$lib/core/registry';
   import { directory } from '$lib/core/directory';
@@ -234,6 +234,12 @@
     }
   };
 
+  /** The last error of the cycle, in words where the storage itself is refused. */
+  function lastErrorText(message: string): string {
+    const key = storageErrorKey(message);
+    return key ? $t(key) : message;
+  }
+
   function finishSyncBtn(lastError: string | null | undefined) {
     if (lastError) {
       syncBtnState = 'idle';
@@ -363,9 +369,12 @@
           </div>
         {/if}
         {#if status.last_error && !running}
-          <div class="m-row msg danger">{status.last_error}</div>
+          <div class="m-row msg danger">{lastErrorText(status.last_error)}</div>
         {:else if status.last_warning}
           <div class="m-row msg warn">{status.last_warning}</div>
+        {/if}
+        {#if status.first_read_pending}
+          <div class="m-row msg warn">{$t('settings_sync_first_read')}</div>
         {/if}
         <button class="m-row" onclick={toggleEnabled} disabled={busy}>
           <span class="m-row-label">{$t('settings_sync_enabled')}</span>

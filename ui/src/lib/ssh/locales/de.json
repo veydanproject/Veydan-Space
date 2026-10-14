@@ -28,6 +28,7 @@
     "files_transfer_done": "Fertig",
     "files_transfer_cancelled": "Abgebrochen — Teildaten bleiben erhalten, ein Neustart setzt die Übertragung fort",
     "files_transfer_skipped": "Übersprungen: {n}",
+    "files_transfer_move_kept": "{n} nicht verschoben, die Originale bleiben erhalten",
     "files_conflict_title": "Datei existiert bereits",
     "files_conflict_msg_file": "„{name}“ existiert am Ziel bereits. Überschreiben?",
     "files_conflict_msg_dir": "Der Ordner „{name}“ existiert am Ziel bereits. Dateien darin überschreiben?",

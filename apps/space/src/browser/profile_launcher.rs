@@ -188,7 +188,7 @@ pub async fn launch_profile(
         .inner()
         .clone();
     let (effective_proxy, local_proxy_stop) =
-        setup_proxy(proxy, &core.db, &tor, &profile.id).await?;
+        setup_proxy(proxy, &tor, &profile.id).await?;
 
     // The effective proxy is the local relay whatever stands behind it, so
     // that the relay leads to Tor is told apart here.
@@ -203,7 +203,11 @@ pub async fn launch_profile(
 
     if profile.browser_type == "camoufox" {
         let app_name = crate::commands::camoufox::resolve_binary(&core.app_data_dir)
-            .and_then(|bin| bin.parent().map(crate::commands::camoufox::read_app_name))
+            .map(|bin| {
+                crate::commands::camoufox::read_app_name(&crate::commands::camoufox::resources_dir(
+                    &bin,
+                ))
+            })
             .unwrap_or_else(|| "Camoufox".to_string());
         crate::commands::camoufox::write_search_engine_to_profile(
             &firefox_profile_dir,
@@ -245,7 +249,6 @@ pub async fn launch_profile(
 /// Returns the effective proxy (pointing to 127.0.0.1) and a stop channel.
 async fn setup_proxy(
     proxy: Option<&Proxy>,
-    db: &sqlx::SqlitePool,
     tor: &veydan_tor::TorManager,
     profile_id: &str,
 ) -> Result<(Option<Proxy>, Option<tokio::sync::oneshot::Sender<()>>), String> {
@@ -309,6 +312,7 @@ async fn setup_proxy(
             }
         }
         Some(p) if p.proxy_type == "ssh" => {
+            crate::commands::proxies::require_pinned(p)?;
             let auth = if let Some(key) = &p.private_key {
                 if !key.is_empty() {
                     crate::proxy::ssh::SshAuth::PrivateKey(key.clone())
@@ -329,7 +333,6 @@ async fn setup_proxy(
             .await
             {
                 Ok(r) => {
-                    crate::commands::proxies::pin_ssh_fingerprint(db, p, &r).await;
                     let upstream = crate::proxy::local::Upstream::Ssh { session: r.session };
                     match crate::proxy::local::spawn(upstream).await {
                         Ok((local_port, stop_tx)) => {
@@ -371,12 +374,15 @@ async fn resolve_binary_and_config(
             let bin = crate::commands::camoufox::resolve_binary(&core.app_data_dir)
                 .ok_or("Camoufox not found. Please download it in Settings.")?;
 
-            if let Some(install_dir) = bin.parent() {
+            // The files to patch: beside the binary, or in Contents/Resources
+            // of a macOS app bundle.
+            let install_dir = crate::commands::camoufox::resources_dir(&bin);
+            {
                 // Serialize shared-install-dir mutations across concurrent
                 // launches: two launches must not both repack omni.ja (and
                 // clear startup caches) while a starting browser reads it.
                 let _guard = crate::commands::camoufox::INSTALL_DIR_LOCK.lock().await;
-                crate::commands::camoufox::ensure_omni_patched(install_dir, &core.app_data_dir);
+                crate::commands::camoufox::ensure_omni_patched(&install_dir, &core.app_data_dir);
             }
 
             let (wcolor, wname) = if let Some(wid) = &profile.workspace_id {
@@ -422,10 +428,10 @@ async fn resolve_binary_and_config(
             )
             .map_err(err)?;
 
-            if let Some(install_dir) = bin.parent() {
+            {
                 // chrome.css is shared between all profiles — same lock as above.
                 let _guard = crate::commands::camoufox::INSTALL_DIR_LOCK.lock().await;
-                crate::commands::camoufox::patch_chrome_css(install_dir, &wcolor, &tcolor, &label)
+                crate::commands::camoufox::patch_chrome_css(&install_dir, &wcolor, &tcolor, &label)
                     .unwrap_or_else(|e| {
                         eprintln!("patch_chrome_css failed: {e}");
                     });

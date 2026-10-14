@@ -99,7 +99,7 @@
     "tor_external_hint": "Instans tanpa negara mendengarkan port ini di 127.0.0.1. Program apa pun di komputer ini dapat memakainya.",
     "tor_external_port": "Port",
     "tor_section_advanced": "Lanjutan",
-    "tor_torrc_warning": "Baris-baris ini diteruskan ke tor apa adanya. Baris yang salah dapat membuat Tor gagal dimulai atau melemahkan privasi Anda.",
+    "tor_torrc_warning": "Hanya baris tentang pemilihan node dan sirkuit yang diterima (misalnya ExitNodes, StrictNodes, NumEntryGuards); baris lain ditolak. Baris yang salah dapat membuat Tor gagal dimulai atau melemahkan privasi Anda.",
     "tor_torrc_label": "Baris torrc tambahan",
     "tor_err_countries": "Bukan kode negara dua huruf: {list}.",
     "tor_err_ports": "Bukan port (1–65535): {list}.",

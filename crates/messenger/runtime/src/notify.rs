@@ -44,7 +44,7 @@ impl MessengerRuntime {
     }
 
     pub async fn notify_settings(&self) -> Result<Settings> {
-        Settings::load(self.store()).await
+        Settings::load_or(self.store(), messenger_notify::LOCKSCREEN_HIDDEN_BY_DEFAULT).await
     }
 
     pub async fn notify_set_settings(&self, settings: Settings) -> Result<Settings> {
@@ -127,6 +127,23 @@ mod tests {
         rt.notify_set_settings(Settings { content: Content::Sender, lockscreen_hidden: true }).await.unwrap();
         assert!(!rt.notify_bundle().await.unwrap().unwrap().calls_only);
         assert_eq!(rt.notify_fingerprint().await.unwrap().unwrap(), full_print);
+        rt.shutdown().await;
+    }
+
+    /// A computer that tells its session is locked (Linux) hides the text
+    /// over it until the user says otherwise; elsewhere, as before, not; a
+    /// choice stands.
+    #[tokio::test]
+    async fn the_lock_screen_hides_the_text_on_a_computer_by_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+        let first = rt.notify_settings().await.unwrap();
+        assert_eq!(first.lockscreen_hidden, messenger_notify::LOCKSCREEN_HIDDEN_BY_DEFAULT);
+        assert_eq!(messenger_notify::LOCKSCREEN_HIDDEN_BY_DEFAULT, cfg!(target_os = "linux"), "only where the setting works");
+        assert!(!Settings::load(rt.store()).await.unwrap().lockscreen_hidden, "the push handler of a phone reads it as before");
+        rt.notify_set_settings(Settings { content: first.content, lockscreen_hidden: false }).await.unwrap();
+        assert!(!rt.notify_settings().await.unwrap().lockscreen_hidden, "the choice stands");
         rt.shutdown().await;
     }
 }

@@ -73,7 +73,7 @@ pub use templates::placeholder_values;
 
 #[cfg(desktop)]
 use attachments::allow_asset_dir;
-use attachments::{attachments_dir_for, is_staging_name, safe_file_name};
+use attachments::{attachments_dir_for, is_staging_name, safe_file_name, unique_path};
 use crud::{insert_note, restore_note, trash_note, update_note, NewNote};
 use files::{effective_docs_dir, parse_note_file, write_note_file};
 use history::{history_content_by_id, history_snapshot_by};
@@ -219,6 +219,30 @@ pub const SCHEMA: Schema = Schema {
     )],
 };
 
+/// What the notes' own windows reach besides what the shell grants every
+/// window but `main` (platform-spec 5.2). The notes window shows the whole
+/// page of the notes, its footer locks the app and runs sync; quick capture
+/// writes one note into a folder.
+#[cfg(desktop)]
+const WINDOWS: &[veydan_shell::WindowGrant] = &[
+    veydan_shell::WindowGrant {
+        label: window::NOTES_WINDOW_LABEL,
+        commands: veydan_shell::Grant::All,
+    },
+    veydan_shell::WindowGrant {
+        label: window::NOTES_WINDOW_LABEL,
+        commands: veydan_shell::Grant::Only(&["lock_lock", "sync_run_now"]),
+    },
+    veydan_shell::WindowGrant {
+        label: quick_capture::WINDOW_LABEL,
+        commands: veydan_shell::Grant::Only(&[
+            "note_folder_list",
+            "note_create",
+            "note_add_folder",
+        ]),
+    },
+];
+
 pub fn module() -> Module {
     Module {
         start: Some(start),
@@ -234,6 +258,8 @@ pub fn module() -> Module {
             on_click: tray_click,
             tooltip: None,
         }),
+        #[cfg(desktop)]
+        windows: WINDOWS,
         ..veydan_shell::module! {
             id: "notes",
             setup: setup,
@@ -383,10 +409,14 @@ pub struct NotesState {
     /// Notes dir watcher: none while the module is switched off; dropped
     /// before a backup restore releases its handle.
     pub watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
-    /// Serializes note saves. `update_note` checks `base_hash` against the file,
-    /// then awaits several times before writing; without this lock two concurrent
-    /// saves can both pass the check and the later one silently overwrites the
-    /// earlier. Matters for multiple windows, the capture bridge and sync apply.
+    /// Serializes the writes of note files. `update_note` checks `base_hash`
+    /// against the file, then awaits several times before writing; without
+    /// this lock two concurrent saves can both pass the check and the later one
+    /// silently overwrites the earlier. Every writer holds it from its read of
+    /// the file to its write: `update_note` (and `propagate_rename` under it),
+    /// the tags, the bindings, a restore from history, and sync apply, which
+    /// reads the file again under it and leaves the network outside. A tokio
+    /// mutex, not reentrant: a writer called with it held must not take it.
     pub save: Arc<tokio::sync::Mutex<()>>,
 }
 

@@ -5,7 +5,7 @@ module lock = 3
 module notes = 1
 module pass = 1
 module ssh = 1
-module sync = 1
+module sync = 2
 index idx_nh_note_created: CREATE INDEX idx_nh_note_created ON note_history(note_id, created_at DESC)
 index idx_nh_note_revision: CREATE INDEX idx_nh_note_revision ON note_history(note_id, revision DESC)
 index idx_note_links_to: CREATE INDEX idx_note_links_to ON note_links(to_id)
@@ -39,6 +39,7 @@ index sqlite_autoindex_ssh_connections_1:
 index sqlite_autoindex_ssh_keys_1: 
 index sqlite_autoindex_sync_attachment_state_1: 
 index sqlite_autoindex_sync_gc_candidates_1: 
+index sqlite_autoindex_sync_left_row_state_1: 
 index sqlite_autoindex_sync_note_state_1: 
 index sqlite_autoindex_sync_peers_1: 
 index sqlite_autoindex_sync_profile_files_state_1: 
@@ -325,6 +326,13 @@ table sync_gc_candidates
   column blob TEXT notnull=1 default=- pk=1
   column first_seen INTEGER notnull=1 default=- pk=0
   index sqlite_autoindex_sync_gc_candidates_1 (blob) unique=1 origin=pk
+table sync_left_row_state
+  column vault_id TEXT notnull=1 default=- pk=0
+  column entity_type TEXT notnull=1 default=- pk=1
+  column entity_id TEXT notnull=1 default=- pk=2
+  column synced_hash TEXT notnull=1 default='' pk=0
+  column deleted INTEGER notnull=1 default=0 pk=0
+  index sqlite_autoindex_sync_left_row_state_1 (entity_type, entity_id) unique=1 origin=pk
 table sync_note_state
   column note_id TEXT notnull=1 default=- pk=1
   column head_blob TEXT notnull=1 default='' pk=0

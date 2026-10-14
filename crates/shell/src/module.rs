@@ -33,6 +33,10 @@ pub struct Module {
     /// Names exactly as the frontend invokes them.
     pub commands: &'static [&'static str],
     pub handler: Handler,
+    /// What the windows besides `main` may invoke (platform-spec 5.2): such
+    /// a window reaches only the commands some grant of the product names
+    /// for its label or for [`ANY_WINDOW`]; `main` reaches every one.
+    pub windows: &'static [WindowGrant],
     /// Runs inside the app's setup once the data file is open and `Core`,
     /// `Shell` and `veydan_lock::Lock` are managed, in the order the product
     /// lists its modules. The
@@ -68,6 +72,32 @@ pub struct Module {
     /// What a backup of the product takes of the module's data. Read by the
     /// driver of a product that has one.
     pub backup: Option<BackupPart>,
+}
+
+/// The label of the app's own window: it reaches every command of the
+/// product. Any other window reaches what the grants name.
+pub const MAIN_WINDOW: &str = "main";
+
+/// The label of a grant that holds for every window besides `main`.
+pub const ANY_WINDOW: &str = "*";
+
+/// Commands a window other than `main` may invoke. A window no grant names
+/// reaches none: the router refuses the call (`window_denied`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowGrant {
+    /// The label of the window, or [`ANY_WINDOW`].
+    pub label: &'static str,
+    pub commands: Grant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Grant {
+    /// Every command of the module that holds the grant.
+    All,
+    /// These commands, of any module of the product; a name the product
+    /// does not declare is refused when the router is built. `#[cfg(..)]` on
+    /// an entry keeps it to the platforms where the name is declared.
+    Only(&'static [&'static str]),
 }
 
 /// Who switches a module on and off (platform-spec 12). A module that is
@@ -238,6 +268,7 @@ macro_rules! module {
                 ::tauri::generate_handler![ $( $(#[$attr])* $($seg)::+ ),* ]
             ),
             setup: $setup,
+            windows: &[],
             schema: ::std::option::Option::None,
             directory: ::std::option::Option::None,
             tray: ::std::option::Option::None,
@@ -312,7 +343,7 @@ mod tests {
         assert_eq!(module.commands, &["one", "two", "mobile_only"]);
         assert!(module.schema.is_none() && module.tray.is_none() && module.stop.is_none());
         assert!(module.key_user.is_none() && module.demo.is_none() && module.backup.is_none());
-        assert!(module.start.is_none());
+        assert!(module.start.is_none() && module.windows.is_empty());
         assert_eq!(module.switch, Switch::Own);
     }
 

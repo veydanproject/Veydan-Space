@@ -25,10 +25,20 @@
 //!   made again, see [`following_route`].
 //!
 //! The system's own proxy settings are not looked at.
+//!
+//! An address someone else wrote (a link, a picture, a NIP-05 domain, the
+//! server of an attachment) is asked only on the open internet: see
+//! [`target`] and [`public_builder`].
+
+pub mod target;
+
+pub use target::{is_public, Target};
 
 use messenger_core::{MessengerError, Result};
 use messenger_vlink::{Net, Route};
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use std::future::Future;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -59,6 +69,27 @@ pub fn builder(connect: Duration, total: Duration) -> Result<reqwest::ClientBuil
 
 /// The same, following the rule `net` instead of the one of the process.
 pub fn builder_on(net: Net, connect: Duration, total: Duration) -> Result<reqwest::ClientBuilder> {
+    made(net, connect, total, None)
+}
+
+/// A builder for an address someone else wrote: every redirect is checked
+/// as the first address was ([`Target::parse`], at most `max_redirects`
+/// of them), and a name is asked only when it resolves to the open
+/// internet ([`PublicOnly`]). The first address is the caller's to check
+/// with [`Target::parse`]: an address written as a number never goes to
+/// a resolver.
+pub fn public_builder(connect: Duration, total: Duration, max_redirects: usize) -> Result<reqwest::ClientBuilder> {
+    public_builder_on(Net::global().clone(), connect, total, max_redirects)
+}
+
+/// The same, following the rule `net`.
+pub fn public_builder_on(net: Net, connect: Duration, total: Duration, max_redirects: usize) -> Result<reqwest::ClientBuilder> {
+    Ok(made(net, connect, total, Some(max_redirects))?.dns_resolver(Arc::new(PublicOnly)))
+}
+
+/// `public`: the redirects of an address someone else wrote, at most so
+/// many.
+fn made(net: Net, connect: Duration, total: Duration, public: Option<usize>) -> Result<reqwest::ClientBuilder> {
     // `socks5h`: the name goes to the door as it is, so no resolver of this
     // machine is asked about a server that is reached through a bridge.
     let rule = net.clone();
@@ -66,8 +97,12 @@ pub fn builder_on(net: Net, connect: Duration, total: Duration) -> Result<reqwes
     // A server of the project that redirects somewhere else would take the
     // request off the bridge.
     let redirects = reqwest::redirect::Policy::custom(move |attempt| {
-        if attempt.previous().len() > MAX_REDIRECTS {
-            return attempt.error("too many redirects");
+        match public {
+            Some(max) if attempt.previous().len() >= max => return attempt.error("preview_too_many_redirects"),
+            Some(_) if Target::parse(attempt.url().as_str()).is_err() => return attempt.error("preview_private_host"),
+            Some(_) => {}
+            None if attempt.previous().len() > MAX_REDIRECTS => return attempt.error("too many redirects"),
+            None => {}
         }
         let bridged = |url: &reqwest::Url| url.host_str().is_some_and(|h| net.route(h) == Route::Bridge);
         if attempt.previous().iter().any(bridged) && !bridged(attempt.url()) {
@@ -82,6 +117,24 @@ pub fn builder_on(net: Net, connect: Duration, total: Duration) -> Result<reqwes
         .pool_max_idle_per_host(0)
         .connect_timeout(connect)
         .timeout(total))
+}
+
+/// Resolves a name and drops every address that is not on the open
+/// internet. A name with none left is refused (`preview_private_host`).
+pub struct PublicOnly;
+
+impl Resolve for PublicOnly {
+    fn resolve(&self, name: Name) -> Resolving {
+        Box::pin(async move {
+            let found = tokio::net::lookup_host((name.as_str(), 0)).await?;
+            let open: Vec<SocketAddr> = found.filter(|a| is_public(a.ip())).collect();
+            if open.is_empty() {
+                return Err("preview_private_host".into());
+            }
+            let addrs: Addrs = Box::new(open.into_iter());
+            Ok(addrs)
+        })
+    }
 }
 
 /// The way of the request's host changed while it was under way, more
@@ -153,5 +206,40 @@ mod tests {
     fn client_builds_without_a_process_default_provider() {
         let c = client(Duration::from_secs(1), Duration::from_secs(2));
         assert!(c.is_ok(), "{:?}", c.err());
+        let p = public_builder(Duration::from_secs(1), Duration::from_secs(2), 3).and_then(|b| b.build().map_err(|e| MessengerError::Transport(e.to_string())));
+        assert!(p.is_ok(), "{:?}", p.err());
+    }
+
+    #[tokio::test]
+    async fn a_name_that_leads_inside_is_not_resolved() {
+        let name: Name = "localhost".parse().unwrap();
+        let err = PublicOnly.resolve(name).await.err().expect("localhost is this machine");
+        assert!(err.to_string().contains("preview_private_host"), "{err}");
+    }
+
+    /// A public address that redirects inside is not followed there.
+    #[tokio::test]
+    async fn a_redirect_inside_is_not_followed() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let inside = MockServer::start().await;
+        Mock::given(method("GET")).respond_with(ResponseTemplate::new(200)).mount(&inside).await;
+        let outside = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", format!("{}/secret", inside.uri())))
+            .mount(&outside)
+            .await;
+        // The first address is the caller's to check; the client alone
+        // is asked here, as if it had passed.
+        let c = public_builder_on(Net::new(), Duration::from_secs(2), Duration::from_secs(4), 3).unwrap().build().unwrap();
+        let err = c.get(outside.uri()).send().await.unwrap_err();
+        let mut text = String::new();
+        let mut source: Option<&dyn std::error::Error> = Some(&err);
+        while let Some(s) = source {
+            text += &s.to_string();
+            source = s.source();
+        }
+        assert!(text.contains("preview_private_host"), "{text}");
+        assert!(inside.received_requests().await.unwrap().is_empty(), "nothing reached the inside");
     }
 }

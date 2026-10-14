@@ -11,7 +11,7 @@ use messenger_core::traits::RelayState;
 use messenger_core::{MessengerError, RelayUrl, Result, Transport};
 use messenger_store::{relays as repo, settings, Store};
 use messenger_transport::manifest::{diff_relays, StoredRelay, REGION_DEFAULT};
-use messenger_transport::{Manifest, RelayChanges, RelayConfig, RelayPool, EMBEDDED_MANIFEST_JSON};
+use messenger_transport::{Manifest, RelayChanges, RelayConfig, RelayPool, EMBEDDED_MANIFEST_JSON, PROJECT_MANIFEST_PUBKEY};
 use nostr::key::Keys;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -22,7 +22,12 @@ const KEY_ISSUED_AT: &str = "manifest.issued_at";
 const KEY_REGION: &str = "manifest.region";
 pub(crate) const KEY_SILENT: &str = "relays.silent_mode";
 pub(crate) const KEY_MODE: &str = "servers.mode";
+/// The document of the manifest in use, written for the record (and for an
+/// older build after a downgrade). Never read back: see `KEY_SIGNED`.
 const KEY_JSON: &str = "manifest.json";
+/// The event the project signed, of a manifest that came from a place.
+/// Its signature is checked at every read.
+const KEY_SIGNED: &str = "manifest.signed";
 const KEY_ORIGIN: &str = "manifest.origin";
 const KEY_CHECKED_AT: &str = "manifest.checked_at";
 
@@ -102,6 +107,9 @@ pub struct ManifestInfo {
 pub struct RelayService {
     store: Store,
     pool: RwLock<Arc<RelayPool>>,
+    /// The key (hex) a stored manifest has to be signed by: the project's,
+    /// or the one `MessengerRuntime::set_manifest_remote` was given.
+    pinned: std::sync::RwLock<String>,
 }
 
 impl RelayService {
@@ -112,11 +120,12 @@ impl RelayService {
         let svc = Self {
             store,
             pool: RwLock::new(Arc::new(RelayPool::new(signer))),
+            pinned: std::sync::RwLock::new(PROJECT_MANIFEST_PUBKEY.to_string()),
         };
         if svc.servers_mode().await? == Some(ServersMode::Veydan) {
-            let (current, origin) = svc.current_manifest().await?;
+            let (current, _, _) = svc.in_use().await?;
             if current.passes_anti_rollback(svc.manifest_serial().await?) {
-                svc.adopt_manifest(&current, &origin, false).await?;
+                svc.adopt_current(false).await?;
             }
         }
         if svc.is_silent().await? {
@@ -162,11 +171,12 @@ impl RelayService {
 
     pub async fn manifest_info(&self) -> Result<ManifestInfo> {
         let (current, origin) = self.current_manifest().await?;
+        // Of the manifest in use: the serial applied may stand above it
+        // while a stored copy is not taken (`behind_applied`).
+        let applied = self.manifest_serial().await?;
         Ok(ManifestInfo {
-            serial: self.manifest_serial().await?,
-            issued_at: settings::get(&self.store, KEY_ISSUED_AT)
-                .await?
-                .and_then(|s| s.parse().ok()),
+            serial: applied.map(|_| current.serial),
+            issued_at: applied.map(|_| current.issued_at),
             region: self.region().await?,
             regions: current.regions,
             silent_mode: self.is_silent().await?,
@@ -189,36 +199,90 @@ impl RelayService {
         settings::set(&self.store, KEY_MODE, mode.as_str()).await
     }
 
+    /// The key a stored manifest has to be signed by from now on.
+    pub fn set_pinned(&self, pinned: &str) {
+        *self.pinned.write().expect("pinned key") = pinned.to_string();
+    }
+
     /// The best manifest this install knows and where it came from: the
     /// stored one, unless the app brought a newer one.
     pub async fn current_manifest(&self) -> Result<(Manifest, String)> {
+        let (m, origin, _) = self.in_use().await?;
+        Ok((m, origin))
+    }
+
+    /// The manifest in use is older than the one applied last: the stored
+    /// one was not taken (`in_use`), and the rows stand as it left them.
+    pub async fn behind_applied(&self) -> Result<bool> {
+        let applied = self.manifest_serial().await?;
+        let in_use = self.in_use().await?.0.serial;
+        Ok(applied.is_some_and(|s| s > in_use))
+    }
+
+    /// The manifest in use, its origin and, for one that came from a place,
+    /// the event the project signed. The settings are a file anyone with the
+    /// device may edit: a stored manifest counts only with a good signature
+    /// of the pinned key, checked here at every read, and otherwise the one
+    /// built into the app stands. The bare document of `KEY_JSON` (all an
+    /// older build kept) is not taken: the next check fetches the signed one.
+    async fn in_use(&self) -> Result<(Manifest, String, Option<String>)> {
         let embedded = Manifest::parse_content(EMBEDDED_MANIFEST_JSON)?;
-        // Stored only after its signature was checked, so the bare form is fine.
-        let stored = settings::get(&self.store, KEY_JSON)
-            .await?
-            .and_then(|json| Manifest::parse_content(&json).ok());
-        match stored {
-            Some(m) if m.serial >= embedded.serial => {
+        let Some(signed) = settings::get(&self.store, KEY_SIGNED).await? else {
+            return Ok((embedded, ORIGIN_EMBEDDED.into(), None));
+        };
+        let pinned = self.pinned.read().expect("pinned key").clone();
+        match Manifest::parse_signed(&signed, Some(&pinned)) {
+            Ok(m) if m.serial >= embedded.serial => {
                 let origin = settings::get(&self.store, KEY_ORIGIN)
                     .await?
                     .unwrap_or_else(|| ORIGIN_EMBEDDED.into());
-                Ok((m, origin))
+                Ok((m, origin, Some(signed)))
             }
-            _ => Ok((embedded, ORIGIN_EMBEDDED.into())),
+            Ok(_) => Ok((embedded, ORIGIN_EMBEDDED.into(), None)),
+            Err(e) => {
+                eprintln!("messenger relays: the stored manifest is not taken ({e}): the built-in one is used");
+                Ok((embedded, ORIGIN_EMBEDDED.into(), None))
+            }
         }
     }
 
-    /// Apply `m` and remember it as the manifest in use.
-    pub async fn adopt_manifest(
-        &self,
-        m: &Manifest,
-        origin: &str,
-        force: bool,
-    ) -> Result<RelayChanges> {
+    /// Apply a manifest the project signed (`signed`, the event as it was
+    /// fetched from `origin`) and remember it as the one in use. Refused,
+    /// and nothing changes, unless the pinned key signed it.
+    pub async fn adopt_signed(&self, signed: &str, origin: &str, force: bool) -> Result<Manifest> {
+        let pinned = self.pinned.read().expect("pinned key").clone();
+        let m = Manifest::parse_signed(signed, Some(&pinned))?;
+        self.adopt(&m, origin, Some(signed), force).await?;
+        Ok(m)
+    }
+
+    /// Apply the manifest in use again (a region switch, the Veydan
+    /// servers chosen anew, an app that brought a newer built-in one).
+    pub async fn adopt_current(&self, force: bool) -> Result<RelayChanges> {
+        let (m, origin, signed) = self.in_use().await?;
+        self.adopt(&m, &origin, signed.as_deref(), force).await
+    }
+
+    /// Apply `m` and remember it as the manifest in use: with the event
+    /// the project signed, or none for the built-in one.
+    async fn adopt(&self, m: &Manifest, origin: &str, signed: Option<&str>, force: bool) -> Result<RelayChanges> {
         let changes = self.apply_manifest(m, force).await?;
         settings::set(&self.store, KEY_JSON, &serde_json::to_string(m)?).await?;
         settings::set(&self.store, KEY_ORIGIN, origin).await?;
+        match signed {
+            Some(s) => settings::set(&self.store, KEY_SIGNED, s).await?,
+            None => settings::delete(&self.store, KEY_SIGNED).await?,
+        }
         Ok(changes)
+    }
+
+    /// Tests: adopt `m` as if the project had signed it, by a key made for
+    /// the test and pinned from now on.
+    #[cfg(test)]
+    pub(crate) async fn adopt_for_test(&self, m: &Manifest, force: bool) -> Result<Manifest> {
+        let keys = Keys::generate();
+        self.set_pinned(&keys.public_key().to_hex());
+        self.adopt_signed(&m.sign(&keys)?, "test", force).await
     }
 
     pub async fn manifest_checked_at(&self) -> Result<Option<i64>> {
@@ -296,8 +360,17 @@ impl RelayService {
             )
             .await?;
         }
-        settings::set(&self.store, KEY_SERIAL, &m.serial.to_string()).await?;
-        settings::set(&self.store, KEY_ISSUED_AT, &m.issued_at.to_string()).await?;
+        // The serial applied never goes back, not even when the built-in
+        // manifest is applied again with `force` (a region switch, the
+        // Veydan servers chosen anew) over the rows of a newer one whose
+        // stored copy was not taken: the next check is then due at once
+        // (`behind_applied`), and a signed copy older than the rows on
+        // this device is not taken for newer (`manifest_check`).
+        let applied = self.manifest_serial().await?;
+        if applied.is_none_or(|a| m.serial >= a) {
+            settings::set(&self.store, KEY_SERIAL, &m.serial.to_string()).await?;
+            settings::set(&self.store, KEY_ISSUED_AT, &m.issued_at.to_string()).await?;
+        }
         self.reload().await?;
         Ok(changes)
     }
@@ -316,8 +389,7 @@ impl RelayService {
         }
         settings::set(&self.store, KEY_REGION, region).await?;
         if self.servers_mode().await? == Some(ServersMode::Veydan) {
-            let (m, origin) = self.current_manifest().await?;
-            self.adopt_manifest(&m, &origin, true).await?;
+            self.adopt_current(true).await?;
         }
         Ok(())
     }

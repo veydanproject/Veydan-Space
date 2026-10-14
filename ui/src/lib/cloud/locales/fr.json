@@ -61,6 +61,7 @@
     "cloud_state_grace": "Lecture seule",
     "cloud_state_suspended": "Suspendu",
     "cloud_until": "Payé jusqu’au {date}",
+    "cloud_next_plan": "L’offre {plan} commence le {date}",
     "cloud_grace_until": "Lecture seule jusqu’au {date} : saisissez une clé d’activation pour continuer à synchroniser.",
     "cloud_suspended_text": "Le compte est suspendu. Vous pouvez toujours le supprimer.",
     "cloud_kept_at": "Veydan Cloud est injoignable pour le moment. Données au {date}.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Cette clé a expiré.",
     "cloud_err_key_revoked": "Cette clé a été révoquée.",
     "cloud_err_rate_limited": "Trop de tentatives. Réessayez plus tard.",
+    "cloud_err_deletion_pending": "L’ancien compte est encore en cours de suppression. Réessayez dans quelques minutes.",
     "cloud_err_no_host": "Veydan Cloud est injoignable pour le moment.",
     "cloud_err_clock": "L’horloge de cet appareil est fausse : réglez la date et l’heure.",
     "cloud_err_suspended": "Le compte est suspendu.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Offres",
     "cloud_recover_expired_title": "La demande a expiré",
     "cloud_recovery_reissue_short": "Réémettre",
+    "cloud_recovery_elsewhere": "La Recovery Key a été émise sur un autre appareil : réémettez-la là-bas ou restaurez avec les mots.",
+    "cloud_recovery_elsewhere_anew": "Émettre à nouveau",
+    "cloud_recovery_elsewhere_hint": "La nouvelle clé est émise ici. Les anciens mots restent valables jusqu’à la suppression de leur copie.",
+    "cloud_trustees_missing": "Reconfigurer les personnes de confiance",
     "cloud_recovery_setup_short": "Configurer",
     "cloud_recovery_show_words": "Afficher les 12 mots",
     "cloud_restore_new_secret_hint": "Il verrouillera l’application sur cet appareil.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Accès restauré depuis un nouvel appareil",
     "cloud_card_line_plan_expiring": "Votre offre arrive bientôt à expiration",
     "cloud_card_line_quota": "Veydan Cloud est presque plein",
-    "cloud_card_line_dormant": "Le compte sera supprimé pour inactivité"
+    "cloud_card_line_dormant": "Le compte sera supprimé pour inactivité",
+    "cloud_card_downgraded": "Votre offre a pris fin. Les fichiers au-delà de la limite gratuite sont conservés, mais les nouveaux ne sont pas enregistrés tant que vous ne libérez pas d’espace ou ne prolongez pas l’offre.",
+    "cloud_card_downgraded_limit": "Offre gratuite : {limit} pour les fichiers",
+    "cloud_card_line_downgraded": "Votre offre a pris fin"
   },
   "mobile": {}
 }

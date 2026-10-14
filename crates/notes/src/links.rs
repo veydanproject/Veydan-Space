@@ -158,6 +158,9 @@ pub(crate) fn rewrite_title_links(body: &str, old_title: &str, new_title: &str) 
 }
 
 /// After a title change: update files of all notes linking to `note_id`.
+/// Called by `update_note` with `NotesState::save` held, which covers these
+/// writes too; it must not take the lock itself: the tokio mutex is not
+/// reentrant, and a second lock here would wait for ever.
 pub(crate) async fn propagate_rename(
     note_id: &str,
     old_title: &str,

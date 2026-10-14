@@ -19,7 +19,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Deserialize;
 
 use crate::manager::ExitSet;
-use crate::settings::{BridgeMode, TorSettings, UpstreamKind};
+use crate::settings::{allowed_directive, BridgeMode, TorSettings, UpstreamKind};
 
 /// The file of the bundle that lists the transports and the built-in bridges.
 pub const PT_CONFIG: &str = "pt_config.json";
@@ -223,7 +223,13 @@ pub fn torrc(
     }
 
     for line in &settings.extra_torrc {
-        put(one_line(line.trim())?);
+        let line = one_line(line.trim())?;
+        // The stored settings are not validated when they are read.
+        if !allowed_directive(&line) {
+            eprintln!("tor: a line of the extra torrc is not written: its directive is not allowed");
+            continue;
+        }
+        put(line);
     }
 
     let mut text = out.join("\n");
@@ -509,6 +515,23 @@ ClientTransportPlugin snowflake exec bundle/tor/pluggable_transports/lyrebird\n"
         s.upstream.as_mut().unwrap().password.clear();
         let text = torrc(&s, &ExitSet::any(), None, &paths(), 4242, None).unwrap();
         assert_eq!(body(&text), format!("{HEAD}HTTPSProxy [::1]:3128\n"));
+    }
+
+    /// A stored line that runs a program or reads a file is not written.
+    #[test]
+    fn extra_lines_of_other_directives_are_not_written() {
+        let mut s = TorSettings::defaults();
+        s.extra_torrc = vec![
+            "ClientTransportPlugin obfs4 exec /bin/sh".into(),
+            "clienttransportplugin x exec /bin/sh".into(),
+            "+ClientTransportPlugin x exec /bin/sh".into(),
+            "%include /tmp/x".into(),
+            "ExitNodes {de}".into(),
+        ];
+        let text = torrc(&s, &ExitSet::any(), None, &paths(), 4242, None).unwrap();
+        assert!(!text.to_lowercase().contains("transportplugin"));
+        assert!(!text.contains("%include"));
+        assert!(text.contains("ExitNodes {de}\n"));
     }
 
     #[test]

@@ -16,7 +16,7 @@ messenger-vlink.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
 webpki-roots.workspace = true
-tokio = { workspace = true, features = ["sync", "macros"] }
+tokio = { workspace = true, features = ["sync", "macros", "net"] }
 
 [dev-dependencies]
 messenger-vlink = { workspace = true, features = ["testing"] }

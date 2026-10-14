@@ -99,7 +99,7 @@
     "tor_external_hint": "La instancia sin país escucha en este puerto de 127.0.0.1. Cualquier programa de esta computadora puede usarlo.",
     "tor_external_port": "Puerto",
     "tor_section_advanced": "Avanzado",
-    "tor_torrc_warning": "Estas líneas se pasan a tor tal cual. Una línea incorrecta puede impedir que Tor se inicie o debilitar tu privacidad.",
+    "tor_torrc_warning": "Solo se aceptan líneas sobre la elección de nodos y circuitos (por ejemplo ExitNodes, StrictNodes, NumEntryGuards); las demás se rechazan. Una línea incorrecta puede impedir que Tor se inicie o debilitar tu privacidad.",
     "tor_torrc_label": "Líneas adicionales de torrc",
     "tor_err_countries": "No es un código de país de dos letras: {list}.",
     "tor_err_ports": "No es un puerto (1–65535): {list}.",

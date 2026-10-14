@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 use veydan_core::{settings, AppError, BoxFuture, CmdResult};
 use veydan_sync::storage_cloud::VaultTransport;
 use veydan_sync::{
-    CloudStorage, LargeFileConfig, LocalDir, RequestSigner, S3Config, S3Storage, Storage,
+    CloudStorage, LargeFileConfig, LocalDir, PeerHead, RequestSigner, S3Config, S3Storage, Storage,
     WebDavConfig, WebDavStorage,
 };
 use zeroize::Zeroizing;
@@ -349,19 +349,75 @@ fn binding_changed() {
     }
 }
 
-/// Start a fresh device log: new id, empty own chain. Peer heads, entity
-/// states and the HLC stay so remote ops are still applied idempotently.
-pub async fn rotate_device_id(db: &Pool<Sqlite>) -> CmdResult<()> {
-    for key in ["sync_device_id", "sync_own_seq", "sync_own_head"] {
-        settings::delete(db, key).await?;
+/// The ids this install wrote its log under before a rotation, oldest first.
+/// Their logs are read as any other device's; a handler tells its own ops
+/// from before the rotation by them (a lease it moved to the new id).
+pub const FORMER_DEVICES_KEY: &str = "sync_former_devices";
+
+pub async fn former_device_ids(db: &Pool<Sqlite>) -> Vec<String> {
+    settings::get_json(db, FORMER_DEVICES_KEY)
+        .await
+        .unwrap_or_default()
+}
+
+/// Start a fresh device log: new id, empty own chain, no push to replay.
+/// Peer heads, entity states and the HLC stay so remote ops are still applied
+/// idempotently. What the handlers hold under the old id moves to the new one
+/// in the same transaction (`Handler::device_rotated`). `old_head` is where
+/// the storage confirms the old log as this device knows it: its peer head
+/// is set there, so the old log is read as another device's from that point
+/// on, not from its start again (audit A2-20); none reads it from the start.
+pub async fn rotate_device_id(
+    db: &Pool<Sqlite>,
+    registry: &Registry,
+    old_head: Option<PeerHead>,
+) -> CmdResult<()> {
+    let old = settings::get(db, "sync_device_id")
+        .await
+        .filter(|s| !s.is_empty());
+    let new = veydan_sync::random_hex(8);
+    let mut tx = db.begin().await.map_err(AppError::db)?;
+    settings::set(&mut *tx, "sync_device_id", &new).await?;
+    for key in [
+        "sync_own_seq",
+        "sync_own_head",
+        crate::state::OWN_PENDING_KEY,
+    ] {
+        settings::delete(&mut *tx, key).await?;
     }
-    Ok(())
+    if let Some(old) = old {
+        let mut former: Vec<String> = settings::get_json(&mut *tx, FORMER_DEVICES_KEY)
+            .await
+            .unwrap_or_default();
+        if !former.contains(&old) {
+            former.push(old.clone());
+        }
+        settings::set_json(&mut *tx, FORMER_DEVICES_KEY, &former).await?;
+        if let Some(head) = old_head.filter(|h| h.seq > 0) {
+            sqlx::query(
+                "INSERT INTO sync_peers (device_id, seq, head_hash) VALUES (?, ?, ?)
+                 ON CONFLICT(device_id) DO UPDATE SET seq = excluded.seq, head_hash = excluded.head_hash",
+            )
+            .bind(&old)
+            .bind(head.seq as i64)
+            .bind(&head.hash)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::db)?;
+        }
+        registry.device_rotated(&mut tx, &old, &new).await?;
+    }
+    tx.commit().await.map_err(AppError::db)
 }
 
 /// Detect a database that was restored or copied from another install and
 /// rotate the device id so two installs never write to the same log.
 /// `data_dir/install.id` is outside the backup set; `sync_install_id` travels with the DB.
-pub async fn check_install_marker(db: &Pool<Sqlite>, data_dir: &std::path::Path) -> CmdResult<()> {
+pub async fn check_install_marker(
+    db: &Pool<Sqlite>,
+    data_dir: &std::path::Path,
+    registry: &Registry,
+) -> CmdResult<()> {
     let marker_path = data_dir.join("install.id");
     let marker = match std::fs::read_to_string(&marker_path) {
         Ok(s) if !s.trim().is_empty() => s.trim().to_string(),
@@ -374,7 +430,7 @@ pub async fn check_install_marker(db: &Pool<Sqlite>, data_dir: &std::path::Path)
     match settings::get(db, "sync_install_id").await {
         Some(stored) if stored == marker => Ok(()),
         Some(_) => {
-            rotate_device_id(db).await?;
+            rotate_device_id(db, registry, None).await?;
             settings::set(db, "sync_install_id", &marker).await
         }
         None => settings::set(db, "sync_install_id", &marker).await,
@@ -396,6 +452,9 @@ pub async fn clear_binding(db: &Pool<Sqlite>, registry: &Registry) -> CmdResult<
         "sync_device_id",
         "sync_own_seq",
         "sync_own_head",
+        crate::state::OWN_PENDING_KEY,
+        FORMER_DEVICES_KEY,
+        crate::gc::MISSING_KEY,
         // `sync_hlc` is kept: a clock reset would break LWW against existing ops.
         "sync_last_run",
         "sync_last_started",
@@ -409,8 +468,11 @@ pub async fn clear_binding(db: &Pool<Sqlite>, registry: &Registry) -> CmdResult<
         "sync_gc_lf_total",
         "sync_gc_lf_removed",
         JOIN_PENDING,
+        crate::join::FRESH_BINDING,
         crate::state::REREAD_KEY,
         crate::state::REREAD_PEERS_KEY,
+        crate::state::REREAD_STUCK_KEY,
+        crate::rows::TWINS_KEY,
     ];
     for key in keys.into_iter().chain(registry.hold_keys()) {
         settings::delete(db, key).await?;

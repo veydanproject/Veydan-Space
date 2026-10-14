@@ -6,9 +6,12 @@
 //! Deliberately mirrors the shape of `commands::sftp` (same `FileEntry`
 //! model) so the frontend treats a local panel and a remote panel uniformly.
 
+use crate::commands::fs_guard;
 use crate::error::{AppError, CmdResult};
 use crate::models::{format_octal, format_permissions, FileEntry};
 use std::path::Path;
+use tauri::State;
+use veydan_core::Core;
 
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
@@ -68,19 +71,25 @@ pub async fn fs_home() -> CmdResult<String> {
 /// Stat a single local path; `None` if it doesn't exist. Used for
 /// conflict detection before transfers.
 #[tauri::command]
-pub async fn fs_stat(path: String) -> CmdResult<Option<FileEntry>> {
+pub async fn fs_stat(path: String, core: State<'_, Core>) -> CmdResult<Option<FileEntry>> {
+    fs_guard::check_readable(Path::new(&path), &core.app_data_dir)?;
     tokio::task::spawn_blocking(move || Ok(entry_for(Path::new(&path))))
         .await
         .map_err(AppError::other)?
 }
 
 #[tauri::command]
-pub async fn fs_list(path: String) -> CmdResult<Vec<FileEntry>> {
+pub async fn fs_list(path: String, core: State<'_, Core>) -> CmdResult<Vec<FileEntry>> {
+    fs_guard::check_readable(Path::new(&path), &core.app_data_dir)?;
     tokio::task::spawn_blocking(move || {
         let dir = Path::new(&path);
         let read = std::fs::read_dir(dir).map_err(AppError::io)?;
         let mut entries: Vec<FileEntry> = read
             .filter_map(|r| r.ok())
+            // the temps of unfinished transfers stay out of the listing
+            .filter(|e| {
+                !crate::commands::transfer::is_transfer_temp(&e.file_name().to_string_lossy())
+            })
             .filter_map(|e| entry_for(&e.path()))
             .collect();
         entries.sort_by_key(|e| e.name.to_lowercase());
@@ -91,14 +100,18 @@ pub async fn fs_list(path: String) -> CmdResult<Vec<FileEntry>> {
 }
 
 // ── Mutating operations ────────────────────────────────────────────────────────
+// Each one passes `fs_guard` first: never the root, the home folder or the
+// data of the app, whichever window sent the command.
 
 #[tauri::command]
-pub async fn fs_mkdir(path: String) -> CmdResult<()> {
+pub async fn fs_mkdir(path: String, core: State<'_, Core>) -> CmdResult<()> {
+    fs_guard::check_mutable(Path::new(&path), &core.app_data_dir)?;
     tokio::fs::create_dir(&path).await.map_err(AppError::io)
 }
 
 #[tauri::command]
-pub async fn fs_create_file(path: String) -> CmdResult<()> {
+pub async fn fs_create_file(path: String, core: State<'_, Core>) -> CmdResult<()> {
+    fs_guard::check_mutable(Path::new(&path), &core.app_data_dir)?;
     // create_new: fail if the file already exists rather than truncating it
     tokio::fs::OpenOptions::new()
         .write(true)
@@ -110,7 +123,9 @@ pub async fn fs_create_file(path: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub async fn fs_rename(from: String, to: String) -> CmdResult<()> {
+pub async fn fs_rename(from: String, to: String, core: State<'_, Core>) -> CmdResult<()> {
+    fs_guard::check_mutable(Path::new(&from), &core.app_data_dir)?;
+    fs_guard::check_mutable(Path::new(&to), &core.app_data_dir)?;
     if tokio::fs::symlink_metadata(&to).await.is_ok() {
         return Err(AppError::other(format!("Target already exists: {to}")));
     }
@@ -118,7 +133,8 @@ pub async fn fs_rename(from: String, to: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub async fn fs_delete(path: String) -> CmdResult<()> {
+pub async fn fs_delete(path: String, core: State<'_, Core>) -> CmdResult<()> {
+    fs_guard::check_mutable(Path::new(&path), &core.app_data_dir)?;
     tokio::task::spawn_blocking(move || {
         let p = Path::new(&path);
         // symlink_metadata: never follow — remove the link itself
@@ -134,7 +150,9 @@ pub async fn fs_delete(path: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub async fn fs_chmod(path: String, mode: u32) -> CmdResult<()> {
+pub async fn fs_chmod(path: String, mode: u32, core: State<'_, Core>) -> CmdResult<()> {
+    // chmod follows a link: the target is what is judged.
+    fs_guard::check_mutable_following(Path::new(&path), &core.app_data_dir)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

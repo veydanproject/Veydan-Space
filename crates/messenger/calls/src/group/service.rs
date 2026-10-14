@@ -140,7 +140,7 @@ use crate::group::view::{
     UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 use crate::node_client::{ice_servers_of, Joined, MediaLimits, NodeAccess, NodeClient, NodeError, RoomApi, RoomCreated, CAP_CASCADE, CAP_SFU};
-use crate::servers::{CallNode, NodeClass, NodeRef, ServerSets};
+use crate::servers::{CallNode, NodeClass, NodeRef, ServerSets, KEY_RELAY_POLICY};
 use crate::service::{VideoQuality, CONNECT_TIMEOUT, KEY_VIDEO_QUALITY, VIDEO_FPS};
 use crate::signal::{new_call_id, reason};
 use messenger_core::traits::UiEvent;
@@ -197,6 +197,19 @@ pub const REJOIN_CONNECT: Duration = Duration::from_secs(10);
 /// (the home still reaps the seats of the dead way), so many times.
 pub const REJOIN_RETRY: Duration = Duration::from_secs(3);
 const REJOIN_FULL_TRIES: u32 = 3;
+/// A note to the group refused because someone who left still knows the
+/// group key (`group_key_stale`) is sealed again this often, so many
+/// times, while a manager brings a new key; the turn of the keys of my
+/// room waits as long as it takes, looked at this often.
+pub const STALE_KEY_RETRY: Duration = Duration::from_secs(2);
+const STALE_KEY_TRIES: u32 = 30;
+/// The longest a word to a node (a join, a leave, a new token) may take
+/// here, beyond the bounds of the node client: the state of the calls is
+/// held meanwhile, and a node that black-holes its packets must not hold
+/// it for ever. Past it the node is unreachable on that path. A join
+/// through my own node has [`crate::node_client::CASCADE_JOIN_TIMEOUT`]
+/// on top.
+pub const NODE_WORD: Duration = Duration::from_secs(6);
 /// Joins after a loss that did not connect before the home is judged
 /// gone (or one `room_not_found`).
 const REJOIN_TRIES: u32 = 2;
@@ -253,6 +266,10 @@ pub struct Timing {
     pub move_backup: Duration,
     /// [`MOVE_WAIT`].
     pub move_wait: Duration,
+    /// [`STALE_KEY_RETRY`].
+    pub key_retry: Duration,
+    /// [`NODE_WORD`].
+    pub node_word: Duration,
 }
 
 impl Default for Timing {
@@ -268,6 +285,8 @@ impl Default for Timing {
             rejoin_retry: REJOIN_RETRY,
             move_backup: MOVE_BACKUP,
             move_wait: MOVE_WAIT,
+            key_retry: STALE_KEY_RETRY,
+            node_word: NODE_WORD,
         }
     }
 }
@@ -281,6 +300,8 @@ enum Timer {
     Verify { seat: u32 },
     /// Move my sending to the epoch.
     Switch { epoch: u32 },
+    /// The turn of the keys owed while the group key was stale: try again.
+    Rekey,
     /// Say my word again when somebody is not confirmed yet; `opening`
     /// counts the openings of my channel: the chain of an earlier
     /// opening ends when the channel opens anew.
@@ -620,6 +641,10 @@ struct Room {
     /// The screen or window my video shows when it is the screen (`None`:
     /// the first screen): given again to a new session of the room.
     screen_id: Option<String>,
+    /// A turn of the keys is owed and waits for a fresh group key: its note
+    /// could not go out. `true`: with a new token of the room (a member
+    /// of the group is gone and the room is mine).
+    rekey: Option<bool>,
 }
 
 impl Room {
@@ -657,6 +682,7 @@ impl Room {
             moving: false,
             screen: false,
             screen_id: None,
+            rekey: None,
         }
     }
 
@@ -819,6 +845,9 @@ struct Inner {
     timing: RwLock<Timing>,
     state: Mutex<State>,
     outlet: mpsc::UnboundedSender<Effect>,
+    /// Notes to a group that wait for its new key, in order: while a
+    /// group has an entry here, a note to it goes behind the others.
+    held: Arc<std::sync::Mutex<HashMap<String, VecDeque<GroupSignal>>>>,
 }
 
 #[derive(Clone)]
@@ -855,6 +884,7 @@ impl GroupCallService {
             timing: RwLock::new(Timing::default()),
             state: Mutex::new(State::default()),
             outlet,
+            held: Arc::default(),
         };
         (Self { inner: Arc::new(inner) }, rx)
     }
@@ -949,7 +979,7 @@ impl GroupCallService {
         // The node and the room are asked without the lock.
         let outcome: Result<(NodeAccess, RoomCreated)> = async {
             let access = inner.sfu_node(group_id, now, &bad).await?;
-            let created = inner.rooms.create(&access.node, MediaLimits::default()).await?;
+            let created = inner.to_node(inner.timing().node_word, inner.rooms.create(&access.node, MediaLimits::default())).await?;
             Ok((access, created))
         }
         .await;
@@ -1348,6 +1378,30 @@ fn state_event(view: &GroupCallView) -> Effect {
     Effect::Emit(UiEvent { name: UI_EVENT_GROUP_CALL_STATE.into(), payload: serde_json::json!({ "call": view }) })
 }
 
+/// `signal` behind the notes held for a group. A leave of a seat whose
+/// join is still held, and an end of a call whose start is, tell nobody
+/// anything: they and what they undo are dropped.
+fn hold_behind(queue: &mut VecDeque<GroupSignal>, signal: &GroupSignal) {
+    match signal {
+        GroupSignal::Leave { call_id, participant, .. } => {
+            if let Some(i) = queue.iter().position(|s| matches!(s, GroupSignal::Join { call_id: c, participant: p, .. } if c == call_id && p == participant)) {
+                queue.remove(i);
+                return;
+            }
+        }
+        GroupSignal::End { call_id, .. } if queue.iter().any(|s| matches!(s, GroupSignal::Start { call_id: c, .. } if c == call_id)) => {
+            queue.retain(|s| s.call_id() != call_id);
+            return;
+        }
+        _ => {}
+    }
+    queue.push_back(signal.clone());
+}
+
+fn is_stale_key(e: &MessengerError) -> bool {
+    matches!(e, MessengerError::Invalid(code) if code == "group_key_stale")
+}
+
 fn error_event(e: &MessengerError) -> Effect {
     Effect::Emit(UiEvent { name: "error".into(), payload: serde_json::json!({ "scope": "group_calls", "error": e }) })
 }
@@ -1621,7 +1675,7 @@ impl Inner {
             tracing::debug!(own = %own.node.node.id.short(), has_cascade, higher, nearer, "group call: joining the home directly");
             return Ok(Plan { home: home_access, via: None });
         }
-        match self.rooms.delegate(home, room_id, join_token).await {
+        match self.to_node(self.timing().node_word, self.rooms.delegate(home, room_id, join_token)).await {
             Ok(pass) => {
                 tracing::info!(own = %own.node.node.id.short(), home = %home.node.id.short(), "group call: joining through my own node");
                 Ok(Plan { home: home_access, via: Some((own, pass.proxy_token)) })
@@ -1639,7 +1693,17 @@ impl Inner {
     async fn open_session(&self, call_id: &str, media: Media, simulcast: bool, access: &NodeAccess) -> Result<(Box<dyn Session>, String)> {
         let servers: Vec<IceServer> = ice_servers_of(&access.credentials);
         let config = RoomConfig { call_id: call_id.to_string(), data_label: CTL_LABEL.into(), key_salt: call_id.as_bytes().to_vec(), simulcast };
-        let session = self.engine.create_room_session(servers, RelayPolicy::Auto, media, config).await?;
+        // «Always through a relay» holds in a group as in a call of two. The
+        // TURN is the one of this same node (the room's SFU), which sees my
+        // public address either way; what the setting keeps off it are the
+        // host candidates (LAN, a global IPv6) and the direct UDP. Without
+        // a TURN on the node there is nothing to relay through: an error,
+        // never a quiet fall back to `auto`.
+        let policy = settings::get(&self.store, KEY_RELAY_POLICY).await?.as_deref().and_then(RelayPolicy::parse).unwrap_or_default();
+        if policy == RelayPolicy::RelayOnly && !servers.iter().any(|s| s.credential.is_some()) {
+            return Err(MessengerError::Transport("relay_unavailable: the node of the call has no relay (TURN) and the setting wants one".into()));
+        }
+        let session = self.engine.create_room_session(servers, policy, media, config).await?;
         match session.create_offer().await {
             Ok(offer) => Ok((session, offer)),
             Err(e) => {
@@ -1657,7 +1721,7 @@ impl Inner {
         let home = plan.home.node.clone();
         if let Some((own, pass)) = &plan.via {
             let (session, offer) = self.open_session(call_id, media, simulcast, own).await?;
-            match self.rooms.join_via(&own.node, &home.node, room_id, pass, &offer).await {
+            match self.to_node(self.timing().node_word + crate::node_client::CASCADE_JOIN_TIMEOUT, self.rooms.join_via(&own.node, &home.node, room_id, pass, &offer)).await {
                 Ok(joined) => return Ok(Entered { session, offer, joined, node: own.node.clone(), access: own.clone() }),
                 Err(e) => {
                     session.close().await;
@@ -1669,7 +1733,7 @@ impl Inner {
             }
         }
         let (session, offer) = self.open_session(call_id, media, simulcast, &plan.home).await?;
-        match self.rooms.join(&home, room_id, join_token, &offer).await {
+        match self.to_node(self.timing().node_word, self.rooms.join(&home, room_id, join_token, &offer)).await {
             Ok(joined) => Ok(Entered { session, offer, joined, node: home, access: plan.home.clone() }),
             Err(e) => {
                 session.close().await;
@@ -1902,12 +1966,87 @@ impl Inner {
         }
     }
 
-    /// A note to the group, sealed by the groups.
+    /// A note to the group, sealed by the groups. Nothing goes out under a
+    /// key someone who left still knows: such a note waits for the new key,
+    /// and the notes after it wait behind it, in order. The caller may
+    /// hold the lock of the group the new key needs, so they wait apart.
     async fn tell_group(&self, group_id: &str, signal: &GroupSignal) {
+        {
+            let mut held = self.held.lock().unwrap();
+            if let Some(queue) = held.get_mut(group_id) {
+                hold_behind(queue, signal);
+                return;
+            }
+        }
         match self.groups.seal_note(group_id, &signal.to_envelope()).await {
             Ok(out) => self.emit(vec![Effect::Send(out)]),
+            Err(e) if is_stale_key(&e) => {
+                let mut held = self.held.lock().unwrap();
+                let first = !held.contains_key(group_id);
+                hold_behind(held.entry(group_id.to_string()).or_default(), signal);
+                if first {
+                    self.drain_later(group_id);
+                }
+            }
             Err(e) => self.emit(vec![error_event(&e)]),
         }
+    }
+
+    /// The notes held for `group_id` go out, in order, once its key is
+    /// fresh; after [`STALE_KEY_TRIES`] the rest is given up and the
+    /// screen told.
+    fn drain_later(&self, group_id: &str) {
+        let (groups, outlet, held, group_id) = (self.groups.clone(), self.outlet.clone(), self.held.clone(), group_id.to_string());
+        let retry = self.timing().key_retry;
+        tokio::spawn(async move {
+            for _ in 0..STALE_KEY_TRIES {
+                tokio::time::sleep(retry).await;
+                loop {
+                    let next = {
+                        let mut held = held.lock().unwrap();
+                        match held.get(&group_id).and_then(|q| q.front().cloned()) {
+                            Some(next) => next,
+                            None => {
+                                held.remove(&group_id);
+                                return;
+                            }
+                        }
+                    };
+                    let sealed = groups.seal_note(&group_id, &next.to_envelope()).await;
+                    match sealed {
+                        Err(e) if is_stale_key(&e) => break,
+                        Ok(out) => {
+                            let _ = outlet.send(Effect::Send(out));
+                        }
+                        Err(e) => {
+                            let _ = outlet.send(error_event(&e));
+                        }
+                    }
+                    // Taken off unless it was dropped meanwhile.
+                    let mut held = held.lock().unwrap();
+                    if let Some(q) = held.get_mut(&group_id) {
+                        if q.front() == Some(&next) {
+                            q.pop_front();
+                        }
+                    }
+                }
+            }
+            if held.lock().unwrap().remove(&group_id).is_some_and(|q| !q.is_empty()) {
+                let _ = outlet.send(error_event(&MessengerError::Invalid("group_key_stale".into())));
+            }
+        });
+    }
+
+    /// The notes of a call that ended wait no more, but its end.
+    fn forget_held(&self, call_id: &str) {
+        for queue in self.held.lock().unwrap().values_mut() {
+            queue.retain(|s| s.call_id() != call_id || matches!(s, GroupSignal::End { .. }));
+        }
+    }
+
+    /// A word to a node, within `wait` ([`NODE_WORD`]).
+    async fn to_node<T>(&self, wait: Duration, word: impl std::future::Future<Output = std::result::Result<T, NodeError>>) -> std::result::Result<T, NodeError> {
+        tokio::time::timeout(wait, word).await.unwrap_or_else(|_| Err(NodeError::Unreachable("the node did not answer in time".into())))
     }
 
     fn emit_announced(&self, st: &State, call_id: &str) {
@@ -2049,20 +2188,100 @@ impl Inner {
     /// A new epoch, told to the group: when a seat left or never said who
     /// it is, by the oldest verified seat; when the group lost a member,
     /// by the owner of the room too (`force`), with the room's new token.
+    /// The epoch counts only once its note is out: while the group key is
+    /// stale the frames stay under the epoch everybody has, and the turn
+    /// waits ([`Timer::Rekey`]).
     async fn rotate(self: &Arc<Self>, st: &mut State, join_token: Option<String>, force: bool) {
         let Some(room) = st.room.as_ref() else { return };
         if room.view.phase == GroupPhase::Left || room.lost.is_some() || (!force && !room.oldest()) {
             return;
         }
         let (gen, call_id, group_id, room_id) = (room.gen, room.view.call_id.clone(), room.view.group_id.clone(), room.room_id.clone());
-        let Some(a) = st.announced.get_mut(&call_id) else { return };
+        let Some(a) = st.announced.get(&call_id) else { return };
         let epoch = a.current_epoch() + 1;
         let secret = new_secret();
-        a.epochs.insert(epoch, secret);
-        self.tell_group(&group_id, &GroupSignal::Epoch { call_id, epoch, secret, join_token, room_id: Some(room_id) }).await;
+        let new_token = join_token.is_some();
+        let note = GroupSignal::Epoch { call_id: call_id.clone(), epoch, secret, join_token, room_id: Some(room_id) };
+        let out = match self.groups.seal_note(&group_id, &note.to_envelope()).await {
+            Ok(out) => out,
+            // Not now: owed, and tried again ([`Timer::Rekey`]); the seat
+            // gone must not keep the secret because a note failed once.
+            Err(e) => {
+                if !is_stale_key(&e) {
+                    tracing::warn!(error = %e, "group call: the note of a new epoch was not sealed; tried again");
+                }
+                self.rekey_later(st, new_token);
+                return;
+            }
+        };
+        if let Some(a) = st.announced.get_mut(&call_id) {
+            a.epochs.insert(epoch, secret);
+        }
+        self.emit(vec![Effect::Send(out)]);
         self.key_everything(st).await;
         self.schedule(self.timing().send_switch_delay, Timer::Switch { epoch }, gen);
         self.say_hello(st).await;
+    }
+
+    /// A turn of the keys owed until the group key is fresh: one timer for
+    /// however many were owed, with a new token if any of them was.
+    fn rekey_later(self: &Arc<Self>, st: &mut State, force: bool) {
+        let Some(room) = st.room.as_mut() else { return };
+        let first = room.rekey.is_none();
+        room.rekey = Some(room.rekey.unwrap_or(false) || force);
+        if first {
+            self.schedule(self.timing().key_retry, Timer::Rekey, room.gen);
+        }
+    }
+
+    /// The turn of the keys owed ([`Self::rekey_later`]), when the group key
+    /// is fresh; looked at again later while it is not. Bound to the room,
+    /// not to its session: a join again or a move on the way keeps it owed
+    /// (a timer of the session before would be dropped with it).
+    async fn rekey_now(self: &Arc<Self>, st: &mut State) {
+        let Some(room) = st.room.as_ref() else { return };
+        if room.rekey.is_none() || room.view.phase == GroupPhase::Left {
+            return;
+        }
+        let (gen, group_id) = (room.gen, room.view.group_id.clone());
+        // While a loss is judged the turn could not be made: still owed.
+        if room.lost.is_some() || self.groups.key_stale(&group_id).await.unwrap_or(false) {
+            self.schedule(self.timing().key_retry, Timer::Rekey, gen);
+            return;
+        }
+        let Some(force) = st.room.as_mut().and_then(|r| r.rekey.take()) else { return };
+        let token = if force { self.change_room_token(st).await } else { None };
+        let call_id = st.room.as_ref().map(|r| r.view.call_id.clone()).unwrap_or_default();
+        // An owed turn is made by whoever owes it, the oldest seat or not
+        // (a move on the way may have made another seat the oldest, or the
+        // room not mine any more); the token is changed only by the owner.
+        // The checks of `rotate` that remain (in the room, no loss judged)
+        // hold here, so the turn is not dropped unmade.
+        self.rotate(st, token.clone(), true).await;
+        if token.is_some() {
+            self.emit_announced(st, &call_id);
+        }
+    }
+
+    /// A new token of my room, when it is mine (the creator's admin
+    /// token): the one before opens no door from now on.
+    async fn change_room_token(&self, st: &mut State) -> Option<String> {
+        let room = st.room.as_ref()?;
+        let (home, room_id, call_id, admin) = (room.home.clone(), room.room_id.clone(), room.view.call_id.clone(), room.admin_token.clone()?);
+        match self.to_node(self.timing().node_word, self.rooms.change_token(&home, &room_id, &admin)).await {
+            Ok(t) => {
+                if let Some(a) = st.announced.get_mut(&call_id) {
+                    if let Some(link) = a.link_mut(&room_id) {
+                        link.join_token = t.clone();
+                    }
+                }
+                Some(t)
+            }
+            Err(e) => {
+                self.emit(vec![error_event(&e.into())]);
+                None
+            }
+        }
     }
 
     /// `on_signal` boxed, for the notes held early that are handed back
@@ -2552,7 +2771,7 @@ impl Inner {
         let Some(room) = st.room.as_mut() else { return };
         if let Some(s) = room.session.take() {
             if tell != Tell::Nobody && !room.participant_token.is_empty() {
-                let _ = self.rooms.leave(&room.node, &room.room_id, room.seat, &room.participant_token).await;
+                let _ = self.to_node(self.timing().node_word, self.rooms.leave(&room.node, &room.room_id, room.seat, &room.participant_token)).await;
             }
             s.close().await;
         }
@@ -2621,7 +2840,7 @@ impl Inner {
                     // The direct join is the HELLO's to decide: only the way
                     // through my own node is tried here.
                     let (session, offer) = inner.open_session(&call_id, media, simulcast, &own).await.ok()?;
-                    match inner.rooms.join_via(&own.node, &home.node, &room_id, &pass, &offer).await {
+                    match inner.to_node(inner.timing().node_word + crate::node_client::CASCADE_JOIN_TIMEOUT, inner.rooms.join_via(&own.node, &home.node, &room_id, &pass, &offer)).await {
                         Ok(joined) => Some(Ok(Entered { session, offer, joined, node: own.node.clone(), access: own })),
                         Err(e) => {
                             session.close().await;
@@ -2672,7 +2891,7 @@ impl Inner {
             // The home answers: my way was the trouble. Directly, my
             // seat on the home through my own node given up first.
             if let Some((seat, home_token)) = home_seat {
-                let _ = inner.rooms.leave(&home, &room_id, seat, &home_token).await;
+                let _ = inner.to_node(inner.timing().node_word, inner.rooms.leave(&home, &room_id, seat, &home_token)).await;
             }
             let access = match inner.nodes.access(&home, now).await {
                 Ok(a) => a,
@@ -2853,7 +3072,7 @@ impl Inner {
                     .pick_sfu(&candidates, now)
                     .await
                     .ok_or_else(|| MessengerError::Transport("no other call node with an SFU answered".into()))?;
-                let created = inner.rooms.create(&access.node, MediaLimits::default()).await?;
+                let created = inner.to_node(inner.timing().node_word, inner.rooms.create(&access.node, MediaLimits::default())).await?;
                 Ok((access, created))
             }
             .await;
@@ -3042,6 +3261,7 @@ impl Inner {
         a.ended = true;
         let view = a.view(false);
         st.forget(call_id);
+        self.forget_held(call_id);
         st.drop_early(call_id);
         match self.feed.finish(call_id, outcome, ended_at).await {
             Ok(fx) => self.emit(fx),
@@ -3071,7 +3291,7 @@ impl Inner {
         let (call_id, group_id, seat, room_id) = (room.view.call_id.clone(), room.view.group_id.clone(), room.seat, room.room_id.clone());
         if let Some(s) = room.session.take() {
             if matches!(tell, Tell::All | Tell::Node) && !room.participant_token.is_empty() {
-                let _ = self.rooms.leave(&room.node, &room.room_id, seat, &room.participant_token).await;
+                let _ = self.to_node(self.timing().node_word, self.rooms.leave(&room.node, &room.room_id, seat, &room.participant_token)).await;
             }
             s.close().await;
         }
@@ -3173,27 +3393,23 @@ impl Inner {
         let view = room.view.clone();
         self.emit(vec![state_event(&view)]);
         let (home, room_id, admin) = (room.home.clone(), room.room_id.clone(), room.admin_token.clone());
-        let mut token = None;
-        if let Some(admin) = admin {
+        if let Some(admin) = &admin {
             for seat in &expelled {
-                if let Err(e) = self.rooms.leave(&home, &room_id, *seat, &admin).await {
+                if let Err(e) = self.to_node(self.timing().node_word, self.rooms.leave(&home, &room_id, *seat, admin)).await {
                     self.emit(vec![error_event(&e.into())]);
                 }
             }
-            match self.rooms.change_token(&home, &room_id, &admin).await {
-                Ok(t) => {
-                    if let Some(a) = st.announced.get_mut(&call_id) {
-                        if let Some(link) = a.link_mut(&room_id) {
-                            link.join_token = t.clone();
-                        }
-                    }
-                    token = Some(t);
-                }
-                Err(e) => self.emit(vec![error_event(&e.into())]),
-            }
         }
-        let force = token.is_some();
-        self.rotate(st, token, force).await;
+        if self.groups.key_stale(group_id).await.unwrap_or(false) {
+            // The note of a new epoch could not go out now: the keys and the
+            // token of the room stay as everybody has them until a manager
+            // brings the group a new key.
+            self.rekey_later(st, admin.is_some());
+        } else {
+            let token = self.change_room_token(st).await;
+            let force = token.is_some();
+            self.rotate(st, token, force).await;
+        }
         self.emit_announced(st, &call_id);
     }
 
@@ -3212,6 +3428,10 @@ impl Inner {
 
     async fn on_timer(self: &Arc<Self>, timer: Timer, gen: u64) {
         let mut st = self.state.lock().await;
+        if timer == Timer::Rekey {
+            self.rekey_now(&mut st).await;
+            return;
+        }
         let Some(room) = st.room.as_ref().filter(|r| r.gen == gen) else { return };
         match timer {
             Timer::Connect => {
@@ -3256,7 +3476,7 @@ impl Inner {
                 tracing::info!(seat, "group call: the seat said nothing in its time: nobody");
                 if let Some(admin) = room.admin_token.clone() {
                     let (home, room_id) = (room.home.clone(), room.room_id.clone());
-                    match self.rooms.leave(&home, &room_id, seat, &admin).await {
+                    match self.to_node(self.timing().node_word, self.rooms.leave(&home, &room_id, seat, &admin)).await {
                         Ok(()) => return,
                         Err(e) => tracing::warn!(seat, error = %e, "group call: the node did not put the seat out"),
                     }
@@ -3264,6 +3484,8 @@ impl Inner {
                 self.rotate(&mut st, None, false).await;
             }
             Timer::Switch { epoch } => self.switch_sending(&mut st, epoch).await,
+            // Taken above, whatever the generation.
+            Timer::Rekey => {}
             Timer::Hello { opening } => {
                 if !room.ctl_open || room.openings != opening {
                     return;

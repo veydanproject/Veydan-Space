@@ -62,7 +62,6 @@ const MAX_LINES: usize = 5;
 /// The key of notices that name no chat.
 const NO_CHAT: &str = "dm";
 
-const AVATAR_TIMEOUT: Duration = Duration::from_millis(2500);
 const AVATAR_MAX_BYTES: usize = 2 * 1024 * 1024;
 
 /// The words of the user's language. The page sends them (`i18n.ts` holds
@@ -331,14 +330,20 @@ impl Stack {
         }
     }
 
+    /// Only how many came: what a notification over a locked screen says,
+    /// whatever lines were heard before the lock.
+    fn count_only(&self, words: &Words) -> String {
+        if self.count > 1 {
+            words.new_messages.replace("{n}", &self.count.to_string())
+        } else {
+            words.new_message.clone()
+        }
+    }
+
     /// The last lines, and "+N" for the messages they leave out.
     fn body(&self, words: &Words) -> String {
         if self.lines.is_empty() {
-            return if self.count > 1 {
-                words.new_messages.replace("{n}", &self.count.to_string())
-            } else {
-                words.new_message.clone()
-            };
+            return self.count_only(words);
         }
         let mut out: Vec<String> = self.lines.iter().map(Line::shown).collect();
         let left_out = self.count.saturating_sub(self.lines.len() as u32);
@@ -658,7 +663,8 @@ impl DesktopNotify {
     }
 
     async fn show(&self, rt: &MessengerRuntime, notice: messenger_core::Notice) {
-        let outcome = match rt.live_notice(&notice, self.locked().await).await {
+        let screen = self.screen_locked(rt).await;
+        let outcome = match rt.live_notice(&notice, self.locked().await || screen).await {
             Ok(o) => o,
             Err(e) => {
                 eprintln!("messenger notify: {e}");
@@ -666,17 +672,25 @@ impl DesktopNotify {
             }
         };
         let words = self.words.read().unwrap().clone();
-        let Some(w) = word(outcome, &words) else { return };
+        let Some(mut w) = word(outcome, &words) else { return };
+        if screen {
+            w.title = words.app.clone();
+            w.picture = None;
+        }
         let sound = rt.desktop_notify_settings().await.map(|s| s.sound).unwrap_or(true);
         let image = match &w.picture {
-            Some(url) => self.avatar(url).await,
+            Some(url) => self.avatar(rt, url).await,
             None => None,
         };
         let body = {
             let mut stacks = self.stacks.lock().unwrap();
             let stack = stacks.entry(w.key.clone()).or_default();
             stack.push(w.line, &words);
-            stack.body(&words)
+            if screen {
+                stack.count_only(&words)
+            } else {
+                stack.body(&words)
+            }
         };
         self.notifier.show(Toast { key: w.key, title: w.title, body, image, silent: !sound, ..Toast::default() });
     }
@@ -718,7 +732,8 @@ impl DesktopNotify {
             sender: Some(call.peer.clone()),
             request: false,
         };
-        let (title, picture) = match rt.live_notice(&notice, self.locked().await).await {
+        let guarded = self.locked().await || self.screen_locked(rt).await;
+        let (title, picture) = match rt.live_notice(&notice, guarded).await {
             Ok(outcome) => caller(outcome, &words),
             Err(e) => {
                 eprintln!("messenger notify: call: {e}");
@@ -726,7 +741,7 @@ impl DesktopNotify {
             }
         };
         let image = match &picture {
-            Some(url) => self.avatar(url).await,
+            Some(url) => self.avatar(rt, url).await,
             None => None,
         };
         let toast = call_toast(&call, title, image, silent, &words);
@@ -804,7 +819,9 @@ impl DesktopNotify {
             sender: Some(call.started_by.clone()),
             request: false,
         };
-        let (title, picture) = match rt.live_notice(&notice, self.locked().await).await {
+        let screen = self.screen_locked(rt).await;
+        let (title, picture) = match rt.live_notice(&notice, self.locked().await || screen).await {
+            Ok(_) if screen => (words.app.clone(), None),
             Ok(Outcome::Show(n)) if !n.title.is_empty() => (n.title, n.picture),
             Ok(Outcome::Plain(p)) => (p.title.filter(|t| !t.is_empty()).unwrap_or_else(|| words.app.clone()), None),
             Ok(_) => (words.app.clone(), None),
@@ -814,7 +831,7 @@ impl DesktopNotify {
             }
         };
         let image = match &picture {
-            Some(url) => self.avatar(url).await,
+            Some(url) => self.avatar(rt, url).await,
             None => None,
         };
         let toast = group_call_toast(&call, title, image, &words);
@@ -854,6 +871,16 @@ impl DesktopNotify {
         }
     }
 
+    /// The session of the system is locked now and the settings hide
+    /// notifications there: one shown now names nobody and says only how
+    /// many came. No system has a mark "private on the lock screen" for one
+    /// notification (Android's `VISIBILITY_PRIVATE`), so it is asked at
+    /// showing (`desktop_notify::session_locked`: Linux so far).
+    async fn screen_locked(&self, rt: &MessengerRuntime) -> bool {
+        let hide = rt.notify_settings().await.map(|s| s.lockscreen_hidden).unwrap_or(true);
+        hide && desktop_notify::session_locked().await
+    }
+
     /// Takes the chat's notification away (it was read), or all of them.
     pub fn clear(&self, key: Option<&str>) {
         let mut stacks = self.stacks.lock().unwrap();
@@ -873,28 +900,32 @@ impl DesktopNotify {
         }
     }
 
-    /// The sender's picture as a file the system can read. Nothing when it
-    /// cannot be had quickly: the notification goes without it.
-    async fn avatar(&self, url: &str) -> Option<PathBuf> {
+    /// The sender's picture as a file the system can read: the one this
+    /// device holds already (the avatars of the runtime, which fetch by
+    /// the rule of addresses others wrote, and not in silent mode). A
+    /// notification asks nothing of the network: without a picture here,
+    /// it goes without one.
+    async fn avatar(&self, rt: &MessengerRuntime, url: &str) -> Option<PathBuf> {
         let dir = self.avatars.as_ref()?;
-        let name: String = Sha256::digest(url.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
-        let path = dir.join(name);
-        if path.exists() {
-            return Some(path);
-        }
-        let client = reqwest::Client::builder().timeout(AVATAR_TIMEOUT).build().ok()?;
-        let resp = client.get(url).send().await.ok()?.error_for_status().ok()?;
-        if resp.content_length().is_some_and(|l| l as usize > AVATAR_MAX_BYTES) {
-            return None;
-        }
-        let bytes = resp.bytes().await.ok()?;
-        if bytes.len() > AVATAR_MAX_BYTES {
-            return None;
-        }
-        tokio::fs::create_dir_all(dir).await.ok()?;
-        tokio::fs::write(&path, &bytes).await.ok()?;
-        Some(path)
+        picture_file(dir, rt.avatars().local_bytes(url).await).await
     }
+}
+
+/// `bytes` as a file in `dir`, named by what it holds: a notification
+/// still up keeps reading its own picture whatever is written after it.
+/// Nothing without bytes.
+async fn picture_file(dir: &Path, bytes: Option<Vec<u8>>) -> Option<PathBuf> {
+    let bytes = bytes.filter(|b| !b.is_empty() && b.len() <= AVATAR_MAX_BYTES)?;
+    let name: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let path = dir.join(&name);
+    if path.exists() {
+        return Some(path);
+    }
+    tokio::fs::create_dir_all(dir).await.ok()?;
+    let part = dir.join(format!("{name}.part"));
+    tokio::fs::write(&part, &bytes).await.ok()?;
+    tokio::fs::rename(&part, &path).await.ok()?;
+    Some(path)
 }
 
 // ─── Waiting messages on the icon and in the tray ───────────────────────────
@@ -1111,6 +1142,31 @@ mod tests {
 
     const ON_SCREEN: WindowSeen = WindowSeen { focused: true, visible: true, minimized: false };
 
+    /// Without a picture this device holds, the notification has none and
+    /// nothing is asked of the address of the profile; with one, it is a
+    /// file named by its bytes.
+    #[tokio::test]
+    async fn the_picture_is_the_one_held_here_never_fetched() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("notify-avatars");
+        // Where the profile says the picture is: nothing may come here.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        assert_eq!(picture_file(&cache, None).await, None);
+        assert_eq!(picture_file(&cache, Some(Vec::new())).await, None);
+        assert_eq!(picture_file(&cache, Some(vec![0; AVATAR_MAX_BYTES + 1])).await, None);
+        let knock = tokio::time::timeout(Duration::from_millis(200), listener.accept()).await;
+        assert!(knock.is_err(), "no request went out");
+        assert!(!cache.exists(), "nothing written");
+
+        let png = b"\x89PNG\r\n\x1a\n picture".to_vec();
+        let path = picture_file(&cache, Some(png.clone())).await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), png);
+        assert_eq!(picture_file(&cache, Some(png)).await, Some(path.clone()), "the same picture, the same file");
+        let other = picture_file(&cache, Some(b"another".to_vec())).await.unwrap();
+        assert_ne!(other, path);
+        assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 2, "no part left behind");
+    }
+
     #[test]
     fn the_card_while_the_window_is_seen_the_system_otherwise() {
         assert_eq!(route(ON_SCREEN, true, true), Route::Card);
@@ -1156,6 +1212,18 @@ mod tests {
         assert_eq!(s.body(&words()), "New message");
         s.push(None, &words());
         assert_eq!(s.body(&words()), "2 new messages");
+    }
+
+    /// Over a locked session the lines heard before the lock are not shown
+    /// again: only how many came.
+    #[test]
+    fn over_a_locked_screen_a_stack_says_only_how_many() {
+        let mut s = Stack::default();
+        s.push(plain_line("before the lock"), &words());
+        assert_eq!(s.count_only(&words()), "New message");
+        s.push(None, &words());
+        assert_eq!(s.count_only(&words()), "2 new messages");
+        assert_eq!(s.body(&words()), "before the lock\n+1 more", "unlocked, the lines are as they were");
     }
 
     fn notice(kind: ChatKind, body: Option<Body>) -> Outcome {

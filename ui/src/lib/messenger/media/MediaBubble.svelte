@@ -43,6 +43,8 @@
   let busy = $state(false);
   let error = $state('');
   let previewFailed = $state(false);
+  /** The file is on a server only its sender named: it waits for the user's word, and says why. */
+  let foreign = $state(false);
   /** `src` is the file itself, read by the webview from the app's server, not a copy in memory. */
   let fromFile = false;
   /** The file could not be read that way: a copy in memory instead, when it is small enough. */
@@ -162,6 +164,7 @@
     try {
       const p = await messengerApi.media.download(m.id, manual);
       if (p) { local = p; await loadPreview(); }
+      else if (!manual) foreign = await messengerApi.media.foreignServer(m.id).catch(() => false);
     } catch (e) { if (manual) error = explain(e); }
     finally { busy = false; }
   }
@@ -206,6 +209,12 @@
   <button class="act" onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="save" size={14} /></button>
 {/snippet}
 
+{#snippet foreignNote()}
+  {#if foreign && phase === 'remote'}
+    <span class="foreign" title={$t('msg_media_foreign_server_hint')}><Icon name="alert-triangle" size={11} />{$t('msg_media_foreign_server')}</span>
+  {/if}
+{/snippet}
+
 {#snippet status(look: 'compact' | 'full', overlay = false)}
   {#if media}
     <TransferStatus p={shown} {look} {overlay} name={media.name} size={media.size} chunks={media.chunks} messageId={m.id} {busy}
@@ -223,7 +232,7 @@
     <span class="about">
       <span class="name">{media.name}</span>
       {#if phase === 'here'}<span class="sub">{bytes(media.size, localeTag($locale))}</span>
-      {:else}<span class="status">{@render status('full')}</span>{/if}
+      {:else}<span class="status">{@render status('full')}</span>{@render foreignNote()}{/if}
     </span>
     {#if phase === 'here'}<span class="acts">{@render here()}</span>{/if}
     {#if error}<span class="card-fail" title={error}><Icon name="alert-triangle" size={11} />{error}</span>{/if}
@@ -254,6 +263,7 @@
     {:else if phase !== 'here'}
       {@render status('compact', true)}
     {/if}
+    {#if foreign && phase === 'remote'}<span class="foreign-tag">{@render foreignNote()}</span>{/if}
     {#if error}<span class="bad" title={error}><Icon name="alert-triangle" size={12} /></span>{/if}
   </div>
 {:else if media}
@@ -298,7 +308,7 @@
       <span class="info">
         <span class="name" title={media.name}>{media.name}</span>
         {#if phase === 'here'}<span class="sub">{bytes(media.size, localeTag($locale))}</span>
-        {:else}{@render status('full')}{/if}
+        {:else}{@render status('full')}{@render foreignNote()}{/if}
       </span>
       {#if phase === 'here'}<span class="actions">{@render here()}</span>{/if}
     </div>
@@ -310,6 +320,10 @@
 {/if}
 
 <style>
+  /* A server only the sender named: a quiet word under the file, the reason in its title. */
+  .foreign { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
+  .foreign-tag { position: absolute; left: 6px; bottom: 6px; z-index: 1; pointer-events: none; padding: 1px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.55); }
+  .foreign-tag .foreign { color: #fff; }
   .media { display: flex; flex-direction: column; gap: 6px; min-width: min(240px, 100%); max-width: 360px; }
   .media.kind-circle, .media.kind-voice { min-width: 0; }
   /* A file in an album: a small card, its kind in a tinted square, like the files of the old client. */

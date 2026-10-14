@@ -49,6 +49,21 @@ function askProfile(chatId: string) {
     .catch(() => {});
 }
 
+/**
+ * Whether the lock of the app is closed, as its events (`lock://locked`,
+ * `lock://unlocked`) tell; the module store follows them. The screen of
+ * the lock leaves the document visible, so this is asked too.
+ */
+export const lockSight = $state({ locked: false });
+
+/**
+ * The chats are on the screen: the page is visible and not behind the lock.
+ * What comes otherwise is not seen: not marked read, not counted as presence.
+ */
+export function inSight(): boolean {
+  return document.visibilityState === 'visible' && !lockSight.locked;
+}
+
 class ChatStore {
   chats = $state<MessengerChat[]>([]);
   activeId = $state<string | null>(null);
@@ -194,7 +209,9 @@ class ChatStore {
     this.messages = [];
   }
 
+  /** Not behind the lock: nothing of the chat is seen there (the command refuses it too). */
   async markRead(chatId: string) {
+    if (lockSight.locked) return;
     const c = this.chats.find((x) => x.id === chatId);
     if (c && c.unread === 0) return;
     await messengerApi.chats.markRead(chatId);
@@ -398,7 +415,7 @@ class ChatStore {
         if (m) this.noteTail(m);
         if (m && m.chat_id === this.activeId) {
           this.upsert(m);
-          if (m.direction === 'in' && document.visibilityState === 'visible') {
+          if (m.direction === 'in' && inSight()) {
             messengerApi.chats.markRead(m.chat_id).catch(() => {});
           }
         }

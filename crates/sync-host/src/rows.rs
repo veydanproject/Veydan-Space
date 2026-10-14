@@ -25,20 +25,28 @@ use veydan_sync::{sha256_hex, Hlc, HlcClock, Op};
 pub const EVENT_CHANGED: &str = "sync://data-changed";
 
 /// Ids are UUIDs, setting keys or the literal `default`; nothing else is accepted.
+/// The colon stays for the ids of `label` (`kind:id`); an id of dots alone
+/// (`.`, `..`) is refused: a hook that joins the id to a folder would climb.
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+        && !id.chars().all(|c| c == '.')
 }
 
 // ── Reading rows ─────────────────────────────────────────────────────────────
 
 /// `SELECT pk, json_object('c', c, ..) FROM table`: SQLite keeps the column types.
 fn select_sql(table: &Table) -> String {
+    select_columns(table, table.spec.columns)
+}
+
+/// The same over `columns`, which may be a set the table synced before.
+fn select_columns(table: &Table, columns: &[&str]) -> String {
     let spec = &table.spec;
-    let pairs: Vec<String> = spec.columns.iter().map(|c| format!("'{c}', {c}")).collect();
+    let pairs: Vec<String> = columns.iter().map(|c| format!("'{c}', {c}")).collect();
     let mut sql = format!(
         "SELECT {}, json_object({}) FROM {}",
         spec.pk,
@@ -88,11 +96,11 @@ fn parse_object(json: &str) -> Map<String, Value> {
         .unwrap_or_default()
 }
 
-/// Rows matching `select` with their link arrays folded in, as `(id, payload)`.
+/// Rows matching `select` with the arrays of `links` folded in, as `(id, payload)`.
 async fn read_payloads(
     db: &Pool<Sqlite>,
-    table: &Table,
     select: String,
+    links: &[&LinkSpec],
     id: Option<&str>,
 ) -> CmdResult<Vec<(String, Value)>> {
     let mut q = sqlx::query_as::<_, (String, String)>(AssertSqlSafe(select));
@@ -100,15 +108,15 @@ async fn read_payloads(
         q = q.bind(id.to_string());
     }
     let rows = q.fetch_all(db).await.map_err(AppError::db)?;
-    let mut links: Vec<(&LinkSpec, HashMap<String, Vec<String>>)> = Vec::new();
-    for link in table.spec.links {
-        links.push((link, link_map(db, link, id).await?));
+    let mut maps: Vec<(&LinkSpec, HashMap<String, Vec<String>>)> = Vec::new();
+    for link in links {
+        maps.push((link, link_map(db, link, id).await?));
     }
     Ok(rows
         .into_iter()
         .map(|(row_id, json)| {
             let mut payload = parse_object(&json);
-            for (link, map) in &links {
+            for (link, map) in &maps {
                 let ids = map.get(&row_id).cloned().unwrap_or_default();
                 payload.insert(
                     link.key.into(),
@@ -122,7 +130,11 @@ async fn read_payloads(
 
 /// Every synced row of a table.
 pub async fn read_rows(db: &Pool<Sqlite>, table: &Table) -> CmdResult<Vec<(String, Value)>> {
-    read_payloads(db, table, select_sql(table), None).await
+    read_payloads(db, select_sql(table), &all_links(table), None).await
+}
+
+fn all_links(table: &Table) -> Vec<&LinkSpec> {
+    table.spec.links.iter().collect()
 }
 
 pub async fn read_row(db: &Pool<Sqlite>, table: &Table, id: &str) -> CmdResult<Option<Value>> {
@@ -136,15 +148,110 @@ pub async fn read_row(db: &Pool<Sqlite>, table: &Table, id: &str) -> CmdResult<O
         },
         table.spec.pk
     );
-    Ok(read_payloads(db, table, sql, Some(id))
+    Ok(read_payloads(db, sql, &all_links(table), Some(id))
         .await?
         .pop()
         .map(|(_, v)| v))
 }
 
 /// serde_json sorts object keys, so equal rows hash equal.
-fn payload_hash(payload: &Value) -> String {
+pub(crate) fn payload_hash(payload: &Value) -> String {
     sha256_hex(payload.to_string().as_bytes())
+}
+
+// ── The shape of a row ───────────────────────────────────────────────────────
+
+/// The local setting that names the shape the states of `entity` were hashed by.
+fn shape_key(entity: &str) -> String {
+    format!("sync_row_shape:{entity}")
+}
+
+/// What the hash of a row is made of: the synced columns and the link keys,
+/// each sorted, as `col,col;key,key`.
+fn row_shape(table: &Table) -> String {
+    let mut columns: Vec<&str> = table.spec.columns.to_vec();
+    columns.sort_unstable();
+    let mut keys: Vec<&str> = table.spec.links.iter().map(|l| l.key).collect();
+    keys.sort_unstable();
+    format!("{};{}", columns.join(","), keys.join(","))
+}
+
+/// The columns and links to read the rows by `shape`; `None` when the rows
+/// cannot be read so: a name that is not an identifier, a link this build
+/// does not know how to read.
+fn shape_parts<'a>(table: &'a Table, shape: &'a str) -> Option<(Vec<&'a str>, Vec<&'a LinkSpec>)> {
+    let (columns, keys) = shape.split_once(';')?;
+    let names = |list: &'a str| list.split(',').filter(|n| !n.is_empty());
+    let columns: Vec<&str> = names(columns).collect();
+    if !columns
+        .iter()
+        .all(|c| c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_'))
+    {
+        return None;
+    }
+    let links = names(keys)
+        .map(|key| table.spec.links.iter().find(|l| l.key == key))
+        .collect::<Option<Vec<_>>>()?;
+    Some((columns, links))
+}
+
+/// The states of a table hold the hash of each row by the columns and link
+/// keys it synced then. A build that syncs another set (a new column) would
+/// see every row as changed and publish all of them with new HLCs, over the
+/// edits of the devices that did not update yet. So when the set differs from
+/// the one kept, a state whose row still hashes as its `synced_hash` by the
+/// old set takes the hash by the new one without an op: a new column with a
+/// default changes nothing; a row changed since goes out as before. The set
+/// is local and kept per entity; the vault format (spec 9.5) does not change.
+async fn adopt_row_shape(db: &Pool<Sqlite>, table: &Table) -> CmdResult<()> {
+    let entity = table.spec.entity;
+    let key = shape_key(entity);
+    let shape = row_shape(table);
+    let kept = settings::get(db, &key).await;
+    if kept.as_deref() == Some(shape.as_str()) {
+        return Ok(());
+    }
+    // No set kept: the states were hashed by this build's set.
+    if let Some(old) = kept.as_deref() {
+        match shape_parts(table, old) {
+            Some((columns, links)) => {
+                match read_payloads(db, select_columns(table, &columns), &links, None).await {
+                    Ok(before) => rehash_unchanged(db, table, before).await?,
+                    Err(e) => eprintln!("sync: {entity} cannot be read as it synced before: {e}"),
+                }
+            }
+            None => eprintln!("sync: {entity} cannot be read as it synced before ({old})"),
+        }
+    }
+    settings::set(db, &key, &shape).await
+}
+
+/// The new hash for each state whose row `before` (read by the old set)
+/// still matches what was synced.
+async fn rehash_unchanged(
+    db: &Pool<Sqlite>,
+    table: &Table,
+    before: Vec<(String, Value)>,
+) -> CmdResult<()> {
+    let before: HashMap<String, String> = before
+        .into_iter()
+        .map(|(id, payload)| (id, payload_hash(&payload)))
+        .collect();
+    let now: HashMap<String, String> = read_rows(db, table)
+        .await?
+        .into_iter()
+        .map(|(id, payload)| (id, payload_hash(&payload)))
+        .collect();
+    for (id, mut st) in load_row_states(db, table.spec.entity).await? {
+        if st.deleted || before.get(&id) != Some(&st.synced_hash) {
+            continue;
+        }
+        if let Some(hash) = now.get(&id).filter(|h| **h != st.synced_hash) {
+            st.synced_hash = hash.clone();
+            save_row_state(db, &st).await?;
+        }
+    }
+    Ok(())
 }
 
 // ── Push ─────────────────────────────────────────────────────────────────────
@@ -185,6 +292,7 @@ pub async fn collect_local_changes(
     for table in tables.iter().filter(|t| t.push) {
         let spec = &table.spec;
         let waits = |id: &str| reread.is_some_and(|known| !took(known, spec.entity, id));
+        adopt_row_shape(db, table).await?;
         let mut states = load_row_states(db, spec.entity).await?;
         // The state of an id the table does not take, such as a setting key
         // no module registers any more, is not of a row that disappeared: its
@@ -294,8 +402,25 @@ enum Upserted {
     Done {
         id: String,
         absorbed: Option<String>,
+        /// The twin is newer than the op and kept its values.
+        kept: bool,
     },
     Skip,
+}
+
+/// Whether the local row `twin`, which takes in an op of another id under
+/// the same unique key, is newer than the op (LWW, audit A2-16): its last op
+/// is not older, or it was edited here since it was last synced (the next
+/// collect publishes it). A row with no state was never synced and takes
+/// the op, as before.
+async fn twin_is_newer(db: &Pool<Sqlite>, table: &Table, twin: &str, hlc: &Hlc) -> CmdResult<bool> {
+    let Some(st) = load_row_state(db, table.spec.entity, twin).await? else {
+        return Ok(false);
+    };
+    if st.head_hlc.as_ref().is_some_and(|head| head >= hlc) {
+        return Ok(true);
+    }
+    Ok(!st.deleted && changed_here(db, table, &st).await?)
 }
 
 fn unique_vals<'a>(keys: &[&str], payload: &'a Map<String, Value>) -> Option<Vec<&'a str>> {
@@ -332,6 +457,10 @@ async fn find_unique_other(
 }
 
 /// Write the row. `Skip` when the table forbids inserts and the row is absent.
+/// With the op's `hlc`, a twin takes the op's values only when the op is
+/// newer ([`twin_is_newer`]); without one (a write that is not an op's), it
+/// always does and the id that sorts first wins.
+#[allow(clippy::too_many_arguments)]
 async fn upsert(
     host: &Host<'_>,
     db: &Pool<Sqlite>,
@@ -340,14 +469,23 @@ async fn upsert(
     id: &str,
     payload: &mut Map<String, Value>,
     aliases: &mut HashMap<String, String>,
+    hlc: Option<&Hlc>,
 ) -> CmdResult<Upserted> {
     let spec = &table.spec;
     // Same unique key under another id: keep that row, absorb the remote id.
     let mut twin = None;
+    let mut newer: Option<(String, bool)> = None;
     if let Some(keys) = spec.unique {
         if let Some(vals) = unique_vals(keys, payload) {
             if let Some(other_id) = find_unique_other(db, table, keys, &vals, id).await? {
-                let remote_wins = id < other_id.as_str();
+                let remote_wins = match hlc {
+                    Some(hlc) => {
+                        let kept = twin_is_newer(db, table, &other_id, hlc).await?;
+                        newer = Some((other_id.clone(), kept));
+                        !kept
+                    }
+                    None => id < other_id.as_str(),
+                };
                 twin = Some(Twin {
                     id: other_id,
                     remote_wins,
@@ -382,15 +520,24 @@ async fn upsert(
         .collect();
 
     if let (Some(twin), Some(keys)) = (twin, spec.unique) {
-        let skip: HashSet<&str> = keys.iter().copied().collect();
-        let rest: Vec<(&str, Value)> = cols
-            .into_iter()
-            .filter(|(c, _)| !skip.contains(c))
-            .collect();
-        update_row(db, table, &twin.id, &rest).await?;
+        // The twin a hook found was not compared yet.
+        let kept = match (hlc, newer) {
+            (Some(_), Some((checked, kept))) if checked == twin.id => kept,
+            (Some(hlc), _) => twin_is_newer(db, table, &twin.id, hlc).await?,
+            (None, _) => false,
+        };
+        if !kept {
+            let skip: HashSet<&str> = keys.iter().copied().collect();
+            let rest: Vec<(&str, Value)> = cols
+                .into_iter()
+                .filter(|(c, _)| !skip.contains(c))
+                .collect();
+            update_row(db, table, &twin.id, &rest).await?;
+        }
         return Ok(Upserted::Done {
             id: twin.id,
             absorbed: Some(id.into()),
+            kept,
         });
     }
 
@@ -399,6 +546,7 @@ async fn upsert(
             Ok(Upserted::Done {
                 id: id.into(),
                 absorbed: None,
+                kept: false,
             })
         } else {
             Ok(Upserted::Skip)
@@ -433,6 +581,7 @@ async fn upsert(
     Ok(Upserted::Done {
         id: id.into(),
         absorbed: None,
+        kept: false,
     })
 }
 
@@ -586,7 +735,12 @@ async fn apply_links(
 }
 
 /// Delete a row the vault deleted, through the table's hook when it has one.
-async fn delete_row(host: &Host<'_>, core: &Core, table: &Table, id: &str) -> CmdResult<Deletion> {
+pub(crate) async fn delete_row(
+    host: &Host<'_>,
+    core: &Core,
+    table: &Table,
+    id: &str,
+) -> CmdResult<Deletion> {
     let decision = match table.hooks.on_delete {
         Some(on_delete) => on_delete(host, core, id).await?,
         None => Deletion::Plain,
@@ -639,6 +793,9 @@ pub enum Put {
         absorbed: Option<String>,
         /// Hash of what the table now holds, so the next collect sees no change.
         synced_hash: String,
+        /// The local row that took the op's id in is newer than the op and
+        /// kept its values (LWW); its state stays as it is.
+        kept: bool,
     },
 }
 
@@ -652,14 +809,30 @@ pub async fn put_row(
     data_dir: &Path,
     table: &Table,
     id: &str,
+    payload: Map<String, Value>,
+    aliases: &mut HashMap<String, String>,
+) -> CmdResult<Put> {
+    put_row_at(host, db, data_dir, table, id, payload, aliases, None).await
+}
+
+/// [`put_row`] of an op stamped `hlc`: a local twin newer than it keeps
+/// its values ([`twin_is_newer`]).
+#[allow(clippy::too_many_arguments)]
+async fn put_row_at(
+    host: &Host<'_>,
+    db: &Pool<Sqlite>,
+    data_dir: &Path,
+    table: &Table,
+    id: &str,
     mut payload: Map<String, Value>,
     aliases: &mut HashMap<String, String>,
+    hlc: Option<&Hlc>,
 ) -> CmdResult<Put> {
     let entity = table.spec.entity;
     if !sanitize_payload(db, table, &mut payload).await? {
         return Ok(Put::Retry(format!("{entity} {id} waiting for parent")));
     }
-    let applied = match upsert(host, db, data_dir, table, id, &mut payload, aliases).await {
+    let applied = match upsert(host, db, data_dir, table, id, &mut payload, aliases, hlc).await {
         Ok(v) => v,
         Err(e) if is_fk_error(&e) => {
             return Ok(Put::Retry(format!("{entity} {id}: {e}")));
@@ -668,8 +841,10 @@ pub async fn put_row(
     };
     match applied {
         Upserted::Skip => Ok(Put::Skip),
-        Upserted::Done { id, absorbed } => {
-            apply_links(db, table, &id, &payload).await?;
+        Upserted::Done { id, absorbed, kept } => {
+            if !kept {
+                apply_links(db, table, &id, &payload).await?;
+            }
             let synced_hash = match read_row(db, table, &id).await? {
                 Some(local) => payload_hash(&local),
                 None => payload_hash(&Value::Object(payload)),
@@ -678,6 +853,7 @@ pub async fn put_row(
                 id,
                 absorbed,
                 synced_hash,
+                kept,
             })
         }
     }
@@ -783,13 +959,74 @@ impl<'t> Held<'t> {
     }
 }
 
+/// The rows `ops` would write that were edited here since they were last
+/// pushed or applied: the edits made after the collect of the cycle.
+#[derive(Default)]
+pub struct Edited(HashSet<(String, String)>);
+
+impl Edited {
+    fn has(&self, entity: &str, id: &str) -> bool {
+        self.0.contains(&(entity.to_string(), id.to_string()))
+    }
+}
+
+/// Find the [`Edited`] rows among those of `tables` that `ops` would write.
+/// Read before any op of the pull is written, so that what an op does to
+/// another row (a deleted folder clears the parent of its children, a
+/// handler writes a column) is not taken for an edit. Only the tables that
+/// publish count: a mirrored row is never published from here.
+pub async fn edited_rows(db: &Pool<Sqlite>, tables: &[&Table], ops: &[Op]) -> CmdResult<Edited> {
+    let mut checked = HashSet::new();
+    let mut edited = HashSet::new();
+    for op in ops {
+        let Some(table) = tables
+            .iter()
+            .find(|t| t.spec.entity == op.entity_type && t.push)
+        else {
+            continue;
+        };
+        let key = (op.entity_type.clone(), op.entity_id.clone());
+        if checked.contains(&key) || !table.takes(&op.entity_id) || !valid_id(&op.entity_id) {
+            continue;
+        }
+        let Some(st) = load_row_state(db, table.spec.entity, &op.entity_id).await? else {
+            checked.insert(key);
+            continue;
+        };
+        // An op the row is newer than writes nothing; a later op of the
+        // same row may.
+        if st.head_hlc.as_ref().is_some_and(|h| *h >= op.hlc) {
+            continue;
+        }
+        if !st.deleted && changed_here(db, table, &st).await? {
+            edited.insert(key.clone());
+        }
+        checked.insert(key);
+    }
+    Ok(Edited(edited))
+}
+
 /// Apply remote row ops of `tables` (LWW by HLC). Parents first so FK checks
-/// pass. Hooks reach the states of the modules through `host`.
+/// pass. Hooks reach the states of the modules through `host`. A row edited
+/// here since the last push or apply keeps its value ([`edited_rows`]).
 pub async fn apply_ops(
     host: &Host<'_>,
     core: &Core,
     tables: &[&Table],
     ops: &[Op],
+) -> CmdResult<ApplyOutcome> {
+    let edited = edited_rows(&core.db, tables, ops).await?;
+    apply_ops_except(host, core, tables, ops, &edited).await
+}
+
+/// [`apply_ops`] with the edited rows found before: a cycle finds them once,
+/// before the first of its apply steps writes anything.
+pub async fn apply_ops_except(
+    host: &Host<'_>,
+    core: &Core,
+    tables: &[&Table],
+    ops: &[Op],
+    edited: &Edited,
 ) -> CmdResult<ApplyOutcome> {
     let db = &core.db;
     let mut outcome = ApplyOutcome::default();
@@ -818,6 +1055,8 @@ pub async fn apply_ops(
     pending.sort_by_key(|op| apply_order(tables, op));
 
     let mut aliases: HashMap<String, String> = HashMap::new();
+    let mut twins: BTreeMap<String, String> =
+        settings::get_json(db, TWINS_KEY).await.unwrap_or_default();
     for op in pending {
         let table = table_of(&op.entity_type).expect("filtered");
         let spec = &table.spec;
@@ -831,6 +1070,13 @@ pub async fn apply_ops(
         {
             continue;
         }
+        // A row edited here since it was last pushed or applied keeps its
+        // value: the next collect publishes it with a newer HLC, which wins
+        // on every device (LWW). Written over, the edit would be lost
+        // without an op. A tombstone waits the same way.
+        if edited.has(spec.entity, id) {
+            continue;
+        }
         let mut st = RowSyncState {
             entity: spec.entity.into(),
             id: id.into(),
@@ -841,6 +1087,28 @@ pub async fn apply_ops(
         if op.deleted {
             if matches!(spec.delete, Delete::Ignore) {
                 continue;
+            }
+            // The tombstone of an id a local row took in under its unique
+            // key is that row's (audit A2-16).
+            let alias = twin_key(spec.entity, id);
+            if let Some(twin) = twins.get(&alias).cloned() {
+                if read_row(db, table, id).await?.is_none() {
+                    match delete_twin(host, core, table, &twin, &op.hlc).await? {
+                        TwinTombstone::Retry(reason) => {
+                            outcome.retry = Some(reason);
+                            continue;
+                        }
+                        TwinTombstone::Kept => {}
+                        TwinTombstone::Deleted => changed(&mut outcome, table, &twin),
+                    }
+                    st.deleted = true;
+                    save_row_state(db, &st).await?;
+                    twins.remove(&alias);
+                    save_twins(db, &twins).await?;
+                    continue;
+                }
+                twins.remove(&alias);
+                save_twins(db, &twins).await?;
             }
             match delete_row(host, core, table, id).await {
                 Ok(Deletion::Later) => {
@@ -868,7 +1136,7 @@ pub async fn apply_ops(
         }
 
         let payload = op.payload.as_object().cloned().unwrap_or_default();
-        match put_row(
+        match put_row_at(
             host,
             db,
             &core.app_data_dir,
@@ -876,6 +1144,7 @@ pub async fn apply_ops(
             id,
             payload,
             &mut aliases,
+            Some(&op.hlc),
         )
         .await?
         {
@@ -893,14 +1162,31 @@ pub async fn apply_ops(
                 id: applied_id,
                 absorbed,
                 synced_hash,
+                kept,
             } => {
                 after_row(core, table, &applied_id).await?;
                 if let Some(old) = &absorbed {
                     after_row(core, table, old).await?;
                 }
-                st.id = applied_id;
-                st.synced_hash = synced_hash;
-                save_row_state(db, &st).await?;
+                // A twin newer than the op keeps its values and its state.
+                if !kept {
+                    st.id = applied_id.clone();
+                    st.synced_hash = synced_hash;
+                    save_row_state(db, &st).await?;
+                }
+                // Recorded before the state of the alias, op by op: an apply
+                // that stops halfway leaves no alias whose twin is unknown.
+                match &absorbed {
+                    Some(old) => {
+                        twins.insert(twin_key(spec.entity, old), applied_id);
+                        save_twins(db, &twins).await?;
+                    }
+                    None => {
+                        if twins.remove(&twin_key(spec.entity, &applied_id)).is_some() {
+                            save_twins(db, &twins).await?;
+                        }
+                    }
+                }
                 if let Some(old) = absorbed {
                     save_row_state(
                         db,
@@ -925,6 +1211,87 @@ pub async fn apply_ops(
         h.save(db).await?;
     }
     Ok(outcome)
+}
+
+/// Write what [`TWINS_KEY`] holds.
+async fn save_twins(db: &Pool<Sqlite>, twins: &BTreeMap<String, String>) -> CmdResult<()> {
+    if twins.is_empty() {
+        settings::delete(db, TWINS_KEY).await
+    } else {
+        settings::set_json(db, TWINS_KEY, twins).await
+    }
+}
+
+/// The ids a local row took in under its unique key ([`Twin`]): `<entity>/<id>`
+/// of the op's id → the id of the row. A tombstone of such an id deletes
+/// that row (audit A2-16). Device-local, cleared with the binding.
+pub const TWINS_KEY: &str = "sync_twins";
+
+fn twin_key(entity: &str, id: &str) -> String {
+    format!("{entity}/{id}")
+}
+
+/// What a tombstone of an id `twin` took in did to `twin`.
+enum TwinTombstone {
+    /// Not now (the row is in use, a reference fails): the op comes again.
+    Retry(String),
+    /// The twin stays: it is newer, already gone, or its hook keeps it
+    /// (then the next collect publishes it again).
+    Kept,
+    /// The twin is deleted. Its state stays without `deleted` and with the
+    /// tombstone's HLC, so the next collect publishes its own tombstone for
+    /// the devices that know it by its id.
+    Deleted,
+}
+
+/// The tombstone of an id `twin` took in, stamped `hlc`, applied to `twin`
+/// as if it were its own: LWW against its state, through the table's hook.
+async fn delete_twin(
+    host: &Host<'_>,
+    core: &Core,
+    table: &Table,
+    twin: &str,
+    hlc: &Hlc,
+) -> CmdResult<TwinTombstone> {
+    let db = &core.db;
+    let entity = table.spec.entity;
+    let Some(mut st) = load_row_state(db, entity, twin).await? else {
+        return Ok(TwinTombstone::Kept);
+    };
+    if st.deleted
+        || read_row(db, table, twin).await?.is_none()
+        || twin_is_newer(db, table, twin, hlc).await?
+    {
+        return Ok(TwinTombstone::Kept);
+    }
+    match delete_row(host, core, table, twin).await {
+        Ok(Deletion::Later) => Ok(TwinTombstone::Retry(format!("{entity} {twin} is in use"))),
+        Ok(Deletion::Keep) => {
+            after_row(core, table, twin).await?;
+            st.synced_hash = String::new();
+            save_row_state(db, &st).await?;
+            Ok(TwinTombstone::Kept)
+        }
+        Ok(Deletion::Plain | Deletion::Done) => {
+            after_row(core, table, twin).await?;
+            st.head_hlc = Some(hlc.clone());
+            save_row_state(db, &st).await?;
+            Ok(TwinTombstone::Deleted)
+        }
+        Err(e) if is_fk_error(&e) => Ok(TwinTombstone::Retry(format!("{entity} {twin}: {e}"))),
+        Err(e) => Err(e),
+    }
+}
+
+/// Whether the next collect would publish the row of `st`: its synced columns
+/// differ from what was last pushed or applied (an empty hash, left by a
+/// kept tombstone, always does), or it is gone and the table publishes
+/// tombstones.
+async fn changed_here(db: &Pool<Sqlite>, table: &Table, st: &RowSyncState) -> CmdResult<bool> {
+    Ok(match read_row(db, table, &st.id).await? {
+        Some(row) => payload_hash(&row) != st.synced_hash,
+        None => !matches!(table.spec.delete, Delete::Ignore),
+    })
 }
 
 /// The hook `after_row` of the table, if it has one.
@@ -974,13 +1341,27 @@ mod tests {
 
     const THINGS: Schema = Schema {
         module: "things",
-        steps: &["CREATE TABLE things (
+        steps: &[
+            "CREATE TABLE things (
             id   TEXT PRIMARY KEY NOT NULL,
             name TEXT NOT NULL,
             flag INTEGER NOT NULL DEFAULT 0
-        )"],
+        )",
+            "CREATE TABLE tags (
+            id    TEXT PRIMARY KEY NOT NULL,
+            name  TEXT NOT NULL UNIQUE,
+            color TEXT NOT NULL DEFAULT ''
+        )",
+        ],
     };
-    const ROWS: &[&str] = &["password_vault", "setting", "label", "thing", "thing_flag"];
+    const ROWS: &[&str] = &[
+        "password_vault",
+        "setting",
+        "label",
+        "thing",
+        "thing_flag",
+        "tag",
+    ];
     const PLAN: Plan = Plan {
         collect: &[Step::rows("rows", None, "app", ROWS)],
         apply: &[Step::rows("rows", None, "app", ROWS)],
@@ -1040,6 +1421,14 @@ mod tests {
                 delete: Delete::Ignore,
                 hold: Some("held_flags"),
                 ..TableSpec::plain("thing_flag", "things", &["flag"])
+            },
+            Hooks::default(),
+        );
+        // A tag is its name: one of another id with the same name is a twin.
+        registry.table(
+            TableSpec {
+                unique: Some(&["name"]),
+                ..TableSpec::plain("tag", "tags", &["name", "color"])
             },
             Hooks::default(),
         );
@@ -1120,6 +1509,37 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(st.head_hlc, Some(flag.hlc));
+    }
+
+    /// An id of dots alone reaches neither a row nor a hook: a hook that
+    /// joins `..` to a folder names the folder above it. The colon of the
+    /// ids of `label` stays.
+    #[tokio::test]
+    async fn an_id_of_dots_alone_is_not_applied() {
+        let (core, registry, _dir) = setup().await;
+        let db = &core.db;
+        let ops = [
+            op("thing", "..", 1000, Some(json!({ "name": "up" }))),
+            op("thing", ".", 1001, Some(json!({ "name": "here" }))),
+            op("thing", "...", 1002, Some(json!({ "name": "dots" }))),
+            op("thing", "..", 1003, None),
+        ];
+        let outcome = apply(&core, &registry, &ops).await;
+        assert!(outcome.changed.is_empty());
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM things")
+            .fetch_one(db)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0);
+        for id in ["..", ".", "..."] {
+            assert!(load_row_state(db, "thing", id).await.unwrap().is_none());
+        }
+        assert_eq!(settings::get(db, "heard").await, None);
+
+        assert!(["", ".", "..", "..."].iter().all(|id| !valid_id(id)));
+        assert!(["a.b", "..a", "tag:t-1", "default"]
+            .iter()
+            .all(|id| valid_id(id)));
     }
 
     /// Spec 9.2, rule 1: an op of a type or a setting key no module
@@ -1234,6 +1654,163 @@ mod tests {
         assert_eq!(pushed, [("thing", "t-1", false)]);
     }
 
+    /// A build that syncs one more column (with a default) publishes no row
+    /// nobody changed, and still the row changed here before it came.
+    #[tokio::test]
+    async fn a_new_synced_column_republishes_no_row() {
+        let (core, registry, _dir) = setup().await;
+        let db = &core.db;
+        let puts = [
+            op("thing", "t-1", 1000, Some(json!({ "name": "one" }))),
+            op("thing", "t-2", 1000, Some(json!({ "name": "two" }))),
+        ];
+        apply(&core, &registry, &puts).await;
+        let mut clock = HlcClock::new("here", None);
+        let changes = collect_local_changes(&core, &mut clock, &registry.rows(&["thing"]), None)
+            .await
+            .unwrap();
+        assert!(changes.ops.is_empty(), "{:?}", changes.ops);
+        assert_eq!(
+            settings::get(db, "sync_row_shape:thing").await.as_deref(),
+            Some("name;")
+        );
+
+        sqlx::query("UPDATE things SET name = 'two, edited' WHERE id = 't-2'")
+            .execute(db)
+            .await
+            .unwrap();
+        sqlx::query("ALTER TABLE things ADD COLUMN color TEXT NOT NULL DEFAULT 'grey'")
+            .execute(db)
+            .await
+            .unwrap();
+        let mut wider = Registry::new();
+        wider.add("things", |registry| {
+            registry.table(
+                TableSpec::plain("thing", "things", &["name", "color"]),
+                Hooks::default(),
+            )
+        });
+        let wider = wider.finish(&PLAN).unwrap();
+        let tables = wider.rows(&["thing"]);
+
+        let changes = collect_local_changes(&core, &mut clock, &tables, None)
+            .await
+            .unwrap();
+        let pushed: Vec<_> = changes
+            .ops
+            .iter()
+            .map(|op| (op.entity_id.as_str(), op.payload.clone()))
+            .collect();
+        assert_eq!(
+            pushed,
+            [("t-2", json!({ "name": "two, edited", "color": "grey" }))]
+        );
+        assert_eq!(
+            settings::get(db, "sync_row_shape:thing").await.as_deref(),
+            Some("color,name;")
+        );
+        for st in &changes.states {
+            save_row_state(db, st).await.unwrap();
+        }
+        let changes = collect_local_changes(&core, &mut clock, &tables, None)
+            .await
+            .unwrap();
+        assert!(changes.ops.is_empty(), "{:?}", changes.ops);
+
+        // The new column changes like any other once it is synced.
+        sqlx::query("UPDATE things SET color = 'red' WHERE id = 't-1'")
+            .execute(db)
+            .await
+            .unwrap();
+        let changes = collect_local_changes(&core, &mut clock, &tables, None)
+            .await
+            .unwrap();
+        let pushed: Vec<_> = changes.ops.iter().map(|op| op.entity_id.as_str()).collect();
+        assert_eq!(pushed, ["t-1"]);
+    }
+
+    /// An edit made after the collect, before the apply of the same cycle,
+    /// is neither written over by a newer remote op nor deleted by a
+    /// tombstone: the next collect publishes it. A row nobody changed here
+    /// takes the op as before.
+    #[tokio::test]
+    async fn a_row_changed_since_the_collect_is_not_overwritten() {
+        let (core, registry, _dir) = setup().await;
+        let db = &core.db;
+        let puts = [
+            op("thing", "t-1", 1000, Some(json!({ "name": "one" }))),
+            op("thing", "t-2", 1000, Some(json!({ "name": "two" }))),
+            op("thing", "t-3", 1000, Some(json!({ "name": "three" }))),
+            op("thing", "t-4", 1000, Some(json!({ "name": "four" }))),
+        ];
+        apply(&core, &registry, &puts).await;
+        for statement in [
+            "UPDATE things SET name = 'one, mine' WHERE id = 't-1'",
+            "UPDATE things SET name = 'two, mine' WHERE id = 't-2'",
+            "DELETE FROM things WHERE id = 't-4'",
+        ] {
+            sqlx::query(statement).execute(db).await.unwrap();
+        }
+        let newer = [
+            op("thing", "t-1", 2000, Some(json!({ "name": "one, theirs" }))),
+            op("thing", "t-2", 2000, None),
+            op(
+                "thing",
+                "t-3",
+                2000,
+                Some(json!({ "name": "three, theirs" })),
+            ),
+            op(
+                "thing",
+                "t-4",
+                2000,
+                Some(json!({ "name": "four, theirs" })),
+            ),
+        ];
+        let outcome = apply(&core, &registry, &newer).await;
+        assert_eq!(outcome.retry, None);
+
+        let names: Vec<(String, String)> =
+            sqlx::query_as("SELECT id, name FROM things ORDER BY id")
+                .fetch_all(db)
+                .await
+                .unwrap();
+        let names: Vec<(&str, &str)> = names
+            .iter()
+            .map(|(id, name)| (id.as_str(), name.as_str()))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("t-1", "one, mine"),
+                ("t-2", "two, mine"),
+                ("t-3", "three, theirs")
+            ]
+        );
+        let kept = load_row_state(db, "thing", "t-1").await.unwrap().unwrap();
+        assert_eq!(kept.head_hlc.map(|h| h.wall_ms), Some(1000));
+
+        let mut clock = HlcClock::new("here", None);
+        let changes = collect_local_changes(&core, &mut clock, &registry.rows(&["thing"]), None)
+            .await
+            .unwrap();
+        let mut pushed: Vec<_> = changes
+            .ops
+            .iter()
+            .map(|op| (op.entity_id.as_str(), op.deleted, op.payload.clone()))
+            .collect();
+        pushed.sort_by(|a, b| a.0.cmp(b.0));
+        assert_eq!(
+            pushed,
+            [
+                ("t-1", false, json!({ "name": "one, mine" })),
+                ("t-2", false, json!({ "name": "two, mine" })),
+                ("t-4", true, json!({})),
+            ]
+        );
+        assert!(changes.ops.iter().all(|op| op.hlc.wall_ms > 2000));
+    }
+
     #[tokio::test]
     async fn the_owner_hears_of_each_row_sync_wrote_or_removed() {
         let (core, registry, _dir) = setup().await;
@@ -1324,5 +1901,164 @@ mod tests {
             .await
             .unwrap();
         assert!(changes.ops.is_empty(), "{:?}", changes.ops);
+    }
+
+    /// A local tag `t-here` named "work", synced at `wall_ms`.
+    async fn local_tag(core: &Core, registry: &Registry, color: &str, wall_ms: u64) {
+        let db = &core.db;
+        sqlx::query("INSERT INTO tags (id, name, color) VALUES ('t-here', 'work', ?)")
+            .bind(color)
+            .execute(db)
+            .await
+            .unwrap();
+        let table = registry.table_of("tag").unwrap();
+        let row = read_row(db, table, "t-here").await.unwrap().unwrap();
+        save_row_state(
+            db,
+            &RowSyncState {
+                entity: "tag".into(),
+                id: "t-here".into(),
+                head_hlc: Some(Hlc {
+                    wall_ms,
+                    counter: 0,
+                    device_id: "here".into(),
+                }),
+                synced_hash: payload_hash(&row),
+                deleted: false,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    async fn tag_color(core: &Core) -> Option<String> {
+        sqlx::query_scalar("SELECT color FROM tags WHERE id = 't-here'")
+            .fetch_optional(&core.db)
+            .await
+            .unwrap()
+    }
+
+    /// Audit A2-16: a row of another id with the same unique key writes over
+    /// the local twin only when it is newer (LWW), and never over an edit
+    /// made here since the twin was synced; the twin's clock never goes back.
+    #[tokio::test]
+    async fn a_twin_takes_the_values_of_a_newer_op_only() {
+        let (core, registry, _dir) = setup().await;
+        let db = &core.db;
+        local_tag(&core, &registry, "red", 2000).await;
+
+        let older = op(
+            "tag",
+            "t-there",
+            1000,
+            Some(json!({ "name": "work", "color": "blue" })),
+        );
+        apply(&core, &registry, &[older]).await;
+        assert_eq!(tag_color(&core).await.as_deref(), Some("red"));
+        let twin = load_row_state(db, "tag", "t-here").await.unwrap().unwrap();
+        assert_eq!(twin.head_hlc.unwrap().wall_ms, 2000);
+        let alias = load_row_state(db, "tag", "t-there").await.unwrap().unwrap();
+        assert!(alias.deleted);
+
+        let newer = op(
+            "tag",
+            "t-there",
+            3000,
+            Some(json!({ "name": "work", "color": "green" })),
+        );
+        apply(&core, &registry, &[newer]).await;
+        assert_eq!(tag_color(&core).await.as_deref(), Some("green"));
+        let twin = load_row_state(db, "tag", "t-here").await.unwrap().unwrap();
+        assert_eq!(twin.head_hlc.unwrap().wall_ms, 3000);
+        let mut clock = HlcClock::new("here", None);
+        let changes = collect_local_changes(&core, &mut clock, &registry.rows(&["tag"]), None)
+            .await
+            .unwrap();
+        assert!(changes.ops.is_empty(), "{:?}", changes.ops);
+
+        sqlx::query("UPDATE tags SET color = 'pink' WHERE id = 't-here'")
+            .execute(db)
+            .await
+            .unwrap();
+        let later = op(
+            "tag",
+            "t-there",
+            4000,
+            Some(json!({ "name": "work", "color": "black" })),
+        );
+        apply(&core, &registry, &[later]).await;
+        assert_eq!(tag_color(&core).await.as_deref(), Some("pink"));
+        let changes = collect_local_changes(&core, &mut clock, &registry.rows(&["tag"]), None)
+            .await
+            .unwrap();
+        let pushed: Vec<_> = changes
+            .ops
+            .iter()
+            .map(|op| (op.entity_id.as_str(), op.deleted, op.hlc.wall_ms > 4000))
+            .collect();
+        assert_eq!(pushed, [("t-here", false, true)]);
+    }
+
+    /// Audit A2-16: the tombstone of an id a local twin took in deletes the
+    /// twin (LWW against its state), and the next collect publishes the
+    /// twin's own tombstone for the devices that know it by its id; an
+    /// older tombstone leaves a newer twin alone.
+    #[tokio::test]
+    async fn the_tombstone_of_an_absorbed_id_deletes_its_twin_everywhere() {
+        let (core, registry, _dir) = setup().await;
+        let db = &core.db;
+        local_tag(&core, &registry, "red", 2000).await;
+        let put = op(
+            "tag",
+            "t-there",
+            1000,
+            Some(json!({ "name": "work", "color": "blue" })),
+        );
+        apply(&core, &registry, &[put]).await;
+
+        // Older than the twin: it stays.
+        apply(&core, &registry, &[op("tag", "t-there", 1500, None)]).await;
+        assert_eq!(tag_color(&core).await.as_deref(), Some("red"));
+        assert!(settings::get(db, TWINS_KEY).await.is_none());
+
+        // Taken in again, then deleted on the device it came from.
+        let put = op(
+            "tag",
+            "t-there",
+            2500,
+            Some(json!({ "name": "work", "color": "blue" })),
+        );
+        apply(&core, &registry, &[put]).await;
+        assert_eq!(tag_color(&core).await.as_deref(), Some("blue"));
+        assert!(settings::get(db, TWINS_KEY).await.is_some());
+        let outcome = apply(&core, &registry, &[op("tag", "t-there", 5000, None)]).await;
+        assert!(outcome.changed.contains("tag"));
+        assert_eq!(tag_color(&core).await, None);
+        assert!(settings::get(db, TWINS_KEY).await.is_none());
+        let alias = load_row_state(db, "tag", "t-there").await.unwrap().unwrap();
+        assert!(alias.deleted);
+        assert_eq!(alias.head_hlc.unwrap().wall_ms, 5000);
+
+        let mut clock = HlcClock::new("here", None);
+        let changes = collect_local_changes(&core, &mut clock, &registry.rows(&["tag"]), None)
+            .await
+            .unwrap();
+        let pushed: Vec<_> = changes
+            .ops
+            .iter()
+            .map(|op| (op.entity_id.as_str(), op.deleted, op.hlc.wall_ms > 5000))
+            .collect();
+        assert_eq!(pushed, [("t-here", true, true)]);
+        save_states(db, &changes.states).await;
+        let changes = collect_local_changes(&core, &mut clock, &registry.rows(&["tag"]), None)
+            .await
+            .unwrap();
+        assert!(changes.ops.is_empty(), "{:?}", changes.ops);
+    }
+
+    async fn save_states(db: &Pool<Sqlite>, states: &[RowSyncState]) {
+        for st in states {
+            save_row_state(db, st).await.unwrap();
+        }
     }
 }

@@ -19,7 +19,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::path::Path;
 use veydan_core::{BoxFuture, CmdResult, Core};
-use veydan_sync::{sha256_hex, Engine, HlcClock, LocalState, Op};
+use veydan_sync::{sha256_hex, Engine, Hlc, HlcClock, LocalState, Op};
 
 /// Link table folded into the parent payload as an id array.
 pub struct LinkSpec {
@@ -114,8 +114,8 @@ pub struct Upsert<'a> {
     /// The id the op names.
     pub id: &'a str,
     pub payload: &'a mut Map<String, Value>,
-    /// The local row with the same unique key under another id; it takes the
-    /// values, and the op's id becomes an alias of it.
+    /// The local row with the same unique key under another id; the op's id
+    /// becomes an alias of it, and it takes the values when the op is newer.
     pub twin: Option<Twin>,
     /// Values one op of this apply renamed, for the hooks of the ops after it.
     pub aliases: &'a mut HashMap<String, String>,
@@ -127,7 +127,8 @@ pub struct Upsert<'a> {
 
 pub struct Twin {
     pub id: String,
-    /// The op's id sorts first: its values win over the twin's own.
+    /// The op is newer than the twin (LWW; for a write that is no op's, its
+    /// id sorts first): its values win over the twin's own.
     pub remote_wins: bool,
 }
 
@@ -221,7 +222,12 @@ pub type Commit = Box<dyn FnOnce(Pool<Sqlite>) -> BoxFuture<'static, CmdResult<(
 pub struct Applied {
     /// Set when an op was skipped on a transient condition; peer heads must not advance.
     pub retry: Option<String>,
-    /// Ops whose blobs are gone; reported as warnings, peer heads still advance.
+    /// The devices whose ops `retry` is for (the device of each op's HLC,
+    /// whose log it came in): only their heads stay, the other logs'
+    /// advance. Empty with `retry` set, every head stays.
+    pub retry_from: Vec<String>,
+    /// Ops whose blobs are gone or do not open (quarantined); reported as
+    /// warnings, peer heads still advance.
     pub skipped: Vec<String>,
     /// What the handler's `finish` and `notify` read.
     pub detail: Option<Box<dyn Any + Send + Sync>>,
@@ -285,6 +291,31 @@ pub trait Handler: Send + Sync {
     /// Blobs of format v1 an op of its types keeps alive.
     async fn blob_refs(&self, _engine: &Engine, _op: &Op) -> CmdResult<Vec<String>> {
         Ok(Vec::new())
+    }
+
+    /// The device id was rotated (`config::rotate_device_id`): what the
+    /// handler holds under `old` as this device's own moves to `new`, in the
+    /// transaction of the rotation.
+    async fn device_rotated(
+        &self,
+        _tx: &mut sqlx::SqliteConnection,
+        _old: &str,
+        _new: &str,
+    ) -> CmdResult<()> {
+        Ok(())
+    }
+
+    /// The storage lost the chunks of this device's log after `newest`
+    /// (`state::forget_pushed_after`): the states of what `device` pushed
+    /// after it forget the push, so the next collect publishes it again.
+    /// `state::pushed_after` finds them by their HLC.
+    async fn forget_pushed_after(
+        &self,
+        _tx: &mut sqlx::SqliteConnection,
+        _device: &str,
+        _newest: Option<&Hlc>,
+    ) -> CmdResult<()> {
+        Ok(())
     }
 }
 
@@ -688,6 +719,35 @@ impl Registry {
         self.handlers
             .iter()
             .flat_map(|h| h.handler.state_tables().iter().copied())
+    }
+
+    /// Every handler hears that the device id was rotated, in the order they registered.
+    pub async fn device_rotated(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        old: &str,
+        new: &str,
+    ) -> CmdResult<()> {
+        for entry in &self.handlers {
+            entry.handler.device_rotated(tx, old, new).await?;
+        }
+        Ok(())
+    }
+
+    /// Every handler forgets what `device` pushed after `newest`.
+    pub async fn forget_pushed_after(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        device: &str,
+        newest: Option<&Hlc>,
+    ) -> CmdResult<()> {
+        for entry in &self.handlers {
+            entry
+                .handler
+                .forget_pushed_after(tx, device, newest)
+                .await?;
+        }
+        Ok(())
     }
 
     /// The order the plan applies the registered entities in: the puts and

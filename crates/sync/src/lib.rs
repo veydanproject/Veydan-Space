@@ -30,7 +30,7 @@ pub mod storage_cloud;
 pub mod storage_s3;
 pub mod storage_webdav;
 
-pub use engine::{Engine, Probe, PullResult};
+pub use engine::{Engine, EveryLog, OwnLogStatus, Probe, PullResult};
 pub use hlc::{Hlc, HlcClock};
 pub use keys::{Manifest, Vmk};
 pub use large_files::{

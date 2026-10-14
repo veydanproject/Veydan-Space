@@ -8,7 +8,8 @@
   import Icon from '$lib/core/Icon.svelte';
   import type { TotpEntry, TotpCode } from '$lib/pass/types';
   import { api } from '$lib/pass/api';
-  import { formatError } from '$lib/core/utils';
+  import { copySecret } from '$lib/pass/clipboard';
+  import { formatError, hasErrorCode } from '$lib/core/utils';
   import { onSyncChanged } from '$lib/core/mobile/api';
   import { directory } from '$lib/core/directory';
   import { userLabels } from '$lib/pass/totp-tags';
@@ -37,7 +38,6 @@
     );
   });
   let toastTimer: ReturnType<typeof setTimeout>;
-  let clipTimer: ReturnType<typeof setTimeout>;
   let tick: ReturnType<typeof setInterval>;
 
   const RADIUS = 12;
@@ -116,7 +116,8 @@
       const list = await api.totp.generateCodes(entries.map((e) => e.id));
       codes = new Map(list.map((c) => [c.id, c]));
     } catch (e) {
-      error = formatError(e);
+      // The lock closed between two ticks: the gate takes the page away, no error to show.
+      if (!hasErrorCode(e, 'vault_locked')) error = formatError(e);
     }
   }
 
@@ -129,11 +130,8 @@
   async function copy(entry: TotpEntry) {
     const code = codes.get(entry.id);
     if (!code) return;
-    await navigator.clipboard.writeText(code.code);
+    await copySecret(code.code);
     showToast($t('totp_copied'));
-    // Clear clipboard after 30s so the code does not linger.
-    clearTimeout(clipTimer);
-    clipTimer = setTimeout(() => navigator.clipboard.writeText('').catch(() => {}), 30_000);
   }
 
   async function remove() {
@@ -158,7 +156,6 @@
   onDestroy(() => {
     clearInterval(tick);
     clearTimeout(toastTimer);
-    clearTimeout(clipTimer);
   });
 </script>
 

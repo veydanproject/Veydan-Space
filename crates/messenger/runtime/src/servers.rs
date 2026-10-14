@@ -44,6 +44,7 @@ impl MessengerRuntime {
 
     /// Replace where manifests come from (tests, the CLI).
     pub fn set_manifest_remote(&self, remote: ManifestRemote) {
+        self.relays.set_pinned(&remote.pinned);
         *self.manifest_remote.write().unwrap() = remote;
     }
 
@@ -79,7 +80,9 @@ impl MessengerRuntime {
         }
         if !force {
             if let Some(at) = self.relays.manifest_checked_at().await? {
-                if SystemClock.now().secs() - at < REFRESH_EVERY_SECS {
+                // A stored manifest that was not taken (no signature kept by
+                // an older build, or a bad one) is asked for again at once.
+                if SystemClock.now().secs() - at < REFRESH_EVERY_SECS && !self.relays.behind_applied().await? {
                     return Ok(None);
                 }
             }
@@ -100,25 +103,31 @@ impl MessengerRuntime {
         // Nowhere to ask (no project URLs, no sources in the manifest): the
         // one in use stands, and that is not an error.
         let fetched = if urls.is_empty() {
-            Ok((current.clone(), origin.clone()))
+            Ok(None)
         } else {
-            fetch_signed(remote.fetcher.as_ref(), &urls, &remote.pinned).await
+            fetch_signed(remote.fetcher.as_ref(), &urls, &remote.pinned).await.map(Some)
         };
         self.relays.set_manifest_checked_at(SystemClock.now().secs()).await?;
+        // Newer than the one in use, and no older than what the rows of this
+        // device came from: while the stored copy is not taken (`in_use`),
+        // the one in use is the built-in one, and a signed copy between the
+        // two would be a step back.
+        let applied = self.relays.manifest_serial().await?;
+        let newer = |m: &messenger_transport::Manifest| m.serial > current.serial && applied.is_none_or(|a| m.serial >= a);
         let check = match fetched {
-            Ok((m, url)) if m.serial > current.serial => {
-                self.relays.adopt_manifest(&m, &url, true).await?;
+            Ok(Some((m, url, signed))) if newer(&m) => {
+                self.relays.adopt_signed(&signed, &url, true).await?;
                 ManifestCheck { origin: url, serial: m.serial, updated: true, error: None }
             }
             Ok(_) => {
                 if reapply {
-                    self.relays.adopt_manifest(&current, &origin, true).await?;
+                    self.relays.adopt_current(true).await?;
                 }
                 ManifestCheck { origin, serial: current.serial, updated: false, error: None }
             }
             Err(e) => {
                 if reapply {
-                    self.relays.adopt_manifest(&current, &origin, true).await?;
+                    self.relays.adopt_current(true).await?;
                 }
                 ManifestCheck { origin, serial: current.serial, updated: false, error: Some(e.to_string()) }
             }
@@ -299,16 +308,18 @@ mod tests {
         s.rt.shutdown().await;
     }
 
+    /// No project URL: the built-in manifest still names where to ask (its
+    /// `sources`, from serial 14 on), so those are asked; none answers, and
+    /// the built-in one stands with the error said.
     #[tokio::test]
-    async fn nowhere_to_ask_is_the_built_in_manifest_without_an_error() {
+    async fn without_project_urls_the_sources_of_the_built_in_manifest_are_asked() {
         let s = setup().await;
         s.rt.set_manifest_remote(ManifestRemote { fetcher: s.fake.clone(), urls: vec![], pinned: "00".into() });
         let check = s.rt.servers_use_veydan().await.unwrap();
-        assert_eq!((check.origin.as_str(), check.updated, check.error), ("embedded", false, None));
+        assert_eq!((check.origin.as_str(), check.updated), ("embedded", false));
+        assert!(check.error.as_deref().is_some_and(|e| e.contains("Veydan-Manifest")), "{:?}", check.error);
         assert_eq!(urls(&s.rt).await, embedded_urls(None));
-        let check = s.rt.manifest_refresh(true).await.unwrap().unwrap();
-        assert_eq!((check.updated, check.error), (false, None));
-        assert_eq!(s.fake.calls.load(Ordering::SeqCst), 0, "nothing was asked");
+        assert!(s.fake.calls.load(Ordering::SeqCst) > 0, "the sources of the built-in manifest were asked");
         s.rt.shutdown().await;
     }
 
@@ -332,6 +343,85 @@ mod tests {
         assert!(embedded_urls(None).iter().all(|u| now.contains(u)) && now.contains(&"wss://mine.example".to_string()));
         s.rt.servers_use_own().await.unwrap();
         assert_eq!(urls(&s.rt).await, vec!["wss://mine.example".to_string()]);
+        s.rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_manifest_written_into_the_settings_counts_only_with_the_signature() {
+        use messenger_store::settings;
+        let s = setup().await;
+        publish(&s, embedded_serial() + 1, "wss://node-2.veydan.net");
+        s.rt.servers_use_veydan().await.unwrap();
+        assert_eq!(urls(&s.rt).await, embedded_urls(Some("wss://node-2.veydan.net")));
+        let store = s.rt.store();
+        assert!(settings::get(store, "manifest.signed").await.unwrap().is_some(), "the signed event is kept");
+        assert_eq!(s.rt.relays().current_manifest().await.unwrap().1, URL);
+
+        // A bare document with a relay of somebody else and a big serial,
+        // as an older build kept it: not taken, and the next check does not
+        // wait a day.
+        let mut forged = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap();
+        forged.serial = 1000;
+        forged.relays[0].url = "wss://evil.example".into();
+        settings::set(store, "manifest.json", &serde_json::to_string(&forged).unwrap()).await.unwrap();
+        settings::delete(store, "manifest.signed").await.unwrap();
+        let (m, origin) = s.rt.relays().current_manifest().await.unwrap();
+        assert_eq!((m.serial, origin.as_str()), (embedded_serial(), "embedded"));
+        assert!(s.rt.relays().behind_applied().await.unwrap());
+        let calls = s.fake.calls.load(Ordering::SeqCst);
+        let check = s.rt.manifest_refresh(false).await.unwrap().expect("asked at once");
+        assert!(check.updated && s.fake.calls.load(Ordering::SeqCst) > calls);
+        assert!(!s.rt.relays().behind_applied().await.unwrap());
+        assert_eq!(s.rt.relays().current_manifest().await.unwrap().1, URL);
+
+        // A signed event changed after the signature, or signed by another
+        // key: the built-in manifest again, and a region switch applies it.
+        let good = settings::get(store, "manifest.signed").await.unwrap().unwrap();
+        settings::set(store, "manifest.signed", &forged.sign(&Keys::generate()).unwrap()).await.unwrap();
+        assert_eq!(s.rt.relays().current_manifest().await.unwrap().1, "embedded");
+        settings::set(store, "manifest.signed", &good).await.unwrap();
+        assert_eq!(s.rt.relays().current_manifest().await.unwrap().1, URL, "the good one still counts");
+        settings::set(store, "manifest.signed", &good.replace("node-2.veydan.net", "evil.example")).await.unwrap();
+        assert_eq!(s.rt.relays().current_manifest().await.unwrap().1, "embedded");
+        s.rt.relays().set_region("ru").await.unwrap();
+        let now = urls(&s.rt).await;
+        assert!(!now.iter().any(|u| u.contains("evil.example")), "{now:?}");
+        s.rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn while_the_stored_copy_is_not_taken_nothing_steps_back() {
+        use messenger_store::settings;
+        let s = setup().await;
+        let e = embedded_serial();
+        publish(&s, e + 2, "wss://node-3.veydan.net");
+        s.rt.servers_use_veydan().await.unwrap();
+        assert_eq!(s.rt.relays().manifest_serial().await.unwrap(), Some(e + 2));
+        // As an older build left it: the rows of e + 2, no signed copy.
+        settings::delete(s.rt.store(), "manifest.signed").await.unwrap();
+        let info = s.rt.relays().manifest_info().await.unwrap();
+        assert_eq!((info.origin.as_str(), info.serial), ("embedded", Some(e)), "the info tells of the one in use");
+
+        // A region switch and the Veydan servers chosen again apply the
+        // built-in one, and the serial applied stays: the check is still due.
+        s.rt.relays().set_region("ru").await.unwrap();
+        s.rt.relays().set_region("default").await.unwrap();
+        assert_eq!(s.rt.relays().manifest_serial().await.unwrap(), Some(e + 2));
+        assert!(s.rt.relays().behind_applied().await.unwrap());
+
+        // A signed copy between the built-in one and the rows is no step
+        // forward: not taken, and the check stays due.
+        publish(&s, e + 1, "wss://node-1.veydan.net");
+        let check = s.rt.manifest_refresh(false).await.unwrap().expect("asked at once");
+        assert!(!check.updated, "{check:?}");
+        assert!(s.rt.relays().behind_applied().await.unwrap());
+        assert_eq!(s.rt.relays().manifest_serial().await.unwrap(), Some(e + 2));
+        // The copy of the rows is: taken, and the check rests.
+        publish(&s, e + 2, "wss://node-3.veydan.net");
+        assert!(s.rt.manifest_refresh(false).await.unwrap().expect("asked at once").updated);
+        assert!(!s.rt.relays().behind_applied().await.unwrap());
+        assert_eq!(urls(&s.rt).await, embedded_urls(Some("wss://node-3.veydan.net")));
+        assert_eq!(s.rt.manifest_refresh(false).await.unwrap(), None, "checked a moment ago");
         s.rt.shutdown().await;
     }
 

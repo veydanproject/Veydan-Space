@@ -345,3 +345,42 @@ pub async fn ssh_key_delete(core: State<'_, Core>, id: String) -> CmdResult<()> 
         .map_err(AppError::db)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use russh::keys::ssh_key::LineEnding;
+
+    fn encrypted_ed25519(pass: &str) -> String {
+        let mut rng = rand::rng();
+        let key = PrivateKey::from(Ed25519Keypair::random(&mut rng));
+        key.encrypt(&mut rng, pass)
+            .unwrap()
+            .to_openssh(LineEnding::LF)
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn an_encrypted_key_opens_with_its_passphrase_only() {
+        let pem = encrypted_ed25519("correct horse");
+        let key = parse_imported(&pem, Some("correct horse")).expect("the right passphrase opens");
+        assert!(!key.is_encrypted());
+        // No passphrase, an empty one and a wrong one are told apart.
+        let err = parse_imported(&pem, None).unwrap_err().to_string();
+        assert!(err.contains(ERR_KEY_ENCRYPTED), "{err}");
+        let err = parse_imported(&pem, Some("")).unwrap_err().to_string();
+        assert!(err.contains(ERR_KEY_ENCRYPTED), "{err}");
+        let err = parse_imported(&pem, Some("wrong")).unwrap_err().to_string();
+        assert!(err.contains(ERR_KEY_WRONG_PASSPHRASE), "{err}");
+    }
+
+    #[test]
+    fn a_plain_key_ignores_a_saved_passphrase() {
+        let mut rng = rand::rng();
+        let key = PrivateKey::from(Ed25519Keypair::random(&mut rng));
+        let pem = key.to_openssh(LineEnding::LF).unwrap().to_string();
+        assert!(parse_imported(&pem, Some("left over")).is_ok());
+        assert!(parse_imported(&pem, None).is_ok());
+    }
+}

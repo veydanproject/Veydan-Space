@@ -325,6 +325,52 @@ pub struct Invite {
     pub expires_at: i64,
 }
 
+/// How far ahead of my clock an invitation may be dated.
+pub const INVITE_SKEW_SECS: i64 = 300;
+
+impl Invite {
+    /// Whether an invitation that came is one to keep, by my clock `now`:
+    /// ids as this app makes them, a name without controls that still shows
+    /// something once cleaned, a description and a picture as the log takes
+    /// them (`state::check_text`), a relay address,
+    /// dated no later than a little ahead of me and good for no more than
+    /// a week from that date. The name and the description are shown as
+    /// `richtext::normalize` makes them (bidi marks are dropped there).
+    pub fn check(&self, now: i64) -> std::result::Result<(), &'static str> {
+        use crate::state::{MAX_ABOUT_CHARS, MAX_NAME_CHARS, MAX_PICTURE_CHARS};
+        let hex = |s: &str, len: usize| s.len() == len && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        if !hex(&self.invite_id, 32) {
+            return Err("invite_id");
+        }
+        if !hex(&self.group_id, 64) {
+            return Err("group_id");
+        }
+        let name = self.name.trim();
+        if name.is_empty() || name.chars().count() > MAX_NAME_CHARS || name.chars().any(char::is_control) || self.shown_name().is_empty() {
+            return Err("name");
+        }
+        if self.about.chars().count() > MAX_ABOUT_CHARS {
+            return Err("about");
+        }
+        let p = &self.picture;
+        if !p.is_empty() && (!p.starts_with("https://") || p.chars().count() > MAX_PICTURE_CHARS) {
+            return Err("picture");
+        }
+        if !self.relay.is_empty() && (self.relay.len() > MAX_PICTURE_CHARS || messenger_core::RelayUrl::parse(&self.relay).is_none()) {
+            return Err("relay");
+        }
+        if self.created_at > now + INVITE_SKEW_SECS || self.expires_at <= now || self.expires_at > self.created_at + INVITE_TTL_SECS {
+            return Err("dates");
+        }
+        Ok(())
+    }
+
+    /// The name as it is shown: trimmed, without bidi marks and the like.
+    pub fn shown_name(&self) -> String {
+        messenger_richtext::normalize(self.name.trim())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InviteReply {
     pub invite_id: String,

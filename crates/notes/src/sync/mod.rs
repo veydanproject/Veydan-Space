@@ -16,7 +16,9 @@ mod golden;
 pub(crate) mod notes;
 pub(crate) mod state;
 
-use veydan_sync_host::{blob_gone, config, emit_progress, open_engine, progress_pct, SyncManager};
+use veydan_sync_host::{
+    blob_gone, blob_quarantined, config, emit_progress, open_engine, progress_pct, SyncManager,
+};
 
 use crate::tags::{normalize_tag_name, TAG_PLACEHOLDER_COLOR};
 use serde_json::Value;
@@ -124,6 +126,9 @@ fn tag_keeps_its_color<'a>(cx: &'a mut Upsert<'_>) -> BoxFuture<'a, CmdResult<()
         let lower = name.map(normalize_tag_name).filter(|n| !n.is_empty());
         if let Some(lower) = lower.filter(|lower| Some(lower.as_str()) != name) {
             // The twin of the sync host was looked up by the name as it came.
+            // Whether it takes the values the host decides by the clocks
+            // (`Twin::remote_wins` of a twin it found); nothing of the tags
+            // reads `remote_wins`, so the order of the ids stands in here.
             if cx.twin.is_none() {
                 let other: Option<(String,)> =
                     sqlx::query_as("SELECT id FROM note_tags WHERE name = ? AND id != ?")
@@ -243,7 +248,10 @@ mod tests {
         let Put::Done { id, absorbed, .. } = put else {
             panic!("the tag was not written");
         };
-        assert_eq!((id.as_str(), absorbed.as_deref()), ("t-local", Some("t-remote")));
+        assert_eq!(
+            (id.as_str(), absorbed.as_deref()),
+            ("t-local", Some("t-remote"))
+        );
         assert_eq!(
             tags(&states.core.db).await,
             [("t-local".into(), "работа".into(), RED.into())]

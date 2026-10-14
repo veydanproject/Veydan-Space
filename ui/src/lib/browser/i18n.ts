@@ -79,6 +79,7 @@ export const translations = {
     // Profile side panel
     panel_proxy: 'Proxy',
     panel_no_proxy: 'No proxy',
+    panel_proxy_deleted: 'Proxy deleted',
     panel_os: 'OS / Browser',
     panel_last_activity: 'Last activity',
     panel_never: 'Never',
@@ -122,6 +123,7 @@ export const translations = {
     profile_webrtc_disable: 'Disable (recommended)',
     profile_webrtc_proxy: 'Proxy Only',
     profile_webrtc_real_ip: 'Real IP (enabled)',
+    profile_webrtc_hint: 'With a proxy, WebRTC goes only through the proxy (TURN over TCP); direct connections and STUN are off.',
     profile_field_search_engine: 'Default Search Engine',
     profile_field_history: 'Browser History',
     profile_field_history_hint: 'Save visited pages and enable Back/Forward buttons',
@@ -274,6 +276,10 @@ export const translations = {
     settings_camoufox_checking_update: 'Checking…',
     settings_camoufox_up_to_date: 'Up to date',
     settings_camoufox_update_available: 'Update available: {version}',
+    settings_camoufox_unverified: 'This Camoufox was not checked by the app. Update it to install the checked {version}.',
+    settings_camoufox_unavailable: 'This version of the app has no checked Camoufox for this computer.',
+    settings_camoufox_in_use: 'Close the running browser profiles to install Camoufox. The download is kept.',
+    settings_camoufox_upstream_newer: 'Camoufox {version} is out. The app installs a new Camoufox after checking it, with an app update.',
     settings_capture_section: 'Browser capture',
     settings_capture_hint: 'Notes captured from a site get this folder and tags automatically. Use *.example.com for subdomains.',
     // The UI/UX pass (2026-10-04): the proxy form's Russian literals.
@@ -418,6 +424,7 @@ export const translations = {
     // Profile side panel
     panel_proxy: 'Прокси',
     panel_no_proxy: 'Без прокси',
+    panel_proxy_deleted: 'Прокси удалён',
     panel_os: 'ОС / Браузер',
     panel_last_activity: 'Последняя активность',
     panel_never: 'Никогда',
@@ -464,6 +471,7 @@ export const translations = {
     profile_webrtc_disable: 'Отключить (рекомендуется)',
     profile_webrtc_proxy: 'Только через прокси',
     profile_webrtc_real_ip: 'Реальный IP (включён)',
+    profile_webrtc_hint: 'С прокси WebRTC идёт только через прокси (TURN по TCP); прямые соединения и STUN выключены.',
     profile_field_timezone: 'Часовой пояс',
     profile_timezone_none: 'Авто (системный)',
     profile_field_gpu: 'GPU пресет',
@@ -613,6 +621,10 @@ export const translations = {
     settings_camoufox_checking_update: 'Проверка…',
     settings_camoufox_up_to_date: 'Актуальная версия',
     settings_camoufox_update_available: 'Доступно обновление: {version}',
+    settings_camoufox_unverified: 'Этот Camoufox не проверен приложением. Обновите его, чтобы установить проверенную версию {version}.',
+    settings_camoufox_unavailable: 'В этой версии приложения нет проверенного Camoufox для этого компьютера.',
+    settings_camoufox_in_use: 'Закройте запущенные профили браузера, чтобы установить Camoufox. Скачанный файл сохранён.',
+    settings_camoufox_upstream_newer: 'Вышел Camoufox {version}. Новый Camoufox приходит после проверки, с обновлением приложения.',
     settings_capture_section: 'Захват из браузера',
     settings_capture_hint: 'Заметки, сохранённые с сайта, автоматически получают папку и теги. Для поддоменов используйте *.example.com.',
     // The UI/UX pass (2026-10-04): the proxy form's Russian literals.

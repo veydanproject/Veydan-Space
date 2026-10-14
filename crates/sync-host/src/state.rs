@@ -7,10 +7,11 @@
 //! (`Handler::state_tables`).
 
 use crate::Registry;
+use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use veydan_core::{settings, AppError, CmdResult};
-use veydan_sync::{Hlc, LocalState, PeerHead};
+use veydan_sync::{Hlc, LocalState, Op, PeerHead};
 
 /// Forget every sync position; the next cycle starts from scratch.
 pub async fn clear_all_states(db: &Pool<Sqlite>, registry: &Registry) -> CmdResult<()> {
@@ -138,12 +139,109 @@ pub async fn load_local_state(db: &Pool<Sqlite>) -> CmdResult<(LocalState, Optio
     ))
 }
 
-/// Own log position and clock. Called right after every push so a crash can
-/// never reuse a sequence number.
+/// Own log position and clock, in one transaction: a crash between the
+/// three would leave the seq of a new chunk with the hash of the one before
+/// it, and the next chunk would break the chain for every peer (audit KA2-03).
 pub async fn save_own_state(db: &Pool<Sqlite>, s: &LocalState, hlc: &Hlc) -> CmdResult<()> {
-    settings::set(db, "sync_own_seq", &s.own_seq.to_string()).await?;
-    settings::set(db, "sync_own_head", &s.own_head_hash).await?;
-    settings::set(db, "sync_hlc", &hlc.encode()).await
+    write_own_state(db, s, hlc, false).await
+}
+
+/// The chunk of [`OwnPending`] is in the storage: the position moves to it
+/// and the push to replay is gone, together.
+pub async fn save_pushed(db: &Pool<Sqlite>, s: &LocalState, hlc: &Hlc) -> CmdResult<()> {
+    write_own_state(db, s, hlc, true).await
+}
+
+async fn write_own_state(
+    db: &Pool<Sqlite>,
+    s: &LocalState,
+    hlc: &Hlc,
+    pushed: bool,
+) -> CmdResult<()> {
+    let mut tx = db.begin().await.map_err(AppError::db)?;
+    settings::set(&mut *tx, "sync_own_seq", &s.own_seq.to_string()).await?;
+    settings::set(&mut *tx, "sync_own_head", &s.own_head_hash).await?;
+    settings::set(&mut *tx, "sync_hlc", &hlc.encode()).await?;
+    if pushed {
+        settings::delete(&mut *tx, OWN_PENDING_KEY).await?;
+    }
+    tx.commit().await.map_err(AppError::db)
+}
+
+/// The chunk a push is about to write, kept until the push is known to have
+/// gone through or not (spec 9.3): a lost answer to the write is replayed
+/// with the very same ops at the next cycle instead of colliding with them.
+pub const OWN_PENDING_KEY: &str = "sync_own_pending";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnPending {
+    /// The vault and the device id it was kept for: another binding or
+    /// another id drops it unreplayed.
+    pub vault_id: String,
+    pub device_id: String,
+    pub seq: u64,
+    pub prev_hash: String,
+    pub ops: Vec<Op>,
+}
+
+/// Written before the chunk is.
+pub async fn save_own_pending(db: &Pool<Sqlite>, pending: &OwnPending) -> CmdResult<()> {
+    settings::set_json(db, OWN_PENDING_KEY, pending).await
+}
+
+/// A value that does not read is none: its ops are collected again, as the
+/// states they stand for were not saved.
+pub async fn load_own_pending(db: &Pool<Sqlite>) -> Option<OwnPending> {
+    settings::get_json(db, OWN_PENDING_KEY).await
+}
+
+pub async fn drop_own_pending(db: &Pool<Sqlite>) -> CmdResult<()> {
+    settings::delete(db, OWN_PENDING_KEY).await
+}
+
+/// A condition over a column of encoded HLCs (`Hlc::encode`): stamped by
+/// the device bound first and later than the HLC bound second
+/// ([`hlc_floor`]). The device id starts at character 27 of the encoding,
+/// and two encodings of one device compare as their HLCs.
+pub fn pushed_after(column: &str) -> String {
+    format!("(substr({column}, 27) = ? AND {column} > ?)")
+}
+
+/// What [`pushed_after`] compares with: the encoding of `newest`, or the
+/// empty string, below every HLC.
+pub fn hlc_floor(newest: Option<&Hlc>) -> String {
+    newest.map(Hlc::encode).unwrap_or_default()
+}
+
+/// The storage lost chunks of this device's log: what `device` pushed after
+/// `newest`, the last of its ops the storage still holds, went with them.
+/// The states of the rows and of every handler (`Handler::forget_pushed_after`)
+/// forget that push, so the next collect publishes it again — a put, or the
+/// tombstone of what is gone — under the id the device rotates to (audit
+/// A2-12). Returns how many rows.
+pub async fn forget_pushed_after(
+    db: &Pool<Sqlite>,
+    registry: &Registry,
+    device_id: &str,
+    newest: Option<&Hlc>,
+) -> CmdResult<u64> {
+    let floor = hlc_floor(newest);
+    let mut tx = db.begin().await.map_err(AppError::db)?;
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "UPDATE sync_row_state SET synced_hash = '', deleted = 0 WHERE {}",
+        pushed_after("head_hlc")
+    )))
+    .bind(device_id)
+    .bind(&floor)
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::db)?
+    .rows_affected();
+    registry
+        .forget_pushed_after(&mut tx, device_id, newest)
+        .await?;
+    tx.commit().await.map_err(AppError::db)?;
+    Ok(rows)
 }
 
 /// Peer heads. Called only after their ops were fully applied.
@@ -175,6 +273,9 @@ pub const REREAD_KEY: &str = "sync_reread";
 /// The devices whose logs were read again in full since `REREAD_KEY` was
 /// set; their ops are not read a second time.
 pub const REREAD_PEERS_KEY: &str = "sync_reread_peers";
+/// The logs a second read stopped in below where the plain read of them
+/// stands, with the cycles it did so (`cycle::skipped_before`).
+pub const REREAD_STUCK_KEY: &str = "sync_reread_stuck";
 
 /// At start (spec 9.2, rule 3): when the registry is not the one of the last
 /// start, the next cycle reads the vault again from the start of every log
@@ -200,6 +301,7 @@ pub async fn check_registry(db: &Pool<Sqlite>, registry: &Registry) -> CmdResult
         };
         settings::set_json(&mut *tx, REREAD_KEY, &known).await?;
         settings::delete(&mut *tx, REREAD_PEERS_KEY).await?;
+        settings::delete(&mut *tx, REREAD_STUCK_KEY).await?;
     }
     settings::set_json(&mut *tx, SYNCED_KEY, &registry.synced()).await?;
     settings::set(&mut *tx, FINGERPRINT_KEY, &fingerprint).await?;
@@ -269,7 +371,23 @@ pub async fn reread_peers_done(db: &Pool<Sqlite>, peers: &[String]) -> CmdResult
 /// The vault was read again without a gap.
 pub async fn reread_done(db: &Pool<Sqlite>) -> CmdResult<()> {
     settings::delete(db, REREAD_KEY).await?;
-    settings::delete(db, REREAD_PEERS_KEY).await
+    settings::delete(db, REREAD_PEERS_KEY).await?;
+    settings::delete(db, REREAD_STUCK_KEY).await
+}
+
+/// The logs a second read stopped in below the plain read, and how often.
+pub async fn reread_stuck(db: &Pool<Sqlite>) -> BTreeMap<String, u32> {
+    settings::get_json(db, REREAD_STUCK_KEY)
+        .await
+        .unwrap_or_default()
+}
+
+pub async fn set_reread_stuck(db: &Pool<Sqlite>, stuck: &BTreeMap<String, u32>) -> CmdResult<()> {
+    if stuck.is_empty() {
+        settings::delete(db, REREAD_STUCK_KEY).await
+    } else {
+        settings::set_json(db, REREAD_STUCK_KEY, stuck).await
+    }
 }
 
 #[cfg(test)]

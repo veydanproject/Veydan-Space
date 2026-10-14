@@ -28,6 +28,7 @@
     "files_transfer_done": "完成",
     "files_transfer_cancelled": "已取消 — 已保留部分数据，重新开始即可继续传输",
     "files_transfer_skipped": "已跳过 {n} 项",
+    "files_transfer_move_kept": "{n} 项未移动，原件已保留",
     "files_conflict_title": "文件已存在",
     "files_conflict_msg_file": "目标位置已存在“{name}”。要覆盖吗？",
     "files_conflict_msg_dir": "目标位置已存在文件夹“{name}”。要覆盖其中的文件吗？",

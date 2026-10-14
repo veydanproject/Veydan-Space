@@ -13,4 +13,12 @@ request_id: string | null, created_at: number | null, expires_at: number | null,
 /**
  * The id of the plan (`plus`), not a name to show as it is.
  */
-plan: string | null, until: number | null, } | { "t": "quota.90", pool: string | null, used: number | null, limit: number | null, } | { "t": "account.dormant", since: number | null, delete_after: number | null, } | { "t": "unknown" };
+plan: string | null, until: number | null, } | { "t": "quota.90", pool: string | null, used: number | null, limit: number | null, } | { "t": "account.dormant", since: number | null, delete_after: number | null, } | { "t": "account.downgraded", 
+/**
+ * The id of the plan that ended.
+ */
+plan: string | null, 
+/**
+ * The limits of free, bytes.
+ */
+files_bytes: number | null, text_bytes: number | null, } | { "t": "unknown" };

@@ -76,7 +76,7 @@
           >{$t(`msg_notify_${choice}` as 'msg_notify_sender_text')}</button>
         {/each}
       </div>
-      {#if phone}
+      {#if phone || n.lockscreen_supported}
         <div class="line">
           <span>{$t('msg_notify_lockscreen')}</span>
           <button

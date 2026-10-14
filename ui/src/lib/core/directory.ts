@@ -57,11 +57,11 @@ const SHORT_ID = 8;
 
 class Directory {
   /**
-   * Kinds that have a provider in this product, in registry order: the owner,
+   * Kinds that have a provider in this window (`registry.here`), in registry order: the owner,
    * or a fallback where no module owns the kind.
    */
   get kinds(): EntityKindDef[] {
-    const all = registry.active.flatMap((m) => m.entities ?? []);
+    const all = registry.here.flatMap((m) => m.entities ?? []);
     const owned = new Set(all.filter((d) => !d.fallback).map((d) => d.kind));
     return all.filter((d, i) => !(d.fallback && (owned.has(d.kind) || all.findIndex((x) => x.kind === d.kind) < i)));
   }

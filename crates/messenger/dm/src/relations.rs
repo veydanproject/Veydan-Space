@@ -8,7 +8,7 @@
 use crate::relationship::{
     apply_my_action, apply_own_signal, apply_peer_signal, floor_after_pending_end, inbound_decision, outbound_permission,
     raise_floor, screen_mode, signal_implied_by_message, Action, DropReason, InboundDecision, MyContact, OutboundPermission,
-    PeerSignal, Relationship, ScreenMode, Signal, SystemLine,
+    PeerSignal, Relationship, ScreenMode, Signal, SystemLine, FLOOR_SKEW_SECS,
 };
 use crate::service::{DmService, UI_EVENT_DM_MESSAGE};
 use crate::wrap::{wrap_as, Wake};
@@ -420,8 +420,12 @@ impl DmService {
             let blocked = self.load_relation(peer).await?.blocked;
             return Ok(if blocked { InboundGate::Drop } else { InboundGate::Pass { effects: vec![], regate: false } });
         }
-        let floor = self.unread_floor.load(Ordering::SeqCst);
-        let enforced = !historical || (floor >= 0 && at >= floor);
+        // History is stored as it was only on a fresh database, in its first
+        // session (no previous one set the floor). Its rumor time is the
+        // sender's: "older than when I was last online" says nothing of the
+        // message, so it is no way around the gate. A block drops it either
+        // way (`inbound_decision`).
+        let enforced = !historical || self.unread_floor.load(Ordering::SeqCst) >= 0;
         let mut r = self.load_relation(peer).await?;
         let seen = repo::count_visible_incoming_since(&self.store, chat_id, r.request_floor).await?;
         match inbound_decision(&r, enforced, seen, at) {
@@ -452,6 +456,9 @@ impl DmService {
 
     /// Writing to me is a statement of will when nothing explicit and newer
     /// says otherwise. For a message being shown now (passed, or released).
+    /// The will it implies is the peer's newest word, as a signal's is: a
+    /// signal that comes later dated before this message does not undo it.
+    /// Its time counts no further than my clock plus the skew, as a signal's.
     async fn implied_by_message(&self, chat_id: &str, peer: &PubKey, r: Relationship, at: i64) -> Result<Vec<Effect>> {
         let mut effects = Vec::new();
         if at < r.last_signal_at {
@@ -460,6 +467,8 @@ impl DmService {
         let Some(implied) = signal_implied_by_message(&r) else { return Ok(effects) };
         let mut next = r;
         next.peer_signal = implied;
+        let cap = self.clock.now().secs().saturating_add(FLOOR_SKEW_SECS);
+        next.last_signal_at = r.last_signal_at.max(at.min(cap));
         if r.my_contact == MyContact::Approved {
             next.was_ever_mutual = true;
         }
@@ -560,7 +569,7 @@ impl DmService {
             }
             return Ok(effects);
         }
-        let outcome = apply_peer_signal(&current, signal, at, !historical);
+        let outcome = apply_peer_signal(&current, signal, at, !historical, self.clock.now().secs());
         let mut next = outcome.next;
         // Even when it changes nothing else (a withdrawal over their own
         // accept), what they write after it is a new request. Not past

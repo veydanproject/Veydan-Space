@@ -86,6 +86,18 @@ pub enum BotCard {
         #[ts(type = "number | null")]
         delete_after: Option<u64>,
     },
+    /// The paid plan ended and the account is on free: nothing is deleted,
+    /// new files wait until there is room.
+    #[serde(rename = "account.downgraded")]
+    AccountDowngraded {
+        /// The id of the plan that ended.
+        plan: Option<String>,
+        /// The limits of free, bytes.
+        #[ts(type = "number | null")]
+        files_bytes: Option<u64>,
+        #[ts(type = "number | null")]
+        text_bytes: Option<u64>,
+    },
     /// A type this app does not know: «Сообщение Veydan Cloud», no text.
     /// The type itself is the bot's word and is not handed on.
     #[serde(rename = "unknown")]
@@ -126,6 +138,7 @@ impl BotCard {
             "plan.expiring" => Self::PlanExpiring { plan: word("plan"), until: number("until") },
             "quota.90" => Self::Quota90 { pool: word("pool"), used: number("used"), limit: number("limit") },
             "account.dormant" => Self::AccountDormant { since: number("since"), delete_after: number("delete_after") },
+            "account.downgraded" => Self::AccountDowngraded { plan: word("plan"), files_bytes: number("files_bytes"), text_bytes: number("text_bytes") },
             _ => Self::Unknown,
         }
     }
@@ -209,6 +222,14 @@ mod tests {
         assert_eq!(
             read(r#"{"v":1,"t":"account.dormant","since":1,"delete_after":2}"#),
             BotCard::AccountDormant { since: Some(1), delete_after: Some(2) }
+        );
+        assert_eq!(
+            read(r#"{"v":1,"t":"account.downgraded","plan":"pro","files_bytes":2147483648,"text_bytes":536870912}"#),
+            BotCard::AccountDowngraded { plan: Some("pro".into()), files_bytes: Some(2_147_483_648), text_bytes: Some(536_870_912) }
+        );
+        assert_eq!(
+            read(r#"{"v":1,"t":"account.downgraded","plan":"Delete at evil.example","files_bytes":-1}"#),
+            BotCard::AccountDowngraded { plan: None, files_bytes: None, text_bytes: None }
         );
     }
 

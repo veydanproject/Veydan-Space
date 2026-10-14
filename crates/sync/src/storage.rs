@@ -3,14 +3,21 @@
 
 //! Storage trait and the local-directory adapter.
 
-use crate::{Result, SyncError};
+use crate::{random_hex, Result, SyncError};
 use async_trait::async_trait;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use std::collections::HashMap;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+
+/// The whole-request limit of the short requests (list, HEAD): they carry no
+/// payload, so a host that takes longer is stuck. A blob is bounded by the
+/// idle time of the connection instead (`read_timeout` of the client), or a
+/// large file on a slow link would be cut at the same 90 seconds every time.
+pub const METADATA_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// HTTP client for S3 / WebDAV: fail instead of hanging forever.
 pub fn http_client() -> Result<reqwest::Client> {
@@ -21,7 +28,7 @@ pub fn http_client() -> Result<reqwest::Client> {
         .pool_max_idle_per_host(4)
         .pool_idle_timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(90))
+        .read_timeout(Duration::from_secs(90))
         .dns_resolver(CachedIpv4Resolver);
     #[cfg(target_os = "android")]
     let builder = builder.use_preconfigured_tls(android_tls_config());
@@ -202,6 +209,10 @@ pub trait Storage: Send + Sync {
         Ok(self.get(key).await?.is_some())
     }
     /// Write only when `key` is absent; returns whether bytes were written.
+    /// Of two writers of one key exactly one gets `true`: an adapter whose
+    /// storage cannot make the write conditional refuses it instead
+    /// (`ERR_NO_ATOMIC_MOVE`, `ERR_NO_CONDITIONAL_PUT`). The default, a
+    /// check and a write apart, is for fakes in tests.
     async fn put_if_absent(&self, key: &str, data: &[u8]) -> Result<bool> {
         if self.exists(key).await? {
             return Ok(false);
@@ -226,6 +237,16 @@ pub fn status_error(status: reqwest::StatusCode, what: &str, body: &str) -> Sync
 
 /// Suffix of in-progress writes; skipped by every adapter's `list`.
 pub const TMP_SUFFIX: &str = ".tmp";
+
+/// A WebDAV server without MOVE: a put would be a plain PUT a reader can see
+/// half written, and a put_if_absent a check and a write apart. The UI knows
+/// this text (ui/src/lib/core/join-error.ts).
+pub const ERR_NO_ATOMIC_MOVE: &str = "storage does not support atomic writes (MOVE)";
+
+/// An S3 server that ignores `If-None-Match`: a second writer of a key would
+/// overwrite the first. The UI knows this text (ui/src/lib/core/join-error.ts).
+pub const ERR_NO_CONDITIONAL_PUT: &str =
+    "storage does not support conditional writes (If-None-Match)";
 
 /// Keys the vault never produces; ignored so a cloud client's metadata files
 /// don't make a folder look "foreign".
@@ -252,6 +273,60 @@ impl LocalDir {
             return Err(SyncError::Storage(format!("bad key {key}")));
         }
         Ok(self.root.join(key))
+    }
+
+    /// `data` in a fresh file beside `path`, flushed to the disk. The name is
+    /// unique, so two writers of one key never share a temp file.
+    fn write_tmp(path: &Path, data: &[u8]) -> std::io::Result<PathBuf> {
+        use std::io::Write;
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let mut name = path.as_os_str().to_owned();
+        name.push(format!(
+            ".{}-{}-{}{TMP_SUFFIX}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed),
+            random_hex(4)
+        ));
+        let tmp = PathBuf::from(name);
+        let written = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .and_then(|mut f| {
+                f.write_all(data)?;
+                f.sync_all()
+            });
+        match written {
+            Ok(()) => Ok(tmp),
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                Err(e)
+            }
+        }
+    }
+
+    /// For a file system without hard links (FAT, exFAT, some network
+    /// mounts): `create_new` still gives the key to one writer only, though a
+    /// reader may see the file before it is whole.
+    fn create_new(path: &Path, data: &[u8]) -> std::io::Result<bool> {
+        use std::io::Write;
+        let mut f = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        match f.write_all(data).and_then(|()| f.sync_all()) {
+            Ok(()) => Ok(true),
+            Err(e) => {
+                drop(f);
+                let _ = std::fs::remove_file(path);
+                Err(e)
+            }
+        }
     }
 
     fn walk(dir: &Path, rel: &str, out: &mut Vec<String>) -> std::io::Result<()> {
@@ -298,18 +373,37 @@ impl Storage for LocalDir {
     }
 
     async fn put(&self, key: &str, data: &[u8]) -> Result<()> {
-        use std::io::Write;
         let path = self.path_for(key)?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let tmp = PathBuf::from(format!("{}{}", path.display(), TMP_SUFFIX));
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(data)?;
-        f.sync_all()?;
-        drop(f);
-        std::fs::rename(&tmp, &path)?;
+        let tmp = Self::write_tmp(&path, data)?;
+        if let Err(e) = std::fs::rename(&tmp, &path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.into());
+        }
         Ok(())
+    }
+
+    /// A whole temp file linked to the key: the link fails when the key is
+    /// there, so of two writers exactly one wins and no reader sees a part.
+    /// The check first only saves the copy of a blob already there.
+    async fn put_if_absent(&self, key: &str, data: &[u8]) -> Result<bool> {
+        if self.exists(key).await? {
+            return Ok(false);
+        }
+        let path = self.path_for(key)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = Self::write_tmp(&path, data)?;
+        let linked = std::fs::hard_link(&tmp, &path);
+        let _ = std::fs::remove_file(&tmp);
+        match linked {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+            Err(_) => Ok(Self::create_new(&path, data)?),
+        }
     }
 
     async fn delete(&self, key: &str) -> Result<()> {

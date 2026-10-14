@@ -61,6 +61,7 @@
     "cloud_state_grace": "Salt okunur",
     "cloud_state_suspended": "Askıya alındı",
     "cloud_until": "{date} tarihine kadar ödendi",
+    "cloud_next_plan": "{plan} planı {date} tarihinde başlıyor",
     "cloud_grace_until": "{date} tarihine kadar salt okunur: eşitlemeye devam etmek için bir etkinleştirme anahtarı girin.",
     "cloud_suspended_text": "Hesap askıya alındı. Yine de silebilirsiniz.",
     "cloud_kept_at": "Veydan Cloud’a şu anda ulaşılamıyor. {date} itibarıyla gösteriliyor.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Bu anahtarın süresi doldu.",
     "cloud_err_key_revoked": "Bu anahtar iptal edildi.",
     "cloud_err_rate_limited": "Çok fazla deneme. Daha sonra tekrar deneyin.",
+    "cloud_err_deletion_pending": "Önceki hesap hâlâ siliniyor. Birkaç dakika sonra tekrar deneyin.",
     "cloud_err_no_host": "Veydan Cloud’a şu anda ulaşılamıyor.",
     "cloud_err_clock": "Bu cihazın saati yanlış: tarihi ve saati ayarlayın.",
     "cloud_err_suspended": "Hesap askıya alındı.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Planlar",
     "cloud_recover_expired_title": "İsteğin süresi doldu",
     "cloud_recovery_reissue_short": "Yeniden oluştur",
+    "cloud_recovery_elsewhere": "Recovery Key başka bir cihazda oluşturuldu: orada yeniden oluşturun veya kelimelerle geri yükleyin.",
+    "cloud_recovery_elsewhere_anew": "Yeniden oluştur",
+    "cloud_recovery_elsewhere_hint": "Yeni anahtar burada oluşturulur. Eski kelimeler, kopyaları silinene kadar geçerli kalır.",
+    "cloud_trustees_missing": "Güvenilen kişileri yeniden ayarlayın",
     "cloud_recovery_setup_short": "Ayarla",
     "cloud_recovery_show_words": "12 kelimeyi göster",
     "cloud_restore_new_secret_hint": "Bu cihazda uygulamayı kilitlemek için kullanılacak.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Erişim yeni bir cihazdan geri yüklendi",
     "cloud_card_line_plan_expiring": "Planınızın süresi dolmak üzere",
     "cloud_card_line_quota": "Veydan Cloud neredeyse dolu",
-    "cloud_card_line_dormant": "Hesap kullanılmadığı için silinecek"
+    "cloud_card_line_dormant": "Hesap kullanılmadığı için silinecek",
+    "cloud_card_downgraded": "Planınız sona erdi. Ücretsiz sınırı aşan dosyalar kalır, ancak yer açana veya planı uzatana kadar yeni dosyalar kaydedilmez.",
+    "cloud_card_downgraded_limit": "Ücretsiz plan: dosyalar için {limit}",
+    "cloud_card_line_downgraded": "Planınız sona erdi"
   },
   "mobile": {}
 }

@@ -182,4 +182,6 @@ export interface TransferDoneEvent {
   cancelled: boolean;
   files_done: number;
   files_skipped: number;
+  /** src_path of every item that arrived whole; a move deletes only these. */
+  complete_items: string[];
 }

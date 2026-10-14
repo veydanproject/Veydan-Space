@@ -22,7 +22,7 @@
   import { isMobile } from '$lib/core/platform';
   import { appLock } from '$lib/core/lock/store.svelte';
   import RecoveryKeyCard from '$lib/core/lock/RecoveryKeyCard.svelte';
-  import { asCloudError, cloudApi, type CloudError, type CloudRecoveryInfo, type CloudRecoveryKeyStatus } from '$lib/cloud/api';
+  import { asCloudError, cloudApi, socialApi, type CloudError, type CloudRecoveryInfo, type CloudRecoveryKeyStatus, type CloudTrustees } from '$lib/cloud/api';
   import { dateOf } from '$lib/cloud/account';
   import { recoveryRefusal } from '$lib/cloud/recoveryKey';
   import { cloudPage } from '$lib/cloud/status.svelte';
@@ -42,6 +42,8 @@
   } = $props();
 
   let status = $state<CloudRecoveryKeyStatus | null>(null);
+  /** The trusted people this device keeps; the server may know others (KA1-03). */
+  let trustees = $state<CloudTrustees | null>(null);
   let loadError = $state<CloudError | null>(null);
   let secret = $state('');
   let asking = $state<'setup' | 'reissue' | null>(null);
@@ -58,8 +60,12 @@
 
   const lockOn = $derived(appLock.status.enabled);
   const issued = $derived(status?.issued === true);
+  /** The key was issued on another device: nothing of it is here, yet the server says the recovery is configured (the row of the lock proves nothing) (KA1-02). */
+  const elsewhere = $derived(status !== null && !status.issued && recovery?.configured === true);
+  let anyway = $state(false);
   const keyLine = $derived.by(() => {
     if (!status) return loadError ? loadError.message || loadError.code : '';
+    if (elsewhere) return $t('cloud_recovery_elsewhere');
     if (!status.issued) return $t('cloud_recovery_not_issued');
     return status.escrow_written_at
       ? $t('cloud_recovery_issued', { date: dateOf(status.escrow_written_at, $locale) })
@@ -67,6 +73,7 @@
   });
   const trusteesLine = $derived.by(() => {
     if (!issued) return $t('cloud_trustees_need_key');
+    if (recovery?.configured && trustees && !trustees.configured) return $t('cloud_trustees_missing');
     if (recovery?.configured && recovery.k && recovery.n) return $t('cloud_recovery_on', { k: String(recovery.k), n: String(recovery.n) });
     return $t('cloud_trustees_off');
   });
@@ -79,6 +86,7 @@
   async function load() {
     try {
       status = await cloudApi.recoveryStatus();
+      trustees = await socialApi.trustees().catch(() => null);
       loadError = null;
     } catch (e) {
       loadError = asCloudError(e);
@@ -90,6 +98,8 @@
     secret = '';
     noVault = false;
     if (what === 'setup') vault = await loadVaultState();
+    // The explicit word of the owner: the button said «issue anew» and the form asks again.
+    anyway = what === 'setup' && elsewhere;
     asking = what;
   }
 
@@ -104,7 +114,7 @@
         vault = 'joined';
       }
       const current = lockOn ? secret : null;
-      const issuedKey = asking === 'setup' ? await cloudApi.recoveryKeyShowOnce(current) : await cloudApi.recoveryKeyReissue(current);
+      const issuedKey = asking === 'setup' ? await cloudApi.recoveryKeyShowOnce(current, anyway) : await cloudApi.recoveryKeyReissue(current, anyway);
       words = issuedKey.words;
       asking = null;
       secret = '';
@@ -135,7 +145,7 @@
           {#if issued}
             <button class="btn btn-ghost btn-sm" type="button" onclick={() => start('reissue')}>{$t('cloud_recovery_reissue_short')}</button>
           {:else}
-            <button class="btn btn-primary btn-sm" type="button" onclick={() => start('setup')}>{$t('cloud_recovery_setup_short')}</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick={() => start('setup')}>{elsewhere ? $t('cloud_recovery_elsewhere_anew') : $t('cloud_recovery_setup_short')}</button>
           {/if}
         {/if}
       {/snippet}
@@ -150,6 +160,8 @@
         <h3>{asking === 'setup' ? $t('cloud_recovery_setup') : $t('cloud_recovery_reissue')}</h3>
         {#if asking === 'reissue'}
           <Notice tone="warn">{$t('cloud_recovery_reissue_hint')}</Notice>
+        {:else if elsewhere}
+          <Notice tone="warn">{$t('cloud_recovery_elsewhere_hint')}</Notice>
         {:else}
           {#if lockOn && appLock.status.recovery_version !== null}
             <Notice tone="warn">{$t('cloud_recovery_setup_replaces')}</Notice>

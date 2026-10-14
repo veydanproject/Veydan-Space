@@ -10,9 +10,10 @@ use sqlx::{FromRow, Sqlite, Transaction};
 use totp_rs::{Algorithm, Secret, TOTP};
 use uuid::Uuid;
 use veydan_core::{AppError, BoxFuture, CmdResult, Core};
+use veydan_lock::Lock;
 use veydan_sync_host::{Deletion, Host};
 
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+#[derive(Serialize, Deserialize, FromRow, Clone)]
 pub struct TotpEntry {
     pub id: String,
     pub name: String,
@@ -79,6 +80,34 @@ pub struct TotpPreview {
     pub period: u64,
 }
 
+/// The secret stays out of a `{:?}` print (a log line, a panic message).
+impl std::fmt::Debug for TotpEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TotpEntry")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("issuer", &self.issuer)
+            .field("secret", &"…")
+            .field("algorithm", &self.algorithm)
+            .field("digits", &self.digits)
+            .field("period", &self.period)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The algorithm a form names, as it is stored: one of the three of RFC
+/// 6238 in capitals. Any other name is refused, not taken for SHA1 (codes
+/// of a typo would be wrong without a word).
+fn known_algorithm(alg: &str) -> Result<String, AppError> {
+    let up = alg.trim().to_uppercase();
+    match up.as_str() {
+        "SHA1" | "SHA256" | "SHA512" => Ok(up),
+        _ => Err(AppError::other(format!("Unknown TOTP algorithm: {alg}"))),
+    }
+}
+
+/// A stored entry's algorithm (one written before `known_algorithm`, or
+/// by another device, may be anything): an unknown name gives SHA1.
 fn parse_algorithm(alg: &str) -> Algorithm {
     match alg.to_uppercase().as_str() {
         "SHA256" => Algorithm::SHA256,
@@ -247,7 +276,7 @@ pub async fn totp_add(
             req.name.clone(),
             req.issuer.clone(),
             normalized,
-            req.algorithm.unwrap_or_else(|| "SHA1".into()),
+            known_algorithm(req.algorithm.as_deref().unwrap_or("SHA1"))?,
             req.digits.unwrap_or(6),
             req.period.unwrap_or(30),
         )
@@ -417,8 +446,17 @@ pub(crate) fn delete_synced<'a>(
     })
 }
 
+/// Not while the app is locked, as the action `code` of the directory
+/// (platform-spec 20, question 17: closed with the history of the generator).
 #[tauri::command]
-pub async fn totp_generate_code(id: String, core: tauri::State<'_, Core>) -> CmdResult<TotpCode> {
+pub async fn totp_generate_code(
+    id: String,
+    core: tauri::State<'_, Core>,
+    lock: tauri::State<'_, Lock>,
+) -> CmdResult<TotpCode> {
+    if lock.is_locked().await {
+        return Err(AppError::VaultLocked);
+    }
     let entry = sqlx::query_as::<_, TotpEntry>("SELECT * FROM totp_entries WHERE id = ?")
         .bind(&id)
         .fetch_optional(&core.db)
@@ -439,11 +477,16 @@ pub async fn totp_generate_code(id: String, core: tauri::State<'_, Core>) -> Cmd
     Ok(code)
 }
 
+/// Not while the app is locked, as `totp_generate_code`.
 #[tauri::command]
 pub async fn totp_generate_codes(
     ids: Vec<String>,
     core: tauri::State<'_, Core>,
+    lock: tauri::State<'_, Lock>,
 ) -> CmdResult<Vec<TotpCode>> {
+    if lock.is_locked().await {
+        return Err(AppError::VaultLocked);
+    }
     if ids.is_empty() {
         return Ok(vec![]);
     }
@@ -469,16 +512,8 @@ pub async fn totp_preview_uri(uri: String) -> CmdResult<TotpPreview> {
     let totp =
         TOTP::from_url(&uri).map_err(|e| AppError::other(format!("Invalid otpauth URI: {e}")))?;
 
-    let secret_b32 = totp.get_secret_base32();
-    let masked = if secret_b32.len() > 4 {
-        format!(
-            "{}…{}",
-            &secret_b32[..2],
-            &secret_b32[secret_b32.len() - 2..]
-        )
-    } else {
-        "••••".to_string()
-    };
+    // Not a character of the secret: four of them were 20 of its bits.
+    let masked = "••••".to_string();
 
     let alg = match totp.algorithm {
         Algorithm::SHA256 => "SHA256",
@@ -514,6 +549,21 @@ mod tests {
             updated_at: String::new(),
             last_used_at: None,
         }
+    }
+
+    /// The secret is never in a `{:?}` print; an algorithm of a form is one
+    /// of three, in capitals, or refused.
+    #[test]
+    fn the_secret_stays_out_of_debug_and_an_unknown_algorithm_is_refused() {
+        let e = entry("JBSWY3DPEHPK3PXP", "SHA1", 6);
+        let printed = format!("{e:?}");
+        assert!(!printed.contains(&e.secret), "{printed}");
+        assert!(printed.contains("test"));
+        assert_eq!(known_algorithm("sha256").unwrap(), "SHA256");
+        assert_eq!(known_algorithm(" SHA512 ").unwrap(), "SHA512");
+        assert_eq!(known_algorithm("SHA1").unwrap(), "SHA1");
+        assert!(known_algorithm("md5").is_err());
+        assert!(known_algorithm("").is_err());
     }
 
     /// RFC 6238, Appendix B: the seeds as hex, eight digits, steps of 30 s.
@@ -577,5 +627,48 @@ mod tests {
         short.digits = 6;
         short.period = 0;
         assert!(build_totp(&short).is_err());
+    }
+
+    /// The commands give no code while the app is locked, as the action
+    /// `code` of the directory (`no_code_while_the_app_is_locked`).
+    #[tokio::test]
+    async fn no_code_from_the_commands_while_the_app_is_locked() {
+        use tauri::Manager;
+        let (app, _dir) = crate::testing::app().await;
+        sqlx::query(
+            "INSERT INTO totp_entries (id, name, issuer, secret, algorithm, digits, period, created_at, updated_at)
+             VALUES ('t-gh', 'github-work', NULL, 'JBSWY3DPEHPK3PXP', 'SHA1', 6, 30, 't', 't')",
+        )
+        .execute(&app.state::<Core>().db)
+        .await
+        .unwrap();
+        let lock = app.state::<Lock>();
+        lock.set(Some("4821".into()), None, Some("pin".into()), None)
+            .await
+            .unwrap();
+        let ids = || vec!["t-gh".to_string()];
+        assert_eq!(
+            totp_generate_codes(ids(), app.state(), app.state())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        lock.lock();
+        assert!(matches!(
+            totp_generate_code("t-gh".into(), app.state(), app.state()).await,
+            Err(AppError::VaultLocked)
+        ));
+        assert!(matches!(
+            totp_generate_codes(ids(), app.state(), app.state()).await,
+            Err(AppError::VaultLocked)
+        ));
+
+        assert!(lock.unlock("4821").await.unwrap());
+        let code = totp_generate_code("t-gh".into(), app.state(), app.state())
+            .await
+            .unwrap();
+        assert_eq!(code.code.len(), 6);
     }
 }

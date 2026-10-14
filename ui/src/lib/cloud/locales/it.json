@@ -61,6 +61,7 @@
     "cloud_state_grace": "Sola lettura",
     "cloud_state_suspended": "Sospeso",
     "cloud_until": "Pagato fino al {date}",
+    "cloud_next_plan": "Il piano {plan} inizia il {date}",
     "cloud_grace_until": "Sola lettura fino al {date}: inserisci una chiave di attivazione per continuare a sincronizzare.",
     "cloud_suspended_text": "L’account è sospeso. Puoi comunque eliminarlo.",
     "cloud_kept_at": "Veydan Cloud non è raggiungibile ora. Dati al {date}.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Questa chiave è scaduta.",
     "cloud_err_key_revoked": "Questa chiave è stata revocata.",
     "cloud_err_rate_limited": "Troppi tentativi. Riprova più tardi.",
+    "cloud_err_deletion_pending": "L’account precedente è ancora in fase di eliminazione. Riprova tra qualche minuto.",
     "cloud_err_no_host": "Veydan Cloud non è raggiungibile ora.",
     "cloud_err_clock": "L’orologio di questo dispositivo è sbagliato: imposta data e ora.",
     "cloud_err_suspended": "L’account è sospeso.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Piani",
     "cloud_recover_expired_title": "La richiesta è scaduta",
     "cloud_recovery_reissue_short": "Riemetti",
+    "cloud_recovery_elsewhere": "La Recovery Key è stata emessa su un altro dispositivo: riemettila lì o ripristina con le parole.",
+    "cloud_recovery_elsewhere_anew": "Emetti di nuovo",
+    "cloud_recovery_elsewhere_hint": "La nuova chiave viene emessa qui. Le vecchie parole restano valide finché la loro copia non viene eliminata.",
+    "cloud_trustees_missing": "Configura di nuovo le persone fidate",
     "cloud_recovery_setup_short": "Configura",
     "cloud_recovery_show_words": "Mostra le 12 parole",
     "cloud_restore_new_secret_hint": "Bloccherà l’app su questo dispositivo.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Accesso ripristinato da un nuovo dispositivo",
     "cloud_card_line_plan_expiring": "Il tuo piano sta per scadere",
     "cloud_card_line_quota": "Veydan Cloud è quasi pieno",
-    "cloud_card_line_dormant": "L’account sarà eliminato per inattività"
+    "cloud_card_line_dormant": "L’account sarà eliminato per inattività",
+    "cloud_card_downgraded": "Il tuo piano è terminato. I file oltre il limite gratuito restano, ma quelli nuovi non vengono salvati finché non liberi spazio o rinnovi il piano.",
+    "cloud_card_downgraded_limit": "Piano gratuito: {limit} per i file",
+    "cloud_card_line_downgraded": "Il tuo piano è terminato"
   },
   "mobile": {}
 }

@@ -20,8 +20,11 @@
 //! the old escrow and shares gone — is finished by [`resume`] at the next
 //! start. The state of a reissue under way lives in the box `cloud` of the
 //! lock ([`Pending`], with the mark of the point of no return), so a start
-//! after a crash can tell what to do. Step 5 goes through
-//! [`ShareDelivery`]: until stage C5 fills it ([`NoShares`]), there are no
+//! after a crash can tell what to do. The old escrow is written down as
+//! [`Retired`] before the state forgets it and stays so until its delete
+//! and revoke went ([`retire`], at every start and daily): the old words
+//! open nothing once that is done, however the first try ended. Step 5
+//! goes through [`ShareDelivery`]: until stage C5 fills it ([`NoShares`]), there are no
 //! trusted people, nothing is delivered, and a start with a reissue under
 //! way before step 6 always rolls it back — continuing a wait for acks is
 //! C5's.
@@ -37,6 +40,22 @@ use crate::restore::lock_error;
 
 /// The key of the box: a reissue under way, JSON of [`Pending`].
 pub const KEY_PENDING: &str = "reissue.pending";
+/// The key of the box: the escrows a reissue retired that are not gone
+/// yet, JSON of a list of [`Retired`].
+pub const KEY_RETIRED: &str = "escrow.retired";
+
+/// An escrow of an older key, retired by a reissue: it is deleted and its
+/// shares revoked until both are done ([`retire`]), so that the old words
+/// stop opening anything even when the first try at step 7 failed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Retired {
+    pub address: String,
+    pub generation: u32,
+    /// The shares of `generation` are revoked already: the trusted people
+    /// are told once, however many times the delete is tried.
+    #[serde(default)]
+    pub revoked: bool,
+}
 
 fn ser_secret<S: Serializer>(value: &Zeroizing<String>, s: S) -> Result<S::Ok, S::Error> {
     value.as_str().serialize(s)
@@ -172,13 +191,74 @@ async fn rollback(env: &Env<'_>, pending: &Pending) -> Result<(), CloudError> {
     env.boxed.delete(KEY_PENDING).await
 }
 
-/// Step 7 after the point of no return: the new key and the state of its
-/// escrow into the box, the old escrow deleted, the old shares revoked,
-/// the box forgets the reissue. Made again from the start by [`resume`]
-/// when a step failed: every step stands being made twice.
+/// The escrows retired and not gone yet, from the box.
+pub async fn load_retired(boxed: &dyn LockBox) -> Result<Vec<Retired>, CloudError> {
+    let Some(bytes) = boxed.get(KEY_RETIRED).await? else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_slice(&bytes)
+        .map_err(|e| crypto(format!("the retired escrows in the box: {e}")))
+}
+
+async fn save_retired(boxed: &dyn LockBox, retired: &[Retired]) -> Result<(), CloudError> {
+    if retired.is_empty() {
+        return boxed.delete(KEY_RETIRED).await;
+    }
+    let json = serde_json::to_vec(retired).map_err(crypto)?;
+    boxed.put(KEY_RETIRED, &json).await
+}
+
+/// The escrows retired by a reissue deleted and their shares revoked: an
+/// entry leaves the box only when its `DELETE` was answered — `204`, or
+/// `404` when nothing of this npub is at the address (vstore knows the
+/// owner on every host, spec/vstore.md §8) — and its revoke went. How
+/// many are left for the next try (the daily pass of the app, `recovery`).
+pub async fn retire(env: &Env<'_>) -> Result<usize, CloudError> {
+    let retired = load_retired(env.boxed).await?;
+    if retired.is_empty() {
+        return Ok(0);
+    }
+    // Never the escrow in force, whatever the list says.
+    let current = escrow::load_state(env.boxed).await?.map(|s| s.address);
+    let mut left = Vec::new();
+    for mut old in retired {
+        if current.as_deref() == Some(old.address.as_str()) {
+            continue;
+        }
+        if !old.revoked {
+            old.revoked = env.shares.revoke(old.generation).await.is_ok();
+        }
+        let deleted = env.store.delete(&old.address).await.is_ok();
+        if !(deleted && old.revoked) {
+            left.push(old);
+        }
+    }
+    save_retired(env.boxed, &left).await?;
+    Ok(left.len())
+}
+
+/// Step 7 after the point of no return: the old escrow written down as
+/// retired, the new key and the state of its escrow into the box, the box
+/// forgets the reissue, then the retired escrows deleted and their shares
+/// revoked ([`retire`]; what fails there stays retired for the next try).
+/// Made again from the start by [`resume`] when a step failed: every step
+/// stands being made twice.
 async fn finish(env: &Env<'_>, pending: &Pending) -> Result<(), CloudError> {
     let rk = pending.rk()?;
     let previous = escrow::load_state(env.boxed).await?;
+    // Before the state forgets the old address: a finish made again after
+    // a failure finds only the new escrow in the state.
+    if let Some(old) = previous.filter(|old| old.address != pending.address) {
+        let mut retired = load_retired(env.boxed).await?;
+        if !retired.iter().any(|r| r.address == old.address) {
+            retired.push(Retired {
+                address: old.address,
+                generation: old.generation,
+                revoked: false,
+            });
+            save_retired(env.boxed, &retired).await?;
+        }
+    }
     escrow::save_rk(env.boxed, &rk, pending.generation).await?;
     escrow::save_state(
         env.boxed,
@@ -191,13 +271,11 @@ async fn finish(env: &Env<'_>, pending: &Pending) -> Result<(), CloudError> {
         },
     )
     .await?;
-    if let Some(old) = previous {
-        if old.address != pending.address {
-            let _ = env.store.delete(&old.address).await;
-            let _ = env.shares.revoke(old.generation).await;
-        }
+    env.boxed.delete(KEY_PENDING).await?;
+    if let Err(e) = retire(env).await {
+        eprintln!("cloud: the retired escrow is deleted at the next pass: {e}");
     }
-    env.boxed.delete(KEY_PENDING).await
+    Ok(())
 }
 
 /// Whether a reissue found under way passed its point of no return: the
@@ -230,6 +308,31 @@ pub async fn resume(env: &Env<'_>) -> Result<bool, CloudError> {
         }
         None => Ok(false),
     }
+}
+
+/// Whether the Recovery Key was issued on another device: the box holds no
+/// escrow state of this one, yet the server says the recovery is configured
+/// (`server_configured`, from `GET /account`). The row of the lock cannot
+/// tell: `Lock::set` issues words of version 2 on every device, so a lock
+/// of version 2 proves nothing (the marker for devices without a lock is
+/// decision D12, after the release). A second key issued by accident would
+/// replace the first one unseen (audit KA1-02).
+pub async fn issued_elsewhere(env: &Env<'_>, server_configured: bool) -> Result<bool, CloudError> {
+    if escrow::load_state(env.boxed).await?.is_some() {
+        return Ok(false);
+    }
+    Ok(server_configured)
+}
+
+/// [`issued_elsewhere`] as the refusal [`words::ISSUED_ELSEWHERE`].
+pub async fn refuse_elsewhere(env: &Env<'_>, server_configured: bool) -> Result<(), CloudError> {
+    if issued_elsewhere(env, server_configured).await? {
+        return Err(CloudError::new(
+            words::ISSUED_ELSEWHERE,
+            "the recovery key was issued on another device: reissue it there, restore with the words, or issue anew on purpose",
+        ));
+    }
+    Ok(())
 }
 
 /// The first issue of the Recovery Key of the cloud on this device: the
@@ -539,6 +642,43 @@ mod tests {
         assert_eq!((restored.backend.as_str(), restored.folder_path.as_str()), ("folder", "/sync"));
     }
 
+    /// A device with an empty box whose server says the recovery is
+    /// configured: the key was issued elsewhere, and issuing here is refused
+    /// until the owner says so (KA1-02). The lock row cannot tell (`set`
+    /// issues words of version 2 everywhere). After the detour the old key
+    /// is not revoked: its escrow stays and the old words still open it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_device_without_the_box_does_not_issue_a_second_key_by_accident() {
+        let device = Device::new(true).await;
+        let shares = Shares::default();
+        let env = device.env(&shares);
+        assert!(!issued_elsewhere(&env, false).await.expect("fresh"), "the lock row of version 2 proves nothing");
+        let first = first_setup(&env, PIN).await.expect("first");
+        assert!(!issued_elsewhere(&env, true).await.expect("here"), "the state is in the box");
+
+        // The same lock row on a device with an empty box.
+        let empty = MemoryBox::default();
+        let other = Env {
+            sources: device.sources(),
+            store: &device.store,
+            boxed: &empty,
+            shares: &shares,
+        };
+        refuse_elsewhere(&other, false).await.expect("a server that knows nothing refuses nothing");
+        assert_eq!(
+            refuse_elsewhere(&other, true).await.err().map(|e| e.code).as_deref(),
+            Some(words::ISSUED_ELSEWHERE)
+        );
+
+        // «Выпустить заново»: the owner's word; the old key is not revoked.
+        let again = reissue(&other, PIN).await.expect("issued anew");
+        assert_eq!(again.generation, 1);
+        assert!(device.objects().len() == 2, "the escrow of the first key stays until it is deleted");
+        let old = device.escrow_of(&first.words).await;
+        assert_eq!(old.nsec, NSEC, "the old words still open the old escrow");
+        device.db.close().await;
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn the_first_issue_and_a_reissue_leave_one_escrow_and_one_key_in_force() {
         let device = Device::new(true).await;
@@ -759,6 +899,97 @@ mod tests {
         assert!(resume(&env).await.expect("resume"));
         assert_eq!(device.objects(), vec![after.address]);
         assert!(load_pending(&device.boxed).await.expect("pending").is_none());
+        device.db.close().await;
+    }
+
+    /// Step 7's delete refused by vstore: the old escrow stays retired in
+    /// the box, the pass of the start and the day deletes it, and the old
+    /// words read nothing after; the trusted people are told once.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_delete_refused_after_step_6_is_made_again_until_the_old_words_open_nothing() {
+        let device = Device::new(true).await;
+        let shares = Shares::default();
+        let env = device.env(&shares);
+        let first = first_setup(&env, PIN).await.expect("first");
+        let before = escrow::load_state(&device.boxed).await.expect("state").expect("written");
+
+        *device.vstore.fail_delete.lock().expect("fail") = true;
+        let second = reissue(&env, PIN).await.expect("the words come back");
+        assert!(load_pending(&device.boxed).await.expect("pending").is_none());
+        let retired = vec![Retired {
+            address: before.address.clone(),
+            generation: 1,
+            revoked: true,
+        }];
+        assert_eq!(load_retired(&device.boxed).await.expect("retired"), retired);
+        assert_eq!(device.escrow_of(&first.words).await.generation, 1, "the old escrow stands still");
+
+        // The pass of the start: nothing under way, the delete refused again.
+        assert!(!resume(&env).await.expect("resume"));
+        assert_eq!(retire(&env).await.expect("retire"), 1);
+        assert_eq!(load_retired(&device.boxed).await.expect("retired"), retired);
+
+        // The daily pass, the host back: the old escrow goes, the box forgets it.
+        *device.vstore.fail_delete.lock().expect("fail") = false;
+        assert_eq!(retire(&env).await.expect("retire"), 0);
+        assert!(device.boxed.values.lock().expect("values").get(KEY_RETIRED).is_none());
+        let after = escrow::load_state(&device.boxed).await.expect("state").expect("written");
+        assert_eq!(device.objects(), vec![after.address.clone()]);
+        let rk = RecoveryKey::from_words(&first.words).expect("rk");
+        let read = device.store.get(&rk.escrow_auth().expect("auth")).await;
+        assert_eq!(read.err().map(|e| e.code).as_deref(), Some(words::NOT_FOUND));
+        assert_eq!(device.escrow_of(&second.words).await.generation, 2);
+        assert_eq!(*shares.revoked.lock().expect("revoked"), vec![1]);
+
+        // A retired address with nothing there (`404`) is gone as well; the
+        // escrow in force is never deleted, whatever the list says.
+        save_retired(
+            &device.boxed,
+            &[
+                Retired { address: "cd".repeat(32), generation: 1, revoked: true },
+                Retired { address: after.address.clone(), generation: 2, revoked: true },
+            ],
+        )
+        .await
+        .expect("retired");
+        assert_eq!(retire(&env).await.expect("retire"), 0);
+        assert_eq!(device.objects(), vec![after.address]);
+        assert!(load_retired(&device.boxed).await.expect("retired").is_empty());
+        device.db.close().await;
+    }
+
+    /// The box erased by the deletion of the account: a new activation of
+    /// the same npub issues a key anew from generation 1, not
+    /// `already_set_up`, and the reissue after it works as ever.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn after_the_account_is_deleted_a_key_is_issued_anew() {
+        let device = Device::new(true).await;
+        let shares = Shares::default();
+        let env = device.env(&shares);
+        first_setup(&env, PIN).await.expect("first");
+        *device.vstore.fail_delete.lock().expect("fail") = true;
+        reissue(&env, PIN).await.expect("reissue");
+        assert_eq!(load_retired(&device.boxed).await.expect("retired").len(), 1);
+        *device.vstore.fail_delete.lock().expect("fail") = false;
+
+        crate::delete::erase_box(&device.boxed).await.expect("erased");
+        let values = device.boxed.values.lock().expect("values").clone();
+        for key in crate::delete::RECOVERY_KEYS {
+            assert!(!values.contains_key(key), "{key} is gone");
+        }
+        let again = first_setup(&env, PIN).await.expect("issued anew");
+        assert_eq!(again.generation, 1);
+        device.lock.recovery_check(&again.words).await.expect("the words open the lock");
+        let next = reissue(&env, PIN).await.expect("reissue");
+        assert_eq!(next.generation, 2);
+        assert_eq!(device.escrow_of(&next.words).await.generation, 2);
+        let replaced = RecoveryKey::from_words(&again.words)
+            .expect("rk")
+            .escrow_auth()
+            .expect("auth")
+            .escrow_address();
+        assert!(!device.objects().contains(&replaced), "the escrow of the first key is gone");
+        assert!(load_retired(&device.boxed).await.expect("retired").is_empty());
         device.db.close().await;
     }
 

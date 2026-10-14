@@ -1,6 +1,7 @@
 //! `org.freedesktop.Notifications` over the session bus.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use tokio::sync::{mpsc, watch};
@@ -284,5 +285,105 @@ mod tests {
         let r = request(&app(), &Caps { actions: false, markup: false }, &call());
         assert!(r.actions.is_empty());
         assert_eq!(r.body, "Incoming call");
+    }
+}
+
+#[zbus::proxy(
+    interface = "org.freedesktop.login1.Session",
+    default_service = "org.freedesktop.login1",
+    default_path = "/org/freedesktop/login1/session/auto",
+    gen_blocking = false
+)]
+trait Session {
+    #[zbus(property)]
+    fn locked_hint(&self) -> zbus::Result<bool>;
+}
+
+/// The system bus, connected once; `None` when there is none.
+static SYSTEM_BUS: tokio::sync::OnceCell<Option<zbus::Connection>> = tokio::sync::OnceCell::const_new();
+
+/// What logind said of the lock of my session.
+pub(crate) enum Answer {
+    Locked(bool),
+    /// No logind here, or no such session: asked again in ten minutes.
+    Absent,
+    /// No answer in time, or an error of the moment: a notification then
+    /// counts the session as locked and says nothing (privacy over text),
+    /// and logind is asked again in half a minute.
+    Silent,
+}
+
+/// The last answer that is not asked again before its time: until when,
+/// and what it means for `session_locked`.
+static HELD: std::sync::Mutex<Option<(Instant, bool)>> = std::sync::Mutex::new(None);
+
+/// How long the absence of logind stands.
+const ABSENT_FOR: Duration = Duration::from_secs(600);
+/// How long a missing answer stands.
+const NO_ANSWER_FOR: Duration = Duration::from_secs(30);
+/// How long logind is waited for.
+const PATIENCE: Duration = Duration::from_millis(500);
+
+/// `LockedHint` of my session (`session/auto`: the caller's, or the
+/// user's graphical one). No system bus, no logind, no session: `false`,
+/// for ten minutes. No answer in half a second or another error: `true`
+/// (a notification shows no text) for half a minute.
+pub(crate) async fn session_locked() -> bool {
+    if let Some((until, locked)) = *HELD.lock().expect("held answer") {
+        if Instant::now() < until {
+            return locked;
+        }
+    }
+    let asked = tokio::time::timeout(PATIENCE, async {
+        match SYSTEM_BUS.get_or_init(|| async { zbus::Connection::system().await.ok() }).await {
+            Some(bus) => locked_hint_of(bus).await,
+            None => Answer::Absent,
+        }
+    })
+    .await
+    .unwrap_or(Answer::Silent);
+    let (held, locked) = match asked {
+        Answer::Locked(locked) => (None, locked),
+        Answer::Absent => (Some(ABSENT_FOR), false),
+        Answer::Silent => (Some(NO_ANSWER_FOR), true),
+    };
+    *HELD.lock().expect("held answer") = held.map(|d| (Instant::now() + d, locked));
+    locked
+}
+
+/// The errors that say logind or the session is not there at all.
+fn absent(e: &zbus::Error) -> bool {
+    const ABSENT: [&str; 5] = [
+        "org.freedesktop.DBus.Error.ServiceUnknown",
+        "org.freedesktop.DBus.Error.NameHasNoOwner",
+        "org.freedesktop.DBus.Error.UnknownObject",
+        "org.freedesktop.DBus.Error.UnknownInterface",
+        "org.freedesktop.DBus.Error.UnknownProperty",
+    ];
+    match e {
+        zbus::Error::MethodError(name, _, _) => ABSENT.contains(&name.as_str()),
+        zbus::Error::FDO(f) => matches!(
+            **f,
+            zbus::fdo::Error::ServiceUnknown(_)
+                | zbus::fdo::Error::NameHasNoOwner(_)
+                | zbus::fdo::Error::UnknownObject(_)
+                | zbus::fdo::Error::UnknownInterface(_)
+                | zbus::fdo::Error::UnknownProperty(_)
+        ),
+        _ => false,
+    }
+}
+
+/// `LockedHint` of the session as logind on `bus` tells it.
+pub(crate) async fn locked_hint_of(bus: &zbus::Connection) -> Answer {
+    let proxy = match SessionProxy::builder(bus).cache_properties(zbus::proxy::CacheProperties::No).build().await {
+        Ok(p) => p,
+        Err(e) if absent(&e) => return Answer::Absent,
+        Err(_) => return Answer::Silent,
+    };
+    match proxy.locked_hint().await {
+        Ok(locked) => Answer::Locked(locked),
+        Err(e) if absent(&e) => Answer::Absent,
+        Err(_) => Answer::Silent,
     }
 }

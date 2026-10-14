@@ -11,6 +11,7 @@
   import { hasErrorCode } from '$lib/core/utils';
   import { appLock } from '$lib/core/lock/store.svelte';
   import { api } from '$lib/pass/api';
+  import { copySecret } from '$lib/pass/clipboard';
   import { passwordStore } from '$lib/pass/store/passwords.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
 
@@ -59,13 +60,8 @@
     }
     try {
       const value = (await api.passwords.reveal(id, 'password')).value;
-      await writeClipboard(value);
+      await copySecret(value);
       markCopied('pass');
-      setTimeout(() => {
-        navigator.clipboard.readText().then((current) => {
-          if (current === value) void navigator.clipboard.writeText('');
-        }).catch(() => {});
-      }, 30_000);
     } catch (e) {
       if (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed')) {
         pendingCopy = true;

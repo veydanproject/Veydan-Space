@@ -463,6 +463,104 @@ async fn a_member_leaves_and_a_manager_brings_a_new_key() {
     assert!(!log.state().key_stale);
 }
 
+/// The id of the key a group event is sealed with (its `k` tag).
+fn sealed_with(out: &Outbound) -> String {
+    let Outbound::PublishScoped { event, .. } = out else { panic!("not a group event: {out:?}") };
+    let ev: Event = serde_json::from_value(event.json.clone()).unwrap();
+    ev.tags.iter().filter(|t| t.kind() == "k").filter_map(|t| t.as_slice().get(1)).next().cloned().unwrap()
+}
+
+#[tokio::test]
+async fn nothing_is_sealed_with_a_key_someone_who_left_still_knows() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.bring(alice, &g, carol).await;
+    w.say(carol, &g, "before").await;
+    let old = w.devices[alice].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+
+    // Bob leaves while nobody who manages the group is online.
+    w.offline(alice);
+    w.act(bob, &g, OpBody::Leave).await.unwrap();
+    let c = &w.devices[carol];
+    assert_eq!(c.svc.need_log(&g).await.unwrap().key_status(), &crate::log::KeyStatus::Rotate);
+    assert_eq!(code(w.try_say(carol, &g, "bob reads this").await), "group_key_stale");
+    let c = &w.devices[carol];
+    assert_eq!(code(c.svc.prepare_read_receipt(&c.keys, &g, w.clock.now().secs()).await), "group_key_stale");
+    let first = c.visible(&g).await.into_iter().find(|m| m.text.as_deref() == Some("before")).unwrap();
+    assert_eq!(code(c.svc.prepare_reaction(&c.keys, &first.id, "👍").await), "group_key_stale");
+    let renewed = c.svc.renew_stale_key(&c.keys, &g).await.unwrap();
+    assert!(renewed.publish.is_empty(), "a member does not choose keys");
+    assert_eq!(c.svc.need_log(&g).await.unwrap().state().current_key, Some(old.clone()));
+    assert_eq!(w.devices[carol].texts(&g).await, vec!["before"], "nothing was kept to go out later");
+
+    // Alice comes back; the leave is in her log before her device looked
+    // after the key. What she writes goes under a new key.
+    w.devices[alice].online = true;
+    for wire in std::mem::take(&mut w.devices[alice].missed) {
+        w.deliver(alice, &wire, true).await;
+    }
+    w.tick();
+    let a = &w.devices[alice];
+    assert_eq!(a.svc.need_log(&g).await.unwrap().key_status(), &crate::log::KeyStatus::Rotate);
+    assert_eq!(code(a.svc.prepare_text(&a.keys, &g, "too early", None).await), "group_key_stale");
+    let renewed = a.svc.renew_stale_key(&a.keys, &g).await.unwrap();
+    assert_eq!(renewed.publish.len(), 1, "the rotation");
+    let (_, out) = a.svc.prepare_text(&a.keys, &g, "after bob", None).await.unwrap();
+    let new = a.svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+    assert_ne!(new, old);
+    assert_eq!(sealed_with(&out), new.0);
+    w.run(alice, renewed).await;
+    w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
+
+    assert_eq!(w.devices[carol].texts(&g).await, vec!["before", "after bob"]);
+    assert!(w.devices[bob].svc.key(&g, &new).await.unwrap().is_none(), "the new key never reached bob");
+    assert!(!w.devices[bob].texts(&g).await.contains(&"after bob".to_string()));
+    w.say(carol, &g, "carol again").await;
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["before", "after bob", "carol again"]);
+}
+
+#[tokio::test]
+async fn an_admin_who_leaves_with_a_key_of_their_own_does_not_keep_reading() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let dave = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, dave).await;
+    w.bring(alice, &g, bob).await;
+    w.act(alice, &g, OpBody::SetRole { who: w.pk(dave), role: Role::Admin }).await.unwrap();
+    let old = w.devices[alice].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+
+    // Dave's client leaves and hands everyone a key dave chose.
+    w.tick();
+    let d = &w.devices[dave];
+    let log = d.svc.need_log(&g).await.unwrap();
+    let sealing = d.svc.key(&g, &old).await.unwrap().unwrap();
+    let mine = crate::keys::GroupKey::generate().unwrap();
+    let op = log.next(&d.pk(), w.clock.now().secs(), OpBody::Leave).with_key(mine.id());
+    let envelopes = [alice, dave, bob].iter().map(|i| crate::wire::envelope_for(&d.keys, &w.pk(*i), mine.as_bytes()).unwrap()).collect();
+    let signed = crate::wire::sign_op(&d.keys, &op).unwrap();
+    let sealed = crate::wire::seal_op(&g, &sealing, &signed, envelopes, &d.keys).unwrap();
+    w.run(dave, Outcome { publish: vec![GroupService::scoped(&g, sealed)], ..Default::default() }).await;
+
+    for who in [alice, bob] {
+        let log = w.devices[who].svc.need_log(&g).await.unwrap();
+        assert!(!log.state().is_member(&w.pk(dave)));
+        let now = log.state().current_key.clone().unwrap();
+        assert_ne!(now, mine.id(), "the key of the one who left is not taken");
+        assert_ne!(now, old, "a manager brought a new key");
+        assert!(!log.state().key_stale);
+        assert!(w.devices[dave].svc.key(&g, &now).await.unwrap().is_none(), "the new key never reached dave");
+    }
+    w.say(bob, &g, "without dave").await;
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["without dave"]);
+    assert!(w.devices[dave].texts(&g).await.is_empty());
+}
+
 #[tokio::test]
 async fn request_through_a_private_link() {
     let mut w = World::new();
@@ -1252,4 +1350,446 @@ async fn the_caption_of_my_photo_is_edited_for_members_and_my_other_device() {
     let d = &w.devices[alice];
     assert!(d.svc.prepare_edit(&d.keys, &card, "text").await.is_err());
     assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+// ─── Messages dated back ────────────────────────────────────────────────────
+
+/// A message signed by `who` at `inner`, sealed with `key` into an event
+/// dated `outer`: what any holder of the key can make.
+fn backdated(w: &World, who: usize, group: &str, key: &crate::keys::GroupKey, text: &str, inner: i64, outer: i64) -> WireEvent {
+    let author = &w.devices[who].keys;
+    let content = messenger_core::Envelope::text(text).encode();
+    let signed = crate::wire::sign_message(author, group, &content, inner, None).unwrap();
+    let payload = crate::wire::Payload {
+        v: crate::wire::PAYLOAD_VERSION,
+        t: "msg".into(),
+        event: serde_json::to_value(&signed).unwrap(),
+        envelopes: vec![],
+        keys: vec![],
+    };
+    crate::wire::seal(group, key, None, &payload, outer, author, false).unwrap()
+}
+
+/// When the op of the log that matches `pick` was dated.
+async fn op_time(w: &World, who: usize, group: &str, pick: impl Fn(&OpBody) -> bool) -> i64 {
+    let log = w.devices[who].svc.need_log(group).await.unwrap();
+    log.ordered().filter(|o| pick(&o.body)).map(|o| o.created_at).max().unwrap()
+}
+
+#[tokio::test]
+async fn the_removed_does_not_speak_by_dating_a_message_back() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.bring(alice, &g, carol).await;
+    w.say(bob, &g, "still here").await;
+    let old_id = w.devices[alice].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+    w.act(alice, &g, OpBody::Remove { who: w.pk(bob) }).await.unwrap();
+    let removed_at = op_time(&w, carol, &g, |b| matches!(b, OpBody::Remove { .. })).await;
+    // Bob kept the key he had; the time inside says he was still a member.
+    let old = w.devices[bob].svc.key(&g, &old_id).await.unwrap().expect("bob kept the old key");
+    w.tick();
+    let now = w.clock.now().secs();
+    assert!(now - (removed_at - 1) <= 300, "within the slack of the clocks");
+    for (inner, text) in [(removed_at - 1, "a second before"), (removed_at, "the same second")] {
+        let forged = backdated(&w, bob, &g, &old, text, inner, now);
+        let o = w.deliver(carol, &Wire::Group(forged), false).await;
+        assert!(o.notify.is_empty(), "nobody is woken for {text:?}");
+        w.run(carol, o).await;
+    }
+    // Nothing waits to be let in later as history.
+    w.act(alice, &g, OpBody::EditSettings { name: Some("Team 2".into()), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None }).await.unwrap();
+    w.say(alice, &g, "without bob").await;
+    assert_eq!(w.devices[carol].texts(&g).await, vec!["still here", "without bob"]);
+}
+
+#[tokio::test]
+async fn a_muted_member_does_not_date_a_message_before_the_mute() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let user = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Moderated", true).await;
+    w.bring(alice, &g, user).await;
+    w.say(user, &g, "fine").await;
+    w.act(alice, &g, OpBody::SetMuted { who: w.pk(user), muted: true }).await.unwrap();
+    let muted_at = op_time(&w, alice, &g, |b| matches!(b, OpBody::SetMuted { .. })).await;
+    let id = w.devices[user].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+    let key = w.devices[user].svc.key(&g, &id).await.unwrap().unwrap();
+    w.tick();
+    // Sealed as an honest client seals: the event dated as the message.
+    let forged = backdated(&w, user, &g, &key, "before the mute", muted_at - 1, muted_at - 1);
+    let o = w.deliver(alice, &Wire::Group(forged), false).await;
+    assert!(o.notify.is_empty());
+    w.run(alice, o).await;
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["fine"]);
+}
+
+#[tokio::test]
+async fn what_was_said_before_a_removal_comes_later_as_history() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.bring(alice, &g, carol).await;
+    w.offline(carol);
+    w.say(bob, &g, "last word").await;
+    w.act(alice, &g, OpBody::Remove { who: w.pk(bob) }).await.unwrap();
+    w.say(alice, &g, "without bob").await;
+    w.online(carol).await;
+    assert_eq!(w.devices[carol].texts(&g).await, vec!["last word", "without bob"]);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn an_event_dated_far_from_its_message_is_dropped() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    let id = w.devices[bob].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+    let key = w.devices[bob].svc.key(&g, &id).await.unwrap().unwrap();
+    w.tick();
+    let now = w.clock.now().secs();
+    for (inner, outer, text) in [(now, now - 301, "an old event"), (now - 301, now, "an old message"), (now - 300, now, "within the slack")] {
+        let sealed = backdated(&w, bob, &g, &key, text, inner, outer);
+        let o = w.deliver(alice, &Wire::Group(sealed), false).await;
+        w.run(alice, o).await;
+    }
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["within the slack"]);
+}
+
+/// A direct message of the group protocol from `from` to device `to`, as
+/// the DM service hands it over, dated `created_at`.
+async fn dm_from<T: serde::Serialize>(w: &World, from: &Keys, to: usize, t: &str, body: &T, created_at: i64) -> Outcome {
+    let d = &w.devices[to];
+    let id = || EventId::parse(&Keys::generate().public_key().to_hex()).unwrap();
+    let msg = DmInbound {
+        envelope: WireEnvelope {
+            wire_id: id(),
+            source: EventSource::Relay { url: RelayUrl::parse(RELAY).unwrap() },
+            wire_created_at: Timestamp(created_at),
+        },
+        rumor_id: id(),
+        sender: me_of(from),
+        recipients: vec![d.pk()],
+        created_at: Timestamp(created_at),
+        content: crate::wire::dm_envelope(t, body).unwrap(),
+        reply_to: None,
+        rumor_kind: 14,
+    };
+    d.svc.on_dm(&d.keys, &msg, &d.ctx()).await.unwrap().expect("a group message")
+}
+
+fn an_invite(group_id: &str, name: &str, now: i64) -> crate::wire::Invite {
+    let mut id = [0u8; 16];
+    getrandom::fill(&mut id).unwrap();
+    crate::wire::Invite {
+        invite_id: hex::encode(id),
+        group_id: group_id.to_string(),
+        name: name.to_string(),
+        about: String::new(),
+        picture: String::new(),
+        relay: RELAY.into(),
+        members: 3,
+        created_at: now,
+        expires_at: now + crate::wire::INVITE_TTL_SECS,
+    }
+}
+
+fn some_group_id() -> String {
+    Keys::generate().public_key().to_hex()
+}
+
+#[tokio::test]
+async fn an_invitation_is_dated_by_my_clock_and_its_fields_are_checked() {
+    let mut w = World::new();
+    let bob = w.person().await;
+    let eve = Keys::generate();
+    let now = w.clock.now().secs();
+    let year = 365 * 24 * 3600;
+    let bad = [
+        // Dated ten years ahead, good for a week after that.
+        crate::wire::Invite { created_at: now + 10 * year, expires_at: now + 10 * year + 3600, ..an_invite(&some_group_id(), "Later", now) },
+        crate::wire::Invite { created_at: now + 301, ..an_invite(&some_group_id(), "Ahead", now) },
+        crate::wire::Invite { expires_at: now, ..an_invite(&some_group_id(), "Over", now) },
+        crate::wire::Invite { invite_id: "x".repeat(5000), ..an_invite(&some_group_id(), "Long id", now) },
+        crate::wire::Invite { group_id: "AB".repeat(32), ..an_invite("", "Upper", now) },
+        an_invite(&some_group_id(), "Bell\u{0007}", now),
+        an_invite(&some_group_id(), "\u{202E}\u{202C}", now),
+        an_invite(&some_group_id(), &"n".repeat(101), now),
+        an_invite(&some_group_id(), "   ", now),
+        crate::wire::Invite { about: "a".repeat(1001), ..an_invite(&some_group_id(), "About", now) },
+        crate::wire::Invite { picture: "http://x/p.png".into(), ..an_invite(&some_group_id(), "Picture", now) },
+        crate::wire::Invite { relay: "https://not.a.relay".into(), ..an_invite(&some_group_id(), "Relay", now) },
+    ];
+    for invite in &bad {
+        let o = dm_from(&w, &eve, bob, crate::wire::T_INVITE, invite, now).await;
+        assert!(o.notify.is_empty() && o.events.is_empty(), "{:?}", invite.name);
+    }
+    assert!(w.devices[bob].svc.invites("in").await.unwrap().is_empty(), "none of them is kept");
+
+    // Within the skew and well-formed: kept with its name cleaned, and not
+    // told of, since eve is nobody to bob.
+    let fine = crate::wire::Invite {
+        created_at: now + 300,
+        about: "\u{202E}tuoba".into(),
+        ..an_invite(&some_group_id(), " \u{202E}maeT ", now)
+    };
+    let o = dm_from(&w, &eve, bob, crate::wire::T_INVITE, &fine, now).await;
+    assert!(o.notify.is_empty(), "a stranger's invitation is not told of");
+    let kept = w.devices[bob].svc.invites("in").await.unwrap();
+    assert_eq!(kept.len(), 1);
+    assert_eq!((kept[0].name.as_str(), kept[0].about.as_str()), ("maeT", "tuoba"));
+
+    // From a contact it is told of.
+    let d = &w.devices[bob];
+    d.dm.act(&d.keys, &me_of(&eve), messenger_dm::Action::Request).await.unwrap();
+    let o = dm_from(&w, &eve, bob, crate::wire::T_INVITE, &an_invite(&some_group_id(), "Friends", now), now).await;
+    assert_eq!(o.notify.len(), 1);
+    assert_eq!(o.notify[0].title, "Friends");
+}
+
+#[tokio::test]
+async fn in_a_group_i_was_in_a_manager_is_told_of_and_the_rest_waits_unheard() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let dave = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.bring(alice, &g, carol).await;
+    w.act(alice, &g, OpBody::Ban { who: w.pk(dave) }).await.unwrap();
+    w.act(bob, &g, OpBody::Leave).await.unwrap();
+    assert_eq!(w.devices[bob].group(&g).await.unwrap().membership, "left");
+    // Carol is made an admin after bob left: his log stopped before that.
+    w.act(alice, &g, OpBody::SetRole { who: w.pk(carol), role: Role::Admin }).await.unwrap();
+    let before = w.devices[bob].svc.invites("in").await.unwrap().len();
+    let standing = |who: usize| {
+        let (store, pk) = (w.devices[bob].svc.store.clone(), w.pk(who));
+        let g = g.clone();
+        async move { invite_standing_in(&store, &g, &pk, false).await.unwrap() }
+    };
+    assert_eq!(standing(dave).await, InviteStanding::Drop, "banned by the log bob holds");
+    assert_eq!(standing(carol).await, InviteStanding::Unvouched, "no manager by that log");
+    assert_eq!(standing(alice).await, InviteStanding::Vouched);
+
+    // Dave is banned there: dropped.
+    let now = w.clock.now().secs();
+    let dave_keys = w.devices[dave].keys.clone();
+    let o = dm_from(&w, &dave_keys, bob, crate::wire::T_INVITE, &an_invite(&g, "Team", now), now).await;
+    assert!(o.notify.is_empty() && o.events.is_empty());
+    assert_eq!(w.devices[bob].svc.invites("in").await.unwrap().len(), before);
+    // Carol's word alone: kept to be answered, not told of.
+    let carol_keys = w.devices[carol].keys.clone();
+    let o = dm_from(&w, &carol_keys, bob, crate::wire::T_INVITE, &an_invite(&g, "Team", now), now).await;
+    assert!(o.notify.is_empty());
+    assert_eq!(w.devices[bob].svc.invites("in").await.unwrap().len(), before + 1);
+
+    // Alice is the owner: kept and told of, though she is no contact of bob.
+    w.tick();
+    let a = &w.devices[alice];
+    let (_, o) = a.svc.invite(&a.keys, &g, &w.pk(bob)).await.unwrap();
+    let to_bob = o.publish.iter().find_map(|p| match p {
+        Outbound::PublishToInbox { recipient, event, .. } if recipient == &w.pk(bob) => Some(event.clone()),
+        _ => None,
+    });
+    let o = w.deliver(bob, &Wire::Dm(to_bob.expect("a DM to bob")), false).await;
+    assert_eq!(o.notify.len(), 1, "the log vouches for the inviter");
+    assert_eq!(w.devices[bob].svc.invites("in").await.unwrap().len(), before + 2);
+}
+
+#[tokio::test]
+async fn invitations_of_strangers_and_requests_that_wait_are_few() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let now = w.clock.now().secs();
+    let names = |w: &World| {
+        let svc = w.devices[bob].svc.clone();
+        async move { svc.invites("in").await.unwrap().into_iter().map(|i| i.name).collect::<Vec<_>>() }
+    };
+
+    // One inviter, many groups: the first ones make room for the later.
+    let eve = Keys::generate();
+    for i in 0..12 {
+        let invite = an_invite(&some_group_id(), &format!("G{i}"), now - 100 + i);
+        dm_from(&w, &eve, bob, crate::wire::T_INVITE, &invite, now).await;
+    }
+    let kept = names(&w).await;
+    assert_eq!(kept.len(), 10);
+    assert!(!kept.contains(&"G0".to_string()) && !kept.contains(&"G1".to_string()) && kept.contains(&"G11".to_string()), "{kept:?}");
+    // Many strangers, one group; then my contact to the same group is not
+    // held back by them, and pushes none of them out.
+    let g = some_group_id();
+    for _ in 0..6 {
+        dm_from(&w, &Keys::generate(), bob, crate::wire::T_INVITE, &an_invite(&g, "One", now - 50), now).await;
+    }
+    let of_g = |w: &World| {
+        let (svc, g) = (w.devices[bob].svc.clone(), g.clone());
+        async move { svc.invites("in").await.unwrap().into_iter().filter(|i| i.group_id == g).count() }
+    };
+    assert_eq!(of_g(&w).await, 4);
+    let friend = Keys::generate();
+    let d = &w.devices[bob];
+    d.dm.act(&d.keys, &me_of(&friend), messenger_dm::Action::Request).await.unwrap();
+    let o = dm_from(&w, &friend, bob, crate::wire::T_INVITE, &an_invite(&g, "One", now), now).await;
+    assert_eq!(o.notify.len(), 1);
+    assert_eq!(of_g(&w).await, 5);
+    // In all, from strangers each new: fifty of theirs, and the contact's.
+    for i in 0..60 {
+        dm_from(&w, &Keys::generate(), bob, crate::wire::T_INVITE, &an_invite(&some_group_id(), &format!("S{i}"), now), now).await;
+    }
+    assert_eq!(w.devices[bob].svc.invites("in").await.unwrap().len(), 51);
+    assert_eq!(of_g(&w).await, 1, "the strangers' ones went first, the contact's stayed");
+
+    // Requests to join a private group: twenty wait, the rest is dropped,
+    // one dated ahead of the manager's clock is not taken, and a date eight
+    // days back (the sender's word) does not take a request out of the count.
+    let team = w.create(alice, GroupKind::Private, "Team", true).await;
+    let now = w.clock.now().secs();
+    let ahead = crate::wire::JoinRequest { group_id: team.clone(), note: String::new(), created_at: now + 301 };
+    let o = dm_from(&w, &Keys::generate(), alice, crate::wire::T_JOIN_REQUEST, &ahead, now).await;
+    assert!(o.notify.is_empty());
+    let old = now - crate::wire::INVITE_TTL_SECS - 10;
+    for _ in 0..25 {
+        let r = crate::wire::JoinRequest { group_id: team.clone(), note: "old".into(), created_at: old };
+        dm_from(&w, &Keys::generate(), alice, crate::wire::T_JOIN_REQUEST, &r, old).await;
+    }
+    for _ in 0..25 {
+        let r = crate::wire::JoinRequest { group_id: team.clone(), note: "hi".into(), created_at: now };
+        dm_from(&w, &Keys::generate(), alice, crate::wire::T_JOIN_REQUEST, &r, now).await;
+    }
+    assert_eq!(w.devices[alice].group(&team).await.unwrap().requests.len(), 20, "old dates count, by the time they came");
+}
+
+#[tokio::test]
+async fn the_description_is_shown_without_controls_though_the_log_keeps_it() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    let about = "\u{202E}gnirts\u{0007} of the team";
+    let edit = OpBody::EditSettings { name: None, about: Some(about.into()), picture: None, history_for_new: None, call_node: None, call_node_key: None };
+    w.act(alice, &g, edit).await.unwrap();
+    for d in [alice, bob] {
+        assert_eq!(w.devices[d].svc.need_log(&g).await.unwrap().state().about, about, "the log is as it was written");
+        assert_eq!(w.devices[d].group(&g).await.unwrap().about, "gnirts of the team", "device {d}");
+    }
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn a_group_keeps_no_more_keys_than_its_limit_and_never_the_ones_its_log_names() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.say(alice, &g, "before").await;
+    let named = w.devices[bob].svc.need_log(&g).await.unwrap().state().keys.clone();
+
+    // A manager hands bob a heap of keys nobody uses.
+    let junk: Vec<_> = (0..600).map(|_| crate::keys::GroupKey::generate().unwrap()).collect();
+    let alice_keys = w.devices[alice].keys.clone();
+    let now = w.clock.now().secs();
+    for part in junk.chunks(200) {
+        let body = crate::wire::KeyDelivery { group_id: g.clone(), keys: crate::wire::encode_keys(part) };
+        dm_from(&w, &alice_keys, bob, crate::wire::T_KEYS, &body, now).await;
+    }
+    let ids = messenger_store::groups::key_ids(&w.devices[bob].svc.store, &g).await.unwrap();
+    assert_eq!(ids.len(), crate::inbound::MAX_KEYS);
+    for k in &named {
+        assert!(ids.contains(&k.0), "a key of the log stays");
+        assert!(w.devices[bob].svc.key(&g, k).await.unwrap().is_some());
+    }
+    let (stay, gone): (Vec<_>, Vec<_>) = junk.iter().partition(|k| ids.contains(&k.id().0));
+    assert_eq!(stay.len(), crate::inbound::MAX_KEYS - named.len(), "only the junk went");
+    assert!(stay.iter().any(|k| k.id() == junk[599].id()), "the one kept last stays");
+    for k in gone {
+        assert!(w.devices[bob].svc.key(&g, &k.id()).await.unwrap().is_none(), "a key that went takes its secret with it");
+    }
+
+    // The group goes on: bob reads and writes, a newcomer gets in.
+    w.say(alice, &g, "after").await;
+    w.say(bob, &g, "still here").await;
+    w.bring(alice, &g, carol).await;
+    w.say(carol, &g, "hi").await;
+    for d in [alice, bob] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["before", "after", "still here", "hi"], "device {d}");
+    }
+}
+
+#[tokio::test]
+async fn a_stranger_s_invitation_pushed_out_leaves_no_row_and_its_word_is_replaced() {
+    let mut w = World::new();
+    let bob = w.person().await;
+    let store = w.devices[bob].svc.store.clone();
+    let now = w.clock.now().secs();
+    // A row kept before the mark of vouching existed: counted as vouched.
+    let old = an_invite(&some_group_id(), "From before", now);
+    messenger_store::groups::insert_invite(
+        &store,
+        &messenger_store::groups::InviteRow {
+            invite_id: old.invite_id.clone(),
+            group_id: old.group_id.clone(),
+            direction: "in".into(),
+            peer: Keys::generate().public_key().to_hex(),
+            status: "received".into(),
+            payload_json: serde_json::to_string(&old).unwrap(),
+            created_at: old.created_at,
+            expires_at: old.expires_at,
+            updated_at: 0,
+        },
+    )
+    .await
+    .unwrap();
+    // One stranger asks twice about one group: the later word stands alone.
+    let eve = Keys::generate();
+    let g = some_group_id();
+    dm_from(&w, &eve, bob, crate::wire::T_INVITE, &an_invite(&g, "First", now), now).await;
+    dm_from(&w, &eve, bob, crate::wire::T_INVITE, &an_invite(&g, "Second", now), now).await;
+    let of_g: Vec<_> = w.devices[bob].svc.invites("in").await.unwrap().into_iter().filter(|i| i.group_id == g).collect();
+    assert_eq!(of_g.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(), vec!["Second"]);
+    assert!(!of_g[0].vouched);
+    for i in 0..80 {
+        dm_from(&w, &Keys::generate(), bob, crate::wire::T_INVITE, &an_invite(&some_group_id(), &format!("S{i}"), now), now).await;
+    }
+    let shown = w.devices[bob].svc.invites("in").await.unwrap();
+    assert_eq!(shown.len(), 51);
+    assert!(shown.iter().any(|i| i.invite_id == old.invite_id && i.vouched), "the old row stays");
+    // What was pushed out is gone, not kept as a row.
+    let rows = messenger_store::groups::invites(&store, "in", &["received", "expired"]).await.unwrap();
+    assert_eq!(rows.len(), 51);
+}
+
+#[tokio::test]
+async fn an_invitation_lapsed_here_and_accepted_on_my_other_device_brings_me_in() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let bob2 = w.device(w.devices[bob].keys.clone()).await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.tick();
+    let a = &w.devices[alice];
+    let (invite, o) = a.svc.invite(&a.keys, &g, &w.pk(bob)).await.unwrap();
+    w.run(alice, o).await;
+    // Here it lapsed (or was pushed out); there it is answered in time.
+    let store = w.devices[bob].svc.store.clone();
+    messenger_store::groups::set_invite_status(&store, &invite.invite_id, "expired").await.unwrap();
+    w.tick();
+    let d = &w.devices[bob2];
+    let o = d.svc.answer_invite(&d.keys, &invite.invite_id, true).await.unwrap();
+    w.run(bob2, o).await;
+    for d in [bob, bob2] {
+        assert_eq!(w.devices[d].group(&g).await.expect("in").membership, "joined", "device {d}");
+    }
 }

@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copySecret } from '$lib/pass/clipboard';
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { t, locale } from '$lib/core/i18n';
@@ -54,7 +55,7 @@
   }
 
   function copyText(text: string) {
-    navigator.clipboard.writeText(text);
+    void copySecret(text).catch(() => {});
     clearTimeout(toastTimer);
     toast = $t('pwgen_copied');
     toastTimer = setTimeout(() => (toast = ''), 1800);

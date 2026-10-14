@@ -62,8 +62,7 @@ sha2 = "0.11"
 desktop-notify = { path = "../desktop-notify" }
 # Open http(s) links and received files without going through a shell
 tauri-plugin-opener = "2"
-# The sender's picture of a notification.
-reqwest = "0.13"
+# The sender's picture of a notification, as a file named by its content.
 sha2 = "0.11"
 # The window icon of the product as a file, for systems that take the
 # source's icon from one (Windows).

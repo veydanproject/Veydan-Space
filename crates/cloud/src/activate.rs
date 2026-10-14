@@ -387,7 +387,15 @@ mod tests {
         assert_eq!(fake.solved(), 1);
         seen.lock().expect("seen").clear();
         let again = activate_free(&api, &report).await.expect("again");
-        assert_eq!(again, account);
+        // The same account; the clock of the server is in every answer, and
+        // a second may have turned between the two.
+        assert_eq!(
+            Account {
+                server_time: account.server_time,
+                ..again
+            },
+            account
+        );
         assert_eq!(*seen.lock().expect("seen"), vec![Phase::Asking]);
         assert_eq!(fake.solved(), 1);
     }

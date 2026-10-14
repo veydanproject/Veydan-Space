@@ -41,13 +41,13 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use sqlx::{Pool, Sqlite};
-use veydan_core::{settings, AppError, BoxFuture, Core};
+use veydan_core::{AppError, BoxFuture, Core};
 use veydan_lock::{Lock, SecretKey};
 use veydan_recovery::{LockKey, RecoveryKey, RecoveryParams, SyncKeys};
 use veydan_shell::seams::{code, CloudError, LockBox, SeamFuture, Signer, TempKey, WireEvent};
 use veydan_sync::{Engine, Vmk};
 use veydan_sync_host::join::{self, JoinKey};
-use veydan_sync_host::{config, state, Host, Registry};
+use veydan_sync_host::{config, Host, Registry, SyncManager};
 use zeroize::Zeroizing;
 
 use crate::api::now;
@@ -297,13 +297,20 @@ pub async fn adopt_and_bind(
             lock.ensure_key().await?;
         }
     }
-    let key_row = join::adopt_vault_key(host, engine, core, registry, true).await?;
-    join::bind(&core.db, registry, engine.vault_id(), vmk).await?;
-    match &key_row {
-        JoinKey::Vaults(st) => state::save_row_state(&core.db, st).await?,
-        JoinKey::Unread => settings::set(&core.db, config::JOIN_PENDING, "1").await?,
-        JoinKey::Own => {}
-    }
+    // As `sync_join_vault`: no cycle runs while the binding changes, and
+    // the slot is free again before the first one.
+    let slot = match host.state::<SyncManager>() {
+        Some(sync) => Some(
+            sync.pause(join::SLOT_WAIT)
+                .await
+                .ok_or_else(|| AppError::other(join::ERR_SYNC_RUNNING))?,
+        ),
+        None => None,
+    };
+    let read = join::read_vault(engine).await?;
+    let key_row = join::adopt_vault_key(host, &read.latest, core, registry, true).await?;
+    join::bind_joined(&core.db, registry, engine.vault_id(), vmk, &read, &key_row).await?;
+    drop(slot);
     let replaced = matches!(key_row, JoinKey::Vaults(_));
     if replaced {
         join::key_row_changed(host).await;

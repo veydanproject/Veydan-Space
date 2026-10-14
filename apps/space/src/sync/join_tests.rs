@@ -984,3 +984,412 @@ async fn a_device_moved_to_a_storage_with_a_vault_leaves_its_own_and_joins_that_
     let _ = std::fs::remove_dir_all(&old);
     close(vec![there, mover], new).await;
 }
+
+/// A whole cycle as the app runs it (`veydan_sync_host::cycle`): a device
+/// that has just joined publishes nothing before it read the vault.
+async fn whole_cycle(state: &TestStates) -> Vec<String> {
+    state.sync.mark_ready();
+    veydan_sync_host::cycle(state.host(), &state.core, &state.sync)
+        .await
+        .unwrap()
+}
+
+async fn password_title(state: &TestStates, id: &str) -> Option<String> {
+    sqlx::query_scalar("SELECT title FROM passwords WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.core.db)
+        .await
+        .unwrap()
+}
+
+/// The latest op of the vault for a row, over the logs that read.
+async fn latest_op(state: &TestStates, entity: &str, id: &str) -> Option<veydan_sync::Op> {
+    let engine = open_engine(&state.core).await.unwrap();
+    engine
+        .read_every_log()
+        .await
+        .unwrap()
+        .ops
+        .into_iter()
+        .find(|op| op.entity_type == entity && op.entity_id == id)
+}
+
+/// Spec 9.3, "Leave, then join": what the other devices changed while this
+/// one was away stands. Its own copies of those rows are older: published
+/// with the clock of the join, they would undo the edit and bring the
+/// deleted row back on every device.
+#[tokio::test]
+async fn a_device_that_joins_again_takes_what_changed_while_it_was_away() {
+    let dir = crate::db::test_dir();
+    let (owner, _) = owner(&dir, false).await;
+    let away = device(&dir).await;
+    join_vault(&away).await.unwrap();
+    whole_cycle(&away).await;
+    save_password(&owner, "pw-gone", "deleted while the device was away").await;
+    whole_cycle(&owner).await;
+    whole_cycle(&away).await;
+    assert_eq!(
+        password_title(&away, "pw-gone").await.as_deref(),
+        Some("pw-gone")
+    );
+    join::leave(&away.core.db, away.sync.registry())
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "UPDATE passwords SET title = 'edited while away', updated_at = '2026-09-03T09:00:00+00:00'
+         WHERE id = 'pw-old'",
+    )
+    .execute(&owner.core.db)
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM passwords WHERE id = 'pw-gone'")
+        .execute(&owner.core.db)
+        .await
+        .unwrap();
+    whole_cycle(&owner).await;
+    let edit = latest_op(&owner, "password", "pw-old").await.unwrap().hlc;
+
+    join_vault(&away).await.unwrap();
+    whole_cycle(&away).await;
+    whole_cycle(&owner).await;
+    whole_cycle(&away).await;
+    whole_cycle(&owner).await;
+
+    for state in [&owner, &away] {
+        assert_eq!(
+            password_title(state, "pw-old").await.as_deref(),
+            Some("edited while away")
+        );
+        assert_eq!(password_title(state, "pw-gone").await, None);
+    }
+    assert_eq!(
+        latest_op(&owner, "password", "pw-old").await.unwrap().hlc,
+        edit
+    );
+    assert!(
+        latest_op(&owner, "password", "pw-gone")
+            .await
+            .unwrap()
+            .deleted
+    );
+    assert_eq!(reveal(&away, "pw-old").await.unwrap(), "kept since 4.x");
+
+    close(vec![owner, away], dir).await;
+}
+
+/// The vault deleted its key row: a device that joins with a key row of
+/// its own gives it up and does not publish it, and what its key encrypted
+/// is kept for the key it makes next.
+#[tokio::test]
+async fn a_key_row_the_vault_deleted_is_not_brought_back_by_a_join() {
+    let dir = crate::db::test_dir();
+    let (owner, vault_key) = owner(&dir, false).await;
+    let owner_id = config::device_id(&owner.core.db).await.unwrap();
+    sqlx::query("DELETE FROM password_vault")
+        .execute(&owner.core.db)
+        .await
+        .unwrap();
+    whole_cycle(&owner).await;
+    assert!(
+        latest_op(&owner, "password_vault", veydan_lock::ROW_ID)
+            .await
+            .unwrap()
+            .deleted
+    );
+
+    let joiner = device(&dir).await;
+    save_password(&joiner, "pw-new", "saved before the join").await;
+    let own_key = key_id(&joiner).await.expect("a key row of its own");
+    assert_ne!(own_key, vault_key);
+    join_vault(&joiner).await.unwrap();
+    assert_eq!(key_id(&joiner).await, None);
+    whole_cycle(&joiner).await;
+    whole_cycle(&joiner).await;
+    whole_cycle(&owner).await;
+
+    let op = latest_op(&joiner, "password_vault", veydan_lock::ROW_ID)
+        .await
+        .unwrap();
+    assert!(op.deleted, "{:?}", op.payload);
+    assert_eq!(op.hlc.device_id, owner_id);
+    assert_eq!(key_id(&owner).await, None);
+    // The next key of the device takes over what the old one encrypted.
+    joiner.lock.ensure_key().await.unwrap();
+    assert_ne!(key_id(&joiner).await, Some(own_key));
+    assert_eq!(
+        reveal(&joiner, "pw-new").await.unwrap(),
+        "saved before the join"
+    );
+
+    close(vec![owner, joiner], dir).await;
+}
+
+/// `sync_join_vault` holds the slot of the cycle: a join while a cycle runs
+/// waits for its end, or is refused, and a cycle of the old binding never
+/// writes under the new one. The slot is free again for the first cycle.
+#[tokio::test]
+async fn a_join_waits_for_the_cycle_that_runs() {
+    use std::time::Duration;
+    let dir = crate::db::test_dir();
+    let (owner, key) = owner(&dir, false).await;
+    let joiner = device(&dir).await;
+    let running = joiner.sync.pause(Duration::ZERO).await.expect("the slot");
+
+    let refused = join::join_held(
+        &joiner.host(),
+        &joiner.core,
+        &joiner.sync,
+        PASSPHRASE,
+        Duration::from_millis(300),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(refused.to_string(), join::ERR_SYNC_RUNNING);
+    assert!(load_binding(&joiner.core.db).await.is_none());
+
+    let host = joiner.host();
+    let (joined, ()) = tokio::join!(
+        join::join_held(
+            &host,
+            &joiner.core,
+            &joiner.sync,
+            PASSPHRASE,
+            Duration::from_secs(20),
+        ),
+        async {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            assert!(
+                load_binding(&joiner.core.db).await.is_none(),
+                "the join waits for the cycle"
+            );
+            drop(running);
+        }
+    );
+    if joined.unwrap() {
+        key_row_changed(&joiner).await;
+    }
+    assert!(load_binding(&joiner.core.db).await.is_some());
+    assert!(!joiner.sync.is_running());
+    whole_cycle(&joiner).await;
+    assert_eq!(key_id(&joiner).await, Some(key));
+    assert_eq!(reveal(&joiner, "pw-old").await.unwrap(), "kept since 4.x");
+
+    close(vec![owner, joiner], dir).await;
+}
+
+/// A join reads the whole vault. A log that is not all there yet (a chunk
+/// listed after one that is not: a cloud client still delivering) refuses
+/// the join with the words of a wait, and nothing changes here; once the
+/// vault reads, the join goes through, and what only this device holds is
+/// published after the first cycle has read the vault.
+#[tokio::test]
+async fn a_join_waits_until_the_whole_vault_can_be_read() {
+    let dir = crate::db::test_dir();
+    let (owner, key) = owner(&dir, false).await;
+    let joiner = device(&dir).await;
+    save_password(&joiner, "pw-new", "saved before the join").await;
+    let own_key = key_id(&joiner).await;
+    let another = dir.join("devices").join("another");
+    std::fs::create_dir_all(another.join("log")).unwrap();
+    // Its second chunk is listed, the first is not there yet.
+    std::fs::write(another.join("log").join("00000002.bin"), b"a chunk").unwrap();
+
+    let refused = join_vault(&joiner).await.unwrap_err();
+    assert!(
+        refused.to_string().starts_with(join::ERR_VAULT_UNREAD),
+        "{refused}"
+    );
+    assert!(load_binding(&joiner.core.db).await.is_none());
+    assert_eq!(key_id(&joiner).await, own_key);
+
+    std::fs::remove_dir_all(&another).unwrap();
+    join_vault(&joiner).await.unwrap();
+    whole_cycle(&joiner).await;
+    assert!(latest_op(&joiner, "password", "pw-new").await.is_none());
+    whole_cycle(&joiner).await;
+    whole_cycle(&owner).await;
+    assert_eq!(key_id(&joiner).await, Some(key.clone()));
+    assert_eq!(key_id(&owner).await, Some(key));
+    assert_eq!(
+        reveal(&owner, "pw-new").await.unwrap(),
+        "saved before the join"
+    );
+
+    close(vec![owner, joiner], dir).await;
+}
+
+/// The first cycle after a join publishes nothing, and its pull does not
+/// take the vault's older wrap of the same key over a lock changed here:
+/// the change stands and reaches the vault with the next cycle.
+#[tokio::test]
+async fn a_lock_changed_here_stands_through_the_first_cycle_after_the_join() {
+    let dir = crate::db::test_dir();
+    let (owner, key) = owner(&dir, true).await;
+    let joiner = device(&dir).await;
+    join_vault(&joiner).await.unwrap();
+    whole_cycle(&joiner).await;
+    assert!(joiner.lock.unlock(PIN).await.unwrap());
+    joiner
+        .lock
+        .set(
+            Some(OWN_PIN.into()),
+            Some(PIN.into()),
+            Some("pin".into()),
+            None,
+        )
+        .await
+        .unwrap();
+
+    join_vault(&joiner).await.unwrap();
+    whole_cycle(&joiner).await;
+    joiner.lock.lock();
+    assert!(joiner.lock.unlock(PIN).await.is_err());
+    assert!(joiner.lock.unlock(OWN_PIN).await.unwrap());
+    whole_cycle(&joiner).await;
+    whole_cycle(&owner).await;
+    assert_eq!(key_id(&owner).await, Some(key));
+    assert_eq!(lock_hash(&owner).await, lock_hash(&joiner).await);
+    assert!(owner.lock.unlock(OWN_PIN).await.unwrap());
+    assert_eq!(reveal(&owner, "pw-old").await.unwrap(), "kept since 4.x");
+
+    close(vec![owner, joiner], dir).await;
+}
+
+/// What `sync_status` says of the first read of the vault.
+async fn first_read_pending(state: &TestStates) -> bool {
+    veydan_sync_host::status(&state.core, &state.sync)
+        .await
+        .unwrap()
+        .first_read_pending
+}
+
+/// A log that does not open is no reason to keep a device out of the join:
+/// it says which one. But the file may be a copy still on its way, and a
+/// row whose only op lies past it has no state here yet: the log holds the
+/// first read as any log a pull stops in, until a cycle reads past it.
+#[tokio::test]
+async fn a_log_broken_at_the_join_holds_the_first_read_until_a_pull_reads_past_it() {
+    let dir = crate::db::test_dir();
+    let (owner, key) = owner(&dir, false).await;
+    let joiner = device(&dir).await;
+    save_password(&joiner, "pw-new", "saved before the join").await;
+    let another = dir.join("devices").join("another").join("log");
+    std::fs::create_dir_all(&another).unwrap();
+    std::fs::write(another.join("00000001.bin"), b"half a chunk").unwrap();
+
+    join_vault(&joiner).await.unwrap();
+    let warning = settings::get(&joiner.core.db, "sync_last_warning")
+        .await
+        .unwrap_or_default();
+    assert!(warning.contains("another"), "{warning}");
+    assert!(first_read_pending(&joiner).await);
+    whole_cycle(&joiner).await;
+    assert!(first_read_pending(&joiner).await, "the broken log holds it");
+    assert!(latest_op(&joiner, "password", "pw-new").await.is_none());
+    // The half chunk goes (its client is done with it): the wait ends.
+    std::fs::remove_file(another.join("00000001.bin")).unwrap();
+    whole_cycle(&joiner).await;
+    assert!(!first_read_pending(&joiner).await);
+    whole_cycle(&joiner).await;
+    whole_cycle(&owner).await;
+    assert_eq!(key_id(&joiner).await, Some(key));
+    assert_eq!(
+        reveal(&owner, "pw-new").await.unwrap(),
+        "saved before the join"
+    );
+
+    close(vec![owner, joiner], dir).await;
+}
+
+/// A log that breaks after the join keeps the first read from ending. The
+/// device does not wait for it for ever, sending nothing: after a few
+/// cycles it says so and sends what it holds.
+#[tokio::test]
+async fn a_log_that_breaks_after_the_join_holds_the_device_back_a_few_cycles_only() {
+    let dir = crate::db::test_dir();
+    let (owner, _) = owner(&dir, false).await;
+    let owner_id = config::device_id(&owner.core.db).await.unwrap();
+    let joiner = device(&dir).await;
+    save_password(&joiner, "pw-new", "saved before the join").await;
+    join_vault(&joiner).await.unwrap();
+    for chunk in std::fs::read_dir(dir.join("devices").join(&owner_id).join("log"))
+        .unwrap()
+        .flatten()
+    {
+        let mut bytes = std::fs::read(chunk.path()).unwrap();
+        *bytes.last_mut().unwrap() ^= 0xff;
+        std::fs::write(chunk.path(), bytes).unwrap();
+    }
+
+    for _ in 1..5 {
+        let warnings = whole_cycle(&joiner).await;
+        assert!(warnings.iter().all(|w| !w.contains("did not finish")));
+        assert!(first_read_pending(&joiner).await);
+        assert!(latest_op(&joiner, "password", "pw-new").await.is_none());
+    }
+    let warnings = whole_cycle(&joiner).await;
+    assert!(
+        warnings.iter().any(|w| w.contains("did not finish")),
+        "{warnings:?}"
+    );
+    assert!(!first_read_pending(&joiner).await);
+    whole_cycle(&joiner).await;
+    assert!(latest_op(&joiner, "password", "pw-new").await.is_some());
+
+    close(vec![owner, joiner], dir).await;
+}
+
+/// What this device changed while it was away from the vault is not lost
+/// when it joins the same vault again: the leave kept what it last synced,
+/// the edited row differs from it, and the edit goes out. A row it deleted
+/// meanwhile takes the vault's again: a clear of this device alone deletes
+/// nowhere else.
+#[tokio::test]
+async fn an_edit_made_while_away_from_the_vault_goes_out_at_the_join() {
+    let dir = crate::db::test_dir();
+    let (owner, _) = owner(&dir, false).await;
+    save_password(&owner, "pw-kept", "kept everywhere").await;
+    whole_cycle(&owner).await;
+    let away = device(&dir).await;
+    join_vault(&away).await.unwrap();
+    whole_cycle(&away).await;
+    whole_cycle(&away).await;
+    assert_eq!(
+        password_title(&away, "pw-kept").await.as_deref(),
+        Some("pw-kept")
+    );
+    join::leave(&away.core.db, away.sync.registry())
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "UPDATE passwords SET title = 'edited while away', updated_at = '2026-09-03T09:00:00+00:00'
+         WHERE id = 'pw-old'",
+    )
+    .execute(&away.core.db)
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM passwords WHERE id = 'pw-kept'")
+        .execute(&away.core.db)
+        .await
+        .unwrap();
+    join_vault(&away).await.unwrap();
+    whole_cycle(&away).await;
+    whole_cycle(&away).await;
+    whole_cycle(&owner).await;
+
+    for state in [&owner, &away] {
+        assert_eq!(
+            password_title(state, "pw-old").await.as_deref(),
+            Some("edited while away")
+        );
+        assert_eq!(
+            password_title(state, "pw-kept").await.as_deref(),
+            Some("pw-kept")
+        );
+    }
+    assert_eq!(reveal(&owner, "pw-old").await.unwrap(), "kept since 4.x");
+
+    close(vec![owner, away], dir).await;
+}

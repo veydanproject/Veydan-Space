@@ -28,6 +28,7 @@
     "files_transfer_done": "Terminé",
     "files_transfer_cancelled": "Annulé — données partielles conservées, relancez pour reprendre",
     "files_transfer_skipped": "Ignorés : {n}",
+    "files_transfer_move_kept": "{n} non déplacé(s) : les originaux sont conservés",
     "files_conflict_title": "Le fichier existe déjà",
     "files_conflict_msg_file": "« {name} » existe déjà dans la destination. L'écraser ?",
     "files_conflict_msg_dir": "Le dossier « {name} » existe déjà dans la destination. Écraser les fichiers qu'il contient ?",

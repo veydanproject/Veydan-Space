@@ -172,6 +172,15 @@ export function cardView(card: KnownCard, ctx: CardContext, t: Tr): CardView {
         note: null, action: null, until: null,
       };
     }
+    case 'account.downgraded': {
+      // Nothing was deleted: new files wait for room. The limit of free, when the card names one.
+      const limit = card.files_bytes !== null && card.files_bytes > 0 ? card.files_bytes : null;
+      return {
+        icon: 'alert-triangle', tone: 'warn', text: t('cloud_card_downgraded'),
+        note: limit !== null ? t('cloud_card_downgraded_limit', { limit: formatBytes(limit) }) : null,
+        action: { id: 'usage', label: t('cloud_quota_what') }, until: null,
+      };
+    }
   }
 }
 
@@ -183,6 +192,7 @@ const LINES: Record<KnownCard['t'], TranslationKey> = {
   'plan.expiring': 'cloud_card_line_plan_expiring',
   'quota.90': 'cloud_card_line_quota',
   'account.dormant': 'cloud_card_line_dormant',
+  'account.downgraded': 'cloud_card_line_downgraded',
 };
 
 /** One short line of a card for the list of chats and a notice: fixed words by the type, no value of the card. */

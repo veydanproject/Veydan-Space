@@ -35,13 +35,23 @@ pub struct Workdir {
 }
 
 impl Workdir {
+    #[cfg(test)]
     fn new(dir: PathBuf, product: &str) -> Self {
         let root = dir.join(product);
+        let key = root.clone();
+        Self::keyed(dir, root, &key)
+    }
+
+    /// `key` names the directory the tag is derived from: the canonical
+    /// form of `root` once it exists (`identity_key`), so a symlink, `..`
+    /// or another spelling of one directory is one profile: one lock, one
+    /// webview store.
+    fn keyed(dir: PathBuf, root: PathBuf, key: &Path) -> Self {
         // Windows paths are case-insensitive: one directory, one profile.
         #[cfg(windows)]
-        let key = root.to_string_lossy().to_lowercase();
+        let key = key.to_string_lossy().to_lowercase();
         #[cfg(not(windows))]
-        let key = root.to_string_lossy().into_owned();
+        let key = key.to_string_lossy().into_owned();
 
         let digest = Sha256::digest(key.as_bytes());
         let tag = digest[..4].iter().map(|b| format!("{b:02x}")).collect();
@@ -86,7 +96,8 @@ impl Workdir {
         builder: WebviewWindowBuilder<'a, R, M>,
     ) -> WebviewWindowBuilder<'a, R, M> {
         // WKWebView has no data directory; the data store needs macOS 14+,
-        // older systems fall back to the shared default store.
+        // older systems fall back to the shared default store (`init` says
+        // so in the log).
         #[cfg(target_os = "macos")]
         {
             builder.data_store_identifier(self.store_id)
@@ -114,6 +125,10 @@ pub fn init(product: &str) -> Result<Option<&'static Workdir>, String> {
         Some(dir) => Some(prepare(Path::new(&dir), product)?),
         None => None,
     };
+    #[cfg(target_os = "macos")]
+    if let Some(workdir) = &workdir {
+        warn_on_a_shared_webview_store(workdir);
+    }
     Ok(CURRENT.get_or_init(|| workdir).as_ref())
 }
 
@@ -163,17 +178,70 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Option<String>, Stri
 
 /// The profile in `dir`, with its root created: the webview is pointed at
 /// `root/webview` before anything else makes `root`. Relative paths resolve
-/// against the current directory. Not `canonicalize`: its `\\?\` paths on
-/// Windows break the browser launch.
+/// against the current directory. `root` is not `canonicalize`d: its `\\?\`
+/// paths on Windows break the browser launch. The tag is: it is derived from
+/// the canonical root (`identity_key`), so an alias of the directory (a
+/// symlink, `a/../b`) cannot open the same data as a second profile.
 fn prepare(dir: &Path, product: &str) -> Result<Workdir, String> {
     let path = std::path::absolute(dir)
         .map_err(|e| format!("--{FLAG}: bad path {}: {e}", dir.display()))?;
     // Drops the trailing separator of `vasa/`, so both spellings give one tag.
     let path: PathBuf = path.components().collect();
-    let workdir = Workdir::new(path, product);
-    std::fs::create_dir_all(&workdir.root)
-        .map_err(|e| format!("--{FLAG}: cannot create {}: {e}", workdir.root.display()))?;
-    Ok(workdir)
+    let root = path.join(product);
+    std::fs::create_dir_all(&root)
+        .map_err(|e| format!("--{FLAG}: cannot create {}: {e}", root.display()))?;
+    let key = identity_key(&root);
+    Ok(Workdir::keyed(path, root, &key))
+}
+
+/// The canonical form of an existing `root`, for the tag only. On Windows
+/// the verbatim prefix `canonicalize` adds is taken off again (`\\?\C:\x`
+/// → `C:\x`, `\\?\UNC\srv\x` → `\\srv\x`), so a directory reached without
+/// aliases keeps the tag it had. Falls back to `root` as given.
+fn identity_key(root: &Path) -> PathBuf {
+    let Ok(canonical) = std::fs::canonicalize(root) else {
+        return root.to_path_buf();
+    };
+    #[cfg(windows)]
+    {
+        let text = canonical.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{rest}"));
+        }
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            return PathBuf::from(rest);
+        }
+    }
+    canonical
+}
+
+/// Whether a macOS of this `sw_vers -productVersion` gives a `--workdir`
+/// profile the shared default webview store: a data store of its own needs
+/// macOS 14. `None` when the version cannot be read.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn shares_webview_store(product_version: &str) -> Option<bool> {
+    let major: u32 = product_version.trim().split('.').next()?.parse().ok()?;
+    Some(major < 14)
+}
+
+/// On macOS 13 and older the localStorage and IndexedDB of a profile are
+/// those of the default one: said in the log, the profile still starts.
+#[cfg(target_os = "macos")]
+fn warn_on_a_shared_webview_store(workdir: &Workdir) {
+    let version = std::process::Command::new("/usr/bin/sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .unwrap_or_default();
+    if shares_webview_store(&version) == Some(true) {
+        eprintln!(
+            "--{FLAG} {}: macOS {} has no separate webview data store (needs 14); \
+             this profile shares localStorage and IndexedDB with the default one",
+            workdir.name,
+            version.trim()
+        );
+    }
 }
 
 #[cfg(test)]
@@ -258,5 +326,44 @@ mod tests {
         assert_eq!(workdir.webview_dir().parent(), Some(workdir.root.as_path()));
         assert_eq!(workdir.cache_dir(), workdir.root.join("cache"));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_alias_of_the_directory_is_the_same_profile() {
+        let base = std::env::temp_dir().join(format!("veydan-workdir-alias-{}", std::process::id()));
+        let real = base.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        let link = base.join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let plain = prepare(&real, "net.veydan.space").unwrap();
+        let via_link = prepare(&link, "net.veydan.space").unwrap();
+        let dotted = prepare(&base.join("link/../real"), "net.veydan.space").unwrap();
+        assert_eq!(plain.tag, via_link.tag);
+        assert_eq!(plain.store_id, via_link.store_id);
+        assert_eq!(plain.tag, dotted.tag);
+        // The paths the webview and the data are given stay as spelled.
+        assert_eq!(via_link.root, link.join("net.veydan.space"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_profile_without_aliases_keeps_its_tag() {
+        let base = std::env::temp_dir().join(format!("veydan-workdir-tag-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let base = std::fs::canonicalize(&base).unwrap();
+        let prepared = prepare(&base, "net.veydan.space").unwrap();
+        let before = Workdir::new(base.clone(), "net.veydan.space");
+        assert_eq!(prepared.tag, before.tag);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn macos_before_14_shares_the_webview_store() {
+        assert_eq!(shares_webview_store("13.6.1\n"), Some(true));
+        assert_eq!(shares_webview_store("12.7"), Some(true));
+        assert_eq!(shares_webview_store("14.0"), Some(false));
+        assert_eq!(shares_webview_store("15.1.1"), Some(false));
+        assert_eq!(shares_webview_store(""), None);
     }
 }

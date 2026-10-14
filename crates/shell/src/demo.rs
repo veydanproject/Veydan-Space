@@ -4,11 +4,18 @@
 //! The demo data of a product, put together from the parts of its modules,
 //! and the wipe of everything they keep. The driver knows no module: it goes
 //! over `Module::demo` of the product's list.
+//!
+//! Both commands are dangerous actions: they run behind an open lock and,
+//! when a lock is set, with its secret given again. The demo data is in a
+//! debug build and in one with the feature `demo` only; in a release
+//! `demo_seed` refuses (the command stays in the list, as the golden lists
+//! and `boundaries` know it).
 
 use crate::module::DemoPart;
+use crate::seams::{self, LockConfirm};
 use crate::services::Shell;
 use std::time::Duration;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use veydan_core::{AppError, CmdResult, Core};
 use veydan_lock::Lock;
 use veydan_sync_host::SyncManager;
@@ -17,12 +24,60 @@ use veydan_sync_host::SyncManager;
 pub const DEMO_LOCK: &str = "demo";
 /// How long a command waits for a running cycle of sync to end.
 const SYNC_WAIT: Duration = Duration::from_secs(30);
+/// Whether this build loads the demo data: a debug build, or a release built
+/// with the feature `demo` (the screenshots of the products). `host_info`
+/// tells the UI, which offers the demo data only then.
+pub const DEMO_BUILD: bool = cfg!(any(debug_assertions, feature = "demo"));
+
+/// What `app_clear_data` deletes the data of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClearScope {
+    /// This device alone: a device joined to a vault leaves it first, so no
+    /// tombstone of what is deleted reaches the vault.
+    Device,
+    /// Every device of the vault: the next cycle publishes the tombstones.
+    All,
+}
+
+impl ClearScope {
+    fn parse(scope: &str) -> CmdResult<Self> {
+        match scope {
+            "device" => Ok(Self::Device),
+            "all" => Ok(Self::All),
+            other => Err(AppError::other(format!("unknown scope `{other}`"))),
+        }
+    }
+}
+
+/// The demo data is not part of a release built without the feature `demo`.
+fn demo_in_build(build: bool) -> CmdResult<()> {
+    if build {
+        Ok(())
+    } else {
+        Err(AppError::other("the demo data is not part of this build"))
+    }
+}
+
+/// The confirmation of a dangerous action: the lock is open and, when one is
+/// set, `secret` is its own (`seams::lock_confirm`, which waits after wrong
+/// secrets as `unlock` does and counts a wrong one with them).
+async fn confirm<R: Runtime>(app: &AppHandle<R>, secret: Option<&str>) -> CmdResult<()> {
+    if app.state::<Lock>().is_locked().await {
+        return Err(AppError::VaultLocked);
+    }
+    match seams::lock_confirm(app, secret).await {
+        Ok(LockConfirm::NoLock | LockConfirm::Confirmed) => Ok(()),
+        Ok(LockConfirm::Wrong) => Err(AppError::other(veydan_lock::ERR_WRONG)),
+        Err(e) => Err(AppError::other(e.message)),
+    }
+}
 
 /// Empty what every part keeps. A module comes after those whose data it
 /// refers to, so the parts are cleared from the last one back. The lock and
 /// its key stay; the positions in the logs and the states of rows stay too,
 /// so the next cycle publishes the tombstones of what disappeared — and of
-/// the labels of what the owners here had.
+/// the labels of what the owners here had — unless the device left its
+/// vault first (`ClearScope::Device`).
 pub async fn clear<R: Runtime>(app: &AppHandle<R>, parts: &[DemoPart<R>]) -> CmdResult<()> {
     for part in parts.iter().rev() {
         (part.clear)(app.clone()).await?;
@@ -59,30 +114,65 @@ pub async fn seed<R: Runtime>(
     Ok(())
 }
 
-/// Wipe what the modules keep: the rows, the folders and files of notes and
-/// profiles, the settings of the modules.
-#[tauri::command]
-pub async fn app_clear_data(app: AppHandle, sync: tauri::State<'_, SyncManager>) -> CmdResult<()> {
+/// `app_clear_data` without its runtime: the confirmation, then, with the
+/// slot of sync held, the leave of the vault (`ClearScope::Device` of a
+/// joined device) and the clear. The leave comes first: the states of the
+/// rows go with it, and nothing is left to publish the tombstones of.
+async fn clear_data<R: Runtime>(
+    app: &AppHandle<R>,
+    parts: &[DemoPart<R>],
+    secret: Option<&str>,
+    scope: ClearScope,
+) -> CmdResult<()> {
+    confirm(app, secret).await?;
+    let sync = app.state::<SyncManager>();
     let guard = sync.pause(SYNC_WAIT).await;
     if guard.is_none() {
         return Err(AppError::other("sync is running, try again"));
     }
-    let parts = app.state::<Shell>().demo_parts();
-    let result = clear(&app, &parts).await;
+    let db = &app.state::<Core>().db;
+    if scope == ClearScope::Device && veydan_sync_host::config::load_binding(db).await.is_some() {
+        veydan_sync_host::join::leave(db, sync.registry()).await?;
+        let _ = app.emit(veydan_sync_host::EVENT_STATUS, ());
+    }
+    let result = clear(app, parts).await;
     drop(guard);
-    veydan_sync_host::trigger_cycle(&app, "clear_data");
+    result
+}
+
+/// Wipe what the modules keep: the rows, the folders and files of notes and
+/// profiles, the settings of the modules. `scope` is `device` (a joined
+/// device leaves its vault first, the other devices keep everything) or
+/// `all` (the deletion goes to every device of the vault); `secret` is the
+/// lock's, when one is set.
+#[tauri::command]
+pub async fn app_clear_data(
+    secret: Option<String>,
+    scope: String,
+    app: AppHandle,
+) -> CmdResult<()> {
+    let scope = ClearScope::parse(&scope)?;
+    let parts = app.state::<Shell>().demo_parts();
+    let result = clear_data(&app, &parts, secret.as_deref(), scope).await;
+    if scope == ClearScope::All {
+        veydan_sync_host::trigger_cycle(&app, "clear_data");
+    }
     result
 }
 
 /// Wipe, then load the demo data of `locale` (`ru` or `en`). Runs with the
 /// sync slot held, then pushes right away, so the fresh rows carry a newer
-/// clock than any tombstone another device may still publish.
+/// clock than any tombstone another device may still publish. Refused in a
+/// release without the feature `demo`; `secret` as for `app_clear_data`.
 #[tauri::command]
 pub async fn demo_seed(
     locale: String,
+    secret: Option<String>,
     app: AppHandle,
     sync: tauri::State<'_, SyncManager>,
 ) -> CmdResult<()> {
+    demo_in_build(DEMO_BUILD)?;
+    confirm(&app, secret.as_deref()).await?;
     let guard = sync.pause(SYNC_WAIT).await;
     if guard.is_none() {
         return Err(AppError::other("sync is running, try again"));
@@ -160,7 +250,151 @@ mod tests {
         app.manage(Lock::new(pool.clone()));
         app.manage(Core::new(pool, dir.path().to_owned(), Directory::default()));
         app.manage(Log::default());
+        app.manage(SyncManager::new(veydan_sync_host::Registry::new()));
         (app, dir)
+    }
+
+    /// A part that tells whether this device was joined to a vault when it
+    /// was cleared.
+    fn part_joined() -> DemoPart<MockRuntime> {
+        DemoPart {
+            seed: |_app, _locale| Box::pin(async { Ok(()) }),
+            clear: |app| {
+                Box::pin(async move {
+                    let db = &app.state::<Core>().db;
+                    let joined = veydan_sync_host::config::load_binding(db).await.is_some();
+                    note(&app, format!("clear joined={joined}"));
+                    Ok(())
+                })
+            },
+        }
+    }
+
+    /// The device is joined to a vault and has published a row.
+    async fn join(app: &tauri::App<MockRuntime>) {
+        let db = &app.state::<Core>().db;
+        for (key, value) in [
+            ("sync_vault_id", "v1"),
+            ("sync_vault_key", "a2V5"),
+            ("sync_device_id", "d1"),
+            ("sync_enabled", "1"),
+        ] {
+            veydan_core::settings::set(db, key, value).await.unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO sync_row_state (entity_type, entity_id, head_hlc, synced_hash)
+             VALUES ('password', 'p1', 'h', 's')",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+    }
+
+    async fn row_states(app: &tauri::App<MockRuntime>) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM sync_row_state")
+            .fetch_one(&app.state::<Core>().db)
+            .await
+            .unwrap()
+    }
+
+    async fn with_pin(app: &tauri::App<MockRuntime>) {
+        let lock = app.state::<Lock>();
+        lock.open_default().await.unwrap();
+        lock.set(Some("4821".into()), None, Some("pin".into()), None)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn nothing_is_cleared_behind_a_closed_lock() {
+        let (app, _dir) = app().await;
+        with_pin(&app).await;
+        app.state::<Lock>().lock();
+        let refused = clear_data(app.handle(), &[part_a()], Some("4821"), ClearScope::All).await;
+        assert!(matches!(refused, Err(AppError::VaultLocked)));
+        assert!(log(&app).is_empty());
+    }
+
+    /// A wrong secret clears nothing and counts as one of `unlock`: after
+    /// the third, each further one waits.
+    #[tokio::test]
+    async fn a_wrong_secret_clears_nothing_and_is_counted() {
+        let (app, _dir) = app().await;
+        with_pin(&app).await;
+        let wrong =
+            |r: CmdResult<()>| matches!(r, Err(AppError::Other(m)) if m == veydan_lock::ERR_WRONG);
+        assert!(wrong(
+            clear_data(app.handle(), &[part_a()], None, ClearScope::All).await
+        ));
+        for _ in 0..3 {
+            assert!(wrong(
+                clear_data(app.handle(), &[part_a()], Some("0000"), ClearScope::All).await
+            ));
+        }
+        let started = std::time::Instant::now();
+        assert!(wrong(
+            clear_data(app.handle(), &[part_a()], Some("1111"), ClearScope::All).await
+        ));
+        assert!(started.elapsed() >= Duration::from_millis(900));
+        assert!(log(&app).is_empty());
+
+        clear_data(app.handle(), &[part_a()], Some("4821"), ClearScope::All)
+            .await
+            .unwrap();
+        assert_eq!(log(&app), ["clear a"]);
+    }
+
+    #[tokio::test]
+    async fn without_a_lock_the_clear_asks_no_secret() {
+        let (app, _dir) = app().await;
+        clear_data(app.handle(), &[part_a()], None, ClearScope::All)
+            .await
+            .unwrap();
+        assert_eq!(log(&app), ["clear a"]);
+    }
+
+    /// «Only this device»: the device leaves its vault before anything is
+    /// deleted, and the states of its rows go with the binding, so no cycle
+    /// has a tombstone to publish. «Every device» keeps both.
+    #[tokio::test]
+    async fn a_device_cleared_alone_leaves_its_vault_first() {
+        let (app, _dir) = app().await;
+        join(&app).await;
+        clear_data(app.handle(), &[part_joined()], None, ClearScope::All)
+            .await
+            .unwrap();
+        assert_eq!(log(&app), ["clear joined=true"]);
+        assert_eq!(row_states(&app).await, 1);
+
+        clear_data(app.handle(), &[part_joined()], None, ClearScope::Device)
+            .await
+            .unwrap();
+        assert_eq!(log(&app), ["clear joined=false"]);
+        assert_eq!(row_states(&app).await, 0);
+        let db = &app.state::<Core>().db;
+        assert!(veydan_sync_host::config::load_binding(db).await.is_none());
+        assert_eq!(
+            veydan_core::settings::get(db, "sync_enabled")
+                .await
+                .as_deref(),
+            Some("0")
+        );
+    }
+
+    #[test]
+    fn the_scope_is_device_or_all() {
+        assert_eq!(ClearScope::parse("device").unwrap(), ClearScope::Device);
+        assert_eq!(ClearScope::parse("all").unwrap(), ClearScope::All);
+        assert!(ClearScope::parse("").is_err());
+    }
+
+    /// A release without the feature `demo` refuses the demo data; a debug
+    /// build (the tests) and a build with the feature load it.
+    #[test]
+    fn the_demo_data_is_refused_outside_a_demo_build() {
+        assert!(matches!(demo_in_build(false), Err(AppError::Other(_))));
+        assert!(demo_in_build(true).is_ok());
+        assert_eq!(DEMO_BUILD, cfg!(any(debug_assertions, feature = "demo")));
     }
 
     fn log(app: &tauri::App<MockRuntime>) -> Vec<String> {

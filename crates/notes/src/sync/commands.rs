@@ -44,7 +44,16 @@ pub async fn sync_conflict_resolve(
     notes::resolve_conflict(&core, &notes, &note_id, &token, content).await?;
     let _ = app.emit(EVENT_STATUS, ());
     if !sync.is_running() {
-        run_cycle(&app, "conflict").await?;
+        // The resolution is stored; a cycle that fails after it is the status's to
+        // tell, not a failure of the resolve.
+        if let Err(e) = run_cycle(&app, "conflict").await {
+            trace_skip(
+                &app,
+                "conflict",
+                "cycle",
+                &format!("failed after the resolve: {e}"),
+            );
+        }
     } else {
         trace_skip(&app, "conflict", "trigger", "already running");
     }

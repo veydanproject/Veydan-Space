@@ -4,6 +4,7 @@
 //! Vault engine: create/open, push own ops, pull peers' ops, blobs, compaction.
 
 use crate::envelope::{self, Kind};
+use crate::hlc::Hlc;
 use crate::keys::{Keys, Manifest, Vmk, MANIFEST_KEY};
 use crate::large_files::{LargeFileConfig, LargeFileStore};
 use crate::log::{
@@ -34,6 +35,22 @@ pub struct PullPeer {
     pub files: u32,
     pub ops: usize,
     pub error: Option<String>,
+    /// `error` is of the log's content — a file that does not open or does
+    /// not continue the chain ([`is_broken`]), not of the storage. What the
+    /// pull read before it is taken and the head stands just before it; no
+    /// later read gets past it while the file stays as it is.
+    pub broken: bool,
+}
+
+/// An error of what a log holds rather than of the storage that serves it:
+/// an envelope that does not open (`Format`, `Crypto`) or content that does
+/// not fit (`Integrity`). A copy still on its way (a cloud client) shows the
+/// same way until it lands.
+pub fn is_broken(e: &SyncError) -> bool {
+    matches!(
+        e,
+        SyncError::Integrity(_) | SyncError::Format(_) | SyncError::Crypto(_)
+    )
 }
 
 /// Ops from peers plus per-peer failures that did not stop the others.
@@ -42,6 +59,32 @@ pub struct PullResult {
     pub ops: Vec<Op>,
     pub errors: Vec<(String, String)>,
     pub peers: Vec<PullPeer>,
+}
+
+/// This device's log as the storage holds it ([`Engine::own_log_status`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OwnLogStatus {
+    /// The highest seq reachable without a gap or a chain break; 0 for none.
+    pub seq: u64,
+    /// The hash of the chunk at `seq`, or the snapshot's head when it ends there.
+    pub head_hash: String,
+    /// `prev_hash` of the chunk at `seq`; none when `seq` is the snapshot's
+    /// (or 0) and no chunk past it continues the chain.
+    pub prev_hash: Option<String>,
+    /// The newest HLC of the ops up to `seq`: what this device stamped last
+    /// that the storage still holds.
+    pub newest: Option<Hlc>,
+}
+
+/// What [`Engine::read_every_log`] read.
+#[derive(Debug, Default)]
+pub struct EveryLog {
+    /// The latest op of each entity over the logs, a broken one up to the
+    /// file it stops at.
+    pub ops: Vec<Op>,
+    /// The logs that stop at a file that does not open or does not continue
+    /// the chain, and why.
+    pub broken: Vec<(String, String)>,
 }
 
 pub struct Engine {
@@ -121,9 +164,35 @@ impl Engine {
         }
         let pass = Zeroizing::new(passphrase.to_owned());
         let (manifest, vmk) = off_runtime(move || Manifest::create(&pass)).await?;
-        storage.put(MANIFEST_KEY, &manifest.to_json()?).await?;
+        // Two devices creating in one empty folder at once: the second must
+        // not replace the first one's manifest (its key, its vault id).
+        let json = manifest.to_json()?;
+        if !storage.put_if_absent(MANIFEST_KEY, &json).await? {
+            return Err(SyncError::VaultExists);
+        }
+        Self::read_back_manifest(storage.as_ref(), &json).await?;
         let engine = Self::with_key(storage, &vmk, &manifest.vault_id, device_id);
         Ok((engine, vmk))
+    }
+
+    /// The manifest as the storage gives it back is the one written: a write
+    /// the storage took but did not keep, or another writer's manifest in its
+    /// place, leaves this device on a key nobody else has.
+    async fn read_back_manifest(storage: &dyn Storage, written: &[u8]) -> Result<()> {
+        match storage.get(MANIFEST_KEY).await? {
+            Some(bytes) if bytes == written => Ok(()),
+            Some(bytes) => match (Manifest::from_json(&bytes), Manifest::from_json(written)) {
+                (Ok(theirs), Ok(ours)) if theirs.vault_id != ours.vault_id => {
+                    Err(SyncError::VaultExists)
+                }
+                _ => Err(SyncError::Storage(
+                    "the manifest read back is not the one written".into(),
+                )),
+            },
+            None => Err(SyncError::Storage(
+                "the manifest written is not in the storage".into(),
+            )),
+        }
     }
 
     /// Join an existing vault with its passphrase.
@@ -193,7 +262,9 @@ impl Engine {
             Ok(manifest)
         })
         .await?;
-        self.storage.put(MANIFEST_KEY, &manifest.to_json()?).await
+        let json = manifest.to_json()?;
+        self.storage.put(MANIFEST_KEY, &json).await?;
+        Self::read_back_manifest(self.storage.as_ref(), &json).await
     }
 
     pub fn vault_id(&self) -> &str {
@@ -312,54 +383,118 @@ impl Engine {
         Ok(())
     }
 
-    /// Highest seq reachable from the snapshot without a gap or a chain break.
-    async fn own_log_tip(&self) -> Result<(u64, String)> {
-        let mut seq = 0u64;
-        let mut hash = String::new();
-        if let Some(snap) = self.read_snapshot(&self.device_id).await? {
-            seq = snap.up_to_seq;
-            hash = snap.head_hash;
-        }
+    /// Where this device's log stands in the storage: the highest seq
+    /// reachable from the snapshot without a gap or a chain break, with what
+    /// the host needs to tell its own saved state from another writer's
+    /// (spec 9.3, "the own log: pending and reconciliation").
+    ///
+    /// `own_seq` and `own_head` are what the device saved. When the listing
+    /// ends at that chunk or the one after it, without a gap, the status is
+    /// read from those one or two chunks; the snapshot and the whole chain
+    /// are read only when it does not (an idle cycle costs a listing and a
+    /// GET or two, not the log).
+    pub async fn own_log_status(&self, own_seq: u64, own_head: &str) -> Result<OwnLogStatus> {
         let prefix = format!("devices/{}/log/", self.device_id);
         let keys = self.storage.list(&prefix).await?;
-        let mut seqs: Vec<u64> = keys
-            .iter()
-            .filter_map(|k| seq_from_key(k))
-            .filter(|s| *s > seq)
-            .collect();
+        let mut seqs: Vec<u64> = keys.iter().filter_map(|k| seq_from_key(k)).collect();
         seqs.sort_unstable();
         seqs.dedup();
-        for s in seqs {
-            if s != seq + 1 {
-                break;
-            }
-            let Some(bytes) = self.storage.get(&chunk_key(&self.device_id, s)).await? else {
-                break;
-            };
-            let chunk = match self.open_chunk(&self.device_id, s, &bytes) {
-                Ok(c) => c,
-                Err(_) => break,
-            };
-            if chunk.seq != s || chunk.prev_hash != hash {
-                break;
-            }
-            hash = sha256_hex(&bytes);
-            seq = s;
+        if let Some(status) = self.own_log_at(&seqs, own_seq, own_head).await? {
+            return Ok(status);
         }
-        Ok((seq, hash))
+        self.own_log_walk(&seqs).await
     }
 
-    /// Step the local cursor back when it is ahead of the stored chain.
-    /// The next push then continues from a head peers can follow.
-    pub async fn rewind_own_log(&self, state: &mut LocalState) -> Result<Option<String>> {
-        let (seq, hash) = self.own_log_tip().await?;
-        if state.own_seq <= seq {
+    /// The status from the saved position alone, when the listing allows it.
+    async fn own_log_at(
+        &self,
+        seqs: &[u64],
+        own_seq: u64,
+        own_head: &str,
+    ) -> Result<Option<OwnLogStatus>> {
+        let top = seqs.last().copied().unwrap_or(0);
+        let gap = seqs.windows(2).any(|w| w[1] != w[0] + 1);
+        if own_seq == 0 || gap || !seqs.contains(&own_seq) || top > own_seq + 1 {
             return Ok(None);
         }
-        let from = state.own_seq;
-        state.own_seq = seq;
-        state.own_head_hash = hash;
-        Ok(Some(format!("own log rewound from {from} to {seq}")))
+        let Some((chunk, hash)) = self.own_chunk(own_seq).await? else {
+            return Ok(None);
+        };
+        if hash != own_head {
+            return Ok(None);
+        }
+        let mut status = OwnLogStatus {
+            seq: own_seq,
+            newest: chunk.ops.iter().map(|op| &op.hlc).max().cloned(),
+            prev_hash: Some(chunk.prev_hash),
+            head_hash: hash,
+        };
+        if top == own_seq + 1 {
+            let Some((next, hash)) = self.own_chunk(top).await? else {
+                return Ok(None);
+            };
+            if next.prev_hash != status.head_hash {
+                return Ok(None);
+            }
+            let newest = next.ops.iter().map(|op| &op.hlc).max().cloned();
+            status = OwnLogStatus {
+                seq: top,
+                head_hash: hash,
+                prev_hash: Some(next.prev_hash),
+                newest: status.newest.max(newest),
+            };
+        }
+        Ok(Some(status))
+    }
+
+    /// Chunk `seq` of this device's log and the hash of its file, when the
+    /// storage gives one that opens and carries that seq.
+    async fn own_chunk(&self, seq: u64) -> Result<Option<(Chunk, String)>> {
+        let Some(bytes) = self.storage.get(&chunk_key(&self.device_id, seq)).await? else {
+            return Ok(None);
+        };
+        Ok(self
+            .open_chunk(&self.device_id, seq, &bytes)
+            .ok()
+            .filter(|chunk| chunk.seq == seq)
+            .map(|chunk| (chunk, sha256_hex(&bytes))))
+    }
+
+    /// The hash of chunk `seq` of this device's log as the storage gives it
+    /// by its key, whatever a listing said; none for 0 or a chunk it lacks.
+    pub async fn own_chunk_hash(&self, seq: u64) -> Result<Option<String>> {
+        if seq == 0 {
+            return Ok(None);
+        }
+        Ok(self.own_chunk(seq).await?.map(|(_, hash)| hash))
+    }
+
+    /// The whole chain from the snapshot.
+    async fn own_log_walk(&self, listed: &[u64]) -> Result<OwnLogStatus> {
+        let mut status = OwnLogStatus::default();
+        if let Some(snap) = self.read_snapshot(&self.device_id).await? {
+            status.seq = snap.up_to_seq;
+            status.head_hash = snap.head_hash;
+            status.newest = snap.ops.iter().map(|op| &op.hlc).max().cloned();
+        }
+        let from = status.seq;
+        for &s in listed.iter().filter(|s| **s > from) {
+            if s != status.seq + 1 {
+                break;
+            }
+            let Some((chunk, hash)) = self.own_chunk(s).await? else {
+                break;
+            };
+            if chunk.prev_hash != status.head_hash {
+                break;
+            }
+            let newest = chunk.ops.iter().map(|op| &op.hlc).max().cloned();
+            status.newest = status.newest.max(newest);
+            status.prev_hash = Some(chunk.prev_hash);
+            status.head_hash = hash;
+            status.seq = s;
+        }
+        Ok(status)
     }
 
     pub async fn own_chunk_count(&self) -> Result<usize> {
@@ -371,18 +506,18 @@ impl Engine {
     }
 
     /// Fold own log into a snapshot and drop the chunks it covers.
-    /// Tombstones older than `tombstone_ttl_ms` (by HLC wall time) are dropped.
-    pub async fn compact(
-        &self,
-        state: &LocalState,
-        now_ms: u64,
-        tombstone_ttl_ms: u64,
-    ) -> Result<()> {
+    /// A tombstone is kept for ever: a device that was offline longer than any
+    /// limit would bring the row back from its old log (audit A2-01). A chunk
+    /// past the snapshot that the listing lacks or that does not read fails
+    /// it before anything is written or deleted.
+    pub async fn compact(&self, state: &LocalState) -> Result<()> {
         if state.own_seq == 0 {
             return Ok(());
         }
         let mut ops: Vec<Op> = Vec::new();
+        let mut base = 0;
         if let Some(snap) = self.read_snapshot(&self.device_id).await? {
+            base = snap.up_to_seq;
             ops.extend(snap.ops);
         }
         let keys = self
@@ -391,19 +526,36 @@ impl Engine {
             .await?;
         let mut seqs: Vec<u64> = keys.iter().filter_map(|k| seq_from_key(k)).collect();
         seqs.sort_unstable();
+        seqs.dedup();
+        // Every chunk from the snapshot on to the position is folded, or
+        // none is: a snapshot without the ops of a chunk the listing lacks
+        // or that does not read would stand for them, and a device that
+        // has not read that chunk would never get them (audit A2-22).
+        let past: Vec<u64> = seqs
+            .iter()
+            .copied()
+            .filter(|s| *s > base && *s <= state.own_seq)
+            .collect();
+        if let Some(missing) = (base + 1..=state.own_seq).find(|s| past.binary_search(s).is_err()) {
+            return Err(SyncError::Storage(format!(
+                "chunk {} is not in the listing: the log is not compacted",
+                chunk_key(&self.device_id, missing)
+            )));
+        }
         for seq in &seqs {
             if *seq > state.own_seq {
                 continue;
             }
-            let Some(bytes) = self.storage.get(&chunk_key(&self.device_id, *seq)).await? else {
-                continue;
+            let key = chunk_key(&self.device_id, *seq);
+            let Some(bytes) = self.storage.get(&key).await? else {
+                return Err(SyncError::Storage(format!(
+                    "chunk {key} is listed but does not read: the log is not compacted"
+                )));
             };
             let chunk = self.open_chunk(&self.device_id, *seq, &bytes)?;
             ops.extend(chunk.ops);
         }
-        let mut latest = fold_latest(ops);
-        latest
-            .retain(|op| !(op.deleted && op.hlc.wall_ms.saturating_add(tombstone_ttl_ms) < now_ms));
+        let latest = fold_latest(ops);
 
         let snap = Snapshot {
             up_to_seq: state.own_seq,
@@ -433,7 +585,9 @@ impl Engine {
     // ── Peers ────────────────────────────────────────────────────────────────
 
     /// Read every peer's log past the remembered head. Verifies the hash chain;
-    /// a peer whose chain breaks is reported in `errors` and its head is left as is.
+    /// a peer whose storage fails is reported in `errors` and its head is left
+    /// as is; one whose log stops at a broken file (`PullPeer::broken`) too,
+    /// with what it read before that file taken and its head moved there.
     /// `on_file(current, total, key)` is called before each GET.
     pub async fn pull(
         &self,
@@ -478,17 +632,24 @@ impl Engine {
                 )
                 .await
             {
-                Ok(ops) => {
+                // A broken file stops the log there, with an error: what
+                // came before it is taken (audit A2-17).
+                Ok((ops, broken)) => {
                     let n = ops.len();
+                    let error = broken.map(|e| e.to_string());
                     result.peers.push(PullPeer {
                         device_id: peer.clone(),
                         head_seq,
                         files: current - read_from,
                         ops: n,
-                        error: None,
+                        error: error.clone(),
+                        broken: error.is_some(),
                     });
                     result.ops.extend(ops);
-                    state.peers.insert(peer, head);
+                    state.peers.insert(peer.clone(), head);
+                    if let Some(message) = error {
+                        result.errors.push((peer, message));
+                    }
                 }
                 Err(e) => {
                     let message = e.to_string();
@@ -498,6 +659,7 @@ impl Engine {
                         files: current - read_from,
                         ops: 0,
                         error: Some(message.clone()),
+                        broken: false,
                     });
                     result.errors.push((peer, message));
                 }
@@ -507,6 +669,9 @@ impl Engine {
         Ok(result)
     }
 
+    /// The ops of one peer past `head`, and the error of a broken file
+    /// ([`is_broken`]) the log stops at: what came before it is kept and
+    /// `head` stands just before it. An error of the storage gives nothing.
     #[allow(clippy::too_many_arguments)]
     async fn pull_peer(
         &self,
@@ -517,7 +682,31 @@ impl Engine {
         current: &mut u32,
         total: u32,
         on_file: &mut impl FnMut(u32, u32, &str),
-    ) -> Result<Vec<Op>> {
+    ) -> Result<(Vec<Op>, Option<SyncError>)> {
+        let start = *current;
+        let mut ops = Vec::new();
+        let read = self
+            .read_peer(peer, head, all_keys, &mut ops, current, total, on_file)
+            .await;
+        *current = (*current).max(start + planned.len() as u32);
+        match read {
+            Ok(()) => Ok((ops, None)),
+            Err(e) if is_broken(&e) => Ok((ops, Some(e))),
+            Err(e) => Err(e),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn read_peer(
+        &self,
+        peer: &str,
+        head: &mut PeerHead,
+        all_keys: &[String],
+        ops: &mut Vec<Op>,
+        current: &mut u32,
+        total: u32,
+        on_file: &mut impl FnMut(u32, u32, &str),
+    ) -> Result<()> {
         let log_prefix = format!("devices/{peer}/log/");
         let mut seqs: Vec<u64> = all_keys
             .iter()
@@ -525,8 +714,6 @@ impl Engine {
             .filter_map(|k| seq_from_key(k))
             .collect();
         seqs.sort_unstable();
-        let mut ops = Vec::new();
-        let start = *current;
 
         // No chunk continues our head: either nothing new, or the peer compacted
         // and the snapshot now carries what we miss.
@@ -564,11 +751,14 @@ impl Engine {
             let Some(bytes) = self.storage.get(&key).await? else {
                 break;
             };
-            let chunk = match self.open_chunk(peer, next, &bytes) {
-                Ok(c) => c,
-                Err(SyncError::Format(_)) => break,
-                Err(e) => return Err(e),
-            };
+            // A file that is not an envelope (empty, cut short, another
+            // file under its name) stops the log with an error, not in
+            // silence: until it is mended nothing past it is read (audit
+            // A2-17).
+            let chunk = self.open_chunk(peer, next, &bytes).map_err(|e| match e {
+                SyncError::Format(why) => SyncError::Format(format!("chunk {key}: {why}")),
+                e => e,
+            })?;
             if chunk.seq != next {
                 return Err(SyncError::Integrity(format!(
                     "chunk {next} carries seq {}",
@@ -587,8 +777,7 @@ impl Engine {
             };
             next += 1;
         }
-        *current = (*current).max(start + planned.len() as u32);
-        Ok(ops)
+        Ok(())
     }
 
     /// Authenticated but undecodable content is a real fault, not a partial
@@ -645,6 +834,86 @@ impl Engine {
             }
         }
         Ok(fold_latest(ops))
+    }
+
+    /// Every log read from its start, as a pull of a device that has read
+    /// nothing reads it: the snapshot, then the chunks in a chain from it.
+    /// For a join, which takes the vault as the truth. A log that is not all
+    /// there yet (a listed chunk that does not read, a chunk missing before
+    /// a listed one) or a storage that fails is an error: a cloud client may
+    /// still be delivering it. A log that stops at a file that does not open
+    /// or does not continue its chain is `broken`: what came before that file
+    /// is taken, as a pull takes it (`PullPeer::broken`), and nothing past it.
+    pub async fn read_every_log(&self) -> Result<EveryLog> {
+        let all = self.storage.list("devices/").await?;
+        let devices: BTreeSet<String> = all
+            .iter()
+            .filter_map(|k| device_from_key(k))
+            .map(str::to_string)
+            .collect();
+        let mut out = EveryLog::default();
+        let mut ops: Vec<Op> = Vec::new();
+        for device in devices {
+            match self.read_log(&device, &all, &mut ops).await {
+                Ok(()) => {}
+                Err(e) if is_broken(&e) => out.broken.push((device, e.to_string())),
+                Err(e) => return Err(e),
+            }
+        }
+        out.ops = fold_latest(ops);
+        Ok(out)
+    }
+
+    /// The ops of one log from its start into `ops`, for
+    /// [`Engine::read_every_log`]; on an error, those before it.
+    async fn read_log(&self, device: &str, all: &[String], ops: &mut Vec<Op>) -> Result<()> {
+        let log_prefix = format!("devices/{device}/log/");
+        let mut seqs: Vec<u64> = all
+            .iter()
+            .filter(|k| k.starts_with(&log_prefix))
+            .filter_map(|k| seq_from_key(k))
+            .collect();
+        seqs.sort_unstable();
+        seqs.dedup();
+        let mut head = PeerHead::default();
+        if let Some(snap) = self.read_snapshot(device).await? {
+            ops.extend(snap.ops);
+            head = PeerHead {
+                seq: snap.up_to_seq,
+                hash: snap.head_hash,
+            };
+        }
+        let from = head.seq;
+        for seq in seqs.into_iter().filter(|s| *s > from) {
+            if seq != head.seq + 1 {
+                return Err(SyncError::Storage(format!(
+                    "chunk {} of {device} is not there yet",
+                    head.seq + 1
+                )));
+            }
+            let key = chunk_key(device, seq);
+            let bytes = self.storage.get(&key).await?.ok_or_else(|| {
+                SyncError::Storage(format!("chunk {key} listed but not readable"))
+            })?;
+            let chunk = self.open_chunk(device, seq, &bytes)?;
+            if chunk.seq != seq {
+                return Err(SyncError::Integrity(format!(
+                    "chunk {seq} carries seq {}",
+                    chunk.seq
+                )));
+            }
+            if chunk.prev_hash != head.hash {
+                return Err(SyncError::Integrity(format!(
+                    "chain break at {device}/{seq}"
+                )));
+            }
+            ops.extend(chunk.ops);
+            head = PeerHead {
+                seq,
+                hash: sha256_hex(&bytes),
+            };
+        }
+        Ok(())
     }
 
     // ── Blobs ────────────────────────────────────────────────────────────────

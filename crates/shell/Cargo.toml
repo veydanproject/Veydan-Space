@@ -10,6 +10,12 @@ authors = ["Veydan Project"]
 license-file = "../../LICENSE"
 publish = false
 
+[features]
+# The demo data in a release build (the screenshots of the products): a
+# debug build loads it anyway, a release without the feature refuses
+# `demo_seed` (src/demo.rs).
+demo = []
+
 [build-dependencies]
 veydan-build-cfg = { path = "../build-cfg" }
 

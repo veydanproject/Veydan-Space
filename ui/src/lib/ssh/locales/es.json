@@ -28,6 +28,7 @@
     "files_transfer_done": "Listo",
     "files_transfer_cancelled": "Cancelada — los datos parciales se conservan; vuelve a iniciarla para reanudar",
     "files_transfer_skipped": "Omitidos: {n}",
+    "files_transfer_move_kept": "{n} sin mover: se conservan los originales",
     "files_conflict_title": "El archivo ya existe",
     "files_conflict_msg_file": "«{name}» ya existe en el destino. ¿Sobrescribirlo?",
     "files_conflict_msg_dir": "La carpeta «{name}» ya existe en el destino. ¿Sobrescribir los archivos que contiene?",

@@ -29,15 +29,24 @@ pub struct HashCache(Mutex<HashMap<PathBuf, FileStamp>>);
 impl HashCache {
     /// SHA-256 of the file, or `None` when it cannot be read.
     pub fn file_hash(&self, path: &Path) -> Option<String> {
-        let meta = std::fs::metadata(path).ok()?;
+        self.try_file_hash(path).ok()
+    }
+
+    /// SHA-256 of the file, or why it cannot be read: a caller that must
+    /// tell a file gone (`NotFound`) from one it may not read uses this.
+    pub fn try_file_hash(&self, path: &Path) -> std::io::Result<String> {
+        let meta = std::fs::metadata(path)?;
         let (mtime, size) = (meta.modified().ok(), meta.len());
-        let mut cache = self.0.lock().ok()?;
+        let mut cache = self
+            .0
+            .lock()
+            .map_err(|_| std::io::Error::other("hash cache poisoned"))?;
         if let Some(s) = cache.get(path) {
             if s.mtime == mtime && s.size == size {
-                return Some(s.hash.clone());
+                return Ok(s.hash.clone());
             }
         }
-        let hash = hash_file(path).ok()?;
+        let hash = hash_file(path)?;
         cache.insert(
             path.to_path_buf(),
             FileStamp {
@@ -46,6 +55,6 @@ impl HashCache {
                 hash: hash.clone(),
             },
         );
-        Some(hash)
+        Ok(hash)
     }
 }

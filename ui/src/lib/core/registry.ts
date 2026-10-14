@@ -14,6 +14,7 @@
  */
 
 import { redirect } from '@sveltejs/kit';
+import { windowLabel } from './api';
 import { modulesStore } from './store/modules.svelte';
 import type {
   AccountSource,
@@ -97,6 +98,19 @@ class Registry {
   /** Modules that are in the product and switched on. */
   get active(): ModuleDef[] {
     return this.defs.filter((m) => this.enabled(m.id));
+  }
+
+  /**
+   * The modules whose entities this window shows: every active one in
+   * `main`; in a module's own window (`ModuleDef.windows`) that module alone.
+   * Such a window reaches no other module's commands (platform-spec 5.2), so
+   * it shows another module's entities as a product without that module
+   * does (10.3): by their labels.
+   */
+  get here(): ModuleDef[] {
+    const label = windowLabel();
+    if (label === 'main') return this.active;
+    return this.active.filter((m) => m.windows?.some((w) => w.label === label));
   }
 
   /**

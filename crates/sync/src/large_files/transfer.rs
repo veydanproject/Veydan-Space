@@ -8,6 +8,7 @@
 //! so the staged prefix is always valid and resume is a plain length.
 
 use super::crypto::{self, chunk_key, manifest_key};
+use super::gc;
 use super::manifest::{ChunkEntry, ManifestV2, CODEC_ZSTD, FORMAT_VERSION};
 use super::{
     CancelFlag, LargeFileRef, LargeFileSink, LargeFileSource, LargeFileStore, Phase, Progress,
@@ -17,7 +18,7 @@ use crate::{Result, SyncError};
 use futures_util::stream::{FuturesOrdered, StreamExt};
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const RETRY_ATTEMPTS: u32 = 4;
@@ -119,6 +120,7 @@ pub(super) async fn upload(
     let mut reader = source.open_at(0).await?;
     let mut in_flight = FuturesOrdered::new();
     let mut entries: Vec<ChunkEntry> = Vec::new();
+    let mut seen: Vec<Seen> = Vec::new();
     loop {
         let plain = read_chunk(reader.as_mut(), chunk_size as usize).await?;
         let eof = (plain.len() as u64) < chunk_size;
@@ -127,7 +129,11 @@ pub(super) async fn upload(
         }
         while in_flight.len() >= store.config.parallelism || (eof && !in_flight.is_empty()) {
             match in_flight.next().await {
-                Some(entry) => entries.push(entry?),
+                Some(done) => {
+                    let (entry, at) = done?;
+                    entries.push(entry);
+                    seen.push(at);
+                }
                 None => break,
             }
         }
@@ -137,6 +143,7 @@ pub(super) async fn upload(
     }
 
     cancel.check()?;
+    recheck_chunks(store, source, &entries, &seen, cancel).await?;
     counter.report(Phase::Finalizing);
     let size = entries.iter().map(|c| c.size).sum();
     let ids: Vec<String> = entries.iter().map(|c| c.id.clone()).collect();
@@ -153,6 +160,7 @@ pub(super) async fn upload(
     let (manifest_id, sealed) = crypto::seal_manifest(store.keys, store.vault_id, &manifest)?;
     let key = manifest_key(&manifest_id);
     with_retry(cancel, || store.storage.put_if_absent(&key, &sealed)).await?;
+    gc::touch(&key);
     Ok(LargeFileRef {
         version: FORMAT_VERSION,
         manifest_id,
@@ -161,13 +169,28 @@ pub(super) async fn upload(
     })
 }
 
-/// Hash, skip when present, otherwise seal and store. Returns the manifest entry.
+/// A chunk written longer ago than this is looked at again before the
+/// manifest goes out: the GC of another device may have taken it since.
+const RECHECK_AFTER: Duration = Duration::from_secs(60);
+
+/// How a chunk of an upload was found in the vault, and when.
+#[derive(Clone, Copy)]
+struct Seen {
+    at: Instant,
+    /// It was there already: another device's GC may hold it for an orphan
+    /// of a day ago and delete it under the reference this upload makes.
+    reused: bool,
+}
+
+/// Hash, skip when present, otherwise seal and store. Returns the manifest
+/// entry and how the chunk was found. Either way the chunk is touched, so a
+/// GC pass of this device keeps it while the upload goes on.
 async fn upload_chunk(
     store: &LargeFileStore<'_>,
     plain: Vec<u8>,
     counter: &Counter<'_>,
     cancel: &CancelFlag,
-) -> Result<ChunkEntry> {
+) -> Result<(ChunkEntry, Seen)> {
     cancel.check()?;
     let size = plain.len() as u64;
     let id = crypto::chunk_id(store.keys, &plain);
@@ -178,8 +201,49 @@ async fn upload_chunk(
         drop(plain);
         with_retry(cancel, || store.storage.put_if_absent(&key, &sealed)).await?;
     }
+    gc::touch(&key);
     counter.add(Phase::Uploading, size);
-    Ok(ChunkEntry { id, size })
+    let seen = Seen {
+        at: Instant::now(),
+        reused: present,
+    };
+    Ok((ChunkEntry { id, size }, seen))
+}
+
+/// Just before the manifest: every chunk that was in place already, and
+/// every chunk written longer than `RECHECK_AFTER` ago (an upload longer
+/// than the grace of the GC), must still be there; one that is gone is read
+/// from the source again and written back. A source that changed since
+/// fails the upload.
+async fn recheck_chunks(
+    store: &LargeFileStore<'_>,
+    source: &dyn LargeFileSource,
+    entries: &[ChunkEntry],
+    seen: &[Seen],
+    cancel: &CancelFlag,
+) -> Result<()> {
+    let chunk_size = store.config.chunk_size;
+    for (i, (entry, seen)) in entries.iter().zip(seen).enumerate() {
+        if !seen.reused && seen.at.elapsed() < RECHECK_AFTER {
+            continue;
+        }
+        let key = chunk_key(&entry.id);
+        if with_retry(cancel, || store.storage.exists(&key)).await? {
+            gc::touch(&key);
+            continue;
+        }
+        let mut reader = source.open_at(i as u64 * chunk_size).await?;
+        let plain = read_chunk(reader.as_mut(), entry.size as usize).await?;
+        if plain.len() as u64 != entry.size || crypto::chunk_id(store.keys, &plain) != entry.id {
+            return Err(SyncError::Source(format!(
+                "chunk {i} changed during the upload"
+            )));
+        }
+        let sealed = crypto::seal_chunk(store.keys, store.vault_id, &entry.id, &plain)?;
+        with_retry(cancel, || store.storage.put_if_absent(&key, &sealed)).await?;
+        gc::touch(&key);
+    }
+    Ok(())
 }
 
 pub(super) async fn download(

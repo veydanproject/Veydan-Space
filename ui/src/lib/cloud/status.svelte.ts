@@ -20,6 +20,7 @@ import {
 } from '$lib/cloud/api';
 import type { DeleteForm } from '$lib/cloud/account';
 import { usageApi, type CloudCategory } from '$lib/cloud/usage';
+import { ERR_SYNC_RUNNING } from '$lib/core/join-error';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -192,7 +193,12 @@ class CloudPageState {
     );
     if (!receipt) return null;
     this.deleted = receipt;
-    await leaveCloudSync();
+    let leaveFailed: CloudError | null = null;
+    try {
+      await leaveCloudSync();
+    } catch (e) {
+      leaveFailed = asCloudError(e);
+    }
     let wipeFailed: CloudError | null = null;
     if (form.wipeDevice) {
       try {
@@ -203,7 +209,7 @@ class CloudPageState {
     }
     await this.load();
     // The account is gone but the identity stayed on this device: said after the page was read again, which clears errors.
-    if (wipeFailed) this.error = wipeFailed;
+    if (wipeFailed ?? leaveFailed) this.error = wipeFailed ?? leaveFailed;
     return receipt;
   }
 
@@ -218,7 +224,17 @@ class CloudPageState {
       }),
       await listen<CloudDeleteReceipt>(DELETED_EVENT, (e) => {
         this.deleted = e.payload;
-        void leaveCloudSync().then(() => this.load());
+        void (async () => {
+          let failed: CloudError | null = null;
+          try {
+            await leaveCloudSync();
+          } catch (err) {
+            failed = asCloudError(err);
+          }
+          await this.load();
+          // Said after the page was read again, which clears errors.
+          if (failed) this.error = failed;
+        })();
       }),
     );
     return () => {
@@ -230,15 +246,31 @@ class CloudPageState {
 /** The backend of sync that Veydan Cloud gives (`sync_backend`). */
 const CLOUD_BACKEND = 'cloud';
 
-/** The sync of this device lets go of the backend `cloud` (plan 4.6: `sync_leave`). */
+/** How often the leave is asked again while a cycle holds the binding; the command itself waits for it. */
+const LEAVE_TRIES = 3;
+
+/**
+ * The sync of this device lets go of the backend `cloud` (plan 4.6:
+ * `sync_leave`). A leave refused while a cycle runs is asked again; one that
+ * still fails is thrown, so the device is never left bound in silence.
+ */
 export async function leaveCloudSync(): Promise<void> {
+  let joined = false;
   try {
     const config = await api.sync.getConfig();
     if (config?.backend !== CLOUD_BACKEND) return;
-    const status = await api.sync.status();
-    if (status?.joined) await api.sync.leave();
+    joined = (await api.sync.status())?.joined ?? false;
   } catch {
     // A product without sync, or sync not set up: nothing to leave.
+    return;
+  }
+  for (let attempt = 1; joined; attempt++) {
+    try {
+      await api.sync.leave();
+      return;
+    } catch (e) {
+      if (attempt >= LEAVE_TRIES || (e as { message?: string })?.message !== ERR_SYNC_RUNNING) throw e;
+    }
   }
 }
 

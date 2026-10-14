@@ -32,7 +32,14 @@ pub(crate) const HELD_TTL_SECS: i64 = 24 * 3600;
 /// Clocks differ: a message may be dated a little before the join.
 const JOIN_SLACK_SECS: i64 = 300;
 /// Keys a device keeps for one group.
-const MAX_KEYS: usize = 512;
+pub(crate) const MAX_KEYS: usize = 512;
+/// Unvouched invitations received and not answered yet (`InviteStanding`):
+/// in all, of one group, of one inviter. One more pushes out the first.
+const MAX_OPEN_INVITES: usize = 50;
+const MAX_OPEN_INVITES_PER_GROUP: usize = 4;
+const MAX_OPEN_INVITES_PER_PEER: usize = 10;
+/// Requests to join one group that wait for a manager.
+const MAX_OPEN_REQUESTS: usize = 20;
 
 struct Item {
     event_id: String,
@@ -54,14 +61,16 @@ enum Standing {
     Outsider,
 }
 
-/// Was `who` a member (and allowed to speak) at the moment `at`?
+/// Was `who` a member (and allowed to speak) at the moment `at`? A
+/// removal, a ban or a leave ends the stretch at its own second: what is
+/// dated then is outside.
 fn standing(log: &OpLog, who: &PubKey, at: i64) -> Standing {
     let mut member_since: Option<i64> = None;
     let mut muted_since: Option<i64> = None;
     let mut result = Standing::Outsider;
     let close = |since: &mut Option<i64>, muted: &mut Option<i64>, end: i64, result: &mut Standing| {
         if let Some(start) = since.take() {
-            if at >= start - JOIN_SLACK_SECS && at <= end {
+            if at >= start - JOIN_SLACK_SECS && at < end {
                 *result = if muted.is_some_and(|m| at >= m) { Standing::Muted } else { Standing::Member };
             }
         }
@@ -95,6 +104,14 @@ fn standing(log: &OpLog, who: &PubKey, at: i64) -> Standing {
     result
 }
 
+/// Newest `created_at` of the operations the log took: `before_time` of
+/// the service, without the rejected ones, as `standing` goes without
+/// them. A live message is judged no earlier than this: by the log as it
+/// stands now.
+fn head_time(log: &OpLog) -> i64 {
+    log.ordered().filter(|o| log.rejection(&o.id()).is_none()).map(|o| o.created_at).max().unwrap_or(0)
+}
+
 /// How I stopped being a member, by the last operation about me.
 fn departure(log: &OpLog, me: &PubKey) -> &'static str {
     let mut how = MEMBERSHIP_REMOVED;
@@ -114,6 +131,15 @@ fn departure(log: &OpLog, me: &PubKey) -> &'static str {
         }
     }
     how
+}
+
+/// The stored form of an invitation: the body as it came (cleaned), and
+/// whether its inviter was vouched for (`vouched`, unknown to the wire:
+/// the body reads it back without it).
+fn invite_payload(body: &wire::Invite, vouched: bool) -> Result<String> {
+    let mut v = serde_json::to_value(body)?;
+    v["vouched"] = serde_json::Value::Bool(vouched);
+    Ok(v.to_string())
 }
 
 fn adds_people(body: &OpBody) -> bool {
@@ -156,14 +182,30 @@ impl GroupService {
         })))
     }
 
-    async fn on_invite(&self, body: wire::Invite, peer: Option<PubKey>, from_me: bool, historical: bool) -> Result<Outcome> {
+    async fn on_invite(&self, mut body: wire::Invite, peer: Option<PubKey>, from_me: bool, historical: bool) -> Result<Outcome> {
         let Some(peer) = peer else { return Ok(Outcome::default()) };
         let now = self.now();
-        if body.expires_at <= now || body.expires_at > body.created_at + wire::INVITE_TTL_SECS || body.group_id.len() != 64 {
-            return Ok(Outcome::default());
+        if let Err(what) = body.check(now) {
+            return Ok(Outcome { notes: vec![format!("group: an invitation dropped: bad {what}")], ..Default::default() });
         }
-        if !from_me && repo::get(&self.store, &body.group_id).await?.is_some_and(|g| g.membership == MEMBERSHIP_JOINED) {
-            return Ok(Outcome::default());
+        body.name = body.shown_name();
+        body.about = messenger_richtext::normalize(&body.about);
+        // Is the inviter one who may invite (`invite_standing`, the same
+        // rule as the push's)? A manager by the log I hold, or my contact,
+        // is told of; anyone else's word is kept to be answered, unheard.
+        let mut vouched = false;
+        if !from_me {
+            let row = repo::get(&self.store, &body.group_id).await?;
+            let log = self.log(&body.group_id).await?;
+            let contact = self.dm.load_relation(&peer).await?.my_contact == messenger_dm::relationship::MyContact::Approved;
+            match invite_standing(row.as_ref(), log.as_ref(), &peer, contact) {
+                InviteStanding::Drop => return Ok(Outcome::default()),
+                InviteStanding::Vouched => vouched = true,
+                InviteStanding::Unvouched if repo::invite(&self.store, &body.invite_id).await?.is_none() => {
+                    self.make_room_for_unvouched(&body, &peer, now).await?
+                }
+                InviteStanding::Unvouched => {}
+            }
         }
         let new = repo::insert_invite(
             &self.store,
@@ -173,7 +215,7 @@ impl GroupService {
                 direction: if from_me { "out".into() } else { "in".into() },
                 peer: peer.as_hex().to_string(),
                 status: if from_me { "sent".into() } else { "received".into() },
-                payload_json: serde_json::to_string(&body)?,
+                payload_json: invite_payload(&body, vouched)?,
                 created_at: body.created_at,
                 expires_at: body.expires_at,
                 updated_at: 0,
@@ -185,8 +227,8 @@ impl GroupService {
             // The answer of my other device came first and left a stub:
             // now there is something to show for it.
             if let Some(row) = repo::invite(&self.store, &body.invite_id).await? {
-                if row.payload_json == "{}" {
-                    repo::set_invite_payload(&self.store, &body.invite_id, &serde_json::to_string(&body)?).await?;
+                if row.payload_json == "{}" && row.peer == peer.as_hex() && row.group_id == body.group_id {
+                    repo::set_invite_payload(&self.store, &body.invite_id, &invite_payload(&body, vouched)?).await?;
                 }
             }
             return Ok(out);
@@ -195,7 +237,7 @@ impl GroupService {
             name: UI_EVENT_GROUP_INVITE.into(),
             payload: serde_json::json!({ "invite_id": body.invite_id, "group_id": body.group_id }),
         });
-        if !from_me && !historical {
+        if !from_me && !historical && vouched {
             out.notify.push(Notice {
                 title: body.name.clone(),
                 body: Some(Body::Invite { group_name: body.name.clone() }),
@@ -205,6 +247,50 @@ impl GroupService {
             });
         }
         Ok(out)
+    }
+
+    /// Unvouched invitations that wait are few: in all, of one group, of
+    /// one inviter. A new one takes the place of the one that came first
+    /// (by my clock) among those it would go over: whoever fills the
+    /// places with strangers' keys loses their own first, and nothing of a
+    /// contact or a manager is ever counted or pushed out.
+    async fn make_room_for_unvouched(&self, body: &wire::Invite, peer: &PubKey, now: i64) -> Result<()> {
+        // What lapsed goes for good: a copy of it coming again is past its
+        // date and refused by `check`.
+        repo::delete_lapsed_invites(&self.store, now).await?;
+        let mut open: Vec<_> = repo::invites(&self.store, "in", &["received"])
+            .await?
+            .into_iter()
+            .filter(|i| i.expires_at > now && i.invite_id != body.invite_id && !vouched_of(i))
+            .collect();
+        open.sort_by(|a, b| (a.updated_at, a.created_at, &a.invite_id).cmp(&(b.updated_at, b.created_at, &b.invite_id)));
+        // The same inviter's earlier word on the same group: this one stands
+        // in its place.
+        let again: Vec<String> =
+            open.iter().filter(|i| i.peer == peer.as_hex() && i.group_id == body.group_id).map(|i| i.invite_id.clone()).collect();
+        for id in &again {
+            repo::delete_invite(&self.store, id).await?;
+        }
+        open.retain(|i| !again.contains(&i.invite_id));
+        loop {
+            let of_peer = |i: &&repo::InviteRow| i.peer == peer.as_hex();
+            let of_group = |i: &&repo::InviteRow| i.group_id == body.group_id;
+            let victim = if open.iter().filter(of_peer).count() >= MAX_OPEN_INVITES_PER_PEER {
+                open.iter().find(of_peer)
+            } else if open.iter().filter(of_group).count() >= MAX_OPEN_INVITES_PER_GROUP {
+                open.iter().find(of_group)
+            } else if open.len() >= MAX_OPEN_INVITES {
+                open.first()
+            } else {
+                return Ok(());
+            };
+            let Some(id) = victim.map(|v| v.invite_id.clone()) else { return Ok(()) };
+            // Taken away whole, not marked: rows of strangers do not pile up,
+            // and an answer from my other device to it finds no row and
+            // leaves the stub it leaves for one it never heard of.
+            repo::delete_invite(&self.store, &id).await?;
+            open.retain(|i| i.invite_id != id);
+        }
     }
 
     async fn on_invite_reply(
@@ -220,7 +306,8 @@ impl GroupService {
         if from_me {
             // Answered on another device of mine.
             match repo::invite(&self.store, &body.invite_id).await? {
-                Some(row) if row.direction == "in" && row.status == "received" => {
+                // One that lapsed here may have been answered there in time.
+                Some(row) if row.direction == "in" && (row.status == "received" || row.status == "expired") => {
                     repo::set_invite_status(&self.store, &body.invite_id, status).await?;
                 }
                 Some(_) => return Ok(Outcome::default()),
@@ -314,10 +401,26 @@ impl GroupService {
         {
             return Ok(Outcome::default());
         }
+        // A request dated ahead of my clock would stand above every later one.
+        if body.created_at > self.now() + wire::INVITE_SKEW_SECS {
+            return Ok(Outcome::default());
+        }
         if let Some(known) = repo::request(&self.store, &body.group_id, sender.as_hex(), "in").await? {
             if known.status == "pending" || known.created_at >= body.created_at {
                 return Ok(Outcome::default());
             }
+        }
+        // Requests that wait are few: the rest is dropped unseen. One taken
+        // in more than a week ago (by my clock: `updated_at`, the date of
+        // the request is the sender's) no longer holds a place.
+        let since = self.now() - wire::INVITE_TTL_SECS;
+        let waiting = repo::requests(&self.store, &body.group_id, "in", "pending")
+            .await?
+            .into_iter()
+            .filter(|r| r.updated_at > since && PubKey::parse(&r.requester).is_some_and(|p| !s.is_member(&p) && !s.is_banned(&p)))
+            .count();
+        if waiting >= MAX_OPEN_REQUESTS {
+            return Ok(Outcome { notes: vec!["group: a request over the limit dropped".into()], ..Default::default() });
         }
         repo::put_request(
             &self.store,
@@ -466,7 +569,7 @@ impl GroupService {
                 id: group_id.clone(),
                 kind: if s.kind == GroupKind::Public { "public".into() } else { "private".into() },
                 name: s.name.clone(),
-                about: s.about.clone(),
+                about: messenger_richtext::normalize(&s.about),
                 picture: s.picture.clone(),
                 relay_url: row.as_ref().map(|r| r.relay_url.clone()).filter(|r| !r.is_empty()).unwrap_or(body.relay.clone()),
                 owner,
@@ -481,7 +584,7 @@ impl GroupService {
         .await?;
         self.forget_log(&group_id).await;
         for key in wire::decode_keys(&body.keys) {
-            self.keep_key(&group_id, &key).await?;
+            self.store_key(&group_id, &key).await?;
         }
         for (op, signed) in &verified {
             if self.join_proven(&group_id, op).await? == Some(false) {
@@ -492,6 +595,9 @@ impl GroupService {
         for key in wire::decode_keys(&body.keys) {
             self.keep_key(&group_id, &key).await?;
         }
+        // The first pass kept the keys before the log was here: the trim
+        // comes now, when the log names its own.
+        self.trim_keys(&group_id, None).await?;
         if let (Some(link), GroupKind::Public) = (&body.link, s.kind) {
             if let Some(Ok(secret)) = wire::decode_secret(link).map(|b| LinkSecret::from_bytes(&b)) {
                 if Some(secret.group_key(&group_id, s.link_epoch).id()) == s.current_key {
@@ -814,12 +920,28 @@ impl GroupService {
         if s.is_banned(&m.author) {
             return Ok(Verdict::Done);
         }
-        let standing = standing(&log, &m.author, m.created_at);
-        // Not a member as far as the log here knows: the op that let them
-        // in may not have come yet. Held like anything they say, a reaction
-        // too, and tried again when the log grows (or given up after
-        // `HELD_TTL_SECS`).
+        // An honest client dates the event and the message inside it alike
+        // (`wire::seal_inner`): one far from the other is somebody's own
+        // making, and the outer time is what says what is history.
+        if (item.created_at - m.created_at).abs() > JOIN_SLACK_SECS {
+            return Ok(Verdict::Done);
+        }
+        // The time inside is the author's word. What comes live is judged by
+        // the log as it stands: one who was removed, left or was muted does
+        // not speak again by dating a message back under a key they kept.
+        // History is judged by its date.
+        let at = if item.historical { m.created_at } else { m.created_at.max(head_time(&log)) };
+        let standing = standing(&log, &m.author, at);
         if standing == Standing::Outsider {
+            // A member by the date, not now: dropped, not held, for what
+            // waits is tried again as history, by its date.
+            if at != m.created_at && self::standing(&log, &m.author, m.created_at) != Standing::Outsider {
+                return Ok(Verdict::Done);
+            }
+            // Not a member as far as the log here knows: the op that let them
+            // in may not have come yet. Held like anything they say, a reaction
+            // too, and tried again when the log grows (or given up after
+            // `HELD_TTL_SECS`).
             return Ok(Verdict::Hold);
         }
         let from_me = &m.author == me;
@@ -874,7 +996,7 @@ impl GroupService {
                 msgs::CT_MEDIA,
                 envelope.str_field("caption").map(String::from),
                 false,
-                Some(serde_json::Value::Object(envelope.fields.clone()).to_string()),
+                Some(messenger_dm::media::received_media_json(&envelope)),
             ),
             // A card that is no card is dropped; one about somebody else
             // loses its phone here, before anything keeps it.
@@ -983,7 +1105,8 @@ impl GroupService {
             name: messenger_dm::UI_EVENT_DM_MESSAGE.into(),
             payload: serde_json::json!({ "chat_id": chat_id, "message": view, "historical": item.historical }),
         });
-        if live && !deleted && !chats::is_muted(&self.store, &chat_id).await? {
+        // Nobody is woken for one who is not a member now.
+        if live && !deleted && s.member(&m.author).is_some() && !chats::is_muted(&self.store, &chat_id).await? {
             out.notify.push(Notice {
                 title: s.name.clone(),
                 body: messenger_dm::body::body_of(&envelope),

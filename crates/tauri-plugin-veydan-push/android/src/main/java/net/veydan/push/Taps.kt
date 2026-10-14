@@ -34,12 +34,12 @@ internal object Taps : Application.ActivityLifecycleCallbacks {
     // A window brought back from saved state, or from the recent apps, was
     // started long ago: the intent it carries is not a new tap.
     val fromHistory = activity.intent?.flags?.and(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-    if (saved == null && !fromHistory) caught(activity.intent)
-    (activity as? OnNewIntentProvider)?.addOnNewIntentListener { caught(it) }
+    if (saved == null && !fromHistory) caught(activity, activity.intent)
+    (activity as? OnNewIntentProvider)?.addOnNewIntentListener { caught(activity, it) }
   }
 
-  private fun caught(intent: Intent?) {
-    val tap = Notifier.readTap(intent) ?: return
+  private fun caught(context: Context, intent: Intent?) {
+    val tap = Notifier.readTap(context, intent) ?: return
     PushState.putTap(tap)
     // Nobody to tell yet on a cold start: the page asks when it is up.
     PushState.plugin()?.tapped()

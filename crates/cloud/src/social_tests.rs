@@ -504,6 +504,19 @@ async fn a_wrong_code_a_cancel_and_a_lost_share_are_refused_by_the_trustee() {
     assert!(seen.closed_at.is_some());
     assert_eq!(ben.confirm(true).await.err().map(|e| e.code).as_deref(), Some(trustee::words::REQUEST_CLOSED));
 
+    // Looked up while open, cancelled after: confirm reads the request again,
+    // sends nothing and forgets the session.
+    let clean2 = Device::new(&stage.world, None, "");
+    let requester2 = requester_of(&stage, &clean2);
+    let view2 = requester2.start(&stage.owner.me()).await.expect("request");
+    let dan = helper(&stage, &stage.trustees[1]);
+    let seen = dan.lookup(&stage.owner.me()).await.expect("looked up");
+    assert_eq!((seen.state.as_str(), seen.can_confirm), ("open", true));
+    stage.api.recovery_cancel(&view2.request_id.expect("id")).await.expect("cancelled");
+    assert_eq!(dan.confirm(true).await.err().map(|e| e.code).as_deref(), Some(trustee::words::REQUEST_CLOSED));
+    assert_eq!(stage.world.sent(trustee::T_ANSWER), 0);
+    assert_eq!(dan.confirm(true).await.err().map(|e| e.code).as_deref(), Some(trustee::words::NOT_LOOKED_UP));
+
     // Without a share there is nothing to look up; without a request either.
     let stranger = Device::new(&stage.world, Some([0x55; 32]), "Eve");
     let eve = helper(&stage, &stranger);

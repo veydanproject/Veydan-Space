@@ -248,6 +248,53 @@ mod tests {
         assert_eq!(table.len(), expected.len());
     }
 
+    /// What the windows besides `main` reach (platform-spec 5.2): each
+    /// command a grant names is a line of `commands.golden.txt`, and of the
+    /// shell or of the notes, whose windows they are — no command of pass,
+    /// the browser, ssh, the messenger, the cloud, Tor or the backup.
+    #[test]
+    fn the_windows_besides_main_reach_the_shell_and_the_notes_alone() {
+        let golden: Vec<(&str, &str)> = include_str!("commands.golden.txt")
+            .lines()
+            .filter_map(|line| {
+                let mut words = line.split(' ');
+                let (command, module, platform) = (words.next()?, words.next()?, words.next()?);
+                let here = match platform {
+                    "desktop" => cfg!(desktop),
+                    "mobile" => cfg!(mobile),
+                    _ => true,
+                };
+                here.then_some((command, module))
+            })
+            .collect();
+        let windows = veydan_shell::window_table(crate::PRODUCT, all()).unwrap();
+        assert!(!windows.is_empty());
+        for (window, command) in &windows {
+            let owner = golden.iter().find(|(c, _)| c == command).map(|(_, m)| *m);
+            assert!(
+                matches!(owner, Some("shell" | "notes")),
+                "{window} {command}: {owner:?}"
+            );
+        }
+        #[cfg(desktop)]
+        {
+            let quick: Vec<_> = windows
+                .iter()
+                .filter(|(window, _)| *window == "quick-capture")
+                .map(|(_, command)| *command)
+                .collect();
+            for command in [
+                "note_create",
+                "note_add_folder",
+                "note_folder_list",
+                "lock_unlock",
+            ] {
+                assert!(quick.contains(&command), "{command}");
+            }
+            assert!(!quick.contains(&"note_delete") && !quick.contains(&"lock_lock"));
+        }
+    }
+
     /// The modules of the crate are those `products.json` gives Space: the
     /// UI is built from that list, the app from `module_list()`. The list of
     /// the manifest is unordered; `capture`, a service without a UI, is not

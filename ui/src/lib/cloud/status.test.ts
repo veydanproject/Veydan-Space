@@ -6,6 +6,7 @@ import { mockCommand } from '$lib/core/api';
 import { asCloudError, IDLE_ACTIVATION, type CloudAccount, type CloudStatus } from '$lib/cloud/api';
 import { activating, cloudPage, errorLine, failedStatus, statusLine } from '$lib/cloud/status.svelte';
 import { emptyDeleteForm, viewOf } from '$lib/cloud/account';
+import { ERR_SYNC_RUNNING } from '$lib/core/join-error';
 
 const words = { notConnected: 'Not connected on this device.', name: 'Veydan Cloud' };
 
@@ -171,6 +172,30 @@ describe('the store of the cloud page', () => {
     mockCommand('sync_get_config', { backend: 's3' });
     await cloudPage.deleteAccount({ ...emptyDeleteForm(false), word: 'DELETE' });
     expect(left).toBe(1);
+  });
+
+  it('asks the leave again while a cycle runs, and says so when it does not go', async () => {
+    let tries = 0;
+    mockCommand('cloud_delete_account', { deleted_at: 1, receipt: '7K2M-ABCD-EFGH', shares_revoked: 0, from_card: false });
+    mockCommand('sync_get_config', { backend: 'cloud' });
+    mockCommand('sync_status', { joined: true });
+    mockCommand('sync_leave', () => {
+      tries++;
+      if (tries < 2) throw { code: 'other', message: ERR_SYNC_RUNNING };
+      return { joined: false };
+    });
+    await cloudPage.deleteAccount({ ...emptyDeleteForm(false), word: 'DELETE' });
+    expect(tries).toBe(2);
+    expect(cloudPage.error).toBeNull();
+
+    tries = 0;
+    mockCommand('sync_leave', () => {
+      tries++;
+      throw { code: 'other', message: ERR_SYNC_RUNNING };
+    });
+    await cloudPage.deleteAccount({ ...emptyDeleteForm(false), word: 'DELETE' });
+    expect(tries).toBe(3);
+    expect(cloudPage.error?.message).toBe(ERR_SYNC_RUNNING);
   });
 
   it('keeps the word of a refused deletion', async () => {

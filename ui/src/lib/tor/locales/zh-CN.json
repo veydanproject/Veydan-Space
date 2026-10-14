@@ -99,7 +99,7 @@
     "tor_external_hint": "不指定国家的实例监听 127.0.0.1 的此端口。这台电脑上的任何程序都可以使用它。",
     "tor_external_port": "端口",
     "tor_section_advanced": "高级",
-    "tor_torrc_warning": "这些行会原样传给 tor。错误的行可能导致 Tor 无法启动，或削弱你的隐私保护。",
+    "tor_torrc_warning": "仅接受与节点和线路选择有关的行（例如 ExitNodes、StrictNodes、NumEntryGuards），其他行会被拒绝。错误的行可能导致 Tor 无法启动，或削弱你的隐私保护。",
     "tor_torrc_label": "额外的 torrc 行",
     "tor_err_countries": "不是两个字母的国家代码：{list}。",
     "tor_err_ports": "不是有效端口（1–65535）：{list}。",

@@ -15,6 +15,7 @@ import androidx.core.app.Person
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import java.security.MessageDigest
 
 /**
  * Shows and removes notifications. Needs no window and no Rust: the words
@@ -32,6 +33,8 @@ internal object Notifier {
 
   const val EXTRA_TYPE = "veydan_push_type"
   const val EXTRA_CHAT = "veydan_push_chat"
+  /** The app's secret (`PushState.tapKey`): what tells our intent from a copy of its extras. */
+  private const val EXTRA_KEY = "veydan_push_key"
 
   /** Notifications are told apart by their tag; the number is the same for all. */
   private const val ID = 1
@@ -128,6 +131,7 @@ internal object Notifier {
     val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return false
     intent.putExtra(EXTRA_TYPE, if (group) Push.TYPE_GROUP else Push.TYPE_DM)
     intent.putExtra(EXTRA_CHAT, chat)
+    PushState.tapKey(context)?.let { intent.putExtra(EXTRA_KEY, it) }
     val shortcut = ShortcutInfoCompat.Builder(context, chat)
       .setShortLabel(title.ifBlank { "Veydan" })
       .setLongLived(true)
@@ -402,6 +406,7 @@ internal object Notifier {
     intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
     intent.putExtra(EXTRA_TYPE, type)
     chat?.let { intent.putExtra(EXTRA_CHAT, it) }
+    PushState.tapKey(context)?.let { intent.putExtra(EXTRA_KEY, it) }
     return PendingIntent.getActivity(
       context,
       (chat ?: type).hashCode(),
@@ -441,12 +446,20 @@ internal object Notifier {
     if (!left) manager.cancel(TAG_SUMMARY, ID)
   }
 
-  /** What a tap carried, if the intent is one of ours. The note is removed: it is read once. */
-  fun readTap(intent: Intent?): Tap? {
+  /**
+   * What a tap carried, if the intent is one of ours: it holds the app's
+   * secret, which another app sending the same extras to the exported
+   * activity does not know. The note is removed: it is read once.
+   */
+  fun readTap(context: Context, intent: Intent?): Tap? {
     val type = intent?.getStringExtra(EXTRA_TYPE) ?: return null
     val chat = intent.getStringExtra(EXTRA_CHAT)?.takeIf { Push.isChatKey(it) }
+    val key = intent.getStringExtra(EXTRA_KEY)
     intent.removeExtra(EXTRA_TYPE)
     intent.removeExtra(EXTRA_CHAT)
+    intent.removeExtra(EXTRA_KEY)
+    val ours = PushState.tapKey(context) ?: return null
+    if (key == null || !MessageDigest.isEqual(key.toByteArray(), ours.toByteArray())) return null
     return Tap(type.take(32), chat)
   }
 }

@@ -61,6 +61,7 @@
     "cloud_state_grace": "Nur Lesen",
     "cloud_state_suspended": "Gesperrt",
     "cloud_until": "Bezahlt bis {date}",
+    "cloud_next_plan": "Tarif {plan} beginnt am {date}",
     "cloud_grace_until": "Nur Lesen bis {date}: Gib einen Aktivierungsschlüssel ein, damit die Synchronisierung weiterläuft.",
     "cloud_suspended_text": "Das Konto ist gesperrt. Du kannst es trotzdem löschen.",
     "cloud_kept_at": "Veydan Cloud ist gerade nicht erreichbar. Stand: {date}.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Dieser Schlüssel ist abgelaufen.",
     "cloud_err_key_revoked": "Dieser Schlüssel wurde widerrufen.",
     "cloud_err_rate_limited": "Zu viele Versuche. Versuche es später erneut.",
+    "cloud_err_deletion_pending": "Das vorherige Konto wird noch gelöscht. Versuche es in ein paar Minuten erneut.",
     "cloud_err_no_host": "Veydan Cloud ist gerade nicht erreichbar.",
     "cloud_err_clock": "Die Uhr dieses Geräts geht falsch: Stelle Datum und Uhrzeit richtig ein.",
     "cloud_err_suspended": "Das Konto ist gesperrt.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Tarife",
     "cloud_recover_expired_title": "Die Anfrage ist abgelaufen",
     "cloud_recovery_reissue_short": "Neu ausstellen",
+    "cloud_recovery_elsewhere": "Der Recovery Key wurde auf einem anderen Gerät ausgestellt: Stelle ihn dort neu aus oder stelle mit den Wörtern wieder her.",
+    "cloud_recovery_elsewhere_anew": "Neu ausstellen",
+    "cloud_recovery_elsewhere_hint": "Der neue Schlüssel wird hier ausgestellt. Die alten Wörter bleiben gültig, bis ihre Kopie gelöscht ist.",
+    "cloud_trustees_missing": "Vertrauenspersonen neu einrichten",
     "cloud_recovery_setup_short": "Einrichten",
     "cloud_recovery_show_words": "Die 12 Wörter anzeigen",
     "cloud_restore_new_secret_hint": "Damit wird die App auf diesem Gerät gesperrt.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Zugang von einem neuen Gerät aus wiederhergestellt",
     "cloud_card_line_plan_expiring": "Dein Tarif läuft bald ab",
     "cloud_card_line_quota": "Veydan Cloud ist fast voll",
-    "cloud_card_line_dormant": "Das Konto wird wegen Inaktivität gelöscht"
+    "cloud_card_line_dormant": "Das Konto wird wegen Inaktivität gelöscht",
+    "cloud_card_downgraded": "Dein Tarif ist abgelaufen. Dateien über dem kostenlosen Limit bleiben erhalten, neue werden aber nicht gespeichert, bis du Platz freigibst oder den Tarif verlängerst.",
+    "cloud_card_downgraded_limit": "Kostenloser Tarif: {limit} für Dateien",
+    "cloud_card_line_downgraded": "Dein Tarif ist abgelaufen"
   },
   "mobile": {}
 }

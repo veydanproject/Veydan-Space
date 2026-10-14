@@ -480,6 +480,10 @@ impl GroupAccess for GroupsDoor {
             .prepare_call_note(&keys, group_id, envelope)
             .await
     }
+
+    async fn key_stale(&self, group_id: &str) -> Result<bool> {
+        self.groups.key_stale(group_id).await
+    }
 }
 
 /// Where the groups hand the `call.*` notes of their members: to the
@@ -1628,7 +1632,7 @@ mod tests {
     use messenger_testkit::{FakeEngine, MemorySecretStore};
 
     const NODE: &str =
-        "108.61.171.68:8443#fda09da75199c4e04601a9df309710fab15cd7b2b806ca3b2bbab202582a6dca";
+        "2.28.123.208:8443#feb4cb32ae467efa7727139a2626ac28e650880e4cd53c79f87897e236d2396e";
 
     /// The view of the runtime is the view of the core, field for field:
     /// the events carry the core's JSON, the commands answer the runtime's.
@@ -1844,7 +1848,7 @@ mod tests {
             }])
             .await
             .unwrap();
-        // My node is the project's eu-1 too: mine takes its place in the list.
+        // My node is the project's eu-2 too: mine takes its place in the list.
         assert_eq!(
             st.nodes.len(),
             embedded,
@@ -1859,7 +1863,7 @@ mod tests {
         assert_eq!(rt.call_own_nodes().await.unwrap(), st.nodes[..1]);
 
         // A manifest with a node of the project: listed after mine.
-        let (mut manifest, origin) = rt.relays().current_manifest().await.unwrap();
+        let (mut manifest, _) = rt.relays().current_manifest().await.unwrap();
         manifest.serial += 1;
         manifest
             .calls
@@ -1871,7 +1875,7 @@ mod tests {
                 regions: vec!["*".into()],
             });
         rt.relays()
-            .adopt_manifest(&manifest, &origin, false)
+            .adopt_for_test(&manifest, false)
             .await
             .unwrap();
         rt.seed_call_nodes().await.unwrap();

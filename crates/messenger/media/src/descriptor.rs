@@ -136,8 +136,10 @@ impl MediaDescriptor {
     }
 
     /// Reject anything a hostile peer could use against the receiver:
-    /// absurd sizes, mismatching chunk tables, non-http servers, names
-    /// that are paths.
+    /// absurd sizes, mismatching chunk tables, servers that are not https
+    /// on the open internet (`messenger_http::Target`: no `http://`, no
+    /// private or local address, nothing before an `@`), names that are
+    /// paths.
     pub fn validate(&self) -> Result<()> {
         let bad = |m: &str| Err(MessengerError::Invalid(format!("media descriptor: {m}")));
         if self.algo != ALGO {
@@ -167,8 +169,8 @@ impl MediaDescriptor {
         if self.servers.is_empty() || self.servers.len() > 8 {
             return bad("needs 1 to 8 servers");
         }
-        if !self.servers.iter().all(|s| s.starts_with("https://") || s.starts_with("http://")) {
-            return bad("servers must be http(s)");
+        if !self.servers.iter().all(|s| messenger_http::Target::parse(s).is_ok()) {
+            return bad("servers must be https on the open internet");
         }
         if self.waveform.as_ref().is_some_and(|w| w.len() > MAX_WAVEFORM) {
             return bad("waveform is too long");
@@ -370,6 +372,16 @@ pub(crate) mod tests {
             ("upper hash", Box::new(|d| d.chunks[0].sha256 = "B".repeat(64))),
             ("no servers", Box::new(|d| d.servers.clear())),
             ("file url", Box::new(|d| d.servers = vec!["file:///etc".into()])),
+            ("http", Box::new(|d| d.servers = vec!["http://media.example/bucket".into()])),
+            ("one of them http", Box::new(|d| d.servers.push("http://media.example/bucket".into()))),
+            ("loopback", Box::new(|d| d.servers = vec!["https://127.0.0.1:9000/x".into()])),
+            ("private", Box::new(|d| d.servers = vec!["https://192.168.1.5/x".into()])),
+            ("metadata", Box::new(|d| d.servers = vec!["https://169.254.169.254/latest".into()])),
+            ("ipv6 loopback", Box::new(|d| d.servers = vec!["https://[::1]/x".into()])),
+            ("6to4", Box::new(|d| d.servers = vec!["https://[2002:7f00:1::]/x".into()])),
+            ("local name", Box::new(|d| d.servers = vec!["https://minio.local/x".into()])),
+            ("localhost", Box::new(|d| d.servers = vec!["https://localhost:9000/x".into()])),
+            ("userinfo", Box::new(|d| d.servers = vec!["https://user:pw@media.example/x".into()])),
             ("key", Box::new(|d| d.key = "AAAA".into())),
             ("path name", Box::new(|d| d.name = "../../etc/passwd".into())),
             ("hidden name", Box::new(|d| d.name = ".bashrc".into())),

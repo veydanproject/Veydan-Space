@@ -350,7 +350,7 @@ done <<<"$product_plugins"
 #    module; where it would mislead, the command is named here one by one.
 owner() {
   case "$1" in
-    app_start_error|host_info|open_url|clipboard_write_text|update_supported|update_check|update_open|window_minimize|media_grant_access) echo shell ;;
+    app_start_error|host_info|open_url|clipboard_write_text|update_supported|update_check|update_open|updater_check|updater_install|app_relaunch|window_minimize|media_grant_access) echo shell ;;
     tray_*|app_locale_*|modules_*|labels_*) echo shell ;;
     demo_seed|app_clear_data) echo shell ;;
     lock_*|vault_replaced_keys|vault_replaced_keys_open) echo shell ;;
@@ -452,7 +452,7 @@ allowed() {
     contacts)  echo "messenger-core messenger-store messenger-http messenger-richtext messenger-avatar" ;;
     dm)        echo "messenger-core messenger-store messenger-contacts messenger-links" ;;
     media)     echo "messenger-core messenger-store messenger-http" ;;
-    groups)    echo "messenger-core messenger-store messenger-media messenger-dm messenger-links messenger-contacts" ;;
+    groups)    echo "messenger-core messenger-store messenger-media messenger-dm messenger-links messenger-contacts messenger-richtext" ;;
     push)      echo "messenger-core messenger-http" ;;
     presence)  echo "messenger-core messenger-store" ;;
     notify)    echo "messenger-core messenger-store messenger-ingress messenger-contacts messenger-dm messenger-groups messenger-media messenger-transport messenger-vlink" ;;

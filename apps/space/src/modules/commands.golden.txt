@@ -1,6 +1,7 @@
 app_clear_data shell all
 app_locale_get shell desktop
 app_locale_set shell desktop
+app_relaunch shell desktop
 app_start_error shell all
 backup_get_config backup desktop
 backup_list backup desktop
@@ -171,6 +172,7 @@ messenger_manifest_set_region messenger all
 messenger_media_cancel messenger all
 messenger_media_data_url messenger all
 messenger_media_download messenger all
+messenger_media_foreign_server messenger all
 messenger_media_grant_access messenger all
 messenger_media_import messenger all
 messenger_media_local_path messenger all
@@ -426,6 +428,8 @@ tray_settings_set shell desktop
 update_check shell all
 update_open shell all
 update_supported shell desktop
+updater_check shell desktop
+updater_install shell desktop
 vault_replaced_keys shell all
 vault_replaced_keys_open shell all
 window_minimize shell desktop

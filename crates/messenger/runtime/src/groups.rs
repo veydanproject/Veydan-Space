@@ -262,6 +262,15 @@ impl GroupsDriver {
         }
     }
 
+    /// Before something of mine is sealed with the key of `group_id`: a
+    /// key someone who left still knows is replaced first when I manage the
+    /// group; otherwise the sealing refuses (`group_key_stale`). The caller
+    /// holds the group's lock and seals under it.
+    pub(crate) async fn renew_stale_key(&self, keys: &nostr::key::Keys, group_id: &str) -> Result<()> {
+        let outcome = self.groups.renew_stale_key(keys, group_id).await?;
+        self.apply(outcome).await
+    }
+
     /// Several managers may be online; the owner goes first and the
     /// others a little later, when there is most likely nothing left to do.
     pub(crate) fn maintain_later(&self, group_id: String) {
@@ -450,14 +459,25 @@ impl MessengerRuntime {
 
     pub async fn group_send_text(&self, group_id: &str, text: &str, reply_to: Option<&str>) -> Result<MessageView> {
         let keys = self.session_keys().await?;
-        let (message, out) = self.groups().prepare_text(&keys, group_id, text, reply_to).await?;
+        let (message, out) = {
+            let lock = self.groups().lock_of(group_id).await;
+            let _guard = lock.lock().await;
+            self.group_driver.renew_stale_key(&keys, group_id).await?;
+            self.groups().prepare_text(&keys, group_id, text, reply_to).await?
+        };
         let id = message.id.clone();
         self.publish_group_message(message, out, &id, true).await
     }
 
     pub async fn group_edit(&self, message_id: &str, text: &str) -> Result<MessageView> {
         let keys = self.session_keys().await?;
-        let (message, tracking, out) = self.groups().prepare_edit(&keys, message_id, text).await?;
+        let group_id = self.group_of_message(message_id).await?.ok_or_else(|| MessengerError::Invalid("unknown message".into()))?;
+        let (message, tracking, out) = {
+            let lock = self.groups().lock_of(&group_id).await;
+            let _guard = lock.lock().await;
+            self.group_driver.renew_stale_key(&keys, &group_id).await?;
+            self.groups().prepare_edit(&keys, message_id, text).await?
+        };
         self.publish_group_message(message, out, &tracking, false).await
     }
 
@@ -465,7 +485,13 @@ impl MessengerRuntime {
     /// moderator.
     pub async fn group_delete(&self, message_id: &str) -> Result<()> {
         let keys = self.session_keys().await?;
-        let (chat_id, tracking, out) = self.groups().prepare_delete(&keys, message_id).await?;
+        let group_id = self.group_of_message(message_id).await?.ok_or_else(|| MessengerError::Invalid("unknown message".into()))?;
+        let (chat_id, tracking, out) = {
+            let lock = self.groups().lock_of(&group_id).await;
+            let _guard = lock.lock().await;
+            self.group_driver.renew_stale_key(&keys, &group_id).await?;
+            self.groups().prepare_delete(&keys, message_id).await?
+        };
         let local_id = self.outbox.enqueue(out).await?;
         self.dm.attach_outbox(&tracking, &local_id).await?;
         self.outbox.kick();
@@ -479,7 +505,12 @@ impl MessengerRuntime {
 
 impl MessengerRuntime {
     pub(crate) async fn is_group_message(&self, message_id: &str) -> Result<bool> {
-        Ok(self.dm.message(message_id).await?.is_some_and(|m| m.chat_id.starts_with("group:")))
+        Ok(self.group_of_message(message_id).await?.is_some())
+    }
+
+    /// The group whose chat holds this message.
+    pub(crate) async fn group_of_message(&self, message_id: &str) -> Result<Option<String>> {
+        Ok(self.dm.message(message_id).await?.and_then(|m| m.chat_id.strip_prefix("group:").map(String::from)))
     }
 }
 

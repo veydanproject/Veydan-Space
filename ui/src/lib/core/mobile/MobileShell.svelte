@@ -109,7 +109,9 @@
   <Wizard />
 {/if}
 <!-- The app's confirmation questions (ui/confirm.svelte.ts), above everything else. -->
-<ConfirmHost />
+{#if !appLock.gated}
+  <ConfirmHost />
+{/if}
 
 <style>
   .shell {

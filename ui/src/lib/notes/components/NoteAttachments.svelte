@@ -6,6 +6,7 @@
   import { convertFileSrc } from '@tauri-apps/api/core';
   import type { NoteAttachment } from '$lib/notes/types';
   import { api, downloadNoteAttachment, type AttachmentTransfer } from '$lib/notes/api';
+  import { notesStore } from '$lib/notes/store/notes.svelte';
   import { transferKey, transferPercent } from '$lib/notes/attachmentTransfer';
   import Icon from '$lib/core/Icon.svelte';
   import { locale, t } from '$lib/core/i18n';
@@ -120,6 +121,16 @@
   async function gc() {
     gcBusy = true;
     try {
+      // The gc reads the note files: a link just inserted must be in one first.
+      await notesStore.save();
+      if (notesStore.saveStatus === 'failed') {
+        gcResult = $t('note_status_error');
+        return;
+      }
+      if (notesStore.saveStatus === 'external') {
+        gcResult = $t('note_status_external');
+        return;
+      }
       const orphans = await api.notes.attachmentsGc(false);
       if (orphans.length === 0) {
         gcResult = $t('note_att_gc_done', { n: '0' });

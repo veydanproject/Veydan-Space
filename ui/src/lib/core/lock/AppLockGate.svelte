@@ -10,6 +10,7 @@
   import { lockInputAttrs } from '$lib/core/lock/secret';
   import LockRecoverFlow from '$lib/core/lock/LockRecoverFlow.svelte';
   import { gateScreen } from '$lib/core/lock/gate';
+  import { confirmState } from '$lib/core/ui/confirm.svelte';
 
   interface Props {
     children: Snippet;
@@ -29,6 +30,7 @@
   const screen = $derived(
     gateScreen({
       ready: appLock.ready,
+      failed: appLock.failed,
       locked: appLock.locked,
       recovering: appLock.recovering,
       keyPending: appLock.newRecoveryKey !== null,
@@ -51,6 +53,12 @@
     }
   });
 
+  // A question asked before the lock engaged is answered "no" and its dialog
+  // goes: nothing of the app is asked over the lock screen.
+  $effect(() => {
+    if (appLock.gated) confirmState.answer(false);
+  });
+
   async function submit() {
     if (!password || busy) return;
     busy = true;
@@ -69,6 +77,14 @@
 
 {#if screen === 'blank'}
   <div class="lock-screen"></div>
+{:else if screen === 'error'}
+  <div class="lock-screen">
+    <div class="lock-card" role="alert">
+      <Icon name="alert-triangle" size={28} />
+      <h3>{$t('lock_status_failed')}</h3>
+      <button class="btn btn-primary" type="button" onclick={() => void appLock.refresh()}>{$t('start_error_retry')}</button>
+    </div>
+  </div>
 {:else if screen === 'recover'}
   <div class="lock-screen">
     <div class="lock-card wide">

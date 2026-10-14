@@ -99,7 +99,7 @@
     "tor_external_hint": "Instancja bez kraju nasłuchuje na tym porcie adresu 127.0.0.1. Może z niej korzystać każdy program na tym komputerze.",
     "tor_external_port": "Port",
     "tor_section_advanced": "Zaawansowane",
-    "tor_torrc_warning": "Te wiersze są przekazywane do tor bez zmian. Błędny wiersz może uniemożliwić uruchomienie Tor lub osłabić twoją prywatność.",
+    "tor_torrc_warning": "Przyjmowane są tylko wiersze o wyborze węzłów i obwodów (na przykład ExitNodes, StrictNodes, NumEntryGuards); pozostałe są odrzucane. Błędny wiersz może uniemożliwić uruchomienie Tor lub osłabić twoją prywatność.",
     "tor_torrc_label": "Dodatkowe wiersze torrc",
     "tor_err_countries": "To nie są dwuliterowe kody krajów: {list}.",
     "tor_err_ports": "To nie są porty (1–65535): {list}.",

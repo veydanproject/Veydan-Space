@@ -28,6 +28,7 @@
     "files_transfer_done": "Fatto",
     "files_transfer_cancelled": "Annullato — i dati parziali sono conservati, riavvia per riprendere",
     "files_transfer_skipped": "Saltati: {n}",
+    "files_transfer_move_kept": "{n} non spostati: gli originali restano al loro posto",
     "files_conflict_title": "Il file esiste già",
     "files_conflict_msg_file": "“{name}” esiste già nella destinazione. Sovrascriverlo?",
     "files_conflict_msg_dir": "La cartella “{name}” esiste già nella destinazione. Sovrascrivere i file al suo interno?",

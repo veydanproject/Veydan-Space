@@ -278,6 +278,18 @@ impl MessengerState {
         self.slot.runtime()
     }
 
+    /// The runtime, for a command that shows what the chats hold or speaks
+    /// for the user (a message, a read mark, "the page is seen"): refused
+    /// with `VaultLocked` while the lock is closed. The session stays up
+    /// under the lock, so a call still rings and a notification still comes;
+    /// only what the screen of the lock hides is closed
+    /// (internal/messenger-spec.md §4.5).
+    pub(crate) async fn runtime_unlocked(&self) -> CmdResult<Arc<MessengerRuntime>> {
+        let rt = self.runtime()?;
+        unlocked(self.app.try_state::<Lock>().as_deref()).await?;
+        Ok(rt)
+    }
+
     #[cfg(desktop)]
     pub(crate) fn desktop(&self) -> Option<Arc<desktop_notify::DesktopNotify>> {
         self.desktop.get().cloned()
@@ -513,7 +525,11 @@ fn spawn_lock_watcher(app: &tauri::AppHandle, rt: Arc<MessengerRuntime>) -> Opti
             match events.recv().await {
                 Ok(event) => {
                     push::lock_changed();
-                    if event != veydan_lock::Event::Locked {
+                    if event == veydan_lock::Event::Locked {
+                        // Behind the lock the page is not seen: no heartbeat
+                        // of presence until it says so again.
+                        let _ = rt.presence_foreground(false).await;
+                    } else {
                         forget_lost_identity(&rt).await;
                     }
                 }
@@ -560,6 +576,14 @@ async fn drop_identity(rt: &MessengerRuntime) -> messenger_core::Result<()> {
     // The push handler's copy of the keys goes with the identity.
     push::lock_changed();
     Ok(())
+}
+
+/// `VaultLocked` while the lock is closed; an app without a lock closes nothing.
+async fn unlocked(lock: Option<&Lock>) -> CmdResult<()> {
+    match lock {
+        Some(lock) if lock.is_locked().await => Err(AppError::VaultLocked),
+        _ => Ok(()),
+    }
 }
 
 fn map_err(e: MessengerError) -> AppError {
@@ -623,11 +647,23 @@ pub async fn messenger_identity_get(messenger: tauri::State<'_, MessengerState>)
     messenger.runtime()?.identity().get().await.map_err(map_err)
 }
 
+/// The fewest characters of the password of a backup (`ncryptsec`): the
+/// forms ask as many, and so does a direct call.
+const MIN_BACKUP_PASSWORD: usize = 8;
+
+fn backup_password(password: &str) -> CmdResult<()> {
+    if password.chars().count() < MIN_BACKUP_PASSWORD {
+        return Err(AppError::Other(format!("the backup password is shorter than {MIN_BACKUP_PASSWORD} characters")));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn messenger_identity_create(
     password: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<CreatedIdentity> {
+    backup_password(&password)?;
     let rt = messenger.runtime()?;
     let created = rt.identity().create(&password).await.map_err(map_err)?;
     rt.refresh_signer().await.map_err(map_err)?;
@@ -662,6 +698,7 @@ pub async fn messenger_identity_export(
     password: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<String> {
+    backup_password(&password)?;
     messenger.runtime()?.identity().export_ncryptsec(&password).await.map_err(map_err)
 }
 
@@ -862,7 +899,7 @@ pub async fn messenger_card_send(
     include_phone: bool,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime()?.card_send(&chat, pubkey.as_deref(), include_phone).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.card_send(&chat, pubkey.as_deref(), include_phone).await.map_err(map_err)
 }
 
 /// "Add contact" on a received card. Errors: `card_unknown`, `card_is_me`.
@@ -871,7 +908,7 @@ pub async fn messenger_card_accept(
     message_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime()?.card_accept(&message_id).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.card_accept(&message_id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -925,13 +962,13 @@ pub async fn messenger_chats_list(
     include_archived: Option<bool>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Vec<ChatView>> {
-    messenger.runtime()?.chats(include_archived.unwrap_or(false)).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.chats(include_archived.unwrap_or(false)).await.map_err(map_err)
 }
 
 /// Open (creating if needed) the chat with `peer` (npub or hex).
 #[tauri::command]
 pub async fn messenger_chat_open(peer: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<ChatView> {
-    messenger.runtime()?.chat_open(&peer).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.chat_open(&peer).await.map_err(map_err)
 }
 
 /// One page of visible messages, oldest first, strictly older than `before`.
@@ -942,7 +979,7 @@ pub async fn messenger_chat_messages(
     limit: Option<i64>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Vec<MessageView>> {
-    messenger.runtime()?.dm().messages(&chat_id, before, limit.unwrap_or(50)).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.dm().messages(&chat_id, before, limit.unwrap_or(50)).await.map_err(map_err)
 }
 
 /// How many messages each section of what a chat has shared holds.
@@ -951,7 +988,7 @@ pub async fn messenger_chat_shared_counts(
     chat_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<SharedCounts> {
-    messenger.runtime()?.shared_counts(&chat_id).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.shared_counts(&chat_id).await.map_err(map_err)
 }
 
 /// One page of a section of what a chat has shared, newest first, strictly older than `before`.
@@ -963,7 +1000,7 @@ pub async fn messenger_chat_shared(
     limit: Option<i64>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Vec<MessageView>> {
-    messenger.runtime()?.shared(&chat_id, section, before, limit.unwrap_or(60)).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.shared(&chat_id, section, before, limit.unwrap_or(60)).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -987,14 +1024,17 @@ pub async fn messenger_presence_list(messenger: tauri::State<'_, MessengerState>
 }
 
 /// The page is in sight (said again every 45 s while it is) or hidden.
+/// In sight is refused while the lock is closed: nothing is seen then.
 #[tauri::command]
 pub async fn messenger_presence_foreground(visible: bool, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.presence_foreground(visible).await.map_err(map_err)
+    let rt = if visible { messenger.runtime_unlocked().await? } else { messenger.runtime()? };
+    rt.presence_foreground(visible).await.map_err(map_err)
 }
 
+/// Not while the lock is closed: the chat is not on the screen then.
 #[tauri::command]
 pub async fn messenger_chat_mark_read(chat_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.chat_mark_read(&chat_id).await.map_err(map_err)?;
+    messenger.runtime_unlocked().await?.chat_mark_read(&chat_id).await.map_err(map_err)?;
     messenger.notices_seen(Some(&chat_id));
     Ok(())
 }
@@ -1047,7 +1087,7 @@ pub async fn messenger_dm_send_text(
     reply_to: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime()?.dm_send_text(&to, &text, reply_to.as_deref()).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.dm_send_text(&to, &text, reply_to.as_deref()).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -1056,7 +1096,7 @@ pub async fn messenger_dm_edit(
     text: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime()?.dm_edit(&message_id, &text).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.dm_edit(&message_id, &text).await.map_err(map_err)
 }
 
 /// Put an emoji on a message, or take mine back. Refusals reach the UI as
@@ -1067,7 +1107,7 @@ pub async fn messenger_dm_react(
     emoji: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime()?.dm_react(&message_id, &emoji).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.dm_react(&message_id, &emoji).await.map_err(map_err)
 }
 
 /// An emoji was picked in the composer: it counts among the ones I use most.
@@ -1088,12 +1128,12 @@ pub async fn messenger_dm_delete(
     for_everyone: bool,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
-    messenger.runtime()?.dm_delete(&message_id, for_everyone).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.dm_delete(&message_id, for_everyone).await.map_err(map_err)
 }
 
 #[tauri::command]
 pub async fn messenger_dm_retry(message_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.dm_retry(&message_id).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.dm_retry(&message_id).await.map_err(map_err)
 }
 
 // ─── DM relationship ────────────────────────────────────────────────────────
@@ -1303,8 +1343,11 @@ pub async fn messenger_dm_send_file(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    let rt = messenger.runtime()?;
+    let rt = messenger.runtime_unlocked().await?;
     let local = import_picked(&app, &path, rt.config().data_dir()).await?;
+    if !path.starts_with("content://") && !was_picked(&app, &local, rt.config().data_dir()) {
+        return Err(AppError::Other(NOT_PICKED.into()));
+    }
     rt.dm_send_file_with(&to, &local, caption.as_deref(), batch.as_deref(), original.unwrap_or(false), poster)
         .await
         .map_err(map_err)
@@ -1322,12 +1365,11 @@ pub async fn messenger_media_import(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Picked> {
-    use tauri_plugin_fs::FsExt;
-    let rt = messenger.runtime()?;
+    let rt = messenger.runtime_unlocked().await?;
     let copied = path.starts_with("content://");
     let local = import_picked(&app, &path, rt.config().data_dir()).await?;
-    if !copied && !app.try_fs_scope().is_some_and(|s| s.is_allowed(&local)) {
-        return Err(AppError::Other("the file was not picked".into()));
+    if !copied && !was_picked(&app, &local, rt.config().data_dir()) {
+        return Err(AppError::Other(NOT_PICKED.into()));
     }
     let picked = rt.picked(&local).await.map_err(map_err)?;
     // The webview reads a picked video by itself, for a frame of it.
@@ -1349,6 +1391,31 @@ async fn import_picked(app: &tauri::AppHandle, picked: &str, data_dir: &Path) ->
     }
     let source = app.state::<veydan_shell::Shell>().open_source(picked)?;
     copy_picked(source, data_dir, messenger_runtime::media::MAX_SEND_BYTES).await
+}
+
+/// What a command answers for a path the user did not pick.
+const NOT_PICKED: &str = "the file was not picked";
+
+/// Whether the user picked `path`, a path that is not `content://`: the
+/// computer's picker (or a drop on the window) has let it into the scope of
+/// fs, or it is a file of `outgoing/` in the messenger's folder — the copy
+/// of a `content://` file that `messenger_media_import` gave the composer.
+fn was_picked(app: &tauri::AppHandle, path: &Path, data_dir: &Path) -> bool {
+    use tauri_plugin_fs::FsExt;
+    let scope = app.try_fs_scope();
+    picked_path(path, data_dir, |p| scope.as_ref().is_some_and(|s| s.is_allowed(p)))
+}
+
+/// `was_picked` with the scope as `in_scope`. A path in `outgoing/` counts
+/// once it is resolved: `..` and links that lead out of it do not.
+fn picked_path(path: &Path, data_dir: &Path, in_scope: impl Fn(&Path) -> bool) -> bool {
+    if in_scope(path) {
+        return true;
+    }
+    let (Ok(path), Ok(outgoing)) = (std::fs::canonicalize(path), std::fs::canonicalize(data_dir.join("outgoing"))) else {
+        return false;
+    };
+    path != outgoing && path.starts_with(&outgoing) && path.is_file()
 }
 
 /// A file too large to send, by the name its source gives: a `content://`
@@ -1409,8 +1476,15 @@ pub async fn messenger_media_download(
     manual: bool,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<String>> {
-    let p = messenger.runtime()?.media_download(&message_id, manual).await.map_err(map_err)?;
+    let p = messenger.runtime_unlocked().await?.media_download(&message_id, manual).await.map_err(map_err)?;
     Ok(p.map(|p| p.to_string_lossy().into_owned()))
+}
+
+/// The attachment is on a server neither of the project nor of the user,
+/// one only its sender named: it is fetched only by hand.
+#[tauri::command]
+pub async fn messenger_media_foreign_server(message_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<bool> {
+    messenger.runtime()?.media_foreign_server(&message_id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -1451,6 +1525,10 @@ pub async fn messenger_media_cancel(transfer_id: String, messenger: tauri::State
     messenger.runtime()?.media_cancel(&transfer_id).await.map_err(map_err)
 }
 
+/// Save the attachment where the save dialog said: a `content://` document
+/// the system opened (Android), or a path the dialog let into the scope of
+/// fs (a computer: the dialog's `save` allows the file it returns). Any
+/// other path is refused, so the webview cannot write where it likes.
 #[tauri::command]
 pub async fn messenger_media_save_as(
     message_id: String,
@@ -1458,7 +1536,8 @@ pub async fn messenger_media_save_as(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
-    let rt = messenger.runtime()?;
+    use tauri_plugin_fs::FsExt;
+    let rt = messenger.runtime_unlocked().await?;
     if dest.starts_with("content://") {
         // Android: the destination is a document the system opens for us.
         let src = rt
@@ -1478,6 +1557,9 @@ pub async fn messenger_media_save_as(
         .await
         .map_err(AppError::io)?;
     }
+    if !app.try_fs_scope().is_some_and(|s| s.is_allowed(Path::new(&dest))) {
+        return Err(AppError::Other("the place to save was not picked".into()));
+    }
     rt.media_save_as(&message_id, Path::new(&dest)).await.map_err(map_err)
 }
 
@@ -1488,7 +1570,7 @@ pub async fn messenger_media_data_url(
     message_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<String>> {
-    messenger.runtime()?.media_data_url(&message_id).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.media_data_url(&message_id).await.map_err(map_err)
 }
 
 /// Local path of the attachment if present (to open or reveal it).
@@ -1497,7 +1579,7 @@ pub async fn messenger_media_local_path(
     message_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<String>> {
-    let p = messenger.runtime()?.media_local_path(&message_id).await.map_err(map_err)?;
+    let p = messenger.runtime_unlocked().await?.media_local_path(&message_id).await.map_err(map_err)?;
     Ok(p.map(|p| p.to_string_lossy().into_owned()))
 }
 
@@ -1521,7 +1603,7 @@ pub async fn messenger_media_url(
     server: tauri::State<'_, MediaServer>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<String>> {
-    let Some((path, mime)) = messenger.runtime()?.media_playable(&message_id).await.map_err(map_err)? else { return Ok(None) };
+    let Some((path, mime)) = messenger.runtime_unlocked().await?.media_playable(&message_id).await.map_err(map_err)? else { return Ok(None) };
     Ok(server.url(&path, &mime).await)
 }
 
@@ -1575,26 +1657,34 @@ pub async fn messenger_media_open(
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
     let path = messenger
-        .runtime()?
+        .runtime_unlocked()
+        .await?
         .media_local_path(&message_id)
         .await
         .map_err(map_err)?
         .ok_or_else(|| AppError::Other("err.not_downloaded".into()))?;
-    // A received file is untrusted: anything the system would run is only
-    // shown in its folder, never launched.
-    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    if RUNNABLE_EXTENSIONS.contains(&ext.as_str()) || ext.is_empty() {
+    // A received file is untrusted: only what its viewer shows is opened,
+    // anything else is shown in its folder, never launched.
+    if !opens_in_place(&path) {
         return reveal(&app, &path);
     }
     open_external(&app, &path.to_string_lossy(), true)
 }
 
-/// File types that execute code when opened with the default handler.
-const RUNNABLE_EXTENSIONS: &[&str] = &[
-    "exe", "msi", "bat", "cmd", "com", "scr", "pif", "cpl", "ps1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta",
-    "lnk", "reg", "sh", "bash", "zsh", "fish", "desktop", "appimage", "run", "bin", "jar", "app", "command",
-    "dmg", "pkg", "deb", "rpm", "apk", "py", "pl", "rb", "php", "html", "htm", "svg", "url", "scpt",
+/// File types the system opens in a viewer that runs nothing: pictures,
+/// video, sound, PDF and plain text. The name is the sender's, so the list
+/// says what may open; a shortcut, a script, a page or a type this list
+/// does not know is only shown in its folder.
+const OPENABLE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "avif", "mp4", "mov", "webm", "mkv", "m4v", "mp3", "m4a",
+    "aac", "ogg", "opus", "wav", "flac", "pdf", "txt",
 ];
+
+/// Whether `messenger_media_open` lets the system open `path` (else it is revealed).
+fn opens_in_place(path: &Path) -> bool {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    OPENABLE_EXTENSIONS.contains(&ext.as_str())
+}
 
 #[cfg(desktop)]
 fn reveal(app: &tauri::AppHandle, path: &Path) -> CmdResult<()> {
@@ -1655,7 +1745,7 @@ pub async fn messenger_dm_send_recording(
         waveform: recording.waveform,
         bytes,
     };
-    messenger.runtime()?.dm_send_recording(&to, rec, None).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.dm_send_recording(&to, rec, None).await.map_err(map_err)
 }
 
 /// Let the webview answer microphone and camera requests (WebKitGTK denies
@@ -2073,5 +2163,91 @@ mod tests {
 
         let copied = copy_picked(picked("fits.bin", &file), &data_dir, 100).await.unwrap();
         assert_eq!(std::fs::read(&copied).unwrap().len(), 100, "exactly the limit goes");
+    }
+
+    /// A path that is not `content://` is read only when the user picked it:
+    /// the scope of fs let it in, or it is a copy in `outgoing/` (Android's
+    /// import). Anything else — a file of the home folder, `outgoing/`
+    /// itself, a way out of it by `..` or by a link — is refused.
+    #[test]
+    fn a_file_goes_out_only_from_a_path_the_user_picked() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join(DATA_SUBDIR);
+        let outgoing = data_dir.join("outgoing");
+        std::fs::create_dir_all(outgoing.join("5e")).unwrap();
+        let copy = outgoing.join("5e").join("IMG_1.jpg");
+        std::fs::write(&copy, b"a copy").unwrap();
+        let secret = dir.path().join("id_ed25519");
+        std::fs::write(&secret, b"a key").unwrap();
+        let nothing = |_: &Path| false;
+
+        assert!(picked_path(&copy, &data_dir, nothing));
+        assert!(!picked_path(&secret, &data_dir, nothing));
+        assert!(picked_path(&secret, &data_dir, |p| p == secret.as_path()), "the picker let it in");
+        assert!(!picked_path(&outgoing, &data_dir, nothing));
+        assert!(!picked_path(&outgoing.join("5e"), &data_dir, nothing), "a folder is no file");
+        assert!(!picked_path(&outgoing.join("..").join("..").join("id_ed25519"), &data_dir, nothing));
+        assert!(!picked_path(&outgoing.join("gone.jpg"), &data_dir, nothing));
+        #[cfg(unix)]
+        {
+            let link = outgoing.join("5e").join("link.jpg");
+            std::os::unix::fs::symlink(&secret, &link).unwrap();
+            assert!(!picked_path(&link, &data_dir, nothing), "a link out of outgoing/");
+        }
+        // Without an `outgoing/` nothing of the folder counts.
+        assert!(!picked_path(&copy, &dir.path().join("elsewhere"), nothing));
+    }
+
+    /// «Open» lets the system open only what its viewer shows; a shortcut, a
+    /// script, a page, a package or a type the list does not know is revealed.
+    #[test]
+    fn open_runs_nothing_a_sender_named() {
+        for name in [
+            "a.jpg", "a.JPEG", "a.png", "a.gif", "a.webp", "a.bmp", "a.heic", "a.avif", "a.mp4", "a.mov", "a.webm",
+            "a.mkv", "a.m4v", "a.mp3", "a.m4a", "a.aac", "a.ogg", "a.opus", "a.wav", "a.flac", "a.pdf", "a.txt",
+            "dir.v2/clip.MP4",
+        ] {
+            assert!(opens_in_place(Path::new(name)), "{name} opens");
+        }
+        for name in [
+            "x.webloc", "x.inetloc", "x.website", "x.scf", "x.settingcontent-ms", "x.library-ms", "x.search-ms",
+            "x.msc", "x.application", "x.appref-ms", "x.msix", "x.appx", "x.diagcab", "x.xll", "x.mht", "x.mhtml",
+            "x.xhtml", "x.terminal", "x.tool", "x.workflow", "x.exe", "x.lnk", "x.desktop", "x.url", "x.html",
+            "x.svg", "x.js", "x.sh", "x.docm", "x.unknown", "noext", ".jpg", "x.jpg.exe", "x.pdf ",
+        ] {
+            assert!(!opens_in_place(Path::new(name)), "{name} is revealed");
+        }
+    }
+
+    /// The commands of the chats ask the lock first: closed, they answer
+    /// `VaultLocked`; open, or no lock set, or no lock in the app, they go on.
+    #[tokio::test]
+    async fn a_closed_lock_closes_the_commands_of_the_chats() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock_schema = veydan_core::Schema { module: "lock", steps: veydan_lock::SCHEMA_STEPS };
+        let db = veydan_core::db::open(&dir.path().join(veydan_core::db::DB_FILE), &[veydan_core::SCHEMA, lock_schema])
+            .await
+            .unwrap();
+        let lock = Lock::new(db.clone());
+        lock.open_default().await.unwrap();
+        assert!(unlocked(None).await.is_ok());
+        assert!(unlocked(Some(&lock)).await.is_ok(), "no lock set");
+        lock.set(Some("1357".into()), None, Some("pin".into()), None).await.unwrap();
+        assert!(unlocked(Some(&lock)).await.is_ok());
+        lock.lock();
+        assert!(matches!(unlocked(Some(&lock)).await, Err(AppError::VaultLocked)));
+        assert!(lock.unlock("1357").await.unwrap());
+        assert!(unlocked(Some(&lock)).await.is_ok());
+        db.close().await;
+    }
+
+    #[test]
+    fn a_backup_password_has_at_least_eight_characters() {
+        assert!(backup_password("").is_err());
+        assert!(backup_password("1234567").is_err());
+        assert!(backup_password("12345678").is_ok());
+        // Characters, not bytes: eight letters of Cyrillic are enough, four are not.
+        assert!(backup_password("пароль12").is_ok());
+        assert!(backup_password("пару").is_err());
     }
 }

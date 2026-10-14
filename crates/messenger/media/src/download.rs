@@ -33,6 +33,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock, Weak};
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
 
@@ -54,13 +55,24 @@ pub trait BlobFetcher: Send + Sync {
     }
 }
 
+/// The servers of an attachment are the sender's word: they are asked
+/// only over https and on the open internet, redirects included
+/// (`messenger_http::public_builder`).
 pub struct HttpFetcher {
     http: reqwest::Client,
+    /// Off only for the tests of a server on this machine.
+    public_only: bool,
 }
+
+/// Redirects one chunk may follow.
+const MAX_REDIRECTS: usize = 10;
 
 impl HttpFetcher {
     pub fn new() -> Result<Self> {
-        Ok(Self { http: crate::backend::http_client()? })
+        let http = messenger_http::public_builder(Duration::from_secs(10), Duration::from_secs(600), MAX_REDIRECTS)?
+            .build()
+            .map_err(|e| MessengerError::Transport(e.to_string()))?;
+        Ok(Self { http, public_only: true })
     }
 }
 
@@ -88,6 +100,10 @@ impl BlobFetcher for HttpFetcher {
 impl HttpFetcher {
     async fn fetch_once(&self, url: &str, max_bytes: u64, got: &AtomicU64) -> Result<Option<Vec<u8>>> {
         got.store(0, Ordering::Relaxed);
+        // A literal address never goes to the resolver that checks names.
+        if self.public_only {
+            messenger_http::Target::parse(url)?;
+        }
         let mut resp = self.http.get(url).send().await.map_err(network)?;
         let status = resp.status().as_u16();
         if status == 404 {
@@ -506,7 +522,7 @@ mod tests {
         let body: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
         Mock::given(method("GET")).and(path("/blob")).respond_with(ResponseTemplate::new(200).set_body_bytes(body.clone())).mount(&server).await;
         Mock::given(method("GET")).and(path("/gone")).respond_with(ResponseTemplate::new(404)).mount(&server).await;
-        let fetcher = HttpFetcher::new().unwrap();
+        let fetcher = HttpFetcher { http: crate::backend::http_client().unwrap(), public_only: false };
         let url = format!("{}/blob", server.uri());
 
         let got = AtomicU64::new(12_345);
@@ -521,5 +537,29 @@ mod tests {
         let e = fetcher.fetch_counted(&url, 1000, &got).await.unwrap_err();
         assert!(e.to_string().contains("err.blob_too_large"), "{e}");
         assert_eq!(fetcher.fetch_counted(&format!("{}/gone", server.uri()), 1000, &got).await.unwrap(), None);
+    }
+
+    /// The real fetcher asks nothing of a server that is not https on the
+    /// open internet: this machine, its network, a plain `http://`.
+    #[tokio::test]
+    async fn a_server_inside_or_without_tls_is_not_asked() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).respond_with(ResponseTemplate::new(200).set_body_bytes(vec![1u8; 10])).mount(&server).await;
+        let port = server.address().port();
+        let fetcher = HttpFetcher::new().unwrap();
+        let got = AtomicU64::new(0);
+        for url in [
+            format!("{}/blob", server.uri()),
+            format!("https://127.0.0.1:{port}/blob"),
+            format!("https://[::1]:{port}/blob"),
+            format!("https://localhost:{port}/blob"),
+            "https://10.0.0.1/blob".to_string(),
+            "https://169.254.169.254/blob".to_string(),
+        ] {
+            let e = fetcher.fetch_counted(&url, 1000, &got).await.unwrap_err();
+            let text = e.to_string();
+            assert!(text.contains("preview_not_https") || text.contains("preview_private_host"), "{url}: {text}");
+        }
+        assert!(server.received_requests().await.unwrap().is_empty(), "nothing reached the server");
     }
 }

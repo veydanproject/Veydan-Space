@@ -61,6 +61,7 @@
     "cloud_state_grace": "Hanya baca",
     "cloud_state_suspended": "Ditangguhkan",
     "cloud_until": "Dibayar hingga {date}",
+    "cloud_next_plan": "Paket {plan} dimulai pada {date}",
     "cloud_grace_until": "Hanya baca hingga {date}: masukkan kunci aktivasi agar sinkronisasi berlanjut.",
     "cloud_suspended_text": "Akun ditangguhkan. Anda masih dapat menghapusnya.",
     "cloud_kept_at": "Veydan Cloud tidak dapat dijangkau sekarang. Ditampilkan per {date}.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Kunci ini sudah kedaluwarsa.",
     "cloud_err_key_revoked": "Kunci ini telah dicabut.",
     "cloud_err_rate_limited": "Terlalu banyak percobaan. Coba lagi nanti.",
+    "cloud_err_deletion_pending": "Akun sebelumnya masih dalam proses penghapusan. Coba lagi dalam beberapa menit.",
     "cloud_err_no_host": "Veydan Cloud tidak dapat dijangkau sekarang.",
     "cloud_err_clock": "Jam perangkat ini salah: atur tanggal dan waktu.",
     "cloud_err_suspended": "Akun ditangguhkan.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Paket",
     "cloud_recover_expired_title": "Permintaan sudah kedaluwarsa",
     "cloud_recovery_reissue_short": "Terbitkan ulang",
+    "cloud_recovery_elsewhere": "Recovery Key diterbitkan di perangkat lain: terbitkan ulang di sana atau pulihkan dengan kata-katanya.",
+    "cloud_recovery_elsewhere_anew": "Terbitkan baru",
+    "cloud_recovery_elsewhere_hint": "Kunci baru diterbitkan di sini. Kata lama tetap berlaku sampai salinannya dihapus.",
+    "cloud_trustees_missing": "Atur ulang orang tepercaya",
     "cloud_recovery_setup_short": "Atur",
     "cloud_recovery_show_words": "Tampilkan 12 kata",
     "cloud_restore_new_secret_hint": "Ini akan mengunci aplikasi di perangkat ini.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Akses dipulihkan dari perangkat baru",
     "cloud_card_line_plan_expiring": "Paket Anda akan segera berakhir",
     "cloud_card_line_quota": "Veydan Cloud hampir penuh",
-    "cloud_card_line_dormant": "Akun akan dihapus karena tidak aktif"
+    "cloud_card_line_dormant": "Akun akan dihapus karena tidak aktif",
+    "cloud_card_downgraded": "Paket Anda telah berakhir. File yang melebihi batas gratis tetap disimpan, tetapi file baru tidak disimpan sampai Anda mengosongkan ruang atau memperpanjang paket.",
+    "cloud_card_downgraded_limit": "Paket gratis: {limit} untuk file",
+    "cloud_card_line_downgraded": "Paket Anda telah berakhir"
   },
   "mobile": {}
 }

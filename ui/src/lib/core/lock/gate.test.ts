@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { gateScreen, recoveryStep } from './gate';
+import { afterStatusRead, gateScreen, recoveryStep } from './gate';
 
 const unlocked = { enabled: true, locked: false, timeout_min: 5, vault: 'none', kind: 'pin', hint: null, has_recovery: true };
 const lockCalls = vi.hoisted(() => ({
   recover: vi.fn(),
+  status: vi.fn(),
   lock: vi.fn(),
 }));
 vi.mock('$lib/core/api', () => ({ api: { lock: lockCalls } }));
@@ -69,5 +70,36 @@ describe('the recovery in the lock store', () => {
     expect(gateScreen({ ready: true, locked: appLock.locked, recovering: appLock.recovering, keyPending: appLock.newRecoveryKey !== null })).toBe('recover');
     expect(recoveryStep({ locked: appLock.locked, newKey: appLock.newRecoveryKey })).toBe(3);
     expect(appLock.newRecoveryKey).toBe('CCCC-DDDD');
+  });
+});
+
+describe('a lock status that does not answer', () => {
+  it('fails closed: an error screen, never the app', () => {
+    expect(gateScreen({ ready: false, failed: true, locked: false, recovering: false, keyPending: false })).toBe('error');
+    expect(afterStatusRead(false, false)).toEqual({ ready: false, failed: true });
+    expect(afterStatusRead(true, false)).toEqual({ ready: true, failed: false });
+    // A later read that fails keeps the status already known.
+    expect(afterStatusRead(false, true)).toEqual({ ready: true, failed: false });
+  });
+
+  it('is ready only after a read answered, and a retry can recover', async () => {
+    const fresh = new (appLock.constructor as new () => typeof appLock)();
+    lockCalls.status.mockRejectedValueOnce(new Error('denied'));
+    await fresh.refresh();
+    expect(fresh.ready).toBe(false);
+    expect(fresh.failed).toBe(true);
+    lockCalls.status.mockResolvedValueOnce({ ...unlocked, locked: true });
+    await fresh.refresh();
+    expect(fresh.ready).toBe(true);
+    expect(fresh.failed).toBe(false);
+    expect(fresh.locked).toBe(true);
+  });
+
+  it('shows the lock at once on the locked event', () => {
+    lockCalls.status.mockReturnValue(new Promise(() => {}));
+    appLock.status = { ...unlocked } as typeof appLock.status;
+    appLock.markLocked();
+    expect(appLock.locked).toBe(true);
+    lockCalls.status.mockReset();
   });
 });

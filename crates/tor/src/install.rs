@@ -13,14 +13,13 @@
 //! `version.txt` came from a pinned archive; one without it was put there
 //! by hand or from an archive of unknown checksum (source "manual").
 
-use std::io::{Read, Write};
+use std::io::{Seek, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use tauri::Emitter;
 use tokio::sync::Mutex;
 use veydan_core::{AppError, CmdResult, Core};
@@ -235,38 +234,17 @@ pub fn status(app_data_dir: &Path) -> TorStatus {
 
 // ── Checksum ───────────────────────────────────────────────────────────────
 
-/// The SHA-256 of a file, in lower-case hex.
-pub fn sha256_file(path: &Path) -> std::io::Result<String> {
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 256 * 1024];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect())
+pub use crate::checksum::sha256_file;
+
+/// The SHA-256 of what is left of an open file, in lower-case hex.
+fn sha256_of(file: &mut std::fs::File) -> std::io::Result<String> {
+    crate::checksum::sha256_reader(file)
 }
 
 /// Holds a complete download against its pin. A file that does not match is
 /// deleted with its marker, so the next attempt starts clean.
 fn verify_download(tmp: &Path, marker: &Path, pinned: &Pinned) -> Result<(), String> {
-    let actual = sha256_file(tmp).map_err(|e| format!("cannot read the download: {e}"))?;
-    if actual != pinned.sha256 {
-        let _ = std::fs::remove_file(tmp);
-        let _ = std::fs::remove_file(marker);
-        return Err(format!(
-            "checksum mismatch for {}: expected {}, got {actual}",
-            pinned.file, pinned.sha256
-        ));
-    }
-    Ok(())
+    crate::checksum::verify_download(tmp, marker, pinned.file, pinned.sha256)
 }
 
 // ── Unpacking ──────────────────────────────────────────────────────────────
@@ -310,8 +288,7 @@ fn entry_path(raw: &Path) -> Result<Option<PathBuf>, String> {
 /// Unpacks a `.tar.gz` into `dest`, which must not exist yet. Only regular
 /// files and directories are taken; any path that would leave `dest` fails
 /// the whole unpack.
-fn unpack(archive: &Path, dest: &Path) -> Result<(), String> {
-    let file = std::fs::File::open(archive).map_err(|e| format!("cannot open the archive: {e}"))?;
+fn unpack(file: std::fs::File, dest: &Path) -> Result<(), String> {
     let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(std::io::BufReader::new(file)));
     std::fs::create_dir_all(dest).map_err(|e| format!("cannot create {}: {e}", dest.display()))?;
     let entries = tar.entries().map_err(|e| format!("bad archive: {e}"))?;
@@ -393,6 +370,18 @@ pub fn install_archive(
 /// [`install_archive`] for a caller that holds [`INSTALL_DIR_LOCK`].
 fn install_archive_locked(
     archive: &Path,
+    app_data_dir: &Path,
+    version: Option<&str>,
+) -> Result<(), String> {
+    let file = std::fs::File::open(archive).map_err(|e| format!("cannot open the archive: {e}"))?;
+    install_file_locked(file, app_data_dir, version)
+}
+
+/// [`install_archive_locked`] from an open file: the one a caller has
+/// checked, so what is unpacked is what was hashed, whatever happens to the
+/// path meanwhile.
+fn install_file_locked(
+    archive: std::fs::File,
     app_data_dir: &Path,
     version: Option<&str>,
 ) -> Result<(), String> {
@@ -478,10 +467,13 @@ pub fn install_from_archive(
     app_data_dir: &Path,
     allow_unknown: bool,
 ) -> Result<InstallOutcome, String> {
-    match check_archive(archive, allow_unknown)? {
+    let mut file = open_archive(archive)?;
+    match check_file(&mut file, allow_unknown)? {
         Checked::Unknown(sha256) => Ok(InstallOutcome::UnknownHash { sha256 }),
         Checked::Install(version) => {
-            install_archive(archive, app_data_dir, version)?;
+            file.rewind().map_err(|e| format!("cannot read the archive: {e}"))?;
+            let _guard = INSTALL_DIR_LOCK.blocking_lock();
+            install_file_locked(file, app_data_dir, version)?;
             Ok(InstallOutcome::Installed {
                 version: version.map(str::to_string),
             })
@@ -497,9 +489,14 @@ enum Checked {
     Unknown(String),
 }
 
-/// Holds the archive against the pins. Blocking: hashes the whole file.
-fn check_archive(archive: &Path, allow_unknown: bool) -> Result<Checked, String> {
-    let sha256 = sha256_file(archive).map_err(|e| format!("cannot read the archive: {e}"))?;
+fn open_archive(archive: &Path) -> Result<std::fs::File, String> {
+    std::fs::File::open(archive).map_err(|e| format!("cannot read the archive: {e}"))
+}
+
+/// Holds the archive against the pins by its open handle, which the install
+/// then unpacks. Blocking: hashes the whole file.
+fn check_file(archive: &mut std::fs::File, allow_unknown: bool) -> Result<Checked, String> {
+    let sha256 = sha256_of(archive).map_err(|e| format!("cannot read the archive: {e}"))?;
     Ok(match PINNED.iter().find(|p| p.sha256 == sha256) {
         Some(pinned) => {
             let here = current_target().unwrap_or("unknown");
@@ -803,19 +800,23 @@ pub async fn tor_install_from_archive(
     }
     let app_data_dir = core.app_data_dir.clone();
     let archive = PathBuf::from(path);
-    let checked = {
-        let archive = archive.clone();
-        tokio::task::spawn_blocking(move || check_archive(&archive, allow_unknown))
-            .await
-            .map_err(AppError::other)?
-            .map_err(AppError::other)?
-    };
+    // One open file for the check and the unpack: the path may change
+    // between the two, the handle does not.
+    let (file, checked) = tokio::task::spawn_blocking(move || {
+        let mut file = open_archive(&archive)?;
+        let checked = check_file(&mut file, allow_unknown)?;
+        file.rewind().map_err(|e| format!("cannot read the archive: {e}"))?;
+        Ok::<_, String>((file, checked))
+    })
+    .await
+    .map_err(AppError::other)?
+    .map_err(AppError::other)?;
     let version = match checked {
         Checked::Unknown(sha256) => return Ok(InstallOutcome::UnknownHash { sha256 }),
         Checked::Install(version) => version,
     };
     with_bundle_released(&manager, move || {
-        install_archive_locked(&archive, &app_data_dir, version)
+        install_file_locked(file, &app_data_dir, version)
     })
     .await
     .map_err(AppError::other)?;

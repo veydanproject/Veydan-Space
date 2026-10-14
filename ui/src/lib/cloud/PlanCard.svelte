@@ -1,7 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- The plan of the account (vcloud-plan.md 4.2, 4.5): its name and state, the day it is paid until, the three numbers a person feels (room, a file of a chat, how long media stay), and the two ways to change it: the plans and a key. How old the numbers are is said when the server could not be asked. -->
+<!-- The plan of the account (vcloud-plan.md 4.2, 4.5): its name and state, the day it is paid until, the plan that waits for that day, the three numbers a person feels (room, a file of a chat, how long media stay), and the two ways to change it: the plans and a key. How old the numbers are is said when the server could not be asked. -->
 <script lang="ts">
   import { t, locale } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -12,6 +12,7 @@
   let {
     account,
     name,
+    nextName = '',
     hasPlans = false,
     onPlans,
     onKey,
@@ -19,6 +20,8 @@
     account: ShownAccount;
     /** The name of the plan as the server calls it. */
     name: string;
+    /** The name of the plan that starts when this one ends, if one waits. */
+    nextName?: string;
     /** There is a choice of plans on the page to lead to. */
     hasPlans?: boolean;
     onPlans: () => void;
@@ -53,6 +56,9 @@
     <Notice tone="danger">{$t('cloud_suspended_text')}</Notice>
   {:else if account.until}
     <p class="line">{$t('cloud_until', { date: dateOf(account.until, $locale) })}</p>
+  {/if}
+  {#if account.next && nextName}
+    <p class="line">{$t('cloud_next_plan', { plan: nextName, date: dateOf(account.next.since, $locale) })}</p>
   {/if}
 
   {#if files || chatFile || retention}

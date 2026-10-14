@@ -62,8 +62,8 @@ pub struct MessageView {
     pub direction: String,
     /// `queued` | `sent` | `failed` | `received`
     pub status: String,
-    /// `text` | `system` | `media` | `contact` | `bot_card` | anything
-    /// newer clients invent
+    /// `text` | `system` | `media` | `contact` | `bot_card` | `unknown`
+    /// (any other type of the wire; its name stays in the envelope)
     pub content_type: String,
     pub text: Option<String>,
     pub sender_pubkey: String,

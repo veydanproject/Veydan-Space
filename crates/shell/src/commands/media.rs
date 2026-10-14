@@ -31,20 +31,33 @@ pub(crate) fn grant_access(window: &WebviewWindow) -> Result<(), String> {
         return Ok(());
     }
 
+    // Only a page of the app gets the camera: the window keeps to them
+    // (`navigation`), and the answer is checked here too.
+    #[cfg(target_os = "linux")]
+    let dev = crate::navigation::dev_url(window);
     #[cfg(target_os = "linux")]
     window
-        .with_webview(|webview| {
+        .with_webview(move |webview| {
             use webkit2gtk::glib::ObjectExt;
             use webkit2gtk::{PermissionRequestExt, UserMediaPermissionRequest, WebViewExt};
 
-            webview.inner().connect_permission_request(|_, req| {
-                if req.is::<UserMediaPermissionRequest>() {
-                    req.allow();
+            webview
+                .inner()
+                .connect_permission_request(move |view, req| {
+                    if !req.is::<UserMediaPermissionRequest>() {
+                        return false;
+                    }
+                    let own = view
+                        .uri()
+                        .and_then(|uri| tauri::Url::parse(&uri).ok())
+                        .is_some_and(|url| crate::navigation::is_own(&url, dev.as_ref()));
+                    if own {
+                        req.allow();
+                    } else {
+                        req.deny();
+                    }
                     true
-                } else {
-                    false
-                }
-            });
+                });
         })
         .map_err(|e| e.to_string())?;
 

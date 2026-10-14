@@ -155,6 +155,10 @@ pub struct InviteView {
     pub status: String,
     pub created_at: i64,
     pub expires_at: i64,
+    /// Incoming: the inviter was a manager by the log of this device, or
+    /// my contact (`InviteStanding::Vouched`); otherwise it is their word
+    /// alone. Outgoing: always.
+    pub vouched: bool,
 }
 
 /// Where the `call.*` notes of a group go (the core of group calls,
@@ -183,6 +187,71 @@ pub struct GroupService {
     signer: Arc<std::sync::Mutex<Option<Keys>>>,
     locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
     call_sink: Arc<std::sync::Mutex<Option<Arc<dyn GroupCallSink>>>>,
+}
+
+/// The log of a group as this device keeps it, or none.
+pub(crate) async fn load_log(store: &Store, group_id: &str) -> Result<Option<OpLog>> {
+    let mut ops = Vec::new();
+    for json in repo::ops(store, group_id).await? {
+        let Ok(event) = serde_json::from_str::<Event>(&json) else { continue };
+        let Ok(op) = serde_json::from_str::<Op>(&event.content) else { continue };
+        ops.push(op);
+    }
+    Ok(OpLog::from_ops(ops).ok())
+}
+
+/// How far an invitation to a group is vouched for: one rule for the app
+/// (`GroupService::on_invite`) and for the push of a phone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InviteStanding {
+    /// Not taken: I am in the group already, or the log I hold has the
+    /// inviter banned.
+    Drop,
+    /// A manager by the log I hold, or my approved contact: kept and told of.
+    Vouched,
+    /// The inviter's word alone (a group I never was in, or one whose log
+    /// stopped when I left, so a manager made later is not in it): kept to
+    /// be answered, not told of, and few of them.
+    Unvouched,
+}
+
+/// The rule of [`InviteStanding`], from what this device holds of the group.
+pub fn invite_standing(row: Option<&GroupRow>, log: Option<&OpLog>, inviter: &PubKey, contact: bool) -> InviteStanding {
+    if row.is_some_and(|g| g.membership == MEMBERSHIP_JOINED) {
+        return InviteStanding::Drop;
+    }
+    if let Some(s) = log.map(OpLog::state) {
+        if s.is_banned(inviter) {
+            return InviteStanding::Drop;
+        }
+        if s.role_of(inviter).is_some_and(Role::is_manager) {
+            return InviteStanding::Vouched;
+        }
+    }
+    if contact {
+        InviteStanding::Vouched
+    } else {
+        InviteStanding::Unvouched
+    }
+}
+
+/// Whether a stored invitation was vouched for (`invite_payload`). A row
+/// written before the mark existed counts as vouched: nothing tells whose
+/// it was, and strangers coming now must not push out what a contact or a
+/// manager sent then.
+pub(crate) fn vouched_of(row: &repo::InviteRow) -> bool {
+    serde_json::from_str::<serde_json::Value>(&row.payload_json)
+        .ok()
+        .and_then(|v| v.get("vouched").map(|m| m.as_bool().unwrap_or(false)))
+        .unwrap_or(true)
+}
+
+/// [`invite_standing`] read from the store (the push handler, which has no
+/// service).
+pub async fn invite_standing_in(store: &Store, group_id: &str, inviter: &PubKey, contact: bool) -> Result<InviteStanding> {
+    let row = repo::get(store, group_id).await?;
+    let log = load_log(store, group_id).await?;
+    Ok(invite_standing(row.as_ref(), log.as_ref(), inviter, contact))
 }
 
 fn key_ref(group_id: &str, key_id: &KeyId) -> String {
@@ -291,11 +360,7 @@ impl GroupService {
         if row.membership != MEMBERSHIP_JOINED || s.member(&me).is_none() {
             return Err(MessengerError::Invalid("group_not_member".into()));
         }
-        let key = match &s.current_key {
-            Some(id) => self.key(group_id, id).await?,
-            None => None,
-        }
-        .ok_or_else(|| MessengerError::Invalid("group_no_key".into()))?;
+        let key = self.sealing_key(group_id, &log).await?;
         let signed = wire::sign_message(keys, group_id, &envelope.encode(), self.now(), None)?;
         let grace = self.grace_key(group_id, s).await?;
         let sealed = wire::seal_note(group_id, &key, grace.as_ref(), &signed, keys)?;
@@ -323,6 +388,17 @@ impl GroupService {
 
     /// Store a key; `true` when it is new on this device.
     pub(crate) async fn keep_key(&self, group_id: &str, key: &GroupKey) -> Result<bool> {
+        let new = self.store_key(group_id, key).await?;
+        if new {
+            self.trim_keys(group_id, Some(&key.id())).await?;
+        }
+        Ok(new)
+    }
+
+    /// `keep_key` without the trim: for keys that come before the log
+    /// they belong to (the first pass of a welcome), which is trimmed
+    /// once the log is there (`trim_keys`).
+    pub(crate) async fn store_key(&self, group_id: &str, key: &GroupKey) -> Result<bool> {
         let id = key.id();
         if self.key(group_id, &id).await?.is_some() {
             repo::add_key(&self.store, group_id, &id.0).await?;
@@ -331,6 +407,35 @@ impl GroupService {
         self.secrets.put(&key_ref(group_id, &id), key.as_bytes()).await?;
         repo::add_key(&self.store, group_id, &id.0).await?;
         Ok(true)
+    }
+
+    /// A group keeps at most `MAX_KEYS` keys. Past that, the oldest go
+    /// that the log does not name (`state.keys`): a key anyone with the
+    /// current one may hand around (`chain`, `group.keys`, a welcome)
+    /// opens events, and what is in them is signed, so it gives nothing,
+    /// but it would lie in the store and go on in every welcome. A key the
+    /// log names stays, and so does the one just kept: its operation may
+    /// not have come yet (a key delivered to a newcomer before the log).
+    pub(crate) async fn trim_keys(&self, group_id: &str, kept: Option<&KeyId>) -> Result<()> {
+        let ids = repo::key_ids(&self.store, group_id).await?;
+        let mut over = ids.len().saturating_sub(crate::inbound::MAX_KEYS);
+        if over == 0 {
+            return Ok(());
+        }
+        let named: std::collections::BTreeSet<String> =
+            self.log(group_id).await?.map(|l| l.state().keys.iter().map(|k| k.0.clone()).collect()).unwrap_or_default();
+        for id in ids {
+            if over == 0 {
+                break;
+            }
+            if kept.is_some_and(|k| k.0 == id) || named.contains(&id) {
+                continue;
+            }
+            self.secrets.delete(&key_ref(group_id, &KeyId(id.clone()))).await?;
+            repo::remove_key(&self.store, group_id, &id).await?;
+            over -= 1;
+        }
+        Ok(())
     }
 
     pub(crate) async fn all_keys(&self, group_id: &str) -> Result<Vec<GroupKey>> {
@@ -372,6 +477,22 @@ impl GroupService {
         }
         ids.sort();
         Ok(ids.join(","))
+    }
+
+    /// The key something of mine is sealed with now: the current one, and
+    /// never while the log says someone who is no longer a member knows it
+    /// (`KeyStatus::Rotate`). Nothing new goes out under such a key; a
+    /// manager brings a new one first ([`Self::renew_stale_key`]), the
+    /// others wait for it (`group_key_stale`).
+    async fn sealing_key(&self, group_id: &str, log: &OpLog) -> Result<GroupKey> {
+        if *log.key_status() == KeyStatus::Rotate {
+            return Err(MessengerError::Invalid("group_key_stale".into()));
+        }
+        match &log.state().current_key {
+            Some(id) => self.key(group_id, id).await?,
+            None => None,
+        }
+        .ok_or_else(|| MessengerError::Invalid("group_no_key".into()))
     }
 
     /// The key replaced not long ago, if this device holds it. For a while
@@ -425,13 +546,7 @@ impl GroupService {
         if let Some(l) = self.logs.lock().await.get(group_id) {
             return Ok(Some(l.clone()));
         }
-        let mut ops = Vec::new();
-        for json in repo::ops(&self.store, group_id).await? {
-            let Ok(event) = serde_json::from_str::<Event>(&json) else { continue };
-            let Ok(op) = serde_json::from_str::<Op>(&event.content) else { continue };
-            ops.push(op);
-        }
-        let Ok(log) = OpLog::from_ops(ops) else { return Ok(None) };
+        let Some(log) = load_log(&self.store, group_id).await? else { return Ok(None) };
         self.logs.lock().await.insert(group_id.to_string(), log.clone());
         Ok(Some(log))
     }
@@ -465,7 +580,9 @@ impl GroupService {
             let s = log.state();
             row.kind = if s.kind == GroupKind::Public { "public".into() } else { "private".into() };
             row.name = s.name.clone();
-            row.about = s.about.clone();
+            // The log takes an `about` with controls and bidi marks in it (older
+            // clients wrote such), so it is cleaned for the row, never in `apply`.
+            row.about = messenger_richtext::normalize(&s.about);
             row.picture = s.picture.clone();
             row.owner = s.owner.as_hex().to_string();
             row.members = s.members.len() as i64;
@@ -563,7 +680,7 @@ impl GroupService {
             chat_id: repo::group_chat_id(&row.id),
             kind: row.kind.clone(),
             name: row.name.clone(),
-            about: row.about.clone(),
+            about: messenger_richtext::normalize(&row.about),
             picture: row.picture.clone(),
             relay: row.relay_url.clone(),
             owner: row.owner.clone(),
@@ -591,7 +708,7 @@ impl GroupService {
         // only by an operation that carries it again.
         let Some(op) = log
             .ordered()
-            .filter(|o| o.key.as_ref() == Some(&current) && log.rejection(&o.id()).is_none())
+            .filter(|o| o.key.as_ref() == Some(&current) && !matches!(o.body, OpBody::Leave) && log.rejection(&o.id()).is_none())
             .last()
         else {
             return Ok(None);
@@ -660,11 +777,12 @@ impl GroupService {
             .into_iter()
             .filter_map(|r| {
                 let p: wire::Invite = serde_json::from_str(&r.payload_json).ok()?;
+                let vouched = r.direction != "in" || vouched_of(&r);
                 Some(InviteView {
                     invite_id: r.invite_id,
                     group_id: r.group_id,
                     name: p.name,
-                    about: p.about,
+                    about: messenger_richtext::normalize(&p.about),
                     picture: p.picture,
                     members: p.members,
                     peer: r.peer,
@@ -672,6 +790,7 @@ impl GroupService {
                     status: r.status,
                     created_at: r.created_at,
                     expires_at: r.expires_at,
+                    vouched,
                 })
             })
             .collect())
@@ -1279,6 +1398,30 @@ impl GroupService {
         }
     }
 
+    /// Does someone who is no longer a member know the current key? Then
+    /// nothing of mine is sealed with it (`group_key_stale`).
+    pub async fn key_stale(&self, group_id: &str) -> Result<bool> {
+        Ok(*self.need_log(group_id).await?.key_status() == KeyStatus::Rotate)
+    }
+
+    /// Before something of mine is sealed with the group key: when someone
+    /// who left still knows the current key and I manage the group, the new
+    /// key `maintain` would bring a moment later, now. Nothing otherwise:
+    /// a member who manages nothing waits for a manager. The caller holds
+    /// the group's lock.
+    pub async fn renew_stale_key(&self, keys: &Keys, group_id: &str) -> Result<Outcome> {
+        let me = me_of(keys);
+        let Some(row) = repo::get(&self.store, group_id).await? else { return Ok(Outcome::default()) };
+        if row.membership != MEMBERSHIP_JOINED {
+            return Ok(Outcome::default());
+        }
+        let Some(log) = self.log(group_id).await? else { return Ok(Outcome::default()) };
+        if *log.key_status() != KeyStatus::Rotate || !log.state().role_of(&me).is_some_and(Role::is_manager) {
+            return Ok(Outcome::default());
+        }
+        Ok(self.operate(keys, group_id, OpBody::RotateKey).await?.1)
+    }
+
     // ─── Messages ───────────────────────────────────────────────────────────
 
     /// Store and seal a message of mine. Returns the stored message, what
@@ -1304,11 +1447,7 @@ impl GroupService {
         if !s.can_post(&me) {
             return Err(MessengerError::Invalid(if s.member(&me).is_some_and(|m| m.muted) { "group_muted".into() } else { "group_not_member".into() }));
         }
-        let key = match &s.current_key {
-            Some(id) => self.key(group_id, id).await?,
-            None => None,
-        }
-        .ok_or_else(|| MessengerError::Invalid("group_no_key".into()))?;
+        let key = self.sealing_key(group_id, &log).await?;
         let chat_id = repo::group_chat_id(group_id);
         if let Some(id) = reply_to {
             match msgs::get(&self.store, id).await? {
@@ -1374,11 +1513,7 @@ impl GroupService {
         if row.membership != MEMBERSHIP_JOINED || s.member(&me).is_none() {
             return Err(MessengerError::Invalid("group_not_member".into()));
         }
-        let key = match &s.current_key {
-            Some(id) => self.key(group_id, id).await?,
-            None => None,
-        }
-        .ok_or_else(|| MessengerError::Invalid("group_no_key".into()))?;
+        let key = self.sealing_key(group_id, &log).await?;
         let signed = wire::sign_message(keys, group_id, &Envelope::receipt_read(at).encode(), self.now(), None)?;
         let grace = self.grace_key(group_id, s).await?;
         let sealed = wire::seal_note(group_id, &key, grace.as_ref(), &signed, keys)?;
@@ -1409,11 +1544,7 @@ impl GroupService {
         if !s.can_post(&me) {
             return Err(MessengerError::Invalid(if s.member(&me).is_some_and(|m| m.muted) { "group_muted".into() } else { "group_not_member".into() }));
         }
-        let key = match &s.current_key {
-            Some(id) => self.key(&group_id, id).await?,
-            None => None,
-        }
-        .ok_or_else(|| MessengerError::Invalid("group_no_key".into()))?;
+        let key = self.sealing_key(&group_id, &log).await?;
         let grace = self.grace_key(&group_id, s).await?;
         let (set, at) = self.dm.react_locally(&row.chat_id, &me, &row.id, emoji).await?;
         let signed = wire::sign_message(keys, &group_id, &Envelope::reaction(&row.id, emoji, set).encode(), at, None)?;

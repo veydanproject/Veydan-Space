@@ -61,6 +61,7 @@
     "cloud_state_grace": "Лише читання",
     "cloud_state_suspended": "Призупинено",
     "cloud_until": "Оплачено до {date}",
+    "cloud_next_plan": "Тариф {plan} почнеться {date}",
     "cloud_grace_until": "Лише читання до {date}: введіть ключ активації, щоб синхронізація тривала.",
     "cloud_suspended_text": "Обліковий запис призупинено. Видалити його все одно можна.",
     "cloud_kept_at": "Veydan Cloud зараз недоступний. Показано станом на {date}.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Строк дії ключа минув.",
     "cloud_err_key_revoked": "Цей ключ відкликано.",
     "cloud_err_rate_limited": "Забагато спроб. Спробуйте пізніше.",
+    "cloud_err_deletion_pending": "Попередній обліковий запис ще видаляється. Спробуйте за кілька хвилин.",
     "cloud_err_no_host": "Veydan Cloud зараз недоступний.",
     "cloud_err_clock": "Годинник цього пристрою йде неправильно: установіть дату й час.",
     "cloud_err_suspended": "Обліковий запис призупинено.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Тарифи",
     "cloud_recover_expired_title": "Запит застарів",
     "cloud_recovery_reissue_short": "Перевипустити",
+    "cloud_recovery_elsewhere": "Recovery Key видано на іншому пристрої: перевидайте його там або відновіть словами.",
+    "cloud_recovery_elsewhere_anew": "Видати заново",
+    "cloud_recovery_elsewhere_hint": "Новий ключ видається тут. Старі слова залишаються чинними, доки їхню копію не видалено.",
+    "cloud_trustees_missing": "Налаштуйте довірених осіб заново",
     "cloud_recovery_setup_short": "Налаштувати",
     "cloud_recovery_show_words": "Показати 12 слів",
     "cloud_restore_new_secret_hint": "Ним блокуватиметься застосунок на цьому пристрої.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Доступ відновлено з нового пристрою",
     "cloud_card_line_plan_expiring": "Тариф невдовзі спливає",
     "cloud_card_line_quota": "Veydan Cloud майже заповнений",
-    "cloud_card_line_dormant": "Обліковий запис буде видалено через неактивність"
+    "cloud_card_line_dormant": "Обліковий запис буде видалено через неактивність",
+    "cloud_card_downgraded": "Тариф закінчився. Файли понад безкоштовний ліміт залишаються, але нові не зберігаються, доки ви не звільните місце або не продовжите тариф.",
+    "cloud_card_downgraded_limit": "Безкоштовний тариф: {limit} для файлів",
+    "cloud_card_line_downgraded": "Тариф закінчився"
   },
   "mobile": {}
 }

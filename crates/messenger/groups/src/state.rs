@@ -440,7 +440,12 @@ impl GroupState {
                 self.disbanded = true;
             }
         }
-        self.take_key(op);
+        // A key on a `Leave` is ignored, not refused: whoever leaves knows it
+        // and cannot be the one to choose the next, and refusing the whole
+        // `Leave` would split the members between versions of the client.
+        if !matches!(op.body, OpBody::Leave) {
+            self.take_key(op);
+        }
         self.version += 1;
         Ok(())
     }

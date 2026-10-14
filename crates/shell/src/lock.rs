@@ -9,7 +9,7 @@ use serde::Serialize;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 use tokio::sync::broadcast::{error::RecvError, Receiver};
-use veydan_core::{settings, CmdResult, Core, Schema};
+use veydan_core::{settings, AppError, CmdResult, Core, Schema};
 use veydan_lock::{Event, KeyUser, Lock, LockStatus};
 
 /// The tables of the lock in the data file, under the module name `lock`.
@@ -208,12 +208,17 @@ pub async fn lock_recover_keep(
     Ok(lock.status().await)
 }
 
+/// Only behind an open lock: `0` turns the auto-lock off, on every device
+/// the setting reaches.
 #[tauri::command]
 pub async fn lock_timeout_set(
     minutes: u32,
     core: tauri::State<'_, Core>,
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<LockStatus> {
+    if lock.is_locked().await {
+        return Err(AppError::VaultLocked);
+    }
     core.settings
         .set(TIMEOUT_KEY, &minutes.to_string())
         .await?;
@@ -318,5 +323,42 @@ mod tests {
         assert_eq!(timeout_of(Some("0")), 0);
         assert_eq!(timeout_of(Some("soon")), veydan_lock::DEFAULT_TIMEOUT_MIN);
         assert_eq!(timeout_of(None), veydan_lock::DEFAULT_TIMEOUT_MIN);
+    }
+
+    /// The auto-lock is not switched off behind a closed lock.
+    #[tokio::test]
+    async fn the_timeout_changes_only_behind_an_open_lock() {
+        use tauri::Manager;
+        let dir = tempfile::tempdir().unwrap();
+        let db = veydan_core::db::open(
+            &dir.path().join(veydan_core::db::DB_FILE),
+            &[veydan_core::SCHEMA, SCHEMA],
+        )
+        .await
+        .unwrap();
+        let app = tauri::test::mock_app();
+        let lock = Lock::new(db.clone());
+        lock.open_default().await.unwrap();
+        lock.set(Some("4821".into()), None, Some("pin".into()), None)
+            .await
+            .unwrap();
+        app.manage(lock);
+        app.manage(Core::new(
+            db,
+            dir.path().to_owned(),
+            veydan_core::Directory::default(),
+        ));
+
+        lock_timeout_set(15, app.state(), app.state())
+            .await
+            .unwrap();
+        app.state::<Lock>().lock();
+        assert!(matches!(
+            lock_timeout_set(0, app.state(), app.state()).await,
+            Err(AppError::VaultLocked)
+        ));
+        assert_eq!(app.state::<Lock>().timeout(), 15);
+        let core = app.state::<Core>();
+        assert_eq!(core.settings.get(TIMEOUT_KEY).await.as_deref(), Some("15"));
     }
 }

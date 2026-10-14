@@ -4,6 +4,17 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, Serializer};
 
+/// For a nullable column of a partial update: a missing field is `None` (keep
+/// the stored value), an explicit `null` is `Some(None)` (clear it), a value is
+/// `Some(Some(v))`. Use with `#[serde(default, deserialize_with = ...)]`.
+pub(crate) fn double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(d)?))
+}
+
 fn serialize_tags_as_vec<S>(tags: &str, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -146,26 +157,37 @@ pub struct CreateProfileRequest {
     pub history_enabled: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A missing nullable field keeps the stored value; `null` clears it (see
+/// `double_option`). Never serialized: the shape would not survive a round trip.
+#[derive(Debug, Clone, Deserialize)]
 pub struct UpdateProfileRequest {
     pub name: Option<String>,
     pub browser_type: Option<String>,
-    pub proxy_id: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub proxy_id: Option<Option<String>>,
     pub fingerprint_preset: Option<String>,
-    pub user_agent: Option<String>,
-    pub platform: Option<String>,
-    pub timezone: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub user_agent: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub platform: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub timezone: Option<Option<String>>,
     pub locale: Option<String>,
     pub languages: Option<String>,
     pub screen_width: Option<i64>,
     pub screen_height: Option<i64>,
     pub webrtc_mode: Option<String>,
     pub geolocation_enabled: Option<bool>,
-    pub latitude: Option<f64>,
-    pub longitude: Option<f64>,
-    pub webgl_vendor: Option<String>,
-    pub webgl_renderer: Option<String>,
-    pub notes: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub latitude: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub longitude: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub webgl_vendor: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub webgl_renderer: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub notes: Option<Option<String>>,
     pub default_search_engine: Option<String>,
     pub history_enabled: Option<bool>,
 }
@@ -316,6 +338,27 @@ impl Proxy {
             created_at: chrono::Utc::now(),
         }
     }
+}
+
+/// The body of `proxy_update`: `name`, `proxy_type`, `host` and `port` are
+/// always sent; of the others a missing field keeps the stored value and `null`
+/// clears it (`password` and `private_key` keep on null, as before).
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateProxyRequest {
+    pub name: String,
+    pub proxy_type: String,
+    pub host: String,
+    pub port: i64,
+    #[serde(default, deserialize_with = "double_option")]
+    pub tags: Option<Option<Vec<String>>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub username: Option<Option<String>>,
+    pub password: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub country: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub city: Option<Option<String>>,
+    pub private_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { api } from '$lib/core/api';
-import type { Update } from '@tauri-apps/plugin-updater';
 
 export type UpdaterStatus =
   | 'idle'
@@ -25,7 +24,8 @@ class UpdaterStore {
   bannerDismissed = $state(false);
   /** False on Linux deb/rpm installs — updater can't replace those in-place */
   supported = $state(true);
-  private update: Update | null = null;
+  /** The last check found a newer version. */
+  private offered = false;
   private initialized = false;
 
   async init() {
@@ -39,7 +39,8 @@ class UpdaterStore {
   }
 
   /**
-   * Check the release endpoint for a newer version.
+   * Check the release endpoint for a newer version (the shell's `updater_check`: never an
+   * older one).
    * silent=true (startup): errors are swallowed, nothing changes on failure.
    * silent=false (settings button): errors surface via status='error'.
    */
@@ -51,22 +52,21 @@ class UpdaterStore {
     this.status = 'checking';
     this.error = '';
     try {
-      const { check } = await import('@tauri-apps/plugin-updater');
-      const update = await check();
-      if (update) {
-        this.update = update;
-        this.version = update.version;
+      const version = await api.updater.check();
+      if (version) {
+        this.offered = true;
+        this.version = version;
         this.status = 'available';
       } else {
-        this.update = null;
+        this.offered = false;
         this.status = 'upToDate';
       }
     } catch (e) {
-      this.update = null;
+      this.offered = false;
       if (silent) {
         this.status = 'idle';
       } else {
-        // The plugin's text is English and technical: the card shows its own
+        // The updater's text is English and technical: the card shows its own
         // sentence (settings_update_failed), this one is for the console.
         console.error('update check failed', e);
         this.error = String(e);
@@ -76,32 +76,28 @@ class UpdaterStore {
   }
 
   async install() {
-    if (!isTauri || !this.update || !this.supported) return;
+    if (!isTauri || !this.offered || !this.supported) return;
     if (this.status === 'downloading' || this.status === 'installing') return;
     this.status = 'downloading';
     this.progress = 0;
     this.error = '';
     try {
-      let total = 0;
       let received = 0;
-      await this.update.downloadAndInstall((event) => {
+      await api.updater.install((event) => {
         switch (event.event) {
-          case 'Started':
-            total = event.data.contentLength ?? 0;
+          case 'chunk':
+            received += event.len;
+            if (event.total) this.progress = Math.min(100, Math.round((received / event.total) * 100));
             break;
-          case 'Progress':
-            received += event.data.chunkLength;
-            if (total > 0) this.progress = Math.min(100, Math.round((received / total) * 100));
-            break;
-          case 'Finished':
+          case 'downloaded':
             this.progress = 100;
             break;
         }
       });
       this.status = 'installing';
-      // On Windows the installer exits the app itself; elsewhere we relaunch.
-      const { relaunch } = await import('@tauri-apps/plugin-process');
-      await relaunch();
+      // On Windows the installer exits the app itself (the modules stopped
+      // first); elsewhere the shell stops the modules and restarts.
+      await api.updater.relaunch();
     } catch (e) {
       this.error = String(e);
       this.status = 'error';

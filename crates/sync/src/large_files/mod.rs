@@ -22,7 +22,7 @@ pub mod manifest;
 mod source;
 mod transfer;
 
-pub use gc::{refs_from_payload, GcOutcome};
+pub use gc::{forget_touches_before, refs_from_payload, touch, touched_since, GcOutcome, GcRoots};
 pub use manifest::FORMAT_VERSION;
 pub use source::{available_space, FileSource, Opener, PathSink, PathSource, PART_SUFFIX};
 
@@ -238,14 +238,17 @@ impl<'a> LargeFileStore<'a> {
 
     /// Destructive sweep. `roots` must be every live manifest id of the whole
     /// vault; `candidates` maps object keys to when they were first seen orphaned.
+    /// Before every delete `again` may give the roots read anew: an object
+    /// live in any read stays.
     pub async fn gc_with_complete_root_set(
         &self,
         roots: &BTreeSet<String>,
         candidates: &HashMap<String, i64>,
         now_ms: i64,
         grace_ms: i64,
+        again: &mut dyn GcRoots,
     ) -> Result<GcOutcome> {
-        gc::run(self, roots, candidates, now_ms, grace_ms).await
+        gc::run(self, roots, candidates, now_ms, grace_ms, again).await
     }
 
     /// Storage keys of v2 objects; lets the v1 blob GC skip this namespace.

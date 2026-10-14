@@ -46,7 +46,12 @@
   let hostEl: HTMLElement | null = $state(null);
   let wrapEl: HTMLElement | null = $state(null);
   let editor: Editor | null = null;
+  // The editor's own Markdown of the document it holds. The file's text may be written another
+  // way (escapes, spacing), so it is compared with what the editor makes of it, not the raw text:
+  // opening a note or a click writes nothing.
   let lastEmitted = '';
+  // The `content` last taken in or given out.
+  let lastContent = '';
   let isEmpty = $state(false);
 
   const isRelative = (url: string) => !/^([a-z][a-z0-9+.-]*:|\/\/|#|\/)/i.test(url);
@@ -80,11 +85,13 @@
         // Only real document changes reach the parent
         if (md === lastEmitted) return;
         lastEmitted = md;
+        lastContent = md;
         onchange(md);
       },
       onSelectionUpdate: () => { updateWikiState(); updateImageBar(); },
     });
-    lastEmitted = content;
+    lastContent = content;
+    lastEmitted = editor.getMarkdown();
     isEmpty = editor.isEmpty;
     return () => editor?.destroy();
   });
@@ -92,10 +99,12 @@
   // Content changed outside the editor (history restore, merge, external file change, source mode)
   $effect(() => {
     const md = content;
-    if (!editor || md === lastEmitted) return;
-    lastEmitted = md;
+    if (!editor || md === lastContent) return;
+    lastContent = md;
+    if (md === lastEmitted) return;
     // Not undoable: Ctrl+Z must not bring back the replaced document
     editor.chain().setMeta('addToHistory', false).setContent(md, { contentType: 'markdown', emitUpdate: false }).run();
+    lastEmitted = editor.getMarkdown();
     isEmpty = editor.isEmpty;
   });
 

@@ -99,7 +99,7 @@
     "tor_external_hint": "Ülkesiz örnek, 127.0.0.1 üzerindeki bu portu dinler. Bu bilgisayardaki her program onu kullanabilir.",
     "tor_external_port": "Port",
     "tor_section_advanced": "Gelişmiş",
-    "tor_torrc_warning": "Bu satırlar tor'a olduğu gibi aktarılır. Yanlış bir satır Tor'un başlamasını engelleyebilir ya da gizliliğinizi zayıflatabilir.",
+    "tor_torrc_warning": "Yalnızca düğüm ve devre seçimiyle ilgili satırlar kabul edilir (örneğin ExitNodes, StrictNodes, NumEntryGuards); diğerleri reddedilir. Yanlış bir satır Tor’un başlamasını engelleyebilir ya da gizliliğinizi zayıflatabilir.",
     "tor_torrc_label": "Ek torrc satırları",
     "tor_err_countries": "İki harfli ülke kodu değil: {list}.",
     "tor_err_ports": "Port değil (1–65535): {list}.",

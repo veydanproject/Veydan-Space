@@ -835,3 +835,54 @@ async fn the_pinned_bot_is_no_request_and_its_card_says_no_word_of_its_own() {
     phone.dm.act(&phone.keys, &pk(&bot), Action::Block).await.unwrap();
     assert_eq!(quiet(messenger_notify::describe_as(&config, Some(&bundle), &dm_push(&event)).await.unwrap()), Reason::Blocked);
 }
+
+#[tokio::test]
+async fn an_invitation_to_a_group_is_told_of_when_it_is_whole_and_from_a_contact() {
+    use messenger_groups::wire::{dm_envelope, Invite, INVITE_TTL_SECS, T_INVITE};
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    let invite = |name: &str, created_at: i64| Invite {
+        invite_id: "0a".repeat(16),
+        group_id: "0b".repeat(32),
+        name: name.into(),
+        about: String::new(),
+        picture: String::new(),
+        relay: "wss://r.example".into(),
+        members: 2,
+        created_at,
+        expires_at: created_at + INVITE_TTL_SECS,
+    };
+    let event = |i: &Invite| {
+        let envelope = Envelope::parse(&dm_envelope(T_INVITE, i).unwrap()).unwrap();
+        dm_from(&alice, &phone, &envelope, now())
+    };
+    // Not a contact yet: nothing is told.
+    assert_eq!(quiet(phone.describe(dm_push(&event(&invite("Team", now())))).await), Reason::NotForMe);
+    befriend(&phone, &alice, "Al").await;
+    let n = shown(phone.describe(dm_push(&event(&invite("\u{202E}Team", now())))).await);
+    assert_eq!(n.body, Some(Body::Invite { group_name: "Team".into() }), "the name without its bidi mark");
+    // From a contact still, but dated a year ahead, or with a control in the name.
+    assert_eq!(quiet(phone.describe(dm_push(&event(&invite("Team", now() + 365 * 24 * 3600)))).await), Reason::Invalid);
+    assert_eq!(quiet(phone.describe(dm_push(&event(&invite("Te\u{0007}am", now())))).await), Reason::Invalid);
+}
+
+#[tokio::test]
+async fn the_protocol_of_groups_is_not_held_by_the_gate_of_requests() {
+    use messenger_groups::wire::{dm_envelope, JoinRequest, T_JOIN_REQUEST};
+    let phone = Phone::new().await;
+    let relay = RelayUrl::parse("wss://r.example").unwrap();
+    let (group, _) = phone.groups.create(&phone.keys, GroupKind::Private, "Team", "", true, &relay).await.unwrap();
+    // A stranger wrote once, and that message waits for an answer: a second
+    // message of theirs is held back, but a request to join goes to the
+    // groups, as in the app, and its manager hears of it.
+    let stranger = Keys::generate();
+    let first = dm_from(&stranger, &phone, &Envelope::text("hi"), now() - 10);
+    phone.app_received(&first).await;
+    let text = dm_from(&stranger, &phone, &Envelope::text("again"), now() - 5);
+    assert_eq!(quiet(phone.describe(dm_push(&text)).await), Reason::NotForMe);
+    let request = JoinRequest { group_id: group.id.clone(), note: "let me in".into(), created_at: now() };
+    let envelope = Envelope::parse(&dm_envelope(T_JOIN_REQUEST, &request).unwrap()).unwrap();
+    let n = shown(phone.describe(dm_push(&dm_from(&stranger, &phone, &envelope, now()))).await);
+    assert_eq!(n.kind, ChatKind::Dm);
+    assert_eq!(n.body, Some(Body::JoinRequest { group_name: "Team".into() }));
+}

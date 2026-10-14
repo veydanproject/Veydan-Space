@@ -372,7 +372,7 @@ export function buildDemo(): DemoData {
   messages[left.chat_id].push(sys(left.chat_id, now - day * 8, 'group_removed', boris, ME));
   const invites: MessengerGroupInvite[] = [{
     invite_id: 'inv1', group_id: gid('ad'), name: 'Книжный клуб', about: 'Читаем по книге в месяц.', picture: '', members: 12,
-    peer: alice, direction: 'in', status: 'received', created_at: now - 3600, expires_at: now + day * 6,
+    peer: alice, direction: 'in', status: 'received', created_at: now - 3600, expires_at: now + day * 6, vouched: true,
   }];
 
 

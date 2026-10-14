@@ -28,6 +28,7 @@
     "files_transfer_done": "Bitti",
     "files_transfer_cancelled": "İptal edildi — kısmi veriler korundu, kaldığı yerden sürdürmek için yeniden başlatın",
     "files_transfer_skipped": "Atlandı: {n}",
+    "files_transfer_move_kept": "Taşınmadı: {n}, asılları yerinde kaldı",
     "files_conflict_title": "Dosya zaten var",
     "files_conflict_msg_file": "\"{name}\" hedefte zaten var. Üzerine yazılsın mı?",
     "files_conflict_msg_dir": "\"{name}\" klasörü hedefte zaten var. İçindeki dosyaların üzerine yazılsın mı?",

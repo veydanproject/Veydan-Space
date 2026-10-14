@@ -44,8 +44,13 @@ impl MessengerRuntime {
     /// and those of the chat (`dm_blocked`, `group_muted`, …).
     pub async fn dm_react(&self, message_id: &str, emoji: &str) -> Result<MessageView> {
         let keys = self.session_keys().await?;
-        let (chat_id, fallback) = if self.is_group_message(message_id).await? {
-            let (chat_id, out) = self.groups().prepare_reaction(&keys, message_id, emoji).await?;
+        let (chat_id, fallback) = if let Some(group_id) = self.group_of_message(message_id).await? {
+            let (chat_id, out) = {
+                let lock = self.groups().lock_of(&group_id).await;
+                let _guard = lock.lock().await;
+                self.group_driver.renew_stale_key(&keys, &group_id).await?;
+                self.groups().prepare_reaction(&keys, message_id, emoji).await?
+            };
             self.outbox.enqueue(out).await?;
             (chat_id, None)
         } else {

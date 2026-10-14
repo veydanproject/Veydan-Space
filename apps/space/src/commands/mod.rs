@@ -12,6 +12,8 @@ pub mod camoufox;
 #[cfg(desktop)]
 pub mod fs;
 #[cfg(desktop)]
+pub(crate) mod fs_guard;
+#[cfg(desktop)]
 pub mod profiles;
 #[cfg(desktop)]
 pub mod proxies;

@@ -19,7 +19,14 @@
   import { timeLeft } from '$lib/cloud/link.svelte';
   import { helpInputOf, HelpStore, shortKey, socialErrorKey } from '$lib/cloud/social.svelte';
 
-  let { search = '' }: { search?: string } = $props();
+  // `onleave`: «Done» goes back its own way (to the chat a card opened this from).
+  let { search = '', onleave }: { search?: string; onleave?: () => void } = $props();
+
+  function done(e: MouseEvent) {
+    if (!onleave) return;
+    e.preventDefault();
+    onleave();
+  }
 
   const store = new HelpStore();
   let input = $state('');
@@ -56,7 +63,7 @@
   <StateView tone="ok" title={$t('cloud_help_sent_title')}>
     <p>{$t('cloud_help_sent_text')}</p>
     {#snippet actions()}
-      <Actions><a class="btn btn-primary" href="/cloud">{$t('cloud_done')}</a></Actions>
+      <Actions><a class="btn btn-primary" href="/cloud" onclick={done}>{$t('cloud_done')}</a></Actions>
     {/snippet}
   </StateView>
 {:else if store.phase === 'closed'}
@@ -64,7 +71,7 @@
     <p>{$t('cloud_help_dismissed')}</p>
     {#snippet actions()}
       <Actions>
-        <a class="btn btn-ghost" href="/cloud">{$t('cloud_done')}</a>
+        <a class="btn btn-ghost" href="/cloud" onclick={done}>{$t('cloud_done')}</a>
         <button class="btn btn-primary" type="button" onclick={() => { input = ''; store.reset(); }}>{$t('cloud_help_another')}</button>
       </Actions>
     {/snippet}

@@ -23,7 +23,7 @@ import {
   type OwnPrivateView,
 } from './api';
 import { avatarStore } from './contacts/avatars.svelte';
-import { chatStore } from './chats/chatStore.svelte';
+import { chatStore, inSight, lockSight } from './chats/chatStore.svelte';
 import { transferStore } from './media/transferStore.svelte';
 import { groupStore } from "./groups/groupStore.svelte";
 import { nameStore } from "./groups/names.svelte";
@@ -47,6 +47,9 @@ const FEED_LIMIT = 50;
 const PRESENCE_LEASE_MS = 45_000;
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+/** Whether the page is seen, as the runtime's presence takes it. */
+const sayForeground = (visible: boolean) => messengerApi.presence.foreground(visible).catch(() => {});
 
 /** Module-level state: whether the module exists in this build, is enabled, and who we are. */
 class MessengerStore {
@@ -261,22 +264,37 @@ class MessengerStore {
         }
       }),
     );
+    this._unlisten.push(
+      await listen('lock://locked', () => this.lockChanged(true)),
+      await listen('lock://unlocked', () => this.lockChanged(false)),
+    );
     this._unlisten.push(this.leaseForeground());
+  }
+
+  /**
+   * Behind the lock nothing of the chats is seen: the open chat closes, so
+   * what comes in it is not marked read, and the page says it is not in
+   * sight. The lock opened, the page says it is seen again and the list is
+   * read anew: the commands of the chats answered `vault_locked` meanwhile.
+   */
+  lockChanged(locked: boolean) {
+    lockSight.locked = locked;
+    if (locked) chatStore.close();
+    else chatStore.scheduleChatsRefresh();
+    void sayForeground(inSight());
   }
 
   /**
    * The runtime beats presence only while the page is seen. `true` is a
    * lease of 90 s, said again every 45 s, so a page that died without a
    * word stops the heartbeat by itself; hiding says `false` at once.
-   * Returns what undoes it.
+   * Behind the lock the page is not seen (`inSight`). Returns what undoes it.
    */
   private leaseForeground(): () => void {
-    const visible = () => document.visibilityState === 'visible';
-    const say = (v: boolean) => messengerApi.presence.foreground(v).catch(() => {});
-    const onChange = () => say(visible());
+    const onChange = () => sayForeground(inSight());
     document.addEventListener('visibilitychange', onChange);
-    say(visible());
-    const timer = setInterval(() => { if (visible()) say(true); }, PRESENCE_LEASE_MS);
+    sayForeground(inSight());
+    const timer = setInterval(() => { if (inSight()) sayForeground(true); }, PRESENCE_LEASE_MS);
     return () => {
       document.removeEventListener('visibilitychange', onChange);
       clearInterval(timer);

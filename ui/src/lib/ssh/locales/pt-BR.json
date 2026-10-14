@@ -28,6 +28,7 @@
     "files_transfer_done": "Concluído",
     "files_transfer_cancelled": "Cancelado — os dados parciais foram mantidos; inicie de novo para retomar",
     "files_transfer_skipped": "Pulados: {n}",
+    "files_transfer_move_kept": "{n} não movidos: os originais foram mantidos",
     "files_conflict_title": "O arquivo já existe",
     "files_conflict_msg_file": "\"{name}\" já existe no destino. Substituir?",
     "files_conflict_msg_dir": "A pasta \"{name}\" já existe no destino. Substituir os arquivos dentro dela?",

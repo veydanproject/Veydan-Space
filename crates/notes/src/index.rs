@@ -161,6 +161,18 @@ pub async fn sync_notes_index(
         return Ok(());
     }
 
+    // An older index took `..md` and `...md` as the notes `.` and `..`: their
+    // paths are the folders of attachments and of documents. Their rows go,
+    // and no file is touched for them.
+    let bad: Vec<(String, Option<i64>)> =
+        sqlx::query_as("SELECT id, fts_rowid FROM notes WHERE id IN ('', '.', '..')")
+            .fetch_all(db)
+            .await
+            .map_err(AppError::db)?;
+    for (id, fts_rowid) in &bad {
+        super::crud::delete_note_rows(id, *fts_rowid, core).await?;
+    }
+
     let existing: Vec<NoteRow> = sqlx::query_as::<_, NoteRow>("SELECT * FROM notes")
         .fetch_all(db)
         .await
@@ -178,13 +190,19 @@ pub async fn sync_notes_index(
         let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
             continue;
         };
-        if ext == "tmp" {
-            continue;
-        }
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
         let note_id = stem.to_string();
+        // Only a note file named by a note id becomes a note: not a csv or
+        // json of the folder, and no name that would turn into a path. A
+        // file an older index took keeps its row while it is that row's file.
+        let indexed_before = indexed
+            .get(&note_id)
+            .is_some_and(|r| resolve_note_abs_path(app_data_dir, &r.file_path) == path);
+        if !indexed_before && !(is_note_ext(ext) && valid_id(stem)) {
+            continue;
+        }
 
         let meta = std::fs::metadata(&path).ok();
         let mtime = meta
@@ -192,8 +210,24 @@ pub async fn sync_notes_index(
             .map(|t| chrono::DateTime::<Utc>::from(t).to_rfc3339());
 
         if let Some(row) = indexed.remove(&note_id) {
+            // The row may name another file: while that one is there it is
+            // the note's, and this file of the same name is a stranger that
+            // changes nothing; when it is gone, the note moved here.
+            let row_path = resolve_note_abs_path(app_data_dir, &row.file_path);
+            let moved = row_path != path;
+            if moved && row_path.exists() {
+                continue;
+            }
+            if moved {
+                sqlx::query("UPDATE notes SET file_path=? WHERE id=?")
+                    .bind(path.to_string_lossy().to_string())
+                    .bind(&note_id)
+                    .execute(db)
+                    .await
+                    .map_err(AppError::db)?;
+            }
             // File exists, check if changed
-            let file_changed = mtime.as_deref() != row.file_mtime.as_deref();
+            let file_changed = moved || mtime.as_deref() != row.file_mtime.as_deref();
             if file_changed {
                 if let Ok((kv, _, _)) = read_note_file(&path) {
                     let title = kv
@@ -232,7 +266,7 @@ pub async fn sync_notes_index(
             let created_at = kv.get("created_at").cloned().unwrap_or_else(|| now.clone());
             let updated_at = kv.get("updated_at").cloned().unwrap_or_else(|| now.clone());
             let file_path = path.to_string_lossy().to_string();
-            let content_hash = compute_hash(&format!("---\n{:?}\n---\n{}", kv, body));
+            let content_hash = compute_hash(&body);
             let preview = make_preview(&body);
 
             let bindings_json = frontmatter_bindings(&kv);
@@ -265,7 +299,12 @@ pub async fn sync_notes_index(
     }
 
     // Remaining in indexed = files missing from disk
-    for id in indexed.keys() {
+    // (a row whose file stands where it names, in the scanned folder or not,
+    // is not missing)
+    for (id, row) in &indexed {
+        if resolve_note_abs_path(app_data_dir, &row.file_path).exists() {
+            continue;
+        }
         sqlx::query("UPDATE notes SET doc_status='missing' WHERE id=?")
             .bind(id)
             .execute(db)
@@ -275,6 +314,12 @@ pub async fn sync_notes_index(
 
     // Rebuild FTS
     sqlx::query("DELETE FROM notes_fts")
+        .execute(db)
+        .await
+        .map_err(AppError::db)?;
+    // The rows of deleted notes keep no rowid of a table that was emptied: a
+    // rowid taken again by a live note would be dropped with them.
+    sqlx::query("UPDATE notes SET fts_rowid = NULL WHERE deleted = 1")
         .execute(db)
         .await
         .map_err(AppError::db)?;
@@ -361,6 +406,7 @@ pub fn start_notes_watcher(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::Manager;
 
     #[test]
     fn bindings_are_read_from_either_form_of_a_note_file() {
@@ -387,5 +433,153 @@ mod tests {
             "---\nid: n3\ntitle: Global\nformat: md\nscope: global\nworkspace_id: null\nprofile_id: null\n---\n\nbody",
         );
         assert_eq!(frontmatter_bindings(&kv), "[]");
+    }
+
+    async fn ids(db: &sqlx::Pool<sqlx::Sqlite>) -> Vec<String> {
+        sqlx::query_scalar("SELECT id FROM notes ORDER BY id")
+            .fetch_all(db)
+            .await
+            .unwrap()
+    }
+
+    /// `..md` and `...md` have the stems `.` and `..`, a path and not an id;
+    /// a csv of the folder is not a note. None of them gets a row.
+    #[tokio::test]
+    async fn a_file_not_named_by_a_note_id_gets_no_row() {
+        let (app, dir) = crate::testing::app().await;
+        let core = app.state::<Core>();
+        let docs = documents_dir(dir.path());
+        for name in ["..md", "...md", "readme.csv", "My note.md"] {
+            std::fs::write(docs.join(name), "---\ntitle: x\n---\n\nbody").unwrap();
+        }
+        std::fs::write(docs.join("n-1.md"), "---\ntitle: One\n---\n\nbody").unwrap();
+
+        sync_notes_index(&core, None).await.unwrap();
+
+        assert_eq!(ids(&core.db).await, ["n-1"]);
+    }
+
+    /// The rows `.` and `..` an older index made go without a file touched;
+    /// a row with another name the rule would refuse now stays, active.
+    #[tokio::test]
+    async fn the_rows_dot_and_dot_dot_go_and_an_older_row_stays() {
+        let (app, dir) = crate::testing::app().await;
+        let core = app.state::<Core>();
+        let docs = documents_dir(dir.path());
+        std::fs::write(docs.join("...md"), "body").unwrap();
+        std::fs::write(docs.join("readme.csv"), "a,b").unwrap();
+        std::fs::create_dir_all(docs.join("attachments/n-2")).unwrap();
+        std::fs::write(docs.join("attachments/n-2/a.png"), "png").unwrap();
+        for (id, file) in [("..", "...md"), (".", "..md"), ("readme", "readme.csv")] {
+            sqlx::query(
+                "INSERT INTO notes (id, title, file_path, created_at, updated_at)
+                 VALUES (?, ?, ?, '2026-01-01', '2026-01-01')",
+            )
+            .bind(id)
+            .bind(id)
+            .bind(docs.join(file).to_string_lossy().to_string())
+            .execute(&core.db)
+            .await
+            .unwrap();
+        }
+
+        sync_notes_index(&core, None).await.unwrap();
+
+        assert_eq!(ids(&core.db).await, ["readme"]);
+        let status: String = sqlx::query_scalar("SELECT doc_status FROM notes WHERE id = 'readme'")
+            .fetch_one(&core.db)
+            .await
+            .unwrap();
+        assert_eq!(status, "active");
+        assert!(docs.join("...md").exists());
+        assert!(docs.join("readme.csv").exists());
+        assert!(docs.join("attachments/n-2/a.png").exists());
+    }
+
+    async fn row_of(db: &sqlx::Pool<sqlx::Sqlite>, id: &str) -> (String, String, String) {
+        sqlx::query_as("SELECT title, file_path, doc_status FROM notes WHERE id = ?")
+            .bind(id)
+            .fetch_one(db)
+            .await
+            .unwrap()
+    }
+
+    async fn insert_row(
+        db: &sqlx::Pool<sqlx::Sqlite>,
+        id: &str,
+        title: &str,
+        file: &std::path::Path,
+    ) {
+        sqlx::query(
+            "INSERT INTO notes (id, title, file_path, created_at, updated_at)
+             VALUES (?, ?, ?, '2026-01-01', '2026-01-01')",
+        )
+        .bind(id)
+        .bind(title)
+        .bind(file.to_string_lossy().to_string())
+        .execute(db)
+        .await
+        .unwrap();
+    }
+
+    /// A row whose file stands elsewhere by an absolute path is not missing,
+    /// and a file of the same name in the folder does not change its title.
+    #[tokio::test]
+    async fn a_file_elsewhere_is_not_missing_and_a_stranger_changes_nothing() {
+        let (app, dir) = crate::testing::app().await;
+        let core = app.state::<Core>();
+        let docs = documents_dir(dir.path());
+        let other = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("n-1.md"), "---\ntitle: Mine\n---\n\nbody").unwrap();
+        std::fs::write(other.join("n-2.md"), "---\ntitle: Solo\n---\n\nbody").unwrap();
+        insert_row(&core.db, "n-1", "Mine", &other.join("n-1.md")).await;
+        insert_row(&core.db, "n-2", "Solo", &other.join("n-2.md")).await;
+        std::fs::write(docs.join("n-1.md"), "---\ntitle: Stranger\n---\n\nother").unwrap();
+
+        sync_notes_index(&core, None).await.unwrap();
+
+        let (title, path, status) = row_of(&core.db, "n-1").await;
+        assert_eq!(title, "Mine");
+        assert_eq!(path, other.join("n-1.md").to_string_lossy());
+        assert_eq!(status, "active");
+        assert_eq!(row_of(&core.db, "n-2").await.2, "active");
+    }
+
+    /// A note moved by hand into the folder keeps its row and gets the new
+    /// path; a note whose file is nowhere is missing.
+    #[tokio::test]
+    async fn a_moved_file_updates_its_path_and_a_lost_one_is_missing() {
+        let (app, dir) = crate::testing::app().await;
+        let core = app.state::<Core>();
+        let docs = documents_dir(dir.path());
+        let old = dir.path().join("old");
+        insert_row(&core.db, "n-1", "Moved", &old.join("n-1.md")).await;
+        insert_row(&core.db, "n-2", "Lost", &old.join("n-2.md")).await;
+        std::fs::write(docs.join("n-1.md"), "---\ntitle: Moved\n---\n\nbody").unwrap();
+
+        sync_notes_index(&core, None).await.unwrap();
+
+        let (_, path, status) = row_of(&core.db, "n-1").await;
+        assert_eq!(path, docs.join("n-1.md").to_string_lossy());
+        assert_eq!(status, "active");
+        assert_eq!(row_of(&core.db, "n-2").await.2, "missing");
+    }
+
+    /// The hash of a new file is that of its body, as every save computes it.
+    #[tokio::test]
+    async fn the_hash_of_a_new_file_is_the_hash_of_its_body() {
+        let (app, dir) = crate::testing::app().await;
+        let core = app.state::<Core>();
+        let docs = documents_dir(dir.path());
+        std::fs::write(docs.join("n-1.md"), "---\ntitle: One\n---\n\nthe body").unwrap();
+
+        sync_notes_index(&core, None).await.unwrap();
+
+        let hash: String = sqlx::query_scalar("SELECT content_hash FROM notes WHERE id='n-1'")
+            .fetch_one(&core.db)
+            .await
+            .unwrap();
+        assert_eq!(hash, compute_hash("the body"));
     }
 }

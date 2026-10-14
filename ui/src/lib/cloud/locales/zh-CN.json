@@ -61,6 +61,7 @@
     "cloud_state_grace": "只读",
     "cloud_state_suspended": "已暂停",
     "cloud_until": "已付费至 {date}",
+    "cloud_next_plan": "{plan} 套餐将于 {date} 开始",
     "cloud_grace_until": "只读至 {date}：输入激活密钥以继续同步。",
     "cloud_suspended_text": "账户已暂停。你仍然可以删除它。",
     "cloud_kept_at": "现在无法连接 Veydan Cloud。显示的是截至 {date} 的信息。",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "此密钥已过期。",
     "cloud_err_key_revoked": "此密钥已被撤销。",
     "cloud_err_rate_limited": "尝试次数过多。请稍后再试。",
+    "cloud_err_deletion_pending": "之前的账户仍在删除中。请几分钟后再试。",
     "cloud_err_no_host": "现在无法连接 Veydan Cloud。",
     "cloud_err_clock": "此设备的时钟不准：请设置日期和时间。",
     "cloud_err_suspended": "账户已暂停。",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "套餐",
     "cloud_recover_expired_title": "请求已过期",
     "cloud_recovery_reissue_short": "重新签发",
+    "cloud_recovery_elsewhere": "Recovery Key 是在另一台设备上签发的：请在那里重新签发，或用助记词恢复。",
+    "cloud_recovery_elsewhere_anew": "重新签发",
+    "cloud_recovery_elsewhere_hint": "新密钥将在此处签发。旧助记词在其副本被删除前仍然有效。",
+    "cloud_trustees_missing": "重新设置可信联系人",
     "cloud_recovery_setup_short": "设置",
     "cloud_recovery_show_words": "显示 12 个单词",
     "cloud_restore_new_secret_hint": "它将用于锁定此设备上的应用。",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "已从新设备恢复访问",
     "cloud_card_line_plan_expiring": "你的套餐即将到期",
     "cloud_card_line_quota": "Veydan Cloud 即将用满",
-    "cloud_card_line_dormant": "账户将因长期未使用而被删除"
+    "cloud_card_line_dormant": "账户将因长期未使用而被删除",
+    "cloud_card_downgraded": "你的套餐已结束。超出免费额度的文件会保留，但在你释放空间或续订套餐之前，新文件不会被保存。",
+    "cloud_card_downgraded_limit": "免费套餐：文件 {limit}",
+    "cloud_card_line_downgraded": "你的套餐已结束"
   },
   "mobile": {}
 }

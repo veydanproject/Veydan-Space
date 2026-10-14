@@ -31,6 +31,7 @@
     const toOpt = (p: Proxy) => ({ label: proxyOptionLabel(p, $t), value: p.id });
     return [
       { label: $t('profile_proxy_none'), value: null as string | null },
+      ...(profile.proxy_id && !proxies.some(p => p.id === profile.proxy_id) ? [{ label: $t('panel_proxy_deleted'), value: profile.proxy_id as string | null }] : []),
       ...ws.map(toOpt),
       ...(other.length > 0 && ws.length > 0 ? [{ label: '— ' + $t('proxies_other') + ' —', value: null, disabled: true }] : []),
       ...other.map(toOpt),
@@ -46,7 +47,7 @@
     browser_type: profile.browser_type,
     proxy_id: profile.proxy_id,
     fingerprint_preset: profile.fingerprint_preset,
-    user_agent: null,
+    user_agent: profile.user_agent,
     platform: profile.platform,
     timezone: profile.timezone,
     locale: profile.locale,
@@ -101,7 +102,11 @@
     if (!form.name?.trim()) { error = $t('profile_error_name'); return; }
     saving = true; error = '';
     try {
-      const updated = await api.profiles.update(profile.id, form);
+      // A stored user agent stays; a new preset takes the UA of its own.
+      const req = form.fingerprint_preset !== profile.fingerprint_preset
+        ? { ...form, user_agent: null }
+        : form;
+      const updated = await api.profiles.update(profile.id, req);
       onsaved(updated);
     } catch (e) {
       error = formatError(e);
@@ -227,6 +232,7 @@
                 { label: $t('profile_webrtc_real_ip'), value: 'real_ip' },
               ]}
             />
+            <span class="toggle-hint">{$t('profile_webrtc_hint')}</span>
           </div>
 
           <div class="form-group">
@@ -345,6 +351,7 @@
   .toggle-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .toggle-label { font-size: 0.95rem; font-weight: var(--fw-semibold); color: var(--text); }
   .toggle-hint { font-size: 0.8rem; color: var(--text-faint); line-height: 1.5; max-width: 290px; }
+  .form-group > .toggle-hint { display: block; margin-top: 4px; max-width: none; }
 
   .toggle-btn {
     position: relative; flex-shrink: 0;

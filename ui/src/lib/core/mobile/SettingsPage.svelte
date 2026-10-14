@@ -19,6 +19,8 @@
   import ModulesSettings from '$lib/core/ModulesSettings.svelte';
   import { formatError } from '$lib/core/utils';
   import { appLock } from '$lib/core/lock/store.svelte';
+  import { isWrongSecret } from '$lib/core/lock/secret';
+  import DataConfirmFields from '$lib/core/DataConfirmFields.svelte';
   import { product } from '$lib/core/product';
   import { updateCheck } from '$lib/core/store/update-check.svelte';
 
@@ -36,7 +38,10 @@
   // The demo data is offered where a module has some (`ModuleDef.demo`), in
   // the language of the UI to begin with.
   const demoModules = registry.modules.filter((m) => m.demo);
-  const hasDemo = demoModules.length > 0;
+  /** "Clear app data" clears what these modules keep, in every build. */
+  const hasData = demoModules.length > 0;
+  /** The demo data only where the build loads it (`HostInfo.demo`: a debug build, or one with the feature `demo`). */
+  const hasDemo = $derived(hasData && (info?.demo ?? false));
   // The demo data exists in English and Russian; every other language starts from English.
   let demoLocale = $state<'en' | 'ru'>(get(locale) === 'ru' ? 'ru' : 'en');
   /** The sections whose data the demo set replaces and "Clear app data" deletes. */
@@ -48,6 +53,10 @@
   let pendingData = $state<'load' | 'clear' | null>(null);
   let dataMsg = $state('');
   let dataError = $state('');
+  // The confirmation: the lock's secret, which devices a clear reaches (DataConfirmFields).
+  let dataSecret = $state('');
+  let dataScope = $state<'device' | 'all'>('device');
+  let dataWrong = $state(false);
   let bugOpen = $state(false);
 
   const themeOptions = $derived([
@@ -104,51 +113,65 @@
 
   function askLoadDemo() {
     if (demoBusy || clearBusy) return;
-    pendingData = 'load';
+    askData('load');
   }
 
   function askClearData() {
     if (demoBusy || clearBusy) return;
-    pendingData = 'clear';
+    askData('clear');
   }
 
+  function askData(action: 'load' | 'clear') {
+    dataSecret = '';
+    dataScope = 'device';
+    dataWrong = false;
+    pendingData = action;
+  }
+
+  /** The dialog stays open on a wrong secret, and says so. */
   async function confirmDataAction() {
     const action = pendingData;
-    pendingData = null;
-    if (action === 'load') await loadDemoData();
-    else if (action === 'clear') await clearAppData();
+    const wrong = action === 'load' ? await loadDemoData() : action === 'clear' ? await clearAppData() : false;
+    dataWrong = wrong;
+    if (!wrong) pendingData = null;
   }
 
-  async function loadDemoData() {
-    if (demoBusy || clearBusy) return;
+  /** True when the secret was not the lock's. */
+  async function loadDemoData(): Promise<boolean> {
+    if (demoBusy || clearBusy) return false;
     demoBusy = true;
     dataMsg = '';
     dataError = '';
     try {
-      await shared.demo.seed(demoLocale);
+      await shared.demo.seed(demoLocale, dataSecret || null);
       await refreshStores();
       dataMsg = $t('settings_demo_done');
     } catch (e) {
+      if (isWrongSecret(e)) return true;
       dataError = formatError(e);
     } finally {
       demoBusy = false;
     }
+    return false;
   }
 
-  async function clearAppData() {
-    if (demoBusy || clearBusy) return;
+  /** True when the secret was not the lock's. */
+  async function clearAppData(): Promise<boolean> {
+    if (demoBusy || clearBusy) return false;
     clearBusy = true;
     dataMsg = '';
     dataError = '';
     try {
-      await shared.app.clearData();
+      await shared.app.clearData(dataSecret || null, dataScope);
       await refreshStores();
       dataMsg = $t('settings_clear_done');
     } catch (e) {
+      if (isWrongSecret(e)) return true;
       dataError = formatError(e);
     } finally {
       clearBusy = false;
     }
+    return false;
   }
 
   onMount(() => {
@@ -289,6 +312,8 @@
       <button type="button" class="m-row" disabled={demoBusy || clearBusy} onclick={askLoadDemo}>
         <span class="m-row-label">{demoBusy ? $t('settings_demo_loading') : $t('settings_demo_load')}</span>
       </button>
+    {/if}
+    {#if hasData}
       <button type="button" class="m-row danger" disabled={demoBusy || clearBusy} onclick={askClearData}>
         {clearBusy ? $t('settings_clear_clearing') : $t('settings_clear_data')}
       </button>
@@ -309,6 +334,13 @@
     {#if pendingData === 'load'}
       {#each demoLosses as key (key)}<p>{$t(key)}</p>{/each}
     {/if}
+    <DataConfirmFields
+      clear={pendingData === 'clear'}
+      bind:secret={dataSecret}
+      bind:scope={dataScope}
+      wrong={dataWrong}
+      disabled={demoBusy || clearBusy}
+    />
     {#snippet footer()}
       <button class="btn btn-ghost btn-sm" onclick={() => (pendingData = null)}>
         {$t('settings_backup_cancel')}
@@ -317,6 +349,7 @@
         class="btn btn-sm"
         class:btn-danger={pendingData === 'clear'}
         class:btn-primary={pendingData !== 'clear'}
+        disabled={demoBusy || clearBusy || (appLock.status.enabled && !dataSecret)}
         onclick={confirmDataAction}
       >
         {pendingData === 'clear' ? $t('settings_clear_data') : $t('settings_demo_load')}

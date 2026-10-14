@@ -99,7 +99,7 @@
     "tor_external_hint": "国の指定がないインスタンスは127.0.0.1のこのポートで待ち受けます。このコンピューター上のどのプログラムでも使用できます。",
     "tor_external_port": "ポート",
     "tor_section_advanced": "詳細設定",
-    "tor_torrc_warning": "これらの行はそのままtorに渡されます。誤った行があるとTorが起動しなくなったり、プライバシーが低下したりする可能性があります。",
+    "tor_torrc_warning": "ノードと回線の選択に関する行のみ受け付けます（例：ExitNodes、StrictNodes、NumEntryGuards）。その他の行は拒否されます。誤った行があるとTorが起動しなくなったり、プライバシーが低下したりする可能性があります。",
     "tor_torrc_label": "追加のtorrc行",
     "tor_err_countries": "2文字の国コードではありません：{list}。",
     "tor_err_ports": "ポートではありません（1–65535）：{list}。",

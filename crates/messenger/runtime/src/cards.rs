@@ -146,7 +146,12 @@ impl MessengerRuntime {
                     return Err(MessengerError::Invalid("phone_public_group".into()));
                 }
             }
-            let (message, out) = self.groups().prepare_card(&keys, group, &card).await?;
+            let (message, out) = {
+                let lock = self.groups().lock_of(group).await;
+                let _guard = lock.lock().await;
+                self.group_driver.renew_stale_key(&keys, group).await?;
+                self.groups().prepare_card(&keys, group, &card).await?
+            };
             let id = message.id.clone();
             return self.publish_group_message(message, out, &id, true).await;
         }

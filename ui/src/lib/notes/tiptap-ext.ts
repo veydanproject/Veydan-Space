@@ -282,9 +282,19 @@ const NoteOrderedList = OrderedList.extend({
   },
 });
 
-/** StarterKit with our own paragraph, hard break and ordered list. */
+/**
+ * StarterKit with our own paragraph, hard break and ordered list. No trailing node: it adds an
+ * empty paragraph after a closing list, heading, code block or table on the first transaction
+ * (a click is enough), and that change would rewrite a note nobody edited.
+ */
 const noteStarterKit = () =>
-  StarterKit.configure({ hardBreak: false, paragraph: false, orderedList: false, link: { openOnClick: false } });
+  StarterKit.configure({
+    hardBreak: false,
+    paragraph: false,
+    orderedList: false,
+    trailingNode: false,
+    link: { openOnClick: false },
+  });
 
 /**
  * The nodes that decide how a note's Markdown is read and written, without NodeViews or UI

@@ -554,8 +554,10 @@ impl MediaService {
     /// an update without a secret keeps the stored one.
     pub async fn put_server(&self, input: MediaServerInput) -> Result<MediaServerView> {
         let url = input.url.trim().trim_end_matches('/').to_string();
-        if !(url.starts_with("https://") || url.starts_with("http://")) {
-            return Err(MessengerError::Invalid("server url must start with https:// or http://".into()));
+        // What a peer is told to read from: https, on the open internet
+        // (`MediaDescriptor::validate` refuses anything else).
+        if messenger_http::Target::parse(&url).is_err() {
+            return Err(MessengerError::Invalid("server url must be https:// on the open internet".into()));
         }
         let kind = input.kind.trim().to_ascii_lowercase();
         let nonempty = |o: Option<String>| o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
@@ -3332,6 +3334,11 @@ mod tests {
         assert!(svc.put_server(MediaServerInput { kind: "ftp".into(), url: "https://x".into(), ..Default::default() }).await.is_err());
         assert!(svc.put_server(MediaServerInput { kind: "s3".into(), url: "https://x".into(), ..Default::default() }).await.is_err(), "bucket required");
         assert!(svc.put_server(MediaServerInput { kind: "blossom".into(), url: "file:///x".into(), ..Default::default() }).await.is_err());
+        // What a peer would refuse to read from is not taken either.
+        for url in ["http://blossom.example", "https://127.0.0.1:9000", "https://192.168.1.5", "https://minio:9000", "https://user:pw@blossom.example"] {
+            let e = svc.put_server(MediaServerInput { kind: "blossom".into(), url: url.into(), ..Default::default() }).await.unwrap_err();
+            assert!(e.to_string().contains("https:// on the open internet"), "{url}: {e}");
+        }
     }
 
     // ─── Public blobs ───────────────────────────────────────────────────────
@@ -3414,16 +3421,23 @@ mod tests {
         (svc, dir)
     }
 
+    /// A blossom server of the tests, on this machine over `http://`:
+    /// put in as a row, since `put_server` takes neither.
     async fn blossom(svc: &MediaService, id: &str, url: &str, priority: i64) {
-        svc.put_server(MediaServerInput {
-            id: Some(id.into()),
-            kind: "blossom".into(),
+        let row = ServerRow {
+            id: id.into(),
+            kind: repo::KIND_BLOSSOM.into(),
             url: url.into(),
-            priority: Some(priority),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
+            bucket: None,
+            region: None,
+            access_key: None,
+            priority,
+            enabled: true,
+            source: "user".into(),
+            created_at: 0,
+            updated_at: 0,
+        };
+        repo::upsert_server(&svc.store, &row).await.unwrap();
     }
 
     #[tokio::test]

@@ -25,6 +25,13 @@ export interface CloudRecoveryInfo {
   generation: number | null;
 }
 
+/** The plan that starts when the current one ends (cloud-api.md 4.3 `next`). */
+export interface CloudNextPlan {
+  plan: string;
+  since: number;
+  until: number | null;
+}
+
 /** `GET /cloud/v1/account` (cloud-api.md 4.3); `subscription` only after a key (4.2). */
 export interface CloudAccount {
   npub: string;
@@ -32,6 +39,8 @@ export interface CloudAccount {
   plan: string;
   until: number | null;
   grace_until?: number | null;
+  /** A plan bought while another runs, from the day that one ends (cloud-api.md 4.3). */
+  next?: CloudNextPlan | null;
   /** The effective limits by the keys of the contract (`vault.files_bytes`, …). */
   limits?: Record<string, number>;
   usage?: CloudAccountUsage | null;
@@ -223,12 +232,12 @@ export interface CloudRestoreSecret {
 export const cloudApi = {
   status: () => call<CloudStatus>('cloud_status'),
   recoveryStatus: () => call<CloudRecoveryKeyStatus>('cloud_recovery_status'),
-  /** The first setup of recovery: the words come once. `current` is the secret of the lock. */
-  recoveryKeyShowOnce: (current: string | null) =>
-    call<CloudRecoveryKeyIssued>('cloud_recovery_key_show_once', { current }),
+  /** The first setup of recovery: the words come once. `current` is the secret of the lock. `anyway` issues although the key was issued on another device (`issued_elsewhere`). */
+  recoveryKeyShowOnce: (current: string | null, anyway = false) =>
+    call<CloudRecoveryKeyIssued>('cloud_recovery_key_show_once', { current, anyway }),
   /** A new Recovery Key in place of the one in force, all or nothing. */
-  recoveryKeyReissue: (current: string | null) =>
-    call<CloudRecoveryKeyIssued>('cloud_recovery_key_reissue', { current }),
+  recoveryKeyReissue: (current: string | null, anyway = false) =>
+    call<CloudRecoveryKeyIssued>('cloud_recovery_key_reissue', { current, anyway }),
   /**
    * A clean install and the 12 words: the account restored in the order of §7.
    * `withoutVault` is the answer to `vault_unreachable`: the identity and the lock alone.

@@ -525,7 +525,7 @@ mod tests {
         let manifest =
             messenger_transport::Manifest::parse_content(&m.to_string()).expect("manifest");
         rt.relays()
-            .adopt_manifest(&manifest, "test", true)
+            .adopt_for_test(&manifest, true)
             .await
             .expect("adopted");
     }

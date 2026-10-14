@@ -255,3 +255,98 @@ fn parse_blocks(marked: &str) -> Vec<MergeBlock> {
     p.flush_normal();
     p.blocks
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ANCESTOR: &str = "one\ntwo\nthree\nfour\nfive\n";
+
+    #[test]
+    fn edits_of_different_lines_merge_clean() {
+        let ours = "one, ours\ntwo\nthree\nfour\nfive\n";
+        let theirs = "one\ntwo\nthree\nfour\nfive, theirs\n";
+
+        let merged = merge3(ANCESTOR, ours, theirs);
+
+        assert!(!merged.has_conflicts);
+        assert_eq!(
+            merged.content,
+            "one, ours\ntwo\nthree\nfour\nfive, theirs\n"
+        );
+        assert_eq!(merged.blocks.len(), 1);
+        assert_eq!(merged.blocks[0].kind, "normal");
+        assert_eq!(merged.blocks[0].text, merged.content);
+    }
+
+    #[test]
+    fn edits_of_the_same_line_are_a_conflict_with_both_sides() {
+        let ours = "one\ntwo\nthree, ours\nfour\nfive\n";
+        let theirs = "one\ntwo\nthree, theirs\nfour\nfive\n";
+
+        let merged = merge3(ANCESTOR, ours, theirs);
+
+        assert!(merged.has_conflicts);
+        let conflicts: Vec<&MergeBlock> =
+            merged.blocks.iter().filter(|b| b.is_conflict()).collect();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].ours, "three, ours\n");
+        assert_eq!(conflicts[0].theirs, "three, theirs\n");
+        // The blocks around the conflict keep the untouched lines, in order.
+        let normal: String = merged
+            .blocks
+            .iter()
+            .filter(|b| !b.is_conflict())
+            .map(|b| b.text.as_str())
+            .collect();
+        assert_eq!(normal, "one\ntwo\nfour\nfive\n");
+    }
+
+    #[test]
+    fn the_same_edit_on_both_sides_is_no_conflict() {
+        let both = "one\ntwo\nthree, edited\nfour\nfive\n";
+
+        let merged = merge3(ANCESTOR, both, both);
+
+        assert!(!merged.has_conflicts);
+        assert_eq!(merged.content, both);
+    }
+
+    #[test]
+    fn line_endings_are_no_change() {
+        let crlf = ANCESTOR.replace('\n', "\r\n");
+        let theirs = "one\ntwo\nthree\nfour\nfive, theirs\n";
+
+        let merged = merge3(ANCESTOR, &crlf, theirs);
+
+        assert!(!merged.has_conflicts);
+        assert_eq!(merged.content, theirs);
+    }
+
+    #[test]
+    fn a_user_line_like_a_marker_stays_text() {
+        let line = format!("{}\n", "=".repeat(MARKER_LEN));
+        let ours = format!("one\n{line}two\nthree\nfour\nfive\n");
+        let theirs = "one\ntwo\nthree\nfour\nfive, theirs\n";
+
+        let merged = merge3(ANCESTOR, &ours, theirs);
+
+        assert!(!merged.has_conflicts);
+        assert_eq!(
+            merged.content,
+            format!("one\n{line}two\nthree\nfour\nfive, theirs\n")
+        );
+    }
+
+    #[test]
+    fn a_clean_merge_of_two_whole_texts_still_asks_for_a_choice() {
+        let merged = merge3("", "ours\n", "ours\n").or_whole_texts("ours\n", "ours\n");
+        assert!(!merged.has_conflicts);
+
+        let merged = merge3(ANCESTOR, ANCESTOR, "theirs\n").or_whole_texts(ANCESTOR, "theirs\n");
+        assert!(merged.has_conflicts);
+        assert_eq!(merged.blocks.len(), 1);
+        assert_eq!(merged.blocks[0].ours, ANCESTOR);
+        assert_eq!(merged.blocks[0].theirs, "theirs\n");
+    }
+}

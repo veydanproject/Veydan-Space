@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
+use crate::browser::launch::Running;
 use crate::browser::BrowserState;
 use crate::error::{AppError, CmdResult};
 use futures_util::StreamExt;
@@ -15,14 +16,111 @@ use veydan_core::Core;
 const MOZLZ4_MAGIC: &[u8] = b"mozLz40\x00";
 
 /// Serializes mutations of the shared Camoufox install dir (omni.ja repack,
-/// chrome.css rewrite, policies.json strip, download extraction) so concurrent
-/// profile launches / downloads don't clobber each other's read-modify-write.
+/// chrome.css rewrite, policies.json strip, the install of a download, which
+/// checks under it that no browser runs) so concurrent profile launches /
+/// downloads don't clobber each other's read-modify-write.
 /// Lock with `.lock().await` from async code and `.blocking_lock()` from
 /// `spawn_blocking` threads.
 pub static INSTALL_DIR_LOCK: Mutex<()> = Mutex::const_new(());
 
-/// Only release assets under this path are downloaded.
-const CAMOUFOX_RELEASE_PREFIX: &str = "https://github.com/daijro/camoufox/releases/download/";
+// ── The pinned release ─────────────────────────────────────────────────────
+
+/// The release of Camoufox the app installs, as its tag on GitHub. A new
+/// Camoufox comes with a release of the app: the tag and the pins below
+/// change together.
+pub const CAMOUFOX_VERSION: &str = "v152.0.4-beta.30";
+
+/// One archive of the pinned release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pinned {
+    /// `<os>.<arch>` as the asset names of Camoufox have it.
+    pub target: &'static str,
+    pub file: &'static str,
+    pub size: u64,
+    /// The SHA-256 of the asset. Empty: not pinned yet, and then this target
+    /// gets no download at all (never an unchecked one).
+    pub sha256: &'static str,
+}
+
+/// The archives of [`CAMOUFOX_VERSION`], one per desktop target. Camoufox
+/// publishes no checksums or signatures of its own: each value is the
+/// SHA-256 and the size of the asset the owner downloaded and checked.
+pub const PINNED: &[Pinned] = &[
+    Pinned {
+        target: "lin.x86_64",
+        file: "camoufox-152.0.4-beta.30-lin.x86_64.zip",
+        size: 663467670,
+        sha256: "5720d45b894ce1770543de024c6f10d514b38be560fa2dc3226b3d8586caf672",
+    },
+    Pinned {
+        target: "lin.arm64",
+        file: "camoufox-152.0.4-beta.30-lin.arm64.zip",
+        size: 653870625,
+        sha256: "60447260af8bebdb0ec3f2aa72f687b879e5598367303de2e3fdbc7a5be8c124",
+    },
+    Pinned {
+        target: "win.x86_64",
+        file: "camoufox-152.0.4-beta.30-win.x86_64.zip",
+        size: 493141328,
+        sha256: "ea52a02fb1cfb1813ef6a326bea03fb2b650c9774143d953a94a27bfc8f10072",
+    },
+    Pinned {
+        target: "mac.x86_64",
+        file: "camoufox-152.0.4-beta.30-mac.x86_64.zip",
+        size: 319886717,
+        sha256: "f12f90a3650478e670064a2f071c13b998fdd1125f79dc9f6cad5a9b9395b4bc",
+    },
+    Pinned {
+        target: "mac.arm64",
+        file: "camoufox-152.0.4-beta.30-mac.arm64.zip",
+        size: 312665777,
+        sha256: "3b43e766574f286a6a63296cf58b660b7a3120952086c869b4df4c9a71604bc3",
+    },
+];
+
+/// Where a pinned file is downloaded from: the assets of the pinned tag,
+/// never "the latest release".
+fn download_url(file: &str) -> String {
+    format!("https://github.com/daijro/camoufox/releases/download/{CAMOUFOX_VERSION}/{file}")
+}
+
+/// The target of this build as the asset names of Camoufox have it.
+pub fn current_target() -> Option<&'static str> {
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        Some("lin.x86_64")
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        Some("lin.arm64")
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        Some("win.x86_64")
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        Some("mac.x86_64")
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        Some("mac.arm64")
+    } else {
+        None
+    }
+}
+
+pub fn pinned_for(target: &str) -> Option<&'static Pinned> {
+    PINNED.iter().find(|p| p.target == target)
+}
+
+/// The pinned archive of this computer, or why there is none: a target
+/// whose pin is not filled in is not downloadable.
+fn pinned_here() -> Result<&'static Pinned, String> {
+    let target = current_target().ok_or_else(|| {
+        "camoufox_unavailable: Camoufox publishes no build for this platform".to_string()
+    })?;
+    pinned_for(target)
+        .filter(|p| !p.sha256.is_empty() && p.size > 0)
+        .ok_or_else(|| {
+            format!("camoufox_unavailable: this build of the app has no checked Camoufox archive for {target}")
+        })
+}
+
+/// Refused while a browser runs: the files of a running Camoufox are not
+/// replaced under it. The UI tells it by this prefix.
+const IN_USE: &str = "camoufox_in_use: close the running browser profiles first; the checked download is kept and installed on the next try";
 
 /// Writes `data` to a temp file in the same directory and renames it over
 /// `path`, so readers (e.g. a browser that is starting up) never observe a
@@ -44,6 +142,8 @@ pub enum DownloadState {
         total: u64,
         percent: u8,
     },
+    /// The checked archive is being installed; it cannot be cancelled.
+    Extracting,
     Done {
         version: String,
     },
@@ -71,24 +171,80 @@ impl Default for DownloadManager {
 #[derive(Deserialize)]
 struct GhRelease {
     tag_name: String,
-    assets: Vec<GhAsset>,
-}
-
-#[derive(Deserialize)]
-struct GhAsset {
-    name: String,
-    browser_download_url: String,
-    size: u64,
 }
 
 // ── Binary resolution ───────────────────────────────────────────────────────
 
+/// `<data>/camoufox/`: the installed Camoufox; `camoufox.new` and
+/// `camoufox.old` beside it are the two sides of a swap.
+fn install_root(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("camoufox")
+}
+
+/// Where the files of a Camoufox install are.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Layout {
+    /// The executable a profile is started with.
+    pub binary: PathBuf,
+    /// The directory of omni.ja, chrome.css, application.ini and
+    /// distribution/policies.json: what the app patches.
+    pub resources: PathBuf,
+}
+
+impl Layout {
+    /// The layout of this platform under the root of an install.
+    pub fn of(root: &Path) -> Self {
+        let os = if cfg!(target_os = "windows") {
+            "win"
+        } else if cfg!(target_os = "macos") {
+            "mac"
+        } else {
+            "lin"
+        };
+        Self::for_os(root, os)
+    }
+
+    /// Windows and Linux: everything at the root of the archive. macOS: an
+    /// app bundle, the executable in `Contents/MacOS`, the rest in
+    /// `Contents/Resources` (as Camoufox's own launcher has it).
+    /// TODO(owner): check on macOS against a real archive.
+    fn for_os(root: &Path, os: &str) -> Self {
+        match os {
+            "win" => Self {
+                binary: root.join("camoufox.exe"),
+                resources: root.to_path_buf(),
+            },
+            "mac" => {
+                let contents = root.join("Camoufox.app").join("Contents");
+                Self {
+                    binary: contents.join("MacOS").join("camoufox"),
+                    resources: contents.join("Resources"),
+                }
+            }
+            _ => Self {
+                binary: root.join("camoufox"),
+                resources: root.to_path_buf(),
+            },
+        }
+    }
+}
+
 pub fn local_binary_path(app_data_dir: &Path) -> PathBuf {
-    let dir = app_data_dir.join("camoufox");
-    if cfg!(target_os = "windows") {
-        dir.join("camoufox.exe")
-    } else {
-        dir.join("camoufox")
+    Layout::of(&install_root(app_data_dir)).binary
+}
+
+/// The directory of the files to patch for a Camoufox binary: beside it, or
+/// `Contents/Resources` for one in `Contents/MacOS` of an app bundle.
+pub fn resources_dir(binary: &Path) -> PathBuf {
+    let parent = binary.parent().unwrap_or(Path::new(""));
+    let contents = parent.parent();
+    match (parent.file_name(), contents) {
+        (Some(name), Some(contents))
+            if name == "MacOS" && contents.file_name().is_some_and(|c| c == "Contents") =>
+        {
+            contents.join("Resources")
+        }
+        _ => parent.to_path_buf(),
     }
 }
 
@@ -702,54 +858,257 @@ html, :root {{ width: auto !important; height: 100% !important; }}
     write_atomic(&css_path, patched.as_bytes())
 }
 
+// ── Install ─────────────────────────────────────────────────────────────────
+
+/// Beside `version.txt` at the root of an install from a pinned archive: the
+/// SHA-256 of that archive. An install without it, or with another one, was
+/// not checked by this build.
+fn archive_sha_file(root: &Path) -> PathBuf {
+    root.join("archive.sha256")
+}
+
+fn read_trimmed(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn download_tmp(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("camoufox_download.tmp.zip")
+}
+
+/// Names the file a partial download belongs to.
+fn download_marker(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("camoufox_download.tmp.version")
+}
+
+/// Unpacks a zip into `dest`. Every path is checked before anything is
+/// written: one that would leave `dest` fails the whole unpack. A file the
+/// archive marks executable stays executable (the helpers of a macOS app
+/// bundle need it).
+fn unzip(archive_path: &Path, dest: &Path) -> Result<(), String> {
+    let zip_file =
+        std::fs::File::open(archive_path).map_err(|e| format!("Cannot open zip: {e}"))?;
+    let mut archive = zip::ZipArchive::new(zip_file).map_err(|e| format!("Bad zip: {e}"))?;
+
+    // Security: validate all paths before extracting (prevent Zip Slip)
+    for i in 0..archive.len() {
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Bad zip entry: {e}"))?;
+        let entry_path = entry.enclosed_name().ok_or("Invalid path in ZIP")?;
+        if entry_path.is_absolute() {
+            return Err("Invalid path in ZIP: absolute path".to_string());
+        }
+        for component in entry_path.components() {
+            if let std::path::Component::ParentDir = component {
+                return Err("Invalid path in ZIP: path traversal attempt".to_string());
+            }
+        }
+    }
+
+    std::fs::create_dir_all(dest).map_err(|e| format!("cannot create {}: {e}", dest.display()))?;
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Bad zip entry: {e}"))?;
+        let entry_path = entry
+            .enclosed_name()
+            .ok_or("Invalid path in ZIP")?
+            .to_owned();
+        let target = dest.join(&entry_path);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        #[cfg(unix)]
+        let executable = entry.unix_mode().is_some_and(|m| m & 0o111 != 0);
+        let mut out = std::fs::File::create(&target).map_err(|e| e.to_string())?;
+        std::io::copy(&mut entry, &mut out)
+            .map_err(|e| format!("cannot unpack {}: {e}", entry_path.display()))?;
+        out.flush().map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        if executable {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Installs a checked archive under [`INSTALL_DIR_LOCK`] when no browser
+/// runs: a launch takes the same lock to patch the install, so it waits for
+/// the swap; a running browser makes it `camoufox_in_use`, and the caller
+/// keeps the archive. Blocking.
+fn install_when_idle(
+    archive: &Path,
+    app_data_dir: &Path,
+    running: &Running,
+    version: &str,
+    sha256: &str,
+) -> Result<(), String> {
+    let _guard = INSTALL_DIR_LOCK.blocking_lock();
+    if !running.processes.blocking_lock().is_empty() {
+        return Err(IN_USE.to_string());
+    }
+    install_archive_locked(archive, app_data_dir, version, sha256)
+}
+
+/// Unpacks a checked archive next to the install (`camoufox.new`), checks
+/// the binary, patches it and writes its markers there, and only then swaps
+/// it in. Whatever fails before the swap leaves the installed Camoufox
+/// untouched. The caller holds [`INSTALL_DIR_LOCK`]. Blocking.
+fn install_archive_locked(
+    archive: &Path,
+    app_data_dir: &Path,
+    version: &str,
+    sha256: &str,
+) -> Result<(), String> {
+    let dir = install_root(app_data_dir);
+    let fresh = app_data_dir.join("camoufox.new");
+    let old = app_data_dir.join("camoufox.old");
+    let _ = std::fs::remove_dir_all(&fresh);
+    let _ = std::fs::remove_dir_all(&old);
+
+    let prepared = (|| {
+        unzip(archive, &fresh)?;
+        let layout = Layout::of(&fresh);
+        if !layout.binary.is_file() {
+            return Err(format!(
+                "the archive holds no {}: not a Camoufox build for this platform",
+                layout
+                    .binary
+                    .strip_prefix(&fresh)
+                    .unwrap_or(&layout.binary)
+                    .display()
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&layout.binary, std::fs::Permissions::from_mode(0o755))
+                .map_err(|e| format!("cannot make {} executable: {e}", layout.binary.display()))?;
+        }
+
+        // Propagate patch failures — a silently unpatched omni.ja ships a browser
+        // with broken search/UI, which is far worse than a visible download error.
+        patch_chrome_css(&layout.resources, "#6366f1", "#6366f1", "")
+            .map_err(|e| format!("chrome.css patch failed: {e}"))?;
+        patch_omni_ja(&layout.resources).map_err(|e| format!("omni.ja patch failed: {e}"))?;
+        patch_policies_json(&layout.resources);
+        // Store marker after initial patch so ensure_omni_patched skips on first launch
+        write_patch_marker(&layout.resources);
+
+        std::fs::write(fresh.join("version.txt"), version)
+            .map_err(|e| format!("cannot write version.txt: {e}"))?;
+        std::fs::write(archive_sha_file(&fresh), sha256)
+            .map_err(|e| format!("cannot write archive.sha256: {e}"))?;
+        Ok(())
+    })();
+    if let Err(e) = prepared {
+        let _ = std::fs::remove_dir_all(&fresh);
+        return Err(e);
+    }
+
+    // The swap: the old install steps aside, the new one takes its name, and
+    // the old one comes back if that fails.
+    let had_old = dir.exists();
+    if had_old {
+        std::fs::rename(&dir, &old).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&fresh);
+            format!("cannot replace the installed Camoufox (is a browser running?): {e}")
+        })?;
+    }
+    if let Err(e) = std::fs::rename(&fresh, &dir) {
+        if had_old {
+            let _ = std::fs::rename(&old, &dir);
+        }
+        let _ = std::fs::remove_dir_all(&fresh);
+        return Err(format!("cannot move the new Camoufox in place: {e}"));
+    }
+    let _ = std::fs::remove_dir_all(&old);
+    Ok(())
+}
+
 // ── Tauri commands ──────────────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, PartialEq, Debug)]
 pub struct CamoufoxStatus {
     pub installed: bool,
     pub version: Option<String>,
     pub camoufox_tag: Option<String>,
     pub path: Option<String>,
+    /// Installed by the app from the archive pinned in this build: the tag
+    /// and the checksum of the archive match the pins.
+    pub verified: bool,
+    /// The release this build installs.
+    pub pinned_version: String,
+    /// This build pins an archive for this computer.
+    pub download_available: bool,
+    /// Installed but not verified (an older download, one from before the
+    /// pins, one found on PATH) while the pinned one can be installed.
+    pub update_available: bool,
+}
+
+/// What is installed, without asking the binary its version. `pinned` is
+/// the archive of this computer, `None` where there is none to download.
+fn install_status(app_data_dir: &Path, pinned: Option<&Pinned>) -> CamoufoxStatus {
+    let binary = resolve_binary(app_data_dir);
+    let root = install_root(app_data_dir);
+    let local = binary
+        .as_ref()
+        .is_some_and(|b| *b == local_binary_path(app_data_dir));
+    let camoufox_tag = if local {
+        read_trimmed(&root.join("version.txt"))
+    } else {
+        None
+    };
+    let verified = local
+        && pinned.is_some_and(|p| {
+            !p.sha256.is_empty()
+                && camoufox_tag.as_deref() == Some(CAMOUFOX_VERSION)
+                && read_trimmed(&archive_sha_file(&root)).as_deref() == Some(p.sha256)
+        });
+    CamoufoxStatus {
+        installed: binary.is_some(),
+        version: None,
+        camoufox_tag,
+        update_available: binary.is_some() && !verified && pinned.is_some(),
+        path: binary.map(|p| p.to_string_lossy().to_string()),
+        verified,
+        pinned_version: CAMOUFOX_VERSION.to_string(),
+        download_available: pinned.is_some(),
+    }
 }
 
 #[tauri::command]
 pub async fn camoufox_status(core: tauri::State<'_, Core>) -> CmdResult<CamoufoxStatus> {
     let app_data_dir = core.app_data_dir.clone();
     // Blocking: spawns `camoufox --version` and reads version.txt
-    tokio::task::spawn_blocking(move || match resolve_binary(&app_data_dir) {
-        Some(path) => {
-            let version = std::process::Command::new(&path)
+    tokio::task::spawn_blocking(move || {
+        let mut status = install_status(&app_data_dir, pinned_here().ok());
+        status.version = status.path.as_ref().and_then(|path| {
+            std::process::Command::new(path)
                 .arg("--version")
                 .output()
                 .ok()
                 .and_then(|o| String::from_utf8(o.stdout).ok())
                 .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-
-            let camoufox_tag =
-                std::fs::read_to_string(app_data_dir.join("camoufox").join("version.txt"))
-                    .ok()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-
-            CamoufoxStatus {
-                installed: true,
-                version,
-                camoufox_tag,
-                path: Some(path.to_string_lossy().to_string()),
-            }
-        }
-        None => CamoufoxStatus {
-            installed: false,
-            version: None,
-            camoufox_tag: None,
-            path: None,
-        },
+                .filter(|s| !s.is_empty())
+        });
+        status
     })
     .await
     .map_err(AppError::other)
 }
 
+/// The newest release upstream, for the information of the user only: the
+/// download installs [`CAMOUFOX_VERSION`], whatever this says.
 #[tauri::command]
 pub async fn camoufox_latest_version() -> CmdResult<String> {
     let client = reqwest::Client::builder()
@@ -776,39 +1135,61 @@ pub async fn camoufox_download_state(
     Ok(browser.download.state.lock().await.clone())
 }
 
+/// Stops a download. An install under way is not stopped halfway: the
+/// download moves to `Extracting` under the same lock of the state, so a
+/// cancel either comes before it and stops the download, or does nothing.
 #[tauri::command]
 pub async fn camoufox_download_cancel(browser: tauri::State<'_, BrowserState>) -> CmdResult<()> {
-    let mut tx = browser.download.cancel_tx.lock().await;
-    if let Some(sender) = tx.take() {
-        sender.send(()).ok();
-    }
-    *browser.download.state.lock().await = DownloadState::Idle;
+    browser.download.cancel().await;
     Ok(())
 }
 
+impl DownloadManager {
+    async fn cancel(&self) {
+        let mut state = self.state.lock().await;
+        if matches!(*state, DownloadState::Extracting) {
+            return;
+        }
+        if let Some(sender) = self.cancel_tx.lock().await.take() {
+            sender.send(()).ok();
+        }
+        *state = DownloadState::Idle;
+    }
+}
+
+/// Starts the download of the pinned archive and returns at once; the
+/// progress comes as `camoufox://progress`, the install as
+/// `camoufox://extracting`, the end as `camoufox://done` or
+/// `camoufox://error`.
 #[tauri::command]
 pub async fn camoufox_download(
     app: tauri::AppHandle,
     core: tauri::State<'_, Core>,
     browser: tauri::State<'_, BrowserState>,
 ) -> CmdResult<()> {
-    // Don't start if already downloading. Claim the slot synchronously inside
-    // the same lock as the check — the first chunk may take seconds to arrive,
-    // and a second rapid invocation must not pass the guard in the meantime
-    // (both would write camoufox_download.tmp.zip concurrently).
+    let pinned = pinned_here().map_err(AppError::other)?;
+    // Don't start if already downloading or installing. Claim the slot
+    // synchronously inside the same lock as the check — the first chunk may
+    // take seconds to arrive, and a second rapid invocation must not pass the
+    // guard in the meantime (both would write camoufox_download.tmp.zip
+    // concurrently).
     {
         let mut current = browser.download.state.lock().await;
-        if matches!(*current, DownloadState::Downloading { .. }) {
+        if matches!(
+            *current,
+            DownloadState::Downloading { .. } | DownloadState::Extracting
+        ) {
             return Err(AppError::other("Download already in progress"));
         }
         *current = DownloadState::Downloading {
             downloaded: 0,
-            total: 0,
+            total: pinned.size,
             percent: 0,
         };
     }
 
     let app_data_dir = core.app_data_dir.clone();
+    let running = Arc::clone(&browser.running);
     let dl_state = Arc::clone(&browser.download.state);
     let cancel_arc = Arc::clone(&browser.download.cancel_tx);
 
@@ -817,7 +1198,15 @@ pub async fn camoufox_download(
 
     // Spawn background task — command returns immediately
     tokio::spawn(async move {
-        let result = run_download(app.clone(), app_data_dir, dl_state.clone(), cancel_rx).await;
+        let result = run_download(
+            app.clone(),
+            app_data_dir,
+            running,
+            pinned,
+            dl_state.clone(),
+            cancel_rx,
+        )
+        .await;
 
         match result {
             Ok(version) => {
@@ -860,243 +1249,157 @@ impl From<String> for DownloadError {
 async fn run_download(
     app: tauri::AppHandle,
     app_data_dir: PathBuf,
+    running: Arc<Running>,
+    pinned: &'static Pinned,
     dl_state: Arc<Mutex<DownloadState>>,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<String, DownloadError> {
+    std::fs::create_dir_all(&app_data_dir)
+        .map_err(|e| format!("Cannot create the data directory: {e}"))?;
+    let tmp = download_tmp(&app_data_dir);
+    let marker = download_marker(&app_data_dir);
+
+    // A partial file is resumed only when it belongs to this very file; a
+    // complete one that was checked but not installed (a browser was running)
+    // is installed without fetching it again.
+    let same_file = std::fs::read_to_string(&marker)
+        .map(|v| v.trim() == pinned.file)
+        .unwrap_or(false);
+    let existing = tmp.metadata().map(|m| m.len()).unwrap_or(0);
+    if !same_file || existing > pinned.size {
+        std::fs::write(&marker, pinned.file)
+            .map_err(|e| format!("Cannot write the download marker: {e}"))?;
+        std::fs::File::create(&tmp).map_err(|e| format!("Cannot create the temp file: {e}"))?;
+    }
+
+    // No limit on the whole transfer, a limit on silence.
     let client = reqwest::Client::builder()
         .user_agent("VeydanSpace/1.0")
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .read_timeout(std::time::Duration::from_secs(90))
         .build()
         .map_err(|e| e.to_string())?;
+    let url = download_url(pinned.file);
+    fetch(
+        &client,
+        &url,
+        &tmp,
+        pinned.size,
+        &app,
+        &dl_state,
+        &mut cancel_rx,
+    )
+    .await?;
 
-    let arch = if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "x86_64"
-    };
-    let os = if cfg!(target_os = "windows") {
-        "win"
-    } else if cfg!(target_os = "macos") {
-        "mac"
-    } else {
-        "lin"
-    };
-    let target_suffix = format!("{os}.{arch}.zip");
-
-    // Fetch up to 20 releases and find the latest one that has an asset for this platform.
-    // Some releases may skip certain platforms (e.g. Windows builds missing in recent releases).
-    let releases: Vec<GhRelease> = client
-        .get("https://api.github.com/repos/daijro/camoufox/releases?per_page=20")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch release info: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse release info: {e}"))?;
-
-    let (release, asset) = releases
-        .into_iter()
-        .find_map(|r| {
-            let a = r.assets.iter().find(|a| a.name.ends_with(&target_suffix))?;
-            Some((r.tag_name.clone(), (a.browser_download_url.clone(), a.size)))
+    {
+        let (tmp, marker) = (tmp.clone(), marker.clone());
+        tokio::task::spawn_blocking(move || {
+            veydan_tor::checksum::verify_download(&tmp, &marker, pinned.file, pinned.sha256)
         })
-        .ok_or_else(|| format!("No release found with asset for '{target_suffix}'"))?;
-
-    let version = release;
-    let (download_url, total_size) = asset;
-
-    // The API response is untrusted input: only accept assets hosted under
-    // the upstream release path.
-    if !download_url.starts_with(CAMOUFOX_RELEASE_PREFIX) {
-        return Err(format!("Unexpected asset URL: {download_url}").into());
-    }
-
-    let tmp_path = app_data_dir.join("camoufox_download.tmp.zip");
-    let version_path = app_data_dir.join("camoufox_download.tmp.version");
-
-    // Resume only a partial file that belongs to this exact version.
-    let same_version = std::fs::read_to_string(&version_path)
-        .map(|v| v.trim() == version)
-        .unwrap_or(false);
-    let existing_size = tmp_path.metadata().map(|m| m.len()).unwrap_or(0);
-    let mut start_from = if same_version && existing_size > 0 && existing_size < total_size {
-        existing_size
-    } else {
-        0
-    };
-
-    let mut req = client.get(&download_url);
-    if start_from > 0 {
-        req = req.header("Range", format!("bytes={start_from}-"));
-    }
-
-    let response = req
-        .send()
         .await
-        .map_err(|e| format!("Download failed: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("Download failed: {e}"))?;
-
-    // A server that ignores Range sends the whole file: restart instead of appending.
-    if start_from > 0 && response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-        start_from = 0;
+        .map_err(|e| format!("Checksum task failed: {e}"))??;
     }
 
-    // Open file: append if resuming, overwrite otherwise
-    let mut file = if start_from > 0 {
-        std::fs::OpenOptions::new().append(true).open(&tmp_path)
-    } else {
-        std::fs::write(&version_path, &version)
-            .map_err(|e| format!("Cannot write version marker: {e}"))?;
-        std::fs::File::create(&tmp_path)
-    }
-    .map_err(|e| format!("Cannot open temp file: {e}"))?;
-
-    let mut downloaded = start_from;
-    let mut stream = response.bytes_stream();
-
-    loop {
-        tokio::select! {
-            chunk = stream.next() => {
-                match chunk {
-                    Some(Ok(data)) => {
-                        file.write_all(&data).map_err(|e| format!("Write error: {e}"))?;
-                        downloaded += data.len() as u64;
-
-                        let percent = (downloaded * 100)
-                            .checked_div(total_size)
-                            .map_or(0, |p| p.min(100) as u8);
-
-                        let state_val = DownloadState::Downloading { downloaded, total: total_size, percent };
-                        *dl_state.lock().await = state_val.clone();
-                        app.emit("camoufox://progress", state_val).ok();
-                    }
-                    Some(Err(e)) => return Err(format!("Stream error: {e}").into()),
-                    None => break,
-                }
-            }
-            _ = &mut cancel_rx => {
-                return Err(DownloadError::Cancelled);
-            }
+    // From here on the install is not cancelled: the state turns to
+    // Extracting under its lock, after the last look at the cancel.
+    {
+        let mut state = dl_state.lock().await;
+        if cancel_rx.try_recv().is_ok() {
+            return Err(DownloadError::Cancelled);
         }
+        *state = DownloadState::Extracting;
     }
-
-    drop(file);
-
-    // Size mismatch means a truncated or substituted archive: drop it so the
-    // next attempt starts clean.
-    if downloaded != total_size {
-        let _ = std::fs::remove_file(&tmp_path);
-        let _ = std::fs::remove_file(&version_path);
-        return Err(
-            format!("Downloaded size {downloaded} does not match asset size {total_size}").into(),
-        );
-    }
-
-    // Extract zip + patch — heavy synchronous IO, moved off the async worker
     app.emit("camoufox://extracting", ()).ok();
 
     {
-        let tmp_path = tmp_path.clone();
-        let app_data_dir = app_data_dir.clone();
-        let version = version.clone();
+        // Refused while a browser runs: the checked file stays, and the
+        // next `camoufox_download` installs it without fetching it again.
+        let (tmp, app_data_dir) = (tmp.clone(), app_data_dir.clone());
         tokio::task::spawn_blocking(move || {
-            extract_and_install(&tmp_path, &app_data_dir, &version)
+            install_when_idle(
+                &tmp,
+                &app_data_dir,
+                &running,
+                CAMOUFOX_VERSION,
+                pinned.sha256,
+            )
         })
         .await
         .map_err(|e| format!("Extraction task failed: {e}"))??;
     }
-
-    Ok(version)
+    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&marker);
+    Ok(CAMOUFOX_VERSION.to_string())
 }
 
-/// Synchronous tail of the download: zip validation + extraction, permissions,
-/// omni.ja/chrome.css/policies patching and marker files. Runs inside
-/// `spawn_blocking` — everything here is blocking `std::fs`/zip IO.
-fn extract_and_install(tmp_path: &Path, app_data_dir: &Path, version: &str) -> Result<(), String> {
-    // Runs on a spawn_blocking thread, so blocking_lock is safe here. Keeps a
-    // concurrently launching profile from patching/reading the install dir
-    // while it is being replaced.
-    let _guard = INSTALL_DIR_LOCK.blocking_lock();
-
-    let dest_dir = app_data_dir.join("camoufox");
-    std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
-
-    let zip_file = std::fs::File::open(tmp_path).map_err(|e| format!("Cannot open zip: {e}"))?;
-    let mut archive = zip::ZipArchive::new(zip_file).map_err(|e| format!("Bad zip: {e}"))?;
-
-    // Security: validate all paths before extracting (prevent Zip Slip)
-    for i in 0..archive.len() {
-        let entry = archive
-            .by_index(i)
-            .map_err(|e| format!("Bad zip entry: {e}"))?;
-        let entry_path = entry.enclosed_name().ok_or("Invalid path in ZIP")?;
-        if entry_path.is_absolute() {
-            return Err("Invalid path in ZIP: absolute path".to_string());
-        }
-        for component in entry_path.components() {
-            if let std::path::Component::ParentDir = component {
-                return Err("Invalid path in ZIP: path traversal attempt".to_string());
-            }
-        }
+/// Brings `tmp` to `total` bytes from `url`, resuming what it holds.
+async fn fetch(
+    client: &reqwest::Client,
+    url: &str,
+    tmp: &Path,
+    total: u64,
+    app: &tauri::AppHandle,
+    state: &Mutex<DownloadState>,
+    cancel_rx: &mut tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), DownloadError> {
+    let mut start = tmp.metadata().map(|m| m.len()).unwrap_or(0);
+    if start == total {
+        return Ok(());
     }
-
-    // Extract all entries
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("Bad zip entry: {e}"))?;
-        let entry_path = entry
-            .enclosed_name()
-            .ok_or("Invalid path in ZIP")?
-            .to_owned();
-        let dest = dest_dir.join(&entry_path);
-        if entry.is_dir() {
-            std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-        } else {
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-            }
-            let mut out = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
-            std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
-        }
+    let mut req = client.get(url);
+    if start > 0 {
+        req = req.header("Range", format!("bytes={start}-"));
     }
+    let response = tokio::select! {
+        response = req.send() => response,
+        _ = &mut *cancel_rx => return Err(DownloadError::Cancelled),
+    };
+    let response = response
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("Download failed: {e}"))?;
+    // A server that ignores Range sends the whole file: restart instead of appending.
+    if start > 0 && response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        start = 0;
+    }
+    let mut file = if start > 0 {
+        std::fs::OpenOptions::new().append(true).open(tmp)
+    } else {
+        std::fs::File::create(tmp)
+    }
+    .map_err(|e| format!("Cannot open temp file: {e}"))?;
 
-    std::fs::remove_file(tmp_path).ok();
-    std::fs::remove_file(tmp_path.with_extension("version")).ok();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let binary = local_binary_path(app_data_dir);
-        if binary.exists() {
-            let mut perms = std::fs::metadata(&binary)
-                .map_err(|e| e.to_string())?
-                .permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&binary, perms).map_err(|e| e.to_string())?;
+    let mut downloaded = start;
+    let mut last_percent = None;
+    let mut stream = response.bytes_stream();
+    loop {
+        tokio::select! {
+            chunk = stream.next() => match chunk {
+                Some(Ok(data)) => {
+                    if downloaded + data.len() as u64 > total {
+                        drop(file);
+                        let _ = std::fs::remove_file(tmp);
+                        return Err(format!("The server sends more than the pinned {total} bytes").into());
+                    }
+                    file.write_all(&data).map_err(|e| format!("Write error: {e}"))?;
+                    downloaded += data.len() as u64;
+                    let percent = (downloaded * 100).checked_div(total).map_or(0, |p| p.min(100) as u8);
+                    let now = DownloadState::Downloading { downloaded, total, percent };
+                    *state.lock().await = now.clone();
+                    if last_percent != Some(percent) {
+                        last_percent = Some(percent);
+                        app.emit("camoufox://progress", now).ok();
+                    }
+                }
+                Some(Err(e)) => return Err(format!("Stream error: {e}").into()),
+                None => break,
+            },
+            _ = &mut *cancel_rx => return Err(DownloadError::Cancelled),
         }
     }
-
-    let binary = local_binary_path(app_data_dir);
-    if !binary.exists() {
-        return Err(format!(
-            "Binary not found after extraction at {}",
-            binary.display()
-        ));
+    file.flush().map_err(|e| format!("Write error: {e}"))?;
+    if downloaded != total {
+        return Err(format!("The download ended at {downloaded} of {total} bytes").into());
     }
-
-    // Propagate patch failures — a silently unpatched omni.ja ships a browser
-    // with broken search/UI, which is far worse than a visible download error.
-    patch_chrome_css(&dest_dir, "#6366f1", "#6366f1", "")
-        .map_err(|e| format!("chrome.css patch failed: {e}"))?;
-    patch_omni_ja(&dest_dir).map_err(|e| format!("omni.ja patch failed: {e}"))?;
-    patch_policies_json(&dest_dir);
-
-    // Store marker after initial patch so ensure_omni_patched skips on first launch
-    write_patch_marker(&dest_dir);
-
-    std::fs::write(dest_dir.join("version.txt"), version).ok();
-
     Ok(())
 }
 
@@ -1281,7 +1584,8 @@ mod tests {
 
     #[test]
     fn the_window_keeps_the_size_it_is_restored_with() {
-        let before = format!("    }}\n\n{DEFAULT_SIZE_BROKEN}\n    // Hijack the outer window size.\n");
+        let before =
+            format!("    }}\n\n{DEFAULT_SIZE_BROKEN}\n    // Hijack the outer window size.\n");
         let dir = install_dir_with_browser_init("size", &before);
         patch_browser_omni(&dir).unwrap();
         let after = read_browser_init(&dir);
@@ -1291,5 +1595,421 @@ mod tests {
         patch_browser_omni(&dir).unwrap();
         assert_eq!(read_browser_init(&dir), after);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── The pinned download and its install ──────────────────────────────
+
+    /// A directory of its own under the temp dir, removed when dropped.
+    struct TmpDir(PathBuf);
+
+    impl TmpDir {
+        fn new(name: &str) -> Self {
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static N: AtomicU32 = AtomicU32::new(0);
+            let dir = std::env::temp_dir().join(format!(
+                "veydan-camoufox-{name}-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::Relaxed)
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for TmpDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A path of the layout of this platform, relative to the root of an
+    /// archive, with the separators of a zip.
+    fn rel(path: PathBuf) -> String {
+        path.to_string_lossy().replace('\\', "/")
+    }
+
+    fn binary_name() -> String {
+        rel(Layout::of(Path::new("")).binary)
+    }
+
+    fn policies_name() -> String {
+        let resources = rel(Layout::of(Path::new("")).resources);
+        if resources.is_empty() {
+            "distribution/policies.json".to_string()
+        } else {
+            format!("{resources}/distribution/policies.json")
+        }
+    }
+
+    /// A zip of `(name, contents)` pairs, names written as they are.
+    fn zip_of(path: &Path, files: &[(&str, &[u8])]) {
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        for (name, data) in files {
+            zip.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    /// The layout of a real build, small: the binary and the policy that
+    /// the install strips.
+    fn good_archive(path: &Path, binary: &[u8]) {
+        zip_of(
+            path,
+            &[
+                (&binary_name(), binary),
+                (
+                    &policies_name(),
+                    br#"{"policies":{"SearchEngines":{"Remove":["Google"]},"DisableTelemetry":true}}"#,
+                ),
+                ("application.ini", b"[App]\nName=Camoufox\n"),
+            ],
+        )
+    }
+
+    /// The pin of a file made here.
+    fn pin_of(file: &Path) -> Pinned {
+        Pinned {
+            sha256: Box::leak(
+                veydan_tor::checksum::sha256_file(file)
+                    .unwrap()
+                    .into_boxed_str(),
+            ),
+            size: std::fs::metadata(file).unwrap().len(),
+            ..PINNED[0]
+        }
+    }
+
+    fn installed_binary(data: &Path) -> Vec<u8> {
+        std::fs::read(local_binary_path(data)).unwrap()
+    }
+
+    #[test]
+    fn every_desktop_target_has_a_pin_or_an_honest_todo() {
+        let tag = CAMOUFOX_VERSION.strip_prefix('v').unwrap();
+        for target in [
+            "lin.x86_64",
+            "lin.arm64",
+            "win.x86_64",
+            "mac.x86_64",
+            "mac.arm64",
+        ] {
+            let pinned = pinned_for(target).unwrap_or_else(|| panic!("{target}"));
+            assert_eq!(pinned.file, format!("camoufox-{tag}-{target}.zip"));
+            if pinned.sha256.is_empty() {
+                // Not filled in yet: no download for it, not an unchecked one.
+                assert_eq!(pinned.size, 0, "{target}");
+            } else {
+                assert_eq!(pinned.sha256.len(), 64, "{target}");
+                assert!(pinned
+                    .sha256
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+                assert!(pinned.size > 0, "{target}");
+            }
+        }
+        assert_eq!(PINNED.len(), 5);
+        assert!(current_target().is_none_or(|t| pinned_for(t).is_some()));
+        // Where the pin of this computer is empty, the download is refused
+        // with a clear error, before anything is fetched.
+        match current_target().and_then(pinned_for) {
+            Some(p) if !p.sha256.is_empty() => assert_eq!(pinned_here().unwrap(), p),
+            _ => assert!(pinned_here()
+                .unwrap_err()
+                .starts_with("camoufox_unavailable")),
+        }
+        assert_eq!(
+            download_url("camoufox-x.zip"),
+            format!("https://github.com/daijro/camoufox/releases/download/{CAMOUFOX_VERSION}/camoufox-x.zip")
+        );
+    }
+
+    #[test]
+    fn a_download_of_another_checksum_is_refused_and_deleted() {
+        let dir = TmpDir::new("checksum");
+        let tmp = download_tmp(&dir.0);
+        let marker = download_marker(&dir.0);
+        good_archive(&tmp, b"camoufox");
+        let pinned = pin_of(&tmp);
+
+        // Another file under the same name, and a pin left empty.
+        for expected in ["0".repeat(64).as_str(), ""] {
+            good_archive(&tmp, b"something else");
+            std::fs::write(&marker, pinned.file).unwrap();
+            let err = veydan_tor::checksum::verify_download(&tmp, &marker, pinned.file, expected)
+                .unwrap_err();
+            assert!(err.contains("checksum mismatch"), "{err}");
+            assert!(!tmp.exists() && !marker.exists());
+        }
+
+        good_archive(&tmp, b"camoufox");
+        veydan_tor::checksum::verify_download(&tmp, &marker, pinned.file, pinned.sha256).unwrap();
+        assert!(tmp.exists());
+    }
+
+    #[test]
+    fn a_zip_with_paths_out_of_its_directory_is_refused() {
+        for bad in ["../evil", "a/../../evil", "camoufox/../../evil"] {
+            let dir = TmpDir::new("slip");
+            let archive = dir.0.join("a.zip");
+            zip_of(&archive, &[(&binary_name(), b"camoufox"), (bad, b"x")]);
+            let data = dir.0.join("data");
+            let err =
+                install_when_idle(&archive, &data, &Running::default(), "v1", "ab").unwrap_err();
+            assert!(err.contains("Invalid path in ZIP"), "{bad}: {err}");
+            assert!(!local_binary_path(&data).exists());
+            assert!(!data.join("camoufox.new").exists());
+            assert!(!dir.0.join("evil").exists() && !data.join("evil").exists());
+        }
+
+        // A name from the root is taken as relative: it lands in the install.
+        let dir = TmpDir::new("slip-root");
+        let archive = dir.0.join("a.zip");
+        zip_of(
+            &archive,
+            &[
+                (&binary_name(), b"camoufox"),
+                ("/veydan-zip-slip/evil", b"x"),
+            ],
+        );
+        let data = dir.0.join("data");
+        install_when_idle(&archive, &data, &Running::default(), "v1", "ab").unwrap();
+        assert!(!Path::new("/veydan-zip-slip").exists());
+        assert!(install_root(&data).join("veydan-zip-slip/evil").is_file());
+    }
+
+    #[test]
+    fn a_good_archive_is_patched_in_staging_and_installed_verified() {
+        let dir = TmpDir::new("good");
+        let archive = dir.0.join("a.zip");
+        good_archive(&archive, b"camoufox");
+        let pinned = pin_of(&archive);
+        let data = dir.0.join("data");
+        install_when_idle(
+            &archive,
+            &data,
+            &Running::default(),
+            CAMOUFOX_VERSION,
+            pinned.sha256,
+        )
+        .unwrap();
+
+        let layout = Layout::of(&install_root(&data));
+        assert_eq!(installed_binary(&data), b"camoufox");
+        let policies =
+            std::fs::read_to_string(layout.resources.join("distribution/policies.json")).unwrap();
+        assert!(!policies.contains("SearchEngines") && policies.contains("DisableTelemetry"));
+        assert!(patch_marker_path(&layout.resources).is_file());
+        assert!(!data.join("camoufox.new").exists() && !data.join("camoufox.old").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&layout.binary)
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
+
+        let status = install_status(&data, Some(&pinned));
+        assert!(status.installed && status.verified && status.download_available);
+        assert!(!status.update_available);
+        assert_eq!(status.camoufox_tag.as_deref(), Some(CAMOUFOX_VERSION));
+        assert_eq!(status.pinned_version, CAMOUFOX_VERSION);
+        assert_eq!(
+            status.path.as_deref(),
+            Some(local_binary_path(&data).to_string_lossy().as_ref())
+        );
+
+        // A second install replaces the first one whole.
+        good_archive(&archive, b"camoufox 2");
+        let pinned = pin_of(&archive);
+        install_when_idle(
+            &archive,
+            &data,
+            &Running::default(),
+            CAMOUFOX_VERSION,
+            pinned.sha256,
+        )
+        .unwrap();
+        assert_eq!(installed_binary(&data), b"camoufox 2");
+        assert!(install_status(&data, Some(&pinned)).verified);
+    }
+
+    #[test]
+    fn a_failed_unpack_keeps_the_installed_camoufox() {
+        let dir = TmpDir::new("failed");
+        let data = dir.0.join("data");
+        let good = dir.0.join("good.zip");
+        good_archive(&good, b"old camoufox");
+        let pinned = pin_of(&good);
+        install_when_idle(
+            &good,
+            &data,
+            &Running::default(),
+            CAMOUFOX_VERSION,
+            pinned.sha256,
+        )
+        .unwrap();
+
+        // An archive with no binary, one that breaks off, one with a bad path.
+        let empty = dir.0.join("empty.zip");
+        zip_of(&empty, &[("application.ini", b"[App]\n")]);
+        let cut = dir.0.join("cut.zip");
+        good_archive(&cut, &[7u8; 4096]);
+        let bytes = std::fs::read(&cut).unwrap();
+        std::fs::write(&cut, &bytes[..bytes.len() / 2]).unwrap();
+        let evil = dir.0.join("evil.zip");
+        zip_of(
+            &evil,
+            &[(&binary_name(), b"new camoufox"), ("../evil", b"x")],
+        );
+
+        for archive in [&empty, &cut, &evil] {
+            assert!(
+                install_when_idle(archive, &data, &Running::default(), "v0", "00").is_err(),
+                "{}",
+                archive.display()
+            );
+            assert_eq!(installed_binary(&data), b"old camoufox");
+            assert!(install_status(&data, Some(&pinned)).verified);
+            assert!(!data.join("camoufox.new").exists());
+        }
+    }
+
+    #[test]
+    fn the_install_is_refused_while_a_browser_runs() {
+        let dir = TmpDir::new("running");
+        let data = dir.0.join("data");
+        let old = dir.0.join("old.zip");
+        good_archive(&old, b"old camoufox");
+        let pinned = pin_of(&old);
+        install_when_idle(
+            &old,
+            &data,
+            &Running::default(),
+            CAMOUFOX_VERSION,
+            pinned.sha256,
+        )
+        .unwrap();
+
+        let archive = dir.0.join("new.zip");
+        good_archive(&archive, b"new camoufox");
+        let running = Running::default();
+        running.processes.blocking_lock().insert(
+            "p1".into(),
+            crate::browser::launch::BrowserProcess::for_test(1),
+        );
+        let err = install_when_idle(&archive, &data, &running, CAMOUFOX_VERSION, "ab").unwrap_err();
+        assert!(err.starts_with("camoufox_in_use"), "{err}");
+        assert_eq!(installed_binary(&data), b"old camoufox");
+        // The archive stays for the next try.
+        assert!(archive.is_file());
+
+        running.processes.blocking_lock().clear();
+        let pinned = pin_of(&archive);
+        install_when_idle(&archive, &data, &running, CAMOUFOX_VERSION, pinned.sha256).unwrap();
+        assert_eq!(installed_binary(&data), b"new camoufox");
+    }
+
+    #[test]
+    fn an_install_not_from_the_pin_is_not_verified() {
+        let dir = TmpDir::new("manual");
+        let data = dir.0.join("data");
+        let binary = local_binary_path(&data);
+        std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        std::fs::write(&binary, b"camoufox").unwrap();
+        let archive = dir.0.join("a.zip");
+        good_archive(&archive, b"camoufox");
+        let pinned = pin_of(&archive);
+
+        // Put in place by hand: no version, no checksum.
+        let status = install_status(&data, Some(&pinned));
+        assert!(status.installed && !status.verified && status.update_available);
+        assert_eq!(status.camoufox_tag, None);
+
+        // A download from before the pins: a tag, no checksum.
+        let root = install_root(&data);
+        std::fs::write(root.join("version.txt"), CAMOUFOX_VERSION).unwrap();
+        assert!(install_status(&data, Some(&pinned)).update_available);
+
+        // An older pinned download.
+        std::fs::write(root.join("version.txt"), "v135.0.1-beta.24").unwrap();
+        std::fs::write(archive_sha_file(&root), pinned.sha256).unwrap();
+        let status = install_status(&data, Some(&pinned));
+        assert!(!status.verified && status.update_available);
+
+        // The pinned one.
+        std::fs::write(root.join("version.txt"), CAMOUFOX_VERSION).unwrap();
+        assert!(install_status(&data, Some(&pinned)).verified);
+
+        // Without a pin for this computer nothing is verified, and there is
+        // nothing to update to.
+        let status = install_status(&data, None);
+        assert!(!status.verified && !status.update_available && !status.download_available);
+    }
+
+    #[test]
+    fn the_files_to_patch_of_a_macos_bundle_are_in_its_resources() {
+        let root = Path::new("/data/camoufox");
+        let mac = Layout::for_os(root, "mac");
+        assert_eq!(
+            mac.binary,
+            root.join("Camoufox.app/Contents/MacOS/camoufox")
+        );
+        assert_eq!(mac.resources, root.join("Camoufox.app/Contents/Resources"));
+        assert_eq!(resources_dir(&mac.binary), mac.resources);
+
+        for os in ["lin", "win"] {
+            let layout = Layout::for_os(root, os);
+            assert_eq!(layout.resources, root);
+            assert_eq!(resources_dir(&layout.binary), root);
+        }
+        // A Camoufox found on PATH: the files beside it.
+        assert_eq!(
+            resources_dir(Path::new("/usr/lib/camoufox/camoufox")),
+            Path::new("/usr/lib/camoufox")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cancel_does_not_stop_an_install_under_way() {
+        let manager = DownloadManager::default();
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        *manager.cancel_tx.lock().await = Some(tx);
+        *manager.state.lock().await = DownloadState::Extracting;
+        manager.cancel().await;
+        assert_eq!(*manager.state.lock().await, DownloadState::Extracting);
+        assert!(rx.try_recv().is_err());
+        assert!(manager.cancel_tx.lock().await.is_some());
+
+        *manager.state.lock().await = DownloadState::Downloading {
+            downloaded: 1,
+            total: 2,
+            percent: 50,
+        };
+        manager.cancel().await;
+        assert_eq!(*manager.state.lock().await, DownloadState::Idle);
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[test]
+    fn the_shapes_the_ui_reads() {
+        assert_eq!(
+            serde_json::to_string(&DownloadState::Extracting).unwrap(),
+            r#"{"state":"extracting"}"#
+        );
+        let dir = TmpDir::new("shape");
+        let status = serde_json::to_value(install_status(&dir.0, None)).unwrap();
+        for key in [
+            "verified",
+            "pinned_version",
+            "download_available",
+            "update_available",
+        ] {
+            assert!(status.get(key).is_some(), "{key}");
+        }
     }
 }

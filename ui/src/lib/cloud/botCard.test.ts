@@ -50,6 +50,7 @@ describe('the words of a card', () => {
     expect(cardView({ t: 'plan.expiring', plan: null, until: null }, ctx(), t).text).toBe('cloud_card_plan_expiring_soon');
     expect(cardView({ t: 'quota.90', pool: 'files', used: null, limit: null }, ctx(), t).text).toBe('cloud_card_quota {"pool":"cloud_pool_files"}');
     expect(cardView({ t: 'account.dormant', since: null, delete_after: null }, ctx(), t).text).toBe('cloud_card_dormant_soon');
+    expect(cardView({ t: 'account.downgraded', plan: null, files_bytes: null, text_bytes: null }, ctx(), t).text).toBe('cloud_card_downgraded');
   });
 
   it('carry the values the table names, formatted here', () => {
@@ -64,6 +65,11 @@ describe('the words of a card', () => {
     expect(quota.text).toBe('cloud_card_quota {"pool":"cloud_pool_text"}');
     expect(quota.note).toBe('cloud_pool_of {"used":"9 MB","limit":"10 MB"}');
     expect(cardView({ t: 'quota.90', pool: 'media', used: 1, limit: 0 }, ctx(), t).note).toBeNull();
+    // The plan ended: the limit of free under the words, nothing said of a deletion.
+    const downgraded = cardView({ t: 'account.downgraded', plan: 'plus', files_bytes: 2 * 1024 ** 3, text_bytes: 512 * 1024 ** 2 }, ctx(), t);
+    expect(downgraded.note).toBe('cloud_card_downgraded_limit {"limit":"2 GB"}');
+    expect(downgraded.tone).toBe('warn');
+    expect(cardView({ t: 'account.downgraded', plan: 'plus', files_bytes: 0, text_bytes: null }, ctx(), t).note).toBeNull();
   });
 
   it('name a plan only by a name this device knows', () => {
@@ -137,6 +143,7 @@ describe('the button of a card', () => {
     expect(cardView({ t: 'plan.expiring', plan: 'plus', until: AT }, ctx(), t).action).toEqual({ id: 'key', label: 'cloud_key_enter' });
     expect(cardView({ t: 'quota.90', pool: 'files', used: null, limit: null }, ctx(), t).action).toEqual({ id: 'usage', label: 'cloud_quota_what' });
     expect(cardView({ t: 'account.dormant', since: AT, delete_after: null }, ctx(), t).action).toBeNull();
+    expect(cardView({ t: 'account.downgraded', plan: null, files_bytes: null, text_bytes: null }, ctx(), t).action).toEqual({ id: 'usage', label: 'cloud_quota_what' });
   });
 
   it('leads to a part of the page of the cloud', () => {
@@ -199,6 +206,7 @@ describe('the line of a card in the list of chats', () => {
       [{ t: 'plan.expiring', plan: null, until: null }, 'cloud_card_line_plan_expiring'],
       [{ t: 'quota.90', pool: null, used: null, limit: null }, 'cloud_card_line_quota'],
       [{ t: 'account.dormant', since: null, delete_after: null }, 'cloud_card_line_dormant'],
+      [{ t: 'account.downgraded', plan: null, files_bytes: null, text_bytes: null }, 'cloud_card_line_downgraded'],
     ];
     for (const [card, key] of lines) {
       expect(cardLine(card), card.t).toBe(key);

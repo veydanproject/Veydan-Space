@@ -59,7 +59,9 @@ const devLabels: Record<string, { name: string; color?: string }> = {
  */
 const devMocks: Record<string, unknown> = {
   update_supported: true,
+  updater_check: null,
   app_start_error: null,
+  lock_status: { enabled: false, locked: false, timeout_min: 5, vault: 'none', kind: 'password', hint: null, has_recovery: false, recovery_version: null },
   labels_resolve: (args?: Record<string, unknown>): LabelName[] =>
     ((args?.items ?? []) as LabelRef[]).map(({ kind, id }) => {
       const label = devLabels[`${kind}:${id}`];
@@ -137,6 +139,27 @@ export const api = {
     open: () => call<void>('update_open'),
   },
 
+  /**
+   * The updater of a computer (14.3): only a version newer than this build. The modules
+   * stop before the installer of Windows takes over and before the restart.
+   */
+  updater: {
+    /** The version an update offers, or null when this build is the newest. */
+    check: () => call<string | null>('updater_check'),
+    /** Downloads and installs; on Windows the app exits into the installer. */
+    install: async (onprogress: (event: UpdaterProgress) => void): Promise<void> => {
+      if (isTauri) {
+        const { Channel, invoke } = await import('@tauri-apps/api/core');
+        const channel = new Channel<UpdaterProgress>();
+        channel.onmessage = onprogress;
+        return invoke<void>('updater_install', { onProgress: channel });
+      }
+      return call<void>('updater_install');
+    },
+    /** Starts the app again on the files the update put in place. */
+    relaunch: () => call<void>('app_relaunch'),
+  },
+
   sync: {
     getConfig: () => call<SyncConfig>('sync_get_config'),
     setConfig: (cfg: SyncConfig) => call<void>('sync_set_config', { cfg }),
@@ -176,13 +199,18 @@ export const api = {
   },
 
   demo: {
-    seed: (locale: 'ru' | 'en') => call<void>('demo_seed', { locale }),
+    /** `secret`: the lock's, when one is set. Refused by a release built without the demo data (`HostInfo.demo`). */
+    seed: (locale: 'ru' | 'en', secret: string | null) => call<void>('demo_seed', { locale, secret }),
   },
 
   app: {
     /** Non-null in a degraded start: no other command works until the cause is fixed. */
     startError: () => call<StartError | null>('app_start_error'),
-    clearData: () => call<void>('app_clear_data'),
+    /**
+     * `secret`: the lock's, when one is set. `device`: a device joined to a vault leaves it first and
+     * the other devices keep their data; `all`: the deletion goes to every device of the vault.
+     */
+    clearData: (secret: string | null, scope: 'device' | 'all') => call<void>('app_clear_data', { secret, scope }),
   },
 
   /** Which modules this device keeps on (platform-spec 12); the shell owns these. */
@@ -221,13 +249,21 @@ export interface TraySettings {
 
 /**
  * Why the app started without its data. `db_foreign`: the file at `path` is not a Veydan 5
- * database. `db_dev_schema`: it is one, with the schema of another build.
+ * database. `db_dev_schema`: it is one, with the schema of another build. `db_failed`: the
+ * file or its folder at `path` could not be read, created or opened; `reason` says why.
  */
 export interface StartError {
-  code: 'db_foreign' | 'db_dev_schema';
-  /** Absolute path of the file that was left untouched */
+  code: 'db_foreign' | 'db_dev_schema' | 'db_failed';
+  /** Absolute path of the file (or, for `db_failed`, of the folder) the start stopped at */
   path: string;
+  /** `db_failed`: the error as the system gave it */
+  reason?: string;
 }
+
+/** What `updater_install` tells while the update downloads. */
+export type UpdaterProgress =
+  | { event: 'chunk'; len: number; total: number | null }
+  | { event: 'downloaded' };
 
 export interface SyncConfig {
   enabled: boolean;
@@ -334,6 +370,8 @@ export interface SyncStatus {
   /** Chunked large-file objects (manifests + chunks) after the last cleanup. */
   lf_total: number | null;
   lf_removed_last_gc: number | null;
+  /** The device joined and has not read the vault in full yet: it sends nothing until then. */
+  first_read_pending: boolean;
 }
 
 /**

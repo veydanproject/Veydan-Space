@@ -23,7 +23,7 @@ use messenger_dm::relationship::{inbound_decision, InboundDecision};
 use messenger_dm::body::body_of;
 use messenger_dm::DmService;
 use messenger_groups::wire::{self, Opened, T_INVITE, T_JOIN_REQUEST, T_WELCOME};
-use messenger_groups::service::MEMBERSHIP_JOINED;
+use messenger_groups::service::{invite_standing_in, InviteStanding, MEMBERSHIP_JOINED};
 use messenger_ingress::classify::KIND_DM_RUMOR;
 use messenger_store::{calls, chats, groups, messages, Store};
 use nostr::key::Keys;
@@ -246,7 +246,11 @@ impl Describe {
         // writes is a message of its chat, never a request, and its block
         // was looked at above. Its signals are not heard.
         let from_bot = self.dm.is_bot(&peer);
-        let kind = if from_bot {
+        // The protocol of groups is no message of the chat: the app hands it
+        // to the groups before the gate of requests (`GroupService::on_dm`,
+        // the block alone, looked at above), and so does this.
+        let group = envelope.t.starts_with("group.");
+        let kind = if from_bot || group {
             ChatKind::Dm
         } else {
             let seen = messages::count_visible_incoming_since(&self.store, &chat_id, relation.request_floor).await?;
@@ -264,8 +268,18 @@ impl Describe {
             T_CONTACT => (body_of(&envelope), Some(chat_id.clone())),
             T_EDIT | T_DELETE | T_CONTROL => return Ok(Outcome::Quiet { reason: Reason::NotAMessage }),
             T_INVITE => {
+                // As the app tells of it (`GroupService::on_invite`, one rule:
+                // `invite_standing`): a well-formed invitation from a manager
+                // by the log this device holds, or from my contact.
                 let invite: wire::Invite = wire::dm_body(&envelope)?;
-                (Some(Body::Invite { group_name: invite.name }), None)
+                if invite.check(SystemClock.now().secs()).is_err() {
+                    return Ok(Outcome::Quiet { reason: Reason::Invalid });
+                }
+                let contact = relation.my_contact == messenger_dm::relationship::MyContact::Approved;
+                if invite_standing_in(&self.store, &invite.group_id, &peer, contact).await? != InviteStanding::Vouched {
+                    return Ok(Outcome::Quiet { reason: Reason::NotForMe });
+                }
+                (Some(Body::Invite { group_name: invite.shown_name() }), None)
             }
             T_JOIN_REQUEST => {
                 let request: wire::JoinRequest = wire::dm_body(&envelope)?;

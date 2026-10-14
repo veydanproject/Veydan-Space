@@ -27,4 +27,4 @@ pub use describe::{call_over, describe, describe_as, invite_expired, invite_time
 pub use live::{live, Face};
 pub use notice::{Body, CallEnd, CallNotice, ChatKind, LinkKind, Notice, Outcome, Plain, Reason};
 pub use push::{PushData, PushKind};
-pub use settings::{Content, DesktopSettings, Settings};
+pub use settings::{Content, DesktopSettings, Settings, LOCKSCREEN_HIDDEN_BY_DEFAULT};

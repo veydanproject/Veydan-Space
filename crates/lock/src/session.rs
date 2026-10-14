@@ -37,15 +37,17 @@ impl Session {
         self.last_activity.lock().unwrap().is_some()
     }
 
+    /// Activity alone forgives no wrong secret: an open session could guess
+    /// the secret of a dangerous action, touching between the guesses.
     pub(crate) fn touch(&self) {
         *self.last_activity.lock().unwrap() = Some(Instant::now());
-        *self.failed_attempts.lock().unwrap() = 0;
     }
 
     /// Unlocked with `meta`; its hash is remembered for the relock check.
     pub(crate) fn open(&self, meta: LockMeta) {
         *self.meta.lock().unwrap() = Some(meta);
         self.touch();
+        self.forgive();
     }
 
     pub(crate) fn clear(&self) {
@@ -72,6 +74,17 @@ impl Session {
     pub(crate) fn record_failure(&self) {
         let mut failed = self.failed_attempts.lock().unwrap();
         *failed = failed.saturating_add(1);
+    }
+
+    /// The right secret came: the wrong ones before it are forgotten.
+    pub(crate) fn forgive(&self) {
+        *self.failed_attempts.lock().unwrap() = 0;
+    }
+
+    /// Wrong secrets in a row.
+    #[cfg(test)]
+    pub(crate) fn failures(&self) -> u32 {
+        *self.failed_attempts.lock().unwrap()
     }
 
     /// The user was last active `ago` before now.

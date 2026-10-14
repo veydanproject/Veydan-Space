@@ -31,7 +31,10 @@
 
     // Restore state if download was already running
     const dlState = await api.camoufox.downloadState().catch(() => null);
-    if (dlState?.state === 'downloading') {
+    if (dlState?.state === 'extracting') {
+      downloading = true;
+      extracting = true;
+    } else if (dlState?.state === 'downloading') {
       downloading = true;
       if (dlState.downloaded && dlState.total) {
         progress = { percent: dlState.percent ?? 0, downloaded: dlState.downloaded, total: dlState.total };
@@ -112,6 +115,18 @@
     if (!latestCamoufox || !camoufox?.camoufox_tag) return false;
     return latestCamoufox === camoufox.camoufox_tag;
   }
+
+  /** The newest release upstream is the one this build installs. */
+  function latestIsPinned(): boolean {
+    return !!latestCamoufox && latestCamoufox === camoufox?.pinned_version;
+  }
+
+  /** The errors the backend marks with a code, in the language of the UI. */
+  function explainError(message: string): string {
+    if (message.includes('camoufox_in_use')) return $t('settings_camoufox_in_use');
+    if (message.includes('camoufox_unavailable')) return $t('settings_camoufox_unavailable');
+    return message;
+  }
 </script>
 
 {#if camoufox === null}
@@ -142,23 +157,29 @@
     {/if}
   </div>
 
+  {#if camoufox.update_available}
+    <p class="warn-msg">{$t('settings_camoufox_unverified', { version: camoufox.pinned_version })}</p>
+  {/if}
+
   <div class="btn-row">
-    <button class="btn btn-primary btn-sm" disabled={downloading} onclick={downloadCamoufox}>
+    <button class="btn btn-primary btn-sm" disabled={downloading || !camoufox.download_available} onclick={downloadCamoufox}>
       {downloading ? $t('settings_camoufox_btn_updating') : $t('settings_camoufox_btn_update')}
     </button>
     <button class="btn btn-ghost btn-sm" disabled={checkingUpdate || downloading} onclick={checkForUpdates}>
       {checkingUpdate ? $t('settings_camoufox_checking_update') : $t('settings_camoufox_check_update')}
     </button>
-    {#if downloading}
+    {#if downloading && !extracting}
       <button class="btn btn-ghost btn-sm" onclick={cancelDownload}>{$t('common_cancel')}</button>
     {/if}
   </div>
 
   {#if latestCamoufox}
-    {#if isUpToDate()}
+    {#if isUpToDate() && camoufox.verified}
       <p class="ok-msg">{$t('settings_camoufox_up_to_date')}</p>
-    {:else}
+    {:else if latestIsPinned()}
       <p class="warn-msg">{$t('settings_camoufox_update_available', { version: latestCamoufox })}</p>
+    {:else if !isUpToDate()}
+      <p class="muted small">{$t('settings_camoufox_upstream_newer', { version: latestCamoufox })}</p>
     {/if}
   {/if}
   {#if checkUpdateError}
@@ -168,12 +189,16 @@
   <div class="status-row">
     <span class="badge badge-warn">{$t('settings_camoufox_not_installed')}</span>
   </div>
-  <p class="muted small">{$t('settings_camoufox_download_hint')}</p>
+  {#if camoufox.download_available}
+    <p class="muted small">{$t('settings_camoufox_download_hint')}</p>
+  {:else}
+    <p class="warn-msg">{$t('settings_camoufox_unavailable')}</p>
+  {/if}
   <div class="btn-row">
-    <button class="btn btn-primary btn-sm" disabled={downloading} onclick={downloadCamoufox}>
+    <button class="btn btn-primary btn-sm" disabled={downloading || !camoufox.download_available} onclick={downloadCamoufox}>
       {downloading ? $t('settings_camoufox_btn_downloading') : $t('settings_camoufox_btn_download')}
     </button>
-    {#if downloading}
+    {#if downloading && !extracting}
       <button class="btn btn-ghost btn-sm" onclick={cancelDownload}>{$t('common_cancel')}</button>
     {/if}
   </div>
@@ -198,5 +223,5 @@
   <p class="ok-msg">{$t('settings_camoufox_success', { version: downloadDone })}</p>
 {/if}
 {#if downloadError}
-  <div class="error-msg">{downloadError}</div>
+  <div class="error-msg">{explainError(downloadError)}</div>
 {/if}

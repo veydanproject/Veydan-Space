@@ -226,6 +226,15 @@ async fn drop_own_copy(outgoing: &Path, path: &Path) {
     }
 }
 
+/// Whether `path` lies inside `dir`, with links and `..` resolved. `false`
+/// when either cannot be resolved.
+async fn inside(dir: &Path, path: &Path) -> bool {
+    match (tokio::fs::canonicalize(dir).await, tokio::fs::canonicalize(path).await) {
+        (Ok(dir), Ok(path)) => path.starts_with(dir),
+        _ => false,
+    }
+}
+
 /// Everything a download task needs, detached from the runtime's lifetime.
 #[derive(Clone)]
 struct FetchJob {
@@ -480,6 +489,23 @@ impl UploadJob {
         }
     }
 
+    /// What `GroupsDriver::renew_stale_key` does, with what the job has:
+    /// the new key goes out first, the group view learns of it.
+    async fn renew_stale_key(&self, group_id: &str) -> Result<()> {
+        let outcome = self.groups.renew_stale_key(&self.keys, group_id).await?;
+        let publish = !outcome.publish.is_empty();
+        for out in outcome.publish {
+            self.outbox.enqueue(out).await?;
+        }
+        if publish {
+            self.outbox.kick();
+        }
+        for ev in outcome.events {
+            let _ = self.ui.send(ev);
+        }
+        Ok(())
+    }
+
     /// The blob is stored and the chat is a group: the message goes out
     /// under the group key.
     async fn finish_in_group(
@@ -494,6 +520,11 @@ impl UploadJob {
         let lock = self.groups.lock_of(&group_id).await;
         let finished = {
             let _guard = lock.lock().await;
+            // A key someone who left still knows is replaced first when I
+            // manage the group; otherwise the message is refused below.
+            if let Err(e) = self.renew_stale_key(&group_id).await {
+                eprintln!("messenger media: the key of the group {group_id} was not renewed: {e}");
+            }
             self.groups.media_finish(&self.keys, placeholder, envelope, local).await
         };
         match finished {
@@ -913,7 +944,11 @@ impl MessengerRuntime {
         let Some(m) = self.dm.message(message_id).await? else { return Ok(None) };
         let Some(fields) = m.media else { return Ok(None) };
         if let Some(p) = fields.get("local_path").and_then(|v| v.as_str()) {
-            if tokio::fs::metadata(p).await.map(|x| x.is_file()).unwrap_or(false) {
+            // What we received is only ever in the cache: a path elsewhere
+            // came from the sender's envelope (rows kept before it was
+            // dropped on receipt), not from a download of ours.
+            let ours = m.direction != messenger_store::messages::DIR_IN || inside(self.media.cache_dir(), Path::new(p)).await;
+            if ours && tokio::fs::metadata(p).await.map(|x| x.is_file()).unwrap_or(false) {
                 return Ok(Some(PathBuf::from(p)));
             }
         }
@@ -923,9 +958,34 @@ impl MessengerRuntime {
         }
     }
 
+    /// Every server of `d` is one of the project's (a host of its manifest,
+    /// the hosts a bridge carries among them) or one of mine. The servers
+    /// of an attachment are the sender's word: one only the sender named
+    /// learns the address of this device from the request, so it is asked
+    /// only when the user says so.
+    async fn known_servers(&self, d: &MediaDescriptor) -> Result<bool> {
+        let (manifest, _) = self.relays.current_manifest().await?;
+        let mut hosts = crate::net::project_hosts(&manifest);
+        hosts.extend(self.media.servers().await?.iter().filter_map(|s| crate::net::host_of(&s.url)));
+        Ok(d.servers.iter().all(|s| crate::net::host_of(s).is_some_and(|h| hosts.contains(&h))))
+    }
+
+    /// The attachment of a message is on a server neither of the project
+    /// nor mine (`known_servers`): it is not fetched by itself, and the
+    /// bubble says why. False for a message without one.
+    pub async fn media_foreign_server(&self, message_id: &str) -> Result<bool> {
+        let Some(m) = self.dm.message(message_id).await? else { return Ok(false) };
+        let Some(fields) = m.media else { return Ok(false) };
+        match MediaDescriptor::from_fields(&fields) {
+            Ok(d) => Ok(!self.known_servers(&d).await?),
+            Err(_) => Ok(false),
+        }
+    }
+
     /// Fetch the attachment of a message. `manual = false` is the
     /// automatic path: it respects the size limit, earlier failures and a
-    /// previous cancel, and answers `None` when it decides not to start.
+    /// previous cancel, takes only the servers of the project and mine
+    /// (`known_servers`), and answers `None` when it decides not to start.
     pub async fn media_download(&self, message_id: &str, manual: bool) -> Result<Option<PathBuf>> {
         if let Some(p) = self.media_local_path(message_id).await? {
             return Ok(Some(p));
@@ -933,6 +993,9 @@ impl MessengerRuntime {
         let (m, d) = self.descriptor_of(message_id).await?;
         if !manual {
             if d.size > AUTO_DOWNLOAD_BYTES || !self.media.may_auto_download(message_id).await? {
+                return Ok(None);
+            }
+            if !self.known_servers(&d).await? {
                 return Ok(None);
             }
             // Nothing is fetched on behalf of someone I block.
@@ -1402,6 +1465,65 @@ mod tests {
         rt.shutdown().await;
     }
 
+    /// What we received is a file of ours only inside the cache: a path the
+    /// sender wrote into its envelope, kept in a row from before such
+    /// fields were dropped on receipt, leads nowhere.
+    #[tokio::test]
+    async fn a_received_attachment_is_never_a_file_outside_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        let cache = rt.media.cache_dir().to_path_buf();
+        let secret = dir.path().join("id_ed25519");
+        tokio::fs::write(&secret, b"secret").await.unwrap();
+        let next_to_cache = cache.parent().unwrap().join("leak.txt");
+        tokio::fs::write(&next_to_cache, b"secret").await.unwrap();
+        let fetched = cache.join("a".repeat(64)).join("cat.png");
+        tokio::fs::create_dir_all(fetched.parent().unwrap()).await.unwrap();
+        tokio::fs::write(&fetched, b"cat").await.unwrap();
+
+        let chat = messenger_store::chats::ensure_dm(&rt.store, &"b".repeat(64)).await.unwrap();
+        let row = |id: &str, direction: &str, path: &Path| NewMessage {
+            id: id.into(),
+            chat_id: chat.id.clone(),
+            wire_id: None,
+            direction: direction.into(),
+            status: if direction == messages::DIR_IN { messages::STATUS_RECEIVED } else { messages::STATUS_SENT }.into(),
+            content_type: messages::CT_MEDIA.into(),
+            text: None,
+            envelope_json: "{}".into(),
+            sender_pubkey: "b".repeat(64),
+            reply_to_id: None,
+            target_id: None,
+            created_at: 1,
+            is_hidden: false,
+            outbox_local_id: None,
+            media_json: Some(
+                serde_json::json!({ "name": "cat.png", "mime": "image/png", "size": 3, "kind": "image", "local_path": path.to_string_lossy() })
+                    .to_string(),
+            ),
+        };
+        let cases = [
+            ("in-elsewhere", messages::DIR_IN, secret.clone(), false),
+            ("in-climbs-out", messages::DIR_IN, cache.join("..").join("leak.txt"), false),
+            ("in-cache", messages::DIR_IN, fetched.clone(), true),
+            ("out-picked", messages::DIR_OUT, secret.clone(), true),
+        ];
+        for (id, direction, path, here) in &cases {
+            messages::insert(&rt.store, &row(id, direction, path)).await.unwrap();
+            assert_eq!(rt.media_local_path(id).await.unwrap().is_some(), *here, "{id}");
+        }
+        #[cfg(unix)]
+        {
+            let link = cache.join("link.png");
+            std::os::unix::fs::symlink(&secret, &link).unwrap();
+            messages::insert(&rt.store, &row("in-link", messages::DIR_IN, &link)).await.unwrap();
+            assert!(rt.media_local_path("in-link").await.unwrap().is_none(), "a link out of the cache");
+        }
+        assert!(rt.media_data_url("in-elsewhere").await.unwrap().is_none());
+        rt.shutdown().await;
+    }
+
     /// An upload the CLI ran beside the app, and the CLI was killed: no run
     /// is left anywhere. A pause marks it paused here, and its bubble and
     /// its placeholder are told.
@@ -1852,6 +1974,74 @@ mod tests {
         assert_eq!(status_of(&rt, &up[1].1).await, "paused");
         let listed: Vec<String> = rt.media_transfers().await.unwrap().into_iter().map(|t| t.id).collect();
         assert_eq!(listed, [up[1].1.clone()], "only what is not over is listed");
+        rt.shutdown().await;
+    }
+
+    /// A small file the sender keeps on a server of their own is not
+    /// fetched by itself: the server would learn this device's address.
+    /// One on a server of the project, or on one of mine, is.
+    #[tokio::test]
+    async fn only_the_servers_of_the_project_and_mine_are_asked_by_themselves() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let mut rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        let backend = MemoryBackend::new("https://mem.example/a");
+        use_memory(&mut rt, &backend);
+        rt.identity().create("pw").await.unwrap();
+        let keys = rt.identity().load_keys().await.unwrap();
+        let peer = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
+        let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex()).await.unwrap().id;
+        let (manifest, _) = rt.relays.current_manifest().await.unwrap();
+        let project = manifest.media.first().expect("the manifest names a media server").url.clone();
+
+        let received = async |n: u8, servers: Vec<String>| {
+            let theirs = dir.path().join(format!("theirs-{n}.bin"));
+            tokio::fs::write(&theirs, vec![n; 2_000]).await.unwrap();
+            let blob = rt.media.queue_upload(&theirs, "dm:x", "x").await.unwrap();
+            let mut d = rt.media.run_upload(&blob.id, &keys, None, &UiSink(rt.ui.clone())).await.unwrap().unwrap();
+            d.servers = servers;
+            let id = format!("in-{n}");
+            let m = NewMessage {
+                id: id.clone(),
+                chat_id: chat.clone(),
+                wire_id: None,
+                direction: messages::DIR_IN.into(),
+                status: messages::STATUS_RECEIVED.into(),
+                content_type: messages::CT_MEDIA.into(),
+                text: None,
+                envelope_json: "{}".into(),
+                sender_pubkey: peer.as_hex().to_string(),
+                reply_to_id: None,
+                target_id: None,
+                created_at: n as i64,
+                is_hidden: false,
+                outbox_local_id: None,
+                media_json: Some(serde_json::to_string(&d).unwrap()),
+            };
+            messages::insert(&rt.store, &m).await.unwrap();
+            id
+        };
+        let theirs = received(1, vec!["https://media.stranger.example/b".into()]).await;
+        let mixed = received(2, vec![format!("{project}/b"), "https://media.stranger.example/b".into()]).await;
+        let ours = received(3, vec![format!("{project}/b")]).await;
+        let mine = received(4, vec!["https://blobs.mine.example".into()]).await;
+
+        for id in [&theirs, &mixed, &mine] {
+            assert_eq!(rt.media_download(id, false).await.unwrap(), None, "{id}");
+            assert!(rt.media_foreign_server(id).await.unwrap(), "{id}");
+            assert!(rt.media.transfer_for_message(id, DIR_DOWN).await.unwrap().is_none(), "{id}: nothing started");
+        }
+        assert!(!rt.media_foreign_server(&ours).await.unwrap());
+        assert!(rt.media_download(&ours, false).await.unwrap().is_some(), "the project's server is asked by itself");
+
+        // A server I added is one of mine.
+        rt.media_server_put(MediaServerInput { kind: "blossom".into(), url: "https://blobs.mine.example".into(), ..Default::default() })
+            .await
+            .unwrap();
+        assert!(!rt.media_foreign_server(&mine).await.unwrap());
+        assert!(rt.media_download(&mine, false).await.unwrap().is_some());
+        // By hand, the sender's own server is asked too.
+        assert!(rt.media_download(&theirs, true).await.unwrap().is_some());
         rt.shutdown().await;
     }
 

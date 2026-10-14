@@ -20,7 +20,6 @@ use uuid::Uuid;
 use veydan_core::Core;
 use veydan_core::{AppError, CmdResult};
 
-const NOTE_EXTS: &[&str] = &["md", "markdown", "txt"];
 /// Same cap as backups: accept archives made on faster machines.
 const MAX_SCRYPT_WORK_FACTOR: u8 = 22;
 
@@ -32,12 +31,18 @@ pub struct ExportResult {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
-/// Unique `{title}.{ext}` inside the export.
-fn export_file_name(title: &str, ext: &str, taken: &mut HashSet<String>) -> String {
+/// Unique `{title}.{ext}` inside the export, and beside the files already in
+/// the folder `dest` it goes to: an export never writes over a file.
+fn export_file_name(
+    title: &str,
+    ext: &str,
+    taken: &mut HashSet<String>,
+    dest: Option<&Path>,
+) -> String {
     let base = safe_file_name(title).replace('/', "_");
     let mut name = format!("{base}.{ext}");
     let mut i = 2;
-    while taken.contains(&name) {
+    while taken.contains(&name) || dest.is_some_and(|d| d.join(&name).exists()) {
         name = format!("{base}-{i}.{ext}");
         i += 1;
     }
@@ -49,6 +54,7 @@ fn export_file_name(title: &str, ext: &str, taken: &mut HashSet<String>) -> Stri
 async fn collect_export_entries(
     ids: &[String],
     core: &Core,
+    dest: Option<&Path>,
 ) -> Result<Vec<(String, PathBuf)>, AppError> {
     let mut entries = Vec::new();
     let mut taken = HashSet::new();
@@ -67,7 +73,10 @@ async fn collect_export_entries(
             continue;
         }
         let ext = if row.format == "txt" { "txt" } else { "md" };
-        entries.push((export_file_name(&row.title, ext, &mut taken), file.clone()));
+        entries.push((
+            export_file_name(&row.title, ext, &mut taken, dest),
+            file.clone(),
+        ));
 
         let att_dir = attachments_dir_for(&file, &row.id);
         if let Ok(files) = std::fs::read_dir(&att_dir) {
@@ -179,9 +188,11 @@ pub async fn note_export(
     password: Option<String>,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<ExportResult> {
-    let entries = collect_export_entries(&ids, &core).await?;
     let dest_path = PathBuf::from(&dest);
     let password = password.filter(|p| !p.is_empty());
+    let into_dir = password.is_none() && !as_zip;
+    let entries =
+        collect_export_entries(&ids, &core, into_dir.then_some(dest_path.as_path())).await?;
     if let Some(pw) = password {
         write_encrypted_zip(&dest_path, &pw, &entries)?;
     } else if as_zip {
@@ -210,10 +221,28 @@ fn is_note_file(path: &Path) -> bool {
 }
 
 /// Recursively collect note files, skipping hidden dirs and `attachments/`.
-fn collect_note_files(path: &Path, out: &mut Vec<PathBuf>) {
+/// Each comes with the root its links may reach: the folder chosen (or the
+/// one an archive was unpacked into), and for a single file its folder.
+fn collect_note_files(path: &Path, out: &mut Vec<(PathBuf, PathBuf)>) {
+    if path.is_file() {
+        let root = path.parent().unwrap_or(Path::new("."));
+        collect_under(path, root, out);
+    } else {
+        collect_under(path, path, out);
+    }
+}
+
+fn collect_under(path: &Path, root: &Path, out: &mut Vec<(PathBuf, PathBuf)>) {
+    let Ok(root) = root.canonicalize() else {
+        return;
+    };
+    collect_walk(path, &root, out);
+}
+
+fn collect_walk(path: &Path, root: &Path, out: &mut Vec<(PathBuf, PathBuf)>) {
     if path.is_file() {
         if is_note_file(path) {
-            out.push(path.to_path_buf());
+            out.push((path.to_path_buf(), root.to_path_buf()));
         }
         return;
     }
@@ -227,9 +256,9 @@ fn collect_note_files(path: &Path, out: &mut Vec<PathBuf>) {
             if name.starts_with('.') || name == "attachments" {
                 continue;
             }
-            collect_note_files(&p, out);
+            collect_walk(&p, root, out);
         } else if is_note_file(&p) {
-            out.push(p);
+            out.push((p, root.to_path_buf()));
         }
     }
 }
@@ -243,13 +272,26 @@ fn is_external_target(target: &str) -> bool {
 }
 
 /// Resolve a link target relative to the source note; also look in a sibling `attachments/`.
-fn resolve_local(src_dir: &Path, target: &str) -> Option<PathBuf> {
+fn resolve_local(root: &Path, src_dir: &Path, target: &str) -> Option<PathBuf> {
+    use std::path::Component;
     let decoded = percent_decode_simple(target);
+    // Only a path inside the import: no absolute path, no drive, and what
+    // `..` or a link leads out of the root stays text.
+    if Path::new(&decoded)
+        .components()
+        .any(|c| matches!(c, Component::RootDir | Component::Prefix(_)))
+    {
+        return None;
+    }
+    let root = root.canonicalize().ok()?;
     let candidates = [
         src_dir.join(&decoded),
         src_dir.join("attachments").join(&decoded),
     ];
-    candidates.into_iter().find(|p| p.is_file())
+    candidates
+        .into_iter()
+        .filter_map(|p| p.canonicalize().ok())
+        .find(|p| p.is_file() && p.starts_with(&root))
 }
 
 fn percent_decode_simple(s: &str) -> String {
@@ -274,6 +316,7 @@ fn percent_decode_simple(s: &str) -> String {
 /// Handles `[x](rel/path)` / `![x](rel/path)` and Obsidian `![[file]]` embeds.
 fn rewrite_links(
     body: &str,
+    root: &Path,
     src_dir: &Path,
     note_file: &Path,
     note_id: &str,
@@ -310,7 +353,7 @@ fn rewrite_links(
         let replacement = if is_external_target(target) {
             None
         } else {
-            resolve_local(src_dir, target).and_then(|src| {
+            resolve_local(root, src_dir, target).and_then(|src| {
                 let data = std::fs::read(&src).ok()?;
                 let name = src.file_name()?.to_str()?;
                 store_attachment(note_file, note_id, name, &data)
@@ -376,7 +419,7 @@ pub async fn note_import(
 ) -> CmdResult<Vec<String>> {
     let password = password.filter(|p| !p.is_empty());
     let unpack_root = notes_dir(&core.app_data_dir).join(format!(".import-{}", Uuid::new_v4()));
-    let mut files = Vec::new();
+    let mut files: Vec<(PathBuf, PathBuf)> = Vec::new();
     for p in &paths {
         let path = Path::new(p);
         if path.is_file() && is_archive(path) {
@@ -403,7 +446,7 @@ pub async fn note_import(
 }
 
 async fn import_files(
-    files: Vec<PathBuf>,
+    files: Vec<(PathBuf, PathBuf)>,
     bindings: Vec<String>,
     core: &Core,
     notes: &NotesState,
@@ -411,7 +454,7 @@ async fn import_files(
     let docs_dir = current_docs_dir(core, notes);
     let mut created = Vec::new();
 
-    for src in files {
+    for (src, root) in files {
         let Ok(raw) = std::fs::read_to_string(&src) else {
             continue;
         };
@@ -460,7 +503,7 @@ async fn import_files(
 
         let note_file = docs_dir.join(format!("{id}.{format}"));
         let src_dir = src.parent().unwrap_or(Path::new("."));
-        let content = rewrite_links(&body, src_dir, &note_file, &id)?;
+        let content = rewrite_links(&body, &root, src_dir, &note_file, &id)?;
 
         let note = insert_note(
             NewNote {
@@ -482,4 +525,93 @@ async fn import_files(
     }
 
     Ok(created)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `import/` holds the note, `outside/` a file beside it, `out/` the
+    /// documents of the new note.
+    fn tree() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let import = dir.path().join("import");
+        std::fs::create_dir_all(import.join("sub")).unwrap();
+        std::fs::create_dir_all(dir.path().join("out")).unwrap();
+        std::fs::write(dir.path().join("secret.txt"), "secret").unwrap();
+        std::fs::write(import.join("pic.png"), "png").unwrap();
+        let import = import.canonicalize().unwrap();
+        (dir, import)
+    }
+
+    fn rewrite(dir: &tempfile::TempDir, import: &Path, body: &str) -> String {
+        let note_file = dir.path().join("out/n-1.md");
+        rewrite_links(body, import, &import.join("sub"), &note_file, "n-1").unwrap()
+    }
+
+    #[test]
+    fn a_link_out_of_the_import_stays_text_and_copies_nothing() {
+        let (dir, import) = tree();
+        let abs = dir.path().join("secret.txt");
+        let body = format!(
+            "[a](/etc/hostname) [b](../../secret.txt) ![[../../secret.txt]] [c]({})",
+            abs.display()
+        );
+
+        let out = rewrite(&dir, &import, &body);
+
+        assert_eq!(out, body);
+        assert!(!dir.path().join("out/attachments").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_out_of_the_import_stays_text() {
+        let (dir, import) = tree();
+        std::os::unix::fs::symlink(dir.path().join("secret.txt"), import.join("sub/ln.txt"))
+            .unwrap();
+        let body = "[l](ln.txt)";
+
+        assert_eq!(rewrite(&dir, &import, body), body);
+        assert!(!dir.path().join("out/attachments").exists());
+    }
+
+    #[test]
+    fn a_link_inside_the_import_is_copied() {
+        let (dir, import) = tree();
+
+        let out = rewrite(&dir, &import, "![p](../pic.png)");
+
+        assert!(out.starts_with("![p](attachments/n-1/"), "{out}");
+        assert!(dir.path().join("out/attachments/n-1/pic.png").is_file());
+    }
+
+    #[test]
+    fn a_chosen_file_reaches_only_its_folder() {
+        let (_dir, import) = tree();
+        std::fs::write(import.join("n.md"), "x").unwrap();
+        let mut found = Vec::new();
+
+        collect_note_files(&import.join("n.md"), &mut found);
+
+        assert_eq!(found, [(import.join("n.md"), import.clone())]);
+    }
+
+    #[test]
+    fn an_export_beside_a_file_of_the_same_name_does_not_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Plan.md"), "mine").unwrap();
+        std::fs::write(dir.path().join("Plan-2.md"), "mine too").unwrap();
+        let mut taken = HashSet::new();
+
+        let first = export_file_name("Plan", "md", &mut taken, Some(dir.path()));
+        let second = export_file_name("Plan", "md", &mut taken, Some(dir.path()));
+
+        assert_eq!(first, "Plan-3.md");
+        assert_eq!(second, "Plan-4.md");
+        assert_eq!(
+            export_file_name("Other", "md", &mut taken, Some(dir.path())),
+            "Other.md"
+        );
+    }
 }

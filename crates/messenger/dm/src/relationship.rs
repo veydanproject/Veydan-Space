@@ -225,23 +225,25 @@ pub enum DropReason {
 
 /// Decision for a regular (non-control) message from the peer.
 ///
-/// `enforced` is false for restored history (older than this device was
-/// last online): it is stored as it was. `visible_incoming` counts the
-/// messages of this peer already shown in the chat after `request_floor`;
-/// `at` is the message's rumor time. A message dated up to the floor
-/// belongs to an ended episode and is dropped. The caller holds (does not
-/// discard) a second message before approval: a later end of the episode
-/// may let it through.
+/// A block beats everything: mine, then the peer's, whatever the message
+/// is dated (its rumor time is the sender's to choose, so a backdated one
+/// is no way around it). `enforced` is false only for the history a fresh
+/// database restores in its first session: past the blocks, it is stored
+/// as it was. `visible_incoming` counts the messages of this peer already
+/// shown in the chat after `request_floor`; `at` is the message's rumor
+/// time. A message dated up to the floor belongs to an ended episode and
+/// is dropped. The caller holds (does not discard) a second message before
+/// approval: a later end of the episode may let it through.
 pub fn inbound_decision(r: &Relationship, enforced: bool, visible_incoming: i64, at: i64) -> InboundDecision {
     use InboundDecision as D;
-    if !enforced {
-        return D::Save;
-    }
     if r.blocked {
         return D::Drop(DropReason::BlockedByMe);
     }
     if r.peer_signal == PeerSignal::Blocked {
         return D::Drop(DropReason::BlockedByPeer);
+    }
+    if !enforced {
+        return D::Save;
     }
     if r.my_contact == MyContact::Approved {
         // Whatever the peer's last signal was, they are my contact: deliver.
@@ -372,13 +374,18 @@ pub struct SignalOutcome {
 }
 
 /// Apply a control signal from the peer. `at` is the rumor time, `live`
-/// is false for anything older than the running session.
+/// is false for anything older than the running session, `now` is my
+/// clock.
 ///
 /// Order is decided by `at` against the stored `last_signal_at` (a replay
 /// of history in any order cannot undo a newer signal), and historical
-/// signals never trigger an answer.
-pub fn apply_peer_signal(r: &Relationship, signal: Signal, at: i64, live: bool) -> SignalOutcome {
+/// signals never trigger an answer. `at` counts no further than my clock
+/// plus the skew (`FLOOR_SKEW_SECS`): a signal dated in the far future
+/// would stay the newest for good, and every later word of the peer,
+/// written with an honest clock, would be stale.
+pub fn apply_peer_signal(r: &Relationship, signal: Signal, at: i64, live: bool, now: i64) -> SignalOutcome {
     use PeerSignal as P;
+    let at = at.min(now.saturating_add(FLOOR_SKEW_SECS));
     let unchanged = SignalOutcome { next: *r, applied: false, confirm_back: false, system_line: None };
     if at < r.last_signal_at {
         return unchanged;
@@ -626,9 +633,15 @@ mod tests {
         use InboundDecision as D;
         // The newest peer signal is at 100; `at` is the message's time.
         let cases: &[(M, bool, P, bool, i64, i64, D)] = &[
-            // Restored history is stored as it was, whatever the state.
-            (M::None, true, P::Blocked, false, 9, 150, D::Save),
+            // A block beats everything, restored history too: its date is
+            // the sender's to choose.
+            (M::None, true, P::Blocked, false, 9, 150, D::Drop(R::BlockedByMe)),
+            (M::Approved, true, P::Approved, false, 0, 1, D::Drop(R::BlockedByMe)),
+            (M::None, false, P::Blocked, false, 0, 1, D::Drop(R::BlockedByPeer)),
+            (M::Approved, false, P::Blocked, false, 3, 90, D::Drop(R::BlockedByPeer)),
+            // Past the blocks, restored history is stored as it was.
             (M::None, false, P::Left, false, 3, 90, D::Save),
+            (M::None, false, P::None, false, 7, 1, D::Save),
             // Blocks, mine first.
             (M::Approved, true, P::Approved, true, 0, 150, D::Drop(R::BlockedByMe)),
             (M::None, true, P::Blocked, true, 0, 150, D::Drop(R::BlockedByMe)),
@@ -702,6 +715,9 @@ mod tests {
 
     const YEAR_2100: i64 = 4_102_444_800;
 
+    /// My clock in the tests that do not look at it.
+    const NOW: i64 = 1_000_000;
+
     #[test]
     fn an_ended_episode_sets_the_floor_for_the_next_request() {
         // Removal, withdrawal and a no from the peer each end an episode;
@@ -724,7 +740,7 @@ mod tests {
         // peer chose. The caller raises it from what is stored.
         let r = Relationship { request_floor: 30, ..rel(M::None, false, P::None, false) };
         for sig in [Signal::ContactRemoved, Signal::RequestCancelled, Signal::Decline] {
-            assert_eq!(apply_peer_signal(&r, sig, 4_102_444_800, true).next.request_floor, 30, "{sig:?}");
+            assert_eq!(apply_peer_signal(&r, sig, 4_102_444_800, true, NOW).next.request_floor, 30, "{sig:?}");
         }
 
         // Raised toward a stored time, capped at my clock plus the skew,
@@ -737,7 +753,7 @@ mod tests {
 
         // Both removed: the old text is behind the floor, the new request
         // (newer than their removal) goes through once.
-        let left = apply_peer_signal(&rel(M::None, false, P::Approved, true), Signal::ContactRemoved, 100, true).next;
+        let left = apply_peer_signal(&rel(M::None, false, P::Approved, true), Signal::ContactRemoved, 100, true, NOW).next;
         assert_eq!(inbound_decision(&left, true, 0, 101), InboundDecision::SaveAsRequest);
         assert_eq!(inbound_decision(&left, true, 0, 99), InboundDecision::Drop(DropReason::ConnectionEnded));
         // After my no with nothing from the peer since, the request I
@@ -826,7 +842,7 @@ mod tests {
             (P::Approved, Signal::RequestCancelled, P::Approved, false),
         ];
         for (cur, sig, want, applied) in cases {
-            let out = apply_peer_signal(&rel(M::Approved, false, *cur, false), *sig, 10, true);
+            let out = apply_peer_signal(&rel(M::Approved, false, *cur, false), *sig, 10, true, NOW);
             assert_eq!((out.next.peer_signal, out.applied), (*want, *applied), "({cur:?}, {sig:?})");
             assert_eq!(out.next.last_signal_at, 10);
         }
@@ -836,41 +852,67 @@ mod tests {
     fn stale_signals_cannot_undo_newer_ones() {
         let mut r = rel(M::Approved, false, P::None, false);
         // History replayed newest first: block at 200, then the accept from 100.
-        r = apply_peer_signal(&r, Signal::Block, 200, false).next;
-        let out = apply_peer_signal(&r, Signal::Accept, 100, false);
+        r = apply_peer_signal(&r, Signal::Block, 200, false, NOW).next;
+        let out = apply_peer_signal(&r, Signal::Accept, 100, false, NOW);
         assert!(!out.applied);
         assert_eq!(out.next.peer_signal, P::Blocked);
         assert_eq!(out.next.last_signal_at, 200);
         // Same time is accepted (two signals in one second keep arrival order).
-        assert!(apply_peer_signal(&r, Signal::Unblock, 200, false).applied);
+        assert!(apply_peer_signal(&r, Signal::Unblock, 200, false, NOW).applied);
+    }
+
+    #[test]
+    fn a_signal_from_the_future_does_not_lock_the_peers_will() {
+        let now = 1_000;
+        let mutual = rel(M::Approved, false, P::Approved, true);
+        // A block dated 2100 counts as written at my clock plus the skew.
+        let blocked = apply_peer_signal(&mutual, Signal::Block, YEAR_2100, true, now);
+        assert!(blocked.applied);
+        assert_eq!((blocked.next.peer_signal, blocked.next.last_signal_at), (P::Blocked, now + FLOOR_SKEW_SECS));
+        // An unblock written with an honest clock right after it is older.
+        let early = apply_peer_signal(&blocked.next, Signal::Unblock, now, true, now);
+        assert!(!early.applied);
+        assert_eq!(early.next.peer_signal, P::Blocked);
+        // Once time has passed, the peer's word is heard again, even one
+        // dated a little ahead (it is cut to the skew too).
+        let later = now + 100;
+        let unblocked = apply_peer_signal(&blocked.next, Signal::Unblock, later + 400, true, later);
+        assert!(unblocked.applied);
+        assert_eq!((unblocked.next.peer_signal, unblocked.next.last_signal_at), (P::None, later + FLOOR_SKEW_SECS));
+        let accepted = apply_peer_signal(&unblocked.next, Signal::Accept, later + FLOOR_SKEW_SECS, true, later);
+        assert_eq!((accepted.applied, accepted.next.peer_signal), (true, P::Approved));
+        // A signal that does not apply moves the mark no further either.
+        let noop = apply_peer_signal(&mutual, Signal::Unblock, YEAR_2100, true, now);
+        assert!(!noop.applied);
+        assert_eq!(noop.next.last_signal_at, now + FLOOR_SKEW_SECS);
     }
 
     #[test]
     fn confirm_back_only_live_only_once_only_for_contacts() {
         let mine = rel(M::Approved, false, P::None, false);
-        let live = apply_peer_signal(&mine, Signal::Accept, 10, true);
+        let live = apply_peer_signal(&mine, Signal::Accept, 10, true, NOW);
         assert!(live.confirm_back);
         assert!(live.next.was_ever_mutual);
         assert_eq!(live.system_line, Some(SystemLine::RequestAccepted));
 
         // The peer's confirm-back arrives at the side that accepted first:
         // already approved, so no answer and no second system line.
-        let echo = apply_peer_signal(&live.next, Signal::Accept, 11, true);
+        let echo = apply_peer_signal(&live.next, Signal::Accept, 11, true, NOW);
         assert!(echo.applied && !echo.confirm_back);
         assert_eq!(echo.system_line, None);
 
         // Historical accept: applied, never answered.
-        let hist = apply_peer_signal(&mine, Signal::Accept, 10, false);
+        let hist = apply_peer_signal(&mine, Signal::Accept, 10, false, NOW);
         assert!(hist.applied && !hist.confirm_back);
 
         // A stranger's accept is a request, not something to confirm.
-        let stranger = apply_peer_signal(&rel(M::None, false, P::None, false), Signal::Accept, 10, true);
+        let stranger = apply_peer_signal(&rel(M::None, false, P::None, false), Signal::Accept, 10, true, NOW);
         assert!(!stranger.confirm_back);
         assert!(!stranger.next.was_ever_mutual);
         assert_eq!(stranger.system_line, Some(SystemLine::RequestReceived));
 
         // While I block them nothing is answered or shown.
-        let blocked = apply_peer_signal(&rel(M::Approved, true, P::None, false), Signal::Accept, 10, true);
+        let blocked = apply_peer_signal(&rel(M::Approved, true, P::None, false), Signal::Accept, 10, true, NOW);
         assert!(blocked.applied && !blocked.confirm_back);
         assert_eq!(blocked.system_line, None);
     }
@@ -907,7 +949,7 @@ mod tests {
         assert_eq!((o.next.my_contact, o.next.peer_signal), (M::Declined, P::None));
         assert_eq!(o.signals, vec![Signal::Decline]);
         assert_eq!(screen_mode(&o.next), S::RequestDeclinedByMe);
-        let again = apply_peer_signal(&o.next, Signal::Accept, 50, true);
+        let again = apply_peer_signal(&o.next, Signal::Accept, 50, true, NOW);
         assert_eq!(screen_mode(&again.next), S::RequestReceived);
 
         // Block keeps contact and signal; unblock leaves the peer defined.
@@ -940,7 +982,7 @@ mod tests {
         // A blocks B. A drops B's messages; B (after the signal) cannot send
         // and drops A's messages too.
         let a = apply_my_action(&rel(M::Approved, false, P::Approved, true), Action::Block, true, false).next;
-        let b = apply_peer_signal(&rel(M::Approved, false, P::Approved, true), Signal::Block, 10, true).next;
+        let b = apply_peer_signal(&rel(M::Approved, false, P::Approved, true), Signal::Block, 10, true, NOW).next;
         assert!(matches!(inbound_decision(&a, true, 3, 20), InboundDecision::Drop(DropReason::BlockedByMe)));
         assert!(matches!(outbound_permission(&a, 3, true), OutboundPermission::Deny(DenyReason::Blocked)));
         assert!(matches!(inbound_decision(&b, true, 3, 20), InboundDecision::Drop(DropReason::BlockedByPeer)));

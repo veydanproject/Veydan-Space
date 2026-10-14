@@ -57,7 +57,8 @@ pub(crate) async fn open_notes_window(
                 .title(title)
                 .inner_size(960.0, 700.0)
                 .min_inner_size(640.0, 480.0);
-        let builder = veydan_shell::workdir::apply_to_window(builder);
+        let builder =
+            veydan_shell::workdir::apply_to_window(veydan_shell::guard_window(&app2, builder));
         // Rebound, not mutated: on Windows and macOS nothing changes it, and
         // a `mut` would be unused there.
         #[cfg(target_os = "linux")]

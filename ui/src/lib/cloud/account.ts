@@ -39,6 +39,8 @@ export interface ShownAccount {
   plan: string;
   until: number | null;
   grace_until: number | null;
+  /** The plan that waits for the end of this one; only the server's answer knows it. */
+  next: CloudAccount['next'];
   limits: Record<string, number>;
   usage: CloudAccountUsage | null;
   recovery: CloudAccount['recovery'];
@@ -54,6 +56,7 @@ export function shownAccount(status: CloudStatus | null): ShownAccount | null {
       plan: live.plan,
       until: live.until,
       grace_until: live.grace_until ?? null,
+      next: live.next ?? null,
       limits: live.limits ?? {},
       usage: live.usage ?? null,
       recovery: live.recovery ?? null,
@@ -67,6 +70,7 @@ export function shownAccount(status: CloudStatus | null): ShownAccount | null {
     plan: kept.plan,
     until: kept.until,
     grace_until: kept.grace_until,
+    next: null,
     limits: kept.limits ?? {},
     usage: kept.usage,
     recovery: null,
@@ -180,6 +184,7 @@ export const ERROR_KEYS = {
   key_expired: 'cloud_err_key_expired',
   key_revoked: 'cloud_err_key_revoked',
   rate_limited: 'cloud_err_rate_limited',
+  deletion_pending: 'cloud_err_deletion_pending',
   no_host: 'cloud_err_no_host',
   transport: 'cloud_err_no_host',
   auth_expired: 'cloud_err_clock',

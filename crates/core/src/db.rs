@@ -13,7 +13,8 @@
 //! holds a module newer than this build knows (`OpenError::OtherSchema`).
 
 use anyhow::Result;
-use sqlx::{sqlite::SqlitePoolOptions, Connection, Pool, Sqlite, SqliteConnection};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{ConnectOptions, Connection, Pool, Sqlite, SqliteConnection};
 use std::path::{Path, PathBuf};
 
 /// Name of the data file inside the data directory.
@@ -140,8 +141,7 @@ pub async fn is_data_file(path: &Path, schemas: &[Schema]) -> bool {
     if !matches!(classify(path), Ok(FileKind::Marked)) {
         return false;
     }
-    let url = format!("sqlite://{}?mode=ro", path.display());
-    let Ok(mut conn) = SqliteConnection::connect(&url).await else {
+    let Ok(mut conn) = options(path).read_only(true).connect().await else {
         return false;
     };
     let opens = pending(&mut conn, schemas).await.is_ok();
@@ -188,11 +188,18 @@ pub async fn open(db_path: &Path, schemas: &[Schema]) -> Result<Pool<Sqlite>, Op
 }
 
 async fn connect(db_path: &Path) -> Result<Pool<Sqlite>> {
-    let url = format!("sqlite://{}?mode=rwc", db_path.display());
     Ok(SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&url)
+        .connect_with(options(db_path).create_if_missing(true))
         .await?)
+}
+
+/// The file at `path` as SQLite gets it: the path itself, not a URL, which
+/// sqlx would percent-decode and cut at the first `?` — a `--workdir` or a
+/// folder of the user with `%41` or `?` in its name would send the data to
+/// another place than the one `classify` looked at.
+pub fn options(path: &Path) -> SqliteConnectOptions {
+    SqliteConnectOptions::new().filename(path)
 }
 
 fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
@@ -414,6 +421,38 @@ mod tests {
         assert_eq!(classify(&path).unwrap(), FileKind::Marked);
         assert_eq!(names(dir.path()), vec![std::ffi::OsString::from(DB_FILE)]);
         assert!(is_data_file(&path, &[SCHEMA, ITEMS_2]).await);
+    }
+
+    /// A folder whose name reads as a URL — a percent escape, a `?` — holds
+    /// the data file itself: nothing goes to the folder the escape names,
+    /// and the file is opened again where it was made.
+    #[tokio::test]
+    async fn the_data_file_stays_in_a_folder_whose_name_looks_like_a_url() {
+        let root = tempfile::tempdir().unwrap();
+        let mut odd = vec!["a%62", "x%2541"];
+        if cfg!(unix) {
+            odd.push("a?b");
+        }
+        for name in odd {
+            let dir = root.path().join(name);
+            std::fs::create_dir(&dir).unwrap();
+            let path = dir.join(DB_FILE);
+            open(&path, &[SCHEMA]).await.unwrap().close().await;
+            assert_eq!(classify(&path).unwrap(), FileKind::Marked, "{name}");
+            assert_eq!(names(&dir), vec![std::ffi::OsString::from(DB_FILE)]);
+            assert!(is_data_file(&path, &[SCHEMA]).await, "{name}");
+            open(&path, &[SCHEMA]).await.unwrap().close().await;
+        }
+        // Only the folders made here: none that a decoded name points at.
+        let mut made = names(root.path());
+        made.sort();
+        let mut expected: Vec<std::ffi::OsString> = ["a%62", "x%2541"]
+            .into_iter()
+            .chain(cfg!(unix).then_some("a?b"))
+            .map(Into::into)
+            .collect();
+        expected.sort();
+        assert_eq!(made, expected);
     }
 
     #[tokio::test]

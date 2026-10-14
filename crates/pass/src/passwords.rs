@@ -48,6 +48,13 @@ pub struct RevealedSecret {
     pub value: String,
 }
 
+/// The plaintext is wiped once it is sent (or dropped unsent).
+impl Drop for RevealedSecret {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.value);
+    }
+}
+
 #[derive(Deserialize)]
 pub struct PasswordCreate {
     pub title: String,
@@ -76,6 +83,34 @@ fn blank(value: Option<String>) -> Option<String> {
     value
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+/// The address of an entry is opened by the UI, which opens only http, https and mailto: anything else
+/// (javascript:, data:, file:, …) is refused on the way in. A bare domain stays as it is.
+fn check_url(url: Option<String>) -> CmdResult<Option<String>> {
+    let Some(url) = blank(url) else {
+        return Ok(None);
+    };
+    if url.chars().any(char::is_control) {
+        return Err(AppError::other("The address contains control characters"));
+    }
+    if let Some((scheme, rest)) = url.split_once(':') {
+        let is_scheme = scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+        // `host:8080` is a bare domain with a port, not a scheme.
+        let is_port = !rest.is_empty() && rest.starts_with(|c: char| c.is_ascii_digit());
+        let allowed = ["http", "https", "mailto"]
+            .iter()
+            .any(|ok| scheme.eq_ignore_ascii_case(ok));
+        if is_scheme && !allowed && !is_port {
+            return Err(AppError::other(
+                "The address must start with http://, https:// or mailto:",
+            ));
+        }
+    }
+    Ok(Some(url))
 }
 
 fn parse_list(raw: &str) -> Vec<String> {
@@ -185,7 +220,7 @@ pub async fn password_create(
     let totp_json = serde_json::to_string(&totp_ids)?;
     let now = Utc::now().to_rfc3339();
     let username = blank(req.username);
-    let url = blank(req.url);
+    let url = check_url(req.url)?;
     let mut tx = core.db.begin().await.map_err(AppError::db)?;
     sqlx::query(
         "INSERT INTO passwords (
@@ -242,7 +277,7 @@ pub async fn password_update(
         row.username = blank(Some(username));
     }
     if let Some(url) = req.url {
-        row.url = blank(Some(url));
+        row.url = check_url(Some(url))?;
     }
     if let Some(ids) = req.totp_ids {
         let ids = clean_ids(ids);
@@ -383,12 +418,24 @@ pub async fn password_copy(
     core: tauri::State<'_, Core>,
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<()> {
-    let revealed = password_reveal(id, "password".into(), core, lock).await?;
-    let secret = revealed.value;
+    let mut revealed = password_reveal(id, "password".into(), core, lock).await?;
+    // Both copies are wiped when they go; the clipboard's own is the system's.
+    let secret = Zeroizing::new(std::mem::take(&mut revealed.value));
     let to_write = secret.clone();
     tokio::task::spawn_blocking(move || {
         let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-        clipboard.set_text(to_write).map_err(|e| e.to_string())
+        // The password stays out of the clipboard histories of the desktop (KDE hint, Windows, macOS).
+        #[cfg(target_os = "linux")]
+        use arboard::SetExtLinux as _;
+        #[cfg(target_os = "macos")]
+        use arboard::SetExtApple as _;
+        #[cfg(windows)]
+        use arboard::SetExtWindows as _;
+        clipboard
+            .set()
+            .exclude_from_history()
+            .text(to_write.as_str())
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| AppError::other(e.to_string()))?
@@ -398,7 +445,7 @@ pub async fn password_copy(
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         let _ = tokio::task::spawn_blocking(move || {
             let mut clipboard = arboard::Clipboard::new().ok()?;
-            if clipboard.get_text().ok()? == secret {
+            if *Zeroizing::new(clipboard.get_text().ok()?) == *secret {
                 let _ = clipboard.set_text(String::new());
             }
             Some(())
@@ -546,6 +593,18 @@ mod tests {
 
     const SECRET: &str = "VEYDAN_TEST_SECRET_72FC194";
     const SYNC_SECRET: &str = "VEYDAN_SYNC_SECRET_91AB";
+
+    #[test]
+    fn url_of_an_entry_is_http_https_mailto_or_bare() {
+        for ok in ["https://a.example/x", "HTTP://a.example", "mailto:a@b.example", "a.example", "a.example:8080/x", "  a.example  "] {
+            assert!(check_url(Some(ok.into())).unwrap().is_some(), "{ok}");
+        }
+        assert_eq!(check_url(Some("   ".into())).unwrap(), None);
+        assert_eq!(check_url(None).unwrap(), None);
+        for bad in ["javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,x", "file:///etc/passwd", "vbscript:x", "java\nscript:alert(1)"] {
+            assert!(check_url(Some(bad.into())).is_err(), "{bad}");
+        }
+    }
 
     #[tokio::test]
     async fn plaintext_absent_from_db_and_wal() {
@@ -707,7 +766,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            totp_generate_code(totp.id.clone(), app.state())
+            totp_generate_code(totp.id.clone(), app.state(), app.state())
                 .await
                 .unwrap()
                 .code

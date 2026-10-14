@@ -5,15 +5,22 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/notes/api';
   import { notesStore } from '$lib/notes/store/notes.svelte';
+  import { quickDraft } from '$lib/notes/store/quickDraft.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
 
-  let text = $state('');
+  // Kept in memory beyond the page: a lock unmounts it, the unlock brings the text back.
+  let text = $state(quickDraft.text);
   let folderId = $state('');
-  let tags = $state('');
+  let tags = $state(quickDraft.tags);
   let saving = $state(false);
   let savedFlash = $state(false);
   let textarea = $state<HTMLTextAreaElement | null>(null);
+
+  $effect(() => {
+    quickDraft.text = text;
+    quickDraft.tags = tags;
+  });
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 

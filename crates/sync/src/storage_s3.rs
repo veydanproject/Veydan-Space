@@ -4,8 +4,11 @@
 //! S3-compatible adapter (AWS S3, Cloudflare R2, MinIO, Backblaze B2) with
 //! hand-rolled SigV4 signing. Only four operations are needed.
 
-use crate::storage::{http_client, is_noise_key, send_retry, status_error, Storage};
-use crate::{sha256_hex, Result, SyncError};
+use crate::storage::{
+    http_client, is_noise_key, send_retry, status_error, Storage, ERR_NO_CONDITIONAL_PUT,
+    METADATA_TIMEOUT,
+};
+use crate::{random_hex, sha256_hex, Result, SyncError};
 use async_trait::async_trait;
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
@@ -14,6 +17,8 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 use reqwest::{Client, Method, StatusCode};
 use sha2::Sha256;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use url::Url;
 
 /// RFC 3986 unreserved set as S3 expects: everything except A-Z a-z 0-9 - _ . ~
@@ -200,6 +205,7 @@ impl S3Storage {
             Some(&canonical_query)
         });
 
+        let is_short = method == Method::HEAD || query.iter().any(|(k, _)| k == "list-type");
         let mut req = self
             .client
             .request(method, url)
@@ -209,6 +215,9 @@ impl S3Storage {
         for (k, v) in extra {
             req = req.header(*k, *v);
         }
+        if is_short {
+            req = req.timeout(METADATA_TIMEOUT);
+        }
         req.body(body)
     }
 
@@ -217,6 +226,66 @@ impl S3Storage {
         let text = resp.text().await.unwrap_or_default();
         status_error(status, &format!("s3 {what}"), &text)
     }
+
+    /// One PUT with `If-None-Match: *`.
+    async fn put_if_none_match(&self, key: &str, data: &[u8]) -> Result<Conditional> {
+        let path = self.object_path(&self.full_key(key));
+        let resp = self
+            .request_with(
+                Method::PUT,
+                &path,
+                &[],
+                data.to_vec(),
+                &[("If-None-Match", "*")],
+            )
+            .await?;
+        match resp.status() {
+            s if s.is_success() => Ok(Conditional::Written),
+            StatusCode::PRECONDITION_FAILED => Ok(Conditional::Present),
+            StatusCode::NOT_IMPLEMENTED | StatusCode::BAD_REQUEST => Ok(Conditional::Unsupported),
+            _ => Err(Self::fail(resp, "put").await),
+        }
+    }
+
+    /// Whether the server keeps `If-None-Match: *`: a fresh probe key written
+    /// twice must answer 412 the second time. Asked once per storage in the
+    /// process (the cycle builds its storage anew); an error of the network
+    /// is not remembered. The probe key starts with a dot, so it is noise to
+    /// every `list` even when its delete fails.
+    async fn conditional_put_works(&self) -> Result<bool> {
+        static KNOWN: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+        let known = KNOWN.get_or_init(|| Mutex::new(HashMap::new()));
+        let id = format!("{}|{}|{}", self.base, self.cfg.bucket, self.full_key(""));
+        if let Some(works) = known.lock().ok().and_then(|k| k.get(&id).copied()) {
+            return Ok(works);
+        }
+        let probe = format!(".veydan-probe-{}", random_hex(8));
+        let works = async {
+            Ok::<_, SyncError>(match self.put_if_none_match(&probe, b"probe").await? {
+                Conditional::Written => {
+                    self.put_if_none_match(&probe, b"again").await? == Conditional::Present
+                }
+                Conditional::Present | Conditional::Unsupported => false,
+            })
+        }
+        .await;
+        let _ = self.delete(&probe).await;
+        let works = works?;
+        if let Ok(mut k) = known.lock() {
+            k.insert(id, works);
+        }
+        Ok(works)
+    }
+}
+
+/// What a PUT with `If-None-Match: *` came to.
+#[derive(Debug, PartialEq, Eq)]
+enum Conditional {
+    Written,
+    /// 412: the key is there.
+    Present,
+    /// 501 or 400: the server does not take the header.
+    Unsupported,
 }
 
 /// Pull `<Key>` values and the continuation token out of a ListObjectsV2 response.
@@ -257,8 +326,13 @@ fn parse_list(xml: &[u8]) -> Result<(Vec<String>, Option<String>)> {
 #[async_trait]
 impl Storage for S3Storage {
     async fn list(&self, prefix: &str) -> Result<Vec<String>> {
-        let full_prefix = self.full_key(prefix);
         let strip = self.full_key("");
+        // `vault/`, not `vault`: the bucket's `vault2/…` is not this vault's.
+        let full_prefix = if prefix.is_empty() && !strip.is_empty() {
+            format!("{strip}/")
+        } else {
+            self.full_key(prefix)
+        };
         let mut out = Vec::new();
         let mut token: Option<String> = None;
         loop {
@@ -281,9 +355,10 @@ impl Storage for S3Storage {
                 let rel = if strip.is_empty() {
                     k
                 } else {
-                    k.strip_prefix(&format!("{strip}/"))
-                        .unwrap_or(&k)
-                        .to_string()
+                    match k.strip_prefix(&format!("{strip}/")) {
+                        Some(rel) => rel.to_string(),
+                        None => continue,
+                    }
                 };
                 if !is_noise_key(&rel) {
                     out.push(rel);
@@ -361,29 +436,204 @@ impl Storage for S3Storage {
         }
     }
 
-    /// Conditional PUT; servers without `If-None-Match` fall back to HEAD + PUT.
+    /// Conditional PUT. A server that ignores `If-None-Match` would answer 2xx
+    /// and overwrite, so it is asked once (`conditional_put_works`) and
+    /// refused (`ERR_NO_CONDITIONAL_PUT`) instead of a HEAD and a PUT apart.
     async fn put_if_absent(&self, key: &str, data: &[u8]) -> Result<bool> {
-        let path = self.object_path(&self.full_key(key));
-        let resp = self
-            .request_with(
-                Method::PUT,
-                &path,
-                &[],
-                data.to_vec(),
-                &[("If-None-Match", "*")],
-            )
-            .await?;
-        match resp.status() {
-            s if s.is_success() => Ok(true),
-            StatusCode::PRECONDITION_FAILED => Ok(false),
-            StatusCode::NOT_IMPLEMENTED | StatusCode::BAD_REQUEST => {
-                if self.exists(key).await? {
-                    return Ok(false);
-                }
-                self.put(key, data).await?;
-                Ok(true)
-            }
-            _ => Err(Self::fail(resp, "put").await),
+        if !self.conditional_put_works().await? {
+            return Err(SyncError::Storage(ERR_NO_CONDITIONAL_PUT.into()));
         }
+        match self.put_if_none_match(key, data).await? {
+            Conditional::Written => Ok(true),
+            Conditional::Present => Ok(false),
+            Conditional::Unsupported => Err(SyncError::Storage(ERR_NO_CONDITIONAL_PUT.into())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! `S3Storage` against an in-process fake of a bucket (path style, no
+    //! check of the signature) that may ignore `If-None-Match`.
+
+    use super::*;
+    use axum::body::Bytes;
+    use axum::extract::State;
+    use axum::http::{HeaderMap, Method as Verb, StatusCode as Code, Uri};
+    use axum::response::{IntoResponse, Response};
+    use axum::Router;
+    use percent_encoding::percent_decode_str;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    #[derive(Default)]
+    struct Bucket {
+        objects: BTreeMap<String, Vec<u8>>,
+        /// The server writes over a key whatever `If-None-Match` says.
+        ignores_condition: bool,
+        /// Conditional PUTs of probe keys that reached the server.
+        probes: usize,
+    }
+
+    type Shared = Arc<Mutex<Bucket>>;
+
+    fn decode(s: &str) -> String {
+        percent_decode_str(s).decode_utf8_lossy().into_owned()
+    }
+
+    async fn handle(
+        State(shared): State<Shared>,
+        method: Verb,
+        uri: Uri,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> Response {
+        let mut b = shared.lock().unwrap();
+        let key = decode(uri.path().strip_prefix("/b/").unwrap_or(""));
+        match method {
+            Verb::GET if key.is_empty() => {
+                let prefix = uri
+                    .query()
+                    .unwrap_or("")
+                    .split('&')
+                    .find_map(|p| p.strip_prefix("prefix="))
+                    .map(decode)
+                    .unwrap_or_default();
+                let mut xml = String::from("<ListBucketResult>");
+                for k in b.objects.keys().filter(|k| k.starts_with(&prefix)) {
+                    xml.push_str(&format!("<Contents><Key>{k}</Key></Contents>"));
+                }
+                xml.push_str("<IsTruncated>false</IsTruncated></ListBucketResult>");
+                (Code::OK, xml).into_response()
+            }
+            Verb::GET | Verb::HEAD => match b.objects.get(&key) {
+                Some(data) if method == Verb::GET => (Code::OK, data.clone()).into_response(),
+                Some(_) => Code::OK.into_response(),
+                None => Code::NOT_FOUND.into_response(),
+            },
+            Verb::PUT => {
+                let conditional = headers.get("if-none-match").is_some();
+                if conditional
+                    && key
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or("")
+                        .starts_with(".veydan-probe-")
+                {
+                    b.probes += 1;
+                }
+                if conditional && !b.ignores_condition && b.objects.contains_key(&key) {
+                    return Code::PRECONDITION_FAILED.into_response();
+                }
+                b.objects.insert(key, body.to_vec());
+                Code::OK.into_response()
+            }
+            Verb::DELETE => {
+                b.objects.remove(&key);
+                Code::NO_CONTENT.into_response()
+            }
+            _ => Code::BAD_REQUEST.into_response(),
+        }
+    }
+
+    async fn serve(bucket: Bucket, prefix: &str) -> (S3Storage, Shared) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let shared = Arc::new(Mutex::new(bucket));
+        let app = Router::new().fallback(handle).with_state(shared.clone());
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let storage = S3Storage::new(S3Config {
+            endpoint: format!("http://{addr}"),
+            region: "us-east-1".into(),
+            bucket: "b".into(),
+            prefix: prefix.into(),
+            access_key: "k".into(),
+            secret_key: "s".into(),
+            path_style: true,
+        })
+        .expect("storage");
+        (storage, shared)
+    }
+
+    #[tokio::test]
+    async fn a_server_that_ignores_if_none_match_is_refused_before_any_write() {
+        let (s, shared) = serve(
+            Bucket {
+                ignores_condition: true,
+                ..Bucket::default()
+            },
+            "vault",
+        )
+        .await;
+        for _ in 0..2 {
+            let err = s
+                .put_if_absent("devices/a/log/00000001", b"chunk")
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(&err, SyncError::Storage(m) if m == ERR_NO_CONDITIONAL_PUT),
+                "{err}"
+            );
+        }
+        let b = shared.lock().unwrap();
+        assert!(
+            b.objects.is_empty(),
+            "no chunk, no probe left: {:?}",
+            b.objects.keys()
+        );
+        assert_eq!(b.probes, 2, "asked once: two PUTs of one probe key");
+    }
+
+    #[tokio::test]
+    async fn a_server_that_keeps_if_none_match_has_one_winner_and_is_asked_once() {
+        let (s, shared) = serve(Bucket::default(), "vault").await;
+        assert!(s
+            .put_if_absent("devices/a/log/00000001", b"first")
+            .await
+            .unwrap());
+        assert!(!s
+            .put_if_absent("devices/a/log/00000001", b"second")
+            .await
+            .unwrap());
+        let b = shared.lock().unwrap();
+        assert_eq!(b.probes, 2);
+        assert_eq!(
+            b.objects.len(),
+            1,
+            "the probe key is gone: {:?}",
+            b.objects.keys()
+        );
+        assert_eq!(b.objects["vault/devices/a/log/00000001"], b"first");
+    }
+
+    #[tokio::test]
+    async fn a_neighbour_prefix_is_not_listed_as_this_vault() {
+        let mut objects = BTreeMap::new();
+        objects.insert("vault/manifest.json".to_string(), b"m".to_vec());
+        objects.insert("vault2/manifest.json".to_string(), b"other".to_vec());
+        objects.insert("vaultx".to_string(), b"other".to_vec());
+        let (s, _) = serve(
+            Bucket {
+                objects,
+                ..Bucket::default()
+            },
+            "vault",
+        )
+        .await;
+        assert_eq!(s.list("").await.unwrap(), vec!["manifest.json"]);
+
+        let (empty, _) = serve(
+            Bucket {
+                objects: [("vault2/manifest.json".to_string(), b"x".to_vec())].into(),
+                ..Bucket::default()
+            },
+            "vault",
+        )
+        .await;
+        assert!(empty.list("").await.unwrap().is_empty());
     }
 }

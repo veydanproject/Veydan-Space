@@ -352,13 +352,10 @@ mod sync {
 
     #[cfg(desktop)]
     const PROXY: TableSpec = TableSpec {
-        // Must detach every referencing table, exactly like `proxy_delete` does
-        // locally. Missing `ssh_connections` here left connections pointing at a
-        // deleted proxy on every other device.
-        delete: Delete::Plain(&[
-            "UPDATE profiles SET proxy_id = NULL WHERE proxy_id = ?",
-            "UPDATE ssh_connections SET proxy_id = NULL WHERE proxy_id = ?",
-        ]),
+        // Profiles keep their dangling `proxy_id` (the start is then refused,
+        // see `resolve_required`), exactly like `proxy_delete` does locally.
+        // SSH connections are detached: their column is a foreign key.
+        delete: Delete::Plain(&["UPDATE ssh_connections SET proxy_id = NULL WHERE proxy_id = ?"]),
         ..TableSpec::plain(
             "proxy",
             "proxies",
@@ -462,12 +459,14 @@ mod sync {
     }
 
     /// The tags a profile carries are renamed as earlier ops of the pull
-    /// renamed them; a new row gets the device-local columns and its folder.
+    /// renamed them; a new row gets the device-local columns and its folder,
+    /// named by a hash for an id that is not a plain name (`profile_dir_of`):
+    /// an error here would stop the cycle on every device that meets the id.
     #[cfg(desktop)]
     fn profile_before_upsert<'a>(cx: &'a mut Upsert<'_>) -> BoxFuture<'a, CmdResult<()>> {
         Box::pin(async move {
             rewrite_json_tags(cx.payload, "tags", cx.aliases);
-            let dir = cx.data_dir.join("profiles").join(cx.id);
+            let dir = crate::commands::profiles::crud::profile_dir_of(cx.data_dir, cx.id);
             std::fs::create_dir_all(&dir).map_err(AppError::io)?;
             cx.defaults = vec![
                 (
@@ -492,6 +491,8 @@ mod sync {
             let browser = host
                 .state::<crate::browser::BrowserState>()
                 .ok_or_else(|| AppError::other("the browser is not set up"))?;
+            // Not beside a launch that has not registered its process yet.
+            let _files = browser.files.lock(id).await;
             if browser.running.is_running(id).await {
                 return Ok(Deletion::Later);
             }
@@ -501,8 +502,9 @@ mod sync {
     }
 
     /// A column with the name of a local one is that column: the values of the
-    /// row whose id sorts first win, and the tag of the losing column is
-    /// renamed on every profile — and in the profiles of the ops that follow.
+    /// newer of the two win (LWW, `Twin::remote_wins`), and the tag of the
+    /// losing column is renamed on every profile — and in the profiles of the
+    /// ops that follow.
     #[cfg(desktop)]
     fn column_before_upsert<'a>(cx: &'a mut Upsert<'_>) -> BoxFuture<'a, CmdResult<()>> {
         Box::pin(async move {

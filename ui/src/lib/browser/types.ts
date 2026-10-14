@@ -223,6 +223,14 @@ export interface CamoufoxStatus {
   version: string | null;
   camoufox_tag: string | null;
   path: string | null;
+  /** Installed by the app from the archive pinned in this build. */
+  verified: boolean;
+  /** The release of Camoufox this build installs. */
+  pinned_version: string;
+  /** This build pins an archive for this computer. */
+  download_available: boolean;
+  /** Installed but not verified, and the pinned one can be installed. */
+  update_available: boolean;
 }
 
 /** Browser capture: domain -> folder / tags */

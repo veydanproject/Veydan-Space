@@ -61,6 +61,7 @@
     "cloud_state_grace": "読み取り専用",
     "cloud_state_suspended": "停止中",
     "cloud_until": "{date} まで支払い済み",
+    "cloud_next_plan": "{plan} プランは {date} に始まります",
     "cloud_grace_until": "{date} まで読み取り専用です。同期を続けるにはアクティベーションキーを入力してください。",
     "cloud_suspended_text": "アカウントは停止されています。削除は引き続きできます。",
     "cloud_kept_at": "現在 Veydan Cloud に接続できません。{date} 時点の情報を表示しています。",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "このキーは有効期限が切れています。",
     "cloud_err_key_revoked": "このキーは無効にされています。",
     "cloud_err_rate_limited": "試行回数が多すぎます。しばらくしてからもう一度お試しください。",
+    "cloud_err_deletion_pending": "以前のアカウントはまだ削除中です。数分後にもう一度お試しください。",
     "cloud_err_no_host": "現在 Veydan Cloud に接続できません。",
     "cloud_err_clock": "このデバイスの時計がずれています。日付と時刻を設定してください。",
     "cloud_err_suspended": "アカウントは停止されています。",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "プラン",
     "cloud_recover_expired_title": "リクエストは期限切れです",
     "cloud_recovery_reissue_short": "再発行",
+    "cloud_recovery_elsewhere": "Recovery Key は別の端末で発行されています。その端末で再発行するか、単語で復元してください。",
+    "cloud_recovery_elsewhere_anew": "新しく発行する",
+    "cloud_recovery_elsewhere_hint": "新しいキーはここで発行されます。古い単語は、そのコピーが削除されるまで有効です。",
+    "cloud_trustees_missing": "信頼できる人を設定し直す",
     "cloud_recovery_setup_short": "設定",
     "cloud_recovery_show_words": "12 個の単語を表示",
     "cloud_restore_new_secret_hint": "このデバイスでアプリをロックするのに使います。",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "新しいデバイスからアクセスが復元されました",
     "cloud_card_line_plan_expiring": "プランの期限がまもなく切れます",
     "cloud_card_line_quota": "Veydan Cloud の空きがほとんどありません",
-    "cloud_card_line_dormant": "アカウントは未使用のため削除されます"
+    "cloud_card_line_dormant": "アカウントは未使用のため削除されます",
+    "cloud_card_downgraded": "プランが終了しました。無料の上限を超えたファイルは残りますが、空き容量を作るかプランを延長するまで新しいファイルは保存されません。",
+    "cloud_card_downgraded_limit": "無料プラン：ファイル用に {limit}",
+    "cloud_card_line_downgraded": "プランが終了しました"
   },
   "mobile": {}
 }

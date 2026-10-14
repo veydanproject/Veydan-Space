@@ -65,15 +65,23 @@ pub async fn sync_create_vault(
     let cfg = load_config(db).await;
     let device = config::device_id(db).await?;
     let storage = build_storage(&cfg)?;
+    // The slot of the cycle is held while the binding changes, as in
+    // `sync_change_storage`, and free again before the first cycle.
+    let slot = sync
+        .pause(CHANGE_STORAGE_WAIT)
+        .await
+        .ok_or_else(|| AppError::other(join::ERR_SYNC_RUNNING))?;
     let (engine, vmk) = Engine::create(storage, &passphrase, &device)
         .await
         .map_err(AppError::other)?;
     join::bind(db, sync.registry(), engine.vault_id(), &vmk).await?;
+    drop(slot);
     start_first_cycle(&app);
     status(&core, &sync).await
 }
 
-/// Join the vault found in the configured storage.
+/// Join the vault found in the configured storage, with the slot of the
+/// cycle held (`join::join_held`).
 #[tauri::command]
 pub async fn sync_join_vault(
     passphrase: String,
@@ -83,7 +91,7 @@ pub async fn sync_join_vault(
 ) -> CmdResult<SyncStatus> {
     let host = Host::App(&app);
     let passphrase = config::vault_passphrase(&core.db, passphrase).await?;
-    if join::join(&host, &core, sync.registry(), &passphrase).await? {
+    if join::join_held(&host, &core, &sync, &passphrase, CHANGE_STORAGE_WAIT).await? {
         join::key_row_changed(&host).await;
     }
     start_first_cycle(&app);
@@ -116,14 +124,21 @@ fn start_first_cycle(app: &AppHandle) {
     trigger_cycle(app, "join");
 }
 
-/// Forget the vault on this device. Nothing in the storage is touched.
+/// Forget the vault on this device. Nothing in the storage is touched. The
+/// slot of the cycle is held: a cycle that ended after the leave would
+/// write its states and positions back.
 #[tauri::command]
 pub async fn sync_leave(
     app: AppHandle,
     core: tauri::State<'_, Core>,
     sync: tauri::State<'_, SyncManager>,
 ) -> CmdResult<SyncStatus> {
+    let slot = sync
+        .pause(CHANGE_STORAGE_WAIT)
+        .await
+        .ok_or_else(|| AppError::other(join::ERR_SYNC_RUNNING))?;
     join::leave(&core.db, sync.registry()).await?;
+    drop(slot);
     let _ = app.emit(EVENT_STATUS, ());
     status(&core, &sync).await
 }

@@ -190,7 +190,7 @@ pub struct KeyNote {
 /// content is an envelope. Anything else is `None`.
 pub fn open_wrap(keys: &Keys, event: &Event) -> Option<KeyNote> {
     let opened = UnwrappedGift::from_gift_wrap(keys, event).ok()?;
-    let mut rumor = opened.rumor;
+    let rumor = opened.rumor;
     if rumor.pubkey != opened.sender {
         return None;
     }
@@ -199,8 +199,11 @@ pub fn open_wrap(keys: &Keys, event: &Event) -> Option<KeyNote> {
     if kind != KIND_PEER_NOTE_RUMOR && !own {
         return None;
     }
-    rumor.ensure_id();
-    let rumor_id = rumor.id?.to_hex();
+    // The id of a rumor is the hash of its fields, never the id written
+    // beside them (as for a direct message, ingress `classify`): a rumor
+    // that claims another id is nobody's.
+    rumor.verify_id().ok()?;
+    let rumor_id = rumor.compute_id().to_hex();
     let envelope = Envelope::parse(&rumor.content).ok()?;
     Some(KeyNote {
         rumor_id,
@@ -288,6 +291,29 @@ mod tests {
         )
         .unwrap();
         assert!(open_wrap(&me, &event(&forged)).is_none());
+    }
+
+    #[test]
+    fn a_note_whose_rumor_claims_an_id_not_its_hash_is_dropped() {
+        let (a, t) = (Keys::generate(), Keys::generate());
+        let content = Envelope::new(T_DEVICE_LINK).with("blob", "AQID").encode();
+        let rumor = |id: Option<nostr::event::EventId>| {
+            let mut r = EventBuilder::new(Kind::from(KIND_PEER_NOTE_RUMOR), content.as_str())
+                .tag(Tag::public_key(t.public_key()))
+                .custom_created_at(at(1_791_000_000))
+                .finalize_unsigned(a.public_key());
+            r.id = id;
+            r
+        };
+        let honest = rumor(None).compute_id();
+        let zeros = nostr::event::EventId::from_hex(&"0".repeat(64)).unwrap();
+        let forged = gift(&a, t.public_key(), rumor(Some(zeros)), &Keys::generate(), 1, vec![]).unwrap();
+        assert!(open_wrap(&t, &event(&forged)).is_none(), "an id of zeros is not the hash");
+        // Without an id, or with its own hash, the note opens under its hash.
+        for id in [None, Some(honest)] {
+            let w = gift(&a, t.public_key(), rumor(id), &Keys::generate(), 1, vec![]).unwrap();
+            assert_eq!(open_wrap(&t, &event(&w)).expect("opens").rumor_id, honest.to_hex());
+        }
     }
 
     #[test]

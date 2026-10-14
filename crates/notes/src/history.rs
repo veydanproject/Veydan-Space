@@ -6,6 +6,7 @@ use super::index::*;
 use super::merge::{merge3, MergeResult};
 use super::models::*;
 use super::tags::*;
+use super::NotesState;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -440,7 +441,12 @@ pub async fn note_history_restore(
     note_id: String,
     history_id: String,
     core: tauri::State<'_, Core>,
+    notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<Note> {
+    // Held from the read of the current body to the write: a save in flight
+    // lands first and is the version kept in the history below.
+    let _save_guard = notes.save.lock().await;
+
     // Get history content to restore
     let history_content = history_content_by_id(&history_id, &core.db).await?;
 
@@ -494,7 +500,14 @@ pub async fn note_history_restore(
         .map(|t| t.name)
         .collect::<Vec<_>>();
 
-    write_note_file(&file_path, &row, &tag_names, &history_content)?;
+    // An external edit since the read above is refused, not overwritten unseen.
+    write_note_checked(
+        &file_path,
+        &row,
+        &tag_names,
+        &history_content,
+        &compute_hash(&current_content),
+    )?;
 
     let fts_rowid = fts_upsert(
         &note_id,

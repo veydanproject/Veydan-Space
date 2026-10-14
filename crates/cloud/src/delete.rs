@@ -75,21 +75,45 @@ pub fn confirmed(word: &str) -> bool {
     word.trim() == CONFIRM_WORD
 }
 
+/// The keys of the box `cloud` the account leaves behind besides itself:
+/// the Recovery Key and its generation, the state of the escrow, a reissue
+/// under way, the escrows it retired and the trusted people. A new
+/// activation of the same npub starts from nothing (the first issue, not
+/// `already_set_up`). The shares this device keeps for others lie in a box
+/// of their own (`recovery_shares`) and stay.
+pub const RECOVERY_KEYS: [&str; 6] = [
+    crate::escrow::KEY_RK,
+    crate::escrow::KEY_GENERATION,
+    crate::escrow::KEY_ESCROW_STATE,
+    crate::reissue::KEY_PENDING,
+    crate::reissue::KEY_RETIRED,
+    crate::social::KEY_TRUSTEES,
+];
+
+/// Forgets the account in the box: what recovery kept of it, then the
+/// account itself (it works while the lock is closed).
+pub async fn erase_box(boxed: &dyn LockBox) -> Result<(), CloudError> {
+    for key in RECOVERY_KEYS {
+        boxed.delete(key).await?;
+    }
+    account::erase(boxed).await
+}
+
 /// Deletes the account on the server and forgets it here: the receipt of
-/// the server, then the box erased (it works while the lock is closed).
+/// the server, then the box erased ([`erase_box`]).
 pub async fn delete_account(
     api: &dyn CloudApi,
     boxed: &dyn LockBox,
 ) -> Result<Deleted, CloudError> {
     let deleted = api.delete().await?;
-    account::erase(boxed).await?;
+    erase_box(boxed).await?;
     Ok(deleted)
 }
 
 /// This device lets go of the account: nothing kept, no activation shown,
 /// and the screens told.
 async fn unbind<R: Runtime>(app: &AppHandle<R>, receipt: &DeleteReceipt) {
-    let _ = account::forget(app).await;
+    let _ = erase_box(account::boxed(app).as_ref()).await;
     if let Some(activation) = app.try_state::<Activation>() {
         activation.reset();
     }
@@ -138,7 +162,6 @@ pub async fn cloud_delete_account<R: Runtime>(
     };
     let deleted =
         delete_account(crate::client(&app).as_ref(), account::boxed(&app).as_ref()).await?;
-    let _ = account::boxed(&app).delete(crate::social::KEY_TRUSTEES).await;
     let receipt = DeleteReceipt {
         deleted_at: deleted.deleted_at,
         receipt: deleted.receipt,
@@ -205,6 +228,25 @@ mod tests {
     use std::sync::Mutex;
     use veydan_shell::seams::code;
 
+    /// What recovery kept of the account, as a device that issued a key,
+    /// reissued it and chose trusted people would have it.
+    async fn keep_recovery(boxed: &dyn LockBox) {
+        for key in RECOVERY_KEYS {
+            boxed.put(key, b"kept").await.expect("put");
+        }
+    }
+
+    /// The keys of recovery still in the box.
+    async fn recovery_left(boxed: &dyn LockBox) -> Vec<&'static str> {
+        let mut left = Vec::new();
+        for key in RECOVERY_KEYS {
+            if boxed.get(key).await.expect("get").is_some() {
+                left.push(key);
+            }
+        }
+        left
+    }
+
     #[test]
     fn only_the_word_delete_confirms() {
         assert!(confirmed("DELETE") && confirmed("  DELETE\n"));
@@ -225,9 +267,11 @@ mod tests {
             .await
             .expect("refresh");
         assert!(crate::account::read(&boxed).await.expect("read").is_some());
+        keep_recovery(&boxed).await;
         let deleted = delete_account(&api, &boxed).await.expect("deleted");
         assert_eq!(deleted.receipt.len(), 14);
         assert_eq!(crate::account::read(&boxed).await, Ok(None));
+        assert_eq!(recovery_left(&boxed).await, Vec::<&str>::new(), "nothing of recovery is kept");
         assert_eq!(
             fake.last_path().as_deref(),
             Some("/cloud/v1/account?confirm=DELETE")
@@ -366,6 +410,8 @@ mod tests {
         crate::account::refresh(&fake.client(), crate::account::boxed(app.handle()).as_ref())
             .await
             .expect("refresh");
+        let boxed = crate::account::boxed(app.handle());
+        keep_recovery(boxed.as_ref()).await;
         let cards = Dismissed(Mutex::new(Vec::new()));
         let other = card("plan.expiring", json!({ "plan": "plus", "until": 1 }));
         assert!(!take_card(app.handle(), &cards, &other).await);
@@ -386,8 +432,10 @@ mod tests {
                 from_card: true,
             })
         );
+        assert_eq!(recovery_left(boxed.as_ref()).await.len(), RECOVERY_KEYS.len(), "another card keeps it");
         assert!(take_card(app.handle(), &cards, &deleted).await);
         assert_eq!(crate::account::load(app.handle()).await, Ok(None));
+        assert_eq!(recovery_left(boxed.as_ref()).await, Vec::<&str>::new(), "nothing of recovery is kept");
         assert_eq!(
             *cards.0.lock().expect("ids"),
             vec!["id-account.deleted".to_string()]

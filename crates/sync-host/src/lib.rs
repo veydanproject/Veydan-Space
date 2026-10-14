@@ -31,8 +31,9 @@ mod system;
 
 pub use config::{check_install_marker, SyncConfig};
 pub use cycle::{
-    blob_gone, collect, cycle, open_engine, push_error, run_cycle, start, status, trigger_cycle,
-    vault_active, Gathered, Pending, Saves, StorageDevice, SyncStatus,
+    blob_gone, blob_quarantined, collect, cycle, open_engine, prepare, push_error, push_own,
+    reconcile_own_log, run_cycle, start, status, trigger_cycle, vault_active, Gathered, Pending,
+    PushFailed, Saves, StorageDevice, SyncStatus,
 };
 pub use debug::{debug_on, trace, trace_skip, SyncDebugEntry, SyncDebugState};
 pub use fs_hash::HashCache;
@@ -60,15 +61,16 @@ pub const EVENT_DEBUG: &str = "sync://debug";
 /// The sync loop's own tables (unused while sync is disabled).
 pub const SCHEMA: Schema = Schema {
     module: "sync",
-    steps: &[concat!(
-        // Last verified position in each peer device's log.
-        "CREATE TABLE sync_peers (
+    steps: &[
+        concat!(
+            // Last verified position in each peer device's log.
+            "CREATE TABLE sync_peers (
             device_id TEXT PRIMARY KEY NOT NULL,
             seq       INTEGER NOT NULL DEFAULT 0,
             head_hash TEXT NOT NULL DEFAULT ''
         );",
-        // Per-row sync position for table entities (profiles, proxies, ...).
-        "CREATE TABLE sync_row_state (
+            // Per-row sync position for table entities (profiles, proxies, ...).
+            "CREATE TABLE sync_row_state (
             entity_type TEXT NOT NULL,
             entity_id   TEXT NOT NULL,
             head_hlc    TEXT NOT NULL DEFAULT '',
@@ -76,12 +78,23 @@ pub const SCHEMA: Schema = Schema {
             deleted     INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (entity_type, entity_id)
         );",
-        // Unreferenced vault blobs and when they were first seen; deleted after a grace period.
-        "CREATE TABLE sync_gc_candidates (
+            // Unreferenced vault blobs and when they were first seen; deleted after a grace period.
+            "CREATE TABLE sync_gc_candidates (
             blob       TEXT PRIMARY KEY NOT NULL,
             first_seen INTEGER NOT NULL
         );",
-    )],
+        ),
+        // What the device last synced of each row with the vault it left last:
+        // a join of that vault again tells an edit made here since (`join::leave`).
+        "CREATE TABLE sync_left_row_state (
+            vault_id    TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id   TEXT NOT NULL,
+            synced_hash TEXT NOT NULL DEFAULT '',
+            deleted     INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (entity_type, entity_id)
+        );",
+    ],
 };
 
 /// The states the setups of the modules put in place, without the app: what
@@ -167,6 +180,10 @@ pub struct SyncManager {
     debug: debug::Debug,
     /// Scheduler already reported "already running" for the current overlap.
     sched_skip: AtomicBool,
+    /// The checks of the start (install marker, labels, registry) went through;
+    /// a cycle before that would publish with a registry the data file has not
+    /// been reconciled with (audit KA2-09).
+    ready: AtomicBool,
     registry: Registry,
 }
 
@@ -178,8 +195,19 @@ impl SyncManager {
             transfers: Mutex::new(HashMap::new()),
             debug: debug::Debug::default(),
             sched_skip: AtomicBool::new(false),
+            ready: AtomicBool::new(false),
             registry,
         }
+    }
+
+    /// The start checks went through: cycles may run.
+    pub fn is_ready(&self) -> bool {
+        self.ready.load(Ordering::SeqCst)
+    }
+
+    /// Called once the start checks of the data file passed.
+    pub fn mark_ready(&self) {
+        self.ready.store(true, Ordering::SeqCst);
     }
 
     pub fn registry(&self) -> &Registry {

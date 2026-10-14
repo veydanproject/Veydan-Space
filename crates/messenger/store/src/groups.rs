@@ -142,6 +142,16 @@ pub async fn add_key(store: &Store, group_id: &str, key_id: &str) -> Result<bool
     Ok(res.rows_affected() == 1)
 }
 
+pub async fn remove_key(store: &Store, group_id: &str, key_id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM msg_group_keys WHERE group_id = ? AND key_id = ?")
+        .bind(group_id)
+        .bind(key_id)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
 pub async fn key_ids(store: &Store, group_id: &str) -> Result<Vec<String>> {
     sqlx::query_scalar::<_, String>("SELECT key_id FROM msg_group_keys WHERE group_id = ? ORDER BY created_at, key_id")
         .bind(group_id)
@@ -302,6 +312,27 @@ pub async fn expire_invites(store: &Store, now: i64) -> Result<u64> {
     Ok(res.rows_affected())
 }
 
+/// Incoming invitations past their date that were never answered: gone.
+pub async fn delete_lapsed_invites(store: &Store, now: i64) -> Result<u64> {
+    let res = sqlx::query(
+        "DELETE FROM msg_group_invites WHERE direction = 'in' AND status IN ('received', 'expired') AND expires_at <= ?",
+    )
+    .bind(now)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(res.rows_affected())
+}
+
+pub async fn delete_invite(store: &Store, invite_id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM msg_group_invites WHERE invite_id = ?")
+        .bind(invite_id)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
 // ─── Join requests ──────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
@@ -321,7 +352,7 @@ pub async fn put_request(store: &Store, r: &RequestRow) -> Result<()> {
         "INSERT INTO msg_group_requests (group_id, requester, direction, status, payload_json, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(group_id, requester, direction) DO UPDATE SET status = excluded.status,
-           payload_json = excluded.payload_json, updated_at = excluded.updated_at",
+           payload_json = excluded.payload_json, created_at = excluded.created_at, updated_at = excluded.updated_at",
     )
     .bind(&r.group_id)
     .bind(&r.requester)

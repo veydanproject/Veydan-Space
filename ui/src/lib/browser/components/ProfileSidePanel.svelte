@@ -218,7 +218,7 @@
 
         <div class="info-row">
           <span class="info-label">{$t('panel_proxy')}</span>
-          <span class="info-value" class:no-proxy={!proxy}>
+          <span class="info-value" class:no-proxy={!proxy} class:proxy-gone={!proxy && !!profile.proxy_id}>
             {#if proxy}
               <Icon name="globe" size={12} />
               {proxy.name}
@@ -227,7 +227,7 @@
               {/if}
             {:else}
               <Icon name="wifi-off" size={12} />
-              {$t('panel_no_proxy')}
+              {$t(profile.proxy_id ? 'panel_proxy_deleted' : 'panel_no_proxy')}
             {/if}
           </span>
         </div>
@@ -428,6 +428,7 @@
   }
   .info-value :global(svg) { color: var(--text-2); }
   .info-value.no-proxy { color: var(--text-dim); }
+  .info-value.proxy-gone { color: var(--danger-text); }
   .info-value.muted { color: var(--text-2); }
 
   .country-badge {

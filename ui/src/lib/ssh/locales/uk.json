@@ -28,6 +28,7 @@
     "files_transfer_done": "Готово",
     "files_transfer_cancelled": "Скасовано — часткові дані збережено, запустіть передачу знову, щоб продовжити",
     "files_transfer_skipped": "Пропущено: {n}",
+    "files_transfer_move_kept": "Не переміщено: {n}, оригінали залишено",
     "files_conflict_title": "Файл уже існує",
     "files_conflict_msg_file": "«{name}» уже існує в місці призначення. Перезаписати?",
     "files_conflict_msg_dir": "Папка «{name}» уже існує в місці призначення. Перезаписати файли в ній?",

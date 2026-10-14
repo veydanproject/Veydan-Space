@@ -78,15 +78,16 @@
   let contentValue = $state('');
   let titleInputEl: HTMLInputElement | null = $state(null);
 
-  let _lastNoteId: string | null = null;
+  // The editor takes the title and body of the note when another note opens or the store puts
+  // a new body in (`contentRev`); a save answer, a title, tags or a pin leave what is typed.
+  const bodyKey = $derived(note ? `${note.id}:${notesStore.contentRev}` : null);
   $effect(() => {
-    if (note) {
-      if (note.id !== _lastNoteId) {
-        _lastNoteId = note.id;
-      }
+    if (!bodyKey) return;
+    untrack(() => {
+      if (!note) return;
       titleValue = note.title;
       contentValue = note.content ?? '';
-    }
+    });
   });
 
   let textareaEl: HTMLTextAreaElement | null = $state(null);
@@ -122,7 +123,9 @@
     try { localStorage.setItem(MODE_KEY, m); } catch {}
   }
 
-  const readonly = $derived(note?.deleted ?? false);
+  // Read-only in the trash, and while the next note loads: what is typed into the one still
+  // on screen would belong to neither.
+  const readonly = $derived((note?.deleted ?? false) || notesStore.noteLoading);
   const stats = $derived({ words: wordCount(contentValue), chars: contentValue.length });
 
   function setContent(content: string) {
@@ -623,12 +626,9 @@
     showDeleteConfirm = false;
   }
 
+  // The store takes the restored body in (contentRev), and the editor with it.
   function onHistoryRestore(restoredNote: Note) {
-    if (note && restoredNote.id === note.id) {
-      titleValue = restoredNote.title;
-      contentValue = restoredNote.content ?? '';
-      notesStore.activeNote = restoredNote;
-    }
+    if (note && restoredNote.id === note.id) notesStore.takeRestored(restoredNote);
     showHistory = false;
   }
 
@@ -655,8 +655,10 @@
   async function onSyncConflictResolved(mergedContent: string) {
     if (!note) return;
     const id = note.id;
+    let resolved = false;
     try {
       await api.sync.conflictResolve(id, syncConflictToken, mergedContent);
+      resolved = true;
       const fresh = await api.notes.get(id);
       onHistoryRestore(fresh);
       await syncStore.refresh();
@@ -667,6 +669,14 @@
         return;
       }
       syncStore.error = formatError(e);
+      // The resolution may be stored although a step after it failed: show what is on disk.
+      if (resolved) {
+        try {
+          onHistoryRestore(await api.notes.get(id));
+        } catch {
+          /* the error above stays */
+        }
+      }
     }
   }
 
@@ -761,6 +771,7 @@
           class="title-input"
           placeholder={$t('notes_title_placeholder')}
           maxlength="100"
+          readonly={notesStore.noteLoading}
           oninput={onTitleChange}
         />
         {#if titleHovered}

@@ -400,10 +400,14 @@ impl DmService {
     /// Application time for the next outgoing rumor: never earlier than
     /// the newest message in the chat, so order survives clock skew and
     /// several sends within one second. After the chat was deleted here, it
-    /// is later than the deletion, which history sync drops.
+    /// is later than the deletion, which history sync drops. A row counts no
+    /// further than my clock plus the skew (`FLOOR_SKEW_SECS`): the peer's
+    /// rows are dated by the peer, and one dated years ahead would move all
+    /// I write, my signals too, into the future.
     pub(crate) async fn next_created_at(&self, chat_id: &str) -> Result<i64> {
         let now = self.clock.now().secs();
-        let last = repo::last_created_at(&self.store, chat_id).await?;
+        let cap = now.saturating_add(crate::relationship::FLOOR_SKEW_SECS);
+        let last = repo::last_created_at(&self.store, chat_id).await?.map(|l| l.min(cap));
         let cleared = Some(chats::cleared_at(&self.store, chat_id).await?).filter(|c| *c > 0);
         Ok(match last.max(cleared) {
             Some(last) if last >= now => last + 1,
@@ -703,19 +707,19 @@ impl DmService {
                     envelope.str_field("caption").map(String::from),
                     false,
                     None,
-                    Some(serde_json::Value::Object(envelope.fields.clone()).to_string()),
+                    Some(crate::media::received_media_json(&envelope)),
                 ),
                 // Any other envelope of the bot is a card: kept as it was
                 // read, without a text of its own.
                 _ if from_bot => {
                     (repo::CT_BOT_CARD.into(), None, false, None, Some(serde_json::to_string(&BotCard::read(&envelope))?))
                 }
-                // A name only this side writes is not taken from the wire:
-                // nobody sends a system line or a card of the bot.
-                repo::CT_SYSTEM | repo::CT_BOT_CARD => {
-                    (repo::CT_FOREIGN.into(), envelope.str_field("text").map(String::from), false, None, None)
-                }
-                other => (other.to_string(), envelope.str_field("text").map(String::from), false, None, None),
+                // Any other type is kept as `unknown`, its own name only in
+                // the stored envelope: the name is the sender's free text,
+                // of any length, and the list of chats shows it. Names only
+                // this side writes go the same way: nobody sends a system
+                // line or a card of the bot.
+                _ => (repo::CT_FOREIGN.into(), envelope.str_field("text").map(String::from), false, None, None),
             };
         // A card is kept as it was checked, the envelope too.
         let content = match (&card_line, &media_json) {
@@ -1216,8 +1220,9 @@ mod tests {
             assert!(p.message.created_at > last, "strictly increasing within one second");
             last = p.message.created_at;
         }
-        // A peer message from the "future" (clock skew) pushes ours after it.
-        bob.clock.0.store(1_000_500, Ordering::SeqCst);
+        // A peer message from the "future" (a clock skew within the allowed
+        // one) pushes ours after it.
+        bob.clock.0.store(1_000_200, Ordering::SeqCst);
         let ahead = bob.dm.prepare_text(&bob.keys, &alice.pk(), "from the future", None).await.unwrap();
         alice.receive(&peer_event(&ahead)).await;
         let next = alice.dm.prepare_text(&alice.keys, &bob.pk(), "after", None).await.unwrap();
@@ -1420,7 +1425,7 @@ mod tests {
         let msgs = bob.dm.messages(&chat.id, None, 50).await.unwrap();
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].text.as_deref(), Some("just text, no envelope"));
-        assert_eq!(msgs[1].content_type, "sticker");
+        assert_eq!(msgs[1].content_type, "unknown", "a type this side does not know, its name in the envelope");
 
         bob.dm.set_muted(&chat.id, true).await.unwrap();
         assert!(bob.dm.chat(&chat.id).await.unwrap().unwrap().is_muted);
@@ -1637,6 +1642,102 @@ mod tests {
         assert_eq!(mode(&bob, &alice).await, "request_received");
         bob.receive(&peer_event(&p)).await;
         assert!(visible(&bob, &alice).await.contains(&"the request".to_string()));
+    }
+
+    #[tokio::test]
+    async fn a_block_holds_whatever_the_date_of_the_message() {
+        // My block. A fresh database in its first session (no unread floor)
+        // is where restored history is taken as it was: still dropped.
+        let (alice, bob) = mutual().await;
+        bob.dm.act(&bob.keys, &alice.pk(), Action::Block).await.unwrap();
+        let before = visible(&bob, &alice).await;
+        for at in [1, 999_999, 1_000_100] {
+            let fx = bare_text(&alice, &bob, "let me in", at).await;
+            assert!(!names(&fx).contains(&"dm.message".to_string()), "at {at}: {fx:?}");
+        }
+        assert_eq!(visible(&bob, &alice).await, before);
+
+        // The peer's block: what they "wrote before it" is no way past it.
+        let (alice, bob) = mutual().await;
+        let b = alice.dm.act(&alice.keys, &bob.pk(), Action::Block).await.unwrap();
+        for w in for_peer(&b.outbounds) {
+            bob.receive(&w).await;
+        }
+        assert_eq!(mode(&bob, &alice).await, "blocked_by_peer");
+        let fx = bare_text(&alice, &bob, "from the past", 1).await;
+        assert!(!names(&fx).contains(&"dm.message".to_string()));
+        assert!(!visible(&bob, &alice).await.contains(&"from the past".to_string()));
+    }
+
+    #[tokio::test]
+    async fn a_backdated_stranger_still_gets_one_message() {
+        let alice = gated().await;
+        let bob = gated().await;
+        // Bob had a session before: what comes is checked whatever its date.
+        bob.dm.set_unread_floor(999_500);
+        for at in 1..=20 {
+            bare_text(&alice, &bob, &format!("spam {at}"), at).await;
+        }
+        let shown = visible(&bob, &alice).await;
+        assert_eq!(shown.iter().filter(|s| s.starts_with("spam ")).count(), 1, "{shown:?}");
+        assert_eq!(mode(&bob, &alice).await, "request_received");
+        assert_eq!(held_count(&bob, &alice).await, crate::relations::HELD_PER_CHAT, "the rest held up to the limit, then dropped");
+    }
+
+    #[tokio::test]
+    async fn a_message_newer_than_a_late_signal_keeps_the_request() {
+        let alice = gated().await;
+        let bob = gated().await;
+        bob.dm.set_unread_floor(999_500);
+        // Nothing heard of her yet (last signal 0): her text at 5000 is her
+        // newest word, a removal dated 10 that comes after it is older.
+        bare_text(&alice, &bob, "hello", 5_000).await;
+        assert_eq!(mode(&bob, &alice).await, "request_received");
+        assert_eq!(bob.dm.load_relation(&alice.pk()).await.unwrap().last_signal_at, 5_000);
+        let removed = wrap(&alice.keys, &bob.pk(), &Envelope::control("contact_removed").encode(), 10, None).unwrap();
+        bob.receive(&removed.to_peer).await;
+        assert_eq!(mode(&bob, &alice).await, "request_received");
+        assert!(visible(&bob, &alice).await.contains(&"hello".to_string()));
+
+        // Her text from the far future counts as written at my clock plus
+        // the skew: her honest signals after that are heard.
+        let alice = gated().await;
+        let bob = gated().await;
+        bare_text(&alice, &bob, "from 2100", YEAR_2100).await;
+        assert_eq!(bob.dm.load_relation(&alice.pk()).await.unwrap().last_signal_at, 1_000_000 + crate::relationship::FLOOR_SKEW_SECS);
+    }
+
+    #[tokio::test]
+    async fn a_far_future_message_does_not_move_my_clock() {
+        let (alice, bob) = mutual().await;
+        bare_text(&alice, &bob, "from 2036", 1_000_000 + 10 * 365 * 86_400).await;
+        let mine = bob.dm.prepare_text(&bob.keys, &alice.pk(), "answer", None).await.unwrap();
+        assert!(mine.message.created_at <= 1_000_000 + crate::relationship::FLOOR_SKEW_SECS + 1, "{}", mine.message.created_at);
+        assert!(mine.message.created_at >= 1_000_000);
+        // Several in one go still keep their order, within the skew.
+        let next = bob.dm.prepare_text(&bob.keys, &alice.pk(), "and more", None).await.unwrap();
+        assert!(next.message.created_at >= mine.message.created_at);
+        assert!(next.message.created_at <= 1_000_000 + crate::relationship::FLOOR_SKEW_SECS + 1);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_type_is_kept_as_unknown() {
+        let (alice, bob) = mutual().await;
+        let name = format!("x\u{202E}{}", "y".repeat(2_000));
+        let content = serde_json::json!({ "v": 1, "t": name, "text": "a text" }).to_string();
+        let w = wrap(&alice.keys, &bob.pk(), &content, 1_000_100, None).unwrap();
+        assert!(names(&bob.receive(&w.to_peer).await).contains(&"dm.message".to_string()));
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+        let msgs = bob.dm.messages(&chat.id, None, 100).await.unwrap();
+        let m = msgs.iter().find(|m| m.text.as_deref() == Some("a text")).expect("stored");
+        assert_eq!(m.content_type, "unknown");
+        let row = repo::get(bob.dm.store(), &m.id).await.unwrap().unwrap();
+        assert_eq!(row.content_type, "unknown");
+        assert_eq!(Envelope::parse(&row.envelope_json).unwrap().t, name, "the name stays in the envelope");
+        // Known types are kept by their names.
+        bare_text(&alice, &bob, "plain", 1_000_101).await;
+        let msgs = bob.dm.messages(&chat.id, None, 100).await.unwrap();
+        assert_eq!(msgs.iter().find(|m| m.text.as_deref() == Some("plain")).unwrap().content_type, "text");
     }
 
     #[tokio::test]
@@ -2497,6 +2598,31 @@ mod tests {
 
         bob.dm.media_set_local_path(&got.id, "/cache/cat.png").await.unwrap();
         assert_eq!(bob.dm.message(&got.id).await.unwrap().unwrap().media.unwrap()["local_path"], "/cache/cat.png");
+    }
+
+    #[tokio::test]
+    async fn a_local_path_in_a_peers_envelope_is_dropped() {
+        let (alice, bob) = mutual().await;
+        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), None).await.unwrap();
+        // A hostile client puts the fields only Bob's device writes into
+        // what travels.
+        let envelope = Envelope::new("media")
+            .with("kind", "image")
+            .with("name", "cat.png")
+            .with("key", "k")
+            .with("local_path", "/home/bob/.ssh/id_ed25519")
+            .with("transfer_id", "t1")
+            .with("original", true);
+        let p = alice.dm.media_finish(&alice.keys, &ph.id, envelope, media_fields("cat.png")).await.unwrap();
+        bob.receive(&peer_event(&p)).await;
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+        let got = bob.dm.messages(&chat.id, None, 50).await.unwrap().pop().unwrap();
+        let media = got.media.unwrap();
+        for name in crate::media::LOCAL_FIELDS {
+            assert!(media.get(name).is_none(), "{name} is not taken from the wire");
+        }
+        assert_eq!(media["key"], "k");
+        assert_eq!(media["name"], "cat.png");
     }
 
     #[tokio::test]
@@ -3723,7 +3849,7 @@ mod tests {
         assert!(notice.request);
         let shown = incoming(&me, &stranger_pk).await;
         assert_eq!(shown.len(), 1);
-        assert_eq!((shown[0].content_type.as_str(), shown[0].bot_card.clone()), ("recovery.requested", None), "an unknown type, as before");
+        assert_eq!((shown[0].content_type.as_str(), shown[0].bot_card.clone()), ("unknown", None), "an unknown type, its name in the envelope only");
         assert!(!me.dm.chat(&chats::dm_chat_id(stranger_pk.as_hex())).await.unwrap().unwrap().bot);
         // One message until I answer, as for any stranger.
         let second = r#"{"v":1,"t":"recovery.escrow_read","at":1000002}"#;
@@ -3741,7 +3867,7 @@ mod tests {
         assert!(bot_cards(&fx).is_empty());
         assert_eq!(me.dm.relation(&bot_pk).await.unwrap().mode, "request_received");
         let shown = incoming(&me, &bot_pk).await;
-        assert_eq!((shown[0].content_type.as_str(), shown[0].bot_card.clone()), ("recovery.requested", None));
+        assert_eq!((shown[0].content_type.as_str(), shown[0].bot_card.clone()), ("unknown", None));
         assert!(me.receive(&written(&bot, &me, "a second one", 1_000_002)).await.is_empty(), "held like a stranger's");
     }
 

@@ -18,6 +18,7 @@ mod commands;
 pub mod demo;
 mod lock;
 mod module;
+mod navigation;
 mod plan;
 mod router;
 pub mod seams;
@@ -29,9 +30,11 @@ mod update;
 #[cfg(desktop)]
 mod tray;
 #[cfg(desktop)]
+mod updater;
+#[cfg(desktop)]
 pub mod workdir;
 
-pub use app::{command_table, run, schemas, sync_registry};
+pub use app::{command_table, run, schemas, sync_registry, window_table};
 pub use lock::{
     LockSetResult, EVENT_LOCKED, EVENT_UNLOCKED, EVENT_VAULT_CHANGED, TIMEOUT_KEY as LOCK_TIMEOUT_KEY,
 };
@@ -39,11 +42,14 @@ pub use commands::labels::{resolve as resolve_labels, LabelName, LabelRef};
 #[cfg(desktop)]
 pub use commands::settings::app_locale;
 pub use plan::default_plan;
+pub use navigation::guard_window;
 pub use module::{
-    tray_label, BackupPart, BackupPath, DemoPart, Handler, Hook, Module, Setup, SetupResult, Switch,
-    TrayGroup, TrayItem, TrayLabels, TrayPart,
+    tray_label, BackupPart, BackupPath, DemoPart, Grant, Handler, Hook, Module, Setup, SetupResult,
+    Switch, TrayGroup, TrayItem, TrayLabels, TrayPart, WindowGrant, ANY_WINDOW, MAIN_WINDOW,
 };
-pub use router::{unknown_command, DuplicateCommand, Router};
+pub use router::{
+    unknown_command, window_denied, DuplicateCommand, Router, RouterError, UnknownGrant,
+};
 pub use seams::{provide, seam, CloudError, Seam};
 pub use services::{Product, Shell};
 pub use source::{FileSource, Opener};

@@ -66,6 +66,9 @@ pub struct Account {
     pub plan: String,
     pub until: Option<u64>,
     pub grace_until: Option<u64>,
+    /// A plan bought while another runs, from the day that one ends (4.3).
+    #[serde(default)]
+    pub next: Option<NextPlan>,
     /// The effective limits of the plan, by their keys (`vault.files_bytes`, …).
     #[serde(default)]
     pub limits: BTreeMap<String, u64>,
@@ -103,6 +106,14 @@ pub struct RecoveryInfo {
     pub k: Option<u8>,
     pub n: Option<u8>,
     pub generation: Option<u32>,
+}
+
+/// The plan that starts when the current one ends (4.3 `next`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NextPlan {
+    pub plan: String,
+    pub since: u64,
+    pub until: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -967,6 +978,15 @@ mod tests {
         assert_eq!(account.limits["media.retention_days"], 90);
         assert_eq!(account.recovery.and_then(|r| r.k), Some(3));
         assert!(account.subscription.is_none());
+        assert!(account.next.is_none(), "an older server sends no next");
+        // A plan waiting for the end of the current one.
+        let json = serde_json::json!({
+            "npub": "3f".repeat(32), "state": "paid", "plan": "plus", "until": 1793604345u64, "grace_until": null,
+            "next": { "plan": "pro", "since": 1793604345u64, "until": 1796196345u64 },
+            "usage": null, "recovery": null, "last_seen_at": null, "server_time": null,
+        });
+        let account: Account = serde_json::from_value(json).expect("account");
+        assert_eq!(account.next, Some(NextPlan { plan: "pro".into(), since: 1793604345, until: Some(1796196345) }));
     }
 
     /// The example of 4.5 reads: a free plan without prices and a paid one

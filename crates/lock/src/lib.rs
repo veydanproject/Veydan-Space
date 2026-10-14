@@ -457,18 +457,29 @@ impl Lock {
         hint: Option<String>,
     ) -> Result<Option<String>> {
         let form = self.form().await?;
+        // A wrong `current` counts as a wrong secret of `unlock` and waits
+        // as it does: changing the lock is no way around the pause.
+        if matches!(form, SyncedLock::Meta(_) | SyncedLock::Unstated) {
+            self.session.throttle().await;
+        }
         // The secret the key is wrapped with now; without a lock the built-in one.
         let current_secret = match &form {
             SyncedLock::Meta(meta) => match current.as_deref() {
                 Some(c) if verify_hash(c, &meta.hash) => c.to_string(),
-                _ => return Err(Error::other(ERR_CURRENT)),
+                _ => {
+                    self.session.record_failure();
+                    return Err(Error::other(ERR_CURRENT));
+                }
             },
             // Only the wrap can tell whether `current` is the secret.
             SyncedLock::Unstated => current.clone().ok_or_else(|| Error::other(ERR_CURRENT))?,
             SyncedLock::NoRow | SyncedLock::Default => DEFAULT_SECRET.to_string(),
         };
         let unstated = |e: Error| match (&form, e) {
-            (SyncedLock::Unstated, Error::VaultMismatch) => Error::other(ERR_CURRENT),
+            (SyncedLock::Unstated, Error::VaultMismatch) => {
+                self.session.record_failure();
+                Error::other(ERR_CURRENT)
+            }
             (_, e) => e,
         };
         let password = password
@@ -599,17 +610,22 @@ impl Lock {
 
     /// Check the secret of the lock without changing anything: the
     /// confirmation of a dangerous action. Fails when there is no lock.
+    /// A wrong secret counts as a wrong one of `unlock` and waits as it does.
     pub async fn verify(&self, secret: &str) -> Result<()> {
-        let right = match self.form().await? {
+        let form = self.form().await?;
+        if matches!(form, SyncedLock::NoRow | SyncedLock::Default) {
+            return Err(Error::VaultLocked);
+        }
+        self.session.throttle().await;
+        let right = match form {
             SyncedLock::Meta(meta) => verify_hash(secret, &meta.hash),
-            SyncedLock::Unstated => {
-                self.legacy_for(secret).is_some() || vault::opens_row(&self.db, secret).await?
-            }
-            SyncedLock::NoRow | SyncedLock::Default => return Err(Error::VaultLocked),
+            _ => self.legacy_for(secret).is_some() || vault::opens_row(&self.db, secret).await?,
         };
         if right {
+            self.session.forgive();
             Ok(())
         } else {
+            self.session.record_failure();
             Err(Error::other(ERR_WRONG))
         }
     }
@@ -1244,6 +1260,39 @@ mod tests {
         );
         db.close().await;
         other.close().await;
+    }
+
+    /// A wrong `current` of `set` and a wrong secret of `verify` count as
+    /// wrong secrets of `unlock`: after the third, whichever asked, each
+    /// attempt waits. Activity forgives none of them, the right secret all.
+    #[tokio::test]
+    async fn wrong_secrets_of_set_and_verify_are_counted_and_slowed() {
+        let (db, _dir) = pool().await;
+        let lock = Lock::new(db);
+        lock.open_default().await.unwrap();
+        lock.set(Some(PIN.into()), None, Some("pin".into()), None)
+            .await
+            .unwrap();
+        for _ in 0..2 {
+            assert!(lock
+                .set(Some("5555".into()), Some("0000".into()), None, None)
+                .await
+                .is_err());
+        }
+        assert!(lock.verify("0000").await.is_err());
+        lock.touch();
+        assert_eq!(lock.session.failures(), 3);
+
+        let started = std::time::Instant::now();
+        assert!(lock
+            .set(Some("5555".into()), Some("1111".into()), None, None)
+            .await
+            .is_err());
+        assert!(started.elapsed() >= Duration::from_millis(900));
+        assert_eq!(lock.session.failures(), 4);
+
+        lock.verify(PIN).await.unwrap();
+        assert_eq!(lock.session.failures(), 0);
     }
 
     #[tokio::test]

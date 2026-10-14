@@ -61,6 +61,7 @@
     "cloud_state_grace": "Tylko odczyt",
     "cloud_state_suspended": "Zawieszone",
     "cloud_until": "Opłacone do {date}",
+    "cloud_next_plan": "Plan {plan} zaczyna się {date}",
     "cloud_grace_until": "Tylko odczyt do {date}: wpisz klucz aktywacyjny, aby dalej synchronizować.",
     "cloud_suspended_text": "Konto jest zawieszone. Nadal możesz je usunąć.",
     "cloud_kept_at": "Veydan Cloud jest teraz nieosiągalny. Stan na {date}.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Ten klucz wygasł.",
     "cloud_err_key_revoked": "Ten klucz został odwołany.",
     "cloud_err_rate_limited": "Zbyt wiele prób. Spróbuj później.",
+    "cloud_err_deletion_pending": "Poprzednie konto jest jeszcze usuwane. Spróbuj ponownie za kilka minut.",
     "cloud_err_no_host": "Veydan Cloud jest teraz nieosiągalny.",
     "cloud_err_clock": "Zegar tego urządzenia jest nieprawidłowy: ustaw datę i godzinę.",
     "cloud_err_suspended": "Konto jest zawieszone.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Plany",
     "cloud_recover_expired_title": "Wniosek wygasł",
     "cloud_recovery_reissue_short": "Wydaj nowy",
+    "cloud_recovery_elsewhere": "Recovery Key wydano na innym urządzeniu: wydaj go tam ponownie lub przywróć za pomocą słów.",
+    "cloud_recovery_elsewhere_anew": "Wydaj od nowa",
+    "cloud_recovery_elsewhere_hint": "Nowy klucz jest wydawany tutaj. Stare słowa pozostają ważne, dopóki ich kopia nie zostanie usunięta.",
+    "cloud_trustees_missing": "Skonfiguruj zaufane osoby od nowa",
     "cloud_recovery_setup_short": "Skonfiguruj",
     "cloud_recovery_show_words": "Pokaż 12 słów",
     "cloud_restore_new_secret_hint": "Będzie blokować aplikację na tym urządzeniu.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Dostęp przywrócony z nowego urządzenia",
     "cloud_card_line_plan_expiring": "Twój plan wkrótce wygaśnie",
     "cloud_card_line_quota": "Veydan Cloud jest prawie pełny",
-    "cloud_card_line_dormant": "Konto zostanie usunięte z powodu nieaktywności"
+    "cloud_card_line_dormant": "Konto zostanie usunięte z powodu nieaktywności",
+    "cloud_card_downgraded": "Twój plan się skończył. Pliki ponad darmowy limit zostają, ale nowe nie są zapisywane, dopóki nie zwolnisz miejsca lub nie przedłużysz planu.",
+    "cloud_card_downgraded_limit": "Plan darmowy: {limit} na pliki",
+    "cloud_card_line_downgraded": "Twój plan się skończył"
   },
   "mobile": {}
 }

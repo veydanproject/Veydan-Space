@@ -28,6 +28,7 @@
     "files_transfer_done": "Selesai",
     "files_transfer_cancelled": "Dibatalkan — data sebagian disimpan, mulai ulang untuk melanjutkan",
     "files_transfer_skipped": "Dilewati: {n}",
+    "files_transfer_move_kept": "{n} tidak dipindahkan: aslinya tetap disimpan",
     "files_conflict_title": "File sudah ada",
     "files_conflict_msg_file": "\"{name}\" sudah ada di tujuan. Timpa?",
     "files_conflict_msg_dir": "Folder \"{name}\" sudah ada di tujuan. Timpa file di dalamnya?",

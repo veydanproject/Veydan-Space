@@ -187,10 +187,12 @@ pub fn step(mode: NetMode, verdict: Verdict, now: i64, dismissed_at: Option<i64>
     }
 }
 
-/// The host of `wss://host…` or `https://host…`.
-fn host_of(url: &str) -> Option<String> {
-    let rest = url.split_once("://")?.1;
-    let host = rest.split(['/', ':', '?']).next()?;
+/// The host of `wss://host…` or `https://host…`, as the clients read it
+/// when they ask `Net::route` (`Url::host_str`): an IPv6 address in its
+/// brackets, without what goes before an `@`.
+pub(crate) fn host_of(url: &str) -> Option<String> {
+    let url = reqwest::Url::parse(url.trim()).ok()?;
+    let host = url.host_str()?;
     (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
@@ -996,6 +998,16 @@ mod tests {
             Some("m.example.org")
         );
         assert_eq!(host_of("not an address"), None);
+        // As the clients read it: IPv6 whole, never what goes before an `@`.
+        assert_eq!(host_of("wss://[2001:db8::1]:443").as_deref(), Some("[2001:db8::1]"));
+        assert_eq!(
+            host_of("https://user:pass@eu-1-media.veydan.net/b").as_deref(),
+            Some("eu-1-media.veydan.net")
+        );
+        for url in ["wss://[2001:db8::1]:443/", "https://user:pass@eu-1-media.veydan.net/b"] {
+            let read = reqwest::Url::parse(url).unwrap();
+            assert_eq!(host_of(url).as_deref(), read.host_str(), "{url}");
+        }
     }
 
     #[test]

@@ -28,6 +28,7 @@
     "files_transfer_done": "Xong",
     "files_transfer_cancelled": "Đã hủy — phần dữ liệu đã truyền được giữ lại, chạy lại để tiếp tục",
     "files_transfer_skipped": "Đã bỏ qua {n}",
+    "files_transfer_move_kept": "{n} mục chưa được chuyển, bản gốc vẫn được giữ",
     "files_conflict_title": "Tệp đã tồn tại",
     "files_conflict_msg_file": "“{name}” đã tồn tại ở nơi đích. Ghi đè?",
     "files_conflict_msg_dir": "Thư mục “{name}” đã tồn tại ở nơi đích. Ghi đè các tệp bên trong?",

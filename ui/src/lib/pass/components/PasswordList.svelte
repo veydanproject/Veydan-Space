@@ -4,6 +4,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/pass/api';
+  import { copySecret } from '$lib/pass/clipboard';
   import { t } from '$lib/core/i18n';
   import { parseBinding } from '$lib/core/bindings';
   import { userLabels } from '$lib/core/entity-tags';
@@ -99,14 +100,8 @@
       }
       try {
         const value = (await api.passwords.reveal(entry.id, 'password')).value;
-        await navigator.clipboard.writeText(value);
+        await copySecret(value);
         markCopied(`${entry.id}:pass`);
-        const secret = value;
-        setTimeout(() => {
-          navigator.clipboard.readText().then((current) => {
-            if (current === secret) void navigator.clipboard.writeText('');
-          }).catch(() => {});
-        }, 30_000);
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
       }

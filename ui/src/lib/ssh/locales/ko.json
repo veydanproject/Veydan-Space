@@ -28,6 +28,7 @@
     "files_transfer_done": "완료",
     "files_transfer_cancelled": "취소됨 — 일부 데이터는 유지되며, 다시 시작하면 이어서 전송합니다",
     "files_transfer_skipped": "{n}개 건너뜀",
+    "files_transfer_move_kept": "{n}개는 이동되지 않아 원본을 유지했습니다",
     "files_conflict_title": "파일이 이미 있습니다",
     "files_conflict_msg_file": "대상 위치에 “{name}”이(가) 이미 있습니다. 덮어쓸까요?",
     "files_conflict_msg_dir": "대상 위치에 “{name}” 폴더가 이미 있습니다. 폴더 안의 파일을 덮어쓸까요?",

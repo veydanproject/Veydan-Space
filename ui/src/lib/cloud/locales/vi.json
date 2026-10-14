@@ -61,6 +61,7 @@
     "cloud_state_grace": "Chỉ đọc",
     "cloud_state_suspended": "Bị tạm ngưng",
     "cloud_until": "Đã thanh toán đến {date}",
+    "cloud_next_plan": "Gói {plan} bắt đầu vào {date}",
     "cloud_grace_until": "Chỉ đọc đến {date}: nhập khóa kích hoạt để tiếp tục đồng bộ.",
     "cloud_suspended_text": "Tài khoản bị tạm ngưng. Bạn vẫn có thể xóa tài khoản.",
     "cloud_kept_at": "Hiện không thể kết nối Veydan Cloud. Dữ liệu tính đến {date}.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Khóa này đã hết hạn.",
     "cloud_err_key_revoked": "Khóa này đã bị thu hồi.",
     "cloud_err_rate_limited": "Quá nhiều lần thử. Hãy thử lại sau.",
+    "cloud_err_deletion_pending": "Tài khoản trước vẫn đang được xóa. Hãy thử lại sau vài phút.",
     "cloud_err_no_host": "Hiện không thể kết nối Veydan Cloud.",
     "cloud_err_clock": "Đồng hồ của thiết bị này bị sai: hãy chỉnh ngày và giờ.",
     "cloud_err_suspended": "Tài khoản bị tạm ngưng.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Các gói",
     "cloud_recover_expired_title": "Yêu cầu đã hết hạn",
     "cloud_recovery_reissue_short": "Cấp lại",
+    "cloud_recovery_elsewhere": "Recovery Key đã được cấp trên thiết bị khác: hãy cấp lại ở đó hoặc khôi phục bằng các từ.",
+    "cloud_recovery_elsewhere_anew": "Cấp mới",
+    "cloud_recovery_elsewhere_hint": "Khóa mới được cấp tại đây. Các từ cũ vẫn còn hiệu lực cho đến khi bản sao của chúng bị xóa.",
+    "cloud_trustees_missing": "Thiết lập lại người tin cậy",
     "cloud_recovery_setup_short": "Thiết lập",
     "cloud_recovery_show_words": "Hiện 12 từ",
     "cloud_restore_new_secret_hint": "Dùng để khóa ứng dụng trên thiết bị này.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Quyền truy cập đã được khôi phục từ thiết bị mới",
     "cloud_card_line_plan_expiring": "Gói của bạn sắp hết hạn",
     "cloud_card_line_quota": "Veydan Cloud sắp đầy",
-    "cloud_card_line_dormant": "Tài khoản sẽ bị xóa do không hoạt động"
+    "cloud_card_line_dormant": "Tài khoản sẽ bị xóa do không hoạt động",
+    "cloud_card_downgraded": "Gói của bạn đã kết thúc. Các tệp vượt quá giới hạn miễn phí vẫn được giữ, nhưng tệp mới sẽ không được lưu cho đến khi bạn giải phóng dung lượng hoặc gia hạn gói.",
+    "cloud_card_downgraded_limit": "Gói miễn phí: {limit} cho tệp",
+    "cloud_card_line_downgraded": "Gói của bạn đã kết thúc"
   },
   "mobile": {}
 }

@@ -5,6 +5,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { t } from '$lib/core/i18n';
   import { api } from '$lib/pass/api';
+  import { copySecret } from '$lib/pass/clipboard';
   import { totpStore } from '$lib/pass/store/totp.svelte';
   import { directory } from '$lib/core/directory';
   import type { TotpEntry, TotpCode } from '$lib/pass/types';
@@ -27,7 +28,6 @@
   let codes = $state<Map<string, TotpCode>>(new Map());
   let copiedId = $state('');
   let copyTimer: ReturnType<typeof setTimeout>;
-  let clipClearTimer: ReturnType<typeof setTimeout>;
   let editing = $state<TotpEntry | null>(null);
 
   // Countdown ring
@@ -66,7 +66,6 @@
   onDestroy(() => {
     clearInterval(interval);
     clearTimeout(copyTimer);
-    clearTimeout(clipClearTimer);
   });
 
   $effect(() => {
@@ -79,17 +78,11 @@
     const code = codes.get(entry.id);
     if (!code) return;
     try {
-      await navigator.clipboard.writeText(code.code);
+      await copySecret(code.code);
       copiedId = '';
       requestAnimationFrame(() => (copiedId = entry.id));
       clearTimeout(copyTimer);
       copyTimer = setTimeout(() => (copiedId = ''), 2000);
-
-      // Auto-clear clipboard after 30s
-      clearTimeout(clipClearTimer);
-      clipClearTimer = setTimeout(() => {
-        navigator.clipboard.writeText('').catch(() => {});
-      }, 30_000);
     } catch {}
   }
 

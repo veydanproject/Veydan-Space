@@ -458,6 +458,7 @@ mod tests {
             "n-1".into(),
             vec!["Работа".into(), "работа".into(), "Inbox".into()],
             app.state(),
+            app.state(),
         )
         .await
         .unwrap();

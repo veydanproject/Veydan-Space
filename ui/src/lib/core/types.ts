@@ -40,6 +40,8 @@ export interface HostInfo {
   os: string;
   arch: string;
   version: string;
+  /** The build loads the demo data: a debug build, or a release with the feature `demo`. */
+  demo: boolean;
 }
 
 /** The answer of `update_check` (crates/shell/src/update.rs): the product's

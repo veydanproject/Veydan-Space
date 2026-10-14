@@ -5,7 +5,7 @@ use crate::error::{AppError, CmdResult};
 use crate::modules::directory;
 use base64::Engine as _;
 use chrono::Utc;
-use russh::keys::{decode_secret_key, HashAlg, PrivateKeyWithHashAlg};
+use russh::keys::{HashAlg, PrivateKeyWithHashAlg};
 use russh::{client, ChannelMsg};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -375,8 +375,61 @@ fn emit_data(app: &AppHandle, session_id: &str, data: &[u8]) {
     );
 }
 
+/// What one attempt of a login method came to.
+enum Step {
+    Done,
+    Failed {
+        remaining: Vec<russh::MethodKind>,
+        partial: bool,
+    },
+}
+
+/// The methods to try after `last` failed, best first. `remaining` is what the
+/// server still accepts, `partial` that `last` was accepted but is not enough.
+/// A method the user gave nothing for (no saved password, no 2FA) is offered
+/// only after a partial success: after a plain failure it would just ask the
+/// user again for what he did not set up. A password the server rejected is
+/// not sent a second time through keyboard-interactive while the server still
+/// takes passwords.
+fn fallback_methods(
+    last: russh::MethodKind,
+    remaining: &[russh::MethodKind],
+    partial: bool,
+    tried: &[russh::MethodKind],
+    have_password: bool,
+    requires_2fa: bool,
+) -> Vec<russh::MethodKind> {
+    use russh::MethodKind::{KeyboardInteractive, Password};
+    if !partial && last == Password && remaining.contains(&Password) {
+        return Vec::new();
+    }
+    let order = if requires_2fa || !have_password {
+        [KeyboardInteractive, Password]
+    } else {
+        [Password, KeyboardInteractive]
+    };
+    order
+        .into_iter()
+        .filter(|m| remaining.contains(m) && !tried.contains(m))
+        .filter(|m| partial || have_password || (requires_2fa && *m == KeyboardInteractive))
+        .collect()
+}
+
+fn method_name(m: russh::MethodKind) -> &'static str {
+    match m {
+        russh::MethodKind::Password => "Password",
+        russh::MethodKind::PublicKey => "Public key",
+        russh::MethodKind::KeyboardInteractive => "Keyboard-interactive",
+        russh::MethodKind::HostBased => "Host-based",
+        russh::MethodKind::None => "None",
+    }
+}
+
 /// Authenticate with the SSH server based on auth_type.
 /// Shared by the terminal (`run_session`) and the SFTP subsystem (`commands::sftp`).
+/// The method of `auth_type` goes first; when the server refuses it or wants
+/// more (partial success), the next method it still offers is tried
+/// (keyboard-interactive, password), as `ssh` does.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn do_authenticate(
     handle: &mut client::Handle<TerminalHandler>,
@@ -391,9 +444,77 @@ pub(crate) async fn do_authenticate(
     totp_entry_id: Option<&str>,
     rx: &mut mpsc::Receiver<SshInputCommand>,
 ) -> anyhow::Result<()> {
-    match auth_type {
-        "password" => {
-            if requires_2fa {
+    use russh::MethodKind;
+
+    let mut method = match auth_type {
+        "password" if requires_2fa => MethodKind::KeyboardInteractive,
+        "password" => MethodKind::Password,
+        "key" | "key_password" => MethodKind::PublicKey,
+        other => anyhow::bail!("Unknown auth_type: {other}"),
+    };
+
+    // The key is read once, with the saved passphrase for both key types: a
+    // key that needs one opens, an encrypted key without one says so.
+    let key = if method == MethodKind::PublicKey {
+        let pem = private_key.ok_or_else(|| anyhow::anyhow!("No private key provided"))?;
+        let key = crate::commands::ssh_keys::parse_imported(pem, key_passphrase)
+            .map_err(|e| anyhow::anyhow!("Failed to parse private key: {e}"))?;
+        let algo = key.algorithm();
+        let algo_str = format!("{algo}");
+        let fingerprint = key.fingerprint(HashAlg::Sha256);
+        let hash_alg = if algo.is_rsa() {
+            Some(HashAlg::Sha256)
+        } else {
+            None
+        };
+        let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
+        let detail = format!(
+            "Key: {algo_str} / {}, Fingerprint: {fingerprint}",
+            key_with_alg.algorithm()
+        );
+        Some((key_with_alg, detail))
+    } else {
+        None
+    };
+
+    let have_password = password.is_some_and(|p| !p.is_empty());
+    let mut tried: Vec<MethodKind> = Vec::new();
+    let mut first_failure: Option<String> = None;
+    loop {
+        tried.push(method);
+        let step = match method {
+            MethodKind::PublicKey => {
+                let (key_with_alg, _) = key.as_ref().expect("the key is read for this method");
+                match handle
+                    .authenticate_publickey(username, key_with_alg.clone())
+                    .await?
+                {
+                    russh::client::AuthResult::Success => Step::Done,
+                    russh::client::AuthResult::Failure {
+                        remaining_methods,
+                        partial_success,
+                    } => Step::Failed {
+                        remaining: remaining_methods.to_vec(),
+                        partial: partial_success,
+                    },
+                }
+            }
+            MethodKind::Password => {
+                match handle
+                    .authenticate_password(username, password.unwrap_or(""))
+                    .await?
+                {
+                    russh::client::AuthResult::Success => Step::Done,
+                    russh::client::AuthResult::Failure {
+                        remaining_methods,
+                        partial_success,
+                    } => Step::Failed {
+                        remaining: remaining_methods.to_vec(),
+                        partial: partial_success,
+                    },
+                }
+            }
+            _ => {
                 do_keyboard_interactive(
                     handle,
                     app,
@@ -403,90 +524,119 @@ pub(crate) async fn do_authenticate(
                     totp_entry_id,
                     rx,
                 )
-                .await
-            } else {
-                let pw = password.unwrap_or("");
-                let result = handle.authenticate_password(username, pw).await?;
-                if matches!(result, russh::client::AuthResult::Success) {
-                    Ok(())
-                } else {
-                    anyhow::bail!("Password authentication failed")
+                .await?
+            }
+        };
+        let (remaining, partial) = match step {
+            Step::Done => return Ok(()),
+            Step::Failed { remaining, partial } => (remaining, partial),
+        };
+        if first_failure.is_none() {
+            let listed: Vec<String> = remaining.iter().map(|m| format!("{m:?}")).collect();
+            first_failure = Some(match (method, key.as_ref()) {
+                (MethodKind::PublicKey, Some((_, detail))) => format!(
+                    "Public key authentication failed.\n\
+                     {detail}\n\
+                     Server remaining: [{}]\n\
+                     Check that the public key is in ~/.ssh/authorized_keys on the server.",
+                    listed.join(", ")
+                ),
+                _ => format!("{} authentication failed", method_name(method)),
+            });
+        }
+        let next = fallback_methods(
+            method,
+            &remaining,
+            partial,
+            &tried,
+            have_password,
+            requires_2fa,
+        );
+        match next.first() {
+            Some(m) => method = *m,
+            None => {
+                let mut msg = first_failure.unwrap_or_default();
+                if tried.len() > 1 {
+                    let names: Vec<&str> = tried[1..].iter().map(|m| method_name(*m)).collect();
+                    msg.push_str(&format!("\nThen tried: {}", names.join(", ")));
                 }
+                anyhow::bail!(msg)
             }
         }
-        "key" | "key_password" => {
-            let pem = private_key.ok_or_else(|| anyhow::anyhow!("No private key provided"))?;
-            let pem = pem.trim();
+    }
+}
 
-            let key = if auth_type == "key_password" {
-                let passphrase = key_passphrase.unwrap_or("");
-                russh::keys::PrivateKey::from_openssh(pem)
-                    .or_else(|_| decode_secret_key(pem, Some(passphrase)))
-                    .map_err(|e| anyhow::anyhow!("Failed to parse private key: {e}"))?
-            } else {
-                russh::keys::PrivateKey::from_openssh(pem)
-                    .or_else(|_| decode_secret_key(pem, None))
-                    .map_err(|e| anyhow::anyhow!("Failed to parse private key: {e}"))?
-            };
+/// How a keyboard-interactive prompt reads: a one-time code, the account
+/// password, or something else (asked of the user). The code is checked first:
+/// «One-time password» holds the word "password" but wants the code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptKind {
+    Totp,
+    Password,
+    Other,
+}
 
-            let algo = key.algorithm();
-            let algo_str = format!("{algo}");
-            let fingerprint = key.fingerprint(HashAlg::Sha256);
-            let hash_alg = if algo.is_rsa() {
-                Some(HashAlg::Sha256)
-            } else {
-                None
-            };
-            let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
-            let auth_algo = key_with_alg.algorithm();
+fn classify_prompt(prompt: &str) -> PromptKind {
+    let p = prompt.to_lowercase();
+    const TOTP: [&str; 9] = [
+        "one-time",
+        "one time",
+        "onetime",
+        "verification",
+        "code",
+        "totp",
+        "2fa",
+        "authenticator",
+        "otp",
+    ];
+    if TOTP.iter().any(|m| p.contains(m)) {
+        PromptKind::Totp
+    } else if p.contains("password") || p.contains("пароль") || p.contains("passwd") {
+        PromptKind::Password
+    } else {
+        PromptKind::Other
+    }
+}
 
-            let result = handle
-                .authenticate_publickey(username, key_with_alg)
-                .await?;
-            match result {
-                russh::client::AuthResult::Success => Ok(()),
-                russh::client::AuthResult::Failure {
-                    partial_success: true,
-                    ref remaining_methods,
-                } if remaining_methods
-                    .iter()
-                    .any(|m| matches!(m, russh::MethodKind::KeyboardInteractive)) =>
-                {
-                    do_keyboard_interactive(
-                        handle,
-                        app,
-                        session_id,
-                        username,
-                        password,
-                        totp_entry_id,
-                        rx,
-                    )
-                    .await
-                }
-                russh::client::AuthResult::Failure {
-                    remaining_methods, ..
-                } => {
-                    let methods: Vec<String> =
-                        remaining_methods.iter().map(|m| format!("{m:?}")).collect();
-                    anyhow::bail!(
-                        "Public key authentication failed.\n\
-                         Key: {algo_str} / {auth_algo}, Fingerprint: {fingerprint}\n\
-                         Server remaining: [{}]\n\
-                         Check that the public key is in ~/.ssh/authorized_keys on the server.",
-                        methods.join(", ")
-                    )
-                }
+/// What may be answered by itself. Each kind goes once per login: a server
+/// that asks again refused the first answer, and the same one is not sent
+/// twice (fail2ban, a code used up) — the user is asked then.
+#[derive(Default)]
+struct AutoAnswers {
+    password_sent: bool,
+    totp_sent: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Auto {
+    Password,
+    Totp,
+}
+
+impl AutoAnswers {
+    fn choose(&mut self, kind: PromptKind, has_password: bool, has_totp: bool) -> Option<Auto> {
+        match kind {
+            PromptKind::Password if has_password && !self.password_sent => {
+                self.password_sent = true;
+                Some(Auto::Password)
             }
+            PromptKind::Totp if has_totp && !self.totp_sent => {
+                self.totp_sent = true;
+                Some(Auto::Totp)
+            }
+            _ => None,
         }
-        other => anyhow::bail!("Unknown auth_type: {other}"),
     }
 }
 
 /// Keyboard-interactive auth.
 /// Prompts are auto-answered with:
-///   1. Stored password (if prompt contains "password")
-///   2. TOTP code generated from linked profile (if prompt contains "verification" / "code" / etc.)
+///   1. TOTP code generated from linked profile (prompt reads as a one-time code)
+///   2. Stored password (prompt contains "password")
 ///   3. Otherwise relayed to the frontend overlay for interactive input.
+///
+/// Each prompt is answered in order, one at a time; a relayed prompt goes to
+/// the frontend alone, so exactly one answer is awaited for it.
 async fn do_keyboard_interactive(
     handle: &mut client::Handle<TerminalHandler>,
     app: &AppHandle,
@@ -495,16 +645,23 @@ async fn do_keyboard_interactive(
     auto_password: Option<&str>,
     totp_entry_id: Option<&str>,
     rx: &mut mpsc::Receiver<SshInputCommand>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Step> {
     let mut result = handle
         .authenticate_keyboard_interactive_start(username, None)
         .await?;
+    let mut autos = AutoAnswers::default();
 
     loop {
         match result {
-            russh::client::KeyboardInteractiveAuthResponse::Success => return Ok(()),
-            russh::client::KeyboardInteractiveAuthResponse::Failure { .. } => {
-                anyhow::bail!("Keyboard-interactive authentication failed")
+            russh::client::KeyboardInteractiveAuthResponse::Success => return Ok(Step::Done),
+            russh::client::KeyboardInteractiveAuthResponse::Failure {
+                remaining_methods,
+                partial_success,
+            } => {
+                return Ok(Step::Failed {
+                    remaining: remaining_methods.to_vec(),
+                    partial: partial_success,
+                })
             }
             russh::client::KeyboardInteractiveAuthResponse::InfoRequest {
                 name,
@@ -513,51 +670,34 @@ async fn do_keyboard_interactive(
             } => {
                 let mut answers: Vec<String> = Vec::with_capacity(prompts.len());
 
-                for (i, prompt) in prompts.iter().enumerate() {
-                    let prompt_lower = prompt.prompt.to_lowercase();
-
-                    let is_password_prompt = prompt_lower.contains("password")
-                        || prompt_lower.contains("пароль")
-                        || prompt_lower.contains("passwd");
-
-                    let is_totp_prompt = prompt_lower.contains("verification")
-                        || prompt_lower.contains("code")
-                        || prompt_lower.contains("totp")
-                        || prompt_lower.contains("2fa")
-                        || prompt_lower.contains("authenticator")
-                        || prompt_lower.contains("otp");
-
-                    let auto = if is_password_prompt {
-                        auto_password.map(|s| s.to_string())
-                    } else if is_totp_prompt {
+                for prompt in prompts.iter() {
+                    let auto = match autos.choose(
+                        classify_prompt(&prompt.prompt),
+                        auto_password.is_some(),
+                        totp_entry_id.is_some(),
+                    ) {
+                        Some(Auto::Password) => auto_password.map(|s| s.to_string()),
                         // The current code of the linked TOTP entry, from its owner
-                        if let Some(entry_id) = totp_entry_id {
-                            totp_code(app, entry_id).await
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
+                        Some(Auto::Totp) => match totp_entry_id {
+                            Some(entry_id) => totp_code(app, entry_id).await,
+                            None => None,
+                        },
+                        None => None,
                     };
 
                     let answer = if let Some(a) = auto {
                         a
                     } else {
-                        // Relay the whole InfoRequest to frontend — frontend sends one response per prompt
                         let _ = app.emit(
                             "ssh://keyboard-prompt",
                             KeyboardPromptPayload {
                                 session_id: session_id.to_string(),
                                 name: name.clone(),
                                 instructions: instructions.clone(),
-                                // Only send remaining prompts starting from i
-                                prompts: prompts[i..]
-                                    .iter()
-                                    .map(|p| KeyboardPromptItem {
-                                        prompt: p.prompt.clone(),
-                                        echo: p.echo,
-                                    })
-                                    .collect(),
+                                prompts: vec![KeyboardPromptItem {
+                                    prompt: prompt.prompt.clone(),
+                                    echo: prompt.echo,
+                                }],
                                 host_key: None,
                             },
                         );
@@ -871,7 +1011,9 @@ pub async fn ssh_connection_create(
 ///   and `ssh_connection_trust_fingerprint`, never by this command.
 #[tauri::command]
 pub async fn ssh_connection_update(
+    app: AppHandle,
     core: State<'_, Core>,
+    ssh: State<'_, SshState>,
     id: String,
     input: SshConnectionUpdateInput,
 ) -> CmdResult<SshConnection> {
@@ -936,11 +1078,20 @@ pub async fn ssh_connection_update(
             .map_err(AppError::other)?;
     }
 
+    // What the cached SFTP session holds (host, user, key, proxy) may be what
+    // was just changed: the next call connects anew.
+    crate::commands::sftp::forget_session(&app, &ssh, &id).await;
+
     ssh_connection_get(core, id).await
 }
 
 #[tauri::command]
-pub async fn ssh_connection_delete(core: State<'_, Core>, id: String) -> CmdResult<()> {
+pub async fn ssh_connection_delete(
+    app: AppHandle,
+    core: State<'_, Core>,
+    ssh: State<'_, SshState>,
+    id: String,
+) -> CmdResult<()> {
     // Delete paths do not lean on the schema's ON DELETE CASCADE on the two link
     // tables (see `db::schemas`) — drop those rows explicitly, in one transaction
     // with the delete so a failure cannot leave the row gone but its links behind.
@@ -967,6 +1118,7 @@ pub async fn ssh_connection_delete(core: State<'_, Core>, id: String) -> CmdResu
     directory::relabel(&core.directory, &mut tx, &directory::SSH, &id).await?;
 
     tx.commit().await.map_err(AppError::db)?;
+    crate::commands::sftp::forget_session(&app, &ssh, &id).await;
     Ok(())
 }
 
@@ -975,7 +1127,9 @@ pub async fn ssh_connection_delete(core: State<'_, Core>, id: String) -> CmdResu
 /// `proxy_trust_fingerprint`).
 #[tauri::command]
 pub async fn ssh_connection_trust_fingerprint(
+    app: AppHandle,
     core: State<'_, Core>,
+    ssh: State<'_, SshState>,
     id: String,
     fingerprint: String,
 ) -> CmdResult<()> {
@@ -986,6 +1140,8 @@ pub async fn ssh_connection_trust_fingerprint(
         .execute(&core.db)
         .await
         .map_err(AppError::db)?;
+    // A session open on the old key is no longer one to this server.
+    crate::commands::sftp::forget_session(&app, &ssh, &id).await;
     Ok(())
 }
 
@@ -1193,7 +1349,7 @@ pub(crate) async fn establish_transport(
     conn: &SshConnection,
     proxy: Option<&crate::models::Proxy>,
     config: Arc<client::Config>,
-    db: &sqlx::SqlitePool,
+    _db: &sqlx::SqlitePool,
     tor: &veydan_tor::TorManager,
 ) -> anyhow::Result<(
     Option<TransportHold>,
@@ -1247,6 +1403,7 @@ pub(crate) async fn establish_transport(
                 )
             }
             Some(p) if p.proxy_type == "ssh" => {
+                crate::commands::proxies::require_pinned(p).map_err(anyhow::Error::msg)?;
                 let jump_auth = if let Some(ref key) = p.private_key {
                     crate::proxy::ssh::SshAuth::PrivateKey(key.clone())
                 } else {
@@ -1260,7 +1417,6 @@ pub(crate) async fn establish_transport(
                     p.server_fingerprint.clone(),
                 )
                 .await?;
-                crate::commands::proxies::pin_ssh_fingerprint(db, p, &jump_result).await;
                 let channel = jump_result.session.open_channel(host, port).await?;
                 let stream = channel.into_stream();
                 // Keep the jump session Arc alive — dropping it would close the tunnel
@@ -1374,12 +1530,33 @@ async fn run_session(
     db: sqlx::SqlitePool,
     mut rx: mpsc::Receiver<SshInputCommand>,
 ) -> anyhow::Result<()> {
-    let config = Arc::new(client::Config::default());
+    // The connection's own keepalive and connect timeout, as the SFTP path has them.
+    let config = Arc::new(client::Config {
+        keepalive_interval: Some(std::time::Duration::from_secs(
+            conn.keepalive_sec.max(5) as u64
+        )),
+        ..Default::default()
+    });
+    let timeout = std::time::Duration::from_secs(conn.connect_timeout_sec.max(1) as u64);
 
     let tor = app.state::<veydan_tor::TorManager>().inner().clone();
+    // Tor may have to start first, which takes longer than a connect timeout
+    // is set for: that wait is not counted against it.
+    let _tor_ready = match proxy.as_ref() {
+        Some(p) if crate::proxy::tor::is_tor(p) => Some(
+            crate::proxy::tor::lease(&tor, p, &format!("ssh:{}", conn.id))
+                .await
+                .map_err(anyhow::Error::msg)?,
+        ),
+        _ => None,
+    };
     // _hold keeps the jump session or the tor lease for the duration of the session
-    let (_hold, mut handle, received_fp) =
-        establish_transport(conn, proxy.as_ref(), config, &db, &tor).await?;
+    let (_hold, mut handle, received_fp) = tokio::time::timeout(
+        timeout,
+        establish_transport(conn, proxy.as_ref(), config, &db, &tor),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("Connection timeout ({}s)", timeout.as_secs()))??;
     confirm_host_key(app, session_id, conn, received_fp.as_deref(), &mut rx).await?;
 
     // Authenticate
@@ -1548,4 +1725,87 @@ pub async fn ssh_respond_prompt(
         let _ = tx.send(SshInputCommand::PromptResponse(response)).await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod auth_tests {
+    use super::*;
+    use russh::MethodKind::{KeyboardInteractive as Kbd, Password as Pw, PublicKey as Pk};
+
+    #[test]
+    fn prompts_are_read_by_what_they_want() {
+        for (text, kind) in [
+            ("Password: ", PromptKind::Password),
+            ("user@host's password:", PromptKind::Password),
+            ("Пароль:", PromptKind::Password),
+            ("One-time password (OATH) for user: ", PromptKind::Totp),
+            ("Verification code: ", PromptKind::Totp),
+            ("Enter OTP:", PromptKind::Totp),
+            ("Authenticator token", PromptKind::Totp),
+            ("Authenticator code:", PromptKind::Totp),
+            ("Your 2FA:", PromptKind::Totp),
+            ("Favourite colour?", PromptKind::Other),
+        ] {
+            assert_eq!(classify_prompt(text), kind, "{text}");
+        }
+    }
+
+    #[test]
+    fn each_auto_answer_goes_once_and_a_code_never_gets_the_password() {
+        let mut a = AutoAnswers::default();
+        // «Password» + «Verification code» in one round, in order.
+        assert_eq!(
+            a.choose(PromptKind::Password, true, true),
+            Some(Auto::Password)
+        );
+        assert_eq!(a.choose(PromptKind::Totp, true, true), Some(Auto::Totp));
+        // The server asks again: the user is asked, nothing is resent.
+        assert_eq!(a.choose(PromptKind::Password, true, true), None);
+        assert_eq!(a.choose(PromptKind::Totp, true, true), None);
+        // No saved password / no linked entry: the user is asked, and a
+        // one-time prompt never takes the password.
+        let mut b = AutoAnswers::default();
+        assert_eq!(b.choose(PromptKind::Password, false, true), None);
+        assert_eq!(b.choose(PromptKind::Totp, true, false), None);
+        assert_eq!(b.choose(PromptKind::Other, true, true), None);
+    }
+
+    #[test]
+    fn the_login_falls_back_to_the_next_method_the_server_offers() {
+        // A key accepted but not enough: keyboard-interactive, then password.
+        assert_eq!(
+            fallback_methods(Pk, &[Kbd, Pw], true, &[Pk], false, false),
+            vec![Kbd, Pw]
+        );
+        // A saved password goes first unless 2FA is on.
+        assert_eq!(
+            fallback_methods(Pk, &[Kbd, Pw], true, &[Pk], true, false),
+            vec![Pw, Kbd]
+        );
+        assert_eq!(
+            fallback_methods(Pk, &[Kbd, Pw], true, &[Pk], true, true),
+            vec![Kbd, Pw]
+        );
+        // A refused key with nothing else set up: no surprise prompt.
+        assert!(fallback_methods(Pk, &[Kbd, Pw], false, &[Pk], false, false).is_empty());
+        // ... with a saved password it is tried.
+        assert_eq!(
+            fallback_methods(Pk, &[Pw], false, &[Pk], true, false),
+            vec![Pw]
+        );
+        // PasswordAuthentication no, KbdInteractive yes: the password goes there.
+        assert_eq!(
+            fallback_methods(Pw, &[Kbd], false, &[Pw], true, false),
+            vec![Kbd]
+        );
+        // A wrong password on a server that still takes passwords is not resent.
+        assert!(fallback_methods(Pw, &[Pw, Kbd], false, &[Pw], true, false).is_empty());
+        // A method is never tried twice.
+        assert!(fallback_methods(Kbd, &[Kbd, Pw], true, &[Pk, Kbd, Pw], true, false).is_empty());
+        // 2FA on a password login whose first round fails for good.
+        assert_eq!(
+            fallback_methods(Kbd, &[Pw], true, &[Kbd], true, true),
+            vec![Pw]
+        );
+    }
 }

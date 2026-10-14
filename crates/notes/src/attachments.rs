@@ -5,11 +5,10 @@
 //! and referenced from Markdown by that relative path.
 
 use super::files::*;
-#[cfg(desktop)]
-use super::models::*;
 use super::settings::load_attachment_policy;
 use super::NotesState;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -60,9 +59,20 @@ pub(crate) fn attachments_dir_for(note_file: &Path, note_id: &str) -> PathBuf {
         .join(note_id)
 }
 
+/// Remove the attachments of a note: only a note id names a folder, and only
+/// a folder inside `attachments/` (not it, and not one a link leads out of).
 pub(crate) fn remove_note_attachments(note_file: &Path, note_id: &str) {
+    if !valid_id(note_id) {
+        return;
+    }
     let dir = attachments_dir_for(note_file, note_id);
-    if dir.exists() {
+    let Some(root) = dir.parent() else {
+        return;
+    };
+    let (Ok(dir), Ok(root)) = (dir.canonicalize(), root.canonicalize()) else {
+        return;
+    };
+    if dir != root && dir.starts_with(&root) {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -114,19 +124,22 @@ pub(crate) fn safe_file_name(name: &str) -> String {
     }
 }
 
-/// Append `-1`, `-2`, … before the extension until the name is free.
-fn unique_path(dir: &Path, name: &str) -> PathBuf {
-    let candidate = dir.join(name);
-    if !candidate.exists() {
-        return candidate;
+/// Append `-1`, `-2`, … before the extension until the name is free: no file
+/// on disk and none of `reserved`, the names of the note's attachments that
+/// are still only in the vault (a file of such a name would take their place).
+pub(crate) fn unique_path(dir: &Path, name: &str, reserved: &HashSet<String>) -> PathBuf {
+    let free = |n: &str| !reserved.contains(n) && !dir.join(n).exists();
+    if free(name) {
+        return dir.join(name);
     }
     let (stem, ext) = match name.rsplit_once('.') {
         Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
         _ => (name.to_string(), String::new()),
     };
     (1..)
-        .map(|i| dir.join(format!("{stem}-{i}{ext}")))
-        .find(|p| !p.exists())
+        .map(|i| format!("{stem}-{i}{ext}"))
+        .find(|n| free(n))
+        .map(|n| dir.join(n))
         .expect("unbounded iterator")
 }
 
@@ -152,7 +165,8 @@ fn deferred_attachment(note_id: &str, name: String, size: u64) -> NoteAttachment
     }
 }
 
-/// Store bytes as a new attachment of the note (small clipboard / capture payloads).
+/// Store bytes as a new attachment of a note just made (capture, import):
+/// none of its files is in the vault yet, so no name is reserved.
 #[cfg(desktop)]
 pub(crate) fn store_attachment(
     note_file: &Path,
@@ -164,6 +178,7 @@ pub(crate) fn store_attachment(
         note_file,
         note_id,
         file_name,
+        &HashSet::new(),
         Some(data.len() as u64),
         None,
         &mut &data[..],
@@ -171,11 +186,13 @@ pub(crate) fn store_attachment(
 }
 
 /// Stream `reader` into `attachments/{note_id}/{name}` through a `.part` file
-/// that is renamed only when the copy completed. `max` is the product limit.
+/// that is renamed only when the copy completed. `max` is the product limit;
+/// `reserved` are names the new file must not take (see `unique_path`).
 pub(crate) fn store_attachment_stream(
     note_file: &Path,
     note_id: &str,
     file_name: &str,
+    reserved: &HashSet<String>,
     len_hint: Option<u64>,
     max: Option<u64>,
     reader: &mut dyn Read,
@@ -189,7 +206,7 @@ pub(crate) fn store_attachment_stream(
             )));
         }
     }
-    let dest = unique_path(&dir, &safe_file_name(file_name));
+    let dest = unique_path(&dir, &safe_file_name(file_name), reserved);
     let part = PathBuf::from(format!("{}{PART_SUFFIX}", dest.display()));
     let copied = (|| -> Result<u64, AppError> {
         let mut out = std::io::BufWriter::with_capacity(
@@ -337,7 +354,16 @@ pub async fn note_attachment_add(
         return Err(AppError::other("attachment body must be raw bytes"));
     };
     let note_file = note_file_path(&note_id, &core).await?;
-    store_attachment(&note_file, &note_id, &file_name, data)
+    let reserved = crate::sync::attachments::deferred_names(&core, &note_id).await?;
+    store_attachment_stream(
+        &note_file,
+        &note_id,
+        &file_name,
+        &reserved,
+        Some(data.len() as u64),
+        None,
+        &mut &data[..],
+    )
 }
 
 /// File bytes as base64 for webviews without the asset protocol.
@@ -358,9 +384,12 @@ pub async fn note_attachment_read(
 }
 
 /// Local file paths currently held by the OS clipboard (files copied in a file manager).
+/// They are what the user copied, as a picked file is what the user picked: each
+/// file is let into the bound of the shell's `open_source`, which
+/// `note_attachment_add_from_path` reads through.
 #[cfg(desktop)]
 #[tauri::command]
-pub async fn clipboard_file_paths() -> CmdResult<Vec<String>> {
+pub async fn clipboard_file_paths(app: tauri::AppHandle) -> CmdResult<Vec<String>> {
     let paths = tokio::task::spawn_blocking(|| {
         let mut cb = arboard::Clipboard::new().map_err(AppError::io)?;
         Ok::<_, AppError>(cb.get().file_list().unwrap_or_default())
@@ -368,11 +397,18 @@ pub async fn clipboard_file_paths() -> CmdResult<Vec<String>> {
     .await
     .map_err(AppError::io)??;
     // uri-list entries are CRLF-terminated; arboard leaves the '\r' on the path
-    Ok(paths
+    let paths: Vec<String> = paths
         .into_iter()
         .map(|p| p.to_string_lossy().trim().to_owned())
         .filter(|p| !p.is_empty())
-        .collect())
+        .collect();
+    let shell = app.state::<veydan_shell::Shell>();
+    for path in &paths {
+        if Path::new(path).is_file() {
+            shell.allow_source(Path::new(path));
+        }
+    }
+    Ok(paths)
 }
 
 /// Copy an existing file (picker, drag-and-drop, Android content URI) into the
@@ -389,12 +425,14 @@ pub async fn note_attachment_add_from_path(
     let source = app.state::<veydan_shell::Shell>().open_source(&src_path)?;
     policy.check_size(source.len)?;
     let max = policy.max_file_bytes();
+    let reserved = crate::sync::attachments::deferred_names(&core, &note_id).await?;
     tokio::task::spawn_blocking(move || {
         let mut reader = (source.open)().map_err(AppError::io)?;
         store_attachment_stream(
             &note_file,
             &note_id,
             &source.name,
+            &reserved,
             source.len,
             max,
             &mut reader,
@@ -520,21 +558,40 @@ pub async fn note_attachments_gc(
     delete: bool,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<Vec<OrphanAttachment>> {
-    let rows = sqlx::query_as::<_, NoteRow>("SELECT * FROM notes")
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT id, file_path FROM notes")
         .fetch_all(&core.db)
         .await
         .map_err(AppError::db)?;
+    Ok(collect_orphans(&core.app_data_dir, &rows, delete))
+}
 
+/// The attachments of `rows` (id, file path) their note does not reference.
+/// Only what was read counts: a note whose file cannot be read is skipped,
+/// not taken for an empty body, and a file newer than its note stays (the
+/// editor may hold its link unsaved, or sync brought it before the note).
+#[cfg(desktop)]
+fn collect_orphans(
+    app_data_dir: &Path,
+    rows: &[(String, String)],
+    delete: bool,
+) -> Vec<OrphanAttachment> {
     let mut orphans = Vec::new();
-    for row in &rows {
-        let note_file = resolve_note_abs_path(&core.app_data_dir, &row.file_path);
-        let dir = attachments_dir_for(&note_file, &row.id);
+    for (id, file_path) in rows {
+        // `.` or `..` would name `attachments/` itself or the documents folder.
+        if !valid_id(id) {
+            continue;
+        }
+        let note_file = resolve_note_abs_path(app_data_dir, file_path);
+        let dir = attachments_dir_for(&note_file, id);
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        let body = read_note_file(&note_file)
-            .map(|(_, _, b)| b)
-            .unwrap_or_default();
+        let Ok((_, _, body)) = read_note_file(&note_file) else {
+            continue;
+        };
+        let Ok(note_mtime) = std::fs::metadata(&note_file).and_then(|m| m.modified()) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let Some(name) = path
@@ -544,17 +601,22 @@ pub async fn note_attachments_gc(
             else {
                 continue;
             };
-            if body_references(&body, &row.id, &name) || is_staging_name(&name) {
+            if body_references(&body, id, &name) || is_staging_name(&name) {
                 continue;
             }
-            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let Ok(meta) = std::fs::metadata(&path) else {
+                continue;
+            };
+            if meta.modified().map_or(true, |m| m > note_mtime) {
+                continue;
+            }
             if delete {
                 let _ = std::fs::remove_file(&path);
             }
             orphans.push(OrphanAttachment {
-                note_id: row.id.clone(),
+                note_id: id.clone(),
                 name,
-                size,
+                size: meta.len(),
             });
         }
         if delete
@@ -565,5 +627,72 @@ pub async fn note_attachments_gc(
             let _ = std::fs::remove_dir(&dir);
         }
     }
-    Ok(orphans)
+    orphans
+}
+
+#[cfg(all(test, desktop))]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    fn touch(path: &Path, at: SystemTime) {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    }
+
+    /// A note with `old.png` older and `new.png` newer than its file, both
+    /// unreferenced. Returns the row.
+    fn note(root: &Path, id: &str, body: &[u8]) -> (String, String) {
+        let file = root.join(format!("{id}.md"));
+        std::fs::write(&file, body).unwrap();
+        let at = SystemTime::now() - Duration::from_secs(3600);
+        touch(&file, at);
+        let dir = attachments_dir_for(&file, id);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, mtime) in [
+            ("old.png", at - Duration::from_secs(60)),
+            ("new.png", at + Duration::from_secs(60)),
+        ] {
+            std::fs::write(dir.join(name), b"png").unwrap();
+            touch(&dir.join(name), mtime);
+        }
+        (id.to_string(), file.to_string_lossy().to_string())
+    }
+
+    /// A4-08: a file newer than its note may be linked by an edit not saved
+    /// yet; it is neither listed nor removed.
+    #[test]
+    fn the_gc_keeps_a_file_newer_than_its_note() {
+        let root = tempfile::tempdir().unwrap();
+        let row = note(root.path(), "n1", b"no links");
+
+        let orphans = collect_orphans(root.path(), std::slice::from_ref(&row), true);
+        let names: Vec<&str> = orphans.iter().map(|o| o.name.as_str()).collect();
+        assert_eq!(names, ["old.png"]);
+        let dir = root.path().join("attachments/n1");
+        assert!(!dir.join("old.png").exists());
+        assert!(dir.join("new.png").exists());
+    }
+
+    /// SYNCROWS-11: a note whose file cannot be read is not an empty body:
+    /// none of its attachments is removed.
+    #[test]
+    fn the_gc_removes_nothing_of_a_note_it_could_not_read() {
+        let root = tempfile::tempdir().unwrap();
+        // Not UTF-8: the file is there and its body cannot be read.
+        let unreadable = note(root.path(), "n1", &[0xff, 0xfe, 0x00]);
+        let gone = note(root.path(), "n2", b"no links");
+        std::fs::remove_file(&gone.1).unwrap();
+
+        let orphans = collect_orphans(root.path(), &[unreadable, gone], true);
+        assert!(orphans.is_empty(), "{orphans:?}");
+        for id in ["n1", "n2"] {
+            let dir = root.path().join("attachments").join(id);
+            assert!(dir.join("old.png").exists() && dir.join("new.png").exists());
+        }
+    }
 }

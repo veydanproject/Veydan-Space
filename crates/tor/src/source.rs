@@ -97,7 +97,13 @@ pub fn resolve(app_data_dir: &Path) -> Option<Bundle> {
         return None;
     }
     let bundle = Bundle::at(&bundle_dir(app_data_dir));
-    bundle.tor.is_file().then_some(bundle)
+    // The installed binary is not hashed again: what protects it is that a
+    // restore and sync never write into `tor/`. A regular, non-empty file at
+    // least is required before it is run.
+    let runnable = std::fs::metadata(&bundle.tor)
+        .map(|m| m.is_file() && m.len() > 0)
+        .unwrap_or(false);
+    runnable.then_some(bundle)
 }
 
 /// The version of tor from the output of `tor --version`: its first line is
@@ -138,6 +144,8 @@ mod tests {
         let bundle = Bundle::at(&bundle_dir(dir.path()));
         std::fs::create_dir_all(bundle.tor.parent().unwrap()).unwrap();
         std::fs::write(&bundle.tor, b"").unwrap();
+        assert_eq!(resolve(dir.path()), None, "an empty file is not a tor");
+        std::fs::write(&bundle.tor, b"tor").unwrap();
         assert_eq!(resolve(dir.path()), Some(bundle));
     }
 }

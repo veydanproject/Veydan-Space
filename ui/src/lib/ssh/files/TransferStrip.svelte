@@ -53,6 +53,9 @@
                 <span class="status-ok">
                   {$t('files_transfer_done')}{tr.filesSkipped > 0 ? ` · ${$t('files_transfer_skipped', { n: String(tr.filesSkipped) })}` : ''}
                 </span>
+                {#if tr.moveKept > 0}
+                  <span class="status-warn">· {$t('files_transfer_move_kept', { n: String(tr.moveKept) })}</span>
+                {/if}
               {:else if tr.status === 'cancelled'}
                 <span class="status-warn">{$t('files_transfer_cancelled')}</span>
               {:else}

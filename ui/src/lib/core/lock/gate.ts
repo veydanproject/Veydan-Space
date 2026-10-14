@@ -11,11 +11,14 @@
  */
 export function gateScreen(s: {
   ready: boolean;
+  /** The first read of the lock status failed: nothing is known, so nothing opens. */
+  failed?: boolean;
   locked: boolean;
   recovering: boolean;
   /** A recovery issued a key that step 3 has not had confirmed yet. */
   keyPending: boolean;
-}): 'blank' | 'lock' | 'recover' | 'app' {
+}): 'blank' | 'error' | 'lock' | 'recover' | 'app' {
+  if (s.failed) return 'error';
   if (!s.ready) return 'blank';
   if (s.locked) return s.recovering ? 'recover' : 'lock';
   if (s.recovering || s.keyPending) return 'recover';
@@ -29,4 +32,15 @@ export function gateScreen(s: {
  */
 export function recoveryStep(s: { locked: boolean; newKey: string | null }): 1 | 3 {
   return s.newKey !== null && !s.locked ? 3 : 1;
+}
+
+/**
+ * What a read of the lock status leaves: the app is ready only when the read
+ * answered. An unanswered read is not "unlocked" — the gate fails closed and
+ * offers to read again; a read after the first one that fails keeps the
+ * status already known.
+ */
+export function afterStatusRead(ok: boolean, wasReady: boolean): { ready: boolean; failed: boolean } {
+  if (ok) return { ready: true, failed: false };
+  return { ready: wasReady, failed: !wasReady };
 }

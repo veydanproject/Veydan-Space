@@ -4,6 +4,7 @@
 use super::files::*;
 use super::index::rebuild_manifest;
 use super::models::*;
+use super::NotesState;
 use chrono::Utc;
 use uuid::Uuid;
 use veydan_core::Core;
@@ -145,11 +146,16 @@ pub async fn note_folder_delete(id: String, core: tauri::State<'_, Core>) -> Cmd
 }
 
 /// Persist a new bindings list to the DB and the note file frontmatter.
+/// Takes `NotesState::save`: never call it with the lock held.
 pub(crate) async fn persist_bindings(
     note_id: &str,
     bindings: &[String],
     core: &Core,
+    notes: &NotesState,
 ) -> Result<(), AppError> {
+    // The file is rewritten with the body read below: a save in flight lands
+    // first, or this write would bring the older body back.
+    let _save_guard = notes.save.lock().await;
     let new_json = serde_json::to_string(bindings).map_err(AppError::other)?;
     let now = Utc::now().to_rfc3339();
     sqlx::query("UPDATE notes SET bindings = ?, updated_at = ? WHERE id = ?")
@@ -191,13 +197,14 @@ pub async fn note_add_binding(
     note_id: String,
     binding: String,
     core: tauri::State<'_, Core>,
+    notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<()> {
     let Some(mut bindings) = load_bindings(&note_id, &core).await? else {
         return Ok(());
     };
     if !bindings.contains(&binding) {
         bindings.push(binding);
-        persist_bindings(&note_id, &bindings, &core).await?;
+        persist_bindings(&note_id, &bindings, &core, &notes).await?;
     }
     Ok(())
 }
@@ -207,12 +214,13 @@ pub async fn note_remove_binding(
     note_id: String,
     binding: String,
     core: tauri::State<'_, Core>,
+    notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<()> {
     let Some(mut bindings) = load_bindings(&note_id, &core).await? else {
         return Ok(());
     };
     bindings.retain(|b| b != &binding);
-    persist_bindings(&note_id, &bindings, &core).await
+    persist_bindings(&note_id, &bindings, &core, &notes).await
 }
 
 #[tauri::command]

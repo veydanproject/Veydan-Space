@@ -3,15 +3,12 @@
 
 //! The network. Three places can lead a request inside, and each is
 //! closed: the address itself (`Target`), every redirect, and what a name
-//! resolves to.
+//! resolves to (`messenger_http::public_builder`).
 
-use crate::target::{is_public, Target};
+use crate::target::Target;
 use crate::refuse;
 use async_trait::async_trait;
 use messenger_core::{MessengerError, Result};
-use reqwest::dns::{Addrs, Name, Resolve, Resolving};
-use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 const MAX_REDIRECTS: usize = 3;
@@ -37,43 +34,15 @@ pub trait Fetcher: Send + Sync {
     async fn get(&self, target: &Target, accept: &str, max_bytes: usize) -> Result<Fetched>;
 }
 
-/// Resolves a name and drops every address that is not on the open internet.
-struct PublicOnly;
-
-impl Resolve for PublicOnly {
-    fn resolve(&self, name: Name) -> Resolving {
-        Box::pin(async move {
-            let found = tokio::net::lookup_host((name.as_str(), 0)).await?;
-            let open: Vec<SocketAddr> = found.filter(|a| is_public(a.ip())).collect();
-            if open.is_empty() {
-                return Err("preview_private_host".into());
-            }
-            let addrs: Addrs = Box::new(open.into_iter());
-            Ok(addrs)
-        })
-    }
-}
-
 pub struct ReqwestFetcher {
     client: reqwest::Client,
 }
 
 impl ReqwestFetcher {
     pub fn new() -> Result<Self> {
-        let redirects = reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= MAX_REDIRECTS {
-                return attempt.error("preview_too_many_redirects");
-            }
-            match Target::parse(attempt.url().as_str()) {
-                Ok(_) => attempt.follow(),
-                Err(_) => attempt.error("preview_private_host"),
-            }
-        });
-        let client = messenger_http::builder(CONNECT_TIMEOUT, TOTAL_TIMEOUT)?
+        let client = messenger_http::public_builder(CONNECT_TIMEOUT, TOTAL_TIMEOUT, MAX_REDIRECTS)?
             .user_agent(USER_AGENT)
-            .redirect(redirects)
             .referer(false)
-            .dns_resolver(Arc::new(PublicOnly))
             .build()
             .map_err(|e| MessengerError::Transport(e.to_string()))?;
         Ok(Self { client })
@@ -140,12 +109,5 @@ mod tests {
     #[test]
     fn the_client_builds() {
         assert!(ReqwestFetcher::new().is_ok());
-    }
-
-    #[tokio::test]
-    async fn a_name_that_leads_inside_is_not_resolved() {
-        let name: Name = "localhost".parse().unwrap();
-        let err = PublicOnly.resolve(name).await.err().expect("localhost is this machine");
-        assert!(err.to_string().contains("preview_private_host"), "{err}");
     }
 }

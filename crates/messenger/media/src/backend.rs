@@ -42,11 +42,22 @@ impl BackendError {
         }
     }
 
+    /// A `413` of the media-auth in front of blossom that is the day's or
+    /// the plan's quota, not the size of the file: its body is
+    /// `{"error":"plan_limit","limit":"media.upload_per_day"|"media.per_ip_per_day",…}`
+    /// (`spec/vstore.md` 10.2). A `plan_limit` of the file's size, and a
+    /// `413` of anything else, stay a file that is too large.
+    fn is_quota(&self) -> bool {
+        self.message.contains("\"plan_limit\"")
+            && (self.message.contains("media.upload_per_day") || self.message.contains("media.per_ip_per_day"))
+    }
+
     pub fn code(&self) -> &'static str {
         match self.status {
             None => "err.network",
             Some(401) | Some(403) => "err.auth_failed",
             Some(408) => "err.timeout",
+            Some(413) if self.is_quota() => "err.media_quota",
             Some(413) => "err.file_too_large",
             Some(429) => "err.rate_limited",
             Some(s) if s >= 500 => "err.server",
@@ -748,6 +759,14 @@ mod tests {
         assert!(!e(Some(413)).is_retryable());
         assert_eq!(e(Some(403)).code(), "err.auth_failed");
         assert_eq!(e(Some(413)).code(), "err.file_too_large");
+        let plan = |limit: &str| BackendError {
+            status: Some(413),
+            message: format!(r#"{{"error":"plan_limit","limit":"{limit}","max":209715200}}"#),
+        };
+        assert_eq!(plan("media.max_file_bytes").code(), "err.file_too_large");
+        assert_eq!(plan("media.upload_per_day").code(), "err.media_quota");
+        assert_eq!(plan("media.per_ip_per_day").code(), "err.media_quota");
+        assert!(!plan("media.per_ip_per_day").is_retryable());
         assert_eq!(e(None).code(), "err.network");
         assert!(e(Some(408)).is_retryable());
         assert_eq!(e(Some(408)).code(), "err.timeout");

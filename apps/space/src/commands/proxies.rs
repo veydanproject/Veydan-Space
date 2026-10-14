@@ -4,7 +4,7 @@
 use crate::error::{AppError, CmdResult};
 use crate::models::{
     BulkImportResult, BulkImportRowResult, BulkProxyItem, CreateProxyRequest, Proxy,
-    ProxyCheckResult,
+    ProxyCheckResult, UpdateProxyRequest,
 };
 use crate::modules::directory;
 use crate::proxy::check;
@@ -438,29 +438,209 @@ mod tests {
             .expect_err("an unsupported proxy type must not fall back to direct");
         assert!(matches!(err, AppError::Proxy(_)), "got {err:?}");
     }
+
+    // ── delete and update against the real schema ────────────────────────────
+
+    async fn real_db() -> (sqlx::SqlitePool, std::path::PathBuf) {
+        crate::db::test_pool().await
+    }
+
+    async fn real_proxy(db: &sqlx::SqlitePool, id: &str) {
+        insert_proxy(db, id, "socks5").await;
+    }
+
+    async fn real_profile(db: &sqlx::SqlitePool, id: &str, proxy_id: Option<&str>) {
+        sqlx::query(
+            "INSERT INTO profiles (id, name, profile_path, proxy_id, timezone, notes, created_at, updated_at)
+             VALUES (?, ?, '/x', ?, 'Europe/Berlin', 'n', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        .bind(id)
+        .bind(id)
+        .bind(proxy_id)
+        .execute(db)
+        .await
+        .unwrap();
+    }
+
+    async fn real_ssh(db: &sqlx::SqlitePool, id: &str, proxy_id: &str) {
+        sqlx::query(
+            "INSERT INTO ssh_connections (id, name, host, username, proxy_id, created_at, updated_at)
+             VALUES (?, ?, 'h', 'u', ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        .bind(id)
+        .bind(id)
+        .bind(proxy_id)
+        .execute(db)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_deleted_proxy_leaves_its_profiles_closed() {
+        let (db, dir) = real_db().await;
+        real_proxy(&db, "px").await;
+        real_profile(&db, "pr", Some("px")).await;
+
+        delete_impl(&db, &Directory::default(), "px").await.unwrap();
+
+        let proxy_id: Option<String> =
+            sqlx::query_scalar("SELECT proxy_id FROM profiles WHERE id = 'pr'")
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert_eq!(proxy_id.as_deref(), Some("px"));
+        let err = resolve_required(&db, proxy_id.as_deref())
+            .await
+            .expect_err("the profile must not start direct");
+        assert!(matches!(err, AppError::Proxy(_)), "got {err:?}");
+
+        db.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn a_proxy_of_an_ssh_connection_is_not_deleted() {
+        let (db, dir) = real_db().await;
+        real_proxy(&db, "px").await;
+        real_ssh(&db, "c1", "px").await;
+
+        let err = delete_impl(&db, &Directory::default(), "px")
+            .await
+            .expect_err("deleting would detach the connection into a direct one");
+        assert!(err.to_string().contains("c1"), "got {err}");
+        let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM proxies WHERE id = 'px'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(left, 1);
+
+        db.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn update_req(json: serde_json::Value) -> UpdateProxyRequest {
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_proxy_update_without_a_field_keeps_it_and_null_clears_it() {
+        let (db, dir) = real_db().await;
+        sqlx::query(
+            "INSERT INTO proxies (id, name, proxy_type, host, port, username, country, city, tags, created_at)
+             VALUES ('px', 'p', 'socks5', '1.2.3.4', 1080, 'u', 'de', 'Berlin', '[\"a\"]', '2026-01-01T00:00:00Z')",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+        let row = || async {
+            sqlx::query_as::<_, (Option<String>, Option<String>, Option<String>, String)>(
+                "SELECT username, country, city, tags FROM proxies WHERE id = 'px'",
+            )
+            .fetch_one(&db)
+            .await
+            .unwrap()
+        };
+        let base = serde_json::json!({"name": "q", "proxy_type": "socks5", "host": "1.2.3.4", "port": 1080});
+
+        update_impl(&db, &Directory::default(), "px", update_req(base.clone()))
+            .await
+            .unwrap();
+        let (u, c, city, tags) = row().await;
+        assert_eq!(
+            (u.as_deref(), c.as_deref(), city.as_deref(), tags.as_str()),
+            (Some("u"), Some("de"), Some("Berlin"), "[\"a\"]")
+        );
+
+        let mut cleared = base;
+        cleared["username"] = serde_json::Value::Null;
+        cleared["city"] = serde_json::Value::Null;
+        cleared["tags"] = serde_json::json!(["b"]);
+        update_impl(&db, &Directory::default(), "px", update_req(cleared))
+            .await
+            .unwrap();
+        let (u, c, city, tags) = row().await;
+        assert_eq!(
+            (u.as_deref(), c.as_deref(), city.as_deref(), tags.as_str()),
+            (None, Some("de"), None, "[\"b\"]")
+        );
+
+        db.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_ssh_proxy_needs_a_pinned_host_key() {
+        let mut p = Proxy::test_default();
+        p.proxy_type = "ssh".into();
+        p.server_fingerprint = None;
+        assert!(require_pinned(&p).unwrap_err().contains("Proxies"));
+        p.server_fingerprint = Some(String::new());
+        assert!(require_pinned(&p).is_err());
+        p.server_fingerprint = Some("SHA256:abc".into());
+        assert!(require_pinned(&p).is_ok());
+    }
 }
 
-/// Update a proxy. Field contract (matches ProxyPanel.svelte, which pre-fills
-/// the edit form from the stored proxy and submits the complete state):
-///
-/// * `name`, `proxy_type`, `host`, `port`, `tags` are required and replaced.
-/// * `username`, `country`, `city` are bound raw: null clears the column
-///   (the UI sends the full state each save, so null means "no value").
-/// * Credentials (`password`, `private_key`) use COALESCE — null means "keep
-///   the stored secret", so a caller omitting them can never wipe credentials
-///   by accident. Clearing them intentionally still works: an empty string
-///   from the UI is stored as NULL.
+/// Update a proxy. `name`, `proxy_type`, `host` and `port` are replaced. Of
+/// `username`, `country`, `city` and `tags` a missing field keeps the stored
+/// value and an explicit null clears it (ProxyPanel.svelte sends the complete
+/// state, so for it null means "no value"). Credentials (`password`,
+/// `private_key`) use COALESCE — null means "keep the stored secret", so a
+/// caller omitting them can never wipe credentials by accident. Clearing them
+/// intentionally still works: an empty string from the UI is stored as NULL.
 #[tauri::command]
 pub async fn proxy_update(
     id: String,
-    mut req: CreateProxyRequest,
+    req: UpdateProxyRequest,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<Proxy> {
+    update_impl(&core.db, &core.directory, &id, req).await?;
+
+    proxy_get(id, core)
+        .await
+        .and_then(|p| p.ok_or_else(|| AppError::not_found("Proxy not found after update")))
+}
+
+async fn update_impl(
+    db: &sqlx::SqlitePool,
+    labels: &Directory,
+    id: &str,
+    req: UpdateProxyRequest,
+) -> CmdResult<()> {
+    let mut tx = db.begin().await.map_err(AppError::db)?;
+    let (stored_username, stored_country, stored_city, stored_tags): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        String,
+    ) = sqlx::query_as("SELECT username, country, city, tags FROM proxies WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(AppError::db)?
+        .ok_or_else(|| AppError::not_found("Proxy not found"))?;
+
+    // What a missing field keeps is resolved here, so the Tor normalizing sees
+    // the row as it will be stored.
+    let mut req = CreateProxyRequest {
+        name: req.name,
+        proxy_type: req.proxy_type,
+        host: req.host,
+        port: req.port,
+        tags: Some(match req.tags {
+            Some(tags) => tags.unwrap_or_default(),
+            None => serde_json::from_str(&stored_tags).unwrap_or_default(),
+        }),
+        username: req.username.unwrap_or(stored_username),
+        password: req.password,
+        country: req.country.unwrap_or(stored_country),
+        city: req.city.unwrap_or(stored_city),
+        private_key: req.private_key,
+    };
     crate::proxy::tor::normalize(&mut req).map_err(AppError::proxy)?;
     let tags_json =
         serde_json::to_string(&req.tags.unwrap_or_default()).map_err(AppError::other)?;
 
-    let mut tx = core.db.begin().await.map_err(AppError::db)?;
     sqlx::query(
         "UPDATE proxies SET
             name = ?, proxy_type = ?, host = ?, port = ?,
@@ -479,37 +659,27 @@ pub async fn proxy_update(
     .bind(&req.city)
     .bind(&req.private_key)
     .bind(&tags_json)
-    .bind(&id)
+    .bind(id)
     .execute(&mut *tx)
     .await
     .map_err(AppError::db)?;
-    directory::relabel(&core.directory, &mut tx, &directory::PROXY, &id).await?;
+    directory::relabel(labels, &mut tx, &directory::PROXY, id).await?;
     tx.commit().await.map_err(AppError::db)?;
-
-    proxy_get(id, core)
-        .await
-        .and_then(|p| p.ok_or_else(|| AppError::not_found("Proxy not found after update")))
+    Ok(())
 }
 
-/// TOFU pin for an SSH proxy after a successful connect made outside `proxy_check`
-/// (profile launch, jump host). Only fills an empty slot; never overwrites.
-pub async fn pin_ssh_fingerprint(
-    db: &sqlx::SqlitePool,
-    proxy: &Proxy,
-    result: &crate::proxy::ssh::SshConnectResult,
-) {
-    if !result.is_new || proxy.server_fingerprint.is_some() {
-        return;
-    }
-    if let Err(e) = sqlx::query(
-        "UPDATE proxies SET server_fingerprint = ? WHERE id = ? AND server_fingerprint IS NULL",
-    )
-    .bind(&result.fingerprint)
-    .bind(&proxy.id)
-    .execute(db)
-    .await
-    {
-        eprintln!("[proxy] failed to pin host key for {}: {e}", proxy.id);
+/// An SSH proxy connects only to a host key the user has confirmed (Proxies →
+/// Check). Connecting with no pinned key would accept whatever answers the
+/// first time — a man in the middle — and the traffic of the profile or the
+/// jump would go through it.
+pub fn require_pinned(proxy: &Proxy) -> Result<(), String> {
+    if proxy.server_fingerprint.as_deref().is_some_and(|f| !f.is_empty()) {
+        Ok(())
+    } else {
+        Err(format!(
+            "The host key of the SSH proxy '{}' is not confirmed. Confirm it first: Proxies → Check.",
+            proxy.name
+        ))
     }
 }
 
@@ -597,31 +767,37 @@ pub async fn proxy_usage(id: String, core: tauri::State<'_, Core>) -> CmdResult<
 
 #[tauri::command]
 pub async fn proxy_delete(id: String, core: tauri::State<'_, Core>) -> CmdResult<()> {
-    // Delete paths do not lean on the schema's `ON DELETE SET NULL` (see
-    // `db::schemas`) — clear every reference explicitly. One transaction with the delete:
-    // a partial failure would leave rows pointing at a proxy that is already
-    // gone, and those then refuse to connect (`resolve_required`) until edited.
-    let mut tx = core.db.begin().await.map_err(AppError::db)?;
+    delete_impl(&core.db, &core.directory, &id).await
+}
 
-    sqlx::query("UPDATE profiles SET proxy_id = NULL WHERE proxy_id = ?")
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(AppError::db)?;
+/// Profiles that name the deleted proxy are left as they are: their `proxy_id`
+/// then points at nothing and `resolve_required` refuses to start them, so the
+/// real IP never goes out because a proxy was removed. The user assigns another
+/// proxy (or clears the field on purpose). SSH connections are different:
+/// their `proxy_id` has `ON DELETE SET NULL`, which would silently turn a
+/// proxied connection into a direct one — so a proxy used by one is not deleted.
+async fn delete_impl(db: &sqlx::SqlitePool, labels: &Directory, id: &str) -> CmdResult<()> {
+    let mut tx = db.begin().await.map_err(AppError::db)?;
 
-    sqlx::query("UPDATE ssh_connections SET proxy_id = NULL, updated_at = ? WHERE proxy_id = ?")
-        .bind(Utc::now().to_rfc3339())
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(AppError::db)?;
+    let ssh: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM ssh_connections WHERE proxy_id = ? ORDER BY name")
+            .bind(id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(AppError::db)?;
+    if !ssh.is_empty() {
+        return Err(AppError::proxy(format!(
+            "This proxy is used by SSH connections ({}). Detach the proxy from them first.",
+            ssh.join(", ")
+        )));
+    }
 
     sqlx::query("DELETE FROM proxies WHERE id = ?")
-        .bind(&id)
+        .bind(id)
         .execute(&mut *tx)
         .await
         .map_err(AppError::db)?;
-    directory::relabel(&core.directory, &mut tx, &directory::PROXY, &id).await?;
+    directory::relabel(labels, &mut tx, &directory::PROXY, id).await?;
 
     tx.commit().await.map_err(AppError::db)?;
     Ok(())

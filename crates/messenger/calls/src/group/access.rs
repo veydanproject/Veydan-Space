@@ -24,4 +24,11 @@ pub trait GroupAccess: Send + Sync {
     /// A quiet note of mine to the group, sealed with the group key as a
     /// message is: what to publish.
     async fn seal_note(&self, group_id: &str, envelope: &Envelope) -> Result<Outbound>;
+
+    /// Someone who is no longer a member still knows the group key: a
+    /// note would be refused (`group_key_stale`) until a manager brings a
+    /// new one.
+    async fn key_stale(&self, _group_id: &str) -> Result<bool> {
+        Ok(false)
+    }
 }

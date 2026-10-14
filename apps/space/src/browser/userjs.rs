@@ -80,6 +80,13 @@ pub fn generate_with(profile: &Profile, proxy: Option<&Proxy>, via_tor: bool) ->
         }
         "proxy_only" => {
             prefs.push(pref_bool("media.peerconnection.enabled", true));
+            // Explicit either way: a stale prefs.js must not keep the other value.
+            // Behind a proxy ICE goes only through it (TURN over TCP); without
+            // one there is nothing to force.
+            prefs.push(pref_bool(
+                "media.peerconnection.ice.proxy_only",
+                proxy.is_some(),
+            ));
             prefs.push(pref_bool("media.peerconnection.ice.no_host", true));
             prefs.push(pref_bool(
                 "media.peerconnection.ice.default_address_only",
@@ -94,7 +101,10 @@ pub fn generate_with(profile: &Profile, proxy: Option<&Proxy>, via_tor: bool) ->
                 false,
             ));
         }
-        _ => {}
+        // An unknown mode is the safe one, as "disable".
+        _ => {
+            prefs.push(pref_bool("media.peerconnection.enabled", false));
+        }
     }
 
     // Geolocation coordinates
@@ -157,6 +167,8 @@ pub fn generate_with(profile: &Profile, proxy: Option<&Proxy>, via_tor: bool) ->
         prefs.push(pref_int("network.proxy.ssl_port", 0));
         prefs.push(pref_string("network.proxy.socks", ""));
         prefs.push(pref_int("network.proxy.socks_port", 0));
+        prefs.push(pref_string("network.proxy.socks_username", ""));
+        prefs.push(pref_string("network.proxy.socks_password", ""));
     }
 
     // Sideloaded unsigned notes extension (firefox-profile/extensions/*.xpi)
@@ -164,6 +176,9 @@ pub fn generate_with(profile: &Profile, proxy: Option<&Proxy>, via_tor: bool) ->
     prefs.push(pref_int("extensions.autoDisableScopes", 0));
     prefs.push(pref_int("extensions.enabledScopes", 5));
 
+    if proxy.is_some() {
+        apply_proxy_privacy_prefs(&mut prefs);
+    }
     if via_tor {
         apply_tor_prefs(&mut prefs);
     }
@@ -178,15 +193,18 @@ fn apply_tor_prefs(prefs: &mut Vec<String>) {
     prefs.push(pref_bool("media.peerconnection.enabled", false));
     // Onion names are resolved by tor: the relay hands the name over as it is.
     prefs.push(pref_bool("network.dns.blockDotOnion", false));
-    // No DNS of the browser's own beside the proxy: no DNS over HTTPS, no
-    // prefetch of names, no speculative connections.
+}
+
+/// What any profile behind a proxy needs: no DNS of the browser's own beside
+/// the proxy (no DNS over HTTPS, no prefetch of names, no speculative
+/// connections) and no HTTP/3, which is UDP, and a proxy does not carry it.
+fn apply_proxy_privacy_prefs(prefs: &mut Vec<String>) {
     prefs.push(pref_int("network.trr.mode", 5));
     prefs.push(pref_bool("network.dns.disablePrefetch", true));
     prefs.push(pref_bool("network.dns.disablePrefetchFromHTTPS", true));
     prefs.push(pref_bool("network.predictor.enabled", false));
     prefs.push(pref_bool("network.prefetch-next", false));
     prefs.push(pref_int("network.http.speculative-parallel-limit", 0));
-    // HTTP/3 is UDP too.
     prefs.push(pref_bool("network.http.http3.enable", false));
 }
 
@@ -202,6 +220,8 @@ fn apply_proxy_prefs(prefs: &mut Vec<String>, proxy: &Proxy) {
             // Явно сбрасываем SOCKS чтобы стареющий prefs.js не перехватывал трафик
             prefs.push(pref_string("network.proxy.socks", ""));
             prefs.push(pref_int("network.proxy.socks_port", 0));
+            prefs.push(pref_string("network.proxy.socks_username", ""));
+            prefs.push(pref_string("network.proxy.socks_password", ""));
         }
         "socks5" => {
             prefs.push(pref_int("network.proxy.type", 1));
@@ -387,6 +407,30 @@ mod tests {
         assert!(js.contains("user_pref(\"media.peerconnection.enabled\", true);"));
         assert!(js.contains("user_pref(\"media.peerconnection.ice.no_host\", true);"));
         assert!(js.contains("user_pref(\"media.peerconnection.ice.default_address_only\", true);"));
+        assert!(js.contains("user_pref(\"media.peerconnection.ice.proxy_only\", false);"));
+        let js = generate(&p, Some(&Proxy::test_default()));
+        assert!(js.contains("user_pref(\"media.peerconnection.ice.proxy_only\", true);"));
+    }
+
+    #[test]
+    fn an_unknown_webrtc_mode_is_disable() {
+        let mut p = Profile::test_default();
+        p.webrtc_mode = "something".into();
+        let js = generate(&p, None);
+        assert!(js.contains("user_pref(\"media.peerconnection.enabled\", false);"));
+    }
+
+    #[test]
+    fn a_stale_socks_login_is_cleared_without_socks() {
+        let mut proxy = Proxy::test_default();
+        proxy.proxy_type = "http".into();
+        for js in [
+            generate(&Profile::test_default(), Some(&proxy)),
+            generate(&Profile::test_default(), None),
+        ] {
+            assert!(js.contains("user_pref(\"network.proxy.socks_username\", \"\");"));
+            assert!(js.contains("user_pref(\"network.proxy.socks_password\", \"\");"));
+        }
     }
 
     #[test]
@@ -422,10 +466,13 @@ mod tests {
     }
 
     #[test]
-    fn a_profile_not_behind_tor_gets_none_of_the_tor_prefs() {
+    fn a_profile_behind_a_proxy_has_no_dns_of_its_own_but_no_tor_prefs() {
         let js = generate(&Profile::test_default(), Some(&Proxy::test_default()));
         assert!(!js.contains("blockDotOnion"));
-        assert!(!js.contains("network.trr.mode"));
+        assert!(js.contains("user_pref(\"network.trr.mode\", 5);"));
+        assert!(js.contains("user_pref(\"network.http.http3.enable\", false);"));
+        let direct = generate(&Profile::test_default(), None);
+        assert!(!direct.contains("network.trr.mode"));
     }
 
     #[test]

@@ -242,3 +242,72 @@ async fn no_server_is_not_available() {
     n.show(Toast { key: "k".into(), title: "t".into(), body: "b".into(), ..Toast::default() });
     settle().await;
 }
+
+/// logind's session as a lock screen leaves it.
+struct LoginSession(Arc<Mutex<bool>>);
+
+#[zbus::interface(name = "org.freedesktop.login1.Session")]
+impl LoginSession {
+    #[zbus(property)]
+    fn locked_hint(&self) -> bool {
+        *self.0.lock().unwrap()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_lock_of_the_session_is_asked_of_logind_each_time() {
+    let (_bus, address) = private_bus();
+    // No logind on the bus: not locked.
+    assert_eq!(desktop_notify::session_locked_on_bus(&address).await, None, "no logind on the bus: absent, not silent");
+    let locked = Arc::new(Mutex::new(false));
+    let _logind = zbus::connection::Builder::address(address.as_str())
+        .unwrap()
+        .name("org.freedesktop.login1")
+        .unwrap()
+        .serve_at("/org/freedesktop/login1/session/auto", LoginSession(locked.clone()))
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    assert_eq!(desktop_notify::session_locked_on_bus(&address).await, Some(false));
+    *locked.lock().unwrap() = true;
+    assert_eq!(desktop_notify::session_locked_on_bus(&address).await, Some(true), "a lock comes through at once, nothing is cached");
+    *locked.lock().unwrap() = false;
+    assert_eq!(desktop_notify::session_locked_on_bus(&address).await, Some(false));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_system_is_not_waited_on_for_every_notification() {
+    // Whatever this machine has: logind answering at once, or none, which
+    // is then left alone; the second ask never waits the half second.
+    let _ = desktop_notify::session_locked().await;
+    let started = std::time::Instant::now();
+    let _ = desktop_notify::session_locked().await;
+    assert!(started.elapsed() < Duration::from_millis(400), "{:?}", started.elapsed());
+}
+
+/// A logind that fails to answer the property.
+struct BrokenSession;
+
+#[zbus::interface(name = "org.freedesktop.login1.Session")]
+impl BrokenSession {
+    #[zbus(property)]
+    fn locked_hint(&self) -> zbus::fdo::Result<bool> {
+        Err(zbus::fdo::Error::Failed("busy".into()))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_logind_that_fails_counts_the_session_as_locked() {
+    let (_bus, address) = private_bus();
+    let _logind = zbus::connection::Builder::address(address.as_str())
+        .unwrap()
+        .name("org.freedesktop.login1")
+        .unwrap()
+        .serve_at("/org/freedesktop/login1/session/auto", BrokenSession)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    assert_eq!(desktop_notify::session_locked_on_bus(&address).await, Some(true), "an error of the moment shows no text");
+}

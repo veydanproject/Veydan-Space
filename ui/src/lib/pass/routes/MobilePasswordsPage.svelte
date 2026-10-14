@@ -15,6 +15,7 @@
   import PasswordLockBadge from '$lib/pass/components/PasswordLockBadge.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
   import { api } from '$lib/pass/api';
+  import { copySecret } from '$lib/pass/clipboard';
   import { formatError, hasErrorCode } from '$lib/core/utils';
   import { onSyncChanged } from '$lib/core/mobile/api';
   import { t } from '$lib/core/mobile/i18n';
@@ -110,14 +111,8 @@
     }
     try {
       const value = (await api.passwords.reveal(entry.id, 'password')).value;
-      await writeClipboard(value);
+      await copySecret(value);
       showToast($t('pw_copied'));
-      // The clipboard forgets the password after 30 s, unless something else was copied since.
-      setTimeout(() => {
-        navigator.clipboard.readText().then((current) => {
-          if (current === value) void navigator.clipboard.writeText('');
-        }).catch(() => {});
-      }, 30_000);
     } catch (e) {
       if (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed')) {
         pendingCopy = entry;

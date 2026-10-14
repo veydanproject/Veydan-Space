@@ -710,6 +710,7 @@ impl MessengerRuntime {
         let me = self.session_pubkey().await.ok_or(MessengerError::NotLoggedIn)?;
         let input = key_or_nip05.trim();
         let key = if input.contains('@') || (!input.starts_with("npub1") && input.len() != 64 && input.contains('.')) {
+            self.nip05_allowed().await?;
             self.nip05.resolve(input).await?.as_hex().to_string()
         } else {
             input.to_string()
@@ -755,10 +756,19 @@ impl MessengerRuntime {
         let Some(nip05) = profile.nip05 else {
             return Err(MessengerError::Invalid("profile has no NIP-05".into()));
         };
+        self.nip05_allowed().await?;
         let ok = self.nip05.verify(&nip05, pubkey).await?;
         let now = messenger_core::traits::SystemClock.now().secs();
         self.profiles.set_nip05_verified(pubkey, if ok { Some(now) } else { None }).await?;
         Ok(ok)
+    }
+
+    /// A NIP-05 name is asked of its domain, outside: never in silent mode.
+    async fn nip05_allowed(&self) -> Result<()> {
+        if self.relays.is_silent().await? {
+            return Err(MessengerError::Transport("silent mode".into()));
+        }
+        Ok(())
     }
 
     async fn session_keys(&self) -> Result<Keys> {
@@ -927,6 +937,23 @@ mod tests {
         assert_eq!(st.outbox_pending, 0);
         assert!(cfg.db_path().exists());
 
+        rt.shutdown().await;
+    }
+
+    /// A NIP-05 name is asked of its domain: not in silent mode.
+    #[tokio::test]
+    async fn nip05_is_not_asked_in_silent_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+        servers::use_veydan_offline(&rt).await;
+        rt.identity().create("pw").await.unwrap();
+        assert!(rt.refresh_signer().await.unwrap());
+        rt.relays().set_silent(true).await.unwrap();
+        for id in ["alice@example.com", "example.com"] {
+            let e = rt.contact_add(id, None).await.unwrap_err();
+            assert!(e.to_string().contains("silent mode"), "{id}: {e}");
+        }
         rt.shutdown().await;
     }
 

@@ -28,6 +28,7 @@
     "files_transfer_done": "完了",
     "files_transfer_cancelled": "キャンセルしました — 途中までのデータは保持されます。再実行すると続きから転送します",
     "files_transfer_skipped": "{n}件をスキップ",
+    "files_transfer_move_kept": "{n}件は移動されず、元のファイルを残しました",
     "files_conflict_title": "ファイルはすでに存在します",
     "files_conflict_msg_file": "「{name}」は転送先にすでに存在します。上書きしますか？",
     "files_conflict_msg_dir": "フォルダ「{name}」は転送先にすでに存在します。中のファイルを上書きしますか？",

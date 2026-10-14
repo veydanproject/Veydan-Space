@@ -5,6 +5,7 @@ package net.veydan.shell
 
 import android.graphics.Color
 import android.graphics.Rect
+import android.net.Uri
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
@@ -77,7 +78,7 @@ class ActivityDelegate(private val activity: ComponentActivity) {
 
     if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
       insetsScriptHandler?.remove()
-      insetsScriptHandler = WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
+      insetsScriptHandler = WebViewCompat.addDocumentStartJavaScript(webView, script, OWN_ORIGINS)
     }
     webView.evaluateJavascript(script, null)
   }
@@ -89,10 +90,23 @@ class ActivityDelegate(private val activity: ComponentActivity) {
     controller.isAppearanceLightNavigationBars = light
   }
 
+  /**
+   * The page in the window is the app's own: the bridge is in every frame
+   * of whatever the WebView shows, and only the app may set the bars and
+   * take the edge of the screen from "back". Read on the UI thread.
+   */
+  private fun ownPage(view: WebView): Boolean {
+    val uri = view.url?.let(Uri::parse) ?: return false
+    return (uri.scheme == "http" || uri.scheme == "https") && uri.host == HOST && uri.port == -1
+  }
+
   inner class ChromeBridge {
     @JavascriptInterface
     fun setLightBars(light: Boolean) {
-      activity.runOnUiThread { applyLightBars(light) }
+      activity.runOnUiThread {
+        val view = webView ?: return@runOnUiThread
+        if (ownPage(view)) applyLightBars(light)
+      }
     }
 
     /**
@@ -104,6 +118,7 @@ class ActivityDelegate(private val activity: ComponentActivity) {
     fun setGestureExclusion(left: Double, top: Double, width: Double, height: Double) {
       activity.runOnUiThread {
         val view = webView ?: return@runOnUiThread
+        if (!ownPage(view)) return@runOnUiThread
         val d = view.resources.displayMetrics.density
         val rects = if (width <= 0 || height <= 0) emptyList() else listOf(
           Rect((left * d).toInt(), (top * d).toInt(), ((left + width) * d).toInt(), ((top + height) * d).toInt()),
@@ -111,5 +126,11 @@ class ActivityDelegate(private val activity: ComponentActivity) {
         ViewCompat.setSystemGestureExclusionRects(view, rects)
       }
     }
+  }
+
+  private companion object {
+    /** Where Tauri serves the pages on Android, a dev build too (it proxies the dev server). */
+    const val HOST = "tauri.localhost"
+    val OWN_ORIGINS = setOf("http://$HOST", "https://$HOST")
   }
 }

@@ -15,6 +15,21 @@ use messenger_store::messages::{self as repo, NewMessage};
 use nostr::key::Keys;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Fields of an attachment that only this device writes into its row: where
+/// the file is here, its upload, whether it goes as it is. A peer's envelope
+/// never sets them.
+pub const LOCAL_FIELDS: [&str; 3] = ["local_path", "transfer_id", "original"];
+
+/// The attachment of a received envelope as its row keeps it: the fields of
+/// the envelope without those only this device writes.
+pub fn received_media_json(envelope: &Envelope) -> String {
+    let mut fields = envelope.fields.clone();
+    for name in LOCAL_FIELDS {
+        fields.remove(name);
+    }
+    serde_json::Value::Object(fields).to_string()
+}
+
 fn placeholder_id() -> String {
     static N: AtomicU64 = AtomicU64::new(0);
     let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);

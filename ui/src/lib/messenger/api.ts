@@ -294,6 +294,8 @@ export interface MessengerGroupInvite {
   status: string;
   created_at: number;
   expires_at: number;
+  /** Incoming: the inviter was a manager by the log of this device, or a contact; otherwise their word alone (`InviteStanding`). Outgoing: always. */
+  vouched: boolean;
 }
 
 
@@ -609,6 +611,8 @@ export interface MessengerNotifySettings {
   lockscreen_hidden: boolean;
   /** A PIN or password guards the app: notifications say only that something came, whatever `content` says. */
   locked: boolean;
+  /** Whether `lockscreen_hidden` does anything on this device (a phone; a computer whose system tells that its session is locked: Linux). */
+  lockscreen_supported: boolean;
 }
 
 /** What the other side learns of the user; each works both ways: off here, the user sees nothing of it from others either. */
@@ -743,7 +747,7 @@ function manifestRelay(): MessengerRelay {
   return { url: 'wss://node-1.veydan.net', relay_id: 'veydan-node-1', source: 'manifest', regions: ['default', 'ru'], read: true, write: true, enabled: true, auth_type: 'api_key', state: 'connected' };
 }
 let mockRelays: MessengerRelay[] = [manifestRelay()];
-let mockNotify: MessengerNotifySettings = { content: 'sender_text', lockscreen_hidden: false, locked: false };
+let mockNotify: MessengerNotifySettings = { content: 'sender_text', lockscreen_hidden: false, locked: false, lockscreen_supported: true };
 let mockPrivacy: MessengerPrivacy = { read_receipts: true, presence: true };
 let mockDesktopNotify: MessengerDesktopNotify = { enabled: true, sound: true, available: true, close_to_tray: false };
 // `messenger.demo.desk=1`: the demo is a computer (no push, notifications of its own).
@@ -1249,6 +1253,8 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     mockRun(t.id);
     return null;
   },
+  // The demo's files are on its own servers.
+  messenger_media_foreign_server: () => false,
   messenger_media_transfer: (a) => [...mockTransfers.values()].reverse().find((t) => t.message_id === a?.messageId) ?? null,
   messenger_media_transfers: () => [...mockTransfers.values()].filter((t) => t.status !== 'done' && t.status !== 'cancelled').reverse(),
   messenger_media_retry_failed: () => {
@@ -1321,7 +1327,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     mockMessages[g.chat_id] = [];
     return g;
   },
-  messenger_group_invite: (a) => ({ invite_id: 'demo', group_id: String(a?.groupId), name: mockGroup(String(a?.groupId)).name, about: '', picture: '', members: 1, peer: String(a?.who), direction: 'out', status: 'sent', created_at: Date.now() / 1000, expires_at: Date.now() / 1000 + 7 * 86400 }),
+  messenger_group_invite: (a) => ({ invite_id: 'demo', group_id: String(a?.groupId), name: mockGroup(String(a?.groupId)).name, about: '', picture: '', members: 1, peer: String(a?.who), direction: 'out', status: 'sent', created_at: Date.now() / 1000, expires_at: Date.now() / 1000 + 7 * 86400, vouched: true }),
   messenger_group_invites: (a) => (a?.direction === 'in' ? mockInvites : []),
   messenger_group_answer_invite: (a) => { mockInvites = mockInvites.filter((i) => i.invite_id !== a?.inviteId); },
   messenger_group_open_link: (a) => {
@@ -1899,6 +1905,8 @@ export const messengerApi = {
     sendFile: (to: string, path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null) =>
       invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, batch: batch ?? null, original, poster }),
     download: (messageId: string, manual: boolean) => invoke<string | null>('messenger_media_download', { messageId, manual }),
+    /** The file is on a server only its sender named (neither the project's nor mine): fetched only by hand. */
+    foreignServer: (messageId: string) => invoke<boolean>('messenger_media_foreign_server', { messageId }),
     transfer: (messageId: string) => invoke<MessengerTransfer | null>('messenger_media_transfer', { messageId }),
     /** Every transfer queued, running, waiting, paused or failed, newest first. */
     transfers: () => invoke<MessengerTransfer[]>('messenger_media_transfers'),

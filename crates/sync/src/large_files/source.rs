@@ -184,10 +184,9 @@ impl LargeFileSink for PathSink {
         let file = std::fs::File::open(&self.part).map_err(Self::disk)?;
         file.sync_all().map_err(Self::disk)?;
         drop(file);
-        // Windows rename does not replace an existing destination.
-        if self.dest.exists() {
-            std::fs::remove_file(&self.dest).map_err(Self::disk)?;
-        }
+        // `std::fs::rename` replaces an existing file on every platform,
+        // Windows too: the old file stays whole until the new one takes its
+        // name, and the destination is never missing in between.
         std::fs::rename(&self.part, &self.dest).map_err(Self::disk)?;
         Self::remove_quiet(&self.sidecar);
         Ok(())

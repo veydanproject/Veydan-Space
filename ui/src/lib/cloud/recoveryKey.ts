@@ -14,6 +14,8 @@ export function recoveryRefusal(e: CloudError, tr: (key: TranslationKey) => stri
       return tr('cloud_recovery_wrong_password');
     case 'already_set_up':
       return tr('cloud_recovery_already');
+    case 'issued_elsewhere':
+      return tr('cloud_recovery_elsewhere');
     case 'reissue_pending':
       return tr('cloud_recovery_pending');
     case 'no_sync_vault':

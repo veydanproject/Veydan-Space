@@ -14,14 +14,14 @@
     busy = false,
     /** The plan the key was asked for, by its name: said in the title. */
     planName = '',
-    /** What the account became after the key: its plan and the day it is paid until. */
+    /** What the account became after the key: its plan, the day it is paid until, and the plan that waits for that day. */
     result = null,
     onRedeem,
   }: {
     open?: boolean;
     busy?: boolean;
     planName?: string;
-    result?: { plan: string; until: number | null } | null;
+    result?: { plan: string; until: number | null; next?: { plan: string; since: number } | null } | null;
     onRedeem: (key: string) => Promise<CloudError | null>;
   } = $props();
 
@@ -81,6 +81,9 @@
         <p>
           {result.until ? $t('cloud_key_done_until', { plan: result.plan, date: dateOf(result.until, $locale) }) : $t('cloud_key_done_plan', { plan: result.plan })}
         </p>
+        {#if result.next}
+          <p>{$t('cloud_next_plan', { plan: result.next.plan, date: dateOf(result.next.since, $locale) })}</p>
+        {/if}
       {/if}
     </StateView>
   {:else}

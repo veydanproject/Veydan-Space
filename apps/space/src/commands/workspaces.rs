@@ -11,7 +11,7 @@ use crate::models::{
 use crate::modules::directory;
 use chrono::Utc;
 use uuid::Uuid;
-use veydan_core::Core;
+use veydan_core::{Core, Directory};
 
 #[tauri::command]
 pub async fn workspace_list(core: tauri::State<'_, Core>) -> CmdResult<Vec<Workspace>> {
@@ -135,82 +135,110 @@ pub async fn workspace_delete(
         }
         let running_ids = browser.running.running_ids().await;
         browser_launch::emit_running_changed(&app_handle, running_ids);
-
-        for profile in &profiles {
-            if std::path::Path::new(&profile.profile_path).exists() {
-                let _ = std::fs::remove_dir_all(&profile.profile_path);
-            }
-        }
     }
 
-    // The rows, and the labels of what they name, in one transaction.
-    let mut tx = core.db.begin().await.map_err(AppError::db)?;
+    let paths = delete_impl(&core.db, &core.directory, &id, &mode).await?;
+
+    // The folders go after the commit: a failed transaction must not leave
+    // profiles whose files are already gone.
+    for path in paths {
+        let _ = crate::commands::profiles::crud::remove_profile_dir(&core.app_data_dir, &path);
+    }
+
+    Ok(())
+}
+
+/// The rows of a deleted workspace, and the labels of what they name, in one
+/// transaction. Returns the folders of the profiles deleted with it.
+async fn delete_impl(
+    db: &sqlx::SqlitePool,
+    labels: &Directory,
+    id: &str,
+    mode: &str,
+) -> CmdResult<Vec<String>> {
+    let mut tx = db.begin().await.map_err(AppError::db)?;
     let ws_tag = format!("workspace:{}", id);
-    let profiles: Vec<String> =
-        sqlx::query_scalar("SELECT id FROM profiles WHERE workspace_id = ?")
-            .bind(&id)
+    let profile_rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, profile_path FROM profiles WHERE workspace_id = ?")
+            .bind(id)
             .fetch_all(&mut *tx)
             .await
             .map_err(AppError::db)?;
+    let profiles: Vec<String> = profile_rows.iter().map(|(id, _)| id.clone()).collect();
+    let mut paths: Vec<String> = Vec::new();
     let mut proxies: Vec<String> = Vec::new();
     if mode == "delete_all" {
         sqlx::query("DELETE FROM profiles WHERE workspace_id = ?")
-            .bind(&id)
+            .bind(id)
             .execute(&mut *tx)
             .await
             .map_err(AppError::db)?;
+        for (profile_id, path) in &profile_rows {
+            sqlx::query("DELETE FROM sync_profile_files_state WHERE profile_id = ?")
+                .bind(profile_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(AppError::db)?;
+            paths.push(path.clone());
+        }
 
-        // Delete proxies tagged with this workspace
-        proxies = sqlx::query_scalar(
-            "SELECT id FROM proxies WHERE EXISTS (
+        // Delete the proxies tagged with this workspace that nothing outside
+        // it uses: a profile of another workspace would be left with a
+        // dangling proxy (it would not start), an SSH connection would lose
+        // its proxy. The others keep the row and lose the tag, as below.
+        let unused = "FROM proxies WHERE EXISTS (
                 SELECT 1 FROM json_each(tags) WHERE value = ?
-            )",
-        )
-        .bind(&ws_tag)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(AppError::db)?;
-        sqlx::query(
-            "DELETE FROM proxies WHERE EXISTS (
-                SELECT 1 FROM json_each(tags) WHERE value = ?
-            )",
-        )
-        .bind(&ws_tag)
-        .execute(&mut *tx)
-        .await
-        .map_err(AppError::db)?;
+            )
+            AND NOT EXISTS (SELECT 1 FROM profiles WHERE profiles.proxy_id = proxies.id)
+            AND NOT EXISTS (SELECT 1 FROM ssh_connections WHERE ssh_connections.proxy_id = proxies.id)";
+        proxies = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT id {unused}")))
+            .bind(&ws_tag)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(AppError::db)?;
+        sqlx::query(sqlx::AssertSqlSafe(format!("DELETE {unused}")))
+            .bind(&ws_tag)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::db)?;
     } else {
         sqlx::query("UPDATE profiles SET workspace_id = 'default' WHERE workspace_id = ?")
-            .bind(&id)
+            .bind(id)
             .execute(&mut *tx)
             .await
             .map_err(AppError::db)?;
-
-        // Replace workspace tag on proxies: workspace:{id} → workspace:default
-        sqlx::query(
-            "UPDATE proxies SET tags = (
-                SELECT json_group_array(CASE WHEN value = ? THEN 'workspace:default' ELSE value END)
-                FROM json_each(tags)
-            ) WHERE EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)",
-        )
-        .bind(&ws_tag)
-        .bind(&ws_tag)
-        .execute(&mut *tx)
-        .await
-        .map_err(AppError::db)?;
     }
 
-    sqlx::query("DELETE FROM workspaces WHERE id = ?")
-        .bind(&id)
+    // Replace workspace tag on the proxies left: workspace:{id} → workspace:default
+    sqlx::query(
+        "UPDATE proxies SET tags = (
+            SELECT json_group_array(CASE WHEN value = ? THEN 'workspace:default' ELSE value END)
+            FROM json_each(tags)
+        ) WHERE EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)",
+    )
+    .bind(&ws_tag)
+    .bind(&ws_tag)
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::db)?;
+
+    // The columns of the board have a foreign key to the workspace.
+    sqlx::query("DELETE FROM workspace_columns WHERE workspace_id = ?")
+        .bind(id)
         .execute(&mut *tx)
         .await
         .map_err(AppError::db)?;
-    directory::relabel(&core.directory, &mut tx, &directory::WORKSPACE, &id).await?;
-    directory::relabel_all(&core.directory, &mut tx, &directory::PROFILE, &profiles).await?;
-    directory::relabel_all(&core.directory, &mut tx, &directory::PROXY, &proxies).await?;
+    sqlx::query("DELETE FROM workspaces WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::db)?;
+    directory::relabel(labels, &mut tx, &directory::WORKSPACE, id).await?;
+    directory::relabel_all(labels, &mut tx, &directory::PROFILE, &profiles).await?;
+    directory::relabel_all(labels, &mut tx, &directory::PROXY, &proxies).await?;
     tx.commit().await.map_err(AppError::db)?;
 
-    Ok(())
+    Ok(paths)
 }
 
 #[tauri::command]
@@ -448,4 +476,95 @@ pub async fn profile_move_to_kanban_column(
         .map_err(AppError::db)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn exec(db: &sqlx::SqlitePool, sql: &str) {
+        sqlx::query(sqlx::AssertSqlSafe(sql.to_string()))
+            .execute(db)
+            .await
+            .unwrap();
+    }
+
+    async fn count(db: &sqlx::SqlitePool, table: &str) -> i64 {
+        sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
+            .fetch_one(db)
+            .await
+            .unwrap()
+    }
+
+    async fn fixture(db: &sqlx::SqlitePool) {
+        let at = "'2026-01-01T00:00:00Z'";
+        exec(db, &format!("INSERT INTO workspaces (id, name, created_at, updated_at) VALUES ('w', 'w', {at}, {at})")).await;
+        exec(db, &format!("INSERT INTO workspace_columns (id, workspace_id, name, tag_name, created_at) VALUES ('c', 'w', 'c', 't', {at})")).await;
+        // Used by a profile of the default workspace; used by an SSH connection; free.
+        for (id, tag) in [("keep-profile", "w"), ("keep-ssh", "w"), ("free", "w")] {
+            exec(db, &format!("INSERT INTO proxies (id, name, host, port, tags, created_at) VALUES ('{id}', '{id}', 'h', 1, '[\"workspace:{tag}\"]', {at})")).await;
+        }
+        exec(db, &format!("INSERT INTO profiles (id, name, profile_path, workspace_id, created_at, updated_at) VALUES ('in', 'in', '/in', 'w', {at}, {at})")).await;
+        exec(db, &format!("INSERT INTO profiles (id, name, profile_path, workspace_id, proxy_id, created_at, updated_at) VALUES ('out', 'out', '/out', 'default', 'keep-profile', {at}, {at})")).await;
+        exec(db, &format!("INSERT INTO ssh_connections (id, name, host, username, proxy_id, created_at, updated_at) VALUES ('s', 's', 'h', 'u', 'keep-ssh', {at}, {at})")).await;
+        exec(
+            db,
+            "INSERT INTO sync_profile_files_state (profile_id) VALUES ('in')",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn deleting_a_workspace_deletes_its_columns_and_spares_shared_proxies() {
+        let (db, dir) = crate::db::test_pool().await;
+        let at = "'2026-01-01T00:00:00Z'";
+        exec(&db, &format!("INSERT OR IGNORE INTO workspaces (id, name, created_at, updated_at) VALUES ('default', 'Default', {at}, {at})")).await;
+        fixture(&db).await;
+
+        let paths = delete_impl(&db, &Directory::default(), "w", "delete_all")
+            .await
+            .unwrap();
+
+        assert_eq!(paths, ["/in"]);
+        assert_eq!(count(&db, "workspaces WHERE id = 'w'").await, 0);
+        assert_eq!(count(&db, "workspace_columns").await, 0);
+        assert_eq!(count(&db, "profiles WHERE id = 'in'").await, 0);
+        assert_eq!(count(&db, "profiles WHERE id = 'out'").await, 1);
+        assert_eq!(count(&db, "sync_profile_files_state").await, 0);
+        assert_eq!(count(&db, "proxies WHERE id = 'free'").await, 0);
+        // The others stay, with the tag of the default workspace.
+        assert_eq!(
+            count(&db, "proxies WHERE id IN ('keep-profile', 'keep-ssh') AND tags = '[\"workspace:default\"]'").await,
+            2
+        );
+
+        db.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn moving_a_workspace_to_default_keeps_profiles_and_deletes_columns() {
+        let (db, dir) = crate::db::test_pool().await;
+        let at = "'2026-01-01T00:00:00Z'";
+        exec(&db, &format!("INSERT OR IGNORE INTO workspaces (id, name, created_at, updated_at) VALUES ('default', 'Default', {at}, {at})")).await;
+        fixture(&db).await;
+
+        let paths = delete_impl(&db, &Directory::default(), "w", "move")
+            .await
+            .unwrap();
+
+        assert!(paths.is_empty());
+        assert_eq!(count(&db, "workspace_columns").await, 0);
+        assert_eq!(
+            count(&db, "profiles WHERE workspace_id = 'default'").await,
+            2
+        );
+        assert_eq!(
+            count(&db, "proxies WHERE tags = '[\"workspace:default\"]'").await,
+            3
+        );
+
+        db.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

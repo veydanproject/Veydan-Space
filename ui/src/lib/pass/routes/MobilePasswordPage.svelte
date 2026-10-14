@@ -12,6 +12,7 @@
   import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
   import { api } from '$lib/pass/api';
+  import { copySecret } from '$lib/pass/clipboard';
   import { formatError } from '$lib/core/utils';
   import { t } from '$lib/core/mobile/i18n';
   import { appLock } from '$lib/core/lock/store.svelte';
@@ -151,7 +152,7 @@
     try {
       const value = (await api.passwords.reveal(id, 'password')).value;
       revealed = value;
-      await writeClipboard(value);
+      await copySecret(value);
       markCopied('password');
       toast = $t('pw_copied');
     } catch (e) {

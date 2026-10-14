@@ -22,7 +22,7 @@ use veydan_core::db::{OpenError, DB_FILE};
 /// Connections of the pool enforce the `REFERENCES` clauses (sqlx turns
 /// `foreign_keys` on), but the delete paths do not lean on `ON DELETE`: each
 /// clears its own references explicitly — `ssh_key_delete`,
-/// `ssh_connection_delete`, `proxy_delete`, and the matching `Delete::Plain`
+/// `ssh_connection_delete`, `proxy_delete` (for ssh connections), and the matching `Delete::Plain`
 /// statements the modules register for sync. A *dangling* reference is
 /// deliberately not repaired by nulling it: `proxies::resolve_required`
 /// refuses to connect, because silently dropping a proxy reference would

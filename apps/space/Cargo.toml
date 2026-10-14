@@ -1,6 +1,6 @@
 [package]
 name = "veydanspace"
-version = "5.1.16"
+version = "5.1.17"
 description = "Workspace for multi-accounting: browser profiles, proxies, SSH, notes, passwords and chat"
 authors = ["Veydan Project"]
 edition = "2021"
@@ -10,6 +10,10 @@ license-file = "../../LICENSE"
 # One library for every platform: desktop main.rs and the Android/iOS bootstrap load it.
 name = "veydan_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# The demo data in a release build (the screenshots): veydan-shell's feature.
+demo = ["veydan-shell/demo"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

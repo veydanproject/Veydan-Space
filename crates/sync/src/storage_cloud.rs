@@ -126,7 +126,12 @@ impl VaultTransport for Direct {
         Box::pin(async move {
             let method = Method::from_bytes(request.method.as_bytes())
                 .map_err(|e| SyncError::Storage(format!("method {}: {e}", request.method)))?;
+            // A list is a GET of `/v1/o` with a prefix; a blob is `/v1/o/<key>`.
+            let short = method == Method::HEAD || request.url.contains("/v1/o?");
             let mut builder = self.client.request(method, request.url);
+            if short {
+                builder = builder.timeout(crate::storage::METADATA_TIMEOUT);
+            }
             for (name, value) in &request.headers {
                 builder = builder.header(*name, value.as_str());
             }

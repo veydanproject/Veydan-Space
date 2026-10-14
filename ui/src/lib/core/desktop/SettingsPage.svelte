@@ -21,6 +21,9 @@
   import { updaterStore } from '$lib/core/store/updater.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import LockSetupForm from '$lib/core/lock/LockSetupForm.svelte';
+  import { appLock } from '$lib/core/lock/store.svelte';
+  import { isWrongSecret } from '$lib/core/lock/secret';
+  import DataConfirmFields from '$lib/core/DataConfirmFields.svelte';
   import SyncSettings from '$lib/core/sync/SyncSettings.svelte';
   import BugReportDialog from '$lib/core/BugReportDialog.svelte';
   import HotkeySettings from '$lib/core/desktop/HotkeySettings.svelte';
@@ -211,7 +214,11 @@
   // The demo data is offered where a module has some (`ModuleDef.demo`), in
   // the language of the UI to begin with.
   const demoModules = registry.modules.filter((m) => m.demo);
-  const hasDemo = demoModules.length > 0;
+  /** "Clear app data" clears what these modules keep, in every build. */
+  const hasData = demoModules.length > 0;
+  /** The demo data only where the build loads it (`HostInfo.demo`: a debug build, or one with the feature `demo`). */
+  let demoBuild = $state(false);
+  const hasDemo = $derived(hasData && demoBuild);
   /** The sections whose data the demo set replaces and "Clear app data" deletes. */
   const dataList = $derived(demoModules.map((m) => $t(m.title as TranslationKey)).join(', '));
   // The demo data exists in English and Russian; every other language starts from English.
@@ -223,6 +230,10 @@
   let clearBusy = $state(false);
   let dataMsg = $state('');
   let dataError = $state('');
+  // The confirmation: the lock's secret, which devices a clear reaches (DataConfirmFields).
+  let dataSecret = $state('');
+  let dataScope = $state<'device' | 'all'>('device');
+  let dataWrong = $state(false);
 
   async function saveTray() {
     if (!isTauri) return;
@@ -256,6 +267,7 @@
         trayClose = tray.close_to_tray;
         trayStartHidden = tray.start_hidden;
       } catch {}
+      demoBuild = (await api.system.hostInfo().catch(() => null))?.demo ?? false;
     }
 
   });
@@ -277,7 +289,7 @@
       dataError = formatError('Not running in app');
       return;
     }
-    pendingData = 'load';
+    askData('load');
   }
 
   function askClearData() {
@@ -286,56 +298,70 @@
       dataError = formatError('Not running in app');
       return;
     }
-    pendingData = 'clear';
+    askData('clear');
   }
 
+  function askData(action: 'load' | 'clear') {
+    dataSecret = '';
+    dataScope = 'device';
+    dataWrong = false;
+    pendingData = action;
+  }
+
+  /** The dialog stays open on a wrong secret, and says so. */
   async function confirmDataAction() {
     const action = pendingData;
-    pendingData = null;
-    if (action === 'load') await loadDemoData();
-    else if (action === 'clear') await clearAppData();
+    const wrong = action === 'load' ? await loadDemoData() : action === 'clear' ? await clearAppData() : false;
+    dataWrong = wrong;
+    if (!wrong) pendingData = null;
   }
 
-  async function loadDemoData() {
-    if (demoBusy || clearBusy) return;
+  /** True when the secret was not the lock's. */
+  async function loadDemoData(): Promise<boolean> {
+    if (demoBusy || clearBusy) return false;
     if (!isTauri) {
       dataError = formatError('Not running in app');
-      return;
+      return false;
     }
     demoBusy = true;
     dataMsg = '';
     dataError = '';
     try {
-      await api.demo.seed(demoLocale);
+      await api.demo.seed(demoLocale, dataSecret || null);
       await refreshCatalogStores();
       dataMsg = $t('settings_demo_done');
       setTimeout(() => (dataMsg = ''), 4000);
     } catch (e) {
+      if (isWrongSecret(e)) return true;
       dataError = formatError(e);
     } finally {
       demoBusy = false;
     }
+    return false;
   }
 
-  async function clearAppData() {
-    if (demoBusy || clearBusy) return;
+  /** True when the secret was not the lock's. */
+  async function clearAppData(): Promise<boolean> {
+    if (demoBusy || clearBusy) return false;
     if (!isTauri) {
       dataError = formatError('Not running in app');
-      return;
+      return false;
     }
     clearBusy = true;
     dataMsg = '';
     dataError = '';
     try {
-      await api.app.clearData();
+      await api.app.clearData(dataSecret || null, dataScope);
       await refreshCatalogStores();
       dataMsg = $t('settings_clear_done');
       setTimeout(() => (dataMsg = ''), 4000);
     } catch (e) {
+      if (isWrongSecret(e)) return true;
       dataError = formatError(e);
     } finally {
       clearBusy = false;
     }
+    return false;
   }
 
 </script>
@@ -673,6 +699,8 @@
       <button type="button" class="demo-link" disabled={demoBusy || clearBusy} onclick={askLoadDemo}>
         {demoBusy ? $t('settings_demo_loading') : $t('settings_demo_load')}
       </button>
+    {/if}
+    {#if hasData}
       <button type="button" class="demo-link danger" disabled={demoBusy || clearBusy} onclick={askClearData}>
         {clearBusy ? $t('settings_clear_clearing') : $t('settings_clear_data')}
       </button>
@@ -696,6 +724,13 @@
         {#each demoLosses as key (key)}<p>{$t(key as TranslationKey)}</p>{/each}
       {/if}
     </div>
+    <DataConfirmFields
+      clear={pendingData === 'clear'}
+      bind:secret={dataSecret}
+      bind:scope={dataScope}
+      wrong={dataWrong}
+      disabled={demoBusy || clearBusy}
+    />
     {#snippet footer()}
       <button class="btn btn-ghost btn-sm" onclick={() => (pendingData = null)}>
         {$t('settings_backup_cancel')}
@@ -704,6 +739,7 @@
         class="btn btn-sm"
         class:btn-danger={pendingData === 'clear'}
         class:btn-primary={pendingData !== 'clear'}
+        disabled={demoBusy || clearBusy || (appLock.status.enabled && !dataSecret)}
         onclick={confirmDataAction}
       >
         {pendingData === 'clear' ? $t('settings_clear_data') : $t('settings_demo_load')}

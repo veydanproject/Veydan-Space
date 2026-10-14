@@ -9,7 +9,7 @@
 
 use crate::MessengerRuntime;
 use messenger_core::traits::SystemClock;
-use messenger_core::{Clock, Envelope, Outbound, PubKey, Result};
+use messenger_core::{Clock, Envelope, MessengerError, Outbound, PubKey, Result};
 use messenger_dm::wrap::wrap_note;
 use messenger_dm::DmService;
 use messenger_groups::GroupService;
@@ -72,6 +72,15 @@ pub(crate) async fn flush(dm: &DmService, groups: &GroupService, outbox: &Outbox
         } else if let Some(group) = chat_id.strip_prefix("group:") {
             match groups.prepare_read_receipt(keys, group, at).await {
                 Ok(out) => outbox.enqueue(out).await.map(|_| ()),
+                // A key someone who left still knows: not a word under it.
+                // The read is owed again and said at a tick after the new
+                // key came (the other devices of mine wait for it too).
+                Err(MessengerError::Invalid(code)) if code == "group_key_stale" => {
+                    if let Err(e) = dm.owe_read_again(&chat_id).await {
+                        eprintln!("messenger receipts: read of {chat_id}, lost: {e}");
+                    }
+                    continue;
+                }
                 // Left, or no key yet: there is nobody to tell.
                 Err(e) => {
                     eprintln!("messenger receipts: group {group}: {e}");

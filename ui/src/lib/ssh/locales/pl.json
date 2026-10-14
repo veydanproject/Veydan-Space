@@ -28,6 +28,7 @@
     "files_transfer_done": "Gotowe",
     "files_transfer_cancelled": "Anulowano — częściowe dane zachowane, uruchom ponownie, aby wznowić",
     "files_transfer_skipped": "Pominięto: {n}",
+    "files_transfer_move_kept": "Nie przeniesiono: {n}, oryginały zostają na miejscu",
     "files_conflict_title": "Plik już istnieje",
     "files_conflict_msg_file": "„{name}” już istnieje w miejscu docelowym. Zastąpić?",
     "files_conflict_msg_dir": "Folder „{name}” już istnieje w miejscu docelowym. Zastąpić pliki w nim?",

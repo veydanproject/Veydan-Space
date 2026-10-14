@@ -4,7 +4,7 @@
 //! The app of a product, built from its modules.
 
 use crate::module::{Module, Setup};
-use crate::router::{DuplicateCommand, Router};
+use crate::router::{Router, RouterError};
 use crate::services::{Part, Product, Shell};
 use crate::start::{StartError, StartState};
 use sqlx::{Pool, Sqlite};
@@ -35,12 +35,12 @@ fn with_shell(modules: Vec<Module>) -> Vec<Module> {
     all
 }
 
-fn router(product: Product, modules: Vec<Module>) -> Result<Router, DuplicateCommand> {
+fn router(product: Product, modules: Vec<Module>) -> Result<Router, RouterError> {
     Router::new(
         product.id,
         modules
             .into_iter()
-            .map(|module| (module.id, module.commands, module.handler))
+            .map(|module| (module.id, module.commands, module.windows, module.handler))
             .collect(),
     )
 }
@@ -80,8 +80,18 @@ fn registry(product: Product, modules: &[Module]) -> Result<Registry, String> {
 pub fn command_table(
     product: Product,
     modules: Vec<Module>,
-) -> Result<Vec<(&'static str, &'static str)>, DuplicateCommand> {
+) -> Result<Vec<(&'static str, &'static str)>, RouterError> {
     Ok(router(product, with_shell(modules))?.table())
+}
+
+/// What each window of a product made of `modules` besides `main` may
+/// invoke: the label (`*` for a window no grant names) and the command,
+/// ordered by both. `main` reaches every command of [`command_table`].
+pub fn window_table(
+    product: Product,
+    modules: Vec<Module>,
+) -> Result<Vec<(&'static str, &'static str)>, RouterError> {
+    Ok(router(product, with_shell(modules))?.window_table())
 }
 
 /// What the app's setup needs of the modules, taken before their handlers
@@ -120,7 +130,13 @@ impl Start {
         app: &mut tauri::App,
         data_dir: PathBuf,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        std::fs::create_dir_all(&data_dir)?;
+        // A folder that cannot be made is told by the page, as a data file
+        // that cannot be opened; an error here would end the start in a
+        // panic of the builder, before any window exists.
+        if let Err(e) = std::fs::create_dir_all(&data_dir) {
+            app.state::<StartState>().fail(failed(&data_dir, &e));
+            return Ok(false);
+        }
         for before_open in &self.before_open {
             before_open(&data_dir);
         }
@@ -177,12 +193,13 @@ fn hold_windows(config: &mut tauri::Config) -> Vec<String> {
         .collect()
 }
 
-/// Build the windows [`hold_windows`] took over, each with the webview
-/// storage of the `--workdir` profile when there is one.
+/// Build the windows [`hold_windows`] took over, each kept on the pages of
+/// the app and with the webview storage of the `--workdir` profile when
+/// there is one.
 fn open_windows<R: Runtime>(app: &tauri::AppHandle<R>, labels: &[String]) -> tauri::Result<()> {
     let windows = app.config().app.windows.clone();
     for config in windows.iter().filter(|w| labels.contains(&w.label)) {
-        let builder = WebviewWindowBuilder::from_config(app, config)?;
+        let builder = crate::guard_window(app, WebviewWindowBuilder::from_config(app, config)?);
         #[cfg(desktop)]
         let builder = crate::workdir::apply_to_window(builder);
         builder.build()?;
@@ -203,10 +220,15 @@ fn show_tray(app: &tauri::App) {
     crate::tray::watch_main_window(app.handle());
 }
 
-/// Open the data file in `data_dir`. `None` when what sits there is not a
-/// data file this build opens: it is left alone, the reason is recorded for
-/// `app_start_error`, and the caller must go no further.
-fn open_data(app: &tauri::AppHandle, data_dir: &Path, schemas: &[Schema]) -> Option<Pool<Sqlite>> {
+/// Open the data file in `data_dir`. `None` when the data cannot be opened —
+/// what sits there is not a data file this build opens (it is left alone),
+/// or the file or its folder cannot be read, created or opened: the reason
+/// is recorded for `app_start_error`, and the caller must go no further.
+fn open_data<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    data_dir: &Path,
+    schemas: &[Schema],
+) -> Option<Pool<Sqlite>> {
     let db_path = data_dir.join(db::DB_FILE);
     let error = match tauri::async_runtime::block_on(db::open(&db_path, schemas)) {
         Ok(db) => return Some(db),
@@ -225,10 +247,21 @@ fn open_data(app: &tauri::AppHandle, data_dir: &Path, schemas: &[Schema]) -> Opt
                 path: db_path.to_string_lossy().into_owned(),
             }
         }
-        Err(OpenError::Failed(e)) => panic!("Failed to initialize database: {e:#}"),
+        Err(OpenError::Failed(e)) => failed(&db_path, &e),
     };
     app.state::<StartState>().fail(error);
     None
+}
+
+/// The data at `path` could not be opened: the reason goes to the log of the
+/// start and to the page.
+fn failed(path: &Path, error: &dyn std::fmt::Display) -> StartError {
+    let reason = format!("{error:#}");
+    eprintln!("data at {} cannot be opened: {reason}", path.display());
+    StartError::DbFailed {
+        path: path.to_string_lossy().into_owned(),
+        reason,
+    }
 }
 
 /// Starts the product. `context` comes from `tauri::generate_context!()`
@@ -261,7 +294,7 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
     };
     let router = match router(product, modules) {
         Ok(router) => router,
-        Err(duplicate) => panic!("{}: {duplicate}", product.id),
+        Err(refused) => panic!("{}: {refused}", product.id),
     };
 
     let builder = tauri::Builder::default();
@@ -274,7 +307,13 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // The page reaches the updater through the shell's own commands
+        // (`crate::updater`), not the plugin's: no older version is taken.
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .default_version_comparator(crate::updater::upgrade_only)
+                .build(),
+        )
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init());
     #[cfg(mobile)]
@@ -316,8 +355,8 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
                 let Some(shell) = app.try_state::<Shell>() else {
                     return;
                 };
-                shell.begin_exit();
-                tauri::async_runtime::block_on(shell.stop_modules());
+                // Done already when a restore or `app_relaunch` restarts.
+                tauri::async_runtime::block_on(shell.shutdown());
             }
         });
     #[cfg(mobile)]
@@ -327,6 +366,7 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::router::DuplicateCommand;
     use veydan_sync_host::{Hooks, Plan, Step, TableSpec};
 
     #[tauri::command]
@@ -377,16 +417,49 @@ mod tests {
         assert!(table.windows(2).all(|pair| pair[0].0 < pair[1].0));
     }
 
+    /// A window besides `main` reaches of the shell the shared set alone:
+    /// nothing that sets the lock, deletes the data, configures sync,
+    /// updates or switches the modules.
+    #[test]
+    fn a_window_besides_main_reaches_the_shared_commands_of_the_shell_alone() {
+        let windows = window_table(PRODUCT, vec![notes()]).unwrap();
+        let mut shared: Vec<_> = crate::commands::SECONDARY.to_vec();
+        shared.sort_unstable();
+        let granted: Vec<_> = windows.iter().map(|(_, command)| *command).collect();
+        assert!(windows
+            .iter()
+            .all(|(window, _)| *window == crate::ANY_WINDOW));
+        assert_eq!(granted, shared);
+        for main_only in [
+            "lock_set",
+            "lock_timeout_set",
+            "lock_recovery_regenerate",
+            "vault_replaced_keys_open",
+            "demo_seed",
+            "app_clear_data",
+            "sync_set_config",
+            "sync_leave",
+            "update_open",
+            "updater_check",
+            "updater_install",
+            "app_relaunch",
+            "modules_set_enabled",
+            "note_ping",
+        ] {
+            assert!(!granted.contains(&main_only), "{main_only}");
+        }
+    }
+
     #[test]
     fn a_module_may_not_take_a_command_of_the_shell() {
         let greedy = crate::module! { id: "greedy", setup: |_app| Ok(()), commands: [host_info] };
         assert_eq!(
             command_table(PRODUCT, vec![greedy]).unwrap_err(),
-            DuplicateCommand {
+            RouterError::Duplicate(DuplicateCommand {
                 command: "host_info",
                 first: "shell",
                 second: "greedy"
-            }
+            })
         );
     }
 
@@ -469,6 +542,40 @@ mod tests {
         assert_eq!(*during_setup.lock().unwrap(), Some(0));
         assert!(app.get_webview_window("main").is_some());
         assert!(app.get_webview_window("on-demand").is_none());
+    }
+
+    /// A data folder the app may not read is a page with the reason, not a
+    /// panic of the start.
+    #[cfg(unix)]
+    #[test]
+    fn data_that_cannot_be_read_is_a_reason_of_the_start() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join(DATA_SUBDIR);
+        std::fs::create_dir(&data).unwrap();
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // Root reads any folder: nothing to see then.
+        let readable = std::fs::metadata(data.join(db::DB_FILE))
+            .map(|_| true)
+            .unwrap_or_else(|e| e.kind() == std::io::ErrorKind::NotFound);
+        if !readable {
+            let app = tauri::test::mock_builder()
+                .manage(StartState::default())
+                .build(tauri::test::mock_context(tauri::test::noop_assets()))
+                .unwrap();
+            assert!(open_data(app.handle(), &data, &schemas(&[])).is_none());
+            let Some(StartError::DbFailed { path, reason }) = app.state::<StartState>().error()
+            else {
+                panic!("{:?}", app.state::<StartState>().error());
+            };
+            assert_eq!(Path::new(&path), data.join(db::DB_FILE));
+            assert!(
+                reason.to_lowercase().contains("permission denied"),
+                "{reason}"
+            );
+        }
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[test]

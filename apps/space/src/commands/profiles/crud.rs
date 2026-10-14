@@ -7,9 +7,9 @@ use crate::error::{AppError, CmdResult};
 use crate::models::{CookieEntry, CreateProfileRequest, Profile, UpdateProfileRequest};
 use crate::modules::directory;
 use chrono::Utc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use veydan_core::Core;
+use veydan_core::{Core, Directory};
 
 #[tauri::command]
 pub async fn profiles_list(core: tauri::State<'_, Core>) -> CmdResult<Vec<Profile>> {
@@ -107,21 +107,19 @@ pub async fn profile_create(
         .and_then(|p| p.ok_or_else(|| AppError::not_found("Profile not found after create")))
 }
 
-/// Update a profile. Field contract (matches EditProfilePanel.svelte, which
-/// always submits the complete form state):
+/// Update a profile. Field contract (EditProfilePanel.svelte sends the form
+/// state, but a caller may send less, and a missing field never wipes data):
 ///
 /// * NOT-NULL columns (`name`, `browser_type`, `fingerprint_preset`, `locale`,
 ///   `languages`, `screen_width/height`, `webrtc_mode`, `geolocation_enabled`,
 ///   `default_search_engine`, `history_enabled`) use COALESCE — omitting the
-///   field (null) keeps the stored value, so a partial request can never wipe
-///   them.
+///   field (or null) keeps the stored value.
 /// * Nullable columns (`proxy_id`, `user_agent`, `platform`, `timezone`,
 ///   `latitude`, `longitude`, `webgl_vendor`, `webgl_renderer`, `notes`) are
-///   bound raw on purpose: null *clears* the column. The UI relies on this —
-///   e.g. selecting "None" detaches the proxy (proxy_id: null), and every save
-///   resets `user_agent` to null so the effective UA follows the (possibly
-///   changed) fingerprint preset. Callers must therefore send the full state
-///   for these fields, not a partial diff.
+///   `Option<Option<T>>`: a missing field keeps the stored value, an explicit
+///   `null` clears the column, a value sets it. The UI relies on this — "None"
+///   detaches the proxy (`proxy_id: null`), and a change of the fingerprint
+///   preset sends `user_agent: null` so the effective UA follows the new preset.
 #[tauri::command]
 pub async fn profile_update(
     id: String,
@@ -134,30 +132,44 @@ pub async fn profile_update(
             "Cannot update a running profile. Stop it first.",
         ));
     }
+    update_impl(&core.db, &core.directory, &id, &req).await?;
 
+    profile_get(id, core)
+        .await
+        .and_then(|p| p.ok_or_else(|| AppError::not_found("Profile not found after update")))
+}
+
+async fn update_impl(
+    db: &sqlx::SqlitePool,
+    labels: &Directory,
+    id: &str,
+    req: &UpdateProfileRequest,
+) -> CmdResult<()> {
     let now = Utc::now();
 
-    let mut tx = core.db.begin().await.map_err(AppError::db)?;
+    // `col = CASE WHEN ?flag THEN ?value ELSE col END`: the flag says the
+    // request named the field; the value (possibly NULL) is then stored.
+    let mut tx = db.begin().await.map_err(AppError::db)?;
     sqlx::query(
         "UPDATE profiles SET
             name = COALESCE(?, name),
             browser_type = COALESCE(?, browser_type),
-            proxy_id = ?,
+            proxy_id = CASE WHEN ? THEN ? ELSE proxy_id END,
             fingerprint_preset = COALESCE(?, fingerprint_preset),
-            user_agent = ?,
-            platform = ?,
-            timezone = ?,
+            user_agent = CASE WHEN ? THEN ? ELSE user_agent END,
+            platform = CASE WHEN ? THEN ? ELSE platform END,
+            timezone = CASE WHEN ? THEN ? ELSE timezone END,
             locale = COALESCE(?, locale),
             languages = COALESCE(?, languages),
             screen_width = COALESCE(?, screen_width),
             screen_height = COALESCE(?, screen_height),
             webrtc_mode = COALESCE(?, webrtc_mode),
             geolocation_enabled = COALESCE(?, geolocation_enabled),
-            latitude = ?,
-            longitude = ?,
-            webgl_vendor = ?,
-            webgl_renderer = ?,
-            notes = ?,
+            latitude = CASE WHEN ? THEN ? ELSE latitude END,
+            longitude = CASE WHEN ? THEN ? ELSE longitude END,
+            webgl_vendor = CASE WHEN ? THEN ? ELSE webgl_vendor END,
+            webgl_renderer = CASE WHEN ? THEN ? ELSE webgl_renderer END,
+            notes = CASE WHEN ? THEN ? ELSE notes END,
             default_search_engine = COALESCE(?, default_search_engine),
             history_enabled = COALESCE(?, history_enabled),
             updated_at = ?
@@ -165,35 +177,41 @@ pub async fn profile_update(
     )
     .bind(&req.name)
     .bind(&req.browser_type)
-    .bind(&req.proxy_id)
+    .bind(req.proxy_id.is_some())
+    .bind(req.proxy_id.clone().flatten())
     .bind(&req.fingerprint_preset)
-    .bind(&req.user_agent)
-    .bind(&req.platform)
-    .bind(&req.timezone)
+    .bind(req.user_agent.is_some())
+    .bind(req.user_agent.clone().flatten())
+    .bind(req.platform.is_some())
+    .bind(req.platform.clone().flatten())
+    .bind(req.timezone.is_some())
+    .bind(req.timezone.clone().flatten())
     .bind(&req.locale)
     .bind(&req.languages)
     .bind(req.screen_width)
     .bind(req.screen_height)
     .bind(&req.webrtc_mode)
     .bind(req.geolocation_enabled)
-    .bind(req.latitude)
-    .bind(req.longitude)
-    .bind(&req.webgl_vendor)
-    .bind(&req.webgl_renderer)
-    .bind(&req.notes)
+    .bind(req.latitude.is_some())
+    .bind(req.latitude.flatten())
+    .bind(req.longitude.is_some())
+    .bind(req.longitude.flatten())
+    .bind(req.webgl_vendor.is_some())
+    .bind(req.webgl_vendor.clone().flatten())
+    .bind(req.webgl_renderer.is_some())
+    .bind(req.webgl_renderer.clone().flatten())
+    .bind(req.notes.is_some())
+    .bind(req.notes.clone().flatten())
     .bind(&req.default_search_engine)
     .bind(req.history_enabled)
     .bind(now.to_rfc3339())
-    .bind(&id)
+    .bind(id)
     .execute(&mut *tx)
     .await
     .map_err(AppError::db)?;
-    directory::relabel(&core.directory, &mut tx, &directory::PROFILE, &id).await?;
+    directory::relabel(labels, &mut tx, &directory::PROFILE, id).await?;
     tx.commit().await.map_err(AppError::db)?;
-
-    profile_get(id, core)
-        .await
-        .and_then(|p| p.ok_or_else(|| AppError::not_found("Profile not found after update")))
+    Ok(())
 }
 
 #[tauri::command]
@@ -210,7 +228,52 @@ pub async fn profile_delete(
         browser_launch::emit_running_changed(&app_handle, ids);
     }
 
+    // Not while sync writes or reads the files: an apply would put the
+    // folder back after it went.
+    let _files = browser.files.lock(&id).await;
     remove_profile(&id, &core).await
+}
+
+/// The folder of a profile in `data_dir/profiles`. An id from the vault is
+/// any id of sync (`.`, `:` too): one that is not a plain name on every
+/// system — `a.b`, `C:x`, which on Windows is the drive — gets `h-` and a
+/// hash of it instead, so no id names a folder outside `profiles/`.
+pub(crate) fn profile_dir_of(data_dir: &Path, id: &str) -> PathBuf {
+    let plain = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'));
+    let name = if plain {
+        id.to_string()
+    } else {
+        format!("h-{}", &veydan_sync::sha256_hex(id.as_bytes())[..16])
+    };
+    data_dir.join("profiles").join(name)
+}
+
+/// Remove the folder of a profile, only when it lies inside
+/// `data_dir/profiles` once links are resolved, and is not that folder: the
+/// path is a column of the row, and an id from the vault wrote it (`..` gave
+/// the data directory itself). Any other path is left as it is.
+pub(crate) fn remove_profile_dir(data_dir: &Path, profile_path: &str) -> CmdResult<()> {
+    let path = Path::new(profile_path);
+    if !path.exists() {
+        return Ok(());
+    }
+    let root = data_dir.join("profiles");
+    let inside = match (std::fs::canonicalize(&root), std::fs::canonicalize(path)) {
+        (Ok(root), Ok(real)) => real != root && real.starts_with(&root),
+        _ => false,
+    };
+    if !inside {
+        eprintln!(
+            "[profiles] {} is not a folder in {}; left in place",
+            path.display(),
+            root.display()
+        );
+        return Ok(());
+    }
+    std::fs::remove_dir_all(path).map_err(AppError::io)
 }
 
 /// Remove a profile that is not running: its directory, then its row and
@@ -223,9 +286,7 @@ pub(crate) async fn remove_profile(id: &str, core: &Core) -> Result<(), AppError
         .map_err(AppError::db)?;
 
     if let Some(p) = profile {
-        if std::path::Path::new(&p.profile_path).exists() {
-            std::fs::remove_dir_all(&p.profile_path).map_err(AppError::io)?;
-        }
+        remove_profile_dir(&core.app_data_dir, &p.profile_path)?;
     }
 
     let mut tx = core.db.begin().await.map_err(AppError::db)?;
@@ -360,7 +421,14 @@ pub async fn profile_raw_data(
 
     let cfg = super::build_camoufox_config(&profile);
     let camoufox_config = serde_json::to_string_pretty(&cfg).unwrap_or_default();
-    let user_js = crate::browser::userjs::generate(&profile, proxy.as_ref());
+    // The password of the proxy is not shown: this text goes to the screen.
+    let shown_proxy = proxy.clone().map(|mut p| {
+        if p.password.as_deref().is_some_and(|s| !s.is_empty()) {
+            p.password = Some("********".to_owned());
+        }
+        p
+    });
+    let user_js = crate::browser::userjs::generate(&profile, shown_proxy.as_ref());
 
     let seed = profile
         .id
@@ -465,4 +533,77 @@ pub fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Re
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn insert_profile(db: &sqlx::SqlitePool) {
+        sqlx::query(
+            "INSERT INTO profiles (id, name, profile_path, proxy_id, user_agent, timezone, notes, latitude, created_at, updated_at)
+             VALUES ('p', 'old', '/x', 'px', 'UA', 'Europe/Berlin', 'n', 52.5, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+    }
+
+    async fn row(
+        db: &sqlx::SqlitePool,
+    ) -> (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<f64>,
+    ) {
+        sqlx::query_as(
+            "SELECT name, proxy_id, user_agent, timezone, notes, latitude FROM profiles WHERE id = 'p'",
+        )
+        .fetch_one(db)
+        .await
+        .unwrap()
+    }
+
+    fn req(json: serde_json::Value) -> UpdateProfileRequest {
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[tokio::test]
+    async fn an_update_names_only_what_it_changes_and_null_clears() {
+        let (db, dir) = crate::db::test_pool().await;
+        insert_profile(&db).await;
+        let labels = Directory::default();
+
+        update_impl(&db, &labels, "p", &req(serde_json::json!({"name": "new"})))
+            .await
+            .unwrap();
+        let (name, proxy, ua, tz, notes, lat) = row(&db).await;
+        assert_eq!(name, "new");
+        assert_eq!(proxy.as_deref(), Some("px"));
+        assert_eq!(ua.as_deref(), Some("UA"));
+        assert_eq!(tz.as_deref(), Some("Europe/Berlin"));
+        assert_eq!(notes.as_deref(), Some("n"));
+        assert_eq!(lat, Some(52.5));
+
+        update_impl(
+            &db,
+            &labels,
+            "p",
+            &req(serde_json::json!({"proxy_id": null, "latitude": null, "timezone": "UTC"})),
+        )
+        .await
+        .unwrap();
+        let (_, proxy, ua, tz, notes, lat) = row(&db).await;
+        assert_eq!(proxy, None);
+        assert_eq!(lat, None);
+        assert_eq!(tz.as_deref(), Some("UTC"));
+        assert_eq!(ua.as_deref(), Some("UA"));
+        assert_eq!(notes.as_deref(), Some("n"));
+
+        db.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

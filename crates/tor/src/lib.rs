@@ -14,6 +14,8 @@
 //! The module keeps no tables and knows no other module.
 
 #[cfg(desktop)]
+pub mod checksum;
+#[cfg(desktop)]
 mod commands;
 pub mod control;
 #[cfg(desktop)]

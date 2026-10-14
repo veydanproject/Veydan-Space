@@ -3,7 +3,10 @@
 
 //! WebDAV adapter (Nextcloud, Yandex Disk, generic servers) with basic auth.
 
-use crate::storage::{http_client, is_noise_key, send_retry, status_error, Storage, TMP_SUFFIX};
+use crate::storage::{
+    http_client, is_noise_key, send_retry, status_error, Storage, ERR_NO_ATOMIC_MOVE,
+    METADATA_TIMEOUT, TMP_SUFFIX,
+};
 use crate::{random_hex, Result, SyncError};
 use async_trait::async_trait;
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
@@ -74,7 +77,11 @@ impl WebDavStorage {
     }
 
     fn req(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
-        let b = self.client.request(method, url);
+        let short = method == Method::HEAD || method.as_str() == "PROPFIND";
+        let mut b = self.client.request(method, url);
+        if short {
+            b = b.timeout(METADATA_TIMEOUT);
+        }
         if self.cfg.username.is_empty() {
             b
         } else {
@@ -281,10 +288,19 @@ impl Storage for WebDavStorage {
             None => String::new(),
         };
         let mut out = Vec::new();
-        let mut stack = vec![start_dir];
+        let mut stack = vec![start_dir.clone()];
         while let Some(dir) = stack.pop() {
+            // Only the start may be missing (nothing under the prefix yet). A
+            // collection its parent has just listed answering 404 is a fault
+            // of the server: leaving it out would read as a vault without
+            // that device's log, and the collector would take its blobs.
             let Some(children) = self.list_dir(&dir).await? else {
-                continue;
+                if dir == start_dir {
+                    continue;
+                }
+                return Err(SyncError::Storage(format!(
+                    "webdav propfind: {dir}/ was listed by its parent but answers 404"
+                )));
             };
             for (rel, is_dir) in children {
                 if is_dir {
@@ -308,8 +324,8 @@ impl Storage for WebDavStorage {
     }
 
     /// PUT is not atomic on WebDAV: a reader could see a half-written chunk or
-    /// manifest. Write a temp key and MOVE it into place; plain PUT only when
-    /// the server has no MOVE.
+    /// manifest. Write a temp key and MOVE it into place; a server without
+    /// MOVE is refused (`ERR_NO_ATOMIC_MOVE`), never written with a plain PUT.
     async fn put(&self, key: &str, data: &[u8]) -> Result<()> {
         let tmp = format!("{key}.{}{TMP_SUFFIX}", random_hex(4));
         self.put_raw(&tmp, data).await?;
@@ -323,7 +339,7 @@ impl Storage for WebDavStorage {
             }
             Ok(None) => {
                 let _ = self.delete(&tmp).await;
-                self.put_raw(key, data).await
+                Err(SyncError::Storage(ERR_NO_ATOMIC_MOVE.into()))
             }
             Err(e) => {
                 let _ = self.delete(&tmp).await;
@@ -352,7 +368,9 @@ impl Storage for WebDavStorage {
         }
     }
 
-    /// PUT is not atomic on WebDAV: write a temp key, then MOVE it into place.
+    /// PUT is not atomic on WebDAV: write a temp key, then MOVE it into place
+    /// with `Overwrite: F`, which the server refuses (412) when the key is
+    /// there. Without MOVE the write cannot be conditional and is refused.
     async fn put_if_absent(&self, key: &str, data: &[u8]) -> Result<bool> {
         if self.exists(key).await? {
             return Ok(false);
@@ -367,14 +385,212 @@ impl Storage for WebDavStorage {
                 Ok(moved)
             }
             Ok(None) => {
-                self.delete(&tmp).await?;
-                self.put_raw(key, data).await?;
-                Ok(true)
+                let _ = self.delete(&tmp).await;
+                Err(SyncError::Storage(ERR_NO_ATOMIC_MOVE.into()))
             }
             Err(e) => {
                 let _ = self.delete(&tmp).await;
                 Err(e)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! `WebDavStorage` against an in-process fake of a WebDAV server: files
+    //! by path, MOVE that can be switched off, collections that answer 404.
+
+    use super::*;
+    use axum::body::Bytes;
+    use axum::extract::State;
+    use axum::http::{HeaderMap, Method as Verb, StatusCode as Code, Uri};
+    use axum::response::{IntoResponse, Response};
+    use axum::Router;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    #[derive(Default)]
+    struct Dav {
+        files: BTreeMap<String, Vec<u8>>,
+        no_move: bool,
+        /// Collections that answer 404 to PROPFIND although they hold files.
+        broken: HashSet<String>,
+    }
+
+    type Shared = Arc<Mutex<Dav>>;
+
+    fn rel(path: &str) -> String {
+        decode_path(path.strip_prefix("/dav").unwrap_or(path))
+            .trim_matches('/')
+            .to_string()
+    }
+
+    async fn handle(
+        State(shared): State<Shared>,
+        method: Verb,
+        uri: Uri,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> Response {
+        let mut d = shared.lock().unwrap();
+        let key = rel(uri.path());
+        match method.as_str() {
+            "PUT" => {
+                d.files.insert(key, body.to_vec());
+                Code::CREATED.into_response()
+            }
+            "GET" | "HEAD" => match d.files.get(&key) {
+                Some(data) if method == Verb::GET => (Code::OK, data.clone()).into_response(),
+                Some(_) => Code::OK.into_response(),
+                None => Code::NOT_FOUND.into_response(),
+            },
+            "DELETE" => match d.files.remove(&key) {
+                Some(_) => Code::NO_CONTENT.into_response(),
+                None => Code::NOT_FOUND.into_response(),
+            },
+            "MKCOL" => Code::CREATED.into_response(),
+            "MOVE" => {
+                if d.no_move {
+                    return Code::METHOD_NOT_ALLOWED.into_response();
+                }
+                let dest = headers
+                    .get("destination")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|v| rel(&href_path(v)))
+                    .unwrap_or_default();
+                let overwrite = headers.get("overwrite").is_none_or(|v| v != "F");
+                if !overwrite && d.files.contains_key(&dest) {
+                    return Code::PRECONDITION_FAILED.into_response();
+                }
+                match d.files.remove(&key) {
+                    Some(data) => {
+                        d.files.insert(dest, data);
+                        Code::CREATED.into_response()
+                    }
+                    None => Code::NOT_FOUND.into_response(),
+                }
+            }
+            "PROPFIND" => {
+                let under = if key.is_empty() {
+                    String::new()
+                } else {
+                    format!("{key}/")
+                };
+                let mut children = BTreeMap::new();
+                for path in d.files.keys() {
+                    if let Some(rest) = path.strip_prefix(&under) {
+                        match rest.split_once('/') {
+                            Some((dir, _)) => children.insert(format!("{under}{dir}"), true),
+                            None => children.insert(path.clone(), false),
+                        };
+                    }
+                }
+                if d.broken.contains(&key) || (!key.is_empty() && children.is_empty()) {
+                    return Code::NOT_FOUND.into_response();
+                }
+                let mut xml =
+                    String::from(r#"<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">"#);
+                xml.push_str(&format!(
+                    "<d:response><d:href>/dav/{under}</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>"
+                ));
+                for (path, is_dir) in children {
+                    let kind = if is_dir { "<d:collection/>" } else { "" };
+                    let slash = if is_dir { "/" } else { "" };
+                    xml.push_str(&format!(
+                        "<d:response><d:href>/dav/{path}{slash}</d:href><d:propstat><d:prop><d:resourcetype>{kind}</d:resourcetype></d:prop></d:propstat></d:response>"
+                    ));
+                }
+                xml.push_str("</d:multistatus>");
+                (Code::MULTI_STATUS, xml).into_response()
+            }
+            _ => Code::BAD_REQUEST.into_response(),
+        }
+    }
+
+    async fn serve(dav: Dav) -> (WebDavStorage, Shared) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let shared = Arc::new(Mutex::new(dav));
+        let app = Router::new().fallback(handle).with_state(shared.clone());
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let storage = WebDavStorage::new(WebDavConfig {
+            url: format!("http://{addr}/dav"),
+            username: String::new(),
+            password: String::new(),
+        })
+        .expect("storage");
+        (storage, shared)
+    }
+
+    #[tokio::test]
+    async fn a_server_without_move_is_refused_not_written_with_a_plain_put() {
+        let (s, shared) = serve(Dav {
+            no_move: true,
+            ..Dav::default()
+        })
+        .await;
+        let put = s.put("manifest.json", b"{}").await.unwrap_err();
+        assert!(
+            matches!(&put, SyncError::Storage(m) if m == ERR_NO_ATOMIC_MOVE),
+            "{put}"
+        );
+        let once = s
+            .put_if_absent("devices/a/log/00000001", b"chunk")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&once, SyncError::Storage(m) if m == ERR_NO_ATOMIC_MOVE),
+            "{once}"
+        );
+        let left: Vec<String> = shared.lock().unwrap().files.keys().cloned().collect();
+        assert!(left.is_empty(), "nothing is left behind: {left:?}");
+    }
+
+    #[tokio::test]
+    async fn put_if_absent_moves_without_overwrite() {
+        let (s, shared) = serve(Dav::default()).await;
+        assert!(s
+            .put_if_absent("devices/a/log/00000001", b"first")
+            .await
+            .unwrap());
+        assert!(!s
+            .put_if_absent("devices/a/log/00000001", b"second")
+            .await
+            .unwrap());
+        s.put("manifest.json", b"one").await.unwrap();
+        s.put("manifest.json", b"two").await.unwrap();
+        let files = shared.lock().unwrap().files.clone();
+        assert_eq!(files.len(), 2, "no temp key is left: {:?}", files.keys());
+        assert_eq!(files["devices/a/log/00000001"], b"first");
+        assert_eq!(files["manifest.json"], b"two");
+    }
+
+    #[tokio::test]
+    async fn a_listed_collection_answering_404_fails_the_list() {
+        let mut files = BTreeMap::new();
+        files.insert("manifest.json".to_string(), b"m".to_vec());
+        files.insert("devices/a/log/00000001".to_string(), b"c".to_vec());
+        let (s, shared) = serve(Dav {
+            files,
+            ..Dav::default()
+        })
+        .await;
+        let mut all = s.list("").await.unwrap();
+        all.sort();
+        assert_eq!(all, vec!["devices/a/log/00000001", "manifest.json"]);
+        // A start with nothing under it yet is empty, not an error.
+        assert!(s.list("devices/b/log/").await.unwrap().is_empty());
+
+        shared.lock().unwrap().broken.insert("devices/a".into());
+        let err = s.list("").await.unwrap_err();
+        assert!(
+            matches!(&err, SyncError::Storage(m) if m.contains("devices/a")),
+            "{err}"
+        );
     }
 }

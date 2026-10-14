@@ -8,7 +8,7 @@
   import type { SyncConfig, SyncStatus } from '$lib/core/api';
   import { syncStore } from '$lib/core/store/sync.svelte';
   import { formatBytes, formatDateTime, formatError } from '$lib/core/utils';
-  import { joinErrorKey } from '$lib/core/join-error';
+  import { joinErrorKey, storageErrorKey } from '$lib/core/join-error';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { directory } from '$lib/core/directory';
@@ -154,6 +154,12 @@
   const hasProfiles = $derived(directory.owned('profile'));
   /** Large-file transfer applies where a module syncs files (notes' attachments, profile files). */
   const syncsFiles = registry.modules.some((m) => m.syncsFiles);
+
+  /** The last error of the cycle, in words where the storage itself is refused. */
+  function lastErrorText(message: string): string {
+    const key = storageErrorKey(message);
+    return key ? $t(key) : message;
+  }
 
   async function refreshStatus() {
     try {
@@ -528,7 +534,10 @@
         <div class="trow"><span class="tlabel">{$t('settings_sync_last_applied')}</span><span class="tvalue">{status.last_applied ?? 0}</span></div>
         <div class="trow"><span class="tlabel">{$t('settings_sync_last_run')}</span><span class="tvalue">{status.last_run ? formatDateTime(status.last_run, $locale) : $t('settings_backup_never')}</span></div>
         {#if status.last_error}
-          <div class="trow"><span class="tlabel">{$t('settings_sync_last_error')}</span><span class="tvalue error">{status.last_error}</span></div>
+          <div class="trow"><span class="tlabel">{$t('settings_sync_last_error')}</span><span class="tvalue error">{lastErrorText(status.last_error)}</span></div>
+        {/if}
+        {#if status.first_read_pending}
+          <div class="trow"><span class="tvalue warn">{$t('settings_sync_first_read')}</span></div>
         {/if}
         {#if status.last_warning}
           <div class="trow"><span class="tlabel">{$t('settings_sync_last_warning')}</span><span class="tvalue warn">{status.last_warning}</span></div>

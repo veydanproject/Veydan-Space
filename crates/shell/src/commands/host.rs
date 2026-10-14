@@ -9,6 +9,8 @@ pub struct HostInfo {
     os: &'static str,
     arch: &'static str,
     version: String,
+    /// The build loads the demo data (`demo::DEMO_BUILD`): the settings offer it.
+    demo: bool,
 }
 
 /// The version is the product's: `CARGO_PKG_VERSION` here would be the
@@ -19,6 +21,7 @@ pub fn host_info(app: tauri::AppHandle) -> HostInfo {
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
         version: app.package_info().version.to_string(),
+        demo: crate::demo::DEMO_BUILD,
     }
 }
 

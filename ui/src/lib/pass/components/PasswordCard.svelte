@@ -3,6 +3,8 @@
 
 <script lang="ts">
   import { api } from '$lib/pass/api';
+  import { copySecret } from '$lib/pass/clipboard';
+  import { safeExternalUrl } from '$lib/pass/safe-url';
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
   import { passwordErrorKey } from '$lib/core/password-error';
@@ -32,6 +34,13 @@
   let toast = $state('');
   let unlockOpen = $state(false);
   let afterUnlock = $state<(() => void) | null>(null);
+
+  const safeUrl = $derived(safeExternalUrl(entry.url));
+
+  function openLink(e: MouseEvent) {
+    e.preventDefault();
+    if (safeUrl) void api.system.openUrl(safeUrl).catch((err) => fail(err));
+  }
 
   const totps = $derived(
     entry.totp_ids
@@ -143,13 +152,8 @@
       }
       try {
         const value = (await api.passwords.reveal(entry.id, 'password')).value;
-        await navigator.clipboard.writeText(value);
+        await copySecret(value);
         toast = $t('pw_copied');
-        setTimeout(() => {
-          navigator.clipboard.readText().then((current) => {
-            if (current === value) void navigator.clipboard.writeText('');
-          }).catch(() => {});
-        }, 30_000);
       } catch (err) {
         fail(err);
       }
@@ -186,7 +190,11 @@
   {#if entry.url}
     <div class="line">
       <span>{$t('pw_field_url')}</span>
-      <a href={entry.url} target="_blank" rel="noreferrer">{entry.url}</a>
+      {#if safeUrl}
+        <a href={safeUrl} onclick={openLink}>{entry.url}</a>
+      {:else}
+        <span>{entry.url}</span>
+      {/if}
     </div>
   {/if}
   <div class="line">

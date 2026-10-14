@@ -43,8 +43,31 @@ use tokio_rustls::TlsConnector;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 const USER_AGENT: &str = "veydan-messenger";
+
+/// The largest message of a relay that is read, other than negentropy:
+/// twice the largest event the relays of the project store (`maxEventSize`
+/// of strfry, 128 KiB), room for the wrapping. A larger one is dropped, the
+/// connection stays: an event a relay of somebody's own keeps over the
+/// limit would come back on every `REQ`, and a closed connection would only
+/// bring it again.
+pub const MAX_MESSAGE_BYTES: usize = 256 * 1024;
+
+/// The largest negentropy message (`NEG-MSG`, `NEG-ERR`): a device with an
+/// empty or old set gets one list of every id of a range (64 hex each),
+/// and strfry cuts such a frame at about 500 000 bytes of its own, 1 MB in
+/// hex.
+pub const MAX_NEGENTROPY_BYTES: usize = 2 * 1024 * 1024;
+
+/// What a socket opened here (through a bridge) reads at most, a frame or a
+/// message: past it the connection ends. Above [`MAX_NEGENTROPY_BYTES`], so
+/// that what the limits drop is dropped here as on the direct way, and the
+/// connection ends only on what is no message of a relay at all. A bridge
+/// carries the relays of the project alone, whose events are 128 KiB at most.
+pub const MAX_BRIDGED_READ_BYTES: usize = 4 * 1024 * 1024;
+const _: () = assert!(MAX_BRIDGED_READ_BYTES > MAX_NEGENTROPY_BYTES, "what the limits drop is read first");
 
 /// Connects relays the way the rule `net` says.
 #[derive(Clone)]
@@ -172,6 +195,10 @@ impl Sockets {
                         if matches!(&item, Ok(Message::Pong(payload)) if payload.as_slice() == PROBE) {
                             continue;
                         }
+                        if let Some((size, limit)) = item.as_ref().ok().and_then(oversized) {
+                            tracing::warn!(size, limit, "a relay sent a message over the limit: it is dropped");
+                            continue;
+                        }
                         return Some((item, Some((stream, socket))));
                     }
                 }
@@ -212,6 +239,34 @@ impl Sockets {
     pub fn count(&self) -> usize {
         self.live().len()
     }
+}
+
+/// The size of a message past its limit, and the limit: a negentropy
+/// message has [`MAX_NEGENTROPY_BYTES`], any other [`MAX_MESSAGE_BYTES`].
+/// The transport of `nostr-sdk` (the direct way) reads a message whole
+/// under the limits of its library, so the cut is made here, before the
+/// message is parsed; a socket opened here (through a bridge) reads no
+/// message past [`MAX_BRIDGED_READ_BYTES`] at all.
+fn oversized(message: &Message) -> Option<(usize, usize)> {
+    let (size, limit) = match message {
+        Message::Text(text) if negentropy(text) => (text.len(), MAX_NEGENTROPY_BYTES),
+        Message::Text(text) => (text.len(), MAX_MESSAGE_BYTES),
+        Message::Binary(data) => (data.len(), MAX_MESSAGE_BYTES),
+        _ => return None,
+    };
+    (size > limit).then_some((size, limit))
+}
+
+/// `["NEG-…", …]`: what a relay answers to `NEG-OPEN` and `NEG-MSG`.
+fn negentropy(text: &str) -> bool {
+    let rest = text.trim_start();
+    rest.strip_prefix('[').is_some_and(|r| r.trim_start().starts_with("\"NEG-"))
+}
+
+/// What a socket opened here reads at most: a frame or a message past it
+/// ends the connection with an error.
+fn limits() -> WebSocketConfig {
+    WebSocketConfig::default().max_message_size(Some(MAX_BRIDGED_READ_BYTES)).max_frame_size(Some(MAX_BRIDGED_READ_BYTES))
 }
 
 /// The sink of a kept connection, shared with [`Sockets::probe`], which
@@ -265,7 +320,7 @@ impl BridgedTransport {
 
         let stream = self.net.open(host, port).await.map_err(Error::transport)?;
         if !secure {
-            let (socket, _) = tokio_tungstenite::client_async(request, stream).await.map_err(Error::transport)?;
+            let (socket, _) = tokio_tungstenite::client_async_with_config(request, stream, Some(limits())).await.map_err(Error::transport)?;
             return Ok(halves(socket));
         }
         // The relay's own certificate is checked here, end to end: what the
@@ -273,7 +328,7 @@ impl BridgedTransport {
         let config = messenger_http::tls_config().map_err(Error::transport)?;
         let name = ServerName::try_from(host.to_string()).map_err(Error::transport)?;
         let tls = TlsConnector::from(Arc::new(config)).connect(name, stream).await.map_err(Error::transport)?;
-        let (socket, _) = tokio_tungstenite::client_async(request, tls).await.map_err(Error::transport)?;
+        let (socket, _) = tokio_tungstenite::client_async_with_config(request, tls, Some(limits())).await.map_err(Error::transport)?;
         Ok(halves(socket))
     }
 }
@@ -330,5 +385,72 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Sink<Message> for Outgoing<S> {
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         self.0.poll_close_unpin(cx).map_err(Error::transport)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kept(messages: Vec<Message>) -> (Arc<Sockets>, WebSocketStream) {
+        let sockets = Arc::new(Sockets::default());
+        let sink: WebSocketSink = Box::pin(futures_util::sink::drain().sink_map_err(|e: std::convert::Infallible| match e {}));
+        let stream: WebSocketStream = Box::pin(futures_util::stream::iter(messages.into_iter().map(Ok)));
+        let (_, stream) = sockets.keep((sink, stream));
+        (sockets, stream)
+    }
+
+    /// `["EVENT","s",{"content":"xxx…"}]` of `size` bytes.
+    fn event_of(size: usize) -> String {
+        let head = r#"["EVENT","s",{"content":""#;
+        let tail = r#""}]"#;
+        format!("{head}{}{tail}", "x".repeat(size - head.len() - tail.len()))
+    }
+
+    /// `["NEG-MSG","s","…"]` of `size` bytes, hex as a relay sends it.
+    fn neg_of(size: usize) -> String {
+        let head = r#"[ "NEG-MSG","s",""#;
+        let tail = r#""]"#;
+        format!("{head}{}{tail}", "ab".repeat((size - head.len() - tail.len()) / 2))
+    }
+
+    fn text(item: Option<Result<Message, Error>>) -> String {
+        match item {
+            Some(Ok(Message::Text(t))) => t,
+            other => panic!("expected a text, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_event_over_the_limit_is_dropped_and_the_connection_stays() {
+        let fits = event_of(MAX_MESSAGE_BYTES);
+        let (sockets, mut stream) = kept(vec![
+            Message::Text(fits.clone()),
+            Message::Text(event_of(300 * 1024)),
+            Message::Binary(vec![0; MAX_MESSAGE_BYTES + 1]),
+            Message::Text("after".into()),
+        ]);
+        assert_eq!(text(stream.next().await), fits, "a message at the limit passes");
+        assert_eq!(text(stream.next().await), "after", "the one past it is dropped, the next one comes");
+        assert!(stream.next().await.is_none());
+        assert!(sockets.live().iter().all(|s| !s.closed.load(Ordering::SeqCst)), "nothing was closed");
+    }
+
+    #[tokio::test]
+    async fn a_negentropy_list_of_a_megabyte_passes() {
+        let list = neg_of(1024 * 1024);
+        assert!(negentropy(&list));
+        let (_, mut stream) = kept(vec![Message::Text(list.clone()), Message::Text(neg_of(MAX_NEGENTROPY_BYTES + 2)), Message::Text("after".into())]);
+        assert_eq!(text(stream.next().await).len(), list.len(), "a NEG-MSG of 1 MiB is read");
+        assert_eq!(text(stream.next().await), "after", "past its own limit a NEG-MSG is dropped too");
+        assert!(!negentropy(&event_of(100)) && !negentropy(r#"["EVENT","NEG-"]"#));
+        assert_eq!(oversized(&Message::Ping(vec![0; MAX_MESSAGE_BYTES + 1])), None, "control frames are the library's");
+    }
+
+    #[test]
+    fn a_socket_opened_here_reads_past_the_limits_and_no_further() {
+        let config = limits();
+        assert_eq!(config.max_message_size, Some(MAX_BRIDGED_READ_BYTES));
+        assert_eq!(config.max_frame_size, Some(MAX_BRIDGED_READ_BYTES));
     }
 }

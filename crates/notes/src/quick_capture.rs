@@ -29,7 +29,8 @@ pub fn show_quick_capture(app: &tauri::AppHandle) {
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .center();
-        let builder = veydan_shell::workdir::apply_to_window(builder);
+        let builder =
+            veydan_shell::workdir::apply_to_window(veydan_shell::guard_window(&app2, builder));
         // Rebound, not mutated: on Windows and macOS nothing changes it, and
         // a `mut` would be unused there.
         #[cfg(target_os = "linux")]

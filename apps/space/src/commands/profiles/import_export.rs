@@ -380,7 +380,19 @@ pub async fn profile_export_zip(
     let export = build_profile_export(&profile, proxy.as_ref(), &options);
     let json = serde_json::to_string_pretty(&export).map_err(AppError::other)?;
 
-    let file = std::fs::File::create(&output_path).map_err(AppError::io)?;
+    // Any path would be overwritten otherwise: a zip, in a folder that exists,
+    // outside the root, the home folder and the data of the app.
+    let out = std::path::Path::new(&output_path);
+    if !out
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+    {
+        return Err(AppError::other(
+            "The export file must have the .zip extension",
+        ));
+    }
+    crate::commands::fs_guard::check_mutable(out, &core.app_data_dir)?;
+    let file = std::fs::File::create(out).map_err(AppError::io)?;
     let mut zip = zip::ZipWriter::new(file);
 
     let opts: FileOptions<()> =
@@ -393,8 +405,14 @@ pub async fn profile_export_zip(
     if options.include_files {
         let firefox_dir = PathBuf::from(&profile.profile_path).join("firefox-profile");
         if firefox_dir.exists() {
-            add_dir_to_zip(&mut zip, &firefox_dir, "firefox-profile", opts)
-                .map_err(AppError::io)?;
+            add_dir_to_zip(
+                &mut zip,
+                &firefox_dir,
+                "firefox-profile",
+                opts,
+                !options.include_proxy_password,
+            )
+            .map_err(AppError::io)?;
         }
     }
 
@@ -407,6 +425,7 @@ fn add_dir_to_zip(
     dir: &std::path::Path,
     prefix: &str,
     opts: zip::write::FileOptions<()>,
+    strip_proxy_credentials: bool,
 ) -> std::io::Result<()> {
     use std::io::Write;
 
@@ -423,11 +442,16 @@ fn add_dir_to_zip(
         let ty = entry.file_type()?;
 
         if ty.is_dir() {
-            add_dir_to_zip(zip, &entry.path(), &zip_path, opts)?;
+            add_dir_to_zip(zip, &entry.path(), &zip_path, opts, strip_proxy_credentials)?;
         } else {
             zip.start_file(&zip_path, opts)
                 .map_err(std::io::Error::other)?;
             let data = std::fs::read(entry.path())?;
+            let data = if strip_proxy_credentials && is_pref_file(&name_str) {
+                without_proxy_credentials(&data)
+            } else {
+                data
+            };
             zip.write_all(&data)?;
         }
     }
@@ -580,4 +604,55 @@ pub async fn profile_export_json_to_file(
 ) -> CmdResult<()> {
     let json = profile_export_json(id, options, core).await?;
     std::fs::write(&output_path, json).map_err(AppError::io)
+}
+/// The files that carry the proxy credentials of a Firefox profile: the app
+/// writes them into `user.js`, and Firefox copies them into `prefs.js`.
+fn is_pref_file(name: &str) -> bool {
+    name == "prefs.js" || name == "user.js"
+}
+
+/// `data` without the lines that set the proxy user name and password. An
+/// export made without the proxy password must not carry it in the files of the
+/// browser either; the app writes the pair again on the next launch.
+fn without_proxy_credentials(data: &[u8]) -> Vec<u8> {
+    const DROPPED: [&[u8]; 2] = [
+        b"user_pref(\"network.proxy.socks_password\"",
+        b"user_pref(\"network.proxy.socks_username\"",
+    ];
+    let mut out = Vec::with_capacity(data.len());
+    for line in data.split_inclusive(|b| *b == b'\n') {
+        let start = line
+            .iter()
+            .position(|b| !b.is_ascii_whitespace())
+            .unwrap_or(line.len());
+        if !DROPPED.iter().any(|p| line[start..].starts_with(p)) {
+            out.extend_from_slice(line);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proxy_credentials_leave_prefs_and_nothing_else() {
+        let prefs = b"// Mozilla\nuser_pref(\"network.proxy.socks\", \"127.0.0.1\");\nuser_pref(\"network.proxy.socks_username\", \"u\");\n  user_pref(\"network.proxy.socks_password\", \"secret\");\nuser_pref(\"network.proxy.socks_port\", 1080);\nuser_pref(\"network.proxy.socks_remote_dns\", true);";
+        let out = String::from_utf8(without_proxy_credentials(prefs)).unwrap();
+        assert!(!out.contains("secret"));
+        assert!(!out.contains("socks_username"));
+        assert!(!out.contains("socks_password"));
+        assert!(out.contains("// Mozilla\n"));
+        assert!(out.contains("network.proxy.socks\""));
+        assert!(out.contains("socks_port"));
+        assert!(out.ends_with("socks_remote_dns\", true);"));
+    }
+
+    #[test]
+    fn only_the_two_pref_files_are_filtered() {
+        assert!(is_pref_file("prefs.js"));
+        assert!(is_pref_file("user.js"));
+        assert!(!is_pref_file("places.sqlite"));
+    }
 }

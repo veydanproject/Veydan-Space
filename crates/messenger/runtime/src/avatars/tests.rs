@@ -27,6 +27,25 @@ impl TestClock {
     }
 }
 
+/// A blossom server of the tests, on this machine over `http://`: put in
+/// as a row, since `put_server` takes neither.
+async fn local_blossom(store: &Store, id: &str, url: String, priority: i64) {
+    let row = messenger_store::media::ServerRow {
+        id: id.into(),
+        kind: messenger_store::media::KIND_BLOSSOM.into(),
+        url,
+        bucket: None,
+        region: None,
+        access_key: None,
+        priority,
+        enabled: true,
+        source: "user".into(),
+        created_at: 0,
+        updated_at: 0,
+    };
+    messenger_store::media::upsert_server(store, &row).await.unwrap();
+}
+
 /// Downloads of chat media are not what these tests are about.
 struct NoFetch;
 
@@ -638,8 +657,7 @@ async fn over_blossom_two_copies_and_a_move() {
     let store = Store::open_in_memory().await.unwrap();
     let media = MediaService::new(store.clone(), Arc::new(MemorySecretStore::unlocked()), dir.path()).unwrap();
     for (id, s, prio) in [("one", &s1, 10), ("two", &s2, 20)] {
-        let input = MediaServerInput { id: Some(id.into()), kind: "blossom".into(), url: s.uri(), priority: Some(prio), ..Default::default() };
-        media.put_server(input).await.unwrap();
+        local_blossom(&store, id, s.uri(), prio).await;
     }
     let r = rig_with_media(store, media.clone(), MemoryBackend::new(BASE), Keys::generate(), MemNet::default(), dir);
     let row = r.set(bmp(64, 64, [42, 42, 42])).await;
@@ -944,8 +962,7 @@ async fn a_server_that_cannot_be_written_now_is_not_moved_away_from() {
         ..Default::default()
     };
     media.put_server(s3).await.unwrap();
-    let blossom = MediaServerInput { id: Some("b".into()), kind: "blossom".into(), url: s.uri(), priority: Some(20), ..Default::default() };
-    media.put_server(blossom).await.unwrap();
+    local_blossom(&store, "b", s.uri(), 20).await;
     let r = rig_with_media(store, media, MemoryBackend::new(BASE), Keys::generate(), MemNet::default(), dir);
 
     let jpeg = own_jpeg([1, 1, 1]);
@@ -1005,8 +1022,7 @@ async fn without_a_server_the_avatar_is_kept_alive_where_it_is() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open_in_memory().await.unwrap();
     let media = MediaService::new(store.clone(), Arc::new(MemorySecretStore::unlocked()), dir.path()).unwrap();
-    let blossom = MediaServerInput { id: Some("b".into()), kind: "blossom".into(), url: s.uri(), ..Default::default() };
-    media.put_server(blossom).await.unwrap();
+    local_blossom(&store, "b", s.uri(), 50).await;
     let r = rig_with_media(store, media.clone(), MemoryBackend::new(BASE), Keys::generate(), MemNet::default(), dir);
     let row = r.set(bmp(64, 64, [8, 8, 80])).await;
     media.set_server_enabled("b", false).await.unwrap();

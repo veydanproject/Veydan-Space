@@ -5,6 +5,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/pass/api';
+  import { copySecret } from '$lib/pass/clipboard';
   import Icon from '$lib/core/Icon.svelte';
   import type { TotpCode } from '$lib/pass/types';
 
@@ -58,7 +59,7 @@
   function copy(e: MouseEvent) {
     e.stopPropagation();
     if (!code) return;
-    void navigator.clipboard.writeText(code.code).catch(() => {});
+    void copySecret(code.code).catch(() => {});
     copied = false;
     requestAnimationFrame(() => (copied = true));
     clearTimeout(copyTimer);

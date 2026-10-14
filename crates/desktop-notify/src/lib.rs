@@ -224,6 +224,41 @@ impl Notifier {
     }
 }
 
+/// Whether the screen of the user's session is locked now, as far as the
+/// system tells. Linux: `LockedHint` of the session in logind, which the
+/// lock screens of GNOME, KDE and the others set. Windows, macOS: not
+/// asked yet, `false`. No logind (or no session): `false`, and logind is
+/// left alone for ten minutes. No answer within half a second, or another
+/// error: `true` (the notification says nothing), for half a minute.
+///
+/// None of the systems has a mark for one notification "hide on the lock
+/// screen" (Android's `VISIBILITY_PRIVATE`): the caller words a
+/// notification without its text while this says `true`.
+pub async fn session_locked() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        linux::session_locked().await
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+/// Linux, tests: what [`session_locked`] makes of a logind on a bus of its
+/// own, without holding the answer: `None` when there is no logind, the
+/// lock as told, or `true` when it did not answer.
+#[doc(hidden)]
+#[cfg(target_os = "linux")]
+pub async fn session_locked_on_bus(address: &str) -> Option<bool> {
+    let bus = zbus::connection::Builder::address(address).ok()?.build().await.ok()?;
+    match linux::locked_hint_of(&bus).await {
+        linux::Answer::Locked(locked) => Some(locked),
+        linux::Answer::Absent => None,
+        linux::Answer::Silent => Some(true),
+    }
+}
+
 /// Nothing can be shown: commands are taken and dropped, a shutdown answered.
 #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
 pub(crate) async fn drain(mut rx: mpsc::UnboundedReceiver<Command>) {

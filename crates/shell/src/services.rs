@@ -96,6 +96,9 @@ pub struct Shell {
     pub(crate) switches: Switches,
     #[cfg(desktop)]
     pub(crate) tray: TrayState,
+    /// Set once [`Shell::shutdown`] has stopped the modules.
+    #[cfg(desktop)]
+    stopped: tokio::sync::OnceCell<()>,
 }
 
 impl Shell {
@@ -107,6 +110,8 @@ impl Shell {
             switches: Switches::default(),
             #[cfg(desktop)]
             tray: TrayState::default(),
+            #[cfg(desktop)]
+            stopped: tokio::sync::OnceCell::new(),
         }
     }
 
@@ -236,6 +241,13 @@ impl Shell {
         source::open(&self.app, src)
     }
 
+    /// A file the user gave by another way than the picker or a drop (files
+    /// copied in a file manager): `open_source` reads it from now on. Only a
+    /// path the user chose, never one a page names.
+    pub fn allow_source(&self, path: &std::path::Path) {
+        source::allow(&self.app, path)
+    }
+
     /// Let the pages of the app in `window` use the camera and the microphone.
     pub fn grant_media_access(&self, window: &tauri::WebviewWindow) -> Result<(), AppError> {
         crate::commands::media::grant_access(window).map_err(AppError::Other)
@@ -248,5 +260,79 @@ impl Shell {
         for part in &self.parts {
             part.run_stop(&self.app).await;
         }
+    }
+}
+
+#[cfg(desktop)]
+impl Shell {
+    /// The app goes: [`Shell::begin_exit`], then [`Shell::stop_modules`].
+    /// Every way out of a computer passes here — the exit (`RunEvent::Exit`),
+    /// a restore of a backup before it swaps the data, the updater before
+    /// the installer of Windows takes over, `app_relaunch` before the restart
+    /// onto the new files. The first call stops the modules; a later one
+    /// (the exit that follows a restart) waits for it and does nothing more.
+    pub async fn shutdown(&self) {
+        shut_down_once(&self.stopped, self).await;
+    }
+}
+
+/// What the shutdown asks of the running app; tests give a fake.
+#[cfg(desktop)]
+pub(crate) trait Leaving {
+    fn begin_exit(&self);
+    async fn stop_modules(&self);
+}
+
+#[cfg(desktop)]
+impl Leaving for Shell {
+    fn begin_exit(&self) {
+        Shell::begin_exit(self);
+    }
+
+    async fn stop_modules(&self) {
+        Shell::stop_modules(self).await;
+    }
+}
+
+/// `exiting` first, so a module that is off stops what it left running,
+/// then `stop` of every module; once for the life of the process.
+#[cfg(desktop)]
+pub(crate) async fn shut_down_once(stopped: &tokio::sync::OnceCell<()>, app: &impl Leaving) {
+    stopped
+        .get_or_init(|| async {
+            app.begin_exit();
+            app.stop_modules().await;
+        })
+        .await;
+}
+
+#[cfg(all(test, desktop))]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// What a test sees the running app do.
+    #[derive(Default)]
+    struct Seen(Mutex<Vec<&'static str>>);
+
+    impl Leaving for Seen {
+        fn begin_exit(&self) {
+            self.0.lock().unwrap().push("begin_exit");
+        }
+        async fn stop_modules(&self) {
+            self.0.lock().unwrap().push("stop_modules");
+        }
+    }
+
+    /// The shutdown marks the exit before the modules stop, so `stop` of a
+    /// module that is off stops what it left running (spec 12), and it runs
+    /// once: the exit after a restore or a relaunch does not stop again.
+    #[tokio::test]
+    async fn the_shutdown_marks_the_exit_then_stops_the_modules_once() {
+        let stopped = tokio::sync::OnceCell::new();
+        let seen = Seen::default();
+        shut_down_once(&stopped, &seen).await;
+        shut_down_once(&stopped, &seen).await;
+        assert_eq!(*seen.0.lock().unwrap(), ["begin_exit", "stop_modules"]);
     }
 }

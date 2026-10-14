@@ -49,7 +49,10 @@ async fn profile_files_active(core: &Core) -> bool {
 }
 
 /// Before the browser starts: refuse a profile leased elsewhere (unless forced),
-/// apply a snapshot that waited, take the lease.
+/// apply a snapshot that waited, take the lease. Called by the launch with the
+/// lock of the profile's files held (`BrowserState::files`), so the snapshot
+/// that waited is never applied beside a cycle that applies or collects the
+/// same profile.
 #[cfg(desktop)]
 pub async fn before_profile_launch(
     app: &AppHandle,
@@ -78,12 +81,19 @@ pub async fn before_profile_launch(
 }
 
 /// After the browser exited: mark files dirty, release the lease, sync soon.
+/// Under the lock of the profile's files: a collect or an apply of them that
+/// loaded the state of the profile does not save it back over the mark.
 #[cfg(desktop)]
 pub async fn on_profile_stopped(app: &AppHandle, profile_id: &str) {
     let core = app.state::<Core>();
     if !veydan_sync_host::vault_active(&core).await {
         return;
     }
+    let _files = app
+        .state::<crate::browser::BrowserState>()
+        .files
+        .lock(profile_id)
+        .await;
     if let Err(e) = profile_files::on_profile_stopped(&core, profile_id).await {
         eprintln!("sync: {e}");
     }

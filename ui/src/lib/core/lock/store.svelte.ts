@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { api } from '$lib/core/api';
+import { afterStatusRead } from '$lib/core/lock/gate';
 import type { LockSecret, LockStatus } from '$lib/core/types';
 
 const TOUCH_INTERVAL_MS = 20_000;
@@ -19,6 +20,8 @@ class LockStore {
     recovery_version: null,
   });
   ready = $state(false);
+  /** The first read of the status failed; the gate shows an error with a retry, never the app. */
+  failed = $state(false);
   /** The lock screen shows the recovery flow (steps 1–3, AppLockGate). */
   recovering = $state(false);
   /**
@@ -49,12 +52,25 @@ class LockStore {
 
   async refresh() {
     const epoch = this._epoch;
+    let ok = true;
     try {
       const status = await api.lock.status();
       if (epoch !== this._epoch) return;
       this.status = status;
-    } catch {}
-    this.ready = true;
+    } catch {
+      ok = false;
+    }
+    if (epoch !== this._epoch) return;
+    const next = afterStatusRead(ok, this.ready);
+    this.ready = next.ready;
+    this.failed = next.failed;
+  }
+
+  /** The backend locked the app: shown at once, the status read follows. */
+  markLocked() {
+    this._epoch++;
+    this.status = { ...this.status, enabled: true, locked: true };
+    void this.refresh();
   }
 
   async unlock(password: string) {
@@ -134,7 +150,7 @@ class LockStore {
       window.removeEventListener('pointerdown', touch, true);
     };
     const { listen } = await import('@tauri-apps/api/event');
-    const a = await listen('lock://locked', () => void this.refresh());
+    const a = await listen('lock://locked', () => this.markLocked());
     const b = await listen('lock://unlocked', () => void this.refresh());
     const c = await listen('passwords://vault-changed', () => void this.refresh());
     const dom = this._unlisten;

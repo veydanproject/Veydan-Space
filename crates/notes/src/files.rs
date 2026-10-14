@@ -9,6 +9,23 @@ use veydan_core::AppError;
 
 // ── File helpers ──────────────────────────────────────────────────────────────
 
+/// Extensions of note files: the index takes only these, a new note gets one.
+pub(crate) const NOTE_EXTS: &[&str] = &["md", "markdown", "txt"];
+
+/// Whether `ext` is the extension of a note file (in any case).
+pub(crate) fn is_note_ext(ext: &str) -> bool {
+    NOTE_EXTS.contains(&ext.to_ascii_lowercase().as_str())
+}
+
+/// Note ids are UUIDs; anything else must not become a file name.
+pub(crate) fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 pub(crate) fn notes_dir(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("notes")
 }
@@ -21,8 +38,9 @@ pub(crate) fn drafts_dir(app_data_dir: &Path) -> PathBuf {
     notes_dir(app_data_dir).join("drafts")
 }
 
-pub(crate) fn draft_file_path(app_data_dir: &Path, id: &str) -> PathBuf {
-    drafts_dir(app_data_dir).join(format!("{}.draft", id))
+/// The draft of a note; none for an id that is not a note id.
+pub(crate) fn draft_file_path(app_data_dir: &Path, id: &str) -> Option<PathBuf> {
+    valid_id(id).then(|| drafts_dir(app_data_dir).join(format!("{}.draft", id)))
 }
 
 pub(crate) fn manifest_path(app_data_dir: &Path) -> PathBuf {
@@ -184,6 +202,30 @@ pub(crate) fn write_note_file(
 
     let full = format!("{}{}", frontmatter, content);
     atomic_write(path, &full)
+}
+
+/// Write the note file only while its body is still the one the caller read:
+/// `expect_hash` is `compute_hash` of that body (of "" when there was no file).
+/// The file is read again here, and nothing awaits between that read and the
+/// rename, so an edit that landed since (an external editor, a writer that
+/// does not hold `NotesState::save`) fails with `conflict_changed` instead of
+/// being overwritten unseen.
+pub(crate) fn write_note_checked(
+    path: &PathBuf,
+    row: &NoteRow,
+    tags: &[String],
+    body: &str,
+    expect_hash: &str,
+) -> Result<(), AppError> {
+    let current = match std::fs::read_to_string(path) {
+        Ok(raw) => parse_note_file(&raw).2,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(AppError::io(e)),
+    };
+    if compute_hash(&current) != expect_hash {
+        return Err(AppError::conflict_changed(format!("note {}", row.id)));
+    }
+    write_note_file(path, row, tags, body)
 }
 
 /// Atomic write: unique tmp next to the target, fsync, rename.

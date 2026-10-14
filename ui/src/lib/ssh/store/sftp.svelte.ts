@@ -54,7 +54,15 @@ export interface TransferInfo {
   speed: number;
   targetPanel: 0 | 1;
   /** Set for a move: delete these sources once the copy finishes cleanly. */
-  moveSources: { panel: 0 | 1; source: PanelSource; paths: string[] } | null;
+  moveSources: MoveSources | null;
+  /** Sources of a move that did not arrive whole and were kept. */
+  moveKept: number;
+}
+
+export interface MoveSources {
+  panel: 0 | 1;
+  source: PanelSource;
+  paths: string[];
 }
 
 export interface ConflictAsk {
@@ -89,6 +97,42 @@ export function parentPosix(path: string): string {
   const trimmed = path.endsWith('/') ? path.slice(0, -1) : path;
   const idx = trimmed.lastIndexOf('/');
   return idx <= 0 ? '/' : trimmed.slice(0, idx);
+}
+
+/**
+ * Local paths are the computer's: on Windows `C:\Users\me` or
+ * `\\server\share\dir`, with either separator. Their root is the drive
+ * (`C:\`) or the share (`\\server\share\`), never `/`.
+ */
+function windowsRoot(path: string): string | null {
+  const drive = /^[A-Za-z]:(?:[\\/]|$)/.exec(path);
+  if (drive) return `${path.slice(0, 2)}\\`;
+  const unc = /^\\{2}[^\\/]+[\\/][^\\/]+(?:[\\/]|$)/.exec(path);
+  if (unc) return unc[0].replace(/[\\/]?$/, '\\');
+  return null;
+}
+
+export function joinLocal(dir: string, name: string): string {
+  if (windowsRoot(dir) === null) return joinPosix(dir, name);
+  return /[\\/]$/.test(dir) ? dir + name : `${dir}\\${name}`;
+}
+
+export function parentLocal(path: string): string {
+  const root = windowsRoot(path);
+  if (root === null) return parentPosix(path);
+  const trimmed = path.replace(/[\\/]+$/, '');
+  if (trimmed.length + 1 <= root.length) return root;
+  const idx = Math.max(trimmed.lastIndexOf('\\'), trimmed.lastIndexOf('/'));
+  return idx < root.length ? root : trimmed.slice(0, idx);
+}
+
+/** Join and parent in the terms of the panel's source. */
+function joinIn(source: PanelSource, dir: string, name: string): string {
+  return source.kind === 'local' ? joinLocal(dir, name) : joinPosix(dir, name);
+}
+
+function parentIn(source: PanelSource, path: string): string {
+  return source.kind === 'local' ? parentLocal(path) : parentPosix(path);
 }
 
 class FilesStore {
@@ -183,22 +227,26 @@ class FilesStore {
       }).then((fn) => this.unlisten.push(fn));
 
       listen<TransferDoneEvent>('sftp://transfer-done', (e) => {
-        const p = e.payload;
-        const t = this.transfers.find((t) => t.id === p.transfer_id);
-        if (!t) return;
-        t.status = p.error ? 'error' : p.cancelled ? 'cancelled' : 'done';
-        t.error = p.error;
-        t.filesDone = p.files_done;
-        t.filesSkipped = p.files_skipped;
-        if (t.status === 'done') t.bytesDone = t.bytesTotal;
-        this.speedSamples.delete(t.id);
-        // A clean cross-source move deletes its originals now.
-        if (t.status === 'done' && t.moveSources) {
-          this.deleteMoveSources(t.moveSources);
-        }
-        this.refresh(t.targetPanel);
+        this.finishTransfer(e.payload);
       }).then((fn) => this.unlisten.push(fn));
     });
+  }
+
+  /** The end of a transfer, as the backend reports it. */
+  async finishTransfer(p: TransferDoneEvent) {
+    const t = this.transfers.find((t) => t.id === p.transfer_id);
+    if (!t) return;
+    t.status = p.error ? 'error' : p.cancelled ? 'cancelled' : 'done';
+    t.error = p.error;
+    t.filesDone = p.files_done;
+    t.filesSkipped = p.files_skipped;
+    if (t.status === 'done') t.bytesDone = t.bytesTotal;
+    this.speedSamples.delete(t.id);
+    // A finished cross-source move deletes the originals that arrived whole.
+    if (t.status === 'done' && t.moveSources) {
+      t.moveKept = await this.deleteMoveSources(t.moveSources, p.complete_items ?? []);
+    }
+    await this.refresh(t.targetPanel);
   }
 
   async respondPrompt(response: string) {
@@ -259,7 +307,7 @@ class FilesStore {
 
   async up(i: 0 | 1) {
     const panel = this.panels[i];
-    const parent = parentPosix(panel.path);
+    const parent = parentIn(panel.source, panel.path);
     if (parent !== panel.path) await this.navigate(i, parent);
   }
 
@@ -383,15 +431,15 @@ class FilesStore {
     let applyAllDecision: ConflictDecision | null = null;
     for (let idx = 0; idx < entries.length; idx++) {
       const entry = entries[idx];
-      const dstPath = joinPosix(dst.path, entry.name);
+      const dstPath = joinIn(dst.source, dst.path, entry.name);
       const existing =
         dst.source.kind === 'local'
           ? await api.fs.stat(dstPath)
           : await api.sftp.stat(connectionId, dstPath);
 
       let overwrite = false;
-      if (existing && !(existing.is_dir && entry.is_dir)) {
-        // dir→dir merges silently; anything else asks
+      if (existing && !(existing.is_dir && entry.is_dir && !opts.deleteSourceAfter)) {
+        // dir→dir merges silently on a copy; a move and anything else asks
         let decision = applyAllDecision;
         if (!decision) {
           const [d, all] = await this.askConflict({
@@ -412,16 +460,25 @@ class FilesStore {
 
     const label =
       items.length === 1
-        ? entries.find((e) => joinPosix(dst.path, e.name) === items[0].dst_path)?.name ?? items[0].src_path
+        ? entries.find((e) => joinIn(dst.source, dst.path, e.name) === items[0].dst_path)?.name ?? items[0].src_path
         : `${items.length}`;
 
-    const transferId = await api.sftp.transferStart(kind, connectionId, items);
+    let transferId: string;
+    let refused: string | null = null;
+    try {
+      transferId = await api.sftp.transferStart(kind, connectionId, items);
+    } catch (e) {
+      // Refused (another transfer writes there, the server is gone): shown in
+      // the strip like a failed transfer.
+      transferId = `refused-${Date.now()}-${Math.random()}`;
+      refused = explainError(e, get(t));
+    }
     this.transfers.push({
       id: transferId,
       kind,
       label,
-      status: 'running',
-      error: null,
+      status: refused ? 'error' : 'running',
+      error: refused,
       currentFile: '',
       filesDone: 0,
       filesTotal: 0,
@@ -433,6 +490,7 @@ class FilesStore {
       moveSources: opts.deleteSourceAfter
         ? { panel: from, source: srcSource, paths: items.map((it) => it.src_path) }
         : null,
+      moveKept: 0,
     });
   }
 
@@ -469,7 +527,7 @@ class FilesStore {
 
   async mkdir(i: 0 | 1, name: string) {
     const panel = this.panels[i];
-    const path = joinPosix(panel.path, name);
+    const path = joinIn(panel.source, panel.path, name);
     if (panel.source.kind === 'local') await api.fs.mkdir(path);
     else await api.sftp.mkdir(panel.source.connectionId, path);
     await this.refresh(i);
@@ -478,7 +536,7 @@ class FilesStore {
 
   async createFile(i: 0 | 1, name: string) {
     const panel = this.panels[i];
-    const path = joinPosix(panel.path, name);
+    const path = joinIn(panel.source, panel.path, name);
     if (panel.source.kind === 'local') await api.fs.createFile(path);
     else await api.sftp.createFile(panel.source.connectionId, path);
     await this.refresh(i);
@@ -488,7 +546,7 @@ class FilesStore {
   async rename(i: 0 | 1, entry: FileEntry, newName: string) {
     if (!newName || newName === entry.name) return;
     const panel = this.panels[i];
-    const to = joinPosix(panel.path, newName);
+    const to = joinIn(panel.source, panel.path, newName);
     if (panel.source.kind === 'local') await api.fs.rename(entry.path, to);
     else await api.sftp.rename(panel.source.connectionId, entry.path, to);
     await this.refresh(i);
@@ -531,7 +589,7 @@ class FilesStore {
 
     if (this.sameSource(src.source, dst.source)) {
       for (const entry of entries) {
-        const target = joinPosix(dst.path, entry.name);
+        const target = joinIn(dst.source, dst.path, entry.name);
         if (src.source.kind === 'local') await api.fs.rename(entry.path, target);
         else await api.sftp.rename(src.source.connectionId, entry.path, target);
       }
@@ -542,19 +600,32 @@ class FilesStore {
     await this.copyToOtherPanel(from, { deleteSourceAfter: true });
   }
 
-  private async deleteMoveSources(mv: { panel: 0 | 1; source: PanelSource; paths: string[] }) {
+  /**
+   * Delete the sources of a move that arrived whole (`complete`, from the
+   * backend); the others (a file skipped, an entry left out, a link not
+   * followed) stay where they are. Answers how many were kept.
+   */
+  private async deleteMoveSources(mv: MoveSources, complete: string[]): Promise<number> {
+    const whole = new Set(complete);
+    let kept = 0;
     for (const path of mv.paths) {
+      if (!whole.has(path)) {
+        kept++;
+        continue;
+      }
       try {
         if (mv.source.kind === 'local') await api.fs.delete(path);
         else await api.sftp.delete(mv.source.connectionId, path);
       } catch {
         // A failed delete leaves the original in place — safer than losing data.
+        kept++;
       }
     }
     // Refresh the source panel if it still shows the same source.
     if (this.sameSource(this.panels[mv.panel].source, mv.source)) {
       await this.refresh(mv.panel);
     }
+    return kept;
   }
 
   private selectByName(i: 0 | 1, name: string) {

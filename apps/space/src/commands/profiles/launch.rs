@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-use crate::browser::launch as browser_launch;
+use crate::browser::launch::{self as browser_launch, Running};
 use crate::browser::{profile_launcher, BrowserState};
 use crate::error::{AppError, CmdResult};
 use crate::models::Profile;
+use std::sync::Arc;
 use veydan_core::Core;
 
 pub async fn emit_running_ids(app_handle: &tauri::AppHandle, browser: &BrowserState) {
@@ -21,13 +22,48 @@ pub async fn profile_launch(
     browser: tauri::State<'_, BrowserState>,
     app_handle: tauri::AppHandle,
 ) -> CmdResult<u32> {
-    if browser.running.is_running(&id).await {
-        return Err(AppError::other("Profile is already running"));
-    }
-    crate::sync::before_profile_launch(&app_handle, &id, force.unwrap_or(false)).await?;
+    launch_once(&browser.running, &id, || {
+        launch_reserved(&id, force, &core, &browser, &app_handle)
+    })
+    .await
+}
+
+/// Runs `launch` with the profile reserved: refused at once while the
+/// profile runs or another launch of it is under way, so two clicks start
+/// one browser and one launch's failure never undoes another's status or
+/// lease. The reservation is given back whatever `launch` returns.
+async fn launch_once<F, Fut>(running: &Arc<Running>, id: &str, launch: F) -> CmdResult<u32>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = CmdResult<u32>>,
+{
+    let Some(slot) = running.reserve(id).await else {
+        return Err(AppError::other(if running.is_running(id).await {
+            "Profile is already running"
+        } else {
+            "Profile is already being launched"
+        }));
+    };
+    let result = launch().await;
+    slot.release().await;
+    result
+}
+
+async fn launch_reserved(
+    id: &str,
+    force: Option<bool>,
+    core: &Core,
+    browser: &BrowserState,
+    app_handle: &tauri::AppHandle,
+) -> CmdResult<u32> {
+    // The files of the profile are not collected or applied by sync from
+    // here until the process is registered (or the launch failed); a cycle
+    // that holds them is waited for.
+    let files = browser.files.lock(id).await;
+    crate::sync::before_profile_launch(app_handle, id, force.unwrap_or(false)).await?;
 
     let profile = sqlx::query_as::<_, Profile>("SELECT * FROM profiles WHERE id = ?")
-        .bind(&id)
+        .bind(id)
         .fetch_optional(&core.db)
         .await
         .map_err(AppError::db)?
@@ -42,7 +78,7 @@ pub async fn profile_launch(
     sqlx::query(
         "UPDATE profiles SET status = 'running', last_launch_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
     )
-    .bind(&id)
+    .bind(id)
     .execute(&core.db)
     .await
     .map_err(AppError::db)?;
@@ -50,25 +86,27 @@ pub async fn profile_launch(
     let result = profile_launcher::launch_profile(
         &profile,
         proxy.as_ref(),
-        &core,
-        &browser,
+        core,
+        browser,
         app_handle.clone(),
     )
     .await;
+    drop(files);
 
-    if result.is_err() {
-        // Rollback status if launch failed
+    // Rollback status if launch failed. The reservation is this launch's, so
+    // a process under the id is one this launch registered: it stays running.
+    if result.is_err() && !browser.running.is_running(id).await {
         let _ = sqlx::query(
             "UPDATE profiles SET status = 'stopped', updated_at = datetime('now') WHERE id = ?",
         )
-        .bind(&id)
+        .bind(id)
         .execute(&core.db)
         .await;
-        crate::sync::on_profile_stopped(&app_handle, &id).await;
+        crate::sync::on_profile_stopped(app_handle, id).await;
     }
 
     // Always emit so frontend reflects actual running state (empty on failure)
-    emit_running_ids(&app_handle, &browser).await;
+    emit_running_ids(app_handle, browser).await;
 
     Ok(result.map_err(AppError::browser)?.pid)
 }
@@ -108,4 +146,62 @@ pub async fn profiles_running_ids(
     browser: tauri::State<'_, BrowserState>,
 ) -> CmdResult<Vec<String>> {
     Ok(browser.running.running_ids().await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::oneshot;
+
+    #[tokio::test]
+    async fn a_second_launch_during_the_first_is_refused_and_a_failure_frees_the_profile() {
+        let running = Arc::new(Running::default());
+        let (started_tx, started_rx) = oneshot::channel();
+        let (go_tx, go_rx) = oneshot::channel::<()>();
+        let first = tokio::spawn({
+            let running = Arc::clone(&running);
+            async move {
+                launch_once(&running, "p", || async move {
+                    started_tx.send(()).ok();
+                    go_rx.await.ok();
+                    Err(AppError::other("spawn failed"))
+                })
+                .await
+            }
+        });
+        started_rx.await.unwrap();
+
+        let second = launch_once(&running, "p", || async { Ok(2) }).await;
+        let err = second.expect_err("one launch at a time").to_string();
+        assert!(err.contains("already being launched"), "got {err}");
+        assert_eq!(
+            launch_once(&running, "q", || async { Ok(3) })
+                .await
+                .unwrap(),
+            3
+        );
+
+        go_tx.send(()).unwrap();
+        assert!(first.await.unwrap().is_err());
+        assert_eq!(
+            launch_once(&running, "p", || async { Ok(4) })
+                .await
+                .unwrap(),
+            4
+        );
+    }
+
+    #[tokio::test]
+    async fn a_running_profile_is_not_launched_again() {
+        let running = Arc::new(Running::default());
+        running.processes.lock().await.insert(
+            "p".into(),
+            crate::browser::launch::BrowserProcess::for_test(1),
+        );
+        let err = launch_once(&running, "p", || async { Ok(2) })
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("already running"), "got {err}");
+    }
 }

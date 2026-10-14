@@ -10,9 +10,19 @@
 //! by a rule every device applies to the same graph:
 //!
 //! 1. an operation comes after all of its parents;
-//! 2. among operations that are ready, the one whose author has the
-//!    higher role (in the state reached so far) goes first;
-//! 3. with equal roles, the one with the smaller id.
+//! 2. an operation that can change someone's rights (removes, bans, gives
+//!    a role to them, hands them the group, or is their own leave or
+//!    handover) comes before whatever was made beside it, neither knowing
+//!    of the other, by that person or acting on them: an author chooses
+//!    the parents, and naming an old part of the log must not put an
+//!    operation ahead of the one that took its ground. Where such
+//!    operations wait for each other in a circle, the one held back by the
+//!    lowest role (its author's own operations not counted) goes first,
+//!    then one taken by whom it concerns (see `Graph::confirmed`);
+//! 3. among operations that are ready, the one whose author has the
+//!    higher role (in the state reached so far) goes first, an owner's
+//!    handover of the group above the owner's other operations;
+//! 4. with equal roles, the one with the smaller id.
 //!
 //! An operation that lost its ground on the way (its author was removed
 //! by one that went first) is rejected and changes nothing, but stays in
@@ -23,6 +33,7 @@
 //! microseconds.
 
 use crate::op::{GroupKind, KeyId, Op, OpBody, OpId};
+use crate::roles::Role;
 use crate::state::{GroupState, Rejection};
 use messenger_core::PubKey;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -90,9 +101,43 @@ impl OpLog {
         let mut all: Vec<Op> = ops.into_iter().collect();
         let at = all.iter().position(|o| matches!(o.body, OpBody::Create { .. })).ok_or(Rejection::NotCreated)?;
         let mut log = Self::create(all.swap_remove(at))?;
+        // All of them first, the order once: not once per operation.
+        let mut aside: HashMap<OpId, Op> = HashMap::new();
         for op in all {
-            log.insert(op);
+            let id = op.id();
+            let refused = op.group_id != log.group_id || matches!(op.body, OpBody::Create { .. }) || op.parents.is_empty();
+            if !refused && !log.ops.contains_key(&id) {
+                aside.insert(id, op);
+            }
         }
+        // Taken in once every parent is in, the way `insert` would.
+        let mut children: HashMap<OpId, Vec<OpId>> = HashMap::new();
+        let mut missing: HashMap<OpId, usize> = HashMap::new();
+        let mut ready: Vec<OpId> = Vec::new();
+        for (id, op) in &aside {
+            let n = op.parents.iter().filter(|p| !log.ops.contains_key(*p)).count();
+            for p in op.parents.iter().filter(|p| !log.ops.contains_key(*p)) {
+                children.entry(p.clone()).or_default().push(id.clone());
+            }
+            missing.insert(id.clone(), n);
+            if n == 0 {
+                ready.push(id.clone());
+            }
+        }
+        while let Some(id) = ready.pop() {
+            let Some(op) = aside.remove(&id) else { continue };
+            log.ops.insert(id.clone(), op);
+            for child in children.remove(&id).unwrap_or_default() {
+                if let Some(n) = missing.get_mut(&child) {
+                    *n = n.saturating_sub(1);
+                    if *n == 0 {
+                        ready.push(child);
+                    }
+                }
+            }
+        }
+        log.waiting = aside;
+        log.rebuild();
         Ok(log)
     }
 
@@ -256,48 +301,265 @@ fn agree(ops: &HashMap<OpId, Op>) -> Option<(Vec<OpId>, HashMap<OpId, Rejection>
 
 /// One pass: the order of a set of operations and the state it produces.
 /// `stale` are joins already known not to count.
+///
+/// Operations are taken by index here, the indices in the order of their
+/// ids: the smaller index is the smaller id.
 fn linearize(ops: &HashMap<OpId, Op>, stale: &HashSet<OpId>) -> Option<(Vec<OpId>, HashMap<OpId, Rejection>, GroupState)> {
     let (root_id, root) = ops.iter().find(|(_, o)| matches!(o.body, OpBody::Create { .. }))?;
     let mut state = GroupState::genesis(root).ok()?;
 
-    let mut children: HashMap<OpId, Vec<OpId>> = HashMap::new();
-    let mut blocked: HashMap<OpId, usize> = HashMap::new();
-    for (id, op) in ops {
-        blocked.insert(id.clone(), op.parents.len());
-        for p in &op.parents {
-            children.entry(p.clone()).or_default().push(id.clone());
-        }
-    }
+    let mut ids: Vec<&OpId> = ops.keys().collect();
+    ids.sort();
+    let at: HashMap<&OpId, usize> = ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    let graph = Graph::new(ids.iter().map(|id| &ops[*id]).collect(), &at);
+    let n = graph.node.len();
+    let root = at[root_id];
+    let stale: Vec<bool> = ids.iter().map(|id| stale.contains(*id)).collect();
 
-    let mut order = vec![root_id.clone()];
+    let mut blocked: Vec<usize> = graph.node.iter().map(|o| o.parents.len()).collect();
+    // Of a ready operation: those it waits for. Of any: the ready ones
+    // waiting for it. How many of those it waits for are still to come.
+    let mut holders: Vec<Vec<usize>> = vec![Vec::new(); n];
+    // Of those, the ones by somebody else than its author.
+    let mut others: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut held: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut waits: Vec<usize> = vec![0; n];
+    let mut done: Vec<bool> = vec![false; n];
+    let mut confirmed_once: Vec<Option<bool>> = vec![None; n];
+    let mut walk = Walk::new(n);
+
+    let mut order = vec![root];
+    done[root] = true;
     let mut rejected = HashMap::new();
-    let mut ready: BTreeSet<OpId> = BTreeSet::new();
-    let mut done = root_id.clone();
+    let mut ready: Vec<usize> = Vec::new();
+    let mut last = root;
     loop {
-        for child in children.get(&done).into_iter().flatten() {
-            if let Some(n) = blocked.get_mut(child) {
-                *n = n.saturating_sub(1);
-                if *n == 0 {
-                    ready.insert(child.clone());
+        for &child in &graph.children[last] {
+            blocked[child] = blocked[child].saturating_sub(1);
+            if blocked[child] > 0 {
+                continue;
+            }
+            // Ready: all it knew is behind. It waits for each operation still
+            // to come, made beside it (that one did not know of it), that can
+            // change the rights it rests on: its author's, or those of the
+            // one it acts on.
+            walk.next_round();
+            for &p in &graph.rests[child] {
+                for &s in &graph.changers[p] {
+                    if s == child || done[s] || !walk.first_time(s) {
+                        continue;
+                    }
+                    if !graph.knew(s, child, &done, &mut walk) {
+                        holders[child].push(s);
+                        if graph.node[s].author != graph.node[child].author {
+                            others[child].push(s);
+                        }
+                        held[s].push(child);
+                        waits[child] += 1;
+                    }
+                }
+            }
+            ready.push(child);
+        }
+        let rank = |i: usize| rank_of(&state, graph.node[i]);
+        // Highest rank, then the smallest id.
+        let by_rank = |a: &usize, b: &usize| rank(*a).cmp(&rank(*b)).then_with(|| b.cmp(a));
+        let mut pick = ready.iter().copied().filter(|m| waits[*m] == 0).max_by(by_rank);
+        if pick.is_none() && !ready.is_empty() {
+            // Each waits for another: the one held back by the weakest goes
+            // first. A removed admin's own operations, held by the owner's
+            // removal, so never get ahead of those the admin holds back. What
+            // an author holds back of their own (a leave, a handover beside
+            // their other operations) weighs nothing here: it protects nobody
+            // from anybody.
+            let strength: Vec<u8> = ready.iter().map(|m| others[*m].iter().filter(|s| !done[**s]).map(|s| rank(*s)).max().unwrap_or(0)).collect();
+            let weakest = strength.iter().copied().min().unwrap_or(0);
+            let tied: Vec<usize> = ready.iter().zip(&strength).filter(|(_, s)| **s == weakest).map(|(m, _)| *m).collect();
+            pick = if tied.len() == 1 {
+                tied.first().copied()
+            } else {
+                // Among those, one taken by whom it concerns, not knowing
+                // what it waits for, before one that was not: an owner who
+                // handed the group over cannot hand it once more beside it,
+                // after the new owner acted. Looked at once a pass for each
+                // operation: a circle of many costs no more than that.
+                let confirmed: Vec<bool> = tied
+                    .iter()
+                    .map(|m| {
+                        *confirmed_once[*m].get_or_insert_with(|| {
+                            graph.confirmed(*m, holders[*m].iter().copied().filter(|s| !done[*s]), &state, &done, &mut walk)
+                        })
+                    })
+                    .collect();
+                (0..tied.len()).max_by(|a, b| confirmed[*a].cmp(&confirmed[*b]).then_with(|| by_rank(&tied[*a], &tied[*b]))).map(|i| tied[i])
+            };
+        }
+        let Some(pick) = pick else { break };
+        ready.retain(|m| *m != pick);
+        done[pick] = true;
+        for &m in &held[pick] {
+            waits[m] = waits[m].saturating_sub(1);
+        }
+        let op = graph.node[pick];
+        if stale[pick] {
+            rejected.insert(ids[pick].clone(), Rejection::StaleLink);
+        } else if let Err(r) = state.apply(op) {
+            rejected.insert(ids[pick].clone(), r);
+        }
+        order.push(pick);
+        last = pick;
+    }
+    Some((order.into_iter().map(|i| ids[i].clone()).collect(), rejected, state))
+}
+
+/// The rank an operation is ordered by: its author's role in the state
+/// reached so far, an owner's handover of the group above the owner's
+/// other operations.
+fn rank_of(state: &GroupState, op: &Op) -> u8 {
+    match state.role_of(&op.author) {
+        Some(Role::Owner) if matches!(op.body, OpBody::TransferOwnership { .. }) => Role::Owner.rank() + 1,
+        Some(r) => r.rank(),
+        None => 0,
+    }
+}
+
+/// The operations of one pass by index, and who they concern.
+struct Graph<'a> {
+    node: Vec<&'a Op>,
+    children: Vec<Vec<usize>>,
+    parents: Vec<Vec<usize>>,
+    /// Whose rights the permission of each operation rests on (people by index).
+    rests: Vec<Vec<usize>>,
+    /// Of each person, the operations that can change their rights.
+    changers: Vec<Vec<usize>>,
+}
+
+impl<'a> Graph<'a> {
+    fn new(node: Vec<&'a Op>, at: &HashMap<&OpId, usize>) -> Self {
+        let n = node.len();
+        let mut children = vec![Vec::new(); n];
+        let mut parents = vec![Vec::new(); n];
+        let mut people: HashMap<&str, usize> = HashMap::new();
+        let mut rests = Vec::with_capacity(n);
+        let mut changes = Vec::with_capacity(n);
+        for (i, &op) in node.iter().enumerate() {
+            for p in &op.parents {
+                if let Some(&j) = at.get(p) {
+                    children[j].push(i);
+                    parents[i].push(j);
+                }
+            }
+            let mut person = |k: &'a PubKey| {
+                let next = people.len();
+                *people.entry(k.as_hex()).or_insert(next)
+            };
+            rests.push(rests_on(op).into_iter().map(&mut person).collect::<Vec<_>>());
+            changes.push(changes_rights_of(op).into_iter().map(&mut person).collect::<Vec<_>>());
+        }
+        let mut changers = vec![Vec::new(); people.len()];
+        for (i, c) in changes.iter().enumerate() {
+            for &p in c {
+                if !changers[p].contains(&i) {
+                    changers[p].push(i);
                 }
             }
         }
-        // Highest role of the author in the state reached so far, then
-        // the smallest id.
-        let rank = |id: &OpId| ops.get(id).and_then(|o| state.role_of(&o.author)).map(|r| r.rank()).unwrap_or(0);
-        let Some(pick) = ready.iter().max_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| b.cmp(a))).cloned() else { break };
-        ready.remove(&pick);
-        if let Some(op) = ops.get(&pick) {
-            if stale.contains(&pick) {
-                rejected.insert(pick.clone(), Rejection::StaleLink);
-            } else if let Err(r) = state.apply(op) {
-                rejected.insert(pick.clone(), r);
-            }
-        }
-        order.push(pick.clone());
-        done = pick;
+        Self { node, children, parents, rests, changers }
     }
-    Some((order, rejected, state))
+
+    /// Did the author of `of` know of `what`, an operation not yet ordered?
+    /// Operations already ordered are passed by: everything they knew is
+    /// ordered too, so `what` is not among it.
+    fn knew(&self, of: usize, what: usize, done: &[bool], walk: &mut Walk) -> bool {
+        walk.begin();
+        walk.stack.extend(self.parents[of].iter().copied());
+        while let Some(i) = walk.stack.pop() {
+            if i == what {
+                walk.stack.clear();
+                return true;
+            }
+            if done[i] || !walk.visit(i) {
+                continue;
+            }
+            walk.stack.extend(self.parents[i].iter().copied());
+        }
+        false
+    }
+
+    /// Did somebody go on from `of` without knowing any of `rivals`
+    /// (operations not yet ordered), by an operation that holds? Who counts:
+    /// the receiver of a handover for a handover, any member but its author
+    /// otherwise; a member in `state`, with an operation that applies after
+    /// `of` there. Whoever knew a rival is passed by, and so are those after
+    /// them: they knew it too. Anyone can name an operation as a parent at
+    /// any time; only a member it concerns, acting as the operation lets
+    /// them, says it was taken.
+    fn confirmed(&self, of: usize, rivals: impl Iterator<Item = usize>, state: &GroupState, done: &[bool], walk: &mut Walk) -> bool {
+        if self.children[of].is_empty() {
+            return false;
+        }
+        let op = self.node[of];
+        let mut after = state.clone();
+        if after.apply(op).is_err() {
+            return false;
+        }
+        let counts = |who: &PubKey| match &op.body {
+            OpBody::TransferOwnership { to } => who == to,
+            _ => who != &op.author,
+        };
+        let rivals: Vec<usize> = rivals.collect();
+        let mut seen: HashSet<usize> = HashSet::new();
+        let mut queue: Vec<usize> = self.children[of].clone();
+        while let Some(d) = queue.pop() {
+            if !seen.insert(d) || rivals.iter().any(|r| *r == d || self.knew(d, *r, done, walk)) {
+                continue;
+            }
+            let by = &self.node[d].author;
+            if counts(by) && state.is_member(by) && after.clone().apply(self.node[d]).is_ok() {
+                return true;
+            }
+            queue.extend(self.children[d].iter().copied());
+        }
+        false
+    }
+}
+
+/// Marks for the walks of one pass, reused: a round number per node
+/// instead of a fresh set each time.
+struct Walk {
+    seen: Vec<u32>,
+    round: u32,
+    first: Vec<u32>,
+    pass: u32,
+    stack: Vec<usize>,
+}
+
+impl Walk {
+    fn new(n: usize) -> Self {
+        Self { seen: vec![0; n], round: 0, first: vec![0; n], pass: 0, stack: Vec::new() }
+    }
+    fn begin(&mut self) {
+        self.round += 1;
+        self.stack.clear();
+    }
+    fn visit(&mut self, i: usize) -> bool {
+        if self.seen[i] == self.round {
+            return false;
+        }
+        self.seen[i] = self.round;
+        true
+    }
+    /// For the holders of one ready operation: each counted once.
+    fn next_round(&mut self) {
+        self.pass += 1;
+    }
+    fn first_time(&mut self, i: usize) -> bool {
+        if self.first[i] == self.pass {
+            return false;
+        }
+        self.first[i] = self.pass;
+        true
+    }
 }
 
 /// Everything an operation's author had seen: the operation itself and
@@ -316,17 +578,43 @@ fn knowledge(ops: &HashMap<OpId, Op>, of: &OpId) -> HashSet<OpId> {
     seen
 }
 
+/// Whose rights an operation can change: the one it removes, bans or gives
+/// a role to, the author of a leave, the author and the receiver of a
+/// handover.
+fn changes_rights_of(op: &Op) -> Vec<&PubKey> {
+    match &op.body {
+        OpBody::Remove { who } | OpBody::Ban { who } | OpBody::SetRole { who, .. } => vec![who],
+        OpBody::Leave => vec![&op.author],
+        OpBody::TransferOwnership { to } => vec![&op.author, to],
+        _ => vec![],
+    }
+}
+
+/// Whose rights the permission of an operation rests on: its author's,
+/// and those of the one it acts on (a role that grows meanwhile can put
+/// the target out of the author's reach).
+fn rests_on(op: &Op) -> Vec<&PubKey> {
+    match &op.body {
+        OpBody::Remove { who } | OpBody::Ban { who } | OpBody::SetRole { who, .. } | OpBody::SetMuted { who, .. } => vec![&op.author, who],
+        OpBody::TransferOwnership { to } => vec![&op.author, to],
+        _ => vec![&op.author],
+    }
+}
+
 /// The current key is the one brought by the last applied operation that
-/// brings a key. Whoever made it knew a certain part of the log. Anyone
-/// who stopped being a member outside that part still has the key; anyone
-/// who joined outside that part does not have it yet.
+/// brings a key (a key on a `Leave` is ignored). Whoever made it knew a
+/// certain part of the log. Anyone who stopped being a member outside that
+/// part still has the key; anyone who joined outside that part does not
+/// have it yet.
 fn key_status(ops: &HashMap<OpId, Op>, order: &[OpId], rejected: &HashMap<OpId, Rejection>, state: &mut GroupState) -> KeyStatus {
     if state.kind == GroupKind::Public || state.disbanded {
         state.key_stale = false;
         return KeyStatus::Good;
     }
     let applied: Vec<&Op> = order.iter().filter(|id| !rejected.contains_key(*id)).filter_map(|id| ops.get(id)).collect();
-    let Some(key_op) = applied.iter().rev().find(|o| o.key.is_some()) else { return KeyStatus::Good };
+    let Some(key_op) = applied.iter().rev().find(|o| o.key.is_some() && !matches!(o.body, OpBody::Leave)) else {
+        return KeyStatus::Good;
+    };
     let key_id = key_op.id();
     let known = knowledge(ops, &key_id);
     let current: Option<&KeyId> = key_op.key.as_ref();
@@ -336,6 +624,7 @@ fn key_status(ops: &HashMap<OpId, Op>, order: &[OpId], rejected: &HashMap<OpId, 
     let mut replay: Option<GroupState> = None;
     let mut departed: BTreeMap<String, bool> = BTreeMap::new();
     let mut arrived: BTreeSet<String> = BTreeSet::new();
+    let mut managers: HashSet<String> = HashSet::new();
     for op in &applied {
         let before: BTreeSet<String> = replay.as_ref().map(|s| s.members.keys().cloned().collect()).unwrap_or_default();
         match replay.as_mut() {
@@ -345,6 +634,19 @@ fn key_status(ops: &HashMap<OpId, Op>, order: &[OpId], rejected: &HashMap<OpId, 
             }
         }
         let after: BTreeSet<String> = replay.as_ref().map(|s| s.members.keys().cloned().collect()).unwrap_or_default();
+        // Everyone who has been a manager.
+        match &op.body {
+            OpBody::Create { .. } => {
+                managers.insert(op.author.as_hex().to_string());
+            }
+            OpBody::SetRole { who, role } if role.is_manager() => {
+                managers.insert(who.as_hex().to_string());
+            }
+            OpBody::TransferOwnership { to } => {
+                managers.insert(to.as_hex().to_string());
+            }
+            _ => {}
+        }
         // Later or at the same time: whoever made the key did not know of it.
         let unknown_to_key = !known.contains(&op.id());
         // At the same time: and whoever made this did not know the key.
@@ -363,7 +665,35 @@ fn key_status(ops: &HashMap<OpId, Op>, order: &[OpId], rejected: &HashMap<OpId, 
         }
     }
 
-    if !departed.is_empty() || state.key_stale {
+    // An admission the order turned down because its author lost the
+    // rights beside it (it does not know the operation, ordered before it,
+    // that took them): a device of a version before that rule took it and
+    // may have handed the key to the newcomer. A key chosen without knowing
+    // of it is replaced, once for each author: when the key knew of one such
+    // admission of theirs, more of them change nothing (the older devices
+    // hand that author's newcomers whatever key there is anyway). A fresh
+    // admission by someone who already lost the rights is turned down by
+    // every version and counts for nothing.
+    let pos: HashMap<&OpId, usize> = order.iter().enumerate().map(|(i, id)| (id, i)).collect();
+    let mut late: BTreeMap<&str, bool> = BTreeMap::new();
+    for (id, r) in rejected {
+        if !matches!(r, Rejection::AuthorNotMember | Rejection::NotPermitted) {
+            continue;
+        }
+        let Some(o) = ops.get(id) else { continue };
+        if !matches!(&o.body, OpBody::Admit { who } if !state.is_member(who)) || !managers.contains(o.author.as_hex()) {
+            continue;
+        }
+        let at = pos.get(id).copied().unwrap_or(0);
+        let knew = knowledge(ops, id);
+        let backdated = order[..at].iter().filter(|s| !rejected.contains_key(*s) && !knew.contains(*s)).filter_map(|s| ops.get(s)).any(|s| changes_rights_of(s).contains(&&o.author));
+        if backdated {
+            *late.entry(o.author.as_hex()).or_insert(false) |= known.contains(id);
+        }
+    }
+    let admitted_elsewhere = late.values().any(|seen| !seen);
+    // Whoever chose the key and is no longer a member still knows it.
+    if !departed.is_empty() || admitted_elsewhere || state.key_stale || !state.is_member(&key_op.author) {
         state.key_stale = true;
         return KeyStatus::Rotate;
     }
@@ -637,6 +967,23 @@ mod tests {
     }
 
     #[test]
+    fn a_key_brought_on_a_leave_is_ignored() {
+        let (mut d, [_, a, ..]) = team(GroupKind::Private, true);
+        let before = d.log.state().current_key.clone();
+        let mut da = d.fork(&a);
+        // An admin leaves and brings a key of their own choosing with it.
+        let leave = da.make(OpBody::Leave, Some(71));
+        deliver(&mut d, &[&leave]);
+        for log in [&d.log, &da.log] {
+            assert!(!log.state().is_member(&a));
+            assert_eq!(log.key_status(), &KeyStatus::Rotate);
+            assert!(log.state().key_stale);
+            assert_eq!(log.state().current_key, before, "the key of the one who left is not current");
+            assert!(!log.state().keys.contains(&key(71)));
+        }
+    }
+
+    #[test]
     fn hidden_history_gives_each_newcomer_a_fresh_key() {
         let (base, [_, a, b, ..]) = team(GroupKind::Private, false);
         let (x, y) = (pk("e"), pk("f"));
@@ -715,6 +1062,247 @@ mod tests {
         assert_eq!(d0.log.key_status(), &KeyStatus::Good);
     }
 
+    /// An operation of `author` on `parents` the author chose, dated so
+    /// that its id is smaller than `below`: the tie-break of equal ranks
+    /// goes its way.
+    fn crafted(author: &PubKey, parents: Vec<OpId>, body: OpBody, with_key: Option<u8>, below: &OpId) -> Op {
+        (1..10_000)
+            .map(|at| {
+                let op = Op::new(GROUP, author, parents.clone(), at, body.clone());
+                match with_key {
+                    Some(k) => op.with_key(key(k)),
+                    None => op,
+                }
+            })
+            .find(|op| &op.id() < below)
+            .expect("an id below")
+    }
+
+    #[test]
+    fn a_removed_admin_cannot_go_back_in_the_log() {
+        let (base, [o, a, _, u, w]) = team(GroupKind::Private, true);
+        let x = pk("e");
+        let p = base.log.heads()[0].clone();
+        // u leaves; the owner, having seen it, removes admin A.
+        let mut du = base.fork(&u);
+        let leave = du.make(OpBody::Leave, None);
+        let mut d0 = base.fork(&o);
+        deliver(&mut d0, &[&leave]);
+        let removal = d0.make(OpBody::Remove { who: a.clone() }, Some(60));
+        // A, removed, names an old part of the log as all it knew and
+        // admits someone of their own.
+        let admit = crafted(&a, vec![p.clone()], OpBody::Admit { who: x.clone() }, None, &leave.id());
+        assert_eq!(d0.log.insert(admit.clone()), Insert::Rejected(Rejection::AuthorNotMember));
+        assert!(!d0.log.state().is_member(&x));
+        assert_eq!(d0.log.key_status(), &KeyStatus::Rotate, "a device of an older version may have handed x the key");
+        let mut fix = d0.fork(&o);
+        fix.make(OpBody::RotateKey, Some(66));
+        assert_eq!(fix.log.key_status(), &KeyStatus::Good, "the new key knew of the admission");
+
+        // To hold back the leave the removal waits for, A also changes
+        // the role of the one leaving, as if beside it: a circle, in which
+        // the one held back by the weaker goes first, and that is not A.
+        let hold = crafted(&a, vec![p], OpBody::SetRole { who: u.clone(), role: Role::Moderator }, None, &leave.id());
+
+        let all = [leave, removal, admit.clone(), hold];
+        let mut results = Vec::new();
+        for order in permutations(&all) {
+            let mut d = base.fork(&w);
+            for op in &order {
+                d.log.insert(op.clone());
+            }
+            results.push((d.log.state().clone(), d.log.ordered().map(Op::id).collect::<Vec<_>>(), d.log.key_status().clone()));
+        }
+        assert!(results.iter().all(|r| r == &results[0]));
+        assert!(!results[0].0.is_member(&x) && !results[0].0.is_member(&a));
+        assert_ne!(results[0].2, KeyStatus::Deliver(vec![x]));
+    }
+
+    #[test]
+    fn a_former_owner_cannot_undo_the_transfer() {
+        let (base, [o, a, b, u, w]) = team(GroupKind::Private, true);
+        let mut d0 = base.fork(&o);
+        let transfer = d0.make(OpBody::TransferOwnership { to: b.clone() }, None);
+        // The new owner acts on it.
+        let mut db = base.fork(&b);
+        deliver(&mut db, &[&transfer]);
+        let acted = db.make(OpBody::SetRole { who: a.clone(), role: Role::Member }, None);
+
+        // The former owner removes the new one, as if beside the transfer.
+        let undo = crafted(&o, transfer.parents.clone(), OpBody::Remove { who: b.clone() }, Some(61), &transfer.id());
+        // With an operation of their own on B beside both, the three wait
+        // for each other in a circle where the owner's own holds weigh
+        // nothing; the handover still goes first.
+        let circle = crafted(&o, transfer.parents.clone(), OpBody::SetRole { who: b.clone(), role: Role::Moderator }, None, &transfer.id());
+        for order in permutations(&[transfer.clone(), undo.clone(), acted.clone(), circle.clone()]) {
+            let mut d = base.fork(&w);
+            for op in &order {
+                d.log.insert(op.clone());
+            }
+            let s = d.log.state();
+            assert_eq!(s.owner, b);
+            assert!(s.is_member(&b));
+            assert_eq!(s.role_of(&o), Some(Role::Admin));
+            assert_eq!(d.log.rejection(&undo.id()), Some(&Rejection::NotPermitted));
+            assert_eq!(d.log.rejection(&transfer.id()), None);
+            assert_eq!(s.role_of(&a), Some(Role::Member), "what the new owner did stands");
+        }
+
+        // Or hands the group to somebody else beside it, a smaller id
+        // winning a tie of the old rule: the handover the new owner went on
+        // from comes first, and the second is the move of an admin.
+        let again = crafted(&o, transfer.parents.clone(), OpBody::TransferOwnership { to: w.clone() }, None, &transfer.id());
+        // Anybody can name the second as a parent, a key nobody knows, a
+        // member it does not concern, or the receiver with an operation
+        // that does not hold: none of it says the second was taken.
+        let stranger = Op::new(GROUP, &pk("f"), vec![again.id()], 1, OpBody::Leave);
+        let bystander = Op::new(GROUP, &u, vec![again.id()], 1, OpBody::SetMuted { who: w.clone(), muted: true });
+        let receiver_leaving = Op::new(GROUP, &w, vec![again.id()], 1, OpBody::Leave);
+        let named = [stranger, bystander, receiver_leaving];
+        for (order, first) in permutations(&[transfer.clone(), again.clone(), acted.clone()]).into_iter().flat_map(|o| [(o.clone(), true), (o, false)]) {
+            let mut d = base.fork(&u);
+            let all: Vec<&Op> = if first { named.iter().chain(&order).collect() } else { order.iter().chain(&named).collect() };
+            for op in all {
+                d.log.insert(op.clone());
+            }
+            let s = d.log.state();
+            assert_eq!(s.owner, b);
+            assert_eq!(d.log.rejection(&again.id()), Some(&Rejection::NotPermitted));
+            assert_eq!(s.role_of(&a), Some(Role::Member));
+        }
+        // What is left: the receiver of the second, a member, acting as an
+        // owner on it beside the first. Each handover is taken by its own
+        // receiver; the old rule decides, the same everywhere.
+        let taken = Op::new(GROUP, &w, vec![again.id()], 1, OpBody::SetRole { who: a.clone(), role: Role::Moderator });
+        let mut results = Vec::new();
+        for order in permutations(&[transfer.clone(), again.clone(), acted.clone(), taken.clone()]) {
+            let mut d = base.fork(&u);
+            for op in &order {
+                d.log.insert(op.clone());
+            }
+            results.push(d.log.state().clone());
+        }
+        assert!(results.iter().all(|s| s == &results[0]));
+        assert_eq!(results[0].owner, w, "the smaller id");
+
+        // Two handovers nobody went on from yet: the old rule, the same
+        // everywhere.
+        let mut d = base.fork(&u);
+        deliver(&mut d, &[&transfer, &again]);
+        assert_eq!(d.log.state().owner, w, "the smaller id");
+        let mut d = base.fork(&u);
+        deliver(&mut d, &[&again, &transfer]);
+        assert_eq!(d.log.state().owner, w);
+    }
+
+    #[test]
+    fn a_demoted_admin_forging_admissions_costs_one_new_key() {
+        let (base, [o, a, ..]) = team(GroupKind::Private, true);
+        let old = base.log.heads();
+        let mut d0 = base.fork(&o);
+        d0.make(OpBody::SetRole { who: a.clone(), role: Role::Member }, None);
+        // Admissions made knowing the demotion: every version turns them down.
+        for i in 0..5u8 {
+            let fresh = Op::new(GROUP, &a, d0.log.heads(), 300 + i64::from(i), OpBody::Admit { who: pk(&format!("{}", i + 1)) });
+            assert_eq!(d0.log.insert(fresh), Insert::Rejected(Rejection::NotPermitted));
+        }
+        assert_eq!(d0.log.key_status(), &KeyStatus::Good, "nothing an older device took");
+        // One named on the part of the log before the demotion: an older
+        // device took it. One new key, and no more for the same author.
+        let back = Op::new(GROUP, &a, old.clone(), 400, OpBody::Admit { who: pk("e") });
+        assert_eq!(d0.log.insert(back), Insert::Rejected(Rejection::NotPermitted));
+        assert_eq!(d0.log.key_status(), &KeyStatus::Rotate);
+        d0.make(OpBody::RotateKey, Some(67));
+        assert_eq!(d0.log.key_status(), &KeyStatus::Good);
+        let again = Op::new(GROUP, &a, old, 401, OpBody::Admit { who: pk("f") });
+        assert_eq!(d0.log.insert(again), Insert::Rejected(Rejection::NotPermitted));
+        assert_eq!(d0.log.key_status(), &KeyStatus::Good, "once for each author");
+    }
+
+    #[test]
+    fn a_target_raised_beside_an_action_is_out_of_its_reach() {
+        let (base, [o, a, b, u, w]) = team(GroupKind::Private, true);
+        let x = w.clone();
+        let p = base.log.heads()[0].clone();
+        // u leaves; the owner, having seen it, makes x an admin. Admin A,
+        // naming the part of the log before the leave, acts on x.
+        let mut du = base.fork(&u);
+        let leave = du.make(OpBody::Leave, None);
+        let mut d0 = base.fork(&o);
+        deliver(&mut d0, &[&leave]);
+        let raise = d0.make(OpBody::SetRole { who: x.clone(), role: Role::Admin }, None);
+        for body in [
+            OpBody::Remove { who: x.clone() },
+            OpBody::Ban { who: x.clone() },
+            OpBody::SetMuted { who: x.clone(), muted: true },
+            OpBody::SetRole { who: x.clone(), role: Role::Member },
+        ] {
+            let with_key = matches!(body, OpBody::Remove { .. } | OpBody::Ban { .. }).then_some(64);
+            let act = crafted(&a, vec![p.clone()], body.clone(), with_key, &leave.id());
+            for order in permutations(&[leave.clone(), raise.clone(), act.clone()]) {
+                let mut d = base.fork(&b);
+                for op in &order {
+                    d.log.insert(op.clone());
+                }
+                let s = d.log.state();
+                assert_eq!(s.role_of(&x), Some(Role::Admin), "{body:?}");
+                assert!(!s.member(&x).unwrap().muted);
+                assert_eq!(d.log.rejection(&act.id()), Some(&Rejection::NotPermitted), "{body:?}");
+                assert_eq!(d.log.rejection(&raise.id()), None);
+            }
+        }
+
+        // An admin removes a member the owner hands the group to, beside it.
+        let mut d0 = base.fork(&o);
+        deliver(&mut d0, &[&leave]);
+        let transfer = d0.make(OpBody::TransferOwnership { to: x.clone() }, None);
+        let removal = crafted(&a, vec![p.clone()], OpBody::Remove { who: x.clone() }, Some(65), &leave.id());
+        for order in permutations(&[leave.clone(), transfer.clone(), removal.clone()]) {
+            let mut d = base.fork(&b);
+            for op in &order {
+                d.log.insert(op.clone());
+            }
+            assert_eq!(d.log.state().owner, x);
+            assert_eq!(d.log.rejection(&removal.id()), Some(&Rejection::NotPermitted));
+        }
+    }
+
+    #[test]
+    fn two_admins_removing_each_other_converge() {
+        let (base, [o, a, b, u, _]) = team(GroupKind::Private, true);
+        let heads = base.log.heads();
+        // Each operation waits for the other: neither may go first by the
+        // rule; the one held back by the weaker goes first.
+        let by_a = Op::new(GROUP, &a, heads.clone(), 300, OpBody::Remove { who: b.clone() }).with_key(key(62));
+        let by_b = Op::new(GROUP, &b, heads.clone(), 300, OpBody::Remove { who: a.clone() }).with_key(key(63));
+        let mut du = base.fork(&u);
+        let leave = du.make(OpBody::Leave, None);
+        let mut d0 = base.fork(&o);
+        let demote = d0.make(OpBody::SetRole { who: a.clone(), role: Role::Member }, None);
+
+        let all = [by_a, by_b, leave, demote];
+        let mut results = Vec::new();
+        for order in permutations(&all) {
+            let mut d = base.fork(&o);
+            for op in &order {
+                d.log.insert(op.clone());
+            }
+            results.push((d.log.state().clone(), d.log.ordered().map(Op::id).collect::<Vec<_>>(), d.log.key_status().clone()));
+        }
+        assert!(results.iter().all(|r| r == &results[0]), "24 delivery orders, one result");
+        let s = &results[0].0;
+        // The owner's demotion goes first; A, a member by then, is removed
+        // by B, and A's own removal of B comes from someone no longer there.
+        assert!(!s.is_member(&a) && s.is_member(&b));
+        assert_eq!(s.role_of(&b), Some(Role::Admin));
+        assert!(!s.is_member(&u));
+        let mut d = base.fork(&o);
+        deliver(&mut d, &[&all[0], &all[1]]);
+        assert!(d.log.state().is_member(&a) && d.log.state().is_member(&b), "without it, an admin removes no admin");
+        assert_eq!(d.log.rejection(&all[0].id()), Some(&Rejection::NotPermitted));
+        assert_eq!(d.log.rejection(&all[1].id()), Some(&Rejection::NotPermitted));
+    }
+
     /// Small deterministic generator: the test must fail the same way twice.
     struct Rng(u64);
     impl Rng {
@@ -791,6 +1379,135 @@ mod tests {
             assert_eq!(s.members.values().filter(|m| m.role == Role::Owner).count(), 1, "seed {seed}");
             assert_eq!(s.role_of(&s.owner), Some(Role::Owner), "seed {seed}");
             assert!(s.banned.iter().all(|k| !s.members.contains_key(k)), "seed {seed}: a banned member");
+        }
+    }
+
+    #[test]
+    fn random_histories_with_old_parents_converge() {
+        for seed in 1..=60u64 {
+            let mut rng = Rng(seed.wrapping_mul(0xD1B5_4A32_D192_ED03));
+            let (base, [o, a, b, u, w]) = team(GroupKind::Private, seed % 2 == 0);
+            let people = [o.clone(), a.clone(), b.clone(), u.clone(), w.clone(), pk("e")];
+            let mut devices: Vec<Device> = [&o, &a, &b, &u].into_iter().map(|p| base.fork(p)).collect();
+            let mut made: Vec<Op> = Vec::new();
+            let mut key_no = 150u8;
+
+            for _ in 0..14 {
+                let d = rng.next(devices.len());
+                if !made.is_empty() && rng.next(3) == 0 {
+                    let heard = made[rng.next(made.len())].clone();
+                    devices[d].log.insert(heard);
+                }
+                let target = people[rng.next(people.len())].clone();
+                let body = match rng.next(7) {
+                    0 => OpBody::Admit { who: target },
+                    1 => OpBody::Remove { who: target },
+                    2 => OpBody::SetRole { who: target, role: [Role::Member, Role::Moderator, Role::Admin][rng.next(3)] },
+                    3 => OpBody::Ban { who: target },
+                    4 => OpBody::Leave,
+                    5 => OpBody::TransferOwnership { to: target },
+                    _ => OpBody::SetMuted { who: target, muted: true },
+                };
+                let dev = &mut devices[d];
+                dev.clock += 1;
+                // Half of the time the author names an old part of the log
+                // as all they knew, and nothing is checked before.
+                let parents = if rng.next(2) == 0 {
+                    let known: Vec<OpId> = base.log.ordered().map(Op::id).chain(made.iter().map(Op::id)).collect();
+                    vec![known[rng.next(known.len())].clone()]
+                } else {
+                    dev.log.heads()
+                };
+                let mut op = Op::new(GROUP, &dev.me, parents, dev.clock, body);
+                if dev.log.state().requires_key(&op.body) || rng.next(4) == 0 {
+                    key_no = key_no.wrapping_add(1);
+                    op = op.with_key(key(key_no));
+                }
+                if made.iter().any(|m| m.id() == op.id()) {
+                    continue;
+                }
+                dev.log.insert(op.clone());
+                made.push(op);
+                // Now and then a key nobody knows names something as its
+                // parent, as if it went on from it.
+                if rng.next(4) == 0 {
+                    let named = made[rng.next(made.len())].id();
+                    let stranger = pk(&format!("{}", 1 + rng.next(5)));
+                    let op = Op::new(GROUP, &stranger, vec![named], dev.clock, OpBody::Leave);
+                    if !made.iter().any(|m| m.id() == op.id()) {
+                        made.push(op);
+                    }
+                }
+            }
+
+            let mut results = Vec::new();
+            let mut last = None;
+            for _ in 0..4 {
+                let mut order = made.clone();
+                for i in (1..order.len()).rev() {
+                    order.swap(i, rng.next(i + 1));
+                }
+                let mut d = base.fork(&w);
+                for op in order {
+                    d.log.insert(op);
+                }
+                assert!(d.log.missing().is_empty(), "seed {seed}");
+                results.push((d.log.state().clone(), d.log.ordered().map(Op::id).collect::<Vec<_>>(), d.log.key_status().clone()));
+                last = Some(d.log);
+            }
+            assert!(results.iter().all(|r| r == &results[0]), "seed {seed}: devices disagree");
+            let (s, order, _) = &results[0];
+            assert_eq!(s.members.values().filter(|m| m.role == Role::Owner).count(), 1, "seed {seed}");
+            assert_eq!(s.role_of(&s.owner), Some(Role::Owner), "seed {seed}");
+
+            // What the owner changes of someone's rights, and a handover,
+            // go before whatever was made beside them resting on those
+            // rights. (Between those of equal standing a circle of such
+            // operations can still be broken either way; it is broken the
+            // same way everywhere.)
+            let log = last.unwrap();
+            let pos = |id: &OpId| order.iter().position(|o| o == id).unwrap();
+            let applied: Vec<&Op> = log.ordered().filter(|op| log.rejection(&op.id()).is_none()).collect();
+            let beside_of = |x: &OpId, y: &OpId| !knowledge(&log.ops, x).contains(y) && !knowledge(&log.ops, y).contains(x);
+            // The owner is still the owner where `t` stands: no handover of
+            // theirs went before it.
+            let still_owner = |t: &Op| !applied.iter().any(|h| h.author == o && matches!(h.body, OpBody::TransferOwnership { .. }) && pos(&h.id()) < pos(&t.id()));
+            for m in &applied {
+                for t in &applied {
+                    let (mid, tid) = (m.id(), t.id());
+                    // Between the operations of one author the rule of circles
+                    // decides: their order among themselves gives the author
+                    // nothing they could not do anyway, but around a handover,
+                    // which ranks above the rest and is taken by its receiver
+                    // (a_former_owner_cannot_undo_the_transfer).
+                    if mid == tid || m.author == t.author || !changes_rights_of(t).iter().any(|p| rests_on(m).contains(p)) {
+                        continue;
+                    }
+                    let strong = match t.body {
+                        // Several handovers of one owner beside each other are
+                        // the owner's own disorder (several devices, or one
+                        // lying): one of them goes first by the rule of circles,
+                        // and the owner's other operations around them may go
+                        // either way. A second handover after the new owner
+                        // acted is a_former_owner_cannot_undo_the_transfer. A
+                        // handover by someone not the owner yet (it counts
+                        // once a handover to them went first) is held as
+                        // what its author is when it waits, not as an owner.
+                        OpBody::TransferOwnership { .. } => {
+                            t.author == o
+                                && still_owner(t)
+                                && !log.ops.values().any(|h| h.author == o && h.id() != tid && matches!(h.body, OpBody::TransferOwnership { .. }) && beside_of(&h.id(), &tid))
+                        }
+                        OpBody::Leave => false,
+                        _ => t.author == o && still_owner(t),
+                    };
+                    // Each resting on what the other changes: a circle, broken
+                    // by the rule of circles (the tests above take the cases).
+                    let circle = changes_rights_of(m).iter().any(|p| rests_on(t).contains(p));
+                    let beside = !circle && beside_of(&mid, &tid);
+                    assert!(!strong || !beside || pos(&tid) < pos(&mid), "seed {seed}: {:?} went before {:?}", m.body, t.body);
+                }
+            }
         }
     }
 }

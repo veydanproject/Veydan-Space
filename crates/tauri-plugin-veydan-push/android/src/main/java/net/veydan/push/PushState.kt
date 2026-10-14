@@ -8,6 +8,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import java.io.File
 import java.lang.ref.WeakReference
+import java.security.SecureRandom
 
 /**
  * What the push service and the plugin share while the process lives.
@@ -46,6 +47,33 @@ internal object PushState {
       }
     } else if (file.exists() && !file.delete()) {
       throw IllegalStateException("the mute could not be lifted")
+    }
+  }
+
+  private const val TAP_KEY_FILE = "push/tap-key"
+
+  /**
+   * The secret every intent of a notification and of a chat's shortcut
+   * carries, so a tap is told from an intent another app sent to the
+   * exported launcher activity with the same extras. Kept in a file of the
+   * app, because a notification outlives the process that showed it; made
+   * once, at the first notification. Null when it cannot be kept: the
+   * intent then carries none, and the tap opens the app at its start.
+   */
+  @Synchronized
+  fun tapKey(context: Context): String? {
+    val file = File(context.noBackupFilesDir, TAP_KEY_FILE)
+    return try {
+      file.takeIf { it.exists() }?.readText()?.trim()?.takeIf { it.length == 32 }
+        ?: run {
+          val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+          val key = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+          file.parentFile?.mkdirs()
+          file.writeText(key)
+          key
+        }
+    } catch (e: Exception) {
+      null
     }
   }
 

@@ -19,8 +19,13 @@
 //! - put that diverged: 3-way merge from the exact common ancestor; a clean
 //!   merge is pushed with both parents, overlapping edits become a conflict
 //!   that keeps the local file untouched and is resolved through the UI.
+//! - every write of the file holds `NotesState::save` and first reads the
+//!   file again: a save since the apply read it puts the op off to the next
+//!   cycle. A local file sync does not know goes to the history before a pull
+//!   replaces it.
 
 use super::state::{load_note_state, save_note_state, NoteSyncState};
+use crate::files::compute_hash;
 use crate::{
     effective_docs_dir, history_content_by_id, history_snapshot_by, merge3, parse_note_file,
     resolve_note_abs_path, restore_note, set_note_tag_links, sync_notes_index, trash_note,
@@ -29,12 +34,12 @@ use crate::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
 use veydan_core::{settings, Core};
 use veydan_core::{AppError, CmdResult};
 use veydan_sync::{sha256_hex, Engine, Hlc, HlcClock, LocalState, Op};
-use veydan_sync_host::{Applied, Collected, Cycle, Handler};
+use veydan_sync_host::{Applied, Collected, Cycle, Handler, Registry};
 
 pub const ENTITY: &str = "note";
 
@@ -63,14 +68,7 @@ struct NoteHead {
     deleted: i64,
 }
 
-/// Note ids are UUIDs; anything else must not become a file name.
-pub(super) fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 64
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
+pub(super) use crate::files::valid_id;
 
 fn put_op(id: &str, hlc: Hlc, blob: String, parents: Vec<String>, format: &str, title: &str) -> Op {
     Op {
@@ -123,10 +121,9 @@ fn file_stems(dir: &PathBuf) -> HashSet<String> {
         .unwrap_or_default()
 }
 
-/// Extension for a new note file; anything odd falls back to `md`.
+/// Extension for a new note file; anything but a note extension falls back to `md`.
 fn safe_format(format: &str) -> &str {
-    if !format.is_empty() && format.len() <= 8 && format.chars().all(|c| c.is_ascii_alphanumeric())
-    {
+    if crate::files::is_note_ext(format) {
         format
     } else {
         "md"
@@ -252,8 +249,21 @@ pub struct ApplyOutcome {
     /// Set when an op was skipped on a transient condition; peer heads must not
     /// advance so the skipped ops are delivered again next cycle.
     pub retry: Option<String>,
-    /// Blobs collected by GC. Reported as warnings; peer heads still advance.
+    /// The devices of the ops `retry` is for: only their heads stay.
+    pub retry_from: Vec<String>,
+    /// Blobs collected by GC or quarantined (they do not open). Reported as
+    /// warnings; peer heads still advance.
     pub skipped: Vec<String>,
+}
+
+impl ApplyOutcome {
+    /// `op` is delivered again next cycle; the log it came in keeps its head.
+    fn retry_op(&mut self, op: &Op, reason: String) {
+        self.retry = Some(reason);
+        if !self.retry_from.contains(&op.hlc.device_id) {
+            self.retry_from.push(op.hlc.device_id.clone());
+        }
+    }
 }
 
 async fn load_head(db: &sqlx::Pool<sqlx::Sqlite>, id: &str) -> CmdResult<Option<NoteHead>> {
@@ -302,6 +312,35 @@ fn remove_unindexed(
     Ok(removed)
 }
 
+/// Whether the file at `path` still holds what an apply read: `read` is the
+/// sha256 of those bytes, `None` when there was no file. Checked with
+/// `NotesState::save` held, right before a write, so a save of the editor or
+/// a capture that landed since the read is not overwritten.
+fn same_as_read(path: &Path, read: Option<&str>) -> bool {
+    std::fs::read(path)
+        .ok()
+        .map(|raw| sha256_hex(&raw))
+        .as_deref()
+        == read
+}
+
+/// Whether the local file is a version sync knows: the one last synced here
+/// (a tombstone keeps that hash), the one this op brings, or one it builds
+/// on. Anything else was written here or brought in on disk, and a pull that
+/// replaces it keeps it in the history first.
+fn local_is_known(
+    raw: &[u8],
+    prev: Option<&NoteSyncState>,
+    payload: &NotePayload,
+    engine: &Engine,
+) -> bool {
+    if prev.is_some_and(|s| !s.synced_hash.is_empty() && sha256_hex(raw) == s.synced_hash) {
+        return true;
+    }
+    let name = engine.blob_name(raw);
+    name == payload.blob || payload.parents.contains(&name)
+}
+
 /// Union keeping local order, then remote extras.
 fn merge_tags(local: &[String], remote: &[String]) -> Vec<String> {
     let mut out = local.to_vec();
@@ -316,6 +355,7 @@ fn merge_tags(local: &[String], remote: &[String]) -> Vec<String> {
 /// Apply remote ops. Ops from the same pull are already HLC-sorted.
 /// Merge results are pushed immediately so a later failure cannot strand them.
 /// Without the app no progress goes out.
+#[allow(clippy::too_many_arguments)]
 pub async fn apply_remote(
     engine: &Engine,
     app: Option<&AppHandle>,
@@ -324,6 +364,7 @@ pub async fn apply_remote(
     ops: Vec<Op>,
     clock: &mut HlcClock,
     local: &mut LocalState,
+    registry: &Registry,
 ) -> CmdResult<ApplyOutcome> {
     let progress = |current: u32, total: u32, id: &str| {
         if let Some(app) = app {
@@ -337,11 +378,12 @@ pub async fn apply_remote(
             );
         }
     };
-    apply_ops(engine, core, notes, ops, clock, local, progress).await
+    apply_ops(engine, core, notes, ops, clock, local, registry, progress).await
 }
 
 /// The apply itself, on the state alone and without the running app.
 /// `progress(current, total, note id)` is called before each put.
+#[allow(clippy::too_many_arguments)]
 async fn apply_ops(
     engine: &Engine,
     core: &Core,
@@ -349,6 +391,7 @@ async fn apply_ops(
     ops: Vec<Op>,
     clock: &mut HlcClock,
     local: &mut LocalState,
+    registry: &Registry,
     progress: impl Fn(u32, u32, &str),
 ) -> CmdResult<ApplyOutcome> {
     let db = &core.db;
@@ -378,6 +421,7 @@ async fn apply_ops(
     // Stems of the files in the documents directory, listed once: when a
     // tombstone first finds neither a row nor a state for its note.
     let mut leftovers: Option<HashSet<String>> = None;
+    let former = veydan_sync_host::config::former_device_ids(db).await;
 
     for op in ops {
         if op.entity_type != ENTITY || !valid_id(&op.entity_id) {
@@ -392,10 +436,17 @@ async fn apply_ops(
             .as_ref()
             .and_then(|s| s.head_hlc.as_ref())
             .is_some_and(|h| *h >= op.hlc);
-        let already = prev
-            .as_ref()
-            .is_some_and(|s| s.head_blob == payload.blob || s.head_parents.contains(&payload.blob));
-        if stale && (op.deleted || already) {
+        // The remote side of a conflict counts: a second delivery of the op
+        // that made it brings nothing new (audit A2-08).
+        let already = prev.as_ref().is_some_and(|s| {
+            s.head_blob == payload.blob
+                || s.head_parents.contains(&payload.blob)
+                || (!payload.blob.is_empty() && s.conflict_remote_blob == payload.blob)
+        });
+        // An older op of a former id of this device is its own old log read
+        // back after a rotation of the id: this device made or saw every
+        // version since (audit A2-20).
+        if stale && (op.deleted || already || former.contains(&op.hlc.device_id)) {
             continue;
         }
         let row = load_head(db, &id).await?;
@@ -403,7 +454,12 @@ async fn apply_ops(
         if op.deleted {
             match &row {
                 Some(r) if r.deleted == 0 => {
-                    trash_note(&id, core).await?;
+                    // A file or a database that cannot be written holds this
+                    // op alone; the rest of the pull goes on.
+                    if let Err(e) = trash_note(&id, core).await {
+                        outcome.retry_op(&op, format!("note {id}: {e}"));
+                        continue;
+                    }
                     outcome.changed.push(id.clone());
                 }
                 Some(_) => {}
@@ -412,22 +468,30 @@ async fn apply_ops(
                 None => {
                     let dir = docs_dir(core, notes);
                     let removed = match &prev {
-                        Some(st) if st.deleted || st.synced_hash.is_empty() => false,
+                        Some(st) if st.deleted || st.synced_hash.is_empty() => Ok(false),
                         Some(st) => {
-                            remove_unindexed(&dir, &id, |raw| sha256_hex(raw) == st.synced_hash)?
+                            remove_unindexed(&dir, &id, |raw| sha256_hex(raw) == st.synced_hash)
                         }
                         // An apply that wrote the file stopped before it saved
                         // the state: the file is the version this op deletes.
                         None => {
                             let leftovers = leftovers.get_or_insert_with(|| file_stems(&dir));
-                            leftovers.contains(&id)
-                                && remove_unindexed(&dir, &id, |raw| {
+                            if leftovers.contains(&id) {
+                                remove_unindexed(&dir, &id, |raw| {
                                     payload.parents.contains(&engine.blob_name(raw))
-                                })?
+                                })
+                            } else {
+                                Ok(false)
+                            }
                         }
                     };
-                    if removed {
-                        outcome.changed.retain(|c| *c != id);
+                    match removed {
+                        Ok(true) => outcome.changed.retain(|c| *c != id),
+                        Ok(false) => {}
+                        Err(e) => {
+                            outcome.retry_op(&op, format!("note {id}: {e}"));
+                            continue;
+                        }
                     }
                 }
             }
@@ -459,19 +523,31 @@ async fn apply_ops(
         if stale && prev.as_ref().is_some_and(|s| s.deleted) {
             continue;
         }
-        let Some(remote_raw) = engine
-            .get_blob(&payload.blob)
-            .await
-            .map_err(AppError::other)?
-        else {
-            let now_ms = Utc::now().timestamp_millis().max(0) as u64;
+        let now_ms = Utc::now().timestamp_millis().max(0) as u64;
+        let fetched = match engine.get_blob(&payload.blob).await {
+            Ok(fetched) => fetched,
+            // A blob that does not open, long after its op: quarantined, the
+            // version is skipped and the heads advance.
+            Err(e) if super::blob_quarantined(&op, &e, now_ms) => {
+                outcome
+                    .skipped
+                    .push(format!("blob for note {id} does not open, skipped: {e}"));
+                continue;
+            }
+            // Read again next cycle, with the log it came in; the others go on.
+            Err(e) => {
+                outcome.retry_op(&op, format!("blob for note {id}: {e}"));
+                continue;
+            }
+        };
+        let Some(remote_raw) = fetched else {
             if super::blob_gone(&op, now_ms) {
                 outcome
                     .skipped
                     .push(format!("blob for note {id} was collected"));
             } else {
                 // Chunk arrived before its blob; deliver the rest again next cycle.
-                outcome.retry = Some(format!("blob for note {id} not available yet"));
+                outcome.retry_op(&op, format!("blob for note {id} not available yet"));
             }
             continue;
         };
@@ -482,6 +558,8 @@ async fn apply_ops(
             None => docs_dir(core, notes).join(format!("{id}.{}", safe_format(&payload.format))),
         };
         let local_raw = std::fs::read(&path).ok();
+        // What this apply read; every write below first checks the file still holds it.
+        let local_sha = local_raw.as_deref().map(sha256_hex);
         let local_changed = match (&prev, &local_raw) {
             (Some(s), Some(raw)) if !s.deleted && !s.head_blob.is_empty() => {
                 sha256_hex(raw) != s.synced_hash
@@ -501,13 +579,53 @@ async fn apply_ops(
         // No DB row yet: the file came from an earlier op of this pull, nothing local to merge.
         if (remote_includes_ours || row.is_none()) && !local_changed {
             let same_bytes = local_raw.as_deref() == Some(remote_raw.as_slice());
+            // Held from the second read of the file to its write and the state.
+            let _save_guard = notes.save.lock().await;
             if !same_bytes {
-                write_raw(&path, &remote_raw)?;
+                if !same_as_read(&path, local_sha.as_deref()) {
+                    outcome.retry_op(&op, format!("note {id} changed during sync"));
+                    continue;
+                }
+                // A file whose bytes no state or op of this note knows (no
+                // state, a tombstone, the same id brought in on disk) is a
+                // version of its own: kept in the history before it goes.
+                let unknown = local_raw
+                    .as_deref()
+                    .filter(|raw| !local_is_known(raw, prev.as_ref(), &payload, engine));
+                if let Some(raw) = unknown {
+                    match &row {
+                        Some(r) => {
+                            let (kv, _, body) = parse_note_file(&String::from_utf8_lossy(raw));
+                            let title = kv.get("title").cloned().unwrap_or_else(|| r.title.clone());
+                            history_snapshot_by(&id, &title, &body, "sync", None, None, db).await?;
+                        }
+                        // The history needs the row; the index after this step
+                        // makes it, and the op comes again next cycle.
+                        None if std::str::from_utf8(raw).is_ok() => {
+                            outcome.retry_op(&op, format!("note {id} has a file not indexed yet"));
+                            if !outcome.changed.contains(&id) {
+                                outcome.changed.push(id.clone());
+                            }
+                            continue;
+                        }
+                        // Not text: the index never makes a row of it, and
+                        // waiting for one would hold every cycle back.
+                        None => {}
+                    }
+                }
+                // A file that cannot be written holds this op alone.
+                if let Err(e) = write_raw(&path, &remote_raw) {
+                    outcome.retry_op(&op, format!("note {id}: {e}"));
+                    continue;
+                }
             }
             // Un-trash before the state is saved: if this cycle dies later the
             // op is skipped next time (hlc <= head) and the note would stay deleted.
             if row.as_ref().map(|r| r.deleted != 0).unwrap_or(false) {
-                restore_note(&id, core).await?;
+                if let Err(e) = restore_note(&id, core).await {
+                    outcome.retry_op(&op, format!("note {id}: {e}"));
+                    continue;
+                }
                 outcome.restored.push(id.clone());
             }
             save_note_state(
@@ -531,7 +649,7 @@ async fn apply_ops(
         let mut st = prev.expect("diverged implies a known head");
         if remote_includes_ours && !st.conflict {
             // Plain race with the editor: next cycle pushes the edit first, then merges.
-            outcome.retry = Some(format!("note {id} changed during sync"));
+            outcome.retry_op(&op, format!("note {id} changed during sync"));
             continue;
         }
         let local_raw = local_raw.unwrap_or_default();
@@ -569,7 +687,16 @@ async fn apply_ops(
                 .cloned()
         };
         let ancestor_raw = match &ancestor_name {
-            Some(name) => engine.get_blob(name).await.map_err(AppError::other)?,
+            Some(name) => match engine.get_blob(name).await {
+                Ok(raw) => raw,
+                // An ancestor that does not open, long after the op that
+                // builds on it, is as good as unknown.
+                Err(e) if super::blob_quarantined(&op, &e, now_ms) => None,
+                Err(e) => {
+                    outcome.retry_op(&op, format!("ancestor of note {id}: {e}"));
+                    continue;
+                }
+            },
             None => None,
         };
 
@@ -584,8 +711,16 @@ async fn apply_ops(
         // let two real forks swap contents forever.
         let Some(ancestor_raw) = ancestor_raw else {
             if !local_changed {
+                let _save_guard = notes.save.lock().await;
+                if !same_as_read(&path, local_sha.as_deref()) {
+                    outcome.retry_op(&op, format!("note {id} changed during sync"));
+                    continue;
+                }
                 history_snapshot_by(&id, &local_title, &lbody, "conflict", None, None, db).await?;
-                write_raw(&path, &remote_raw)?;
+                if let Err(e) = write_raw(&path, &remote_raw) {
+                    outcome.retry_op(&op, format!("note {id}: {e}"));
+                    continue;
+                }
                 save_note_state(
                     db,
                     &NoteSyncState {
@@ -645,6 +780,13 @@ async fn apply_ops(
             remote_title.clone()
         };
         let tags = merge_tags(&ltags, &rtags);
+        // Held from the check of the file to the read of the merge it wrote;
+        // the upload and the push that follow go without it.
+        let save_guard = notes.save.lock().await;
+        if !same_as_read(&path, local_sha.as_deref()) {
+            outcome.retry_op(&op, format!("note {id} changed during sync"));
+            continue;
+        }
         let mut note_row = sqlx::query_as::<_, NoteRow>("SELECT * FROM notes WHERE id = ?")
             .bind(&id)
             .fetch_optional(db)
@@ -676,30 +818,45 @@ async fn apply_ops(
             db,
         )
         .await?;
-        write_note_file(&path, &note_row, &tags, &merged.content)?;
-
-        let merged_raw = std::fs::read(&path).map_err(AppError::io)?;
-        let blob = engine
-            .put_blob(&merged_raw)
-            .await
-            .map_err(AppError::other)?;
+        // The file, its read or the upload of the merge failing holds this
+        // op alone: the next cycle merges again over what was written. The
+        // push below is not caught: one that rotated the device id ends the
+        // cycle.
+        let written = write_note_file(&path, &note_row, &tags, &merged.content)
+            .and_then(|()| std::fs::read(&path).map_err(AppError::io));
+        drop(save_guard);
+        let uploaded = match written {
+            Ok(merged_raw) => match engine.put_blob(&merged_raw).await {
+                Ok(blob) => Ok((merged_raw, blob)),
+                Err(e) => Err(AppError::other(e)),
+            },
+            Err(e) => Err(e),
+        };
+        let (merged_raw, blob) = match uploaded {
+            Ok(uploaded) => uploaded,
+            Err(e) => {
+                outcome.retry_op(&op, format!("merge of note {id}: {e}"));
+                continue;
+            }
+        };
         let parents = vec![st.head_blob.clone(), payload.blob.clone()];
         let hlc = clock.now();
-        engine
-            .push(
-                local,
-                vec![put_op(
-                    &id,
-                    hlc.clone(),
-                    blob.clone(),
-                    parents.clone(),
-                    &note_row.format,
-                    &title,
-                )],
-            )
-            .await
-            .map_err(AppError::other)?;
-        veydan_sync_host::state::save_own_state(db, local, &clock.last()).await?;
+        veydan_sync_host::push_own(
+            engine,
+            db,
+            registry,
+            local,
+            clock,
+            vec![put_op(
+                &id,
+                hlc.clone(),
+                blob.clone(),
+                parents.clone(),
+                &note_row.format,
+                &title,
+            )],
+        )
+        .await?;
         save_note_state(
             db,
             &NoteSyncState {
@@ -733,8 +890,7 @@ async fn apply_ops(
             st.head_hlc = Some(hlc);
             states.push(st);
         }
-        engine.push(local, ops).await.map_err(AppError::other)?;
-        veydan_sync_host::state::save_own_state(db, local, &clock.last()).await?;
+        veydan_sync_host::push_own(engine, db, registry, local, clock, ops).await?;
         for st in &states {
             save_note_state(db, st).await?;
         }
@@ -796,7 +952,10 @@ fn head_parents(st: &NoteSyncState) -> Vec<String> {
 }
 
 /// True when this device trashed the note: its own tombstone is the head, or
-/// the row went to the trash after the tombstone was collected.
+/// the row went to the trash after the tombstone was collected. A note in
+/// the trash with no state at all is not known to be this device's deletion:
+/// the states went with a binding (a leave, then a join), and the vault's
+/// newer word stands over it.
 fn deleted_here(engine: &Engine, prev: Option<&NoteSyncState>, row: Option<&NoteHead>) -> bool {
     match prev {
         Some(s) if s.deleted => s
@@ -804,7 +963,8 @@ fn deleted_here(engine: &Engine, prev: Option<&NoteSyncState>, row: Option<&Note
             .as_ref()
             .map(|h| h.device_id == engine.device_id())
             .unwrap_or(false),
-        _ => row.map(|r| r.deleted != 0).unwrap_or(false),
+        Some(_) => row.map(|r| r.deleted != 0).unwrap_or(false),
+        None => false,
     }
 }
 
@@ -926,7 +1086,8 @@ pub async fn resolve_conflict(
             title: None,
             content: Some(content),
             pinned: None,
-            base_hash: None,
+            // The body the token was checked against: a save since then is refused.
+            base_hash: Some(compute_hash(&local)),
         },
         core,
         notes,
@@ -1035,10 +1196,12 @@ impl Handler for Notes {
             ops.to_vec(),
             cx.clock,
             cx.local,
+            cx.sync.registry(),
         )
         .await?;
         Ok(Applied {
             retry: outcome.retry.clone(),
+            retry_from: outcome.retry_from.clone(),
             skipped: outcome.skipped.clone(),
             detail: Some(Box::new(outcome)),
         })
@@ -1077,6 +1240,27 @@ impl Handler for Notes {
             );
         }
         Ok(refs)
+    }
+
+    /// A version of a note pushed after `newest` was lost with its chunk: its state
+    /// forgets the push, and the next collect publishes it again, or its
+    /// tombstone.
+    async fn forget_pushed_after(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        device: &str,
+        newest: Option<&Hlc>,
+    ) -> CmdResult<()> {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE sync_note_state SET synced_hash = '', deleted = 0 WHERE {}",
+            veydan_sync_host::state::pushed_after("head_hlc")
+        )))
+        .bind(device)
+        .bind(veydan_sync_host::state::hlc_floor(newest))
+        .execute(tx)
+        .await
+        .map_err(AppError::db)?;
+        Ok(())
     }
 }
 
@@ -1289,6 +1473,7 @@ mod apply_tests {
                 ops,
                 &mut self.clock,
                 &mut self.local,
+                self.state.sync.registry(),
                 |_, _, _| {},
             )
             .await
@@ -1361,6 +1546,66 @@ mod apply_tests {
                 .await
                 .unwrap()
                 .expect("sync state")
+        }
+
+        /// The file of the note in the documents directory.
+        fn note_path(&self) -> PathBuf {
+            docs_dir(&self.state.core, &self.state.notes).join(format!("{NOTE}.md"))
+        }
+
+        fn read_note(&self) -> Vec<u8> {
+            std::fs::read(self.note_path()).unwrap()
+        }
+
+        /// The body of the note file as it is now.
+        fn body(&self) -> String {
+            parse_note_file(&String::from_utf8(self.read_note()).unwrap()).2
+        }
+
+        /// An edit of the note made here, as the editor leaves it on disk.
+        fn edit(&self, body: &str) {
+            write_raw(&self.note_path(), &note_file(body)).unwrap();
+        }
+
+        /// A cycle's push of the notes: the index scan, the ops to the vault,
+        /// then the states. Returns the blob of the one put it publishes.
+        async fn publish(&mut self) -> String {
+            sync_notes_index(&self.state.core, None).await.unwrap();
+            let changes = collect_local_changes(
+                &self.engine,
+                &self.state.core,
+                &self.state.notes,
+                &mut self.clock,
+            )
+            .await
+            .unwrap();
+            assert_eq!(changes.ops.len(), 1, "{:?}", changes.ops);
+            let blob = changes.ops[0].payload["blob"].as_str().unwrap().to_string();
+            self.engine
+                .push(&mut self.local, changes.ops)
+                .await
+                .unwrap();
+            for st in &changes.states {
+                save_note_state(&self.state.core.db, st).await.unwrap();
+            }
+            blob
+        }
+
+        /// The versions of the note in its history, oldest first, as `(type, body)`.
+        async fn history(&self) -> Vec<(String, String)> {
+            let db = &self.state.core.db;
+            let rows: Vec<(String, String)> = sqlx::query_as(
+                "SELECT id, version_type FROM note_history WHERE note_id = ? ORDER BY revision",
+            )
+            .bind(NOTE)
+            .fetch_all(db)
+            .await
+            .unwrap();
+            let mut out = Vec::new();
+            for (id, kind) in rows {
+                out.push((kind, history_content_by_id(&id, db).await.unwrap()));
+            }
+            out
         }
 
         async fn close(self, vault: Vault) {
@@ -1694,6 +1939,126 @@ mod apply_tests {
         device.close(vault).await;
     }
 
+    const OTHER: &str = "0b0e3c1e-5a52-4d0e-9a53-0d7e3d7c1a02";
+
+    fn now_ms() -> u64 {
+        Utc::now().timestamp_millis() as u64
+    }
+
+    /// `device` publishes a version of note `id` at `wall_ms`; returns its blob.
+    async fn push_note(vault: &Vault, device: &str, id: &str, wall_ms: u64, body: &str) -> String {
+        let peer = vault.device(device);
+        let blob = peer.put_blob(&note_file(body)).await.unwrap();
+        let put = put_op(
+            id,
+            at(wall_ms, device),
+            blob.clone(),
+            vec![],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut LocalState::default(), vec![put])
+            .await
+            .unwrap();
+        blob
+    }
+
+    /// The same, and then a byte of the blob's envelope in the vault changes:
+    /// it does not open any more.
+    async fn push_broken(vault: &Vault, device: &str, id: &str, wall_ms: u64) {
+        let blob = push_note(vault, device, id, wall_ms, "broken").await;
+        let path = vault.dir.join("blobs").join(&blob);
+        let mut raw = std::fs::read(&path).unwrap();
+        *raw.last_mut().unwrap() ^= 0xff;
+        std::fs::write(&path, raw).unwrap();
+    }
+
+    /// A blob that does not open, long after its op, is quarantined: the
+    /// version is skipped with a warning, the notes after it are applied and
+    /// no retry is asked, so the heads advance (audit SYNCROWS-09,
+    /// SYNCNOTES-12).
+    #[tokio::test]
+    async fn a_blob_that_does_not_open_is_quarantined_and_the_pull_goes_on() {
+        let vault = Vault::new().await;
+        let old = now_ms() - 2 * 24 * 3600 * 1000;
+        push_broken(&vault, "peer-a", NOTE, old).await;
+        push_note(&vault, "peer-b", OTHER, old + 1, "fine").await;
+        let mut device = Device::joined(&vault).await;
+
+        let outcome = device.pull(false).await;
+
+        assert_eq!(outcome.retry, None);
+        assert!(outcome.retry_from.is_empty());
+        assert_eq!(outcome.skipped.len(), 1, "{:?}", outcome.skipped);
+        assert!(
+            outcome.skipped[0].contains(NOTE) && outcome.skipped[0].contains("does not open"),
+            "{:?}",
+            outcome.skipped
+        );
+        assert_eq!(outcome.changed, vec![OTHER.to_string()]);
+        let docs = docs_dir(&device.state.core, &device.state.notes);
+        assert_eq!(
+            std::fs::read(docs.join(format!("{OTHER}.md"))).unwrap(),
+            note_file("fine")
+        );
+        assert!(!device.note_path().exists());
+
+        device.close(vault).await;
+    }
+
+    /// A young one may still be on its way: it is retried, and the retry
+    /// names the device whose log brought it, so the other logs' heads still
+    /// advance.
+    #[tokio::test]
+    async fn a_fresh_blob_that_does_not_open_holds_the_log_of_its_device_alone() {
+        let vault = Vault::new().await;
+        let now = now_ms();
+        push_broken(&vault, "peer-a", NOTE, now).await;
+        push_note(&vault, "peer-b", OTHER, now + 1, "fine").await;
+        let mut device = Device::joined(&vault).await;
+
+        let outcome = device.pull(false).await;
+
+        assert!(outcome.retry.as_deref().is_some_and(|r| r.contains(NOTE)));
+        assert_eq!(outcome.retry_from, ["peer-a"]);
+        assert!(outcome.skipped.is_empty(), "{:?}", outcome.skipped);
+        assert_eq!(outcome.changed, vec![OTHER.to_string()]);
+
+        device.close(vault).await;
+    }
+
+    /// A file that cannot be written holds its op alone: the note after it
+    /// is applied, and the second delivery writes the held one while the
+    /// note applied already is cut by its head.
+    #[tokio::test]
+    async fn a_note_that_cannot_be_written_is_retried_alone() {
+        let vault = Vault::new().await;
+        let now = now_ms();
+        push_note(&vault, "peer-a", NOTE, now, "held").await;
+        push_note(&vault, "peer-b", OTHER, now + 1, "fine").await;
+        let mut device = Device::joined(&vault).await;
+        // The temporary file of the write is a folder.
+        let blocker = device.note_path().with_extension("tmp");
+        std::fs::create_dir_all(&blocker).unwrap();
+        let ops = device.pulled().await;
+
+        let outcome = device.apply(ops.clone(), false).await;
+
+        assert!(outcome.retry.as_deref().is_some_and(|r| r.contains(NOTE)));
+        assert_eq!(outcome.retry_from, ["peer-a"]);
+        assert_eq!(outcome.changed, vec![OTHER.to_string()]);
+        assert!(!device.note_path().exists());
+
+        std::fs::remove_dir(&blocker).unwrap();
+        let outcome = device.apply(ops, false).await;
+
+        assert_eq!(outcome.retry, None);
+        assert_eq!(outcome.changed, vec![NOTE.to_string()]);
+        assert_eq!(device.read_note(), note_file("held"));
+
+        device.close(vault).await;
+    }
+
     #[tokio::test]
     async fn a_put_against_the_tombstone_of_this_device_is_answered_with_a_tombstone() {
         let vault = Vault::new().await;
@@ -1821,6 +2186,503 @@ mod apply_tests {
             pushed.is_empty(),
             "flags set nowhere are published: {pushed:?}"
         );
+
+        device.close(vault).await;
+    }
+
+    const BASE: &str = "one\ntwo\nthree\n";
+
+    /// A peer published `BASE`, this device pulled it, edited it to `body`
+    /// and pushed the edit. Returns the peer, its log, the blob of `BASE` and
+    /// the blob of the edit.
+    async fn edited_on_this_device(
+        vault: &Vault,
+        device: &mut Device,
+        body: &str,
+    ) -> (Engine, LocalState, String, String) {
+        let peer = vault.device("peer-a");
+        let mut log = LocalState::default();
+        let base = peer.put_blob(&note_file(BASE)).await.unwrap();
+        let put = put_op(
+            NOTE,
+            at(1000, "peer-a"),
+            base.clone(),
+            vec![],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![put]).await.unwrap();
+        device.pull(true).await;
+        assert_eq!(device.body(), BASE);
+        device.edit(body);
+        let ours = device.publish().await;
+        assert_eq!(device.note_state().await.head_parents, vec![base.clone()]);
+        (peer, log, base, ours)
+    }
+
+    /// Edits of other lines on two devices, both from `BASE`: the 3-way merge
+    /// from that ancestor keeps both, goes out at once with both heads as
+    /// parents, and every side stays in the history.
+    #[tokio::test]
+    async fn edits_on_two_devices_from_one_ancestor_are_merged() {
+        let vault = Vault::new().await;
+        let mut device = Device::joined(&vault).await;
+        let (peer, mut log, base, ours) =
+            edited_on_this_device(&vault, &mut device, "one, here\ntwo\nthree\n").await;
+        let theirs = peer
+            .put_blob(&note_file("one\ntwo\nthree, there\n"))
+            .await
+            .unwrap();
+        let put = put_op(
+            NOTE,
+            at(5000, "peer-a"),
+            theirs.clone(),
+            vec![base],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![put]).await.unwrap();
+        let seq = device.local.own_seq;
+
+        let outcome = device.pull(true).await;
+
+        assert_eq!(outcome.retry, None);
+        assert_eq!(outcome.changed, vec![NOTE.to_string()]);
+        assert_eq!(device.body(), "one, here\ntwo\nthree, there\n");
+        let st = device.note_state().await;
+        assert!(!st.conflict);
+        assert_eq!(st.head_parents, vec![ours, theirs]);
+        assert_eq!(st.synced_hash, sha256_hex(&device.read_note()));
+        assert_eq!(device.local.own_seq, seq + 1, "the merge is pushed at once");
+        assert!(device.next_push().await.is_empty());
+        assert_eq!(
+            device.history().await,
+            [
+                ("sync".to_string(), "one, here\ntwo\nthree\n".to_string()),
+                ("sync".to_string(), "one\ntwo\nthree, there\n".to_string()),
+                (
+                    "merge".to_string(),
+                    "one, here\ntwo\nthree, there\n".to_string()
+                ),
+            ]
+        );
+
+        device.close(vault).await;
+    }
+
+    /// Edits of the same line from one ancestor: a conflict. The local file
+    /// stays as it was, the note is held back from the push, and the ancestor
+    /// and both sides are in the history for the dialog.
+    #[tokio::test]
+    async fn edits_of_one_line_on_two_devices_are_a_conflict_that_keeps_the_file() {
+        let vault = Vault::new().await;
+        let mut device = Device::joined(&vault).await;
+        let (peer, mut log, base, _) =
+            edited_on_this_device(&vault, &mut device, "one\ntwo\nthree, here\n").await;
+        let before = device.read_note();
+        let theirs = peer
+            .put_blob(&note_file("one\ntwo\nthree, there\n"))
+            .await
+            .unwrap();
+        let put = put_op(
+            NOTE,
+            at(5000, "peer-a"),
+            theirs.clone(),
+            vec![base],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![put]).await.unwrap();
+
+        let outcome = device.pull(true).await;
+
+        assert_eq!(outcome.retry, None);
+        assert_eq!(device.read_note(), before);
+        let st = device.note_state().await;
+        assert!(st.conflict);
+        assert_eq!(st.conflict_remote_blob, theirs);
+        assert!(!st.conflict_ancestor_id.is_empty());
+        assert_eq!(
+            device.history().await,
+            [
+                ("conflict".to_string(), BASE.to_string()),
+                (
+                    "conflict".to_string(),
+                    "one\ntwo\nthree, here\n".to_string()
+                ),
+                (
+                    "conflict".to_string(),
+                    "one\ntwo\nthree, there\n".to_string()
+                ),
+            ]
+        );
+        assert!(device.next_push().await.is_empty());
+
+        device.close(vault).await;
+    }
+
+    /// The op of a conflict delivered again — another log held the heads —
+    /// brings nothing new: the history keeps the three versions it had
+    /// (audit A2-08).
+    #[tokio::test]
+    async fn a_conflict_delivered_again_adds_nothing_to_the_history() {
+        let vault = Vault::new().await;
+        let mut device = Device::joined(&vault).await;
+        let (peer, mut log, base, _) =
+            edited_on_this_device(&vault, &mut device, "one\ntwo\nthree, here\n").await;
+        let theirs = peer
+            .put_blob(&note_file("one\ntwo\nthree, there\n"))
+            .await
+            .unwrap();
+        let put = put_op(NOTE, at(5000, "peer-a"), theirs, vec![base], "md", "Deploy");
+        peer.push(&mut log, vec![put]).await.unwrap();
+        let ops = device.pulled().await;
+        device.apply(ops.clone(), true).await;
+        assert!(device.note_state().await.conflict);
+        let history = device.history().await;
+        assert_eq!(history.len(), 3, "{history:?}");
+
+        let outcome = device.apply(ops, true).await;
+
+        assert_eq!(outcome.retry, None);
+        assert!(outcome.changed.is_empty(), "{:?}", outcome.changed);
+        assert_eq!(device.history().await, history);
+
+        device.close(vault).await;
+    }
+
+    /// A version that shares no ancestor with the head here, while nothing
+    /// was edited here since the last push: the remote one wins, and the
+    /// local text stays in the history.
+    #[tokio::test]
+    async fn a_version_without_a_common_ancestor_wins_over_a_pushed_head() {
+        let vault = Vault::new().await;
+        let mut device = Device::joined(&vault).await;
+        edited_on_this_device(&vault, &mut device, "one, here\ntwo\nthree\n").await;
+        let other = vault.device("peer-b");
+        let theirs = other.put_blob(&note_file("written apart\n")).await.unwrap();
+        let put = put_op(
+            NOTE,
+            at(5000, "peer-b"),
+            theirs.clone(),
+            vec![],
+            "md",
+            "Deploy",
+        );
+        other
+            .push(&mut LocalState::default(), vec![put])
+            .await
+            .unwrap();
+
+        let outcome = device.pull(true).await;
+
+        assert_eq!(outcome.retry, None);
+        assert_eq!(outcome.changed, vec![NOTE.to_string()]);
+        assert_eq!(device.body(), "written apart\n");
+        let st = device.note_state().await;
+        assert!(!st.conflict);
+        assert_eq!(st.head_blob, theirs);
+        assert_eq!(st.synced_hash, sha256_hex(&device.read_note()));
+        assert_eq!(
+            device.history().await,
+            [(
+                "conflict".to_string(),
+                "one, here\ntwo\nthree\n".to_string()
+            )]
+        );
+
+        device.close(vault).await;
+    }
+
+    /// The same, with an edit made here since the push: a conflict without an
+    /// ancestor, the local file untouched.
+    #[tokio::test]
+    async fn a_version_without_a_common_ancestor_against_an_edit_here_is_a_conflict() {
+        let vault = Vault::new().await;
+        let mut device = Device::joined(&vault).await;
+        edited_on_this_device(&vault, &mut device, "one, here\ntwo\nthree\n").await;
+        device.edit("one, here again\ntwo\nthree\n");
+        let before = device.read_note();
+        let other = vault.device("peer-b");
+        let theirs = other.put_blob(&note_file("written apart\n")).await.unwrap();
+        let put = put_op(
+            NOTE,
+            at(5000, "peer-b"),
+            theirs.clone(),
+            vec![],
+            "md",
+            "Deploy",
+        );
+        other
+            .push(&mut LocalState::default(), vec![put])
+            .await
+            .unwrap();
+
+        let outcome = device.pull(true).await;
+
+        assert_eq!(outcome.retry, None);
+        assert_eq!(device.read_note(), before);
+        let st = device.note_state().await;
+        assert!(st.conflict);
+        assert_eq!(st.conflict_remote_blob, theirs);
+        assert_eq!(
+            device.history().await,
+            [
+                ("conflict".to_string(), String::new()),
+                (
+                    "conflict".to_string(),
+                    "one, here again\ntwo\nthree\n".to_string()
+                ),
+                ("conflict".to_string(), "written apart\n".to_string()),
+            ]
+        );
+
+        device.close(vault).await;
+    }
+
+    /// A remote version built on the head here, while the file holds an edit
+    /// not pushed yet: the edit goes out first, so the op waits for the next
+    /// cycle and the file is not touched.
+    #[tokio::test]
+    async fn a_fast_forward_over_an_edit_not_pushed_waits() {
+        let vault = Vault::new().await;
+        let mut device = Device::joined(&vault).await;
+        let (peer, mut log, _, ours) =
+            edited_on_this_device(&vault, &mut device, "one, here\ntwo\nthree\n").await;
+        device.edit("one, here again\ntwo\nthree\n");
+        let before = device.read_note();
+        let theirs = peer
+            .put_blob(&note_file("one, here\ntwo\nthree, there\n"))
+            .await
+            .unwrap();
+        let put = put_op(
+            NOTE,
+            at(5000, "peer-a"),
+            theirs,
+            vec![ours.clone()],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![put]).await.unwrap();
+
+        let outcome = device.pull(true).await;
+
+        assert!(outcome.retry.is_some());
+        assert_eq!(device.read_note(), before);
+        assert_eq!(device.note_state().await.head_blob, ours);
+
+        device.close(vault).await;
+    }
+
+    /// A file of the note's id on disk that no sync wrote (the same note
+    /// brought in on two devices) is kept in the history before a pull
+    /// replaces it. Without a row yet, the op waits for the index to make one.
+    #[tokio::test]
+    async fn a_file_of_the_same_id_without_a_state_is_kept_in_the_history() {
+        let vault = Vault::new().await;
+        let peer = vault.device("peer-a");
+        let blob = peer.put_blob(&note_file(BASE)).await.unwrap();
+        let put = put_op(NOTE, at(1000, "peer-a"), blob, vec![], "md", "Deploy");
+        peer.push(&mut LocalState::default(), vec![put])
+            .await
+            .unwrap();
+        let mut device = Device::joined(&vault).await;
+        device.edit("written here\n");
+        let ops = device.pulled().await;
+
+        let first = device.apply(ops.clone(), true).await;
+
+        assert!(first.retry.is_some());
+        assert_eq!(device.body(), "written here\n");
+        assert_eq!(
+            device.row_deleted().await,
+            Some(0),
+            "the index took the file"
+        );
+
+        let second = device.apply(ops, true).await;
+
+        assert_eq!(second.retry, None);
+        assert_eq!(device.body(), BASE);
+        assert_eq!(
+            device.history().await,
+            [("sync".to_string(), "written here\n".to_string())]
+        );
+
+        device.close(vault).await;
+    }
+
+    /// A note in the trash here, its file edited there, comes back by a
+    /// peer's restore: the edit is kept in the history.
+    #[tokio::test]
+    async fn a_file_edited_in_the_trash_is_kept_when_a_restore_replaces_it() {
+        let vault = Vault::new().await;
+        let peer = vault.device("peer-a");
+        let mut log = LocalState::default();
+        let blob = peer.put_blob(&note_file(BASE)).await.unwrap();
+        let put = put_op(
+            NOTE,
+            at(1000, "peer-a"),
+            blob.clone(),
+            vec![],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![put]).await.unwrap();
+        let mut device = Device::joined(&vault).await;
+        device.pull(true).await;
+        let delete = delete_op(NOTE, at(2000, "peer-a"), vec![blob.clone()]);
+        peer.push(&mut log, vec![delete]).await.unwrap();
+        device.pull(true).await;
+        assert_eq!(device.row_deleted().await, Some(1));
+        assert!(device.note_state().await.deleted);
+        device.edit("edited in the trash\n");
+
+        let restore = put_op(
+            NOTE,
+            at(3000, "peer-a"),
+            blob.clone(),
+            vec![blob],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![restore]).await.unwrap();
+        device.pull(true).await;
+
+        assert_eq!(device.row_deleted().await, Some(0));
+        assert_eq!(device.body(), BASE);
+        assert_eq!(
+            device.history().await,
+            [("sync".to_string(), "edited in the trash\n".to_string())]
+        );
+
+        device.close(vault).await;
+    }
+
+    /// Applies `ops` while a save holds the lock, and lets the save write
+    /// `body` into the file once the apply has read it and waits for the lock.
+    async fn apply_racing_a_save(device: &mut Device, ops: Vec<Op>, body: &str) -> ApplyOutcome {
+        let save = device.state.notes.save.clone();
+        let path = device.note_path();
+        let held = save.lock().await;
+        let mut apply = Box::pin(device.apply(ops, false));
+        let waited = tokio::time::timeout(std::time::Duration::from_millis(300), &mut apply).await;
+        assert!(waited.is_err(), "the apply wrote without the lock");
+        write_raw(&path, &note_file(body)).unwrap();
+        drop(held);
+        apply.await
+    }
+
+    /// Two devices edited from one ancestor; a save lands here between the
+    /// apply's read of the file and the write of the merge. The merge is not
+    /// written over it: the op is tried again next cycle.
+    #[tokio::test]
+    async fn a_merge_is_not_written_over_a_save_made_while_it_ran() {
+        let vault = Vault::new().await;
+        let mut device = Device::joined(&vault).await;
+        let (peer, mut log, base, ours) =
+            edited_on_this_device(&vault, &mut device, "one, here\ntwo\nthree\n").await;
+        let theirs = peer
+            .put_blob(&note_file("one\ntwo\nthree, there\n"))
+            .await
+            .unwrap();
+        let put = put_op(NOTE, at(5000, "peer-a"), theirs, vec![base], "md", "Deploy");
+        peer.push(&mut log, vec![put]).await.unwrap();
+        let seq = device.local.own_seq;
+        let ops = device.pulled().await;
+
+        let outcome = apply_racing_a_save(&mut device, ops, "saved meanwhile\n").await;
+
+        assert!(outcome.retry.is_some());
+        assert_eq!(device.body(), "saved meanwhile\n");
+        assert_eq!(device.note_state().await.head_blob, ours);
+        assert_eq!(device.local.own_seq, seq, "no merge went out");
+        assert!(device.history().await.is_empty());
+
+        device.close(vault).await;
+    }
+
+    /// A fast-forward is not written over a save that landed while it ran.
+    #[tokio::test]
+    async fn a_fast_forward_is_not_written_over_a_save_made_while_it_ran() {
+        let vault = Vault::new().await;
+        let mut device = Device::joined(&vault).await;
+        let (peer, mut log, _, ours) =
+            edited_on_this_device(&vault, &mut device, "one, here\ntwo\nthree\n").await;
+        let theirs = peer
+            .put_blob(&note_file("one, here\ntwo\nthree, there\n"))
+            .await
+            .unwrap();
+        let put = put_op(
+            NOTE,
+            at(5000, "peer-a"),
+            theirs,
+            vec![ours.clone()],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![put]).await.unwrap();
+        let ops = device.pulled().await;
+
+        let outcome = apply_racing_a_save(&mut device, ops, "saved meanwhile\n").await;
+
+        assert!(outcome.retry.is_some());
+        assert_eq!(device.body(), "saved meanwhile\n");
+        assert_eq!(device.note_state().await.head_blob, ours);
+
+        device.close(vault).await;
+    }
+
+    /// A note in the trash here whose state went with the binding (a leave,
+    /// then a join) is not this device's deletion: another device that took
+    /// it out of the trash meanwhile has the newer word. The note leaves the
+    /// trash here too, and no tombstone of this device goes out over it.
+    #[tokio::test]
+    async fn a_note_in_the_trash_without_a_state_takes_a_restore_of_the_vault() {
+        let vault = Vault::new().await;
+        let peer = vault.device("peer-a");
+        let mut log = LocalState::default();
+        let blob = peer.put_blob(&note_file("body")).await.unwrap();
+        let put = put_op(
+            NOTE,
+            at(1000, "peer-a"),
+            blob.clone(),
+            vec![],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![put]).await.unwrap();
+        let mut device = Device::joined(&vault).await;
+        device.pull(true).await;
+        crate::crud::trash_note(NOTE, &device.state.core)
+            .await
+            .unwrap();
+        assert_eq!(device.row_deleted().await, Some(1));
+        sqlx::query("DELETE FROM sync_note_state")
+            .execute(&device.state.core.db)
+            .await
+            .unwrap();
+
+        let restored = put_op(
+            NOTE,
+            at(3000, "peer-a"),
+            blob.clone(),
+            vec![blob],
+            "md",
+            "Deploy",
+        );
+        peer.push(&mut log, vec![restored]).await.unwrap();
+        device.pull(true).await;
+
+        assert_eq!(device.row_deleted().await, Some(0));
+        let latest = peer.all_latest_ops().await.unwrap();
+        let op = latest
+            .iter()
+            .find(|op| op.entity_id == NOTE)
+            .expect("the note in the vault");
+        assert!(!op.deleted);
+        assert_eq!(op.hlc, at(3000, "peer-a"));
+        assert!(device.next_push().await.is_empty());
 
         device.close(vault).await;
     }

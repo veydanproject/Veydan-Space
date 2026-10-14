@@ -13,16 +13,48 @@ pub mod media;
 pub mod settings;
 
 use crate::start::commands as start;
-use crate::{Module, Switch};
+use crate::{Grant, Module, Switch, WindowGrant, ANY_WINDOW};
 
 pub(crate) fn module() -> Module {
     Module {
         #[cfg(desktop)]
         sync: Some(sync),
         switch: Switch::Always,
+        windows: &[WindowGrant {
+            label: ANY_WINDOW,
+            commands: Grant::Only(SECONDARY),
+        }],
         ..commands()
     }
 }
+
+/// What every window besides `main` reaches of the shell (platform-spec
+/// 5.2): the start of the page, the lock screen, its own frame, links and
+/// the clipboard, names of entities, the status of sync, the camera. A
+/// module's own window gets the rest it needs from the module's grants.
+/// Not here, so main alone reaches them: setting the lock, the data's
+/// deletion and the demo, sync's configuration, the updater, the switches of
+/// the modules, the tray and the language.
+pub(crate) const SECONDARY: &[&str] = &[
+    "app_start_error",
+    "host_info",
+    "modules_list",
+    "lock_status",
+    "lock_unlock",
+    "lock_touch",
+    "lock_recovery_check",
+    "lock_recover",
+    "lock_recover_keep",
+    #[cfg(desktop)]
+    "window_minimize",
+    #[cfg(desktop)]
+    "open_url",
+    "labels_resolve",
+    #[cfg(desktop)]
+    "clipboard_write_text",
+    "sync_status",
+    "media_grant_access",
+];
 
 /// The settings of the tray are shared between desktops.
 #[cfg(desktop)]
@@ -61,6 +93,12 @@ fn commands() -> Module {
             labels::labels_resolve,
             crate::update::update_check,
             crate::update::update_open,
+            #[cfg(desktop)]
+            crate::updater::updater_check,
+            #[cfg(desktop)]
+            crate::updater::updater_install,
+            #[cfg(desktop)]
+            crate::updater::app_relaunch,
             crate::switches::modules_list,
             crate::switches::modules_set_enabled,
             crate::switches::modules_choose,

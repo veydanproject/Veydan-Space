@@ -74,7 +74,9 @@ impl ManifestFetcher for HttpManifestFetcher {
 }
 
 /// The URLs to try: the built-in ones, then the `http` sources the current
-/// manifest names. Only `https://`, no duplicates.
+/// manifest names, lower `priority` first and the manifest's order among
+/// equals, as for `storage`: one meaning of the word in the whole document.
+/// Only `https://`, no duplicates.
 pub fn candidate_urls(builtin: &[&str], current: Option<&Manifest>) -> Vec<String> {
     let mut urls: Vec<String> = builtin.iter().map(|u| u.to_string()).collect();
     if let Some(m) = current {
@@ -86,7 +88,7 @@ pub fn candidate_urls(builtin: &[&str], current: Option<&Manifest>) -> Vec<Strin
                 _ => None,
             })
             .collect();
-        sources.sort_by_key(|a| std::cmp::Reverse(a.0));
+        sources.sort_by_key(|a| a.0);
         urls.extend(sources.into_iter().map(|(_, u)| u));
     }
     let mut seen = std::collections::BTreeSet::new();
@@ -94,18 +96,19 @@ pub fn candidate_urls(builtin: &[&str], current: Option<&Manifest>) -> Vec<Strin
     urls
 }
 
-/// Try `urls` in order; the first valid manifest signed by `pinned` wins.
-/// On failure the error lists what went wrong at each place.
-pub async fn fetch_signed(fetcher: &dyn ManifestFetcher, urls: &[String], pinned: &str) -> Result<(Manifest, String)> {
+/// Try `urls` in order; the first valid manifest signed by `pinned` wins:
+/// the manifest, where it came from and the signed event itself, which is
+/// what is kept. On failure the error lists what went wrong at each place.
+pub async fn fetch_signed(fetcher: &dyn ManifestFetcher, urls: &[String], pinned: &str) -> Result<(Manifest, String, String)> {
     let mut errors = Vec::new();
     for url in urls {
         let parsed = match fetcher.fetch(url).await {
             Ok(body) if body.len() > MAX_MANIFEST_BYTES => Err(MessengerError::Invalid("manifest too large".into())),
-            Ok(body) => Manifest::parse_signed(&body, Some(pinned)),
+            Ok(body) => Manifest::parse_signed(&body, Some(pinned)).map(|m| (m, body)),
             Err(e) => Err(e),
         };
         match parsed {
-            Ok(m) => return Ok((m, url.clone())),
+            Ok((m, body)) => return Ok((m, url.clone(), body)),
             Err(e) => errors.push(format!("{url}: {e}")),
         }
     }
@@ -161,7 +164,7 @@ mod tests {
             ("https://c/m".to_string(), Ok(signed(&project, 7))),
             ("https://d/m".to_string(), Ok(signed(&project, 8))),
         ]));
-        let (m, url) =
+        let (m, url, _) =
             fetch_signed(&fetcher, &urls(&["https://x/m", "https://a/m", "https://b/m", "https://c/m", "https://d/m"]), &pinned)
                 .await
                 .unwrap();
@@ -196,9 +199,29 @@ mod tests {
         ];
         assert_eq!(
             candidate_urls(&["https://a/m", "https://b/m"], Some(&m)),
-            urls(&["https://a/m", "https://b/m", "https://high/m", "https://low/m"])
+            urls(&["https://a/m", "https://b/m", "https://low/m", "https://high/m"])
         );
         assert_eq!(candidate_urls(MANIFEST_URLS, None).len(), MANIFEST_URLS.len());
+    }
+
+    #[tokio::test]
+    async fn a_source_of_lower_priority_is_asked_first_as_storage_is() {
+        let project = Keys::generate();
+        let mut m = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap();
+        m.sources = vec![
+            ManifestSource::Http { url: "https://spare/m".into(), regions: vec![], priority: 10 },
+            ManifestSource::Http { url: "https://main/m".into(), regions: vec![], priority: 1 },
+            ManifestSource::Http { url: "https://main-2/m".into(), regions: vec![], priority: 1 },
+        ];
+        let candidates = candidate_urls(&[], Some(&m));
+        assert_eq!(candidates, urls(&["https://main/m", "https://main-2/m", "https://spare/m"]), "equal ones keep their order");
+        // The spare keeps an old manifest, the main place the new one.
+        let fetcher = Fake(HashMap::from([
+            ("https://spare/m".to_string(), Ok(signed(&project, 3))),
+            ("https://main/m".to_string(), Ok(signed(&project, 4))),
+        ]));
+        let (got, url, _) = fetch_signed(&fetcher, &candidates, &project.public_key().to_hex()).await.unwrap();
+        assert_eq!((got.serial, url.as_str()), (4, "https://main/m"));
     }
 
     #[test]

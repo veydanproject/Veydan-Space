@@ -5,7 +5,7 @@
 // product of one module, a service and a fallback provider change
 // (platform-spec 10.3, 11.7, section 12).
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Component } from 'svelte';
 import type { EntityKindDef, ModuleDef } from './module';
 import { leavesOff, registry } from './registry';
@@ -260,5 +260,26 @@ describe('the catalog with a fallback provider', () => {
     expect(directory.foreign('workspace', 'ws-1')).toBeUndefined();
     // A reference to an owned entity that is gone keeps showing its id, as before.
     expect(directory.name('workspace', 'ws-1', tr)).toBe('ws-1');
+  });
+
+  it("shows another module's entities in a module's own window as a product without that module does", () => {
+    const own = { ...notes, windows: [{ label: 'notes', title: 'ctx_kind_note' as const }] };
+    use(browser, own);
+    const inWindow = (label: string) =>
+      vi.stubGlobal('window', { __TAURI_INTERNALS__: { metadata: { currentWindow: { label } } } });
+    try {
+      inWindow('notes');
+      expect(registry.here.map((m) => m.id)).toEqual(['notes']);
+      expect(directory.owned('workspace')).toBe(false);
+      expect(directory.list('workspace').map((w) => w.name)).toEqual(['Work WS']);
+      // A window no module owns shows no module's entities.
+      inWindow('other');
+      expect(registry.here).toEqual([]);
+      inWindow('main');
+      expect(registry.here.map((m) => m.id)).toEqual(['browser', 'notes']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(directory.owned('workspace')).toBe(true);
   });
 });

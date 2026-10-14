@@ -1,9 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the desktop windows",
+  "description": "Capability for the main desktop window; the notes window and quick capture have their own",
   "platforms": ["linux", "macOS", "windows"],
-  "windows": ["main", "notes", "quick-capture"],
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-minimize",
@@ -18,8 +18,6 @@
     "dialog:allow-save",
     "dialog:allow-open",
     "fs:allow-write-file",
-    "fs:allow-create",
-    "updater:default",
-    "process:allow-restart"
+    "fs:allow-create"
   ]
 }

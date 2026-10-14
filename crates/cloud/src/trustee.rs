@@ -492,6 +492,23 @@ impl Helper {
         if view.state != "open" {
             return Err(CloudError::new(words::REQUEST_CLOSED, format!("the request is {}", view.state)));
         }
+        // The look-up may be minutes old: the owner may have said «это не я»
+        // since. Read the request again; the share goes only to the very
+        // request that was shown, still open.
+        let again = self.api.recovery_request_get(&view.npub).await?;
+        let alive = again.is_some_and(|r| {
+            r.request_id == view.request_id
+                && r.temp_pub.as_deref() == Some(temp_pub.as_str())
+                && r.state.as_deref().unwrap_or("open") == "open"
+                && now().is_ok_and(|n| r.expires_at > n)
+        });
+        if !alive {
+            *guard(&self.session) = None;
+            return Err(CloudError::new(
+                words::REQUEST_CLOSED,
+                "the request is gone, changed or closed since it was looked up",
+            ));
+        }
         let mut fields = Map::new();
         fields.insert("request_id".into(), Value::String(view.request_id.clone()));
         fields.insert("t_pub".into(), Value::String(temp_pub.clone()));

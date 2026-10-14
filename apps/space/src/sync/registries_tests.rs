@@ -69,6 +69,7 @@ pub(super) async fn device_owning(registry: Registry, owners: &[&str], vault: &P
     state::check_registry(db, state.sync.registry())
         .await
         .unwrap();
+    state.sync.mark_ready();
     state.lock.open_default().await.unwrap();
     state
 }
@@ -76,12 +77,14 @@ pub(super) async fn device_owning(registry: Registry, owners: &[&str], vault: &P
 /// The app starts again with what `registry` syncs.
 async fn restart(state: &mut TestStates, registry: Registry) -> bool {
     state.sync = SyncManager::new(registry);
-    state::check_registry(&state.core.db, state.sync.registry())
+    let changed = state::check_registry(&state.core.db, state.sync.registry())
         .await
-        .unwrap()
+        .unwrap();
+    state.sync.mark_ready();
+    changed
 }
 
-async fn create_vault(state: &TestStates) {
+pub(super) async fn create_vault(state: &TestStates) {
     let db = &state.core.db;
     let storage = build_storage(&load_config(db).await).unwrap();
     let device = config::device_id(db).await.unwrap();
@@ -92,7 +95,7 @@ async fn create_vault(state: &TestStates) {
 }
 
 /// `sync_join_vault` without the app.
-async fn join_vault(state: &TestStates) {
+pub(super) async fn join_vault(state: &TestStates) {
     if join::join(
         &state.host(),
         &state.core,
@@ -1242,6 +1245,223 @@ async fn a_product_that_knows_every_type_collects_as_before() {
     let _ = std::fs::remove_dir_all(&vault);
 }
 
+// ── Two marks of the garbage collection ──────────────────────────────────────
+
+/// A snapshot op of `id` naming `manifest_blob`, pushed by `engine`.
+async fn publish_snapshot(engine: &Engine, db: &sqlx::SqlitePool, id: &str, manifest_blob: &str) {
+    let (mut local, last) = state::load_local_state(db).await.unwrap();
+    let mut clock = HlcClock::new(engine.device_id().to_string(), last.as_ref());
+    let op = Op {
+        entity_type: "profile_snapshot".into(),
+        entity_id: id.into(),
+        hlc: clock.now(),
+        deleted: false,
+        payload: json!({ "manifest_blob": manifest_blob, "taken_at": T1, "files": 1, "bytes": 3 }),
+    };
+    engine.push(&mut local, vec![op]).await.unwrap();
+    state::save_own_state(db, &local, &clock.last())
+        .await
+        .unwrap();
+}
+
+type DeleteHook = Box<dyn FnOnce(String) -> veydan_core::BoxFuture<'static, ()> + Send>;
+
+/// A storage whose first `delete` runs a hook with the key just before.
+struct OnDelete {
+    inner: Box<dyn veydan_sync::Storage>,
+    hook: tokio::sync::Mutex<Option<DeleteHook>>,
+}
+
+#[async_trait::async_trait]
+impl veydan_sync::Storage for OnDelete {
+    async fn list(&self, prefix: &str) -> veydan_sync::Result<Vec<String>> {
+        self.inner.list(prefix).await
+    }
+    async fn get(&self, key: &str) -> veydan_sync::Result<Option<Vec<u8>>> {
+        self.inner.get(key).await
+    }
+    async fn put(&self, key: &str, data: &[u8]) -> veydan_sync::Result<()> {
+        self.inner.put(key, data).await
+    }
+    async fn delete(&self, key: &str) -> veydan_sync::Result<()> {
+        let hook = self.hook.lock().await.take();
+        if let Some(hook) = hook {
+            hook(key.to_string()).await;
+        }
+        self.inner.delete(key).await
+    }
+    async fn exists(&self, key: &str) -> veydan_sync::Result<bool> {
+        self.inner.exists(key).await
+    }
+    async fn put_if_absent(&self, key: &str, data: &[u8]) -> veydan_sync::Result<bool> {
+        self.inner.put_if_absent(key, data).await
+    }
+}
+
+/// The engine of `state` over `storage` in place of its own.
+async fn engine_over(state: &TestStates, storage: Box<dyn veydan_sync::Storage>) -> Engine {
+    let db = &state.core.db;
+    let binding = config::load_binding(db).await.unwrap();
+    let vmk = veydan_sync::Vmk::from_base64(&binding.vmk_b64).unwrap();
+    let device = config::device_id(db).await.unwrap();
+    Engine::with_key(storage, &vmk, &binding.vault_id, &device)
+}
+
+/// Two snapshots' worth of blobs, named by nothing, are candidates of B
+/// since a day. B's pass deletes the first of them; just then A takes up the
+/// other pair (the same content, the same names, nothing uploaded) and
+/// publishes a snapshot naming it. The read of the logs before B's next
+/// delete finds that snapshot: the pair it names stays.
+#[tokio::test]
+async fn a_snapshot_published_while_the_garbage_is_collected_keeps_its_blobs() {
+    let vault = crate::db::test_dir();
+    let b = device(sync_registry(), &vault).await;
+    create_vault(&b).await;
+    let a = device(sync_registry(), &vault).await;
+    join_vault(&a).await;
+
+    let a_engine = open_engine(&a.core).await.unwrap();
+    let mut pairs = Vec::new();
+    for content in ["one", "two"] {
+        let file = a_engine.put_blob(content.as_bytes()).await.unwrap();
+        let manifest = format!(
+            r#"{{"files":[{{"path":"prefs.js","blob":"{file}","size":3,"hash":"{content}"}}]}}"#
+        );
+        let manifest = a_engine.put_blob(manifest.as_bytes()).await.unwrap();
+        pairs.push([manifest, file]);
+    }
+    let db = &b.core.db;
+    let registry = b.sync.registry();
+    gc::run(&open_engine(&b.core).await.unwrap(), db, registry)
+        .await
+        .unwrap();
+    let day_ago = chrono::Utc::now().timestamp_millis() - 25 * 60 * 60 * 1000;
+    sqlx::query("UPDATE sync_gc_candidates SET first_seen = ?")
+        .bind(day_ago)
+        .execute(db)
+        .await
+        .unwrap();
+
+    let first: std::sync::Arc<std::sync::Mutex<Option<String>>> = Default::default();
+    let hook: DeleteHook = {
+        let (first, pairs, a_db) = (first.clone(), pairs.clone(), a.core.db.clone());
+        Box::new(move |key: String| {
+            Box::pin(async move {
+                let name = key.strip_prefix("blobs/").unwrap().to_string();
+                let other = pairs.iter().find(|p| !p.contains(&name)).unwrap();
+                publish_snapshot(&a_engine, &a_db, "pr-x", &other[0]).await;
+                *first.lock().unwrap() = Some(name);
+            })
+        })
+    };
+    let storage = OnDelete {
+        inner: build_storage(&load_config(db).await).unwrap(),
+        hook: tokio::sync::Mutex::new(Some(hook)),
+    };
+    let engine = engine_over(&b, Box::new(storage)).await;
+    let pace = gc::Pace {
+        every: 1,
+        after: std::time::Duration::from_secs(3600),
+    };
+    let outcome = gc::run_paced(&engine, db, registry, pace).await.unwrap();
+
+    let first = first.lock().unwrap().clone().expect("a delete");
+    let gone = pairs.iter().find(|p| p.contains(&first)).unwrap();
+    let kept = pairs.iter().find(|p| !p.contains(&first)).unwrap();
+    let left = blobs(&b).await;
+    assert_eq!(outcome.removed, 2);
+    for blob in gone {
+        assert!(!left.contains(blob), "{blob}");
+    }
+    for blob in kept {
+        assert!(left.contains(blob), "{blob}");
+    }
+    let candidates: Vec<String> = sqlx::query_scalar("SELECT blob FROM sync_gc_candidates")
+        .fetch_all(db)
+        .await
+        .unwrap();
+    assert!(candidates.is_empty(), "{candidates:?}");
+
+    for state in [a, b] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// The blob of a profile file the snapshot of A names is gone: another
+/// device's GC took it between its mark and the reference. A's next pass
+/// finds the snapshot naming what is not there, the next cycle sends the
+/// profile again and uploads the blob, and B, joining later, gets the file.
+#[tokio::test]
+async fn a_blob_a_foreign_gc_took_under_a_snapshot_is_uploaded_again() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    space_writes_everything(&a).await;
+    cycle(&a).await;
+    let db = &a.core.db;
+    let (manifest, head): (String, String) = sqlx::query_as(
+        "SELECT manifest_json, head_hlc FROM sync_profile_files_state WHERE profile_id = 'pr-1'",
+    )
+    .fetch_one(db)
+    .await
+    .unwrap();
+    let manifest: Value = serde_json::from_str(&manifest).unwrap();
+    let prefs = manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["path"] == "prefs.js")
+        .unwrap()["blob"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let engine = open_engine(&a.core).await.unwrap();
+    engine.delete_blob(&prefs).await.unwrap();
+
+    gc::run(&engine, db, a.sync.registry()).await.unwrap();
+    let missing = gc::missing_refs(db).await;
+    assert_eq!(missing.len(), 1, "{missing:?}");
+    assert_eq!(
+        (
+            missing[0].entity_type.as_str(),
+            missing[0].entity_id.as_str()
+        ),
+        ("profile_snapshot", "pr-1")
+    );
+    assert_eq!(missing[0].hlc.encode(), head);
+
+    cycle(&a).await;
+    assert!(engine.blob_exists(&prefs).await.unwrap());
+    let healed: String = sqlx::query_scalar(
+        "SELECT head_hlc FROM sync_profile_files_state WHERE profile_id = 'pr-1'",
+    )
+    .fetch_one(db)
+    .await
+    .unwrap();
+    assert!(
+        Hlc::decode(&healed) > Hlc::decode(&head),
+        "{healed} / {head}"
+    );
+
+    let b = device(sync_registry(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    let path: String = sqlx::query_scalar("SELECT profile_path FROM profiles WHERE id = 'pr-1'")
+        .fetch_one(&b.core.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read(Path::new(&path).join("firefox-profile/prefs.js")).unwrap(),
+        b"user_pref(\"a\", 1);"
+    );
+
+    for state in [a, b] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
 // ── Rule 3: the fingerprint of the registry ──────────────────────────────────
 
 #[tokio::test]
@@ -1469,6 +1689,7 @@ async fn a_key_row_the_join_held_back_is_settled_once_after_a_new_registry() {
     state::check_registry(&db, device_b.sync.registry())
         .await
         .unwrap();
+    device_b.sync.mark_ready();
     join_vault(&device_b).await;
     assert!(settings::get(&db, config::JOIN_PENDING).await.is_some());
     assert!(restart(&mut device_b, sync_registry_of(&["pass", "notes"])).await);
@@ -1572,9 +1793,10 @@ async fn cycle_with_a_broken_log(state: &TestStates, broken: &str) -> String {
         .unwrap()
 }
 
-/// A device whose log cannot be read does not make the others' logs come
-/// again on every cycle: a log read in full for a new registry is not read
-/// in full again, while the broken one is tried each cycle.
+/// A device whose log cannot be read holds back neither the others' logs nor
+/// the second read of the vault for a new registry: its log is read as far
+/// as any read of it gets and counts as read, and the rows of the new types
+/// go out (audit A2-11).
 #[tokio::test]
 async fn a_log_read_again_in_full_is_not_read_again() {
     let vault = crate::db::test_dir();
@@ -1585,8 +1807,11 @@ async fn a_log_read_again_in_full_is_not_read_again() {
     let broken = device(sync_registry(), &vault).await;
     join_vault(&broken).await;
     save_password(&broken, "pw-2", "swordfish").await;
+    // The first cycle after the join reads the vault, the second pushes.
+    cycle(&broken).await;
     cycle(&broken).await;
     let broken_id = device_id(&broken).await;
+
     // Its chunks no longer open.
     for chunk in std::fs::read_dir(vault.join("devices").join(&broken_id).join("log"))
         .unwrap()
@@ -1597,24 +1822,94 @@ async fn a_log_read_again_in_full_is_not_read_again() {
         std::fs::write(chunk.path(), bytes).unwrap();
     }
 
+    // The join takes that log up to its broken file and says so. The log
+    // holds the wait of the join as any log a pull stops in (a copy may be
+    // still on its way), until the wait of five cycles ends with a warning.
     let mut notes = device(notes_like(), &vault).await;
     join_vault(&notes).await;
     let db = notes.core.db.clone();
+    let warning = settings::get(&db, "sync_last_warning")
+        .await
+        .unwrap_or_default();
+    assert!(warning.contains(&broken_id), "{warning}");
+    for _ in 0..4 {
+        cycle_with_a_broken_log(&notes, &broken_id).await;
+        assert!(join::fresh_binding(&db).await.is_some());
+    }
     cycle_with_a_broken_log(&notes, &broken_id).await;
+    assert!(join::fresh_binding(&db).await.is_none());
 
     assert!(restart(&mut notes, sync_registry_of(&["notes", "pass"])).await);
     let applied = cycle_with_a_broken_log(&notes, &broken_id).await;
     assert_ne!(applied, "0", "what the earlier registry skipped");
     assert_eq!(reveal(&notes, "pw-1").await, "hunter2");
-    assert_eq!(state::reread_peers(&db).await, [device_id(&space).await]);
-    assert!(state::reread(&db).await.is_some());
+    // The broken log was read as far as any read of it gets: it does not
+    // hold the vault's second read open (audit A2-11).
+    assert_eq!(state::reread(&db).await, None);
+    assert!(state::reread_peers(&db).await.is_empty());
+    assert_eq!(cycle_with_a_broken_log(&notes, &broken_id).await, "0");
 
-    assert_eq!(cycle_with_a_broken_log(&notes, &broken_id).await, "0");
-    assert_eq!(cycle_with_a_broken_log(&notes, &broken_id).await, "0");
+    // What the new registry takes goes out from here on.
+    let pushed = own_seq(&notes).await;
+    save_password(&notes, "pw-3", "tiger").await;
+    cycle_with_a_broken_log(&notes, &broken_id).await;
+    assert!(own_seq(&notes).await > pushed);
+    cycle_with_a_broken_log(&space, &broken_id).await;
+    assert_eq!(reveal(&space, "pw-3").await, "tiger");
+
+    for state in [space, broken, notes] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A log whose first chunk broke after this device read past it: read again
+/// for a new registry it stops below where the plain read stands. It is
+/// tried again for five cycles, then counts as read with a warning — no
+/// read gets further — and the vault's second read ends (audit A2-11).
+#[tokio::test]
+async fn a_log_broken_below_the_plain_read_counts_as_read_after_five_tries() {
+    let vault = crate::db::test_dir();
+    let space = device(sync_registry(), &vault).await;
+    create_vault(&space).await;
+    save_password(&space, "pw-1", "hunter2").await;
+    cycle(&space).await;
+    let broken = device(sync_registry(), &vault).await;
+    join_vault(&broken).await;
+    save_password(&broken, "pw-2", "swordfish").await;
+    cycle(&broken).await;
+    cycle(&broken).await;
+    let broken_id = device_id(&broken).await;
+
+    let mut notes = device(notes_like(), &vault).await;
+    join_vault(&notes).await;
+    cycle(&notes).await;
+    let db = notes.core.db.clone();
+    assert!(join::fresh_binding(&db).await.is_none());
+
+    // Its first chunk is no envelope any more; the plain read is past it.
+    let first = vault
+        .join("devices")
+        .join(&broken_id)
+        .join("log")
+        .join("00000001.bin");
+    std::fs::write(&first, b"").unwrap();
+    assert!(restart(&mut notes, sync_registry_of(&["notes", "pass"])).await);
+    for _ in 0..4 {
+        cycle_with_a_broken_log(&notes, &broken_id).await;
+        assert!(state::reread(&db).await.is_some());
+    }
+    let warnings = veydan_sync_host::cycle(notes.host(), &notes.core, &notes.sync)
+        .await
+        .unwrap();
     assert!(
-        state::reread(&db).await.is_some(),
-        "the broken log is still owed"
+        warnings
+            .iter()
+            .any(|w| w.contains(&broken_id) && w.contains("(5 times)")),
+        "{warnings:?}"
     );
+    assert_eq!(state::reread(&db).await, None);
+    assert_eq!(reveal(&notes, "pw-1").await, "hunter2");
 
     for state in [space, broken, notes] {
         close(state).await;
@@ -1686,5 +1981,962 @@ async fn the_vault_manifest_stays_at_version_1() {
     );
 
     close(space).await;
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A tombstone survives the compaction of the log of the device that
+/// deleted the row, however long ago it was made: a device that joins later
+/// reads the insert of the first device and must still see it deleted.
+#[tokio::test]
+async fn a_deleted_password_stays_deleted_after_the_log_is_compacted() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    save_password(&a, "pw-1", "hunter2").await;
+    cycle(&a).await;
+
+    let b = device(sync_registry(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    assert_eq!(reveal(&b, "pw-1").await, "hunter2");
+    sql(&b, "DELETE FROM passwords WHERE id = 'pw-1'").await;
+    cycle(&b).await;
+
+    // The snapshot is folded long after the deletion; nothing is dropped.
+    let (local, _) = state::load_local_state(&b.core.db).await.unwrap();
+    open_engine(&b.core)
+        .await
+        .unwrap()
+        .compact(&local)
+        .await
+        .unwrap();
+
+    let c = device(sync_registry(), &vault).await;
+    join_vault(&c).await;
+    cycle(&c).await;
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM passwords WHERE id = 'pw-1'")
+        .fetch_one(&c.core.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0, "the password came back");
+
+    for state in [a, b, c] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A cycle before the checks of the start went through refuses and
+/// publishes nothing; it runs once they have.
+#[tokio::test]
+async fn a_cycle_waits_for_the_checks_of_the_start() {
+    let vault = crate::db::test_dir();
+    let mut space = device(sync_registry(), &vault).await;
+    create_vault(&space).await;
+    save_password(&space, "pw-1", "hunter2").await;
+
+    space.sync = SyncManager::new(sync_registry());
+    assert!(!space.sync.is_ready());
+    let refused = veydan_sync_host::cycle(space.host(), &space.core, &space.sync)
+        .await
+        .expect_err("a cycle before the checks must refuse");
+    assert!(refused.to_string().contains("not ready"), "{refused}");
+    assert_eq!(own_seq(&space).await, 0, "nothing was published");
+
+    veydan_sync_host::prepare(&space.core, &space.sync)
+        .await
+        .unwrap();
+    assert!(space.sync.is_ready());
+    cycle(&space).await;
+    assert!(own_seq(&space).await > 0);
+
+    close(space).await;
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+// ── Ids of profiles and their folders ────────────────────────────────────────
+
+/// Audit SYNCROWS-13: the folder of a profile is its id under `profiles/`,
+/// and its tombstone removes that folder. A row or a tombstone with the id
+/// `..` is never applied, so the data directory stays; a row an older build
+/// left with the data directory as its path loses its row to a tombstone,
+/// never the directory; an id that is not a plain name (`a.b`, `C:x`, the
+/// drive on Windows) gets a folder by its hash inside `profiles/`.
+#[tokio::test]
+async fn no_id_of_a_profile_reaches_a_folder_above_profiles() {
+    let state = TestStates::new().await;
+    let data = state.core.app_data_dir.clone();
+    let tables = state.sync.registry().step_rows(SYNC_PLAN.apply, "app rows");
+    let profile = |id: &str, wall_ms: u64, put: bool| Op {
+        entity_type: "profile".into(),
+        entity_id: id.into(),
+        hlc: Hlc {
+            wall_ms,
+            counter: 0,
+            device_id: "dev-a".into(),
+        },
+        deleted: !put,
+        payload: if put {
+            json!({
+                "name": id, "browser_type": "camoufox", "fingerprint_preset": "windows",
+                "created_at": T1,
+            })
+        } else {
+            json!({})
+        },
+    };
+    let apply = |ops: Vec<Op>| {
+        let (state, tables) = (&state, &tables);
+        async move {
+            rows::apply_ops(&state.host(), &state.core, tables, &ops)
+                .await
+                .unwrap();
+        }
+    };
+    let path_of = |id: &'static str| {
+        let db = state.core.db.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT profile_path FROM profiles WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&db)
+                .await
+                .unwrap()
+        }
+    };
+    let alive = data.join("alive.txt");
+    write(&alive, b"the data directory");
+
+    apply(vec![profile("..", 1000, true), profile("..", 2000, false)]).await;
+    assert!(path_of("..").await.is_none());
+    assert!(alive.is_file());
+    assert!(data.join("profiles").is_dir());
+
+    for (id, path) in [
+        ("pr-old", data.join("profiles").join("..")),
+        ("pr-root", data.join("profiles")),
+    ] {
+        sql(&state, &format!(
+            "INSERT INTO profiles (id, name, status, profile_path, browser_type, fingerprint_preset, created_at, updated_at)
+             VALUES ('{id}', 'Old', 'stopped', '{}', 'camoufox', 'windows', '{T1}', '{T1}')",
+            path.display()
+        ))
+        .await;
+    }
+    apply(vec![
+        profile("pr-old", 3000, false),
+        profile("pr-root", 3000, false),
+    ])
+    .await;
+    assert!(path_of("pr-old").await.is_none());
+    assert!(path_of("pr-root").await.is_none());
+    assert!(alive.is_file());
+    assert!(data.join("profiles").is_dir());
+
+    apply(vec![
+        profile("pr-1", 4000, true),
+        profile("a.b", 4000, true),
+        profile("C:x", 4000, true),
+    ])
+    .await;
+    assert_eq!(
+        path_of("pr-1").await.map(PathBuf::from),
+        Some(data.join("profiles").join("pr-1"))
+    );
+    let mut hashed = Vec::new();
+    for id in ["a.b", "C:x"] {
+        let path = PathBuf::from(path_of(id).await.expect(id));
+        assert_eq!(path.parent(), Some(data.join("profiles").as_path()), "{id}");
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with("h-") && name.len() == 18, "{name}");
+        assert!(path.is_dir(), "{id}");
+        hashed.push(path);
+    }
+    assert_ne!(hashed[0], hashed[1]);
+    apply(vec![
+        profile("a.b", 5000, false),
+        profile("C:x", 5000, false),
+    ])
+    .await;
+    for path in &hashed {
+        assert!(!path.exists(), "{}", path.display());
+    }
+    assert!(data.join("profiles").join("pr-1").is_dir());
+    assert!(alive.is_file());
+
+    close(state).await;
+}
+
+async fn password_title(state: &TestStates, id: &str) -> String {
+    sqlx::query_scalar("SELECT title FROM passwords WHERE id = ?")
+        .bind(id)
+        .fetch_one(&state.core.db)
+        .await
+        .unwrap()
+}
+
+/// An edit made after the collect of a cycle, before its apply brings the
+/// newer op of another device for the same row, is not written over: the
+/// next cycle publishes it, later than the other device's, and both devices
+/// end with it.
+#[tokio::test]
+async fn an_edit_between_the_collect_and_the_apply_is_not_lost() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    save_password(&a, "pw-1", "hunter2").await;
+    cycle(&a).await;
+    let b = device(sync_registry(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    assert_eq!(password_title(&b, "pw-1").await, "pw-1");
+
+    sql(
+        &a,
+        "UPDATE passwords SET title = 'from a' WHERE id = 'pw-1'",
+    )
+    .await;
+    cycle(&a).await;
+    // B collected already; the user edits; the apply of the cycle comes.
+    sql(
+        &b,
+        "UPDATE passwords SET title = 'from b' WHERE id = 'pw-1'",
+    )
+    .await;
+    let from_a = ops_of(&b, &device_id(&a).await).await;
+    assert!(from_a.iter().any(|op| op.entity_id == "pw-1"));
+    apply_rows(&b, &from_a).await;
+    assert_eq!(password_title(&b, "pw-1").await, "from b");
+
+    // The edit of B is later than A's op on any clock.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    cycle(&b).await;
+    cycle(&a).await;
+    assert_eq!(password_title(&a, "pw-1").await, "from b");
+    assert_eq!(password_title(&b, "pw-1").await, "from b");
+
+    for state in [a, b] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+// ── The own log (spec 9.3, "the own log: pending and reconciliation") ────────
+
+/// A storage whose answer to the next conditional write is lost: the write
+/// lands, the device hears an error.
+struct LostAnswer {
+    inner: veydan_sync::LocalDir,
+    lose: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait::async_trait]
+impl veydan_sync::Storage for LostAnswer {
+    async fn list(&self, prefix: &str) -> veydan_sync::Result<Vec<String>> {
+        self.inner.list(prefix).await
+    }
+    async fn get(&self, key: &str) -> veydan_sync::Result<Option<Vec<u8>>> {
+        self.inner.get(key).await
+    }
+    async fn put(&self, key: &str, data: &[u8]) -> veydan_sync::Result<()> {
+        self.inner.put(key, data).await
+    }
+    async fn delete(&self, key: &str) -> veydan_sync::Result<()> {
+        self.inner.delete(key).await
+    }
+    async fn put_if_absent(&self, key: &str, data: &[u8]) -> veydan_sync::Result<bool> {
+        let written = self.inner.put_if_absent(key, data).await?;
+        if self.lose.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            return Err(veydan_sync::SyncError::Storage("timeout".into()));
+        }
+        Ok(written)
+    }
+}
+
+/// An engine over the vault in `vault` whose answer to the next chunk
+/// write is lost.
+async fn lossy_engine(state: &TestStates, vault: &Path, id: &str) -> Engine {
+    let binding = config::load_binding(&state.core.db).await.unwrap();
+    Engine::with_key(
+        Box::new(LostAnswer {
+            inner: veydan_sync::LocalDir::new(vault),
+            lose: true.into(),
+        }),
+        &veydan_sync::Vmk::from_base64(&binding.vmk_b64).unwrap(),
+        &binding.vault_id,
+        id,
+    )
+}
+
+/// The position of the own log as the data file holds it.
+async fn own_position(state: &TestStates) -> (Option<String>, Option<String>) {
+    let db = &state.core.db;
+    (
+        settings::get(db, "sync_own_seq").await,
+        settings::get(db, "sync_own_head").await,
+    )
+}
+
+async fn set_own_position(state: &TestStates, (seq, head): &(Option<String>, Option<String>)) {
+    let db = &state.core.db;
+    settings::set(db, "sync_own_seq", seq.as_deref().unwrap())
+        .await
+        .unwrap();
+    settings::set(db, "sync_own_head", head.as_deref().unwrap())
+        .await
+        .unwrap();
+}
+
+async fn retitle(state: &TestStates, id: &str, title: &str) {
+    sql(
+        state,
+        &format!("UPDATE passwords SET title = '{title}' WHERE id = '{id}'"),
+    )
+    .await;
+}
+
+/// The chunk of a push whose answer was lost is in the vault; the next
+/// cycle replays the kept chunk and takes it as its own instead of colliding
+/// with it, so the device keeps its id and the other device gets the edit
+/// (audit A2-07, SYNCNOTES-01).
+#[tokio::test]
+async fn a_push_whose_answer_was_lost_does_not_rotate_the_device() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    save_password(&a, "pw-1", "hunter2").await;
+    cycle(&a).await;
+    let b = device(sync_registry(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    let id = device_id(&a).await;
+    let seq = own_seq(&a).await;
+
+    retitle(&a, "pw-1", "lost answer").await;
+    let db = &a.core.db;
+    let lossy = lossy_engine(&a, &vault, &id).await;
+    let (mut local, last) = state::load_local_state(db).await.unwrap();
+    let mut clock = HlcClock::new(id.clone(), last.as_ref());
+    let tables: Vec<_> = a.sync.registry().tables().iter().collect();
+    let changes = rows::collect_local_changes(&a.core, &mut clock, &tables, None)
+        .await
+        .unwrap();
+    assert!(!changes.ops.is_empty());
+    let failed = veydan_sync_host::push_own(
+        &lossy,
+        db,
+        a.sync.registry(),
+        &mut local,
+        &clock,
+        changes.ops,
+    )
+    .await
+    .unwrap_err();
+    assert!(!failed.rotated, "{}", failed.error);
+    assert_eq!(own_seq(&a).await, seq);
+    assert!(state::load_own_pending(db).await.is_some());
+
+    cycle(&a).await;
+    assert_eq!(device_id(&a).await, id, "no rotation");
+    assert!(state::load_own_pending(db).await.is_none());
+    // The replayed chunk, then the rows collected again.
+    assert_eq!(own_seq(&a).await, seq + 2);
+    assert!(config::former_device_ids(db).await.is_empty());
+    cycle(&b).await;
+    assert_eq!(password_title(&b, "pw-1").await, "lost answer");
+    let devices = std::fs::read_dir(vault.join("devices")).unwrap().count();
+    assert_eq!(devices, 2);
+
+    for state in [a, b] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A profile row of Space at `pr-<n>`.
+async fn add_profile(state: &TestStates, id: &str) {
+    let path = state.core.app_data_dir.join("profiles").join(id);
+    sql(
+        state,
+        &format!(
+            "INSERT INTO profiles (id, name, status, profile_path, browser_type, fingerprint_preset,
+               created_at, updated_at)
+             VALUES ('{id}', 'Brand {id}', 'stopped', '{}', 'camoufox', 'windows', '{T1}', '{T1}')",
+            path.display()
+        ),
+    )
+    .await;
+}
+
+/// The device another device's lease of `id` names, as this one sees it.
+async fn lease_of(state: &TestStates, id: &str) -> Option<String> {
+    super::profile_files::foreign_lease(&state.core, id)
+        .await
+        .unwrap()
+        .map(|(device, _)| device)
+}
+
+/// A cycle that rotates the device id; its error.
+async fn rotating_cycle(state: &TestStates) -> String {
+    let before = device_id(state).await;
+    let err = veydan_sync_host::cycle(state.host(), &state.core, &state.sync)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("device id rotated"), "{err}");
+    assert_ne!(device_id(state).await, before);
+    err
+}
+
+/// A data file put back from a copy (a restored folder, a cloned machine)
+/// knows less of its log than the vault holds, the chunks past it folded
+/// into the snapshot: a chunk pushed from there would land in a range
+/// nobody reads. The cycle rotates the device id instead, and the next one
+/// pushes under the new id. The lease of a profile that runs here goes with
+/// the device; the lease of one that does not was the copy's and is let go
+/// here, and the old log read back never takes a profile again (audit
+/// KA2-02, A2-07, A2-19).
+#[tokio::test]
+async fn a_data_file_behind_its_log_rotates_the_device_and_moves_only_running_leases() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    save_password(&a, "pw-1", "hunter2").await;
+    for id in ["pr-1", "pr-2"] {
+        add_profile(&a, id).await;
+        super::profile_files::acquire_lease(&a.core, id)
+            .await
+            .unwrap();
+    }
+    cycle(&a).await;
+    let b = device(sync_registry(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    let old = device_id(&a).await;
+    assert_eq!(lease_of(&b, "pr-1").await, Some(old.clone()));
+
+    let copy = own_position(&a).await;
+    for title in ["one", "two", "three"] {
+        retitle(&a, "pw-1", title).await;
+        cycle(&a).await;
+    }
+    let (local, _) = state::load_local_state(&a.core.db).await.unwrap();
+    open_engine(&a.core)
+        .await
+        .unwrap()
+        .compact(&local)
+        .await
+        .unwrap();
+    set_own_position(&a, &copy).await;
+    retitle(&a, "pw-1", "after the copy").await;
+    sql(
+        &a,
+        "UPDATE profiles SET status = 'running' WHERE id = 'pr-1'",
+    )
+    .await;
+
+    rotating_cycle(&a).await;
+    let new = device_id(&a).await;
+    assert_eq!(config::former_device_ids(&a.core.db).await, [old.as_str()]);
+    assert_eq!(own_seq(&a).await, 0);
+
+    cycle(&a).await;
+    cycle(&b).await;
+    assert_eq!(password_title(&b, "pw-1").await, "after the copy");
+    assert_eq!(lease_of(&b, "pr-1").await, Some(new.clone()));
+    // The vault still says the old id holds pr-2: here it is free.
+    assert_eq!(lease_of(&b, "pr-2").await, Some(old.clone()));
+    // Its old log, read back as another device's, takes nothing from it.
+    cycle(&a).await;
+    assert_eq!(lease_of(&a, "pr-1").await, None);
+    assert_eq!(lease_of(&a, "pr-2").await, None);
+    assert_eq!(password_title(&a, "pw-1").await, "after the copy");
+    cycle(&b).await;
+    assert_eq!(lease_of(&b, "pr-1").await, Some(new));
+
+    for state in [a, b] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A chunk the vault lost (a folder put back, a file deleted) leaves the
+/// device ahead of its log, and another device may have read it already.
+/// The next cycle — with nothing new to push — rotates the device id
+/// rather than writing a different chunk under the same seq, which would
+/// break the chain for that reader, and the cycle after it publishes again
+/// what the lost chunk carried, the rows and a note alike (audit A2-12,
+/// KA2-11).
+#[tokio::test]
+async fn a_chunk_the_vault_lost_is_published_again_under_a_new_id() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    save_password(&a, "pw-1", "hunter2").await;
+    save_password(&a, "pw-2", "swordfish").await;
+    cycle(&a).await;
+    let b = device(sync_registry(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    let c = device(sync_registry(), &vault).await;
+    join_vault(&c).await;
+    cycle(&c).await;
+
+    retitle(&a, "pw-1", "lost").await;
+    write_note(&a, "note-1", "Lost", "In the lost chunk.").await;
+    cycle(&a).await;
+    let old = device_id(&a).await;
+    let seq = own_seq(&a).await;
+    // B reads the chunk before the vault loses it; C does not.
+    cycle(&b).await;
+    assert_eq!(password_title(&b, "pw-1").await, "lost");
+    std::fs::remove_file(
+        vault
+            .join("devices")
+            .join(&old)
+            .join("log")
+            .join(format!("{seq:08}.bin")),
+    )
+    .unwrap();
+
+    rotating_cycle(&a).await;
+    let new = device_id(&a).await;
+    // The old log is read from what the vault still holds of it.
+    let peer: (i64,) = sqlx::query_as("SELECT seq FROM sync_peers WHERE device_id = ?")
+        .bind(&old)
+        .fetch_one(&a.core.db)
+        .await
+        .unwrap();
+    assert_eq!(peer.0 as u64, seq - 1);
+    cycle(&a).await;
+    let republished: BTreeSet<String> = ops_of(&a, &new)
+        .await
+        .into_iter()
+        .map(|op| format!("{}:{}", op.entity_type, op.entity_id))
+        .collect();
+    assert!(republished.contains("password:pw-1"), "{republished:?}");
+    assert!(republished.contains("note:note-1"), "{republished:?}");
+    assert!(!republished.contains("password:pw-2"), "{republished:?}");
+    for peer in [&b, &c] {
+        cycle(peer).await;
+        assert_eq!(password_title(peer, "pw-1").await, "lost");
+        assert_eq!(password_title(peer, "pw-2").await, "pw-2");
+        assert!(note_text(peer, "note-1")
+            .await
+            .unwrap()
+            .contains("In the lost chunk."));
+    }
+
+    for state in [a, b, c] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A kept chunk of a copy whose other half already took that chunk and
+/// compacted past it: the slot is free again in the storage, but the
+/// snapshot closed it, and a chunk written there would be a second version
+/// of it with another hash. The copy rotates instead of replaying (audit
+/// S-B, skeptic N4).
+#[tokio::test]
+async fn a_kept_chunk_is_not_replayed_into_a_range_a_snapshot_closed() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    save_password(&a, "pw-1", "hunter2").await;
+    cycle(&a).await;
+    let b = device(sync_registry(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    let id = device_id(&a).await;
+    let seq = own_seq(&a).await;
+
+    retitle(&a, "pw-1", "kept").await;
+    let db = &a.core.db;
+    let lossy = lossy_engine(&a, &vault, &id).await;
+    let (mut local, last) = state::load_local_state(db).await.unwrap();
+    let mut collecting = HlcClock::new(id.clone(), last.as_ref());
+    let tables: Vec<_> = a.sync.registry().tables().iter().collect();
+    let changes = rows::collect_local_changes(&a.core, &mut collecting, &tables, None)
+        .await
+        .unwrap();
+    veydan_sync_host::push_own(
+        &lossy,
+        db,
+        a.sync.registry(),
+        &mut local,
+        &collecting,
+        changes.ops,
+    )
+    .await
+    .unwrap_err();
+    // The other half of the copy took the chunk and compacted up to it.
+    let engine = open_engine(&a.core).await.unwrap();
+    let stored = engine.own_log_status(0, "").await.unwrap();
+    assert_eq!(stored.seq, seq + 1);
+    engine
+        .compact(&veydan_sync::LocalState {
+            own_seq: stored.seq,
+            own_head_hash: stored.head_hash.clone(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let slot = vault
+        .join("devices")
+        .join(&id)
+        .join("log")
+        .join(format!("{:08}.bin", seq + 1));
+    assert!(!slot.exists());
+
+    rotating_cycle(&a).await;
+    assert!(!slot.exists(), "nothing written into the closed range");
+    cycle(&a).await;
+    cycle(&b).await;
+    assert_eq!(password_title(&b, "pw-1").await, "kept");
+
+    for state in [a, b] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A kept chunk of another vault or another device id (a leave and a join
+/// at once, an older build in between) is dropped, not replayed (audit S-B,
+/// skeptic N5).
+#[tokio::test]
+async fn a_kept_chunk_of_another_binding_is_dropped() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    save_password(&a, "pw-1", "hunter2").await;
+    cycle(&a).await;
+    let id = device_id(&a).await;
+    let seq = own_seq(&a).await;
+    let db = &a.core.db;
+    let (local, _) = state::load_local_state(db).await.unwrap();
+    let op = Op {
+        entity_type: "password".into(),
+        entity_id: "pw-other".into(),
+        hlc: Hlc {
+            wall_ms: 1,
+            counter: 0,
+            device_id: id.clone(),
+        },
+        deleted: false,
+        payload: json!({ "title": "of another vault" }),
+    };
+    for (vault_id, device) in [("another vault", id.clone()), ("", "another id".into())] {
+        let vault_id = if vault_id.is_empty() {
+            config::load_binding(db).await.unwrap().vault_id
+        } else {
+            vault_id.to_string()
+        };
+        state::save_own_pending(
+            db,
+            &state::OwnPending {
+                vault_id,
+                device_id: device,
+                seq: local.own_seq + 1,
+                prev_hash: local.own_head_hash.clone(),
+                ops: vec![op.clone()],
+            },
+        )
+        .await
+        .unwrap();
+        cycle(&a).await;
+        assert!(state::load_own_pending(db).await.is_none());
+        assert_eq!(own_seq(&a).await, seq);
+        assert_eq!(device_id(&a).await, id);
+    }
+
+    close(a).await;
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A storage whose listing of the logs is empty (a WebDAV server answering
+/// 404 for the folder) makes the own log look shorter than it is: the GET
+/// of the saved chunk by its key shows it is there, and nothing is rewound
+/// or rotated (audit S-B, skeptic N3).
+#[tokio::test]
+async fn a_listing_that_lacks_the_own_chunks_changes_nothing() {
+    struct NoLog(veydan_sync::LocalDir);
+
+    #[async_trait::async_trait]
+    impl veydan_sync::Storage for NoLog {
+        async fn list(&self, prefix: &str) -> veydan_sync::Result<Vec<String>> {
+            if prefix.contains("/log") {
+                return Ok(Vec::new());
+            }
+            self.0.list(prefix).await
+        }
+        async fn get(&self, key: &str) -> veydan_sync::Result<Option<Vec<u8>>> {
+            self.0.get(key).await
+        }
+        async fn put(&self, key: &str, data: &[u8]) -> veydan_sync::Result<()> {
+            self.0.put(key, data).await
+        }
+        async fn delete(&self, key: &str) -> veydan_sync::Result<()> {
+            self.0.delete(key).await
+        }
+    }
+
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    save_password(&a, "pw-1", "hunter2").await;
+    cycle(&a).await;
+    let id = device_id(&a).await;
+    let seq = own_seq(&a).await;
+    let db = &a.core.db;
+    let binding = config::load_binding(db).await.unwrap();
+    let blind = Engine::with_key(
+        Box::new(NoLog(veydan_sync::LocalDir::new(&vault))),
+        &veydan_sync::Vmk::from_base64(&binding.vmk_b64).unwrap(),
+        &binding.vault_id,
+        &id,
+    );
+    let (mut local, last) = state::load_local_state(db).await.unwrap();
+    let mut clock = HlcClock::new(id.clone(), last.as_ref());
+    let warning =
+        veydan_sync_host::reconcile_own_log(&blind, db, a.sync.registry(), &mut local, &mut clock)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(warning.contains("listing"), "{warning}");
+    assert_eq!(local.own_seq, seq);
+    assert_eq!(own_seq(&a).await, seq);
+    assert_eq!(device_id(&a).await, id);
+    assert!(rows_to_publish(&a).await.is_empty());
+
+    close(a).await;
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// After a rotation the old log is read as another device's; an older
+/// version of a note in it is this device's own past and does not replace
+/// the file (audit A2-20).
+#[tokio::test]
+async fn the_old_log_read_back_does_not_bring_an_old_note_back() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    for body in ["First.", "Second."] {
+        write(
+            &documents(&a).join("note-1.md"),
+            &note_file("note-1", "Note", body),
+        );
+        if body == "First." {
+            write_note(&a, "note-1", "Note", body).await;
+        }
+        cycle(&a).await;
+    }
+    config::rotate_device_id(&a.core.db, a.sync.registry(), None)
+        .await
+        .unwrap();
+    // An edit under the new id; the old log comes back in the same cycle.
+    write(
+        &documents(&a).join("note-1.md"),
+        &note_file("note-1", "Note", "Third."),
+    );
+    cycle(&a).await;
+    cycle(&a).await;
+    assert!(note_text(&a, "note-1").await.unwrap().contains("Third."));
+
+    close(a).await;
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+async fn conflicts(state: &TestStates) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM note_history WHERE version_type = 'conflict'")
+        .fetch_one(&state.core.db)
+        .await
+        .unwrap()
+}
+
+/// Spec 9.3, "Leave, then join": a note edited on another device while
+/// this one was away comes to it as edited. Its own older copy, published
+/// at the join without a parent, would have looked like a fork with no
+/// common ancestor: the newer op written over the edit and a conflict in
+/// the history of both devices.
+#[tokio::test]
+async fn a_note_edited_while_a_device_was_away_comes_back_without_a_conflict() {
+    let vault = crate::db::test_dir();
+    let space = device(sync_registry(), &vault).await;
+    create_vault(&space).await;
+    write_note(&space, "note-1", "Deploy", "Version 1.").await;
+    cycle(&space).await;
+    let away = device(sync_registry(), &vault).await;
+    join_vault(&away).await;
+    cycle(&away).await;
+    cycle(&away).await;
+    assert!(note_text(&away, "note-1")
+        .await
+        .unwrap()
+        .contains("Version 1."));
+    join::leave(&away.core.db, away.sync.registry())
+        .await
+        .unwrap();
+
+    write(
+        &documents(&space).join("note-1.md"),
+        &note_file("note-1", "Deploy", "Version 2."),
+    );
+    cycle(&space).await;
+    join_vault(&away).await;
+    cycle(&away).await;
+    cycle(&away).await;
+    cycle(&space).await;
+
+    for state in [&space, &away] {
+        let text = note_text(state, "note-1").await.unwrap();
+        assert!(text.contains("Version 2."), "{text}");
+        assert_eq!(conflicts(state).await, 0);
+    }
+
+    for state in [space, away] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A blob one device has not uploaded yet holds the log of that device
+/// alone: the cycle ends in a retry, the note of the other device is
+/// applied and its head saved, and the held log is read again once the blob
+/// is there (audit SYNCNOTES-12, A2-08).
+#[tokio::test]
+async fn a_blob_one_device_has_not_uploaded_yet_holds_only_its_log() {
+    let vault = crate::db::test_dir();
+    let a = device(notes_like(), &vault).await;
+    create_vault(&a).await;
+    write_note(&a, "note-a", "From A", "Written on A.").await;
+    cycle(&a).await;
+    let b = device(notes_like(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    write_note(&b, "note-b", "From B", "Written on B.").await;
+    cycle(&b).await;
+    let (id_a, id_b) = (device_id(&a).await, device_id(&b).await);
+    let blob = ops_of(&a, &id_a)
+        .await
+        .into_iter()
+        .find(|op| op.entity_type == "note" && op.entity_id == "note-a")
+        .and_then(|op| op.payload["blob"].as_str().map(str::to_string))
+        .expect("the put of note-a");
+    let blob_path = vault.join("blobs").join(&blob);
+    let bytes = std::fs::read(&blob_path).unwrap();
+    std::fs::remove_file(&blob_path).unwrap();
+    let heads = |state: &TestStates| {
+        let db = state.core.db.clone();
+        async move {
+            let rows: Vec<(String, i64)> = sqlx::query_as("SELECT device_id, seq FROM sync_peers")
+                .fetch_all(&db)
+                .await
+                .unwrap();
+            rows.into_iter().collect::<BTreeMap<String, i64>>()
+        }
+    };
+
+    let c = device(notes_like(), &vault).await;
+    join_vault(&c).await;
+    let warnings = veydan_sync_host::cycle(c.host(), &c.core, &c.sync)
+        .await
+        .unwrap();
+
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.starts_with("retry next cycle:") && w.contains("note-a")),
+        "{warnings:?}"
+    );
+    assert!(note_text(&c, "note-b")
+        .await
+        .unwrap()
+        .contains("Written on B."));
+    assert_eq!(note_text(&c, "note-a").await, None);
+    let saved = heads(&c).await;
+    assert!(saved.get(&id_b).is_some_and(|seq| *seq > 0), "{saved:?}");
+    assert!(!saved.contains_key(&id_a), "{saved:?}");
+
+    write(&blob_path, &bytes);
+    cycle(&c).await;
+    assert!(note_text(&c, "note-a")
+        .await
+        .unwrap()
+        .contains("Written on A."));
+    assert!(heads(&c).await.get(&id_a).is_some_and(|seq| *seq > 0));
+
+    for state in [a, b, c] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A log read up to a broken file is held alone like any log read: a blob
+/// missing for an op that came before the broken file keeps the head of
+/// that log, the head of the other device's log is saved.
+#[tokio::test]
+async fn a_log_read_up_to_a_broken_file_is_held_alone() {
+    let vault = crate::db::test_dir();
+    let a = device(notes_like(), &vault).await;
+    create_vault(&a).await;
+    write_note(&a, "note-a", "From A", "Written on A.").await;
+    cycle(&a).await;
+    let b = device(notes_like(), &vault).await;
+    join_vault(&b).await;
+    cycle(&b).await;
+    write_note(&b, "note-b", "From B", "Written on B.").await;
+    cycle(&b).await;
+    write_note(&a, "note-a2", "Later on A", "Written later.").await;
+    cycle(&a).await;
+    let (id_a, id_b) = (device_id(&a).await, device_id(&b).await);
+    let blob = ops_of(&a, &id_a)
+        .await
+        .into_iter()
+        .find(|op| op.entity_type == "note" && op.entity_id == "note-a")
+        .and_then(|op| op.payload["blob"].as_str().map(str::to_string))
+        .expect("the put of note-a");
+    std::fs::remove_file(vault.join("blobs").join(&blob)).unwrap();
+    // The last chunk of A is no envelope any more.
+    let mut chunks: Vec<PathBuf> = std::fs::read_dir(vault.join("devices").join(&id_a).join("log"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    chunks.sort();
+    std::fs::write(chunks.last().unwrap(), b"").unwrap();
+
+    let c = device(notes_like(), &vault).await;
+    join_vault(&c).await;
+    let warnings = veydan_sync_host::cycle(c.host(), &c.core, &c.sync)
+        .await
+        .unwrap();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.starts_with("retry next cycle:") && w.contains("note-a")),
+        "{warnings:?}"
+    );
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains(&id_a) && w.contains("format")),
+        "{warnings:?}"
+    );
+    assert!(note_text(&c, "note-b")
+        .await
+        .unwrap()
+        .contains("Written on B."));
+    let saved: BTreeMap<String, i64> = sqlx::query_as("SELECT device_id, seq FROM sync_peers")
+        .fetch_all(&c.core.db)
+        .await
+        .unwrap()
+        .into_iter()
+        .collect();
+    assert!(saved.get(&id_b).is_some_and(|seq| *seq > 0), "{saved:?}");
+    assert!(!saved.contains_key(&id_a), "{saved:?}");
+
+    for state in [a, b, c] {
+        close(state).await;
+    }
     let _ = std::fs::remove_dir_all(&vault);
 }

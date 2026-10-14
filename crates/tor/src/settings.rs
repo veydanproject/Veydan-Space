@@ -137,6 +137,12 @@ impl TorSettings {
         }
         self.bridges.lines = tidy_lines(&self.bridges.lines);
         self.extra_torrc = tidy_lines(&self.extra_torrc);
+        if let Some(line) = self.extra_torrc.iter().find(|l| !allowed_directive(l)) {
+            return Err(format!(
+                "tor_invalid_settings: the directive {:?} is not allowed here",
+                directive_key(line)
+            ));
+        }
         let builtin = self.bridges.builtin.trim().to_string();
         if !builtin
             .bytes()
@@ -211,6 +217,52 @@ pub fn country(code: &str) -> Result<String, String> {
     } else {
         Err(format!("tor_invalid_country: {code:?} is not a two-letter country code"))
     }
+}
+
+/// The directives of the extra lines of torrc: about the choice of nodes and
+/// the timing of circuits only. Whatever runs a program (`*TransportPlugin`,
+/// `%include`), opens a port, or reads or writes a file stays out. One place
+/// for the check of the settings and for the writing of torrc.
+const ALLOWED_DIRECTIVES: [&str; 22] = [
+    "entrynodes",
+    "exitnodes",
+    "excludenodes",
+    "excludeexitnodes",
+    "middlenodes",
+    "strictnodes",
+    "numentryguards",
+    "numprimaryguards",
+    "numdirectoryguards",
+    "usebridges",
+    "useentryguards",
+    "circuitbuildtimeout",
+    "learncircuitbuildtimeout",
+    "circuitstreamtimeout",
+    "newcircuitperiod",
+    "maxcircuitdirtiness",
+    "connectionpadding",
+    "reducedconnectionpadding",
+    "clientuseipv4",
+    "clientuseipv6",
+    "clientpreferipv6orport",
+    "clientonly",
+];
+
+/// The key of a line of torrc: its first word without the `+` and `/` prefix
+/// (append and reset), lower case.
+fn directive_key(line: &str) -> String {
+    line.split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_start_matches(['+', '/'])
+        .to_ascii_lowercase()
+}
+
+/// Whether an extra line of torrc may be written: its directive is one of
+/// [`ALLOWED_DIRECTIVES`] and the line does not go on to the next one.
+pub fn allowed_directive(line: &str) -> bool {
+    let line = line.trim();
+    !line.ends_with('\\') && ALLOWED_DIRECTIVES.contains(&directive_key(line).as_str())
 }
 
 /// A value that goes onto one line of torrc.
@@ -365,6 +417,20 @@ mod tests {
         assert!(bad(&|s| s.external_socks_port = Some(0)).contains("port 0"));
         assert!(bad(&|s| s.extra_torrc = vec!["A 1\nControlPort 9051".into()]).contains("line break"));
         assert!(bad(&|s| s.extra_torrc = vec!["A\0".into()]).contains("NUL"));
+        for line in [
+            "ClientTransportPlugin obfs4 exec /bin/sh",
+            "clienttransportplugin x",
+            "+ClientTransportPlugin x",
+            "%include /tmp/x",
+            "SocksPort 0.0.0.0:9",
+            "ExitNodes {de} \\",
+        ] {
+            let err = bad(&|s| s.extra_torrc = vec![line.into()]);
+            assert!(err.contains("not allowed"), "{line}: {err}");
+        }
+        let mut ok = TorSettings::defaults();
+        ok.extra_torrc = vec!["ExitNodes {de}".into(), "/NumEntryGuards 3".into()];
+        assert!(ok.validate().is_ok());
         assert!(bad(&|s| {
             s.bridges.mode = BridgeMode::Custom;
             s.bridges.lines = vec!["obfs4 x\r".into()];

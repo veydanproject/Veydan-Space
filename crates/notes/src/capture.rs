@@ -13,7 +13,7 @@ use super::attachments::store_attachment;
 use super::binding::BindingKind;
 use super::crud::{current_docs_dir, fts_match_query, insert_note, update_note, NewNote};
 use super::entities;
-use super::files::{read_note_file, resolve_note_abs_path};
+use super::files::{compute_hash, read_note_file, resolve_note_abs_path};
 use super::folders::persist_bindings;
 use super::models::{NoteRow, NoteUpdateInput};
 use super::templates::{render_template, TemplateVars};
@@ -24,7 +24,7 @@ use protocol::{CaptureAsset, CaptureRequest, CaptureResponse, NoteRef};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
-use veydan_core::Core;
+use veydan_core::{AppError, Core};
 
 const MAX_TITLE: usize = 120;
 const MAX_ASSET_BYTES: usize = 10 * 1024 * 1024;
@@ -265,23 +265,29 @@ async fn append_to_note(
         return create_note(req, String::new(), rules, core, notes).await;
     };
     let file_path = resolve_note_abs_path(&core.app_data_dir, &row.file_path);
-    let (_, _, body) = read_note_file(&file_path).map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
-    let mut content = body.trim_end().to_string();
-    if !content.is_empty() {
-        content.push_str("\n\n---\n\n");
-    }
-    content.push_str(&capture_block(req, &now));
+    // The body is read without the lock, so the write is checked against it;
+    // a save that lands in between is read again once and the capture appended to it.
+    for attempt in 0..2 {
+        let (_, _, body) = read_note_file(&file_path).map_err(|e| e.to_string())?;
+        let mut content = body.trim_end().to_string();
+        if !content.is_empty() {
+            content.push_str("\n\n---\n\n");
+        }
+        content.push_str(&capture_block(req, &now));
 
-    let input = NoteUpdateInput {
-        title: None,
-        content: Some(content),
-        pinned: None,
-        base_hash: None,
-    };
-    update_note(&row.id, input, core, notes)
-        .await
-        .map_err(|e| e.to_string())?;
+        let input = NoteUpdateInput {
+            title: None,
+            content: Some(content),
+            pinned: None,
+            base_hash: Some(compute_hash(&body)),
+        };
+        match update_note(&row.id, input, core, notes).await {
+            Ok(_) => break,
+            Err(AppError::ConflictChanged(_)) if attempt == 0 => continue,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
 
     // Merge page bindings so the note shows up for this url/domain too
     let mut bindings: Vec<String> = serde_json::from_str(&row.bindings).unwrap_or_default();
@@ -293,7 +299,7 @@ async fn append_to_note(
         }
     }
     if changed {
-        persist_bindings(&row.id, &bindings, core)
+        persist_bindings(&row.id, &bindings, core, notes)
             .await
             .map_err(|e| e.to_string())?;
     }

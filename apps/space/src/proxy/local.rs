@@ -40,7 +40,8 @@ pub enum Upstream {
 /// пробрасывает через HTTP или SOCKS5 upstream.
 pub async fn spawn(upstream: Upstream) -> anyhow::Result<(u16, tokio::sync::oneshot::Sender<()>)> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let local_port = listener.local_addr()?.port();
+    let local_addr = listener.local_addr()?;
+    let local_port = local_addr.port();
 
     let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
 
@@ -51,9 +52,15 @@ pub async fn spawn(upstream: Upstream) -> anyhow::Result<(u16, tokio::sync::ones
             tokio::select! {
                 result = listener.accept() => {
                     match result {
-                        Ok((client, _)) => {
+                        Ok((client, peer)) => {
                             let up = std::sync::Arc::clone(&upstream);
-                            tokio::spawn(async move { let _ = handle(client, up).await; });
+                            tokio::spawn(async move {
+                                if peer_of_another_user(local_addr, peer).await {
+                                    eprintln!("local proxy: refused {peer}: a process of another user");
+                                    return;
+                                }
+                                let _ = handle(client, up).await;
+                            });
                         }
                         Err(e) => {
                             // Transient errors (ECONNABORTED, EMFILE, ...) must not
@@ -69,6 +76,54 @@ pub async fn spawn(upstream: Upstream) -> anyhow::Result<(u16, tokio::sync::ones
     });
 
     Ok((local_port, stop_tx))
+}
+
+/// The relay has no password of its own (it speaks HTTP to the browser,
+/// and Firefox gives an HTTP proxy none without asking the user), so any
+/// local process that finds the port could send its traffic through the
+/// user's proxy, SSH or tor.
+/// On Linux a connection from a process of another user is refused: the
+/// owner of the other end is read from `/proc/net/tcp`. A process of the same
+/// user is not told apart (it can read the profile's `user.js` anyway), and
+/// on Windows and macOS the port is open to every local user (platform-spec
+/// 5.11).
+#[cfg(target_os = "linux")]
+async fn peer_of_another_user(local: std::net::SocketAddr, peer: std::net::SocketAddr) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let (std::net::SocketAddr::V4(local), std::net::SocketAddr::V4(peer)) = (local, peer) else {
+        return false;
+    };
+    let Ok(me) = tokio::fs::metadata("/proc/self").await.map(|m| m.uid()) else {
+        return false;
+    };
+    let Ok(table) = tokio::fs::read_to_string("/proc/net/tcp").await else {
+        return false;
+    };
+    // Not found (the client is gone already): nothing to refuse.
+    tcp_peer_uid(&table, local, peer).is_some_and(|uid| uid != me)
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn peer_of_another_user(_local: std::net::SocketAddr, _peer: std::net::SocketAddr) -> bool {
+    false
+}
+
+/// The uid of the client socket of a loopback connection in the text of
+/// `/proc/net/tcp`: the row whose local address is `peer` and remote address
+/// is `local` (the relay's own socket is the row the other way round).
+#[cfg(target_os = "linux")]
+fn tcp_peer_uid(table: &str, local: std::net::SocketAddrV4, peer: std::net::SocketAddrV4) -> Option<u32> {
+    // The kernel prints the address as the u32 it holds in network order.
+    let key = |a: std::net::SocketAddrV4| {
+        format!("{:08X}:{:04X}", u32::from_ne_bytes(a.ip().octets()), a.port())
+    };
+    let (client, relay) = (key(peer), key(local));
+    table.lines().skip(1).find_map(|line| {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        (f.len() > 7 && f[1] == client && f[2] == relay)
+            .then(|| f[7].parse().ok())
+            .flatten()
+    })
 }
 
 async fn handle(client: TcpStream, upstream: std::sync::Arc<Upstream>) -> anyhow::Result<()> {
@@ -211,9 +266,12 @@ pub async fn socks5_connect(
 
     let has_auth = username.map(|u| !u.is_empty()).unwrap_or(false);
 
-    // Предлагаем методы аутентификации
+    // Предлагаем методы аутентификации. With credentials only user/pass is
+    // offered: a server (or someone in the path) answering "no auth" would
+    // otherwise carry the traffic without ever seeing them, and tor tells
+    // its consumers apart by them.
     if has_auth {
-        s.write_all(&[0x05, 0x02, 0x00, 0x02]).await?; // no-auth + user/pass
+        s.write_all(&[0x05, 0x01, 0x02]).await?; // user/pass only
     } else {
         s.write_all(&[0x05, 0x01, 0x00]).await?; // no-auth only
     }
@@ -223,6 +281,7 @@ pub async fn socks5_connect(
     anyhow::ensure!(resp[0] == 0x05, "SOCKS5: bad version");
 
     match resp[1] {
+        0x00 if has_auth => anyhow::bail!("SOCKS5: the server skipped the authentication it was asked for"),
         0x00 => {} // no auth — ok
         0x02 => {
             // username/password auth (RFC 1929)
@@ -246,10 +305,17 @@ pub async fn socks5_connect(
         m => anyhow::bail!("SOCKS5: unknown auth method 0x{:02x}", m),
     }
 
-    // CONNECT через DOMAINNAME (ATYP=0x03)
-    let mut req = vec![0x05, 0x01, 0x00, 0x03];
-    req.push(target_host.len() as u8);
-    req.extend_from_slice(target_host.as_bytes());
+    // CONNECT через DOMAINNAME (ATYP=0x03); an IPv6 address as itself
+    // (ATYP=0x04): `::1` is no domain name.
+    let mut req = vec![0x05, 0x01, 0x00];
+    if let Ok(ip) = target_host.parse::<std::net::Ipv6Addr>() {
+        req.push(0x04);
+        req.extend_from_slice(&ip.octets());
+    } else {
+        req.push(0x03);
+        req.push(target_host.len() as u8);
+        req.extend_from_slice(target_host.as_bytes());
+    }
     req.push((target_port >> 8) as u8);
     req.push((target_port & 0xff) as u8);
     s.write_all(&req).await?;
@@ -416,11 +482,37 @@ fn parse_connect_target(headers: &str) -> Option<(String, u16)> {
     if parts.next()? != "CONNECT" {
         return None;
     }
-    let addr = parts.next()?;
-    let colon = addr.rfind(':')?;
-    let host = addr[..colon].to_string();
-    let port: u16 = addr[colon + 1..].parse().ok()?;
-    Some((host, port))
+    // CONNECT names the port always (RFC 9110 9.3.6).
+    split_authority(parts.next()?, None)
+}
+
+/// `host:port`, `[v6]:port`, or without the port when `default` is given →
+/// (host without the brackets, port). The colons of an IPv6 address are not
+/// the port's: only the one after `]` is. A port that is not a number is
+/// not taken for the default.
+fn split_authority(authority: &str, default: Option<u16>) -> Option<(String, u16)> {
+    let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
+        let (host, after) = rest.split_once(']')?;
+        match after {
+            "" => (host, None),
+            _ => (host, Some(after.strip_prefix(':')?)),
+        }
+    } else {
+        match authority.rsplit_once(':') {
+            // A bare IPv6 address has no port to split off.
+            Some((host, _)) if host.contains(':') => (authority, None),
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        }
+    };
+    if host.is_empty() {
+        return None;
+    }
+    let port = match port {
+        Some(p) => p.parse().ok()?,
+        None => default?,
+    };
+    Some((host.to_string(), port))
 }
 
 /// Парсит первую строку HTTP-запроса → (host, port).
@@ -443,30 +535,14 @@ fn parse_http_target(headers: &str) -> Option<(String, u16)> {
             .split_once(':')?
             .1
             .trim();
-        let (h, p) = if let Some(c) = host.rfind(':') {
-            (&host[..c], host[c + 1..].parse().unwrap_or(80))
-        } else {
-            (host, 80)
-        };
-        return Some((h.to_string(), p));
+        return split_authority(host, Some(80));
     };
 
-    let (host_part, _path) = if let Some(s) = without_scheme.0.find('/') {
-        (&without_scheme.0[..s], &without_scheme.0[s..])
-    } else {
-        (without_scheme.0, "/")
+    let host_part = match without_scheme.0.find('/') {
+        Some(s) => &without_scheme.0[..s],
+        None => without_scheme.0,
     };
-
-    let (host, port) = if let Some(c) = host_part.rfind(':') {
-        (
-            &host_part[..c],
-            host_part[c + 1..].parse().unwrap_or(without_scheme.1),
-        )
-    } else {
-        (host_part, without_scheme.1)
-    };
-
-    Some((host.to_string(), port))
+    split_authority(host_part, Some(without_scheme.1))
 }
 
 /// Переписывает абсолютный URL в первой строке запроса на relative path.
@@ -627,5 +703,110 @@ mod tests {
     fn find_header_end_locates_blank_line() {
         assert_eq!(find_header_end(b"GET / HTTP/1.1\r\n\r\nbody"), Some(14));
         assert!(find_header_end(b"incomplete\r\n").is_none());
+    }
+
+    #[test]
+    fn ipv6_targets_keep_their_colons() {
+        assert_eq!(
+            parse_connect_target("CONNECT [::1]:443 HTTP/1.1\r\n\r\n"),
+            Some(("::1".to_string(), 443))
+        );
+        assert_eq!(
+            parse_connect_target("CONNECT [2001:db8::1]:8443 HTTP/1.1\r\n\r\n"),
+            Some(("2001:db8::1".to_string(), 8443))
+        );
+        // CONNECT without a port is no CONNECT.
+        assert!(parse_connect_target("CONNECT [::1] HTTP/1.1\r\n\r\n").is_none());
+        assert_eq!(
+            parse_http_target("GET http://[::1]/x HTTP/1.1\r\n\r\n"),
+            Some(("::1".to_string(), 80))
+        );
+        assert_eq!(
+            parse_http_target("GET https://[2001:db8::1]:8080/x HTTP/1.1\r\n\r\n"),
+            Some(("2001:db8::1".to_string(), 8080))
+        );
+        assert_eq!(
+            parse_http_target("GET /x HTTP/1.1\r\nHost: [::1]\r\n\r\n"),
+            Some(("::1".to_string(), 80))
+        );
+        assert_eq!(
+            parse_http_target("GET /x HTTP/1.1\r\nHost: [::1]:8080\r\n\r\n"),
+            Some(("::1".to_string(), 8080))
+        );
+        // Without brackets an IPv6 address has no port to cut off.
+        assert_eq!(split_authority("::1", Some(80)), Some(("::1".to_string(), 80)));
+        // A port that is not one is refused, not replaced by the default.
+        assert!(parse_http_target("GET http://x.com:abc/ HTTP/1.1\r\n\r\n").is_none());
+        assert!(split_authority("[::1", Some(80)).is_none());
+        assert!(split_authority("[::1]x", Some(80)).is_none());
+        assert!(split_authority(":80", None).is_none());
+    }
+
+    /// A SOCKS5 server that reads the greeting, answers `method` and stops.
+    async fn socks_server(method: u8) -> (u16, tokio::task::JoinHandle<Vec<u8>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let task = tokio::spawn(async move {
+            let (mut s, _) = listener.accept().await.unwrap();
+            let mut head = [0u8; 2];
+            s.read_exact(&mut head).await.unwrap();
+            let mut methods = vec![0u8; head[1] as usize];
+            s.read_exact(&mut methods).await.unwrap();
+            s.write_all(&[0x05, method]).await.unwrap();
+            [head.to_vec(), methods].concat()
+        });
+        (port, task)
+    }
+
+    #[tokio::test]
+    async fn socks5_with_credentials_offers_only_user_pass_and_refuses_no_auth() {
+        let (port, server) = socks_server(0x00).await;
+        let err = socks5_connect("127.0.0.1", port, "x.com", 443, Some("u"), Some("p"))
+            .await
+            .expect_err("no auth must be refused when credentials are set");
+        assert!(err.to_string().contains("skipped the authentication"), "{err}");
+        assert_eq!(server.await.unwrap(), vec![0x05, 0x01, 0x02]);
+    }
+
+    #[tokio::test]
+    async fn socks5_without_credentials_offers_no_auth() {
+        let (port, server) = socks_server(0xFF).await;
+        assert!(socks5_connect("127.0.0.1", port, "x.com", 443, None, None)
+            .await
+            .is_err());
+        assert_eq!(server.await.unwrap(), vec![0x05, 0x01, 0x00]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_client_row_of_proc_net_tcp_gives_its_uid() {
+        let table = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n\
+            \x20  0: 0100007F:9C40 0100007F:D431 01 00000000:00000000 00:00000000 00000000  1000        0 11 1 0 20 4 30 10 -1\n\
+            \x20  1: 0100007F:D431 0100007F:9C40 01 00000000:00000000 00:00000000 00000000  1001        0 12 1 0 20 4 30 10 -1\n";
+        let relay: std::net::SocketAddrV4 = "127.0.0.1:40000".parse().unwrap();
+        let client: std::net::SocketAddrV4 = "127.0.0.1:54321".parse().unwrap();
+        if cfg!(target_endian = "little") {
+            assert_eq!(tcp_peer_uid(table, relay, client), Some(1001));
+            assert_eq!(tcp_peer_uid(table, client, relay), Some(1000));
+        }
+        let other: std::net::SocketAddrV4 = "127.0.0.1:1".parse().unwrap();
+        assert_eq!(tcp_peer_uid(table, relay, other), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_connection_of_this_user_is_let_through() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let local = listener.local_addr().unwrap();
+        let _client = TcpStream::connect(local).await.unwrap();
+        let (_server, peer) = listener.accept().await.unwrap();
+        let table = std::fs::read_to_string("/proc/net/tcp").unwrap();
+        let (std::net::SocketAddr::V4(l), std::net::SocketAddr::V4(p)) = (local, peer) else {
+            panic!("loopback v4")
+        };
+        use std::os::unix::fs::MetadataExt;
+        let me = std::fs::metadata("/proc/self").unwrap().uid();
+        assert_eq!(tcp_peer_uid(&table, l, p), Some(me));
+        assert!(!peer_of_another_user(local, peer).await);
     }
 }

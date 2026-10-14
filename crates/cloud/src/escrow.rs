@@ -59,6 +59,11 @@ pub mod words {
     pub const ALREADY_SET_UP: &str = "already_set_up";
     /// The escrow did not open with the words, or its nsec is not its npub.
     pub const ESCROW_INVALID: &str = "escrow_invalid";
+    /// The box holds no escrow of this device, yet the row of the lock carries
+    /// the words of a key (version 2) or the server knows a configured recovery:
+    /// the Recovery Key was issued on another device, and issuing here would
+    /// replace it unseen. Issued anyway only on the owner's explicit word.
+    pub const ISSUED_ELSEWHERE: &str = "issued_elsewhere";
     /// A reissue is under way on this device.
     pub const REISSUE_PENDING: &str = "reissue_pending";
     /// A restore needs a clean install: this device is bound to a vault or
@@ -602,6 +607,8 @@ pub(crate) mod testing {
         pub objects: Mutex<HashMap<String, Vec<u8>>>,
         pub requests: Mutex<Vec<(String, String)>>,
         pub identity: Mutex<Option<String>>,
+        /// Every `DELETE` answers `502 storage`, as a host whose bucket is away.
+        pub fail_delete: Mutex<bool>,
     }
 
     pub const HOST: &str = "https://media-eu.example.com";
@@ -670,6 +677,9 @@ pub(crate) mod testing {
                             }
                             None => response(404, Vec::new()),
                         },
+                        "DELETE" if *self.fail_delete.lock().expect("fail_delete") => {
+                            response(502, b"{\"error\":{\"code\":\"storage\"}}".to_vec())
+                        }
                         "DELETE" => match objects.remove(&id) {
                             Some(_) => response(204, Vec::new()),
                             None => response(404, b"{\"error\":{\"code\":\"not_found\"}}".to_vec()),

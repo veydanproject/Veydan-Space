@@ -61,6 +61,7 @@
     "cloud_state_grace": "Solo lectura",
     "cloud_state_suspended": "Suspendida",
     "cloud_until": "Pagado hasta el {date}",
+    "cloud_next_plan": "El plan {plan} empieza el {date}",
     "cloud_grace_until": "Solo lectura hasta el {date}: introduce una clave de activación para seguir sincronizando.",
     "cloud_suspended_text": "La cuenta está suspendida. Aún puedes eliminarla.",
     "cloud_kept_at": "No se puede acceder a Veydan Cloud ahora. Datos a fecha de {date}.",
@@ -110,6 +111,7 @@
     "cloud_err_key_expired": "Esta clave ha caducado.",
     "cloud_err_key_revoked": "Esta clave fue revocada.",
     "cloud_err_rate_limited": "Demasiados intentos. Inténtalo más tarde.",
+    "cloud_err_deletion_pending": "La cuenta anterior aún se está eliminando. Inténtalo de nuevo en unos minutos.",
     "cloud_err_no_host": "No se puede acceder a Veydan Cloud ahora.",
     "cloud_err_clock": "El reloj de este dispositivo no está bien: ajusta la fecha y la hora.",
     "cloud_err_suspended": "La cuenta está suspendida.",
@@ -323,6 +325,10 @@
     "cloud_plans_title": "Planes",
     "cloud_recover_expired_title": "La solicitud ha caducado",
     "cloud_recovery_reissue_short": "Volver a emitir",
+    "cloud_recovery_elsewhere": "La Recovery Key se emitió en otro dispositivo: vuelve a emitirla allí o restaura con las palabras.",
+    "cloud_recovery_elsewhere_anew": "Emitir de nuevo",
+    "cloud_recovery_elsewhere_hint": "La nueva clave se emite aquí. Las palabras antiguas siguen siendo válidas hasta que se borre su copia.",
+    "cloud_trustees_missing": "Configura de nuevo a las personas de confianza",
     "cloud_recovery_setup_short": "Configurar",
     "cloud_recovery_show_words": "Mostrar las 12 palabras",
     "cloud_restore_new_secret_hint": "Bloqueará la aplicación en este dispositivo.",
@@ -362,7 +368,10 @@
     "cloud_card_line_restored": "Acceso restaurado desde un dispositivo nuevo",
     "cloud_card_line_plan_expiring": "Tu plan está a punto de caducar",
     "cloud_card_line_quota": "Veydan Cloud está casi lleno",
-    "cloud_card_line_dormant": "La cuenta se eliminará por inactividad"
+    "cloud_card_line_dormant": "La cuenta se eliminará por inactividad",
+    "cloud_card_downgraded": "Tu plan ha terminado. Los archivos que superan el límite gratuito se conservan, pero los nuevos no se guardan hasta que liberes espacio o renueves el plan.",
+    "cloud_card_downgraded_limit": "Plan gratuito: {limit} para archivos",
+    "cloud_card_line_downgraded": "Tu plan ha terminado"
   },
   "mobile": {}
 }

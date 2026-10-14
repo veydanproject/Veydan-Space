@@ -4,9 +4,16 @@
 //! NIP-05: `user@domain` → public key, via
 //! `https://domain/.well-known/nostr.json?name=user`. HTTP is behind a
 //! trait so tests never touch the network.
+//!
+//! The name comes from someone else's profile: the domain is a host name
+//! on the open internet and nothing else (no port, path or query), the
+//! user is the few characters NIP-05 allows, and the request takes the one
+//! rule of the messenger for such addresses (`messenger_http::Target`,
+//! `messenger_http::public_builder`).
 
 use async_trait::async_trait;
 use messenger_core::{MessengerError, PubKey, Result};
+use messenger_http::Target;
 use nostr::nips::nip05::{verify_from_raw_json, Nip05Address, Nip05Profile};
 use nostr::prelude::*;
 use std::sync::Arc;
@@ -24,7 +31,7 @@ pub struct ReqwestFetcher {
 
 impl ReqwestFetcher {
     pub fn new() -> Self {
-        let client = messenger_http::builder(Duration::from_secs(5), Duration::from_secs(10))
+        let client = messenger_http::public_builder(Duration::from_secs(5), Duration::from_secs(10), 0)
             .expect("tls configuration")
             .redirect(reqwest::redirect::Policy::none())
             .user_agent("veydan-messenger")
@@ -43,7 +50,9 @@ impl Default for ReqwestFetcher {
 #[async_trait]
 impl Nip05Fetcher for ReqwestFetcher {
     async fn fetch(&self, url: &str) -> Result<String> {
-        let resp = self.client.get(url).send().await.map_err(|e| MessengerError::Transport(e.to_string()))?;
+        // A literal address never goes to the resolver that checks names.
+        let target = Target::parse(url)?;
+        let resp = self.client.get(target.url()).send().await.map_err(|e| MessengerError::Transport(e.to_string()))?;
         if !resp.status().is_success() {
             return Err(MessengerError::Transport(format!("nip05: http {}", resp.status())));
         }
@@ -65,9 +74,20 @@ impl Nip05Service {
     }
 
     fn address(identifier: &str) -> Result<Nip05Address> {
+        let bad = || MessengerError::Invalid("not a valid NIP-05 identifier".into());
         let id = identifier.trim();
-        let id = if id.contains('@') { id.to_string() } else { format!("_@{id}") };
-        Nip05Address::parse(&id).map_err(|_| MessengerError::Invalid("not a valid NIP-05 identifier".into()))
+        let (name, domain) = id.split_once('@').unwrap_or(("_", id));
+        // The characters NIP-05 allows: nothing that could add to the query.
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) {
+            return Err(bad());
+        }
+        // A host on the open internet, and only a host: a port, a path or a
+        // query would make the address point elsewhere than it says.
+        let target = Target::parse(&format!("https://{domain}/"))?;
+        if target.host() != domain.trim_end_matches('.').to_ascii_lowercase() {
+            return Err(bad());
+        }
+        Nip05Address::parse(&format!("{name}@{}", target.host())).map_err(|_| bad())
     }
 
     /// `user@domain` (or bare `domain` for `_@domain`) → public key.
@@ -100,6 +120,56 @@ mod tests {
         async fn fetch(&self, url: &str) -> Result<String> {
             self.0.lock().unwrap().get(url).cloned().ok_or_else(|| MessengerError::Transport(format!("404 {url}")))
         }
+    }
+
+    /// Writes down every address it is asked for.
+    #[derive(Default)]
+    struct Asked(Mutex<Vec<String>>);
+    #[async_trait]
+    impl Nip05Fetcher for Asked {
+        async fn fetch(&self, url: &str) -> Result<String> {
+            self.0.lock().unwrap().push(url.to_string());
+            Err(MessengerError::Transport("not here".into()))
+        }
+    }
+
+    /// A name that points inside, or adds a port, a path or a query of its
+    /// own, is refused before anything is asked.
+    #[tokio::test]
+    async fn a_name_that_leads_inside_or_elsewhere_is_not_asked() {
+        let asked = Arc::new(Asked::default());
+        let svc = Nip05Service::new(asked.clone());
+        let pk = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
+        for id in [
+            "a@127.0.0.1",
+            "a@localhost",
+            "a@10.0.0.1",
+            "a@[::1]",
+            "a@169.254.169.254",
+            "a@router.lan",
+            "x@127.0.0.1:8443/admin?",
+            "x@example.com:8443",
+            "x@example.com/admin?",
+            "a&b=c@example.com",
+            "a?b@example.com",
+            "@example.com",
+            "a@b@example.com",
+            "a@http://example.com",
+        ] {
+            assert!(svc.resolve(id).await.is_err(), "{id}");
+            assert!(svc.verify(id, &pk).await.is_err(), "{id}");
+        }
+        assert!(asked.0.lock().unwrap().is_empty(), "{:?}", asked.0.lock().unwrap());
+        // A good name is asked, as NIP-05 writes it.
+        let _ = svc.resolve("Alice@Example.COM").await;
+        assert_eq!(*asked.0.lock().unwrap(), ["https://example.com/.well-known/nostr.json?name=Alice"]);
+    }
+
+    /// The real fetcher refuses a literal address inside by itself.
+    #[tokio::test]
+    async fn the_fetcher_refuses_an_address_inside() {
+        let e = ReqwestFetcher::new().fetch("https://127.0.0.1/.well-known/nostr.json?name=a").await.unwrap_err();
+        assert!(e.to_string().contains("preview_private_host"), "{e}");
     }
 
     #[tokio::test]

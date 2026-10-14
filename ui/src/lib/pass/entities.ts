@@ -13,6 +13,7 @@ import { directory } from '$lib/core/directory';
 import type { EntityKindDef } from '$lib/core/module';
 import { parseBinding } from '$lib/core/bindings';
 import { userLabels } from '$lib/core/entity-tags';
+import { copySecret } from '$lib/pass/clipboard';
 import { totpStore } from '$lib/pass/store/totp.svelte';
 import { passwordStore } from '$lib/pass/store/passwords.svelte';
 
@@ -33,17 +34,7 @@ async function copyPassword(id: string): Promise<void> {
     }
   }
   const revealed = await api.passwords.reveal(id, 'password');
-  try {
-    await navigator.clipboard.writeText(revealed.value);
-  } catch {
-    await copyText(revealed.value);
-  }
-  const value = revealed.value;
-  setTimeout(() => {
-    navigator.clipboard.readText().then((current) => {
-      if (current === value) void navigator.clipboard.writeText('');
-    }).catch(() => {});
-  }, 30_000);
+  await copySecret(revealed.value, { fallback: copyText });
 }
 
 /** Workspace color, then a free label, then the accent. Shared by chips and context cards. */

@@ -27,3 +27,11 @@ export function lockInputAttrs(kind: LockKind): LockInputAttrs {
     ? { inputmode: 'numeric', pattern: '[0-9]*' }
     : { inputmode: 'text', pattern: undefined };
 }
+
+/** The text of `veydan_lock::ERR_WRONG`: the secret of a dangerous action is not the lock's. */
+const ERR_WRONG = 'Wrong password';
+
+/** The confirmation of a dangerous action got a secret that is not the lock's. */
+export function isWrongSecret(e: unknown): boolean {
+  return e != null && typeof e === 'object' && (e as { message?: unknown }).message === ERR_WRONG;
+}

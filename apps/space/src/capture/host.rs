@@ -30,27 +30,36 @@ fn write_frame(stdout: &mut impl Write, payload: &[u8]) {
 }
 
 #[cfg(not(windows))]
-fn connect() -> std::io::Result<Box<dyn ReadWrite>> {
-    let s = std::os::unix::net::UnixStream::connect(super::host_endpoint())?;
+fn connect(endpoint: &str) -> std::io::Result<Box<dyn ReadWrite>> {
+    let s = std::os::unix::net::UnixStream::connect(endpoint)?;
     s.set_read_timeout(Some(std::time::Duration::from_secs(15)))?;
     Ok(Box::new(s))
 }
 
 #[cfg(windows)]
-fn connect() -> std::io::Result<Box<dyn ReadWrite>> {
+fn connect(endpoint: &str) -> std::io::Result<Box<dyn ReadWrite>> {
     let f = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(super::host_endpoint())?;
+        .open(endpoint)?;
     Ok(Box::new(f))
 }
 
 trait ReadWrite: Read + Write {}
 impl<T: Read + Write> ReadWrite for T {}
 
-/// One request -> one newline-terminated JSON line each way.
+/// One request -> one newline-terminated JSON line each way. The request goes
+/// in the envelope with the token (`super::envelope_head`).
 fn relay(request: &[u8]) -> Vec<u8> {
-    let mut stream = match connect() {
+    let Some(bridge) = super::host_bridge() else {
+        // A browser started before the bridge had a token (before an update of
+        // the app), or not by the app: it has neither the endpoint nor the token.
+        return serde_json::to_vec(&CaptureResponse::err(
+            "Start this browser profile again from Veydan",
+        ))
+        .unwrap_or_default();
+    };
+    let mut stream = match connect(&bridge.endpoint) {
         Ok(s) => s,
         Err(_) => {
             // No socket: the app is not running, or its notes are switched off
@@ -61,8 +70,11 @@ fn relay(request: &[u8]) -> Vec<u8> {
             .unwrap_or_default();
         }
     };
-    if stream.write_all(request).is_err()
-        || stream.write_all(b"\n").is_err()
+    if stream
+        .write_all(super::envelope_head(&bridge.token).as_bytes())
+        .is_err()
+        || stream.write_all(request).is_err()
+        || stream.write_all(b"}\n").is_err()
         || stream.flush().is_err()
     {
         return serde_json::to_vec(&CaptureResponse::err("Failed to send request to Veydan"))

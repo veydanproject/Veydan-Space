@@ -99,7 +99,7 @@
     "tor_external_hint": "Die Instanz ohne Land lauscht auf diesem Port von 127.0.0.1. Jedes Programm auf diesem Computer kann ihn verwenden.",
     "tor_external_port": "Port",
     "tor_section_advanced": "Erweitert",
-    "tor_torrc_warning": "Diese Zeilen werden unverändert an tor übergeben. Eine falsche Zeile kann den Start von Tor verhindern oder deine Privatsphäre schwächen.",
+    "tor_torrc_warning": "Es werden nur Zeilen zur Auswahl von Knoten und Verbindungen angenommen (zum Beispiel ExitNodes, StrictNodes, NumEntryGuards), alle anderen werden abgelehnt. Eine falsche Zeile kann den Start von Tor verhindern oder deine Privatsphäre schwächen.",
     "tor_torrc_label": "Zusätzliche torrc-Zeilen",
     "tor_err_countries": "Kein Ländercode aus zwei Buchstaben: {list}.",
     "tor_err_ports": "Kein Port (1–65535): {list}.",

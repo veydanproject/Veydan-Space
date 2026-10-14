@@ -44,7 +44,7 @@ const SWITCH: Duration = Duration::from_millis(30);
 /// How long [`World::until`] gives a timer of the rooms to bring what is
 /// waited for: generous, for a loaded machine, and never reached when
 /// the core is right (what is waited for comes in tens of milliseconds).
-const UNTIL: Duration = Duration::from_secs(10);
+const UNTIL: Duration = Duration::from_secs(30);
 
 struct Party {
     name: &'static str,
@@ -1048,6 +1048,218 @@ async fn a_member_removed_from_the_group_is_out_of_the_call() {
     assert!(bob.calls.announced(GROUP).await.is_none());
     assert_eq!(repo::get(&bob.store, &view.call_id).await.unwrap().unwrap().outcome.as_deref(), Some("ended"));
     assert_eq!(w.node.seats(&room).len(), 1);
+}
+
+/// A member leaves the group while nobody who manages it is online: the
+/// group key is stale, and no note of the group can go out. The keys of
+/// the room and its token stay as everybody has them, so nobody falls
+/// silent and nobody is shut out; once a manager brings the group a new
+/// key, they turn.
+#[tokio::test]
+async fn a_member_gone_while_the_group_key_is_stale_silences_nobody() {
+    let w = World::new(&["alice", "bob", "carol"]).await;
+    w.timing(Timing { send_switch_delay: SWITCH, key_retry: Duration::from_millis(20), ..Timing::default() });
+    w.group(&[0, 1, 2]);
+    let (alice, bob, carol) = (w.p(0), w.p(1), w.p(2));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    carol.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms()[0].clone();
+    let token_before = w.node.join_token(&room).unwrap();
+    let alices_key = sender_key_in(&w.engine.sessions()[0].record(), slot(1)).unwrap();
+    assert_eq!(receiver_key(&w.engine.sessions()[1].record(), "a1", slot(1)), Some(alices_key.clone()));
+
+    w.deafen(2);
+    for p in [alice, bob] {
+        p.groups.set_stale(GROUP, true);
+        p.groups.set_members(GROUP, vec![alice.pk(), bob.pk()]);
+        p.calls.on_members_changed(GROUP).await;
+    }
+    w.wait(SWITCH * 5).await;
+    assert_eq!(w.node.seats(&room).len(), 2, "her seat is out");
+    assert_eq!(w.node.join_token(&room), Some(token_before.clone()), "the token holds");
+    for p in [alice, bob] {
+        assert_eq!(p.last_state().unwrap().epoch, 1, "{}", p.name);
+        assert_eq!(p.count("call.epoch"), 0, "{}", p.name);
+        assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
+    }
+    let sa = w.engine.sessions()[0].record();
+    assert_eq!(sender_key_in(&sa, slot(2)), None, "alice sends under the epoch everybody has");
+    assert_eq!(receiver_key(&w.engine.sessions()[1].record(), "a1", slot(1)), Some(alices_key), "and bob hears her");
+
+    // A manager brings the group a new key: the keys turn, the token too.
+    for p in [alice, bob] {
+        p.groups.set_stale(GROUP, false);
+    }
+    w.until("the keys turned on both screens", || alice.last_state().zip(bob.last_state()).is_some_and(|(a, b)| a.epoch >= 2 && a.epoch == b.epoch)).await;
+    assert_ne!(w.node.join_token(&room), Some(token_before), "the token changed");
+    let epochs: Vec<Envelope> = alice.envelopes().into_iter().filter(|e| e.t == "call.epoch").collect();
+    assert_eq!(epochs[0].str_field("join_token"), w.node.join_token(&room).as_deref(), "the new token rides in the note");
+}
+
+/// The turn owed while the group key is stale outlives a join again: the
+/// way to the node breaks in between, the session is a new one, and the
+/// keys and the token still turn once a manager brings the new key.
+#[tokio::test]
+async fn the_turn_owed_for_a_stale_key_outlives_a_join_again() {
+    let w = World::new(&["alice", "bob", "carol"]).await;
+    w.timing(Timing { send_switch_delay: SWITCH, key_retry: Duration::from_millis(20), ..Timing::default() });
+    w.group(&[0, 1, 2]);
+    let (alice, bob) = (w.p(0), w.p(1));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    w.p(2).calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms()[0].clone();
+    let token_before = w.node.join_token(&room).unwrap();
+
+    w.deafen(2);
+    for p in [alice, bob] {
+        p.groups.set_stale(GROUP, true);
+        p.groups.set_members(GROUP, vec![alice.pk(), bob.pk()]);
+        p.calls.on_members_changed(GROUP).await;
+    }
+    w.wait(SWITCH * 3).await;
+    assert_eq!(alice.last_state().unwrap().epoch, 1);
+
+    // Alice's way fails; the home answers and she joins it again.
+    let s = w.engine.sessions()[0].clone();
+    s.inject(SessionEvent::ConnectionState(ConnectionState::Failed));
+    w.until("alice in the room again", || alice.shows(|v| v.phase == GroupPhase::InRoom) && w.engine.sessions().len() > 3).await;
+    w.wait(SWITCH * 3).await;
+    assert_eq!(w.node.join_token(&room), Some(token_before.clone()), "nothing turned while stale");
+
+    for p in [alice, bob] {
+        p.groups.set_stale(GROUP, false);
+    }
+    w.until("the keys turned on both screens", || alice.last_state().zip(bob.last_state()).is_some_and(|(a, b)| a.epoch >= 2 && a.epoch == b.epoch)).await;
+    assert_ne!(w.node.join_token(&room), Some(token_before), "the token changed");
+}
+
+/// The note of a new epoch that fails for another reason than a stale
+/// key is tried again: the seat gone does not keep the secret because a
+/// note failed once.
+#[tokio::test]
+async fn a_new_epoch_whose_note_failed_is_tried_again() {
+    let w = World::new(&["alice", "bob", "carol"]).await;
+    w.timing(Timing { send_switch_delay: SWITCH, key_retry: Duration::from_millis(20), ..Timing::default() });
+    w.group(&[0, 1, 2]);
+    let (alice, bob) = (w.p(0), w.p(1));
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    w.p(2).calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    let room = w.node.rooms()[0].clone();
+
+    w.deafen(2);
+    alice.groups.set_refusing(GROUP, true);
+    for p in [alice, bob] {
+        p.groups.set_members(GROUP, vec![alice.pk(), bob.pk()]);
+        p.calls.on_members_changed(GROUP).await;
+    }
+    w.wait(SWITCH * 3).await;
+    assert_eq!(alice.last_state().unwrap().epoch, 1, "no epoch without its note");
+    assert_eq!(alice.count("call.epoch"), 0);
+
+    alice.groups.set_refusing(GROUP, false);
+    w.until("the keys turned on both screens", || alice.last_state().zip(bob.last_state()).is_some_and(|(a, b)| a.epoch >= 2 && a.epoch == b.epoch)).await;
+    let epochs: Vec<Envelope> = alice.envelopes().into_iter().filter(|e| e.t == "call.epoch").collect();
+    assert_eq!(epochs.last().unwrap().str_field("join_token"), w.node.join_token(&room).as_deref(), "the token of the room rides in it");
+}
+
+/// A turn owed while the group key is stale is made after a move on the
+/// way, though the room is no longer mine and I am not its oldest seat.
+#[tokio::test]
+async fn the_turn_owed_for_a_stale_key_is_made_after_a_move_into_another_room() {
+    let mut w = World::new(&["alice", "bob", "carol", "dave"]).await;
+    let n1 = w.node.add_node();
+    let (home, p1) = (w.node.as_call_node(), w.node.node(n1, NodeClass::Project));
+    let timing = Timing { key_retry: Duration::from_millis(20), node_word: Duration::from_millis(300), move_backup: Duration::from_secs(50), move_wait: Duration::from_secs(50), ..cascade_timing() };
+    w.group(&[0, 1, 2, 3]);
+    for i in 0..4 {
+        w.with_servers(i, vec![home.clone(), p1.clone()], timing).await;
+    }
+    let (alice, bob, dave) = (w.p(0).clone(), w.p(1).clone(), w.p(3).clone());
+    let view = alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    for i in [1, 2, 3] {
+        w.p(i).calls.join(GROUP).await.unwrap();
+        w.settle().await;
+    }
+    let r0 = w.node.rooms_on(0)[0].clone();
+
+    // Carol leaves the group while Alice, the owner of the room, cannot seal.
+    w.deafen(2);
+    alice.groups.set_stale(GROUP, true);
+    for p in [&alice, &bob, &dave] {
+        p.groups.set_members(GROUP, vec![alice.pk(), bob.pk(), dave.pk()]);
+        p.calls.on_members_changed(GROUP).await;
+    }
+    w.wait(Duration::from_millis(60)).await;
+    let epoch = alice.last_state().unwrap().epoch;
+    assert_eq!(alice.count("call.epoch"), 0);
+
+    // The home answers no more; a move by Bob to a room of node 1: Dave
+    // goes first, then Alice; the room is not hers and Dave is its oldest
+    // seat.
+    w.node.set_silent(0, true);
+    let (moved, r1) = crafted_move(&w, &view.call_id, &r0, &p1, 2, epoch + 1).await;
+    dave.calls.on_group_note(GROUP, &bob.pk(), &moved, w.now()).await.unwrap();
+    w.until("dave in the new room", || dave.shows(|v| v.phase == GroupPhase::InRoom && v.home == p1.node.to_string())).await;
+    alice.calls.on_group_note(GROUP, &bob.pk(), &moved, w.now()).await.unwrap();
+    w.until("alice in the new room, dave confirmed", || {
+        alice.shows(|v| v.phase == GroupPhase::InRoom && v.home == p1.node.to_string() && verified_seats(v).iter().any(|(_, ok)| *ok))
+    })
+    .await;
+    assert!(w.node.seats(&r1).len() >= 2);
+    assert_eq!(alice.count("call.epoch"), 0, "still stale");
+
+    alice.groups.set_stale(GROUP, false);
+    w.until("alice turned the keys", || alice.count("call.epoch") >= 1).await;
+    let mine = alice.envelopes().into_iter().find(|e| e.t == "call.epoch").unwrap();
+    assert_eq!(mine.str_field("join_token"), None, "the room is not hers: no token of hers");
+}
+
+/// Notes that wait for a fresh group key go out in their order, and a
+/// call that ends before any of them could go tells nobody anything.
+#[tokio::test]
+async fn notes_held_for_a_stale_key_keep_their_order_and_what_ended_is_dropped() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.timing(Timing { send_switch_delay: SWITCH, key_retry: Duration::from_millis(20), ..Timing::default() });
+    w.group(&[0, 1]);
+    let (alice, bob) = (w.p(0), w.p(1));
+
+    // Alice starts and leaves while the key is stale: nothing goes out.
+    alice.groups.set_stale(GROUP, true);
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    alice.calls.leave().await.unwrap();
+    w.settle().await;
+    alice.groups.set_stale(GROUP, false);
+    w.wait(Duration::from_millis(100)).await;
+    assert!(alice.notes().is_empty(), "{:?}", alice.notes());
+    assert!(bob.calls.announced(GROUP).await.is_none());
+
+    // Started while stale, the start goes out when the key is fresh, then
+    // the join, in that order; bob sees the call.
+    alice.groups.set_stale(GROUP, true);
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    assert!(alice.notes().is_empty());
+    alice.groups.set_stale(GROUP, false);
+    w.until("the start went out", || alice.count("call.start") == 1).await;
+    let notes = alice.notes();
+    assert_eq!(notes.first().map(String::as_str), Some("call.start"), "{notes:?}");
+    assert!(notes.iter().position(|t| t == "call.start") < notes.iter().position(|t| t == "call.join"), "{notes:?}");
+    assert!(bob.calls.announced(GROUP).await.is_some());
+    assert!(alice.errors().is_empty(), "{:?}", alice.errors());
 }
 
 /// A word of identity under a secret not here yet is kept and opened
@@ -3306,4 +3518,27 @@ async fn a_word_of_state_under_an_old_secret_does_not_stick() {
     for p in [alice, bob, dave] {
         assert!(p.errors().is_empty(), "{}: {:?}", p.name, p.errors());
     }
+}
+
+/// «Always through a relay» holds in a group call: the session of a room
+/// is made with the policy of the setting, `auto` when it is not set.
+#[tokio::test]
+async fn a_group_call_honours_the_relay_policy_setting() {
+    let w = World::new(&["alice", "bob"]).await;
+    w.group(&[0, 1]);
+    let (alice, bob) = (w.p(0), w.p(1));
+    messenger_store::settings::set(&bob.store, messenger_calls::KEY_RELAY_POLICY, "relay_only").await.unwrap();
+
+    alice.calls.start(GROUP, Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.join(GROUP).await.unwrap();
+    w.settle().await;
+    assert!(bob.errors().is_empty(), "{:?}", bob.errors());
+    let room = w.node.rooms()[0].clone();
+    let policy_of = |p: &Party| {
+        let id = my_session(&w, p, &room);
+        w.engine.sessions().into_iter().find(|h| h.id() == id).unwrap().record().policy
+    };
+    assert_eq!(policy_of(alice), messenger_calls::engine::RelayPolicy::Auto, "no setting: auto");
+    assert_eq!(policy_of(bob), messenger_calls::engine::RelayPolicy::RelayOnly, "the setting reaches the room's session");
 }

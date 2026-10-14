@@ -72,7 +72,11 @@
   // The key of activation: for a plan of the choice, or for any.
   let keyOpen = $state(false);
   let keyPlan = $state<CloudPlanOffer | null>(null);
-  const keyResult = $derived(account ? { plan: planName(plans, account.plan), until: account.until } : null);
+  const keyResult = $derived(
+    account
+      ? { plan: planName(plans, account.plan), until: account.until, next: account.next ? { plan: planName(plans, account.next.plan), since: account.next.since } : null }
+      : null,
+  );
 
   function openKey(plan: CloudPlanOffer | null = null) {
     keyPlan = plan;
@@ -135,7 +139,7 @@
 
     {#if account}
       <div class="{card} pad">
-        <PlanCard {account} name={planName(plans, account.plan)} hasPlans={canPick} onPlans={toPlans} onKey={() => openKey()} />
+        <PlanCard {account} name={planName(plans, account.plan)} nextName={account.next ? planName(plans, account.next.plan) : ''} hasPlans={canPick} onPlans={toPlans} onKey={() => openKey()} />
       </div>
       <div class="{card} pad">
         <UsageCard {account} categories={cloudPage.categories} onMore={canPick ? toPlans : () => openKey()} />

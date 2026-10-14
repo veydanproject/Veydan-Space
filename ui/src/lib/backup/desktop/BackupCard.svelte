@@ -9,8 +9,8 @@
   import { formatDateTime, formatError, formatBytes } from '$lib/core/utils';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
-  import { api } from '$lib/backup/api';
-  import type { BackupConfig, BackupFileInfo } from '$lib/backup/types';
+  import { api, olderBackup } from '$lib/backup/api';
+  import type { BackupConfig, BackupFileInfo, RestoreOutcome } from '$lib/backup/types';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -28,6 +28,7 @@
     weekday: 0,
     keep: 5,
     last_run: null,
+    last_restore: null,
   });
   let backupList = $state<BackupFileInfo[]>([]);
   let backupSaving = $state(false);
@@ -44,6 +45,10 @@
   let restoring = $state(false);
   let restorePhase = $state('');
   let restorePercent = $state(0);
+  /** The device is joined to a vault: the restore makes it leave (backup_restore). */
+  let restoreJoined = $state(false);
+  /** The archive is older than the newest one of the data: the dates, shown before it is restored anyway. */
+  let restoreOlder = $state<{ created: string; newest: string } | null>(null);
 
   const modeOptions = $derived([
     { value: 'interval', label: $t('settings_backup_mode_interval') },
@@ -56,6 +61,19 @@
       label: $t(`settings_backup_day_${d}` as any),
     }))
   );
+
+  function restoreOutcomeText(o: RestoreOutcome): string {
+    switch (o.result) {
+      case 'restored':
+        return $t('settings_backup_restore_result_restored');
+      case 'failed':
+        return $t('settings_backup_restore_result_failed', { error: o.error ?? '' });
+      case 'undone':
+        return $t('settings_backup_restore_result_undone');
+      default:
+        return $t('settings_backup_restore_result_finished');
+    }
+  }
 
   async function loadBackup() {
     try {
@@ -121,6 +139,9 @@
     // Empty = the backend uses the stored backup password.
     restorePassword = '';
     restoreError = '';
+    restoreJoined = false;
+    restoreOlder = null;
+    void api.sync.status().then((s) => (restoreJoined = s.joined)).catch(() => {});
   }
 
   function closeRestore() {
@@ -136,10 +157,12 @@
     restorePercent = 0;
     try {
       // On success the app restarts, so this call never resolves.
-      await api.backup.restore(restoreTarget.path, restorePassword);
+      await api.backup.restore(restoreTarget.path, restorePassword, restoreOlder !== null);
     } catch (e) {
       restoring = false;
-      restoreError = formatError(e);
+      const older = olderBackup(formatError(e));
+      if (older) restoreOlder = older;
+      else restoreError = formatError(e);
     }
   }
 
@@ -324,6 +347,17 @@
         {backupCfg.last_run ? formatDateTime(backupCfg.last_run, $locale) : $t('settings_backup_never')}
       </span>
     </div>
+    {#if backupCfg.last_restore}
+      <div class="version-row">
+        <span class="version-label">{$t('settings_backup_last_restore')}</span>
+        <span class="version-value">
+          {formatDateTime(backupCfg.last_restore.at, $locale)} · {restoreOutcomeText(backupCfg.last_restore)}
+          {#each backupCfg.last_restore.kept ?? [] as path (path)}
+            <br />{$t('settings_backup_restore_kept', { path })}
+          {/each}
+        </span>
+      </div>
+    {/if}
   </div>
 
 {#if restoreTarget}
@@ -331,6 +365,15 @@
     <div class="restore-body">
       <p class="backup-name">{restoreTarget.name}</p>
       <p class="warn-msg">{$t('settings_backup_restore_warn')}</p>
+      {#if restoreJoined}<p class="warn-msg">{$t('settings_backup_restore_sync')}</p>{/if}
+      {#if restoreOlder}
+        <p class="warn-msg">
+          {$t('settings_backup_restore_older', {
+            created: formatDateTime(restoreOlder.created, $locale),
+            newest: formatDateTime(restoreOlder.newest, $locale),
+          })}
+        </p>
+      {/if}
       <input
         class="field-input"
         type="password"
@@ -354,7 +397,11 @@
         {$t('settings_backup_cancel')}
       </button>
       <button class="btn btn-danger btn-sm" disabled={(!restorePassword && !backupCfg.has_password) || restoring} onclick={confirmRestore}>
-        {restoring ? $t('settings_backup_restoring') : $t('settings_backup_restore_confirm')}
+        {restoring
+          ? $t('settings_backup_restoring')
+          : restoreOlder
+            ? $t('settings_backup_restore_anyway')
+            : $t('settings_backup_restore_confirm')}
       </button>
     {/snippet}
   </Dialog>

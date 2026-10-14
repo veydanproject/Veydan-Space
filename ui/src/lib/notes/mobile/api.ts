@@ -78,6 +78,8 @@ export interface NoteListItem {
 export interface Note extends Omit<NoteListItem, 'preview'> {
   content: string;
   contentHash: string | null;
+  /** An unsaved buffer of this note was kept on this device (note_draft_save). */
+  hasDraft: boolean;
 }
 
 export interface NoteUpdateInput {
@@ -221,9 +223,14 @@ function toItem(d: SharedNoteListItem, nav: NoteNav): NoteListItem {
   };
 }
 
+function sameNames(a: string[], b: string[]): boolean {
+  const set = new Set(a);
+  return set.size === new Set(b).size && b.every((x) => set.has(x));
+}
+
 function toNote(d: SharedNote, nav: NoteNav): Note {
   const { preview: _preview, ...item } = toItem(d, nav);
-  return { ...item, content: d.content ?? '', contentHash: d.content_hash };
+  return { ...item, content: d.content ?? '', contentHash: d.content_hash, hasDraft: d.has_draft };
 }
 
 /** Nav plus entity names for `items`, loaded together. */
@@ -310,21 +317,34 @@ export const api = {
       const n = await shared.notes.create({ title, content, tag_names: tags, bindings });
       return toNote(n, await shapeContext([n]));
     },
+    /**
+     * The returned hash is the one of the body this call wrote, not of a later read:
+     * a write that lands in between must fail the next `base_hash` check.
+     */
     update: async (id: string, input: NoteUpdateInput): Promise<Note> => {
-      if (input.tags) await shared.notes.setTags(id, input.tags);
+      let written: SharedNote | null = null;
       if (input.title !== undefined || input.content !== undefined || input.pinned !== undefined) {
-        await shared.notes.update(id, {
+        written = await shared.notes.update(id, {
           title: input.title,
           content: input.content,
           pinned: input.pinned,
           base_hash: input.base_hash,
         });
       }
+      if (input.tags) {
+        const before = (written ?? (await shared.notes.get(id))).tags.map((t) => t.name);
+        if (!sameNames(before, input.tags)) await shared.notes.setTags(id, input.tags);
+      }
       if (input.archived === true) await shared.notes.archive(id);
       else if (input.archived === false) await shared.notes.restore(id);
       const n = await shared.notes.get(id);
       const nav = await shapeContext([n]);
-      return toNote(n, nav);
+      const out = toNote(n, nav);
+      if (written && input.content !== undefined) {
+        out.content = written.content ?? input.content;
+        out.contentHash = written.content_hash;
+      }
+      return out;
     },
     delete: (id: string) => shared.notes.delete(id),
     restore: async (id: string): Promise<Note> => {

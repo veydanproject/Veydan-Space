@@ -9,6 +9,13 @@ use messenger_store::{settings, Store};
 
 pub const KEY_CONTENT: &str = "notify.content";
 pub const KEY_LOCKSCREEN_HIDDEN: &str = "notify.lockscreen_hidden";
+/// Whether the text is hidden on the lock screen before the user chose:
+/// yes on a computer whose system tells that its session is locked (Linux,
+/// `desktop_notify::session_locked`; its notifications would show the text
+/// over it, A11-08); no on a phone, as it was, and no on Windows and macOS,
+/// where the setting does nothing yet and would otherwise start hiding,
+/// unchosen, the day it does.
+pub const LOCKSCREEN_HIDDEN_BY_DEFAULT: bool = cfg!(target_os = "linux");
 
 /// How much of a message a notification shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -49,9 +56,17 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// As a phone keeps them: shown on the lock screen unless asked.
     pub async fn load(store: &Store) -> Result<Self> {
+        Self::load_or(store, false).await
+    }
+
+    /// `lockscreen_hidden` as `default` until the user chose: a computer that
+    /// tells its session is locked hides the text then unless told otherwise
+    /// ([`LOCKSCREEN_HIDDEN_BY_DEFAULT`]).
+    pub async fn load_or(store: &Store, lockscreen_default: bool) -> Result<Self> {
         let content = settings::get(store, KEY_CONTENT).await?.and_then(|s| Content::parse(&s)).unwrap_or_default();
-        let lockscreen_hidden = settings::get_bool(store, KEY_LOCKSCREEN_HIDDEN, false).await?;
+        let lockscreen_hidden = settings::get_bool(store, KEY_LOCKSCREEN_HIDDEN, lockscreen_default).await?;
         Ok(Self { content, lockscreen_hidden })
     }
 

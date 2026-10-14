@@ -1050,11 +1050,35 @@ pub struct FakeGroups {
     me: PubKey,
     members: Mutex<HashMap<String, Vec<PubKey>>>,
     pinned: Mutex<HashMap<String, CallNode>>,
+    /// Groups whose key someone gone still knows: no note is sealed.
+    stale: Mutex<std::collections::HashSet<String>>,
+    /// Groups whose notes fail to seal for another reason.
+    refusing: Mutex<std::collections::HashSet<String>>,
 }
 
 impl FakeGroups {
     pub fn new(me: PubKey) -> Self {
-        Self { me, members: Mutex::default(), pinned: Mutex::default() }
+        Self { me, members: Mutex::default(), pinned: Mutex::default(), stale: Mutex::default(), refusing: Mutex::default() }
+    }
+
+    /// No note of the group is sealed (`group_no_key`), or they are again.
+    pub fn set_refusing(&self, group_id: &str, on: bool) {
+        let mut set = self.refusing.lock().unwrap();
+        if on {
+            set.insert(group_id.to_string());
+        } else {
+            set.remove(group_id);
+        }
+    }
+
+    /// The key of the group is stale (`group_key_stale`) or fresh again.
+    pub fn set_stale(&self, group_id: &str, stale: bool) {
+        let mut set = self.stale.lock().unwrap();
+        if stale {
+            set.insert(group_id.to_string());
+        } else {
+            set.remove(group_id);
+        }
     }
 
     pub fn set_members(&self, group_id: &str, members: Vec<PubKey>) {
@@ -1090,9 +1114,19 @@ impl GroupAccess for FakeGroups {
     }
 
     async fn seal_note(&self, group_id: &str, envelope: &Envelope) -> Result<Outbound> {
+        if self.stale.lock().unwrap().contains(group_id) {
+            return Err(MessengerError::Invalid("group_key_stale".into()));
+        }
+        if self.refusing.lock().unwrap().contains(group_id) {
+            return Err(MessengerError::Invalid("group_no_key".into()));
+        }
         let id = EventId::parse(&nostr::key::Keys::generate().public_key().to_hex()).expect("64 hex");
         let json = serde_json::json!({ "group": group_id, "author": self.me.as_hex(), "content": envelope.encode() });
         Ok(Outbound::PublishScoped { scope: Scope::Group { id: group_id.to_string() }, event: WireEvent { id, json } })
+    }
+
+    async fn key_stale(&self, group_id: &str) -> Result<bool> {
+        Ok(self.stale.lock().unwrap().contains(group_id))
     }
 }
 

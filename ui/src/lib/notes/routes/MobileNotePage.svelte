@@ -44,6 +44,7 @@
   import { findTag, tagChoice } from '$lib/notes/tag-name';
   import NoteContextSheet from '$lib/notes/mobile/NoteContextSheet.svelte';
   import PlaceholderSheet from '$lib/notes/mobile/PlaceholderSheet.svelte';
+  import { SaveQueue } from '$lib/notes/mobile/save-queue';
 
   // "new" means nothing is stored yet; the note is created on the first edit.
   let id = $state(page.params.id ?? 'new');
@@ -115,14 +116,32 @@
   let fetchOffer = $state<NoteAttachment[]>([]);
   const fetchOfferBytes = $derived(fetchOffer.reduce((n, a) => n + a.size, 0));
 
-  let saveTimer: ReturnType<typeof setTimeout>;
-  let saving: Promise<void> | null = null;
   /** Hash and body last loaded or saved. A watcher event that still matches them is our echo. */
   let baseHash = $state<string | null>(null);
   let knownBody = $state('');
   let externalChange = $state(false);
-  let saveInFlight = false;
   let remoteDuringSave = false;
+  /** Bumped by every load; a read that finds another number or note on return is dropped. */
+  let loadSeq = 0;
+  const queue = new SaveQueue({
+    write: writeNote,
+    held: () => externalChange,
+    failed: (e) => {
+      if (hasErrorCode(e, 'conflict_changed')) {
+        externalChange = true;
+        return true;
+      }
+      error = formatError(e);
+      keepDraft();
+      return false;
+    },
+    status: (s) => (status = s),
+    settled: () => {
+      if (!remoteDuringSave) return;
+      remoteDuringSave = false;
+      void onRemoteNote();
+    },
+  });
   const CARET_GAP = 16;
 
   /** Keep the caret line inside the area above the keyboard. */
@@ -306,14 +325,28 @@
 
   async function load() {
     if (id === 'new') return;
+    const seq = ++loadSeq;
+    const forId = id;
     try {
-      const n = await api.notes.get(id);
+      const n = await api.notes.get(forId);
+      if (seq !== loadSeq || id !== forId) return;
+      // A buffer kept when its save failed comes back into the editor and is saved again.
+      const draft = n.hasDraft ? await shared.notes.draftGet(forId).catch(() => null) : null;
+      if (seq !== loadSeq || id !== forId) return;
       await loadAttachments();
+      if (seq !== loadSeq || id !== forId) return;
       applyNote(n);
-      if (status !== 'dirty' && status !== 'saving') status = 'saved';
+      if (draft !== null && draft !== n.content) {
+        content = draft;
+        queue.edit();
+      } else {
+        if (draft !== null) void shared.notes.draftDiscard(forId).catch(() => {});
+        if (!queue.unsaved) status = 'saved';
+      }
       ready = true;
       void promptFetch();
     } catch (e) {
+      if (seq !== loadSeq || id !== forId) return;
       error = formatError(e);
     }
   }
@@ -321,8 +354,10 @@
   /** Once per note: show the download card for vault-only attachments above the prompt size. */
   async function promptFetch() {
     if (fetchAsked === id) return;
-    fetchAsked = id;
+    const forId = id;
+    fetchAsked = forId;
     const minSize = await askAboveBytes;
+    if (id !== forId) return;
     fetchOffer = attachments.filter((a) => !a.present && a.size >= minSize);
   }
 
@@ -337,17 +372,25 @@
   }
 
   async function fetchAttachment(a: NoteAttachment) {
+    const seq = loadSeq;
+    const forId = id;
     try {
-      await api.attachments.fetch(id, a.name);
+      await api.attachments.fetch(forId, a.name);
+      if (seq !== loadSeq || id !== forId) return;
       await loadAttachments();
     } catch (err) {
+      if (seq !== loadSeq || id !== forId) return;
       error = formatError(err);
     }
   }
 
   async function loadAttachments() {
     if (id === 'new') return;
-    attachments = await api.attachments.list(id);
+    const seq = loadSeq;
+    const forId = id;
+    const list = await api.attachments.list(forId);
+    if (seq !== loadSeq || id !== forId) return;
+    attachments = list;
     const names = new Set(attachments.map((a) => a.name));
     for (const name of Object.keys(thumbs)) {
       if (!names.has(name)) {
@@ -358,6 +401,7 @@
     for (const a of attachments) {
       if (a.is_image && a.present && !thumbs[a.name]) {
         const url = await urls.get(a.name);
+        if (seq !== loadSeq || id !== forId) return;
         if (url) thumbs[a.name] = url;
       }
     }
@@ -376,17 +420,20 @@
   /** Own write echoes match the remembered body. A different body pauses autosave. */
   async function onRemoteNote() {
     if (id === 'new') return;
-    if (saveInFlight) {
+    if (queue.busy) {
       remoteDuringSave = true;
       return;
     }
+    const seq = loadSeq;
+    const forId = id;
     let disk: Note;
     try {
-      disk = await api.notes.get(id);
+      disk = await api.notes.get(forId);
     } catch {
       return;
     }
-    if (saveInFlight) {
+    if (seq !== loadSeq || id !== forId) return;
+    if (queue.busy) {
       remoteDuringSave = true;
       return;
     }
@@ -394,8 +441,8 @@
       baseHash = disk.contentHash;
       return;
     }
-    clearTimeout(saveTimer);
-    if (status === 'dirty' || status === 'saving' || externalChange) {
+    // A buffer the disk does not hold (typed, or left by a failed save) is never replaced unasked.
+    if (queue.unsaved || externalChange) {
       externalChange = true;
       return;
     }
@@ -405,36 +452,30 @@
   }
 
   async function acceptExternal() {
-    clearTimeout(saveTimer);
+    queue.discard();
     externalChange = false;
     status = 'saved';
+    // The disk's text wins: a buffer kept from a failed save must not come back on the load.
+    if (id !== 'new') await shared.notes.draftDiscard(id).catch(() => {});
     await load();
   }
 
   /** Write the editor buffer on top of the body just read from disk. */
   async function keepMine() {
-    clearTimeout(saveTimer);
     if (id === 'new') return;
-    const body = content;
+    const forId = id;
     try {
-      const disk = await api.notes.get(id);
-      const n = await api.notes.update(id, { title, content: body, tags, base_hash: disk.contentHash });
-      baseHash = n.contentHash;
-      knownBody = body;
-      updatedAt = n.updated_at;
-      chips = n.chips;
-      bindings = n.bindings;
-      externalChange = false;
-      status = 'saved';
+      const disk = await api.notes.get(forId);
+      if (id !== forId) return;
+      baseHash = disk.contentHash;
     } catch (e) {
-      if (hasErrorCode(e, 'conflict_changed')) {
-        externalChange = true;
-        status = 'dirty';
-        return;
-      }
       error = formatError(e);
       status = 'failed';
+      return;
     }
+    externalChange = false;
+    queue.edit();
+    await queue.save();
   }
 
   async function refreshConflict() {
@@ -471,9 +512,15 @@
       transfers = new Map([...all].filter(([, x]) => x.note_id === id));
       if ([...all.values()].some((x) => x.note_id === id && x.finished)) void loadAttachments();
     });
+    // The system may stop a hidden app: write the buffer now, a failed write leaves a draft.
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') void save();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       unRemote.then((f) => f());
       unTransfer.then((f) => f());
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   });
 
@@ -489,6 +536,9 @@
 
   async function switchNote(next: string) {
     await save();
+    // Not written (failed, or held by an external change): kept as the note's draft.
+    if (queue.unsaved) keepDraft();
+    queue.discard();
     urls.release();
     urls = new AttachmentUrls(next);
     id = next;
@@ -787,7 +837,7 @@
   /** Creates the note first when it is not stored yet; false if that failed. */
   async function ensureSaved(): Promise<boolean> {
     if (id !== 'new') return true;
-    status = 'dirty';
+    queue.edit();
     await save();
     return id !== 'new';
   }
@@ -856,78 +906,57 @@
   // ── Save ──
 
   function onEdit() {
-    status = 'dirty';
-    clearTimeout(saveTimer);
-    if (externalChange) return;
-    saveTimer = setTimeout(save, 700);
+    queue.edit();
   }
 
-  async function save() {
-    clearTimeout(saveTimer);
-    if (externalChange) return;
-    if (status !== 'dirty') return saving ?? undefined;
-    if (saving) {
-      // Let the in-flight write finish, then persist the latest state.
-      await saving;
-      return save();
-    }
-    status = 'saving';
-    saving = (async () => {
-      saveInFlight = true;
-      try {
-        if (id === 'new') {
-          if (!title.trim() && !content.trim()) {
-            status = 'idle';
-            return;
-          }
-          const bindingsToApply = draftBindings;
-          const foldersToApply = folderIds;
-          const n = await api.notes.create(title, content, tags, bindingsToApply);
-          id = n.id;
-          for (const folderId of foldersToApply) await api.notes.addFolder(id, folderId);
-          // Draft links to entities that keep the link on their side (passwords) are completed there
-          for (const b of bindingsToApply) {
-            const parsed = parseBinding(b);
-            const def = parsed?.value ? directory.get(parsed.kind) : undefined;
-            if (parsed && def?.link) await def.link.add(parsed.value, `note:${id}`);
-          }
-          const fresh = await api.notes.get(id);
-          urls = new AttachmentUrls(id);
-          chips = fresh.chips;
-          bindings = fresh.bindings;
-          createdAt = fresh.created_at;
-          updatedAt = fresh.updated_at;
-          baseHash = fresh.contentHash;
-          knownBody = fresh.content;
-          replaceState(`/notes/${id}`, {});
-        } else {
-          const body = content;
-          const n = await api.notes.update(id, { title, content: body, tags, base_hash: baseHash ?? undefined });
-          knownBody = body;
-          baseHash = n.contentHash;
-          updatedAt = n.updated_at;
-          chips = n.chips;
-          bindings = n.bindings;
-        }
-        status = 'saved';
-      } catch (e) {
-        if (hasErrorCode(e, 'conflict_changed')) {
-          externalChange = true;
-          status = 'dirty';
-          return;
-        }
-        error = formatError(e);
-        status = 'failed';
-      } finally {
-        saving = null;
-        saveInFlight = false;
-        if (remoteDuringSave) {
-          remoteDuringSave = false;
-          void onRemoteNote();
-        }
+  /** Writes every pending edit, the ones typed while it writes too. */
+  function save(): Promise<void> {
+    return queue.save();
+  }
+
+  /** Keep the buffer as the note's draft when it could not be written; the next open restores it. */
+  function keepDraft() {
+    if (id === 'new') return;
+    void shared.notes.draftSave(id, content).catch(() => {});
+  }
+
+  /** One write of the buffer as it is now; the queue repeats it for edits made meanwhile. */
+  async function writeNote(): Promise<boolean> {
+    const sentTitle = title;
+    const sent = content;
+    const sentTags = tags;
+    if (id === 'new') {
+      if (!sentTitle.trim() && !sent.trim()) return false;
+      const bindingsToApply = draftBindings;
+      const foldersToApply = folderIds;
+      const n = await api.notes.create(sentTitle, sent, sentTags, bindingsToApply);
+      id = n.id;
+      urls = new AttachmentUrls(id);
+      // Edits typed during the create go out by the next update, checked against this hash.
+      baseHash = n.contentHash;
+      knownBody = n.content;
+      for (const folderId of foldersToApply) await api.notes.addFolder(id, folderId);
+      // Draft links to entities that keep the link on their side (passwords) are completed there
+      for (const b of bindingsToApply) {
+        const parsed = parseBinding(b);
+        const def = parsed?.value ? directory.get(parsed.kind) : undefined;
+        if (parsed && def?.link) await def.link.add(parsed.value, `note:${id}`);
       }
-    })();
-    return saving;
+      const fresh = await api.notes.get(id);
+      chips = fresh.chips;
+      bindings = fresh.bindings;
+      createdAt = fresh.created_at;
+      updatedAt = fresh.updated_at;
+      replaceState(`/notes/${id}`, {});
+      return true;
+    }
+    const n = await api.notes.update(id, { title: sentTitle, content: sent, tags: sentTags, base_hash: baseHash ?? undefined });
+    knownBody = sent;
+    baseHash = n.contentHash;
+    updatedAt = n.updated_at;
+    chips = n.chips;
+    bindings = n.bindings;
+    return true;
   }
 
   async function setFlags(input: { pinned?: boolean; archived?: boolean }) {
@@ -991,7 +1020,7 @@
     sheet = 'none';
     if (id === 'new') return goto('/notes');
     if (!(await ask({ title: $t('notes_delete_confirm', { title: title || $t('notes_untitled') }) }))) return;
-    clearTimeout(saveTimer);
+    queue.discard();
     status = 'idle';
     try {
       await api.notes.delete(id);
@@ -1006,8 +1035,12 @@
   }
 
   // Flush a pending edit when the user navigates away.
+  // The buffer, not the badge, says what is unsaved: a failed save is tried again here.
   onDestroy(() => {
-    if (status === 'dirty') save();
+    if (queue.unsaved) {
+      if (externalChange) keepDraft();
+      else void save();
+    }
     urls.release();
   });
 </script>
@@ -1222,7 +1255,7 @@
   noteId={id}
   {urls}
   onclose={() => (sheet = 'none')}
-  onrestored={(n) => { applyNote(n); status = 'saved'; }}
+  onrestored={(n) => { applyNote(n); queue.discard(); status = 'saved'; }}
 />
 <MoveFolderSheet
   open={sheet === 'move'}

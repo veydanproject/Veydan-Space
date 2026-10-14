@@ -6,7 +6,9 @@
   backend answers nothing else in that state, so the screen only reads the
   locale and theme the UI already has. With `error` null the backend did not
   answer the start of the page at all (src/lib/core/start.ts): the screen
-  offers to try again. With `hostOs` the UI of the other platform was loaded
+  offers to try again. Data that could not be opened (`db_failed`) is shown
+  with the system's reason and what to check, not the way to move a foreign
+  file aside. With `hostOs` the UI of the other platform was loaded
   (core/start.ts, `wrongPlatform`): the screen says which, and that the app
   is to be built or installed again. On a computer the root layout puts the
   screen inside the window's frame (`framed`).
@@ -41,6 +43,7 @@
   const CAUSE = {
     db_foreign: 'start_error_db_foreign',
     db_dev_schema: 'start_error_db_dev_schema',
+    db_failed: 'start_error_db_failed',
   } as const satisfies Record<StartError['code'], TranslationKey>;
 
   // The sentence keeps its `{path}` slot so the path gets its own element.
@@ -66,8 +69,15 @@
     </div>
     {#if error}
       <p class="cause">{before}<code class="path">{error.path}</code>{after}</p>
-      <p class="note">{$t('start_error_untouched')}</p>
-      <p class="note">{$t('start_error_fix')}</p>
+      {#if error.code === 'db_failed'}
+        {#if error.reason}
+          <p class="note"><code class="path">{error.reason}</code></p>
+        {/if}
+        <p class="note">{$t('start_error_db_failed_fix')}</p>
+      {:else}
+        <p class="note">{$t('start_error_untouched')}</p>
+        <p class="note">{$t('start_error_fix')}</p>
+      {/if}
     {:else if hostOs}
       <p class="cause">{isMobile ? $t('start_error_wrong_ui_phone') : $t('start_error_wrong_ui_desktop')}</p>
       <p class="note">{$t('start_error_wrong_ui_fix')}</p>

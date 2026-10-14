@@ -23,6 +23,10 @@ pub enum StartError {
     /// The data file at `path` is this app's, but its schema is of another
     /// build; it is neither opened nor modified.
     DbDevSchema { path: String },
+    /// The data at `path` — the data file, or the folder it is kept in —
+    /// could not be read, created or opened: a denied permission, a full
+    /// disk, a damaged file. `reason` is the error as the system gave it.
+    DbFailed { path: String, reason: String },
 }
 
 /// Managed before the app is built, so `app_start_error` answers in any start.
@@ -71,6 +75,14 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&error).unwrap(),
             r#"{"code":"db_dev_schema","path":"/data/app.db"}"#
+        );
+        let error = StartError::DbFailed {
+            path: "/data/app.db".into(),
+            reason: "Permission denied (os error 13)".into(),
+        };
+        assert_eq!(
+            serde_json::to_string(&error).unwrap(),
+            r#"{"code":"db_failed","path":"/data/app.db","reason":"Permission denied (os error 13)"}"#
         );
     }
 

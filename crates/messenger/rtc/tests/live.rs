@@ -19,7 +19,7 @@ use std::time::Duration;
 use common::*;
 use messenger_rtc::{CandidateKind, IcePolicy, SessionConfig};
 
-const DEFAULT_NODE: &str = "108.61.171.68:8443#fda09da75199c4e04601a9df309710fab15cd7b2b806ca3b2bbab202582a6dca";
+const DEFAULT_NODE: &str = "2.28.123.208:8443#feb4cb32ae467efa7727139a2626ac28e650880e4cd53c79f87897e236d2396e";
 const TONE_A: f64 = 440.0;
 const TONE_B: f64 = 660.0;
 

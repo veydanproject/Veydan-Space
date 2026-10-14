@@ -43,8 +43,15 @@ pub struct SftpState {
     /// Senders for keyboard-interactive prompts of connects in progress,
     /// keyed by connection_id (answered via `sftp_respond_prompt`).
     pub auth_prompts: std::sync::Mutex<HashMap<String, mpsc::Sender<SshInputCommand>>>,
+    /// One connect at a time per connection_id: a second caller (both panels
+    /// on one new server) waits for the first and takes its session, instead of
+    /// replacing the sender of the prompts the first one is waiting on.
+    connect_gates: std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Cancellation tokens of running transfers, keyed by transfer_id.
     pub transfers: std::sync::Mutex<HashMap<String, tokio_util::sync::CancellationToken>>,
+    /// Where each running transfer writes and over which connection, keyed
+    /// by transfer_id: a new transfer into a place taken is refused.
+    pub(crate) active: std::sync::Mutex<HashMap<String, crate::commands::transfer::ActiveTransfer>>,
 }
 
 pub type SftpSessions = Arc<SftpState>;
@@ -88,9 +95,20 @@ fn emit_status(app: &AppHandle, connection_id: &str, status: &str, error: Option
 
 // ── Path helpers (remote paths are POSIX strings, never PathBuf) ───────────────
 
-/// A single path component that cannot escape its parent directory.
+/// A single path component that cannot escape its parent directory. Names
+/// come from the server and become local names: on Windows they must also be
+/// ones the system can write (no `:` stream or drive, no device names, no
+/// trailing dot or space).
 pub(crate) fn is_safe_name(name: &str) -> bool {
-    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0'])
+    is_safe_name_on(name, cfg!(windows))
+}
+
+fn is_safe_name_on(name: &str, windows: bool) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\', '\0'])
+        && (!windows || crate::fsname::valid_component(name))
 }
 
 pub(crate) fn join_posix(dir: &str, name: &str) -> String {
@@ -126,6 +144,15 @@ pub(crate) async fn get_or_connect(
             }
         }
     }
+    let gate = {
+        let mut gates = ssh
+            .sftp
+            .connect_gates
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        gates.entry(connection_id.to_string()).or_default().clone()
+    };
+    let _connecting = gate.lock().await;
     // Drop the dead entry (re-check under the write lock) and reconnect.
     {
         let mut sessions = ssh.sftp.sessions.write().await;
@@ -240,10 +267,12 @@ async fn do_connect(
         ),
         _ => None,
     };
-    let (jump, mut handle, received_fp) =
-        tokio::time::timeout(timeout, establish_transport(conn, proxy, config, &core.db, &tor))
-            .await
-            .map_err(|_| anyhow::anyhow!("Connection timeout ({}s)", timeout.as_secs()))??;
+    let (jump, mut handle, received_fp) = tokio::time::timeout(
+        timeout,
+        establish_transport(conn, proxy, config, &core.db, &tor),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("Connection timeout ({}s)", timeout.as_secs()))??;
 
     // Keyboard-interactive prompts are relayed to the frontend under a
     // synthetic session id; answers arrive through `sftp_respond_prompt`.
@@ -311,8 +340,9 @@ async fn list_dir(sess: &SftpSessionState, path: &str) -> anyhow::Result<Vec<Fil
 
     for item in dir {
         let name = item.file_name();
-        // Server-supplied names: drop anything that could escape a directory.
-        if !is_safe_name(&name) {
+        // Server-supplied names: drop anything that could escape a directory,
+        // and the temps of unfinished transfers.
+        if !is_safe_name(&name) || crate::commands::transfer::is_transfer_temp(&name) {
             continue;
         }
         let md = item.metadata();
@@ -369,15 +399,23 @@ pub async fn sftp_disconnect(
     ssh: State<'_, SshState>,
     connection_id: String,
 ) -> CmdResult<()> {
+    forget_session(&app, &ssh, &connection_id).await;
+    Ok(())
+}
+
+/// Drop the cached SFTP session of a connection: its transfers are cancelled,
+/// the session closes and the frontend hears it. Used by `sftp_disconnect` and
+/// when the connection is edited, deleted or gets a new host key.
+pub(crate) async fn forget_session(app: &AppHandle, ssh: &SshState, connection_id: &str) {
+    crate::commands::transfer::cancel_connection_transfers(&ssh.sftp, connection_id);
     let removed = {
         let mut sessions = ssh.sftp.sessions.write().await;
-        sessions.remove(&connection_id)
+        sessions.remove(connection_id)
     };
     if let Some(sess) = removed {
         let _ = sess.sftp.close().await;
-        emit_status(&app, &connection_id, "disconnected", None);
+        emit_status(app, connection_id, "disconnected", None);
     }
-    Ok(())
 }
 
 /// Every SFTP session closes and every transfer is cancelled: the module ssh
@@ -640,4 +678,27 @@ pub async fn sftp_respond_prompt(
         let _ = tx.send(SshInputCommand::PromptResponse(response)).await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_safe_name_on;
+
+    #[test]
+    fn names_from_the_server() {
+        for bad in ["", ".", "..", "a/b", "a\\b", "a\0b"] {
+            assert!(!is_safe_name_on(bad, false), "{bad:?}");
+            assert!(!is_safe_name_on(bad, true), "{bad:?}");
+        }
+        for name in [
+            "a:b", "C:x", "x.", "x ", "NUL", "com1.txt", "a<b", "a>b", "a\"b", "a|b", "a?b", "a*b",
+            "a\u{7}", "LPT9",
+        ] {
+            assert!(!is_safe_name_on(name, true), "{name:?} on windows");
+        }
+        for ok in ["a:b", "x.", "NUL", "file.txt"] {
+            assert!(is_safe_name_on(ok, false), "{ok:?} elsewhere");
+        }
+        assert!(is_safe_name_on("file.txt", true));
+    }
 }
