@@ -676,6 +676,7 @@ mod tests {
             last_signal_at: 0,
             last_my_signal_at: 0,
             request_floor: 0,
+            decided_at: 0,
             created_at: 0,
             updated_at: 0,
         };

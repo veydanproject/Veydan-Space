@@ -9,6 +9,7 @@ use messenger_core::inbound::Envelope as WireEnvelope;
 /// Re-exported: ingress filters and skips beats by these, the presence
 /// crate builds them; both take them from core.
 pub use messenger_core::presence::{KIND_PRESENCE, PRESENCE_D};
+pub use messenger_core::relations::{relations_page, KIND_RELATIONS, RELATIONS_D};
 use messenger_core::{ChannelInbound, DmInbound, EventId, GroupInbound, Inbound, MetaInbound, PubKey, RawEvent, Timestamp};
 use nostr::key::Keys;
 use nostr::nips::nip59::UnwrappedGift;
@@ -78,6 +79,7 @@ pub fn classify(raw: &RawEvent, keys: Option<&Keys>) -> Inbound {
                 .collect(),
         }),
         KIND_PRESENCE => classify_presence(&event),
+        KIND_RELATIONS => classify_relations(&event, keys),
         k if CHANNEL_KINDS.contains(&k) => Inbound::Channel(ChannelInbound { envelope, kind: k }),
         k => Inbound::ignored(k, "no handler for kind"),
     }
@@ -208,6 +210,29 @@ fn classify_presence(event: &Event) -> Inbound {
     Inbound::Meta(MetaInbound::Presence { author: pk(&event.pubkey), created_at: ts(event.created_at), expires_at })
 }
 
+/// The snapshot of my relations: application data of my own key under
+/// our `d` only. The same kind carries other clients' data and the open
+/// event of a link code (signed by a key of one procedure); anybody else's
+/// list, under our `d` or not, is not mine to read. Without the keys
+/// nothing of it can be read, as for a gift wrap.
+fn classify_relations(event: &Event, keys: Option<&Keys>) -> Inbound {
+    let Some(keys) = keys else {
+        return Inbound::ignored(KIND_RELATIONS, "no signer to read application data");
+    };
+    if event.pubkey != keys.public_key() {
+        return Inbound::ignored(KIND_RELATIONS, "application data of another key");
+    }
+    let Some(page) = event.tags.identifier().and_then(|d| relations_page(&d)) else {
+        return Inbound::ignored(KIND_RELATIONS, "application data of another kind");
+    };
+    Inbound::Meta(MetaInbound::Relations {
+        author: pk(&event.pubkey),
+        created_at: ts(event.created_at),
+        page,
+        content: event.content.clone(),
+    })
+}
+
 fn pk(p: &PublicKey) -> PubKey {
     PubKey::parse(&p.to_hex()).expect("nostr public keys are 64 hex chars")
 }
@@ -255,6 +280,33 @@ mod tests {
         }
         assert!(matches!(classify(&raw, Some(&eve)), Inbound::Ignored { .. }), "not addressed to eve");
         assert!(matches!(classify(&raw, None), Inbound::Ignored { .. }), "no signer");
+    }
+
+    /// A kind 30078 of `author` under `d`.
+    fn app_data(author: &Keys, d: &str) -> Event {
+        EventBuilder::new(Kind::from(KIND_RELATIONS), "ciphertext").tag(Tag::identifier(d)).finalize(author).unwrap()
+    }
+
+    #[test]
+    fn the_snapshot_of_my_relations_is_mine_under_our_d_only() {
+        let me = Keys::generate();
+        let other = Keys::generate();
+        match classify(&raw_of(&app_data(&me, RELATIONS_D)), Some(&me)) {
+            Inbound::Meta(MetaInbound::Relations { author, page, content, .. }) => {
+                assert_eq!(author.as_hex(), me.public_key().to_hex());
+                assert_eq!((page, content.as_str()), (0, "ciphertext"));
+            }
+            other => panic!("expected the header, got {other:?}"),
+        }
+        match classify(&raw_of(&app_data(&me, "veydan.relations.v1.7")), Some(&me)) {
+            Inbound::Meta(MetaInbound::Relations { page: 7, .. }) => {}
+            other => panic!("expected page 7, got {other:?}"),
+        }
+        let ignored = |e: &Event, keys: Option<&Keys>| matches!(classify(&raw_of(e), keys), Inbound::Ignored { kind: KIND_RELATIONS, .. });
+        assert!(ignored(&app_data(&other, RELATIONS_D), Some(&me)), "somebody else's list");
+        assert!(ignored(&app_data(&me, "veydan.relations.v1.16"), Some(&me)), "past the last page");
+        assert!(ignored(&app_data(&me, &"ab".repeat(32)), Some(&me)), "a link code");
+        assert!(ignored(&app_data(&me, RELATIONS_D), None), "no keys to read it");
     }
 
     /// A rumor of `KIND_OWN_RUMOR` wrapped by `author` to `to`.

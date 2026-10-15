@@ -27,7 +27,13 @@ membership: GroupMembership | null, } | { "kind": "contact", link: string, pubke
 /**
  * My name for them, then their own, then what the link says; may be empty.
  */
-name: string, picture: string | null, nip05: string | null, is_me: boolean, is_contact: boolean, blocked: boolean, } | { "kind": "vlink", link: string, id: string, 
+name: string, picture: string | null, nip05: string | null, is_me: boolean, is_contact: boolean, blocked: boolean, 
+/**
+ * The secret of their invitation, when the link carries one: a
+ * request by it (`messenger_dm_action` with `invite`) is let in
+ * without a request.
+ */
+invite: string | null, } | { "kind": "vlink", link: string, id: string, 
 /**
  * `address:port`.
  */

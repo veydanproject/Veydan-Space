@@ -1004,6 +1004,11 @@ impl MessengerRuntime {
                     return Ok(None);
                 }
             }
+            // Nor for what waits for a moderator: nothing of it is read
+            // until one lets it through (a moderator fetches it by hand).
+            if m.review == "pending" {
+                return Ok(None);
+            }
         }
         self.fetch_job().run(message_id.to_string(), m.chat_id, d, manual).await
     }
@@ -2042,6 +2047,64 @@ mod tests {
         assert!(rt.media_download(&mine, false).await.unwrap().is_some());
         // By hand, the sender's own server is asked too.
         assert!(rt.media_download(&theirs, true).await.unwrap().is_some());
+        rt.shutdown().await;
+    }
+
+    /// Nothing of what waits for a moderator is fetched by itself: a
+    /// moderator fetches it by hand, and once it is let through it comes
+    /// by itself like any other.
+    #[tokio::test]
+    async fn what_waits_for_a_moderator_is_not_fetched_by_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let mut rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        let backend = MemoryBackend::new("https://mem.example/a");
+        use_memory(&mut rt, &backend);
+        rt.identity().create("pw").await.unwrap();
+        let keys = rt.identity().load_keys().await.unwrap();
+        let peer = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
+        let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex()).await.unwrap().id;
+        let (manifest, _) = rt.relays.current_manifest().await.unwrap();
+        let project = manifest.media.first().expect("the manifest names a media server").url.clone();
+        let received = async |n: u8| {
+            let theirs = dir.path().join(format!("theirs-{n}.bin"));
+            tokio::fs::write(&theirs, vec![n; 2_000]).await.unwrap();
+            let blob = rt.media.queue_upload(&theirs, "dm:x", "x").await.unwrap();
+            let mut d = rt.media.run_upload(&blob.id, &keys, None, &UiSink(rt.ui.clone())).await.unwrap().unwrap();
+            d.servers = vec![format!("{project}/b")];
+            let id = format!("in-{n}");
+            let m = NewMessage {
+                id: id.clone(),
+                chat_id: chat.clone(),
+                wire_id: None,
+                direction: messages::DIR_IN.into(),
+                status: messages::STATUS_RECEIVED.into(),
+                content_type: messages::CT_MEDIA.into(),
+                text: None,
+                envelope_json: "{}".into(),
+                sender_pubkey: peer.as_hex().to_string(),
+                reply_to_id: None,
+                target_id: None,
+                created_at: n as i64,
+                is_hidden: false,
+                outbox_local_id: None,
+                media_json: Some(serde_json::to_string(&d).unwrap()),
+            };
+            messages::insert(&rt.store, &m).await.unwrap();
+            messages::set_review(&rt.store, &id, messages::REVIEW_PENDING).await.unwrap();
+            id
+        };
+        let held = received(1).await;
+        let freed = received(2).await;
+        for id in [&held, &freed] {
+            assert_eq!(rt.media_download(id, false).await.unwrap(), None, "{id}: waits, nothing is read of it");
+            assert!(rt.media.transfer_for_message(id, DIR_DOWN).await.unwrap().is_none(), "{id}: nothing started");
+        }
+        // Let through: fetched by itself, as any other.
+        messages::set_review(&rt.store, &freed, messages::REVIEW_APPROVED).await.unwrap();
+        assert!(rt.media_download(&freed, false).await.unwrap().is_some());
+        // Still waiting: a moderator fetches it by hand.
+        assert!(rt.media_download(&held, true).await.unwrap().is_some());
         rt.shutdown().await;
     }
 

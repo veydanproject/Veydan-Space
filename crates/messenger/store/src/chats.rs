@@ -106,12 +106,12 @@ pub async fn recompute_last(store: &Store, id: &str) -> Result<()> {
     sqlx::query(
         "UPDATE msg_chats SET
            last_message_at = (SELECT MAX(created_at) FROM msg_messages
-                               WHERE chat_id = ? AND is_hidden = 0 AND deleted_at IS NULL AND content_type != 'system'),
+                               WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1))),
            last_preview = (SELECT CASE WHEN content_type = 'media' THEN '📎 ' || COALESCE(text, json_extract(media_json, '$.name'), '')
                                        WHEN content_type = 'contact' THEN '👤 ' || COALESCE(json_extract(media_json, '$.display_name'),
                                                                                          json_extract(media_json, '$.name'), '')
                                        ELSE text END FROM msg_messages
-                           WHERE chat_id = ? AND is_hidden = 0 AND deleted_at IS NULL AND content_type != 'system'
+                           WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1))
                            ORDER BY created_at DESC LIMIT 1),
            updated_at = ?
          WHERE id = ?",
@@ -138,7 +138,7 @@ pub async fn mark_read(store: &Store, id: &str) -> Result<Option<i64>> {
         .await
         .map_err(storage)?;
     let newest = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT MAX(created_at) FROM msg_messages WHERE chat_id = ? AND direction = 'in' AND is_hidden = 0",
+        "SELECT MAX(created_at) FROM msg_messages WHERE chat_id = ? AND direction = 'in' AND is_hidden = 0 AND mod_state = ''",
     )
     .bind(id)
     .fetch_one(store.pool())
@@ -157,9 +157,7 @@ pub async fn read_up_to(store: &Store, id: &str, at: i64) -> Result<bool> {
     if !raise_read(store, id, at, false).await? {
         return Ok(false);
     }
-    let later = "(SELECT COUNT(*) FROM msg_messages
-                  WHERE chat_id = ?1 AND direction = 'in' AND is_hidden = 0 AND deleted_at IS NULL
-                    AND content_type != 'system' AND created_at > ?2)";
+    let later = format!("(SELECT COUNT(*) FROM msg_messages WHERE chat_id = ?1 AND {COUNTED} AND created_at > ?2)");
     let r = sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE msg_chats SET unread = {later}, updated_at = ?3 WHERE id = ?1 AND unread > {later}"
     )))
@@ -170,6 +168,42 @@ pub async fn read_up_to(store: &Store, id: &str, at: i64) -> Result<bool> {
     .await
     .map_err(storage)?;
     Ok(r.rows_affected() > 0)
+}
+
+/// A row of `msg_messages` that counts as unread once it is later than
+/// what was read: incoming, shown, not waiting for a moderator, and in a
+/// group not of someone I block in direct messages.
+const COUNTED: &str = "direction = 'in' AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system'
+    AND NOT (chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1))";
+
+/// A block in direct messages took effect, or was lifted: the group
+/// chats the peer wrote in show their line of the list without them
+/// (`recompute_last`) and count unread without them, never more than
+/// they counted before (as `read_up_to`: what was never counted, old
+/// history under the floor of a new device, does not start to count by
+/// an unblock). The chats touched, for the screen to be told.
+pub async fn group_chats_follow_block(store: &Store, peer_pubkey: &str) -> Result<Vec<String>> {
+    let ids = sqlx::query_scalar::<_, String>(
+        "SELECT DISTINCT chat_id FROM msg_messages WHERE sender_pubkey = ? AND chat_id LIKE 'group:%' AND is_hidden = 0",
+    )
+    .bind(peer_pubkey)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)?;
+    for id in &ids {
+        recompute_last(store, id).await?;
+        let counted = format!(
+            "(SELECT COUNT(*) FROM msg_messages WHERE chat_id = ?1 AND {COUNTED}
+               AND created_at > COALESCE((SELECT read_at FROM msg_own_read WHERE chat_id = ?1), 0))"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE msg_chats SET unread = {counted}, updated_at = ?2 WHERE id = ?1 AND unread > {counted}")))
+            .bind(id)
+            .bind(crate::now())
+            .execute(store.pool())
+            .await
+            .map_err(storage)?;
+    }
+    Ok(ids)
 }
 
 /// Move what is read in the chat up to `at`, never back. `true` when it moved.
@@ -312,12 +346,19 @@ pub async fn cleared_at(store: &Store, id: &str) -> Result<i64> {
 }
 
 /// What the app counts as waiting: a muted or archived chat keeps its own
-/// counter but stays out of the total (the badge, the tray).
+/// counter but stays out of the total (the badge, the tray), and so does a
+/// request of a stranger (`dm_relations::REQUEST_SQL`): the queue of
+/// requests has a count of its own.
 pub async fn total_unread(store: &Store) -> Result<i64> {
-    sqlx::query_scalar::<_, i64>("SELECT COALESCE(SUM(unread), 0) FROM msg_chats WHERE archived = 0 AND muted = 0")
-        .fetch_one(store.pool())
-        .await
-        .map_err(storage)
+    sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!(
+        "SELECT COALESCE(SUM(c.unread), 0) FROM msg_chats c
+         LEFT JOIN msg_dm_relations r ON r.peer_pubkey = c.peer_pubkey
+         WHERE c.archived = 0 AND c.muted = 0 AND NOT (c.kind = 'dm' AND r.peer_pubkey IS NOT NULL AND {})",
+        crate::dm_relations::REQUEST_SQL
+    )))
+    .fetch_one(store.pool())
+    .await
+    .map_err(storage)
 }
 
 #[cfg(test)]
@@ -504,6 +545,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_unread_request_is_not_counted_as_waiting() {
+        let s = Store::open_in_memory().await.unwrap();
+        ensure_dm(&s, "aa").await.unwrap();
+        incoming(&s, "m1", 100, "may I?").await;
+        assert_eq!(total_unread(&s).await.unwrap(), 1, "a chat without a relation row counts");
+        let mut r = crate::dm_relations::RelationRow {
+            peer_pubkey: "aa".into(),
+            my_contact: "none".into(),
+            blocked: false,
+            peer_signal: "approved".into(),
+            was_ever_mutual: false,
+            last_signal_at: 0,
+            last_my_signal_at: 0,
+            request_floor: 0,
+            decided_at: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        crate::dm_relations::put(&s, &r).await.unwrap();
+        assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().unread, 1, "the chat keeps its counter");
+        assert_eq!(total_unread(&s).await.unwrap(), 0, "a request stays out of the total");
+        r.my_contact = "approved".into();
+        crate::dm_relations::put(&s, &r).await.unwrap();
+        assert_eq!(total_unread(&s).await.unwrap(), 1, "accepted: it counts");
+    }
+
+    #[tokio::test]
     async fn read_on_any_device_holds_whatever_comes_first() {
         let s = Store::open_in_memory().await.unwrap();
         assert!(!read_up_to(&s, "dm:aa", 150).await.unwrap(), "no chat yet: kept, nothing to lower");
@@ -518,5 +586,76 @@ mod tests {
         incoming(&s, "m3", 300, "three").await;
         assert!(read_up_to(&s, "dm:aa", 300).await.unwrap());
         assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().unread, 0);
+    }
+
+    #[tokio::test]
+    async fn a_group_chat_counts_and_shows_nothing_of_someone_i_block() {
+        use crate::dm_relations::{put, RelationRow};
+        let s = Store::open_in_memory().await.unwrap();
+        sqlx::query("INSERT INTO msg_chats (id, kind, peer_pubkey, unread, last_message_at, last_preview, pinned, archived, muted, created_at, updated_at) VALUES ('group:g', 'group', NULL, 0, NULL, NULL, 0, 0, 0, 1, 1)")
+            .execute(s.pool())
+            .await
+            .unwrap();
+        let said = |id: &str, who: &str, at: i64| crate::messages::NewMessage {
+            chat_id: "group:g".into(),
+            sender_pubkey: who.into(),
+            text: Some(format!("{who}{at}")),
+            ..crate::messages::NewMessage {
+                id: id.into(),
+                chat_id: String::new(),
+                wire_id: None,
+                direction: "in".into(),
+                status: "received".into(),
+                content_type: "text".into(),
+                text: None,
+                envelope_json: "{}".into(),
+                sender_pubkey: String::new(),
+                reply_to_id: None,
+                target_id: None,
+                created_at: at,
+                is_hidden: false,
+                outbox_local_id: None,
+                media_json: None,
+            }
+        };
+        for (id, who, at) in [("a", "u", 10), ("b", "v", 20), ("c", "u", 30)] {
+            crate::messages::insert(&s, &said(id, who, at)).await.unwrap();
+            touch(&s, "group:g", at, Some(&format!("{who}{at}")), true).await.unwrap();
+        }
+        let chat = get(&s, "group:g").await.unwrap().unwrap();
+        assert_eq!((chat.unread, chat.last_preview.as_deref()), (3, Some("u30")));
+        let mut r = RelationRow {
+            peer_pubkey: "u".into(),
+            my_contact: "none".into(),
+            blocked: true,
+            peer_signal: "none".into(),
+            was_ever_mutual: false,
+            last_signal_at: 0,
+            last_my_signal_at: 0,
+            request_floor: 0,
+            decided_at: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        put(&s, &r).await.unwrap();
+        assert_eq!(group_chats_follow_block(&s, "u").await.unwrap(), vec!["group:g".to_string()]);
+        let chat = get(&s, "group:g").await.unwrap().unwrap();
+        assert_eq!((chat.unread, chat.last_preview.as_deref(), chat.last_message_at), (1, Some("v20"), Some(20)), "blocked: neither counted nor shown");
+        assert!(group_chats_follow_block(&s, "nobody").await.unwrap().is_empty());
+        // Read elsewhere while blocked: what they wrote does not count there
+        // either (the counter was bumped for both here, as if they were not).
+        crate::messages::insert(&s, &said("d", "u", 40)).await.unwrap();
+        touch(&s, "group:g", 40, Some("u40"), true).await.unwrap();
+        crate::messages::insert(&s, &said("e", "v", 50)).await.unwrap();
+        touch(&s, "group:g", 50, Some("v50"), true).await.unwrap();
+        assert_eq!(get(&s, "group:g").await.unwrap().unwrap().unread, 3);
+        assert!(read_up_to(&s, "group:g", 15).await.unwrap(), "lowered: only v20 and v50 count");
+        assert_eq!(get(&s, "group:g").await.unwrap().unwrap().unread, 2);
+        // Unblocked: shown again in the list; what was never counted does not start to count.
+        r.blocked = false;
+        put(&s, &r).await.unwrap();
+        group_chats_follow_block(&s, "u").await.unwrap();
+        let chat = get(&s, "group:g").await.unwrap().unwrap();
+        assert_eq!((chat.unread, chat.last_preview.as_deref()), (2, Some("v50")));
     }
 }

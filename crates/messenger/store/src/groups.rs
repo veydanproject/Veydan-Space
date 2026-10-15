@@ -27,16 +27,19 @@ pub struct GroupRow {
     pub link_epoch: i64,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Something of the group is newer than this build reads
+    /// (`set_needs_update`); not touched by `upsert`.
+    pub needs_update: bool,
 }
 
-const COLS: &str = "id, kind, name, about, picture, relay_url, owner, membership, my_role, members, link_epoch, created_at, updated_at";
+const COLS: &str = "id, kind, name, about, picture, relay_url, owner, membership, my_role, members, link_epoch, created_at, updated_at, needs_update";
 
 /// Insert or refresh the cached facts of a group.
 pub async fn upsert(store: &Store, g: &GroupRow) -> Result<()> {
     let now = crate::now();
     sqlx::query(
-        "INSERT INTO msg_groups (id, kind, name, about, picture, relay_url, owner, membership, my_role, members, link_epoch, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO msg_groups (id, kind, name, about, picture, relay_url, owner, membership, my_role, members, link_epoch, created_at, updated_at, needs_update)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, about = excluded.about, picture = excluded.picture,
            relay_url = excluded.relay_url, owner = excluded.owner, membership = excluded.membership,
            my_role = excluded.my_role, members = excluded.members, link_epoch = excluded.link_epoch,
@@ -55,6 +58,7 @@ pub async fn upsert(store: &Store, g: &GroupRow) -> Result<()> {
     .bind(g.link_epoch)
     .bind(now)
     .bind(now)
+    .bind(g.needs_update)
     .execute(store.pool())
     .await
     .map_err(storage)?;
@@ -85,6 +89,17 @@ pub async fn list(store: &Store) -> Result<Vec<GroupRow>> {
         .fetch_all(store.pool())
         .await
         .map_err(storage)
+}
+
+/// Whether something of the group waits for a newer build of the app.
+pub async fn set_needs_update(store: &Store, id: &str, needs_update: bool) -> Result<()> {
+    sqlx::query("UPDATE msg_groups SET needs_update = ? WHERE id = ?")
+        .bind(needs_update)
+        .bind(id)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
 }
 
 /// Forget a group on this device: cache, log, keys list, pending, chat.
@@ -207,6 +222,59 @@ pub async fn take_pending(store: &Store, group_id: &str, key_id: &str) -> Result
         .await
         .map_err(storage)?;
     Ok(rows)
+}
+
+/// What waits in a bucket, oldest first, left where it is.
+pub async fn pending_in(store: &Store, group_id: &str, key_id: &str) -> Result<Vec<PendingRow>> {
+    sqlx::query_as::<_, PendingRow>(
+        "SELECT event_id, group_id, key_id, ciphertext, created_at, received_at FROM msg_group_pending
+         WHERE group_id = ? AND key_id = ? ORDER BY created_at, event_id",
+    )
+    .bind(group_id)
+    .bind(key_id)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+pub async fn delete_pending(store: &Store, event_id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM msg_group_pending WHERE event_id = ?").bind(event_id).execute(store.pool()).await.map_err(storage)?;
+    Ok(())
+}
+
+/// How much waits in the buckets of a group whose name starts with
+/// `prefix`: rows, and bytes of ciphertext.
+pub async fn pending_prefix_size(store: &Store, group_id: &str, prefix: &str) -> Result<(i64, i64)> {
+    sqlx::query_as::<_, (i64, i64)>(
+        "SELECT COUNT(*), COALESCE(SUM(length(ciphertext)), 0) FROM msg_group_pending
+         WHERE group_id = ? AND substr(key_id, 1, length(?)) = ?",
+    )
+    .bind(group_id)
+    .bind(prefix)
+    .bind(prefix)
+    .fetch_one(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// Drop the row of those buckets that came first (by its receipt here,
+/// never by the date its author wrote on it: a bucket of what strangers
+/// to this build wrote is emptied as a queue, and a date is anybody's
+/// word); the bytes it held, or none when there was nothing to drop.
+pub async fn delete_oldest_pending(store: &Store, group_id: &str, prefix: &str) -> Result<Option<i64>> {
+    let oldest = sqlx::query_as::<_, (String, i64)>(
+        "SELECT event_id, length(ciphertext) FROM msg_group_pending
+         WHERE group_id = ? AND substr(key_id, 1, length(?)) = ? ORDER BY received_at, rowid LIMIT 1",
+    )
+    .bind(group_id)
+    .bind(prefix)
+    .bind(prefix)
+    .fetch_optional(store.pool())
+    .await
+    .map_err(storage)?;
+    let Some((event_id, bytes)) = oldest else { return Ok(None) };
+    delete_pending(store, &event_id).await?;
+    Ok(Some(bytes))
 }
 
 /// Events that wait for a key (not those that wait for their author),
@@ -423,6 +491,7 @@ mod tests {
             link_epoch: 0,
             created_at: 0,
             updated_at: 0,
+            needs_update: false,
         }
     }
 
@@ -456,6 +525,33 @@ mod tests {
         let taken = take_pending(&s, "g1", "k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9").await.unwrap();
         assert_eq!(taken.iter().map(|p| p.event_id.as_str()).collect::<Vec<_>>(), vec!["e1", "e2"]);
         assert_eq!(count_pending(&s, "g1", 0).await.unwrap(), 0);
+
+        // Buckets of one prefix: measured, read in place, the first that
+        // came dropped (f2 came first, whatever its date says).
+        for (id, bucket, at, text) in [("f2", "future:k1", 20, "cc"), ("f1", "future:k2", 10, "c"), ("w1", "welcome", 5, "cccc")] {
+            add_pending(&s, &PendingRow { event_id: id.into(), group_id: "g1".into(), key_id: bucket.into(), ciphertext: text.into(), created_at: at, received_at: 0 })
+                .await
+                .unwrap();
+        }
+        assert_eq!(pending_prefix_size(&s, "g1", "future:").await.unwrap(), (2, 3));
+        assert_eq!(pending_prefix_size(&s, "g1", "nothing:").await.unwrap(), (0, 0));
+        assert_eq!(count_pending(&s, "g1", 0).await.unwrap(), 0, "none of them waits for a key");
+        assert_eq!(pending_in(&s, "g1", "future:k1").await.unwrap().iter().map(|p| p.event_id.as_str()).collect::<Vec<_>>(), vec!["f2"]);
+        assert_eq!(pending_in(&s, "g1", "future:k1").await.unwrap().len(), 1, "reading leaves it there");
+        assert_eq!(delete_oldest_pending(&s, "g1", "future:").await.unwrap(), Some(2));
+        assert_eq!(pending_prefix_size(&s, "g1", "future:").await.unwrap(), (1, 1));
+        assert!(pending_in(&s, "g1", "future:k1").await.unwrap().is_empty(), "f2 went, though dated later");
+        delete_pending(&s, "f1").await.unwrap();
+        assert_eq!(delete_oldest_pending(&s, "g1", "future:").await.unwrap(), None);
+        assert_eq!(pending_in(&s, "g1", "welcome").await.unwrap().len(), 1, "another bucket is untouched");
+
+        assert!(!get(&s, "g1").await.unwrap().unwrap().needs_update);
+        set_needs_update(&s, "g1", true).await.unwrap();
+        assert!(get(&s, "g1").await.unwrap().unwrap().needs_update);
+        upsert(&s, &group("g1")).await.unwrap();
+        assert!(get(&s, "g1").await.unwrap().unwrap().needs_update, "a refresh of the row does not clear it");
+        set_needs_update(&s, "g1", false).await.unwrap();
+        assert!(!get(&s, "g1").await.unwrap().unwrap().needs_update);
 
         delete(&s, "g1").await.unwrap();
         assert!(get(&s, "g1").await.unwrap().is_none());

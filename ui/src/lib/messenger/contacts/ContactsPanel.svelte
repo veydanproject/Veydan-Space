@@ -13,6 +13,7 @@
   import Avatar from './Avatar.svelte';
   import ContactAddForm from './ContactAddForm.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
+  import MyQrButton from '../invites/MyQrButton.svelte';
 
   interface Props {
     onchat?: (pubkey: string) => void;
@@ -74,7 +75,12 @@
 </script>
 
 <div class="contacts" class:card={!compact} class:compact>
-  {#if !compact}<div class="card-title"><Icon name="user" size={16} /> {$t('msg_contacts_title')}</div>{/if}
+  {#if !compact}
+    <div class="title-row">
+      <div class="card-title"><Icon name="user" size={16} /> {$t('msg_contacts_title')}</div>
+      <MyQrButton disabled={!messengerStore.status?.runtime?.session_active} />
+    </div>
+  {/if}
   <p class="muted">{$t('msg_contacts_text')}</p>
 
   {#if !compact}<ContactAddForm />{/if}
@@ -176,6 +182,7 @@
 <style>
   .contacts { max-width: 680px; width: 100%; margin-inline: auto; display: flex; flex-direction: column; gap: var(--sp-3); }
   .card-title { display: flex; align-items: center; gap: var(--sp-2); }
+  .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-xs); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }

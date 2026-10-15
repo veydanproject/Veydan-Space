@@ -14,6 +14,15 @@ export const callHref = () => `${BASE}/call`;
 /** The room of the group call I am in, the whole screen. */
 export const groupCallHref = () => `${BASE}/group-call`;
 
+/** The requests of strangers waiting for an answer. */
+export const requestsHref = () => `${BASE}/requests`;
+
+/** One request, by the stranger's key (hex). */
+export const requestHref = (peer: string) => `${BASE}/request?peer=${encodeURIComponent(peer)}`;
+
+/** «Мой QR»: my code to show, and the camera for someone else's. */
+export const qrHref = () => `${BASE}/qr`;
+
 /**
  * Whether a tapped notification has somewhere to go from `here`. The page
  * it leads to may be open already (a second tap on the same chat): going

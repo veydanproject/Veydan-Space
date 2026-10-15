@@ -19,6 +19,10 @@ use crate::calls::{
 use crate::call_nodes::{CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust};
 use crate::cards::{ContactPrivateView, OwnPrivateView};
 use crate::links::{GroupMembership, LinkGroupKind, LinkView};
+use crate::moderation::{
+    BlockedView, DmSettings, GroupModSettings, InvitePreset, InviteStatus, InviteView, LogEntry, LogPage, ModAction, QueueFilter,
+    QueueItem, QueuePage, RequestAction, RequestView, RequestsPage, Schedule,
+};
 use crate::net::{BridgeView, NetCheck, NetMode, NetStatus, Verdict};
 use crate::shared::{SharedCounts, SharedSection};
 use messenger_avatar::CropRect;
@@ -37,6 +41,7 @@ pub const PROFILE_FILE: &str = "../../../ui/src/lib/messenger/generated/profile.
 pub const TRANSFER_FILE: &str = "../../../ui/src/lib/messenger/generated/transfer.ts";
 pub const CALLS_FILE: &str = "../../../ui/src/lib/messenger/generated/calls.ts";
 pub const BOT_FILE: &str = "../../../ui/src/lib/messenger/generated/bot.ts";
+pub const MODERATION_FILE: &str = "../../../ui/src/lib/messenger/generated/moderation.ts";
 
 const HEADER: &str = "// SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
@@ -162,8 +167,34 @@ pub fn bot_ts() -> String {
     out
 }
 
+/// The queue of requests, the settings of direct messages, the moderation
+/// of groups and the invitations, as the pages of moderation read them
+/// (the facade `messenger_runtime::moderation`, the commands
+/// `messenger_moderation_*`).
+pub fn moderation_ts() -> String {
+    let cfg = Config::new();
+    let mut out = String::from(HEADER);
+    out += &export::<RequestView>(&cfg, "One request of a stranger: the chat, who, the one text that shows, when, and how many of their words wait behind it.");
+    out += &export::<RequestsPage>(&cfg, "A page of the queue of requests, newest first, as `messenger_moderation_requests` answers; `next_before` is what to pass for the next page, absent on the last.");
+    out += &export::<RequestAction>(&cfg, "What `messenger_moderation_request_act` does with a request: let the stranger in, say no, or shut the key.");
+    out += &export::<DmSettings>(&cfg, "Whom I take messages from (`anyone` | `contacts`) and how many days a request waits (0: forever), as `messenger_moderation_dm_settings` answers.");
+    out += &export::<QueueItem>(&cfg, "A message waiting in the queue of a group, or hidden there.");
+    out += &export::<QueuePage>(&cfg, "A page of the queue of a group, as `messenger_moderation_group_queue` answers.");
+    out += &export::<QueueFilter>(&cfg, "What of the queue of a group to show; a field left out means any.");
+    out += &export::<ModAction>(&cfg, "One act of moderation in a group, as `messenger_moderation_group_mod` takes it; tagged by `t`.");
+    out += &export::<LogEntry>(&cfg, "One line of the log of moderation of a group.");
+    out += &export::<LogPage>(&cfg, "A page of the log of moderation, as `messenger_moderation_group_log` answers.");
+    out += &export::<Schedule>(&cfg, "When members may post: days 1 (Monday) to 7, `from` and `to` as HH:MM in `tz`.");
+    out += &export::<GroupModSettings>(&cfg, "The settings of moderation of a group: who may post (`all` | `managers`), when, and whose messages wait for a manager (`off` | `newcomers` | `all`).");
+    out += &export::<InvitePreset>(&cfg, "What an invitation is to be, as `messenger_moderation_invite_create` takes it: a link, a code or a QR, for how many, for how long, for whom.");
+    out += &export::<InviteView>(&cfg, "An invitation as `messenger_moderation_invite_list` lists them: `link` for a link and a QR (my contact link with the secret on it), none for a code; `used` counts the keys that came in by it.");
+    out += &export::<InviteStatus>(&cfg, "The state of the invitations on this device, as `messenger_moderation_invite_status` answers: `paused_until` when somebody guessed too often (the event `dm.invite_paused` tells of it).");
+    out += &export::<BlockedView>(&cfg, "Somebody I block, as `messenger_moderation_blocked` lists them: the key, its npub and what the app calls them.");
+    out
+}
+
 /// Every generated file and what it should hold.
-pub fn files() -> [(&'static str, String); 7] {
+pub fn files() -> [(&'static str, String); 8] {
     [
         (LINKS_FILE, links_ts()),
         (SHARED_FILE, shared_ts()),
@@ -172,6 +203,7 @@ pub fn files() -> [(&'static str, String); 7] {
         (TRANSFER_FILE, transfer_ts()),
         (CALLS_FILE, calls_ts()),
         (BOT_FILE, bot_ts()),
+        (MODERATION_FILE, moderation_ts()),
     ]
 }
 

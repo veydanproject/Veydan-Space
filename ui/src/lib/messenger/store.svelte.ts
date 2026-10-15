@@ -34,6 +34,8 @@ import { callNodesStore } from "./net/callNodesStore.svelte";
 import { usageStore } from "./shared/emoji/usageStore.svelte";
 import { presenceStore } from "./presence/presenceStore.svelte";
 import { privacyStore } from "./privacy/privacyStore.svelte";
+import { requestStore } from "./requests/requestStore.svelte";
+import { inviteStore } from "./invites/inviteStore.svelte";
 import { pushSeen } from "./push/bridge";
 import { callStore } from "./calls/callStore.svelte";
 import { groupCallStore } from "./calls/groupCallStore.svelte";
@@ -127,6 +129,8 @@ class MessengerStore {
         this.ownProfile = ownProfile;
         if (identity) {
           chatStore.loadChats().catch(() => {});
+          // The row of requests above the chats shows their count.
+          requestStore.load().catch(() => {});
           groupStore.load().catch(() => {});
           // Whether a bridge is offered shows above the chats, not only in settings.
           netStore.load().catch(() => {});
@@ -154,6 +158,8 @@ class MessengerStore {
         this.phonesAsked.clear();
         avatarStore.reset();
         chatStore.reset();
+        requestStore.reset();
+        inviteStore.reset();
         groupStore.reset();
         linkStore.reset();
         sharedStore.reset();
@@ -193,6 +199,8 @@ class MessengerStore {
     avatarStore.reset();
     this.loaded = false;
     chatStore.reset();
+    requestStore.reset();
+    inviteStore.reset();
     groupStore.reset();
     linkStore.reset();
     sharedStore.reset();
@@ -215,6 +223,9 @@ class MessengerStore {
         transferStore.handleEvent(ev);
         callStore.handleEvent(ev);
         groupCallStore.handleEvent(ev);
+        requestStore.handleEvent(ev);
+        inviteStore.handleEvent(ev);
+        groupStore.handleEvent(ev);
       }));
       return;
     }
@@ -234,6 +245,8 @@ class MessengerStore {
         usageStore.handleEvent(e.payload);
         presenceStore.handleEvent(e.payload);
         privacyStore.handleEvent(e.payload);
+        requestStore.handleEvent(e.payload);
+        inviteStore.handleEvent(e.payload);
         avatarStore.handleEvent(e.payload);
         callStore.handleEvent(e.payload);
         groupCallStore.handleEvent(e.payload);
@@ -274,13 +287,17 @@ class MessengerStore {
   /**
    * Behind the lock nothing of the chats is seen: the open chat closes, so
    * what comes in it is not marked read, and the page says it is not in
-   * sight. The lock opened, the page says it is seen again and the list is
-   * read anew: the commands of the chats answered `vault_locked` meanwhile.
+   * sight. The lock opened, the page says it is seen again and the list and
+   * the requests are read anew: their commands answered `vault_locked`
+   * meanwhile.
    */
   lockChanged(locked: boolean) {
     lockSight.locked = locked;
     if (locked) chatStore.close();
-    else chatStore.scheduleChatsRefresh();
+    else {
+      chatStore.scheduleChatsRefresh();
+      requestStore.scheduleReload();
+    }
     void sayForeground(inSight());
   }
 

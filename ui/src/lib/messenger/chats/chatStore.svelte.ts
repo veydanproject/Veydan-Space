@@ -93,8 +93,10 @@ class ChatStore {
   }
 
   get totalUnread(): number {
-    // Muted chats keep their own counter but stay out of the total.
-    return this.chats.reduce((n, c) => n + (c.archived || c.is_muted ? 0 : c.unread), 0);
+    // Muted chats keep their own counter but stay out of the total, and so
+    // do the requests of strangers: they wait in a folder of their own and
+    // must not call the user back to the app.
+    return this.chats.reduce((n, c) => n + (c.archived || c.is_muted || c.mode === 'request_received' ? 0 : c.unread), 0);
   }
 
   async loadChats() {
@@ -218,16 +220,23 @@ class ChatStore {
     this.chats = this.chats.map((x) => (x.id === chatId ? { ...x, unread: 0 } : x));
   }
 
-  async loadOlder() {
+  /**
+   * The page before the first message shown; how many it added. `force`
+   * reads it even when the last page said there is no more: a group has
+   * just been asked for its older history (`groups.history`).
+   */
+  async loadOlder(force = false): Promise<number> {
     const id = this.activeId;
-    if (!id || !this.hasMore || this.loadingOlder || this.messages.length === 0) return;
+    if (!id || (!this.hasMore && !force) || this.loadingOlder || this.messages.length === 0) return 0;
     this.loadingOlder = true;
     try {
       const page = await messengerApi.chats.messages(id, this.messages[0].created_at, PAGE);
-      if (this.activeId !== id) return;
+      if (this.activeId !== id) return 0;
       const known = new Set(this.messages.map((m) => m.id));
-      this.messages = [...page.filter((m) => !known.has(m.id)), ...this.messages];
+      const fresh = page.filter((m) => !known.has(m.id));
+      this.messages = [...fresh, ...this.messages];
       this.hasMore = page.length === PAGE;
+      return fresh.length;
     } finally {
       this.loadingOlder = false;
     }
@@ -434,6 +443,12 @@ class ChatStore {
         if (p.chat_id === this.activeId) this.scheduleWindowReload();
         this.scheduleChatsRefresh();
         break;
+      // A message was let through, turned down or hidden: the open window
+      // shows it as the group now decides. These name the group, not the chat.
+      case 'group.queue':
+      case 'group.moderation':
+        if (typeof p.group === 'string' && `group:${p.group}` === this.activeId) this.scheduleWindowReload();
+        break;
       // Someone read up to here: the ticks of the open chat change, its place in the list does not.
       case 'chat.receipt':
         if (p.chat_id === this.activeId) this.scheduleWindowReload();
@@ -441,6 +456,8 @@ class ChatStore {
       case "group.invite":
       case "group.request":
       case 'chats.updated':
+      // A request came, expired or was answered: its chat moves in or out of the list.
+      case 'dm.request':
       case 'chat.read':
       case 'profile.updated':
       case 'history.synced':

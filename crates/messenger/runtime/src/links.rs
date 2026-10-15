@@ -87,6 +87,10 @@ pub enum LinkView {
         is_me: bool,
         is_contact: bool,
         blocked: bool,
+        /// The secret of their invitation, when the link carries one: a
+        /// request by it (`messenger_dm_action` with `invite`) is let in
+        /// without a request.
+        invite: Option<String>,
     },
     /// A VLink bridge to the project's servers that somebody runs
     /// (`veydan://vlink/…`). The kind is `vlink`: `bridge` is kept for
@@ -144,7 +148,7 @@ impl LinkView {
 /// `npub1…` and `nostr:npub1…` name a person as a link does.
 fn bare_contact(text: &str) -> Option<ContactLink> {
     let npub = text.strip_prefix("nostr:").unwrap_or(text);
-    pubkey_of_npub(npub).map(|pubkey| ContactLink { pubkey, name: String::new(), relays: Vec::new() })
+    pubkey_of_npub(npub).map(|pubkey| ContactLink { pubkey, name: String::new(), relays: Vec::new(), invite: None })
 }
 
 impl MessengerRuntime {
@@ -249,17 +253,24 @@ impl MessengerRuntime {
             is_me,
             is_contact: contact.is_some(),
             blocked: self.dm_blocked().await?.iter().any(|b| b == pk.as_hex()),
+            invite: link.invite.clone(),
         })
     }
 
     /// The link of a person, to share: the name they are known by here and
     /// the relays this device writes to.
     pub async fn contact_link(&self, pubkey: &PubKey) -> Result<String> {
+        self.contact_link_with(pubkey, None).await
+    }
+
+    /// The same with the secret of an invitation on it (mine, for my own
+    /// link: `moderation::invite_create`).
+    pub async fn contact_link_with(&self, pubkey: &PubKey, invite: Option<&str>) -> Result<String> {
         let name = match self.link_inspect(&npub_of(pubkey).unwrap_or_default()).await? {
             LinkView::Contact { name, .. } => name,
             _ => String::new(),
         };
-        let relays = self
+        let relays: Vec<messenger_core::RelayUrl> = self
             .relays()
             .list()
             .await?
@@ -267,7 +278,7 @@ impl MessengerRuntime {
             .filter(|r| r.enabled && r.write)
             .filter_map(|r| messenger_core::RelayUrl::parse(&r.url))
             .collect();
-        Ok(ContactLink { pubkey: pubkey.clone(), name, relays }.encode()?)
+        Ok(messenger_links::contact_link(pubkey, &name, &relays, invite)?)
     }
 }
 

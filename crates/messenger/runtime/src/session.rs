@@ -1,17 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! A session = a signer + a live ingress loop + an outbox pump + one
-//! history catch-up + a loop that sends the receipts this device owes + the
-//! presence loop (`crate::presence`) + the keeper of my avatar
-//! (`crate::avatars`) + the follower of profiles (`crate::meta`). It
-//! exists only while the runtime holds signing keys;
-//! the runtime restarts it when the signer or the relay pool changes.
+//! A session = a signer + a live ingress loop + an outbox pump + the
+//! opening of the inbox (the list of my relations first, then the
+//! subscriptions, then one history catch-up; `crate::relations`) + the
+//! publisher of that list + a loop that sends the receipts this device
+//! owes + the presence loop (`crate::presence`) + the keeper of my avatar
+//! (`crate::avatars`) + the follower of profiles (`crate::meta`) + the
+//! keeper of the queue of requests (`crate::moderation`). It exists only
+//! while the runtime holds signing keys; the runtime restarts it when the
+//! signer or the relay pool changes.
 
 use async_trait::async_trait;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
 use messenger_core::Clock;
-use messenger_core::{Ack, Context, Outbound, PubKey, Result, Scope, SubId, SyncItem, Timestamp, Transport};
+use messenger_core::{Ack, Context, Outbound, PubKey, Result, Scope, SyncItem, Timestamp, Transport};
 use messenger_dm::DmService;
 use messenger_groups::GroupService;
 use messenger_ingress::{filters, Dispatcher, EffectSink, IngressLoop, Outbox};
@@ -63,7 +66,10 @@ pub struct Session {
     pub started_at: Timestamp,
     ingress: IngressLoop,
     pump: JoinHandle<()>,
-    history: JoinHandle<()>,
+    /// Reads my list, subscribes, catches the history up (`crate::relations`).
+    inbox: JoinHandle<()>,
+    /// Publishes my list after a decision (`crate::relations`).
+    relations: JoinHandle<()>,
     /// Sends the receipts this device owes (`crate::receipts`).
     receipts: JoinHandle<()>,
     /// Tells my key, watches the contacts, beats (`crate::presence`).
@@ -72,6 +78,8 @@ pub struct Session {
     avatars: JoinHandle<()>,
     /// Follows the profiles of whom the relays bring (`crate::meta`).
     meta: JoinHandle<()>,
+    /// Keeps the queue of requests: its term and its size (`crate::moderation`).
+    requests: JoinHandle<()>,
 }
 
 impl Session {
@@ -95,14 +103,6 @@ impl Session {
         let started_at = clock.now();
         let me = PubKey::parse(&keys.public_key().to_hex()).expect("valid pubkey");
 
-        let since = Timestamp(started_at.secs() - filters::DM_LIVE_MARGIN_SECS);
-        pool.send(Outbound::Subscribe {
-            id: SubId(filters::SUB_DM_LIVE.into()),
-            filter: filters::dm_inbox(&me, since),
-            scope: Scope::Own,
-        })
-        .await?;
-
         // What arrived while we were offline counts as unread; on a fresh
         // database (no previous session) restored history does not.
         if let Ok(Some(last_seen)) = settings::get(&store, KEY_LAST_SEEN).await {
@@ -121,12 +121,31 @@ impl Session {
 
         let receipts = tokio::spawn(crate::receipts::receipt_loop(dm.clone(), groups, outbox.clone(), keys.clone()));
         let presence = tokio::spawn(crate::presence::presence_loop(presence, pool.clone(), keys.clone()));
-        let pump = tokio::spawn(pump_loop(store.clone(), pool.clone(), outbox, dm, ui.clone()));
+        let requests = tokio::spawn(crate::moderation::sweep_loop(
+            dm.clone(),
+            outbox.clone(),
+            ui.clone(),
+            crate::moderation::SWEEP_WAIT_FOR_HISTORY,
+            crate::moderation::SWEEP_EVERY,
+        ));
+        let pump = tokio::spawn(pump_loop(store.clone(), pool.clone(), outbox.clone(), dm.clone(), ui.clone()));
         let quiet = pool.clone();
         avatars.session_started();
         let avatars = tokio::spawn(crate::avatars::keeper_loop(avatars, keys.clone(), move || quiet.is_silent()));
-        let history = tokio::spawn(history_catch_up(store, pool, me, started_at, ui));
-        Ok(Self { keys, started_at, ingress, pump, history, receipts, presence, avatars, meta })
+        // The list of my relations first, then the inbox and the history;
+        // and a decision taken here rings the publisher of the list.
+        let owed = Arc::new(tokio::sync::Notify::new());
+        let ring = owed.clone();
+        dm.set_relations_hook(Some(Arc::new(move || ring.notify_one())));
+        let relations = tokio::spawn(crate::relations::publish_loop(dm.clone(), outbox.clone(), keys.clone(), owed));
+        let inbox = tokio::spawn(crate::relations::open_inbox(store, pool, keys.clone(), dm, outbox, me, started_at, ui));
+        Ok(Self { keys, started_at, ingress, pump, inbox, relations, receipts, presence, avatars, meta, requests })
+    }
+
+    /// Whether the keeper of the queue of requests is still running.
+    #[cfg(test)]
+    pub(crate) fn sweeps_requests(&self) -> bool {
+        !self.requests.is_finished()
     }
 
     pub fn stats(&self) -> (u64, u64, u64, u64, u64) {
@@ -136,11 +155,13 @@ impl Session {
     pub fn stop(&self) {
         self.ingress.abort();
         self.pump.abort();
-        self.history.abort();
+        self.inbox.abort();
+        self.relations.abort();
         self.receipts.abort();
         self.presence.abort();
         self.avatars.abort();
         self.meta.abort();
+        self.requests.abort();
     }
 }
 
@@ -181,8 +202,9 @@ async fn pump_loop(store: Store, pool: Arc<RelayPool>, outbox: Outbox, dm: DmSer
 
 /// One history reconciliation per session: everything addressed to us
 /// since the last completed catch-up (minus the gift-wrap time jitter), or
-/// from the beginning on a fresh database.
-async fn history_catch_up(
+/// from the beginning on a fresh database. After the list of my relations
+/// was read (`crate::relations::open_inbox`), so the history meets it.
+pub(crate) async fn history_catch_up(
     store: Store,
     pool: Arc<RelayPool>,
     me: PubKey,
@@ -202,7 +224,7 @@ async fn history_catch_up(
     }
     let cursor = cursors::get(&store, filters::CURSOR_DM_INBOX, cursors::ANY_RELAY).await.ok().flatten();
     let since = cursor.map(|c| c - filters::DM_LIVE_MARGIN_SECS).unwrap_or(0).max(0);
-    let local = events_raw::items_since(&store, 1059, since, 20_000)
+    let local = events_raw::items_since(&store, 1059, since)
         .await
         .unwrap_or_default()
         .into_iter()

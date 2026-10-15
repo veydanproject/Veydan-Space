@@ -28,6 +28,18 @@
 //! messenger-cli [--data-dir DIR] cards <npub|hex|group:ID> [SECONDS] | card-accept <message-id>
 //! messenger-cli [--data-dir DIR] relation <npub|hex>
 //! messenger-cli [--data-dir DIR] request|accept|decline|block|unblock|remove <npub|hex>
+//! messenger-cli [--data-dir DIR] requests [--before N] [--limit N]                 (the queue of requests of strangers, newest first)
+//! messenger-cli [--data-dir DIR] request-accept|request-decline|request-block <npub|hex>
+//! messenger-cli [--data-dir DIR] dm-settings [--from anyone|contacts] [--keep-days N]   (whom I take messages from; 0 days = forever)
+//! messenger-cli [--data-dir DIR] group-queue <group:ID> [--author <npub|hex>] [--before N] [--limit N] | group-log <group:ID> [--before N] [--limit N]
+//! messenger-cli [--data-dir DIR] group-hide <group:ID> <id>… | group-unhide <group:ID> <id>… | group-hide-author <group:ID> <npub|hex> [--from N] [--to N]
+//! messenger-cli [--data-dir DIR] group-mod-approve <group:ID> <id> <version> | group-mod-reject <group:ID> <id> | group-spam <group:ID> <npub|hex> [<id>]
+//! messenger-cli [--data-dir DIR] group-mod-mute <group:ID> <npub|hex> [--until N] | group-mod-unmute <group:ID> <npub|hex> | group-trust <group:ID> <npub|hex> on|off
+//! messenger-cli [--data-dir DIR] group-mod-settings <group:ID> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none]
+//! messenger-cli [--data-dir DIR] group-inherit <group:ID> <npub|hex>          (say again, as me, what that moderator decided)
+//!   (the moderation of groups goes through the facade of the runtime;
+//!    `group-approve`, `group-reject`, `group-mute`, `group-unmute` are the older commands of membership, hence the `-mod-` names)
+//! messenger-cli [--data-dir DIR] invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <npub|hex>] [--label L] | invite-list | invite-revoke <id>   (the same)
 //! messenger-cli [--data-dir DIR] push-on <token> [--server URL]
 //! messenger-cli [--data-dir DIR] push-status | push-test | push-off
 //! messenger-cli [--data-dir DIR] servers [veydan|own|refresh]
@@ -82,7 +94,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request|accept|decline|block|unblock|remove <peer> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -327,18 +339,26 @@ async fn main() {
             if args.is_empty() {
                 usage();
             }
-            let chat = rt.chat_open(&args[0]).await.unwrap_or_else(die);
-            for m in rt.dm().messages(&chat.id, None, 200).await.unwrap_or_else(die) {
+            // A group (`group:<id>`, the id may be short) is read as the
+            // runtime shows it to me: a moderator sees what waits for a
+            // check, a member does not. The full id is printed: it is what
+            // `group-hide` and `group-mod-approve` take.
+            let chat_id = match args[0].strip_prefix("group:") {
+                Some(short) => format!("group:{}", group_id(&rt, short).await),
+                None => rt.chat_open(&args[0]).await.unwrap_or_else(die).id,
+            };
+            for m in rt.messages(&chat_id, None, 200).await.unwrap_or_else(die) {
                 println!(
-                    "{} {} {:<8} {:<4} {}{}{}{}",
+                    "{} {} {:<8} {:<4} {}{}{}{}{}",
                     m.created_at,
                     if m.direction == "out" { "->" } else { "<-" },
                     m.status,
                     ticks(&m),
                     if m.deleted { "(deleted)".to_string() } else { body_line(&m) },
                     if m.edited_at.is_some() && !m.deleted { " (edited)" } else { "" },
+                    if m.review != "ok" { format!(" [{}]", m.review) } else { String::new() },
                     reactions(&m),
-                    format_args!("  #{}", &m.id[..8.min(m.id.len())]),
+                    format_args!("  #{}", m.id),
                 );
             }
         }
@@ -558,8 +578,19 @@ async fn main() {
             );
         }
         "request" | "accept" | "decline" | "block" | "unblock" | "remove" => {
+            // A request by an invitation of the peer: the secret of their
+            // link, code or QR, and the first text that goes with a code.
+            let invite = take_flag(&mut args, "--invite");
+            let text = take_flag(&mut args, "--text");
             if args.is_empty() {
                 usage();
+            }
+            if cmd == "request" && (invite.is_some() || text.is_some()) {
+                wait_connect(&rt).await;
+                let r = rt.dm_request(&args[0], invite.as_deref(), text.as_deref()).await.unwrap_or_else(die);
+                flush(&rt).await;
+                println!("mode={} can_send={}", r.mode, r.can_send);
+                return;
             }
             let action = match cmd.as_str() {
                 "request" => messenger_runtime::DmAction::Request,
@@ -573,6 +604,200 @@ async fn main() {
             let r = rt.dm_act(&args[0], action).await.unwrap_or_else(die);
             flush(&rt).await;
             println!("mode={} can_send={}", r.mode, r.can_send);
+        }
+        "requests" => {
+            let before = take_flag(&mut args, "--before").map(|v| number(&v));
+            let limit = take_flag(&mut args, "--limit").map(|v| number(&v) as u32).unwrap_or(50);
+            let page = rt.requests(before, limit).await.unwrap_or_else(die);
+            if page.items.is_empty() {
+                println!("(nobody is asking)");
+            }
+            for r in &page.items {
+                println!("{}  {}  {}  held={}  \"{}\"", r.at, r.peer, r.name, r.held, r.text);
+            }
+            println!("total={}{}", page.total, page.next_before.map(|b| format!(" next --before {b}")).unwrap_or_default());
+        }
+        "request-accept" | "request-decline" | "request-block" => {
+            if args.is_empty() {
+                usage();
+            }
+            let action = match cmd.as_str() {
+                "request-accept" => messenger_runtime::RequestAction::Accept,
+                "request-decline" => messenger_runtime::RequestAction::Decline,
+                _ => messenger_runtime::RequestAction::Block,
+            };
+            wait_connect(&rt).await;
+            rt.request_act(&args[0], action).await.unwrap_or_else(die);
+            flush(&rt).await;
+            let r = rt.dm_relation(&args[0]).await.unwrap_or_else(die);
+            println!("mode={} can_send={} pending={}", r.mode, r.can_send, rt.requests_count().await.unwrap_or_else(die));
+        }
+        "dm-settings" => {
+            let from = take_flag(&mut args, "--from");
+            let keep_days = take_flag(&mut args, "--keep-days").map(|v| number(&v) as u32);
+            let mut s = rt.dm_settings().await.unwrap_or_else(die);
+            if from.is_some() || keep_days.is_some() {
+                if let Some(from) = from {
+                    s.dm_from = from;
+                }
+                if let Some(days) = keep_days {
+                    s.keep_days = days;
+                }
+                rt.dm_settings_set(s.clone()).await.unwrap_or_else(die);
+                s = rt.dm_settings().await.unwrap_or_else(die);
+            }
+            println!("dm_from={} keep_days={} pending={}", s.dm_from, s.keep_days, rt.requests_count().await.unwrap_or_else(die));
+        }
+        // The moderation of groups and the invitations: the facade answers
+        // `not_implemented` until their stages land; the commands stand so
+        // that a bot or a check is written against them now.
+        "group-queue" => {
+            let filter = messenger_runtime::QueueFilter {
+                author: take_flag(&mut args, "--author"),
+                since: take_flag(&mut args, "--since").map(|v| number(&v)),
+                until: take_flag(&mut args, "--until").map(|v| number(&v)),
+                text: take_flag(&mut args, "--text"),
+            };
+            let before = take_flag(&mut args, "--before").map(|v| number(&v));
+            let limit = take_flag(&mut args, "--limit").map(|v| number(&v) as u32).unwrap_or(50);
+            let group = group_ref(&args);
+            let page = rt.group_queue(&group, filter, before, limit).await.unwrap_or_else(die);
+            for i in &page.items {
+                println!("{}  {}  {}  v{}  +{}  \"{}\"", i.at, i.message_id, i.author, i.version, i.more_from_author, i.text);
+            }
+            println!("total={}", page.total);
+        }
+        "group-log" => {
+            let before = take_flag(&mut args, "--before").map(|v| number(&v));
+            let limit = take_flag(&mut args, "--limit").map(|v| number(&v) as u32).unwrap_or(50);
+            let group = group_ref(&args);
+            let page = rt.group_log(&group, before, limit).await.unwrap_or_else(die);
+            for e in &page.items {
+                println!("{}  {}  {}  {}  {}", e.at, e.by, e.action, e.target, e.detail);
+            }
+        }
+        "group-hide" | "group-unhide" | "group-hide-author" | "group-mod-approve" | "group-mod-reject" | "group-spam"
+        | "group-mod-mute" | "group-mod-unmute" | "group-trust" => {
+            let from = take_flag(&mut args, "--from").map(|v| number(&v));
+            let to = take_flag(&mut args, "--to").map(|v| number(&v));
+            let until = take_flag(&mut args, "--until").map(|v| number(&v));
+            if args.len() < 2 {
+                usage();
+            }
+            let group = group_ref(&args);
+            let rest: Vec<String> = args[1..].to_vec();
+            let key = |i: usize| messenger_runtime::parse_key(&rest[i]).unwrap_or_else(die).as_hex().to_string();
+            let action = match cmd.as_str() {
+                "group-hide" => messenger_runtime::ModAction::Hide { targets: rest.clone() },
+                "group-unhide" => messenger_runtime::ModAction::Unhide { targets: rest.clone() },
+                "group-hide-author" => messenger_runtime::ModAction::HideAuthor { author: key(0), from: from.unwrap_or(0), to: to.unwrap_or(i64::MAX) },
+                "group-mod-approve" => {
+                    let version = rest.get(1).cloned().unwrap_or_else(|| usage());
+                    messenger_runtime::ModAction::Approve { target: rest[0].clone(), version }
+                }
+                "group-mod-reject" => messenger_runtime::ModAction::Reject { target: rest[0].clone() },
+                "group-spam" => messenger_runtime::ModAction::Spam { author: key(0), target: rest.get(1).cloned() },
+                "group-mod-mute" => messenger_runtime::ModAction::Mute { who: key(0), until },
+                "group-mod-unmute" => messenger_runtime::ModAction::Unmute { who: key(0) },
+                _ => {
+                    let trusted = match rest.get(1).map(String::as_str) {
+                        Some("on") => true,
+                        Some("off") => false,
+                        _ => usage(),
+                    };
+                    messenger_runtime::ModAction::Trust { who: key(0), trusted }
+                }
+            };
+            settle(&rt, 3).await;
+            rt.group_mod(&group, action).await.unwrap_or_else(die);
+            flush(&rt).await;
+            println!("ok");
+        }
+        "group-inherit" => {
+            if args.len() < 2 {
+                usage();
+            }
+            let group = group_ref(&args);
+            settle(&rt, 3).await;
+            let n = rt.group_inherit(&group, &args[1]).await.unwrap_or_else(die);
+            flush(&rt).await;
+            println!("ok sent={n}");
+        }
+        "group-mod-settings" => {
+            let post_mode = take_flag(&mut args, "--post-mode");
+            let premod = take_flag(&mut args, "--premod");
+            // `TZ:DAYS:HH:MM-HH:MM` (days as digits 1..7, e.g. `12345`), or `none`.
+            let schedule = take_flag(&mut args, "--schedule").map(|v| {
+                if v == "none" {
+                    return None;
+                }
+                let mut parts = v.splitn(3, ':');
+                let (Some(tz), Some(days), Some(hours)) = (parts.next(), parts.next(), parts.next()) else { usage() };
+                let Some((from, to)) = hours.split_once('-') else { usage() };
+                Some(messenger_runtime::Schedule {
+                    tz: tz.to_string(),
+                    days: days.chars().filter_map(|c| c.to_digit(10).map(|d| d as u8)).collect(),
+                    from: from.to_string(),
+                    to: to.to_string(),
+                })
+            });
+            let group = group_ref(&args);
+            let mut s = rt.group_mod_settings(&group).await.unwrap_or_else(die);
+            if post_mode.is_some() || premod.is_some() || schedule.is_some() {
+                if let Some(p) = post_mode {
+                    s.post_mode = p;
+                }
+                if let Some(p) = premod {
+                    s.premod = p;
+                }
+                if let Some(sched) = schedule {
+                    s.schedule = sched;
+                }
+                settle(&rt, 3).await;
+                rt.group_mod_settings_set(&group, s.clone()).await.unwrap_or_else(die);
+                flush(&rt).await;
+                s = rt.group_mod_settings(&group).await.unwrap_or_else(die);
+            }
+            println!("post_mode={} premod={} schedule={}", s.post_mode, s.premod, s.schedule.map(|x| format!("{} {:?} {}-{}", x.tz, x.days, x.from, x.to)).unwrap_or_else(|| "none".into()));
+        }
+        "invite-create" => {
+            let preset = messenger_runtime::InvitePreset {
+                max_uses: take_flag(&mut args, "--max-uses").map(|v| number(&v) as u32),
+                ttl_secs: take_flag(&mut args, "--ttl").map(|v| number(&v)),
+                for_pubkey: take_flag(&mut args, "--for").map(|k| messenger_runtime::parse_key(&k).unwrap_or_else(die).as_hex().to_string()),
+                label: take_flag(&mut args, "--label").unwrap_or_default(),
+                kind: args.first().cloned().unwrap_or_else(|| usage()),
+            };
+            let v = rt.invite_create(preset).await.unwrap_or_else(die);
+            print_invite(&v);
+        }
+        "invite-list" => {
+            let list = rt.invite_list().await.unwrap_or_else(die);
+            if list.is_empty() {
+                println!("(no invitations)");
+            }
+            for v in &list {
+                print_invite(v);
+            }
+            if let Some(until) = rt.invite_status().await.unwrap_or_else(die).paused_until {
+                println!("paused until {until}: somebody is guessing");
+            }
+        }
+        "blocked" => {
+            let list = rt.blocked().await.unwrap_or_else(die);
+            if list.is_empty() {
+                println!("(nobody is blocked)");
+            }
+            for b in &list {
+                println!("{}  {}  {}", b.peer, b.npub, b.name);
+            }
+        }
+        "invite-revoke" => {
+            if args.is_empty() {
+                usage();
+            }
+            rt.invite_revoke(&args[0]).await.unwrap_or_else(die);
+            println!("ok");
         }
         "media-servers" => {
             for s in rt.media_servers().await.unwrap_or_else(die) {
@@ -913,16 +1138,21 @@ async fn main() {
             if args.len() < 2 {
                 usage();
             }
+            // `--raw <json>` wraps any envelope as given (a media descriptor,
+            // a control signal, an unknown type): what a client that skips
+            // its own checks could send; `--at <secs>` dates the rumor.
             let send = args.iter().any(|a| a == "--send");
             args.retain(|a| a != "--send");
+            let raw = take_flag(&mut args, "--raw");
+            let at = take_flag(&mut args, "--at").and_then(|s| s.parse::<i64>().ok());
             let to = args.remove(0);
             let bundle = rt.notify_bundle().await.unwrap_or_else(die).unwrap_or_else(|| {
                 eprintln!("error: no identity");
                 std::process::exit(1)
             });
             let keys = bundle.keys().unwrap_or_else(die);
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
-            let content = messenger_core::Envelope::text(&args.join(" ")).encode();
+            let now = at.unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64);
+            let content = raw.unwrap_or_else(|| messenger_core::Envelope::text(&args.join(" ")).encode());
             let group = to.strip_prefix("group:").map(|id| (id, false)).or(to.strip_prefix("stranger:").map(|id| (id, true)));
             if let Some((group_id, stranger)) = group {
                 // A member seals with the group's newest key this identity holds.
@@ -945,9 +1175,21 @@ async fn main() {
                     flush(&rt).await;
                 }
             } else {
-                let to = messenger_core::PubKey::parse(&to).unwrap_or_else(|| usage());
+                let to = messenger_runtime::parse_key(&to).unwrap_or_else(die);
                 let wrapped = messenger_dm::wrap::wrap(&keys, &to, &content, now, None).unwrap_or_else(die);
                 println!("{}", wrapped.to_peer.json);
+                if send {
+                    // Straight to the peer's inbox, past every check of the
+                    // sender: the receiver's gate is what is being tried.
+                    wait_connect(&rt).await;
+                    let hint_relays = rt.dm().hints(&to).await.unwrap_or_default();
+                    rt.outbox()
+                        .enqueue(messenger_core::Outbound::PublishToInbox { recipient: to, event: wrapped.to_peer, hint_relays })
+                        .await
+                        .unwrap_or_else(die);
+                    rt.outbox().kick();
+                    flush(&rt).await;
+                }
             }
         }
         "notify-describe" => {
@@ -979,16 +1221,30 @@ async fn main() {
             println!("{}", serde_json::to_string_pretty(&outcome).unwrap());
             return;
         }
+        "group-link" => {
+            // The link of a public group as a member sees it: what a QR or
+            // «Join by link» on another device takes.
+            if args.is_empty() {
+                usage();
+            }
+            let id = group_id(&rt, &args[0]).await;
+            let g = rt.group_get(&id).await.unwrap_or_else(die);
+            println!("{}", g.link.unwrap_or_else(|| "(no link: not public, or not joined)".into()));
+        }
         "groups" => {
             for g in rt.group_list().await.unwrap_or_else(die) {
                 println!(
-                    "{}  {:<7} {:<10} role={:<9} members={} undecrypted={}  {}",
+                    "{}  {:<7} {:<10} role={:<9} members={} undecrypted={} post={} mode={} premod={} queue={}  {}",
                     &g.id[..12],
                     g.kind,
                     g.membership,
                     g.my_role.unwrap_or_else(|| "-".into()),
                     g.members.len(),
                     g.undecrypted,
+                    g.can_post,
+                    g.post_mode,
+                    g.premod,
+                    g.queue,
                     g.name
                 );
             }
@@ -1114,6 +1370,8 @@ async fn main() {
             println!("deleted {id}");
         }
         "group-history" => {
+            let before = take_flag(&mut args, "--before").map(|v| number(&v));
+            let limit = take_flag(&mut args, "--limit").map(|v| number(&v) as u32).unwrap_or(200);
             if args.is_empty() {
                 usage();
             }
@@ -1122,7 +1380,15 @@ async fn main() {
             if secs > 0 {
                 settle(&rt, secs).await;
             }
-            let mut list = rt.dm().messages(&format!("group:{id}"), None, 500).await.unwrap_or_else(die);
+            // «Load earlier»: the window below `--before` is asked of the
+            // relays first, then what is here is listed.
+            if let Some(before) = before {
+                wait_connect(&rt).await;
+                let n = rt.group_history(&id, before, limit).await.unwrap_or_else(die);
+                println!("fetched {n} before {before}");
+            }
+            // As I see it: a moderator sees what waits for one too.
+            let mut list = rt.messages(&format!("group:{id}"), None, 500).await.unwrap_or_else(die);
             list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
             for m in list {
                 println!(
@@ -1147,8 +1413,8 @@ async fn main() {
                 "group-remove" => messenger_runtime::GroupOp::Remove { who },
                 "group-ban" => messenger_runtime::GroupOp::Ban { who },
                 "group-unban" => messenger_runtime::GroupOp::Unban { who },
-                "group-mute" => messenger_runtime::GroupOp::SetMuted { who, muted: true },
-                "group-unmute" => messenger_runtime::GroupOp::SetMuted { who, muted: false },
+                "group-mute" => messenger_runtime::GroupOp::SetMuted { who, muted: true, until: None },
+                "group-unmute" => messenger_runtime::GroupOp::SetMuted { who, muted: false, until: None },
                 "group-transfer" => messenger_runtime::GroupOp::TransferOwnership { to: who },
                 _ => {
                     let role = args.get(2).and_then(|r| messenger_runtime::GroupRole::parse(r)).unwrap_or_else(|| usage());
@@ -1173,7 +1439,7 @@ async fn main() {
                 _ => {
                     rt.group_act(
                         &id,
-                        messenger_runtime::GroupOp::EditSettings { name: Some(args[1..].join(" ")), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None },
+                        messenger_runtime::GroupOp::EditSettings { name: Some(args[1..].join(" ")), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None, post_mode: None, post_schedule: None, premod: None },
                     )
                     .await
                 }
@@ -1228,6 +1494,9 @@ async fn main() {
                 history_for_new: None,
                 call_node: Some(node),
                 call_node_key: Some(key.unwrap_or_default()),
+                post_mode: None,
+                post_schedule: None,
+                premod: None,
             };
             rt.group_act(&id, op).await.unwrap_or_else(die);
             flush(&rt).await;
@@ -1472,6 +1741,32 @@ fn transfer_line(t: &messenger_runtime::TransferView) -> String {
 fn die<T>(e: messenger_core::MessengerError) -> T {
     eprintln!("error: {e}");
     std::process::exit(1)
+}
+
+/// A number of a flag, or the usage.
+fn number(v: &str) -> i64 {
+    v.parse().unwrap_or_else(|_| usage())
+}
+
+/// The first argument as the id of a group, with or without `group:`.
+fn group_ref(args: &[String]) -> String {
+    args.first().map(|a| a.trim_start_matches("group:").to_string()).unwrap_or_else(|| usage())
+}
+
+fn print_invite(v: &messenger_runtime::moderation::InviteView) {
+    println!(
+        "{}  {}  {}  used={}{}  {}{}{}{}{}",
+        v.id,
+        v.kind,
+        v.secret,
+        v.used,
+        v.max_uses.map(|m| format!("/{m}")).unwrap_or_default(),
+        v.label,
+        v.expires_at.map(|e| format!("  until {e}")).unwrap_or_default(),
+        v.for_pubkey.as_deref().map(|f| format!("  for {f}")).unwrap_or_default(),
+        if v.revoked { "  revoked" } else { "" },
+        v.link.as_deref().map(|l| format!("\n    {l}")).unwrap_or_default()
+    );
 }
 
 /// Accept the short `#abcdef12` form printed by `history`.

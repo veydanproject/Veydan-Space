@@ -5,6 +5,7 @@ use super::*;
 use messenger_core::Timestamp;
 use messenger_media::download::BlobFetcher;
 use messenger_media::{MediaServerInput, MemoryBackend};
+use messenger_store::chats;
 use messenger_testkit::MemorySecretStore;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
@@ -693,12 +694,28 @@ async fn over_blossom_two_copies_and_a_move() {
 
 // ─── Others ─────────────────────────────────────────────────────────────────
 
+/// Somebody in my book whose profile names `url` as their picture: a face
+/// this device asks for.
+async fn contact_with_picture(r: &Rig, url: &str) -> Keys {
+    let k = Keys::generate();
+    let peer = k.public_key().to_hex();
+    messenger_store::contacts::add(&r.store, &peer, None).await.unwrap();
+    profiles::upsert_if_newer(
+        &r.store,
+        &profiles::ProfileRow { pubkey: peer, picture: Some(url.to_string()), event_created_at: 1, ..Default::default() },
+    )
+    .await
+    .unwrap();
+    k
+}
+
 #[tokio::test]
 async fn a_picture_of_someone_else_is_fetched_once_and_kept_small() {
     let r = rig().await;
     let picture = bmp(600, 400, [0, 120, 255]);
     let sha = avatar::sha256_hex(&picture);
     let url = format!("https://cdn.example/{sha}.png");
+    contact_with_picture(&r, &url).await;
     r.net.serve(&url, picture);
     let mut rx = r.ui.subscribe();
     assert_eq!(r.av.cached(&url, None, true).await.unwrap(), None, "fetched in the background");
@@ -714,6 +731,7 @@ async fn a_picture_of_someone_else_is_fetched_once_and_kept_small() {
     // An address without a hash is named by the address, and looked at
     // again a week later; the old picture is shown meanwhile.
     let plain = "https://cdn.example/me.png";
+    contact_with_picture(&r, plain).await;
     r.net.serve(plain, bmp(50, 50, [1, 1, 1]));
     assert_eq!(r.av.cached(plain, None, true).await.unwrap(), None);
     r.ready(&mut rx, plain).await;
@@ -727,6 +745,86 @@ async fn a_picture_of_someone_else_is_fetched_once_and_kept_small() {
     assert_eq!(r.net.calls().iter().filter(|c| c.ends_with(&url)).count(), 1);
 }
 
+/// Only the faces of my contacts are fetched: a stranger's, whether
+/// their request waits, I declined it, it ran out, I blocked them or
+/// their profile was merely looked at, is not, or their server would
+/// learn that I looked. Once the request is accepted, it is fetched like
+/// anybody's; what the device holds is shown either way.
+#[tokio::test]
+async fn the_picture_of_a_stranger_is_not_fetched() {
+    let r = rig().await;
+    let picture = bmp(40, 40, [9, 9, 9]);
+    let (asking, blocked, friend, declined, expired, looked) =
+        (Keys::generate(), Keys::generate(), Keys::generate(), Keys::generate(), Keys::generate(), Keys::generate());
+    let url_of = |k: &Keys| format!("https://cdn.example/{}.png", &k.public_key().to_hex()[..8]);
+    for (k, my_contact, blocked_by_me) in [
+        (&asking, Some("none"), false),
+        (&blocked, Some("approved"), true),
+        (&friend, Some("approved"), false),
+        (&declined, Some("declined"), false),
+        (&expired, Some("expired"), false),
+        (&looked, None, false),
+    ] {
+        let peer = k.public_key().to_hex();
+        if let Some(my_contact) = my_contact {
+            chats::ensure_dm(&r.store, &peer).await.unwrap();
+            dm_relations::put(
+                &r.store,
+                &dm_relations::RelationRow {
+                    peer_pubkey: peer.clone(),
+                    my_contact: my_contact.into(),
+                    blocked: blocked_by_me,
+                    peer_signal: "approved".into(),
+                    was_ever_mutual: false,
+                    last_signal_at: 0,
+                    last_my_signal_at: 0,
+                    request_floor: 0,
+                    decided_at: 0,
+                    created_at: 0,
+                    updated_at: 0,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        profiles::upsert_if_newer(
+            &r.store,
+            &profiles::ProfileRow { pubkey: peer, picture: Some(url_of(k)), event_created_at: 1, ..Default::default() },
+        )
+        .await
+        .unwrap();
+        r.net.serve(&url_of(k), picture.clone());
+    }
+    let mut rx = r.ui.subscribe();
+    for k in [&asking, &blocked, &declined, &expired, &looked, &friend] {
+        assert_eq!(r.av.cached(&url_of(k), None, true).await.unwrap(), None);
+    }
+    r.ready(&mut rx, &url_of(&friend)).await;
+    assert_eq!(r.net.calls(), vec![format!("foreign {}", url_of(&friend))], "the contact's alone");
+    assert!(r.av.cached(&url_of(&friend), None, true).await.unwrap().is_some());
+    // An address of nobody's is not asked for either.
+    assert_eq!(r.av.cached("https://cdn.example/nobody.png", None, true).await.unwrap(), None);
+    assert_eq!(r.net.calls().len(), 1);
+
+    // Accepted: the picture is fetched like anybody's.
+    let mut row = dm_relations::get(&r.store, &asking.public_key().to_hex()).await.unwrap().unwrap();
+    row.my_contact = "approved".into();
+    dm_relations::put(&r.store, &row).await.unwrap();
+    assert_eq!(r.av.cached(&url_of(&asking), None, true).await.unwrap(), None);
+    r.ready(&mut rx, &url_of(&asking)).await;
+    assert!(r.av.cached(&url_of(&asking), None, true).await.unwrap().is_some());
+    assert_eq!(r.net.calls().len(), 2);
+    // In my book without a relation row (added before relations were kept): mine to ask for.
+    messenger_store::contacts::add(&r.store, &looked.public_key().to_hex(), None).await.unwrap();
+    assert_eq!(r.av.cached(&url_of(&looked), None, true).await.unwrap(), None);
+    r.ready(&mut rx, &url_of(&looked)).await;
+    assert_eq!(r.net.calls().len(), 3);
+    // Blocked, the book is no reason.
+    messenger_store::contacts::add(&r.store, &blocked.public_key().to_hex(), None).await.unwrap();
+    assert_eq!(r.av.cached(&url_of(&blocked), None, true).await.unwrap(), None);
+    assert_eq!(r.net.calls().len(), 3);
+}
+
 #[tokio::test]
 async fn a_wrong_or_missing_picture_is_looked_for_on_my_servers() {
     let r = rig().await;
@@ -734,6 +832,8 @@ async fn a_wrong_or_missing_picture_is_looked_for_on_my_servers() {
     let sha = avatar::sha256_hex(&picture);
     r.backend.blobs.lock().unwrap().insert(sha.clone(), picture);
     let url = format!("https://gone.example/{sha}");
+    // Named by my own kind 0 (set on another device): a face of mine.
+    r.profiles.apply_event(&r.me(), Timestamp(T0 + 5), &serde_json::json!({ "name": "me", "picture": url }).to_string()).await.unwrap();
     r.net.serve(&url, b"something else".to_vec());
     let mut rx = r.ui.subscribe();
     assert_eq!(r.av.cached(&url, Some(&r.keys), true).await.unwrap(), None);
@@ -756,6 +856,7 @@ async fn a_wrong_or_missing_picture_is_looked_for_on_my_servers() {
 async fn failures_are_remembered() {
     let r = rig().await;
     let url = "https://down.example/a.png";
+    contact_with_picture(&r, url).await;
     let mut rx = r.ui.subscribe();
     for attempt in 1..=8 {
         assert_eq!(r.av.cached(url, None, true).await.unwrap(), None);
@@ -781,6 +882,7 @@ async fn failures_are_remembered() {
 
     // Garbage is a failure too, and nothing is kept.
     let junk = "https://junk.example/a.png";
+    contact_with_picture(&r, junk).await;
     r.net.serve(junk, b"<html>".to_vec());
     r.av.cached(junk, None, true).await.unwrap();
     attempts_reach(&r.store, junk, 1).await;
@@ -804,6 +906,7 @@ async fn fetches_are_deduplicated_and_limited() {
     let r = rig_on(MemoryBackend::new(BASE), Keys::generate(), net).await;
     let urls: Vec<String> = (0..7).map(|i| format!("https://cdn.example/{i}.png")).collect();
     for (i, u) in urls.iter().enumerate() {
+        contact_with_picture(&r, u).await;
         r.net.serve(u, bmp(20, 20, [i as u8 * 30, 0, 0]));
     }
     let mut rx = r.ui.subscribe();
@@ -1045,6 +1148,7 @@ async fn pictures_nobody_looks_at_are_let_go() {
     for rgb in [[1, 1, 1], [2, 2, 2]] {
         let body = bmp(30, 30, rgb);
         let url = format!("https://cdn.example/{}.png", avatar::sha256_hex(&body));
+        contact_with_picture(&r, &url).await;
         r.net.serve(&url, body);
         assert_eq!(r.av.cached(&url, None, true).await.unwrap(), None);
         r.ready(&mut rx, &url).await;

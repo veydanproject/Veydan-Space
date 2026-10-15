@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import '../shared/emoji/font.css';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -20,6 +20,9 @@
   import ContactsPanel from '../contacts/ContactsPanel.svelte';
   import SettingsView from './SettingsView.svelte';
   import ConfirmHost from '../shared/ConfirmHost.svelte';
+  import RequestsList from '../requests/RequestsList.svelte';
+  import RequestView from '../requests/RequestView.svelte';
+  import { requestStore, requestsUi } from '../requests/requestStore.svelte';
   import type { MessengerChat } from '../api';
   import { onChatOpened } from '../content/actions';
   import { paletteUi } from '../palette.svelte';
@@ -67,6 +70,24 @@
     if (!messengerStore.identity && view === 'settings') view = 'chat';
   });
 
+  // The rail shows the requests or the chats, and the pane a request or a
+  // chat, never one of each: the requests open in the chat view with no
+  // chat, and a chat opened from anywhere closes them.
+  $effect(() => {
+    if (requestsUi.shown) untrack(() => show('chat'));
+  });
+  $effect(() => {
+    if (chatStore.activeId) untrack(() => requestsUi.close());
+  });
+  const request = $derived(requestsUi.shown ? requestStore.current : null);
+
+  /** Accepted: the request is a chat now, shown as any other. */
+  function accepted(chatId: string) {
+    requestsUi.close();
+    view = 'chat';
+    chatStore.open(chatId).catch(() => {});
+  }
+
   function show(v: View) {
     view = v;
     if (v !== 'chat') chatStore.close();
@@ -90,7 +111,7 @@
 {:else if s.runtime}
   <div class="page page--fill messenger">
     <div class="shell">
-      <aside class="rail" class:hidden-narrow={view !== 'chat' || !!chatStore.active}>
+      <aside class="rail" class:hidden-narrow={view !== 'chat' || !!chatStore.active || !!request}>
         <div class="rail-head">
           <span class="rail-title">{$t('msg_title')} <span class="alpha-badge">{$t('msg_alpha_badge')}</span></span>
           <span class="net {netState}" title={$t(`msg_net_${netState}` as 'msg_net_on', { connected: String(connected), total: String(total) })}></span>
@@ -100,17 +121,21 @@
           <button class="icon" onclick={() => (newGroup = true)} title={$t("msg_group_new_title")}><Icon name="users-plus" size={16} /></button>
           <button class="icon accent" onclick={() => (newChat = true)} title={$t('msg_newchat_title')}><Icon name="message-circle-plus" size={16} /></button>
         </div>
-        <div class="search">
-          <Icon name="search" size={14} />
-          <input type="text" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" />
-          {#if query}<button class="icon sm" onclick={() => (query = '')}><Icon name="x" size={12} /></button>{/if}
-        </div>
-        <BridgeOffer />
-        <InvitesBar />
-        <ChatList {query} onopen={openChat} />
+        {#if requestsUi.shown}
+          <RequestsList onopen={(r) => (requestStore.selected = r.peer)} onback={() => requestsUi.close()} />
+        {:else}
+          <div class="search">
+            <Icon name="search" size={14} />
+            <input type="text" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" />
+            {#if query}<button class="icon sm" onclick={() => (query = '')}><Icon name="x" size={12} /></button>{/if}
+          </div>
+          <BridgeOffer />
+          <InvitesBar />
+          <ChatList {query} onopen={openChat} />
+        {/if}
       </aside>
 
-      <main class="pane" class:hidden-narrow={view === 'chat' && !chatStore.active}>
+      <main class="pane" class:hidden-narrow={view === 'chat' && !chatStore.active && !request}>
         {#if view === 'contacts'}
           <div class="pane-scroll">
             <button class="back-narrow btn btn-ghost btn-sm" onclick={() => show('chat')}><Icon name="arrow-left" size={12} />{$t('msg_back')}</button>
@@ -120,6 +145,13 @@
           <div class="pane-scroll">
             <button class="back-narrow btn btn-ghost btn-sm" onclick={() => show('chat')}><Icon name="arrow-left" size={12} />{$t('msg_back')}</button>
             <SettingsView />
+          </div>
+        {:else if request}
+          <RequestView {request} onback={() => (requestStore.selected = null)} onaccepted={accepted} ondone={() => (requestStore.selected = null)} />
+        {:else if requestsUi.shown}
+          <div class="welcome">
+            <div class="welcome-icon"><Icon name="shield" size={34} /></div>
+            <span>{$t('msg_req_pick')}</span>
           </div>
         {:else if chatStore.active?.kind === "group"}
           <GroupChat chat={chatStore.active} onback={() => chatStore.close()} />

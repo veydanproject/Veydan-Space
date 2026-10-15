@@ -6,11 +6,13 @@
 //! There is no server that knows "A and B are contacts". Each device keeps
 //! four independent facts about a peer and derives everything else:
 //!
-//! - `my_contact`: what I decided (none / approved / declined)
+//! - `my_contact`: what I decided (none / approved / declined / expired)
 //! - `blocked`: my block (the only block flag)
 //! - `peer_signal`: the last will of the peer, learned from control
 //!   messages; cleared locally when I decline, remove or re-request
 //! - `was_ever_mutual`: both were approved at some point
+//! - `decided_at`: when I last decided (my clock), so that a copy of a
+//!   decision from another device applies only when it is newer
 //!
 //! No transition table: each fact changes on its own, and the screen mode,
 //! the inbound decision and the outbound permission are computed. Nothing
@@ -24,6 +26,9 @@ pub enum MyContact {
     None,
     Approved,
     Declined,
+    /// Their request ran out (its term, or pushed out of a full queue):
+    /// nothing of theirs comes through until I add them myself.
+    Expired,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,7 +55,7 @@ macro_rules! str_enum {
     };
 }
 
-str_enum!(MyContact { None => "none", Approved => "approved", Declined => "declined" });
+str_enum!(MyContact { None => "none", Approved => "approved", Declined => "declined", Expired => "expired" });
 str_enum!(PeerSignal {
     None => "none", Approved => "approved", Blocked => "blocked",
     Left => "left", Declined => "declined", Revoked => "revoked",
@@ -128,6 +133,10 @@ pub struct Relationship {
     /// Where the last episode ended, in the peer's clock: only the peer's
     /// messages after it count toward "one message before approval".
     pub request_floor: i64,
+    /// When `my_contact` or `blocked` was last decided: by me here (my
+    /// clock, never twice the same), or the time a copy of my decision
+    /// from another device carried (`merge_decision`). 0: never.
+    pub decided_at: i64,
 }
 
 impl Default for Relationship {
@@ -140,7 +149,42 @@ impl Default for Relationship {
             last_signal_at: 0,
             last_my_signal_at: 0,
             request_floor: 0,
+            decided_at: 0,
         }
+    }
+}
+
+/// The time of a decision taken here, after the one before: my clock,
+/// and one more when the clock has not moved since.
+pub fn decided_now(prev: i64, now: i64) -> i64 {
+    now.max(prev.saturating_add(1))
+}
+
+/// How much a decision of mine shuts: a block over anything, then an
+/// expiry, a no, a yes, nothing. A difference in the block ranks above
+/// one in `my_contact`.
+fn strictness(r: &Relationship) -> (bool, u8) {
+    let mine = match r.my_contact {
+        MyContact::None => 0,
+        MyContact::Approved => 1,
+        MyContact::Declined => 2,
+        MyContact::Expired => 3,
+    };
+    (r.blocked, mine)
+}
+
+/// My decision as another device of mine holds it (`incoming`: `local`
+/// with their `my_contact`, `blocked` and `decided_at`) against the one
+/// here. The newer decision stands; of two taken in the same second on
+/// two devices the stricter one, so both end the same whichever copy
+/// comes first. A copy is never a new decision: nothing is bumped.
+pub fn merge_decision(local: &Relationship, incoming: &Relationship) -> Relationship {
+    let newer = incoming.decided_at > local.decided_at;
+    let stricter = incoming.decided_at == local.decided_at && strictness(incoming) > strictness(local);
+    if newer || stricter {
+        *incoming
+    } else {
+        *local
     }
 }
 
@@ -188,6 +232,11 @@ pub fn screen_mode(r: &Relationship) -> ScreenMode {
             P::None | P::Blocked => ScreenMode::RequestSent,
         };
     }
+    // A request that ran out is never a request again, whatever the peer
+    // signals: only my own "Add" opens the way back.
+    if r.my_contact == M::Expired {
+        return ScreenMode::RequestDeclinedByMe;
+    }
     if r.peer_signal == P::Approved {
         // Even if I declined before: a fresh accept is a fresh request.
         return ScreenMode::RequestReceived;
@@ -221,20 +270,67 @@ pub enum DropReason {
     BlockedByPeer,
     ConnectionEnded,
     SecondMessageBeforeApproval,
+    /// Before approval only a short plain text comes through: no file, no
+    /// card, no unknown type, nothing long, nothing with a link in it.
+    NotPlainTextBeforeApproval,
+    /// Their request ran out: nothing until I add them myself.
+    RequestExpired,
+    /// I take messages from my contacts only (`DmFrom::Contacts`).
+    StrangersNotAllowed,
 }
+
+/// The most a request may say: longer is spam or a paste, and the queue
+/// shows one line of it anyway.
+pub const MAX_REQUEST_CHARS: usize = 1000;
+
+/// What a message of the peer is, as far as the gate cares: a plain text
+/// with its length and whether a link is in it, or anything else.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InboundKind {
+    PlainText { chars: usize, has_link: bool },
+    Other,
+}
+
+impl InboundKind {
+    /// A text the gate lets a stranger say: short, nothing to click.
+    pub fn is_request_text(self) -> bool {
+        matches!(self, InboundKind::PlainText { chars, has_link: false } if chars <= MAX_REQUEST_CHARS)
+    }
+}
+
+/// Whose messages I take (`privacy.dm_from`): anybody's, into the queue
+/// of requests, or my contacts' only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DmFrom {
+    #[default]
+    Anyone,
+    Contacts,
+}
+
+str_enum!(DmFrom { Anyone => "anyone", Contacts => "contacts" });
 
 /// Decision for a regular (non-control) message from the peer.
 ///
 /// A block beats everything: mine, then the peer's, whatever the message
 /// is dated (its rumor time is the sender's to choose, so a backdated one
-/// is no way around it). `enforced` is false only for the history a fresh
-/// database restores in its first session: past the blocks, it is stored
-/// as it was. `visible_incoming` counts the messages of this peer already
+/// is no way around it). Then what I decided of strangers: a request that
+/// ran out, and `dm_from`. `enforced` is false only for the history a
+/// fresh database restores in its first session: past those, it is stored
+/// as it was. Before approval the message must be a short plain text
+/// (`kind`). `visible_incoming` counts the messages of this peer already
 /// shown in the chat after `request_floor`; `at` is the message's rumor
 /// time. A message dated up to the floor belongs to an ended episode and
 /// is dropped. The caller holds (does not discard) a second message before
 /// approval: a later end of the episode may let it through.
-pub fn inbound_decision(r: &Relationship, enforced: bool, visible_incoming: i64, at: i64) -> InboundDecision {
+pub fn inbound_decision(
+    r: &Relationship,
+    enforced: bool,
+    visible_incoming: i64,
+    at: i64,
+    kind: InboundKind,
+    dm_from: DmFrom,
+) -> InboundDecision {
     use InboundDecision as D;
     if r.blocked {
         return D::Drop(DropReason::BlockedByMe);
@@ -242,12 +338,21 @@ pub fn inbound_decision(r: &Relationship, enforced: bool, visible_incoming: i64,
     if r.peer_signal == PeerSignal::Blocked {
         return D::Drop(DropReason::BlockedByPeer);
     }
+    if r.my_contact == MyContact::Expired {
+        return D::Drop(DropReason::RequestExpired);
+    }
+    if dm_from == DmFrom::Contacts && r.my_contact != MyContact::Approved {
+        return D::Drop(DropReason::StrangersNotAllowed);
+    }
     if !enforced {
         return D::Save;
     }
     if r.my_contact == MyContact::Approved {
         // Whatever the peer's last signal was, they are my contact: deliver.
         return D::Save;
+    }
+    if !kind.is_request_text() {
+        return D::Drop(DropReason::NotPlainTextBeforeApproval);
     }
     // Written before the peer left: that connection is over. Written after
     // it: a new request, counted like any other.
@@ -317,6 +422,11 @@ pub fn outbound_permission(r: &Relationship, visible_outgoing: i64, is_text: boo
     if r.blocked {
         return O::Deny(DenyReason::Blocked);
     }
+    // Their request ran out: as after my no, "Add" is the way back, and
+    // their accept makes no request to answer first.
+    if r.my_contact == MyContact::Expired && r.peer_signal != PeerSignal::Blocked {
+        return O::Deny(DenyReason::DeclinedByMe);
+    }
     match r.peer_signal {
         PeerSignal::Blocked => return O::Deny(DenyReason::BlockedByPeer),
         PeerSignal::Approved if r.my_contact == MyContact::Approved => return O::Allow,
@@ -355,12 +465,15 @@ pub enum SystemLine {
     ContactLeft,
     Blocked,
     Unblocked,
+    /// The peer came in by an invitation of mine: no request, a full chat.
+    Invited,
 }
 
 str_enum!(SystemLine {
     RequestSent => "request_sent", RequestReceived => "request_received", RequestAccepted => "request_accepted",
     RequestDeclined => "request_declined", RequestCancelled => "request_cancelled",
     ContactRemoved => "contact_removed", ContactLeft => "contact_left", Blocked => "blocked", Unblocked => "unblocked",
+    Invited => "invited",
 });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -467,7 +580,8 @@ pub fn apply_my_action(r: &Relationship, action: Action, has_history: bool, with
     let mut system_line = None;
     match action {
         Action::Request => {
-            let was_declined = r.my_contact == MyContact::Declined;
+            // An expired request is taken back the way a declined one is.
+            let was_declined = matches!(r.my_contact, MyContact::Declined | MyContact::Expired);
             next.my_contact = MyContact::Approved;
             // A new request of mine supersedes the peer's old "no".
             if matches!(r.peer_signal, P::Declined | P::Left | P::Revoked) {
@@ -551,14 +665,28 @@ pub fn apply_my_action(r: &Relationship, action: Action, has_history: bool, with
     ActionOutcome { next, signals, system_line }
 }
 
+/// What a copy of my own signal made of the relationship here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OwnSignal {
+    pub next: Relationship,
+    /// The decision the copy carries stood over the one here (`merge_decision`):
+    /// what the action did on that device is done here too. False when the
+    /// copy only ordered itself among my signals.
+    pub stood: bool,
+}
+
 /// My own signal seen through a self-copy (another device of mine acted).
-/// Only my side changes; stale copies are ignored.
-pub fn apply_own_signal(r: &Relationship, signal: Signal, at: i64) -> Option<Relationship> {
+/// Only my side changes; stale copies are ignored. The copy carries the
+/// time of that decision (`at`, the rumor time of the signal): it stands
+/// only over an older decision here (`merge_decision`), so an expiry or a
+/// silent add taken here after it is not undone by it.
+pub fn apply_own_signal(r: &Relationship, signal: Signal, at: i64) -> Option<OwnSignal> {
     if at <= r.last_my_signal_at {
         return None;
     }
     let mut next = *r;
     next.last_my_signal_at = at;
+    next.decided_at = at;
     match signal {
         Signal::Accept => {
             next.my_contact = MyContact::Approved;
@@ -572,9 +700,23 @@ pub fn apply_own_signal(r: &Relationship, signal: Signal, at: i64) -> Option<Rel
         }
         Signal::Block => next.blocked = true,
         Signal::Unblock => next.blocked = false,
-        Signal::ContactRemoved | Signal::RequestCancelled => next.my_contact = MyContact::None,
+        Signal::ContactRemoved | Signal::RequestCancelled => {
+            next.my_contact = MyContact::None;
+            // As the removal did on the device that made it (`Action::Remove`):
+            // their approval was for the relation I ended, so the old
+            // request does not come back on this device.
+            if r.peer_signal == PeerSignal::Approved {
+                next.peer_signal = PeerSignal::None;
+            }
+        }
     }
-    Some(next)
+    let mut merged = merge_decision(r, &next);
+    // Of two decisions of the same second the merge keeps the one here when
+    // it is as strict: then the copy did not stand, whatever its time says.
+    let stood = merged == next;
+    // The copy is the newest word of mine either way: it orders the copies.
+    merged.last_my_signal_at = at;
+    Some(OwnSignal { next: merged, stood })
 }
 
 #[cfg(test)]
@@ -586,6 +728,15 @@ mod tests {
 
     fn rel(m: M, blocked: bool, p: P, mutual: bool) -> Relationship {
         Relationship { my_contact: m, blocked, peer_signal: p, was_ever_mutual: mutual, ..Default::default() }
+    }
+
+    /// A short plain text, as a request may be.
+    const TEXT: InboundKind = InboundKind::PlainText { chars: 12, has_link: false };
+
+    /// `inbound_decision` for a plain text from anybody: what the old rules
+    /// judged.
+    fn decide(r: &Relationship, enforced: bool, seen: i64, at: i64) -> InboundDecision {
+        inbound_decision(r, enforced, seen, at, TEXT, DmFrom::Anyone)
     }
 
     #[test]
@@ -621,10 +772,140 @@ mod tests {
             (M::None, false, P::Declined, true, S::MutualReconnect),
             (M::None, false, P::None, false, S::FirstContact),
             (M::None, false, P::Declined, false, S::FirstContact),
+            // Their request ran out: as declined by me, and their accept
+            // never makes it a request again. The blocks still come first.
+            (M::Expired, false, P::Approved, false, S::RequestDeclinedByMe),
+            (M::Expired, false, P::Approved, true, S::RequestDeclinedByMe),
+            (M::Expired, false, P::None, false, S::RequestDeclinedByMe),
+            (M::Expired, false, P::Left, false, S::RequestDeclinedByMe),
+            (M::Expired, false, P::Revoked, false, S::RequestDeclinedByMe),
+            (M::Expired, false, P::Declined, false, S::RequestDeclinedByMe),
+            (M::Expired, false, P::Blocked, false, S::BlockedByPeer),
+            (M::Expired, true, P::Approved, false, S::Blocked),
         ];
         for (m, b, p, mutual, want) in cases {
             assert_eq!(screen_mode(&rel(*m, *b, *p, *mutual)), *want, "({m:?}, blocked={b}, {p:?}, mutual={mutual})");
         }
+    }
+
+    /// Every combination of the three facts, for the tests that check a
+    /// rule over all of them.
+    fn every_relation() -> Vec<Relationship> {
+        let mut all = Vec::new();
+        for m in [M::None, M::Approved, M::Declined, M::Expired] {
+            for b in [false, true] {
+                for p in [P::None, P::Approved, P::Blocked, P::Left, P::Declined, P::Revoked] {
+                    for mutual in [false, true] {
+                        all.push(rel(m, b, p, mutual));
+                    }
+                }
+            }
+        }
+        all
+    }
+
+    #[test]
+    fn an_expired_request_is_shut_whatever_the_peer_says() {
+        for r in every_relation().into_iter().filter(|r| r.my_contact == M::Expired) {
+            assert_ne!(screen_mode(&r), S::RequestReceived, "{r:?}");
+            let got = decide(&r, true, 0, 150);
+            if r.blocked {
+                assert_eq!(got, InboundDecision::Drop(DropReason::BlockedByMe), "{r:?}");
+            } else if r.peer_signal == P::Blocked {
+                assert_eq!(got, InboundDecision::Drop(DropReason::BlockedByPeer), "{r:?}");
+            } else {
+                assert_eq!(got, InboundDecision::Drop(DropReason::RequestExpired), "{r:?}");
+                // Restored history too: the expiry was decided here.
+                assert_eq!(decide(&r, false, 0, 150), InboundDecision::Drop(DropReason::RequestExpired), "{r:?}");
+                assert_eq!(outbound_permission(&r, 0, true), OutboundPermission::Deny(DenyReason::DeclinedByMe), "{r:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_short_plain_text_without_a_link_passes_before_approval() {
+        use DropReason as R;
+        use InboundDecision as D;
+        let long = InboundKind::PlainText { chars: MAX_REQUEST_CHARS + 1, has_link: false };
+        let longest = InboundKind::PlainText { chars: MAX_REQUEST_CHARS, has_link: false };
+        let linked = InboundKind::PlainText { chars: 30, has_link: true };
+        let kinds = [(TEXT, true), (longest, true), (long, false), (linked, false), (InboundKind::Other, false)];
+        for r in every_relation().into_iter().filter(|r| !r.blocked && r.peer_signal != P::Blocked && r.my_contact != M::Expired) {
+            for (kind, passes) in kinds {
+                let got = inbound_decision(&r, true, 0, 150, kind, DmFrom::Anyone);
+                let plain = decide(&r, true, 0, 150);
+                if r.my_contact == M::Approved {
+                    assert_eq!(got, D::Save, "my contact sends what they like: {r:?} {kind:?}");
+                } else if passes {
+                    assert_eq!(got, plain, "{r:?} {kind:?}");
+                } else {
+                    assert_eq!(got, D::Drop(R::NotPlainTextBeforeApproval), "{r:?} {kind:?}");
+                }
+                // Restored history of a fresh database is stored as it was.
+                assert_eq!(inbound_decision(&r, false, 0, 150, kind, DmFrom::Anyone), D::Save, "{r:?} {kind:?}");
+            }
+        }
+        // The kind is judged before the episode rules: a file as a second
+        // message is dropped, not held, and so is one behind the floor.
+        let stranger = Relationship { last_signal_at: 100, request_floor: 120, ..rel(M::None, false, P::Approved, false) };
+        assert_eq!(inbound_decision(&stranger, true, 1, 150, InboundKind::Other, DmFrom::Anyone), D::Drop(R::NotPlainTextBeforeApproval));
+        assert_eq!(inbound_decision(&stranger, true, 0, 110, linked, DmFrom::Anyone), D::Drop(R::NotPlainTextBeforeApproval));
+        assert_eq!(decide(&stranger, true, 0, 110), D::Drop(R::ConnectionEnded));
+    }
+
+    #[test]
+    fn contacts_only_drops_every_stranger_and_keeps_the_blocks_first() {
+        use DropReason as R;
+        use InboundDecision as D;
+        for r in every_relation() {
+            for enforced in [true, false] {
+                let got = inbound_decision(&r, enforced, 0, 150, TEXT, DmFrom::Contacts);
+                let want = if r.blocked {
+                    D::Drop(R::BlockedByMe)
+                } else if r.peer_signal == P::Blocked {
+                    D::Drop(R::BlockedByPeer)
+                } else if r.my_contact == M::Expired {
+                    D::Drop(R::RequestExpired)
+                } else if r.my_contact != M::Approved {
+                    D::Drop(R::StrangersNotAllowed)
+                } else {
+                    decide(&r, enforced, 0, 150)
+                };
+                assert_eq!(got, want, "{r:?} enforced={enforced}");
+            }
+        }
+        assert_eq!(DmFrom::parse("contacts"), Some(DmFrom::Contacts));
+        assert_eq!(DmFrom::parse("whoever"), None);
+        assert_eq!(DmFrom::default().as_str(), "anyone");
+    }
+
+    #[test]
+    fn a_copy_of_my_decision_stands_only_over_an_older_one() {
+        let at = |m: M, b: bool, decided_at: i64| Relationship { decided_at, ..rel(m, b, P::Approved, false) };
+        // Newer wins, whatever it says.
+        assert_eq!(merge_decision(&at(M::Expired, false, 10), &at(M::Approved, false, 11)), at(M::Approved, false, 11));
+        assert_eq!(merge_decision(&at(M::Approved, false, 11), &at(M::Expired, false, 10)), at(M::Approved, false, 11));
+        assert_eq!(merge_decision(&at(M::None, true, 5), &at(M::None, false, 6)), at(M::None, false, 6));
+        // The same second on two devices: the stricter one, so that both
+        // devices end the same whichever copy they see first.
+        let cases: &[(Relationship, Relationship, Relationship)] = &[
+            (at(M::Approved, false, 7), at(M::Declined, false, 7), at(M::Declined, false, 7)),
+            (at(M::Declined, false, 7), at(M::Expired, false, 7), at(M::Expired, false, 7)),
+            (at(M::Expired, false, 7), at(M::None, true, 7), at(M::None, true, 7)),
+            (at(M::None, false, 7), at(M::Approved, false, 7), at(M::Approved, false, 7)),
+            (at(M::Expired, false, 7), at(M::Approved, true, 7), at(M::Approved, true, 7)),
+            (at(M::Expired, true, 7), at(M::Approved, false, 7), at(M::Expired, true, 7)),
+        ];
+        for (a, b, want) in cases {
+            assert_eq!(merge_decision(a, b), *want, "{a:?} <- {b:?}");
+            assert_eq!(merge_decision(b, a), *want, "{b:?} <- {a:?}");
+        }
+        // Equal in every way: the local one.
+        assert_eq!(merge_decision(&at(M::Declined, false, 7), &at(M::Declined, false, 7)), at(M::Declined, false, 7));
+        // Decided here after the clock stood still: still later.
+        assert_eq!(decided_now(100, 100), 101);
+        assert_eq!(decided_now(0, 100), 100);
+        assert_eq!(decided_now(200, 100), 201);
     }
 
     #[test]
@@ -675,7 +956,7 @@ mod tests {
         for (m, b, p, enforced, seen, at, want) in cases {
             let r = Relationship { last_signal_at: 100, ..rel(*m, *b, *p, false) };
             assert_eq!(
-                inbound_decision(&r, *enforced, *seen, *at),
+                decide(&r, *enforced, *seen, *at),
                 *want,
                 "({m:?}, blocked={b}, {p:?}, enforced={enforced}, seen={seen}, at={at})"
             );
@@ -695,7 +976,7 @@ mod tests {
         ];
         for (m, p, enforced, seen, at, want) in cases {
             let r = Relationship { last_signal_at: 100, request_floor: 120, ..rel(*m, false, *p, false) };
-            assert_eq!(inbound_decision(&r, *enforced, *seen, *at), *want, "floor 120: ({m:?}, {p:?}, seen={seen}, at={at})");
+            assert_eq!(decide(&r, *enforced, *seen, *at), *want, "floor 120: ({m:?}, {p:?}, seen={seen}, at={at})");
         }
     }
 
@@ -754,13 +1035,13 @@ mod tests {
         // Both removed: the old text is behind the floor, the new request
         // (newer than their removal) goes through once.
         let left = apply_peer_signal(&rel(M::None, false, P::Approved, true), Signal::ContactRemoved, 100, true, NOW).next;
-        assert_eq!(inbound_decision(&left, true, 0, 101), InboundDecision::SaveAsRequest);
-        assert_eq!(inbound_decision(&left, true, 0, 99), InboundDecision::Drop(DropReason::ConnectionEnded));
+        assert_eq!(decide(&left, true, 0, 101), InboundDecision::SaveAsRequest);
+        assert_eq!(decide(&left, true, 0, 99), InboundDecision::Drop(DropReason::ConnectionEnded));
         // After my no with nothing from the peer since, the request I
         // declined still counts (the floor is not raised on my no).
         let declined = apply_my_action(&rel(M::None, false, P::Approved, false), Action::Decline, true, false).next;
         assert_eq!((declined.my_contact, declined.peer_signal, declined.request_floor), (M::Declined, P::None, 0));
-        assert_eq!(inbound_decision(&declined, true, 1, 150), InboundDecision::Drop(DropReason::SecondMessageBeforeApproval));
+        assert_eq!(decide(&declined, true, 1, 150), InboundDecision::Drop(DropReason::SecondMessageBeforeApproval));
     }
 
     #[test]
@@ -797,7 +1078,13 @@ mod tests {
             (M::Approved, false, P::None, 1, true, O::Deny(R::WaitingApproval)),
             (M::Approved, false, P::Revoked, 1, true, O::Deny(R::WaitingApproval)),
             (M::Approved, false, P::Revoked, 0, true, O::AllowAsRequest),
-            // I declined their request: only "Add" opens the chat again.
+            // I declined their request, or it ran out: only "Add" opens the
+            // chat again, and their accept makes no request to answer first.
+            (M::Expired, false, P::None, 0, true, O::Deny(R::DeclinedByMe)),
+            (M::Expired, false, P::Approved, 0, true, O::Deny(R::DeclinedByMe)),
+            (M::Expired, false, P::Left, 2, false, O::Deny(R::DeclinedByMe)),
+            (M::Expired, false, P::Blocked, 0, true, O::Deny(R::BlockedByPeer)),
+            (M::Expired, true, P::Approved, 0, true, O::Deny(R::Blocked)),
             (M::Declined, false, P::None, 0, true, O::Deny(R::DeclinedByMe)),
             (M::Declined, false, P::None, 0, false, O::Deny(R::DeclinedByMe)),
             (M::Declined, false, P::None, 2, true, O::Deny(R::DeclinedByMe)),
@@ -930,9 +1217,14 @@ mod tests {
         let o = apply_my_action(&Relationship::default(), Action::Request, false, false);
         assert!(o.signals.is_empty() && o.system_line.is_none());
 
-        // Re-adding after my decline, or after a mutual past, tells the peer.
+        // Re-adding after my decline, after an expiry, or after a mutual
+        // past, tells the peer.
         let o = apply_my_action(&rel(M::Declined, false, P::None, false), Action::Request, true, false);
         assert_eq!(o.signals, vec![Signal::Accept]);
+        let o = apply_my_action(&rel(M::Expired, false, P::None, false), Action::Request, false, false);
+        assert_eq!((o.next.my_contact, o.signals.clone(), o.system_line), (M::Approved, vec![Signal::Accept], Some(SystemLine::RequestSent)));
+        let o = apply_my_action(&rel(M::Expired, false, P::Approved, false), Action::Accept, true, false);
+        assert_eq!((o.next.my_contact, o.signals.clone(), screen_mode(&o.next)), (M::Approved, vec![Signal::Accept], S::FullChat));
         let o = apply_my_action(&rel(M::None, false, P::Left, true), Action::Request, true, false);
         assert_eq!(o.signals, vec![Signal::Accept]);
         assert_eq!(o.next.peer_signal, P::None, "my new request supersedes their old no");
@@ -983,9 +1275,9 @@ mod tests {
         // and drops A's messages too.
         let a = apply_my_action(&rel(M::Approved, false, P::Approved, true), Action::Block, true, false).next;
         let b = apply_peer_signal(&rel(M::Approved, false, P::Approved, true), Signal::Block, 10, true, NOW).next;
-        assert!(matches!(inbound_decision(&a, true, 3, 20), InboundDecision::Drop(DropReason::BlockedByMe)));
+        assert!(matches!(decide(&a, true, 3, 20), InboundDecision::Drop(DropReason::BlockedByMe)));
         assert!(matches!(outbound_permission(&a, 3, true), OutboundPermission::Deny(DenyReason::Blocked)));
-        assert!(matches!(inbound_decision(&b, true, 3, 20), InboundDecision::Drop(DropReason::BlockedByPeer)));
+        assert!(matches!(decide(&b, true, 3, 20), InboundDecision::Drop(DropReason::BlockedByPeer)));
         assert!(matches!(outbound_permission(&b, 3, true), OutboundPermission::Deny(DenyReason::BlockedByPeer)));
         assert_eq!(screen_mode(&a), S::Blocked);
         assert_eq!(screen_mode(&b), S::BlockedByPeer);
@@ -993,14 +1285,40 @@ mod tests {
 
     #[test]
     fn own_signals_from_another_device() {
+        let own = |r: &Relationship, s: Signal, at: i64| apply_own_signal(r, s, at).map(|o| o.next);
         let r = rel(M::None, false, P::Approved, false);
-        let n = apply_own_signal(&r, Signal::Accept, 10).unwrap();
+        let n = own(&r, Signal::Accept, 10).unwrap();
         assert_eq!(n.my_contact, M::Approved);
         assert!(n.was_ever_mutual);
-        assert!(apply_own_signal(&n, Signal::Block, 10).is_none(), "not newer");
-        let n = apply_own_signal(&n, Signal::Block, 11).unwrap();
-        assert!(n.blocked);
-        assert!(!apply_own_signal(&n, Signal::Unblock, 12).unwrap().blocked);
+        assert!(own(&n, Signal::Block, 10).is_none(), "not newer");
+        let o = apply_own_signal(&n, Signal::Block, 11).unwrap();
+        assert!(o.next.blocked && o.stood);
+        let n = o.next;
+        assert_eq!((n.decided_at, n.last_my_signal_at), (11, 11), "the copy carries the time of the decision");
+        assert!(!own(&n, Signal::Unblock, 12).unwrap().blocked);
+        // My removal elsewhere ends what their approval was for, as it did
+        // there: no request comes back on this device.
+        let n = own(&rel(M::Approved, false, P::Approved, true), Signal::ContactRemoved, 13).unwrap();
+        assert_eq!((n.my_contact, n.peer_signal, screen_mode(&n)), (M::None, P::None, S::MutualReconnect));
+        let n = own(&rel(M::Approved, false, P::Left, true), Signal::ContactRemoved, 13).unwrap();
+        assert_eq!(n.peer_signal, P::Left, "their own ending stays");
+
+        // Decided here after the copy was made (an expiry at 50): the copy
+        // of an accept from 20 is older and changes nothing but the order
+        // of copies.
+        let expired = Relationship { decided_at: 50, last_my_signal_at: 10, ..rel(M::Expired, false, P::Approved, false) };
+        let o = apply_own_signal(&expired, Signal::Accept, 20).unwrap();
+        assert_eq!((o.next.my_contact, o.next.decided_at, o.next.last_my_signal_at, o.stood), (M::Expired, 50, 20, false));
+        let o = apply_own_signal(&expired, Signal::Accept, 60).unwrap();
+        assert_eq!((o.next.my_contact, o.next.decided_at, o.stood), (M::Approved, 60, true), "a newer copy stands");
+        // The same second: the stricter decision, whichever came first;
+        // the copy that lost did not stand, though it is dated the same.
+        let o = apply_own_signal(&expired, Signal::Block, 50).unwrap();
+        assert_eq!((o.next.blocked, o.next.my_contact, o.stood), (true, M::Expired, true));
+        let o = apply_own_signal(&expired, Signal::Accept, 50).unwrap();
+        assert_eq!((o.next.blocked, o.next.my_contact, o.stood), (false, M::Expired, false));
+        let o = apply_own_signal(&expired, Signal::ContactRemoved, 50).unwrap();
+        assert_eq!((o.next.my_contact, o.stood), (M::Expired, false), "a removal of the same second loses to the expiry");
     }
 
     #[test]
@@ -1010,6 +1328,8 @@ mod tests {
         }
         assert_eq!(Signal::parse("nope"), None);
         assert_eq!(ScreenMode::RequestDeclinedByMe.as_str(), "request_declined_by_me");
+        assert_eq!(MyContact::parse("expired"), Some(MyContact::Expired));
+        assert_eq!(MyContact::Expired.as_str(), "expired");
         assert_eq!(DenyReason::WaitingApproval.as_str(), "dm_waiting_approval");
         assert_eq!(DenyReason::DeclinedByMe.as_str(), "dm_declined_by_me");
     }

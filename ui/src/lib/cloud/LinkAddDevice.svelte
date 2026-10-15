@@ -10,7 +10,7 @@
   import { appLock } from '$lib/core/lock/store.svelte';
   import { linkErrorKey, OldDeviceLink } from '$lib/cloud/link.svelte';
   import Actions from '$lib/cloud/Actions.svelte';
-  import QrScanner from '$lib/cloud/QrScanner.svelte';
+  import QrScanner from '$lib/core/ui/QrScanner.svelte';
   import StateView from '$lib/cloud/StateView.svelte';
   import Steps from '$lib/cloud/Steps.svelte';
   import WordChips from '$lib/cloud/WordChips.svelte';
@@ -58,6 +58,13 @@
     title={$t('cloud_scan_title')}
     hint={$t('cloud_scan_hint')}
     manual={$t('cloud_scan_manual')}
+    words={{
+      starting: $t('cloud_scan_starting'),
+      denied: $t('cloud_scan_denied'),
+      failed: $t('cloud_scan_failed'),
+      retry: $t('cloud_scan_retry'),
+      openSettings: $t('cloud_scan_open_settings'),
+    }}
     onresult={scanned}
     onclose={() => (scanning = false)}
   />

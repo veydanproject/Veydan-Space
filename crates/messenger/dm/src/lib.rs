@@ -17,19 +17,31 @@
 //! - `reactions`: reactions on messages, the limits, and making one.
 //! - `cards`: contact cards sent and received as messages.
 //! - `botcard`: the cards of the pinned bot of Veydan Cloud in its chat.
+//! - `requests`: the queue of requests of strangers, its term and size, and
+//!   whom I take messages from.
+//! - `snapshot`: the list of my relations as my devices publish it on my
+//!   relays and read it before anything else.
 //! - `view`: what the host shows; `body`: what a notification tells of a message.
 
 pub mod body;
 pub mod botcard;
 pub mod cards;
 pub mod handler;
+/// Invitations to write to me without a request, and the budget of
+/// guesses at them.
+pub mod invites;
 pub mod media;
 pub mod notes;
 pub mod own;
 pub mod reactions;
 pub mod relations;
 pub mod relationship;
+/// The queue of requests of strangers, its term and size, and whom I take
+/// messages from.
+pub mod requests;
 pub mod service;
+/// The list of my relations first: its snapshot on my relays.
+pub mod snapshot;
 pub mod view;
 pub mod pushtags;
 pub mod wrap;
@@ -44,8 +56,11 @@ pub use own::{
 pub use reactions::{PreparedReaction, Refusal, MAX_DISTINCT_PER_MESSAGE, MAX_MINE_PER_MESSAGE};
 pub use botcard::{BotCard, UI_EVENT_BOT_CARD};
 pub use handler::{DmHandler, DmRoutesHandler, UI_EVENT_CHATS_UPDATED, UI_EVENT_DM_MESSAGE, UI_EVENT_DM_UPDATED};
+pub use invites::{Invite, InviteKind, InviteNew, UI_EVENT_DM_INVITE_PAUSED};
 pub use relations::{contacts_updated, ActionResult, RelationView, UI_EVENT_DM_RELATIONSHIP};
-pub use relationship::Action;
+pub use relationship::{Action, DmFrom, InboundKind, MAX_REQUEST_CHARS};
+pub use requests::{DmSettings, RequestView, DEFAULT_KEEP_DAYS, KEY_DM_FROM, KEY_KEEP_DAYS, MAX_REQUESTS, UI_EVENT_DM_REQUEST};
+pub use snapshot::{Applied as RelationsApplied, Known as RelationsKnown, Piece as RelationsPiece};
 pub use service::{DmService, Prepared};
 pub use cards::StoredCard;
 pub use view::{CardView, ChatView, MessageView, ReactionView};

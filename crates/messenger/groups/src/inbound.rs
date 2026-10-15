@@ -11,9 +11,10 @@
 
 use crate::keys::{GroupKey, LinkSecret};
 use crate::log::{KeyStatus, OpLog};
-use crate::op::{GroupKind, KeyId, Op, OpBody};
+use crate::op::{GroupKind, KeyId, Op, OpBody, PostMode, Premod, Schedule};
 use crate::roles::Role;
 use crate::service::*;
+use crate::state::{self, Closed, GroupState};
 use crate::wire::{self, InnerMessage, Opened, SecretEnvelope};
 use messenger_core::envelope::{T_CONTACT, T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_RECEIPT_READ, T_TEXT};
 use messenger_core::traits::{Body, Notice, UiEvent};
@@ -54,54 +55,211 @@ enum Verdict {
     Hold,
 }
 
-#[derive(PartialEq)]
-enum Standing {
+/// Where the FUTURE bucket's rows of a key are: operations of a version
+/// newer than this build reads (`wire::OP_TOO_NEW`), kept for after an
+/// update; nothing in it goes stale.
+const FUTURE: &str = "future:";
+/// Welcomes whose log has such operations, and me admitted after them:
+/// kept whole, read again after an update (`replay_parked_welcomes`).
+/// Not under the FUTURE prefix: the two are bounded apart, so that a
+/// member who floods the group with what this build cannot read does
+/// not push out the welcome a manager sent me.
+const FUTURE_WELCOME: &str = "welcome:future";
+/// What one group may park under each of those: rows, and bytes of
+/// ciphertext. Past that, what came first makes room.
+pub(crate) const MAX_FUTURE_ROWS: i64 = 1000;
+pub(crate) const MAX_FUTURE_BYTES: i64 = 16 * 1024 * 1024;
+
+/// `MAX_FUTURE_ROWS`, which a test may lower to see the bound at work.
+fn max_future_rows() -> i64 {
+    #[cfg(test)]
+    if let Some(n) = FUTURE_ROWS_CAP.with(|c| c.get()) {
+        return n;
+    }
+    MAX_FUTURE_ROWS
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static FUTURE_ROWS_CAP: std::cell::Cell<Option<i64>> = const { std::cell::Cell::new(None) };
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Standing {
     Member,
     Muted,
     Outsider,
 }
 
-/// Was `who` a member (and allowed to speak) at the moment `at`? A
-/// removal, a ban or a leave ends the stretch at its own second: what is
-/// dated then is outside.
-fn standing(log: &OpLog, who: &PubKey, at: i64) -> Standing {
-    let mut member_since: Option<i64> = None;
-    let mut muted_since: Option<i64> = None;
-    let mut result = Standing::Outsider;
-    let close = |since: &mut Option<i64>, muted: &mut Option<i64>, end: i64, result: &mut Standing| {
-        if let Some(start) = since.take() {
-            if at >= start - JOIN_SLACK_SECS && at < end {
-                *result = if muted.is_some_and(|m| at >= m) { Standing::Muted } else { Standing::Member };
-            }
+/// What the log says of one person at one moment (`rules_at`): whether
+/// they were a member and could speak, what they were, and the rules of
+/// posting in force then.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Rules {
+    pub(crate) standing: Standing,
+    /// Of a mute in force: when it lifts by itself.
+    muted_until: Option<i64>,
+    role: Role,
+    trusted: bool,
+    post_mode: PostMode,
+    schedule: Option<Schedule>,
+    premod: Premod,
+    premod_since: Option<u64>,
+    joined_pos: Option<u64>,
+}
+
+impl Rules {
+    /// Why this person may not speak at `at`, if they may not: not a
+    /// member, muted, or held by the rules of the group (`state::gate`).
+    pub(crate) fn closed(&self, at: i64) -> Option<Closed> {
+        match self.standing {
+            Standing::Outsider => Some(Closed::NotMember),
+            Standing::Muted => Some(Closed::Muted { until: self.muted_until }),
+            Standing::Member => state::gate(self.role, self.post_mode, self.schedule.as_ref(), at).err(),
         }
-        *muted = None;
+    }
+
+    /// Do this person's messages wait for a moderator: the rule of
+    /// `GroupState::subject_to_premod`, as it stood then. Messages of one
+    /// held so wait for a moderator (`moderation`).
+    pub(crate) fn subject_to_premod(&self) -> bool {
+        if self.standing != Standing::Member || self.role >= Role::Moderator || self.trusted {
+            return false;
+        }
+        match self.premod {
+            Premod::Off => false,
+            Premod::All => true,
+            Premod::Newcomers => matches!((self.premod_since, self.joined_pos), (Some(since), Some(pos)) if pos > since),
+        }
+    }
+}
+
+/// One stay in the group: when it began, and the mute in force during
+/// it (when it began, when it lifts by itself).
+#[derive(Default)]
+struct Stay {
+    since: Option<i64>,
+    mute: Option<(i64, Option<i64>)>,
+}
+
+impl Stay {
+    /// The stay ends at `end`: what `at` was inside it, if it was. Clocks
+    /// differ: a message may be dated a little before the join.
+    fn end(&mut self, at: i64, end: i64) -> Option<(Standing, Option<i64>)> {
+        let start = self.since.take()?;
+        let mute = self.mute.take();
+        if at < start - JOIN_SLACK_SECS || at >= end {
+            return None;
+        }
+        Some(match mute {
+            Some((m, until)) if at >= m && until.is_none_or(|u| at < u) => (Standing::Muted, until),
+            _ => (Standing::Member, None),
+        })
+    }
+}
+
+/// What held for `who` at the moment `at`. A removal, a ban or a leave
+/// ends the stay at its own second: what is dated then is outside. A
+/// mute with an end lifts at that end, with no operation to say so. The
+/// roles and the rules of posting are those set by the operations dated
+/// up to `at`; the places in the log (`joined_pos`, `premod_since`) are
+/// those of the applied order, the same on every device.
+pub(crate) fn rules_at(log: &OpLog, who: &PubKey, at: i64) -> Rules {
+    let mut stay = Stay::default();
+    let mut rules = Rules {
+        standing: Standing::Outsider,
+        muted_until: None,
+        role: Role::Member,
+        trusted: false,
+        post_mode: PostMode::All,
+        schedule: None,
+        premod: Premod::Off,
+        premod_since: None,
+        joined_pos: None,
     };
-    for op in log.ordered() {
-        if log.rejection(&op.id()).is_some() {
-            continue;
-        }
+    let mut inside: Option<(Standing, Option<i64>)> = None;
+    let applied = log.ordered().filter(|o| log.rejection(&o.id()).is_none());
+    for (pos, op) in applied.enumerate() {
+        let pos = pos as u64;
+        let counts = op.created_at <= at;
         match &op.body {
-            OpBody::Create { .. } | OpBody::Join if &op.author == who => member_since = member_since.or(Some(op.created_at)),
-            OpBody::Admit { who: w } if w == who => member_since = member_since.or(Some(op.created_at)),
-            OpBody::Leave if &op.author == who => close(&mut member_since, &mut muted_since, op.created_at, &mut result),
-            OpBody::Remove { who: w } | OpBody::Ban { who: w } if w == who => {
-                close(&mut member_since, &mut muted_since, op.created_at, &mut result)
+            OpBody::Create { .. } | OpBody::Join if &op.author == who => {
+                stay.since = stay.since.or(Some(op.created_at));
+                if counts {
+                    rules.role = if op.body == OpBody::Join { Role::Member } else { Role::Owner };
+                    rules.trusted = false;
+                    rules.joined_pos = Some(pos);
+                }
             }
-            OpBody::SetMuted { who: w, muted } if w == who => {
-                // A muted stretch that ended still hides what was said in it.
+            OpBody::Admit { who: w } if w == who => {
+                stay.since = stay.since.or(Some(op.created_at));
+                if counts {
+                    rules.role = Role::Member;
+                    rules.trusted = false;
+                    rules.joined_pos = Some(pos);
+                }
+            }
+            OpBody::Leave if &op.author == who => inside = inside.or(stay.end(at, op.created_at)),
+            OpBody::Remove { who: w } | OpBody::Ban { who: w } if w == who => inside = inside.or(stay.end(at, op.created_at)),
+            OpBody::SetMuted { who: w, muted, until } if w == who => {
                 if *muted {
-                    muted_since = muted_since.or(Some(op.created_at));
-                } else if let Some(m) = muted_since.take() {
-                    if at >= m && at < op.created_at {
-                        return Standing::Muted;
+                    stay.mute = match stay.mute {
+                        // A mute that had lifted by itself: a new one, and
+                        // what was said under the old one stays hidden.
+                        Some((m, Some(u))) if u <= op.created_at => {
+                            if at >= m && at < u {
+                                inside = Some((Standing::Muted, Some(u)));
+                            }
+                            Some((op.created_at, *until))
+                        }
+                        // One in force keeps its start and takes the new end.
+                        Some((m, _)) => Some((m, *until)),
+                        None => Some((op.created_at, *until)),
+                    };
+                } else if let Some((m, until)) = stay.mute.take() {
+                    // A muted stretch that ended still hides what was said in it.
+                    let end = until.map_or(op.created_at, |u| u.min(op.created_at));
+                    if at >= m && at < end {
+                        inside = Some((Standing::Muted, until));
                     }
+                }
+            }
+            OpBody::SetRole { who: w, role } if w == who && counts => rules.role = *role,
+            OpBody::TransferOwnership { to } if counts => {
+                if to == who {
+                    rules.role = Role::Owner;
+                } else if &op.author == who {
+                    rules.role = Role::Admin;
+                }
+            }
+            OpBody::SetTrusted { who: w, trusted } if w == who && counts => rules.trusted = *trusted,
+            OpBody::EditSettings { post_mode, post_schedule, premod, .. } if counts => {
+                if let Some(p) = post_mode {
+                    rules.post_mode = *p;
+                }
+                if let Some(s) = post_schedule {
+                    rules.schedule = if s.is_empty() { None } else { Some(s.clone()) };
+                }
+                if let Some(p) = premod {
+                    match (rules.premod, *p) {
+                        (_, Premod::Off) => rules.premod_since = None,
+                        (Premod::Off, _) => rules.premod_since = Some(pos),
+                        _ => {}
+                    }
+                    rules.premod = *p;
                 }
             }
             _ => {}
         }
     }
-    close(&mut member_since, &mut muted_since, i64::MAX, &mut result);
-    result
+    // What was found first stands: a mute that ended, with `at` under it,
+    // is not undone by the stay going on after it.
+    inside = inside.or(stay.end(at, i64::MAX));
+    if let Some((standing, until)) = inside {
+        rules.standing = standing;
+        rules.muted_until = until;
+    }
+    rules
 }
 
 /// Newest `created_at` of the operations the log took: `before_time` of
@@ -542,14 +700,21 @@ impl GroupService {
             return Ok(Outcome::default());
         }
 
-        // The log as the welcome tells it, every operation verified.
+        // The log as the welcome tells it, every operation verified. One
+        // of a version newer than this build reads is kept as it came
+        // (`keep_op_ahead`), for the log to take after an update.
         let mut verified: Vec<(Op, serde_json::Value)> = Vec::new();
+        let mut ahead: Vec<serde_json::Value> = Vec::new();
         for signed in &body.ops {
-            if let Ok(op) = wire::verify_op(signed, &group_id) {
-                if matches!(op.body, OpBody::Create { .. }) && verified.iter().any(|(o, _)| matches!(o.body, OpBody::Create { .. })) {
-                    continue;
+            match wire::verify_op(signed, &group_id) {
+                Ok(op) => {
+                    if matches!(op.body, OpBody::Create { .. }) && verified.iter().any(|(o, _)| matches!(o.body, OpBody::Create { .. })) {
+                        continue;
+                    }
+                    verified.push((op, signed.clone()));
                 }
-                verified.push((op, signed.clone()));
+                Err(e) if wire::is_op_too_new(&e) => ahead.push(signed.clone()),
+                Err(_) => {}
             }
         }
         let told = OpLog::from_ops(verified.iter().map(|(o, _)| o.clone())).map_err(rejection)?;
@@ -559,7 +724,16 @@ impl GroupService {
                 return Err(MessengerError::Invalid("group_wrong_owner".into()));
             }
         }
-        if !s.is_member(me) || s.disbanded || !(from_me || s.role_of(sender).is_some_and(Role::is_manager)) {
+        if s.disbanded || !(from_me || s.role_of(sender).is_some_and(Role::is_manager)) {
+            return Err(MessengerError::Invalid("group_bad_welcome".into()));
+        }
+        if !s.is_member(me) {
+            // My admission came after an operation this build cannot read:
+            // the welcome is kept whole for after an update, and the group
+            // is listed as one I am getting into.
+            if !ahead.is_empty() {
+                return self.park_welcome(&body, sender, wire_id, created_at, s, row.as_ref()).await;
+            }
             return Err(MessengerError::Invalid("group_bad_welcome".into()));
         }
         let owner = told.ordered().next().map(|c| c.author.as_hex().to_string()).unwrap_or_default();
@@ -579,6 +753,7 @@ impl GroupService {
                 link_epoch: s.link_epoch as i64,
                 created_at: 0,
                 updated_at: 0,
+                needs_update: row.as_ref().is_some_and(|r| r.needs_update),
             },
         )
         .await?;
@@ -591,6 +766,12 @@ impl GroupService {
                 continue;
             }
             self.keep_op(op, signed).await?;
+        }
+        for signed in &ahead {
+            self.keep_op_ahead(&group_id, signed).await?;
+        }
+        if !ahead.is_empty() {
+            repo::set_needs_update(&self.store, &group_id, true).await?;
         }
         for key in wire::decode_keys(&body.keys) {
             self.keep_key(&group_id, &key).await?;
@@ -708,11 +889,117 @@ impl GroupService {
         .await
     }
 
+    /// Park something of a version newer than this build reads (an event
+    /// under the key's FUTURE bucket, a welcome under `FUTURE_WELCOME`):
+    /// it is tried again after an update, and the group says it waits for
+    /// one. Few of them, by rows and by bytes, the events under one bound
+    /// and the welcomes under another; past that, what came first (by its
+    /// receipt here, not by the date its author wrote) makes room.
+    async fn hold_future(&self, group_id: &str, bucket: &str, item: &Item) -> Result<()> {
+        let scope = if bucket == FUTURE_WELCOME { FUTURE_WELCOME } else { FUTURE };
+        let (mut rows, mut bytes) = repo::pending_prefix_size(&self.store, group_id, scope).await?;
+        let size = item.ciphertext.len() as i64;
+        while rows >= max_future_rows() || bytes + size > MAX_FUTURE_BYTES {
+            let Some(dropped) = repo::delete_oldest_pending(&self.store, group_id, scope).await? else { break };
+            rows -= 1;
+            bytes -= dropped;
+        }
+        self.hold(group_id, bucket, item).await?;
+        repo::set_needs_update(&self.store, group_id, true).await
+    }
+
+    /// A welcome this build cannot read whole (`on_welcome`): kept for
+    /// after an update, its keys stored so that what the group says
+    /// meanwhile is opened and kept too, and a row for the group as one I
+    /// am getting into, so that the runtime listens to it and comes back
+    /// to it at the start of every session (`maintain`).
+    async fn park_welcome(&self, body: &wire::Welcome, sender: &PubKey, wire_id: &str, created_at: i64, s: &GroupState, row: Option<&GroupRow>) -> Result<Outcome> {
+        let group_id = &body.group_id;
+        let item = Item {
+            event_id: wire_id.to_string(),
+            ciphertext: serde_json::json!({ "from": sender.as_hex(), "body": body }).to_string(),
+            created_at,
+            historical: true,
+        };
+        if row.is_none_or(|r| r.membership != MEMBERSHIP_JOINED) {
+            repo::upsert(
+                &self.store,
+                &GroupRow {
+                    id: group_id.clone(),
+                    kind: if s.kind == GroupKind::Public { "public".into() } else { "private".into() },
+                    name: s.name.clone(),
+                    about: messenger_richtext::normalize(&s.about),
+                    picture: s.picture.clone(),
+                    relay_url: row.map(|r| r.relay_url.clone()).filter(|r| !r.is_empty()).unwrap_or(body.relay.clone()),
+                    owner: s.owner.as_hex().to_string(),
+                    membership: MEMBERSHIP_JOINING.into(),
+                    my_role: None,
+                    members: s.members.len() as i64,
+                    link_epoch: s.link_epoch as i64,
+                    created_at: 0,
+                    updated_at: 0,
+                    needs_update: true,
+                },
+            )
+            .await?;
+        }
+        for key in wire::decode_keys(&body.keys) {
+            self.store_key(group_id, &key).await?;
+        }
+        self.hold_future(group_id, FUTURE_WELCOME, &item).await?;
+        Ok(Outcome { resubscribe: true, events: vec![Self::updated(group_id)], ..Default::default() })
+    }
+
+    /// Welcomes kept for after an update (`park_welcome`), read again
+    /// when every operation in them is one this build reads.
+    pub(crate) async fn replay_parked_welcomes(&self, keys: &Keys, group_id: &str, ctx: &Context) -> Result<Outcome> {
+        let mut out = Outcome::default();
+        for row in repo::pending_in(&self.store, group_id, FUTURE_WELCOME).await? {
+            let parsed = serde_json::from_str::<serde_json::Value>(&row.ciphertext).ok();
+            let from = parsed.as_ref().and_then(|v| v.get("from")).and_then(|f| f.as_str()).and_then(PubKey::parse);
+            let body = parsed.as_ref().and_then(|v| v.get("body").cloned()).and_then(|b| serde_json::from_value::<wire::Welcome>(b).ok());
+            let (Some(from), Some(body)) = (from, body) else {
+                repo::delete_pending(&self.store, &row.event_id).await?;
+                continue;
+            };
+            if body.ops.iter().any(wire::is_ahead) {
+                continue;
+            }
+            repo::delete_pending(&self.store, &row.event_id).await?;
+            match self.on_welcome(keys, body, &from, &row.event_id, row.created_at, ctx).await {
+                Ok(o) => out.merge(o),
+                Err(e) => out.notes.push(format!("group: a welcome kept for an update was dropped: {e}")),
+            }
+        }
+        Ok(out)
+    }
+
+    /// Whether the group still waits for an update: something is parked
+    /// (`hold_future`), or an operation of the log here is one this build
+    /// cannot read (`keep_op_ahead`). The row is told.
+    pub(crate) async fn refresh_needs_update(&self, group_id: &str) -> Result<bool> {
+        let Some(row) = repo::get(&self.store, group_id).await? else { return Ok(false) };
+        let (parked, _) = repo::pending_prefix_size(&self.store, group_id, FUTURE).await?;
+        let (welcomes, _) = repo::pending_prefix_size(&self.store, group_id, FUTURE_WELCOME).await?;
+        // The stored operations are read only when the flag may clear:
+        // a log of hundreds is not parsed on every drain for nothing.
+        let needs = parked + welcomes > 0 || (row.needs_update && ops_ahead(&self.store, group_id).await? > 0);
+        if needs != row.needs_update {
+            repo::set_needs_update(&self.store, group_id, needs).await?;
+        }
+        Ok(needs)
+    }
+
     /// Open one event and act on it. `true` when the group became better
     /// known (a key, the log, a member): what waits may be tried again.
     async fn process(&self, keys: &Keys, group_id: &str, key: &GroupKey, item: &Item, ctx: &Context, out: &mut Outcome) -> Result<bool> {
         let opened = match wire::open(group_id, key, &item.ciphertext) {
             Ok(o) => o,
+            Err(e) if wire::is_op_too_new(&e) => {
+                self.hold_future(group_id, &format!("{FUTURE}{}", key.id().0), item).await?;
+                out.events.push(Self::updated(group_id));
+                return Ok(false);
+            }
             Err(e) => {
                 out.notes.push(format!("group: event dropped: {e}"));
                 return Ok(false);
@@ -790,11 +1077,23 @@ impl GroupService {
                         progress |= self.process(keys, group_id, &key, &item, ctx, out).await?;
                     }
                 }
+                // What was ahead of this build is looked at where it lies:
+                // most of it stays until an update, and what the build reads
+                // now (it was updated) goes the usual way.
+                for row in repo::pending_in(&self.store, group_id, &format!("{FUTURE}{id}")).await? {
+                    if wire::open(group_id, &key, &row.ciphertext).is_err_and(|e| wire::is_op_too_new(&e)) {
+                        continue;
+                    }
+                    repo::delete_pending(&self.store, &row.event_id).await?;
+                    let item = Item { event_id: row.event_id, ciphertext: row.ciphertext, created_at: row.created_at, historical: true };
+                    progress |= self.process(keys, group_id, &key, &item, ctx, out).await?;
+                }
             }
             if !progress {
                 break;
             }
         }
+        self.refresh_needs_update(group_id).await?;
         out.events.push(Self::updated(group_id));
         Ok(())
     }
@@ -864,6 +1163,9 @@ impl GroupService {
             if let Some(ev) = self.system_line(group_id, &op).await? {
                 out.events.push(ev);
             }
+            if let Some(ev) = crate::moderation::op_event(group_id, &op) {
+                out.events.push(ev);
+            }
         }
         Ok(())
     }
@@ -875,6 +1177,9 @@ impl GroupService {
         let Some(before) = repo::get(&self.store, group_id).await? else { return Ok(()) };
         let Some(log) = self.log(group_id).await? else { return Ok(()) };
         self.lines(group_id, &log, out).await?;
+        // The marks of moderation are in force by the journal as it stands:
+        // read again whenever it changed.
+        self.marks_follow_log(group_id, &log, out).await?;
         let gone = before.membership == MEMBERSHIP_JOINED && !log.state().is_member(me) && !log.state().disbanded;
         let row = self.refresh_row(group_id, me, gone.then(|| departure(&log, me))).await?;
         let Some(row) = row else { return Ok(()) };
@@ -926,16 +1231,25 @@ impl GroupService {
         if (item.created_at - m.created_at).abs() > JOIN_SLACK_SECS {
             return Ok(Verdict::Done);
         }
+        let Ok(envelope) = Envelope::parse(&m.content) else { return Ok(Verdict::Done) };
+        // A note of moderation is kept whatever its author's standing:
+        // whether it is in force is the journal's to say, now and after
+        // every change of it (`marks`). One of a type this build does not
+        // know is dropped quietly, like every unknown note.
+        if envelope.t.starts_with(crate::marks::T_PREFIX) {
+            self.on_mark(group_id, &log, &m, &envelope, out).await?;
+            return Ok(Verdict::Done);
+        }
         // The time inside is the author's word. What comes live is judged by
         // the log as it stands: one who was removed, left or was muted does
         // not speak again by dating a message back under a key they kept.
         // History is judged by its date.
         let at = if item.historical { m.created_at } else { m.created_at.max(head_time(&log)) };
-        let standing = standing(&log, &m.author, at);
-        if standing == Standing::Outsider {
+        let rules = rules_at(&log, &m.author, at);
+        if rules.standing == Standing::Outsider {
             // A member by the date, not now: dropped, not held, for what
             // waits is tried again as history, by its date.
-            if at != m.created_at && self::standing(&log, &m.author, m.created_at) != Standing::Outsider {
+            if at != m.created_at && rules_at(&log, &m.author, m.created_at).standing != Standing::Outsider {
                 return Ok(Verdict::Done);
             }
             // Not a member as far as the log here knows: the op that let them
@@ -947,13 +1261,16 @@ impl GroupService {
         let from_me = &m.author == me;
         let chat_id = repo::group_chat_id(group_id);
         let id = m.id.as_hex().to_string();
-        let Ok(envelope) = Envelope::parse(&m.content) else { return Ok(Verdict::Done) };
+        // Whether the author may speak at `at`: a member, not muted, and
+        // the group open to them (only moderators and above write, or the
+        // hours of the schedule). What a closed group hears is dropped.
+        let speaks = rules.closed(at).is_none();
         // A reaction: only a member who may speak puts one, mine from
         // another device or my own echo too (the same word again changes
         // nothing). One of a muted member is dropped.
         if envelope.t == T_REACTION {
             let fields = (envelope.str_field("target"), envelope.str_field("emoji"), envelope.fields.get("set").and_then(|v| v.as_bool()));
-            if let (Standing::Member, (Some(target), Some(emoji), Some(set))) = (&standing, fields) {
+            if let (true, (Some(target), Some(emoji), Some(set))) = (speaks, fields) {
                 for fx in self.dm.apply_reaction(&chat_id, &m.author, target, emoji, set, m.created_at).await? {
                     if let messenger_core::Effect::Emit(e) = fx {
                         out.events.push(e);
@@ -983,7 +1300,7 @@ impl GroupService {
             }
             return Ok(Verdict::Done);
         }
-        if standing == Standing::Muted {
+        if !speaks {
             return Ok(Verdict::Done);
         }
         let target = envelope.str_field("target").map(String::from);
@@ -1066,6 +1383,15 @@ impl GroupService {
             return Ok(Verdict::Done);
         }
 
+        // Held for a moderator by the rules at `at` (`Rules::subject_to_premod`):
+        // the row waits, listed for the moderators and its author only,
+        // counted and told nowhere, until a mark says otherwise. Judged by
+        // the journal as it is here now; one that outran the operation
+        // holding its author is judged again when that comes
+        // (`outrun_rows`), so every device ends alike.
+        if rules.subject_to_premod() {
+            msgs::set_review(&self.store, &id, msgs::REVIEW_PENDING).await?;
+        }
         // Edits or a delete that overtook this message on the way.
         if let Some(row) = msgs::get(&self.store, &id).await? {
             for p in msgs::pending_for_target(&self.store, &id).await? {
@@ -1076,6 +1402,28 @@ impl GroupService {
         }
         // Removed for me on another device before it came here.
         let hidden_before = self.dm.hide_if_hidden(&id).await?;
+        // The marks of moderation that waited for it.
+        if let Some(row) = msgs::get(&self.store, &id).await? {
+            self.marks_on_insert(group_id, s, &row, out).await?;
+        }
+        let Some(row) = msgs::get(&self.store, &id).await? else { return Ok(Verdict::Done) };
+        // Whether I see it: not hidden by a moderator, not of someone I
+        // block in direct messages (the one thing a block does in a
+        // group), and not waiting for a moderator unless I am one, or it
+        // is mine. What I do not see counts nowhere and wakes nobody; the
+        // row stays, for the unblock, the approval or the unhide to show.
+        let blocked = !from_me && self.dm.is_blocked(&m.author).await?;
+        let waits = row.review == msgs::REVIEW_PENDING;
+        let moderator = s.role_of(me).is_some_and(|r| r >= Role::Moderator);
+        let shown = row.mod_state == msgs::MOD_SHOWN && !blocked && (!waits || moderator || from_me);
+        // The count of what waits is a moderator's, and the author's for
+        // their own badge; a member's page is told nothing of it.
+        if waits && (moderator || from_me) {
+            out.events.push(self.queue_event(group_id).await?);
+        }
+        if !shown {
+            return Ok(Verdict::Done);
+        }
 
         let line = if let Some(line) = card_line {
             line
@@ -1088,9 +1436,13 @@ impl GroupService {
         let live = !from_me && !item.historical;
         let floor = self.dm.unread_floor();
         let joined_at = s.member(me).map(|x| x.joined_at).unwrap_or(i64::MAX);
+        // What waits for a moderator is read by nobody yet: not counted,
+        // not the line of the chat list, and nobody woken.
         let unread =
-            !from_me && !hidden_before && m.created_at >= joined_at && (live || (floor >= 0 && m.created_at >= floor));
-        chats::touch(&self.store, &chat_id, m.created_at, Some(&line), unread).await?;
+            !from_me && !hidden_before && !waits && m.created_at >= joined_at && (live || (floor >= 0 && m.created_at >= floor));
+        if !waits {
+            chats::touch(&self.store, &chat_id, m.created_at, Some(&line), unread).await?;
+        }
         chats::recompute_last(&self.store, &chat_id).await?;
         // Written on another device of mine: what came before is read there.
         if from_me && chats::read_up_to(&self.store, &chat_id, m.created_at).await? {
@@ -1105,8 +1457,9 @@ impl GroupService {
             name: messenger_dm::UI_EVENT_DM_MESSAGE.into(),
             payload: serde_json::json!({ "chat_id": chat_id, "message": view, "historical": item.historical }),
         });
-        // Nobody is woken for one who is not a member now.
-        if live && !deleted && s.member(&m.author).is_some() && !chats::is_muted(&self.store, &chat_id).await? {
+        // Nobody is woken for one who is not a member now, nor for what
+        // waits for a moderator.
+        if live && !deleted && !waits && s.member(&m.author).is_some() && !chats::is_muted(&self.store, &chat_id).await? {
             out.notify.push(Notice {
                 title: s.name.clone(),
                 body: messenger_dm::body::body_of(&envelope),
@@ -1144,6 +1497,8 @@ impl GroupService {
                     return Ok(false);
                 };
                 msgs::set_text(&self.store, &row.id, &t, at).await?;
+                // A new version: what a moderator approved was the old one.
+                self.after_edit(log.group_id(), log, row, at).await?;
                 Ok(true)
             }
             msgs::CT_DELETE => {
@@ -1175,4 +1530,166 @@ pub fn group_of_dm(content: &str) -> Option<String> {
         return None;
     }
     Some(e.str_field("group_id").unwrap_or_default().to_string())
+}
+
+#[cfg(test)]
+mod rules_tests {
+    use super::*;
+    use crate::log::Insert;
+    use crate::op::tests::Settings;
+    use crate::state::tests::{create, key, pk, utc};
+
+    /// A log with an owner `o`, an admin `a`, a moderator `m` and a
+    /// member `u`, history shown; every operation dated as asked.
+    fn team() -> (OpLog, [PubKey; 4]) {
+        let who = [pk("0"), pk("a"), pk("b"), pk("c")];
+        let [o, a, m, u] = who.clone();
+        let mut log = OpLog::create(create(GroupKind::Private, &o, true)).unwrap();
+        for (i, member) in [&a, &m, &u].into_iter().enumerate() {
+            apply(&mut log, &o, 110 + i as i64, OpBody::Admit { who: member.clone() }, None);
+        }
+        apply(&mut log, &o, 120, OpBody::SetRole { who: a, role: Role::Admin }, None);
+        apply(&mut log, &o, 121, OpBody::SetRole { who: m, role: Role::Moderator }, None);
+        (log, who)
+    }
+
+    fn apply(log: &mut OpLog, author: &PubKey, at: i64, body: OpBody, with_key: Option<u8>) {
+        let mut op = log.next(author, at, body);
+        if let Some(k) = with_key {
+            op = op.with_key(key(k));
+        }
+        assert_eq!(log.insert(op.clone()), Insert::Applied, "{:?}", op.body);
+    }
+
+    #[test]
+    fn a_timed_mute_lifts_by_itself_in_the_replay() {
+        let (mut log, [_, _, m, u]) = team();
+        apply(&mut log, &m, 300, OpBody::SetMuted { who: u.clone(), muted: true, until: Some(600) }, None);
+        assert_eq!(rules_at(&log, &u, 299).standing, Standing::Member);
+        assert_eq!(rules_at(&log, &u, 300).closed(300), Some(Closed::Muted { until: Some(600) }));
+        assert_eq!(rules_at(&log, &u, 599).standing, Standing::Muted);
+        assert_eq!(rules_at(&log, &u, 600).closed(600), None, "lifted with no operation to say so");
+        assert_eq!(rules_at(&log, &u, 10_000).standing, Standing::Member);
+        // Lifted early by a moderator: what was said under the mute stays hidden.
+        apply(&mut log, &m, 450, OpBody::SetMuted { who: u.clone(), muted: false, until: None }, None);
+        assert_eq!(rules_at(&log, &u, 400).standing, Standing::Muted);
+        assert_eq!(rules_at(&log, &u, 500).standing, Standing::Member);
+        // Muted again, with an end, and then for good after that end had
+        // passed: the gap between the two is free.
+        apply(&mut log, &m, 700, OpBody::SetMuted { who: u.clone(), muted: true, until: Some(800) }, None);
+        apply(&mut log, &m, 900, OpBody::SetMuted { who: u.clone(), muted: true, until: None }, None);
+        assert_eq!(rules_at(&log, &u, 750).closed(750), Some(Closed::Muted { until: Some(800) }));
+        assert_eq!(rules_at(&log, &u, 850).standing, Standing::Member);
+        assert_eq!(rules_at(&log, &u, 950).closed(950), Some(Closed::Muted { until: None }));
+        // A mute in force takes a new end from a second mute.
+        apply(&mut log, &m, 1_000, OpBody::SetMuted { who: u.clone(), muted: true, until: Some(1_100) }, None);
+        assert_eq!(rules_at(&log, &u, 1_050).closed(1_050), Some(Closed::Muted { until: Some(1_100) }));
+        assert_eq!(rules_at(&log, &u, 1_100).standing, Standing::Member);
+        // The moderator was never muted, and an outsider is outside.
+        assert_eq!(rules_at(&log, &m, 950).closed(950), None);
+        assert_eq!(rules_at(&log, &pk("f"), 950).closed(950), Some(Closed::NotMember));
+    }
+
+    #[test]
+    fn the_rules_of_posting_are_those_in_force_at_the_moment() {
+        let (mut log, [o, a, m, u]) = team();
+        let friday = utc(2026, 10, 16, 10, 0);
+        apply(&mut log, &a, friday, Settings { post_mode: Some(PostMode::Managers), ..Settings::default() }.body(), None);
+        assert_eq!(rules_at(&log, &u, friday - 1).closed(friday - 1), None, "before the rule");
+        assert_eq!(rules_at(&log, &u, friday).closed(friday), Some(Closed::ManagersOnly));
+        for who in [&o, &a, &m] {
+            assert_eq!(rules_at(&log, who, friday).closed(friday), None);
+        }
+        // Raised beside the rule: a moderator from that moment on.
+        apply(&mut log, &o, friday + 100, OpBody::SetRole { who: u.clone(), role: Role::Moderator }, None);
+        assert_eq!(rules_at(&log, &u, friday + 50).closed(friday + 50), Some(Closed::ManagersOnly));
+        assert_eq!(rules_at(&log, &u, friday + 100).closed(friday + 100), None);
+        apply(&mut log, &o, friday + 200, OpBody::SetRole { who: u.clone(), role: Role::Member }, None);
+        apply(&mut log, &a, friday + 300, Settings { post_mode: Some(PostMode::All), ..Settings::default() }.body(), None);
+        assert_eq!(rules_at(&log, &u, friday + 300).closed(friday + 300), None);
+
+        // The hours: Fridays 09:00 to 18:00 UTC.
+        let sched = Schedule { tz: "UTC".into(), days: vec![5], from: "09:00".into(), to: "18:00".into() };
+        apply(&mut log, &a, friday + 400, Settings { post_schedule: Some(sched.clone()), ..Settings::default() }.body(), None);
+        let evening = utc(2026, 10, 16, 18, 0);
+        assert_eq!(rules_at(&log, &u, friday + 400).closed(friday + 400), None);
+        assert_eq!(rules_at(&log, &u, evening).closed(evening), Some(Closed::Schedule { opens_at: utc(2026, 10, 23, 9, 0) }));
+        assert_eq!(rules_at(&log, &m, evening).closed(evening), None);
+        // A mute is said before the hours.
+        apply(&mut log, &m, evening + 10, OpBody::SetMuted { who: u.clone(), muted: true, until: Some(evening + 500) }, None);
+        assert_eq!(rules_at(&log, &u, evening + 20).closed(evening + 20), Some(Closed::Muted { until: Some(evening + 500) }));
+        // The schedule taken away: open again.
+        apply(&mut log, &a, evening + 600, Settings { post_schedule: Some(Schedule { days: vec![], ..sched }), ..Settings::default() }.body(), None);
+        assert_eq!(rules_at(&log, &u, evening + 600).closed(evening + 600), None);
+        assert_eq!(rules_at(&log, &u, evening + 550).closed(evening + 550), Some(Closed::Schedule { opens_at: utc(2026, 10, 23, 9, 0) }), "history is judged by its date");
+        assert_eq!(rules_at(&log, &u, evening + 100).closed(evening + 100), Some(Closed::Muted { until: Some(evening + 500) }), "the mute before the hours, then too");
+    }
+
+    #[test]
+    fn premod_and_the_line_of_newcomers() {
+        let (mut log, [o, a, m, u]) = team();
+        let x = pk("d");
+        let live = 100_000;
+        assert!(!rules_at(&log, &u, live).subject_to_premod());
+        apply(&mut log, &a, 300, Settings { premod: Some(Premod::Newcomers), ..Settings::default() }.body(), None);
+        assert!(!rules_at(&log, &u, live).subject_to_premod(), "from before the rule");
+        // Let in by an operation dated before the rule, ordered after it.
+        apply(&mut log, &a, 250, OpBody::Admit { who: x.clone() }, None);
+        let rules = rules_at(&log, &x, live);
+        assert_eq!(rules.standing, Standing::Member);
+        assert!(rules.subject_to_premod(), "a newcomer by the order of the log, whatever the clock says");
+        assert!(rules.joined_pos.unwrap() > rules.premod_since.unwrap());
+        // Trusted: not held. Raised: not held. Everyone: the old member too.
+        apply(&mut log, &m, 400, OpBody::SetTrusted { who: x.clone(), trusted: true }, None);
+        assert!(!rules_at(&log, &x, live).subject_to_premod());
+        assert!(rules_at(&log, &x, 350).subject_to_premod(), "not trusted yet then");
+        apply(&mut log, &m, 450, OpBody::SetTrusted { who: x.clone(), trusted: false }, None);
+        apply(&mut log, &o, 500, OpBody::SetRole { who: x.clone(), role: Role::Moderator }, None);
+        assert!(!rules_at(&log, &x, live).subject_to_premod());
+        apply(&mut log, &a, 600, Settings { premod: Some(Premod::All), ..Settings::default() }.body(), None);
+        assert!(rules_at(&log, &u, live).subject_to_premod() && !rules_at(&log, &m, live).subject_to_premod());
+        assert!(!rules_at(&log, &pk("f"), live).subject_to_premod(), "an outsider is nobody's to hold");
+        apply(&mut log, &a, 700, Settings { premod: Some(Premod::Off), ..Settings::default() }.body(), None);
+        assert!(!rules_at(&log, &u, live).subject_to_premod());
+        // The same answers as the state's, for a live message.
+        let s = log.state();
+        for who in [&o, &a, &m, &u, &x] {
+            assert_eq!(rules_at(&log, who, live).subject_to_premod(), s.subject_to_premod(who), "{who:?}");
+        }
+    }
+
+    #[test]
+    fn the_hold_is_the_same_on_every_device_whatever_order_the_operations_came_in() {
+        // Three operations made at once, each not knowing the others: the
+        // rule turned on by the owner, x let in by an admin (dated before
+        // the rule), and then x trusted. Devices hear of them in every
+        // order; the place of each in the applied order (the owner's goes
+        // first, so x is a newcomer), and so the hold, is the same on each.
+        let (log, [o, a, m, _]) = team();
+        let x = pk("d");
+        let base: Vec<crate::op::Op> = log.ordered().cloned().collect();
+        let rule = log.next(&o, 300, Settings { premod: Some(Premod::Newcomers), ..Settings::default() }.body());
+        let admit = log.next(&a, 250, OpBody::Admit { who: x.clone() });
+        let mut with_x = log.clone();
+        assert_eq!(with_x.insert(admit.clone()), Insert::Applied);
+        let trust = with_x.next(&m, 400, OpBody::SetTrusted { who: x.clone(), trusted: true });
+        let extra = [rule, admit, trust];
+        let mut answers = std::collections::HashSet::new();
+        for order in [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]] {
+            let mut l = OpLog::from_ops(base.iter().cloned()).unwrap();
+            for i in order {
+                l.insert(extra[i].clone());
+            }
+            assert_eq!(l.len(), base.len() + 3, "{order:?}: every operation is in, in whatever order it came");
+            let now = rules_at(&l, &x, 100_000);
+            let then = rules_at(&l, &x, 350);
+            answers.insert((now.subject_to_premod(), then.subject_to_premod(), now.joined_pos, now.premod_since, l.state().subject_to_premod(&x)));
+        }
+        assert_eq!(answers.len(), 1, "one answer for every order: {answers:?}");
+        let (now, then, joined, since, state) = answers.into_iter().next().unwrap();
+        assert!(!now, "trusted by now");
+        assert!(then, "not trusted at 350, and a newcomer: the rule stands first in the applied order, the admission after it");
+        assert!(joined > since);
+        assert_eq!(state, now);
+    }
 }

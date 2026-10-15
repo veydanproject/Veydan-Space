@@ -7,7 +7,7 @@
 //! Links are found roughly here (a text that holds a scheme); what in it
 //! is a link, and what that link means, is decided above the store.
 
-use crate::messages::{MessageRow, CT_MEDIA, CT_TEXT};
+use crate::messages::{MessageRow, COLS, CT_MEDIA, CT_TEXT};
 use crate::{storage, Store};
 use messenger_core::Result;
 
@@ -46,10 +46,9 @@ pub struct Counts {
     pub voice: i64,
 }
 
-const COLS: &str = "id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json";
 
 /// Seen, not removed.
-const LIVE: &str = "chat_id = ? AND is_hidden = 0 AND deleted_at IS NULL";
+const LIVE: &str = "chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL";
 
 /// A text that may hold a link; the UI decides which part of it is one.
 const HAS_LINK: &str = "(text LIKE '%http://%' OR text LIKE '%https://%' OR text LIKE '%veydan://%' OR text LIKE '%npub1%')";

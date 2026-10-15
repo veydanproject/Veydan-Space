@@ -9,7 +9,7 @@ use messenger_core::traits::{Clock, SystemClock};
 use messenger_core::{Context, Envelope, MessengerConfig, PubKey, RelayUrl, Timestamp};
 use messenger_dm::relationship::Action;
 use messenger_dm::wrap::{wrap, wrap_as, wrap_note, wrap_note_as, wrap_own, Wake};
-use messenger_dm::DmService;
+use messenger_dm::{DmService, DmSettings};
 use messenger_groups::wire::{seal_message, sign_message};
 use messenger_groups::{GroupKind, GroupService};
 use messenger_media::{ChunkRef, MediaDescriptor, MediaKind};
@@ -152,18 +152,19 @@ async fn a_text_from_a_contact_names_them_and_says_what() {
     assert_eq!(n.count, 1);
 }
 
+/// A stranger's first word goes into the queue of requests, which the
+/// app tells by its count: the phone shows nothing for it, nor for a copy
+/// of it, nor for anything the stranger says before an answer.
 #[tokio::test]
 async fn a_stranger_is_a_request_once_and_nothing_the_second_time() {
     let phone = Phone::new().await;
     let stranger = Keys::generate();
     let first = dm_from(&stranger, &phone, &Envelope::text("hi"), 1_000_000);
-    let n = shown(phone.describe(dm_push(&first)).await);
-    assert_eq!(n.kind, ChatKind::Request);
-    assert!(n.title.starts_with("npub1"), "{}", n.title);
+    assert_eq!(quiet(phone.describe(dm_push(&first)).await), Reason::Request);
 
     // The app took the first message in; a second before an answer is dropped.
     phone.app_received(&first).await;
-    assert_eq!(shown(phone.describe(dm_push(&first)).await).kind, ChatKind::Dm, "a copy of what is stored is shown as stored");
+    assert_eq!(quiet(phone.describe(dm_push(&first)).await), Reason::Request, "a copy of the request is the request");
     let second = dm_from(&stranger, &phone, &Envelope::text("hi again"), 1_000_001);
     assert_eq!(quiet(phone.describe(dm_push(&second)).await), Reason::NotForMe);
 
@@ -174,6 +175,83 @@ async fn a_stranger_is_a_request_once_and_nothing_the_second_time() {
     let row = messenger_store::messages::get(&phone.store, held.rumor_id.as_hex()).await.unwrap();
     assert!(row.is_some_and(|r| r.is_hidden), "the second message is stored, hidden");
     assert_eq!(quiet(phone.describe(dm_push(&second)).await), Reason::NotForMe);
+
+    // Let in: what they write is a message like any other.
+    phone.dm.act(&phone.keys, &pk(&stranger), Action::Accept).await.unwrap();
+    let third = dm_from(&stranger, &phone, &Envelope::text("thanks"), 1_000_002);
+    let n = shown(phone.describe(dm_push(&third)).await);
+    assert_eq!(n.kind, ChatKind::Dm);
+    assert!(n.title.starts_with("npub1"), "{}", n.title);
+}
+
+/// Before an answer a stranger may say one short plain text and nothing
+/// else: a file, a card, a link, a long text are dropped by the app and
+/// so say nothing here, as the gate of the app decides it.
+#[tokio::test]
+async fn what_a_stranger_may_not_say_before_an_answer_is_quiet() {
+    let phone = Phone::new().await;
+    let photo = descriptor(MediaKind::Image, "cat.jpg", Some("look")).to_envelope();
+    let card = Envelope::contact(serde_json::json!({ "pubkey": Keys::generate().public_key().to_hex(), "display_name": "Анна", "at": 1 }));
+    let long = Envelope::text(&"а".repeat(1001));
+    let short = Envelope::text(&"а".repeat(1000));
+    for (envelope, why) in [
+        (photo, "a file"),
+        (card, "a card"),
+        (Envelope::text("see https://evil.example"), "a link"),
+        (Envelope::text("find me at NPUB1qqq"), "a key, in any case"),
+        (Envelope::new("poll.v9").with("text", "vote"), "a type of a newer app"),
+        (long, "a long text"),
+    ] {
+        let stranger = Keys::generate();
+        let event = dm_from(&stranger, &phone, &envelope, 1_000_000);
+        assert_eq!(quiet(phone.describe(dm_push(&event)).await), Reason::NotForMe, "{why}");
+    }
+    let stranger = Keys::generate();
+    let request = dm_from(&stranger, &phone, &short, 1_000_000);
+    assert_eq!(quiet(phone.describe(dm_push(&request)).await), Reason::Request, "a thousand characters still go");
+    // An edit or a delete of the request, which the app drops unstored.
+    phone.app_received(&request).await;
+    let messenger_core::Inbound::Dm(stored) = messenger_ingress::classify(&raw(&request), Some(&phone.keys)) else { panic!("a dm") };
+    let id = stored.rumor_id.as_hex().to_string();
+    for envelope in [Envelope::edit(&id, "see https://evil.example"), Envelope::edit(&id, "plain"), Envelope::delete(&id)] {
+        let event = dm_from(&stranger, &phone, &envelope, 1_000_001);
+        assert_eq!(quiet(phone.describe(dm_push(&event)).await), Reason::NotForMe, "{}", envelope.t);
+    }
+    // Declined: a copy of the text that is stored says nothing either, as
+    // the app says nothing of a copy.
+    phone.dm.act(&phone.keys, &pk(&stranger), Action::Decline).await.unwrap();
+    assert_eq!(quiet(phone.describe(dm_push(&request)).await), Reason::NotForMe);
+}
+
+/// Under "contacts only" a stranger says nothing at all, and a contact
+/// is heard as before.
+#[tokio::test]
+async fn under_contacts_only_a_stranger_says_nothing() {
+    let phone = Phone::new().await;
+    phone.dm.dm_settings_set(DmSettings { dm_from: "contacts".into(), keep_days: 7 }).await.unwrap();
+    let stranger = Keys::generate();
+    let event = dm_from(&stranger, &phone, &Envelope::text("hi"), 1_000_000);
+    assert_eq!(quiet(phone.describe(dm_push(&event)).await), Reason::NotForMe);
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+    let n = shown(phone.describe(dm_push(&dm_from(&alice, &phone, &Envelope::text("hi"), 1_000_001))).await);
+    assert_eq!(n.sender, "Al");
+}
+
+/// A request that ran out shut the key: nothing of that stranger is
+/// heard until I add them myself, their old word included.
+#[tokio::test]
+async fn a_request_that_ran_out_says_nothing() {
+    let phone = Phone::new().await;
+    let stranger = Keys::generate();
+    let first = dm_from(&stranger, &phone, &Envelope::text("hi"), 1_000_000);
+    phone.app_received(&first).await;
+    assert_eq!(quiet(phone.describe(dm_push(&first)).await), Reason::Request);
+    // As the app keeps the queue: the request is older than the term.
+    phone.dm.sweep_requests(now()).await.unwrap();
+    assert_eq!(quiet(phone.describe(dm_push(&first)).await), Reason::NotForMe);
+    let again = dm_from(&stranger, &phone, &Envelope::text("still there?"), now());
+    assert_eq!(quiet(phone.describe(dm_push(&again)).await), Reason::NotForMe);
 }
 
 #[tokio::test]
@@ -826,10 +904,11 @@ async fn the_pinned_bot_is_no_request_and_its_card_says_no_word_of_its_own() {
     let ring = dm_from(&bot, &phone, &ring, now());
     assert_eq!(quiet(messenger_notify::describe_as(&config, Some(&bundle), &dm_push(&ring)).await.unwrap()), Reason::NotForMe);
 
-    // Without the pin the same key is a stranger: a request, told by what
-    // its envelope says.
-    let n = shown(phone.describe(dm_push(&event)).await);
-    assert_eq!((n.kind, n.body), (ChatKind::Request, Some(Body::Text { text: "go to evil.example".into() })));
+    // Without the pin the same key is a stranger, and its card no plain
+    // text: dropped before an answer, as the app drops it.
+    assert_eq!(quiet(phone.describe(dm_push(&event)).await), Reason::NotForMe);
+    // Its plain alert is the request, and a request is told by its count.
+    assert_eq!(quiet(phone.describe(dm_push(&alert)).await), Reason::Request);
 
     // Blocked, the bot is as quiet as anybody.
     phone.dm.act(&phone.keys, &pk(&bot), Action::Block).await.unwrap();

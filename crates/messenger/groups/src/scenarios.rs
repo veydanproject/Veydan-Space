@@ -5,7 +5,8 @@
 //! delivers late, twice, and in the wrong order.
 
 use crate::keys::GroupLink;
-use crate::op::{GroupKind, KeyId, OpBody};
+use crate::op::tests::Settings;
+use crate::op::{GroupKind, KeyId, OpBody, PostMode, Schedule};
 use crate::roles::Role;
 use crate::service::*;
 use async_trait::async_trait;
@@ -767,10 +768,10 @@ async fn roles_mute_and_moderation_of_messages() {
     w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
     assert_eq!(w.devices[user].texts(&g).await, vec!["owner spoke"]);
 
-    w.act(mod_, &g, OpBody::SetMuted { who: w.pk(user), muted: true }).await.unwrap();
+    w.act(mod_, &g, OpBody::SetMuted { who: w.pk(user), muted: true, until: None }).await.unwrap();
     assert_eq!(code(w.try_say(user, &g, "mmm").await), "group_muted");
     assert!(!w.devices[user].group(&g).await.unwrap().can_post);
-    w.act(mod_, &g, OpBody::SetMuted { who: w.pk(user), muted: false }).await.unwrap();
+    w.act(mod_, &g, OpBody::SetMuted { who: w.pk(user), muted: false, until: None }).await.unwrap();
     w.say(user, &g, "sorry").await;
     assert_eq!(w.devices[alice].texts(&g).await, vec!["owner spoke", "sorry"]);
     // A moderator does not remove people.
@@ -791,7 +792,7 @@ async fn a_device_that_was_away_catches_up() {
     w.say(carol, &g, "two").await;
     w.act(alice, &g, OpBody::Remove { who: w.pk(carol) }).await.unwrap();
     w.say(alice, &g, "three").await;
-    w.act(alice, &g, OpBody::EditSettings { name: Some("Team 2".into()), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None }).await.unwrap();
+    w.act(alice, &g, Settings { name: Some("Team 2".into()), ..Settings::default() }.body()).await.unwrap();
     w.online(bob).await;
     let v = w.devices[bob].group(&g).await.unwrap();
     assert_eq!((v.name.as_str(), v.members.len(), v.undecrypted), ("Team 2", 2, 0));
@@ -1096,7 +1097,7 @@ async fn members_react_and_outsiders_cannot() {
     assert_eq!(code(w.react(bob, &m, "no").await), "reaction_invalid");
 
     // Muted: refused here, and dropped by the others if sent anyway.
-    w.act(alice, &g, OpBody::SetMuted { who: w.pk(carol), muted: true }).await.unwrap();
+    w.act(alice, &g, OpBody::SetMuted { who: w.pk(carol), muted: true, until: None }).await.unwrap();
     assert_eq!(code(w.react(carol, &m, "🔥").await), "group_muted");
     w.tick();
     let sealed = w.forged_reaction(carol, &g, &m, "🔥").await;
@@ -1401,7 +1402,7 @@ async fn the_removed_does_not_speak_by_dating_a_message_back() {
         w.run(carol, o).await;
     }
     // Nothing waits to be let in later as history.
-    w.act(alice, &g, OpBody::EditSettings { name: Some("Team 2".into()), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None }).await.unwrap();
+    w.act(alice, &g, Settings { name: Some("Team 2".into()), ..Settings::default() }.body()).await.unwrap();
     w.say(alice, &g, "without bob").await;
     assert_eq!(w.devices[carol].texts(&g).await, vec!["still here", "without bob"]);
 }
@@ -1414,7 +1415,7 @@ async fn a_muted_member_does_not_date_a_message_before_the_mute() {
     let g = w.create(alice, GroupKind::Private, "Moderated", true).await;
     w.bring(alice, &g, user).await;
     w.say(user, &g, "fine").await;
-    w.act(alice, &g, OpBody::SetMuted { who: w.pk(user), muted: true }).await.unwrap();
+    w.act(alice, &g, OpBody::SetMuted { who: w.pk(user), muted: true, until: None }).await.unwrap();
     let muted_at = op_time(&w, alice, &g, |b| matches!(b, OpBody::SetMuted { .. })).await;
     let id = w.devices[user].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
     let key = w.devices[user].svc.key(&g, &id).await.unwrap().unwrap();
@@ -1677,7 +1678,7 @@ async fn the_description_is_shown_without_controls_though_the_log_keeps_it() {
     let g = w.create(alice, GroupKind::Private, "Team", true).await;
     w.bring(alice, &g, bob).await;
     let about = "\u{202E}gnirts\u{0007} of the team";
-    let edit = OpBody::EditSettings { name: None, about: Some(about.into()), picture: None, history_for_new: None, call_node: None, call_node_key: None };
+    let edit = Settings { about: Some(about.into()), ..Settings::default() }.body();
     w.act(alice, &g, edit).await.unwrap();
     for d in [alice, bob] {
         assert_eq!(w.devices[d].svc.need_log(&g).await.unwrap().state().about, about, "the log is as it was written");
@@ -1792,4 +1793,1158 @@ async fn an_invitation_lapsed_here_and_accepted_on_my_other_device_brings_me_in(
     for d in [bob, bob2] {
         assert_eq!(w.devices[d].group(&g).await.expect("in").membership, "joined", "device {d}");
     }
+}
+
+/// A text of `who` sealed with the group key as their client would, with
+/// nothing asked of the service: what a client that ignores the rules
+/// would put on the relay.
+async fn forged_text(w: &World, who: usize, group: &str, text: &str) -> Outbound {
+    let d = &w.devices[who];
+    let log = d.svc.need_log(group).await.unwrap();
+    let key = d.svc.key(group, log.state().current_key.as_ref().unwrap()).await.unwrap().unwrap();
+    let signed = crate::wire::sign_message(&d.keys, group, &Envelope::text(text).encode(), w.clock.now().secs(), None).unwrap();
+    let sealed = crate::wire::seal_message(group, &key, None, &signed, &d.keys).unwrap();
+    GroupService::scoped(group, sealed)
+}
+
+#[tokio::test]
+async fn a_timed_mute_lifts_by_itself() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    let until = w.clock.now().secs() + 1_000;
+    w.act(alice, &g, OpBody::SetMuted { who: w.pk(bob), muted: true, until: Some(until) }).await.unwrap();
+    assert_eq!(code(w.try_say(bob, &g, "now").await), "group_muted_until");
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert!(v.muted && !v.can_post);
+    assert_eq!(v.muted_until, Some(until));
+    let seen_by_alice = w.devices[alice].group(&g).await.unwrap();
+    let member = seen_by_alice.members.iter().find(|m| m.pubkey == w.pk(bob).as_hex()).unwrap();
+    assert_eq!((member.muted, member.muted_until), (true, Some(until)));
+    assert!(w.devices[alice].lines(&g).await.contains(&"group_muted_until".to_string()));
+    // A client of bob's that ignores the mute: dropped by everyone else.
+    let forged = forged_text(&w, bob, &g, "under the mute").await;
+    w.run(bob, Outcome { publish: vec![forged], ..Default::default() }).await;
+    assert!(w.devices[alice].texts(&g).await.is_empty());
+
+    // The end passes: no operation, and bob writes again.
+    w.clock.0.fetch_add(1_000, Ordering::SeqCst);
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert!(!v.muted && v.can_post && v.muted_until.is_none());
+    w.say(bob, &g, "free again").await;
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["free again"]);
+    let member = w.devices[alice].group(&g).await.unwrap().members.into_iter().find(|m| m.pubkey == w.pk(bob).as_hex()).unwrap();
+    assert!(!member.muted && member.muted_until.is_none());
+    // Muted for good: an end of none, and the old refusal.
+    w.act(alice, &g, OpBody::SetMuted { who: w.pk(bob), muted: true, until: None }).await.unwrap();
+    assert_eq!(code(w.try_say(bob, &g, "still").await), "group_muted");
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn only_moderators_write_when_the_group_says_so() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.bring(alice, &g, carol).await;
+    w.act(alice, &g, Settings { post_mode: Some(PostMode::Managers), ..Settings::default() }.body()).await.unwrap();
+    for d in [alice, bob, carol] {
+        assert_eq!(w.devices[d].group(&g).await.unwrap().post_mode, "managers", "device {d}");
+        assert!(w.devices[d].lines(&g).await.contains(&"group_post_mode".to_string()));
+    }
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert!(!v.can_post && !v.muted && v.closed_until.is_none());
+    assert_eq!(code(w.try_say(bob, &g, "members too?").await), "group_closed");
+    let forged = forged_text(&w, bob, &g, "anyway").await;
+    w.run(bob, Outcome { publish: vec![forged], ..Default::default() }).await;
+    w.say(alice, &g, "managers only").await;
+    assert_eq!(w.devices[carol].texts(&g).await, vec!["managers only"]);
+    // Made a moderator, carol writes; bob reads.
+    w.act(alice, &g, OpBody::SetRole { who: w.pk(carol), role: Role::Moderator }).await.unwrap();
+    assert!(w.devices[carol].group(&g).await.unwrap().can_post);
+    w.say(carol, &g, "as a moderator").await;
+    assert_eq!(w.devices[bob].texts(&g).await, vec!["managers only", "as a moderator"]);
+    // Open again.
+    w.act(alice, &g, Settings { post_mode: Some(PostMode::All), ..Settings::default() }.body()).await.unwrap();
+    assert!(w.devices[bob].group(&g).await.unwrap().can_post);
+    w.say(bob, &g, "everyone again").await;
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["managers only", "as a moderator", "everyone again"]);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn the_schedule_closes_the_group_outside_its_hours() {
+    let mut w = World::new();
+    // Friday 2026-10-16, 10:00 in Berlin (08:00 UTC).
+    let berlin = |h: i8, mi: i8| jiff::civil::date(2026, 10, 16).at(h, mi, 0, 0).in_tz("Europe/Berlin").unwrap().timestamp().as_second();
+    w.clock.0.store(berlin(10, 0), Ordering::SeqCst);
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    let hours = Schedule { tz: "Europe/Berlin".into(), days: vec![5], from: "09:00".into(), to: "18:00".into() };
+    w.act(alice, &g, Settings { post_schedule: Some(hours.clone()), ..Settings::default() }.body()).await.unwrap();
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert_eq!(v.schedule.as_ref(), Some(&hours));
+    assert!(v.can_post && v.closed_until.is_none() && !v.schedule_tz_unknown);
+    assert!(w.devices[bob].lines(&g).await.contains(&"group_schedule".to_string()));
+    w.say(bob, &g, "in hours").await;
+
+    // Six in the evening in Berlin: closed until next Friday, nine.
+    w.clock.0.store(berlin(18, 0), Ordering::SeqCst);
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert!(!v.can_post);
+    let next_friday = jiff::civil::date(2026, 10, 23).at(9, 0, 0, 0).in_tz("Europe/Berlin").unwrap().timestamp().as_second();
+    assert_eq!(v.closed_until, Some(next_friday));
+    assert_eq!(code(w.try_say(bob, &g, "after hours").await), "group_closed");
+    let forged = forged_text(&w, bob, &g, "after hours anyway").await;
+    w.run(bob, Outcome { publish: vec![forged], ..Default::default() }).await;
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["in hours"]);
+    // The owner is never held by the hours.
+    assert!(w.devices[alice].group(&g).await.unwrap().can_post);
+    w.say(alice, &g, "owner after hours").await;
+    assert_eq!(w.devices[bob].texts(&g).await, vec!["in hours", "owner after hours"]);
+
+    // A zone this build does not know: read in UTC (16:00, still open), and said so.
+    w.act(alice, &g, Settings { post_schedule: Some(Schedule { tz: "Mars/Olympus".into(), ..hours.clone() }), ..Settings::default() }.body()).await.unwrap();
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert!(v.schedule_tz_unknown && v.can_post);
+    // Taken away: open at any hour.
+    w.act(alice, &g, Settings { post_schedule: Some(Schedule { days: vec![], ..hours }), ..Settings::default() }.body()).await.unwrap();
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert!(v.schedule.is_none() && v.can_post && !v.schedule_tz_unknown);
+    w.say(bob, &g, "open again").await;
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["in hours", "owner after hours", "open again"]);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn an_operation_newer_than_the_build_waits_for_an_update() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.bring(alice, &g, carol).await;
+    w.say(bob, &g, "before").await;
+
+    // Alice mutes carol with an end: an operation of version 2. Bob's
+    // device reads version 1 only, as one not updated yet.
+    w.tick();
+    let until = w.clock.now().secs() + 1_000;
+    let d = &w.devices[alice];
+    let o = d.svc.act(&d.keys, &g, OpBody::SetMuted { who: w.pk(carol), muted: true, until: Some(until) }).await.unwrap();
+    let wires: Vec<Wire> = o
+        .publish
+        .iter()
+        .map(|out| match out {
+            Outbound::PublishScoped { event, .. } => Wire::Group(event.clone()),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    for wire in &wires {
+        if let Wire::Group(e) = wire {
+            w.relay.push(e.clone());
+        }
+        for i in [alice, carol] {
+            let o = w.deliver(i, wire, false).await;
+            w.run(i, o).await;
+        }
+        crate::wire::READS_UP_TO.with(|c| c.set(Some(1)));
+        let o = w.deliver(bob, wire, false).await;
+        crate::wire::READS_UP_TO.with(|c| c.set(None));
+        w.run(bob, o).await;
+    }
+    let muted_for = |w: &World, who: usize| {
+        let svc = w.devices[who].svc.clone();
+        let (g, carol) = (g.clone(), w.pk(carol));
+        async move { svc.need_log(&g).await.unwrap().state().member(&carol).unwrap().muted }
+    };
+    assert!(muted_for(&w, alice).await && muted_for(&w, carol).await);
+    assert!(!muted_for(&w, bob).await, "bob's device cannot read the operation");
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert!(v.needs_update, "and says it waits for an update");
+    assert!(!w.devices[alice].group(&g).await.unwrap().needs_update);
+    assert!(w.notes.is_empty(), "parked, not dropped: {:?}", w.notes);
+
+    // Meanwhile the group goes on: messages reach bob, and an operation
+    // after the one parked waits for it on bob's device.
+    w.say(alice, &g, "meanwhile").await;
+    assert_eq!(w.devices[bob].texts(&g).await, vec!["before", "meanwhile"]);
+    w.act(alice, &g, Settings { name: Some("Renamed".into()), ..Settings::default() }.body()).await.unwrap();
+    assert_eq!(w.devices[carol].group(&g).await.unwrap().name, "Renamed");
+    assert_eq!(w.devices[bob].group(&g).await.unwrap().name, "Team");
+    assert!(!w.devices[bob].lines(&g).await.contains(&"group_muted_until".to_string()));
+
+    // Bob updates the app; at the start of the next session the runtime
+    // looks after the group: what was parked is read now.
+    w.synced(bob, &g).await;
+    assert!(muted_for(&w, bob).await);
+    let v = w.devices[bob].group(&g).await.unwrap();
+    assert!(!v.needs_update, "nothing waits any more");
+    assert_eq!(v.name, "Renamed", "and what waited for it came through");
+    assert!(w.devices[bob].lines(&g).await.contains(&"group_muted_until".to_string()));
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn a_welcome_with_an_operation_newer_than_the_build() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.act(alice, &g, OpBody::SetTrusted { who: w.pk(bob), trusted: true }).await.unwrap();
+    assert!(w.devices[bob].group(&g).await.unwrap().members.iter().any(|m| m.is_me && m.trusted));
+
+    // Carol's device reads version 1: the welcome's log has an operation
+    // it cannot read, and everything after it (her own admission) waits
+    // for that one. Not a member by what it reads, it keeps the welcome
+    // whole and lists the group as one it is getting into.
+    crate::wire::READS_UP_TO.with(|c| c.set(Some(1)));
+    w.bring(alice, &g, carol).await;
+    let v = w.devices[carol].group(&g).await.expect("listed");
+    assert_eq!((v.membership.as_str(), v.needs_update, v.name.as_str()), ("joining", true, "Team"));
+    assert!(w.devices[carol].texts(&g).await.is_empty());
+    assert!(w.notes.is_empty(), "parked, not dropped: {:?}", w.notes);
+    // What the group says meanwhile is kept under the keys the welcome brought.
+    w.say(alice, &g, "while carol waits").await;
+    // Another start of a session, not updated yet: still waiting.
+    w.synced(carol, &g).await;
+    let v = w.devices[carol].group(&g).await.unwrap();
+    assert_eq!((v.membership.as_str(), v.needs_update), ("joining", true));
+    crate::wire::READS_UP_TO.with(|c| c.set(None));
+    // What the thread reads is every device's word in a test: a log read
+    // while it read less (alice's, after the admission) is read again,
+    // as a device does at the start of a session after an update.
+    for d in &w.devices {
+        d.svc.forget_log(&g).await;
+    }
+
+    // Updated: at the start of the next session the welcome is read whole,
+    // and what was said meanwhile is there.
+    w.synced(carol, &g).await;
+    let v = w.devices[carol].group(&g).await.unwrap();
+    assert_eq!((v.membership.as_str(), v.needs_update, v.my_role.as_deref()), ("joined", false, Some("member")));
+    assert!(v.members.iter().any(|m| m.pubkey == w.pk(bob).as_hex() && m.trusted));
+    assert_eq!(w.devices[carol].texts(&g).await, vec!["while carol waits"]);
+    w.say(carol, &g, "here at last").await;
+    assert_eq!(w.devices[alice].texts(&g).await, vec!["while carol waits", "here at last"]);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+// ─── Moderation: marks, pre-moderation, the block of direct messages ────────
+
+use crate::marks::ModNote;
+use crate::op::Premod;
+use messenger_dm::Action as DmAction;
+
+impl Device {
+    /// As a moderator sees the chat: what waits for one too.
+    async fn moderated(&self, id: &str) -> Vec<MessageView> {
+        let mut v = self.dm.messages_as(&format!("group:{id}"), None, 500, true).await.unwrap();
+        v.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+        v
+    }
+
+    async fn texts_as_moderator(&self, id: &str) -> Vec<String> {
+        self.moderated(id).await.into_iter().filter(|m| m.content_type == "text" && !m.deleted).filter_map(|m| m.text).collect()
+    }
+
+    async fn unread(&self, id: &str) -> i64 {
+        self.dm.chat(&format!("group:{id}")).await.unwrap().map(|c| c.unread).unwrap_or(0)
+    }
+
+    /// The line of the chat in the list.
+    async fn preview(&self, id: &str) -> Option<String> {
+        self.dm.chat(&format!("group:{id}")).await.unwrap().and_then(|c| c.last_preview)
+    }
+}
+
+impl World {
+    /// A note of moderation by `who`; `true` when something went out.
+    async fn moderate(&mut self, who: usize, group: &str, note: ModNote) -> Result<bool> {
+        self.tick();
+        let d = &self.devices[who];
+        let o = d.svc.moderate(&d.keys, group, note).await?;
+        let sent = !o.publish.is_empty();
+        self.run(who, o).await;
+        Ok(sent)
+    }
+
+    /// A note sealed by `who` themselves, whatever their role, dated `at`:
+    /// what a client of their own making could send.
+    async fn forged_note(&self, who: usize, group: &str, note: &ModNote, at: i64) -> Outbound {
+        self.forged_envelope(who, group, &note.envelope(), at).await
+    }
+
+    /// Any envelope sealed quietly by `who`, dated `at`.
+    async fn forged_envelope(&self, who: usize, group: &str, envelope: &Envelope, at: i64) -> Outbound {
+        let d = &self.devices[who];
+        let log = d.svc.need_log(group).await.unwrap();
+        let key = d.svc.key(group, log.state().current_key.as_ref().unwrap()).await.unwrap().unwrap();
+        let signed = crate::wire::sign_message(&d.keys, group, &envelope.encode(), at, None).unwrap();
+        let sealed = crate::wire::seal_note(group, &key, None, &signed, &d.keys).unwrap();
+        GroupService::scoped(group, sealed)
+    }
+
+    /// `who` changes the text of their message; the id of the edit (the
+    /// new version).
+    async fn edit_versioned(&mut self, who: usize, id: &str, text: &str) -> String {
+        self.tick();
+        let d = &self.devices[who];
+        let (_, version, out) = d.svc.prepare_edit(&d.keys, id, text).await.unwrap();
+        self.run(who, Outcome { publish: vec![out], ..Default::default() }).await;
+        version
+    }
+
+    /// Back online with what was missed delivered in the order given
+    /// (indices into the missed list), as history.
+    async fn online_in_order(&mut self, i: usize, order: &[usize]) {
+        self.devices[i].online = true;
+        let missed = std::mem::take(&mut self.devices[i].missed);
+        for &k in order {
+            let o = self.deliver(i, &missed[k], true).await;
+            self.run(i, o).await;
+        }
+    }
+
+    async fn log_of(&self, who: usize, group: &str) -> Vec<crate::moderation::LogLine> {
+        let d = &self.devices[who];
+        d.svc.mod_log(group, &d.pk()).await.unwrap()
+    }
+}
+
+fn permutations<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
+    if items.len() <= 1 {
+        return vec![items.to_vec()];
+    }
+    let mut out = Vec::new();
+    for i in 0..items.len() {
+        let mut rest = items.to_vec();
+        let x = rest.remove(i);
+        for mut p in permutations(&rest) {
+            p.insert(0, x.clone());
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// A group of an owner, a moderator and two members, everybody seeing
+/// the history.
+async fn moderated_group(w: &mut World) -> (String, usize, usize, usize, usize) {
+    let owner = w.person().await;
+    let moderator = w.person().await;
+    let u = w.person().await;
+    let v = w.person().await;
+    let g = w.create(owner, GroupKind::Private, "Town", true).await;
+    for p in [moderator, u, v] {
+        w.bring(owner, &g, p).await;
+    }
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Moderator }).await.unwrap();
+    (g, owner, moderator, u, v)
+}
+
+#[tokio::test]
+async fn a_member_s_mark_has_no_force_and_a_moderator_s_hides_everywhere() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, v) = moderated_group(&mut w).await;
+    let spam = w.say(u, &g, "buy now").await;
+    let fine = w.say(owner, &g, "welcome").await;
+    let everyone = [owner, moderator, u, v];
+
+    // A member who seals a hide themselves: kept, in force for nobody.
+    let forged = w.forged_note(v, &g, &ModNote::Hide { targets: vec![spam.clone()], reason: String::new() }, w.clock.now().secs()).await;
+    w.run(v, Outcome { publish: vec![forged], ..Default::default() }).await;
+    for d in everyone {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["buy now", "welcome"], "device {d}");
+    }
+    let log = w.log_of(owner, &g).await;
+    assert_eq!(log.len(), 1);
+    assert!(log[0].action == "hide" && log[0].by == w.pk(v).as_hex() && log[0].detail.contains("\"active\":false"));
+    // A member may not even ask.
+    assert_eq!(code(w.moderate(v, &g, ModNote::Hide { targets: vec![spam.clone()], reason: String::new() }).await), "group_not_permitted");
+    // A moderator may not hide the owner's word, nor their own.
+    assert_eq!(code(w.moderate(moderator, &g, ModNote::Hide { targets: vec![fine.clone()], reason: String::new() }).await), "group_not_permitted");
+    assert!(w.moderate(moderator, &g, ModNote::Hide { targets: vec!["ab".repeat(32)], reason: String::new() }).await.is_err(), "unknown message");
+
+    // The moderator hides: gone for everyone, the author too.
+    assert!(w.moderate(moderator, &g, ModNote::Hide { targets: vec![spam.clone()], reason: "spam".into() }).await.unwrap());
+    for d in everyone {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["welcome"], "device {d}");
+        assert_eq!(w.devices[d].texts_as_moderator(&g).await, vec!["welcome"], "hidden is hidden for a moderator too");
+    }
+    // Hidden already: nothing goes out a second time.
+    assert!(!w.moderate(moderator, &g, ModNote::Hide { targets: vec![spam.clone()], reason: String::new() }).await.unwrap());
+    // Shown again by an unhide; the chat list follows.
+    assert!(w.moderate(moderator, &g, ModNote::Unhide { targets: vec![spam.clone()] }).await.unwrap());
+    for d in everyone {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["buy now", "welcome"], "device {d}");
+    }
+    assert!(!w.moderate(moderator, &g, ModNote::Unhide { targets: vec![spam.clone()] }).await.unwrap(), "shown already");
+
+    // The member whose forged hide lies in the store is raised: the mark
+    // comes into force, but the moderator's unhide is newer and stands.
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(v), role: Role::Moderator }).await.unwrap();
+    for d in everyone {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["buy now", "welcome"], "device {d}");
+    }
+    // The first moderator demoted: their marks lose their force, and the
+    // raised member's old hide is all that is left.
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Member }).await.unwrap();
+    for d in everyone {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["welcome"], "device {d}");
+    }
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn a_demoted_moderator_s_marks_lose_their_force_until_the_admin_inherits_them() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, v) = moderated_group(&mut w).await;
+    let a = w.say(u, &g, "a").await;
+    let b = w.say(u, &g, "b").await;
+    w.say(v, &g, "c").await;
+    assert!(w.moderate(moderator, &g, ModNote::Hide { targets: vec![a.clone(), b.clone()], reason: String::new() }).await.unwrap());
+    assert!(w.moderate(moderator, &g, ModNote::HideAuthor { author: w.pk(v), from: 0, to: w.clock.now().secs(), reason: String::new() }).await.unwrap());
+    let everyone = [owner, moderator, u, v];
+    for d in everyone {
+        assert!(w.devices[d].texts(&g).await.is_empty(), "device {d}");
+    }
+    // Demoted: every mark of theirs is out of force, on every device.
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Member }).await.unwrap();
+    for d in everyone {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["a", "b", "c"], "device {d}");
+    }
+    assert!(w.log_of(owner, &g).await.iter().filter(|l| l.action == "hide").all(|l| l.detail.contains("\"active\":false")));
+    // The admin says the same as their own: hidden again everywhere.
+    w.tick();
+    let d = &w.devices[owner];
+    let (n, o) = d.svc.inherit_marks(&d.keys, &g, &w.pk(moderator)).await.unwrap();
+    assert_eq!(n, 3, "two messages and a span");
+    w.run(owner, o).await;
+    for d in everyone {
+        assert!(w.devices[d].texts(&g).await.is_empty(), "device {d}");
+    }
+    // Said already: nothing a second time.
+    let d = &w.devices[owner];
+    let (n, _) = d.svc.inherit_marks(&d.keys, &g, &w.pk(moderator)).await.unwrap();
+    assert_eq!(n, 0);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike() {
+    let mut w = World::new();
+    let owner = w.person().await;
+    let moderator = w.person().await;
+    // Devices of the moderator that will hear everything late, each in
+    // another order: made now, so that the welcome reaches them.
+    let late: Vec<usize> = {
+        let keys = w.devices[moderator].keys.clone();
+        let mut v = Vec::new();
+        for _ in 0..(120 + 120) {
+            v.push(w.device(keys.clone()).await);
+        }
+        v
+    };
+    let u = w.person().await;
+    let g = w.create(owner, GroupKind::Private, "Town", true).await;
+    w.bring(owner, &g, moderator).await;
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Moderator }).await.unwrap();
+    w.act(owner, &g, Settings { premod: Some(Premod::Newcomers), ..Settings::default() }.body()).await.unwrap();
+    w.bring(owner, &g, u).await;
+    for &d in &late {
+        assert_eq!(w.devices[d].group(&g).await.unwrap().my_role.as_deref(), Some("moderator"));
+        w.offline(d);
+    }
+    // What happens, in this order, for those who are there: a newcomer's
+    // message (held), their edit, the approval of the edit, a hide and an
+    // unhide of it, and the demotion of the moderator.
+    let m = w.say(u, &g, "hello").await;
+    let version = w.edit_versioned(u, &m, "hello there").await;
+    assert!(w.moderate(moderator, &g, ModNote::Approve { target: m.clone(), version }).await.unwrap());
+    assert!(w.moderate(moderator, &g, ModNote::Hide { targets: vec![m.clone()], reason: String::new() }).await.unwrap());
+    assert!(w.moderate(moderator, &g, ModNote::Unhide { targets: vec![m.clone()] }).await.unwrap());
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["hello there"], "approved for its new version, shown again");
+    let demotion_at = w.devices[late[0]].missed.len();
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Member }).await.unwrap();
+    assert_eq!(w.devices[late[0]].missed.len(), demotion_at + 1, "the demotion is one event");
+    assert!(w.devices[owner].texts(&g).await.is_empty(), "the approval lost its force: waiting again");
+    assert_eq!(w.devices[owner].texts_as_moderator(&g).await, vec!["hello there"]);
+
+    // Without the demotion, in every order: approved and shown.
+    let five: Vec<usize> = (0..demotion_at).collect();
+    assert_eq!(five.len(), 5, "message, edit, approve, hide, unhide");
+    let orders = permutations(&five);
+    assert_eq!(orders.len(), 120);
+    for (k, order) in orders.iter().enumerate() {
+        let d = late[k];
+        let mut order = order.clone();
+        // The demotion is left where it lies: not delivered.
+        order.retain(|&i| i != demotion_at);
+        w.online_in_order(d, &order).await;
+        assert_eq!(w.devices[d].texts(&g).await, vec!["hello there"], "order {order:?}");
+        let row = &w.devices[d].moderated(&g).await.into_iter().find(|x| x.id == m).unwrap();
+        assert_eq!(row.review, "ok", "order {order:?}");
+    }
+    // With the demotion somewhere in the order: nothing of the moderator's
+    // holds, the message waits, and a moderator's view still has it.
+    let mut six: Vec<Vec<usize>> = Vec::new();
+    for order in orders.iter().take(20) {
+        for pos in 0..=5 {
+            let mut o = order.clone();
+            o.insert(pos, demotion_at);
+            six.push(o);
+        }
+    }
+    for (k, order) in six.iter().enumerate() {
+        let d = late[120 + k];
+        w.online_in_order(d, order).await;
+        assert!(w.devices[d].texts(&g).await.is_empty(), "order {order:?}");
+        let row = &w.devices[d].moderated(&g).await.into_iter().find(|x| x.id == m).unwrap();
+        assert_eq!((row.review.as_str(), row.text.as_deref()), ("pending", Some("hello there")), "order {order:?}");
+    }
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn a_ban_with_a_hidden_span_outlives_the_unban() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, v) = moderated_group(&mut w).await;
+    let x = w.say(u, &g, "x").await;
+    w.say(u, &g, "y").await;
+    w.say(v, &g, "z").await;
+    let now = w.clock.now().secs();
+    w.act(owner, &g, OpBody::Ban { who: w.pk(u) }).await.unwrap();
+    assert!(w.moderate(owner, &g, ModNote::HideAuthor { author: w.pk(u), from: 0, to: now, reason: "spam".into() }).await.unwrap());
+    for d in [owner, moderator, v] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["z"], "device {d}");
+    }
+    // The same span again: nothing goes out.
+    assert!(!w.moderate(owner, &g, ModNote::HideAuthor { author: w.pk(u), from: 0, to: now, reason: "spam".into() }).await.unwrap());
+    // Lifted and let in again: what was hidden stays hidden, the new word shows.
+    w.act(owner, &g, OpBody::Unban { who: w.pk(u) }).await.unwrap();
+    // Let in again by an invitation, as anyone who is not a member.
+    w.bring(owner, &g, u).await;
+    assert_eq!(w.devices[u].group(&g).await.unwrap().membership, "joined");
+    // What the group said while they were out comes as history, the
+    // span among it: hidden for them as for everyone.
+    w.catch_up(u).await;
+    w.say(u, &g, "back").await;
+    for d in [owner, moderator, u, v] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["z", "back"], "device {d}");
+    }
+    // One of the span shown again by name.
+    assert!(w.moderate(moderator, &g, ModNote::Unhide { targets: vec![x] }).await.unwrap());
+    for d in [owner, moderator, u, v] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["x", "z", "back"], "device {d}");
+    }
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn a_mark_dated_ahead_of_the_clock_or_before_its_message_is_dropped() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, _) = moderated_group(&mut w).await;
+    let m = w.say(u, &g, "m").await;
+    let created = w.devices[owner].moderated(&g).await.into_iter().find(|x| x.id == m).unwrap().created_at;
+    let note = ModNote::Hide { targets: vec![m.clone()], reason: String::new() };
+    let ahead = w.forged_note(moderator, &g, &note, w.clock.now().secs() + crate::marks::SKEW_SECS + 1).await;
+    w.run(moderator, Outcome { publish: vec![ahead], ..Default::default() }).await;
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["m"]);
+    assert!(w.log_of(owner, &g).await.is_empty(), "dated ahead: not kept");
+    assert!(w.notes.iter().all(|n| n.contains("dated ahead")), "{:?}", w.notes);
+    w.notes.clear();
+    let before = w.forged_note(moderator, &g, &note, created - 1).await;
+    w.run(moderator, Outcome { publish: vec![before], ..Default::default() }).await;
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["m"]);
+    assert!(w.log_of(owner, &g).await.is_empty(), "before its message: not kept");
+    // Inside the window: in force.
+    let inside = w.forged_note(moderator, &g, &note, w.clock.now().secs() + crate::marks::SKEW_SECS).await;
+    w.run(moderator, Outcome { publish: vec![inside], ..Default::default() }).await;
+    assert!(w.devices[owner].texts(&g).await.is_empty());
+    // A note of a kind this build does not know: quietly nothing.
+    let unknown = w.forged_envelope(moderator, &g, &Envelope::new("mod.later").with("targets", vec![m.clone()]), w.clock.now().secs()).await;
+    w.run(moderator, Outcome { publish: vec![unknown], ..Default::default() }).await;
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+    assert_eq!(w.log_of(owner, &g).await.len(), 1);
+}
+
+#[tokio::test]
+async fn premod_holds_a_newcomer_until_a_moderator_lets_them_through() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, _) = moderated_group(&mut w).await;
+    w.act(owner, &g, Settings { premod: Some(Premod::Newcomers), ..Settings::default() }.body()).await.unwrap();
+    let n = w.person().await;
+    w.bring(owner, &g, n).await;
+    // The newcomer speaks; the message is handed to each device by hand,
+    // so that what each one does with it is seen: nobody is woken, a
+    // member or a moderator alike.
+    w.tick();
+    let d = &w.devices[n];
+    let (m, out) = d.svc.prepare_text(&d.keys, &g, "hi all", None).await.unwrap();
+    let hi = m.id;
+    let Outbound::PublishScoped { event, .. } = &out else { panic!("{out:?}") };
+    w.relay.push(event.clone());
+    let wire = Wire::Group(event.clone());
+    for i in [u, moderator, owner, n] {
+        let o = w.deliver(i, &wire, false).await;
+        assert!(o.notify.is_empty(), "device {i} is not woken for what waits");
+        w.run(i, o).await;
+    }
+    // Members do not see it and are not told of it; moderators see it,
+    // the author sees their own with the mark of waiting.
+    assert!(w.devices[u].texts(&g).await.is_empty());
+    assert_eq!(w.devices[u].unread(&g).await, 0, "nothing to read for a member");
+    assert_eq!(w.devices[owner].texts(&g).await, vec![] as Vec<String>, "a member's view, even of the owner's device");
+    assert_eq!(w.devices[owner].texts_as_moderator(&g).await, vec!["hi all"]);
+    assert_eq!(w.devices[moderator].unread(&g).await, 0, "waiting counts for nobody");
+    let own = w.devices[n].visible(&g).await.into_iter().find(|m| m.id == hi).unwrap();
+    assert_eq!(own.review, "pending");
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 1);
+    assert_eq!(w.devices[u].group(&g).await.unwrap().queue, 0);
+    // The old member is not held.
+    w.say(u, &g, "old hand").await;
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["old hand"]);
+    // An approval of the wrong version is refused, of the right one shows it.
+    assert_eq!(code(w.moderate(moderator, &g, ModNote::Approve { target: hi.clone(), version: "ab".repeat(32) }).await), "group_version_stale");
+    assert!(w.moderate(moderator, &g, ModNote::Approve { target: hi.clone(), version: hi.clone() }).await.unwrap());
+    for d in [owner, moderator, u, n] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["hi all", "old hand"], "device {d}");
+        let row = w.devices[d].visible(&g).await.into_iter().find(|m| m.id == hi).unwrap();
+        assert_eq!(row.review, "ok");
+    }
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 0);
+    assert!(!w.moderate(moderator, &g, ModNote::Approve { target: hi.clone(), version: hi.clone() }).await.unwrap(), "approved already");
+    // Edited: a new version waits again; the old approval is of the old one.
+    let v2 = w.edit_versioned(n, &hi, "hi all, sorry").await;
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old hand"]);
+    assert_eq!(w.devices[moderator].texts_as_moderator(&g).await, vec!["hi all, sorry", "old hand"]);
+    assert_eq!(code(w.moderate(moderator, &g, ModNote::Approve { target: hi.clone(), version: hi.clone() }).await), "group_version_stale");
+    assert!(w.moderate(moderator, &g, ModNote::Approve { target: hi.clone(), version: v2 }).await.unwrap());
+    assert_eq!(w.devices[u].texts(&g).await, vec!["hi all, sorry", "old hand"]);
+    // Rejected: hidden for everyone but its author, who is shown it with
+    // the word that it was turned down.
+    assert!(w.moderate(moderator, &g, ModNote::Reject { target: hi.clone() }).await.unwrap());
+    for d in [owner, moderator, u] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["old hand"], "device {d}");
+        assert_eq!(w.devices[d].texts_as_moderator(&g).await, vec!["old hand"], "device {d}");
+    }
+    assert_eq!(w.devices[n].texts(&g).await, vec!["hi all, sorry", "old hand"]);
+    let own = w.devices[n].visible(&g).await.into_iter().find(|m| m.id == hi).unwrap();
+    assert_eq!(own.review, "rejected");
+    assert!(!w.moderate(moderator, &g, ModNote::Reject { target: hi.clone() }).await.unwrap(), "rejected already");
+    // What was never held takes no approval.
+    let old = w.devices[u].visible(&g).await.into_iter().find(|m| m.text.as_deref() == Some("old hand")).unwrap().id;
+    assert_eq!(code(w.moderate(moderator, &g, ModNote::Approve { target: old.clone(), version: old }).await), "group_not_pending");
+    // Trusted: not held any more.
+    w.act(moderator, &g, OpBody::SetTrusted { who: w.pk(n), trusted: true }).await.unwrap();
+    w.say(n, &g, "trusted now").await;
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old hand", "trusted now"]);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn a_block_in_direct_messages_hides_the_author_for_me_alone() {
+    let mut w = World::new();
+    let (g, owner, _, u, v) = moderated_group(&mut w).await;
+    w.say(u, &g, "x").await;
+    w.tick();
+    w.say(owner, &g, "o").await;
+    assert_eq!((w.devices[v].unread(&g).await, w.devices[v].preview(&g).await.as_deref()), (2, Some("o")));
+    let d = &w.devices[v];
+    d.dm.act(&d.keys, &w.pk(u), DmAction::Block).await.unwrap();
+    assert_eq!(w.devices[v].texts(&g).await, vec!["o"], "blocked: gone for me");
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["x", "o"], "for nobody else");
+    assert_eq!(w.devices[v].unread(&g).await, 1, "what they wrote stops counting at once");
+    w.say(u, &g, "y").await;
+    assert_eq!(w.devices[v].texts(&g).await, vec!["o"]);
+    assert_eq!((w.devices[v].unread(&g).await, w.devices[v].preview(&g).await.as_deref()), (1, Some("o")), "not counted, not the line of the list");
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["x", "o", "y"]);
+    assert_eq!(w.devices[owner].preview(&g).await.as_deref(), Some("y"));
+    let d = &w.devices[v];
+    d.dm.act(&d.keys, &w.pk(u), DmAction::Unblock).await.unwrap();
+    assert_eq!(w.devices[v].texts(&g).await, vec!["x", "o", "y"], "the unblock shows them again");
+    assert_eq!((w.devices[v].unread(&g).await, w.devices[v].preview(&g).await.as_deref()), (1, Some("y")), "in the list too; nothing rings for it");
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn what_waited_is_shown_while_the_journal_does_not_hold_its_author_and_waits_again_when_it_does() {
+    let mut w = World::new();
+    let owner = w.person().await;
+    let moderator = w.person().await;
+    let u = w.person().await;
+    // A device of u that hears everything late, the journal before the message.
+    let u_keys = w.devices[u].keys.clone();
+    let u2 = w.device(u_keys).await;
+    let n = w.person().await;
+    let g = w.create(owner, GroupKind::Private, "Town", true).await;
+    for p in [moderator, u] {
+        w.bring(owner, &g, p).await;
+    }
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Moderator }).await.unwrap();
+    w.act(owner, &g, Settings { premod: Some(Premod::Newcomers), ..Settings::default() }.body()).await.unwrap();
+    w.bring(owner, &g, n).await;
+    w.say(u, &g, "old").await;
+    w.offline(u2);
+    let hi = w.say(n, &g, "hi").await;
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old"]);
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 1);
+
+    // Pre-moderation off: what waited is shown, on every device, and on
+    // one that hears of the rule before the message.
+    w.act(owner, &g, Settings { premod: Some(Premod::Off), ..Settings::default() }.body()).await.unwrap();
+    for d in [owner, moderator, u, n] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["old", "hi"], "device {d}");
+        let row = w.devices[d].visible(&g).await.into_iter().find(|m| m.id == hi).unwrap();
+        assert_eq!(row.review, "ok", "device {d}");
+    }
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 0);
+    assert_eq!(w.devices[u].preview(&g).await.as_deref(), Some("hi"), "in the list now");
+    let missed = w.devices[u2].missed.len();
+    assert!(missed >= 2, "the message and the rule off");
+    let order: Vec<usize> = (0..missed).rev().collect();
+    w.online_in_order(u2, &order).await;
+    assert_eq!(w.devices[u2].texts(&g).await, vec!["old", "hi"], "the late device ends the same");
+
+    // On again, for everybody: what was held once waits again; what was
+    // never held does not start to.
+    w.act(owner, &g, Settings { premod: Some(Premod::All), ..Settings::default() }.body()).await.unwrap();
+    for d in [u, u2] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["old"], "device {d}");
+    }
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 1);
+    assert_eq!(w.devices[moderator].texts_as_moderator(&g).await, vec!["old", "hi"]);
+    // Trusted: released. Not trusted any more: waits again.
+    w.act(moderator, &g, OpBody::SetTrusted { who: w.pk(n), trusted: true }).await.unwrap();
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old", "hi"]);
+    w.act(moderator, &g, OpBody::SetTrusted { who: w.pk(n), trusted: false }).await.unwrap();
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old"]);
+    // Raised: released. A member again: waits again.
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(n), role: Role::Moderator }).await.unwrap();
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old", "hi"]);
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(n), role: Role::Member }).await.unwrap();
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old"]);
+    // An edit while released makes it wait only while the author is held.
+    w.act(owner, &g, Settings { premod: Some(Premod::Off), ..Settings::default() }.body()).await.unwrap();
+    w.edit_versioned(n, &hi, "hi there").await;
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old", "hi there"]);
+    // A decision stands whatever the rule says after it.
+    w.act(owner, &g, Settings { premod: Some(Premod::All), ..Settings::default() }.body()).await.unwrap();
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old"]);
+    let version = w.devices[moderator].svc.queue(&g, &w.pk(moderator), &msgs::QueueFilter::default(), None, 10).await.unwrap().0[0].version.clone();
+    assert!(w.moderate(moderator, &g, ModNote::Approve { target: hi.clone(), version }).await.unwrap());
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old", "hi there"]);
+    w.act(owner, &g, Settings { premod: Some(Premod::Off), ..Settings::default() }.body()).await.unwrap();
+    w.act(owner, &g, Settings { premod: Some(Premod::All), ..Settings::default() }.body()).await.unwrap();
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old", "hi there"], "approved: not waiting again");
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 0);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+impl World {
+    /// An operation sealed by `who` themselves, as their own client could
+    /// make it: of any version, in anybody's name.
+    async fn forged_op(&self, who: usize, group: &str, op: &crate::op::Op, signer: Option<&Keys>) -> Outbound {
+        let d = &self.devices[who];
+        let log = d.svc.need_log(group).await.unwrap();
+        let key = d.svc.key(group, log.state().current_key.as_ref().unwrap()).await.unwrap().unwrap();
+        use nostr::prelude::*;
+        let signer = signer.unwrap_or(&d.keys);
+        let content = op.canonical();
+        let signed = EventBuilder::new(Kind::from(crate::wire::KIND_INNER_OP), content)
+            .tag(Tag::parse(["h", group]).unwrap())
+            .custom_created_at(Timestamp::from_secs(op.created_at.max(0) as u64))
+            .finalize(signer)
+            .unwrap();
+        let sealed = crate::wire::seal_op(group, &key, &signed, vec![], &d.keys).unwrap();
+        GroupService::scoped(group, sealed)
+    }
+
+    async fn parked_ops(&self, who: usize, group: &str) -> i64 {
+        messenger_store::groups::pending_prefix_size(&self.devices[who].svc.store, group, "future:").await.unwrap().0
+    }
+}
+
+#[tokio::test]
+async fn an_operation_of_an_absurd_version_or_in_another_s_name_is_junk_not_the_future() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    let reads = crate::op::OP_VERSION;
+    // Bob holds the key: he can seal anything. A version far past what any
+    // build reads is dropped, and nobody waits for an update over it.
+    let log = w.devices[bob].svc.need_log(&g).await.unwrap();
+    let mut absurd = log.next(&w.pk(bob), w.clock.now().secs(), OpBody::RotateKey);
+    absurd.v = reads + crate::wire::AHEAD_WINDOW + 1;
+    let out = w.forged_op(bob, &g, &absurd, None).await;
+    w.run(bob, Outcome { publish: vec![out], ..Default::default() }).await;
+    assert!(!w.devices[alice].group(&g).await.unwrap().needs_update, "junk pins nothing");
+    assert_eq!(w.parked_ops(alice, &g).await, 0);
+    assert_eq!(w.notes.len(), 2, "dropped on both devices: {:?}", w.notes);
+    w.notes.clear();
+    // The next version, in alice's name, signed by bob: a forgery is not
+    // parked either, however new it says it is.
+    let mut forged = log.next(&w.pk(alice), w.clock.now().secs(), OpBody::RotateKey);
+    forged.v = reads + 1;
+    let bob_keys = w.devices[bob].keys.clone();
+    let out = w.forged_op(bob, &g, &forged, Some(&bob_keys)).await;
+    w.run(bob, Outcome { publish: vec![out], ..Default::default() }).await;
+    assert!(!w.devices[alice].group(&g).await.unwrap().needs_update);
+    assert_eq!(w.parked_ops(alice, &g).await, 0);
+    assert_eq!(w.notes.len(), 2, "{:?}", w.notes);
+    w.notes.clear();
+    // The next version in bob's own name is the future: parked, waited for.
+    let mut ahead = log.next(&w.pk(bob), w.clock.now().secs(), OpBody::RotateKey);
+    ahead.v = reads + 1;
+    let out = w.forged_op(bob, &g, &ahead, None).await;
+    w.run(bob, Outcome { publish: vec![out], ..Default::default() }).await;
+    assert!(w.devices[alice].group(&g).await.unwrap().needs_update);
+    assert_eq!(w.parked_ops(alice, &g).await, 1);
+    assert!(w.notes.is_empty(), "parked, not dropped: {:?}", w.notes);
+}
+
+#[tokio::test]
+async fn a_flood_of_what_the_build_cannot_read_evicts_its_own_oldest_and_never_the_welcome() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.act(alice, &g, OpBody::SetTrusted { who: w.pk(bob), trusted: true }).await.unwrap();
+    // Carol's device reads version 1 and parks at most three events.
+    crate::wire::READS_UP_TO.with(|c| c.set(Some(1)));
+    crate::inbound::FUTURE_ROWS_CAP.with(|c| c.set(Some(3)));
+    w.bring(alice, &g, carol).await;
+    assert_eq!(w.devices[carol].group(&g).await.unwrap().membership, "joining", "the welcome waits for an update");
+    // Bob floods the group with operations of a version past every
+    // build here, each dated earlier than the one before: carol keeps the
+    // last three by their receipt, and the welcome beside them.
+    let log = w.devices[bob].svc.need_log(&g).await.unwrap();
+    for i in 0..5 {
+        let mut op = log.next(&w.pk(bob), w.clock.now().secs() - i, OpBody::RotateKey);
+        op.v = crate::op::OP_VERSION + 1;
+        let out = w.forged_op(bob, &g, &op, None).await;
+        w.run(bob, Outcome { publish: vec![out], ..Default::default() }).await;
+    }
+    assert_eq!(w.parked_ops(carol, &g).await, 3);
+    let kept: Vec<String> = messenger_store::groups::pending_in(&w.devices[carol].svc.store, &g, &format!("future:{}", log.state().current_key.as_ref().unwrap().0))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|r| r.event_id)
+        .collect();
+    assert_eq!(kept.len(), 3);
+    let v = w.devices[carol].group(&g).await.unwrap();
+    assert_eq!((v.membership.as_str(), v.needs_update), ("joining", true), "the welcome is still there");
+    crate::inbound::FUTURE_ROWS_CAP.with(|c| c.set(None));
+    crate::wire::READS_UP_TO.with(|c| c.set(None));
+    // Updated: the welcome is read, carol is in.
+    w.synced(carol, &g).await;
+    let v = w.devices[carol].group(&g).await.unwrap();
+    assert_eq!((v.membership.as_str(), v.my_role.as_deref()), ("joined", Some("member")));
+    // The three kept were the last three to come: the first two by receipt
+    // went, though they were dated latest.
+    let relay_ids: Vec<String> = w.relay.iter().map(|e| e.id.as_hex().to_string()).collect();
+    let last_three: Vec<&String> = relay_ids.iter().rev().take(3).collect();
+    for id in &kept {
+        assert!(last_three.contains(&id), "kept by receipt, not by date");
+    }
+    assert!(w.notes.is_empty(), "parked, not dropped: {:?}", w.notes);
+}
+
+#[tokio::test]
+async fn the_queue_is_one_line_per_author_and_pages() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, v) = moderated_group(&mut w).await;
+    w.act(owner, &g, Settings { premod: Some(Premod::All), ..Settings::default() }.body()).await.unwrap();
+    let u1 = w.say(u, &g, "u1").await;
+    w.say(u, &g, "u2").await;
+    w.say(u, &g, "u3").await;
+    let v1 = w.say(v, &g, "v1").await;
+    w.say(v, &g, "v2").await;
+    let d = &w.devices[moderator];
+    let me = d.pk();
+    let all = msgs::QueueFilter::default();
+    let (page, total) = d.svc.queue(&g, &me, &all, None, 1).await.unwrap();
+    assert_eq!(total, 5, "every waiting row counts");
+    assert_eq!(page.len(), 1);
+    assert_eq!((page[0].row.id.as_str(), page[0].more_from_author, page[0].version.as_str()), (v1.as_str(), 1, v1.as_str()), "the newest author first, their oldest");
+    let (next, _) = d.svc.queue(&g, &me, &all, Some(page[0].row.created_at), 1).await.unwrap();
+    assert_eq!((next[0].row.id.as_str(), next[0].more_from_author), (u1.as_str(), 2));
+    let (end, _) = d.svc.queue(&g, &me, &all, Some(next[0].row.created_at), 1).await.unwrap();
+    assert!(end.is_empty());
+    // By author, by text, by time.
+    let of_u = msgs::QueueFilter { author: Some(w.pk(u).as_hex().to_string()), ..Default::default() };
+    let (page, total) = d.svc.queue(&g, &me, &of_u, None, 10).await.unwrap();
+    assert_eq!((page.len(), total, page[0].more_from_author), (1, 3, 2));
+    let by_text = msgs::QueueFilter { text: Some("2".into()), ..Default::default() };
+    let (page, total) = d.svc.queue(&g, &me, &by_text, None, 10).await.unwrap();
+    assert_eq!(total, 2);
+    assert!(page.iter().all(|l| l.more_from_author == 0), "the count behind a line is under the filter too");
+    let since = page[0].row.created_at;
+    let late = msgs::QueueFilter { since: Some(since), ..Default::default() };
+    assert!(d.svc.queue(&g, &me, &late, None, 10).await.unwrap().1 < 5);
+    // A member may not look.
+    let member = &w.devices[u];
+    assert_eq!(code(member.svc.queue(&g, &member.pk(), &all, None, 10).await), "group_not_permitted");
+    assert_eq!(code(member.svc.mod_log(&g, &member.pk()).await), "group_not_permitted");
+    // Decided: out of the queue; the count on the group follows.
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 5);
+    assert!(w.moderate(moderator, &g, ModNote::Approve { target: u1.clone(), version: u1.clone() }).await.unwrap());
+    assert!(w.moderate(moderator, &g, ModNote::Reject { target: v1.clone() }).await.unwrap());
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 3);
+    assert_eq!(w.devices[owner].svc.queue(&g, &w.pk(owner), &all, None, 10).await.unwrap().1, 3);
+    // The log has it all, newest first.
+    let log = w.log_of(owner, &g).await;
+    assert_eq!(log.iter().map(|l| l.action.as_str()).collect::<Vec<_>>(), vec!["reject", "approve", "settings"]);
+    assert!(log[2].detail.contains("\"premod\":\"all\""));
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+
+#[tokio::test]
+async fn a_message_that_outran_the_rule_is_held_when_the_rule_comes() {
+    let mut w = World::new();
+    let owner = w.person().await;
+    let moderator = w.person().await;
+    let u = w.person().await;
+    let u_keys = w.devices[u].keys.clone();
+    let u2 = w.device(u_keys).await;
+    let n = w.person().await;
+    let n_keys = w.devices[n].keys.clone();
+    let n2 = w.device(n_keys).await;
+    let g = w.create(owner, GroupKind::Private, "Town", true).await;
+    for p in [moderator, u, n] {
+        w.bring(owner, &g, p).await;
+    }
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Moderator }).await.unwrap();
+    w.say(n, &g, "old").await;
+    w.offline(u2);
+    w.offline(n2);
+    // The rule on, then the newcomer speaks: everybody online holds it.
+    w.act(owner, &g, Settings { premod: Some(Premod::All), ..Settings::default() }.body()).await.unwrap();
+    let hi = w.say(n, &g, "hi").await;
+    assert_eq!(w.devices[u].texts(&g).await, vec!["old"]);
+    assert_eq!(w.devices[moderator].group(&g).await.unwrap().queue, 1);
+    // The late devices hear the message before the rule (a relay hands
+    // the newest first): a member's, and the author's own.
+    assert_eq!(w.devices[u2].missed.len(), 2, "the rule and the message");
+    w.online_in_order(u2, &[1, 0]).await;
+    assert_eq!(w.devices[u2].texts(&g).await, vec!["old"], "the late device ends the same: held");
+    let row = w.devices[u2].moderated(&g).await.into_iter().find(|m| m.id == hi).unwrap();
+    assert_eq!(row.review, "pending");
+    w.online_in_order(n2, &[1, 0]).await;
+    let own = w.devices[n2].visible(&g).await.into_iter().find(|m| m.id == hi).unwrap();
+    assert_eq!(own.review, "pending", "the author's other device shows it as waiting too");
+    // What is dated before the rule is nobody's to hold, however late the rule comes.
+    let old = w.devices[u2].visible(&g).await.into_iter().find(|m| m.text.as_deref() == Some("old")).unwrap();
+    assert_eq!(old.review, "ok");
+    // The decision reaches the late device like any other.
+    assert!(w.moderate(moderator, &g, ModNote::Approve { target: hi.clone(), version: hi.clone() }).await.unwrap());
+    for d in [owner, moderator, u, u2, n, n2] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["old", "hi"], "device {d}");
+    }
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn the_admin_inherits_approvals_rejections_and_unhidings_and_passes_a_stale_approval_by() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, v) = moderated_group(&mut w).await;
+    w.act(owner, &g, Settings { premod: Some(Premod::All), ..Settings::default() }.body()).await.unwrap();
+    let p1 = w.say(u, &g, "p1").await;
+    let p2 = w.say(u, &g, "p2").await;
+    let p3 = w.say(u, &g, "p3").await;
+    let q1 = w.say(v, &g, "q1").await;
+    assert!(w.moderate(moderator, &g, ModNote::Approve { target: p1.clone(), version: p1.clone() }).await.unwrap());
+    assert!(w.moderate(moderator, &g, ModNote::Approve { target: p2.clone(), version: p2.clone() }).await.unwrap());
+    assert!(w.moderate(moderator, &g, ModNote::Reject { target: p3.clone() }).await.unwrap());
+    assert!(w.moderate(moderator, &g, ModNote::Hide { targets: vec![q1.clone()], reason: String::new() }).await.unwrap());
+    assert!(w.moderate(moderator, &g, ModNote::Unhide { targets: vec![q1.clone()] }).await.unwrap());
+    // Edited since: the approval of p2 is of a version that is gone.
+    w.edit_versioned(u, &p2, "p2 again").await;
+    // What the store says of a row (a rejected one is listed to nobody
+    // but its author).
+    let review = |w: &World, d: usize, id: &str| {
+        let (store, id) = (w.devices[d].svc.store.clone(), id.to_string());
+        async move { msgs::get(&store, &id).await.unwrap().map(|r| r.review) }
+    };
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["p1"]);
+    assert_eq!(review(&w, owner, &p3).await, Some("rejected".into()));
+
+    // Demoted: every decision of theirs is out of force everywhere.
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Member }).await.unwrap();
+    let everyone = [owner, moderator, u, v];
+    for d in [owner, moderator] {
+        assert!(w.devices[d].texts(&g).await.is_empty(), "device {d}: nothing approved any more");
+    }
+    for d in everyone {
+        assert_eq!(review(&w, d, &p3).await, Some("pending".into()), "device {d}: the rejection is gone");
+    }
+    // The admin says them again: the approval of p1, the rejection of
+    // p3, the unhiding of q1 (the newest about it; the hiding before it
+    // is not said). The approval of p2 cannot be: its version is stale.
+    w.tick();
+    let d = &w.devices[owner];
+    let (n, o) = d.svc.inherit_marks(&d.keys, &g, &w.pk(moderator)).await.unwrap();
+    assert_eq!(n, 3, "an approval, a rejection, an unhiding");
+    w.run(owner, o).await;
+    assert_eq!(w.notes.len(), 1, "{:?}", w.notes);
+    assert!(w.notes[0].contains("group_version_stale"), "{:?}", w.notes);
+    w.notes.clear();
+    for d in [owner, moderator] {
+        assert_eq!(w.devices[d].texts(&g).await, vec!["p1"], "device {d}");
+    }
+    for d in everyone {
+        assert_eq!(review(&w, d, &p1).await, Some("approved".into()), "device {d}");
+        assert_eq!(review(&w, d, &p2).await, Some("pending".into()), "device {d}: edited, waits for an approval of the new version");
+        assert_eq!(review(&w, d, &p3).await, Some("rejected".into()), "device {d}");
+        assert_eq!(review(&w, d, &q1).await, Some("pending".into()), "device {d}: shown to moderators, not hidden");
+    }
+    let log = w.log_of(owner, &g).await;
+    let mut mine: Vec<&str> = log.iter().filter(|l| l.by == w.pk(owner).as_hex()).map(|l| l.action.as_str()).collect();
+    mine.sort_unstable();
+    assert_eq!(mine, vec!["approve", "reject", "settings", "unhide"]);
+    // Said already: nothing a second time.
+    let d = &w.devices[owner];
+    let (n, o) = d.svc.inherit_marks(&d.keys, &g, &w.pk(moderator)).await.unwrap();
+    assert_eq!((n, o.publish.len()), (0, 0));
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn two_moderators_dated_alike_end_alike_in_either_order() {
+    let mut w = World::new();
+    let (g, owner, m1, u, m2) = moderated_group(&mut w).await;
+    w.act(owner, &g, OpBody::SetRole { who: w.pk(m2), role: Role::Moderator }).await.unwrap();
+    w.act(owner, &g, Settings { premod: Some(Premod::Newcomers), ..Settings::default() }.body()).await.unwrap();
+    let n = w.person().await;
+    w.bring(owner, &g, n).await;
+    let x = w.say(u, &g, "x").await;
+    let y = w.say(n, &g, "y").await;
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["x"]);
+    // Two devices away while the two moderators decide in the same second,
+    // the one against the other.
+    w.offline(owner);
+    w.offline(u);
+    w.tick();
+    let at = w.clock.now().secs();
+    let notes = [
+        (m1, ModNote::Hide { targets: vec![x.clone()], reason: String::new() }),
+        (m2, ModNote::Unhide { targets: vec![x.clone()] }),
+        (m1, ModNote::Approve { target: y.clone(), version: y.clone() }),
+        (m2, ModNote::Reject { target: y.clone() }),
+    ];
+    for (who, note) in &notes {
+        let out = w.forged_note(*who, &g, note, at).await;
+        w.run(*who, Outcome { publish: vec![out], ..Default::default() }).await;
+    }
+    // Back, each in another order: the stricter stands on both, as on
+    // the devices that heard them live.
+    w.online_in_order(owner, &[0, 1, 2, 3]).await;
+    w.online_in_order(u, &[3, 2, 1, 0]).await;
+    for d in [owner, u, m1, m2] {
+        assert!(w.devices[d].texts_as_moderator(&g).await.is_empty(), "device {d}: the hiding over the showing, the rejection over the approval");
+    }
+    assert_eq!(w.devices[n].texts(&g).await, vec!["y"], "the author alone is shown what was turned down");
+    for d in [owner, u, m1, m2, n] {
+        let row = msgs::get(&w.devices[d].svc.store, &y).await.unwrap().unwrap();
+        assert_eq!(row.review, "rejected", "device {d}");
+    }
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn an_unblock_opens_only_what_the_block_closed() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, v) = moderated_group(&mut w).await;
+    let x = w.say(u, &g, "x").await;
+    w.say(u, &g, "y").await;
+    let d = &w.devices[v];
+    d.dm.act(&d.keys, &w.pk(u), DmAction::Block).await.unwrap();
+    assert!(w.devices[v].texts(&g).await.is_empty());
+    // While the block stands, a moderator hides one of them for everyone.
+    assert!(w.moderate(moderator, &g, ModNote::Hide { targets: vec![x], reason: String::new() }).await.unwrap());
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["y"]);
+    let d = &w.devices[v];
+    d.dm.act(&d.keys, &w.pk(u), DmAction::Unblock).await.unwrap();
+    assert_eq!(w.devices[v].texts(&g).await, vec!["y"], "the unblock shows what the block alone hid");
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn a_full_page_of_the_queue_keeps_the_lines_of_one_second_together() {
+    let mut w = World::new();
+    let (g, owner, moderator, u, v) = moderated_group(&mut w).await;
+    w.act(owner, &g, Settings { premod: Some(Premod::All), ..Settings::default() }.body()).await.unwrap();
+    // Two members speak in the same second, a third a little later.
+    w.tick();
+    let at = w.clock.now().secs();
+    for (who, text) in [(u, "u1"), (v, "v1")] {
+        let out = w.forged_envelope(who, &g, &Envelope::text(text), at).await;
+        w.run(who, Outcome { publish: vec![out], ..Default::default() }).await;
+    }
+    let n = w.person().await;
+    w.bring(owner, &g, n).await;
+    w.say(n, &g, "n1").await;
+    let d = &w.devices[moderator];
+    let me = d.pk();
+    let all = msgs::QueueFilter::default();
+    let (page, total) = d.svc.queue(&g, &me, &all, None, 2).await.unwrap();
+    assert_eq!(total, 3);
+    assert_eq!(page.len(), 3, "the page is full at the second line, and the third shares its second: it comes along");
+    assert_eq!(page[0].row.text.as_deref(), Some("n1"));
+    assert_eq!((page[1].row.created_at, page[2].row.created_at), (at, at));
+    let (next, _) = d.svc.queue(&g, &me, &all, Some(page[2].row.created_at), 2).await.unwrap();
+    assert!(next.is_empty(), "nothing was passed by");
+    let (one, _) = d.svc.queue(&g, &me, &all, Some(at + 1), 1).await.unwrap();
+    assert_eq!(one.len(), 2, "a page of one takes both lines of the second");
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+/// An operation kept for an update (`keep_op_ahead`) stands in the
+/// store as a signed event of a version this build does not read; its
+/// shape may be one the build happens to parse. The log passes it by
+/// before parsing, so what names it as a parent waits, as on the path of
+/// the bucket; the count of what waits for an update still has it.
+#[tokio::test]
+async fn an_operation_kept_for_an_update_holds_its_children_back_in_the_log() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    let d = &w.devices[alice];
+    let log = d.svc.need_log(&g).await.unwrap();
+    let mut ahead = log.next(&w.pk(alice), w.clock.now().secs(), Settings { name: Some("Future".into()), ..Settings::default() }.body());
+    ahead.v = crate::op::OP_VERSION + 1;
+    let mut child = log.next(&w.pk(alice), w.clock.now().secs() + 1, Settings { name: Some("Child".into()), ..Settings::default() }.body());
+    child.parents = vec![ahead.id()];
+    for op in [&ahead, &child] {
+        use nostr::prelude::*;
+        let signed = EventBuilder::new(Kind::from(crate::wire::KIND_INNER_OP), op.canonical())
+            .tag(Tag::parse(["h", g.as_str()]).unwrap())
+            .custom_created_at(Timestamp::from_secs(op.created_at as u64))
+            .finalize(&d.keys)
+            .unwrap();
+        assert!(messenger_store::groups::insert_op(&d.svc.store, &g, &op.id().0, &serde_json::to_value(&signed).unwrap().to_string()).await.unwrap());
+    }
+    d.svc.forget_log(&g).await;
+    let log = d.svc.need_log(&g).await.unwrap();
+    assert_eq!(log.state().name, "Team", "the child waits for what the build cannot read");
+    assert!(!log.contains(&ahead.id()) && !log.contains(&child.id()));
+    assert_eq!(log.missing(), vec![ahead.id()]);
+    assert_eq!(crate::service::ops_ahead(&d.svc.store, &g).await.unwrap(), 1, "and it counts as waiting for an update");
 }

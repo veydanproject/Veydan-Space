@@ -29,7 +29,7 @@ pub mod uri;
 
 pub use bridge::BridgeLink;
 pub use call_node::CallNodeLink;
-pub use contact::ContactLink;
+pub use contact::{contact_link, is_invite_secret, ContactLink, INVITE_LINK_CHARS};
 pub use error::LinkError;
 pub use kind::LinkType;
 pub use recover::RecoverLink;

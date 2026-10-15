@@ -23,6 +23,9 @@ pub mod groups;
 pub mod link;
 pub mod meta;
 pub mod links;
+/// The facade of moderation: requests of strangers, whom I take messages
+/// from, the moderation of groups, the invitations.
+pub mod moderation;
 pub mod net;
 pub mod preview;
 pub mod presence;
@@ -30,6 +33,7 @@ pub mod privacy;
 pub mod push;
 pub mod reactions;
 pub mod receipts;
+pub mod relations;
 pub mod relays;
 pub mod servers;
 pub mod session;
@@ -82,6 +86,11 @@ pub use calls::{
     UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE,
 };
 pub use privacy::PrivacySettings;
+pub use moderation::{
+    BlockedView, DmSettings, GroupModSettings, InvitePreset, InviteStatus, InviteView as DmInviteView, LogEntry, LogPage, ModAction,
+    QueueFilter, QueueItem, QueuePage, RequestAction, RequestView, RequestsPage, Schedule, UI_EVENT_DM_INVITE_PAUSED,
+    UI_EVENT_DM_REQUEST,
+};
 pub use messenger_presence::PresenceView;
 pub use messenger_preview::Preview as LinkPreview;
 pub use relays::{ManifestCheck, ManifestInfo, RelayService, RelayView, ServersMode};
@@ -254,6 +263,7 @@ impl MessengerRuntime {
                     Arc::new(MetaHandler::new(profiles.clone(), contacts.clone())),
                     Arc::new(DmRoutesHandler::new(store.clone())),
                     Arc::new(messenger_presence::PresenceHandler::new(store.clone())),
+                    Arc::new(relations::RelationsHandler::new(dm.clone())),
                 ]))),
         );
         let previews = preview::LinkPreviews::new(
@@ -379,6 +389,9 @@ impl MessengerRuntime {
         let pool = self.relays.pool().await;
         let keys_for_dm = keys.clone();
         self.presence.session_started().await;
+        // Before the session: the list of my relations may come live from
+        // the first moment, and only the keys read it.
+        self.dm.set_signer(Some(keys_for_dm.clone()));
         let session = Session::start(
             self.store.clone(),
             pool,
@@ -395,8 +408,7 @@ impl MessengerRuntime {
         .await?;
         self.group_driver.groups.set_signer(Some(keys_for_dm.clone()));
         self.calls.service.set_signer(Some(keys_for_dm.clone()));
-        self.group_calls.service.set_signer(Some(keys_for_dm.clone()));
-        self.dm.set_signer(Some(keys_for_dm));
+        self.group_calls.service.set_signer(Some(keys_for_dm));
         *self.session.lock().await = Some(session);
         // Who was approved on another device before the book followed it.
         match self.dm.fill_book_once().await {
@@ -490,6 +502,14 @@ impl MessengerRuntime {
         let peer = p.message.chat_id.strip_prefix("dm:").and_then(PubKey::parse);
         // A new message is tried for an hour, both copies; an edit or a
         // deletion until it leaves.
+        // By an invitation the accept leads: it opens the door the text
+        // walks through. A plain request is the other way round: the text
+        // first, the accept after it.
+        if p.followups_first {
+            for out in &p.followups {
+                self.outbox.enqueue(out.clone()).await?;
+            }
+        }
         let local_id = self.enqueue_copy(p.to_peer, p.expiring).await?;
         self.dm.attach_outbox(&p.tracking_id, &local_id).await?;
         if let Some(own) = p.to_self {
@@ -497,8 +517,10 @@ impl MessengerRuntime {
         }
         // A request: the accept goes out after the text, and the peer
         // joins the address book.
-        for out in p.followups {
-            self.outbox.enqueue(out).await?;
+        if !p.followups_first {
+            for out in p.followups {
+                self.outbox.enqueue(out).await?;
+            }
         }
         if p.became_contact {
             if let (Some(me), Some(peer)) = (self.session_pubkey().await, &peer) {
@@ -608,6 +630,47 @@ impl MessengerRuntime {
         let keys = self.session_keys().await?;
         let pk = messenger_contacts::book::parse_key(peer)?;
         let result = self.dm.act(&keys, &pk, action).await?;
+        self.after_act(&keys, &pk, action, result).await
+    }
+
+    /// A request to `peer` by an invitation of theirs (`invite`, the
+    /// secret of a link, a code or a QR): with a `text`, the text goes as
+    /// the one message of a request and the accept with the secret after
+    /// it, so their device lets me in and the text lands in an open chat;
+    /// without one, the accept alone (a link pasted, a QR scanned). Without
+    /// an invitation it is the request of today: the text, or the quiet
+    /// add of a contact.
+    pub async fn dm_request(&self, peer: &str, invite: Option<&str>, text: Option<&str>) -> Result<RelationView> {
+        let keys = self.session_keys().await?;
+        let pk = messenger_contacts::book::parse_key(peer)?;
+        match (invite, text) {
+            (None, None) => self.dm_act(peer, Action::Request).await,
+            (None, Some(text)) => {
+                self.dm_send_text(pk.as_hex(), text, None).await?;
+                self.dm.relation(&pk).await
+            }
+            (Some(invite), None) => {
+                let result = self.dm.request_by_invite(&keys, &pk, invite).await?;
+                self.after_act(&keys, &pk, Action::Request, result).await
+            }
+            (Some(invite), Some(text)) => {
+                let first = self.dm.chat(&messenger_store::chats::dm_chat_id(pk.as_hex())).await?.is_none();
+                let prepared = self.dm.prepare_request_text(&keys, &pk, text, invite).await?;
+                if first {
+                    let _ = self.request_profile(&pk).await;
+                    let _ = self.resubscribe_meta().await;
+                }
+                self.publish_prepared(prepared).await?;
+                self.dm.relation(&pk).await
+            }
+        }
+    }
+
+    /// What follows an action of mine on the relationship: the signals go
+    /// out, the address book, the profile and presence follow, the page is
+    /// told.
+    async fn after_act(&self, keys: &Keys, pk: &PubKey, action: Action, result: messenger_dm::ActionResult) -> Result<RelationView> {
+        let pk = pk.clone();
         for out in result.outbounds {
             self.outbox.enqueue(out).await?;
         }
@@ -650,6 +713,13 @@ impl MessengerRuntime {
 
     pub async fn dm_blocked(&self) -> Result<Vec<String>> {
         self.dm.blocked_peers().await
+    }
+
+    /// The link of an invitation of mine as a QR code (SVG): a link or a
+    /// QR invitation has one, a code has none (`invite_no_link`).
+    pub async fn invite_qr(&self, id: &str) -> Result<String> {
+        let link = self.invite_link(id).await?.ok_or_else(|| MessengerError::Invalid("invite_no_link".into()))?;
+        messenger_groups::qr::link_svg(&link)
     }
 
     /// Put a failed message back in front of the queue.
@@ -1172,7 +1242,11 @@ mod tests {
         rt.contacts().add(&me, carol.as_hex(), None).await.unwrap();
         let now = SystemClock.now().secs();
         for _ in 0..groups::MAX_PROFILE_AUTHORS {
+            // Approved on another device, which this book did not follow:
+            // a chat peer, not a contact here. (Strangers would not do: the
+            // queue of requests holds `MAX_REQUESTS` and lets the oldest go.)
             let peer = pk_of(&Keys::generate());
+            approved_elsewhere(&rt, &peer).await;
             rt.dm().apply_inbound(dm_inbound(&peer, &me, messenger_core::Envelope::text("hi").encode(), now), &ctx_of(&me, now)).await.unwrap();
         }
         let peers = rt.meta.peers(&me).await.unwrap();
@@ -1201,6 +1275,29 @@ mod tests {
         rt.chat_open(bob_pk.as_hex()).await.unwrap();
         assert_eq!(name_when(&rt, &bob_pk, "Bob v2").await.as_deref(), Some("Bob v2"));
         rt.shutdown().await;
+    }
+
+    /// A relation approved by me, as a copy of my other device's accept
+    /// leaves it, without the address book of this device following it.
+    async fn approved_elsewhere(rt: &MessengerRuntime, peer: &PubKey) {
+        messenger_store::dm_relations::put(
+            rt.store(),
+            &messenger_store::dm_relations::RelationRow {
+                peer_pubkey: peer.as_hex().to_string(),
+                my_contact: "approved".into(),
+                blocked: false,
+                peer_signal: "approved".into(),
+                was_ever_mutual: true,
+                last_signal_at: 0,
+                last_my_signal_at: 0,
+                request_floor: 0,
+                decided_at: 0,
+                created_at: 0,
+                updated_at: 0,
+            },
+        )
+        .await
+        .unwrap();
     }
 
     /// What the session's follower of profiles did, once what a start sent has settled.
@@ -1260,6 +1357,229 @@ mod tests {
         let _ = rt.ui.send(UiEvent { name: session::UI_EVENT_HISTORY_SYNCED.into(), payload: serde_json::json!({}) });
         let _ = rt.ui.send(messenger_dm::contacts_updated(Some(&peers[0])));
         assert_eq!(settled(&rt).await, before + 1);
+        rt.shutdown().await;
+    }
+
+    // ─── The list first: the snapshot of my relations ───────────────────────
+
+    /// A device's folder and its secrets (in memory: kept to open it again).
+    type Folder = (tempfile::TempDir, Arc<MemorySecretStore>);
+
+    /// A device of the key `nsec` on `relay`: a fresh one in a new folder,
+    /// or the one of `folder` again. The page's events are listened to from
+    /// before the session, so what the start tells is not missed.
+    async fn device_on(relay: &LocalRelay, nsec: &str, folder: Option<Folder>) -> (Folder, MessengerRuntime, broadcast::Receiver<UiEvent>) {
+        let url = relay.url().await.as_str_without_trailing_slash().to_string();
+        let fresh = folder.is_none();
+        let (dir, secrets) = folder.unwrap_or_else(|| (tempfile::tempdir().unwrap(), Arc::new(MemorySecretStore::unlocked())));
+        let rt = MessengerRuntime::start(MessengerConfig::new(dir.path().join("messenger")), secrets.clone()).await.unwrap();
+        let ui = rt.ui_events();
+        if fresh {
+            rt.relays().add_user(&url, None).await.unwrap();
+            rt.servers_use_own().await.unwrap();
+            rt.identity().import_nsec(nsec).await.unwrap();
+            assert!(rt.refresh_signer().await.unwrap());
+        }
+        assert!(rt.session_pubkey().await.is_some());
+        ((dir, secrets), rt, ui)
+    }
+
+    /// The reading of my list at the start of a session, or a panic after `secs`.
+    async fn list_read(ui: &mut broadcast::Receiver<UiEvent>, secs: u64) -> serde_json::Value {
+        loop {
+            let ev = event_named(ui, relations::UI_EVENT_RELATIONS, secs).await;
+            if ev.payload["start"] == true {
+                return ev.payload;
+            }
+        }
+    }
+
+    /// The next event named `name`, or a panic after `secs`.
+    async fn event_named(ui: &mut broadcast::Receiver<UiEvent>, name: &str, secs: u64) -> UiEvent {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(secs);
+        loop {
+            match tokio::time::timeout_at(deadline, ui.recv()).await {
+                Ok(Ok(ev)) if ev.name == name => return ev,
+                Ok(Ok(_)) | Ok(Err(broadcast::error::RecvError::Lagged(_))) => {}
+                Ok(Err(broadcast::error::RecvError::Closed)) => panic!("the page's channel closed before {name}"),
+                Err(_) => panic!("no {name} within {secs} s"),
+            }
+        }
+    }
+
+    /// `who` writes `text` to `me` at `at`, as the relay has it before any
+    /// device of mine is on.
+    async fn stranger_wrote(relay: &LocalRelay, who: &Keys, me: &PubKey, text: &str, at: i64) {
+        let url = RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
+        let pool = RelayPool::new(None);
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        connected(&pool).await;
+        let w = messenger_dm::wrap::wrap_as(who, me, &messenger_core::Envelope::text(text).encode(), at, None, messenger_dm::wrap::Wake::Peer).unwrap();
+        pool.send(Outbound::PublishOwn { event: w.to_peer }).await.unwrap();
+        pool.shutdown().await;
+    }
+
+    /// Until `rt` published revision `rev` of its list and the outbox is empty.
+    async fn published(rt: &MessengerRuntime, rev: &str) {
+        for _ in 0..100 {
+            let at_rev = settings::get(rt.store(), messenger_dm::snapshot::KEY_REV).await.unwrap().as_deref() == Some(rev);
+            let drained = messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap().is_empty();
+            if at_rev && drained && !rt.dm().relations_owed().await.unwrap() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("revision {rev} was not published");
+    }
+
+    async fn visible(rt: &MessengerRuntime, peer: &PubKey) -> usize {
+        // The texts; not the system line of a request accepted.
+        rt.dm().messages(&messenger_store::chats::dm_chat_id(peer.as_hex()), None, 50).await.unwrap().iter().filter(|m| m.content_type != "system").count()
+    }
+
+    #[tokio::test]
+    async fn a_fresh_device_reads_my_list_before_its_history_and_follows_it_live() {
+        let relay = LocalRelay::builder().build();
+        relay.run().await.unwrap();
+        let keys = Keys::generate();
+        let nsec = keys.secret_key().to_bech32().unwrap();
+        let me = pk_of(&keys);
+        let (spammer, friend, quiet) = (Keys::generate(), Keys::generate(), Keys::generate());
+        let (spammer_pk, friend_pk, quiet_pk) = (pk_of(&spammer), pk_of(&friend), pk_of(&quiet));
+        // Before any device of mine: a stranger wrote three times, a friend twice.
+        let t = SystemClock.now().secs() - 600;
+        for i in 0..3 {
+            stranger_wrote(&relay, &spammer, &me, &format!("buy {i}"), t + i).await;
+        }
+        stranger_wrote(&relay, &friend, &me, "hi", t + 10).await;
+        stranger_wrote(&relay, &friend, &me, "it's me", t + 11).await;
+
+        // The first device: no list on the relay yet, so it publishes its
+        // own (empty) one; then it blocks the stranger and adds the friend
+        // quietly, which is a second revision.
+        let (dir1, rt1, mut ui1) = device_on(&relay, &nsec, None).await;
+        let told = list_read(&mut ui1, 20).await;
+        assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (None, Some(false)), "nothing on the relay");
+        assert_eq!(rt1.dm().relations_known(), messenger_dm::RelationsKnown::No);
+        event_named(&mut ui1, session::UI_EVENT_HISTORY_SYNCED, 30).await;
+        published(&rt1, "1").await;
+        rt1.dm_act(spammer_pk.as_hex(), Action::Block).await.unwrap();
+        rt1.dm_act(friend_pk.as_hex(), Action::Request).await.unwrap();
+        published(&rt1, "2").await;
+        rt1.shutdown().await;
+
+        // A fresh device of the same key: the list comes before the history,
+        // so the stranger's messages meet the block and the friend's land in
+        // a full chat, without a copy of any signal (there was none).
+        let (_dir2, rt2, mut ui2) = device_on(&relay, &nsec, None).await;
+        let told = list_read(&mut ui2, 20).await;
+        assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (Some(2), Some(true)));
+        assert_eq!(rt2.dm().relations_known(), messenger_dm::RelationsKnown::Complete);
+        event_named(&mut ui2, session::UI_EVENT_HISTORY_SYNCED, 30).await;
+        let spam = rt2.dm_relation(spammer_pk.as_hex()).await.unwrap();
+        assert!(spam.blocked);
+        assert_eq!(visible(&rt2, &spammer_pk).await, 0, "a blocked stranger's old history is dropped");
+        let fr = rt2.dm_relation(friend_pk.as_hex()).await.unwrap();
+        assert_eq!((fr.my_contact.as_str(), fr.mode.as_str()), ("approved", "full_chat"));
+        assert_eq!(visible(&rt2, &friend_pk).await, 2, "a quietly added contact's history is a chat");
+        assert!(rt2.contacts().is_contact(&friend_pk).await.unwrap(), "the book follows the list");
+        assert!(!rt2.dm().relations_owed().await.unwrap(), "nothing to publish: the relay's list is the newest");
+
+        // Live: the first device is back and adds somebody quietly; the
+        // second sees it without a restart, by the snapshot alone.
+        let (_dir1, rt1, _ui1) = device_on(&relay, &nsec, Some(dir1)).await;
+        rt1.dm_act(quiet_pk.as_hex(), Action::Request).await.unwrap();
+        published(&rt1, "3").await;
+        let told = event_named(&mut ui2, relations::UI_EVENT_RELATIONS, 20).await;
+        assert_eq!((told.payload["rev"].as_u64(), told.payload["start"].as_bool(), told.payload["changed"].as_u64()), (Some(3), Some(false), Some(1)));
+        let q = rt2.dm_relation(quiet_pk.as_hex()).await.unwrap();
+        assert_eq!(q.my_contact, "approved");
+        assert!(rt2.contacts().is_contact(&quiet_pk).await.unwrap());
+        assert!(!rt2.dm().relations_owed().await.unwrap(), "a copy is no decision");
+        rt1.shutdown().await;
+        rt2.shutdown().await;
+    }
+
+    /// A page of revision `rev` naming `peer` as approved, under `.1` on
+    /// `relay`, dated `at`: what a relay still holds from a revision the
+    /// newer one outgrew.
+    async fn stale_page_on(relay: &LocalRelay, keys: &Keys, rev: u64, peer: &PubKey, at: i64) -> EventId {
+        let me = keys.public_key();
+        let plain = serde_json::json!({ "v": 1, "rev": rev, "peers": [[peer.as_hex(), "a", 0, 1_700_000_000]] }).to_string();
+        let content = nostr::nips::nip44::encrypt(keys.secret_key(), &me, plain, nostr::nips::nip44::Version::V2).unwrap();
+        let event = EventBuilder::new(Kind::from(messenger_core::relations::KIND_RELATIONS), content)
+            .tag(Tag::identifier(messenger_core::relations::relations_d(1)))
+            .custom_created_at(nostr::types::Timestamp::from_secs(at as u64))
+            .finalize(keys)
+            .unwrap();
+        let id = EventId::parse(&event.id.to_hex()).unwrap();
+        let url = RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
+        let pool = RelayPool::new(None);
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        connected(&pool).await;
+        pool.send(Outbound::PublishOwn { event: WireEvent { id: id.clone(), json: serde_json::to_value(&event).unwrap() } }).await.unwrap();
+        pool.shutdown().await;
+        id
+    }
+
+    #[tokio::test]
+    async fn a_page_of_an_older_revision_the_relay_still_holds_is_not_the_list() {
+        let relay = LocalRelay::builder().build();
+        relay.run().await.unwrap();
+        let keys = Keys::generate();
+        let nsec = keys.secret_key().to_bech32().unwrap();
+        let (friend_pk, gone_pk) = (pk_of(&Keys::generate()), pk_of(&Keys::generate()));
+        // Two revisions, each fitting its header: the relay is told of no
+        // page by either.
+        let (_dir1, rt1, mut ui1) = device_on(&relay, &nsec, None).await;
+        list_read(&mut ui1, 20).await;
+        published(&rt1, "1").await;
+        rt1.dm_act(friend_pk.as_hex(), Action::Request).await.unwrap();
+        published(&rt1, "2").await;
+        rt1.shutdown().await;
+
+        // A fresh device fetches the header (one event) and then follows
+        // the list live. A page `.1` of revision 1 — what a relay still
+        // holds from when a list was long, here put there after the start
+        // so that the first device never saw it — comes alone through that
+        // subscription: it is older than the revision just taken, so the
+        // one it names stays nobody.
+        let (_dir2, rt2, mut ui2) = device_on(&relay, &nsec, None).await;
+        let told = list_read(&mut ui2, 20).await;
+        assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (Some(2), Some(true)));
+        event_named(&mut ui2, session::UI_EVENT_HISTORY_SYNCED, 30).await;
+        let stale = stale_page_on(&relay, &keys, 1, &gone_pk, SystemClock.now().secs() - 1_000).await;
+        for _ in 0..100 {
+            if messenger_store::events_raw::contains(rt2.store(), &stale).await.unwrap() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(messenger_store::events_raw::contains(rt2.store(), &stale).await.unwrap(), "the live subscription brought the old page");
+        assert_eq!(rt2.dm_relation(friend_pk.as_hex()).await.unwrap().my_contact, "approved");
+        assert_eq!(rt2.dm_relation(gone_pk.as_hex()).await.unwrap().my_contact, "none", "the old page is not the list");
+        assert!(!rt2.contacts().is_contact(&gone_pk).await.unwrap());
+        assert_eq!(settings::get(rt2.store(), messenger_dm::snapshot::KEY_REV).await.unwrap().as_deref(), Some("2"));
+        rt2.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_decision_owed_at_the_close_is_published_at_the_next_start() {
+        let relay = LocalRelay::builder().build();
+        relay.run().await.unwrap();
+        let keys = Keys::generate();
+        let nsec = keys.secret_key().to_bech32().unwrap();
+        let (dir, rt, mut ui) = device_on(&relay, &nsec, None).await;
+        list_read(&mut ui, 20).await;
+        published(&rt, "1").await;
+        // The app closed with a decision taken and not yet published: the
+        // relay holds the same revision as this device (nothing behind by
+        // its number), and the mark alone says that the list there is.
+        settings::set(rt.store(), messenger_dm::snapshot::KEY_OWED, "1").await.unwrap();
+        rt.shutdown().await;
+
+        let (_dir, rt, _ui) = device_on(&relay, &nsec, Some(dir)).await;
+        published(&rt, "2").await;
         rt.shutdown().await;
     }
 

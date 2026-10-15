@@ -6,10 +6,12 @@
 //! message flow calls. Decisions themselves are in `relationship`.
 
 use crate::relationship::{
-    apply_my_action, apply_own_signal, apply_peer_signal, floor_after_pending_end, inbound_decision, outbound_permission,
-    raise_floor, screen_mode, signal_implied_by_message, Action, DropReason, InboundDecision, MyContact, OutboundPermission,
-    PeerSignal, Relationship, ScreenMode, Signal, SystemLine, FLOOR_SKEW_SECS,
+    apply_my_action, apply_own_signal, apply_peer_signal, decided_now, floor_after_pending_end, inbound_decision,
+    merge_decision, outbound_permission, raise_floor, screen_mode, signal_implied_by_message, Action, DmFrom, DropReason,
+    InboundDecision, InboundKind, MyContact, OutboundPermission, OwnSignal, PeerSignal, Relationship, ScreenMode, Signal,
+    SystemLine, FLOOR_SKEW_SECS,
 };
+use crate::snapshot::Known;
 use crate::service::{DmService, UI_EVENT_DM_MESSAGE};
 use crate::wrap::{wrap_as, Wake};
 use messenger_core::traits::UiEvent;
@@ -94,9 +96,24 @@ impl DmService {
                 last_signal_at: r.last_signal_at,
                 last_my_signal_at: r.last_my_signal_at,
                 request_floor: r.request_floor,
+                decided_at: r.decided_at,
             },
             None => Relationship::default(),
         })
+    }
+
+    /// What the gate makes of a stored row of the peer, as it made of the
+    /// message when it came (`apply_inbound`): a text by its length and its
+    /// links, anything else as other.
+    pub fn kind_of(content_type: &str, text: Option<&str>) -> InboundKind {
+        match (content_type, text) {
+            (repo::CT_TEXT, Some(t)) => Self::kind_of_text(t),
+            _ => InboundKind::Other,
+        }
+    }
+
+    pub fn kind_of_text(text: &str) -> InboundKind {
+        InboundKind::PlainText { chars: text.chars().count(), has_link: crate::body::has_link(text) }
     }
 
     pub(crate) async fn save_relation(&self, peer: &PubKey, r: &Relationship) -> Result<()> {
@@ -111,11 +128,18 @@ impl DmService {
                 last_signal_at: r.last_signal_at,
                 last_my_signal_at: r.last_my_signal_at,
                 request_floor: r.request_floor,
+                decided_at: r.decided_at,
                 created_at: 0,
                 updated_at: 0,
             },
         )
         .await
+    }
+
+    /// Whether a request to me came or went between two states of the
+    /// relationship: the queue of requests is to be counted again.
+    pub(crate) fn request_changed(before: &Relationship, after: &Relationship) -> bool {
+        (screen_mode(before) == ScreenMode::RequestReceived) != (screen_mode(after) == ScreenMode::RequestReceived)
     }
 
     /// Screen mode and whether the composer may be used.
@@ -151,6 +175,18 @@ impl DmService {
 
     pub async fn is_blocked(&self, peer: &PubKey) -> Result<bool> {
         Ok(self.load_relation(peer).await?.blocked)
+    }
+
+    /// My block of `peer` changed hands (here, or on another device of
+    /// mine): the group chats they wrote in count and show without them,
+    /// or with them again (`chats::group_chats_follow_block`); the
+    /// screen hears of each chat that may have changed.
+    async fn group_chats_follow_block(&self, peer: &PubKey) -> Result<Vec<UiEvent>> {
+        Ok(chats::group_chats_follow_block(&self.store, peer.as_hex())
+            .await?
+            .into_iter()
+            .map(|chat_id| UiEvent { name: crate::service::UI_EVENT_DM_UPDATED.into(), payload: serde_json::json!({ "chat_id": chat_id }) })
+            .collect())
     }
 
     pub async fn blocked_peers(&self) -> Result<Vec<String>> {
@@ -269,10 +305,21 @@ impl DmService {
     }
 
     /// Build one control message (wrap for the peer + self-copy) and record
-    /// it as a hidden row, so a copy coming back is recognised as ours.
-    async fn control(&self, keys: &Keys, chat_id: &str, peer: &PubKey, signal: Signal) -> Result<(i64, Vec<Outbound>)> {
-        let content = Envelope::control(signal.as_str()).encode();
-        let at = self.next_created_at(chat_id).await?;
+    /// it as a hidden row, so a copy coming back is recognised as ours. Its
+    /// time is the time of the decision it tells my other devices of: later
+    /// than the last decision this device knows (one a copy brought from a
+    /// device whose clock runs ahead included), or the copy of this one
+    /// would lose to it there (`merge_decision`) and the devices would part.
+    /// `invite` rides on an accept: the secret of an invitation of the
+    /// peer, by which I come in without a request.
+    async fn control(&self, keys: &Keys, chat_id: &str, peer: &PubKey, signal: Signal, invite: Option<&str>) -> Result<(i64, Vec<Outbound>)> {
+        let content = match invite.filter(|_| signal == Signal::Accept) {
+            Some(secret) => Envelope::control_with_invite(signal.as_str(), secret),
+            None => Envelope::control(signal.as_str()),
+        }
+        .encode();
+        let decided = self.load_relation(peer).await?.decided_at;
+        let at = self.next_created_at(chat_id).await?.max(decided.saturating_add(1));
         // A signal between the two apps: nobody is woken for it.
         let w = wrap_as(keys, peer, &content, at, None, Wake::Nobody)?;
         repo::insert(
@@ -309,7 +356,16 @@ impl DmService {
 
     /// One of my actions: state, signals, system line, events.
     pub async fn act(&self, keys: &Keys, peer: &PubKey, action: Action) -> Result<ActionResult> {
-        self.act_with(keys, peer, action, false).await
+        self.act_with(keys, peer, action, false, None).await
+    }
+
+    /// A request by an invitation of the peer without a text (a link
+    /// pasted, a QR scanned): the accept goes at once, the secret on it,
+    /// and the peer's device lets me in by it. With a text, the request
+    /// goes with the text (`prepare_request_text`).
+    pub async fn request_by_invite(&self, keys: &Keys, peer: &PubKey, invite: &str) -> Result<ActionResult> {
+        check_invite_secret(invite)?;
+        self.act_with(keys, peer, Action::Request, true, Some(invite)).await
     }
 
     /// An episode ended (I removed or unblocked a stranger, or the peer sent
@@ -328,7 +384,17 @@ impl DmService {
         Ok(())
     }
 
-    pub(crate) async fn act_with(&self, keys: &Keys, peer: &PubKey, action: Action, with_message: bool) -> Result<ActionResult> {
+    /// `with_message`: the action goes with my first text, or by an
+    /// invitation, so the peer is told at once (`apply_my_action`);
+    /// `invite`: the secret that rides on the accept.
+    pub(crate) async fn act_with(
+        &self,
+        keys: &Keys,
+        peer: &PubKey,
+        action: Action,
+        with_message: bool,
+        invite: Option<&str>,
+    ) -> Result<ActionResult> {
         if peer.as_hex() == keys.public_key().to_hex() {
             return Err(MessengerError::Invalid("that is your own key".into()));
         }
@@ -349,25 +415,53 @@ impl DmService {
         let has_history = repo::count_visible(&self.store, &chat_id).await? > 0;
         let outcome = apply_my_action(&current, action, has_history, with_message);
         let mut next = outcome.next;
+        let decided = next != current;
         let mut outbounds = Vec::new();
-        let mut last_at = self.clock.now().secs();
+        let now = self.clock.now().secs();
+        let mut last_at = now;
         for s in &outcome.signals {
-            let (at, mut out) = self.control(keys, &chat_id, peer, *s).await?;
+            let (at, mut out) = self.control(keys, &chat_id, peer, *s, invite).await?;
             last_at = at;
             outbounds.append(&mut out);
         }
+        // A decision taken here is dated: by the signal that tells my other
+        // devices of it (its copy carries the same time there), or by my
+        // clock when it is silent. An action that changes nothing (a second
+        // block, a second accept) decides nothing anew.
         if !outcome.signals.is_empty() {
             next.last_my_signal_at = last_at;
+            next.decided_at = last_at;
+        } else if decided {
+            next.decided_at = decided_now(current.decided_at, now);
         }
         if action == Action::Remove || outcome.signals.contains(&Signal::ContactRemoved) {
             self.end_episode(&chat_id, &mut next, None).await?;
         }
         self.save_relation(peer, &next).await?;
-        if next.blocked || next.my_contact == MyContact::Approved {
-            self.purge_held(&chat_id).await?;
+        if decided {
+            self.mark_relations_owed().await?;
         }
-
         let mut events = Vec::new();
+        if next.blocked != current.blocked {
+            events.extend(self.group_chats_follow_block(peer).await?);
+        }
+        if next.blocked {
+            self.purge_held(&chat_id).await?;
+            // A stranger I block is not a chat any more: what they wrote
+            // goes with the tombstone, the key stays in the blocked list.
+            // A contact I block keeps the chat, with its banner.
+            if current.my_contact != MyContact::Approved && !self.is_bot(peer) {
+                self.delete_chat(&chat_id).await?;
+            }
+        } else if next.my_contact == MyContact::Approved {
+            // Shown as they come to the screen; I am the one who just
+            // answered, so nothing of it rings.
+            for e in self.release_held(&chat_id, peer, false).await? {
+                if let Effect::Emit(ev) = e {
+                    events.push(ev);
+                }
+            }
+        }
         if let Some(line) = outcome.system_line {
             if let Some(ev) = self.system_line(&chat_id, peer, line, last_at, false).await? {
                 events.push(ev);
@@ -383,7 +477,126 @@ impl DmService {
         if next != current {
             events.push(self.relationship_event(&chat_id, peer).await?);
         }
+        if Self::request_changed(&current, &next) {
+            events.push(self.request_event(peer).await?);
+            events.extend(self.cap_requests(self.clock.now().secs()).await?.into_iter().filter_map(|e| match e {
+                Effect::Emit(ev) => Some(ev),
+                _ => None,
+            }));
+        }
         Ok(ActionResult { relation: self.relation(peer).await?, outbounds, events })
+    }
+
+    /// Whether the gate judges a message of the peer that is `historical`.
+    /// History is stored as it was only on a fresh database, in its first
+    /// session (no previous one set the floor), and only while my list is
+    /// not known: with the snapshot of my relations read in full before
+    /// the history (`crate::snapshot`), the history passes the gate as
+    /// live messages do; with a part of it, for the peers it names. Its
+    /// rumor time is the sender's: "older than when I was last online"
+    /// says nothing of the message, so it is no way around the gate. A
+    /// block drops it either way (`inbound_decision`).
+    pub(crate) async fn enforced(&self, peer: &PubKey, historical: bool) -> Result<bool> {
+        if !historical || self.unread_floor.load(Ordering::SeqCst) >= 0 {
+            return Ok(true);
+        }
+        Ok(match self.relations_known() {
+            Known::Complete => true,
+            Known::Partial => dm_relations::get(&self.store, peer.as_hex()).await?.is_some(),
+            Known::No => false,
+        })
+    }
+
+    /// My decision about `peer` as another device of mine holds it (the
+    /// snapshot of my relations): it stands here by its time, or by its
+    /// strictness in the same second (`merge_decision`), and what the
+    /// decision does follows, as for the copy of a signal (`on_control`):
+    /// a removal ends the episode, a block purges what waited and takes a
+    /// stranger's chat, an approval shows what waited, an expiry takes the
+    /// request's chat, the book follows. A copy is no decision: nothing
+    /// is bumped, nothing is owed to the relays for it. `None` when the
+    /// decision here stands.
+    pub(crate) async fn apply_decision_copy(
+        &self,
+        peer: &PubKey,
+        my_contact: MyContact,
+        blocked: bool,
+        decided_at: i64,
+    ) -> Result<Option<Vec<Effect>>> {
+        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let current = self.load_relation(peer).await?;
+        let incoming = Relationship { my_contact, blocked, decided_at, ..current };
+        let mut next = merge_decision(&current, &incoming);
+        if next == current {
+            return Ok(None);
+        }
+        if current.my_contact == MyContact::Approved && next.my_contact == MyContact::None && !next.blocked {
+            self.end_episode(&chat_id, &mut next, None).await?;
+        }
+        self.save_relation(peer, &next).await?;
+        let mut effects = Vec::new();
+        if next.blocked {
+            self.purge_held(&chat_id).await?;
+            if current.my_contact != MyContact::Approved && !self.is_bot(peer) {
+                self.delete_chat(&chat_id).await?;
+            }
+        } else if next.my_contact == MyContact::Approved {
+            effects.extend(self.release_held(&chat_id, peer, false).await?);
+        } else if next.my_contact == MyContact::Expired && screen_mode(&current) == ScreenMode::RequestReceived {
+            self.delete_chat(&chat_id).await?;
+        }
+        effects.push(Effect::Emit(self.relationship_event(&chat_id, peer).await?));
+        if self.mirror_book(peer, &current, &next).await? {
+            effects.push(Effect::Emit(contacts_updated(Some(peer))));
+        }
+        if next.request_floor > current.request_floor {
+            effects.extend(self.regate(&chat_id, peer, false).await?);
+        }
+        if Self::request_changed(&current, &next) {
+            effects.push(Effect::Emit(self.request_event(peer).await?));
+            effects.extend(self.cap_requests(self.clock.now().secs()).await?);
+        }
+        Ok(Some(effects))
+    }
+
+    /// Whether a hidden envelope of the peer (a signal, an edit, a delete)
+    /// is heard at all, decided before anything of it is stored: a key that
+    /// is not let in leaves no row behind. A stranger's first word being a
+    /// signal (nothing of them here, no chat with them) is not kept: what
+    /// they mean is implied by their text when it passes the gate. When I
+    /// take messages from my contacts only, a signal of anybody else is not
+    /// heard either; my block is kept by the row it already has. An edit or
+    /// a delete is my contact's alone: anybody else got one text in, and
+    /// changing it is not among what the gate lets them say (`enforced` is
+    /// off for the history a fresh database restores, as for their texts).
+    pub(crate) async fn hears_hidden(&self, chat_id: &str, peer: &PubKey, content_type: &str, enforced: bool) -> Result<bool> {
+        if !self.gate_enabled() {
+            return Ok(true);
+        }
+        let r = self.load_relation(peer).await?;
+        if content_type == repo::CT_CONTROL {
+            if dm_relations::get(&self.store, peer.as_hex()).await?.is_none() && chats::get(&self.store, chat_id).await?.is_none() {
+                return Ok(false);
+            }
+            return Ok(self.dm_from().await? != DmFrom::Contacts || r.my_contact == MyContact::Approved);
+        }
+        // The pinned bot is approved by the build; my block alone shuts it.
+        if self.is_bot(peer) {
+            return Ok(!r.blocked);
+        }
+        Ok(!r.blocked && (!enforced || r.my_contact == MyContact::Approved))
+    }
+
+    /// Whether a text the peer puts in place of one of theirs may stand: my
+    /// contact's, whatever it is; anybody else's only what the gate would
+    /// have let in as their one text, so the row of a request never holds
+    /// what the gate keeps out. The bot's cards are not edited at all
+    /// (`editable_type`), so its key needs no word here.
+    pub(crate) async fn edit_allowed(&self, peer: &PubKey, text: &str) -> Result<bool> {
+        if !self.gate_enabled() || self.load_relation(peer).await?.my_contact == MyContact::Approved {
+            return Ok(true);
+        }
+        Ok(Self::kind_of_text(text).is_request_text())
     }
 
     // ─── Hooks of the message flow ──────────────────────────────────────────
@@ -408,8 +621,17 @@ impl DmService {
         }
     }
 
-    /// Before storing a regular message of the peer.
-    pub(crate) async fn gate_inbound(&self, chat_id: &str, peer: &PubKey, at: i64, historical: bool) -> Result<InboundGate> {
+    /// Before storing a regular message of the peer. `kind` is what the
+    /// message is: before approval only a short plain text without a link
+    /// gets through, and what is not is dropped, never held.
+    pub(crate) async fn gate_inbound(
+        &self,
+        chat_id: &str,
+        peer: &PubKey,
+        at: i64,
+        historical: bool,
+        kind: InboundKind,
+    ) -> Result<InboundGate> {
         if !self.gate_enabled() {
             return Ok(InboundGate::Pass { effects: vec![], regate: false });
         }
@@ -420,15 +642,10 @@ impl DmService {
             let blocked = self.load_relation(peer).await?.blocked;
             return Ok(if blocked { InboundGate::Drop } else { InboundGate::Pass { effects: vec![], regate: false } });
         }
-        // History is stored as it was only on a fresh database, in its first
-        // session (no previous one set the floor). Its rumor time is the
-        // sender's: "older than when I was last online" says nothing of the
-        // message, so it is no way around the gate. A block drops it either
-        // way (`inbound_decision`).
-        let enforced = !historical || self.unread_floor.load(Ordering::SeqCst) >= 0;
+        let enforced = self.enforced(peer, historical).await?;
         let mut r = self.load_relation(peer).await?;
         let seen = repo::count_visible_incoming_since(&self.store, chat_id, r.request_floor).await?;
-        match inbound_decision(&r, enforced, seen, at) {
+        match inbound_decision(&r, enforced, seen, at, kind, self.dm_from().await?) {
             InboundDecision::Drop(DropReason::SecondMessageBeforeApproval)
                 if dm_held::count(&self.store, chat_id).await? < HELD_PER_CHAT =>
             {
@@ -494,12 +711,16 @@ impl DmService {
         if repo::count_visible_incoming_since(&self.store, chat_id, r.request_floor).await? > 0 {
             return Ok(vec![]);
         }
+        let dm_from = self.dm_from().await?;
         for id in dm_held::after(&self.store, chat_id, r.request_floor).await? {
             let Some(row) = repo::get(&self.store, &id).await? else { continue };
             if row.sender_pubkey != peer.as_hex() || !row.is_hidden {
                 continue;
             }
-            if inbound_decision(&r, true, 0, row.created_at) != InboundDecision::SaveAsRequest {
+            // Judged again as it would be coming now: what was held passed
+            // the kind check then, and my settings may have changed since.
+            let kind = Self::kind_of(&row.content_type, row.text.as_deref());
+            if inbound_decision(&r, true, 0, row.created_at, kind, dm_from) != InboundDecision::SaveAsRequest {
                 continue;
             }
             if !dm_held::release(&self.store, &id).await? {
@@ -512,8 +733,23 @@ impl DmService {
         Ok(vec![])
     }
 
-    /// I approved or blocked the peer: what they wrote too much before is
-    /// not shown later. Deleting the chat purges them as well.
+    /// I approved the peer: what they wrote while they waited is theirs to
+    /// have said, shown now in its order (the kind check passed when it was
+    /// held). Nothing of it is a request any more.
+    async fn release_held(&self, chat_id: &str, peer: &PubKey, live: bool) -> Result<Vec<Effect>> {
+        let mut effects = Vec::new();
+        for id in dm_held::after(&self.store, chat_id, 0).await? {
+            let Some(row) = repo::get(&self.store, &id).await? else { continue };
+            if row.sender_pubkey != peer.as_hex() || !row.is_hidden || !dm_held::release(&self.store, &id).await? {
+                continue;
+            }
+            effects.extend(self.land_row(row, live).await?);
+        }
+        Ok(effects)
+    }
+
+    /// I blocked the peer: what they wrote too much before is not shown
+    /// later. Deleting the chat purges them as well.
     async fn purge_held(&self, chat_id: &str) -> Result<()> {
         dm_held::purge(&self.store, chat_id).await?;
         Ok(())
@@ -536,6 +772,9 @@ impl DmService {
     }
 
     /// A control message arrived (already stored as a hidden row).
+    /// `invited`: the peer's accept came with an invitation of mine that
+    /// admits them (`redeem_invite`, decided before the row).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn on_control(
         &self,
         chat_id: &str,
@@ -544,31 +783,61 @@ impl DmService {
         action: Option<&str>,
         at: i64,
         historical: bool,
+        invited: bool,
     ) -> Result<Vec<Effect>> {
         if !self.gate_enabled() {
             return Ok(vec![]);
         }
         let Some(signal) = action.and_then(Signal::parse) else { return Ok(vec![]) };
+        if invited && !from_me && signal == Signal::Accept {
+            return self.admit_by_invite(chat_id, peer, at, historical).await;
+        }
         let current = self.load_relation(peer).await?;
         if from_me {
             // Another device of mine acted.
-            let Some(mut next) = apply_own_signal(&current, signal, at) else { return Ok(vec![]) };
-            if signal.ends_episode_for_me() {
+            let Some(OwnSignal { mut next, stood }) = apply_own_signal(&current, signal, at) else { return Ok(vec![]) };
+            // The copy stood over what was decided here: then it ends the
+            // episode as the action did on that device.
+            if stood && signal.ends_episode_for_me() {
                 self.end_episode(chat_id, &mut next, None).await?;
             }
             self.save_relation(peer, &next).await?;
-            if matches!(signal, Signal::Accept | Signal::Block) {
-                self.purge_held(chat_id).await?;
+            // The device that decided may publish no snapshot (an older
+            // build): what stood here goes into this device's.
+            if stood {
+                self.mark_relations_owed().await?;
             }
             let mut effects = vec![Effect::Emit(self.relationship_event(chat_id, peer).await?)];
+            if next.blocked != current.blocked {
+                effects.extend(self.group_chats_follow_block(peer).await?.into_iter().map(Effect::Emit));
+            }
+            if next.blocked {
+                self.purge_held(chat_id).await?;
+                // Blocked elsewhere: a stranger's chat goes here too.
+                if current.my_contact != MyContact::Approved && !self.is_bot(peer) {
+                    self.delete_chat(chat_id).await?;
+                }
+            } else if next.my_contact == MyContact::Approved {
+                // Accepted elsewhere: what waited here is shown, without a
+                // sound — that device already answered for me.
+                effects.extend(self.release_held(chat_id, peer, false).await?);
+            }
             if self.mirror_book(peer, &current, &next).await? {
                 effects.push(Effect::Emit(contacts_updated(Some(peer))));
             }
             if next.request_floor > current.request_floor {
                 effects.extend(self.regate(chat_id, peer, !historical).await?);
             }
+            // A request that comes back by a signal (my unblock elsewhere)
+            // counts toward the size of the queue as one that lands does.
+            if Self::request_changed(&current, &next) {
+                effects.push(Effect::Emit(self.request_event(peer).await?));
+                effects.extend(self.cap_requests(self.clock.now().secs()).await?);
+            }
             return Ok(effects);
         }
+        // Whether the stranger is heard at all was decided before their
+        // signal was stored (`hears_hidden`).
         let outcome = apply_peer_signal(&current, signal, at, !historical, self.clock.now().secs());
         let mut next = outcome.next;
         // Even when it changes nothing else (a withdrawal over their own
@@ -597,7 +866,7 @@ impl DmService {
         if outcome.confirm_back {
             let keys = self.signer.read().unwrap().clone();
             if let Some(keys) = keys {
-                let (at, outs) = self.control(&keys, chat_id, peer, Signal::Accept).await?;
+                let (at, outs) = self.control(&keys, chat_id, peer, Signal::Accept, None).await?;
                 let mut r = next;
                 r.last_my_signal_at = at;
                 self.save_relation(peer, &r).await?;
@@ -608,6 +877,98 @@ impl DmService {
             effects.extend(self.regate(chat_id, peer, !historical).await?);
         }
         effects.push(Effect::Emit(self.relationship_event(chat_id, peer).await?));
+        // A fresh accept after my no is a request again: the queue is kept
+        // to its size as when one lands.
+        if Self::request_changed(&current, &next) {
+            effects.push(Effect::Emit(self.request_event(peer).await?));
+            effects.extend(self.cap_requests(self.clock.now().secs()).await?);
+        }
         Ok(effects)
     }
+
+    /// The peer came in by an invitation of mine: their accept is their
+    /// word, and mine follows at once, as if I had pressed "Accept": the
+    /// chat opens in full, the accept goes back (for a historical copy
+    /// too: my other device, reading this later as history, must answer
+    /// as well, or the peer waits on it), the line `invited` is written,
+    /// the book follows, the snapshot is owed. Decided here, dated by the
+    /// signal. When my other device admitted them already (its copy or
+    /// the snapshot came first), nothing is said twice: their use was
+    /// recorded, the rest stands. Without the keys of a session (locked)
+    /// the decision is taken and the answer waits for their accept to
+    /// come again, as a confirm-back does.
+    async fn admit_by_invite(&self, chat_id: &str, peer: &PubKey, at: i64, historical: bool) -> Result<Vec<Effect>> {
+        let current = self.load_relation(peer).await?;
+        let now = self.clock.now().secs();
+        chats::ensure_dm(&self.store, peer.as_hex()).await?;
+        let outcome = apply_peer_signal(&current, Signal::Accept, at, !historical, now);
+        let mut next = outcome.next;
+        // Their accept is the newest word of theirs whatever its date: an
+        // invitation is mine to hand out, and it names them.
+        next.peer_signal = PeerSignal::Approved;
+        next.last_signal_at = next.last_signal_at.max(at.min(now.saturating_add(FLOOR_SKEW_SECS)));
+        let mut effects = Vec::new();
+        if current.my_contact == MyContact::Approved {
+            // My contact already: added quietly here, or let in by my other
+            // device, whose accept (its copy came) is dated after theirs and
+            // answered them; a quiet add sent nothing, so they still wait.
+            next.was_ever_mutual = true;
+            let answered = current.last_my_signal_at >= at;
+            let keys = self.signer.read().unwrap().clone();
+            if let Some(keys) = keys.filter(|_| !answered) {
+                let (sig_at, outs) = self.control(&keys, chat_id, peer, Signal::Accept, None).await?;
+                effects.extend(outs.into_iter().map(Effect::Send));
+                next.last_my_signal_at = sig_at;
+            }
+            if next != current {
+                self.save_relation(peer, &next).await?;
+            }
+            if !current.was_ever_mutual {
+                if let Some(ev) = self.system_line(chat_id, peer, SystemLine::Invited, at, false).await? {
+                    effects.push(Effect::Emit(ev));
+                }
+            }
+            if next != current {
+                effects.push(Effect::Emit(self.relationship_event(chat_id, peer).await?));
+            }
+            return Ok(effects);
+        }
+        next.my_contact = MyContact::Approved;
+        next.was_ever_mutual = true;
+        let keys = self.signer.read().unwrap().clone();
+        let decided = match keys {
+            Some(keys) => {
+                let (sig_at, outs) = self.control(&keys, chat_id, peer, Signal::Accept, None).await?;
+                effects.extend(outs.into_iter().map(Effect::Send));
+                next.last_my_signal_at = sig_at;
+                sig_at
+            }
+            None => decided_now(current.decided_at, now),
+        };
+        next.decided_at = decided;
+        self.save_relation(peer, &next).await?;
+        self.mark_relations_owed().await?;
+        if let Some(ev) = self.system_line(chat_id, peer, SystemLine::Invited, at, false).await? {
+            effects.push(Effect::Emit(ev));
+        }
+        effects.extend(self.release_held(chat_id, peer, false).await?);
+        if self.mirror_book(peer, &current, &next).await? {
+            effects.push(Effect::Emit(contacts_updated(Some(peer))));
+        }
+        effects.push(Effect::Emit(self.relationship_event(chat_id, peer).await?));
+        if Self::request_changed(&current, &next) {
+            effects.push(Effect::Emit(self.request_event(peer).await?));
+        }
+        Ok(effects)
+    }
+}
+
+/// A secret as the sender may put on an accept: within the bound of the
+/// wire, nothing else (its shape is the receiver's to judge).
+pub(crate) fn check_invite_secret(secret: &str) -> Result<()> {
+    let n = secret.chars().count();
+    if n == 0 || n > messenger_core::envelope::MAX_INVITE_CHARS || secret.chars().any(char::is_control) {
+        return Err(MessengerError::Invalid("invite_secret".into()));
+    }
+    Ok(())
 }

@@ -18,6 +18,7 @@
   import SocialLinks from './SocialLinks.svelte';
   import ProfileEditor from './ProfileEditor.svelte';
   import { profileDraft } from './profileDraft';
+  import MyQrButton from '../invites/MyQrButton.svelte';
 
   interface Props {
     /** Shows the media servers' settings (from the avatar's "no server" hint). */
@@ -72,9 +73,12 @@
   <div class="title-row">
     <div class="card-title"><Icon name="user" size={16} /> {$t('msg_own_title')}</div>
     {#if !editing}
-      <button class="btn btn-ghost btn-sm" disabled={!canAct} onclick={() => { editing = true; saved = false; }}>
-        <Icon name="pencil" size={12} />{$t('msg_own_edit')}
-      </button>
+      <span class="title-actions">
+        <MyQrButton disabled={!canAct} />
+        <button class="btn btn-ghost btn-sm" disabled={!canAct} onclick={() => { editing = true; saved = false; }}>
+          <Icon name="pencil" size={12} />{$t('msg_own_edit')}
+        </button>
+      </span>
     {/if}
   </div>
 
@@ -138,6 +142,7 @@
   .own { min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: var(--sp-3); }
   .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
   .card-title { display: flex; align-items: center; gap: var(--sp-2); }
+  .title-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .btn :global(svg) { margin-right: 2px; }
   .head { display: flex; gap: var(--sp-3); align-items: center; min-width: 0; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

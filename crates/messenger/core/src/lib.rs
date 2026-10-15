@@ -13,6 +13,7 @@
 //! - `error` — `MessengerError`
 //! - `emoji` — what may be sent as a reaction
 //! - `presence` — the kind and `d` tag of a presence beat
+//! - `relations` — the kind and `d` tags of the snapshot of my relations
 //!
 //! Rules (internal/messenger-spec.md §4.2): no Tauri, no application code, no
 //! protocol crates beyond plain types. Handlers never see relays; transport
@@ -25,6 +26,7 @@ pub mod error;
 pub mod inbound;
 pub mod outbound;
 pub mod presence;
+pub mod relations;
 pub mod traits;
 pub mod types;
 

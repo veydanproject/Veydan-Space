@@ -7,7 +7,7 @@
 //! replaced by the real message. The file key travels inside the
 //! message, under the group key.
 
-use crate::service::{me_of, GroupService, MEMBERSHIP_JOINED};
+use crate::service::{me_of, refused, GroupService, MEMBERSHIP_JOINED};
 use messenger_core::{Envelope, MessengerError, Outbound, Result};
 use messenger_dm::MessageView;
 use messenger_store::groups as repo;
@@ -35,10 +35,10 @@ impl GroupService {
         let me = me_of(keys);
         let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
         let log = self.need_log(group_id).await?;
-        if row.membership != MEMBERSHIP_JOINED || !log.state().can_post(&me) {
-            let muted = log.state().member(&me).is_some_and(|m| m.muted);
-            return Err(MessengerError::Invalid(if muted { "group_muted".into() } else { "group_not_member".into() }));
+        if row.membership != MEMBERSHIP_JOINED {
+            return Err(MessengerError::Invalid("group_not_member".into()));
         }
+        log.state().can_post_at(&me, self.now()).map_err(refused)?;
         let chat_id = repo::group_chat_id(group_id);
         let id = placeholder_id();
         let now = self.now();

@@ -65,4 +65,4 @@ wiremock.workspace = true
 tempfile.workspace = true
 sqlx.workspace = true
 nostr-sdk = { workspace = true, features = ["local-relay"] }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }

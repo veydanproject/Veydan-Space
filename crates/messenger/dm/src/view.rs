@@ -101,6 +101,23 @@ pub struct MessageView {
     /// then empty. Only on a message the pinned key sealed.
     #[serde(default)]
     pub bot_card: Option<BotCard>,
+    /// In a group: `ok`, `pending` (waits for a moderator: listed for the
+    /// moderators and for its author only, counted nowhere, fetched
+    /// nowhere) or `rejected`. `ok` in a direct chat, and for what a
+    /// moderator approved. A message hidden by a moderator is never
+    /// listed, so nothing says it is.
+    #[serde(default = "review_ok")]
+    pub review: String,
+    /// What an approval names while the message waits (`pending`): the id
+    /// of the edit in force, else the message's own id
+    /// (`messages::version_of`). The UI cannot tell it, since the edits
+    /// are rows it never sees; absent on every other message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+fn review_ok() -> String {
+    "ok".into()
 }
 
 impl MessageView {
@@ -138,6 +155,9 @@ impl MessageView {
             reactions: vec![],
             card: None,
             bot_card,
+            // The page tells `approved` from `ok` by nothing: both are shown.
+            review: if r.review == "pending" || r.review == "rejected" { r.review } else { "ok".into() },
+            version: None,
         }
     }
 }

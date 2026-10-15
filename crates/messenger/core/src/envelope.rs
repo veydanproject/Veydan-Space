@@ -19,7 +19,18 @@ pub const T_EDIT: &str = "edit";
 /// `{"t":"delete","target":"<rumor id>"}` — retract a message.
 pub const T_DELETE: &str = "delete";
 /// `{"t":"control","action":"…"}` — DM relationship signal (stage 5b).
+/// With `"invite":"<secret>"` on `dm_accept`: the sender holds an
+/// invitation of mine (a link, a code, a QR) and comes in by it without
+/// a request (internal/messenger-wire.md §3, "Приглашения"). A reader
+/// before the invitations knows no such field and takes the signal as
+/// any other.
 pub const T_CONTROL: &str = "control";
+/// The action a `control` may carry an invitation on.
+pub const CONTROL_DM_ACCEPT: &str = "dm_accept";
+/// A secret longer than this is no invitation of ours (a link's is 22
+/// characters, a code 6): the field is bounded so a reader never keeps
+/// a paste.
+pub const MAX_INVITE_CHARS: usize = 64;
 /// `{"t":"media", …}` — encrypted blob reference (stage 6).
 pub const T_MEDIA: &str = "media";
 /// `{"t":"contact","card":{"pubkey":"<hex>",…}}` — a contact card: a
@@ -188,6 +199,23 @@ impl Envelope {
 
     pub fn control(action: &str) -> Self {
         Self::new(T_CONTROL).with("action", action)
+    }
+
+    /// A `dm_accept` that comes in by an invitation of the peer.
+    pub fn control_with_invite(action: &str, invite: &str) -> Self {
+        Self::control(action).with("invite", invite)
+    }
+
+    /// The invitation a `control` carries: on `dm_accept` only (an
+    /// invitation lets somebody in, nothing else), a string within
+    /// `MAX_INVITE_CHARS` without control characters. Anything else is
+    /// as if no invitation were there.
+    pub fn control_invite(&self) -> Option<&str> {
+        if self.t != T_CONTROL || self.str_field("action") != Some(CONTROL_DM_ACCEPT) {
+            return None;
+        }
+        let i = self.str_field("invite")?;
+        (!i.is_empty() && i.chars().count() <= MAX_INVITE_CHARS && !i.chars().any(char::is_control)).then_some(i)
     }
 
     pub fn own_read(chat_id: &str, at: i64) -> Self {
@@ -439,9 +467,30 @@ mod tests {
         assert_eq!(Envelope::edit("ab", "new").encode(), r#"{"v":1,"t":"edit","target":"ab","text":"new"}"#);
         assert_eq!(Envelope::delete("ab").encode(), r#"{"v":1,"t":"delete","target":"ab"}"#);
         assert_eq!(Envelope::control("dm_accept").encode(), r#"{"v":1,"t":"control","action":"dm_accept"}"#);
+        assert_eq!(
+            Envelope::control_with_invite("dm_accept", "123456").encode(),
+            r#"{"v":1,"t":"control","action":"dm_accept","invite":"123456"}"#
+        );
         let e = Envelope::parse(r#"{"v":1,"t":"edit","target":"ab","text":"new"}"#).unwrap();
         assert_eq!(e.str_field("target"), Some("ab"));
         assert!(e.as_text().is_none(), "edits are not plain text");
+    }
+
+    /// The invitation rides on `dm_accept` alone and within its bounds; a
+    /// reader that knows no such field (every build before it) keeps it
+    /// among the fields and reads the action as before.
+    #[test]
+    fn an_invitation_is_read_on_an_accept_alone_and_ignored_by_an_older_reader() {
+        let e = Envelope::parse(r#"{"v":1,"t":"control","action":"dm_accept","invite":"AAECAwQFBgcICQoLDA0O_w"}"#).unwrap();
+        assert_eq!(e.control_invite(), Some("AAECAwQFBgcICQoLDA0O_w"));
+        assert_eq!(e.str_field("action"), Some("dm_accept"), "an older reader sees the signal it knows");
+        assert_eq!(e.fields.len(), 2, "and keeps the field it does not");
+        assert_eq!(Envelope::control_with_invite("dm_decline", "123456").control_invite(), None, "an invitation declines nothing");
+        assert_eq!(Envelope::control("dm_accept").control_invite(), None);
+        assert_eq!(Envelope::control_with_invite("dm_accept", "").control_invite(), None);
+        assert_eq!(Envelope::control_with_invite("dm_accept", &"x".repeat(MAX_INVITE_CHARS + 1)).control_invite(), None);
+        assert_eq!(Envelope::control_with_invite("dm_accept", "12\u{7}456").control_invite(), None);
+        assert_eq!(Envelope::text("hi").with("invite", "123456").control_invite(), None, "a text invites nobody");
     }
 
     #[test]

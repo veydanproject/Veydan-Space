@@ -2310,6 +2310,9 @@ mod tests {
             history_for_new: None,
             call_node: Some(pinned.clone()),
             call_node_key: Some("k".into()),
+            post_mode: None,
+            post_schedule: None,
+            premod: None,
         };
         rt.group_act(&group.id, op).await.unwrap();
         assert_eq!(

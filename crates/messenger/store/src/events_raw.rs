@@ -53,16 +53,46 @@ pub async fn ids_in_window(store: &Store, kind: u16, since: i64, until: i64, lim
 }
 
 
-/// `(id, created_at)` of the newest known events of `kind` since `since`,
-/// the local set for a history reconciliation.
-pub async fn items_since(store: &Store, kind: u16, since: i64, limit: i64) -> Result<Vec<(EventId, i64)>> {
+/// `(id, created_at)` of every known event of `kind` with `created_at` in
+/// `[since, until]`: the local set of a reconciliation. Nothing is left
+/// out on purpose: Negentropy compares the two sets within the filter, so
+/// an id missing here is an event the relay sends again, and a cap would
+/// make a device with a long history fetch its oldest events every time.
+pub async fn items_in_window(store: &Store, kind: u16, since: i64, until: i64) -> Result<Vec<(EventId, i64)>> {
     let rows = sqlx::query_as::<_, (String, i64)>(
-        "SELECT event_id, created_at FROM msg_events_raw WHERE kind = ? AND created_at >= ?
-         ORDER BY created_at DESC LIMIT ?",
+        "SELECT event_id, created_at FROM msg_events_raw WHERE kind = ? AND created_at BETWEEN ? AND ?
+         ORDER BY created_at DESC",
     )
     .bind(kind as i64)
     .bind(since)
-    .bind(limit)
+    .bind(until)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(rows.into_iter().filter_map(|(id, at)| Some((EventId::parse(&id)?, at))).collect())
+}
+
+/// `(id, created_at)` of every known event of `kind` since `since`: the
+/// local set of a reconciliation by cursor.
+pub async fn items_since(store: &Store, kind: u16, since: i64) -> Result<Vec<(EventId, i64)>> {
+    items_in_window(store, kind, since, i64::MAX).await
+}
+
+/// `(id, created_at)` of the known events of `kind` up to `until` that
+/// carry this tag value (a group id in its `h` tag): the local set of one
+/// window of a group's history. The value is looked for in the stored
+/// JSON, as `forget_tagged` does, so it has to be a long plain id.
+pub async fn items_tagged_until(store: &Store, kind: u16, value: &str, until: i64) -> Result<Vec<(EventId, i64)>> {
+    if value.len() < 32 || !value.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT event_id, created_at FROM msg_events_raw WHERE kind = ? AND created_at <= ? AND raw_json LIKE ?
+         ORDER BY created_at DESC",
+    )
+    .bind(kind as i64)
+    .bind(until)
+    .bind(format!("%\"{value}\"%"))
     .fetch_all(store.pool())
     .await
     .map_err(storage)?;
@@ -116,10 +146,63 @@ mod tests {
         assert!(insert_if_new(&s, &raw("3", 9, 150)).await.unwrap());
         assert!(contains(&s, &EventId::parse(&"1".repeat(64)).unwrap()).await.unwrap());
         assert_eq!(count(&s).await.unwrap(), 3);
-        assert_eq!(items_since(&s, 1059, 150, 10).await.unwrap().len(), 1);
+        assert_eq!(items_since(&s, 1059, 150).await.unwrap().len(), 1);
         let ids = ids_in_window(&s, 1059, 0, 150, 10).await.unwrap();
         assert_eq!(ids.len(), 1);
         assert_eq!(ids[0].as_hex(), "1".repeat(64));
+    }
+
+    /// `n` events of `kind`, one per second from `from`, with the given
+    /// tags, written in batches: the row-by-row insert is too slow for
+    /// tens of thousands.
+    async fn fill(s: &Store, kind: u16, from: i64, n: i64, tags: &str) {
+        for chunk in (0..n).collect::<Vec<_>>().chunks(500) {
+            let values = chunk.iter().map(|_| "(?, ?, ?, ?, 0, '{}', ?)").collect::<Vec<_>>().join(", ");
+            let mut q = sqlx::query(sqlx::AssertSqlSafe(format!(
+                "INSERT INTO msg_events_raw (event_id, kind, pubkey, created_at, received_at, source_json, raw_json) VALUES {values}"
+            )));
+            for i in chunk {
+                let id = format!("{:016x}{:016x}{:016x}{:016x}", kind, from, *i, 0);
+                q = q.bind(id).bind(kind as i64).bind("ab".repeat(32)).bind(from + i).bind(format!("{{\"tags\":[{tags}]}}"));
+            }
+            q.execute(s.pool()).await.unwrap();
+        }
+    }
+
+    /// The local set of a reconciliation is the whole window: thirty
+    /// thousand rows come back, none left out, in one call.
+    #[tokio::test]
+    async fn the_window_holds_every_row() {
+        let s = Store::open_in_memory().await.unwrap();
+        fill(&s, 9, 1_000, 30_000, "").await;
+        fill(&s, 1059, 1_000, 10, "").await;
+        let all = items_in_window(&s, 9, 0, i64::MAX).await.unwrap();
+        assert_eq!(all.len(), 30_000);
+        assert_eq!(all[0].1, 30_999, "the newest first");
+        assert_eq!(all[29_999].1, 1_000);
+        assert_eq!(items_since(&s, 9, 20_000).await.unwrap().len(), 11_000);
+        let part = items_in_window(&s, 9, 2_000, 2_999).await.unwrap();
+        assert_eq!(part.len(), 1_000, "both bounds included");
+        assert_eq!(items_in_window(&s, 1059, 0, i64::MAX).await.unwrap().len(), 10, "another kind is another set");
+    }
+
+    /// One window of a group: the events that carry its id in a tag, up to
+    /// the bound, and nothing of the other groups.
+    #[tokio::test]
+    async fn the_tagged_window_is_one_group_up_to_the_bound() {
+        let s = Store::open_in_memory().await.unwrap();
+        let mine = "a".repeat(64);
+        let other = "b".repeat(64);
+        fill(&s, 9, 1_000, 50, &format!("[\"h\",\"{mine}\"]")).await;
+        fill(&s, 9, 2_000, 50, &format!("[\"h\",\"{other}\"]")).await;
+        let all = items_tagged_until(&s, 9, &mine, i64::MAX).await.unwrap();
+        assert_eq!(all.len(), 50);
+        let part = items_tagged_until(&s, 9, &mine, 1_009).await.unwrap();
+        assert_eq!(part.len(), 10);
+        assert!(part.iter().all(|(_, at)| *at <= 1_009));
+        assert_eq!(items_tagged_until(&s, 9, &other, 2_004).await.unwrap().len(), 5);
+        assert!(items_tagged_until(&s, 9, "h", i64::MAX).await.unwrap().is_empty(), "a short value matches nothing");
+        assert!(items_tagged_until(&s, 1059, &mine, i64::MAX).await.unwrap().is_empty());
     }
 }
 

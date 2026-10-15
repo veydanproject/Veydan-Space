@@ -38,6 +38,16 @@ pub async fn get(store: &Store, pubkey: &str) -> Result<Option<ProfileRow>> {
         .map_err(storage)
 }
 
+/// Whose profile names `url` as its picture (as written, the blanks
+/// around it ignored): several, when several kind 0 point at one file.
+pub async fn with_picture(store: &Store, url: &str) -> Result<Vec<String>> {
+    sqlx::query_scalar::<_, String>("SELECT pubkey FROM msg_profiles WHERE TRIM(picture) = ? ORDER BY pubkey")
+        .bind(url.trim())
+        .fetch_all(store.pool())
+        .await
+        .map_err(storage)
+}
+
 pub async fn get_many(store: &Store, pubkeys: &[String]) -> Result<Vec<ProfileRow>> {
     let mut out = Vec::with_capacity(pubkeys.len());
     for pk in pubkeys {

@@ -6,6 +6,7 @@
 
 use messenger_core::outbound::Filter;
 use messenger_core::presence::{KIND_PRESENCE, PRESENCE_D};
+use messenger_core::relations::{relations_d, KIND_RELATIONS, RELATIONS_MAX_PAGES};
 use messenger_core::{PubKey, Timestamp};
 
 /// Gift wraps carry a `created_at` tweaked randomly up to two days into the
@@ -82,6 +83,36 @@ pub fn dm_history(me: &PubKey, since: Timestamp) -> Filter {
     }))
 }
 
+pub const SUB_RELATIONS: &str = "relations";
+
+/// The snapshot of my relations: the events of my key under the given
+/// pages (`messenger_core::relations`). Addressable, so the relays answer
+/// with the newest of each `d` and no `since` is wanted.
+fn relations_of(me: &PubKey, pages: impl Iterator<Item = usize>) -> Filter {
+    Filter(serde_json::json!({
+        "kinds": [KIND_RELATIONS],
+        "authors": [me.as_hex()],
+        "#d": pages.map(relations_d).collect::<Vec<_>>(),
+    }))
+}
+
+/// The header of the snapshot alone: it says how many pages follow.
+pub fn relations_header(me: &PubKey) -> Filter {
+    relations_of(me, std::iter::once(0))
+}
+
+/// The pages after the header of a snapshot of `pages` events in all
+/// (page 1 to the last; `pages` is clamped to what may exist).
+pub fn relations_pages(me: &PubKey, pages: usize) -> Filter {
+    relations_of(me, 1..pages.min(RELATIONS_MAX_PAGES))
+}
+
+/// The live subscription: the header and every page there may be, so
+/// that what another device of mine publishes comes as it is published.
+pub fn relations_live(me: &PubKey) -> Filter {
+    relations_of(me, 0..RELATIONS_MAX_PAGES)
+}
+
 pub const SUB_GROUPS: &str = "groups";
 pub const CURSOR_GROUPS: &str = "groups";
 /// Group events carry their real time; the margin covers clock drift.
@@ -94,6 +125,12 @@ pub fn group_events(group_ids: &[String], since: Option<Timestamp>) -> Filter {
         f["since"] = serde_json::json!(s.secs());
     }
     Filter(f)
+}
+
+/// One window of a group's past: its events up to `until`, the newest
+/// `limit` of them. What «load earlier» asks for with `Outbound::Sync`.
+pub fn group_events_until(group_ids: &[String], until: Timestamp, limit: usize) -> Filter {
+    Filter(serde_json::json!({ "kinds": [9], "#h": group_ids, "until": until.secs(), "limit": limit }))
 }
 
 pub const SUB_PRESENCE: &str = "presence";
@@ -134,6 +171,32 @@ mod tests {
         let w = dm_inbox_window(&me, Timestamp(1), Timestamp(2), 50);
         assert_eq!(w.0["until"], 2);
         assert_eq!(w.0["limit"], 50);
+    }
+
+    #[test]
+    fn the_snapshot_of_relations_is_asked_by_its_pages() {
+        let me = PubKey::parse(&"c".repeat(64)).unwrap();
+        let header = relations_header(&me);
+        assert_eq!(header.0, serde_json::json!({ "kinds": [30078], "authors": [me.as_hex()], "#d": ["veydan.relations.v1"] }));
+        let pages = relations_pages(&me, 3);
+        assert_eq!(pages.0["#d"], serde_json::json!(["veydan.relations.v1.1", "veydan.relations.v1.2"]));
+        assert_eq!(relations_pages(&me, 1).0["#d"], serde_json::json!([]), "a header alone has no pages after it");
+        assert_eq!(relations_pages(&me, 99).0["#d"].as_array().unwrap().len(), 15, "never past the last page");
+        let live = relations_live(&me);
+        let ds = live.0["#d"].as_array().unwrap();
+        assert_eq!(ds.len(), 16);
+        assert_eq!(ds[0], "veydan.relations.v1");
+        assert_eq!(ds[15], "veydan.relations.v1.15");
+        assert!(live.0.get("since").is_none(), "addressable: the relay gives the newest");
+    }
+
+    #[test]
+    fn a_window_of_group_history_is_bounded_above() {
+        let ids = vec!["a".repeat(64)];
+        let live = group_events(&ids, Some(Timestamp(100)));
+        assert_eq!(live.0, serde_json::json!({ "kinds": [9], "#h": ids, "since": 100 }));
+        let past = group_events_until(&ids, Timestamp(500), 200);
+        assert_eq!(past.0, serde_json::json!({ "kinds": [9], "#h": ids, "until": 500, "limit": 200 }));
     }
 }
 

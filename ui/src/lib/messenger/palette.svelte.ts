@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 // The messenger's commands of the desktop palette (`ModuleDef.palette`): new
-// chat, new group, contacts, settings, and a chat by its name. The module
-// gives them as data; the page answers the request it finds here.
+// chat, new group, contacts, settings, the requests, and a chat by its name.
+// The module gives them as data; the page answers the request it finds here.
 
 import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
@@ -12,6 +12,7 @@ import type { PaletteCommand } from '$lib/core/module';
 import { messengerStore } from './store.svelte';
 import { chatStore } from './chats/chatStore.svelte';
 import { openChat } from './content/actions';
+import { requestStore, requestsUi } from './requests/requestStore.svelte';
 import { BASE } from './mobile/routes';
 
 export type PaletteRequest = 'newChat' | 'newGroup' | 'contacts' | 'settings';
@@ -33,8 +34,14 @@ export function messengerPalette(): PaletteCommand[] {
     { id: 'messenger.new-group', title: tr('msg_group_new_title'), keywords: 'new group', icon: 'users-plus', group, run: () => request('newGroup') },
     { id: 'messenger.contacts', title: tr('msg_contacts_title'), keywords: 'contacts people', icon: 'book-user', group, run: () => request('contacts') },
     { id: 'messenger.settings', title: tr('msg_settings_title_full'), keywords: 'chat messenger settings relays', icon: 'user-cog', group, run: () => request('settings') },
+    // The requests of strangers are reached through their own row only: a
+    // request chat is not a chat yet, and the ordinary window would show
+    // the stranger's text as a message of a chat.
+    ...(requestStore.count > 0
+      ? [{ id: 'messenger.requests', title: tr('msg_req_row', { n: String(requestStore.count) }), keywords: 'requests strangers', icon: 'shield', group, run: async () => { await goto(BASE); requestsUi.open(); } }]
+      : []),
     ...chatStore.chats
-      .filter((c) => !c.archived)
+      .filter((c) => !c.archived && c.mode !== 'request_received')
       .map((c) => ({
         id: `messenger.chat.${c.id}`,
         title: tr('msg_cmd_open_chat', { name: c.title }),

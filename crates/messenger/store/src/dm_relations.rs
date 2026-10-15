@@ -18,13 +18,15 @@ pub struct RelationRow {
     pub last_my_signal_at: i64,
     /// Peer's rumor time where the last episode ended (migration 022).
     pub request_floor: i64,
+    /// When I decided about the peer, my clock (migration 027); 0: never.
+    pub decided_at: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
 pub async fn get(store: &Store, peer: &str) -> Result<Option<RelationRow>> {
     sqlx::query_as::<_, RelationRow>(
-        "SELECT peer_pubkey, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, created_at, updated_at
+        "SELECT peer_pubkey, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, decided_at, created_at, updated_at
          FROM msg_dm_relations WHERE peer_pubkey = ?",
     )
     .bind(peer)
@@ -37,13 +39,13 @@ pub async fn get(store: &Store, peer: &str) -> Result<Option<RelationRow>> {
 pub async fn put(store: &Store, r: &RelationRow) -> Result<()> {
     let now = crate::now();
     sqlx::query(
-        "INSERT INTO msg_dm_relations (peer_pubkey, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO msg_dm_relations (peer_pubkey, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, decided_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(peer_pubkey) DO UPDATE SET
            my_contact = excluded.my_contact, blocked = excluded.blocked, peer_signal = excluded.peer_signal,
            was_ever_mutual = excluded.was_ever_mutual, last_signal_at = excluded.last_signal_at,
            last_my_signal_at = excluded.last_my_signal_at, request_floor = excluded.request_floor,
-           updated_at = excluded.updated_at",
+           decided_at = excluded.decided_at, updated_at = excluded.updated_at",
     )
     .bind(&r.peer_pubkey)
     .bind(&r.my_contact)
@@ -53,6 +55,7 @@ pub async fn put(store: &Store, r: &RelationRow) -> Result<()> {
     .bind(r.last_signal_at)
     .bind(r.last_my_signal_at)
     .bind(r.request_floor)
+    .bind(r.decided_at)
     .bind(now)
     .bind(now)
     .execute(store.pool())
@@ -89,11 +92,86 @@ pub async fn set_end_pending(store: &Store, peer: &str, at: i64) -> Result<()> {
     Ok(())
 }
 
+/// A relation in the state of a request to me, over the alias `r` of
+/// `msg_dm_relations`: the peer approved, I did not (nor did the request
+/// run out), and I do not block them. The one predicate for "request",
+/// the same `screen_mode` computes (`messenger-dm` checks they agree):
+/// the total unread, the queue and its count read it, and no flag of
+/// `msg_chats` says it twice.
+pub const REQUEST_SQL: &str = "r.blocked = 0 AND r.peer_signal = 'approved' AND r.my_contact NOT IN ('approved', 'expired')";
+
+/// One chat of the queue of requests: its id, the peer, and its activity
+/// (`ACTIVITY_SQL`), by which the queue is ordered, paged, aged and capped.
+pub type RequestRow = (String, String, i64);
+
+/// The DM chats in the state of a request, with the relation of their
+/// peer: a request is a chat, so a relation without a chat (deleted here)
+/// is not one.
+const REQUEST_FROM: &str = "FROM msg_chats c JOIN msg_dm_relations r ON r.peer_pubkey = c.peer_pubkey WHERE c.kind = 'dm' AND ";
+
+/// When a request was last active, over the alias `c` of `msg_chats`: the
+/// time of its newest message, but no later than this device last wrote
+/// the chat row. The message is dated by the peer, so one dated in the
+/// future would neither run out nor ever be the oldest, and would push the
+/// honest ones out; my own clock bounds it, and a backdated one only hurts
+/// its sender.
+const ACTIVITY_SQL: &str = "MIN(COALESCE(c.last_message_at, c.created_at), c.updated_at)";
+
+/// The queue, newest activity first; `before` pages it by that activity
+/// (the third of the row).
+pub async fn request_rows(store: &Store, before: Option<i64>, limit: i64) -> Result<Vec<RequestRow>> {
+    sqlx::query_as::<_, RequestRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT c.id, c.peer_pubkey, {ACTIVITY_SQL} {REQUEST_FROM} {REQUEST_SQL}
+           AND (?1 IS NULL OR {ACTIVITY_SQL} < ?1)
+         ORDER BY {ACTIVITY_SQL} DESC, c.id ASC LIMIT ?2"
+    )))
+    .bind(before)
+    .bind(limit)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+pub async fn count_requests(store: &Store) -> Result<i64> {
+    sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) {REQUEST_FROM} {REQUEST_SQL}")))
+        .fetch_one(store.pool())
+        .await
+        .map_err(storage)
+}
+
+/// The `n` requests with the oldest activity, the oldest first: what runs
+/// out first, and what the queue pushes out when it is full.
+pub async fn oldest_requests(store: &Store, n: i64) -> Result<Vec<RequestRow>> {
+    sqlx::query_as::<_, RequestRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT c.id, c.peer_pubkey, {ACTIVITY_SQL} {REQUEST_FROM} {REQUEST_SQL}
+         ORDER BY {ACTIVITY_SQL} ASC, c.id ASC LIMIT ?"
+    )))
+    .bind(n)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
 pub async fn blocked_peers(store: &Store) -> Result<Vec<String>> {
     sqlx::query_scalar::<_, String>("SELECT peer_pubkey FROM msg_dm_relations WHERE blocked = 1 ORDER BY updated_at DESC")
         .fetch_all(store.pool())
         .await
         .map_err(storage)
+}
+
+/// Every peer I decided about: blocked, `my_contact` other than none, or
+/// a time of a decision (a contact removed, a block lifted: nothing else
+/// is left of it). What the snapshot of my relations carries
+/// (`messenger-dm::snapshot`); the rows of peers who only wrote to me are
+/// not decisions.
+pub async fn decided_rows(store: &Store) -> Result<Vec<RelationRow>> {
+    sqlx::query_as::<_, RelationRow>(
+        "SELECT peer_pubkey, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, decided_at, created_at, updated_at
+         FROM msg_dm_relations WHERE blocked = 1 OR my_contact != 'none' OR decided_at > 0 ORDER BY decided_at DESC, peer_pubkey ASC",
+    )
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
 }
 
 /// Peers I approved and did not block: who belongs in my address book.
@@ -123,6 +201,7 @@ mod tests {
             last_signal_at: 0,
             last_my_signal_at: 0,
             request_floor: 0,
+            decided_at: 0,
             created_at: 0,
             updated_at: 0,
         };
@@ -145,6 +224,78 @@ mod tests {
         r.my_contact = "declined".into();
         put(&s, &r).await.unwrap();
         assert_eq!(approved_peers(&s).await.unwrap(), vec!["p".to_string()]);
+        // Who only wrote to me is no decision of mine.
+        r.peer_pubkey = "wrote".into();
+        r.my_contact = "none".into();
+        put(&s, &r).await.unwrap();
+        r.peer_pubkey = "shut".into();
+        r.blocked = true;
+        r.decided_at = 9;
+        put(&s, &r).await.unwrap();
+        let decided: Vec<String> = decided_rows(&s).await.unwrap().into_iter().map(|r| r.peer_pubkey).collect();
+        assert_eq!(decided, vec!["shut".to_string(), "p".into(), "q".into()], "the newest decision first");
+        // A contact removed, a block lifted: nothing is left of them but
+        // the time I decided, and that is a decision.
+        r.peer_pubkey = "gone".into();
+        r.blocked = false;
+        r.decided_at = 4;
+        put(&s, &r).await.unwrap();
+        let decided: Vec<String> = decided_rows(&s).await.unwrap().into_iter().map(|r| r.peer_pubkey).collect();
+        assert_eq!(decided, vec!["shut".to_string(), "gone".into(), "p".into(), "q".into()]);
+    }
+
+    #[tokio::test]
+    async fn the_queue_of_requests_is_the_request_chats_newest_first() {
+        let s = Store::open_in_memory().await.unwrap();
+        let row = |peer: &str, mine: &str, blocked: bool, theirs: &str| RelationRow {
+            peer_pubkey: peer.into(),
+            my_contact: mine.into(),
+            blocked,
+            peer_signal: theirs.into(),
+            was_ever_mutual: false,
+            last_signal_at: 0,
+            last_my_signal_at: 0,
+            request_floor: 0,
+            decided_at: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        for (r, at) in [
+            (row("new", "none", false, "approved"), 300),
+            (row("old", "declined", false, "approved"), 100),
+            (row("mid", "none", false, "approved"), 200),
+            (row("mine", "approved", false, "approved"), 400),
+            (row("blocked", "none", true, "approved"), 500),
+            (row("expired", "expired", false, "approved"), 600),
+            (row("silent", "none", false, "none"), 700),
+        ] {
+            put(&s, &r).await.unwrap();
+            crate::chats::ensure_dm(&s, &r.peer_pubkey).await.unwrap();
+            crate::chats::touch(&s, &format!("dm:{}", r.peer_pubkey), at, Some("hi"), true).await.unwrap();
+        }
+        // A request without its chat (deleted here) is not in the queue.
+        put(&s, &row("no_chat", "none", false, "approved")).await.unwrap();
+        let ids = |rows: Vec<RequestRow>| rows.into_iter().map(|(id, _, _)| id).collect::<Vec<_>>();
+        assert_eq!(ids(request_rows(&s, None, 10).await.unwrap()), vec!["dm:new", "dm:mid", "dm:old"]);
+        assert_eq!(ids(request_rows(&s, Some(300), 1).await.unwrap()), vec!["dm:mid"], "paged by the time before");
+        assert_eq!(count_requests(&s).await.unwrap(), 3);
+        assert_eq!(oldest_requests(&s, 2).await.unwrap(), vec![("dm:old".into(), "old".into(), 100), ("dm:mid".into(), "mid".into(), 200)]);
+        assert_eq!(crate::chats::total_unread(&s).await.unwrap(), 4, "the requests are not counted as waiting");
+
+        // A request whose text is dated in the future (the peer's clock is
+        // theirs to set) is active when this device wrote its chat, not
+        // when the peer says: it ages like the rest, and the honest ones
+        // are never the oldest beside it.
+        let before = crate::now();
+        put(&s, &row("future", "none", false, "approved")).await.unwrap();
+        crate::chats::ensure_dm(&s, "future").await.unwrap();
+        crate::chats::touch(&s, "dm:future", 4_102_444_800, Some("from 2100"), true).await.unwrap();
+        let rows = request_rows(&s, None, 10).await.unwrap();
+        let activity = rows.iter().find(|(id, _, _)| id == "dm:future").unwrap().2;
+        assert!(activity >= before && activity <= crate::now(), "{activity}");
+        assert_eq!(ids(rows), vec!["dm:future", "dm:new", "dm:mid", "dm:old"], "newest by my clock, not by theirs");
+        assert_eq!(ids(oldest_requests(&s, 3).await.unwrap()), vec!["dm:old", "dm:mid", "dm:new"]);
+        assert_eq!(ids(request_rows(&s, Some(activity), 10).await.unwrap()), vec!["dm:new", "dm:mid", "dm:old"], "paged by the activity");
     }
 
     #[tokio::test]
@@ -175,6 +326,7 @@ mod tests {
             last_signal_at: 0,
             last_my_signal_at: 0,
             request_floor: floor,
+            decided_at: 0,
             created_at: 0,
             updated_at: 0,
         };

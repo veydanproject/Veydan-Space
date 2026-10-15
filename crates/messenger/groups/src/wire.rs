@@ -125,20 +125,86 @@ pub fn sign_op(keys: &Keys, op: &Op) -> Result<Event> {
         .map_err(crypto)
 }
 
-/// Check a signed operation event and return the operation.
+/// The refusal of `verify_op` for an operation of a version newer than
+/// this build reads (`OP_VERSION`): kept, not dropped, until an update.
+pub const OP_TOO_NEW: &str = "group_op_too_new";
+/// How many versions past the one this build reads an operation may be
+/// and still be kept for an update. Versions are counted one at a time,
+/// so a build is never more than a few behind; anything further is not
+/// the future but junk, and junk is dropped: one sealed event of some
+/// absurd version would otherwise sit parked on every device for good,
+/// the group asking for an update that never brings it.
+pub const AHEAD_WINDOW: u32 = 2;
+
+pub fn is_op_too_new(e: &MessengerError) -> bool {
+    matches!(e, MessengerError::Invalid(code) if code == OP_TOO_NEW)
+}
+
+/// The newest version of operations this device reads. In tests a device
+/// may read less than the build does, to stand in for one not updated yet.
+fn reads_up_to() -> u32 {
+    #[cfg(test)]
+    if let Some(v) = READS_UP_TO.with(|c| c.get()) {
+        return v;
+    }
+    crate::op::OP_VERSION
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static READS_UP_TO: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+}
+
+/// Whether a version is one this device keeps for an update: newer than
+/// it reads, within `AHEAD_WINDOW` of that.
+fn ahead(v: u64) -> bool {
+    let reads = u64::from(reads_up_to());
+    v > reads && v <= reads + u64::from(AHEAD_WINDOW)
+}
+
+/// Is a signed operation event of a version newer than this device
+/// reads, and worth waiting for (`ahead`)? Nothing is verified here: the
+/// answer is for whoever already holds the event as verified (a welcome
+/// kept for after an update) and asks whether it is readable now. One of
+/// a version past the window is not waited for: `verify_op` drops it.
+pub fn is_ahead(signed: &serde_json::Value) -> bool {
+    signed
+        .get("content")
+        .and_then(|c| c.as_str())
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok())
+        .and_then(|head| head.get("v").and_then(|v| v.as_u64()))
+        .is_some_and(ahead)
+}
+
+/// Check a signed operation event and return the operation. The version
+/// is read before the body: a body of a newer version may have a shape
+/// this build cannot read, and that is `OP_TOO_NEW`, not a bad operation.
+/// What can be checked without the body is checked first all the same:
+/// the signer is the author it names and the group is this one, so that
+/// whoever keeps a too-new operation for an update (`keep_op_ahead`)
+/// keeps nothing a holder of the key wrote in somebody else's name or
+/// carried over from another group.
 pub fn verify_op(signed: &serde_json::Value, group_id: &str) -> Result<Op> {
     let event: Event = serde_json::from_value(signed.clone()).map_err(|_| invalid("operation event"))?;
     event.verify().map_err(|_| invalid("operation signature"))?;
     if event.kind.as_u16() != KIND_INNER_OP {
         return Err(invalid("not an operation"));
     }
-    let op: Op = serde_json::from_str(&event.content).map_err(|_| invalid("operation body"))?;
-    if op.author.as_hex() != event.pubkey.to_hex() {
+    let head: serde_json::Value = serde_json::from_str(&event.content).map_err(|_| invalid("operation body"))?;
+    let v = head.get("v").and_then(|v| v.as_u64()).ok_or_else(|| invalid("operation version"))?;
+    if head.get("author").and_then(|a| a.as_str()).and_then(PubKey::parse).is_none_or(|a| a.as_hex() != event.pubkey.to_hex()) {
         return Err(invalid("operation author is not the signer"));
     }
-    if op.group_id != group_id {
+    if head.get("group_id").and_then(|g| g.as_str()) != Some(group_id) {
         return Err(invalid("operation of another group"));
     }
+    if ahead(v) {
+        return Err(MessengerError::Invalid(OP_TOO_NEW.into()));
+    }
+    if v > u64::from(reads_up_to()) {
+        return Err(invalid("operation version past the window"));
+    }
+    let op: Op = serde_json::from_value(head).map_err(|_| invalid("operation body"))?;
     // The content must be the canonical form, or ids would differ between devices.
     if op.canonical() != event.content {
         return Err(invalid("operation is not in canonical form"));
@@ -518,6 +584,76 @@ mod tests {
                 assert_eq!(envelopes.len(), 1);
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_operation_of_a_newer_version_is_too_new_not_bad() {
+        let alice = Keys::generate();
+        let key = GroupKey::generate().unwrap();
+        let mut op = Op::new(GID, &me(&alice), vec![crate::op::OpId("p".into())], 5, OpBody::RotateKey).with_key(key.id());
+        op.v = 3;
+        let signed = serde_json::to_value(sign_op(&alice, &op).unwrap()).unwrap();
+        let err = verify_op(&signed, GID).unwrap_err();
+        assert!(is_op_too_new(&err), "{err}");
+        assert!(!is_op_too_new(&invalid("operation body")));
+        // Sealed, the same: the error comes through `open`.
+        let sealed = seal_op(GID, &key, &sign_op(&alice, &op).unwrap(), vec![], &alice).unwrap();
+        assert!(is_op_too_new(&open(GID, &key, sealed.json["content"].as_str().unwrap()).unwrap_err()));
+        // A body this build knows, of the version it is written in.
+        let timed = Op::new(GID, &me(&alice), vec![crate::op::OpId("p".into())], 5, OpBody::SetMuted { who: me(&alice), muted: true, until: Some(9) });
+        assert_eq!(timed.v, 2);
+        let signed = serde_json::to_value(sign_op(&alice, &timed).unwrap()).unwrap();
+        assert_eq!(verify_op(&signed, GID).unwrap(), timed);
+        // The same event on a device that reads version 1 only: too new,
+        // while an operation of version 1 is read as ever.
+        READS_UP_TO.with(|c| c.set(Some(1)));
+        assert!(is_op_too_new(&verify_op(&signed, GID).unwrap_err()));
+        let plain = Op::new(GID, &me(&alice), vec![crate::op::OpId("p".into())], 5, OpBody::SetMuted { who: me(&alice), muted: true, until: None });
+        assert_eq!(plain.v, 1);
+        assert_eq!(verify_op(&serde_json::to_value(sign_op(&alice, &plain).unwrap()).unwrap(), GID).unwrap(), plain);
+        READS_UP_TO.with(|c| c.set(None));
+        // No version at all is a bad operation, not a future one.
+        let bare = EventBuilder::new(Kind::from(KIND_INNER_OP), r#"{"group_id":"g"}"#).finalize(&alice).unwrap();
+        assert!(!is_op_too_new(&verify_op(&serde_json::to_value(&bare).unwrap(), GID).unwrap_err()));
+    }
+
+    #[test]
+    fn a_too_new_operation_is_kept_only_in_its_signers_name_for_its_group_and_within_the_window() {
+        let alice = Keys::generate();
+        let mallory = Keys::generate();
+        let key = GroupKey::generate().unwrap();
+        let ahead = |author: &Keys, group: &str, v: u32| {
+            let mut op = Op::new(group, &me(author), vec![crate::op::OpId("p".into())], 5, OpBody::RotateKey).with_key(key.id());
+            op.v = v;
+            op
+        };
+        // In alice's name, signed by mallory: a forgery, not the future.
+        let content = ahead(&alice, GID, 3).canonical();
+        let forged = serde_json::to_value(EventBuilder::new(Kind::from(KIND_INNER_OP), content).finalize(&mallory).unwrap()).unwrap();
+        let err = verify_op(&forged, GID).unwrap_err();
+        assert!(!is_op_too_new(&err), "{err}");
+        // Of another group: the same.
+        let other = "ff".repeat(32);
+        let elsewhere = serde_json::to_value(sign_op(&alice, &ahead(&alice, &other, 3)).unwrap()).unwrap();
+        let err = verify_op(&elsewhere, GID).unwrap_err();
+        assert!(!is_op_too_new(&err), "{err}");
+        assert!(is_op_too_new(&verify_op(&elsewhere, &other).unwrap_err()), "for its own group it is the future");
+        // Sealed, the same: nothing of it is parked.
+        let sealed = seal_op(GID, &key, &sign_op(&alice, &ahead(&alice, &other, 3)).unwrap(), vec![], &alice).unwrap();
+        assert!(!is_op_too_new(&open(GID, &key, sealed.json["content"].as_str().unwrap()).unwrap_err()));
+        // Within the window: the future. Past it: junk, whoever signed it.
+        let reads = crate::op::OP_VERSION;
+        for v in reads + 1..=reads + AHEAD_WINDOW {
+            let signed = serde_json::to_value(sign_op(&alice, &ahead(&alice, GID, v)).unwrap()).unwrap();
+            assert!(is_op_too_new(&verify_op(&signed, GID).unwrap_err()), "v{v}");
+            assert!(is_ahead(&signed), "v{v}");
+        }
+        for v in [reads + AHEAD_WINDOW + 1, 99, u32::MAX] {
+            let signed = serde_json::to_value(sign_op(&alice, &ahead(&alice, GID, v)).unwrap()).unwrap();
+            let err = verify_op(&signed, GID).unwrap_err();
+            assert!(!is_op_too_new(&err), "v{v}: {err}");
+            assert!(!is_ahead(&signed), "v{v}: nothing waits for it");
         }
     }
 

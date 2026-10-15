@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum ChatKind {
     Dm,
-    /// A direct message from somebody who is not my contact yet.
+    /// A direct message from somebody who is not my contact yet. Kept
+    /// for the phone that reads the wire; no longer produced: a request
+    /// goes into the queue of the app without a notification
+    /// ([`Reason::Request`]).
     Request,
     Group,
 }
@@ -61,8 +64,14 @@ pub enum Reason {
     Blocked,
     /// An edit, a deletion, a signal: nothing to read.
     NotAMessage,
-    /// A group I am not in, or a chat that would not take the message.
+    /// A group I am not in, or a chat that would not take the message:
+    /// a stranger's second word before an answer, their file, card or
+    /// long text, a link, anybody not my contact under "contacts only",
+    /// a request that ran out.
     NotForMe,
+    /// A stranger's first message: the app keeps it in its queue of
+    /// requests, which is told by its count and not by a notification.
+    Request,
     /// The event is not what the push said, or not valid.
     Invalid,
     /// An invitation to a call older than its life (45 s from its making):

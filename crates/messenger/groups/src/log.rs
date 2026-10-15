@@ -595,7 +595,7 @@ fn changes_rights_of(op: &Op) -> Vec<&PubKey> {
 /// the target out of the author's reach).
 fn rests_on(op: &Op) -> Vec<&PubKey> {
     match &op.body {
-        OpBody::Remove { who } | OpBody::Ban { who } | OpBody::SetRole { who, .. } | OpBody::SetMuted { who, .. } => vec![&op.author, who],
+        OpBody::Remove { who } | OpBody::Ban { who } | OpBody::SetRole { who, .. } | OpBody::SetMuted { who, .. } | OpBody::SetTrusted { who, .. } => vec![&op.author, who],
         OpBody::TransferOwnership { to } => vec![&op.author, to],
         _ => vec![&op.author],
     }
@@ -709,6 +709,8 @@ fn key_status(ops: &HashMap<OpId, Op>, order: &[OpId], rejected: &HashMap<OpId, 
 mod tests {
     use super::*;
     use crate::roles::Role;
+    use crate::op::tests::Settings;
+    use crate::op::{PostMode, Premod};
     use crate::state::tests::{create, key, pk, GROUP};
 
     /// A device with its own copy of the log.
@@ -805,9 +807,9 @@ mod tests {
         let mut d0 = base.fork(&o);
         let op_a = da.make(OpBody::Remove { who: u.clone() }, Some(50));
         let op_b = db.make(OpBody::Admit { who: x.clone() }, None);
-        let op_o = d0.make(OpBody::EditSettings { name: Some("Renamed".into()), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None }, None);
+        let op_o = d0.make(Settings { name: Some("Renamed".into()), ..Settings::default() }.body(), None);
         // Then B, having seen only its own, mutes w.
-        let op_b2 = db.make(OpBody::SetMuted { who: w.clone(), muted: true }, None);
+        let op_b2 = db.make(OpBody::SetMuted { who: w.clone(), muted: true, until: None }, None);
 
         let all = [op_a.clone(), op_b.clone(), op_o.clone(), op_b2.clone()];
         let mut states = Vec::new();
@@ -906,7 +908,7 @@ mod tests {
         // Later operations may still name the rejected one as a parent.
         let mut d = base.fork(&a);
         deliver(&mut d, &[&op_o, &op_b]);
-        let next = d.make(OpBody::SetMuted { who: u.clone(), muted: true }, None);
+        let next = d.make(OpBody::SetMuted { who: u.clone(), muted: true, until: None }, None);
         assert!(next.parents.contains(&op_b.id()));
     }
 
@@ -914,9 +916,9 @@ mod tests {
     fn operations_wait_for_their_parents() {
         let (base, [_, a, _, u, w]) = team(GroupKind::Private, true);
         let mut da = base.fork(&a);
-        let first = da.make(OpBody::SetMuted { who: u.clone(), muted: true }, None);
-        let second = da.make(OpBody::SetMuted { who: w.clone(), muted: true }, None);
-        let third = da.make(OpBody::SetMuted { who: u.clone(), muted: false }, None);
+        let first = da.make(OpBody::SetMuted { who: u.clone(), muted: true, until: None }, None);
+        let second = da.make(OpBody::SetMuted { who: w.clone(), muted: true, until: None }, None);
+        let third = da.make(OpBody::SetMuted { who: u.clone(), muted: false, until: None }, None);
 
         let mut d = base.fork(&w);
         assert_eq!(d.log.insert(third.clone()), Insert::Waiting { missing: vec![second.id()] });
@@ -1156,7 +1158,7 @@ mod tests {
         // member it does not concern, or the receiver with an operation
         // that does not hold: none of it says the second was taken.
         let stranger = Op::new(GROUP, &pk("f"), vec![again.id()], 1, OpBody::Leave);
-        let bystander = Op::new(GROUP, &u, vec![again.id()], 1, OpBody::SetMuted { who: w.clone(), muted: true });
+        let bystander = Op::new(GROUP, &u, vec![again.id()], 1, OpBody::SetMuted { who: w.clone(), muted: true, until: None });
         let receiver_leaving = Op::new(GROUP, &w, vec![again.id()], 1, OpBody::Leave);
         let named = [stranger, bystander, receiver_leaving];
         for (order, first) in permutations(&[transfer.clone(), again.clone(), acted.clone()]).into_iter().flat_map(|o| [(o.clone(), true), (o, false)]) {
@@ -1234,7 +1236,7 @@ mod tests {
         for body in [
             OpBody::Remove { who: x.clone() },
             OpBody::Ban { who: x.clone() },
-            OpBody::SetMuted { who: x.clone(), muted: true },
+            OpBody::SetMuted { who: x.clone(), muted: true, until: None },
             OpBody::SetRole { who: x.clone(), role: Role::Member },
         ] {
             let with_key = matches!(body, OpBody::Remove { .. } | OpBody::Ban { .. }).then_some(64);
@@ -1332,13 +1334,23 @@ mod tests {
                     devices[d].log.insert(heard);
                 }
                 let target = people[rng.next(people.len())].clone();
-                let body = match rng.next(7) {
+                let body = match rng.next(10) {
                     0 => OpBody::Admit { who: target },
                     1 => OpBody::Remove { who: target },
-                    2 => OpBody::SetMuted { who: target, muted: rng.next(2) == 0 },
+                    2 => OpBody::SetMuted { who: target, muted: rng.next(2) == 0, until: None },
                     3 => OpBody::SetRole { who: target, role: [Role::Member, Role::Moderator, Role::Admin][rng.next(3)] },
                     4 => OpBody::Ban { who: target },
-                    5 => OpBody::EditSettings { name: Some(format!("n{}", rng.next(9))), about: None, picture: None, history_for_new: None, call_node: None, call_node_key: None },
+                    5 => Settings { name: Some(format!("n{}", rng.next(9))), ..Settings::default() }.body(),
+                    // The bodies of version 2: a mute with an end, trust,
+                    // the rules of posting.
+                    6 => OpBody::SetMuted { who: target, muted: true, until: Some(1_000 + rng.next(500) as i64) },
+                    7 => OpBody::SetTrusted { who: target, trusted: rng.next(2) == 0 },
+                    8 => Settings {
+                        post_mode: Some([PostMode::All, PostMode::Managers][rng.next(2)]),
+                        premod: Some([Premod::Off, Premod::Newcomers, Premod::All][rng.next(3)]),
+                        ..Settings::default()
+                    }
+                    .body(),
                     _ => OpBody::RotateKey,
                 };
                 let dev = &mut devices[d];
@@ -1399,14 +1411,16 @@ mod tests {
                     devices[d].log.insert(heard);
                 }
                 let target = people[rng.next(people.len())].clone();
-                let body = match rng.next(7) {
+                let body = match rng.next(9) {
                     0 => OpBody::Admit { who: target },
                     1 => OpBody::Remove { who: target },
                     2 => OpBody::SetRole { who: target, role: [Role::Member, Role::Moderator, Role::Admin][rng.next(3)] },
                     3 => OpBody::Ban { who: target },
                     4 => OpBody::Leave,
                     5 => OpBody::TransferOwnership { to: target },
-                    _ => OpBody::SetMuted { who: target, muted: true },
+                    6 => OpBody::SetTrusted { who: target, trusted: true },
+                    7 => OpBody::SetMuted { who: target, muted: true, until: Some(5_000) },
+                    _ => OpBody::SetMuted { who: target, muted: true, until: None },
                 };
                 let dev = &mut devices[d];
                 dev.clock += 1;

@@ -19,7 +19,7 @@ use messenger_core::envelope::{
 use messenger_core::traits::{Clock, SystemClock};
 use messenger_core::{Envelope, EventSource, Inbound, MessengerConfig, MessengerError, PubKey, RawEvent, RelayUrl, Result, Timestamp};
 use messenger_dm::pushtags::{author_key, author_mark};
-use messenger_dm::relationship::{inbound_decision, InboundDecision};
+use messenger_dm::relationship::{inbound_decision, screen_mode, InboundDecision, InboundKind, ScreenMode};
 use messenger_dm::body::body_of;
 use messenger_dm::DmService;
 use messenger_groups::wire::{self, Opened, T_INVITE, T_JOIN_REQUEST, T_WELCOME};
@@ -250,16 +250,36 @@ impl Describe {
         // to the groups before the gate of requests (`GroupService::on_dm`,
         // the block alone, looked at above), and so does this.
         let group = envelope.t.starts_with("group.");
-        let kind = if from_bot || group {
-            ChatKind::Dm
-        } else {
+        if !(from_bot || group) {
+            // The same gate as the app's, from the same facts: what the
+            // message is (a short plain text without a link, or not), whom
+            // I take messages from, and what came before it. A stranger's
+            // first word is a request: the app puts it in the queue and
+            // raises no notification for it, so neither does the phone; a
+            // copy of a request already stored is the same request.
             let seen = messages::count_visible_incoming_since(&self.store, &chat_id, relation.request_floor).await?;
-            match inbound_decision(&relation, !stored, seen, dm.created_at.0) {
-                InboundDecision::Save => ChatKind::Dm,
-                InboundDecision::SaveAsRequest => ChatKind::Request,
+            let kind = match envelope.t.as_str() {
+                T_TEXT => DmService::kind_of(messages::CT_TEXT, envelope.as_text()),
+                _ => InboundKind::Other,
+            };
+            let dm_from = self.dm.dm_settings().await?.dm_from;
+            let dm_from = messenger_dm::DmFrom::parse(&dm_from).unwrap_or_default();
+            match inbound_decision(&relation, !stored, seen, dm.created_at.0, kind, dm_from) {
+                InboundDecision::Save if screen_mode(&relation) == ScreenMode::RequestReceived => {
+                    return Ok(Outcome::Quiet { reason: Reason::Request })
+                }
+                // A stored text of somebody who is not my contact (one I
+                // declined, one whose chat I deleted): the app told of it
+                // when it came, if at all, and tells nothing of a copy.
+                InboundDecision::Save if stored && relation.my_contact != messenger_dm::relationship::MyContact::Approved => {
+                    return Ok(Outcome::Quiet { reason: Reason::NotForMe })
+                }
+                InboundDecision::Save => {}
+                InboundDecision::SaveAsRequest => return Ok(Outcome::Quiet { reason: Reason::Request }),
                 InboundDecision::Drop(_) => return Ok(Outcome::Quiet { reason: Reason::NotForMe }),
             }
-        };
+        }
+        let kind = ChatKind::Dm;
 
         let (body, chat) = match envelope.t.as_str() {
             T_TEXT | T_MEDIA => (body_of(&envelope), Some(chat_id.clone())),

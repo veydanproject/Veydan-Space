@@ -8,7 +8,23 @@
   outside the shell, keeps only what a person needs: where to aim, what is
   being scanned and the ways out. Without the camera (no permission, no
   plugin) the layer says so and offers the way by hand.
+
+  It lives in the core because more than one module reads codes with it
+  (a new device of the account, a person's QR in the messenger). The words
+  are the caller's: each names its own way by hand, so a refusal of the
+  camera says what to do instead in that module's terms.
 -->
+<script lang="ts" module>
+  /** What the layer says while the camera starts, and when it does not. */
+  export interface QrScannerWords {
+    starting: string;
+    denied: string;
+    failed: string;
+    retry: string;
+    openSettings: string;
+  }
+</script>
+
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { portal } from '$lib/core/portal';
@@ -19,15 +35,20 @@
     title,
     hint,
     manual,
+    words,
     onresult,
     onclose,
+    onmanual,
   }: {
     title: string;
     hint: string;
     /** The words of the way without the camera («Ввести 8 слов»). */
     manual: string;
+    words: QrScannerWords;
     onresult: (content: string) => void;
     onclose: () => void;
+    /** The way by hand, when it is somewhere else than where the layer closes to; without it the layer just closes. */
+    onmanual?: () => void;
   } = $props();
 
   type Phase = 'starting' | 'scanning' | 'denied' | 'failed';
@@ -92,6 +113,12 @@
     onclose();
   }
 
+  async function byHand() {
+    if (!onmanual) return close();
+    await stop();
+    onmanual();
+  }
+
   async function openSettings() {
     try {
       const scanner = await import('@tauri-apps/plugin-barcode-scanner');
@@ -125,14 +152,14 @@
   {#if phase === 'denied' || phase === 'failed'}
     <div class="stop">
       <span class="mark"><Icon name="camera" size={28} /></span>
-      <p class="lead">{phase === 'denied' ? $t('cloud_scan_denied') : $t('cloud_scan_failed')}</p>
+      <p class="lead">{phase === 'denied' ? words.denied : words.failed}</p>
       <div class="buttons">
         {#if phase === 'denied'}
-          <button class="btn btn-primary" type="button" onclick={openSettings}>{$t('cloud_scan_open_settings')}</button>
+          <button class="btn btn-primary" type="button" onclick={openSettings}>{words.openSettings}</button>
         {:else}
-          <button class="btn btn-primary" type="button" onclick={start}>{$t('cloud_scan_retry')}</button>
+          <button class="btn btn-primary" type="button" onclick={start}>{words.retry}</button>
         {/if}
-        <button class="btn btn-ghost" type="button" onclick={close}>{manual}</button>
+        <button class="btn btn-ghost" type="button" onclick={byHand}>{manual}</button>
       </div>
     </div>
   {:else}
@@ -141,10 +168,10 @@
         <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
         {#if phase === 'scanning'}<span class="line"></span>{/if}
       </div>
-      <p class="hint">{phase === 'starting' ? $t('cloud_scan_starting') : hint}</p>
+      <p class="hint">{phase === 'starting' ? words.starting : hint}</p>
     </div>
     <div class="bottom">
-      <button class="pill" type="button" onclick={close}>{manual}</button>
+      <button class="pill" type="button" onclick={byHand}>{manual}</button>
     </div>
   {/if}
 </div>

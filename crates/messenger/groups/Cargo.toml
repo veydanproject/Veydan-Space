@@ -28,6 +28,15 @@ base64.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 getrandom.workspace = true
 qrcode.workspace = true
+# The clock of a posting schedule: a time zone by name, its rules bundled
+# with the app, so that every device reads "09:00 in Europe/Berlin" the same
+# way, whatever its system holds.
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"] }
+
+# Android keeps the rules of its zones in one concatenated file; the app
+# reads that one and falls back on its own copy.
+[target.'cfg(target_os = "android")'.dependencies]
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always", "tzdb-concatenated"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

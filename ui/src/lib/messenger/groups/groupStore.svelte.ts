@@ -115,6 +115,12 @@ class GroupStore {
       case 'group.invite':
         this.refreshInvites().catch(() => {});
         break;
+      // The queue grew or shrank, a moderator decided: the count and the
+      // members (a mute, a ban) are read again; the event only signals.
+      case 'group.queue':
+      case 'group.moderation':
+        if (typeof p.group === 'string') this.schedule(p.group);
+        break;
     }
   }
 

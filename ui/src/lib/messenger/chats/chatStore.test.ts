@@ -54,6 +54,63 @@ describe('reaching a message of the open chat', () => {
   });
 });
 
+describe('the page before the first message shown', () => {
+  beforeEach(async () => {
+    api.messages.mockClear();
+    chatStore.chats = [{ id: 'group:g', unread: 0 } as never];
+    await chatStore.open('group:g');
+    api.messages.mockClear();
+  });
+
+  it('is read on its own while the last page was full', async () => {
+    expect(chatStore.hasMore).toBe(true);
+    expect(await chatStore.loadOlder()).toBe(50);
+    expect(chatStore.messages).toHaveLength(100);
+    expect(chatStore.hasMore).toBe(true);
+  });
+
+  it('is not asked for once the chat said there is no more, unless forced: a group just asked its relays', async () => {
+    await chatStore.loadOlder();
+    await chatStore.loadOlder();
+    expect(chatStore.messages).toHaveLength(120);
+    expect(chatStore.hasMore).toBe(false);
+    api.messages.mockClear();
+    expect(await chatStore.loadOlder()).toBe(0);
+    expect(api.messages).not.toHaveBeenCalled();
+    // Forced: read again, and only what is not shown counts.
+    expect(await chatStore.loadOlder(true)).toBe(0);
+    expect(api.messages).toHaveBeenCalledTimes(1);
+    expect(chatStore.hasMore).toBe(false);
+    api.messages.mockImplementationOnce(async () => [{ id: 'm0', chat_id: 'group:g', created_at: 0 }, { id: 'older', chat_id: 'group:g', created_at: -1 }] as never);
+    expect(await chatStore.loadOlder(true)).toBe(1);
+    expect(chatStore.messages[0].id).toBe('older');
+  });
+
+  it('is nothing when the window is empty', async () => {
+    chatStore.messages = [];
+    expect(await chatStore.loadOlder(true)).toBe(0);
+    expect(api.messages).not.toHaveBeenCalled();
+  });
+});
+
+describe('a decision of a moderator', () => {
+  beforeEach(async () => {
+    chatStore.chats = [{ id: 'group:g', unread: 0 } as never];
+    await chatStore.open('group:g');
+    api.messages.mockClear();
+  });
+
+  it('reads the open window of its group again, and leaves another group alone', async () => {
+    chatStore.handleEvent({ name: 'group.queue', payload: { group: 'other', pending: 1 } } as never);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(api.messages).not.toHaveBeenCalled();
+    chatStore.handleEvent({ name: 'group.moderation', payload: { group: 'g', action: 'hide', by: 'x', target: '' } } as never);
+    chatStore.handleEvent({ name: 'group.queue', payload: { group: 'g', pending: 0 } } as never);
+    await vi.waitFor(() => expect(api.messages).toHaveBeenCalledTimes(1));
+    expect(api.messages).toHaveBeenCalledWith('group:g', undefined, 50);
+  });
+});
+
 describe('contacts the runtime adds on its own', () => {
   it('are read again once a chat with a peer is opened', async () => {
     store.refreshContacts.mockClear();
@@ -149,5 +206,18 @@ describe('behind the lock', () => {
     lockSight.locked = false;
     vi.stubGlobal('document', { visibilityState: 'hidden' });
     expect(inSight()).toBe(false);
+  });
+});
+
+describe('the unread of the navigation', () => {
+  it('counts neither muted nor archived chats, nor the requests of strangers', () => {
+    chatStore.chats = [
+      { id: 'dm:a', unread: 2, mode: 'full_chat', archived: false, is_muted: false },
+      { id: 'dm:b', unread: 5, mode: 'full_chat', archived: false, is_muted: true },
+      { id: 'dm:c', unread: 7, mode: 'full_chat', archived: true, is_muted: false },
+      { id: 'dm:d', unread: 1, mode: 'request_received', archived: false, is_muted: false },
+      { id: 'group:e', unread: 3, mode: 'group', archived: false, is_muted: false },
+    ] as never;
+    expect(chatStore.totalUnread).toBe(5);
   });
 });

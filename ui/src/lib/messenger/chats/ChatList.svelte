@@ -16,6 +16,10 @@
   import { botCardLineKey } from '../content/botCard';
   import { botCards } from '../seams/cards.svelte';
   import type { MessengerChat } from '../api';
+  import { goto } from '$app/navigation';
+  import { requestStore, requestsUi } from '../requests/requestStore.svelte';
+  import { requestsHref } from '../mobile/routes';
+  import { onPhone } from '../shared/phone';
 
   interface Props {
     query: string;
@@ -23,14 +27,26 @@
   }
   let { query, onopen }: Props = $props();
 
+  const phone = onPhone();
+
   let showArchived = $state(false);
   let menu = $state<{ open: boolean; x: number; y: number; chat: MessengerChat | null }>({ open: false, x: 0, y: 0, chat: null });
 
   const q = $derived(query.trim());
   const haystacks = $derived(contactHaystacks(messengerStore.contacts));
   const matches = (c: MessengerChat) => chatMatches(c, q, haystacks);
-  const visible = $derived(chatStore.chats.filter((c) => !c.archived && matches(c)));
-  const archived = $derived(chatStore.chats.filter((c) => c.archived && matches(c)));
+  // A request of a stranger is not a chat yet: it waits behind the row of
+  // requests, out of the list and the archive, until it is accepted.
+  const isRequest = (c: MessengerChat) => c.mode === 'request_received';
+  const visible = $derived(chatStore.chats.filter((c) => !c.archived && !isRequest(c) && matches(c)));
+  const archived = $derived(chatStore.chats.filter((c) => c.archived && !isRequest(c) && matches(c)));
+  const requests = $derived(requestStore.count);
+
+  /** The desktop shows the requests in the rail in place of the chats; a phone goes to their screen. */
+  function openRequests() {
+    if (phone) void goto(requestsHref());
+    else requestsUi.open();
+  }
 
   /** The line under the name: the newest message, or a card of the bot of Veydan Cloud worded by its type. */
   function preview(c: MessengerChat): string {
@@ -85,6 +101,17 @@
 {/snippet}
 
 <div class="list-wrap">
+  {#if requests > 0}
+    <!-- No unread badge: a request must not call anyone back to the app. -->
+    <button class="chat requests" onclick={openRequests}>
+      <span class="req-icon"><Icon name="shield" size={20} /></span>
+      <span class="body">
+        <span class="top"><span class="title">{$t('msg_req_row', { n: String(requests) })}</span></span>
+        <span class="bottom"><span class="preview">{$t('msg_req_row_hint')}</span></span>
+      </span>
+      <span class="dim"><Icon name="chevron-right" size={16} /></span>
+    </button>
+  {/if}
   {#if visible.length === 0 && archived.length === 0}
     <div class="empty">
       <Icon name="message-circle" size={28} />
@@ -123,6 +150,11 @@
   }
   .chat:hover { background: var(--surface-row-hover); }
   .chat.active { background: var(--accent-tint); }
+  .requests { margin-bottom: 2px; }
+  .req-icon {
+    width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-3); color: var(--text-2);
+  }
   .body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
   .top, .bottom { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .title { font-weight: var(--fw-semibold); font-size: var(--fs-sm); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

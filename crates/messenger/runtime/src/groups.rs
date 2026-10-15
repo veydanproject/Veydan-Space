@@ -12,7 +12,7 @@ use messenger_core::{Clock, MessengerError, Outbound, PubKey, RelayUrl, Result, 
 use messenger_dm::{ChatView, MessageView};
 use messenger_groups::{GroupKind, GroupService, GroupView, InviteView, OpBody, Outcome, Signal};
 use messenger_ingress::{filters, Outbox};
-use messenger_store::{cursors, events_raw, groups as repo, Store};
+use messenger_store::{cursors, events_raw, groups as repo, settings, Store};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,8 +23,94 @@ const WAIT_FOR_RELAY: Duration = Duration::from_secs(60);
 /// After the history was asked for: time for it to be read before the
 /// keys are looked after.
 const SETTLE_AFTER_SYNC: Duration = Duration::from_secs(4);
+/// How often the store is asked whether the events of a window of the
+/// past have all arrived, and for how long at most: a window that brings
+/// nothing answers in half a second, a full one when its events are in.
+const WINDOW_POLL: Duration = Duration::from_millis(250);
+const WINDOW_SETTLE: Duration = Duration::from_secs(20);
+/// Windows in a row that brought nothing before the group's past counts
+/// as fetched to the end.
+const WINDOW_MISSES_ENOUGH: u32 = 2;
+/// At most this many events are asked for in one window of the past.
+pub const HISTORY_WINDOW_MAX: u32 = 1_000;
 pub(crate) const MAX_PROFILE_AUTHORS: usize = 500;
 const KIND_GROUP_EVENT: u16 = 9;
+
+/// Where «load earlier» of a group stands (`msg_settings`): the oldest
+/// bound asked for and how many windows in a row brought nothing, as
+/// `<before> <misses>`.
+fn oldest_fetched_key(group_id: &str) -> String {
+    format!("group.{group_id}.oldest_fetched")
+}
+
+async fn oldest_fetched(store: &Store, group_id: &str) -> Option<(i64, u32)> {
+    let value = settings::get(store, &oldest_fetched_key(group_id)).await.ok()??;
+    let mut parts = value.split(' ');
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
+/// A window of the past was answered: a full one moves the bound down and
+/// starts the count of misses again, an empty one at the bound counts.
+async fn note_window(store: &Store, group_id: &str, before: i64, received: u32) {
+    let (bound, misses) = oldest_fetched(store, group_id).await.unwrap_or((i64::MAX, 0));
+    let misses = if received > 0 { 0 } else { misses + 1 };
+    let _ = settings::set(store, &oldest_fetched_key(group_id), &format!("{} {misses}", before.min(bound))).await;
+}
+
+/// Ask the relays for everything of `ids` since `since` that this device
+/// lacks: every local id of the window goes along, so that Negentropy
+/// sends back only what is missing.
+pub(crate) async fn request_since(store: &Store, transport: &dyn Transport, ids: &[String], since: Option<i64>) -> Result<()> {
+    let local = events_raw::items_since(store, KIND_GROUP_EVENT, since.unwrap_or(0))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(id, at)| SyncItem { id, created_at: Timestamp(at) })
+        .collect();
+    let filter = filters::group_events(ids, since.map(Timestamp));
+    transport.send(Outbound::Sync { scope: Scope::Own, filter, local }).await?;
+    Ok(())
+}
+
+/// Ask the relays for one window of a group's past: the newest `limit`
+/// events up to `before` that this device lacks. The local side of the
+/// comparison is this group's events of the same window and nothing
+/// else, so the relays see the same set they hold. How many of them this
+/// device already had.
+pub(crate) async fn request_window(store: &Store, transport: &dyn Transport, group_id: &str, before: i64, limit: u32) -> Result<usize> {
+    let local = events_raw::items_tagged_until(store, KIND_GROUP_EVENT, group_id, before).await?;
+    let known = local.len();
+    let local = local.into_iter().map(|(id, at)| SyncItem { id, created_at: Timestamp(at) }).collect();
+    let filter = filters::group_events_until(&[group_id.to_string()], Timestamp(before), limit as usize);
+    transport.send(Outbound::Sync { scope: Scope::Own, filter, local }).await?;
+    Ok(known)
+}
+
+/// What the relays sent arrives on the stream and reaches the store once
+/// it is applied, so the window is counted until the count stands still.
+/// How many events the window brought.
+async fn settle_window(store: &Store, group_id: &str, before: i64, known: usize) -> u32 {
+    let deadline = tokio::time::Instant::now() + WINDOW_SETTLE;
+    let mut last = known;
+    let mut still = 0;
+    loop {
+        tokio::time::sleep(WINDOW_POLL).await;
+        let now = events_raw::items_tagged_until(store, KIND_GROUP_EVENT, group_id, before).await.map(|v| v.len()).unwrap_or(last);
+        if now == last {
+            still += 1;
+            if still >= 2 {
+                break;
+            }
+        } else {
+            still = 0;
+            last = now;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+    }
+    last.saturating_sub(known) as u32
+}
 
 /// Everything the groups need from the runtime, cloneable into tasks.
 #[derive(Clone)]
@@ -178,16 +264,9 @@ impl GroupsDriver {
             return;
         }
         let started = SystemClock.now().secs();
-        let local = events_raw::items_since(&self.store, KIND_GROUP_EVENT, since.unwrap_or(0), 20_000)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(id, at)| SyncItem { id, created_at: Timestamp(at) })
-            .collect();
         let pool = self.relays.pool().await;
-        let filter = filters::group_events(&ids, since.map(Timestamp));
-        match pool.send(Outbound::Sync { scope: Scope::Own, filter, local }).await {
-            Ok(_) => {
+        match request_since(&self.store, pool.as_ref(), &ids, since).await {
+            Ok(()) => {
                 if since.is_some() {
                     let _ = cursors::advance(&self.store, filters::CURSOR_GROUPS, cursors::ANY_RELAY, started).await;
                 }
@@ -205,6 +284,34 @@ impl GroupsDriver {
         for g in ids {
             self.maintain_now(&g).await;
         }
+    }
+
+    /// «Load earlier»: one window of the group's past, the newest `limit`
+    /// events up to `before`, from the relays. How many of them this
+    /// device did not have. A bound the relays twice had nothing under is
+    /// not asked again (the UI stops offering it after the same two
+    /// answers); a new join forgets that (`group_forget`).
+    pub(crate) async fn history_before(&self, group_id: &str, before: i64, limit: u32) -> Result<u32> {
+        if self.groups.signer().is_none() {
+            return Err(MessengerError::NotLoggedIn);
+        }
+        if repo::get(&self.store, group_id).await?.is_none() {
+            return Err(MessengerError::Invalid("group_unknown".into()));
+        }
+        if let Some((bound, misses)) = oldest_fetched(&self.store, group_id).await {
+            if misses >= WINDOW_MISSES_ENOUGH && before >= bound {
+                return Ok(0);
+            }
+        }
+        if !self.wait_for_relay().await {
+            return Err(MessengerError::Transport("no relay connected".into()));
+        }
+        let pool = self.relays.pool().await;
+        let known = request_window(&self.store, pool.as_ref(), group_id, before, limit).await?;
+        let received = settle_window(&self.store, group_id, before, known).await;
+        note_window(&self.store, group_id, before, received).await;
+        self.maintain_now(group_id).await;
+        Ok(received)
     }
 
     /// A session began: listen, and catch up on what was missed.
@@ -438,8 +545,19 @@ impl MessengerRuntime {
         let _guard = lock.lock().await;
         let outcome = self.groups().forget(group_id).await?;
         self.group_driver.synced.lock().await.remove(group_id);
+        // Its events are forgotten with it: a later join starts over.
+        let _ = settings::delete(&self.store, &oldest_fetched_key(group_id)).await;
         let _ = self.ui.send(UiEvent { name: "chats.updated".into(), payload: serde_json::json!({}) });
         self.group_driver.apply(outcome).await
+    }
+
+    /// «Load earlier» in a group: the newest `limit` (at most
+    /// `HISTORY_WINDOW_MAX`) events before `before` that this device
+    /// lacks, from the relays. How many came; the caller then reads the
+    /// messages before `before` again.
+    pub async fn group_history(&self, group_id: &str, before: i64, limit: u32) -> Result<u32> {
+        self.session_keys().await?;
+        self.group_driver.history_before(group_id, before, limit.clamp(1, HISTORY_WINDOW_MAX)).await
     }
 
     /// `expiring`: a new message, tried for an hour; an edit is tried until
@@ -541,5 +659,91 @@ impl MessengerRuntime {
             Some(group) => self.group_forget(group).await,
             None => self.dm.delete_chat(chat_id).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use messenger_testkit::FakeTransport;
+
+    /// `n` events of `group`, one per second from `from`, straight into the
+    /// store: the row-by-row insert is too slow for tens of thousands.
+    async fn fill(store: &Store, group: &str, from: i64, n: i64) {
+        for chunk in (0..n).collect::<Vec<_>>().chunks(500) {
+            let values = chunk.iter().map(|_| "(?, 9, ?, ?, 0, '{}', ?)").collect::<Vec<_>>().join(", ");
+            let mut q = sqlx::query(sqlx::AssertSqlSafe(format!(
+                "INSERT INTO msg_events_raw (event_id, kind, pubkey, created_at, received_at, source_json, raw_json) VALUES {values}"
+            )));
+            for i in chunk {
+                let id = format!("{}{:016x}{:016x}", &group[..32], from, *i);
+                q = q.bind(id).bind("ab".repeat(32)).bind(from + i).bind(format!("{{\"tags\":[[\"h\",\"{group}\"]]}}"));
+            }
+            q.execute(store.pool()).await.unwrap();
+        }
+    }
+
+    fn sync_of(out: &Outbound) -> (&serde_json::Value, &Vec<SyncItem>) {
+        match out {
+            Outbound::Sync { filter, local, .. } => (&filter.0, local),
+            other => panic!("not a sync: {other:?}"),
+        }
+    }
+
+    /// The reconciliation by cursor carries every local id since the
+    /// cursor, thirty thousand of them, so the relays send back only what
+    /// is missing.
+    #[tokio::test]
+    async fn the_reconciliation_by_cursor_sends_every_local_id() {
+        let store = Store::open_in_memory().await.unwrap();
+        let g = "c".repeat(64);
+        fill(&store, &g, 1_000, 30_000).await;
+        let t = FakeTransport::new();
+        request_since(&store, &t, std::slice::from_ref(&g), Some(500)).await.unwrap();
+        let sent = t.sent();
+        let (filter, local) = sync_of(&sent[0]);
+        assert_eq!(local.len(), 30_000, "nothing is cut off");
+        assert_eq!(filter["since"], 500);
+        assert!(filter.get("until").is_none());
+        let t = FakeTransport::new();
+        request_since(&store, &t, &[g], Some(21_000)).await.unwrap();
+        assert_eq!(sync_of(&t.sent()[0]).1.len(), 10_000, "by the cursor: what is newer than it");
+    }
+
+    /// One window of the past: bounded above, limited, of this group alone,
+    /// with the local ids of the same window beside it.
+    #[tokio::test]
+    async fn a_window_of_the_past_is_one_group_up_to_the_bound() {
+        let store = Store::open_in_memory().await.unwrap();
+        let mine = "d".repeat(64);
+        let other = "e".repeat(64);
+        fill(&store, &mine, 1_000, 100).await;
+        fill(&store, &other, 1_000, 100).await;
+        let t = FakeTransport::new();
+        let known = request_window(&store, &t, &mine, 1_049, 200).await.unwrap();
+        assert_eq!(known, 50);
+        let sent = t.sent();
+        let (filter, local) = sync_of(&sent[0]);
+        assert_eq!(filter, &serde_json::json!({ "kinds": [9], "#h": [mine], "until": 1_049, "limit": 200 }));
+        assert_eq!(local.len(), 50);
+        assert!(local.iter().all(|i| i.created_at.secs() <= 1_049));
+        assert_eq!(settle_window(&store, &mine, 1_049, known).await, 0, "nothing came");
+    }
+
+    /// Two empty windows in a row mark the past as fetched; a full one
+    /// starts the count again and keeps the lowest bound.
+    #[tokio::test]
+    async fn the_misses_of_a_group_are_counted_at_its_lowest_bound() {
+        let store = Store::open_in_memory().await.unwrap();
+        let g = "f".repeat(64);
+        assert_eq!(oldest_fetched(&store, &g).await, None);
+        note_window(&store, &g, 1_049, 0).await;
+        assert_eq!(oldest_fetched(&store, &g).await, Some((1_049, 1)));
+        note_window(&store, &g, 1_020, 0).await;
+        assert_eq!(oldest_fetched(&store, &g).await, Some((1_020, 2)));
+        note_window(&store, &g, 1_030, 7).await;
+        assert_eq!(oldest_fetched(&store, &g).await, Some((1_020, 0)));
+        settings::delete(&store, &oldest_fetched_key(&g)).await.unwrap();
+        assert_eq!(oldest_fetched(&store, &g).await, None, "forgotten with the group");
     }
 }

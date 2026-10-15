@@ -108,6 +108,10 @@
     {#if !m.deleted && m.reactions?.length}<Reactions message={m} onerror={onreacterror} />{/if}
 
     <span class="meta">
+      <!-- Waiting for a moderator: only its author and the moderators have it at all. -->
+      {#if m.review === 'pending' && !m.deleted}<span class="pending"><Icon name="clock" size={11} />{$t('msg_mod_pending')}</span>{/if}
+      <!-- Turned down by a moderator: its author alone is shown it, and told so. -->
+      {#if m.review === 'rejected' && !m.deleted}<span class="pending rejected"><Icon name="x" size={11} />{$t('msg_mod_log_reject')}</span>{/if}
       {#if m.edited_at && !m.deleted}<span>{$t('msg_message_edited')}</span>{/if}
       <span>{clock(m.created_at)}</span>
       {#if out && !m.deleted}
@@ -150,6 +154,11 @@
   .tomb { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
   .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-size: var(--fs-2xs); color: var(--text-3); line-height: 1; }
   .status { display: inline-flex; }
+  .pending {
+    display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border-radius: var(--radius-pill);
+    background: var(--warn-bg); color: var(--warn-text); font-weight: var(--fw-semibold);
+  }
+  .pending.rejected { background: var(--danger-bg); color: var(--danger-text); }
   .status.sent, .status.delivered { color: var(--accent-text-2); }
   .status.read { color: var(--accent); }
   .status.failed { color: var(--danger-text); }

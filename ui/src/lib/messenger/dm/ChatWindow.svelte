@@ -52,13 +52,20 @@
     chatEntries?: MenuEntry[];
     /** Entries of the chat menu put before all others. */
     leadEntries?: MenuEntry[];
+    /**
+     * Entries of a message's menu the chat adds (a group: what its
+     * moderators do), put before the ways to delete it.
+     */
+    extraEntries?: (m: MessengerMessage) => MenuEntry[];
     /** May this message of someone else be removed for everyone? */
     canModerate?: (m: MessengerMessage) => boolean;
+    /** The relays may hold messages older than the window read (a group I am in): offer to ask for them. */
+    moreHistory?: boolean;
     /** Explains refusals this window does not know. */
     explainError?: (e: unknown) => string | null;
     ontitle?: () => void;
   }
-  let { chat, onback, actions, banner, footer, subtitle, author, systemText, chatEntries, leadEntries, canModerate, explainError, ontitle }: Props = $props();
+  let { chat, onback, actions, banner, footer, subtitle, author, systemText, chatEntries, leadEntries, extraEntries, canModerate, moreHistory = false, explainError, ontitle }: Props = $props();
   const isGroup = $derived(chat.kind === "group");
   const canAttach = $derived(chat.mode === "full_chat" || chat.mode === "group");
   /** A phone screen: its back is a chevron, its header the bar colour, no keyboard on its own. */
@@ -94,7 +101,7 @@
   // Leaving a chat drops reply/edit state, and a picture it had open.
   let lastChat = '';
   $effect(() => {
-    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; viewer.close(); }
+    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; earlierEmpty = 0; viewer.close(); }
   });
 
   // The list of transfers asked for a message of this chat: shown once the
@@ -155,6 +162,47 @@
       await tick();
       // Keep the viewport on the same message after older ones are prepended.
       if (scroller) scroller.scrollTop += scroller.scrollHeight - before;
+    }
+  }
+
+  /**
+   * A group does not read its whole history at the start: older messages
+   * are asked of the relays on demand, under the first one shown. Two asks
+   * in a row that bring nothing mean there is nothing earlier to have.
+   */
+  let earlierEmpty = $state(0);
+  let earlierBusy = $state(false);
+  const canLoadEarlier = $derived(isGroup && moreHistory && !chatStore.hasMore && !chatStore.loading && chatStore.messages.length > 0 && earlierEmpty < 2);
+
+  async function loadEarlier() {
+    const first = chatStore.messages[0];
+    if (!first || earlierBusy) return;
+    const id = chat.id;
+    error = ''; earlierBusy = true;
+    try {
+      const got = await messengerApi.groups.history(id.slice(6), first.created_at, 200);
+      if (chat.id !== id) return;
+      // Measured once the relays have answered (the tail may have grown
+      // meanwhile) and right before the page is put above; and the view
+      // is not at the bottom while it is, or a history that fit the screen
+      // would be pulled down to its end by the watcher of the content.
+      const height = scroller?.scrollHeight ?? 0;
+      const wasAtBottom = atBottom;
+      atBottom = false;
+      const added = await chatStore.loadOlder(true);
+      await tick();
+      // The same message stays in view: what came is above it.
+      if (added > 0 && scroller) {
+        scroller.scrollTop += scroller.scrollHeight - height;
+        // Still all on one screen: there is nothing to scroll to, and no button for it.
+        if (scroller.scrollHeight <= scroller.clientHeight) atBottom = wasAtBottom;
+      } else atBottom = wasAtBottom;
+      earlierEmpty = got === 0 && added === 0 ? earlierEmpty + 1 : 0;
+    } catch (e) {
+      error = explain(e);
+      earlierEmpty++;
+    } finally {
+      earlierBusy = false;
     }
   }
 
@@ -327,7 +375,7 @@
    * that never had a request).
    */
   const reactable = (m: MessengerMessage | null): m is MessengerMessage =>
-    !!m && !m.deleted && chat.can_send && !chat.bot && m.content_type !== 'system' && !m.bot_card && !m.id.startsWith('local:') && m.status !== 'failed';
+    !!m && !m.deleted && chat.can_send && !chat.bot && m.content_type !== 'system' && !m.bot_card && !m.id.startsWith('local:') && m.status !== 'failed' && m.review !== 'pending';
 
   function react(m: MessengerMessage, emoji: string) {
     menu.open = false;
@@ -357,7 +405,8 @@
     if (!m.deleted) {
       // An upload on its way is swapped for a message with another id: a quote of it would point at nothing.
       // A card of the bot has no words of its own to quote.
-      if (chat.can_send && !m.bot_card && !m.id.startsWith('local:') && m.status !== 'uploading' && m.status !== 'paused') list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => { editing = null; replyTo = m; } });
+      // A message under review is seen by its author and the moderators alone: an answer to it would quote what the others never got.
+      if (chat.can_send && !m.bot_card && !m.id.startsWith('local:') && m.status !== 'uploading' && m.status !== 'paused' && m.review !== 'pending') list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => { editing = null; replyTo = m; } });
       if (m.text) list.push({ label: $t('msg_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').catch(() => {}) });
       const caption = menu.caption ?? m;
       if (canEdit(caption, chat.can_send)) list.push({ label: $t('msg_message_edit'), icon: 'pencil', onselect: () => { replyTo = null; editing = caption; } });
@@ -366,8 +415,11 @@
         const { x, y } = menu;
         list.push({ label: $t('msg_seen_by', { n: String(m.seen_by.length) }), icon: 'eye', onselect: () => (seen = { open: true, x, y, who: [...m.seen_by] }) });
       }
+      const extra = extraEntries?.(m) ?? [];
+      if (extra.length) list.push({ type: 'separator' }, ...extra);
       list.push({ type: 'separator' });
       list.push({ label: $t('msg_message_delete_me'), icon: 'trash-2', danger: true, onselect: () => guard(() => chatStore.remove(m.id, false)) });
+      // The author deletes for everyone; a moderator hides instead (the owner's decision 8) where the core keeps marks, and removes where it does not.
       if (own || canModerate?.(m)) list.push({ label: $t("msg_message_delete_all"), icon: "trash-2", danger: true, onselect: () => guard(() => chatStore.remove(m.id, true)) });
     }
     return list;
@@ -470,7 +522,14 @@
 
   <div class="scroll" bind:this={scroller} {onscroll}>
     <div class="content" bind:this={content}>
-    {#if chatStore.loadingOlder}<div class="loading"><Icon name="loader" size={14} /></div>{/if}
+    {#if chatStore.loadingOlder}<div class="loading"><Icon name="loader" size={14} /></div>
+    {:else if canLoadEarlier}
+      <div class="earlier">
+        <button class="btn btn-ghost btn-sm" disabled={earlierBusy} onclick={loadEarlier}>
+          <Icon name={earlierBusy ? 'loader' : 'arrow-up'} size={13} />{$t('msg_mod_load_earlier')}
+        </button>
+      </div>
+    {/if}
     {#if chatStore.loading && chatStore.messages.length === 0}
       <div class="placeholder">{$t('loading')}</div>
     {:else if chatStore.messages.length === 0}
@@ -545,6 +604,7 @@
   .placeholder p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
   .placeholder span { font-size: var(--fs-xs); max-width: 320px; line-height: 1.5; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
+  .earlier { display: flex; justify-content: center; padding: var(--sp-2); }
   .to-bottom {
     position: absolute; right: var(--sp-4); bottom: max(84px, calc(var(--bottom-h, 0px) + var(--sp-4))); width: 36px; height: 36px; border-radius: 50%;
     border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer;

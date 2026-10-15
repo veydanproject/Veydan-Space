@@ -216,7 +216,17 @@ export interface MessengerMessage {
    * type and nothing else. Such a message has no text.
    */
   bot_card?: BotCard | null;
+  /**
+   * Groups: whether a moderator let it through. `pending` reaches its
+   * author and the moderators only (a member never gets such a row);
+   * absent and `ok` are the same.
+   */
+  review?: MessageReview;
+  /** Groups: the version an approval names (the id of the last edit, else the message's own id). */
+  version?: string;
 }
+
+export type MessageReview = 'ok' | 'pending' | 'rejected';
 
 /** One emoji on a message: how many put it, and whether I am among them. */
 export interface MessengerReaction {
@@ -233,9 +243,22 @@ export interface MessengerGroupMember {
   pubkey: string;
   role: GroupRole;
   muted: boolean;
+  /**
+   * A mute for a time: when it ends by itself (unix seconds); `null` for
+   * one until lifted. Absent, as the fields below, on a core before the
+   * moderation of groups: the page then offers what the core has.
+   */
+  muted_until?: number | null;
+  /** Writes without a moderator's check, whatever the group's review says. */
+  trusted?: boolean;
   joined_at: number;
   is_me: boolean;
 }
+
+/** Who may post in a group: everyone, or its managers and moderators alone. */
+export type GroupPostMode = 'all' | 'managers';
+/** Whose messages wait for a moderator: nobody's, those who joined after it was turned on, or every member's. */
+export type GroupPremod = 'off' | 'newcomers' | 'all';
 
 export interface MessengerGroup {
   id: string;
@@ -249,6 +272,8 @@ export interface MessengerGroup {
   membership: GroupMembership;
   my_role: GroupRole | null;
   muted: boolean;
+  /** When my mute lifts by itself (unix seconds); `null` for one that stays, or none. */
+  muted_until?: number | null;
   can_post: boolean;
   history_for_new: boolean;
   members: MessengerGroupMember[];
@@ -262,6 +287,24 @@ export interface MessengerGroup {
   undecrypted: number;
   /** The key messages are sealed with now (members only). */
   key: MessengerGroupKey | null;
+  // The moderation of groups: absent together on a core without it
+  // (`hasModeration` in groups/permissions.ts reads `queue` for all of them).
+  post_mode?: GroupPostMode;
+  /** The hours members may post in; `null`: any time. */
+  schedule?: Schedule | null;
+  /** The schedule names a zone this build does not know: it is read in UTC until the app is updated. */
+  schedule_tz_unknown?: boolean;
+  premod?: GroupPremod;
+  /**
+   * Set while the mode or the hours keep me from posting: when the window
+   * opens (unix seconds). `null` when I may post, or when it is not they
+   * that stop me (a mute, my membership).
+   */
+  closed_until?: number | null;
+  /** A change of the group came from a newer version of the app and waits for this one to be updated. */
+  needs_update?: boolean;
+  /** Messages waiting for a moderator, when I am one; 0 otherwise. */
+  queue?: number;
 }
 
 /** What a member may know about the current group key: never the key itself. */
@@ -342,6 +385,28 @@ export function dmErrorCode(e: unknown): string | null {
   return m ? m[0] : null;
 }
 
+// The requests of strangers, who may write to me, the moderation of groups,
+// my invitations and whom I block (the runtime's types, as generated).
+export type {
+  BlockedView, DmSettings, GroupModSettings, InvitePreset, InviteStatus, InviteView, LogEntry, LogPage, ModAction,
+  QueueFilter, QueueItem, QueuePage, RequestAction, RequestsPage, RequestView, Schedule,
+} from './generated/moderation';
+import type {
+  BlockedView, DmSettings, GroupModSettings, InvitePreset, InviteStatus, InviteView, LogEntry, LogPage, ModAction,
+  QueueFilter, QueueItem, QueuePage, RequestAction, RequestsPage, RequestView, Schedule,
+} from './generated/moderation';
+
+/** A contact's link as the runtime reads it; `invite` is the secret of an invitation when the link carries one (key `i`). */
+export type ContactLinkView = Extract<LinkView, { kind: 'contact' }>;
+
+/** What goes with a request: the secret of an invitation, and the first message (a code goes with one). */
+export interface DmRequestExtra {
+  invite?: string;
+  text?: string;
+}
+
+/** Who may start a chat with me: anyone (strangers land in the requests) or only my contacts. */
+export type DmFrom = 'anyone' | 'contacts';
 
 export type MediaKind = 'image' | 'video' | 'audio' | 'file' | 'voice' | 'circle';
 
@@ -749,6 +814,11 @@ function manifestRelay(): MessengerRelay {
 let mockRelays: MessengerRelay[] = [manifestRelay()];
 let mockNotify: MessengerNotifySettings = { content: 'sender_text', lockscreen_hidden: false, locked: false, lockscreen_supported: true };
 let mockPrivacy: MessengerPrivacy = { read_receipts: true, presence: true };
+let mockDmSettings: DmSettings = { dm_from: 'anyone', keep_days: 7 };
+// My invitations; `messenger.demo.invites=paused` shows them paused, as after ten wrong codes.
+let mockDmInvites: InviteView[] = demo?.dmInvites ?? [];
+const mockInvitesPaused = typeof localStorage !== 'undefined' && localStorage.getItem('messenger.demo.invites') === 'paused';
+const mockInvitePausedUntil: number | null = mockInvitesPaused ? Math.floor(Date.now() / 1000) + 40 * 60 : null;
 let mockDesktopNotify: MessengerDesktopNotify = { enabled: true, sound: true, available: true, close_to_tray: false };
 // `messenger.demo.desk=1`: the demo is a computer (no push, notifications of its own).
 const mockDesk = typeof localStorage !== 'undefined' && localStorage.getItem('messenger.demo.desk') === '1';
@@ -918,6 +988,85 @@ function mockChat(peer: string): MessengerChat {
   }
   return c;
 }
+
+/** The demo's requests, newest first: each request chat with the stranger's one text. */
+function mockRequests(): RequestView[] {
+  return mockChats
+    .filter((c) => c.mode === 'request_received' && c.peer_pubkey)
+    .map((c) => {
+      const text = (mockMessages[c.id] ?? []).find((m) => m.direction === 'in' && m.content_type === 'text');
+      const at = text?.created_at ?? c.last_message_at ?? 0;
+      // The demo places a request by the time of its text; the runtime by the activity of the chat.
+      return {
+        chat_id: c.id, peer: c.peer_pubkey ?? '', name: c.title, text: text?.text ?? '',
+        at, held: demo?.held[c.id] ?? 0, cursor: at,
+      };
+    })
+    .sort((a, b) => b.cursor - a.cursor);
+}
+/** What a group the mocks make starts with: nobody's messages wait, anyone posts at any time. */
+const MOCK_MOD_DEFAULTS = { post_mode: 'all', schedule: null, premod: 'off', closed_until: null, needs_update: false, queue: 0 } as const;
+const mockModLog: Record<string, LogEntry[]> = demo?.modLog ?? {};
+const mockNow = () => Math.floor(Date.now() / 1000);
+const mockPending = (g: MessengerGroup) => (mockMessages[g.chat_id] ?? []).filter((m) => m.review === 'pending');
+
+/** The queue of a demo group as the runtime pages it: one row per author (their oldest waiting message), newest rows first. */
+function mockQueue(g: MessengerGroup, filter: QueueFilter, before: number | null, limit: number): QueuePage {
+  const text = filter.text?.trim().toLowerCase();
+  const waiting = mockPending(g)
+    .filter((m) => !filter.author || m.sender_pubkey === filter.author)
+    .filter((m) => filter.since === undefined || m.created_at >= filter.since)
+    .filter((m) => filter.until === undefined || m.created_at < filter.until)
+    .filter((m) => !text || (m.text ?? '').toLowerCase().includes(text))
+    .sort((x, y) => x.created_at - y.created_at);
+  const rows: QueueItem[] = [];
+  for (const m of waiting) {
+    const row = rows.find((r) => r.author === m.sender_pubkey);
+    if (row) { row.more_from_author++; continue; }
+    rows.push({ message_id: m.id, group_id: g.id, author: m.sender_pubkey, text: m.text ?? '', at: m.created_at, version: m.version ?? m.id, more_from_author: 0 });
+  }
+  rows.sort((x, y) => y.at - x.at);
+  const after = rows.filter((r) => before === null || r.at < before);
+  const page = after.slice(0, limit);
+  return { items: page, next_before: after.length > page.length ? page[page.length - 1].at : undefined, total: waiting.length };
+}
+
+/** A decision of a moderator in the demo: the messages change, the log grows, the stores hear of it. */
+function mockModerate(g: MessengerGroup, action: ModAction) {
+  const me = mockIdentity?.pubkey ?? 'ab'.repeat(32);
+  const list = (mockMessages[g.chat_id] ??= []);
+  const drop = (keep: (m: MessengerMessage) => boolean) => { mockMessages[g.chat_id] = list.filter(keep); };
+  // The lines carry what the core writes: its action words and its JSON
+  // detail (a mark: whether in force, its note, a reason, a span, a
+  // version; a mute: its end; the settings: what was set).
+  const log = (what: string, target: string, detail: Record<string, unknown> = {}) =>
+    (mockModLog[g.id] = [{ at: mockNow(), by: me, action: what, target, detail: JSON.stringify(detail) }, ...(mockModLog[g.id] ?? [])]);
+  const mark = (extra: Record<string, unknown> = {}) => ({ active: true, note: 'ef'.repeat(32), ...extra });
+  const member = (who: string, change: Partial<MessengerGroupMember>) => { g.members = g.members.map((m) => (m.pubkey === who ? { ...m, ...change } : m)); };
+  switch (action.t) {
+    case 'hide': drop((m) => !action.targets.includes(m.id)); for (const id of action.targets) log('hide', id, mark()); break;
+    case 'hide_author':
+      drop((m) => !(m.sender_pubkey === action.author && m.created_at >= action.from && m.created_at <= action.to));
+      log('hide', action.author, mark({ from: action.from, to: action.to }));
+      break;
+    case 'unhide': for (const id of action.targets) log('unhide', id, mark()); break;
+    case 'approve': mockMessages[g.chat_id] = list.map((m) => (m.id === action.target ? { ...m, review: 'ok' } : m)); log('approve', action.target, mark({ version: action.version })); break;
+    case 'reject': drop((m) => m.id !== action.target); log('reject', action.target, mark()); break;
+    case 'spam':
+      drop((m) => m.sender_pubkey !== action.author);
+      g.members = g.members.filter((m) => m.pubkey !== action.author);
+      if (!g.banned.includes(action.author)) g.banned = [...g.banned, action.author];
+      log('ban', action.author); log('hide', action.author, mark({ from: 0, to: mockNow(), reason: 'spam' }));
+      break;
+    case 'mute': member(action.who, { muted: true, muted_until: action.until ?? null }); log('mute', action.who, { until: action.until ?? null }); break;
+    case 'unmute': member(action.who, { muted: false, muted_until: null }); log('unmute', action.who); break;
+    case 'trust': member(action.who, { trusted: action.trusted }); log(action.trusted ? 'trust' : 'untrust', action.who); break;
+  }
+  g.queue = mockPending(g).length;
+  demoEmit('group.queue', { group: g.id, pending: g.queue });
+  demoEmit('group.moderation', { group: g.id, action: action.t, by: me, target: '' });
+}
+
 function mockFind(id: string): MessengerMessage | undefined {
   return Object.values(mockMessages).flat().find((m) => m.id === id);
 }
@@ -1076,12 +1225,17 @@ function mockInspect(text: string): LinkView {
   if (npub) {
     const c = mockContacts.find((x) => x.npub === npub);
     const me = mockIdentity?.npub === npub;
-    const hint = new URLSearchParams(link.split('?')[1] ?? '').get('n') ?? '';
-    return {
-      kind: 'contact', link: link.startsWith('veydan://') ? link : `veydan://contact/${npub}`, pubkey: c?.pubkey ?? mockIdentity?.pubkey ?? 'ef'.repeat(32), npub,
+    const params = new URLSearchParams(link.split('?')[1] ?? '');
+    const hint = params.get('n') ?? '';
+    // The secret of an invitation: 16 bytes, 22 characters of base64url, as the runtime's grammar takes it.
+    const invite = params.get('i');
+    if (invite !== null && !/^[A-Za-z0-9_-]{22}$/.test(invite)) return { kind: 'invalid', code: 'link_bad_param' };
+    const view: ContactLinkView = {
+      kind: 'contact', link: link.startsWith('veydan://') ? link : `veydan://contact/${npub}`, pubkey: c?.pubkey ?? (me ? mockIdentity?.pubkey : undefined) ?? 'ef'.repeat(32), npub,
       name: c ? contactLabel(c) : me ? profileLabel(mockOwnProfile) : hint, picture: null, nip05: c?.profile?.nip05 ?? null,
-      is_me: me, is_contact: !!c, blocked: false,
+      is_me: me, is_contact: !!c, blocked: false, invite,
     };
+    return view;
   }
   const m = /^veydan:\/\/([a-z]+(?:-[a-z]+)*)\/([A-Za-z0-9._~-]+)(?:\?(.*))?$/.exec(link);
   if (!m) return { kind: 'invalid', code: link.startsWith('veydan://') ? 'link_bad_id' : 'link_bad_scheme' };
@@ -1108,6 +1262,27 @@ function mockInspect(text: string): LinkView {
     kind: 'group', link, group_id: m[2], group_kind: t, name: g?.name || p.get('n') || '', relay: p.get('r') ?? '', owner: p.get('o') ?? '',
     picture: g?.picture || null, members: g?.members.length || null, membership: g?.membership ?? null,
   };
+}
+
+/** An invitation of the demo, filled as the runtime fills a preset: a link for 7 days, a code for 24 h, a QR for 15 min or for good. */
+function mockInviteCreate(p: InvitePreset): InviteView {
+  const now = Math.floor(Date.now() / 1000);
+  const kind = p.kind === 'code' || p.kind === 'qr' ? p.kind : 'link';
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const secret = kind === 'code'
+    ? String(100000 + (bytes[0] * 65536 + bytes[1] * 256 + bytes[2]) % 900000)
+    : btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const ttl = p.ttl_secs ?? (kind === 'link' ? 7 * 86400 : kind === 'code' ? 86400 : undefined);
+  const max = p.max_uses ?? (kind === 'qr' ? undefined : 1);
+  const npub = mockIdentity?.npub ?? 'npub1demo';
+  const v: InviteView = {
+    id: Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join(''),
+    kind, secret, link: kind === 'code' ? undefined : `veydan://contact/${npub}?i=${secret}&n=${encodeURIComponent(profileLabel(mockOwnProfile))}`,
+    label: p.label, created_at: now, expires_at: ttl === undefined ? undefined : now + ttl, max_uses: max, used: 0,
+    for_pubkey: p.for_pubkey, revoked: false,
+  };
+  mockDmInvites = [v, ...mockDmInvites];
+  return v;
 }
 
 /** The demo's first two approved contacts: one online, one seen an hour ago; nobody while the switch is off. */
@@ -1301,6 +1476,24 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   },
   messenger_dm_action: (a) => {
     const c = mockChat(String(a?.peer));
+    // A request with the first message: the text goes with it into the chat.
+    if (a?.action === 'request' && typeof a?.text === 'string' && a.text) {
+      const at = Math.floor(Date.now() / 1000);
+      const m: MessengerMessage = {
+        id: `demo-req-${Date.now().toString(16)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'text', text: a.text,
+        sender_pubkey: mockIdentity?.pubkey ?? '', reply_to: null, created_at: at, edited_at: null, deleted: false, failure_reason: null,
+        delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null,
+      };
+      (mockMessages[c.id] ??= []).push(m);
+      mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: at, last_preview: a.text as string } : x));
+    }
+    // A right secret lets me in: the peer's device answers in a moment.
+    if (a?.action === 'request' && typeof a?.invite === 'string' && a.invite) {
+      setTimeout(() => {
+        mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, mode: 'full_chat', can_send: true, is_contact: true } : x));
+        demoEmit('dm.relationship', { chat_id: c.id });
+      }, 1200);
+    }
     const next: Record<string, [ChatMode, boolean]> = {
       request: ['request_sent', false], accept: ['full_chat', true], decline: ['request_declined_by_me', false],
       block: ['blocked', false], unblock: ['full_chat', true], remove: ['mutual_reconnect', true],
@@ -1317,8 +1510,8 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const g: MessengerGroup = {
       id, chat_id: `group:${id}`, kind, name: String(a?.name), about: String(a?.about ?? ''), picture: '', relay: 'wss://relay.example',
       owner: 'ab'.repeat(32), membership: 'joined', my_role: 'owner', muted: false, can_post: true, history_for_new: kind === 'public' || Boolean(a?.historyForNew),
-      members: [{ pubkey: 'ab'.repeat(32), role: 'owner', muted: false, joined_at: Math.floor(Date.now() / 1000), is_me: true }],
-      banned: [], requests: [], undecrypted: 0,
+      members: [{ pubkey: 'ab'.repeat(32), role: 'owner', muted: false, muted_until: null, trusted: false, joined_at: Math.floor(Date.now() / 1000), is_me: true }],
+      banned: [], requests: [], undecrypted: 0, ...MOCK_MOD_DEFAULTS,
       key: { id: id.slice(0, 32), version: 1, cipher: 'AES-256-GCM', source: kind === 'public' ? 'link' : 'random', link_epoch: 0, since: Math.floor(Date.now() / 1000), by: 'ab'.repeat(32), reason: 'create', held: true, status: 'good' },
       link: `veydan://group/${id}?t=${kind}&r=wss%3A%2F%2Frelay.example&o=${'ab'.repeat(32)}&n=${encodeURIComponent(String(a?.name))}${kind === 'public' ? '&s=demo&e=0' : ''}`,
     };
@@ -1339,8 +1532,8 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const g: MessengerGroup = {
       id: v.group_id, chat_id: `group:${v.group_id}`, kind: v.group_kind, name: v.name, about: '', picture: '', relay: v.relay, owner: v.owner,
       membership: open ? 'joined' : 'requested', my_role: open ? 'member' : null, muted: false, can_post: open, history_for_new: true,
-      members: open ? [{ pubkey: 'ab'.repeat(32), role: 'member', muted: false, joined_at: Math.floor(Date.now() / 1000), is_me: true }] : [],
-      banned: [], requests: [], link: null, undecrypted: 0, key: null,
+      members: open ? [{ pubkey: 'ab'.repeat(32), role: 'member', muted: false, muted_until: null, trusted: false, joined_at: Math.floor(Date.now() / 1000), is_me: true }] : [],
+      banned: [], requests: [], link: null, undecrypted: 0, key: null, ...MOCK_MOD_DEFAULTS,
     };
     mockGroups = [g, ...mockGroups.filter((x) => x.id !== g.id)];
     if (!mockChats.some((c) => c.id === g.chat_id)) {
@@ -1352,7 +1545,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_group_answer_request: (a) => {
     const g = mockGroup(String(a?.groupId));
     g.requests = g.requests.filter((r) => r !== a?.requester);
-    if (a?.approve) g.members = [...g.members, { pubkey: String(a?.requester), role: 'member', muted: false, joined_at: Math.floor(Date.now() / 1000), is_me: false }];
+    if (a?.approve) g.members = [...g.members, { pubkey: String(a?.requester), role: 'member', muted: false, muted_until: null, trusted: false, joined_at: Math.floor(Date.now() / 1000), is_me: false }];
     return g;
   },
   messenger_group_act: (a) => {
@@ -1363,7 +1556,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
       case 'ban': g.members = g.members.filter((m) => m.pubkey !== act.who); g.banned = [...g.banned, act.who]; break;
       case 'unban': g.banned = g.banned.filter((b) => b !== act.who); break;
       case 'set_role': g.members = g.members.map((m) => (m.pubkey === act.who ? { ...m, role: act.role } : m)); break;
-      case 'set_muted': g.members = g.members.map((m) => (m.pubkey === act.who ? { ...m, muted: act.muted } : m)); break;
+      case 'set_muted': g.members = g.members.map((m) => (m.pubkey === act.who ? { ...m, muted: act.muted, muted_until: null } : m)); break;
       case 'edit_settings':
         if (act.name) g.name = act.name;
         if (act.about !== undefined) g.about = act.about;
@@ -1393,11 +1586,28 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     mockChats = mockChats.filter((c) => c.id !== `group:${a?.groupId}`);
   },
   messenger_dm_blocked: () => mockChats.filter((c) => c.mode === 'blocked').map((c) => c.peer_pubkey),
+  messenger_moderation_blocked: (): BlockedView[] =>
+    mockChats.filter((c) => c.mode === 'blocked' && c.peer_pubkey).map((c) => ({ peer: c.peer_pubkey ?? '', npub: c.peer_npub ?? '', name: c.title })),
+  messenger_moderation_invite_create: (a): InviteView => mockInviteCreate(a?.preset as InvitePreset),
+  messenger_moderation_invite_list: (): InviteView[] => {
+    const now = Math.floor(Date.now() / 1000);
+    const live = (v: InviteView) => !v.revoked && (v.expires_at === undefined || v.expires_at > now) && (v.max_uses === undefined || v.used < v.max_uses);
+    return [...mockDmInvites].sort((x, y) => Number(live(y)) - Number(live(x)) || y.created_at - x.created_at);
+  },
+  messenger_moderation_invite_revoke: (a) => {
+    mockDmInvites = mockDmInvites.map((v) => (v.id === a?.id ? { ...v, revoked: true } : v));
+  },
+  messenger_moderation_invite_status: (): InviteStatus => (mockInvitePausedUntil === null ? {} : { paused_until: mockInvitePausedUntil }),
+  messenger_contact_link_qr: (a) => {
+    if (!mockDmInvites.some((v) => v.id === a?.id && v.kind !== 'code')) throw new Error('invite_unknown');
+    return devMocks.messenger_group_link_qr();
+  },
   /** Dev only: put the open mock chat into a given screen mode. */
   messenger_dev_set_mode: (a) => {
     mockChats = mockChats.map((x) => (x.id === a?.chatId ? { ...x, mode: a?.mode as ChatMode, can_send: Boolean(a?.canSend) } : x));
   },
-  messenger_profile_get: () => null,
+  // Strangers of the demo have a profile of their own; contacts are read from the book.
+  messenger_profile_get: (a) => demo?.strangers.find((p) => p.pubkey === a?.pubkey) ?? null,
   messenger_profile_request: () => undefined,
   messenger_profile_own_get: () => mockOwnProfile,
   messenger_profile_own_set: (a) => mockOwnSet((a?.input ?? {}) as MessengerProfileInput),
@@ -1536,6 +1746,67 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_presence_list: () => mockPresence(),
   messenger_presence_foreground: () => undefined,
   messenger_privacy_set: (a) => { mockPrivacy = { read_receipts: Boolean(a?.readReceipts), presence: Boolean(a?.presence) }; return mockPrivacy; },
+  messenger_moderation_requests: (a): RequestsPage => {
+    const all = mockRequests();
+    const before = typeof a?.before === 'number' ? a.before : null;
+    const limit = Number(a?.limit ?? 50);
+    const page = all.filter((r) => before === null || r.cursor < before).slice(0, limit);
+    const more = all.filter((r) => before === null || r.cursor < before).length > page.length;
+    return { items: page, next_before: more ? page[page.length - 1].cursor : undefined, total: all.length };
+  },
+  messenger_moderation_requests_count: () => mockRequests().length,
+  messenger_moderation_request_act: (a) => {
+    const peer = String(a?.peer);
+    const id = `dm:${peer}`;
+    const next: Record<string, Partial<MessengerChat>> = {
+      accept: { mode: 'full_chat', can_send: true, is_contact: true },
+      decline: { mode: 'request_declined_by_me', can_send: false },
+      block: { mode: 'blocked', can_send: false },
+    };
+    const change = next[String(a?.action)];
+    if (!change) throw new Error('invalid action');
+    mockChats = mockChats.map((c) => (c.id === id ? { ...c, ...change, unread: 0 } : c));
+    demoEmit('dm.relationship', { chat_id: id });
+    demoEmit('dm.request', { peer, pending: mockRequests().length });
+  },
+  messenger_moderation_dm_settings: () => mockDmSettings,
+  messenger_moderation_dm_settings_set: (a) => { mockDmSettings = { ...(a?.settings as DmSettings) }; },
+  messenger_moderation_group_queue: (a): QueuePage =>
+    mockQueue(mockGroup(String(a?.group)), (a?.filter ?? {}) as QueueFilter, typeof a?.before === 'number' ? a.before : null, Number(a?.limit ?? 50)),
+  messenger_moderation_group_mod: (a) => mockModerate(mockGroup(String(a?.group)), a?.action as ModAction),
+  messenger_moderation_group_log: (a): LogPage => {
+    const all = mockModLog[String(a?.group)] ?? [];
+    const before = typeof a?.before === 'number' ? a.before : null;
+    const after = all.filter((e) => before === null || e.at < before);
+    const page = after.slice(0, Number(a?.limit ?? 50));
+    return { items: page, next_before: after.length > page.length ? page[page.length - 1].at : undefined };
+  },
+  messenger_moderation_group_settings: (a): GroupModSettings => {
+    const g = mockGroup(String(a?.group));
+    return { post_mode: g.post_mode ?? 'all', schedule: g.schedule ?? undefined, premod: g.premod ?? 'off' };
+  },
+  messenger_moderation_group_settings_set: (a) => {
+    const g = mockGroup(String(a?.group));
+    const s = a?.settings as GroupModSettings;
+    // The line of the log carries what changed, as the core's operation does.
+    const changed: Record<string, unknown> = {};
+    const postMode = s.post_mode === 'managers' ? 'managers' : 'all';
+    const premod = s.premod === 'all' || s.premod === 'newcomers' ? s.premod : 'off';
+    const schedule = s.schedule ?? null;
+    if (postMode !== (g.post_mode ?? 'all')) changed.post_mode = postMode;
+    if (premod !== (g.premod ?? 'off')) changed.premod = premod;
+    if (JSON.stringify(schedule) !== JSON.stringify(g.schedule ?? null)) changed.schedule = schedule;
+    g.post_mode = postMode;
+    g.schedule = schedule;
+    g.premod = premod;
+    if (Object.keys(changed).length) {
+      mockModLog[g.id] = [{ at: mockNow(), by: mockIdentity?.pubkey ?? '', action: 'settings', target: '', detail: JSON.stringify(changed) }, ...(mockModLog[g.id] ?? [])];
+    }
+    demoEmit('group.updated', { group_id: g.id, chat_id: g.chat_id });
+  },
+  messenger_moderation_group_inherit: (a) => (mockModLog[String(a?.group)] ?? []).filter((e) => e.by === a?.from && (e.action === 'hide' || e.action === 'approve')).length,
+  // The relays of the demo know nothing older than what the demo shows.
+  messenger_group_history: () => 0,
   messenger_desktop_notify_get: () => mockDesktopNotify,
   messenger_desktop_notify_set: (a) => { mockDesktopNotify = { ...mockDesktopNotify, enabled: Boolean(a?.enabled), sound: Boolean(a?.sound) }; return mockDesktopNotify; },
   messenger_desktop_notify_test: () => undefined,
@@ -1603,6 +1874,8 @@ export const messengerApi = {
     inspect: (links: InternalLinkText[]) => invoke<LinkView[]>('messenger_links_inspect', { links }),
     /** The link of a person, to share. */
     contact: (pubkey: string) => invoke<string>('messenger_contact_link', { pubkey }),
+    /** My link with the invitation `id` in it, drawn as a QR code (SVG text). */
+    contactQr: (id: string) => invoke<string>('messenger_contact_link_qr', { id }),
     /** Asks the page: only when the user said so. */
     preview: (url: ExternalUrl) => invoke<LinkPreview>('messenger_link_preview', { url }),
   },
@@ -1701,8 +1974,53 @@ export const messengerApi = {
     delete: (messageId: string, forEveryone: boolean) => invoke<void>('messenger_dm_delete', { messageId, forEveryone }),
     retry: (messageId: string) => invoke<void>('messenger_dm_retry', { messageId }),
     relation: (peer: string) => invoke<MessengerRelation>('messenger_dm_relation', { peer }),
-    action: (peer: string, action: DmAction) => invoke<MessengerRelation>('messenger_dm_action', { peer, action }),
+    /**
+     * A request may carry the secret of the peer's invitation, and with a
+     * code the first message: the two go as one, so the text lands in a chat
+     * the invitation has already opened. Fields left out are not sent: a
+     * runtime that predates invitations takes the plain request.
+     */
+    action: (peer: string, action: DmAction, extra: DmRequestExtra = {}) =>
+      invoke<MessengerRelation>('messenger_dm_action', {
+        peer, action, ...(extra.invite ? { invite: extra.invite } : {}), ...(extra.text ? { text: extra.text } : {}),
+      }),
     blocked: () => invoke<string[]>('messenger_dm_blocked'),
+  },
+
+  /** Requests of strangers and who may write to me (the runtime's moderation facade). */
+  moderation: {
+    requests: (before?: number, limit = 50) =>
+      invoke<RequestsPage>('messenger_moderation_requests', { before: before ?? null, limit }),
+    /** Idempotent: answering a request already answered the same way is no error. */
+    requestAct: (peer: string, action: RequestAction) => invoke<void>('messenger_moderation_request_act', { peer, action }),
+    requestsCount: () => invoke<number>('messenger_moderation_requests_count'),
+    dmSettings: () => invoke<DmSettings>('messenger_moderation_dm_settings'),
+    dmSettingsSet: (settings: DmSettings) => invoke<void>('messenger_moderation_dm_settings_set', { settings }),
+    /** What waits for a moderator in a group: one row per author (the oldest of theirs), in pages of `limit`. */
+    groupQueue: (group: string, filter: QueueFilter = {}, before?: number, limit = 50) =>
+      invoke<QueuePage>('messenger_moderation_group_queue', { group, filter, before: before ?? null, limit }),
+    /** Idempotent: hiding what is hidden, or muting the muted until the same time, sends nothing. */
+    groupMod: (group: string, action: ModAction) => invoke<void>('messenger_moderation_group_mod', { group, action }),
+    /** What the moderators did, newest first. */
+    groupLog: (group: string, before?: number, limit = 50) =>
+      invoke<LogPage>('messenger_moderation_group_log', { group, before: before ?? null, limit }),
+    groupModSettings: (group: string) => invoke<GroupModSettings>('messenger_moderation_group_settings', { group }),
+    groupModSettingsSet: (group: string, settings: GroupModSettings) =>
+      invoke<void>('messenger_moderation_group_settings_set', { group, settings }),
+    /**
+     * Signs again as me every decision of `from` still in force: a demoted
+     * moderator's decisions lose their force, these keep it. How many.
+     */
+    groupInherit: (group: string, from: string) => invoke<number>('messenger_moderation_group_inherit', { group, from }),
+    /** A link, a code or a QR invitation of mine; the runtime fills what the preset leaves out. */
+    inviteCreate: (preset: InvitePreset) => invoke<InviteView>('messenger_moderation_invite_create', { preset }),
+    /** Every invitation of mine, active first. */
+    inviteList: () => invoke<InviteView[]>('messenger_moderation_invite_list'),
+    /** Idempotent: revoking a revoked invitation is no error. */
+    inviteRevoke: (id: string) => invoke<void>('messenger_moderation_invite_revoke', { id }),
+    inviteStatus: () => invoke<InviteStatus>('messenger_moderation_invite_status'),
+    /** The people I blocked, with the names the app gives them. */
+    blocked: () => invoke<BlockedView[]>('messenger_moderation_blocked'),
   },
 
 
@@ -1877,6 +2195,12 @@ export const messengerApi = {
     /** SVG of the QR code of the link. */
     linkQr: (groupId: string) => invoke<string>('messenger_group_link_qr', { groupId }),
     forget: (groupId: string) => invoke<void>('messenger_group_forget', { groupId }),
+    /**
+     * Asks the relays for what the group said before `before` (not read at
+     * the start); how many events they gave. The messages are then read as
+     * any older page.
+     */
+    history: (group: string, before: number, limit = 200) => invoke<number>('messenger_group_history', { group, before, limit }),
   },
 
   media: {

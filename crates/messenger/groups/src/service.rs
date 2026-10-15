@@ -9,9 +9,9 @@
 
 use crate::keys::{GroupKey, GroupLink, LinkSecret};
 use crate::log::{KeyStatus, OpLog};
-use crate::op::{GroupKind, KeyId, Op, OpBody};
+use crate::op::{GroupKind, KeyId, Op, OpBody, PostMode, Premod, Schedule};
 use crate::roles::Role;
-use crate::state::{GroupState, Rejection};
+use crate::state::{Closed, GroupState, Rejection};
 use crate::wire::{self, SecretEnvelope};
 use messenger_contacts::ContactCard;
 use messenger_core::traits::{Notice, UiEvent};
@@ -25,6 +25,7 @@ use messenger_store::{chats, Store};
 use nostr::key::Keys;
 use nostr::prelude::Event;
 use serde::{Deserialize, Serialize};
+use sha2::Digest as _;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -86,7 +87,12 @@ impl Outcome {
 pub struct MemberView {
     pub pubkey: String,
     pub role: String,
+    /// Muted now: a mute with an end that has passed does not count.
     pub muted: bool,
+    /// When the mute lifts by itself; none for one that stays, or none.
+    pub muted_until: Option<i64>,
+    /// Their messages are never held for moderation.
+    pub trusted: bool,
     pub joined_at: i64,
     pub is_me: bool,
 }
@@ -104,8 +110,30 @@ pub struct GroupView {
     pub owner: String,
     pub membership: String,
     pub my_role: Option<String>,
+    /// Muted now (a mute with an end that has passed does not count).
     pub muted: bool,
+    /// When my mute lifts by itself.
+    pub muted_until: Option<i64>,
+    /// May I write now: a member, not muted, and the group open to me.
     pub can_post: bool,
+    /// Who may post: `all` | `managers` (moderators and above).
+    pub post_mode: String,
+    /// When members may post; none for always.
+    pub schedule: Option<Schedule>,
+    /// The schedule names a zone this build does not know: it is read
+    /// in UTC until the app is updated.
+    pub schedule_tz_unknown: bool,
+    /// Whose messages wait for a moderator: `off` | `newcomers` | `all`.
+    pub premod: String,
+    /// The schedule closes the group for me right now: when it opens.
+    /// None when it does not (`post_mode` says when only managers write).
+    pub closed_until: Option<i64>,
+    /// Something of the group is newer than this build reads and waits
+    /// for an update of the app.
+    pub needs_update: bool,
+    /// Messages that wait for a moderator, as I see them: for a moderator
+    /// or above; 0 for anyone else.
+    pub queue: u32,
     pub history_for_new: bool,
     pub members: Vec<MemberView>,
     pub banned: Vec<String>,
@@ -184,20 +212,65 @@ pub struct GroupService {
     pub(crate) logs: Arc<Mutex<HashMap<String, OpLog>>>,
     /// Operations that already have their line in the chat.
     pub(crate) lined: Arc<Mutex<HashMap<String, std::collections::HashSet<String>>>>,
+    /// The journal (its length, the version of its state) the marks of
+    /// moderation of each group were last read against (`marks_follow_log`).
+    pub(crate) marks_seen: Arc<Mutex<HashMap<String, (u64, u64)>>>,
     signer: Arc<std::sync::Mutex<Option<Keys>>>,
     locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
     call_sink: Arc<std::sync::Mutex<Option<Arc<dyn GroupCallSink>>>>,
 }
 
-/// The log of a group as this device keeps it, or none.
+/// The log of a group as this device keeps it, or none. An operation
+/// stored here that this build cannot read (`keep_op_ahead`) is passed
+/// by before it is parsed: one of a known shape under a newer version
+/// would parse, be rejected by the state and stand in the log as a hole
+/// its children apply over; left out, what names it as a parent waits in
+/// the log for it, as on the path of the bucket.
 pub(crate) async fn load_log(store: &Store, group_id: &str) -> Result<Option<OpLog>> {
     let mut ops = Vec::new();
     for json in repo::ops(store, group_id).await? {
-        let Ok(event) = serde_json::from_str::<Event>(&json) else { continue };
+        let Ok(signed) = serde_json::from_str::<serde_json::Value>(&json) else { continue };
+        if wire::is_ahead(&signed) {
+            continue;
+        }
+        let Ok(event) = serde_json::from_value::<Event>(signed) else { continue };
         let Ok(op) = serde_json::from_str::<Op>(&event.content) else { continue };
         ops.push(op);
     }
     Ok(OpLog::from_ops(ops).ok())
+}
+
+/// How many stored operations of the group this build cannot read: of a
+/// version newer than it, within the window it waits for
+/// (`wire::is_ahead`), kept for after an update. One stored that the
+/// build neither reads nor waits for does not count: nothing would ever
+/// clear the flag it kept up.
+pub(crate) async fn ops_ahead(store: &Store, group_id: &str) -> Result<usize> {
+    let mut n = 0;
+    for json in repo::ops(store, group_id).await? {
+        let Ok(signed) = serde_json::from_str::<serde_json::Value>(&json) else { continue };
+        if wire::is_ahead(&signed) {
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+/// The code of a refusal to post (`GroupState::can_post_at`), as the
+/// commands say it: `group_not_member`, `group_muted`,
+/// `group_muted_until` (a mute with an end), `group_closed` (only
+/// moderators and above write now, or the hours of the schedule).
+pub fn closed_code(closed: &Closed) -> &'static str {
+    match closed {
+        Closed::NotMember | Closed::Banned => "group_not_member",
+        Closed::Muted { until: None } => "group_muted",
+        Closed::Muted { until: Some(_) } => "group_muted_until",
+        Closed::ManagersOnly | Closed::Schedule { .. } => "group_closed",
+    }
+}
+
+pub(crate) fn refused(closed: Closed) -> MessengerError {
+    MessengerError::Invalid(closed_code(&closed).into())
 }
 
 /// How far an invitation to a group is vouched for: one rule for the app
@@ -295,6 +368,7 @@ impl GroupService {
             dm,
             logs: Arc::default(),
             lined: Arc::default(),
+            marks_seen: Arc::default(),
             signer: Arc::default(),
             locks: Arc::default(),
             call_sink: Arc::default(),
@@ -484,7 +558,7 @@ impl GroupService {
     /// (`KeyStatus::Rotate`). Nothing new goes out under such a key; a
     /// manager brings a new one first ([`Self::renew_stale_key`]), the
     /// others wait for it (`group_key_stale`).
-    async fn sealing_key(&self, group_id: &str, log: &OpLog) -> Result<GroupKey> {
+    pub(crate) async fn sealing_key(&self, group_id: &str, log: &OpLog) -> Result<GroupKey> {
         if *log.key_status() == KeyStatus::Rotate {
             return Err(MessengerError::Invalid("group_key_stale".into()));
         }
@@ -498,7 +572,7 @@ impl GroupService {
     /// The key replaced not long ago, if this device holds it. For a while
     /// both keys make the group's mark, in what is sent and in what the
     /// push server is told to take (`messenger_dm::pushtags`).
-    async fn grace_key(&self, group_id: &str, state: &GroupState) -> Result<Option<GroupKey>> {
+    pub(crate) async fn grace_key(&self, group_id: &str, state: &GroupState) -> Result<Option<GroupKey>> {
         match &state.replaced_key {
             Some(replaced) if self.now().saturating_sub(replaced.at) < pushtags::GROUP_GRACE_SECS => {
                 self.key(group_id, &replaced.key).await
@@ -568,6 +642,16 @@ impl GroupService {
         Ok(new)
     }
 
+    /// Store a signed operation this build cannot read (of a version
+    /// newer than it, its signature checked): its id is the hash of its
+    /// canonical form, which the content is (`wire::verify_op`). The log
+    /// takes it after an update; welcomes pass it on meanwhile.
+    pub(crate) async fn keep_op_ahead(&self, group_id: &str, signed: &serde_json::Value) -> Result<bool> {
+        let Some(content) = signed.get("content").and_then(|c| c.as_str()) else { return Ok(false) };
+        let id = hex::encode(sha2::Sha256::digest(content.as_bytes()));
+        repo::insert_op(&self.store, group_id, &id, &signed.to_string()).await
+    }
+
     /// Signed operations of a group, for a welcome.
     pub(crate) async fn signed_ops(&self, group_id: &str) -> Result<Vec<serde_json::Value>> {
         Ok(repo::ops(&self.store, group_id).await?.iter().filter_map(|j| serde_json::from_str(j).ok()).collect())
@@ -635,6 +719,7 @@ impl GroupService {
         let log = self.log(&row.id).await?;
         let state: Option<&GroupState> = log.as_ref().map(|l| l.state());
         let joined = row.membership == MEMBERSHIP_JOINED;
+        let now = self.now();
         let my_role = state.and_then(|s| s.role_of(me));
         let manager = joined && my_role.is_some_and(Role::is_manager);
         let members = state
@@ -645,7 +730,9 @@ impl GroupService {
                     .map(|(k, m)| MemberView {
                         pubkey: k.clone(),
                         role: m.role.as_str().into(),
-                        muted: m.muted,
+                        muted: m.muted_at(now),
+                        muted_until: m.muted_until.filter(|_| m.muted_at(now)),
+                        trusted: m.trusted,
                         joined_at: m.joined_at,
                         is_me: k == me.as_hex(),
                     })
@@ -676,6 +763,7 @@ impl GroupService {
             (Some(l), true) => self.key_view(l).await?,
             _ => None,
         };
+        let posting = state.map_or(Err(Closed::NotMember), |s| s.can_post_at(me, now));
         Ok(GroupView {
             chat_id: repo::group_chat_id(&row.id),
             kind: row.kind.clone(),
@@ -686,8 +774,30 @@ impl GroupService {
             owner: row.owner.clone(),
             membership: row.membership.clone(),
             my_role: my_role.map(|r| r.as_str().into()),
-            muted: state.and_then(|s| s.member(me)).is_some_and(|m| m.muted),
-            can_post: joined && state.is_some_and(|s| s.can_post(me)),
+            muted: state.and_then(|s| s.member(me)).is_some_and(|m| m.muted_at(now)),
+            muted_until: state.and_then(|s| s.member(me)).filter(|m| m.muted_at(now)).and_then(|m| m.muted_until),
+            can_post: joined && posting.is_ok(),
+            post_mode: match state.map(|s| s.post_mode).unwrap_or_default() {
+                PostMode::All => "all".into(),
+                PostMode::Managers => "managers".into(),
+            },
+            schedule: state.and_then(|s| s.schedule.clone()),
+            schedule_tz_unknown: state.is_some_and(GroupState::schedule_tz_unknown),
+            premod: match state.map(|s| s.premod).unwrap_or_default() {
+                Premod::Off => "off".into(),
+                Premod::Newcomers => "newcomers".into(),
+                Premod::All => "all".into(),
+            },
+            closed_until: match posting {
+                Err(Closed::Schedule { opens_at }) => Some(opens_at),
+                _ => None,
+            },
+            needs_update: row.needs_update,
+            queue: if joined && my_role.is_some_and(|r| r >= Role::Moderator) {
+                msgs::count_pending(&self.store, &repo::group_chat_id(&row.id)).await? as u32
+            } else {
+                0
+            },
             history_for_new: state.is_some_and(|s| s.history_for_new),
             members,
             banned: if manager { state.map(|s| s.banned.iter().cloned().collect()).unwrap_or_default() } else { vec![] },
@@ -846,7 +956,14 @@ impl GroupService {
             OpBody::Ban { who } => ("group_banned", Some(who)),
             OpBody::Unban { who } => ("group_unbanned", Some(who)),
             OpBody::SetRole { who, .. } => ("group_role", Some(who)),
-            OpBody::SetMuted { who, muted } => (if *muted { "group_muted" } else { "group_unmuted" }, Some(who)),
+            OpBody::SetMuted { who, muted: true, until: Some(_) } => ("group_muted_until", Some(who)),
+            OpBody::SetMuted { who, muted, .. } => (if *muted { "group_muted" } else { "group_unmuted" }, Some(who)),
+            OpBody::SetTrusted { who, trusted } => (if *trusted { "group_trusted" } else { "group_untrusted" }, Some(who)),
+            // One line per operation: the rule of posting it sets names
+            // the line, the rest of the edit is in the details.
+            OpBody::EditSettings { post_mode: Some(_), .. } => ("group_post_mode", None),
+            OpBody::EditSettings { premod: Some(_), .. } => ("group_premod", None),
+            OpBody::EditSettings { post_schedule: Some(_), .. } => ("group_schedule", None),
             OpBody::EditSettings { .. } => ("group_edited", None),
             OpBody::TransferOwnership { to } => ("group_owner", Some(to)),
             OpBody::RotateLink { .. } => ("group_link_changed", None),
@@ -855,11 +972,26 @@ impl GroupService {
         };
         let chat_id = repo::group_chat_id(group_id);
         let id = format!("sys:{}", op.id().0);
-        let details = serde_json::json!({
+        let mut details = serde_json::json!({
             "actor": op.author.as_hex(),
             "target": target.map(|p| p.as_hex()),
             "role": if let OpBody::SetRole { role, .. } = &op.body { Some(role.as_str()) } else { None },
         });
+        match &op.body {
+            OpBody::SetMuted { until: Some(until), .. } => details["until"] = serde_json::json!(until),
+            OpBody::EditSettings { post_mode, post_schedule, premod, .. } => {
+                if let Some(p) = post_mode {
+                    details["post_mode"] = serde_json::to_value(p)?;
+                }
+                if let Some(p) = premod {
+                    details["premod"] = serde_json::to_value(p)?;
+                }
+                if let Some(s) = post_schedule {
+                    details["schedule"] = if s.is_empty() { serde_json::Value::Null } else { serde_json::to_value(s)? };
+                }
+            }
+            _ => {}
+        }
         let inserted = msgs::insert(
             &self.store,
             &NewMessage {
@@ -976,6 +1108,14 @@ impl GroupService {
         if let Some(ev) = self.system_line(group_id, &op).await? {
             outcome.events.push(ev);
         }
+        if let Some(ev) = crate::moderation::op_event(group_id, &op) {
+            outcome.events.push(ev);
+        }
+        // The journal changed by my hand: the marks of moderation follow it
+        // here as they do when a change arrives (`settle`).
+        if let Some(log) = self.log(group_id).await? {
+            self.marks_follow_log(group_id, &log, &mut outcome).await?;
+        }
         outcome.events.push(Self::updated(group_id));
         outcome.resubscribe = matches!(op.body, OpBody::Leave | OpBody::Disband | OpBody::Join);
         if changes_members(&op.body) {
@@ -1058,6 +1198,7 @@ impl GroupService {
                 link_epoch: 0,
                 created_at: 0,
                 updated_at: 0,
+                needs_update: false,
             },
         )
         .await?;
@@ -1205,6 +1346,7 @@ impl GroupService {
             link_epoch: link.link_epoch as i64,
             created_at: 0,
             updated_at: 0,
+            needs_update: false,
         };
         let mut outcome = Outcome::default();
         match (&link.kind, &link.secret) {
@@ -1361,23 +1503,39 @@ impl GroupService {
     pub async fn maintain(&self, keys: &Keys, group_id: &str) -> Result<Outcome> {
         let me = me_of(keys);
         let Some(row) = repo::get(&self.store, group_id).await? else { return Ok(Outcome::default()) };
+        // The runtime comes here for every group at the start of a session:
+        // what was parked as newer than the build (a welcome, events) is
+        // tried again, since the app may have been updated in between.
+        let mut outcome = Outcome::default();
+        if row.needs_update && matches!(row.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING) {
+            let ctx = messenger_core::Context { my_pubkey: me.clone(), session_started_at: self.clock.now(), clock: self.clock.clone() };
+            outcome.merge(self.replay_parked_welcomes(keys, group_id, &ctx).await?);
+            self.drain(keys, group_id, &ctx, &mut outcome).await?;
+            self.settle(keys, group_id, true, &ctx, &mut outcome).await?;
+        }
+        let Some(row) = repo::get(&self.store, group_id).await? else { return Ok(outcome) };
         if row.membership == MEMBERSHIP_JOINING {
             if !self.log(group_id).await?.is_some_and(|l| l.state().is_banned(&me)) {
-                return Ok(Outcome::default());
+                return Ok(outcome);
             }
             self.refresh_row(group_id, &me, Some(MEMBERSHIP_BANNED)).await?;
-            return Ok(Outcome { events: vec![Self::updated(group_id)], resubscribe: true, ..Default::default() });
+            outcome.events.push(Self::updated(group_id));
+            outcome.resubscribe = true;
+            return Ok(outcome);
         }
         if row.membership != MEMBERSHIP_JOINED {
-            return Ok(Outcome::default());
+            return Ok(outcome);
         }
-        let Some(log) = self.log(group_id).await? else { return Ok(Outcome::default()) };
+        let Some(log) = self.log(group_id).await? else { return Ok(outcome) };
         if !log.state().role_of(&me).is_some_and(Role::is_manager) {
-            return Ok(Outcome::default());
+            return Ok(outcome);
         }
         match log.key_status().clone() {
-            KeyStatus::Good => Ok(Outcome::default()),
-            KeyStatus::Rotate => Ok(self.operate(keys, group_id, OpBody::RotateKey).await?.1),
+            KeyStatus::Good => Ok(outcome),
+            KeyStatus::Rotate => {
+                outcome.merge(self.operate(keys, group_id, OpBody::RotateKey).await?.1);
+                Ok(outcome)
+            }
             KeyStatus::Deliver(list) => {
                 let held = if log.state().history_for_new {
                     self.all_keys(group_id).await?
@@ -1389,7 +1547,6 @@ impl GroupService {
                 };
                 let body = wire::KeyDelivery { group_id: group_id.to_string(), keys: wire::encode_keys(&held) };
                 let content = wire::dm_envelope(wire::T_KEYS, &body)?;
-                let mut outcome = Outcome::default();
                 for who in list {
                     outcome.publish.extend(self.dm(keys, &who, content.clone(), false, Wake::Nobody).await?);
                 }
@@ -1444,9 +1601,7 @@ impl GroupService {
         }
         let log = self.need_log(group_id).await?;
         let s = log.state();
-        if !s.can_post(&me) {
-            return Err(MessengerError::Invalid(if s.member(&me).is_some_and(|m| m.muted) { "group_muted".into() } else { "group_not_member".into() }));
-        }
+        s.can_post_at(&me, self.now()).map_err(refused)?;
         let key = self.sealing_key(group_id, &log).await?;
         let chat_id = repo::group_chat_id(group_id);
         if let Some(id) = reply_to {
@@ -1488,6 +1643,11 @@ impl GroupService {
             },
         )
         .await?;
+        // Held for a moderator by the rules now: the others see it once
+        // one approves it; I see it with the mark of waiting.
+        if !hidden && s.subject_to_premod(&me) {
+            msgs::set_review(&self.store, &id, msgs::REVIEW_PENDING).await?;
+        }
         if !hidden {
             let card = card.filter(|_| content_type == msgs::CT_CONTACT);
             let line = match (&text, content_type, card) {
@@ -1541,9 +1701,7 @@ impl GroupService {
         }
         let log = self.need_log(&group_id).await?;
         let s = log.state();
-        if !s.can_post(&me) {
-            return Err(MessengerError::Invalid(if s.member(&me).is_some_and(|m| m.muted) { "group_muted".into() } else { "group_not_member".into() }));
-        }
+        s.can_post_at(&me, self.now()).map_err(refused)?;
         let key = self.sealing_key(&group_id, &log).await?;
         let grace = self.grace_key(&group_id, s).await?;
         let (set, at) = self.dm.react_locally(&row.chat_id, &me, &row.id, emoji).await?;
@@ -1589,6 +1747,9 @@ impl GroupService {
         let group_id = Self::group_of(&row.chat_id)?.to_string();
         let (hidden, out) = self.prepare_message(keys, &group_id, Envelope::edit(message_id, text), msgs::CT_EDIT, None, None, None).await?;
         msgs::set_text(&self.store, message_id, text, hidden.created_at).await?;
+        // A new version: an approval of the old one no longer holds.
+        let log = self.need_log(&group_id).await?;
+        self.after_edit(&group_id, &log, &row, hidden.created_at).await?;
         chats::recompute_last(&self.store, &row.chat_id).await?;
         let view = self.dm.message(message_id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
         Ok((view, hidden.id, out))

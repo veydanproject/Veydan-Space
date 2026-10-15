@@ -33,3 +33,50 @@ export function canModerate(g: MessengerGroup | null, author: string): boolean {
   const role = g.members.find((m) => m.pubkey === author)?.role ?? 'member';
   return roleRank(role) < roleRank(g.my_role);
 }
+
+/** A moderator or above in a group I am in: the queue, the log, hiding. */
+export const isModerator = (g: MessengerGroup | null): g is MessengerGroup =>
+  !!g && g.membership === 'joined' && roleRank(g.my_role) >= MODERATOR;
+
+/**
+ * Does the core behind the page moderate groups (the queue, the marks,
+ * timed mutes, who may write and when)? A core without it sends none of
+ * those fields and answers their commands with `not_implemented`; the
+ * page then keeps to the operations of the log it has always had.
+ */
+export const hasModeration = (g: MessengerGroup | null): g is MessengerGroup => !!g && g.queue !== undefined;
+
+/** Does the group check messages before they are shown? Read defensively: a core without moderation says nothing. */
+export const checksMessages = (g: MessengerGroup | null): boolean => !!g?.premod && g.premod !== 'off';
+
+/**
+ * May I hide what this person wrote? A moderator hides, never deletes for
+ * everyone (the owner's decision 8); the same rule as `canModerate`.
+ */
+export const canHide = (g: MessengerGroup | null, author: string): boolean => canModerate(g, author);
+
+/** May I let through, or turn down, what waits for a moderator? */
+export const canApprove = (g: MessengerGroup | null): boolean => isModerator(g);
+
+/** Spam is a ban and a hiding: a manager's, on someone below them. */
+export function canSpam(g: MessengerGroup | null, author: string): boolean {
+  if (!g || !isManager(g)) return false;
+  const role = g.members.find((m) => m.pubkey === author)?.role ?? 'member';
+  return roleRank(role) < roleRank(g.my_role);
+}
+
+/** Letting someone post without a check, or checking them again: as muting. */
+export const canTrust = (g: MessengerGroup, m: MessengerGroupMember): boolean => canMute(g, m);
+
+/** Is the member kept from writing now? A mute for a time ends by itself. */
+export const mutedNow = (m: MessengerGroupMember, now = Date.now() / 1000): boolean =>
+  m.muted && (m.muted_until === null || m.muted_until === undefined || now < m.muted_until);
+
+/**
+ * A moderator's decisions stand while the moderator does: a change that
+ * leaves them below a moderator (or out) is the moment to offer keeping
+ * them under my name.
+ */
+export function losesModeration(before: GroupRole, after: GroupRole | null): boolean {
+  return roleRank(before) >= MODERATOR && roleRank(after) < MODERATOR;
+}

@@ -5,8 +5,8 @@
 // `localStorage['messenger.demo'] = '1'`. Never used inside the app.
 
 import type {
-  BotCard, CardView, ChatMode, Color, MessageStatus, MessengerChat, MessengerContact, MessengerGroup, MessengerGroupInvite, MessengerGroupMember, MessengerIdentity,
-  MessengerMessage, MessengerProfile, MessengerTransfer, SocialLink, SocialView, Span, Style,
+  BotCard, CardView, ChatMode, Color, LogEntry, MessageStatus, MessengerChat, MessengerContact, MessengerGroup, MessengerGroupInvite, MessengerGroupMember, MessengerIdentity,
+  MessengerMessage, MessengerProfile, MessengerTransfer, SocialLink, SocialView, Span, Style, InviteView,
 } from './api';
 
 const ME = 'ab'.repeat(32);
@@ -190,6 +190,14 @@ export interface DemoData {
   invites: MessengerGroupInvite[];
   /** Transfers of the files of the demo, in the states they show. */
   transfers: MessengerTransfer[];
+  /** Profiles of the people of the requests: not in the book, read like any stranger's. */
+  strangers: MessengerProfile[];
+  /** Messages held back behind a request, by chat. */
+  held: Record<string, number>;
+  /** What the moderators of the demo's groups did, newest first, by group id. */
+  modLog: Record<string, LogEntry[]>;
+  /** My invitations to a chat with me: a link sent somewhere, and a code said to one person. */
+  dmInvites: InviteView[];
 }
 
 export function demoEnabled(): boolean {
@@ -206,8 +214,10 @@ export function buildDemo(): DemoData {
     [hex('4d'), 'Глеб', '', null, 'request_sent', false],
     [hex('5e'), 'Спам-бот', '', null, 'blocked', false],
     [hex('6f'), 'Дарья', 'На связи по будням.', 'daria@example.org', 'removed_by_peer', false],
+    [hex('8e'), 'Никита Орлов', '', 'nikita@orlov.dev', 'request_received', false],
   ];
   const contacts: MessengerContact[] = [];
+  const strangers: MessengerProfile[] = [];
   const chats: MessengerChat[] = [];
   const messages: Record<string, MessengerMessage[]> = {};
   let n = 0;
@@ -229,6 +239,7 @@ export function buildDemo(): DemoData {
   for (const [pk, name, about, nip05, mode, canSend] of people) {
     const p = profile(pk, name, about, nip05, looks[pk]);
     const isContact = mode === 'full_chat' || mode === 'request_sent' || mode === 'removed_by_peer';
+    if (mode === 'request_received') strangers.push(p);
     if (isContact) {
       contacts.push({ pubkey: pk, npub: p.npub, nickname: null, note: null, followed: name === 'Алиса Морозова', profile: p, created_at: now - 86400 * 9, updated_at: now - 3600 });
     }
@@ -238,7 +249,7 @@ export function buildDemo(): DemoData {
   }
 
   const day = 86400;
-  const [alice, boris, vera, gleb, bot, daria] = people.map((p) => p[0]);
+  const [alice, boris, vera, gleb, bot, daria, nikita] = people.map((p) => p[0]);
   const a = `dm:${alice}`;
   const m1 = msg(a, alice, now - day * 2 - 4000, 'Привет! Посмотрела макеты мессенджера. В целом очень нравится, но есть пара мыслей по списку чатов.');
   const m2 = msg(a, ME, now - day * 2 - 3900, 'Привет! Давай, рассказывай.');
@@ -269,6 +280,11 @@ export function buildDemo(): DemoData {
   messages[v].push(
     msg(v, '', now - 4001, 'request_received', { content_type: 'system', direction: 'out' }),
     msg(v, vera, now - 4000, 'Здравствуйте! Мне дали ваш ключ на конференции, хочу обсудить интеграцию.'),
+  );
+  const nk = `dm:${nikita}`;
+  messages[nk].push(
+    msg(nk, '', now - 900, 'request_received', { content_type: 'system', direction: 'out' }),
+    msg(nk, nikita, now - 899, 'Добрый день! Я из команды, которая делает мост между реле.\nЕсть пара вопросов по NIP-77, удобно сейчас?'),
   );
   const g = `dm:${gleb}`;
   messages[g].push(
@@ -305,17 +321,26 @@ export function buildDemo(): DemoData {
   ];
 
 
-  // Groups: one private that I own, one public where I am a member.
+  // Groups: one private that I own, one public where I am a member. In the
+  // private one new members' messages wait for a moderator: three authors
+  // wait in its queue, and Daria may not write for an hour.
   const gid = (c: string) => c.repeat(64).slice(0, 64);
-  const member = (pubkey: string, role: MessengerGroupMember['role'], at: number, muted = false): MessengerGroupMember =>
-    ({ pubkey, role, muted, joined_at: at, is_me: pubkey === ME });
+  const newbie = hex('e7');
+  const member = (pubkey: string, role: MessengerGroupMember['role'], at: number, muted = false, mutedUntil: number | null = null): MessengerGroupMember =>
+    ({ pubkey, role, muted, muted_until: muted ? mutedUntil : null, trusted: false, joined_at: at, is_me: pubkey === ME });
   const sys = (chat: string, at: number, what: string, actor: string, target: string | null = null, role: string | null = null) =>
     msg(chat, actor, at, what, { content_type: 'system', direction: 'out', media: { actor, target, role } });
   const team: MessengerGroup = {
     id: gid('7a'), chat_id: `group:${gid('7a')}`, kind: 'private', name: 'Команда Veydan', about: 'Рабочие вопросы по мессенджеру и реле.',
     picture: '', relay: 'wss://node-1.veydan.net', owner: ME, membership: 'joined', my_role: 'owner', muted: false, can_post: true, history_for_new: true,
-    members: [member(ME, 'owner', now - day * 20), member(boris, 'admin', now - day * 19), member(alice, 'moderator', now - day * 18), member(daria, 'member', now - day * 3, true)],
+    members: [
+      member(ME, 'owner', now - day * 20), member(boris, 'admin', now - day * 19), member(alice, 'moderator', now - day * 18),
+      member(daria, 'member', now - day * 3, true, now + 3600), member(gleb, 'member', now - day), member(nikita, 'member', now - 7200),
+      member(newbie, 'member', now - 3000),
+    ],
     banned: [bot], requests: [vera], undecrypted: 0,
+    post_mode: 'all', schedule: { tz: 'Europe/Berlin', days: [1, 2, 3, 4, 5], from: '09:00', to: '21:00' }, premod: 'newcomers',
+    closed_until: null, needs_update: false, queue: 4,
     key: { id: 'e0aa8b956aaf838d50ee6ab5d8622273', version: 3, cipher: 'AES-256-GCM', source: 'random', link_epoch: 0, since: now - day * 5, by: ME, reason: 'remove', held: true, status: 'good' },
     link: `veydan://group/${gid('7a')}?t=private&r=wss%3A%2F%2Fnode-1.veydan.net&o=${ME}&n=%D0%9A%D0%BE%D0%BC%D0%B0%D0%BD%D0%B4%D0%B0&m=${ME},${boris}`,
   };
@@ -324,6 +349,8 @@ export function buildDemo(): DemoData {
     picture: '', relay: 'wss://node-1.veydan.net', owner: boris, membership: 'joined', my_role: 'member', muted: false, can_post: true, history_for_new: true,
     members: [member(boris, 'owner', now - day * 40), member(alice, 'admin', now - day * 39), member(ME, 'member', now - day * 2), member(gleb, 'member', now - day)],
     banned: [], requests: [], undecrypted: 3,
+    // A change of the group came from a newer app: the banner asks for an update.
+    post_mode: 'all', schedule: null, premod: 'off', closed_until: null, needs_update: true, queue: 0,
     key: { id: '5a0f3c395349207ca3117c7e8590da77', version: 1, cipher: 'AES-256-GCM', source: 'link', link_epoch: 0, since: now - day * 40, by: boris, reason: 'create', held: true, status: 'deliver' },
     link: `veydan://group/${gid('8b')}?t=public&r=wss%3A%2F%2Fnode-1.veydan.net&o=${boris}&n=Veydan&s=M_ASAN9VOjsg94VjUdQvzIk-0vXXcmv_mjLOLp-neys&e=0`,
   };
@@ -331,7 +358,13 @@ export function buildDemo(): DemoData {
     ...square, id: gid('9c'), chat_id: `group:${gid('9c')}`, name: 'Старая группа', about: '', membership: 'removed', my_role: null, can_post: false,
     members: [member(boris, 'owner', now - day * 40)], undecrypted: 0, link: null, key: null,
   };
-  const groups = [team, square, left];
+  // Only admins write here, and I am a plain member: the composer gives
+  // way to the word of it, with no hour it opens at.
+  const notices: MessengerGroup = {
+    ...square, id: gid('ad'), chat_id: `group:${gid('ad')}`, name: 'Объявления', about: 'Пишут только администраторы.', can_post: false,
+    post_mode: 'managers', needs_update: false, undecrypted: 0, link: null,
+  };
+  const groups = [team, square, left, notices];
   for (const g of groups) {
     chats.push({ id: g.chat_id, kind: 'group', peer_pubkey: null, peer_npub: null, title: g.name, picture: null, is_contact: false, is_muted: false, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'group', can_send: g.membership === 'joined' });
     messages[g.chat_id] = [];
@@ -356,7 +389,13 @@ export function buildDemo(): DemoData {
     msg(tm, boris, now - day * 2 + 120, 'Спецификация: https://github.com/nostr-protocol/nips/blob/master/29.md'),
     msg(tm, daria, now - day * 2 + 200, null, { content_type: 'media', media: { name: 'voice.weba', mime: 'audio/webm', size: 31_000, kind: 'voice', duration_ms: 9_200, waveform: [40, 120, 200, 160, 90, 60, 140, 220, 180, 100] } }),
     msg(tm, ME, now - 400, 'Принято, смотрю.'),
+    // Waiting for a moderator: the owner sees them in the timeline and in the queue.
+    msg(tm, gleb, now - 3500, 'Всем привет, я новенький. Где почитать про ключи?', { review: 'pending' }),
+    msg(tm, gleb, now - 3400, 'Нашёл, спасибо.', { review: 'pending' }),
+    msg(tm, nikita, now - 3300, 'Продаю аккаунты, пишите в личку', { review: 'pending' }),
+    msg(tm, newbie, now - 300, 'Можно вопрос по реле?', { review: 'pending' }),
   );
+  for (const x of messages[tm]) if (x.review === 'pending') x.version = x.id;
   messages[tm].sort((x, y) => x.created_at - y.created_at);
   const sq = square.chat_id;
   messages[sq].push(
@@ -489,7 +528,7 @@ export function buildDemo(): DemoData {
     down('logs.tar.gz', 'application/gzip', 'file', 60 * MB, { status: 'failed', done_bytes: 20 * MB, chunks_done: 5, failure_reason: 'err.not_found' }),
   );
 
-  const unread: Record<string, number> = { [b]: 2, [v]: 1, [sq]: 2 };
+  const unread: Record<string, number> = { [b]: 2, [v]: 1, [nk]: 1, [sq]: 2 };
   for (const c of chats) {
     const list = messages[c.id].filter((x) => x.content_type !== 'system');
     const last = list[list.length - 1];
@@ -505,6 +544,30 @@ export function buildDemo(): DemoData {
   });
   return {
     identity: { npub: ownProfile.npub, pubkey: ME, created_at: now - day * 30 },
-    ownProfile, contacts, chats, messages, groups, invites, transfers,
+    ownProfile, contacts, chats, messages, groups, invites, transfers, strangers,
+    dmInvites: [
+      {
+        id: 'c1'.repeat(32), kind: 'link', secret: 'ZGVtby1pbnZpdGUtMDAwMQ', label: 'Telegram',
+        link: `veydan://contact/${ownProfile.npub}?i=ZGVtby1pbnZpdGUtMDAwMQ&n=${encodeURIComponent('Виталий')}`,
+        created_at: now - day, expires_at: now + day * 6, max_uses: 1, used: 0, revoked: false,
+      },
+      {
+        id: 'c2'.repeat(32), kind: 'code', secret: '482913', label: '', created_at: now - 3 * 3600, expires_at: now + 21 * 3600,
+        max_uses: 1, used: 0, for_pubkey: hex('4d'), revoked: false,
+      },
+    ],
+    // Nikita wrote more than the one text a stranger may: it waits for the answer.
+    held: { [nk]: 3 },
+    // The lines as the core writes them: its action words, its JSON detail.
+    modLog: {
+      [team.id]: [
+        { at: now - 7000, by: alice, action: 'mute', target: daria, detail: JSON.stringify({ until: now + 3600 }) },
+        { at: now - day, by: ME, action: 'settings', target: '', detail: JSON.stringify({ premod: 'newcomers', schedule: team.schedule }) },
+        { at: now - day * 2, by: alice, action: 'approve', target: t1.id, detail: JSON.stringify({ active: true, note: hex('f1'), version: t1.id }) },
+        { at: now - day * 4, by: boris, action: 'ban', target: bot, detail: '{}' },
+        { at: now - day * 4, by: boris, action: 'hide', target: bot, detail: JSON.stringify({ active: true, note: hex('f2'), from: 0, to: now - day * 4, reason: 'spam' }) },
+        { at: now - day * 6, by: gleb, action: 'hide', target: t1.id, detail: JSON.stringify({ active: false, note: hex('f3') }) },
+      ],
+    },
   };
 }

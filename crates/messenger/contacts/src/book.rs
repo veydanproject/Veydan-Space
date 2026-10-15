@@ -93,8 +93,24 @@ impl ContactService {
         Ok((format!("{}…{}", &npub[..12.min(npub.len())], &npub[npub.len().saturating_sub(4)..]), None))
     }
 
+    /// One contact as `list` shows it; a removed one is none. One row and
+    /// one profile, not the whole list: the book follows my list of
+    /// relations one peer at a time, and a thousand of them must not read
+    /// a thousand lists.
     pub async fn get(&self, pubkey: &PubKey) -> Result<Option<ContactView>> {
-        Ok(self.list().await?.into_iter().find(|c| c.pubkey == pubkey.as_hex()))
+        let Some(r) = repo::get(&self.store, pubkey.as_hex()).await?.filter(|r| r.deleted_at.is_none()) else { return Ok(None) };
+        let profile = self.profiles.get(pubkey).await?;
+        let followed = repo::follows(&self.store).await?.contains(&r.pubkey);
+        Ok(Some(ContactView {
+            npub: npub_of(&r.pubkey),
+            followed,
+            pubkey: r.pubkey,
+            nickname: r.nickname,
+            note: r.note,
+            profile,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }))
     }
 
     pub async fn is_contact(&self, pubkey: &PubKey) -> Result<bool> {

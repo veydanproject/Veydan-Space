@@ -49,7 +49,7 @@ use messenger_core::{Clock, MessengerError, Outbound, PubKey, Result};
 use messenger_ingress::Outbox;
 use messenger_media::{MediaService, PublicBlob};
 use messenger_richtext::Span;
-use messenger_store::{avatar_cache, own_avatar, settings, Store};
+use messenger_store::{avatar_cache, contacts, dm_relations, own_avatar, profiles, settings, Store};
 use nostr::key::Keys;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -877,10 +877,19 @@ impl Avatars {
     // ─── Others ─────────────────────────────────────────────────────────────
 
     /// The picture of `url` as a `data:` url when it is here. Otherwise
-    /// `None`, and unless `may_fetch` is false a fetch is queued;
+    /// `None`, and unless `may_fetch` is false a fetch is queued when the
+    /// face is one this device has a reason to ask for (`known`);
     /// `avatar.ready {url}` follows when it is done. `keys` (the session)
     /// lets my own servers be recognised and asked.
     pub async fn cached(&self, url: &str, keys: Option<&Keys>, may_fetch: bool) -> Result<Option<String>> {
+        let fetch = may_fetch && self.known(url, keys).await?;
+        self.cached_as(url, keys, fetch).await
+    }
+
+    /// `cached` for a face the caller vouches for by a way the store does
+    /// not know (a member of my group, the bot): `may_fetch` is taken as
+    /// it is.
+    pub async fn cached_as(&self, url: &str, keys: Option<&Keys>, may_fetch: bool) -> Result<Option<String>> {
         let url = url.trim();
         if !acceptable(url) {
             return Ok(None);
@@ -911,6 +920,46 @@ impl Avatars {
             self.queue(url, keys.cloned());
         }
         Ok(found)
+    }
+
+    /// Whether `url` is a face this device has a reason to ask for: my own
+    /// picture, or on one of my servers (`keys`); the picture of my contact,
+    /// one I let in (`my_contact = approved`) or one in my book, as long as
+    /// I do not block them. Anybody else is a stranger: one whose request
+    /// waits, whom I declined or blocked, whose request ran out, or a
+    /// profile merely looked at. Fetching their picture would tell their
+    /// server that this device looked, so their face stays unfetched until
+    /// I let them in (the page shows initials for them); what this device
+    /// already holds is shown as it is. A stranger without a profile names
+    /// no picture at all. The members of my groups are vouched for by the
+    /// caller (`cached_as`): the store does not know them.
+    pub async fn known(&self, url: &str, keys: Option<&Keys>) -> Result<bool> {
+        let url = url.trim();
+        if let Some(keys) = keys {
+            let me = keys.public_key().to_hex();
+            if hash_of(url).is_some() {
+                let bases = self.media.enabled_public_bases(keys).await.unwrap_or_default();
+                if under_my_server(url, &bases) {
+                    return Ok(true);
+                }
+            }
+            if profiles::get(&self.store, &me).await?.and_then(|p| p.picture).is_some_and(|p| p.trim() == url) {
+                return Ok(true);
+            }
+        }
+        for peer in profiles::with_picture(&self.store, url).await? {
+            let relation = dm_relations::get(&self.store, &peer).await?;
+            if relation.as_ref().is_some_and(|r| r.blocked) {
+                continue;
+            }
+            if relation.is_some_and(|r| r.my_contact == "approved") {
+                return Ok(true);
+            }
+            if contacts::get(&self.store, &peer).await?.is_some_and(|c| c.deleted_at.is_none()) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// The picture of `url` as this device holds it, never from the
@@ -1074,11 +1123,35 @@ impl MessengerRuntime {
     }
 
     /// The avatar at `url` as a `data:` url, or `None` while it is fetched
-    /// (`avatar.ready` follows). Nothing is fetched in silent mode.
+    /// (`avatar.ready` follows). Nothing is fetched in silent mode, and
+    /// nothing of a stranger's (`Avatars::known`): the faces this device
+    /// asks for are those of my contacts, of the members of my groups and
+    /// of the bot of Veydan Cloud.
     pub async fn avatar_cached(&self, url: &str) -> Result<Option<String>> {
         let keys = self.session_keys().await.ok();
-        let may_fetch = !self.relays.is_silent().await.unwrap_or(false);
-        self.avatars.cached(url, keys.as_ref(), may_fetch).await
+        let silent = self.relays.is_silent().await.unwrap_or(false);
+        let known = !silent && (self.avatars.known(url, keys.as_ref()).await? || self.vouched_face(url).await?);
+        self.avatars.cached_as(url, keys.as_ref(), known).await
+    }
+
+    /// Whether `url` is the picture of somebody the store cannot vouch for
+    /// but the runtime can: the pinned bot, or a member of a group I am in
+    /// (the groups know their members by their logs).
+    async fn vouched_face(&self, url: &str) -> Result<bool> {
+        let owners = profiles::with_picture(&self.store, url).await?;
+        if owners.is_empty() {
+            return Ok(false);
+        }
+        if owners.iter().filter_map(|o| PubKey::parse(o)).any(|o| self.dm.is_bot(&o)) {
+            return Ok(true);
+        }
+        let Some(me) = self.session_pubkey().await else { return Ok(false) };
+        for g in self.groups().list(&me).await.unwrap_or_default() {
+            if g.members.iter().any(|m| owners.contains(&m.pubkey)) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     async fn own_profile_now(&self, keys: &Keys) -> Result<ProfileView> {

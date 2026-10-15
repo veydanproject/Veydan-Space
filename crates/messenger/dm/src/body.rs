@@ -62,6 +62,17 @@ fn link(text: &str) -> Option<Body> {
     (!rest.is_empty()).then(|| Body::Link { link: LinkKind::Web, title: preview(rest) })
 }
 
+/// Whether a text has anything in it a reader could follow: an address
+/// with a scheme, a `www.` host, a key or a profile of the network, or the
+/// `nostr:` prefix of either, in any case. The gate lets a stranger send
+/// none of these before approval, so that a request is never a lure. A
+/// bare domain without a scheme is left alone: the app shows the text of
+/// a request plain, so nothing of it is clickable anyway.
+pub(crate) fn has_link(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    ["://", "www.", "npub1", "nprofile1", "nostr:"].iter().any(|mark| lower.contains(mark))
+}
+
 /// What anybody may put into a link is no word to show as it is.
 fn clean(name: &str) -> String {
     name.chars().filter(|c| !c.is_control()).collect()
@@ -130,6 +141,25 @@ mod tests {
 
         // A link of a kind this app does not know is shown as it came.
         assert_eq!(body_of(&Envelope::text("veydan://poll/abc")), Some(Body::Text { text: "veydan://poll/abc".into() }));
+    }
+
+    #[test]
+    fn a_link_in_a_text_is_found_in_any_case() {
+        for text in [
+            "see https://example.org",
+            "HTTP://EXAMPLE.ORG/x",
+            "veydan://contact/npub1abc",
+            "go to WWW.example.org now",
+            "my key NPUB1qqqq",
+            "nprofile1qqqs...",
+            "Nostr:npub1abc",
+            "nostr:nevent1abc",
+        ] {
+            assert!(has_link(text), "{text}");
+        }
+        for text in ["hello there", "example.org", "mail me at a@b.c", "npub is a word", "www", "http:/x", ""] {
+            assert!(!has_link(text), "{text}");
+        }
     }
 
     #[test]

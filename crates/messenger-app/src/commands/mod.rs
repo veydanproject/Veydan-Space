@@ -28,6 +28,8 @@ pub mod desktop_notify;
 pub mod notify_jni;
 // Calls: the commands of the page, forwarded to the runtime.
 pub mod calls;
+// Moderation: requests of strangers, whom I take messages from, groups, invitations.
+pub mod moderation;
 /// The calls log of a computer (`calls.log` in the messenger's data folder).
 #[cfg(desktop)]
 pub mod calls_log;
@@ -979,7 +981,7 @@ pub async fn messenger_chat_messages(
     limit: Option<i64>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Vec<MessageView>> {
-    messenger.runtime_unlocked().await?.dm().messages(&chat_id, before, limit.unwrap_or(50)).await.map_err(map_err)
+    messenger.runtime_unlocked().await?.messages(&chat_id, before, limit.unwrap_or(50)).await.map_err(map_err)
 }
 
 /// How many messages each section of what a chat has shared holds.
@@ -1146,13 +1148,21 @@ pub async fn messenger_dm_relation(
     messenger.runtime()?.dm_relation(&peer).await.map_err(map_err)
 }
 
-/// `action`: request | accept | decline | block | unblock | remove.
+/// `action`: request | accept | decline | block | unblock | remove. A
+/// `request` may carry `invite` (the secret of the peer's invitation: a
+/// link pasted, a code said, a QR scanned) and `text` (the first message
+/// that goes with it): the peer's device lets me in without a request.
 #[tauri::command]
 pub async fn messenger_dm_action(
     peer: String,
     action: String,
+    invite: Option<String>,
+    text: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<RelationView> {
+    if action == "request" && (invite.is_some() || text.is_some()) {
+        return messenger.runtime()?.dm_request(&peer, invite.as_deref(), text.as_deref()).await.map_err(map_err);
+    }
     let action = match action.as_str() {
         "request" => DmAction::Request,
         "accept" => DmAction::Accept,
@@ -1282,6 +1292,19 @@ pub async fn messenger_group_link_qr(
 #[tauri::command]
 pub async fn messenger_group_forget(group_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
     messenger.runtime()?.group_forget(&group_id).await.map_err(map_err)
+}
+
+/// «Load earlier» in a group: the newest `limit` events before `before`
+/// from the relays. How many of them this device lacked; the UI then
+/// reads the messages before `before` again.
+#[tauri::command]
+pub async fn messenger_group_history(
+    group: String,
+    before: i64,
+    limit: Option<u32>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<u32> {
+    messenger.runtime()?.group_history(&group, before, limit.unwrap_or(200)).await.map_err(map_err)
 }
 
 /// Hex keys of everyone I block.

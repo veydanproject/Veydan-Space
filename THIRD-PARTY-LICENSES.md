@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 887
+- **Rust / Cargo crates:** 893
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 1043
+- **Total third-party components:** 1049
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -47,11 +47,11 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | Zlib OR Apache-2.0 OR MIT (platform dep) | 16 |
 | Apache-2.0 | 13 |
 | CC0-1.0 | 12 |
+| Unlicense OR MIT | 10 |
+| Apache-2.0 OR MIT (platform dep) | 7 |
 | BSD-3-Clause | 7 |
-| Unlicense OR MIT | 7 |
 | ISC | 6 |
 | Apache-2.0 (platform dep) | 5 |
-| Apache-2.0 OR MIT (platform dep) | 5 |
 | MIT OR Apache-2.0 OR Zlib | 5 |
 | MPL-2.0 | 5 |
 | Apache-2.0 OR ISC OR MIT | 3 |
@@ -65,6 +65,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | CDLA-Permissive-2.0 | 2 |
 | MIT OR Apache-2.0 OR BSD-1-Clause (platform dep) | 2 |
 | MIT OR Apache-2.0 OR LGPL-2.1-or-later (platform dep) | 2 |
+| Unlicense OR MIT (platform dep) | 2 |
 | Zlib OR Apache-2.0 OR MIT | 2 |
 | (Apache-2.0 OR MIT) AND BSD-3-Clause | 1 |
 | (MIT OR Apache-2.0) AND Unicode-3.0 | 1 |
@@ -87,7 +88,6 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | MIT AND BSD-3-Clause | 1 |
 | MIT OR Zlib OR Apache-2.0 | 1 |
 | Unlicense | 1 |
-| Unlicense OR MIT (platform dep) | 1 |
 | Zlib (platform dep) | 1 |
 
 ## License summary — npm packages
@@ -104,7 +104,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (887)
+## Full acknowledgements — Rust crates (893)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -459,6 +459,10 @@ Thank you to the authors of the following Cargo crates:
 | itoa | 1.0.18 | MIT OR Apache-2.0 |
 | javascriptcore-rs | 1.1.2 | MIT |
 | javascriptcore-rs-sys | 1.1.1 | MIT |
+| jiff | 0.2.38 | Unlicense OR MIT |
+| jiff-core | 0.1.1 | Unlicense OR MIT |
+| jiff-static | 0.2.38 | Unlicense OR MIT * |
+| jiff-tzdb | 0.1.9 | Unlicense OR MIT |
 | jni | 0.21.1 | MIT OR Apache-2.0 * |
 | jni | 0.22.4 | MIT OR Apache-2.0 * |
 | jni-macros | 0.22.4 | MIT OR Apache-2.0 * |
@@ -604,6 +608,8 @@ Thank you to the authors of the following Cargo crates:
 | poly1305 | 0.8.0 | Apache-2.0 OR MIT |
 | poly1305 | 0.9.0 | Apache-2.0 OR MIT |
 | polyval | 0.7.1 | Apache-2.0 OR MIT |
+| portable-atomic | 1.15.0 | Apache-2.0 OR MIT * |
+| portable-atomic-util | 0.2.8 | Apache-2.0 OR MIT * |
 | potential_utf | 0.1.5 | Unicode-3.0 |
 | powerfmt | 0.2.0 | MIT OR Apache-2.0 |
 | ppmd-rust | 1.4.0 | CC0-1.0 OR MIT-0 |

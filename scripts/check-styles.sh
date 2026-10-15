@@ -39,9 +39,14 @@ MOBILE_PATHS="^$SRC/(lib/[a-z]+/mobile/|lib/[a-z]+/routes/Mobile|routes/\(mobile
 
 # Set at run time from a file other than the one that reads them.
 RUNTIME_VARS="
+  --attach-w
+  --attach-h
   --chip
   --inspector-bar-height
 "
+#   --attach-w, --attach-h  the size of the attach button inside the field of
+#                           the composer: set on `.field` by Composer.svelte,
+#                           read by AttachButton.svelte
 #   --chip                  style:--chip on a `.tinted` / `.tinted-text`
 #                           element (a colour from data); read by base.css
 #   --inspector-bar-height  UIInspector.svelte, setProperty on <html>; read by

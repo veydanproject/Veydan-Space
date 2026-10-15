@@ -54,6 +54,12 @@ pub struct MessageRow {
     pub outbox_local_id: Option<String>,
     pub failure_reason: Option<String>,
     pub media_json: Option<String>,
+    /// What the moderators of a group decided of it: `` (shown) or
+    /// `hidden`. Never set in a direct chat.
+    pub mod_state: String,
+    /// Whether it waits for a moderator: `ok` (never held), `pending`,
+    /// `approved`, `rejected`. `ok` in a direct chat.
+    pub review: String,
 }
 
 /// What a handler or the sender knows when inserting.
@@ -76,13 +82,39 @@ pub struct NewMessage {
     pub media_json: Option<String>,
 }
 
-const COLS: &str = "id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json";
+pub const COLS: &str = "id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json, mod_state, review";
+
+pub const MOD_SHOWN: &str = "";
+pub const MOD_HIDDEN: &str = "hidden";
+pub const REVIEW_OK: &str = "ok";
+pub const REVIEW_PENDING: &str = "pending";
+pub const REVIEW_APPROVED: &str = "approved";
+pub const REVIEW_REJECTED: &str = "rejected";
+/// Held when it came, shown now because the journal no longer holds its
+/// author (pre-moderation off, the author trusted or raised); it waits
+/// again should the journal hold them again. Shown like `ok`, but it
+/// remembers that it was held, so that a decision that comes late still
+/// counts and every device ends alike.
+pub const REVIEW_RELEASED: &str = "released";
+
+/// A row the chat shows: not an edit or a delete, not hidden by a
+/// moderator (except my own that a moderator rejected: its author alone
+/// is shown it, with the word that it was), and in a group not of someone
+/// I block in direct messages (the one effect of a block in groups; the
+/// unblock shows them again). `m` is the alias of `msg_messages` in the
+/// query.
+pub const SHOWN: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.blocked = 1))";
+
+/// What a member sees of a group: `SHOWN`, and nothing that still waits
+/// for a moderator unless it is mine. A moderator sees the waiting rows
+/// too (`list` with `moderator`).
+pub const SHOWN_TO_MEMBER: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.blocked = 1)) AND (m.review <> 'pending' OR m.direction = 'out')";
 
 /// Insert; `false` when a row with this id already exists (a duplicate copy).
 pub async fn insert(store: &Store, m: &NewMessage) -> Result<bool> {
     let res = sqlx::query(
-        "INSERT OR IGNORE INTO msg_messages (id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?)",
+        "INSERT OR IGNORE INTO msg_messages (id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json, mod_state, review)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, '', 'ok')",
     )
     .bind(&m.id)
     .bind(&m.chat_id)
@@ -116,11 +148,14 @@ pub async fn get(store: &Store, id: &str) -> Result<Option<MessageRow>> {
 
 /// Visible rows of a chat, oldest first, at most `limit`, all strictly
 /// older than `before` (created_at) when given. Deleted rows are included
-/// (rendered as tombstones); hidden rows never.
-pub async fn list(store: &Store, chat_id: &str, before: Option<i64>, limit: i64) -> Result<Vec<MessageRow>> {
+/// (rendered as tombstones); hidden rows never (`SHOWN`). What waits for a
+/// moderator is listed for a `moderator` and for its author, not for the
+/// other members.
+pub async fn list(store: &Store, chat_id: &str, before: Option<i64>, limit: i64, moderator: bool) -> Result<Vec<MessageRow>> {
+    let shown = if moderator { SHOWN } else { SHOWN_TO_MEMBER };
     let mut rows = sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
-        "SELECT {COLS} FROM msg_messages WHERE chat_id = ? AND is_hidden = 0 AND created_at < ?
-         ORDER BY created_at DESC, id DESC LIMIT ?"
+        "SELECT {COLS} FROM msg_messages m WHERE m.chat_id = ? AND {shown} AND m.created_at < ?
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?"
     )))
     .bind(chat_id)
     .bind(before.unwrap_or(i64::MAX))
@@ -130,6 +165,237 @@ pub async fn list(store: &Store, chat_id: &str, before: Option<i64>, limit: i64)
     .map_err(storage)?;
     rows.reverse();
     Ok(rows)
+}
+
+// ─── Moderation of groups ───────────────────────────────────────────────────
+
+/// What the moderators decided of a message: `MOD_SHOWN` or `MOD_HIDDEN`.
+/// `true` when it changed.
+pub async fn set_mod_state(store: &Store, id: &str, mod_state: &str) -> Result<bool> {
+    let r = sqlx::query("UPDATE msg_messages SET mod_state = ? WHERE id = ? AND mod_state <> ?")
+        .bind(mod_state)
+        .bind(id)
+        .bind(mod_state)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(r.rows_affected() > 0)
+}
+
+/// Whether a message waits for a moderator (`REVIEW_*`). `true` when it
+/// changed.
+pub async fn set_review(store: &Store, id: &str, review: &str) -> Result<bool> {
+    let r = sqlx::query("UPDATE msg_messages SET review = ? WHERE id = ? AND review <> ?")
+        .bind(review)
+        .bind(id)
+        .bind(review)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(r.rows_affected() > 0)
+}
+
+/// The version of a message that an approval names: the id of the edit
+/// in force (the one dated `edited_at`, by the author; the smaller id of
+/// two dated alike), or the id of the message itself.
+pub async fn version_of(store: &Store, row: &MessageRow) -> Result<String> {
+    let Some(edited_at) = row.edited_at else { return Ok(row.id.clone()) };
+    let edit = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM msg_messages WHERE target_id = ? AND content_type = 'edit' AND is_hidden = 1 AND sender_pubkey = ? AND created_at = ?
+         ORDER BY id ASC LIMIT 1",
+    )
+    .bind(&row.id)
+    .bind(&row.sender_pubkey)
+    .bind(edited_at)
+    .fetch_optional(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(edit.unwrap_or_else(|| row.id.clone()))
+}
+
+/// Shown rows of a chat written by `author` and dated inside `from..=to`:
+/// what a mark about a span of an author's messages falls on. Rows of
+/// every state, hidden ones too: a span lifted shows them again.
+pub async fn of_author_between(store: &Store, chat_id: &str, author: &str, from: i64, to: i64) -> Result<Vec<MessageRow>> {
+    sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_messages WHERE chat_id = ? AND sender_pubkey = ? AND is_hidden = 0 AND content_type <> 'system'
+           AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC, id ASC"
+    )))
+    .bind(chat_id)
+    .bind(author)
+    .bind(from)
+    .bind(to)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// The rows of a chat that wait for a moderator: shown, not deleted,
+/// `review = pending`.
+const PENDING: &str = "m.chat_id = ? AND m.review = 'pending' AND m.is_hidden = 0 AND m.mod_state = '' AND m.deleted_at IS NULL";
+
+/// What waits for a moderator, oldest first, of one author.
+pub async fn pending_for_author(store: &Store, chat_id: &str, author: &str) -> Result<Vec<MessageRow>> {
+    sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_messages m WHERE {PENDING} AND m.sender_pubkey = ? ORDER BY m.created_at ASC, m.id ASC"
+    )))
+    .bind(chat_id)
+    .bind(author)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// The rows of a chat that were held for a moderator and that nobody
+/// decided: those that wait (`pending`) and those shown because the
+/// journal no longer holds their author (`released`). What the journal
+/// says of them is read again whenever it changes.
+pub async fn held_rows(store: &Store, chat_id: &str) -> Result<Vec<MessageRow>> {
+    sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_messages WHERE chat_id = ? AND review IN ('pending', 'released') AND is_hidden = 0 AND content_type <> 'system'
+         ORDER BY created_at ASC, id ASC"
+    )))
+    .bind(chat_id)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// The rows of a chat that were never held for a moderator (`review =
+/// ok`) and are dated `since` or later: what a rule of pre-moderation
+/// that came after them has still to be read against.
+pub async fn ok_rows_since(store: &Store, chat_id: &str, since: i64) -> Result<Vec<MessageRow>> {
+    sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_messages WHERE chat_id = ? AND review = 'ok' AND created_at >= ? AND is_hidden = 0 AND content_type <> 'system' AND deleted_at IS NULL
+         ORDER BY created_at ASC, id ASC"
+    )))
+    .bind(chat_id)
+    .bind(since)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// How many rows of a chat wait for a moderator.
+pub async fn count_pending(store: &Store, chat_id: &str) -> Result<i64> {
+    sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM msg_messages m WHERE {PENDING}")))
+        .bind(chat_id)
+        .fetch_one(store.pool())
+        .await
+        .map_err(storage)
+}
+
+/// What of the queue to show; a field left out means "any".
+#[derive(Clone, Debug, Default)]
+pub struct QueueFilter {
+    pub author: Option<String>,
+    pub since: Option<i64>,
+    pub until: Option<i64>,
+    /// A part of the text, case-insensitively.
+    pub text: Option<String>,
+}
+
+/// One line of the queue: the oldest waiting row of an author and how
+/// many more of theirs wait behind it.
+#[derive(Clone, Debug)]
+pub struct QueueLine {
+    pub row: MessageRow,
+    pub more_from_author: i64,
+}
+
+fn filter_sql(f: &QueueFilter, alias: &str) -> String {
+    let mut sql = String::new();
+    if f.author.is_some() {
+        sql.push_str(&format!(" AND {alias}.sender_pubkey = ?"));
+    }
+    if f.since.is_some() {
+        sql.push_str(&format!(" AND {alias}.created_at >= ?"));
+    }
+    if f.until.is_some() {
+        sql.push_str(&format!(" AND {alias}.created_at <= ?"));
+    }
+    if f.text.is_some() {
+        sql.push_str(&format!(" AND {alias}.text LIKE ? ESCAPE '\\'"));
+    }
+    sql
+}
+
+fn bind_filter<'q, O>(mut q: sqlx::query::QueryAs<'q, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments>, f: &'q QueueFilter) -> sqlx::query::QueryAs<'q, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments> {
+    if let Some(a) = &f.author {
+        q = q.bind(a);
+    }
+    if let Some(s) = f.since {
+        q = q.bind(s);
+    }
+    if let Some(u) = f.until {
+        q = q.bind(u);
+    }
+    if let Some(t) = &f.text {
+        let escaped = t.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        q = q.bind(format!("%{escaped}%"));
+    }
+    q
+}
+
+/// The queue of a group as a moderator pages through it: one line per
+/// author (their oldest waiting row), newest first by that row, all
+/// strictly older than `before`; `total` is how many rows wait in all
+/// under the filter. The grouping is of the showing only: nothing is
+/// dropped for it. A full page takes along every further line dated to
+/// the same second as its last one, so that the next page, strictly
+/// older, passes none of them by: the page is at least `limit` long, not
+/// at most.
+pub async fn queue(store: &Store, chat_id: &str, filter: &QueueFilter, before: Option<i64>, limit: i64) -> Result<(Vec<QueueLine>, i64)> {
+    let m_filter = filter_sql(filter, "m");
+    let total_sql = format!("SELECT COUNT(*) FROM msg_messages m WHERE {PENDING}{m_filter}");
+    let total = bind_filter(sqlx::query_as::<_, (i64,)>(sqlx::AssertSqlSafe(total_sql)).bind(chat_id), filter)
+        .fetch_one(store.pool())
+        .await
+        .map_err(storage)?
+        .0;
+    let mut lines = queue_page(store, chat_id, filter, "m.created_at < ?", before.unwrap_or(i64::MAX), "", Some(limit)).await?;
+    if lines.len() as i64 >= limit {
+        if let Some(last) = lines.last() {
+            let (at, id) = (last.row.created_at, last.row.id.clone());
+            lines.extend(queue_page(store, chat_id, filter, "m.created_at = ? AND m.id < ?", at, &id, None).await?);
+        }
+    }
+    Ok((lines, total))
+}
+
+/// One read of the lines of the queue under `bound` (a condition on `m`
+/// with one or two placeholders, bound to `at` and `id`; `id` is bound
+/// only when the condition names it), the newest first, `limit` of them
+/// or all.
+async fn queue_page(store: &Store, chat_id: &str, filter: &QueueFilter, bound: &str, at: i64, id: &str, limit: Option<i64>) -> Result<Vec<QueueLine>> {
+    let m_filter = filter_sql(filter, "m");
+    let x_filter = filter_sql(filter, "x");
+    let sql = format!(
+        "SELECT {COLS}, (SELECT COUNT(*) FROM msg_messages x WHERE x.chat_id = m.chat_id AND x.review = 'pending' AND x.is_hidden = 0 AND x.mod_state = '' AND x.deleted_at IS NULL AND x.sender_pubkey = m.sender_pubkey{x_filter}) - 1 AS more
+         FROM msg_messages m
+         WHERE {PENDING}{m_filter} AND {bound}
+           AND m.id = (SELECT x.id FROM msg_messages x WHERE x.chat_id = m.chat_id AND x.review = 'pending' AND x.is_hidden = 0 AND x.mod_state = '' AND x.deleted_at IS NULL AND x.sender_pubkey = m.sender_pubkey{x_filter}
+                       ORDER BY x.created_at ASC, x.id ASC LIMIT 1)
+         ORDER BY m.created_at DESC, m.id DESC LIMIT ?"
+    );
+    // The filter is bound three times, in the order the placeholders
+    // stand: the count behind the line, the line itself, the choice of
+    // the oldest.
+    let q = bind_filter(sqlx::query_as::<_, QueueRow>(sqlx::AssertSqlSafe(sql)), filter).bind(chat_id);
+    let mut q = bind_filter(q, filter).bind(at);
+    if bound.contains("m.id") {
+        q = q.bind(id);
+    }
+    let q = bind_filter(q, filter).bind(limit.unwrap_or(-1));
+    let lines = q.fetch_all(store.pool()).await.map_err(storage)?;
+    Ok(lines.into_iter().map(|r| QueueLine { row: r.row, more_from_author: r.more }).collect())
+}
+
+#[derive(sqlx::FromRow)]
+struct QueueRow {
+    #[sqlx(flatten)]
+    row: MessageRow,
+    more: i64,
 }
 
 /// Newest application time in the chat; new outgoing rumors must be later.
@@ -156,6 +422,21 @@ pub async fn count_visible_incoming_since(store: &Store, chat_id: &str, floor: i
     .map_err(storage)
 }
 
+/// The oldest visible incoming row newer than `floor`: the one message of
+/// the peer's current request, as the queue of requests shows it.
+pub async fn first_visible_incoming_since(store: &Store, chat_id: &str, floor: i64) -> Result<Option<MessageRow>> {
+    sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_messages
+         WHERE chat_id = ? AND direction = 'in' AND is_hidden = 0 AND content_type != 'system' AND created_at > ?
+         ORDER BY created_at ASC, id ASC LIMIT 1"
+    )))
+    .bind(chat_id)
+    .bind(floor)
+    .fetch_optional(store.pool())
+    .await
+    .map_err(storage)
+}
+
 /// Rumor time of the newest visible incoming row: the peer's clock, so it
 /// can mark where an episode that I end now stops.
 pub async fn last_visible_incoming_at(store: &Store, chat_id: &str) -> Result<Option<i64>> {
@@ -171,6 +452,16 @@ pub async fn last_visible_incoming_at(store: &Store, chat_id: &str) -> Result<Op
 
 pub async fn count_visible(store: &Store, chat_id: &str) -> Result<i64> {
     sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM msg_messages WHERE chat_id = ? AND is_hidden = 0")
+        .bind(chat_id)
+        .fetch_one(store.pool())
+        .await
+        .map_err(storage)
+}
+
+/// Every row of a chat, hidden ones included: what a key left behind in
+/// the store, shown or not.
+pub async fn count_in_chat(store: &Store, chat_id: &str) -> Result<i64> {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM msg_messages WHERE chat_id = ?")
         .bind(chat_id)
         .fetch_one(store.pool())
         .await
@@ -369,9 +660,9 @@ mod tests {
         hidden.target_id = Some("3".into());
         insert(&s, &hidden).await.unwrap();
 
-        let page = list(&s, "c", None, 2).await.unwrap();
+        let page = list(&s, "c", None, 2, false).await.unwrap();
         assert_eq!(page.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), vec!["4", "5"], "newest page, oldest first");
-        let older = list(&s, "c", Some(40), 10).await.unwrap();
+        let older = list(&s, "c", Some(40), 10, false).await.unwrap();
         assert_eq!(older.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), vec!["1", "2", "3"], "hidden rows never listed");
         assert_eq!(last_created_at(&s, "c").await.unwrap(), Some(50));
         assert_eq!(count_visible_incoming_since(&s, "c", 0).await.unwrap(), 5);
@@ -389,6 +680,104 @@ mod tests {
         assert!(m.text.is_none() && m.deleted_at == Some(100));
         assert_eq!(count_visible_incoming_since(&s, "c", 0).await.unwrap(), 5, "a retracted request still was a request");
         assert_eq!(count_visible_outgoing(&s, "c").await.unwrap(), 0);
+    }
+
+    /// A row of a group chat by `who`, dated `at`.
+    fn said(id: &str, who: &str, at: i64) -> NewMessage {
+        NewMessage { sender_pubkey: who.into(), ..text(id, "group:g", DIR_IN, at) }
+    }
+
+    #[tokio::test]
+    async fn what_moderators_decided_and_what_waits_for_them_is_listed_by_role() {
+        let s = Store::open_in_memory().await.unwrap();
+        for (id, who, at) in [("a", "u", 10), ("b", "u", 20), ("c", "v", 30), ("d", "v", 40)] {
+            insert(&s, &said(id, who, at)).await.unwrap();
+        }
+        let mut mine = said("m", "me", 50);
+        mine.direction = DIR_OUT.into();
+        insert(&s, &mine).await.unwrap();
+        let ids = |rows: Vec<MessageRow>| rows.into_iter().map(|r| r.id).collect::<Vec<_>>();
+        assert_eq!(ids(list(&s, "group:g", None, 10, false).await.unwrap()), vec!["a", "b", "c", "d", "m"]);
+        assert_eq!(get(&s, "a").await.unwrap().unwrap().review, REVIEW_OK, "never held");
+        // Hidden by a moderator: listed for nobody. Waiting: for a moderator
+        // and for its author.
+        assert!(set_mod_state(&s, "a", MOD_HIDDEN).await.unwrap());
+        assert!(!set_mod_state(&s, "a", MOD_HIDDEN).await.unwrap(), "unchanged");
+        assert!(set_review(&s, "b", REVIEW_PENDING).await.unwrap());
+        assert!(set_review(&s, "c", REVIEW_PENDING).await.unwrap());
+        assert!(set_review(&s, "m", REVIEW_PENDING).await.unwrap());
+        assert_eq!(ids(list(&s, "group:g", None, 10, false).await.unwrap()), vec!["d", "m"], "a member: what is shown and my own");
+        assert_eq!(ids(list(&s, "group:g", None, 10, true).await.unwrap()), vec!["b", "c", "d", "m"], "a moderator: the waiting too");
+        assert_eq!(count_pending(&s, "group:g").await.unwrap(), 3);
+        assert_eq!(ids(pending_for_author(&s, "group:g", "u").await.unwrap()), vec!["b"]);
+        // The queue: one line per author, their oldest, newest line first.
+        let (lines, total) = queue(&s, "group:g", &QueueFilter::default(), None, 10).await.unwrap();
+        assert_eq!(total, 3);
+        assert_eq!(lines.iter().map(|l| (l.row.id.as_str(), l.more_from_author)).collect::<Vec<_>>(), vec![("m", 0), ("c", 0), ("b", 0)]);
+        insert(&s, &said("e", "v", 60)).await.unwrap();
+        set_review(&s, "e", REVIEW_PENDING).await.unwrap();
+        let (lines, total) = queue(&s, "group:g", &QueueFilter::default(), None, 10).await.unwrap();
+        assert_eq!(total, 4);
+        assert_eq!(lines.iter().map(|l| (l.row.id.as_str(), l.more_from_author)).collect::<Vec<_>>(), vec![("m", 0), ("c", 1), ("b", 0)]);
+        let (page, _) = queue(&s, "group:g", &QueueFilter::default(), Some(50), 1).await.unwrap();
+        assert_eq!(page[0].row.id, "c", "strictly older than `before`, one at a time");
+        let by_text = QueueFilter { text: Some("ME".into()), ..Default::default() };
+        let (lines, total) = queue(&s, "group:g", &by_text, None, 10).await.unwrap();
+        assert_eq!((total, lines.len(), lines[0].row.id.as_str()), (1, 1, "e"), "case does not matter; `%` and `_` are no wildcards");
+        let wild = QueueFilter { text: Some("%".into()), ..Default::default() };
+        assert_eq!(queue(&s, "group:g", &wild, None, 10).await.unwrap().1, 0);
+        let of_v = QueueFilter { author: Some("v".into()), since: Some(31), until: Some(60), ..Default::default() };
+        let (lines, total) = queue(&s, "group:g", &of_v, None, 10).await.unwrap();
+        assert_eq!((total, lines[0].row.id.as_str(), lines[0].more_from_author), (1, "e", 0), "the count behind a line is under the filter too");
+        // The span of an author's messages, hidden ones included.
+        assert_eq!(ids(of_author_between(&s, "group:g", "u", 0, 15).await.unwrap()), vec!["a"]);
+        assert_eq!(ids(of_author_between(&s, "group:g", "u", 0, 100).await.unwrap()), vec!["a", "b"]);
+        // The version: the message, or the edit in force.
+        let b = get(&s, "b").await.unwrap().unwrap();
+        assert_eq!(version_of(&s, &b).await.unwrap(), "b");
+        let mut e1 = text("e1", "group:g", DIR_IN, 25);
+        e1.sender_pubkey = "u".into();
+        e1.is_hidden = true;
+        e1.content_type = CT_EDIT.into();
+        e1.target_id = Some("b".into());
+        insert(&s, &e1).await.unwrap();
+        set_text(&s, "b", "changed", 25).await.unwrap();
+        let b = get(&s, "b").await.unwrap().unwrap();
+        assert_eq!(version_of(&s, &b).await.unwrap(), "e1");
+        let mut e0 = e1.clone();
+        e0.id = "e0".into();
+        insert(&s, &e0).await.unwrap();
+        assert_eq!(version_of(&s, &b).await.unwrap(), "e0", "dated alike: the smaller id");
+    }
+
+    #[tokio::test]
+    async fn someone_i_block_is_not_listed_in_a_group_until_the_unblock() {
+        use crate::dm_relations::{put, RelationRow};
+        let s = Store::open_in_memory().await.unwrap();
+        insert(&s, &said("a", "u", 10)).await.unwrap();
+        insert(&s, &said("b", "v", 20)).await.unwrap();
+        insert(&s, &text("d", "dm:u", DIR_IN, 30)).await.unwrap();
+        let mut r = RelationRow {
+            peer_pubkey: "u".into(),
+            my_contact: "none".into(),
+            blocked: true,
+            peer_signal: "none".into(),
+            was_ever_mutual: false,
+            last_signal_at: 0,
+            last_my_signal_at: 0,
+            request_floor: 0,
+            decided_at: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        put(&s, &r).await.unwrap();
+        let ids = |rows: Vec<MessageRow>| rows.into_iter().map(|r| r.id).collect::<Vec<_>>();
+        assert_eq!(ids(list(&s, "group:g", None, 10, false).await.unwrap()), vec!["b"]);
+        assert_eq!(ids(list(&s, "group:g", None, 10, true).await.unwrap()), vec!["b"], "a moderator blocks like anyone");
+        assert_eq!(ids(list(&s, "dm:u", None, 10, false).await.unwrap()), vec!["d"], "the direct chat keeps its rows");
+        r.blocked = false;
+        put(&s, &r).await.unwrap();
+        assert_eq!(ids(list(&s, "group:g", None, 10, false).await.unwrap()), vec!["a", "b"]);
     }
 
     #[tokio::test]

@@ -58,6 +58,9 @@ pub enum Action {
     /// Remove a message written by someone with this role.
     DeleteMessageOf(Role),
     Mute(Role),
+    /// Mark someone with this role as trusted (or take it back): their
+    /// messages are never held for moderation.
+    Trust(Role),
     /// Approve a request or accept an invitation: add a new member.
     Admit,
     Invite,
@@ -84,7 +87,7 @@ pub fn permits(actor: Role, action: Action) -> bool {
     use Role as R;
     match action {
         A::Post => true,
-        A::DeleteMessageOf(target) | A::Mute(target) => actor >= R::Moderator && target < actor,
+        A::DeleteMessageOf(target) | A::Mute(target) | A::Trust(target) => actor >= R::Moderator && target < actor,
         A::Admit | A::Invite | A::Unban | A::EditSettings | A::RotateKey | A::RotateLink => actor.is_manager(),
         A::Remove(target) => actor.is_manager() && target < actor,
         A::Ban(target) => actor.is_manager() && target.is_none_or(|t| t < actor),
@@ -111,6 +114,7 @@ mod tests {
             ("post", Action::Post, [true, true, true, true]),
             ("delete a member's message", Action::DeleteMessageOf(U), [true, true, true, false]),
             ("mute a member", Action::Mute(U), [true, true, true, false]),
+            ("trust a member", Action::Trust(U), [true, true, true, false]),
             ("admit", Action::Admit, [true, true, false, false]),
             ("invite", Action::Invite, [true, true, false, false]),
             ("remove a member", Action::Remove(U), [true, true, false, false]),

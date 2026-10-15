@@ -4,12 +4,14 @@
 <!--
   Everything about a group except its conversation: who is in, in which
   role, who asks to be let in, the link, the settings, and the way out.
+  Its moderation is a mode of the same panel, as a section of what the
+  group shared is.
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { t, type TranslationKey } from '$lib/core/i18n';
+  import { locale, localeTag, t, type TranslationKey } from '$lib/core/i18n';
   import { membersKey } from '../i18n';
-  import { groupError } from './errors';
+  import { groupError, moderationError } from './errors';
   import Icon from '$lib/core/Icon.svelte';
   import PanelHead from '../shared/PanelHead.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
@@ -21,12 +23,15 @@
   import SharedList from '../content/shared/SharedList.svelte';
   import { groupStore } from './groupStore.svelte';
   import { nameStore, shortKey } from './names.svelte';
-  import { canMute, canRemove, isManager, isOwner, rolesFor } from './permissions';
+  import { canMute, canRemove, canTrust, checksMessages, hasModeration, isManager, isModerator, isOwner, losesModeration, mutedNow, rolesFor } from './permissions';
+  import ModerationPanel from './moderation/ModerationPanel.svelte';
+  import ChoiceDialog from './moderation/ChoiceDialog.svelte';
+  import { MUTE_SPANS, muteUntil, opensAt, type MuteSpan } from './moderation/schedule';
   import { chatStore } from '../chats/chatStore.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
   import { longpress } from '../shared/longpress';
   import { stamp } from '../shared/time';
-  import { type GroupAction, type MessengerGroup, type MessengerGroupKey, type MessengerGroupMember, type SharedSection } from '../api';
+  import { messengerApi, type GroupAction, type GroupRole, type MessengerGroup, type MessengerGroupKey, type MessengerGroupMember, type ModAction, type SharedSection } from '../api';
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as "msg_you", params);
 
@@ -34,8 +39,10 @@
     group: MessengerGroup;
     onclose: () => void;
     onforgotten?: () => void;
+    /** The panel shows the moderation of the group instead of the group. */
+    moderation?: boolean;
   }
-  let { group, onclose, onforgotten }: Props = $props();
+  let { group, onclose, onforgotten, moderation = $bindable(false) }: Props = $props();
 
   let error = $state('');
   let busy = $state(false);
@@ -64,8 +71,120 @@
 
   const act = (a: GroupAction) => run(() => groupStore.act(group.id, a));
 
-  async function sure(text: string, cta: string, a: GroupAction) {
-    if (await confirmStore.ask(text, cta, true)) await act(a);
+  async function sure(text: string, cta: string, a: GroupAction): Promise<boolean> {
+    return (await confirmStore.ask(text, cta, true)) && (await act(a));
+  }
+
+  const now = () => Math.floor(Date.now() / 1000);
+
+  /** A decision of a moderator; it changes the members, so the group is read again. */
+  async function moderate(a: ModAction): Promise<boolean> {
+    error = ''; busy = true;
+    try {
+      await messengerApi.moderation.groupMod(group.id, a);
+      await groupStore.refresh(group.id);
+      return true;
+    } catch (e) {
+      error = moderationError(e, tr);
+      return false;
+    } finally {
+      busy = false;
+    }
+  }
+
+  // ── A moderator who stops being one ────────────────────────────────────
+  // Their decisions hold while they do (contract D: a mark is in force by
+  // the log of now); the one who demotes, removes or bans them is offered
+  // to sign those decisions again as their own.
+
+  // What the inheritance signs again: the marks still in force (a hiding, an
+  // approval); a rejection or an unhiding leaves nothing to carry.
+  const MARKS = new Set(['hide', 'approve']);
+
+  /** How many decisions on messages the log credits to this person; `null` when it cannot be read. */
+  async function decisionsOf(who: string): Promise<number | null> {
+    try {
+      let n = 0;
+      let before: number | undefined;
+      for (let i = 0; i < 10; i++) {
+        const page = await messengerApi.moderation.groupLog(group.id, before, 100);
+        n += page.items.filter((e) => e.by === who && MARKS.has(e.action)).length;
+        if (!page.next_before) break;
+        before = page.next_before;
+      }
+      return n;
+    } catch {
+      return null;
+    }
+  }
+
+  async function offerInherit(who: string, n: number | null) {
+    if (n === 0) return;
+    const name = nameStore.label(who);
+    const text = n === null ? $t('msg_mod_inherit_confirm_plain', { name }) : $t('msg_mod_inherit_confirm', { name, n: String(n) });
+    if (!(await confirmStore.ask(text, $t('msg_mod_inherit_cta'), false))) return;
+    error = '';
+    try { await messengerApi.moderation.groupInherit(group.id, who); }
+    catch (e) { error = moderationError(e, tr); }
+  }
+
+  /** An operation that may leave a moderator below one: their decisions are counted before it, offered after (where the core keeps marks). */
+  async function demoting(m: MessengerGroupMember, after: GroupRole | null, op: () => Promise<boolean>) {
+    const losing = hasModeration(group) && losesModeration(m.role, after);
+    const n = losing ? await decisionsOf(m.pubkey) : 0;
+    if ((await op()) && losing) await offerInherit(m.pubkey, n);
+  }
+
+  // ── Choices a menu entry cannot hold ───────────────────────────────────
+
+  let mute = $state<{ open: boolean; m: MessengerGroupMember | null; span: string }>({ open: false, m: null, span: 'hour' });
+  let ban = $state<{ open: boolean; m: MessengerGroupMember | null; hide: boolean }>({ open: false, m: null, hide: true });
+  let dialogBusy = $state(false);
+  let dialogError = $state('');
+
+  const muteOptions = $derived(MUTE_SPANS.map((v) => ({ value: v, label: $t(`msg_mod_mute_span_${v}` as 'msg_mod_mute_span_hour') })));
+
+  async function confirmMute() {
+    const m = mute.m;
+    if (!m) return;
+    dialogBusy = true; dialogError = '';
+    try {
+      const until = muteUntil(mute.span as MuteSpan, now());
+      await messengerApi.moderation.groupMod(group.id, until === undefined ? { t: 'mute', who: m.pubkey } : { t: 'mute', who: m.pubkey, until });
+      mute.open = false;
+      await groupStore.refresh(group.id);
+    } catch (e) {
+      dialogError = moderationError(e, tr);
+    } finally {
+      dialogBusy = false;
+    }
+  }
+
+  /** A ban, and with it, unless unticked, the hiding of everything they wrote until now. */
+  async function confirmBan() {
+    const m = ban.m;
+    if (!m) return;
+    const hide = ban.hide;
+    await demoting(m, null, async () => {
+      dialogBusy = true; dialogError = '';
+      try {
+        await groupStore.act(group.id, { op: 'ban', who: m.pubkey });
+      } catch (e) {
+        dialogError = explain(e);
+        return false;
+      } finally {
+        dialogBusy = false;
+      }
+      ban.open = false;
+      if (hide) await moderate({ t: 'hide_author', author: m.pubkey, from: 0, to: now() });
+      return true;
+    });
+  }
+
+  /** `до 18:00`, `до пт 18:00`: the end of a mute for a time, on this device's clock. */
+  function untilText(at: number): string {
+    const o = opensAt(at, now(), localeTag($locale));
+    return o ? (o.day ? `${o.day} ${o.time}` : o.time) : stamp(at);
   }
 
   /** Unbanning does not bring anyone back: offer to invite them. */
@@ -102,18 +221,30 @@
     const list: MenuEntry[] = [];
     if (!m.is_me) list.push({ label: $t('msg_group_member_write'), icon: 'message-circle', onselect: () => { chatStore.openPeer(m.pubkey).catch(() => {}); onclose(); } });
     for (const role of rolesFor(group, m)) {
-      list.push({ label: $t('msg_group_member_make', { role: $t(`msg_group_role_${role}` as 'msg_group_role_admin') }), icon: 'shield', onselect: () => act({ op: 'set_role', who: m.pubkey, role }) });
+      list.push({ label: $t('msg_group_member_make', { role: $t(`msg_group_role_${role}` as 'msg_group_role_admin') }), icon: 'shield',
+        onselect: () => demoting(m, role, () => act({ op: 'set_role', who: m.pubkey, role })) });
     }
-    if (canMute(group, m)) {
+    if (canMute(group, m) && hasModeration(group)) {
+      if (mutedNow(m)) list.push({ label: $t('msg_group_member_unmute'), icon: 'bell', onselect: () => moderate({ t: 'unmute', who: m.pubkey }) });
+      else list.push({ label: $t('msg_mod_member_mute'), icon: 'bell-off', onselect: () => { dialogError = ''; mute = { open: true, m, span: 'hour' }; } });
+    } else if (canMute(group, m)) {
+      // A core without moderation: the mute of the log, until lifted.
       list.push({ label: m.muted ? $t('msg_group_member_unmute') : $t('msg_group_member_mute'), icon: 'bell-off', onselect: () => act({ op: 'set_muted', who: m.pubkey, muted: !m.muted }) });
+    }
+    if (canTrust(group, m) && checksMessages(group)) {
+      list.push(m.trusted
+        ? { label: $t('msg_mod_member_untrust'), icon: 'shield', onselect: () => moderate({ t: 'trust', who: m.pubkey, trusted: false }) }
+        : { label: $t('msg_mod_member_trust'), icon: 'check-circle', onselect: () => moderate({ t: 'trust', who: m.pubkey, trusted: true }) });
     }
     if (isOwner(group) && !m.is_me) {
       list.push({ label: $t('msg_group_member_transfer'), icon: 'key', onselect: () => sure($t('msg_group_transfer_confirm', { name: who }), $t('msg_group_member_transfer'), { op: 'transfer_ownership', to: m.pubkey }) });
     }
     if (canRemove(group, m)) {
       list.push({ type: 'separator' });
-      list.push({ label: $t('msg_group_member_remove'), icon: 'x', danger: true, onselect: () => sure($t('msg_group_remove_confirm', { name: who }), $t('msg_group_member_remove'), { op: 'remove', who: m.pubkey }) });
-      list.push({ label: $t('msg_group_member_ban'), icon: 'ban', danger: true, onselect: () => sure($t('msg_group_ban_confirm', { name: who }), $t('msg_group_member_ban'), { op: 'ban', who: m.pubkey }) });
+      list.push({ label: $t('msg_group_member_remove'), icon: 'x', danger: true,
+        onselect: () => demoting(m, null, () => sure($t('msg_group_remove_confirm', { name: who }), $t('msg_group_member_remove'), { op: 'remove', who: m.pubkey })) });
+      if (hasModeration(group)) list.push({ label: $t('msg_mod_ban'), icon: 'ban', danger: true, onselect: () => { dialogError = ''; ban = { open: true, m, hide: true }; } });
+      else list.push({ label: $t('msg_group_member_ban'), icon: 'ban', danger: true, onselect: () => sure($t('msg_group_ban_confirm', { name: who }), $t('msg_group_member_ban'), { op: 'ban', who: m.pubkey }) });
     }
     return list;
   }
@@ -156,6 +287,8 @@
 <div class="panel">
   {#if section}
   <SharedList chatId={`group:${group.id}`} {section} onback={() => (section = null)} />
+  {:else if moderation && isModerator(group) && hasModeration(group)}
+  <ModerationPanel {group} onback={() => (moderation = false)} />
   {:else}
   <PanelHead title={$t('msg_group_info')} {onclose} />
 
@@ -238,6 +371,17 @@
       </section>
     {/if}
 
+    {#if isModerator(group) && hasModeration(group)}
+      <button class="mod-row" onclick={() => (moderation = true)}>
+        <Icon name="shield" size={16} />
+        <span class="mod-text">
+          <span class="mod-name">{$t('msg_mod_title')}{#if group.queue} · {group.queue}{/if}</span>
+          <span class="mod-hint">{$t('msg_mod_row_hint')}</span>
+        </span>
+        <Icon name="chevron-right" size={15} />
+      </button>
+    {/if}
+
     {#if joined}<GroupLink {group} />{/if}
 
     <SharedMedia chatId={`group:${group.id}`} onopen={(s) => (section = s)} />
@@ -257,7 +401,10 @@
                 <span class="who-name">{nameStore.label(m.pubkey)}{#if m.is_me} <span class="me">({$t('msg_you')})</span>{/if}</span>
                 <code>{shortKey(m.pubkey)}</code>
               </span>
-              {#if m.muted}<span class="dim" title={$t('msg_group_member_muted')}><Icon name="bell-off" size={13} /></span>{/if}
+              {#if m.trusted && checksMessages(group)}<span class="dim" title={$t('msg_mod_member_trusted')}><Icon name="check-circle" size={13} /></span>{/if}
+              {#if mutedNow(m)}
+                <span class="dim" title={m.muted_until ? $t('msg_mod_member_muted_until', { time: untilText(m.muted_until) }) : $t('msg_group_member_muted')}><Icon name="bell-off" size={13} /></span>
+              {/if}
               {#if m.role !== 'member'}<span class="role {m.role}">{$t(`msg_group_role_${m.role}` as 'msg_group_role_admin')}</span>{/if}
             </button>
           </li>
@@ -298,6 +445,10 @@
 
 <InvitePicker bind:open={inviting} {group} />
 <ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} onclose={() => (menu.open = false)} />
+<ChoiceDialog bind:open={mute.open} bind:value={mute.span} title={$t('msg_mod_mute_title', { name: mute.m ? nameStore.label(mute.m.pubkey) : '' })}
+  options={muteOptions} cta={$t('msg_mod_mute_cta')} danger busy={dialogBusy} error={dialogError} onconfirm={confirmMute} />
+<ChoiceDialog bind:open={ban.open} bind:checked={ban.hide} title={$t('msg_mod_ban_title', { name: ban.m ? nameStore.label(ban.m.pubkey) : '' })}
+  text={$t('msg_mod_ban_text')} check={$t('msg_mod_ban_hide')} cta={$t('msg_mod_ban')} danger busy={dialogBusy} error={dialogError} onconfirm={confirmBan} />
 
 <style>
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
@@ -347,6 +498,14 @@
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   .danger { color: var(--danger-text); }
+  .mod-row {
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 10px 12px; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
+  }
+  .mod-row:hover { background: var(--surface-row-hover); }
+  .mod-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .mod-name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+  .mod-hint { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.35; }
   @media (pointer: coarse) {
     .icon { padding: 10px; }
     .person { padding: 9px 8px; }
