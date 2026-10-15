@@ -1,32 +1,36 @@
 name: Release
 run-name: ${{ contains(github.ref_name, '-rc.') && 'RC' || 'Release' }} ${{ github.ref_name }}
 
-# The Windows and macOS bundles of ONE product, built in the product's own
+# Every bundle of ONE product, built and published in the product's own
 # public repository on GitHub (docs/ci-cd.md, "Releases"). This file lives
 # in the monorepo and reaches the repository of each product with its
 # snapshot (products.json, publish.shared); nothing ever runs it in the
 # monorepo.
 #
-#   make push <product> rc|release   (the owner, in the monorepo)
+#   make push <product> rc|release   (the owner, in the monorepo), or the
+#   merge of a pull request labelled rc:<product> (rc-on-merge of
+#   veydanproject/release on Gitea)
 #     → the release workflow of Gitea (veydanproject/release) publishes the
 #       snapshot of the tagged commit here under vX.Y.Z-rc.N or vX.Y.Z; THIS
-#       workflow builds Windows and macOS (two architectures) and puts the
-#       bundles and their updater signatures into a DRAFT release under the
-#       tag. It publishes nothing: Gitea builds Linux and Android, waits for
-#       this draft, checks every signature, writes latest.json and publishes
-#       it — an rc as a pre-release, a release as the latest.
+#       workflow builds Windows, macOS (two architectures) and Linux in a
+#       matrix, Android (the APK, and the app bundle for Google Play) in a
+#       job of its own, checks every updater signature, writes latest.json
+#       and SHA256SUMS, and publishes the release — an rc as a pre-release
+#       (the updater never offers it), a release as the latest.
 #   make push <product> dev
 #     → a dev build, on Gitea alone: nothing comes here.
 #
-# The build jobs only build and sign; the draft is written with the run's
-# own token by the job `draft`, the only one with `contents: write`.
+# The build jobs only build and sign; the release is written with the run's
+# own token by the job `publish`, the only one with `contents: write`. The
+# app bundle for Google Play is an artifact of the run (90 days), never a
+# file of the release: the owner uploads it to the Play Console by hand.
 on:
   push:
     tags: ['v*']
   # Again, by hand, on a release tag.
   workflow_dispatch:
 
-# Read-only for every job; `draft` alone asks for more.
+# Read-only for every job; `publish` alone asks for more.
 permissions:
   contents: read
 
@@ -36,6 +40,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
 jobs:
   meta:
     runs-on: ubuntu-latest
@@ -44,28 +52,32 @@ jobs:
     outputs:
       product: ${{ steps.meta.outputs.product }}
       version: ${{ steps.meta.outputs.version }}
+      kind: ${{ steps.meta.outputs.kind }}
       release_tag: ${{ steps.meta.outputs.release_tag }}
       release_name: ${{ steps.meta.outputs.release_name }}
+      notes_file: ${{ steps.meta.outputs.notes_file }}
       product_name: ${{ steps.meta.outputs.product_name }}
       asset_prefix: ${{ steps.meta.outputs.asset_prefix }}
       messenger: ${{ steps.meta.outputs.messenger }}
+      lib_name: ${{ steps.meta.outputs.lib_name }}
       matrix: ${{ steps.meta.outputs.matrix }}
       updater_keys: ${{ steps.meta.outputs.updater_keys }}
       updater_pubkey: ${{ steps.meta.outputs.updater_pubkey }}
       build_desktop: ${{ steps.meta.outputs.build_desktop }}
+      build_android: ${{ steps.meta.outputs.build_android }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # The product, the version (it must equal VERSION at the tagged
-      # commit), the desktop platforms and the names of the files.
+      # commit), the platforms and the names of the files.
       - id: meta
         name: Parse the tag and verify VERSION
         run: bash scripts/release/meta.sh
 
-  # The desktop bundles of the product, signed for the updater, as an
-  # artifact of the run. No token: this job publishes nothing.
+  # The desktop bundles of the product (Windows, macOS, Linux), signed for
+  # the updater, as artifacts of the run. No token: this job publishes nothing.
   build:
     needs: meta
     if: needs.meta.outputs.build_desktop == 'true'
@@ -230,17 +242,182 @@ jobs:
         shell: bash
         run: df -h . && du -sh data/target 2>/dev/null || true
 
-  # The draft release under the tag, with every desktop bundle and
-  # signature and nothing else: no latest.json, not published. Gitea takes
-  # it from here. A run started again replaces the files of the draft.
-  draft:
-    needs: [meta, build]
-    if: needs.build.result == 'success'
+  # The APK of the product, signed with the release key, and the app bundle
+  # for Google Play, signed with the upload key. The JDK, the SDK and the NDK
+  # are the pins of scripts/android/android-env.sh, installed into
+  # data/toolchains (kept between runs by the cache), never the ones of the
+  # runner's image: the same build as on our runner. No token: this job
+  # publishes nothing.
+  android:
+    needs: meta
+    if: needs.meta.outputs.build_android == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    env:
+      PRODUCT: ${{ needs.meta.outputs.product }}
+      VEYDAN_ANDROID_NO_ADB: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The toolchains of the image are not used: the pinned ones are.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
+
+      # Rust, Node, pnpm, the JDK, the SDK and the NDK, as the scripts
+      # install them; the key moves with the pins.
+      - name: Toolchains (cache)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            data/toolchains/rustup
+            data/toolchains/cargo
+            data/toolchains/node
+            data/toolchains/jdk
+            data/toolchains/android-sdk
+            data/toolchains/gradle
+          key: android-toolchains-${{ hashFiles('scripts/toolchain.sh', 'scripts/android/android-env.sh', 'rust-toolchain.toml', 'ui/.node-version', 'ui/package.json') }}
+      # android-env.sh fetches the engine's archive for every product (a
+      # product without the messenger links it not; the archive is small).
+      - name: libwebrtc (cache)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: data/toolchains/webrtc
+          key: webrtc-veydan-v1.0.10-android-arm64
+      # cargo's output of the last run of this product: the crates of the
+      # registry are compiled once, the product every time.
+      - name: cargo target (cache)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: data/target-android/${{ needs.meta.outputs.product }}
+          key: android-target-${{ needs.meta.outputs.product }}-${{ hashFiles('Cargo.lock', 'crates/messenger/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: android-target-${{ needs.meta.outputs.product }}-
+      - name: Toolchains (scripts/android/android-env.sh)
+        run: |
+          set -euo pipefail
+          source scripts/android/android-env.sh
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          echo "$ROOT_DIR/data/toolchains/node/bin" >> "$GITHUB_PATH"
+          echo "RUSTUP_HOME=$RUSTUP_HOME" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$CARGO_HOME" >> "$GITHUB_ENV"
+      # The version rust-toolchain.toml names (android-env.sh installed it
+      # into data/toolchains with the Android targets; said here as every
+      # job that runs cargo says it).
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustc -V
+
+      - name: Install frontend dependencies
+        run: pnpm --dir ui install --frozen-lockfile
+
+      # Firebase settings for the messenger's pushes (products with the
+      # messenger): one google-services.json with a client per product.
+      - name: Write google-services.json
+        if: needs.meta.outputs.messenger == 'true'
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON secret (base64 of google-services.json) is required"
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -d > "apps/$PRODUCT/gen/android/app/google-services.json"
+
+      # The APK and the app bundle of the one architecture of the phones
+      # (aarch64; the engine of calls is pinned for it alone), unsigned:
+      # the keys are applied by the steps below, each from its secret.
+      - name: Build Android (APK and app bundle)
+        run: |
+          set -euo pipefail
+          # The NDK of the image is gone (Free disk space); its variables must not point a build script there.
+          unset ANDROID_NDK_ROOT ANDROID_NDK ANDROID_NDK_LATEST_HOME ANDROID_NDK_HOME
+          ROOT_DIR="$PWD"
+          source scripts/android/android-env.sh
+          export GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.daemon=false"
+          source scripts/product.sh
+          product_env "$PRODUCT"
+          export CARGO_TARGET_DIR="$(realpath data)/target-android/$PRODUCT"
+          tauri_cli_ready
+          "$TAURI_CLI" android build --target aarch64
+
+      # The push handler of the messenger is called by name from Java
+      # (scripts/release/android.sh symbol).
+      - name: The JNI symbol of the push handler
+        if: needs.meta.outputs.messenger == 'true'
+        env:
+          LIB_NAME: ${{ needs.meta.outputs.lib_name }}
+        run: |
+          NDK_LLVM_BIN="$(ls -d data/toolchains/android-sdk/ndk/*/toolchains/llvm/prebuilt/linux-x86_64/bin | head -n1)"
+          export NDK_LLVM_BIN
+          bash scripts/release/android.sh symbol
+
+      # The release key from the secrets, for one step (scripts/release/android.sh
+      # sign; the alias is its default, veydan — not a secret: a secret whose
+      # value is a word masks that word in every output, "veydanproject" included).
+      - name: Sign the APK
+        env:
+          ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          ANDROID_RELEASE_KEYSTORE: ${{ secrets.ANDROID_RELEASE_KEYSTORE }}
+          ANDROID_RELEASE_KS_PASS: ${{ secrets.ANDROID_RELEASE_KS_PASS }}
+        run: |
+          export JAVA_HOME="$PWD/data/toolchains/jdk"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          APKSIGNER="$(ls -1 data/toolchains/android-sdk/build-tools/*/apksigner | tail -n1)"
+          export APKSIGNER
+          bash scripts/release/android.sh sign
+
+      # The upload key from the secrets, for one step (scripts/release/android.sh
+      # bundle): the bundle Google Play takes. Its alias is the default, upload.
+      - name: Sign the app bundle for Google Play
+        env:
+          ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          ANDROID_UPLOAD_KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
+          ANDROID_UPLOAD_KS_PASS: ${{ secrets.ANDROID_UPLOAD_KS_PASS }}
+        run: |
+          export JAVA_HOME="$PWD/data/toolchains/jdk"
+          export JARSIGNER="$JAVA_HOME/bin/jarsigner" KEYTOOL="$JAVA_HOME/bin/keytool"
+          bash scripts/release/android.sh bundle
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundles-android
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 3
+      # For the Play Console, by hand: the one artifact that outlives the release.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: play-bundle
+          path: play-bundle/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Disk (after the job)
+        if: always()
+        run: df -h . && du -sh data/target-android data/toolchains 2>/dev/null || true
+
+  # Everything together: every signature checked against the public key of
+  # the product, latest.json over every platform, SHA256SUMS, the note of
+  # the version as the text — published under the tag as a pre-release (rc)
+  # or THE release (the latest). Only this job may write.
+  publish:
+    needs: [meta, build, android]
+    if: needs.build.result == 'success' && needs.android.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      # scripts/release/, and gh calls git even when --repo is set.
+      # scripts/release/, the note, and gh calls git even when --repo is set.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -251,20 +428,34 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: The draft release of this repository
+      - name: Every signature, then the release
         env:
           GH_TOKEN: ${{ github.token }}
-          MODE: draft
+          MODE: ${{ needs.meta.outputs.kind == 'rc' && 'channel' || 'release' }}
+          KIND: ${{ needs.meta.outputs.kind }}
           REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.meta.outputs.release_tag }}
           RELEASE_NAME: ${{ needs.meta.outputs.release_name }}
+          NOTES_SOURCE: ${{ needs.meta.outputs.notes_file }}
           ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
           VERSION: ${{ needs.meta.outputs.version }}
           UPDATER_KEYS: ${{ needs.meta.outputs.updater_keys }}
+          UPDATER_PUBKEY: ${{ needs.meta.outputs.updater_pubkey }}
           ASSETS_DIR: release-assets
         run: |
+          set -euo pipefail
           if [ "$RELEASE_TAG" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::The draft of this repository goes under its own tag $GITHUB_REF_NAME, not $RELEASE_TAG"
+            echo "::error::The release of this repository goes under its own tag $GITHUB_REF_NAME, not $RELEASE_TAG"
             exit 1
           fi
+          node scripts/release/assets.mjs verify --dir "$ASSETS_DIR" --prefix "$ASSET_PREFIX" --version "$VERSION" \
+            --keys "$UPDATER_KEYS" --pubkey "$UPDATER_PUBKEY"
+          if [ ! -f "$NOTES_SOURCE" ]; then
+            echo "::error::$NOTES_SOURCE: the release note of $VERSION is missing at the tag"
+            exit 1
+          fi
+          NOTES_FILE="$(mktemp)"
+          node scripts/release/notes.mjs body "$NOTES_SOURCE" --kind "$KIND" > "$NOTES_FILE"
+          export NOTES_FILE
+          ls -la "$ASSETS_DIR"
           bash scripts/release/publish.sh

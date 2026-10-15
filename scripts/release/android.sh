@@ -23,6 +23,17 @@
 #     keystore lives for this step; without the v4 scheme (its .idsig was
 #     once published next to the APK). The folder holds the signed APK and
 #     nothing else at the end.
+#
+#   scripts/release/android.sh bundle    PRODUCT, ASSET_PREFIX, VERSION,
+#     JARSIGNER, KEYTOOL, RUNNER_TEMP, ANDROID_UPLOAD_KEYSTORE (base64),
+#     ANDROID_UPLOAD_KS_PASS, ANDROID_UPLOAD_KEY_ALIAS (upload): the newest
+#     release app bundle of the product (the .aab Gradle writes beside the
+#     APK) becomes play-bundle/<prefix>_<version>_android.aab, signed with
+#     the UPLOAD key — the key Google Play accepts uploads with; the key of
+#     the APK never goes to Google, and a lost upload key is replaced in
+#     the Play Console. The signature is checked and its certificate must
+#     be the one of the keystore. The bundle is an artifact of the run,
+#     never a file of the release: the owner uploads it to the Play Console.
 set -euo pipefail
 
 fail() {
@@ -74,5 +85,47 @@ case "${1:-}" in
       exit 1
     fi
     ;;
-  *) fail "usage: scripts/release/android.sh symbol|sign" ;;
+  bundle)
+    : "${PRODUCT:?}" "${ASSET_PREFIX:?}" "${VERSION:?}" "${JARSIGNER:?}" "${KEYTOOL:?}" "${RUNNER_TEMP:?}"
+    if [ -z "${ANDROID_UPLOAD_KEYSTORE:-}" ] || [ -z "${ANDROID_UPLOAD_KS_PASS:-}" ]; then
+      fail "ANDROID_UPLOAD_KEYSTORE and ANDROID_UPLOAD_KS_PASS secrets are required"
+    fi
+    ALIAS="${ANDROID_UPLOAD_KEY_ALIAS:-upload}"
+    KS="$RUNNER_TEMP/android-upload.keystore"
+    # Gone on every way out: a wrong password or alias stops jarsigner and
+    # keytool, and set -e with them.
+    trap 'rm -f "$KS"' EXIT
+    printf '%s' "$ANDROID_UPLOAD_KEYSTORE" | base64 -d > "$KS"
+    UNSIGNED="$(find "apps/$PRODUCT/gen/android/app/build/outputs/bundle" \
+      -name '*-release.aab' -printf '%T@\t%p\n' | sort -nr | sed -n '1s/^[^\t]*\t//p')"
+    if [ -z "$UNSIGNED" ]; then
+      rm -f "$KS"
+      fail "No release app bundle (.aab) after tauri android build"
+    fi
+    rm -rf play-bundle && mkdir -p play-bundle
+    SIGNED="play-bundle/${ASSET_PREFIX}_${VERSION}_android.aab"
+    cp "$UNSIGNED" "$SIGNED"
+    # jarsigner signs in place; the passwords come from the environment.
+    "$JARSIGNER" -sigalg SHA256withRSA -digestalg SHA-256 \
+      -keystore "$KS" -storepass:env ANDROID_UPLOAD_KS_PASS -keypass:env ANDROID_UPLOAD_KS_PASS \
+      "$SIGNED" "$ALIAS" >/dev/null
+    # The certificate of the keystore is the one the bundle carries. -v:
+    # without it keytool -list prints "Certificate fingerprint (SHA-256): …",
+    # not the "SHA256: …" line that -printcert prints.
+    WANT="$("$KEYTOOL" -list -v -keystore "$KS" -storepass:env ANDROID_UPLOAD_KS_PASS -alias "$ALIAS" 2>/dev/null | sed -n 's/.*SHA256: *//p' | head -n1 || true)"
+    rm -f "$KS"
+    [ -n "$WANT" ] || fail "the upload keystore has no key '$ALIAS'"
+    # The answer is taken whole, then searched (the trap of `symbol` above).
+    VERIFIED="$("$JARSIGNER" -verify "$SIGNED")" || fail "$SIGNED: jarsigner does not verify the bundle"
+    grep -q 'jar verified' <<<"$VERIFIED" || fail "$SIGNED: jarsigner does not verify the bundle"
+    HAVE="$("$KEYTOOL" -printcert -jarfile "$SIGNED" | sed -n 's/.*SHA256: *//p' | head -n1)"
+    [ "$HAVE" = "$WANT" ] || fail "$SIGNED is signed with $HAVE, and the upload key is $WANT"
+    if [ "$(ls -A play-bundle)" != "$(basename "$SIGNED")" ]; then
+      echo "::error::play-bundle holds more than the signed bundle"
+      ls -A play-bundle
+      exit 1
+    fi
+    echo ">> $SIGNED signed with the upload key $WANT"
+    ;;
+  *) fail "usage: scripts/release/android.sh symbol|sign|bundle" ;;
 esac

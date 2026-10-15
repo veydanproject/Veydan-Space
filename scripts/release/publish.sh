@@ -3,19 +3,15 @@
 # SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 #
 # The GitHub release of one product out of the files the build jobs
-# gathered (docs/ci-cd.md, "Releases"; internal/platform-spec.md 14.3). It
-# publishes where it is told and knows no repository and no token of its
-# own:
+# gathered (docs/ci-cd.md, "Releases"; internal/platform-spec.md 14.3): the
+# job `publish` of release.yml in the product's repository. It publishes
+# where it is told and knows no repository and no token of its own:
 #
-#   MODE           draft    — the job `draft` of release.yml in the product's
-#                             repository: a DRAFT under RELEASE_TAG with the
-#                             desktop bundles and their signatures; no
-#                             latest.json, nothing published
-#                  channel  — the release workflow of Gitea: every file of
-#                             ASSETS_DIR (the desktop bundles taken from the
-#                             draft, the APK built there) plus latest.json
-#                             over UPDATER_KEYS, published as a PRERELEASE,
-#                             never the latest; the draft is replaced in place
+#   MODE           channel  — every file of ASSETS_DIR (the bundles of every
+#                             platform and their signatures, the APK) plus
+#                             latest.json over UPDATER_KEYS and SHA256SUMS
+#                             over all of them, published as a PRERELEASE,
+#                             never the latest
 #                  release  — the same files, published as THE release (latest)
 #   REPO           <owner>/<repo> of the release
 #   RELEASE_TAG    the tag the release is attached to; it must exist there
@@ -31,7 +27,8 @@
 #
 # The release is created with every file at once and checked afterwards:
 # each file is there, the flags are what was asked, a prerelease is not
-# what /releases/latest answers, latest.json names this release.
+# what /releases/latest answers, latest.json names this release. A run
+# started again replaces the files of the release in place.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,7 +41,7 @@ fail() {
 : "${REPO:?}" "${RELEASE_TAG:?}" "${RELEASE_NAME:?}" "${ASSET_PREFIX:?}" "${VERSION:?}" "${ASSETS_DIR:?}"
 MODE="${MODE:-channel}"
 UPDATER_KEYS="${UPDATER_KEYS:-}"
-case "$MODE" in draft|channel|release) ;; *) fail "MODE=$MODE: draft, channel or release" ;; esac
+case "$MODE" in channel|release) ;; *) fail "MODE=$MODE: channel or release" ;; esac
 [ -n "${GH_TOKEN:-}" ] || fail "No token to publish $RELEASE_TAG in $REPO with"
 [ -d "$ASSETS_DIR" ] || fail "$ASSETS_DIR: no assets to publish"
 
@@ -53,7 +50,7 @@ shopt -s nullglob
 FILES=()
 for file in "$ASSETS_DIR"/*; do
   name="$(basename "$file")"
-  [ "$name" = "latest.json" ] && continue
+  case "$name" in latest.json|SHA256SUMS|latest.published.json) continue ;; esac
   case "$name" in
     "${ASSET_PREFIX}_${VERSION}_"*|"${ASSET_PREFIX}-${VERSION}-"*) FILES+=("$file") ;;
     *) fail "$name is not a bundle of ${ASSET_PREFIX} ${VERSION}" ;;
@@ -61,14 +58,18 @@ for file in "$ASSETS_DIR"/*; do
 done
 [ "${#FILES[@]}" -gt 0 ] || fail "$ASSETS_DIR holds no bundle of ${ASSET_PREFIX} ${VERSION}"
 
-if [ "$MODE" != "draft" ] && [ -n "$UPDATER_KEYS" ]; then
+NOTES_FILE="${NOTES_FILE:-}"
+if [ -n "$UPDATER_KEYS" ]; then
   node "$HERE/assets.mjs" latest --dir "$ASSETS_DIR" --prefix "$ASSET_PREFIX" --version "$VERSION" \
     --keys "$UPDATER_KEYS" --base-url "https://github.com/$REPO/releases/download/$RELEASE_TAG" \
     ${NOTES_FILE:+--notes-file "$NOTES_FILE"}
   FILES+=("$ASSETS_DIR/latest.json")
 fi
+# The sums of every file of the release, latest.json included, written
+# before anything is published: the release is complete from its first second.
+(cd "$ASSETS_DIR" && rm -f SHA256SUMS latest.published.json && sha256sum -- * > SHA256SUMS)
+FILES+=("$ASSETS_DIR/SHA256SUMS")
 
-NOTES_FILE="${NOTES_FILE:-}"
 if [ -n "$NOTES_FILE" ]; then
   [ -s "$NOTES_FILE" ] || fail "NOTES_FILE=$NOTES_FILE: no text of the release"
   NOTES_ARGS=(--notes-file "$NOTES_FILE")
@@ -78,19 +79,17 @@ fi
 FLAGS=()
 PRERELEASE="false"
 case "$MODE" in
-  draft) FLAGS+=(--draft --prerelease) ; PRERELEASE="true" ;;
   channel) FLAGS+=(--prerelease --latest=false) ; PRERELEASE="true" ;;
   release) FLAGS+=(--latest) ;;
 esac
 
 if gh release view "$RELEASE_TAG" --repo "$REPO" >/dev/null 2>&1; then
-  # A run started again, or the draft the build left: the files are replaced.
+  # A run started again: the files are replaced.
   echo ">> $REPO already has the release $RELEASE_TAG: its files are replaced"
   gh release upload "$RELEASE_TAG" "${FILES[@]}" --repo "$REPO" --clobber
   EDIT=(--title "$RELEASE_NAME")
   [ -z "$NOTES_FILE" ] || EDIT+=(--notes-file "$NOTES_FILE")
   case "$MODE" in
-    draft) EDIT+=(--draft=true --prerelease) ;;
     channel) EDIT+=(--draft=false --prerelease --latest=false) ;;
     release) EDIT+=(--draft=false --prerelease=false --latest) ;;
   esac
@@ -103,10 +102,8 @@ fi
 
 # What the release really holds.
 STATE="$(gh release view "$RELEASE_TAG" --repo "$REPO" --json tagName,isDraft,isPrerelease,assets)"
-WANT_DRAFT="false"
-[ "$MODE" = "draft" ] && WANT_DRAFT="true"
-jq -e --arg t "$RELEASE_TAG" --argjson d "$WANT_DRAFT" '.tagName == $t and .isDraft == $d' <<<"$STATE" >/dev/null \
-  || fail "$REPO: the release $RELEASE_TAG is not in the state asked (draft=$WANT_DRAFT)"
+jq -e --arg t "$RELEASE_TAG" '.tagName == $t and .isDraft == false' <<<"$STATE" >/dev/null \
+  || fail "$REPO: the release $RELEASE_TAG is not published (a draft, or another tag)"
 jq -e --argjson p "$PRERELEASE" '.isPrerelease == $p' <<<"$STATE" >/dev/null \
   || fail "$REPO: the release $RELEASE_TAG has prerelease != $PRERELEASE"
 for file in "${FILES[@]}"; do
@@ -114,15 +111,19 @@ for file in "${FILES[@]}"; do
   jq -e --arg n "$name" '[.assets[].name] | index($n) != null' <<<"$STATE" >/dev/null \
     || fail "$REPO: the release $RELEASE_TAG lacks $name"
 done
+# What /releases/latest answers may lag a moment behind the edit: asked a few times.
+for attempt in 1 2 3 4 5; do
+  LATEST="$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+  if [ "$MODE" = "channel" ] && [ "$LATEST" != "$RELEASE_TAG" ]; then break; fi
+  if [ "$MODE" = "release" ] && [ "$LATEST" = "$RELEASE_TAG" ]; then break; fi
+  [ "$attempt" -lt 5 ] && sleep 5
+done
 if [ "$MODE" = "channel" ]; then
-  LATEST="$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
   [ "$LATEST" != "$RELEASE_TAG" ] || fail "$REPO: the prerelease $RELEASE_TAG became the latest release"
-fi
-if [ "$MODE" = "release" ]; then
-  LATEST="$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+else
   [ "$LATEST" = "$RELEASE_TAG" ] || fail "$REPO: the release $RELEASE_TAG is not what /releases/latest answers ($LATEST)"
 fi
-if [ "$MODE" != "draft" ] && [ -n "$UPDATER_KEYS" ]; then
+if [ -n "$UPDATER_KEYS" ]; then
   gh release download "$RELEASE_TAG" --repo "$REPO" --pattern latest.json -O "$ASSETS_DIR/latest.published.json" --clobber
   jq -e --arg v "$VERSION" '.version == $v' "$ASSETS_DIR/latest.published.json" >/dev/null \
     || fail "latest.json is not of $VERSION"

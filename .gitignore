@@ -21,6 +21,7 @@ target/
 ui/build/
 
 # Editors and local tools
+# The skill and the agent of the publishing (skills/, agents/) are the repository's; the rest is local
 .vscode/
 .idea/
 # zig leaves it in the working directory of a cross build

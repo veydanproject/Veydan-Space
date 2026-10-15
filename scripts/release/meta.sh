@@ -18,13 +18,15 @@
 #       <product>-vX.Y.Z
 #         → kind=release: every platform built anew, published as THE release
 #           vX.Y.Z (the latest: what every installed app updates to)
-#     For rc and release the snapshot of the tagged commit goes to the
-#     product's repository on GitHub under that tag, where Windows and macOS
-#     are built into a draft; Linux and Android are built on our runner;
-#     Gitea checks every signature, writes latest.json and publishes.
+#     For rc and release Gitea only puts the snapshot of the tagged commit
+#     into the product's repository on GitHub under that tag: the rest is
+#     built and published there.
 #   - the release.yml of a product's repository on GitHub (its snapshot):
 #       GITHUB_REF_NAME=vX.Y.Z[-rc.N] GITHUB_REPOSITORY=veydanproject/Veydan-Chat
-#         → own=true: Windows and macOS into a DRAFT release under the tag.
+#         → own=true: every platform — Windows, macOS (the matrix), Linux
+#           (in the matrix too) and Android (the APK, and the app bundle for
+#           Google Play) — every signature checked, latest.json written and
+#           the release published there.
 #
 # By hand: GITHUB_OUTPUT=/dev/stdout prints the outputs. It reads
 # products.json and the product's crate, calls nothing and writes nothing
@@ -151,15 +153,14 @@ RELEASE_NAME="$PRODUCT_NAME ${FULL#"$PRODUCT"-}"
 # an rc and a release.
 NOTES_FILE="$APP/release-notes/$VERSION.md"
 
-# The matrix of GitHub (Windows, macOS), what latest.json names, what the
-# draft must hold, what Gitea builds.
+# The matrix of the desktop job (Windows, macOS; on GitHub Linux too), what
+# latest.json names, what Gitea builds of a dev build (its own jobs).
 include='[]'
 add() {
   include=$(jq -c --arg p "$1" --arg a "$2" --arg t "$3" --arg n "$4" \
     '. + [{"platform":$p,"args":$a,"target":$t,"artifact":$n}]' <<<"$include")
 }
 keys=""
-draft_keys=""
 BUILD_DESKTOP="false"
 BUILD_LINUX="false"
 BUILD_ANDROID="false"
@@ -168,18 +169,23 @@ for p in $PLATFORMS; do
     linux)
       keys="$keys linux-x86_64"
       BUILD_LINUX="true"
+      # On GitHub Linux is one more row of the matrix (jammy: the oldest
+      # glibc the AppImage and the deb run on); a dev build on Gitea has a
+      # job of its own on our runner.
+      if [ "$OWN" = "true" ]; then
+        add "ubuntu-22.04" "" "" "linux-x86_64"
+        BUILD_DESKTOP="true"
+      fi
       ;;
     windows)
       add "windows-latest" "" "" "windows-x86_64"
       keys="$keys windows-x86_64"
-      draft_keys="$draft_keys windows-x86_64"
       BUILD_DESKTOP="true"
       ;;
     macos)
       add "macos-latest" "--target aarch64-apple-darwin" "aarch64-apple-darwin" "darwin-aarch64"
       add "macos-latest" "--target x86_64-apple-darwin" "x86_64-apple-darwin" "darwin-x86_64"
       keys="$keys darwin-aarch64 darwin-x86_64"
-      draft_keys="$draft_keys darwin-aarch64 darwin-x86_64"
       BUILD_DESKTOP="true"
       ;;
     android)
@@ -187,19 +193,12 @@ for p in $PLATFORMS; do
       ;;
   esac
 done
-# In the product's repository on GitHub only Windows and macOS are built.
-if [ "$OWN" = "true" ]; then
-  BUILD_LINUX="false"
-  BUILD_ANDROID="false"
-fi
 # A matrix may not be empty; the job that reads it is skipped then.
 if [ "$include" = "[]" ]; then
   include='[{"platform":"ubuntu-22.04","args":"","target":"","artifact":"none"}]'
 fi
 # shellcheck disable=SC2086
 keys="$(echo $keys)"
-# shellcheck disable=SC2086
-draft_keys="$(echo $draft_keys)"
 MATRIX=$(jq -c '{include:.}' <<<"$include")
 
 echo "product=$PRODUCT  version=$VERSION  kind=$KIND  channel=$CHANNEL  platforms=$PLATFORMS  → $RELEASE_TAG" >&2
@@ -220,7 +219,6 @@ echo "product=$PRODUCT  version=$VERSION  kind=$KIND  channel=$CHANNEL  platform
   echo "prerelease=$PRERELEASE"
   echo "matrix=$MATRIX"
   echo "updater_keys=$keys"
-  echo "draft_keys=$draft_keys"
   echo "updater_pubkey=$UPDATER_PUBKEY"
   echo "build_desktop=$BUILD_DESKTOP"
   echo "build_linux=$BUILD_LINUX"
