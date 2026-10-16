@@ -20,6 +20,7 @@
   import type { AlbumVariant } from '../content/types';
   import { clock } from '../shared/time';
   import { longpress } from '../shared/longpress';
+  import { swipeReply } from '../shared/swipe-reply';
   import type { MessengerMessage } from '../api';
   import { logSendFailure, sendFailureKey } from './send-failure';
   import { lateAt, shownStatus, worstOf } from './delivery';
@@ -39,8 +40,14 @@
     onretry: (m: MessengerMessage) => void;
     /** A reaction was refused: the window explains why. */
     onreacterror?: (e: unknown) => void;
+    /** Answer it (a swipe to the left on a touch screen); absent where it cannot be answered. */
+    onreply?: () => void;
+    /** A computer: the buttons of a hovered message; `react` absent where one cannot react. */
+    actions?: { react?: (anchor: HTMLElement) => void; more: (anchor: HTMLElement) => void };
+    /** Its menu is open. */
+    selected?: boolean;
   }
-  let { messages, variant, first, last, author = null, authorTint = 'inherit', highlighted = null, onmenu, onretry, onreacterror }: Props = $props();
+  let { messages, variant, first, last, author = null, authorTint = 'inherit', highlighted = null, onmenu, onretry, onreacterror, onreply, actions, selected = false }: Props = $props();
 
   const head = $derived(messages[0]);
   const tail = $derived(messages[messages.length - 1]);
@@ -57,6 +64,8 @@
   const pictures = $derived(messages.filter((m) => mediaFamily(m) === 'visual'));
   const files = $derived(messages.filter((m) => mediaFamily(m) !== 'visual'));
   const rows = $derived(mosaic(pictures));
+  /** What the viewer pages through: the album's pictures and videos, in their order. */
+  const pictureIds = $derived(pictures.map((m) => m.id));
   const fileRows = $derived(mosaic(files));
   /** Pictures without words: the time sits on the last picture. */
   const overlay = $derived(variant === 'visual' && captions.length === 0);
@@ -107,7 +116,8 @@
   </span>
 {/snippet}
 
-<div class="line" class:out class:first class:last class:highlighted={messages.some((m) => m.id === highlighted)}>
+<div class="line" class:out class:first class:last class:selected class:highlighted={messages.some((m) => m.id === highlighted)} use:swipeReply={{ onreply }}>
+  <div class="brow">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="bubble {variant}" class:failed={failed.length > 0} class:bare={overlay && !author}
     oncontextmenu={(e) => onmenu(e, partAt(e.target))} use:longpress={press}>
@@ -120,7 +130,7 @@
           <div class="row" style={h ? `height:${h}px` : ''}>
             {#each row as m (m.id)}
               <div class="cell" data-mid={m.id}>
-                <MediaBubble message={m} variant="tile" fit={h ? 'cover' : 'natural'} />
+                <MediaBubble message={m} variant="tile" fit={h ? 'cover' : 'natural'} album={pictureIds} />
               </div>
             {/each}
           </div>
@@ -147,9 +157,17 @@
         <Icon name="upload" size={11} />{$t(countKey('msg_xfer_album', uploaded.n, $locale), { k: String(uploaded.k), n: String(uploaded.n) })}
       </div>
     {/if}
-    {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} /></div>{/if}
+    {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} onadd={actions?.react} /></div>{/if}
     {#each captions as m (m.id)}<div class="caption" data-part={m.id}><MessageContent text={m.text ?? ''} /></div>{/each}
     {#if !overlay}{@render meta(false)}{/if}
+  </div>
+    {#if actions && !tail.deleted}
+      <div class="acts">
+        {#if onreply}<button class="act" onclick={onreply} title={$t('msg_message_reply')} aria-label={$t('msg_message_reply')}><Icon name="reply" size={18} /></button>{/if}
+        {#if actions.react}<button class="act" onclick={(e) => actions.react?.(e.currentTarget)} title={$t('msg_react_title')} aria-label={$t('msg_react_title')} aria-haspopup="true"><Icon name="smile-plus" size={18} /></button>{/if}
+        <button class="act" onclick={(e) => actions.more(e.currentTarget)} title={$t('msg_message_more')} aria-label={$t('msg_message_more')} aria-haspopup="menu"><Icon name="more-vertical" size={18} /></button>
+      </div>
+    {/if}
   </div>
   {#each failed.filter((m) => out && !m.deleted && !m.id.startsWith('local:')) as m (m.id)}
     <button class="retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
@@ -159,7 +177,18 @@
 </div>
 
 <style>
-  .line { display: flex; flex-direction: column; align-items: flex-start; padding: 1px var(--sp-4); border-radius: var(--radius-sm); transition: background 0.6s var(--ease); }
+
+  /* A computer: the actions of the hovered message beside its bubble (after it, before it for mine). */
+  .brow { display: flex; align-items: center; gap: var(--sp-1); width: 100%; min-width: 0; }
+  .line.out .brow { flex-direction: row-reverse; }
+  .acts { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; }
+  .line:hover .acts, .line:focus-within .acts, .line.selected .acts { opacity: 1; }
+  .act { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: var(--radius-sm); background: none; color: var(--text-soft); cursor: pointer; }
+  .act:hover { background: var(--surface-hover); color: var(--text); }
+  @media (hover: none), (pointer: coarse) { .acts { display: none; } }
+  /* The message whose menu is open. */
+  .line.selected { background: var(--accent-bg); }
+  .line { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding: 1px var(--sp-4); border-radius: var(--radius-sm); transition: background 0.6s var(--ease); }
   .line.out { align-items: flex-end; }
   .line.first { margin-top: var(--sp-2); }
   .line.highlighted { background: var(--accent-tint); }
@@ -198,7 +227,7 @@
   }
   .status { display: inline-flex; }
   .status.sent, .status.delivered { color: var(--accent-text-2); }
-  .status.read { color: var(--accent); }
+  .status.read { color: var(--accent-text); }
   .meta.on-picture .status { color: #fff; }
   .status.failed { color: var(--danger-text); }
   .retry {
@@ -209,6 +238,6 @@
   @media (pointer: coarse) {
     .bubble { -webkit-touch-callout: none; }
     .bubble.visual, .bubble.files, .bubble.mixed { width: 86%; max-width: 86%; }
-    .line { padding-inline: var(--sp-3); }
+    .line { padding-inline: var(--sp-3); touch-action: pan-y; }
   }
 </style>

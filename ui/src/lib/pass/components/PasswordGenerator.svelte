@@ -26,8 +26,6 @@
   const Frame = $derived(as === 'pane' ? Pane : Drawer);
 
   let errorMsg = $state('');
-  let toast = $state('');
-  let toastTimer: ReturnType<typeof setTimeout>;
   const history = $derived(pwgenHistory.entries);
   let revealedIds = $state<Set<string>>(new Set());
 
@@ -56,9 +54,6 @@
 
   function copyText(text: string) {
     void copySecret(text).catch(() => {});
-    clearTimeout(toastTimer);
-    toast = $t('pwgen_copied');
-    toastTimer = setTimeout(() => (toast = ''), 1800);
   }
 
   function toggleReveal(id: string) {
@@ -235,9 +230,6 @@
       {/if}
   </div>
 
-  {#if toast}
-    <div class="toast">{toast}</div>
-  {/if}
 </Frame>
 
 <style>
@@ -489,22 +481,6 @@
   }
 
   /* Toast */
-  .toast {
-    position: absolute;
-    bottom: var(--sp-4);
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--success);
-    color: #fff;
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    padding: 0.4rem var(--sp-4);
-    border-radius: var(--radius-pill);
-    box-shadow: var(--shadow);
-    pointer-events: none;
-    animation: fade-in 0.15s ease;
-    white-space: nowrap;
-  }
 
   @keyframes fade-in {
     from { opacity: 0; transform: translateX(-50%) translateY(4px); }

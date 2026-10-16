@@ -35,7 +35,7 @@
 <style>
   .name {
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: var(--m-field);
     padding: 0 14px;
   }

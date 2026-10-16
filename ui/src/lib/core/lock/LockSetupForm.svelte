@@ -215,7 +215,7 @@
     min-height: var(--control-h-lg);
     padding: 0 var(--sp-3);
     font: inherit;
-    font-size: 0.82rem;
+    font-size: var(--fs-sm);
     border: 1px solid var(--border);
     border-radius: var(--radius-field);
     /* background-color only: a select keeps the chevron of base.css */
@@ -264,7 +264,7 @@
   }
   .reset:disabled { opacity: 0.4; cursor: default; }
   .lock-field.pin { -webkit-text-security: disc; }
-  .mobile .lock-field { height: auto; min-height: 48px; font-size: 16px; }
+  .mobile .lock-field { height: auto; min-height: 48px; font-size: var(--fs-md); }
   .mobile .actions { flex-direction: column; align-items: stretch; }
   .mobile .actions .btn { width: 100%; min-height: 44px; justify-content: center; }
   .mobile .timeout { flex-direction: column; align-items: stretch; }

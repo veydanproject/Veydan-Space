@@ -4,7 +4,7 @@
 // The text of a chip coloured from data (`.tinted`, base.css) is the colour
 // mixed towards --text by --chip-ink; its background is the colour at
 // --chip-tint over whatever surface it sits on. This test resolves those
-// mixes numerically, with the token values of tokens.css and mobile.css,
+// mixes numerically, with the token values of the palette and mobile.css,
 // for every colour the pickers offer, the colour tokens a chip takes, the
 // extremes and a sweep of the whole RGB cube, on every surface of each
 // theme, and asserts WCAG AA (4.5:1). It also finds the largest ink share
@@ -35,9 +35,11 @@ function themeTokens(css: string, theme: Theme): Map<string, string> {
   return out;
 }
 
+const PALETTE_CSS = read(new URL('palettes/quiet.css', STYLES));
+const MOBILE_CSS = read(new URL('mobile.css', STYLES));
 const tokens = {
-  light: new Map([...themeTokens(read(new URL('tokens.css', STYLES)), 'light'), ...themeTokens(read(new URL('mobile.css', STYLES)), 'light')]),
-  dark: new Map([...themeTokens(read(new URL('tokens.css', STYLES)), 'dark'), ...themeTokens(read(new URL('mobile.css', STYLES)), 'dark')]),
+  light: new Map([...themeTokens(PALETTE_CSS, 'light'), ...themeTokens(MOBILE_CSS, 'light')]),
+  dark: new Map([...themeTokens(PALETTE_CSS, 'dark'), ...themeTokens(MOBILE_CSS, 'dark')]),
 };
 
 /** A token's value with var() chains followed; undefined for anything but a colour or a percentage. */
@@ -107,14 +109,11 @@ function pickerPalettes(): string[] {
   return [...out];
 }
 
-/** The accent and background presets of Settings: an accent is a profile's chip colour, a background is under the chips. */
-function themePresets(): { accent: string[]; bg: Record<Theme, string[]> } {
+/** The accent presets of Settings: an accent is a profile's chip colour. */
+function themePresets(): { accent: string[] } {
   const source = read(new URL('../desktop/SettingsPage.svelte', STYLES));
   const list = (re: RegExp) => [...(re.exec(source)?.[1] ?? '').matchAll(/'(#[0-9a-fA-F]{6})'/g)].map((m) => m[1]);
-  return {
-    accent: list(/accent:\s*\[([^\]]*)\]/),
-    bg: { dark: list(/bg:\s*\{\s*dark:\s*\[([^\]]*)\]/), light: list(/bg:\s*\{[^}]*light:\s*\[([^\]]*)\]/) },
-  };
+  return { accent: list(/ACCENT_PRESETS\s*=\s*\[([^\]]*)\]/) };
 }
 
 const PALETTE = pickerPalettes();
@@ -123,7 +122,7 @@ const EXTREMES = ['#000000', '#ffffff', '#fef08a', '#fffbeb', '#000080', '#1e1b4
 /** The colour tokens a chip takes in code (a profile's accent, a workspace with none, a domain's grey) and the category colours. */
 const TOKEN_CHIPS = ['--accent', '--success', '--text-2', '--text-3', '--cat-purple', '--cat-blue', '--cat-teal', '--cat-pink', '--danger-text', '--warn-text'];
 /** The surfaces a chip can sit on. */
-const SURFACES = ['--bg', '--bg-2', '--surface', '--surface-2', '--surface-3', '--surface-hover', '--surface-row-hover', '--surface-drawer', '--surface-drawer-footer', '--m-card', '--m-field', '--m-seg', '--m-tile', '--m-sheet', '--m-hub'];
+const SURFACES = ['--bg', '--bg-2', '--pane', '--pane-strong', '--glass-bg', '--surface', '--surface-2', '--surface-3', '--surface-hover', '--surface-row-hover', '--surface-drawer', '--surface-drawer-footer', '--m-card', '--m-field', '--m-seg', '--m-tile', '--m-sheet'];
 
 function cube(): RGB[] {
   const out: RGB[] = [];
@@ -136,18 +135,19 @@ function surfaces(theme: Theme): RGB[] {
   const hit = surfaceCache.get(theme);
   if (hit) return hit;
   const out: RGB[] = [];
+  // A translucent surface (a pane, the glass, a row's hover) over the page.
+  const page = color(resolve(theme, '--bg')!)!;
   for (const name of SURFACES) {
-    const c = color(resolve(theme, name) ?? '');
+    const c = color(resolve(theme, name) ?? '', page);
     if (c) out.push(c);
   }
-  // A selected row (the accent's tint over a card) and the background presets.
+  // A selected row (the accent's tint over a card).
   const card = color(resolve(theme, '--surface')!)!;
   out.push(color(resolve(theme, '--accent-bg')!, card)!);
-  // A custom accent from Settings rewrites --accent-bg to 15% of itself in
-  // both themes (theme.ts); NotesTable's picked row is 12% of --accent.
+  // A custom accent from Settings rewrites --accent-bg to 18% of itself in
+  // the dark and 12% in the light (theme.ts); NotesTable's picked row is 12% of --accent.
   const accents = [...PRESETS.accent.map(hex), color(resolve(theme, '--accent')!)!];
-  for (const a of accents) out.push(mix(a, card, 0.15), mix(a, card, 0.12));
-  for (const h of PRESETS.bg[theme]) out.push(hex(h));
+  for (const a of accents) out.push(mix(a, card, theme === 'dark' ? 0.18 : 0.12), mix(a, card, 0.12));
   surfaceCache.set(theme, out);
   return out;
 }
@@ -183,8 +183,6 @@ describe('a chip coloured from data reads in both themes (.tinted)', () => {
     // If a picker or the presets change shape, the sweep must not silently shrink.
     expect(PALETTE.length).toBeGreaterThanOrEqual(8);
     expect(PRESETS.accent.length).toBeGreaterThan(0);
-    expect(PRESETS.bg.dark.length).toBeGreaterThan(0);
-    expect(PRESETS.bg.light.length).toBeGreaterThan(0);
   });
 
   it('base.css draws the chip with these tokens and nothing else', () => {

@@ -112,12 +112,12 @@
   .rule-input {
     min-width: 0;
     padding: 6px 8px;
-    font-size: 12px;
+    font-size: var(--fs-xs);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-badge);
     background: var(--bg-2);
     color: var(--text);
   }
   .add { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; }
-  .empty { margin: 0; font-size: 12px; color: var(--text-2); }
+  .empty { margin: 0; font-size: var(--fs-xs); color: var(--text-2); }
 </style>

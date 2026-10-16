@@ -11,7 +11,9 @@
   As in a conversation of two, a press asks first unless that was turned
   off (CallConfirm, kept on this device), and a hold (or a right click)
   opens the settings of calls. A refusal shows under the buttons for a
-  moment.
+  moment. On a phone (`menuStarts`) the two buttons that start a call are
+  entries of the chat's menu instead (start, canStart, startBlocked); joining
+  a call on, or going back to it, stays a button of the header.
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
@@ -27,7 +29,7 @@
   import { openGroupRoom } from './room';
   import { callErrorText } from './words';
 
-  let { chat, group }: { chat: MessengerChat; group: MessengerGroup | null } = $props();
+  let { chat, group, menuStarts = false }: { chat: MessengerChat; group: MessengerGroup | null; menuStarts?: boolean } = $props();
 
   const tr = (key: string, params?: Record<string, string>) => $t(key as 'msg_title', params);
   const phone = onPhone();
@@ -59,6 +61,13 @@
     if (callStore.confirm) asking = media;
     else void go(media);
   }
+
+  /** For the chat's menu: start a call of this kind (asks first, as the buttons do). */
+  export function start(media: CallMedia) { press(media); }
+  /** A call can be started here now (nor one on, nor mine). */
+  export function canStart(): boolean { return member && !mine && !live; }
+  /** Why it cannot start right now ('' when it can). */
+  export function startBlocked(): string { return reason || (groupCallStore.busy ? $t('msg_call_err_busy') : ''); }
 
   function pressJoin() {
     if (!live) return;
@@ -102,7 +111,7 @@
         title={reason || $t('msg_gcall_join_title')} aria-label={$t('msg_gcall_join_title')}>
         <CallIcon name={live.media === 'video' ? 'video' : 'phone'} size={14} />{#if !phone}<span class="label">{$t('msg_gcall_join')}</span>{/if}
       </button>
-    {:else}
+    {:else if !menuStarts}
       {#if kinds.includes('video')}
         <button class="icon" disabled={!!reason || groupCallStore.busy} onclick={() => press('video')} use:hold={toSettings}
           title={reason || $t('msg_gcall_video_start')} aria-label={$t('msg_gcall_video_start')}>

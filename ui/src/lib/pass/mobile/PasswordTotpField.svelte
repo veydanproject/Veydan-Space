@@ -149,10 +149,10 @@
   }
   .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .draft { display: flex; flex-direction: column; gap: var(--sp-2); }
   .cancel { align-self: flex-start; padding: 0; color: var(--text-2); }
   .create { margin-bottom: var(--sp-3); }
   .find { width: 100%; margin-bottom: var(--sp-3); }
-  .m-avatar.small { width: 28px; height: 28px; font-size: 13px; }
+  .m-avatar.small { width: 28px; height: 28px; font-size: var(--fs-sm); }
 </style>

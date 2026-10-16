@@ -238,6 +238,90 @@ pub async fn delete(store: &Store, call_id: &str) -> Result<()> {
     Ok(())
 }
 
+// ─── The journal (migration 032) ───────────────────────────────────────────
+
+/// When the journal was last looked at: a missed call after it is new.
+pub const KEY_SEEN_AT: &str = "calls_seen_at";
+
+/// A call of the journal: the record and what a group call adds to it.
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
+pub struct LogRow {
+    #[sqlx(flatten)]
+    pub call: CallRow,
+    #[sqlx(flatten)]
+    pub group: GroupCallInfo,
+}
+
+/// The calls that are over and not taken out of the journal, of every
+/// chat, newest first, strictly older than `before` (a `started_at`), at
+/// most `limit`. A call under way is not in it yet.
+pub async fn history(store: &Store, before: Option<i64>, limit: i64) -> Result<Vec<LogRow>> {
+    sqlx::query_as::<_, LogRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS}, kind, started_by, participants FROM msg_calls
+         WHERE hidden_at IS NULL AND outcome IS NOT NULL AND (? IS NULL OR started_at < ?)
+         ORDER BY started_at DESC, call_id DESC LIMIT ?"
+    )))
+    .bind(before)
+    .bind(before)
+    .bind(limit)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// Take calls out of the journal; a call under way stays. Their rows and
+/// their lines in the chats stay.
+pub async fn hide(store: &Store, call_ids: &[String], at: i64) -> Result<u64> {
+    let mut hidden = 0;
+    for id in call_ids {
+        let res = sqlx::query("UPDATE msg_calls SET hidden_at = ? WHERE call_id = ? AND outcome IS NOT NULL AND hidden_at IS NULL")
+            .bind(at)
+            .bind(id)
+            .execute(store.pool())
+            .await
+            .map_err(storage)?;
+        hidden += res.rows_affected();
+    }
+    Ok(hidden)
+}
+
+/// Take every call that is over out of the journal.
+pub async fn hide_all(store: &Store, at: i64) -> Result<u64> {
+    let res = sqlx::query("UPDATE msg_calls SET hidden_at = ? WHERE outcome IS NOT NULL AND hidden_at IS NULL")
+        .bind(at)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(res.rows_affected())
+}
+
+/// The calls between two that rang here and nobody took (missed, or
+/// busy with another), started after `since`, still in the journal: the
+/// count on the section «Звонки».
+pub async fn missed_since(store: &Store, since: i64) -> Result<i64> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM msg_calls
+         WHERE kind = ? AND direction = ? AND outcome IN (?, ?) AND hidden_at IS NULL AND started_at > ?",
+    )
+    .bind(KIND_DM)
+    .bind(DIR_IN)
+    .bind(OUTCOME_MISSED)
+    .bind(OUTCOME_BUSY)
+    .bind(since)
+    .fetch_one(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// The newest start on record, for the mark «looked at»: a peer's clock
+/// ahead of mine must not leave its call new after the journal was seen.
+pub async fn latest_start(store: &Store) -> Result<Option<i64>> {
+    sqlx::query_scalar::<_, Option<i64>>("SELECT MAX(started_at) FROM msg_calls")
+        .fetch_one(store.pool())
+        .await
+        .map_err(storage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,5 +394,44 @@ mod tests {
         insert(&store, &NewCall { call_id: "c1".into(), chat_id: "dm:aa".into(), ..new }).await.unwrap();
         assert_eq!(group_info(&store, "c1").await.unwrap().unwrap().kind, KIND_DM);
         assert!(open_group_calls(&store, "dm:aa").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_journal_lists_finished_calls_of_every_chat() {
+        let store = Store::open_in_memory().await.unwrap();
+        let call = |id: &str, chat: &str, dir: &str, at: i64| NewCall {
+            call_id: id.into(),
+            chat_id: chat.into(),
+            peer: chat.trim_start_matches("dm:").trim_start_matches("group:").into(),
+            direction: dir.into(),
+            media: MEDIA_AUDIO.into(),
+            started_at: at,
+        };
+        insert(&store, &call("a", "dm:aa", DIR_IN, 100)).await.unwrap();
+        insert(&store, &call("b", "dm:bb", DIR_OUT, 200)).await.unwrap();
+        insert_group(&store, &call("g", "group:gg", DIR_IN, 300), "cc").await.unwrap();
+        insert(&store, &call("live", "dm:aa", DIR_IN, 400)).await.unwrap();
+        finish(&store, "a", OUTCOME_MISSED, 145).await.unwrap();
+        finish(&store, "b", OUTCOME_ENDED, 260).await.unwrap();
+        finish(&store, "g", OUTCOME_ENDED, 360).await.unwrap();
+
+        let ids = |rows: Vec<LogRow>| rows.into_iter().map(|r| r.call.call_id).collect::<Vec<_>>();
+        assert_eq!(ids(history(&store, None, 10).await.unwrap()), vec!["g", "b", "a"], "a call under way is not in it");
+        assert_eq!(ids(history(&store, Some(300), 10).await.unwrap()), vec!["b", "a"], "pages go back strictly before");
+        assert_eq!(ids(history(&store, None, 1).await.unwrap()), vec!["g"]);
+        let g = history(&store, None, 1).await.unwrap().remove(0);
+        assert_eq!(g.group, GroupCallInfo { kind: KIND_GROUP.into(), started_by: Some("cc".into()), participants: 0 });
+
+        assert_eq!(missed_since(&store, 0).await.unwrap(), 1, "only the missed call between two");
+        assert_eq!(missed_since(&store, 100).await.unwrap(), 0, "seen after it");
+        assert_eq!(latest_start(&store).await.unwrap(), Some(400));
+
+        assert_eq!(hide(&store, &["a".into(), "live".into()], 500).await.unwrap(), 1, "a call under way stays");
+        assert_eq!(ids(history(&store, None, 10).await.unwrap()), vec!["g", "b"]);
+        assert_eq!(missed_since(&store, 0).await.unwrap(), 0, "a hidden call is no longer new");
+        assert!(get(&store, "a").await.unwrap().is_some(), "its row stays");
+        finish(&store, "live", OUTCOME_ENDED, 450).await.unwrap();
+        assert_eq!(hide_all(&store, 600).await.unwrap(), 3);
+        assert!(history(&store, None, 10).await.unwrap().is_empty());
     }
 }

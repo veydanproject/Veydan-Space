@@ -8951,7 +8951,6 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "tokio",
- "url",
  "veydan-build-cfg",
  "veydan-core",
  "veydan-lock",

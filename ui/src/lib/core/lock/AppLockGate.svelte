@@ -80,7 +80,7 @@
 {:else if screen === 'error'}
   <div class="lock-screen">
     <div class="lock-card" role="alert">
-      <Icon name="alert-triangle" size={28} />
+      <span class="lock-tile"><Icon name="alert-triangle" size={24} /></span>
       <h3>{$t('lock_status_failed')}</h3>
       <button class="btn btn-primary" type="button" onclick={() => void appLock.refresh()}>{$t('start_error_retry')}</button>
     </div>
@@ -94,7 +94,7 @@
 {:else if screen === 'lock'}
   <div class="lock-screen">
     <form class="lock-card" onsubmit={(e) => { e.preventDefault(); void submit(); }}>
-      <Icon name="lock" size={28} />
+      <span class="lock-tile"><Icon name="lock" size={24} /></span>
       <h3>{kind === 'pin' ? $t('lock_title_pin') : $t('lock_title_password')}</h3>
       <input
         bind:this={input}
@@ -133,23 +133,29 @@
     padding: var(--sp-4);
     padding-top: max(var(--sp-4), var(--sat, 0px));
     overflow-y: auto;
-    background: var(--bg);
+    background: var(--bg-image), var(--bg);
   }
   .lock-card {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--sp-3);
-    width: 300px;
+    gap: var(--sp-4);
+    width: 400px;
     max-width: 100%;
-    padding: var(--sp-5);
+    padding: var(--sp-8);
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-card);
     background: var(--surface);
+    box-shadow: var(--shadow-lg);
     color: var(--text-2);
   }
-  .lock-card.wide { width: 380px; align-items: stretch; }
-  .lock-card h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+  .lock-tile {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 56px; height: 56px; border-radius: var(--radius-lg);
+    background: var(--accent-bg); color: var(--accent-text);
+  }
+  .lock-card.wide { width: 440px; align-items: stretch; }
+  .lock-card h3 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--text); text-align: center; }
   .lock-card input {
     width: 100%;
     min-height: 40px;
@@ -157,8 +163,8 @@
     font: inherit;
     text-align: center;
     border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg);
+    border-radius: var(--radius);
+    background: var(--surface-3);
     color: var(--text);
   }
   .lock-card input.invalid { border-color: var(--danger); }
@@ -169,11 +175,11 @@
   .forgot {
     border: none;
     background: transparent;
-    color: var(--text-3);
+    color: var(--accent-text);
     font: inherit;
-    font-size: var(--fs-xs);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-bold);
     cursor: pointer;
-    text-decoration: underline;
   }
-  .forgot:hover { color: var(--text); }
+  .forgot:hover { text-decoration: underline; }
 </style>

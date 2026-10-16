@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { get } from 'svelte/store';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { api } from '$lib/core/api';
@@ -85,6 +86,7 @@
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
+      copiedToast();
       copied = true;
       mailError = '';
     } catch (e) {

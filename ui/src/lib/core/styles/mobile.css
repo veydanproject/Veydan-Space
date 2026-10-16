@@ -7,7 +7,9 @@
 :root {
   --touch: 44px;
   --nav-h: 64px;
-  --m-radius: 14px;
+  /* The bar floats: this much glow under it, above the system's own bar. */
+  --nav-gap: 10px;
+  --m-radius: 16px; /* rows, fields, players and small tiles of the phone */
   /* Android injects real insets into these; env() covers iOS / fixed WebViews. */
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
@@ -15,19 +17,21 @@
   --sar: env(safe-area-inset-right, 0px);
 }
 
+/* The phone's colours follow the palette's tokens (palettes/): a palette
+   never needs to name them. */
 [data-theme='light'] {
-  --m-card: #ffffff;
-  --m-card-border: #ececf4;
+  --m-card: var(--surface);
+  --m-card-border: var(--border);
   --m-card-shadow: 0 1px 2px rgba(23, 20, 60, 0.05);
-  --m-field: #f1f0f7;
-  --m-seg: #eeedf5;
-  --m-tile: #ffffff;
-  --m-nav: #ffffff;
-  --m-hub: #f5f4fa;
-  --m-hub-shadow: 0 2px 10px rgba(23, 20, 60, 0.08), 0 0 0 1px rgba(23, 20, 60, 0.06);
-  --m-tag: rgba(109, 92, 240, 0.1);
-  --m-highlight: rgba(109, 92, 240, 0.18);
-  --m-sheet: #ffffff;
+  --m-field: var(--surface-2);
+  --m-seg: var(--surface-hover);
+  --m-tile: var(--surface);
+  /* The header of a screen: glass over the glow; a bar over content: denser glass. */
+  --m-head: var(--pane);
+  --m-nav: var(--glass-bar);
+  --m-tag: var(--accent-tint);
+  --m-highlight: var(--accent-bg);
+  --m-sheet: var(--surface);
   --m-icon-mix: 18%;
   --m-icon-glyph-mix: 0%;
 }
@@ -40,11 +44,10 @@
   --m-field: var(--surface-2);
   --m-seg: var(--surface-2);
   --m-tile: var(--surface-2);
-  --m-nav: var(--chrome);
-  --m-hub: #14141b;
-  --m-hub-shadow: var(--shadow-accent);
+  --m-head: var(--pane);
+  --m-nav: var(--glass-bar);
   --m-tag: var(--accent-tint);
-  --m-highlight: rgba(139, 123, 255, 0.28);
+  --m-highlight: var(--accent-bg);
   --m-sheet: var(--surface);
   --m-icon-mix: 24%;
   --m-icon-glyph-mix: 20%;
@@ -57,7 +60,7 @@ html {
 }
 
 body {
-  font-size: 15px;
+  font-size: var(--fs-body);
   user-select: none;
   -webkit-user-select: none;
   background: var(--bg);
@@ -88,7 +91,7 @@ html.scan-cover .shell { visibility: hidden; }
 .m-page.home {
   overflow-y: auto;
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
-  background: var(--bg);
+  background: transparent;
 }
 .m-body {
   flex: 1;
@@ -96,7 +99,7 @@ html.scan-cover .shell { visibility: hidden; }
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
-  background: var(--bg);
+  background: transparent;
 }
 .m-title {
   font-size: 22px;
@@ -106,17 +109,17 @@ html.scan-cover .shell { visibility: hidden; }
 }
 .m-sub {
   color: var(--text-2);
-  font-size: 14px;
+  font-size: var(--fs-base);
   line-height: 1.45;
 }
 .m-hint {
   color: var(--text-2);
-  font-size: 14px;
+  font-size: var(--fs-base);
   line-height: 1.45;
   margin-bottom: var(--sp-4);
 }
 .m-label {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -124,7 +127,7 @@ html.scan-cover .shell { visibility: hidden; }
   padding: var(--sp-4) var(--sp-1) var(--sp-2);
 }
 .m-section {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-2);
   padding: var(--sp-4) var(--sp-1) var(--sp-2);
@@ -145,7 +148,9 @@ html.scan-cover .shell { visibility: hidden; }
   min-height: 56px;
   margin: 0;
   padding: var(--sp-2) var(--sp-2);
-  background: var(--m-nav);
+  background: var(--m-head);
+  -webkit-backdrop-filter: var(--pane-filter);
+  backdrop-filter: var(--pane-filter);
 }
 .m-header .m-title {
   flex: 1;
@@ -153,7 +158,7 @@ html.scan-cover .shell { visibility: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 20px;
+  font-size: var(--fs-xl);
 }
 /* A root screen has no back arrow: its title starts on the page's left edge. */
 .m-header > .m-title:first-child { padding-left: var(--sp-2); }
@@ -166,14 +171,15 @@ html.scan-cover .shell { visibility: hidden; }
   height: 40px;
   padding: 0;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text);
   text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
-.m-ibtn:active { background: var(--m-seg); }
-.m-ibtn.on { color: var(--accent); background: var(--accent-tint); }
-.m-ibtn.accent { color: var(--accent); }
+.m-ibtn:active { background: var(--m-seg); transform: scale(0.97); transition-duration: var(--dur-press); }
+.m-ibtn.on { color: var(--accent-text); background: var(--accent-tint); }
+.m-ibtn.accent { color: var(--accent-text); }
 
 /* Coloured icon tile: `--c` is the item colour */
 .m-doc {
@@ -182,7 +188,7 @@ html.scan-cover .shell { visibility: hidden; }
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
   background: color-mix(in srgb, var(--c, var(--accent)) var(--m-icon-mix), transparent);
   color: color-mix(in srgb, var(--c, var(--accent)) calc(100% - var(--m-icon-glyph-mix)), #fff);
@@ -190,13 +196,13 @@ html.scan-cover .shell { visibility: hidden; }
 .m-doc.muted {
   --c: var(--text-3);
 }
-.m-doc.lg { width: 36px; height: 36px; border-radius: 10px; }
+.m-doc.lg { width: 36px; height: 36px; border-radius: var(--radius); }
 
 /* ── Touch-sized controls ── */
 .btn, .icon-btn, .seg-btn { min-height: var(--touch); }
 input, select, textarea {
   min-height: var(--touch);
-  font-size: 16px; /* prevents iOS zoom on focus */
+  font-size: var(--fs-md); /* prevents iOS zoom on focus */
 }
 /* No mouse grip on the phone: a text area grows or scrolls by itself. */
 textarea { resize: none; }
@@ -215,7 +221,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   flex-shrink: 0;
   margin: 0;
   padding: 0 var(--sp-4) var(--sp-2);
-  background: var(--m-nav);
+  background: var(--m-head);
 }
 .m-page > .m-search:first-child {
   padding-top: var(--sp-2);
@@ -237,9 +243,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   min-height: 44px;
   padding: 0 40px 0 38px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-pill);
   background: var(--m-field);
-  font-size: 15px;
+  font-size: var(--fs-body);
 }
 .m-search input:focus { box-shadow: 0 0 0 2px var(--accent-border); }
 .m-search .clear {
@@ -259,9 +265,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-search .cancel {
   border: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-body);
   padding: 0 var(--sp-1);
 }
 
@@ -270,7 +276,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   flex-shrink: 0;
   margin: 0;
   padding: 0 var(--sp-4) var(--sp-2);
-  background: var(--m-nav);
+  background: var(--m-head);
 }
 .m-seg {
   display: flex;
@@ -285,10 +291,10 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   min-height: 34px;
   padding: 0 14px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--m-seg);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 .m-seg-btn.active {
@@ -298,9 +304,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 
 /* ── Cards ── */
 .m-card {
-  background: var(--m-card);
+  background: var(--pane-strong);
   border: 1px solid var(--m-card-border);
-  border-radius: var(--m-radius);
+  border-radius: var(--radius-card);
   box-shadow: var(--m-card-shadow);
 }
 .m-cards {
@@ -328,7 +334,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-note .title {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -338,14 +344,14 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   white-space: nowrap;
   flex-shrink: 0;
 }
-.m-note .date svg { color: var(--accent); }
+.m-note .date svg { color: var(--accent-text); }
 .m-note .preview {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -370,9 +376,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 
 /* ── Grouped list rows (settings, tags, drawer) ── */
 .m-list {
-  background: var(--m-card);
+  background: var(--pane-strong);
   border: 1px solid var(--m-card-border);
-  border-radius: var(--m-radius);
+  border-radius: var(--radius-card);
   box-shadow: var(--m-card-shadow);
   overflow: hidden;
 }
@@ -393,13 +399,13 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   width: 100%;
   text-align: left;
   font: inherit;
-  font-size: 15px;
+  font-size: var(--fs-body);
 }
 .m-row:last-child { border-bottom: 0; }
 .m-row:active { background: var(--surface-2); }
 .m-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m-row-value { color: var(--text-2); font-size: 14px; white-space: nowrap; }
-.m-row .count { color: var(--text-3); font-size: 13px; font-weight: 600; }
+.m-row-value { color: var(--text-2); font-size: var(--fs-base); white-space: nowrap; }
+.m-row .count { color: var(--text-3); font-size: var(--fs-sm); font-weight: 600; }
 .m-row .chev { color: var(--text-3); display: inline-flex; }
 .m-row.danger { color: var(--danger-text); justify-content: center; font-weight: 600; }
 .m-dot {
@@ -418,8 +424,8 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   padding: 0 var(--sp-2);
   border: 0;
   background: transparent;
-  color: var(--accent);
-  font-size: 14px;
+  color: var(--accent-text);
+  font-size: var(--fs-base);
   font-weight: 600;
   text-decoration: none;
 }
@@ -433,15 +439,15 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   gap: 6px;
   min-height: 84px;
   padding: var(--sp-3) var(--sp-2);
-  background: var(--m-tile);
+  background: var(--pane-strong);
   border: 1px solid var(--m-card-border);
-  border-radius: var(--m-radius);
+  border-radius: var(--radius-card);
   color: var(--text);
   text-decoration: none;
   transition: transform var(--dur-fast);
 }
-.m-tile svg { color: var(--accent); }
-.m-tile .label { font-size: 12px; font-weight: 600; text-align: center; }
+.m-tile svg { color: var(--accent-text); }
+.m-tile .label { font-size: var(--fs-xs); font-weight: 600; text-align: center; }
 .m-tile:active { transform: scale(0.96); }
 .m-tile.active {
   background: var(--accent-grad);
@@ -465,15 +471,19 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   width: 100%;
   min-height: 48px;
   border: 0;
-  border-radius: var(--m-radius);
+  border-radius: var(--radius);
   background: var(--accent-grad);
   color: #fff;
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 700;
   box-shadow: var(--shadow-accent);
   text-decoration: none;
 }
-.m-btn-grad:active { filter: brightness(1.08); }
+.m-btn-grad { transition: transform var(--dur-fast) var(--ease); }
+.m-btn-grad:active { filter: brightness(1.08); transform: scale(0.97); transition-duration: var(--dur-press); }
+@media (prefers-reduced-motion: reduce) {
+  .m-ibtn:active, .m-btn-grad:active { transform: none; }
+}
 .m-btn-grad:disabled { opacity: 0.5; box-shadow: none; }
 
 /* ── Field with label (forms) ── */
@@ -496,7 +506,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-fab {
   position: fixed;
   right: var(--sp-4);
-  bottom: calc(var(--nav-h) + var(--sab) + var(--sp-4));
+  bottom: calc(var(--nav-h) + var(--nav-gap) + var(--sab) + var(--sp-4));
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -511,20 +521,6 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 }
 .m-fab:active { filter: brightness(1.08); }
 
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--nav-h) + var(--sab) + var(--sp-4));
-  transform: translateX(-50%);
-  padding: var(--sp-2) var(--sp-4);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: var(--fs-sm);
-  animation: vfade var(--dur-fast) ease-out;
-  z-index: 60;
-}
-
 /* ── Chips / tags ── */
 .m-chips {
   display: flex;
@@ -538,11 +534,11 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   gap: 4px;
   min-height: 28px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 0;
   background: var(--m-tag);
   color: var(--accent-text);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
@@ -557,7 +553,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 }
 .m-chips.scroll::-webkit-scrollbar { display: none; }
 .m-chip.active { background: var(--accent); color: #fff; }
-.m-chip.small { min-height: 20px; padding: 0 8px; font-size: 11px; }
+.m-chip.small { min-height: 20px; padding: 0 8px; font-size: var(--fs-2xs); }
 .m-chip.neutral { background: var(--m-seg); color: var(--text-2); }
 /* A chip coloured from data is `.m-chip.tinted` with `style:--chip`: its
    colours are the one rule of base.css (`.tinted`), as on the desktop. A
@@ -589,11 +585,11 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--c);
   color: #fff;
   font-weight: 800;
-  font-size: 15px;
+  font-size: var(--fs-body);
   flex-shrink: 0;
 }
 
@@ -603,7 +599,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   grid-template-columns: 88px 1fr;
   row-gap: var(--sp-2);
   column-gap: var(--sp-3);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   align-items: center;
 }
 .m-meta dt { color: var(--text-3); }
@@ -645,10 +641,13 @@ mark.m-highlight {
   z-index: 51;
   display: flex;
   flex-direction: column;
-  background: var(--m-sheet);
-  border-radius: 24px 24px 0 0;
+  background: var(--glass-bg);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   padding: var(--sp-2) var(--sp-4) calc(var(--sp-4) + var(--sab));
   will-change: transform;
+  box-shadow: var(--glass-highlight);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
 }
 /* In the dark a sheet is --surface, nearly the colour of a field: its fields,
    search boxes and tiles take a lighter fill, so they can be seen. */

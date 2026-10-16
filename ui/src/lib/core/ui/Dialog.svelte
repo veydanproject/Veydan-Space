@@ -10,6 +10,7 @@
   import { t } from '$lib/core/i18n';
   import { isMobile } from '$lib/core/platform';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
+  import { backdropIn, backdropOut, dialogIn, dialogOut } from './motion';
 
   interface Props {
     open: boolean;
@@ -18,6 +19,8 @@
     width?: string;
     /** Close when the backdrop is clicked (default true). */
     closeOnBackdrop?: boolean;
+    /** The phone's sheet keeps its × (default true); a question whose footer has «Отмена» passes false. */
+    closable?: boolean;
     onclose?: () => void;
     header?: Snippet;
     children: Snippet;
@@ -29,6 +32,7 @@
     title,
     width,
     closeOnBackdrop = true,
+    closable = true,
     onclose,
     header,
     children,
@@ -59,7 +63,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#if isMobile}
-  <BottomSheet open={!!open} title={header ? '' : (title ?? '')} onclose={close}>
+  <BottomSheet open={!!open} title={header ? '' : (title ?? '')} onclose={close} {closable}>
     {#if header}<div class="sheet-header">{@render header()}</div>{/if}
     <div class="sheet-body">{@render children()}</div>
     {#if footer}<div class="sheet-actions">{@render footer()}</div>{/if}
@@ -67,6 +71,8 @@
 {:else if open}
   <div
     class="dialog-overlay"
+    in:backdropIn
+    out:backdropOut
     use:portal
     use:backdropDismiss={() => closeOnBackdrop && close()}
     role="presentation"
@@ -74,6 +80,8 @@
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
     <div
       class="dialog"
+      in:dialogIn
+      out:dialogOut
       style={width ? `width:${width}` : undefined}
       role="dialog"
       aria-modal="true"
@@ -124,34 +132,29 @@
     width: var(--dialog-w);
     max-width: 92vw;
     max-height: min(88vh, 100%);
-    background: var(--surface-drawer);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
     overflow: hidden;
-    animation: dialog-in var(--dur-base) var(--ease);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
   }
 
-  @keyframes dialog-in {
-    from { opacity: 0; transform: translateY(8px) scale(0.98); }
-    to   { opacity: 1; transform: none; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .dialog { animation: none; }
-  }
 
   .dialog-header {
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    padding: var(--sp-4) var(--sp-5);
+    min-height: 64px;
+    padding: 0 var(--sp-3) 0 var(--sp-6);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
   .dialog-title {
-    font-size: var(--fs-md);
-    font-weight: var(--fw-extrabold);
-    letter-spacing: -0.3px;
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    line-height: 1.35;
     color: var(--text);
   }
   .dialog-close {
@@ -159,9 +162,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 9px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: var(--radius);
     background: transparent;
     color: var(--text-2);
     border: none;
@@ -174,7 +178,7 @@
     min-height: 0;
     overflow-y: auto;
     scrollbar-gutter: stable;
-    padding: var(--sp-5);
+    padding: var(--sp-5) var(--sp-6);
   }
 
   /* The phone's sheet. */
@@ -182,12 +186,12 @@
   .sheet-body { display: flex; flex-direction: column; gap: var(--sp-3); line-height: 1.45; }
   /* A finger does not drag a resize corner: the field grows with its text. */
   .sheet-body :global(textarea) { resize: none; }
-  /* Side by side while the words fit; a long label takes a row of its own. */
-  .sheet-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-1); }
+  /* Stacked, the whole width, 48 high, the verb on top: the footer reads
+     «Отмена, verb» like the desktop's, the sheet turns it over (design kit). */
+  .sheet-actions { display: flex; flex-direction: column-reverse; gap: var(--sp-2); padding-top: var(--sp-1); }
   .sheet-actions :global(.btn) {
-    flex: 1 1 auto;
-    min-width: 40%;
-    min-height: var(--touch);
+    width: 100%;
+    min-height: 48px;
     justify-content: center;
     font-size: var(--fs-base);
   }

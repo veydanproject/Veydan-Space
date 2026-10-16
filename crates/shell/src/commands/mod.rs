@@ -47,7 +47,6 @@ pub(crate) const SECONDARY: &[&str] = &[
     "lock_recover_keep",
     #[cfg(desktop)]
     "window_minimize",
-    #[cfg(desktop)]
     "open_url",
     "labels_resolve",
     #[cfg(desktop)]
@@ -71,7 +70,6 @@ fn commands() -> Module {
         commands: [
             start::app_start_error,
             host::host_info,
-            #[cfg(desktop)]
             host::open_url,
             #[cfg(desktop)]
             host::clipboard_write_text,

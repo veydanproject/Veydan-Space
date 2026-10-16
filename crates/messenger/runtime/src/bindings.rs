@@ -11,7 +11,7 @@
 
 use crate::avatars::AvatarPreview;
 use crate::calls::{
-    CallDirection, CallEnded, CallIncoming, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState,
+    CallDirection, CallEnded, CallIncoming, CallLimits, CallLogEntry, CallLogKind, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState,
     CallStats, CallVia, CallView, CameraInfo, GroupCallAnnounced, GroupCallEnded, GroupCallLevel, GroupCallPhase,
     GroupCallState, GroupCallView, GroupParticipant, ReconnectReason, RelayPolicy, ScreenInfo, VideoInput, VideoQuality,
     VideoSize, VideoTrack,
@@ -156,6 +156,8 @@ pub fn calls_ts() -> String {
     out += &export::<GroupCallEnded>(&cfg, "The payload of the runtime event `group_call.ended`.");
     out += &export::<GroupCallLevel>(&cfg, "The payload of the runtime event `group_call.level`: how loud one seat is.");
     out += &export::<GroupCallState>(&cfg, "The room I am in and the call announced in a group, as `messenger_group_call_get_state` answers.");
+    out += &export::<CallLogKind>(&cfg, "Whose call a line of the journal is: between two, or of a group.");
+    out += &export::<CallLogEntry>(&cfg, "A call of the journal (the section «Звонки»), over, as `messenger_call_history` lists them, newest first.");
     out
 }
 

@@ -5,6 +5,7 @@
   import type { Snippet } from 'svelte';
   import { portal } from '$lib/core/portal';
   import { backdropDismiss } from '$lib/core/backdrop';
+  import { backdropOut, drawerOut } from './motion';
   import { acquireScrollLock, releaseScrollLock } from '$lib/core/scrollLock';
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
@@ -65,6 +66,7 @@
 {#if open}
   <div
     class="drawer-backdrop"
+    out:backdropOut
     use:portal
     use:backdropDismiss={() => closeOnBackdrop && close()}
     role="presentation"
@@ -72,6 +74,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
     <div
       class="drawer {side}"
+      out:drawerOut={{ side }}
       style={width ? `width:${width}` : undefined}
       role="dialog"
       aria-modal="true"
@@ -129,8 +132,10 @@
     width: var(--drawer-w);
     max-width: 92vw;
     height: 100%;
-    background: var(--surface-drawer);
+    background: var(--glass-bg);
     box-shadow: var(--shadow-drawer);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
   }
   .drawer.right { border-left: 1px solid var(--border); animation: drawer-in-right var(--dur-drawer) var(--ease-drawer); }
   .drawer.left  { border-right: 1px solid var(--border); animation: drawer-in-left  var(--dur-drawer) var(--ease-drawer); }
@@ -151,8 +156,8 @@
     flex-shrink: 0;
   }
   .drawer-title {
-    font-size: 1.15rem;
-    font-weight: var(--fw-extrabold);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
     letter-spacing: -0.3px;
     color: var(--text);
   }
@@ -166,9 +171,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 9px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: var(--radius);
     background: transparent;
     color: var(--text-2);
     border: none;

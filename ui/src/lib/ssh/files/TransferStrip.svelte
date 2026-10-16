@@ -90,11 +90,14 @@
     flex-direction: column;
     gap: var(--sp-1);
     padding: var(--sp-2) var(--sp-3);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    background: var(--pane);
+    border: 1px solid var(--pane-border);
+    border-radius: var(--radius-pane);
     max-height: 180px;
     overflow-y: auto;
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter);
+    backdrop-filter: var(--pane-filter);
   }
 
   .strip-header {

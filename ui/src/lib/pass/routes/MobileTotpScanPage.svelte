@@ -117,7 +117,7 @@
     aspect-ratio: 1;
     margin-top: 16vh;
     border: 3px solid var(--accent);
-    border-radius: 24px;
+    border-radius: var(--radius-card);
   }
   .hint {
     margin-top: var(--sp-5);

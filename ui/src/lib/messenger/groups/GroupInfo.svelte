@@ -9,6 +9,8 @@
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import { pushState } from '$app/navigation';
+  import { page } from '$app/state';
   import { locale, localeTag, t, type TranslationKey } from '$lib/core/i18n';
   import { membersKey } from '../i18n';
   import { groupError, moderationError } from './errors';
@@ -16,6 +18,7 @@
   import PanelHead from '../shared/PanelHead.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import Avatar from '../contacts/Avatar.svelte';
+  import AvatarPicker from '../contacts/AvatarPicker.svelte';
   import GroupLink from './GroupLink.svelte';
   import MessageContent from '../content/MessageContent.svelte';
   import InvitePicker from './InvitePicker.svelte';
@@ -197,6 +200,32 @@
 
   function startEdit() {
     name = group.name; about = group.about; history = group.history_for_new; editing = true;
+    try { pushState('', { ...page.state, groupEdit: true }); stepped = true; } catch { stepped = false; }
+  }
+
+  // Editing is a step of history, as the media viewer is: the way back (the
+  // arrow of the panel, the phone's gesture and button) leaves the editing
+  // for the group's info, not the info for the chat. The picture is applied
+  // at once, so what was set stays set.
+  /** The step of history editing made, while it is the current one. */
+  let stepped = false;
+
+  /** Back from editing to the info: over the step it made, which ends it. */
+  function stopEdit() {
+    if (stepped && page.state.groupEdit) window.history.back();
+    else { editing = false; stepped = false; }
+  }
+
+  // A back left the step of editing.
+  $effect(() => {
+    void page.state.groupEdit;
+    if (editing && stepped && !page.state.groupEdit) { editing = false; stepped = false; }
+  });
+
+  /** The panel closes: an editing under way leaves its step first. */
+  function close() {
+    if (editing) stopEdit();
+    onclose();
   }
 
   async function save() {
@@ -204,8 +233,8 @@
     if (name.trim() && name.trim() !== group.name) a.name = name.trim();
     if (about !== group.about) a.about = about;
     if (group.kind === 'private' && history !== group.history_for_new) a.history_for_new = history;
-    if (Object.keys(a).length === 1) { editing = false; return; }
-    if (await act(a)) { editing = false; chatStore.scheduleChatsRefresh(); }
+    if (Object.keys(a).length === 1) { stopEdit(); return; }
+    if (await act(a)) { stopEdit(); chatStore.scheduleChatsRefresh(); }
   }
 
   function openMenu(e: MouseEvent | { x: number; y: number }, m: MessengerGroupMember) {
@@ -290,12 +319,13 @@
   {:else if moderation && isModerator(group) && hasModeration(group)}
   <ModerationPanel {group} onback={() => (moderation = false)} />
   {:else}
-  <PanelHead title={$t('msg_group_info')} {onclose} />
+  <PanelHead title={$t('msg_group_info')} onback={editing ? stopEdit : undefined} onclose={close} />
 
   <div class="scroll">
     <section class="card-top">
-      <Avatar url={group.picture || null} label={group.name} seed={group.id} size={64} />
       {#if editing}
+        <!-- The picture takes effect at once, apart from Save: it has commands of its own. -->
+        <AvatarPicker {group} disabled={busy} />
         <input class="field" type="text" bind:value={name} maxlength="64" placeholder={$t('msg_group_name')} disabled={busy} />
         <textarea class="field" rows="3" bind:value={about} maxlength="500" placeholder={$t('msg_group_about')} disabled={busy}></textarea>
         {#if group.kind === 'private'}
@@ -307,9 +337,10 @@
         {/if}
         <div class="row">
           <button class="btn btn-primary btn-sm" disabled={busy || !name.trim()} onclick={save}>{$t('msg_group_save')}</button>
-          <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => (editing = false)}>{$t('msg_group_cancel')}</button>
+          <button class="btn btn-ghost btn-sm" disabled={busy} onclick={stopEdit}>{$t('msg_group_cancel')}</button>
         </div>
       {:else}
+        <Avatar url={group.picture || null} label={group.name} seed={group.id} size={64} />
         <div class="name">{group.name}</div>
         <div class="kind">
           <Icon name={group.kind === 'public' ? 'globe' : 'lock'} size={12} />
@@ -509,6 +540,6 @@
   @media (pointer: coarse) {
     .icon { padding: 10px; }
     .person { padding: 9px 8px; }
-    .field { font-size: 16px; }
+    .field { font-size: var(--fs-md); }
   }
 </style>

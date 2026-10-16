@@ -45,7 +45,7 @@
   .quick {
     flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center;
     width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: 50%;
-    background: none; font: inherit; font-size: 20px; line-height: 1; cursor: pointer; color: var(--text-2);
+    background: none; font: inherit; font-size: var(--fs-xl); line-height: 1; cursor: pointer; color: var(--text-2);
   }
   .quick:hover { background: var(--surface-hover, var(--surface-3)); }
   .quick.mine { border-color: var(--accent); background: var(--accent-tint); }

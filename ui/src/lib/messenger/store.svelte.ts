@@ -39,6 +39,7 @@ import { inviteStore } from "./invites/inviteStore.svelte";
 import { pushSeen } from "./push/bridge";
 import { callStore } from "./calls/callStore.svelte";
 import { groupCallStore } from "./calls/groupCallStore.svelte";
+import { callLog } from "./calls/callLog.svelte";
 
 export interface FeedEntry extends MessengerUiEvent {
   at: number;
@@ -81,9 +82,9 @@ class MessengerStore {
     return !!s && s.compiled && s.enabled && s.runtime !== null;
   }
 
-  /** Unread messages in chats that are not archived (navigation badge). */
+  /** Unread messages in chats that are not archived, and the missed calls not seen yet (navigation badge). */
   get unread(): number {
-    return this.visible ? chatStore.totalUnread : 0;
+    return this.visible ? chatStore.totalUnread + callLog.missed : 0;
   }
 
   get compiled(): boolean {
@@ -143,6 +144,8 @@ class MessengerStore {
           callStore.load().catch(() => {});
           // The room of a group call I am in (a page that came back finds it).
           groupCallStore.load().catch(() => {});
+          // The count of missed calls on the section «Звонки».
+          callLog.refreshMissed().catch(() => {});
           // Events must flow as soon as the module is visible, not only
           // while its page is open (unread badge, statuses).
           this.startListeners().catch(() => {});
@@ -170,6 +173,7 @@ class MessengerStore {
         transferStore.reset();
         callStore.reset();
         groupCallStore.reset();
+        callLog.reset();
       }
       this.loaded = true;
     } finally {
@@ -211,6 +215,7 @@ class MessengerStore {
     transferStore.reset();
     callStore.reset();
     groupCallStore.reset();
+    callLog.reset();
   }
 
   /** Subscribe to relay-state and runtime event pushes. Idempotent. */
@@ -223,6 +228,7 @@ class MessengerStore {
         transferStore.handleEvent(ev);
         callStore.handleEvent(ev);
         groupCallStore.handleEvent(ev);
+        callLog.handleEvent(ev);
         requestStore.handleEvent(ev);
         inviteStore.handleEvent(ev);
         groupStore.handleEvent(ev);
@@ -250,6 +256,7 @@ class MessengerStore {
         avatarStore.handleEvent(e.payload);
         callStore.handleEvent(e.payload);
         groupCallStore.handleEvent(e.payload);
+        callLog.handleEvent(e.payload);
         this.handleProfileEvent(e.payload);
         // Many a second while a file moves or a peer speaks: not for the feed.
         if (e.payload.name === 'transfer.progress' || e.payload.name === 'call.level' || e.payload.name === 'group_call.level') return;

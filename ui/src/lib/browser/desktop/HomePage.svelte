@@ -485,14 +485,15 @@
   /* ── Card ── */
   .workspace-card {
     position: relative;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    background: var(--pane-strong);
+    border: 1px solid var(--pane-strong-border);
+    border-radius: var(--radius-card);
     overflow: hidden;
     display: flex;
     flex-direction: column;
     transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
     cursor: pointer;
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
   }
 
   .workspace-card:hover {
@@ -537,18 +538,17 @@
   .workspace-card:hover .drag-handle { opacity: 1; }
   .drag-handle:active { cursor: grabbing; }
 
-  /* Colour tick (design: 44×3 rounded bar at the card top, not a full strip) */
+  /* The workspace's colour: a line along the top edge of the card (design kit, ws-card). */
   .card-accent {
-    width: 44px;
     height: 3px;
-    border-radius: 3px;
-    margin: 22px 0 0 22px;
+    margin: 0 var(--sp-5);
+    border-radius: 0 0 3px 3px;
     background: var(--ws-color, var(--accent));
     flex-shrink: 0;
   }
 
   .card-body {
-    padding: 18px 22px 4px;
+    padding: var(--sp-5) var(--sp-5) 4px;
     display: flex;
     flex-direction: column;
     gap: 1.1rem;
@@ -575,7 +575,7 @@
 
   .card-title-group { flex: 1; min-width: 0; }
   .card-title { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card-desc { font-size: 0.78rem; color: var(--text-faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-desc { font-size: var(--fs-sm); color: var(--text-faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .card-menu {
     position: absolute; top: 10px; right: 12px;
@@ -592,7 +592,7 @@
   .menu-btn.danger:hover { background: var(--danger-bg); color: var(--danger-text); }
 
   .card-stats { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-  .stat { display: flex; align-items: center; gap: 7px; font-size: 0.82rem; color: var(--text-soft); }
+  .stat { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--text-soft); }
   .stat :global(svg) { color: var(--text-dim); }
   .stat.active { color: var(--success-text); font-weight: 500; }
   .stat.active :global(svg) { color: var(--success); }
@@ -620,7 +620,7 @@
   .add-card {
     background: transparent;
     border: 1.5px dashed var(--border-2);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-card);
     display: flex;
     flex-direction: column;
     align-items: center;

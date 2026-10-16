@@ -145,7 +145,7 @@
 <style>
   .tile {
     position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; padding: 0; margin: 0;
-    border-radius: 12px; border: 2px solid transparent; background: #1a1e24; color: #fff; font: inherit; cursor: default;
+    border-radius: var(--radius-md); border: 2px solid transparent; background: #1a1e24; color: #fff; font: inherit; cursor: default;
     display: block; text-align: left; box-sizing: border-box; transition: border-color 160ms ease-out;
   }
   .tile.pickable { cursor: pointer; }

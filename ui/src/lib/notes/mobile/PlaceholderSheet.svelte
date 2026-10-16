@@ -107,14 +107,14 @@
   .label {
     display: inline-flex; align-items: center; justify-content: center;
     width: 40px; height: 40px; flex-shrink: 0;
-    border: 0; border-radius: 12px; background: var(--m-field); color: var(--text-2);
+    border: 0; border-radius: var(--radius-md); background: var(--m-field); color: var(--text-2);
   }
   .strip { flex: 1; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
   .strip::-webkit-scrollbar { display: none; }
   .pill {
     flex-shrink: 0; min-height: 40px; padding: 0 14px;
-    border: 0; border-radius: 12px; background: var(--m-field); color: var(--text);
-    font: inherit; font-size: 14px; font-family: var(--font-mono);
+    border: 0; border-radius: var(--radius-md); background: var(--m-field); color: var(--text);
+    font: inherit; font-size: var(--fs-base); font-family: var(--font-mono);
   }
   .muted { color: var(--text-3); }
   .m-row-value { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

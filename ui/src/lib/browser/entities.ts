@@ -9,6 +9,7 @@
  */
 
 import { get } from 'svelte/store';
+import { copied } from '$lib/core/ui/toast.svelte';
 import { goto } from '$app/navigation';
 import { api } from '$lib/browser/api';
 import { t } from '$lib/core/i18n';
@@ -22,6 +23,7 @@ import { proxyEditor } from '$lib/browser/store/proxy-editor.svelte';
 /** Backend clipboard: actions run after awaited calls, where `navigator.clipboard` is denied. */
 async function copyText(text: string): Promise<void> {
   await api.system.clipboardWriteText(text);
+  copied();
 }
 
 const region = (country: string | null, city: string | null) =>

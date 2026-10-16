@@ -18,11 +18,11 @@
 
 body {
   font-family: var(--font-ui);
-  background: var(--bg-glow), var(--bg);
+  background: var(--bg-image), var(--bg);
   color: var(--text);
   height: 100dvh;
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--fs-base);
   line-height: var(--lh-base);
   transition: background var(--dur-base), color var(--dur-base);
   -webkit-font-smoothing: antialiased;
@@ -130,8 +130,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   font-family: inherit;
   font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
   border-radius: var(--radius);
-  padding: 0.55rem 1.1rem;
+  min-height: var(--control-h);
+  padding: 0 var(--sp-4);
   border: none;
   cursor: pointer;
   transition: all var(--dur-fast);
@@ -148,17 +150,26 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-success-soft:hover:not(:disabled) { background: var(--success-bg); filter: brightness(1.2); }
 .btn-danger { background: var(--danger); color: #fff; box-shadow: var(--shadow-danger); }
 .btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
-.btn-sm { padding: 0.3rem 0.65rem; font-size: 0.78rem; }
+/* A press (design kit, M01): the button sinks to .97 in 100 ms and comes back in 150. */
+.btn:active:not(:disabled), .icon-btn:active:not(:disabled) { transform: scale(0.97); transition-duration: var(--dur-press); }
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled), .icon-btn:active:not(:disabled) { transform: none; }
+}
+.btn-sm { min-height: var(--control-h-sm); padding: 0 var(--sp-3); font-size: var(--fs-sm); border-radius: var(--radius-sm); }
+/* The icon of a button: 18, 16 in a small one (whatever size the call site passed). */
+.btn > .icon { width: 18px; height: 18px; }
+.btn-sm > .icon { width: 16px; height: 16px; }
 
 /* ── Icon buttons ── */
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px; border-radius: var(--radius-sm);
-  background: var(--surface-3); border: 1px solid var(--border);
+  background: transparent; border: 1px solid transparent;
   color: var(--text-soft); cursor: pointer; transition: all var(--dur-fast);
   text-decoration: none;
 }
-.icon-btn:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); color: var(--text); }
+.icon-btn > .icon { width: 18px; height: 18px; }
+.icon-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
 .icon-btn.accent-soft:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
 .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .icon-btn.success { color: var(--success-text); background: var(--success-bg); border-color: color-mix(in srgb, var(--success) 25%, var(--border)); }
@@ -169,7 +180,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ── Forms ── */
 .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-.form-group label { font-size: 0.72rem; font-weight: var(--fw-bold); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; }
+.form-group label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.875rem; }
 
 .error-msg {
@@ -198,20 +209,21 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   flex-shrink: 0;
 }
 .page-header h1 {
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-extrabold);
-  letter-spacing: -0.6px;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1.4;
 }
 .page-header .spacer { margin-left: auto; }
-.page-sub { font-size: var(--fs-base); color: var(--text-2); }
+.page-sub { font-size: var(--fs-xs); color: var(--text-2); }
 
 /* ── Card / section ── */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 22px;
+  background: var(--pane-strong);
+  border: 1px solid var(--pane-strong-border);
+  border-radius: var(--radius-card);
+  padding: var(--sp-6);
   transition: border-color 0.18s, transform 0.18s;
+  box-shadow: var(--pane-highlight), var(--pane-shadow);
 }
 .card--hover:hover { border-color: var(--border-2); transform: translateY(-2px); }
 .card-title { font-size: var(--fs-md); font-weight: var(--fw-bold); }
@@ -253,10 +265,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
-  padding: 0.25rem 0.6rem;
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
+  min-height: 30px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
   background: transparent;
   color: var(--text-2);
   border: 1px solid var(--border);
@@ -325,15 +338,16 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .search-field > svg {
   position: absolute;
-  left: 0.6rem;
+  left: 0.85rem;
   color: var(--text-3);
   pointer-events: none;
 }
 .search-field input {
   height: var(--control-h);
   width: 100%;
-  padding: 0 1.9rem 0 2rem;
-  font-size: var(--fs-sm);
+  padding: 0 1.9rem 0 2.25rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-base);
 }
 .search-clear {
   position: absolute;
@@ -355,7 +369,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   height: var(--control-h);
   padding-top: 0;
   padding-bottom: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   flex-shrink: 0;
 }
 
@@ -407,11 +421,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .empty-state svg { opacity: 0.5; }
 .empty-state p { color: var(--text-body); font-weight: var(--fw-semibold); }
 .empty-state span { font-size: var(--fs-sm); color: var(--text-faint); max-width: 260px; line-height: 1.5; }
-/* Icon tile for empty states (52×52 rounded square per design) */
+/* Icon tile for empty states (56×56, radius 16) */
 .empty-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
   background: var(--surface-3);
   display: flex;
   align-items: center;
@@ -420,34 +434,38 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .empty-icon svg { opacity: 1; }
 
-/* ── Tabs ── */
+/* ── Tabs ── the sections of a page: the kit's segmented control */
 .tab-bar {
-  display: flex;
-  gap: var(--sp-1);
-  border-bottom: 1px solid var(--border);
-  padding: 0 var(--sp-2);
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   flex-shrink: 0;
 }
 .tab {
-  padding: var(--sp-2) var(--sp-3);
+  min-height: 32px;
+  padding: 0 var(--sp-3);
   border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   background: none;
   color: var(--text-2);
   font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-weight: var(--fw-semibold);
+  border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
+  white-space: nowrap;
   cursor: pointer;
   transition: all var(--dur-fast);
 }
-.tab:hover { background: var(--surface); color: var(--text); }
-.tab.active { color: var(--accent-text); border-bottom-color: var(--accent); background: transparent; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); background: var(--surface-hover); }
 .tab-count {
-  font-size: 0.65rem;
+  font-size: var(--fs-2xs);
   background: var(--surface-2);
   border-radius: var(--radius-pill);
   padding: 0.05rem 0.4rem;
@@ -461,20 +479,20 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   gap: 4px;
   background: var(--surface-3);
   border: 1px solid var(--border);
-  border-radius: var(--radius-field);
-  padding: 4px;
+  border-radius: var(--radius);
+  padding: 3px;
 }
 .seg-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 34px;
-  padding: 0 14px;
+  height: 32px;
+  padding: 0 var(--sp-3);
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-2);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
   transition: all var(--dur-fast);
@@ -483,18 +501,18 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .seg-btn:hover:not(.active):not(:disabled) { color: var(--text); }
 .seg-btn.active { background: var(--accent-bg); color: var(--accent-text); }
 .seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-/* Standalone segment buttons (Settings language/theme: 46px, own borders) */
+/* Standalone segment buttons (Settings language/theme: 44px, own borders) */
 .seg-btn-lg {
   display: inline-flex;
   align-items: center;
   gap: 9px;
   height: var(--control-h-lg);
   padding: 0 20px;
-  border-radius: var(--radius-field);
+  border-radius: var(--radius);
   background: var(--surface-3);
   border: 1px solid var(--border);
   color: var(--text-body);
-  font-size: 0.9rem;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   cursor: pointer;
   transition: all var(--dur-fast);
@@ -503,11 +521,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .seg-btn-lg.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
 .seg-btn-lg:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ── Toggle (тумблер) ── track 54×30, knob 24; on = accent */
+/* ── Toggle (тумблер) ── track 40×24, knob 18; on = accent */
 .toggle {
   position: relative;
-  width: 54px;
-  height: 30px;
+  width: 40px;
+  height: 24px;
   border-radius: var(--radius-pill);
   border: none;
   background: var(--toggle-off);
@@ -522,14 +540,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #fff;
   box-shadow: var(--shadow-knob);
   transition: left var(--dur-base);
 }
-.toggle.on::after { left: 27px; }
+.toggle.on::after { left: 19px; }
 
 /* ── Mono text ── (values read and copied character by character: passwords,
    keys, secrets, recovery codes, fingerprints). `.mono` sets the face; no
@@ -550,10 +568,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   color: var(--text-body);
   white-space: nowrap;
 }
@@ -561,17 +579,18 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* ── Data table ── (Proxies / Terminal / Board tables: rounded card wrapper,
    caps header, row hover). Works for both <table> and grid-row markup. */
 .data-table {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--pane);
+  border: 1px solid var(--pane-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  box-shadow: var(--pane-highlight), var(--pane-shadow);
+  -webkit-backdrop-filter: var(--pane-filter);
+  backdrop-filter: var(--pane-filter);
 }
 .data-table-head {
-  font-size: 0.7rem;
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
   border-bottom: 1px solid var(--border);
 }
 .data-table-row { border-bottom: 1px solid var(--surface-2); transition: background 0.12s; }
@@ -600,4 +619,56 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--text-2);
   font-size: var(--fs-sm);
   text-align: center;
+}
+
+/* ── Touch feedback ── (design kit M17, M18)
+   A long press resting on a row or a bubble: it sinks a little under the
+   accent tint over the 450 ms of the press (messenger/shared/longpress.ts),
+   and comes back in 150 ms if the finger lifts or moves. */
+.lp-pressing {
+  transform: scale(0.98);
+  box-shadow: inset 0 0 0 100vmax var(--press-tint);
+  transition: transform 450ms var(--ease), box-shadow 450ms var(--ease) !important;
+}
+.lp-release { transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease) !important; }
+/* The arrow of a swipe to reply (messenger/shared/swipe-reply.ts), at the end of the row. */
+.swipe-arrow {
+  position: absolute;
+  right: var(--sp-3);
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-2);
+  opacity: 0.35;
+  transform: translateY(-50%) scale(0.6);
+  transition: opacity 300ms var(--ease), transform 300ms var(--ease), background 150ms, color 150ms;
+  pointer-events: none;
+}
+.swipe-arrow.on { opacity: 1; transform: translateY(-50%) scale(1); background: var(--accent-bg); color: var(--accent-text); }
+@media (prefers-reduced-motion: reduce) {
+  .lp-pressing, .lp-release, .swipe-arrow { transition: none !important; }
+}
+
+/* The tooltip of a computer (core/ui/tooltip.ts, design kit): dense glass, 12/600,
+   one line up to 280 wide, then it wraps; a shortcut is a mono key chip. */
+.vtip {
+  position: fixed; top: 0; left: 0; z-index: var(--z-tooltip);
+  display: flex; align-items: center; gap: var(--sp-2);
+  width: max-content; max-width: 280px; padding: var(--sp-2) var(--sp-3);
+  background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg), var(--glass-highlight);
+  color: var(--text); font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1.35;
+  overflow-wrap: anywhere; pointer-events: none;
+}
+.vtip[hidden] { display: none; }
+.vtip-kbd {
+  flex-shrink: 0; padding: 1px var(--sp-1); border-radius: var(--radius-xs);
+  background: var(--surface-hover); color: var(--text-body);
+  font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap;
 }

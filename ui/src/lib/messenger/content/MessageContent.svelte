@@ -46,7 +46,7 @@
 
   function follow(e: MouseEvent, url: Parameters<typeof linkActions.openExternal>[0]) {
     e.preventDefault();
-    linkActions.openExternal(url).catch(() => {});
+    void linkActions.follow(url);
   }
 </script>
 
@@ -61,7 +61,7 @@
 {/if}
 
 <style>
-  .text { font-size: var(--fs-sm); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+  .text { font-size: var(--fs-body); line-height: var(--lh-body); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
   .text a { color: var(--accent-text-2); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
   .chip {
     display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline; max-width: 100%;

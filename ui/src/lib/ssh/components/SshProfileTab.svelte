@@ -187,11 +187,11 @@
   .ssh-tab { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) 0; min-height: 100%; }
 
   .tab-header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .count { font-size: 0.78rem; color: var(--text-faint); }
+  .count { font-size: var(--fs-sm); color: var(--text-faint); }
   .header-actions { display: flex; gap: 8px; }
   /* Кнопки шапки вкладки: компактные 34px по дизайну вторичных действий */
   .header-actions :global(.btn) {
-    height: 34px; padding: 0 13px; font-size: 0.82rem; border-radius: 9px;
+    height: 34px; padding: 0 13px; font-size: var(--fs-sm); border-radius: var(--radius);
   }
 
   .form-header { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); }
@@ -237,7 +237,7 @@
     display: flex; align-items: center; justify-content: center; gap: 9px;
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-field);
     height: 46px; padding: 0 14px; cursor: pointer; color: var(--text-body);
-    font-size: 0.9rem; font-weight: var(--fw-semibold); font-family: inherit; width: 100%;
+    font-size: var(--fs-base); font-weight: var(--fw-semibold); font-family: inherit; width: 100%;
     transition: all var(--dur-fast); margin-top: auto; flex-shrink: 0;
   }
   .open-panel-btn:hover { background: var(--surface-hover); border-color: var(--border-2); color: var(--text); }

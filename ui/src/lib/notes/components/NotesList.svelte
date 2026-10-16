@@ -163,9 +163,9 @@
   }
 
   .note-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
     padding: var(--sp-4);
     cursor: pointer;
     transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
@@ -174,12 +174,12 @@
     gap: 0.5rem;
   }
 
-  .note-card:hover { border-color: var(--border-2); }
+  .note-card:hover { background: var(--surface-hover); }
   /* Active card per design: raised surface + accent ring + soft glow */
   .note-card.active {
     border-color: var(--accent-border);
-    background: var(--surface-2);
-    box-shadow: var(--shadow-note-active);
+    background: var(--accent-bg);
+    box-shadow: none;
   }
 
   .card-top {
@@ -190,7 +190,7 @@
   }
 
   .note-title {
-    font-size: 0.92rem;
+    font-size: var(--fs-body);
     font-weight: var(--fw-bold);
     color: var(--text);
     white-space: nowrap;
@@ -211,14 +211,14 @@
   }
 
   .note-format {
-    font-size: 0.65rem;
+    font-size: var(--fs-2xs);
     font-weight: var(--fw-semibold);
     color: var(--text-faint);
     text-transform: uppercase;
     font-family: var(--font-mono);
     background: var(--border);
     padding: 2px 6px;
-    border-radius: 5px;
+    border-radius: var(--radius-badge);
   }
 
   .draft-dot {

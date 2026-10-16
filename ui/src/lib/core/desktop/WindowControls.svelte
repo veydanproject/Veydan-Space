@@ -95,7 +95,7 @@
     color: var(--text);
   }
   .wc-close:hover {
-    background: #e5484d;
+    background: var(--danger);
     color: #fff;
   }
 </style>

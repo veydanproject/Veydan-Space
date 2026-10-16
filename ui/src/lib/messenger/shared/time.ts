@@ -68,3 +68,12 @@ export function dayLabel(unix: number, now = new Date()): { key: 'today' | 'yest
       : { day: 'numeric', month: 'long', year: 'numeric' };
   return { key: null, text: d.toLocaleDateString(lang(), opts) };
 }
+
+/** `14:05` today, `29 Sep, 14:05` this year, `29 Sep 2025, 14:05` before: a call of the journal. */
+export function shortStamp(unix: number, now = new Date()): string {
+  const d = new Date(unix * 1000);
+  if (sameDay(d, now)) return clock(unix);
+  const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  return d.toLocaleString(lang(), opts);
+}

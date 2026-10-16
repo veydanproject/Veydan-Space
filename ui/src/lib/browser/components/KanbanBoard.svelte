@@ -562,10 +562,10 @@
     min-height: 44px; flex-wrap: wrap;
   }
   .col-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-  .col-title { font-size: 0.82rem; font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-body); flex: 1; }
+  .col-title { font-size: var(--fs-sm); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-body); flex: 1; }
   .col-count {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 24px; height: 24px; border-radius: 7px;
+    width: 24px; height: 24px; border-radius: var(--radius-sm);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold);
     background: var(--surface-2); color: var(--text-2);
   }
@@ -594,14 +594,14 @@
   .card-drag { color: var(--text-3); padding-top: 2px; flex-shrink: 0; }
   .card-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; }
   .card-top-row { display: flex; align-items: center; justify-content: space-between; gap: 0.3rem; }
-  .card-name { font-size: 0.9rem; font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-name { font-size: var(--fs-base); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .running-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
 
   .totp-badge {
     background: var(--accent-tint);
     color: var(--accent-text-2);
     border: 1px solid var(--accent-tint-border);
-    border-radius: 6px;
+    border-radius: var(--radius-badge);
     font-size: var(--fs-2xs);
     padding: 0.05rem 0.35rem;
     font-weight: 600;
@@ -612,8 +612,8 @@
   .meta-item { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-dim); }
   /* OS / fingerprint preset chip — mono per design */
   .meta-item:first-child {
-    font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-soft);
-    background: var(--border); padding: 3px 8px; border-radius: 7px;
+    font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-soft);
+    background: var(--border); padding: 3px 8px; border-radius: var(--radius-sm);
   }
   .meta-item.accent { color: var(--accent-text-2); }
   .meta-item.muted { opacity: 0.8; }
@@ -625,7 +625,7 @@
     z-index: var(--z-max);
     background: var(--surface-2);
     border: 1px solid var(--accent);
-    border-radius: 6px;
+    border-radius: var(--radius-badge);
     padding: 0.4rem 0.65rem;
     font-size: var(--fs-sm);
     font-weight: 600;

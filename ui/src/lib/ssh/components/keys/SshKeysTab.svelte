@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { onMount } from 'svelte';
   import { api } from '$lib/ssh/api';
   import type { SshKey } from '$lib/ssh/types';
@@ -63,6 +64,7 @@
   async function copyPublic(k: SshKey) {
     try {
       await navigator.clipboard.writeText(k.public_key);
+      copiedToast();
       copiedId = k.id;
       clearTimeout(copyTimer);
       copyTimer = setTimeout(() => (copiedId = ''), 2000);
@@ -95,6 +97,7 @@
   async function copyPrivate() {
     try {
       await navigator.clipboard.writeText(await loadPrivate());
+      copiedToast();
     } catch (e) {
       error = formatError(e);
     }
@@ -365,8 +368,7 @@
   }
   .keys-table th {
     padding: var(--sp-3) var(--sp-4); text-align: left;
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-3);
-    text-transform: uppercase; letter-spacing: 0.7px;
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .keys-table td { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--surface-2); vertical-align: middle; }
@@ -382,12 +384,12 @@
   /* three 32px buttons, two gaps and the cell's padding */
   .col-actions { width: calc(3 * 32px + 2 * var(--sp-1) + 2 * var(--sp-4)); }
 
-  .key-name { font-weight: var(--fw-semibold); font-size: 0.9rem; color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .key-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .key-comment { display: block; color: var(--text-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   code {
     font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-body);
-    background: var(--surface-2); padding: 4px 8px; border-radius: 7px;
+    background: var(--surface-2); padding: 4px 8px; border-radius: var(--radius-sm);
     display: inline-block; max-width: 100%;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -405,7 +407,7 @@
 
   .usage-chip {
     font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em;
-    padding: 0.15rem var(--sp-2); border-radius: 999px;
+    padding: 0.15rem var(--sp-2); border-radius: var(--radius-pill);
     background: var(--success-bg);
     border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border));
     color: var(--success-text);
@@ -424,7 +426,7 @@
      padding .search-field reserves for its icon. */
   .view-body .form-group { display: flex; flex-direction: column; gap: 8px; }
   .view-body label, .view-body .field-label {
-    font-size: 0.72rem; text-transform: uppercase; color: var(--text-faint);
+    font-size: var(--fs-2xs); text-transform: uppercase; color: var(--text-faint);
     font-weight: var(--fw-bold); letter-spacing: 0.5px;
   }
   .view-body input, .view-body textarea {
@@ -434,11 +436,11 @@
     color: var(--text);
     padding: 0 14px;
     height: var(--control-h-lg);
-    font-size: 0.9rem;
+    font-size: var(--fs-base);
     font-family: inherit;
     resize: vertical;
   }
-  .view-body textarea { height: auto; min-height: 72px; padding: 12px 14px; font-size: 0.75rem; }
+  .view-body textarea { height: auto; min-height: 72px; padding: 12px 14px; font-size: var(--fs-xs); }
   .view-body input:focus, .view-body textarea:focus {
     outline: none;
     border-color: var(--accent-border);
@@ -454,5 +456,5 @@
   .private-actions { display: flex; gap: var(--sp-2); }
   .self-start { align-self: flex-start; }
   .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: var(--sp-2); }
-  .form-actions .btn { height: 42px; border-radius: var(--radius-field); padding: 0 20px; }
+  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 </style>

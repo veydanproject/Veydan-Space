@@ -102,7 +102,7 @@
     gap: 0.1rem;
     padding: 0.3rem 0.45rem;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     background: transparent;
     color: var(--text);
     text-align: left;

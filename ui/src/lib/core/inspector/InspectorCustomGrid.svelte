@@ -50,7 +50,7 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    font-size: 0.72rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text-muted);
   }
 
@@ -59,9 +59,9 @@
     padding: 0.15rem 0.3rem;
     background: var(--color-bg-soft);
     border: 1px solid var(--color-border-soft);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     color: var(--color-text-main);
-    font-size: 0.72rem;
+    font-size: var(--fs-2xs);
     text-align: center;
   }
 

@@ -133,7 +133,7 @@
     width: 100%;
     padding: 0.35rem 0.5rem;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     background: transparent;
     color: var(--text);
     font-size: var(--fs-sm);
@@ -141,7 +141,7 @@
     cursor: pointer;
   }
   .row.active, .row:hover { background: var(--surface-2); }
-  .row.create { color: var(--accent); }
+  .row.create { color: var(--accent-text); }
   .row.empty { color: var(--text-3); cursor: default; }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hints { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.3rem 0.5rem 0.15rem; border-top: 1px solid var(--border); }

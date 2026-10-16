@@ -6,6 +6,7 @@
   public link lets anyone in; a private one only says whom to ask.
 -->
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerApi, messengerError, type MessengerGroup } from '../api';
@@ -33,6 +34,7 @@
     if (!group.link) return;
     try {
       await navigator.clipboard.writeText(group.link);
+      copiedToast();
       copied = true;
       setTimeout(() => (copied = false), 1600);
     } catch (e) { error = messengerError(e); }

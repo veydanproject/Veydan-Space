@@ -94,6 +94,8 @@ age = { version = "0.11", default-features = false }
 
 # ── Mobile only ──────────────────────────────────────────────────────────────
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# Open http(s) links in the system browser (a link of a message on a phone too).
+tauri-plugin-opener = "2"
 tauri-plugin-barcode-scanner = "2"
 # Native file picker (content:// URIs) and fd-based reads of those URIs.
 tauri-plugin-dialog = "2"

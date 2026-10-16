@@ -45,7 +45,7 @@
 use super::{map_err, MessengerState};
 use messenger_runtime::calls::{CameraInfo, ScreenInfo, VideoFrame, VideoInput, VideoQuality, VideoTrack};
 use messenger_runtime::{
-    CallMedia, CallNodeInput, CallNodesView, CallState, CallTrust, CallView, GroupCallState, GroupCallView, MessengerRuntime, RelayPolicy,
+    CallLogEntry, CallMedia, CallNodeInput, CallNodesView, CallState, CallTrust, CallView, GroupCallState, GroupCallView, MessengerRuntime, RelayPolicy,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -555,6 +555,42 @@ pub async fn messenger_call_nodes_set_trust(trust: CallTrust, messenger: tauri::
 #[tauri::command]
 pub async fn messenger_call_nodes_refresh(messenger: tauri::State<'_, MessengerState>) -> CmdResult<CallNodesView> {
     messenger.runtime()?.call_nodes_refresh().await.map_err(map_err)
+}
+
+/// The journal of calls (the section «Звонки»): the calls that are over,
+/// of every chat, newest first, strictly older than `before` (a
+/// `started_at`), 50 by default.
+#[tauri::command]
+pub async fn messenger_call_history(
+    before: Option<i64>,
+    limit: Option<i64>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<Vec<CallLogEntry>> {
+    messenger.runtime_unlocked().await?.call_history(before, limit.unwrap_or(50)).await.map_err(map_err)
+}
+
+/// Take calls out of the journal; their lines in the chats stay.
+#[tauri::command]
+pub async fn messenger_call_history_hide(call_ids: Vec<String>, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    messenger.runtime_unlocked().await?.call_history_hide(&call_ids).await.map_err(map_err)
+}
+
+/// Take every call that is over out of the journal.
+#[tauri::command]
+pub async fn messenger_call_history_clear(messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    messenger.runtime_unlocked().await?.call_history_clear().await.map_err(map_err)
+}
+
+/// How many calls rang here unanswered since the journal was last looked at.
+#[tauri::command]
+pub async fn messenger_calls_missed(messenger: tauri::State<'_, MessengerState>) -> CmdResult<u32> {
+    messenger.runtime_unlocked().await?.calls_missed().await.map_err(map_err)
+}
+
+/// The journal is shown: its missed calls are no longer new.
+#[tauri::command]
+pub async fn messenger_calls_mark_seen(messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    messenger.runtime_unlocked().await?.calls_mark_seen().await.map_err(map_err)
 }
 
 /// The call under way, the policy and the nodes.

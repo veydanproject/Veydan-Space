@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { api } from '$lib/ssh/api';
+import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
 import { get } from 'svelte/store';
 import { t } from '$lib/core/i18n';
 import { explainError, explainTorMessage } from '$lib/ssh/tor-error';
@@ -634,7 +635,7 @@ class FilesStore {
   }
 
   clipboardPath(entry: FileEntry) {
-    navigator.clipboard?.writeText(entry.path).catch(() => {});
+    navigator.clipboard?.writeText(entry.path).then(() => copiedToast()).catch(() => {});
   }
 
   destroy() {

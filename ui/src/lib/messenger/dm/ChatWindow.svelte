@@ -2,15 +2,16 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { toast } from '$lib/core/ui/toast.svelte';
   import { tick, untrack, type Snippet } from 'svelte';
-  import { t, locale, localeTag } from '$lib/core/i18n';
+  import { t, locale, localeTag, countKey } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import MessageBubble from './MessageBubble.svelte';
   import AlbumBubble from './AlbumBubble.svelte';
   import QuickReactions from './QuickReactions.svelte';
-  import { reactionTarget } from './quick-reactions';
+  import { reactionTarget, reactionAllowed } from './quick-reactions';
   import { canEdit, editTarget } from './editable';
   import Timeline from '../content/Timeline.svelte';
   import type { TimelineItem } from '../content/types';
@@ -74,9 +75,30 @@
   let scroller = $state<HTMLDivElement | null>(null);
   let content = $state<HTMLDivElement | null>(null);
   let replyTo = $state<MessengerMessage | null>(null);
+  /**
+   * Whether a message can be answered: an upload on its way is swapped for a message with another id (a quote of it
+   * would point at nothing), a card of the bot has no words of its own, and a message under review is seen by its author
+   * and the moderators alone (an answer would quote what the others never got).
+   */
+  const canReply = (m: MessengerMessage) => !m.deleted && chat.can_send && !m.bot_card && !m.id.startsWith('local:') && m.status !== 'uploading' && m.status !== 'paused' && m.review !== 'pending';
+  const answer = (m: MessengerMessage) => { editing = null; replyTo = m; };
   let editing = $state<MessengerMessage | null>(null);
   let error = $state('');
   let atBottom = $state(true);
+  /** New messages from the others that came while the reader was up the conversation. */
+  let unseen = $state(0);
+  let lastSeenId = '';
+  $effect(() => {
+    const list = chatStore.messages;
+    const last = list[list.length - 1];
+    if (!last) return;
+    if (atBottom || !lastSeenId) { lastSeenId = last.id; unseen = 0; return; }
+    if (last.id === lastSeenId) return;
+    const from = list.findIndex((m) => m.id === lastSeenId);
+    const fresh = from < 0 ? [last] : list.slice(from + 1);
+    unseen += fresh.filter((m) => m.direction === 'in' && m.content_type !== 'system').length;
+    lastSeenId = last.id;
+  });
   let highlighted = $state<string | null>(null);
   /**
    * `m`: the message pressed, what the items act on. `target`: what a reaction from the menu lands on (an album's last part).
@@ -85,6 +107,8 @@
   let menu = $state<{ open: boolean; x: number; y: number; m: MessengerMessage | null; target: MessengerMessage | null; caption: MessengerMessage | null }>({ open: false, x: 0, y: 0, m: null, target: null, caption: null });
   /** The menu of a message shows the whole emoji picker instead of the quick strip. */
   let menuMore = $state(false);
+  /** A computer: the reactions alone, over the hovered message's «Реакция» button. */
+  let menuReact = $state(false);
   let chatMenu = $state<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
   /** Who in a group read a message of mine: opened from its menu, where that menu was. */
   let seen = $state<{ open: boolean; x: number; y: number; who: string[] }>({ open: false, x: 0, y: 0, who: [] });
@@ -243,7 +267,14 @@
     list.push({ label: chat.pinned ? $t("msg_chat_unpin") : $t("msg_chat_pin"), icon: "pin", onselect: () => chatStore.setPinned(chat.id, !chat.pinned) });
     list.push({ label: chat.is_muted ? $t("msg_chat_unmute") : $t("msg_chat_mute"), icon: chat.is_muted ? "bell" : "bell-off", onselect: () => chatStore.setMuted(chat.id, !chat.is_muted) });
     // An archived chat is closed (as a deleted one): its page is left with it.
-    list.push({ label: chat.archived ? $t("msg_chat_unarchive") : $t("msg_chat_archive"), icon: "archive", onselect: async () => { const archive = !chat.archived; await chatStore.setArchived(chat.id, archive); if (archive) onback?.(); } });
+    list.push({ label: chat.archived ? $t("msg_chat_unarchive") : $t("msg_chat_archive"), icon: "archive", onselect: async () => {
+      const archive = !chat.archived;
+      const id = chat.id;
+      await chatStore.setArchived(id, archive);
+      if (!archive) return;
+      toast.undo($t('msg_chat_archived_toast'), { icon: 'archive', onAction: () => void chatStore.setArchived(id, false) });
+      onback?.();
+    } });
     // A group is left, not deleted: its own entries say how.
     if (!isGroup) list.push({ label: $t("msg_chat_delete"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_chat_delete_confirm", { name: chat.title }), $t("msg_chat_delete"), true)) { await chatStore.deleteChat(chat.id); onback?.(); } } });
     return list;
@@ -282,8 +313,10 @@
     catch (e) { error = explain(e); throw e; }
   }
 
+  /** My last message that ↑ in an empty field edits. */
+  const lastEditable = () => [...chatStore.messages].reverse().find((m) => canEdit(m, chat.can_send) && (m.content_type === 'text' || !!m.text));
   function editLast() {
-    const mine = [...chatStore.messages].reverse().find((m) => canEdit(m, chat.can_send) && (m.content_type === 'text' || !!m.text));
+    const mine = lastEditable();
     if (mine) { replyTo = null; editing = mine; }
   }
 
@@ -365,8 +398,36 @@
   function openMenu(e: MouseEvent, m: MessengerMessage, album?: MessengerMessage[]) {
     e.preventDefault();
     menuMore = false;
+    menuReact = false;
     menu = { open: true, x: e.clientX, y: e.clientY, m, target: reactionTarget(m, album), caption: editTarget(m, album) };
   }
+
+  /** The buttons of a hovered message: «Ещё» opens its menu under the button, «Реакция» the reactions over it. */
+  function hoverActions(m: MessengerMessage, album?: MessengerMessage[]) {
+    const at = (el: HTMLElement, below: boolean) => {
+      const r = el.getBoundingClientRect();
+      return below ? { x: r.left, y: r.bottom + 4 } : { x: r.left + r.width / 2, y: r.top };
+    };
+    const target = reactionTarget(m, album);
+    return {
+      more: (el: HTMLElement) => {
+        const { x, y } = at(el, true);
+        menuMore = false;
+        menuReact = false;
+        menu = { open: true, x, y, m, target, caption: editTarget(m, album) };
+      },
+      react: reactable(target)
+        ? (el: HTMLElement) => {
+            const { x, y } = at(el, false);
+            menuMore = false;
+            menuReact = true;
+            menu = { open: true, x, y, m, target, caption: editTarget(m, album) };
+          }
+        : undefined,
+    };
+  }
+  /** The message (or an album's part) whose menu is open: its row is tinted. */
+  const selectedId = $derived(menu.open && !phone ? menu.m?.id ?? null : null);
 
   /**
    * A message one may react to: it is there, it left this device, and this chat takes words from me.
@@ -379,6 +440,7 @@
 
   function react(m: MessengerMessage, emoji: string) {
     menu.open = false;
+    if (!reactionAllowed(m, emoji)) return;
     guard(() => chatStore.react(m.id, emoji));
   }
 
@@ -403,13 +465,10 @@
     const own = m.direction === 'out';
     const list: MenuEntry[] = [];
     if (!m.deleted) {
-      // An upload on its way is swapped for a message with another id: a quote of it would point at nothing.
-      // A card of the bot has no words of its own to quote.
-      // A message under review is seen by its author and the moderators alone: an answer to it would quote what the others never got.
-      if (chat.can_send && !m.bot_card && !m.id.startsWith('local:') && m.status !== 'uploading' && m.status !== 'paused' && m.review !== 'pending') list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => { editing = null; replyTo = m; } });
-      if (m.text) list.push({ label: $t('msg_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').catch(() => {}) });
+      if (canReply(m)) list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => answer(m) });
+      if (m.text) list.push({ label: $t('msg_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').then(() => toast.success($t('msg_text_copied'))).catch(() => {}) });
       const caption = menu.caption ?? m;
-      if (canEdit(caption, chat.can_send)) list.push({ label: $t('msg_message_edit'), icon: 'pencil', onselect: () => { replyTo = null; editing = caption; } });
+      if (canEdit(caption, chat.can_send)) list.push({ label: $t('msg_message_edit'), icon: 'pencil', shortcut: !phone && lastEditable()?.id === caption.id ? '↑' : undefined, onselect: () => { replyTo = null; editing = caption; } });
       if (own && m.status === 'failed') list.push({ label: $t('msg_message_retry'), icon: 'refresh-cw', onselect: () => guard(() => chatStore.retry(m.id)) });
       if (own && isGroup && m.seen_by?.length) {
         const { x, y } = menu;
@@ -448,13 +507,17 @@
 
 {#snippet bubble(item: Extract<TimelineItem, { type: "bubble" }>)}
   <MessageBubble message={item.message} first={item.first} last={item.last} showAuthor={item.showAuthor} peerTitle={chat.title} {author} highlighted={highlighted === item.message.id}
-    onmenu={openMenu} onreplyclick={jumpTo} onretry={(m) => guard(() => chatStore.retry(m.id))} media={attachment} onreacterror={(e) => (error = explain(e))} />
+    onmenu={openMenu} onreplyclick={jumpTo} onretry={(m) => guard(() => chatStore.retry(m.id))} media={attachment} onreacterror={(e) => (error = explain(e))}
+    onreply={canReply(item.message) ? () => answer(item.message) : undefined}
+    actions={phone ? undefined : hoverActions(item.message)} selected={selectedId === item.message.id} />
 {/snippet}
 
 {#snippet album(item: Extract<TimelineItem, { type: "album" }>)}
   {@const who = item.messages[0].sender_pubkey}
   <AlbumBubble messages={item.messages} variant={item.variant} first={item.first} last={item.last} author={item.showAuthor && author ? author(who) : null} authorTint={tint(who)} {highlighted}
-    onmenu={(e, m) => openMenu(e, m, item.messages)} onretry={(m) => guard(() => chatStore.retry(m.id))} onreacterror={(e) => (error = explain(e))} />
+    onmenu={(e, m) => openMenu(e, m, item.messages)} onretry={(m) => guard(() => chatStore.retry(m.id))} onreacterror={(e) => (error = explain(e))}
+    onreply={canReply(item.messages[item.messages.length - 1]) ? () => answer(item.messages[item.messages.length - 1]) : undefined}
+    actions={phone ? undefined : hoverActions(item.messages[item.messages.length - 1], item.messages)} selected={!!selectedId && item.messages.some((p) => p.id === selectedId)} />
 {/snippet}
 
 {#snippet composerTools()}
@@ -545,8 +608,9 @@
   </div>
 
   {#if !atBottom}
-    <button class="to-bottom" onclick={() => { atBottom = true; scrollToBottom(); }} title={$t('msg_chat_to_bottom')}>
-      <Icon name="chevrons-down" size={16} />
+    <button class="to-bottom" class:count={unseen > 0} onclick={() => { atBottom = true; scrollToBottom(); }} title={$t('msg_chat_to_bottom')}>
+      <Icon name="chevrons-down" size={18} />
+      {#if unseen > 0}<span>{$t(countKey('msg_new_count', unseen, $locale), { n: String(unseen) })}</span>{/if}
     </button>
   {/if}
 
@@ -565,15 +629,20 @@
 </section>
 
 <MediaViewer />
-<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} header={reactable(menu.target) ? quick : undefined} onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} header={reactable(menu.target) ? quick : undefined} onclose={() => (menu.open = false)} />
 <ContextMenu bind:open={seen.open} x={seen.x} y={seen.y} items={[]} header={readers} onclose={() => (seen.open = false)} />
 <ContextMenu bind:open={chatMenu.open} x={chatMenu.x} y={chatMenu.y} items={chatItems} onclose={() => (chatMenu.open = false)} />
 
 <style>
-  .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
-  .head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; min-height: 56px; }
+  .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: transparent; }
+  .head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; }
   /* The phone: the bar colour of the shell, the strip under the status bar included; its back is the chevron of every phone screen. */
-  .head.phone { background: var(--m-nav, var(--surface)); padding-left: var(--sp-1); }
+  .head.phone {
+    position: relative; z-index: 2; margin: var(--sp-2) var(--sp-2) 0; min-height: 60px; padding-left: var(--sp-1);
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head);
+    background: var(--pane-strong); box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+  }
   .head.phone .back { color: var(--text); padding: 10px; }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1; }
   .ident.clickable { cursor: pointer; border-radius: var(--radius-sm); }
@@ -584,13 +653,13 @@
   .sub { font-size: var(--fs-2xs); color: var(--text-3); }
   .sub code { font-family: var(--font-mono); }
   .offline { color: var(--warn-text); }
-  .sub .online { color: var(--accent); }
+  .sub .online { color: var(--accent-text); }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   @media (pointer: coarse) {
     .icon { padding: 10px; }
     .head { padding-inline: var(--sp-2); gap: var(--sp-2); }
-    .to-bottom { width: 44px; height: 44px; }
+    .to-bottom { height: 44px; min-width: 44px; }
   }
   .narrow-only { display: none; }
   @media (max-width: 860px) { .narrow-only { display: inline-flex; } }
@@ -605,12 +674,18 @@
   .placeholder span { font-size: var(--fs-xs); max-width: 320px; line-height: 1.5; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .earlier { display: flex; justify-content: center; padding: var(--sp-2); }
+  /* To the bottom (design kit M10): 40, radius 10, glass; with «N новых» when new ones came. */
   .to-bottom {
-    position: absolute; right: var(--sp-4); bottom: max(84px, calc(var(--bottom-h, 0px) + var(--sp-4))); width: 36px; height: 36px; border-radius: 50%;
-    border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow);
+    position: absolute; right: var(--sp-5); bottom: max(96px, calc(var(--bottom-h, 0px) + var(--sp-4))); height: 40px; min-width: 40px; padding: 0 var(--sp-2);
+    gap: var(--sp-1); border-radius: var(--radius); border: 1px solid var(--glass-border); background: var(--glass-bg-raised);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); box-shadow: var(--shadow-lg);
+    color: var(--text-soft); font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; animation: to-bottom-in var(--dur-fast) var(--ease);
   }
+  .to-bottom.count { padding: 0 var(--sp-3) 0 var(--sp-2); color: var(--accent-text); }
   .to-bottom:hover { color: var(--text); }
+  @keyframes to-bottom-in { from { opacity: 0; transform: scale(0.9); } }
+  @media (prefers-reduced-motion: reduce) { .to-bottom { animation: none; } }
   /* Picked files above the field: pictures as they look, the rest by name. */
   .tray { display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; scrollbar-width: thin; }
   .pick {
@@ -635,7 +710,7 @@
   }
   .original.on { border-color: var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-text-2); }
   .original .box {
-    width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: var(--radius-xs); border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center;
   }
   .error-line { white-space: pre-line; }
   .unpick {

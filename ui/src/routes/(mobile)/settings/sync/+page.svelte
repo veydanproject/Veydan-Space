@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { toast } from '$lib/core/ui/toast.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
@@ -32,8 +33,6 @@
   /** The check or the connection under way: its button shows it turning, for it takes seconds (the key of the vault, the storage). */
   let working = $state<'probe' | 'create' | 'join' | null>(null);
   let error = $state('');
-  let toast = $state('');
-  let toastTimer: ReturnType<typeof setTimeout>;
   let saveState = $state<'idle' | 'saving' | 'saved'>('idle');
   let saveResetTimer: ReturnType<typeof setTimeout>;
   let syncBtnState = $state<'idle' | 'syncing' | 'done'>('idle');
@@ -73,11 +72,7 @@
 
   const intervals = [30, 60, 300, 900, 3600];
 
-  function showToast(msg: string) {
-    clearTimeout(toastTimer);
-    toast = msg;
-    toastTimer = setTimeout(() => (toast = ''), 2000);
-  }
+  const showToast = (msg: string) => toast.success(msg);
 
   function intervalLabel(sec: number): string {
     return sec < 60 ? $t('sync_interval_sec', { n: String(sec) }) : $t('sync_interval_min', { n: String(sec / 60) });
@@ -595,9 +590,6 @@
     {/if}
   {/if}
 
-  {#if toast}
-    <div class="toast">{toast}</div>
-  {/if}
   </div>
 </div>
 
@@ -620,8 +612,8 @@
   .warn { color: var(--warn-text); }
   .probe { font-size: var(--fs-sm); color: var(--text-2); margin: var(--sp-3) 0; }
   .prog { flex-direction: column; align-items: stretch; gap: 6px; padding-top: 10px; padding-bottom: 12px; }
-  .bar { height: 6px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
-  .fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.2s ease; }
+  .bar { height: 6px; background: var(--surface-3); border-radius: var(--radius-pill); overflow: hidden; }
+  .fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .prog-label { font-size: var(--fs-sm); color: var(--text-body); }
   .prog-detail { display: block; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); word-break: break-all; }
   .action-btn { justify-content: center; transition: background 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease; }

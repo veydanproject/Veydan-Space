@@ -6,7 +6,9 @@
 //! A push server sees only the outside of an event. The phone has the keys
 //! and the messenger's database, so it is the phone that says who wrote,
 //! what, and in which chat, and whether that chat is to be quiet. This
-//! crate is that: an event in, a notice out, nothing written anywhere.
+//! crate is that: an event in, a notice out, nothing written to the
+//! database. The one thing it leaves is the event of a message it showed,
+//! sealed as it came, for the app to take (`messenger_ingress::push_inbox`).
 //!
 //! It runs where the app does not: in a process a push started, with no
 //! window and no runtime. So it opens the database read-only, takes the

@@ -37,6 +37,7 @@
 //! messenger-cli [--data-dir DIR] group-mod-mute <group:ID> <npub|hex> [--until N] | group-mod-unmute <group:ID> <npub|hex> | group-trust <group:ID> <npub|hex> on|off
 //! messenger-cli [--data-dir DIR] group-mod-settings <group:ID> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none]
 //! messenger-cli [--data-dir DIR] group-inherit <group:ID> <npub|hex>          (say again, as me, what that moderator decided)
+//! messenger-cli [--data-dir DIR] group-picture <group:ID> <file|none>          (the picture of a group I manage: the middle square of the file)
 //!   (the moderation of groups goes through the facade of the runtime;
 //!    `group-approve`, `group-reject`, `group-mute`, `group-unmute` are the older commands of membership, hence the `-mod-` names)
 //! messenger-cli [--data-dir DIR] invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <npub|hex>] [--label L] | invite-list | invite-revoke <id>   (the same)
@@ -94,7 +95,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-picture <group:id> <file|none> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -1221,6 +1222,26 @@ async fn main() {
             println!("{}", serde_json::to_string_pretty(&outcome).unwrap());
             return;
         }
+        "group-picture" => {
+            // The picture of a group I manage, as the app sets it: the whole
+            // picture cropped to its middle square; `none` takes it away.
+            if args.len() < 2 {
+                usage();
+            }
+            let id = group_id(&rt, &args[0]).await;
+            settle(&rt, 3).await;
+            let g = if args[1] == "none" {
+                rt.group_avatar_remove(&id).await.unwrap_or_else(die)
+            } else {
+                let p = rt.avatar_prepare(std::path::Path::new(&args[1])).await.unwrap_or_else(die);
+                let (w, h) = (f64::from(p.width), f64::from(p.height));
+                let side = w.min(h);
+                let rect = messenger_runtime::CropRect { x: (w - side) / 2.0 / w, y: (h - side) / 2.0 / h, w: side / w, h: side / h };
+                rt.group_avatar_set(&id, &p.token, rect).await.unwrap_or_else(die)
+            };
+            flush(&rt).await;
+            println!("picture: {}", if g.picture.is_empty() { "-" } else { g.picture.as_str() });
+        }
         "group-link" => {
             // The link of a public group as a member sees it: what a QR or
             // «Join by link» on another device takes.
@@ -1255,7 +1276,7 @@ async fn main() {
             }
             let id = group_id(&rt, &args[0]).await;
             let g = rt.group_get(&id).await.unwrap_or_else(die);
-            println!("id: {}\nname: {}\nkind: {}\nmembership: {}\ncan_post: {}\nhistory_for_new: {}", g.id, g.name, g.kind, g.membership, g.can_post, g.history_for_new);
+            println!("id: {}\nname: {}\nkind: {}\nmembership: {}\ncan_post: {}\nhistory_for_new: {}\npicture: {}", g.id, g.name, g.kind, g.membership, g.can_post, g.history_for_new, if g.picture.is_empty() { "-" } else { g.picture.as_str() });
             for m in &g.members {
                 println!("member {} {}{}{}", m.pubkey, m.role, if m.muted { " muted" } else { "" }, if m.is_me { " (me)" } else { "" });
             }

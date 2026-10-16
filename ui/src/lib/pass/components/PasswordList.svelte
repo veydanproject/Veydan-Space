@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { secretCopied, toast } from '$lib/core/ui/toast.svelte';
   import { onMount } from 'svelte';
   import { api } from '$lib/pass/api';
   import { copySecret } from '$lib/pass/clipboard';
@@ -73,6 +74,7 @@
     try {
       await navigator.clipboard.writeText(entry.username);
       markCopied(`${entry.id}:user`);
+      toast.success($t('pw_copied'));
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -92,6 +94,7 @@
     try {
       await api.passwords.copy(entry.id);
       markCopied(`${entry.id}:pass`);
+      secretCopied($t('pw_copied'));
     } catch (e) {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: string }).code) : '';
       if (code === 'vault_locked' || code === 'vault_mismatch' || code === 'decrypt_failed') {
@@ -178,19 +181,20 @@
 <VaultUnlock bind:open={unlockOpen} onunlocked={() => { if (pending) void copyPassword(pending); }} />
 
 <style>
-  .list { display: flex; flex-direction: column; gap: 0.4rem; }
+  .list { display: flex; flex-direction: column; gap: 2px; }
   .entry {
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
     gap: var(--sp-2);
     min-height: 64px;
-    padding: 0.55rem 0.75rem;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    padding: var(--sp-2) var(--sp-3);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
+    transition: background var(--dur-fast);
   }
-  .entry:hover { border-color: var(--border-2); }
+  .entry:hover { background: var(--surface-hover); }
   .entry-info {
     flex: 1;
     min-width: 0;
@@ -206,7 +210,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--fs-base);
+    font-size: var(--fs-body);
     font-weight: var(--fw-semibold);
   }
   .entry-sub {

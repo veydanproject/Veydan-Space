@@ -65,12 +65,18 @@
 </div>
 
 <style>
+  /* A flat row of the list (the design kit), not a card. */
   .row {
     display: flex;
     align-items: center;
     min-height: 64px;
     padding-right: var(--sp-2);
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    border-radius: var(--radius-lg);
   }
+  .row:active { background: var(--surface-hover); }
   .open {
     flex: 1;
     min-width: 0;
@@ -86,8 +92,8 @@
   }
   .row:active { background: var(--surface-2); }
   .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .name { font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-body); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
   .tagline .m-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .code { flex-shrink: 0; }

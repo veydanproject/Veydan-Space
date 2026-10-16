@@ -15,6 +15,7 @@
   import { BASE, chatHref } from './routes';
   import { markPhone } from '../shared/phone';
   import MyQrButton from '../invites/MyQrButton.svelte';
+  import ScanQrButton from '../invites/ScanQrButton.svelte';
 
   markPhone();
 
@@ -29,6 +30,7 @@
 </script>
 
 {#snippet actions()}
+  <ScanQrButton icon />
   <MyQrButton icon />
   <button class="ibtn" onclick={() => (adding = true)} aria-label={$t('msg_contacts_new')}><Icon name="user-plus" size={21} /></button>
 {/snippet}

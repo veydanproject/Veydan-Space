@@ -14,6 +14,8 @@ publish = false
 veydan-build-cfg = { path = "../build-cfg" }
 
 [dependencies]
+# Open http(s) links (and, on a computer, received files) without going through a shell
+tauri-plugin-opener = "2"
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -60,8 +62,6 @@ sha2 = "0.11"
 [target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
 # Notifications of the messenger on a computer (D-Bus, WinRT, UserNotifications).
 desktop-notify = { path = "../desktop-notify" }
-# Open http(s) links and received files without going through a shell
-tauri-plugin-opener = "2"
 # The sender's picture of a notification, as a file named by its content.
 sha2 = "0.11"
 # The window icon of the product as a file, for systems that take the

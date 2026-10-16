@@ -100,7 +100,7 @@
   .facts dd { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--text); white-space: nowrap; }
   .facts dt { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.35; }
   .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-  .m .actions .btn { flex: 1 1 auto; min-height: 48px; font-size: 15px; }
+  .m .actions .btn { flex: 1 1 auto; min-height: 48px; font-size: var(--fs-body); }
   .m .facts div { padding: var(--sp-2) var(--sp-3); }
   .m .facts dd { font-size: var(--fs-md); }
 </style>

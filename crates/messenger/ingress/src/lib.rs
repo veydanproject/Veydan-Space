@@ -16,12 +16,14 @@
 //! - `outbox`: persistent queue of `Outbound` requests with backoff; a retry
 //!   republishes the same signed event.
 //! - `filters`: the relay filters the runtime subscribes with.
+//! - `push_inbox`: events the push handler showed, left for the app.
 //! - `r#loop`: `IngressLoop`, the task that ties the above to a transport.
 
 pub mod classify;
 pub mod dispatch;
 pub mod filters;
 pub mod outbox;
+pub mod push_inbox;
 pub mod r#loop;
 
 pub use classify::classify;

@@ -181,7 +181,7 @@
   .win {
     position: fixed; z-index: 70; right: 16px; bottom: 16px;
     width: clamp(300px, 34vw, 460px); aspect-ratio: 16 / 10;
-    border-radius: var(--radius-lg); overflow: hidden; background: #0b0d10;
+    border-radius: var(--radius-card); overflow: hidden; background: #0b0d10;
     border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
     cursor: grab; touch-action: none; user-select: none;
     animation: rise 240ms cubic-bezier(0.2, 0.9, 0.3, 1.1);

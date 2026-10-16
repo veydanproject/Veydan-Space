@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copySecret } from '$lib/pass/clipboard';
   import { onMount } from 'svelte';
   import { hasHome } from '$lib/core/mobile/nav';
   import Icon from '$lib/core/Icon.svelte';
@@ -19,8 +20,6 @@
 
   let password = $state('');
   let error = $state('');
-  let toast = $state('');
-  let toastTimer: ReturnType<typeof setTimeout>;
   let limitOpen = $state(false);
   /** History rows shown in the clear; the rest are dots, as on the desktop. */
   let revealed = $state<Set<string>>(new Set());
@@ -54,14 +53,8 @@
 
   async function copyText(text: string) {
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      return; // the clipboard refused: no "Copied"
-    }
-    clearTimeout(toastTimer);
-    toast = $t('pwgen_copied');
-    toastTimer = setTimeout(() => (toast = ''), 1600);
+    // A generated password is a secret: out of the clipboard in 30 s, said by the toast.
+    await copySecret(text).catch(() => {}); // the clipboard refused: no "Copied"
   }
 
   const flags = [
@@ -201,9 +194,6 @@
     {/if}
   {/if}
 
-  {#if toast}
-    <div class="toast">{toast}</div>
-  {/if}
   </div>
 </div>
 
@@ -228,7 +218,7 @@
   .output.empty .pw { color: var(--text-3); }
   .pw {
     flex: 1;
-    font-size: 15px;
+    font-size: var(--fs-body);
     word-break: break-all;
     user-select: text;
     -webkit-user-select: text;
@@ -251,9 +241,6 @@
     background: transparent;
     accent-color: var(--accent);
   }
-  .toggle { width: 46px; height: 26px; }
-  .toggle::after { width: 20px; height: 20px; }
-  .toggle.on::after { left: 23px; }
 
   /* The history */
   .history-settings { margin-top: var(--sp-5); }

@@ -404,3 +404,37 @@ export type GroupCallLevel = { call_id: string, participant: number, level: numb
 
 /** The room I am in and the call announced in a group, as `messenger_group_call_get_state` answers. */
 export type GroupCallState = { call: GroupCallView | null, announced: GroupCallAnnounced | null, };
+
+/** Whose call a line of the journal is: between two, or of a group. */
+export type CallLogKind = "dm" | "group";
+
+/** A call of the journal (the section «Звонки»), over, as `messenger_call_history` lists them, newest first. */
+export type CallLogEntry = { call_id: string, 
+/**
+ * `dm:<hex>` or `group:<id>`; the chat may be gone since.
+ */
+chat_id: string, 
+/**
+ * The peer (hex) of a call between two, the group id of a group call.
+ */
+peer: string, kind: CallLogKind, 
+/**
+ * `out` when I called (or started the room).
+ */
+direction: CallDirection, media: CallMedia, 
+/**
+ * Unix seconds.
+ */
+started_at: number, answered_at: number | null, ended_at: number | null, outcome: CallOutcome, 
+/**
+ * How long it was talked; `null` for a call nobody took.
+ */
+duration_secs: number | null, via_relay: boolean, 
+/**
+ * Who made the room of a group call (hex).
+ */
+started_by: string | null, 
+/**
+ * How many people a group call saw, me included; 0 between two.
+ */
+participants: number, };

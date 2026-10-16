@@ -1,69 +1,98 @@
-# Veydan Space — UI style guide
+# Veydan — UI style guide
 
-Single source of truth for styling. **Before adding CSS, check whether a token or
-primitive already exists.** New ad-hoc colours/sizes/components are how the UI
-drifted in the first place.
+The look of every product (Space, Chat, Pass, Notes; computer and phone) is
+«Тихое стекло» (Quiet Glass): floating glass panes over a softly glowing
+background, one purple accent, quiet text. This file and the tokens are the
+single source of truth for styling. **Before adding CSS, check whether a
+token or primitive already exists.**
 
 ## Layers
 
 | File | Role |
 |------|------|
-| `src/lib/styles/tokens.css` | Design tokens — colours (dark/light), spacing, type, radius, z-index, sizes, motion. The **only** place raw values live. |
-| `src/lib/styles/base.css` | Global reset + reusable primitives (`.btn`, `.badge`, `.page`, `.card`, `.tab-bar`, `.empty-state`, `.spinner`, …). |
-| `src/lib/styles/mobile.css` | Mobile layer on top of the two: `--m-*` colours, `--touch`, `--nav-h`, safe-area insets `--sat`/`--sab`/`--sal`/`--sar`, `.m-*` primitives. Loaded by the mobile shell only — its tokens do not exist on the desktop. |
-| `src/lib/components/ui/Dialog.svelte` | Centered modal shell. |
-| `src/lib/components/ui/Drawer.svelte` | Right/left side-panel shell. |
+| `src/lib/core/styles/tokens.css` | Design tokens — spacing, type, radius, z-index, sizes, motion. With the palettes, the **only** place raw values live. |
+| `src/lib/core/styles/palettes/<name>.css` | The colours of a palette, dark and light (`<html data-theme data-palette>`). `quiet.css` is the default and answers to `[data-theme]` alone; another palette is `[data-palette=…][data-theme=…]`, imported by `tokens.css`, and may leave out what it shares with quiet. |
+| `src/lib/core/styles/base.css` | Global reset + reusable primitives (`.btn`, `.icon-btn`, `.badge`, `.page`, `.card`, `.tab-bar`, `.empty-state`, `.spinner`, `.vtip`, …). |
+| `src/lib/core/styles/mobile.css` | Phone layer on top of the two: `--m-*` colours, `--touch`, `--nav-h`, safe-area insets `--sat`/`--sab`/`--sal`/`--sar`, `.m-*` primitives. Loaded by the mobile shell only — its tokens do not exist on a computer. |
+| `src/lib/core/theme.ts` | `data-theme` (dark / light) × `data-palette` (`quiet`), and the one colour a user may choose: the accent (`applyAccent`). |
+| `src/lib/core/ui/*` | The shared components: `Dialog`, `Modal`, `Drawer`, `ContextMenu`, `CustomSelect`, `Pane`, `Skeleton`, `ToastHost`/`toast.svelte.ts`, `ConfirmHost`/`confirm.svelte.ts`, `tooltip.ts`, `motion.ts`. |
 
 `tokens.css` and `base.css` are imported by each shell (`DesktopShell.svelte`,
 `MobileShell.svelte`) and by `StartErrorScreen.svelte`; `mobile.css` by
-`MobileShell.svelte` alone.
+`MobileShell.svelte` alone. A new palette is one file in `palettes/`; there is
+no picker yet.
 
 ## Rules
 
-1. **Colour** → always `var(--…)`. Never a raw hex/rgba in a component (except pure
-   `#fff` on a coloured button). If you need a new colour, add it to `tokens.css`
-   in **both** themes.
+1. **Colour** → always `var(--…)`. Never a raw hex/rgba in a component (except
+   pure `#fff` on a coloured button or over a photo or video). If you need a
+   new colour, add it to the palette (`palettes/quiet.css`) in **both** themes.
 2. **Spacing / radius / font-size** → use `--sp-*`, `--radius*`, `--fs-*`. Don't
    invent `0.42rem`.
 3. **z-index** → use `--z-*` (`--z-drawer`, `--z-modal`, `--z-toast`, …). Never a
    bare number.
-4. **Never invent a token name.** Only names defined in `tokens.css` (and, on
-   mobile, `mobile.css`) exist. A
+4. **Never invent a token name.** Only names defined in `tokens.css`, the palettes
+   (and, on the phone, `mobile.css`) exist. A
    `var(--made-up)` with no fallback renders as transparent/inherited. Run the
    guard (below) — it fails on undefined references. A custom property a
    component sets for itself (`--r` in its own `<style>`, `style:--c={…}` on
    an element) is fine as long as it is read in the same file.
-5. **Reuse primitives.** Need a badge/tab/empty-state/card? Use the global class.
-   Only add scoped CSS for a genuine one-off delta.
+5. **Reuse primitives and components.** Need a badge/tab/empty-state/card, a
+   menu, a confirmation, a toast? Use the global class or the shared
+   component. Only add scoped CSS for a genuine one-off delta.
+6. **Icons** are `Icon.svelte`: Tabler Icons (MIT, outline, stroke 1.5), keyed
+   by our own names. 18 in buttons, 22 in navigation. A new icon is a new key
+   with the Tabler drawing nearest to its meaning; no other icon set.
 
 ## Tokens cheat-sheet
 
-- Surfaces: `--bg` < `--bg-2` < `--surface` < `--surface-2`; nested/fields `--surface-3`;
-  hovers `--surface-hover` / `--surface-row-hover`; drawers `--surface-drawer(-footer)`;
-  borders `--border` / `--border-2`.
+- Background: `--bg` with `--bg-image` (four soft glows, `--glow-1..3`) — the
+  shells draw it; nothing on top of it sets a solid `--bg` again.
+- Panes (the floating columns and panels of a computer, the cards of a phone):
+  `--pane` / `--pane-head` / `--pane-border` / `--pane-highlight` /
+  `--pane-shadow`, the denser `--pane-strong(-border)`, blurred by
+  `--pane-filter`. `Pane.svelte` and `.card` take them.
+- Glass (whatever floats over the page: menus, dialogs, sheets, toasts,
+  tooltips, bars): `--glass-bg`, `--glass-bg-raised`, `--glass-bar` (bars over
+  scrolling content), `--glass-border`, `--glass-highlight`, `--glass-filter`.
+  With `prefers-reduced-transparency` or no `backdrop-filter`, all of them
+  become opaque (the palette does it; components do nothing).
+- Surfaces: `--chrome`/`--bg-2` < `--surface` < `--surface-2`; fields
+  `--surface-3`; hovers `--surface-hover` / `--surface-row-hover`; drawers
+  `--surface-drawer(-footer)`; borders `--border` / `--border-2`.
 - Text: `--text` / `--text-2` / `--text-3`; long-form `--text-body`; extras
-  `--text-soft` (metrics/icons) · `--text-faint` (field labels) · `--text-dim` (caps labels, «—»).
-- Accent (purple): `--accent` / `--accent-hover` / `--accent-grad` (primary buttons, logo)
-  · text tiers `--accent-text` (active nav/tabs) / `--accent-text-2` (mono badges) / `--accent-text-3` (links)
-  · fills `--accent-bg` / `--accent-tint`(+`-border`) · `--accent-border` · `--shadow-accent`.
+  `--text-soft` (icons, metrics) · `--text-faint` (field labels) · `--text-dim` (caps labels, «—»).
+- Accent: `--accent` is the **fill** (primary buttons, the active switch, a
+  countdown bar) — `#7066c6`; text in the accent is `--accent-text` (links,
+  the active item, actions of a toast), with `--accent-text-2` (mono badges) /
+  `--accent-text-3`; fills `--accent-bg` / `--accent-tint`(+`-border`) ·
+  `--accent-border` (also the keyboard's focus ring) · `--accent-grad` ·
+  `--shadow-accent`. A chosen accent recomputes all of them (`applyAccent`).
+- Chat: `--bubble-in-*` / `--bubble-out-*`; a held row or bubble `--press-tint`.
 - Semantic: `--success*` (+`-border`, `-grad`), `--danger*` (+`-border`, `--shadow-danger`), `--warn-*` (+`-border`).
 - Category colours (workspaces / proxy types): `--cat-purple` / `--cat-blue` / `--cat-teal` / `--cat-pink`.
-- Fonts: `--font-ui` (Manrope Variable) · `--font-mono` (JetBrains Mono Variable — hosts, versions, IDs).
-- Spacing (4px grid): `--sp-1`=4 … `--sp-6`=24, `--sp-8`=32.
-- Type: `--fs-xs` 0.75 · `--fs-sm` 0.8 · `--fs-base` 0.875 · `--fs-md` 1 · `--fs-lg` 1.15 · `--fs-xl` 1.4 · `--fs-2xl` 1.75 (page h1) · `--fs-3xl` 2rem; weights up to `--fw-extrabold` 800.
-- Radius: `--radius-xs` 4 · `--radius-sm` 8 (chips/badges/icon-btns) · `--radius` 10 (buttons/inputs) ·
-  `--radius-field` 11 (46px drawer fields) · `--radius-md` 12 (nested cards) · `--radius-lg` 16 (cards/tables) · `--radius-pill` 999.
-- Size: `--topbar-h` 64 · `--dock-h`/`--bar-h` 36 · `--control-h` 38 · `--control-h-lg` 46 ·
+- Fonts: `--font-ui` (Manrope Variable) · `--font-mono` (JetBrains Mono Variable — secrets, hosts, versions, IDs).
+- Spacing (4px grid): `--sp-1`=4 … `--sp-6`=24, `--sp-8`=32, `--sp-10`=40, `--sp-12`=48.
+- Type: `--fs-xs` 12 (captions) · `--fs-sm` 13 (secondary) · `--fs-base` 14 (controls) ·
+  `--fs-body` 15 (messages, long text; `--lh-body` 22) · `--fs-md` 16 (section titles) ·
+  `--fs-lg` 18 (dialog titles) · `--fs-xl` 20 (pane titles) · `--fs-2xl` 28 (H1); weights up to `--fw-extrabold` 800.
+- Radius: `--radius-xs` 4 · `--radius-badge` 6 · `--radius-sm` 8 (menu items, small buttons) ·
+  `--radius` 10 (buttons, fields) · `--radius-md` 12 (menus, nested) · `--radius-lg` 16 (list rows) ·
+  `--radius-head` 18 (header plates) · `--radius-pane` 20 (panes) · `--radius-card` 24 (cards, dialogs, sheets) ·
+  `--radius-bar` 26 (the phone's floating bars) · `--radius-pill`.
+- Size: `--topbar-h` 64 · `--control-h` 40 · `--control-h-sm` 32 · `--control-h-lg` 44 (touch) ·
   `--drawer-w` 440 · `--drawer-w-md` 480 · `--drawer-w-lg` 520 · `--dialog-w` 440.
+- Motion: `--dur-press` 100 ms · `--dur-fast` 150 · `--dur-base` 200 · `--dur-drawer` 280; `--ease`, `--ease-drawer`.
 
-### Extrapolation rules (redesign «Variant A»)
+### The language of the panes
 
-Surfaces not covered by the design handoff follow the same language:
-cards `--surface`+`--radius-lg` (padding 22–24) · nested `--surface-2`+`--radius-md` ·
-fields `--surface-3`+`--radius`/`--radius-field` (46px in drawers) · caps section labels
-11px/700/letter-spacing `--text-dim` · technical values in `--font-mono` (often as `.mono-chip`) ·
-status pills = tint bg + coloured text + 6px dot · active nav/tab = `--accent-bg` + `--accent-text` ·
-segment controls = `.seg`/`.seg-btn` (or `.seg-btn-lg` standalone) · toggles = `.toggle` 54×30.
+A computer: the module's columns are panes 12 apart and 12 from the window's
+edges (`fullWidth` routes), a pane's head is 64 high with its title 20/700,
+the top navigation is one floating plate. A phone: a floating head, cards of
+rows on the glowing background, a floating tab bar (`--nav-gap` keeps the last
+row above it). A list row is 56–64 high with `--radius-lg`; the active one is
+`--accent-bg` with `--accent-text`; segment controls are `.tab-bar`; a search
+field is a pill.
 
 ## Primitives
 
@@ -73,6 +102,8 @@ segment controls = `.seg`/`.seg-btn` (or `.seg-btn-lg` standalone) · toggles = 
 · `.tab-bar`/`.tab`(+`.active`)/`.tab-count` · `.seg`/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
 · `.mono`(text in the mono face) · `.mono-chip` · `.data-table`(+`-head/-row`) · `.empty-state`/`.empty-icon` · `.loading`/`.spinner`/`.spin`
 · `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`.
+A button and an icon button sink to .97 under the press (`--dur-press`); the
+phone's `.m-ibtn` and `.m-btn-grad` too.
 Checkboxes and radios are marks, not fields: base.css sizes them to content with
 `accent-color` (20px on the phone); do not re-declare `width: auto` locally.
 A value read or copied character by character — a password, a key, a secret,
@@ -82,6 +113,37 @@ a recovery code, a fingerprint — is `.mono` (or a `<code>`), never a local
 `!=` as `≠` or `->` as an arrow. A component declares no ligature rules;
 a hint in such a field stays in the UI font (`::placeholder { font-family:
 var(--font-ui) }`).
+
+## Feedback
+
+- **Toast** — `toast.success/secret/undo/error/info` (`core/ui/toast.svelte.ts`),
+  one at a time, shown by `ToastHost` in each shell (a computer: bottom right;
+  a phone: at the top under the status bar). Copying says `copied()`; a secret
+  goes through `copySecret` (Pass) or `secretCopied()` — 30 s with
+  «Очистить сейчас». An undoable action shows `toast.undo` with its undo; a
+  failed action `toast.error` with its retry. No local toasts.
+- **Confirmation** — `ask({ title, message, confirmLabel, variant })`
+  (`core/ui/confirm.svelte.ts`): a Modal on a computer, a sheet on the phone
+  with the buttons stacked the whole width, the verb on top, no ×.
+- **Tooltip** — a `title` is enough: on a computer `tooltip.ts` shows every
+  title as the glass `.vtip` (500 ms for a mouse, at once for the keyboard's
+  focus; a shortcut at the end, «Найти (Ctrl+F)», becomes a key chip). An
+  icon button still has its `aria-label`.
+- **Loading** — a list that is coming shows `<Skeleton>` rows of its shape,
+  never «Загрузка…» or a spinner over the page.
+- **Unsaved form** — its actions stay in a `--glass-bar` at the foot of the
+  pane with «Есть несохранённые изменения» and a `--warn-text` dot.
+
+## Motion
+
+`core/ui/motion.ts` holds the ways in and out of the layers, as Svelte
+transitions; reduced motion stops all of them:
+dialogs, modals and the palette `in:dialogIn out:dialogOut` with
+`in:backdropIn out:backdropOut` on the backdrop (200 / 150 ms); drawers
+`out:drawerOut` (280 in by CSS, 200 out); the phone's sheets
+`in:sheetIn out:sheetOut` (280 / 200, out from where the finger left them);
+a computer's menu grows from the point in 150 ms and leaves by `menuOut`
+(100). Hover and press colours take `--dur-fast`.
 
 ### A colour from data: `.tinted`
 
@@ -110,14 +172,14 @@ colour, nothing else:
 - On the phone an `.m-chip` has no border, so its tint is mixed over
   `--m-seg` (the neutral chip) instead of the page (mobile.css).
 - The ink share is computed, not chosen by eye: `chip-contrast.test.ts` takes
-  the pickers' palettes, the accent and background presets of Settings, the
-  colour tokens a chip takes, the extremes and a sweep of the RGB cube,
-  resolves the mixes with the token values of both themes on every surface
-  (with a selected row under each accent preset, at 15% and 12%) and asserts
-  WCAG AA (4.5:1) for the text, 3:1 for the picked ring against the surface
-  and for the faded ×. It also checks each token is within a step of the
-  largest safe share (light 35%, dark 39% today; the tokens take 32% and
-  36%).
+  the pickers' palettes, the accent presets of Settings, the colour tokens a
+  chip takes, the extremes and a sweep of the RGB cube, resolves the mixes
+  with the token values of both themes on every surface, pane and glass
+  (with a selected row under each accent preset: 18% in the dark, 12% in the
+  light, and 12%) and asserts WCAG AA (4.5:1) for the text, 3:1 for the
+  picked ring against the surface and for the faded ×. It also checks each
+  token is within 8 points of the largest safe share (the tokens take 30% in
+  the dark, 32% in the light).
 - No colour (`style:--chip={undefined}`) → the neutral chip. Set the colour
   with `style:--chip`, never `style="--chip: {…}"`: an undefined value would
   still write the property.
@@ -137,15 +199,16 @@ colour, nothing else:
   as its whole line.
 
 
-## Modals & drawers
+## Modals, drawers, menus
 
-Use the shells instead of hand-rolling an overlay (that gave us z-index 20→1000 and
-inconsistent widths/backdrops). A full-window backdrop is placed with
-`inset: var(--overlay-inset, 0); border-radius: var(--overlay-radius, 0)`, never
-`inset: 0`: on Linux the window frame is drawn by the UI, and the tokens keep an
-overlay inside the rounded panel and below the title bar (the window stays movable).
-On the phone `<Dialog>` presents itself as a bottom sheet with full-width buttons, and
-`<ContextMenu>` as a bottom sheet of 52px rows (its x/y are ignored there):
+Use the shells instead of hand-rolling an overlay. A full-window backdrop is
+placed with `inset: var(--overlay-inset, 0); border-radius: var(--overlay-radius, 0)`,
+never `inset: 0`: on Linux the window frame is drawn by the UI, and the tokens
+keep an overlay inside the rounded panel and below the title bar (the window
+stays movable). On the phone `<Dialog>` presents itself as a bottom sheet (its
+footer stacked, the verb on top; `closable={false}` for a question whose footer
+has «Отмена»), and `<ContextMenu>` as a sheet of 52px rows (its x/y are ignored
+there):
 
 ```svelte
 <Drawer open title="Edit proxy" {onclose}>
@@ -154,13 +217,18 @@ On the phone `<Dialog>` presents itself as a bottom sheet with full-width button
 
 <Dialog open title="Import" {onclose}>
   …body…
-  {#snippet footer()}<button class="btn btn-primary">Save</button>{/snippet}
+  {#snippet footer()}
+    <button class="btn btn-ghost">Cancel</button>
+    <button class="btn btn-primary">Save</button>
+  {/snippet}
 </Dialog>
 ```
 
-Both handle: portal to `<body>`, backdrop, Escape/backdrop close, tokenized
-z-index (`--z-drawer` / `--z-modal`), `--drawer-w`/`--dialog-w` width, slide/scale
-animation with `prefers-reduced-motion`.
+They handle: portal to `<body>`, backdrop, Escape/backdrop close, tokenized
+z-index (`--z-drawer` / `--z-modal` / `--z-popover`), `--drawer-w`/`--dialog-w`
+width, the motion above. A computer's `<ContextMenu>` also takes the keys:
+↓/↑ (round), Home/End, the first letters, Enter, Tab; Escape gives the focus
+back.
 
 ## Guardrail
 
@@ -169,31 +237,17 @@ bash scripts/check-styles.sh
 ```
 
 Fails on any `var(--name)` — in a component or a stylesheet — whose name is
-neither a token of `tokens.css` / `mobile.css`, nor set in the same file, nor
+neither a token of `tokens.css` / `palettes/` / `mobile.css`, nor set in the same file, nor
 listed in the script as set at run time from another file; a fallback does
 not excuse an unknown name. Fails on a ligature rule outside base.css and on
 text in a colour from data set outside it (`.tinted`). Reports drift counts: raw hex, raw font-size,
 mobile tokens used without a fallback outside the mobile folders.
-Run it in CI / before committing style changes.
+`chip-contrast.test.ts` checks the contrast of the chips against the
+palettes. Run both in CI / before committing style changes.
 
-## Migration status — FINALIZED
-
-Product UI is fully on the system:
-- **All 10 overlays** use the shells: `<Drawer>` (ProxyPanel, CreateProfilePanel,
-  EditProfilePanel, ProfileSidePanel, RawDataPanel, PasswordGenerator, TotpGenerator)
-  and `<Dialog>` (TotpAddModal, ImportProfileModal, ExportProfileModal). Fixed
-  toolbars/tabs go in the Drawer `subheader` snippet; header controls in `actions`;
-  bottom buttons in `footer`.
-- **All routes + components** reuse the primitives (`.page`/`.page-header`/`.card`/
-  `.badge`/`.chip`/`.empty-state`/`.tab-bar`/`.loading`/`.muted`), local duplicates deleted.
-- **Values tokenized**: font-size snapped to `--fs-*` (raw count 358 → 9, the 9 being
-  inspector dev-tooling + one inline style); exact-grid spacing → `--sp-*`; palette
-  hex → colour tokens. Guard passes (every `var()` resolves).
-
-Deliberately left local (correct, not debt): per-item **dynamic-colour** dots,
-stripes and icons (the colour from data via inline style, no text; a chip or a
-name in a colour from data is `.tinted`, above); bespoke tight **icon buttons** in notes/editor toolbars; the inspector
-dev-tool overlay (`src/lib/inspector/*`, not product surface); off-grid spacing and
-non-palette semantic hex that are intentional.
+Deliberately left as raw values (correct, not debt): the colour pickers'
+palettes and the workspace colours (data), white and black over photos and
+video (calls, media, the camera), the inspector dev-tool overlay
+(`src/lib/core/inspector/*`, not product surface).
 
 When adding UI: use a shell + primitives + tokens. Run `scripts/check-styles.sh`.

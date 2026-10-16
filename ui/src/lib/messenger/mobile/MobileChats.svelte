@@ -6,6 +6,7 @@
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import { messengerStore } from '../store.svelte';
   import { netState as netStateOf } from '../shared/net-state';
   import { chatStore } from '../chats/chatStore.svelte';
@@ -21,6 +22,11 @@
   import { pushSeen, startPushBridge } from '../push/bridge';
   import type { MessengerChat } from '../api';
   import { markPhone } from '../shared/phone';
+  import type { ChatSection } from '../chats/sections';
+  import MeButton from './MeButton.svelte';
+
+  /** The tab: the chats between two, or the groups (the same list, of the groups only while nothing is typed). */
+  let { kind = 'dm' }: { kind?: ChatSection } = $props();
 
   markPhone();
 
@@ -47,21 +53,16 @@
 </script>
 
 {#snippet lead()}
-  <span class="alpha">{$t('msg_alpha_badge')}</span>
   <span class="net {netState}" title={$t(`msg_net_${netState}` as 'msg_net_on', { connected: String(connected), total: String(total) })}></span>
 {/snippet}
 
 {#snippet actions()}
-  {#if !needsIdentity && s?.runtime}
-    <button class="ibtn" onclick={() => goto('/messenger/settings')} aria-label={$t('msg_settings_title_full')}><Icon name="user-cog" size={21} /></button>
-    <button class="ibtn" onclick={() => goto('/messenger/contacts')} aria-label={$t('msg_contacts_title')}><Icon name="book-user" size={21} /></button>
-    <button class="ibtn" onclick={() => (newGroup = true)} aria-label={$t("msg_group_new_title")}><Icon name="users-plus" size={21} /></button>
-  {/if}
+  {#if !needsIdentity && s?.runtime}<MeButton />{/if}
 {/snippet}
 
-<MobileFrame title={$t('msg_title')} {lead} {actions} scroll={needsIdentity || !s?.runtime}>
+<MobileFrame title={kind === 'group' ? $t('msg_nav_groups') : $t('msg_nav_chats')} {lead} {actions} scroll={needsIdentity || !s?.runtime}>
   {#if !s}
-    <div class="note">{$t('loading')}</div>
+    <Skeleton height={64} size={44} trailing />
   {:else if !s.compiled}
     <div class="error-msg">{$t('msg_status_not_compiled')}</div>
   {:else if s.error}
@@ -80,22 +81,25 @@
       <input type="search" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" enterkeyhint="search" />
       {#if query}<button class="clear" onclick={() => (query = '')} aria-label={$t('msg_back')}><Icon name="x" size={14} /></button>{/if}
     </div>
-    <BridgeOffer />
-    <PushOffer />
-    <InvitesBar />
-    <ChatList {query} onopen={open} />
-    <button class="fab" onclick={() => (newChat = true)} aria-label={$t('msg_newchat_title')}><Icon name="message-circle-plus" size={22} /></button>
+    {#if kind === 'dm'}
+      <BridgeOffer />
+      <PushOffer />
+    {:else}
+      <InvitesBar />
+    {/if}
+    <ChatList {query} {kind} onopen={open} />
+    {#if kind === 'group'}
+      <button class="fab" onclick={() => (newGroup = true)} aria-label={$t('msg_groups_new')}><Icon name="users-plus" size={22} /></button>
+    {:else}
+      <button class="fab" onclick={() => (newChat = true)} aria-label={$t('msg_newchat_title')}><Icon name="message-circle-plus" size={22} /></button>
+    {/if}
   {/if}
 </MobileFrame>
 
-<NewChatDialog bind:open={newChat} onopened={() => { if (chatStore.activeId) goto(chatHref(chatStore.activeId)); }} />
+<NewChatDialog bind:open={newChat} shortcuts onopened={() => { if (chatStore.activeId) goto(chatHref(chatStore.activeId)); }} />
 <NewGroupDialog bind:open={newGroup} onopened={(id) => goto(chatHref(id))} />
 
 <style>
-  .alpha {
-    margin-left: 8px; font-size: 10px; font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.6px;
-    padding: 2px 7px; border-radius: var(--radius-sm); background: var(--accent-tint); color: var(--accent-text-2);
-  }
   .net { width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; background: var(--text-3); flex-shrink: 0; }
   .net.on { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
   .net.connecting { background: var(--warn-text); animation: pulse 1.4s ease-in-out infinite; }
@@ -110,7 +114,7 @@
   }
   /* The pill is the field: its border is the one focus mark. */
   .search:focus-within { border-color: var(--accent-border); }
-  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: 16px; color: var(--text); min-height: 42px; padding: 0; }
+  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-md); color: var(--text); min-height: 42px; padding: 0; }
   .search input::-webkit-search-cancel-button { display: none; }
   .clear { border: none; background: none; color: var(--text-3); display: inline-flex; padding: 8px; }
   .fab {

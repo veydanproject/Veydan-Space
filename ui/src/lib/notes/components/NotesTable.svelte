@@ -285,7 +285,7 @@
   .draft { color: var(--warn-text); }
   .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
   .chip {
-    display: inline-block; padding: 0.1rem 0.45rem; border-width: 1px; border-style: solid; border-radius: 999px;
+    display: inline-block; padding: 0.1rem 0.45rem; border-width: 1px; border-style: solid; border-radius: var(--radius-pill);
     font-size: var(--fs-2xs); white-space: nowrap;
   }
   .entity { display: inline-flex; align-items: center; }

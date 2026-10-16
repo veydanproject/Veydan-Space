@@ -4,7 +4,10 @@
 // What the cards do. Each action takes the view the runtime gave, never
 // the text of a message: what was shown is what is acted on.
 
-import { messengerApi, type LinkView } from '../api';
+import { get } from 'svelte/store';
+import { t } from '$lib/core/i18n';
+import { messengerApi, messengerError, type LinkView } from '../api';
+import { copied as copiedToast, toast } from '$lib/core/ui/toast.svelte';
 import { chatStore } from '../chats/chatStore.svelte';
 import { groupStore } from '../groups/groupStore.svelte';
 import { messengerStore } from '../store.svelte';
@@ -33,6 +36,19 @@ export async function openChat(chatId: string) {
 export const linkActions = {
   openExternal: (url: ExternalUrl) => messengerApi.openUrl(url),
 
+  /** A tap on a link: to the system's browser; a failure says so in a toast, with «Повторить». */
+  async follow(url: ExternalUrl, retryOf?: number): Promise<void> {
+    try {
+      await messengerApi.openUrl(url);
+    } catch (e) {
+      const id: number = toast.error((get(t) as (k: string) => string)('msg_link_open_failed'), {
+        sub: messengerError(e),
+        retryOf,
+        onAction: () => void linkActions.follow(url, id),
+      });
+    }
+  },
+
   /** Come into a public group, or ask a private one. Returns what I am to the group now. */
   async joinGroup(view: GroupView, note = '') {
     const g = await groupStore.openLink(view.link, note.trim());
@@ -54,7 +70,7 @@ export const linkActions = {
     linkStore.refresh();
   },
 
-  copy: (text: string) => navigator.clipboard.writeText(text),
+  copy: (text: string) => navigator.clipboard.writeText(text).then(() => { copiedToast(); }),
 };
 
 /** What a contact card in a chat does. It acts on the message: the runtime reads the card it checked. */

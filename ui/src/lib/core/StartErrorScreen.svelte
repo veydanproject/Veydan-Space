@@ -106,7 +106,7 @@
     padding: var(--sp-6) var(--sp-4);
     padding-top: max(var(--sp-6), var(--sat, env(safe-area-inset-top, 0px)));
     padding-bottom: max(var(--sp-6), var(--sab, env(safe-area-inset-bottom, 0px)));
-    background: var(--bg);
+    background: var(--bg-image), var(--bg);
     color: var(--text);
   }
   /* Under the title bar of the window's frame. */

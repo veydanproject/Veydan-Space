@@ -61,7 +61,7 @@
 
 <style>
   .panel { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .bar { display: flex; justify-content: space-between; align-items: center; color: var(--text-faint); font-size: 0.78rem; }
+  .bar { display: flex; justify-content: space-between; align-items: center; color: var(--text-faint); font-size: var(--fs-sm); }
   .count { display: inline-flex; align-items: center; gap: 2px; }
-  .muted { color: var(--text-2); font-size: 0.85rem; }
+  .muted { color: var(--text-2); font-size: var(--fs-base); }
 </style>

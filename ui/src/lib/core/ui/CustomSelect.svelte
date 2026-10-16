@@ -164,12 +164,14 @@
   .dropdown {
     position: fixed;
     z-index: var(--z-popover);
-    background: var(--surface-drawer);
-    border: 1px solid var(--border-2);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-lg);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
     overflow-y: auto;
     padding: 4px;
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
   }
   .dropdown::-webkit-scrollbar { width: 4px; }
   .dropdown::-webkit-scrollbar-track { background: transparent; }
@@ -178,7 +180,8 @@
   .option {
     display: block;
     width: 100%;
-    padding: 0.45rem 0.65rem;
+    min-height: 36px;
+    padding: var(--sp-1) var(--sp-3);
     border-radius: var(--radius-sm);
     background: transparent;
     border: none;

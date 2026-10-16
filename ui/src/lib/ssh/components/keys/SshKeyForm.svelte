@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { untrack } from 'svelte';
   import { api } from '$lib/ssh/api';
   import type { SshKey } from '$lib/ssh/types';
@@ -97,6 +98,7 @@
     if (!createdKey) return;
     try {
       await navigator.clipboard.writeText(createdKey.public_key);
+      copiedToast();
       copied = true;
       setTimeout(() => (copied = false), 2000);
     } catch {}
@@ -240,7 +242,7 @@
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .form-group { display: flex; flex-direction: column; gap: 8px; }
   label, .field-label {
-    font-size: 0.72rem; text-transform: uppercase; color: var(--text-faint);
+    font-size: var(--fs-2xs); text-transform: uppercase; color: var(--text-faint);
     font-weight: var(--fw-bold); letter-spacing: 0.5px;
   }
   input, select, textarea {
@@ -251,12 +253,12 @@
     color: var(--text);
     padding: 0 14px;
     height: var(--control-h-lg);
-    font-size: 0.9rem;
+    font-size: var(--fs-base);
     font-family: inherit;
     resize: vertical;
   }
   select { padding-right: 2.2rem; }
-  textarea { height: auto; min-height: 96px; padding: 12px 14px; font-size: 0.8rem; }
+  textarea { height: auto; min-height: 96px; padding: 12px 14px; font-size: var(--fs-sm); }
   input:focus, select:focus, textarea:focus {
     outline: none;
     border-color: var(--accent-border);
@@ -273,5 +275,5 @@
     font-size: var(--fs-sm);
   }
   .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: var(--sp-2); }
-  .form-actions .btn { height: 42px; border-radius: var(--radius-field); padding: 0 20px; }
+  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 </style>

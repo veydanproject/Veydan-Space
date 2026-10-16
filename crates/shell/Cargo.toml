@@ -54,13 +54,14 @@ tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 # Open http(s) links in the system browser without going through a shell
 tauri-plugin-opener = "2"
-url = "2"
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 # Tag of a --workdir profile
 sha2 = "0.11"
 
 # ── Mobile only ──────────────────────────────────────────────────────────────
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# Open http(s) links in the system browser (a link of a message on a phone too).
+tauri-plugin-opener = "2"
 # Native file picker (content:// URIs) and fd-based reads of those URIs.
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"

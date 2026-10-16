@@ -120,7 +120,7 @@
     text-align: left;
     background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-badge);
     padding: var(--sp-2) 0.65rem;
     cursor: pointer;
     display: flex;
@@ -210,7 +210,7 @@
     align-items: center;
     gap: 0.3rem;
     background: transparent;
-    color: var(--accent);
+    color: var(--accent-text);
     border: 1px solid var(--accent);
     border-radius: var(--radius-sm);
     padding: 0.2rem 0.6rem;

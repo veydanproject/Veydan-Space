@@ -235,7 +235,7 @@
     position: fixed; z-index: 70; right: 16px; bottom: 16px;
     width: clamp(420px, 44vw, 680px); height: clamp(300px, 34vw, 480px);
     display: flex; flex-direction: column;
-    border-radius: var(--radius-lg); overflow: hidden; background: #0b0d10; color: #fff;
+    border-radius: var(--radius-card); overflow: hidden; background: #0b0d10; color: #fff;
     border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
     animation: rise 240ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
   }

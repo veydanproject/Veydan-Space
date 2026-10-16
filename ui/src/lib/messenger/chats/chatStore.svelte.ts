@@ -15,8 +15,14 @@ import {
   type MessengerUiEvent,
 } from '../api';
 import { usageStore } from '../shared/emoji/usageStore.svelte';
+import { chatKind } from './sections';
 
 const PAGE = 50;
+
+/** The order of a window: by time, then by id. */
+function byTime(a: MessengerMessage, b: MessengerMessage): number {
+  return a.created_at - b.created_at || a.id.localeCompare(b.id);
+}
 /** How many of the newest messages are read to find the card a chat ends with (system lines stand among them). */
 const TAIL_PAGE = 8;
 
@@ -87,6 +93,14 @@ class ChatStore {
   private _tailsSeen = new Map<string, number>();
   private _refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private _reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * What events brought to the open chat while a page of it was read: the
+   * page was read before they were stored, and laid over the window it
+   * would drop them (a message that came as the chat a notification opens
+   * was opening stayed away until the next start).
+   */
+  private _arrived = new Map<string, MessengerMessage>();
+  private _reading = 0;
 
   get active(): MessengerChat | null {
     return this.chats.find((c) => c.id === this.activeId) ?? null;
@@ -96,7 +110,12 @@ class ChatStore {
     // Muted chats keep their own counter but stay out of the total, and so
     // do the requests of strangers: they wait in a folder of their own and
     // must not call the user back to the app.
-    return this.chats.reduce((n, c) => n + (c.archived || c.is_muted || c.mode === 'request_received' ? 0 : c.unread), 0);
+    return this.unreadOf();
+  }
+
+  /** The same count, of the chats between two (`dm`) or of the groups only: the badges of the sections. */
+  unreadOf(kind?: 'dm' | 'group'): number {
+    return this.chats.reduce((n, c) => n + (c.archived || c.is_muted || c.mode === 'request_received' || (kind && chatKind(c) !== kind) ? 0 : c.unread), 0);
   }
 
   async loadChats() {
@@ -186,9 +205,9 @@ class ChatStore {
     this.hasMore = false;
     this.loading = true;
     try {
-      const page = await messengerApi.chats.messages(chatId, undefined, PAGE);
+      const page = await this.readPage(chatId, PAGE);
       if (this.activeId !== chatId) return;
-      this.messages = page;
+      this.messages = this.withArrived(chatId, page);
       this.hasMore = page.length === PAGE;
       this.tailTick++;
       await this.markRead(chatId);
@@ -263,20 +282,42 @@ class ChatStore {
     const id = this.activeId;
     if (!id) return;
     const size = Math.max(PAGE, this.messages.length);
-    const page = await messengerApi.chats.messages(id, undefined, size);
+    const read = await this.readPage(id, size);
     if (this.activeId !== id) return;
+    const page = this.withArrived(id, read);
     const grew = page.length > 0 && page[page.length - 1].id !== this.messages[this.messages.length - 1]?.id;
     this.messages = page;
     if (grew) this.tailTick++;
   }
 
+  /** The newest `limit` messages of a chat; what events bring meanwhile is kept aside (`_arrived`). */
+  private async readPage(chatId: string, limit: number): Promise<MessengerMessage[]> {
+    if (this._reading === 0) this._arrived.clear();
+    this._reading++;
+    try {
+      return await messengerApi.chats.messages(chatId, undefined, limit);
+    } finally {
+      this._reading--;
+    }
+  }
+
+  /** `page` with what events brought to the chat while it was read, in order. */
+  private withArrived(chatId: string, page: MessengerMessage[]): MessengerMessage[] {
+    const known = new Set(page.map((m) => m.id));
+    const extra = [...this._arrived.values()].filter((m) => m.chat_id === chatId && !known.has(m.id));
+    if (this._reading === 0) this._arrived.clear();
+    if (extra.length === 0) return page;
+    return [...page, ...extra].sort(byTime);
+  }
+
   private upsert(m: MessengerMessage) {
+    if (this._reading > 0) this._arrived.set(m.id, m);
     const i = this.messages.findIndex((x) => x.id === m.id);
     if (i >= 0) {
       this.messages = this.messages.map((x) => (x.id === m.id ? m : x));
       return;
     }
-    const next = [...this.messages, m].sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
+    const next = [...this.messages, m].sort(byTime);
     const atTail = next[next.length - 1].id === m.id;
     this.messages = next;
     if (atTail) this.tailTick++;

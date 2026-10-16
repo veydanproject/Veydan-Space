@@ -15,7 +15,7 @@
   import PrivacyPanel from '../privacy/PrivacyPanel.svelte';
   import CallsPanel from '../calls/CallsPanel.svelte';
   import DebugFeed from '../debug/DebugFeed.svelte';
-  import { SETTINGS_TABS, settingsRequest, type SettingsTab } from './settingsTab.svelte';
+  import { SETTINGS_TABS, settingsRequest, settingsUi, type SettingsTab } from './settingsTab.svelte';
 
   interface Props {
     /** The host screen already shows the title (phone). */
@@ -23,7 +23,9 @@
   }
   let { compact = false }: Props = $props();
 
-  let tab = $state<SettingsTab>('profile');
+  // The shown section is shared with the desk's nav (MessengerPage).
+  let tab = $derived<SettingsTab>(settingsUi.tab);
+  const pick = (id: SettingsTab) => (settingsUi.tab = id);
   let chips = $state<HTMLElement | null>(null);
 
   // Asked for from elsewhere (a long press on a call button): that tab, its chip in view.
@@ -31,7 +33,7 @@
     const want = settingsRequest.tab;
     if (!want) return;
     settingsRequest.tab = null;
-    tab = want;
+    pick(want);
     void tick().then(() => chips?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
   });
   const s = $derived(messengerStore.status);
@@ -40,7 +42,7 @@
 
   // From the profile: an avatar needs a media server to be stored on.
   async function openMedia() {
-    tab = 'network';
+    pick('network');
     await tick();
     media?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -53,16 +55,16 @@
     <div class="m-seg seg-sticky" role="tablist" bind:this={chips}>
       {#each SETTINGS_TABS as id}
         <button role="tab" class="m-seg-btn" class:active={tab === id} aria-selected={tab === id}
-          onclick={(e) => { tab = id; (e.currentTarget as HTMLElement).scrollIntoView({ inline: 'nearest', block: 'nearest' }); }}>
+          onclick={(e) => { pick(id); (e.currentTarget as HTMLElement).scrollIntoView({ inline: 'nearest', block: 'nearest' }); }}>
           {$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')}
         </button>
       {/each}
     </div>
   {:else}
-    <h2>{$t('msg_settings_title_full')}</h2>
-    <div class="tabs" role="tablist">
+    <!-- A narrow window, where the column of the nav is not shown: the sections as tabs. -->
+    <div class="tabs narrow-only" role="tablist">
       {#each SETTINGS_TABS as id}
-        <button role="tab" class="tab" class:active={tab === id} aria-selected={tab === id} onclick={() => (tab = id)}>
+        <button role="tab" class="tab" class:active={tab === id} aria-selected={tab === id} onclick={() => pick(id)}>
           {$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')}
         </button>
       {/each}
@@ -111,8 +113,8 @@
 </div>
 
 <style>
-  .settings { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 680px; width: 100%; margin-inline: auto; }
-  h2 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.4px; }
+  .settings { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 820px; width: 100%; }
+  @media (min-width: 861px) { .tabs.narrow-only { display: none; } }
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
   .tab { white-space: nowrap; }
   .tab {
@@ -134,5 +136,5 @@
     position: sticky; top: calc(-1 * var(--sp-3)); z-index: 1; margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) 0;
     padding: var(--sp-3) var(--sp-3) var(--sp-2); background: var(--bg);
   }
-  code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-2); padding: 2px 7px; border-radius: 6px; }
+  code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-2); padding: 2px 7px; border-radius: var(--radius-badge); }
 </style>

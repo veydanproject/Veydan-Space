@@ -32,6 +32,8 @@ export const module: ModuleDef = {
   ...common,
   entities: withInline({ password: { inline: PasswordCardInline }, totp: { inline: TotpCardInline } }),
   nav: [{ id: 'passwords', title: 'pw_title', icon: 'lock', href: '/passwords' }],
+  // Its columns go 12 from the window's sides, like the columns of Notes.
+  fullWidth: ['/passwords'],
   settings: [],
   commands: registerPassCommands,
   tray: () => ({ password_generator: get(t)('tray_password_generator') }),

@@ -1219,6 +1219,8 @@ Bundled with the UI, under the SIL Open Font License 1.1 (OFL-1.1):
 
 ## Icons
 
+The icons of the interface (`ui/src/lib/core/Icon.svelte`, every name but `brand-*`) are the outline icons of **Tabler Icons** 3.49.0 by Paweł Kuna, https://tabler.io/icons, under MIT.
+
 The brand icons of social networks in the profile (`ui/src/lib/core/Icon.svelte`, `brand-*`) are the paths of **simple-icons** 16.34.0 (LinkedIn from 13.21.0), https://simpleicons.org, under CC0-1.0. The names and logos are trademarks of their owners and only point to a person's page there.
 
 ---

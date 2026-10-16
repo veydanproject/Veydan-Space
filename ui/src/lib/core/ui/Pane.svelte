@@ -58,25 +58,28 @@
     min-width: 0;
     min-height: 0;
     height: 100%;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    background: var(--pane);
+    border: 1px solid var(--pane-border);
+    border-radius: var(--radius-pane);
     overflow: hidden;
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter);
+    backdrop-filter: var(--pane-filter);
   }
 
   .pane-header {
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    height: 58px;
-    padding: 0 var(--sp-4) 0 var(--sp-5);
-    border-bottom: 1px solid var(--border);
+    height: 64px;
+    padding: 0 var(--sp-3) 0 var(--sp-5);
+    background: var(--pane-head);
+    border-bottom: 1px solid var(--pane-border);
     flex-shrink: 0;
   }
   .pane-title {
-    font-size: var(--fs-md);
-    font-weight: var(--fw-extrabold);
-    letter-spacing: -0.3px;
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-bold);
     color: var(--text);
   }
   .pane-actions {

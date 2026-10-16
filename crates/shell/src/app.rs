@@ -319,7 +319,8 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
     #[cfg(mobile)]
     let builder = builder
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init());
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init());
 
     let builder = builder
         .manage(StartState::default())

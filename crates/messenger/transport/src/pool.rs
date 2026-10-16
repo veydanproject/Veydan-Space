@@ -155,6 +155,13 @@ impl RelayPool {
         self.sockets.probe(patience).await
     }
 
+    /// An event that came another way (a push), handed to whoever reads
+    /// `events()` as if a relay had sent it: the same dedup, checks and
+    /// handlers. Also in silent mode, since nothing goes out.
+    pub async fn inject(&self, raw: RawEvent) -> Result<()> {
+        self.tx.send(raw).await.map_err(|_| MessengerError::Transport("nobody reads the events".into()))
+    }
+
     /// Closes every relay connection; `nostr-sdk` makes each anew, the way
     /// the rule of the bridges says now. Unlike `disconnect` and `connect`
     /// one after the other, this does not race the connection task of

@@ -14,6 +14,7 @@
   import ContactAddForm from './ContactAddForm.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import MyQrButton from '../invites/MyQrButton.svelte';
+  import ScanQrButton from '../invites/ScanQrButton.svelte';
 
   interface Props {
     onchat?: (pubkey: string) => void;
@@ -78,7 +79,10 @@
   {#if !compact}
     <div class="title-row">
       <div class="card-title"><Icon name="user" size={16} /> {$t('msg_contacts_title')}</div>
-      <MyQrButton disabled={!messengerStore.status?.runtime?.session_active} />
+      <span class="title-actions">
+        <ScanQrButton disabled={!messengerStore.status?.runtime?.session_active} />
+        <MyQrButton disabled={!messengerStore.status?.runtime?.session_active} />
+      </span>
     </div>
   {/if}
   <p class="muted">{$t('msg_contacts_text')}</p>
@@ -183,6 +187,7 @@
   .contacts { max-width: 680px; width: 100%; margin-inline: auto; display: flex; flex-direction: column; gap: var(--sp-3); }
   .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+  .title-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-xs); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -212,7 +217,7 @@
   .btn.danger { color: var(--danger-text); }
 
   /* The phone: one grouped list of full-width rows, like the shell's lists (mobile.css .m-list). */
-  .compact .muted { font-size: 14px; line-height: 1.45; padding: 0 var(--sp-1); }
+  .compact .muted { font-size: var(--fs-base); line-height: 1.45; padding: 0 var(--sp-1); }
   .compact .empty { text-align: center; padding: var(--sp-6) var(--sp-4); font-size: var(--fs-sm); }
   .compact .list {
     gap: 0; overflow: hidden; background: var(--m-card, var(--surface));
@@ -223,8 +228,8 @@
   .compact .row.open { background: var(--surface-2); }
   .compact .head { min-height: 64px; padding: var(--sp-2) var(--sp-4); border-radius: 0; }
   .compact .head:active { background: var(--surface-2); }
-  .compact .name { font-size: 15px; }
-  .compact .meta { font-size: 13px; }
+  .compact .name { font-size: var(--fs-body); }
+  .compact .meta { font-size: var(--fs-sm); }
   .compact .details { padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top-color: var(--m-card-border, var(--border)); }
-  .compact .grid input { font-size: 16px; padding: 8px 10px; border-radius: var(--radius); }
+  .compact .grid input { font-size: var(--fs-md); padding: 8px 10px; border-radius: var(--radius); }
 </style>

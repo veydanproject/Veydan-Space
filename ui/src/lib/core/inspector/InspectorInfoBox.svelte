@@ -60,9 +60,9 @@
     pointer-events: none;
     background: rgba(15, 23, 42, 0.92);
     border: 1px solid rgba(99, 102, 241, 0.4);
-    border-radius: 6px;
+    border-radius: var(--radius-badge);
     padding: 0.4rem 0.6rem;
-    font-size: 0.72rem;
+    font-size: var(--fs-2xs);
     color: #e2e8f0;
     min-width: 160px;
     max-width: 240px;
@@ -79,7 +79,7 @@
     color: #86efac;
     margin-bottom: 0.3rem;
     word-break: break-all;
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
   }
 
   .row {

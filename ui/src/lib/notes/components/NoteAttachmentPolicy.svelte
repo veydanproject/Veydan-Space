@@ -88,7 +88,7 @@
     width: 100%; min-width: 0; height: var(--control-h-lg);
     background: var(--surface-3); border: 1px solid var(--border);
     border-radius: var(--radius-field); padding: 0 var(--sp-3);
-    font-size: 0.82rem; color: var(--text-body);
+    font-size: var(--fs-sm); color: var(--text-body);
   }
   .input:focus { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); outline: none; }
   .input:disabled { opacity: 0.5; }

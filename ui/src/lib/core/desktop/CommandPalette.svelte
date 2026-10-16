@@ -5,6 +5,7 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import { backdropIn, backdropOut, dialogIn, dialogOut } from '$lib/core/ui/motion';
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
   import { commands, type Command } from '$lib/core/commands';
@@ -78,9 +79,9 @@
 
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="backdrop" onmousedown={hide}>
+  <div class="backdrop" in:backdropIn out:backdropOut onmousedown={hide}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="palette" role="dialog" aria-label={$t('cmd_title')} onmousedown={(e) => e.stopPropagation()}>
+    <div class="palette" in:dialogIn out:dialogOut role="dialog" aria-label={$t('cmd_title')} onmousedown={(e) => e.stopPropagation()}>
       <div class="input-row">
         <Icon name="search" size={14} />
         <input
@@ -121,7 +122,7 @@
 <style>
   .backdrop {
     position: fixed; inset: var(--overlay-inset, 0); border-radius: var(--overlay-radius, 0); z-index: 1000;
-    background: rgba(0, 0, 0, 0.35);
+    background: var(--backdrop);
     display: flex; justify-content: center; align-items: flex-start;
     padding-top: 12vh;
   }
@@ -129,11 +130,13 @@
     width: min(560px, 92vw);
     max-height: 70vh;
     display: flex; flex-direction: column;
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md, 10px);
-    box-shadow: var(--shadow-lg);
+    background: var(--glass-bg-raised);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
     overflow: hidden;
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
   }
   .input-row {
     display: flex; align-items: center; gap: 0.5rem;
@@ -145,12 +148,12 @@
   .input-row input {
     flex: 1; width: auto; min-width: 0; height: auto;
     border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none;
-    color: var(--text); font-size: var(--fs-sm); line-height: 1.4; padding: 0.2rem 0;
+    color: var(--text); font-size: var(--fs-body); line-height: 1.4; padding: 0.2rem 0;
   }
   .input-row input:focus { border: 0; box-shadow: none; outline: none; }
   kbd {
     font-size: var(--fs-2xs); color: var(--text-3);
-    border: 1px solid var(--border); border-radius: 4px; padding: 0 0.3rem;
+    border: 1px solid var(--border); border-radius: var(--radius-xs); padding: 0 0.3rem;
   }
   .list { overflow-y: auto; padding: 0.3rem; }
   .group {
@@ -160,9 +163,9 @@
   }
   .row {
     display: flex; align-items: center; gap: 0.5rem; width: 100%;
-    padding: 0.4rem 0.6rem; border: 0; border-radius: 6px;
+    min-height: 36px; padding: var(--sp-1) var(--sp-3); border: 0; border-radius: var(--radius-sm);
     background: transparent; color: var(--text); text-align: left; cursor: pointer;
-    font-size: var(--fs-sm);
+    font-size: var(--fs-base);
   }
   .row.active { background: color-mix(in srgb, var(--accent) 15%, transparent); }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -208,7 +208,7 @@
   .scrim { position: absolute; inset: 0; z-index: 10; border: none; background: rgba(0, 0, 0, 0.45); cursor: pointer; }
   .sheet {
     position: absolute; z-index: 11; left: 0; right: 0; bottom: 0; max-height: 70%; display: flex; flex-direction: column;
-    padding-bottom: calc(var(--sab, 0px) + 8px); border-radius: 18px 18px 0 0; background: var(--surface); color: var(--text);
+    padding-bottom: calc(var(--sab, 0px) + 8px); border-radius: var(--radius-head) var(--radius-head) 0 0; background: var(--surface); color: var(--text);
     box-shadow: var(--shadow-lg); animation: up 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
   }
   @keyframes up { from { transform: translateY(40px); opacity: 0; } }

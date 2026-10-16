@@ -25,13 +25,14 @@ pub fn host_info(app: tauri::AppHandle) -> HostInfo {
     }
 }
 
-/// Open an http(s) URL in the default browser, or a mailto: link in the mail client.
+/// Open an http(s) URL in the default browser, or a mailto: link in the mail client
+/// (on a phone, an intent to its browser or mail app).
 /// The opener plugin never goes through a shell, so URL contents cannot become commands.
-#[cfg(desktop)]
+/// Async: off the main thread, where a phone's plugin answers.
 #[tauri::command]
-pub fn open_url(url: String, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn open_url(url: String, app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let parsed = url::Url::parse(&url).map_err(|e| e.to_string())?;
+    let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
     if !matches!(parsed.scheme(), "http" | "https" | "mailto") {
         return Err("only http(s) and mailto URLs are allowed".into());
     }

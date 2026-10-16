@@ -1195,7 +1195,7 @@
   }
 
   .banner-warn { background: var(--warn-bg); color: var(--warn-text); }
-  .banner-info { background: var(--accent-bg); color: var(--accent); }
+  .banner-info { background: var(--accent-bg); color: var(--accent-text); }
 
   .banner-actions {
     display: flex;
@@ -1243,7 +1243,7 @@
   }
 
   .title-hint {
-    color: var(--accent);
+    color: var(--accent-text);
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -1291,7 +1291,7 @@
   }
 
   .save-status-icon.status-saved    { color: var(--success-text); }
-  .save-status-icon.status-saving   { color: var(--accent); }
+  .save-status-icon.status-saving   { color: var(--accent-text); }
   .save-status-icon.status-unsaved  { color: var(--warn-text); }
   .save-status-icon.status-failed   { color: var(--danger-text); }
   .save-status-icon.status-external { color: var(--warn-text); }
@@ -1308,9 +1308,10 @@
     flex-direction: column;
     overflow: hidden;
     margin: var(--sp-2) var(--sp-3) var(--sp-3);
-    border: 1px solid var(--border);
+    /* The editor lies on the pane itself (the design kit): no frame of its own. */
+    border: 1px solid transparent;
     border-radius: var(--radius);
-    background: var(--surface);
+    background: transparent;
   }
 
   .panes {
@@ -1331,7 +1332,7 @@
     border: none;
     outline: none;
     resize: none;
-    font-size: 0.95rem;
+    font-size: var(--fs-body);
     line-height: 1.75;
     color: var(--text-body);
     font-family: var(--font-mono);
@@ -1378,7 +1379,7 @@
     font-family: var(--font-mono);
     margin-left: 2px;
   }
-  .icon-action.active { color: var(--accent); }
+  .icon-action.active { color: var(--accent-text); }
   .icon-danger:hover { color: var(--danger-text) !important; }
 
   .delete-overlay {
@@ -1394,7 +1395,7 @@
   .delete-modal {
     background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius);
     padding: var(--sp-5) var(--sp-6);
     max-width: 320px;
     width: 90%;

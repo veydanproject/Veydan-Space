@@ -11,4 +11,4 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 export const isCsd = isTauri && typeof navigator !== 'undefined' && /linux/i.test(navigator.userAgent);
 
 /** The frame as WindowFrame.svelte draws it; the overlays' inset follows these. */
-export const FRAME = { gutter: 9, radius: 11, titlebar: 34 } as const;
+export const FRAME = { gutter: 9, radius: 11, titlebar: 32 } as const;

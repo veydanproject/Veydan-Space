@@ -4,6 +4,7 @@
 <script lang="ts">
   import { portal } from '$lib/core/portal';
   import { backdropDismiss } from '$lib/core/backdrop';
+  import { backdropIn, backdropOut, dialogIn, dialogOut } from './motion';
 
   interface Props {
     open: boolean;
@@ -36,10 +37,12 @@
 
 {#if open}
   <!-- Portalled to body so it stacks above drawers, which live on body too -->
-  <div class="overlay" use:portal use:backdropDismiss={oncancel} role="presentation">
+  <div class="overlay" in:backdropIn out:backdropOut use:portal use:backdropDismiss={oncancel} role="presentation">
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
     <div
       class="modal"
+      in:dialogIn
+      out:dialogOut
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
@@ -79,21 +82,23 @@
   }
 
   .modal {
-    background: var(--surface-drawer);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 1.25rem 1.5rem;
-    box-shadow: var(--shadow-lg);
-    max-width: 400px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    padding: var(--sp-6);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
+    max-width: var(--dialog-w);
     width: 90%;
     display: flex;
     flex-direction: column;
     gap: 0.875rem;
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
   }
 
   .modal-title {
-    font-size: var(--fs-md);
-    font-weight: var(--fw-extrabold);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
     letter-spacing: -0.3px;
     color: var(--text);
   }

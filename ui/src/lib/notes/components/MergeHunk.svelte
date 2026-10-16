@@ -152,7 +152,7 @@
     margin: 0;
     padding: 0.35rem 0.6rem;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-xs);
     font-weight: 600;
     border-bottom: 1px solid var(--border);
     background: var(--surface-2);
@@ -169,7 +169,7 @@
     max-height: 13rem;
     overflow: auto;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-xs);
     line-height: 1.35;
   }
 
@@ -214,7 +214,7 @@
     color: var(--text-2);
     cursor: pointer;
     font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: var(--fs-base);
     line-height: 1;
   }
 

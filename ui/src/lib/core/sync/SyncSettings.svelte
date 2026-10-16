@@ -611,7 +611,7 @@
     width: 100%; min-width: 0; height: var(--control-h-lg); flex-shrink: 0;
     background: var(--surface-3); border: 1px solid var(--border);
     border-radius: var(--radius-field); padding: 0 var(--sp-3);
-    font-size: 0.82rem; color: var(--text-body);
+    font-size: var(--fs-sm); color: var(--text-body);
   }
   .row > .input.interval { flex: 0 0 110px; }
   .presets { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
@@ -629,8 +629,8 @@
   .error { font-size: var(--fs-sm); color: var(--danger-text); margin: 0; }
   .tvalue.warn { color: var(--warn-text); }
   .progress-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
-  .progress-bar { height: 6px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
-  .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.2s ease; }
+  .progress-bar { height: 6px; background: var(--surface-3); border-radius: var(--radius-pill); overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .progress-label { font-size: var(--fs-sm); color: var(--text-body); }
   .progress-detail { display: block; font-family: var(--font-mono); color: var(--text-dim); word-break: break-all; }
   .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
@@ -638,7 +638,7 @@
   .confirm { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--danger-border); border-radius: var(--radius); background: var(--danger-bg); font-size: var(--fs-sm); }
   .table { display: flex; flex-direction: column; gap: 0.35rem; }
   .trow { display: flex; align-items: baseline; gap: var(--sp-2); }
-  .tlabel { font-size: 0.82rem; color: var(--text-faint); min-width: 120px; flex-shrink: 0; }
+  .tlabel { font-size: var(--fs-sm); color: var(--text-faint); min-width: 120px; flex-shrink: 0; }
   .device-toggle { width: 100%; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; color: inherit; }
   .device-card { flex-direction: column; align-items: stretch; gap: 2px; padding-left: var(--sp-3); }
   .device-card .tlabel { min-width: 0; word-break: break-word; }

@@ -83,7 +83,7 @@
     padding: 0.2rem 0.55rem;
     background: var(--success-bg);
     border: 1px solid color-mix(in srgb, var(--success) 25%, var(--border));
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: var(--fs-2xs);
     color: var(--success-text);
     white-space: nowrap;

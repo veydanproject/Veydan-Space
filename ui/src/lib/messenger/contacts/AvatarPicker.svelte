@@ -2,11 +2,12 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  My avatar in the profile editor: pick a picture (the system's picker,
-  images only, so a phone shows its photo picker; on a computer a file
-  dropped on it too), crop it, and the runtime re-encodes, uploads and
-  publishes it. There is no address to type: only the runtime sets one.
-  The avatar takes effect at once, apart from the form's Publish.
+  My avatar in the profile editor, or the picture of a group I manage
+  (`group`): pick a picture (the system's picker, images only, so a phone
+  shows its photo picker; on a computer a file dropped on it too), crop
+  it, and the runtime re-encodes, uploads and publishes it (in my kind 0,
+  or in the group's log). There is no address to type: only the runtime
+  sets one. It takes effect at once, apart from the form's Publish.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -14,8 +15,11 @@
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
-  import { isTauriHost, messengerApi, profileLabel, type AvatarPreview, type CropRect } from '../api';
+  import { get } from 'svelte/store';
+  import { isTauriHost, messengerApi, profileLabel, type AvatarPreview, type CropRect, type MessengerGroup } from '../api';
   import { messengerStore } from '../store.svelte';
+  import { groupStore } from '../groups/groupStore.svelte';
+  import { groupRefusal } from '../groups/errors';
   import Avatar from './Avatar.svelte';
   import AvatarCropper from './AvatarCropper.svelte';
   import { profileCodeOf, profileErrorText } from './profileErrors';
@@ -24,14 +28,23 @@
     disabled?: boolean;
     /** Shows the media servers' settings (an avatar needs one to be stored on). */
     onopenmedia?: () => void;
+    /** The picture of this group instead of my avatar. */
+    group?: MessengerGroup | null;
   }
-  let { disabled = false, onopenmedia }: Props = $props();
+  let { disabled = false, onopenmedia, group = null }: Props = $props();
 
   const EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'];
   const IMAGE_FILE = /\.(jpe?g|png|webp|gif|bmp)$/i;
 
   const p = $derived(messengerStore.ownProfile);
-  const label = $derived(profileLabel(p) || (messengerStore.identity?.npub ?? '?'));
+  const picture = $derived(group ? group.picture || null : (p?.picture ?? null));
+  const label = $derived(group ? group.name : profileLabel(p) || (messengerStore.identity?.npub ?? '?'));
+  const seed = $derived(group ? group.id : messengerStore.identity?.pubkey);
+
+  /** A refusal of the group (not a manager any more…) or of the picture. */
+  function explain(e: unknown): string {
+    return (group && groupRefusal(e, (k, params) => get(t)(k as 'msg_you', params))) || profileErrorText(e);
+  }
 
   let phase = $state<'idle' | 'preparing' | 'cropping' | 'uploading' | 'removing'>('idle');
   let picked = $state<AvatarPreview | null>(null);
@@ -73,7 +86,7 @@
       cropOpen = true;
     } catch (e) {
       phase = 'idle';
-      error = profileErrorText(e);
+      error = explain(e);
     }
   }
 
@@ -81,19 +94,20 @@
     if (!picked || !rect || phase === 'uploading') return;
     phase = 'uploading'; cropError = ''; noServer = false;
     try {
-      await messengerStore.setAvatar(picked.token, rect);
+      if (group) await groupStore.setAvatar(group.id, picked.token, rect);
+      else await messengerStore.setAvatar(picked.token, rect);
       cropOpen = false;
       picked = null;
       phase = 'idle';
     } catch (e) {
       if (!cropOpen) {
         // The dialog was closed while it uploaded: the refusal goes under the avatar.
-        picked = null; phase = 'idle'; error = profileErrorText(e);
+        picked = null; phase = 'idle'; error = explain(e);
         return;
       }
       phase = 'cropping';
       noServer = profileCodeOf(e) === 'media_no_server';
-      cropError = profileErrorText(e);
+      cropError = explain(e);
     }
   }
 
@@ -112,11 +126,15 @@
 
   async function remove() {
     if (disabled || busy) return;
-    const yes = await ask({ title: $t('msg_profile_avatar_remove'), message: $t('msg_profile_avatar_remove_confirm'), confirmLabel: $t('msg_profile_avatar_remove') });
+    const message = group ? $t('msg_group_avatar_remove_confirm') : $t('msg_profile_avatar_remove_confirm');
+    const yes = await ask({ title: $t('msg_profile_avatar_remove'), message, confirmLabel: $t('msg_profile_avatar_remove') });
     if (!yes) return;
     phase = 'removing'; error = '';
-    try { await messengerStore.removeAvatar(); }
-    catch (e) { error = profileErrorText(e); }
+    try {
+      if (group) await groupStore.removeAvatar(group.id);
+      else await messengerStore.removeAvatar();
+    }
+    catch (e) { error = explain(e); }
     finally { phase = 'idle'; }
   }
 
@@ -164,8 +182,8 @@
 
 <div class="avatar-pick">
   <div class="zone" class:over={dropOver} bind:this={zone}>
-    <button type="button" class="face" disabled={disabled || busy} onclick={pick} title={p?.picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')} aria-label={p?.picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')}>
-      <Avatar url={p?.picture ?? null} {label} seed={messengerStore.identity?.pubkey} size={88} />
+    <button type="button" class="face" disabled={disabled || busy} onclick={pick} title={picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')} aria-label={picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')}>
+      <Avatar url={picture} {label} {seed} size={88} />
       <span class="badge-cam" aria-hidden="true">
         {#if busy}<span class="spinner"></span>{:else}<Icon name="camera" size={16} />{/if}
       </span>
@@ -175,9 +193,9 @@
   <div class="side">
     <div class="buttons">
       <button type="button" class="btn btn-ghost btn-sm" disabled={disabled || busy} onclick={pick}>
-        <Icon name="upload" size={13} />{p?.picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')}
+        <Icon name="upload" size={13} />{picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')}
       </button>
-      {#if p?.picture}
+      {#if picture}
         <button type="button" class="btn btn-ghost btn-sm danger" disabled={disabled || busy} onclick={remove}>
           <Icon name="trash" size={13} />{$t('msg_profile_avatar_remove')}
         </button>
@@ -196,7 +214,7 @@
   {#if picked}
     <div class="crop-body">
       <AvatarCropper src={picked.preview} width={picked.width} height={picked.height} disabled={phase === 'uploading'} bind:rect />
-      <p class="hint center">{$t('msg_profile_avatar_public_hint')}</p>
+      <p class="hint center">{group ? $t('msg_group_avatar_public_hint') : $t('msg_profile_avatar_public_hint')}</p>
       {#if phase === 'uploading'}
         <p class="status"><span class="spinner"></span>{$t('msg_profile_avatar_uploading')}</p>
       {/if}

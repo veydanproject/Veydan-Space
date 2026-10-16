@@ -9,6 +9,7 @@
   until it ends, nobody gets in by any of them.
 -->
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { onDestroy, onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -77,6 +78,7 @@
   async function copy(v: InviteView) {
     try {
       await navigator.clipboard.writeText(v.kind === 'code' ? v.secret : (v.link ?? ''));
+      copiedToast();
       copied = v.id;
       setTimeout(() => { if (copied === v.id) copied = null; }, 1600);
     } catch (e) {

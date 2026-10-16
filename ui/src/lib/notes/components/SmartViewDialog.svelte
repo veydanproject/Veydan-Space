@@ -199,7 +199,7 @@
     padding: 0.4rem 0.55rem;
     font-size: var(--fs-sm);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-badge);
     /* background-color only: a select keeps the chevron of base.css */
     background-color: var(--bg-2);
     color: var(--text);
@@ -229,7 +229,7 @@
     padding: 0.2rem 0.5rem;
     font-size: var(--fs-xs);
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: transparent;
     color: var(--text-2);
     cursor: pointer;

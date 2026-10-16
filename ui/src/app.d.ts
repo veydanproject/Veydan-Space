@@ -13,3 +13,13 @@ declare const __VEYDAN_PRODUCT_NAME__: string;
 declare const __VEYDAN_PRODUCT_TAGLINE__: { en: string; ru: string } & Record<string, string>;
 /** https://github.com/<owner>/<repo> of the product (products.json `repo`). */
 declare const __VEYDAN_PRODUCT_REPO__: string;
+
+declare namespace App {
+  /** Shallow history steps (`pushState` of `$app/navigation`). */
+  interface PageState {
+    /** The media viewer of a chat is open (messenger/media/viewer.svelte.ts). */
+    mediaViewer?: boolean;
+    /** The info of a group is being edited (messenger/groups/GroupInfo.svelte). */
+    groupEdit?: boolean;
+  }
+}

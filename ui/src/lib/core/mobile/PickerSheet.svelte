@@ -32,5 +32,5 @@
 
 <style>
   .m-row.on { color: var(--accent-text); font-weight: 600; }
-  .tick { color: var(--accent); display: inline-flex; }
+  .tick { color: var(--accent-text); display: inline-flex; }
 </style>

@@ -57,5 +57,5 @@
 
 <style>
   span { display: inline-flex; }
-  .pct { font-size: 0.65rem; font-variant-numeric: tabular-nums; color: var(--text-dim); min-width: 1.4em; }
+  .pct { font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; color: var(--text-dim); min-width: 1.4em; }
 </style>

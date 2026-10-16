@@ -32,8 +32,10 @@
     variant?: 'bubble' | 'tile' | 'card';
     wide?: boolean;
     fit?: 'cover' | 'natural';
+    /** The ids of the album's pictures and videos, in order: the viewer pages through them. */
+    album?: string[];
   }
-  let { message: m, variant = 'bubble', fit = 'cover', wide = false }: Props = $props();
+  let { message: m, variant = 'bubble', fit = 'cover', wide = false, album }: Props = $props();
 
   const media = $derived(mediaOf(m));
   const out = $derived(m.direction === 'out');
@@ -122,9 +124,19 @@
     circle.play().catch(() => {});
   }
 
+  /** What the viewer shows of this message, once it is here. */
+  const viewable = $derived(media && src && phase === 'here' && (media.kind === 'image' || media.kind === 'video')
+    ? { messageId: m.id, kind: media.kind, src, name: media.name } : null);
+  // The viewer pages to this part of the album while it is here.
+  $effect(() => {
+    const it = viewable;
+    if (!it) return;
+    viewer.here.set(it.messageId, it);
+    return () => { if (viewer.here.get(it.messageId) === it) viewer.here.delete(it.messageId); };
+  });
+
   function view() {
-    if (!media || !src) return;
-    if (media.kind === "image" || media.kind === "video") viewer.open({ messageId: m.id, kind: media.kind, src, name: media.name });
+    if (viewable) viewer.open(viewable, album);
   }
 
   function explain(e: unknown): string {
@@ -322,7 +334,7 @@
 <style>
   /* A server only the sender named: a quiet word under the file, the reason in its title. */
   .foreign { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
-  .foreign-tag { position: absolute; left: 6px; bottom: 6px; z-index: 1; pointer-events: none; padding: 1px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.55); }
+  .foreign-tag { position: absolute; left: 6px; bottom: 6px; z-index: 1; pointer-events: none; padding: 1px 6px; border-radius: var(--radius-badge); background: rgba(0, 0, 0, 0.55); }
   .foreign-tag .foreign { color: #fff; }
   .media { display: flex; flex-direction: column; gap: 6px; min-width: min(240px, 100%); max-width: 360px; }
   .media.kind-circle, .media.kind-voice { min-width: 0; }
@@ -330,11 +342,11 @@
   .card-file {
     min-width: 0; overflow: hidden;
     position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
-    padding: 10px 8px 8px; border-radius: 10px; background: color-mix(in srgb, var(--surface-3) 70%, transparent);
+    padding: 10px 8px 8px; border-radius: var(--radius); background: color-mix(in srgb, var(--surface-3) 70%, transparent);
   }
   .card-file .hit { z-index: 0; border-radius: inherit; }
   .card-file .kind {
-    width: 46px; height: 46px; flex-shrink: 0; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
+    width: 46px; height: 46px; flex-shrink: 0; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center;
     background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-text-2);
   }
   .card-file.failed .kind { background: var(--danger-bg); color: var(--danger-text); }
@@ -347,7 +359,7 @@
   .card-file .status { position: relative; z-index: 1; display: block; margin-top: 3px; text-align: left; }
   .card-file .acts { position: relative; z-index: 1; display: inline-flex; gap: 2px; margin-top: auto; }
   .card-file.wide { flex-direction: row; text-align: left; padding: 8px 8px 8px 10px; gap: var(--sp-2); }
-  .card-file.wide .kind { width: 40px; height: 40px; border-radius: 10px; }
+  .card-file.wide .kind { width: 40px; height: 40px; border-radius: var(--radius); }
   .card-file.wide .about { width: auto; flex: 1 1 auto; }
   .card-file.wide .acts { flex-shrink: 0; }
   .card-file.wide .name { display: block; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
@@ -381,8 +393,8 @@
     position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center;
     justify-content: center; background: var(--danger-bg); color: var(--danger-text); pointer-events: none;
   }
-  .thumb { border: none; padding: 0; background: none; cursor: zoom-in; border-radius: 10px; overflow: hidden; display: block; }
-  .thumb img { display: block; max-width: 100%; max-height: 320px; object-fit: contain; border-radius: 10px; background: var(--surface-3); }
+  .thumb { border: none; padding: 0; background: none; cursor: zoom-in; border-radius: var(--radius); overflow: hidden; display: block; }
+  .thumb img { display: block; max-width: 100%; max-height: 320px; object-fit: contain; border-radius: var(--radius); background: var(--surface-3); }
   .voice-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   /* The player gives up width to the status beside it: a narrow screen holds both. */
   .voice-row.with-status :global(.voice) { min-width: 0; flex: 1 1 auto; }
@@ -390,7 +402,7 @@
   .circle { position: relative; width: 220px; height: 220px; max-width: 100%; border: none; padding: 0; border-radius: 50%; overflow: hidden; background: #000; cursor: pointer; }
   .circle video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .circle-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(0, 0, 0, 0.28); }
-  .player { max-width: 100%; max-height: 320px; border-radius: 10px; background: #000; }
+  .player { max-width: 100%; max-height: 320px; border-radius: var(--radius); background: #000; }
   .audio { width: 100%; height: 36px; }
   .file-row { display: flex; align-items: center; gap: var(--sp-2); }
   .file-row:has(.info > :global(.full)) { align-items: flex-start; }

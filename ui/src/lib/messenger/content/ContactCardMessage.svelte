@@ -84,7 +84,7 @@
   }
 
   function openSite() {
-    if (website) linkActions.openExternal(website as ExternalUrl).catch(() => {});
+    if (website) void linkActions.follow(website as ExternalUrl);
   }
 </script>
 

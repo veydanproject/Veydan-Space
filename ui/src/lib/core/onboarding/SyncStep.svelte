@@ -174,7 +174,7 @@
   .prep { position: relative; width: 112px; height: 112px; margin-bottom: var(--sp-5); }
   .core {
     position: absolute; inset: 14px; display: flex; align-items: center; justify-content: center; border-radius: 50%;
-    background: var(--accent-tint); color: var(--accent); animation: breathe 2.4s ease-in-out infinite;
+    background: var(--accent-tint); color: var(--accent-text); animation: breathe 2.4s ease-in-out infinite;
   }
   .ring {
     position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--accent-tint); border-top-color: var(--accent);
@@ -183,7 +183,7 @@
   @keyframes turn { to { transform: rotate(360deg); } }
   @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.93); } }
   .stages { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); text-align: left; }
-  .stages li { display: flex; align-items: center; gap: var(--sp-3); color: var(--text-3); font-size: 15px; transition: color 0.2s ease; }
+  .stages li { display: flex; align-items: center; gap: var(--sp-3); color: var(--text-3); font-size: var(--fs-body); transition: color 0.2s ease; }
   .stages li.on { color: var(--text); font-weight: var(--fw-semibold); }
   .stages li.done { color: var(--text-2); }
   .mark { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--border-2); }

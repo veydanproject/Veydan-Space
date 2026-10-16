@@ -427,7 +427,7 @@
     top: var(--sp-3);
     left: var(--sp-5);
     color: var(--text-3);
-    font-size: 0.95rem;
+    font-size: var(--fs-body);
     line-height: 1.7;
     pointer-events: none;
   }
@@ -462,7 +462,7 @@
     border: none;
     color: var(--text-2);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     display: inline-flex;
     align-items: center;
     padding: 0.15rem 0.3rem;
@@ -498,7 +498,7 @@
     overflow-y: auto;
     outline: none;
     padding: var(--sp-3) var(--sp-5);
-    font-size: 0.95rem;
+    font-size: var(--fs-body);
     line-height: 1.7;
     color: var(--text-body);
     word-wrap: break-word;
@@ -516,7 +516,7 @@
   .host :global(h3) { font-size: 1.15em; }
   .host :global(.ProseMirror > :first-child) { margin-top: 0; }
   .host :global(p) { margin: 0 0 0.8em; }
-  .host :global(a) { color: var(--accent); text-decoration: none; cursor: pointer; }
+  .host :global(a) { color: var(--accent-text); text-decoration: none; cursor: pointer; }
   .host :global(a:hover) { text-decoration: underline; }
   .host :global(a.wiki) {
     padding: 0 0.15em;
@@ -526,7 +526,7 @@
   /* Entity mention `[[kind:id|Name]]`: chip look, opens the context card */
   .host :global(a.wiki-entity) {
     padding: 0 0.4em;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
     color: var(--text);
     background: var(--surface-2);
@@ -536,7 +536,7 @@
     font-size: 0.88em;
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     padding: 0.05em 0.35em;
   }
   .host :global(pre) {

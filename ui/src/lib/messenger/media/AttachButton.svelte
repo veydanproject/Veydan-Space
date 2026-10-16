@@ -62,8 +62,8 @@
     <div class="kinds">
       {#each kinds as k (k.id)}
         <button class="kind" onclick={() => pick(k.extensions)}>
-          <span class="kind-icon"><Icon name={k.icon} size={22} /></span>
-          {$t(k.label)}
+          <Icon name={k.icon} size={22} />
+          <span>{$t(k.label)}</span>
         </button>
       {/each}
     </div>
@@ -79,13 +79,14 @@
   .attach:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
   /* Inside the field of the phone composer the field sets the size. */
   @media (pointer: coarse) { .attach { width: var(--attach-w, 44px); height: var(--attach-h, 44px); } }
-  .kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); }
+  /* The rows of a sheet (design kit, menu as a sheet): 52 high, the icon 22, the label 16. */
+  .kinds { display: flex; flex-direction: column; }
   .kind {
-    display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: 14px 4px 12px; cursor: pointer;
-    background: var(--m-tile, var(--surface-2)); border: 1px solid var(--border); border-radius: var(--m-radius, 14px);
-    color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-align: center;
+    display: flex; align-items: center; gap: var(--sp-4); width: 100%; min-height: 52px; padding: 0 var(--sp-2); cursor: pointer;
+    background: none; border: none; border-radius: var(--radius-md);
+    color: var(--text); font: inherit; font-size: var(--fs-md); text-align: left;
   }
-  .kind:active { border-color: var(--accent-tint-border); }
-  .kind-icon { width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--accent-tint); color: var(--accent-text-2); display: flex; align-items: center; justify-content: center; }
+  .kind :global(.icon) { color: var(--text-soft); }
+  .kind:active { background: var(--surface-hover); }
   .attach:disabled { opacity: 0.4; cursor: default; }
 </style>

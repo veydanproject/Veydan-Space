@@ -188,8 +188,20 @@
     });
   }
 
+  /** On a phone the header keeps its plate free: the calls are entries of its menu. */
+  let callButton = $state<ReturnType<typeof GroupCallButton>>();
+
   const entries = $derived.by((): MenuEntry[] => {
-    const list: MenuEntry[] = [{ label: $t('msg_group_info'), icon: 'users', onselect: () => { moderation = false; info = true; } }];
+    const list: MenuEntry[] = [];
+    if (phone && callButton?.canStart()) {
+      const blocked = !!callButton.startBlocked();
+      list.push(
+        { label: $t('msg_gcall_video_start'), icon: 'video', disabled: blocked, onselect: () => callButton?.start('video') },
+        { label: $t('msg_gcall_start'), icon: 'phone', disabled: blocked, onselect: () => callButton?.start('audio') },
+        { type: 'separator' },
+      );
+    }
+    list.push({ label: $t('msg_group_info'), icon: 'users', onselect: () => { moderation = false; info = true; } });
     if (isModerator(group) && hasModeration(group)) list.push({ label: $t('msg_mod_title'), icon: 'shield', onselect: () => { moderation = true; info = true; } });
     if (group?.membership === 'joined' && group.my_role !== 'owner') list.push({ label: $t('msg_group_leave'), icon: 'x', danger: true, onselect: leave });
     if (group && group.membership !== 'joined') list.push({ label: $t('msg_group_forget'), icon: 'trash-2', danger: true, onselect: forget });
@@ -210,7 +222,7 @@
 {/snippet}
 
 {#snippet actions()}
-  <GroupCallButton {chat} {group} />
+  <GroupCallButton bind:this={callButton} {chat} {group} menuStarts={phone} />
   {#if !phone && isModerator(group) && group.queue}
     <button class="pill" onclick={() => { moderation = true; info = true; }} title={$t('msg_mod_title')}>
       <Icon name="shield" size={13} />{group.queue}
@@ -221,7 +233,6 @@
       <Icon name="user-plus" size={13} />{group.requests.length}
     </button>
   {/if}
-  <button class="icon" class:active={info} onclick={() => (info = !info)} title={$t('msg_group_info')}><Icon name="users" size={16} /></button>
 {/snippet}
 
 {#snippet banner()}
@@ -272,9 +283,6 @@
 
 <style>
   .sub-line { display: inline-flex; align-items: center; gap: 4px; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
-  .icon:hover { color: var(--text); background: var(--surface-3); }
-  .icon.active { color: var(--accent-text-2); background: var(--accent-tint); }
   .pill {
     display: inline-flex; align-items: center; gap: 4px; border: none; cursor: pointer; font: inherit; font-size: var(--fs-2xs);
     font-weight: var(--fw-bold); padding: 3px 8px; border-radius: var(--radius-pill); background: var(--accent); color: #fff;
@@ -288,5 +296,4 @@
     border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-2);
   }
   .closed span { display: inline-flex; align-items: center; gap: 6px; }
-  @media (pointer: coarse) { .icon { padding: 10px; } }
 </style>

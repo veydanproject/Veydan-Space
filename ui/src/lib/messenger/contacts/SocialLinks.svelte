@@ -26,7 +26,7 @@
 
   function open(s: SocialView) {
     if (/^https:\/\/\S+$/.test(s.url)) {
-      linkActions.openExternal(s.url as ExternalUrl).catch(() => {});
+      void linkActions.follow(s.url as ExternalUrl);
       return;
     }
     linkActions.copy(s.handle).then(() => {
@@ -54,7 +54,7 @@
   .socials { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
   .social {
     display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0;
-    padding: 4px 10px; border-radius: 999px; cursor: pointer;
+    padding: 4px 10px; border-radius: var(--radius-pill); cursor: pointer;
     font: inherit; font-size: var(--fs-xs); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border);
     transition: background 0.15s var(--ease), border-color 0.15s var(--ease);

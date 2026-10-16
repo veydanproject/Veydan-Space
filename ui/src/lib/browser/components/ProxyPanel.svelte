@@ -215,7 +215,7 @@
               rows="5"
               bind:value={form.private_key}
               placeholder={proxy?.has_private_key && form.private_key === null ? $t('secret_stored_placeholder') : '-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----'}
-              style="font-size: 0.72rem; resize: vertical;"
+              style="font-size: var(--fs-2xs); resize: vertical;"
             ></textarea>
             {#if proxy?.has_private_key && form.private_key === null}
               <button type="button" class="link-btn" onclick={() => (form.private_key = '')}>{$t('secret_clear')}</button>
@@ -297,7 +297,7 @@
     height: var(--control-h-lg);
     border-radius: var(--radius-field);
     background: var(--surface-3);
-    font-size: 0.9rem;
+    font-size: var(--fs-base);
   }
 
   textarea {
@@ -315,5 +315,5 @@
     display: flex; gap: 10px; justify-content: flex-end;
     padding-top: var(--sp-3);
   }
-  .form-actions .btn { height: 42px; border-radius: var(--radius-field); padding: 0 20px; }
+  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 </style>

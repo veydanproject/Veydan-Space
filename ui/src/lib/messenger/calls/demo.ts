@@ -29,7 +29,7 @@
 
 import type { CallStateView, MessengerChat, MessengerMessage } from '../api';
 import type {
-  CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallView, RelayPolicy, VideoInput, VideoQuality, VideoTrack,
+  CallLogEntry, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallView, RelayPolicy, VideoInput, VideoQuality, VideoTrack,
 } from '../generated/calls';
 import { demoGroupCallMocks } from './groupDemo';
 import { HEADER_BYTES, testPattern } from './video';
@@ -45,6 +45,8 @@ export interface DemoCallHost {
   touch: (chatId: string, at: number) => void;
   /** My key, hex. */
   me: () => string;
+  /** A group I am in (its id), for the journal's call of a group; `null` when none. */
+  group?: () => string | null;
   /** The members of a group I am in, hex; empty for any other. */
   members: (groupId: string) => string[];
 }
@@ -228,8 +230,48 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
     call = null;
     endAll('call');
     line(c, outcome, duration);
+    record(c, outcome, duration);
     host.emit('call.ended', { call: { ...c, phase: 'ended' }, outcome, duration_secs: duration });
   }
+
+  // The journal (the section «Звонки»): a few calls of the past with the
+  // demo's data, then every call that ends here.
+  let log: CallLogEntry[] = [];
+  let seeded = false;
+  let seenAt = 0;
+  function record(c: CallView, outcome: CallOutcome, duration: number | null) {
+    log.unshift({
+      call_id: c.call_id, chat_id: c.chat_id, peer: c.peer, kind: 'dm', direction: c.direction, media: c.media,
+      started_at: c.started_at, answered_at: c.answered_at ?? null, ended_at: nowSecs(), outcome, duration_secs: duration,
+      via_relay: c.via === 'relay', started_by: null, participants: 0,
+    });
+  }
+  function seed() {
+    if (seeded || !host.demo) return;
+    seeded = true;
+    const now = nowSecs();
+    const past = (peer: string, ago: number, o: Partial<CallLogEntry>): CallLogEntry => {
+      const chat = host.chat(peer);
+      return {
+        call_id: hexId(), chat_id: chat.id, peer: chat.peer_pubkey ?? peer, kind: 'dm', direction: 'in', media: 'audio',
+        started_at: now - ago, answered_at: null, ended_at: now - ago + 40, outcome: 'missed', duration_secs: null,
+        via_relay: false, started_by: null, participants: 0, ...o,
+      };
+    };
+    const talked = (secs: number) => ({ outcome: 'ended' as const, answered_at: now, duration_secs: secs });
+    const gid = host.group?.() ?? null;
+    log = [
+      past(ALICE, 1200, {}),
+      past(ALICE, 1500, {}),
+      past(BORIS, 5400, { direction: 'out', ...talked(252) }),
+      ...(gid ? [{ ...past(ALICE, 26 * 3600, { ...talked(1310), participants: 4, started_by: ALICE }), chat_id: `group:${gid}`, peer: gid, kind: 'group' as const }] : []),
+      past(ALICE, 30 * 3600, { media: 'video', ...talked(735), via_relay: true }),
+      past(BORIS, 75 * 3600, { direction: 'out', outcome: 'declined' }),
+      past(ALICE, 120 * 3600, { direction: 'out', outcome: 'missed' }),
+    ];
+    seenAt = now - 1800;
+  }
+  const missedNow = () => log.filter((e) => e.kind === 'dm' && e.direction === 'in' && (e.outcome === 'missed' || e.outcome === 'busy') && e.started_at > seenAt).length;
 
   function newCall(peer: string, direction: 'in' | 'out', media: CallMedia): CallView {
     const chat = host.chat(peer);
@@ -300,6 +342,19 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   }
 
   return {
+    messenger_call_history: (a) => {
+      seed();
+      const before = typeof a?.before === 'number' ? a.before : null;
+      const limit = typeof a?.limit === 'number' ? a.limit : 50;
+      return log.filter((e) => before === null || e.started_at < before).slice(0, limit);
+    },
+    messenger_call_history_hide: (a) => {
+      const gone = new Set((a?.callIds as string[] | undefined) ?? []);
+      log = log.filter((e) => !gone.has(e.call_id));
+    },
+    messenger_call_history_clear: () => { log = []; },
+    messenger_calls_missed: () => { seed(); return missedNow(); },
+    messenger_calls_mark_seen: () => { seenAt = nowSecs(); },
     messenger_call_get_state: () => {
       // The call the demo was asked for comes once the screen has looked.
       if (!asked && host.demo) {

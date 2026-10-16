@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { api, type SyncDebugEntry } from '$lib/core/api';
@@ -107,6 +108,7 @@
   async function copyLog() {
     try {
       await navigator.clipboard.writeText(entries.map(lineText).join('\n'));
+      copiedToast();
       copied = true;
       clearTimeout(copyTimer);
       copyTimer = setTimeout(() => (copied = false), 1500);
@@ -191,7 +193,7 @@
   .err { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
   .log {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-xs);
     line-height: 1.45;
     min-height: 12rem;
     flex-shrink: 0;

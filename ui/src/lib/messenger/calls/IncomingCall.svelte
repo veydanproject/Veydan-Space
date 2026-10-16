@@ -105,7 +105,7 @@
   }
   .card {
     width: min(340px, calc(100vw - 32px)); display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
-    padding: var(--sp-10) var(--sp-6) var(--sp-6); border-radius: var(--radius-lg); overflow: hidden;
+    padding: var(--sp-10) var(--sp-6) var(--sp-6); border-radius: var(--radius-card); overflow: hidden;
     background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
     animation: rise 260ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
   }

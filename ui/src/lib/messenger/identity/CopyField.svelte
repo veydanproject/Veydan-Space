@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
 
@@ -18,6 +19,7 @@
   async function copy() {
     try {
       await navigator.clipboard.writeText(value);
+      copiedToast();
     } catch {
       // Older webviews: fall back to a selection the user can copy by hand.
       if (el) {

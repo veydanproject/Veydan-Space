@@ -2,39 +2,41 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  «Мой QR»: a code to show, so a person in front of me gets into a chat
+  «QR»: a code to show, so a person in front of me gets into a chat
   with me without waiting in my requests. The code on the screen lives 15
   minutes and is drawn anew while it is shown, so a photo of it soon lets
   nobody in; «Постоянный» keeps one until it is revoked, for a card or a
   sign. A link to send goes for one person and a week; a code to say aloud
-  for one person and a day, maybe for someone named. On the phone the same
-  screen scans someone else's code: their link with its secret is a request
-  their device answers at once.
+  for one person and a day, maybe for someone named. The same screen reads
+  someone else's code (ScanQr): by the camera on the phone, from a picture
+  on the desktop.
 -->
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { onDestroy, onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
-  import QrScanner from '$lib/core/ui/QrScanner.svelte';
   import { contactLabel, messengerApi, messengerError, type InviteView } from '../api';
   import { messengerStore } from '../store.svelte';
-  import { chatStore } from '../chats/chatStore.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
-  import { onPhone } from '../shared/phone';
   import { clock, stamp } from '../shared/time';
-  import { inviteStore, type JoinOutcome } from './inviteStore.svelte';
+  import { inviteStore } from './inviteStore.svelte';
   import { countdown, formatCode, isPermanentQr, QR_REFRESH_AHEAD_SECS, QR_TTL_SECS, reusableQr } from './invites';
+  import ScanQr from './ScanQr.svelte';
 
   interface Props {
     /** A scanned code let me in (or named a person): their chat is to be opened. */
     onchat?: (chatId: string) => void;
     /** The scanner's way by hand: the key and the code typed in a new chat. */
     onmanual?: () => void;
+    /** The camera for someone else's code starts at once (the phone only). */
+    scan?: boolean;
+    /** The camera that started at once was closed without a code. */
+    onscanclosed?: () => void;
   }
-  let { onchat, onmanual }: Props = $props();
+  let { onchat, onmanual, scan = false, onscanclosed }: Props = $props();
 
-  const phone = onPhone();
   const nowSec = () => Math.floor(Date.now() / 1000);
 
   let now = $state(nowSec());
@@ -52,9 +54,6 @@
   let code = $state<InviteView | null>(null);
   let codeBusy = $state(false);
   let codeCopied = $state(false);
-  let scanning = $state(false);
-  let joined = $state<{ name: string } | null>(null);
-  let scanError = $state('');
   let destroyed = false;
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -125,6 +124,7 @@
       const v = await inviteStore.create({ kind: 'link', label: '' });
       if (!v.link) throw new Error('no link');
       await navigator.clipboard.writeText(v.link);
+      copiedToast();
       linkNote = true;
     } catch (e) {
       error = messengerError(e);
@@ -147,44 +147,11 @@
     if (!code) return;
     try {
       await navigator.clipboard.writeText(code.secret);
+      copiedToast();
       codeCopied = true;
       setTimeout(() => (codeCopied = false), 1600);
     } catch (e) {
       error = messengerError(e);
-    }
-  }
-
-  const JOIN_ERRORS = { not_contact: 'msg_inv_err_not_contact', is_me: 'msg_inv_err_is_me', blocked: 'msg_inv_err_blocked' } as const;
-
-  /** The camera read a code: a person's link with a secret goes as a request at once, without a question. */
-  async function scanned(content: string) {
-    scanning = false;
-    scanError = '';
-    joined = null;
-    let out: JoinOutcome;
-    try {
-      out = await inviteStore.join(content);
-    } catch (e) {
-      scanError = messengerError(e);
-      return;
-    }
-    if (!out.ok) {
-      scanError = $t(JOIN_ERRORS[out.reason]);
-      return;
-    }
-    const peer = out.pubkey;
-    try {
-      const chat = await chatStore.openPeer(peer);
-      // A plain link of a person carries no secret: nothing went, their chat simply opens.
-      if (!out.invited) {
-        onchat?.(chat.id);
-        return;
-      }
-      joined = { name: out.name || `${peer.slice(0, 8)}…` };
-      // The words stay a moment before the chat takes the screen.
-      setTimeout(() => { if (!destroyed) onchat?.(chat.id); }, 900);
-    } catch (e) {
-      scanError = messengerError(e);
     }
   }
 
@@ -203,34 +170,9 @@
   });
 </script>
 
-{#if scanning}
-  <QrScanner
-    title={$t('msg_inv_scan_title')}
-    hint={$t('msg_inv_scan_hint')}
-    manual={$t('msg_inv_scan_manual')}
-    words={{
-      starting: $t('msg_inv_scan_starting'),
-      denied: $t('msg_inv_scan_denied'),
-      failed: $t('msg_inv_scan_failed'),
-      retry: $t('msg_inv_scan_retry'),
-      openSettings: $t('msg_inv_scan_open_settings'),
-    }}
-    onresult={scanned}
-    onclose={() => { scanning = false; }}
-    onmanual={onmanual ? () => { scanning = false; onmanual(); } : undefined}
-  />
-{/if}
-
 <div class="myqr">
   {#if paused}
     <div class="strip warn" role="status"><Icon name="alert-triangle" size={14} />{$t('msg_inv_paused', { time: clock(paused) })}</div>
-  {/if}
-
-  {#if joined}
-    <div class="joined" role="status">
-      <span class="mark"><Icon name="check" size={22} /></span>
-      <div class="joined-text"><strong>{$t('msg_inv_joined')}</strong><span>{joined.name}</span></div>
-    </div>
   {/if}
 
   <p class="hint">{$t('msg_inv_my_qr_hint')}</p>
@@ -275,9 +217,6 @@
     <button class="btn btn-ghost btn-sm" class:active={codeOpen} aria-expanded={codeOpen} onclick={() => (codeOpen = !codeOpen)}>
       <Icon name="key" size={13} />{$t('msg_inv_code_24h')}
     </button>
-    {#if phone}
-      <button class="btn btn-primary btn-sm" onclick={() => { scanError = ''; joined = null; scanning = true; }}><Icon name="scan" size={13} />{$t('msg_inv_scan')}</button>
-    {/if}
   </div>
   {#if linkNote}<p class="muted small" role="status">{$t('msg_inv_link_copied')}</p>{/if}
 
@@ -299,8 +238,9 @@
     </div>
   {/if}
 
-  {#if scanError}<div class="error-msg">{scanError}{#if onmanual}<button class="link-btn" onclick={onmanual}>{$t('msg_inv_scan_manual')}</button>{/if}</div>{/if}
   {#if error}<div class="error-msg">{error}</div>{/if}
+
+  <ScanQr {onchat} {onmanual} autostart={scan} onclosed={onscanclosed} />
 </div>
 
 <style>
@@ -331,14 +271,9 @@
   .danger { color: var(--danger-text); }
   .code-box { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
   .code-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
-  .code { font-size: 28px; font-weight: var(--fw-bold); letter-spacing: 2px; user-select: all; font-variant-numeric: tabular-nums; }
+  .code { font-size: var(--fs-2xl); font-weight: var(--fw-bold); letter-spacing: 2px; user-select: all; font-variant-numeric: tabular-nums; }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
   .self-start { align-self: flex-start; }
-  .joined { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-md); background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text); }
-  .joined .mark { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: var(--bg); }
-  .joined-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--text); }
-  .joined-text span { color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
-  .link-btn { margin-left: 6px; padding: 0; border: 0; background: none; color: var(--accent-text-3); font: inherit; text-decoration: underline; cursor: pointer; }
   @media (pointer: coarse) {
     .actions .btn { flex: 1 1 auto; min-height: 40px; justify-content: center; }
   }

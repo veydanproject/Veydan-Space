@@ -1009,9 +1009,9 @@
     background: none;
     cursor: pointer;
     color: var(--text-body);
-    font-size: 0.85rem;
+    font-size: var(--fs-base);
     font-weight: var(--fw-semibold);
-    border-radius: 9px;
+    border-radius: var(--radius);
     text-align: left;
     transition: background 0.1s, color 0.1s;
     width: 100%;
@@ -1212,7 +1212,7 @@
     flex: 1;
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     padding: var(--sp-1) 0.4rem;
     font-size: var(--fs-sm);
     color: var(--text);
@@ -1231,7 +1231,7 @@
     align-items: center;
     flex-shrink: 0;
   }
-  .btn-save            { color: var(--accent); }
+  .btn-save            { color: var(--accent-text); }
   .btn-save:hover      { background: var(--accent-bg); }
   .btn-save:disabled   { opacity: 0.4; cursor: default; }
   .btn-cancel          { color: var(--text-3); }
@@ -1248,7 +1248,7 @@
     display: flex;
     align-items: center;
   }
-  .btn-add-area:hover { color: var(--accent); background: var(--surface-2); }
+  .btn-add-area:hover { color: var(--accent-text); background: var(--surface-2); }
 
   /* Add-a-subtag button inside a group */
   .group-add-row { padding-top: 0.05rem; padding-bottom: 0.1rem; }
@@ -1265,7 +1265,7 @@
     padding: 0.15rem 0.3rem;
     border-radius: 3px;
   }
-  .btn-group-add:hover { color: var(--accent); background: var(--accent-bg); }
+  .btn-group-add:hover { color: var(--accent-text); background: var(--accent-bg); }
 
   .empty-hint {
     font-size: var(--fs-xs);

@@ -175,7 +175,7 @@
     width: 32px;
     height: 32px;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-2);
     cursor: pointer;
@@ -185,7 +185,7 @@
   .titles h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
   .step { font-size: var(--fs-xs); color: var(--text-3); }
   .lead { margin: 0; font-size: var(--fs-base); font-weight: 600; color: var(--text); }
-  .lead.kept { display: flex; align-items: center; gap: var(--sp-2); color: var(--ok-text, var(--text)); }
+  .lead.kept { display: flex; align-items: center; gap: var(--sp-2); color: var(--success-text); }
   .sub { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
   .sub.none { color: var(--warn-text); }
   .field {
@@ -194,7 +194,7 @@
     padding: 6px 10px;
     font: inherit;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     background: var(--bg-2);
     color: var(--text);
   }

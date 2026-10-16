@@ -51,7 +51,7 @@
     display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%;
     background: var(--accent-grad); color: #fff; font-size: var(--fs-lg); font-weight: 800;
   }
-  .ava.ghost { background: var(--accent-tint); color: var(--accent); }
+  .ava.ghost { background: var(--accent-tint); color: var(--accent-text); }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   strong { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-size: var(--fs-sm); color: var(--text-2); }

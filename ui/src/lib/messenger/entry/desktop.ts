@@ -21,6 +21,8 @@ let stopNotices: (() => void) | null = null;
 export const module: ModuleDef = {
   ...common,
   nav: [navItem],
+  // Its panes go 12 from the window's sides, like the columns of Notes.
+  fullWidth: [BASE],
   // The settings are a pane of the messenger's page here.
   account: accountOf(`${BASE}?view=settings`),
   // The module's switch is in the Modules section of the core (section 12).

@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { t } from '$lib/core/i18n';
   import { api } from '$lib/browser/api';
   import type { ExportOptions, Profile, Proxy } from '$lib/browser/types';
@@ -63,6 +64,7 @@
   async function copyJson() {
     if (!previewJson) return;
     await navigator.clipboard.writeText(previewJson);
+    copiedToast();
     copied = true;
     setTimeout(() => (copied = false), 2000);
   }

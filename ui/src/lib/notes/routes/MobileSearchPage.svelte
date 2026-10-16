@@ -172,12 +172,12 @@
     justify-content: space-between;
     padding: var(--sp-4) var(--sp-1) var(--sp-2);
   }
-  .sec h3 { margin: 0; font-size: 15px; font-weight: 700; }
+  .sec h3 { margin: 0; font-size: var(--fs-body); font-weight: 700; }
   .more {
     border: 0;
     background: transparent;
-    color: var(--accent);
-    font-size: 12px;
+    color: var(--accent-text);
+    font-size: var(--fs-xs);
     font-weight: 600;
     padding: 0;
   }

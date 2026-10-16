@@ -112,15 +112,15 @@
     align-items: center;
     gap: 0.1rem;
     padding: 0.3rem var(--sp-2);
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    border-bottom: 1px solid var(--pane-border);
+    background: transparent;
     flex-shrink: 0;
     flex-wrap: wrap;
   }
   .tb-btn {
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     padding: 0.2rem 0.4rem;
     cursor: pointer;
     color: var(--text-2);
@@ -135,7 +135,7 @@
   }
   .tb-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
   .tb-btn:disabled { opacity: 0.4; cursor: default; }
-  .tb-btn.active { color: var(--accent); background: var(--accent-bg); }
+  .tb-btn.active { color: var(--accent-text); background: var(--accent-bg); }
   .tb-h-label {
     font-family: var(--font-mono);
     font-size: var(--fs-2xs);
@@ -155,7 +155,7 @@
     margin-left: auto;
     display: inline-flex;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-badge);
     overflow: hidden;
   }
   .tb-mode-toggle {
@@ -170,5 +170,5 @@
   }
   .tb-mode-toggle + .tb-mode-toggle { border-left: 1px solid var(--border); }
   .tb-mode-toggle:hover { background: var(--surface-2); color: var(--text); }
-  .tb-mode-toggle.active { color: var(--accent); background: var(--accent-bg); }
+  .tb-mode-toggle.active { color: var(--accent-text); background: var(--accent-bg); }
 </style>

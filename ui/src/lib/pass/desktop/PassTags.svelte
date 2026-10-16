@@ -63,9 +63,9 @@
     flex-shrink: 0;
     border-width: 1px;
     border-style: solid;
-    border-radius: 99px;
+    border-radius: var(--radius-pill);
     padding: 0 6px;
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
     white-space: nowrap;
   }
 </style>

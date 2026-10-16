@@ -225,6 +225,8 @@ pub struct Avatars {
     kick: Arc<Notify>,
     /// One change of my avatar at a time: set, remove, the keeper.
     own_lock: Arc<tokio::sync::Mutex<()>>,
+    /// One change of a group's picture at a time: set, remove, the keeper.
+    group_lock: Arc<tokio::sync::Mutex<()>>,
     /// `ProfileService::own_heard` when the session started: a larger one
     /// now says my kind 0 came from a relay since (`Facts::fresh`).
     heard_from: Arc<AtomicU64>,
@@ -490,6 +492,7 @@ impl Avatars {
             slots: Arc::new(Semaphore::new(MAX_FETCHES)),
             kick: Arc::new(Notify::new()),
             own_lock: Arc::default(),
+            group_lock: Arc::default(),
             heard_from: Arc::default(),
         }
     }
@@ -585,6 +588,14 @@ impl Avatars {
         }
     }
 
+    /// A token serves once: the picture is let go once it is used.
+    fn release(&self, token: &str) {
+        let mut slot = self.prepared.lock().unwrap_or_else(|p| p.into_inner());
+        if slot.as_ref().is_some_and(|p| p.token == token) {
+            slot.take();
+        }
+    }
+
     /// Crop the prepared picture, put it on my servers and name it in my
     /// kind 0. The picture it replaces is taken off its servers.
     pub async fn set(&self, keys: &Keys, token: &str, rect: CropRect) -> Result<()> {
@@ -625,12 +636,7 @@ impl Avatars {
         let event = self.profiles.build_picture(keys, Picture::Set(&first.url)).await?;
         self.outbox.enqueue(Outbound::PublishOwn { event }).await?;
         self.outbox.kick();
-        {
-            let mut slot = self.prepared.lock().unwrap_or_else(|p| p.into_inner());
-            if slot.as_ref().is_some_and(|p| p.token == token) {
-                slot.take();
-            }
-        }
+        self.release(token);
         if let Some(old) = old.filter(|o| o.sha256 != sha) {
             let _ = tokio::fs::remove_file(self.own_path(&old.sha256)).await;
             self.take_down(keys, &old.sha256, copies_of(&old));
@@ -894,11 +900,10 @@ impl Avatars {
         if !acceptable(url) {
             return Ok(None);
         }
-        // My own avatar, wherever it is named: the file, no network.
-        if let Some(sha) = hash_of(url) {
-            if let Ok(bytes) = tokio::fs::read(self.own_path(&sha)).await {
-                return Ok(Some(avatar::data_url(&bytes)));
-            }
+        // My own avatar or the picture of a group I look after, wherever
+        // it is named: the file, no network.
+        if let Some(bytes) = self.original(url).await {
+            return Ok(Some(avatar::data_url(&bytes)));
         }
         let row = avatar_cache::get(&self.store, url).await?;
         let now = self.now();
@@ -967,14 +972,22 @@ impl Avatars {
     /// others. For a contact card.
     pub async fn local_bytes(&self, url: &str) -> Option<Vec<u8>> {
         let url = url.trim();
-        if let Some(sha) = hash_of(url) {
-            if let Ok(bytes) = tokio::fs::read(self.own_path(&sha)).await {
-                return Some(bytes);
-            }
+        if let Some(bytes) = self.original(url).await {
+            return Some(bytes);
         }
         let row = avatar_cache::get(&self.store, url).await.ok()??;
         let name = row.sha256.filter(|n| is_sha(n))?;
         tokio::fs::read(self.cache_path(&name)).await.ok()
+    }
+
+    /// The file of the picture `url` names when this app made it here: my
+    /// avatar, or the picture of a group I look after.
+    async fn original(&self, url: &str) -> Option<Vec<u8>> {
+        let sha = hash_of(url)?;
+        match tokio::fs::read(self.own_path(&sha)).await {
+            Ok(bytes) => Some(bytes),
+            Err(_) => tokio::fs::read(self.group_path(&sha)).await.ok(),
+        }
     }
 
     fn queue(&self, url: &str, keys: Option<Keys>) {
@@ -1041,9 +1054,14 @@ impl Avatars {
 /// Where the avatar was put, as the row says; the server it is named on
 /// when the list cannot be read.
 fn copies_of(row: &own_avatar::OwnAvatar) -> Vec<PublicBlob> {
-    match serde_json::from_str::<Vec<PublicBlob>>(&row.copies_json) {
+    copies_of_parts(&row.copies_json, row.server_id.as_deref(), &row.url)
+}
+
+/// `copies_of` from the columns of a row (mine or a group's).
+fn copies_of_parts(copies_json: &str, server_id: Option<&str>, url: &str) -> Vec<PublicBlob> {
+    match serde_json::from_str::<Vec<PublicBlob>>(copies_json) {
         Ok(list) if !list.is_empty() => list,
-        _ => row.server_id.iter().map(|s| PublicBlob { server_id: s.clone(), url: row.url.clone() }).collect(),
+        _ => server_id.iter().map(|s| PublicBlob { server_id: s.to_string(), url: url.to_string() }).collect(),
     }
 }
 
@@ -1083,6 +1101,9 @@ pub(crate) async fn keeper_loop(avatars: Avatars, keys: Keys, silent: impl Fn() 
         }
         if let Err(e) = avatars.keep(&keys).await {
             eprintln!("messenger avatar: keeper: {e}");
+        }
+        if let Err(e) = avatars.keep_groups(&keys).await {
+            eprintln!("messenger avatar: keeper of groups: {e}");
         }
         // Events of the run itself are no reason for another.
         events = events.resubscribe();
@@ -1125,12 +1146,14 @@ impl MessengerRuntime {
     /// The avatar at `url` as a `data:` url, or `None` while it is fetched
     /// (`avatar.ready` follows). Nothing is fetched in silent mode, and
     /// nothing of a stranger's (`Avatars::known`): the faces this device
-    /// asks for are those of my contacts, of the members of my groups and
-    /// of the bot of Veydan Cloud.
+    /// asks for are those of my contacts, of the members of my groups, of
+    /// the bot of Veydan Cloud, and the pictures of my groups and of those
+    /// a manager or a contact invites me to.
     pub async fn avatar_cached(&self, url: &str) -> Result<Option<String>> {
         let keys = self.session_keys().await.ok();
         let silent = self.relays.is_silent().await.unwrap_or(false);
-        let known = !silent && (self.avatars.known(url, keys.as_ref()).await? || self.vouched_face(url).await?);
+        let known = !silent
+            && (self.avatars.known(url, keys.as_ref()).await? || self.vouched_face(url).await? || self.group_face(url).await?);
         self.avatars.cached_as(url, keys.as_ref(), known).await
     }
 
@@ -1169,6 +1192,9 @@ impl MessengerRuntime {
         social::platforms()
     }
 }
+
+mod group;
+pub use group::{group_plan, GroupFacts, GroupStep};
 
 #[cfg(test)]
 mod tests;

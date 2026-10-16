@@ -7,6 +7,7 @@
   import { t } from '$lib/core/i18n';
   import type { Proxy, ProxyCheckResult } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import Modal from '$lib/core/ui/Modal.svelte';
   import ProxyPanel from '$lib/browser/components/ProxyPanel.svelte';
   import BulkImportProxyModal from '$lib/browser/components/BulkImportProxyModal.svelte';
@@ -190,7 +191,7 @@
   </div>
 
   {#if loading}
-    <div class="empty-state">{$t('loading')}</div>
+    <div class="table-wrap"><Skeleton rows={5} height={48} avatar="none" trailing /></div>
   {:else if proxiesStore.list.length === 0}
     <div class="empty-state">
       <div class="empty-icon"><Icon name="network" size={40} strokeWidth={1.5} /></div>
@@ -340,8 +341,7 @@
 
   .proxy-table th {
     padding: var(--sp-3) var(--sp-4); text-align: left;
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-3);
-    text-transform: uppercase; letter-spacing: 0.7px;
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2);
     white-space: nowrap;
   }
 
@@ -356,7 +356,7 @@
   .col-geo { width: 120px; }
   .col-actions { width: 120px; }
 
-  .proxy-name { font-weight: var(--fw-semibold); font-size: 0.9rem; color: var(--text); display: block; }
+  .proxy-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); display: block; }
 
   /* Proxy type badges: http → blue tint, socks5 → purple tint (design) */
   .type-badge {
@@ -371,7 +371,7 @@
 
   .status-badge {
     display: inline-flex; align-items: center; gap: 7px;
-    font-size: 0.72rem; font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px;
+    font-size: var(--fs-2xs); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px;
     padding: 4px 11px; border-radius: var(--radius-sm);
   }
   .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

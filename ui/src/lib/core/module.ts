@@ -72,6 +72,8 @@ export interface SettingsSection {
   hint?: Key;
   /** Tag next to the title (beta). */
   badge?: Key;
+  /** Icon of the section in the nav of Settings (Icon.svelte name); a gear by default. */
+  icon?: string;
   /** Shown only while true. Default: always. */
   visible?: () => boolean;
   /**

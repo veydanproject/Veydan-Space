@@ -93,6 +93,43 @@ describe('the page before the first message shown', () => {
   });
 });
 
+describe('a message that comes while the window is read', () => {
+  /** The next read of a page waits for `release`, and is what the store held before the message. */
+  function holdNextRead() {
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    api.messages.mockImplementationOnce(async (chat: string, before: number | undefined, limit: number) => {
+      const page = await api.messages.getMockImplementation()!(chat, before, limit);
+      await gate;
+      return page;
+    });
+    return release;
+  }
+  const fresh = { id: 'new', chat_id: 'dm:x', direction: 'out', created_at: 10_000, content_type: 'text' };
+
+  it('stays when the chat a notification opens was opening', async () => {
+    chatStore.chats = [{ id: 'dm:x', unread: 0 } as never];
+    const release = holdNextRead();
+    const opening = chatStore.open('dm:x');
+    chatStore.handleEvent({ name: 'dm.message', payload: { message: fresh } } as never);
+    release();
+    await opening;
+    expect(chatStore.messages.at(-1)?.id).toBe('new');
+    expect(chatStore.messages).toHaveLength(51);
+  });
+
+  it('stays when the open window is read again', async () => {
+    chatStore.chats = [{ id: 'dm:x', unread: 0 } as never];
+    await chatStore.open('dm:x');
+    const release = holdNextRead();
+    const reading = chatStore.reloadWindow();
+    chatStore.handleEvent({ name: 'dm.message', payload: { message: { ...fresh, id: 'new2' } } } as never);
+    release();
+    await reading;
+    expect(chatStore.messages.at(-1)?.id).toBe('new2');
+  });
+});
+
 describe('a decision of a moderator', () => {
   beforeEach(async () => {
     chatStore.chats = [{ id: 'group:g', unread: 0 } as never];

@@ -389,7 +389,7 @@
 <style>
   .status-badge {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 0.72rem; font-weight: var(--fw-bold); padding: 4px 11px;
+    font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 4px 11px;
     border-radius: var(--radius-sm); text-transform: uppercase; letter-spacing: 0.4px;
     background: var(--surface-2); color: var(--text-2);
     border: 1px solid var(--border-2);
@@ -417,7 +417,7 @@
     font-size: var(--fs-base);
   }
 
-  .info-label { color: var(--text-faint); font-size: 0.82rem; }
+  .info-label { color: var(--text-faint); font-size: var(--fs-sm); }
 
   .info-value {
     color: var(--text);
@@ -436,7 +436,7 @@
     background: var(--surface-2);
     border: 1px solid var(--border);
     padding: 0 0.35rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     color: var(--text-2);
   }
 
@@ -467,7 +467,7 @@
     height: 36px;
     padding: 0 12px;
     border-radius: var(--radius);
-    font-size: 0.82rem;
+    font-size: var(--fs-sm);
     white-space: nowrap;
     overflow: hidden;
   }
@@ -476,7 +476,7 @@
     grid-column: 1 / -1;
     justify-content: center;
   }
-  .panel-actions .btn-main { height: 42px; font-size: 0.92rem; font-weight: var(--fw-bold); }
+  .panel-actions .btn-main { height: 42px; font-size: var(--fs-body); font-weight: var(--fw-bold); }
   .btn-delete { color: var(--danger-text) !important; }
   .btn-delete:hover:not(:disabled) { background: var(--danger-bg) !important; border-color: var(--danger-border) !important; }
 
@@ -509,7 +509,7 @@
     font-size: var(--fs-xs);
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     padding: 0.1rem 0.4rem;
     color: var(--text-2);
     font-family: var(--font-mono);
@@ -527,7 +527,7 @@
   .col-chip {
     display: inline-flex; align-items: center; gap: var(--sp-1);
     border-width: 1px; border-style: solid;
-    border-radius: 9px; padding: 5px 13px;
+    border-radius: var(--radius); padding: 5px 13px;
     font-size: var(--fs-sm); font-weight: var(--fw-semibold);
     cursor: pointer; transition: all 0.15s;
   }

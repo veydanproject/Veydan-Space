@@ -10,6 +10,7 @@
   of §7; then the 12 words once more.
 -->
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
@@ -66,6 +67,7 @@
     if (!view.link) return;
     try {
       await navigator.clipboard.writeText(view.link);
+      copiedToast();
       copied = true;
       setTimeout(() => (copied = false), 1600);
     } catch {

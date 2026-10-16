@@ -99,7 +99,7 @@
     min-height: var(--control-h-lg);
     padding: 0 var(--sp-3);
     font: inherit;
-    font-size: 0.82rem;
+    font-size: var(--fs-sm);
     border: 1px solid var(--border);
     border-radius: var(--radius-field);
     /* background-color only: a select keeps the chevron of base.css */
@@ -112,5 +112,5 @@
   .hint { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); }
   .mobile .seg-btn { min-height: 44px; }
   .mobile .row { flex-direction: column; }
-  .mobile .lock-field { height: auto; min-height: 48px; font-size: 16px; }
+  .mobile .lock-field { height: auto; min-height: 48px; font-size: var(--fs-md); }
 </style>

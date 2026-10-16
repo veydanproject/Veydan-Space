@@ -6,6 +6,13 @@
 
 export const BASE = '/messenger';
 
+/** The tabs of the bottom bar: the chats between two (`BASE`), the groups, the journal of calls. */
+export const groupsHref = () => `${BASE}/groups`;
+export const callsHref = () => `${BASE}/calls`;
+
+/** The contacts: QR codes, adding, the list (reached from «Новый чат»). */
+export const contactsHref = () => `${BASE}/contacts`;
+
 export const chatHref = (chatId: string) => `${BASE}/chat?id=${encodeURIComponent(chatId)}`;
 
 /** The call under way, the whole screen. */
@@ -20,8 +27,8 @@ export const requestsHref = () => `${BASE}/requests`;
 /** One request, by the stranger's key (hex). */
 export const requestHref = (peer: string) => `${BASE}/request?peer=${encodeURIComponent(peer)}`;
 
-/** «Мой QR»: my code to show, and the camera for someone else's. */
-export const qrHref = () => `${BASE}/qr`;
+/** «QR»: my code to show, and the camera for someone else's; `scan` opens it with the camera on. */
+export const qrHref = (scan = false) => `${BASE}/qr${scan ? '?scan=1' : ''}`;
 
 /**
  * Whether a tapped notification has somewhere to go from `here`. The page

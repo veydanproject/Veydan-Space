@@ -1,12 +1,13 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- The way to «Мой QR»: a screen of its own on the phone (where it also scans), a dialog on the desktop (it only shows). -->
+<!-- The way to «QR»: a screen of its own on the phone (where it also scans by the camera), a dialog on the desktop (where it reads a picture). -->
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import { openChat } from '../content/actions';
   import { onPhone } from '../shared/phone';
   import { qrHref } from '../mobile/routes';
   import MyQr from './MyQr.svelte';
@@ -35,7 +36,7 @@
 
 {#if !phone}
   <Dialog bind:open title={$t('msg_inv_my_qr')} width="min(420px, calc(100vw - 24px))">
-    {#if open}<MyQr />{/if}
+    {#if open}<MyQr onchat={(id) => { open = false; openChat(id).catch(() => {}); }} />{/if}
   </Dialog>
 {/if}
 

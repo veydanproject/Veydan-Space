@@ -101,10 +101,10 @@
     background: var(--m-field);
     color: var(--text);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
-  h3 { margin: var(--sp-2) 0 0; font-size: 15px; font-weight: 700; }
+  h3 { margin: var(--sp-2) 0 0; font-size: var(--fs-body); font-weight: 700; }
   .list { display: flex; flex-direction: column; gap: 8px; }
   .row {
     display: flex;
@@ -129,8 +129,8 @@
   }
   .open:disabled { opacity: 0.6; }
   .meta { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-  .name { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .size { font-size: 11px; color: var(--text-3); }
+  .name { font-size: var(--fs-sm); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .size { font-size: var(--fs-2xs); color: var(--text-3); }
   .row.remote .badge { border: 1px dashed var(--m-card-border); background: transparent; color: var(--text-3); }
   .x {
     flex-shrink: 0;

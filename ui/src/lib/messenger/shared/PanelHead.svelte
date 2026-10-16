@@ -47,8 +47,8 @@
   @media (pointer: coarse) { .icon { padding: 10px; } }
 
   /* The phone: the bar of the messenger's screens (mobile/MobileFrame.svelte). */
-  .head.phone { gap: var(--sp-1); min-height: 52px; padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1); background: var(--m-nav, var(--surface)); }
-  .head.phone .head-title { font-size: 20px; font-weight: var(--fw-extrabold); letter-spacing: -0.02em; }
-  .head.phone .back { color: var(--text); padding: 10px; border-radius: 12px; }
+  .head.phone { gap: var(--sp-1); min-height: 52px; padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1); background: var(--m-head, var(--surface)); }
+  .head.phone .head-title { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.02em; }
+  .head.phone .back { color: var(--text); padding: 10px; border-radius: var(--radius-md); }
   .head.phone .back:active { background: var(--surface-3); }
 </style>

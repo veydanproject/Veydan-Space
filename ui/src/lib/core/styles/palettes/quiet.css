@@ -1,0 +1,251 @@
+/* SPDX-FileCopyrightText: 2026 Veydan Project */
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 */
+
+/* ============================================================================
+ * Palette «quiet» — the colours of the interface, dark and light.
+ * The default palette: it answers to [data-theme] alone, so it holds with no
+ * data-palette attribute. Another palette is its own file here, imported by
+ * tokens.css, with selectors [data-palette='name'][data-theme='dark|light']:
+ * one more attribute wins over these whatever the order, and a token it leaves
+ * out falls back to this one.
+ * Every colour token is declared in both themes.
+ *
+ * «Quiet Glass» (design kit 2026-10-15): cool neutral greys, a muted violet
+ * — #7066c6 for what is filled (buttons, checks, badges), a lighter step for
+ * text and icons (--accent-text) — and a soft green for presence and success.
+ * ========================================================================== */
+
+/* ── Colours: DARK ── */
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg:          #15171e;
+  --bg-2:        #1d1f26;  /* chrome: header / dock / session bar */
+  --chrome:      #1d1f26;  /* window titlebar (CSD) */
+  --surface:     #212329;  /* cards / sections / tables */
+  --surface-2:   #27282f;  /* nested: profile cards, mono chips */
+  --surface-3:   #202128;  /* form fields / segment containers / filter chips */
+  --surface-hover: #2c2e35;
+  --surface-row-hover: rgba(255, 255, 255, 0.04);  /* table row hover — subtler than card hover */
+  --surface-drawer: #212329;
+  --surface-drawer-footer: #1d1f26;
+  --toggle-off:  #3f4147;  /* toggle track in "off" state */
+  --border:      #2a2c32;
+  --border-2:    #383a40;  /* hover border */
+  --text:        #eef1f7;
+  --text-2:      #c3c5cc;
+  --text-3:      #979aa0;  /* dimmest: placeholders, table header labels */
+  --text-body:   #d8dbe1;  /* long-form body text (note reader, descriptions) */
+  --text-soft:   #c3c5cc;  /* metric text, default icon-button glyphs */
+  --text-faint:  #adb0b6;  /* field labels, sublabels */
+  --text-dim:    #979aa0;  /* "без прокси", stopped status, em-dashes */
+
+  --accent:        #7066c6;
+  --accent-hover:  #655cb2;
+  --accent-bg:     rgba(112, 102, 198, 0.26);
+  --accent-border: rgba(185, 177, 242, 0.4);
+  --accent-grad:   #7066c6;
+  --accent-text:   #b9b1f2;  /* active nav / tabs */
+  --accent-text-2: #b9b1f2;  /* mono badges */
+  --accent-text-3: #b9b1f2;  /* inline links ("Открыть →") */
+  --accent-tint:        rgba(112, 102, 198, 0.2);  /* tag / badge fills */
+  --accent-tint-border: rgba(185, 177, 242, 0.3);
+
+  --success:        #9fd8b8;
+  --success-bg:     rgba(159, 216, 184, 0.13);
+  --success-text:   #9fd8b8;
+  --success-border: rgba(159, 216, 184, 0.28);
+  --success-grad:   #1f7a4d;
+  --danger:         #d63640;  /* solid danger buttons */
+  --danger-bg:      rgba(242, 109, 109, 0.14);
+  --danger-text:    #f26d6d;
+  --danger-border:  rgba(242, 109, 109, 0.3);
+  --warn-bg:        rgba(245, 196, 81, 0.12);
+  --warn-text:      #f5c451;
+  --warn-border:    rgba(245, 196, 81, 0.4);
+
+  /* Category colours (workspaces / proxy types) */
+  --cat-purple: #8b7bff;
+  --cat-blue:   #60a5fa;
+  --cat-teal:   #2dd4bf;
+  --cat-pink:   #f472b6;
+
+  /* The palette of a bio (messenger contacts/BioView): text colours, each
+     WCAG AA (4.5:1) or more on every surface of the theme and on a tinted
+     (outgoing) bubble. */
+  --bio-red:    #f87171;
+  --bio-orange: #fb923c;
+  --bio-yellow: #facc15;
+  --bio-green:  #4ade80;
+  --bio-teal:   #2dd4bf;
+  --bio-blue:   #60a5fa;
+  --bio-purple: #a78bfa;
+  --bio-pink:   #f472b6;
+  --bio-gray:   #a1a1aa;
+
+  /* A chip coloured from data (`.tinted`, base.css): the tint under it, its
+     pressed tint, its border, and the share of the colour in its text (the
+     rest is --text). The ink share is a step under the largest one that keeps
+     WCAG AA 4.5:1 for any colour on any surface of the theme;
+     chip-contrast.test.ts computes it, change these only with that test.
+     --chip-fade: the opacity of a × or a secondary text inside the chip
+     (the ink, faded), 3:1 or more. */
+  --chip-tint:        14%;
+  --chip-tint-strong: 22%;
+  --chip-edge:        50%;
+  --chip-ink:         30%;
+  --chip-fade:        0.75;
+
+  --shadow:      0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg:   0 16px 40px rgba(0, 0, 0, 0.5);
+  --shadow-accent: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-danger: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-drawer: -24px 0 60px rgba(0, 0, 0, 0.5);
+  --shadow-knob: 0 2px 5px rgba(0, 0, 0, 0.4);  /* toggle knob */
+
+  --backdrop: rgba(11, 12, 15, 0.62);
+
+  /* Topology graph (canvas reads these at draw time) */
+  --graph-edge:      rgba(138, 138, 150, 0.2);
+  --graph-node-ring: rgba(255, 255, 255, 0.4);
+
+  /* Glass: the glow of the window under everything (--bg-image, tokens.css),
+     panes over it that take their colour from it, and dense glass for what
+     floats (menus, dialogs, sheets). */
+  --glow-1: rgba(59, 71, 102, 0.42);
+  --glow-2: rgba(70, 63, 102, 0.34);
+  --glow-3: rgba(47, 61, 82, 0.38);
+  --pane:               rgba(255, 255, 255, 0.035);  /* module columns, panels */
+  --pane-head:          rgba(255, 255, 255, 0.025);  /* heads inside a pane */
+  --pane-border:        rgba(255, 255, 255, 0.06);
+  --pane-highlight:     inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --pane-shadow:        0 8px 24px rgba(0, 0, 0, 0.22);
+  --pane-strong:        rgba(255, 255, 255, 0.06);   /* cards and tiles on the background */
+  --pane-strong-border: rgba(255, 255, 255, 0.09);
+  --glass-bg:           rgba(35, 37, 44, 0.9);      /* menus, dialogs, sheets */
+  --glass-bg-raised:    rgba(42, 44, 50, 0.92);       /* over a floating layer: palette, toast */
+  --glass-bar:          rgba(29, 31, 38, 0.84);      /* bars over scrolling content */
+  --glass-border:       rgba(255, 255, 255, 0.09);
+  --glass-highlight:    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  /* Chat bubbles: an incoming one is glass, an outgoing one the accent's tint. */
+  --bubble-in-bg:       rgba(255, 255, 255, 0.055);
+  --bubble-in-border:   rgba(255, 255, 255, 0.07);
+  --bubble-out-bg:      rgba(112, 102, 198, 0.24);
+  --bubble-out-border:  rgba(185, 177, 242, 0.22);
+  --bubble-out-text:    #f1effd;
+  --bubble-out-meta:    rgba(241, 239, 253, 0.75);
+  --press-tint:         rgba(112, 102, 198, 0.12);  /* a long press resting on a row */
+}
+
+/* ── Colours: LIGHT ── */
+[data-theme='light'] {
+  color-scheme: light;
+  --bg:          #eceef3;  /* page bg — violet-tinted */
+  --bg-2:        #f6f7fa;  /* chrome: header / dock / session bar */
+  --chrome:      #f6f7fa;  /* window titlebar (CSD) */
+  --surface:     #ffffff;  /* cards / sections / tables */
+  --surface-2:   #f7f8fa;  /* nested: profile cards, mono chips */
+  --surface-3:   #f9fafb;  /* form fields / segment containers / filter chips */
+  --surface-hover: #e3e5ea;
+  --surface-row-hover: rgba(26, 29, 38, 0.04);  /* table row hover — subtler than card hover */
+  --surface-drawer: #ffffff;
+  --surface-drawer-footer: #f6f7fa;
+  --toggle-off:  #8a8a96;
+  --border:      #d9dbe1;
+  --border-2:    #c8cad0;  /* hover border */
+  --text:        #162033;  /* 16.8:1 */
+  --text-2:      #4a5468;  /* 5.5:1 */
+  --text-3:      #6c7588;  /* dimmest: placeholders, table header labels */
+  --text-body:   #2b3546;  /* long-form body text */
+  --text-soft:   #414959;  /* metric text, default icon-button glyphs */
+  --text-faint:  #5b6478;  /* field labels, sublabels */
+  --text-dim:    #6c7588;  /* stopped status, em-dashes */
+
+  --accent:        #7066c6;  /* brand purple, darker step for light bg */
+  --accent-hover:  #655cb2;
+  --accent-bg:     rgba(112, 102, 198, 0.12);
+  --accent-border: rgba(112, 102, 198, 0.28);
+  --accent-grad:   #7066c6;  /* brand, unchanged */
+  --accent-text:   #5f50d8;  /* active nav / tabs */
+  --accent-text-2: #5f50d8;  /* mono badges */
+  --accent-text-3: #5f50d8;  /* inline links */
+  --accent-tint:        rgba(112, 102, 198, 0.12);
+  --accent-tint-border: rgba(112, 102, 198, 0.28);
+
+  --success:        #1f7a4d;
+  --success-bg:     rgba(31, 122, 77, 0.1);
+  --success-text:   #1f7a4d;
+  --success-border: rgba(31, 122, 77, 0.22);
+  --success-grad:   #1f7a4d;
+  --danger:         #d63640;
+  --danger-bg:      rgba(217, 45, 54, 0.14);
+  --danger-text:    #c92a32;
+  --danger-border:  rgba(217, 45, 54, 0.3);
+  --warn-bg:        rgba(214, 158, 20, 0.12);
+  --warn-text:      #9a6700;
+  --warn-border:    rgba(214, 158, 20, 0.4);
+
+  /* Category colours — one step darker than dark theme for light-bg legibility */
+  --cat-purple: #6d5cf0;
+  --cat-blue:   #3b82f6;
+  --cat-teal:   #0d9488;
+  --cat-pink:   #db2777;
+
+  /* The palette of a bio (messenger contacts/BioView): text colours, each
+     WCAG AA (4.5:1) or more on every surface of the theme and on a tinted
+     (outgoing) bubble. */
+  --bio-red:    #b91c1c;
+  --bio-orange: #a63a0c;
+  --bio-yellow: #7f5400;
+  --bio-green:  #13703a;
+  --bio-teal:   #0d6b64;
+  --bio-blue:   #1d4ed8;
+  --bio-purple: #7e22ce;
+  --bio-pink:   #be185d;
+  --bio-gray:   #52525b;
+
+  /* A chip coloured from data (`.tinted`): as in the dark block. The ink
+     share is lower here: a pale colour on white needs more of the text. */
+  --chip-tint:        16%;
+  --chip-tint-strong: 26%;
+  --chip-edge:        55%;
+  --chip-ink:         32%;
+  --chip-fade:        0.8;
+
+  /* Shadows — violet-gray ink instead of pure black */
+  --shadow:      0 2px 8px rgba(23, 20, 60, 0.08);
+  --shadow-lg:   0 16px 40px rgba(23, 20, 60, 0.13);
+  --shadow-accent: 0 1px 2px rgba(23, 20, 60, 0.12);
+  --shadow-danger: 0 1px 2px rgba(23, 20, 60, 0.12);
+  --shadow-drawer: -24px 0 60px rgba(23, 20, 60, 0.14);
+  --shadow-knob: 0 1px 3px rgba(23, 20, 60, 0.25);
+
+  --backdrop: rgba(23, 20, 60, 0.35);
+
+  /* Topology graph (canvas reads these at draw time) */
+  --graph-edge:      rgba(90, 90, 115, 0.28);
+  --graph-node-ring: rgba(255, 255, 255, 0.9);
+
+  /* Glass: as in the dark block. */
+  --glow-1: rgba(205, 215, 234, 0.85);
+  --glow-2: rgba(221, 214, 239, 0.75);
+  --glow-3: rgba(214, 227, 230, 0.75);
+  --pane:               rgba(255, 255, 255, 0.52);
+  --pane-head:          rgba(255, 255, 255, 0.45);
+  --pane-border:        rgba(255, 255, 255, 0.7);
+  --pane-highlight:     inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --pane-shadow:        0 1px 2px rgba(26, 29, 38, 0.04), 0 8px 24px rgba(26, 29, 38, 0.06);
+  --pane-strong:        rgba(255, 255, 255, 0.66);
+  --pane-strong-border: rgba(255, 255, 255, 0.75);
+  --glass-bg:           rgba(255, 255, 255, 0.88);
+  --glass-bg-raised:    rgba(250, 250, 253, 0.92);
+  --glass-bar:          rgba(250, 250, 253, 0.9);
+  --glass-border:       rgba(26, 29, 38, 0.1);
+  --glass-highlight:    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --bubble-in-bg:       rgba(255, 255, 255, 0.68);
+  --bubble-in-border:   rgba(255, 255, 255, 0.85);
+  --bubble-out-bg:      rgba(112, 102, 198, 0.14);
+  --bubble-out-border:  rgba(112, 102, 198, 0.18);
+  --bubble-out-text:    #1c1840;
+  --bubble-out-meta:    #4a4480;
+  --press-tint:         rgba(112, 102, 198, 0.12);
+}

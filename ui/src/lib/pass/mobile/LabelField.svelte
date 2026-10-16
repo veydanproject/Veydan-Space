@@ -97,7 +97,7 @@
 
 <style>
   .m-chips { margin-bottom: var(--sp-1); }
-  .m-chip.small { position: relative; min-height: 32px; padding-right: 0; font-size: 12px; }
+  .m-chip.small { position: relative; min-height: 32px; padding-right: 0; font-size: var(--fs-xs); }
   .x {
     display: inline-flex;
     align-items: center;

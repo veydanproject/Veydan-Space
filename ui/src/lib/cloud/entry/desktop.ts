@@ -13,7 +13,7 @@ export const module: ModuleDef = {
   ...common,
   nav: [],
   // Before the core's first block: the account opens the page.
-  settings: [{ id: 'account', title: 'cloud_account_title', group: 'cloud_account_title', order: 1, component: AccountCard }],
+  settings: [{ id: 'account', title: 'cloud_account_title', group: 'cloud_account_title', order: 1, icon: 'user', component: AccountCard }],
   // Over any page, in one column: the cards of the bot about recovery («Это не я — отменить», cloud-recovery.md §10) and the room of the vault that runs out, with the ways out.
   overlays: [{ id: 'banners', component: Banners, place: 'window' }],
 };

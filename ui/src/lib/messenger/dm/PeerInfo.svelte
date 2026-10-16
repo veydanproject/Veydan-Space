@@ -78,7 +78,7 @@
       {#if website}
         <section class="field">
           <span class="label">{$t('msg_peer_website')}</span>
-          <button type="button" class="site" title={website} onclick={() => linkActions.openExternal(website as ExternalUrl).catch(() => {})}>
+          <button type="button" class="site" title={website} onclick={() => void linkActions.follow(website as ExternalUrl)}>
             <Icon name="globe" size={14} /><span class="site-text">{website.replace(/^https?:\/\//i, '').replace(/\/$/, '')}</span><Icon name="external-link" size={12} />
           </button>
         </section>
@@ -104,7 +104,7 @@
   .card-top { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; }
   .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); letter-spacing: -0.2px; overflow-wrap: anywhere; word-break: break-word; }
   .sub { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; word-break: break-word; }
-  .sub.online { color: var(--accent); }
+  .sub.online { color: var(--accent-text); }
   .nip05.ok { color: var(--success-text, var(--success)); }
   .about { color: var(--text-body); }
   .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }

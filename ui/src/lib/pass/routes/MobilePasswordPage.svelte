@@ -3,6 +3,8 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { AutoHide } from '$lib/pass/autohide.svelte';
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
@@ -41,6 +43,12 @@
   let totpSecret = $state('');
   let tags = $state<string[]>([]);
   let revealed = $state('');
+  const hide = new AutoHide(() => (revealed = ''));
+  $effect(() => () => hide.stop());
+  // A locked app keeps no shown password, not even masked in memory.
+  $effect(() => {
+    if (appLock.locked) { revealed = ''; hide.stop(); }
+  });
   let copiedKey = $state('');
   let unlockOpen = $state(false);
   let afterUnlock = $state<'reveal' | 'copy' | 'edit' | 'delete' | 'tags' | 'primary' | null>(null);
@@ -49,7 +57,6 @@
   let shownNote = $state('');
   let copyTimer: ReturnType<typeof setTimeout>;
   let totp = $state<TotpEntry[]>([]);
-  let toast = $state('');
   let error = $state('');
   let saving = $state(false);
 
@@ -137,7 +144,13 @@
     if (appLock.locked) return askUnlock('reveal');
     error = '';
     try {
-      revealed = revealed ? '' : (await api.passwords.reveal(id, 'password')).value;
+      if (revealed) {
+        revealed = '';
+        hide.stop();
+      } else {
+        revealed = (await api.passwords.reveal(id, 'password')).value;
+        hide.start();
+      }
     } catch (e) {
       if (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed')) {
         return askUnlock('reveal');
@@ -152,9 +165,9 @@
     try {
       const value = (await api.passwords.reveal(id, 'password')).value;
       revealed = value;
-      await copySecret(value);
+      hide.start();
+      await copySecret(value, { toast: $t('pw_copied') });
       markCopied('password');
-      toast = $t('pw_copied');
     } catch (e) {
       if (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed')) {
         return askUnlock('copy');
@@ -173,6 +186,7 @@
     try {
       await writeClipboard(value);
       markCopied(key);
+      copiedToast();
     } catch (e) {
       fail(e);
     }
@@ -396,6 +410,7 @@
           <span class="field-text">
             <span class="m-label">{$t('pw_field_password')}</span>
             <span class="val mono">{unlocked && revealed ? revealed : '••••••••'}</span>
+            {#if unlocked && revealed && hide.left}<span class="autohide">{$t('pw_autohide_in', { n: String(hide.left) })}</span>{/if}
           </span>
           <button type="button" class="m-ibtn" onclick={reveal} aria-label={$t(revealed ? 'pw_btn_hide' : 'pw_btn_reveal')}>
             <Icon name={revealed ? 'eye-off' : 'eye'} size={20} />
@@ -436,7 +451,6 @@
       {#if tags.length}
         <LabelField linkNotes allowAdd={false} {tags} onchange={onTags} />
       {/if}
-      {#if toast}<p class="ok">{toast}</p>{/if}
     {/if}
   </div>
 </div>
@@ -461,7 +475,7 @@
   }
   .totp-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .totp-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .totp-account { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .primary { display: inline-flex; color: var(--accent); }
-  .ok { color: var(--success-text); }
+  .totp-account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .primary { display: inline-flex; color: var(--accent-text); }
+  .autohide { font-size: var(--fs-xs); color: var(--text-2); }
 </style>

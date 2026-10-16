@@ -121,8 +121,6 @@
     color: var(--text-2);
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
     cursor: pointer;
   }
   .sort-btn:hover { color: var(--text); }

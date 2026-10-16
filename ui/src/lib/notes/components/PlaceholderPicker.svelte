@@ -76,7 +76,7 @@
   }
   .row {
     display: flex; align-items: center; gap: 0.4rem; width: 100%;
-    padding: 0.35rem 0.5rem; border: 0; border-radius: 4px;
+    padding: 0.35rem 0.5rem; border: 0; border-radius: var(--radius-xs);
     background: transparent; color: var(--text); font-size: var(--fs-sm);
     font-family: var(--font-mono); text-align: left; cursor: pointer;
   }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import { BASE, callHref, chatHref, shouldFollow } from './routes';
+import { BASE, callHref, callsHref, chatHref, contactsHref, groupsHref, shouldFollow } from './routes';
 
 const at = (url: string) => {
   const u = new URL(url, 'http://app');
@@ -25,5 +25,12 @@ describe('shouldFollow', () => {
     expect(shouldFollow(BASE, at(chatHref(A)))).toBe(true);
     expect(shouldFollow(chatHref(A), at(BASE))).toBe(true);
     expect(shouldFollow(chatHref(A), at(callHref()))).toBe(true);
+  });
+});
+
+describe('the tabs of the bar', () => {
+  it('are the list, the groups and the calls', () => {
+    expect([BASE, groupsHref(), callsHref(), contactsHref()]).toEqual(['/messenger', '/messenger/groups', '/messenger/calls', '/messenger/contacts']);
+    expect(shouldFollow(chatHref(A), at(callsHref()))).toBe(true);
   });
 });

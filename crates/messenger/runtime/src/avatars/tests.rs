@@ -1264,3 +1264,251 @@ async fn through_the_runtime() {
     assert!(platforms.iter().any(|p| p.id == "other"));
     rt.shutdown().await;
 }
+
+// ─── Groups ─────────────────────────────────────────────────────────────────
+
+fn kept(group: &str, c: char, at: i64) -> messenger_store::group_avatar::GroupAvatar {
+    messenger_store::group_avatar::GroupAvatar {
+        group_id: group.into(),
+        sha256: sha(c),
+        url: format!("https://m.example/{}", sha(c)),
+        server_id: Some("m".into()),
+        copies_json: "[]".into(),
+        set_at: at,
+        checked_at: at,
+        touched_at: at,
+    }
+}
+
+fn group_facts(row: Option<messenger_store::group_avatar::GroupAvatar>, picture: Option<&str>, manager: bool) -> GroupFacts {
+    let f = facts(None, None);
+    GroupFacts {
+        row,
+        picture: picture.map(str::to_string),
+        manager,
+        bases: f.bases,
+        known: f.known,
+        files: vec![sha('a')],
+        now: T0,
+    }
+}
+
+#[test]
+fn group_plan_looks_after_the_picture_of_a_group_i_manage() {
+    let url = format!("https://m.example/{}", sha('a'));
+    assert_eq!(group_plan(&group_facts(Some(kept("g", 'a', T0)), Some(&url), true)), vec![], "all fresh");
+    assert_eq!(
+        group_plan(&group_facts(Some(kept("g", 'a', T0 - TOUCH_EVERY_SECS)), Some(&url), true)),
+        vec![
+            GroupStep::Check { server_id: "m".into(), sha: sha('a') },
+            GroupStep::Touch { url: url.clone(), server_id: "m".into(), sha: sha('a') },
+        ]
+    );
+    // Set by another manager or another device of mine: taken on, the file fetched first.
+    let other = format!("https://n.example/{}", sha('b'));
+    assert_eq!(
+        group_plan(&group_facts(None, Some(&other), true)),
+        vec![
+            GroupStep::Adopt { url: other.clone(), sha: sha('b'), server_id: Some("n".into()) },
+            GroupStep::Download { url: other.clone(), sha: sha('b') },
+        ]
+    );
+    // On a server not mine: no file (it cannot be put back), kept alive all the same.
+    let foreign = format!("https://elsewhere.example/{}", sha('c'));
+    assert_eq!(
+        group_plan(&group_facts(None, Some(&foreign), true)),
+        vec![GroupStep::Adopt { url: foreign.clone(), sha: sha('c'), server_id: None }]
+    );
+    let mut row = kept("g", 'c', T0 - TOUCH_EVERY_SECS);
+    row.url = foreign.clone();
+    row.server_id = None;
+    assert_eq!(group_plan(&group_facts(Some(row), Some(&foreign), true)), vec![GroupStep::KeepAlive { url: foreign, sha: sha('c') }]);
+    // A server in use that cannot be written now is waited for.
+    let mut f = group_facts(Some(kept("g", 'a', T0 - TOUCH_EVERY_SECS)), Some(&url), true);
+    f.bases.remove(0);
+    assert_eq!(group_plan(&f), vec![]);
+    // An address that names no hash was not made by this app.
+    assert_eq!(group_plan(&group_facts(None, Some("https://m.example/me.png"), true)), vec![]);
+    assert_eq!(group_plan(&group_facts(None, Some(""), true)), vec![]);
+}
+
+#[test]
+fn group_plan_lets_go_and_takes_down_only_what_the_log_dropped() {
+    let other = format!("https://n.example/{}", sha('b'));
+    // Another manager replaced it: down from my server, the new one taken on.
+    assert_eq!(
+        group_plan(&group_facts(Some(kept("g", 'a', T0)), Some(&other), true)),
+        vec![
+            GroupStep::Forget { sha: sha('a'), keep_file: false, take_down: true },
+            GroupStep::Adopt { url: other.clone(), sha: sha('b'), server_id: Some("n".into()) },
+            GroupStep::Download { url: other.clone(), sha: sha('b') },
+        ]
+    );
+    // Removed.
+    assert_eq!(
+        group_plan(&group_facts(Some(kept("g", 'a', T0)), Some(""), true)),
+        vec![GroupStep::Forget { sha: sha('a'), keep_file: false, take_down: true }]
+    );
+    // I no longer manage the group, or forgot it: the log still names it, it stays up.
+    let url = format!("https://m.example/{}", sha('a'));
+    assert_eq!(
+        group_plan(&group_facts(Some(kept("g", 'a', T0)), Some(&url), false)),
+        vec![GroupStep::Forget { sha: sha('a'), keep_file: false, take_down: false }]
+    );
+    assert_eq!(
+        group_plan(&group_facts(Some(kept("g", 'a', T0)), None, false)),
+        vec![GroupStep::Forget { sha: sha('a'), keep_file: false, take_down: false }]
+    );
+    // A member who does not manage looks after nothing.
+    assert_eq!(group_plan(&group_facts(None, Some(&other), false)), vec![]);
+    // A picture on a server not mine is not taken down by me.
+    let mut row = kept("g", 'a', T0);
+    row.url = format!("https://elsewhere.example/{}", sha('a'));
+    assert_eq!(
+        group_plan(&group_facts(Some(row), Some(""), true)),
+        vec![GroupStep::Forget { sha: sha('a'), keep_file: false, take_down: false }]
+    );
+}
+
+/// A runtime of one, offline, whose avatars put their blobs in memory.
+async fn group_rig() -> (tempfile::TempDir, MessengerRuntime, MemoryBackend, Arc<TestClock>, Arc<MemNet>) {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = messenger_core::MessengerConfig::new(dir.path().join("messenger"));
+    let mut rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+    rt.relays().set_silent(true).await.unwrap();
+    crate::servers::use_veydan_offline(&rt).await;
+    rt.identity().create("pw").await.unwrap();
+    assert!(rt.refresh_signer().await.unwrap());
+    let backend = MemoryBackend::new(BASE);
+    let media = rt.media.clone().with_backend(Arc::new(backend.clone()), Arc::new(NoFetch));
+    let clock = Arc::new(TestClock(AtomicI64::new(T0)));
+    let net = Arc::new(MemNet { backend: Some(backend.clone()), ..MemNet::default() });
+    rt.avatars = Avatars::new(
+        rt.store.clone(),
+        media,
+        rt.profiles.clone(),
+        rt.outbox.clone(),
+        rt.ui.clone(),
+        clock.clone(),
+        net.clone(),
+        dir.path().join("avatars"),
+    );
+    (dir, rt, backend, clock, net)
+}
+
+async fn group_picture_set(rt: &MessengerRuntime, group: &str, rgb: [u8; 3]) -> messenger_groups::GroupView {
+    let p = rt.avatar_prepare_bytes(bmp(80, 60, rgb)).await.unwrap();
+    rt.group_avatar_set(group, &p.token, CropRect { x: 0.0, y: 0.0, w: 0.75, h: 1.0 }).await.unwrap()
+}
+
+#[tokio::test]
+async fn a_manager_sets_replaces_and_removes_the_picture_of_a_group() {
+    let (dir, rt, backend, _clock, _net) = group_rig().await;
+    let g = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true).await.unwrap();
+    assert_eq!(g.picture, "");
+
+    let queued = rt.outbox.pending().await.unwrap();
+    let view = group_picture_set(&rt, &g.id, [200, 30, 30]).await;
+    let row = messenger_store::group_avatar::get(&rt.store, &g.id).await.unwrap().expect("looked after");
+    assert_eq!(view.picture, format!("{BASE}/{}", row.sha256), "the log names the blob");
+    assert_eq!(row.url, view.picture);
+    assert!(rt.outbox.pending().await.unwrap() > queued, "the operation goes out");
+    let jpeg = backend.get(&row.sha256).expect("on my server");
+    assert_eq!(avatar::sha256_hex(&jpeg), row.sha256);
+    let side = avatar::decode(&jpeg).unwrap();
+    assert_eq!((side.width(), side.height()), (avatar::OWN_SIDE, avatar::OWN_SIDE));
+    let file = dir.path().join("avatars").join("group").join(format!("{}.jpg", row.sha256));
+    assert_eq!(std::fs::read(&file).unwrap(), jpeg, "kept on this device");
+    // Shown from the file, no network; the chat list carries the address.
+    assert_eq!(data_bytes(&rt.avatar_cached(&view.picture).await.unwrap().expect("here")), jpeg);
+    let chat = rt.chat(&g.chat_id).await.unwrap().unwrap();
+    assert_eq!(chat.picture.as_deref(), Some(view.picture.as_str()));
+    assert!(rt.group_face(&view.picture).await.unwrap(), "the picture of my group is a face to fetch");
+    assert!(!rt.group_face("https://cdn.example/x.png").await.unwrap());
+
+    // Replaced: the old one goes off the server and off the device.
+    let next = group_picture_set(&rt, &g.id, [30, 200, 30]).await;
+    assert_ne!(next.picture, view.picture);
+    let old_sha = row.sha256.clone();
+    let b = backend.clone();
+    eventually("the old blob is deleted", move || b.get(&old_sha).is_none()).await;
+    assert!(!file.exists());
+
+    // Removed.
+    let gone = rt.group_avatar_remove(&g.id).await.unwrap();
+    assert_eq!(gone.picture, "");
+    assert_eq!(messenger_store::group_avatar::get(&rt.store, &g.id).await.unwrap(), None);
+    let b = backend.clone();
+    eventually("the blob is deleted", move || b.is_empty()).await;
+    assert_eq!(rt.group_avatar_remove(&g.id).await.unwrap().picture, "", "nothing to remove: nothing goes out");
+
+    // A token serves once; a group I do not know is refused before anything is put.
+    let p = rt.avatar_prepare_bytes(bmp(10, 10, [1, 1, 1])).await.unwrap();
+    assert!(rt.group_avatar_set(&"0".repeat(64), &p.token, CropRect { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }).await.is_err());
+    assert!(backend.is_empty());
+    rt.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_same_picture_in_two_groups_stays_while_one_names_it() {
+    let (_dir, rt, backend, _clock, _net) = group_rig().await;
+    let a = rt.group_create(messenger_groups::GroupKind::Private, "A", "", true).await.unwrap();
+    let b = rt.group_create(messenger_groups::GroupKind::Public, "B", "", true).await.unwrap();
+    let pa = group_picture_set(&rt, &a.id, [9, 9, 9]).await.picture;
+    let pb = group_picture_set(&rt, &b.id, [9, 9, 9]).await.picture;
+    assert_eq!(pa, pb, "one blob");
+    rt.group_avatar_remove(&a.id).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!backend.is_empty(), "the other group still names it");
+    assert!(rt.avatar_cached(&pb).await.unwrap().is_some(), "and its file stays");
+    rt.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_keeper_puts_a_group_picture_back_and_follows_the_log() {
+    let (dir, rt, backend, clock, net) = group_rig().await;
+    let g = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true).await.unwrap();
+    let url = group_picture_set(&rt, &g.id, [7, 70, 7]).await.picture;
+    let sha = hash_of(&url).unwrap();
+    assert_eq!(rt.avatars.keep_groups(&rt.session_keys().await.unwrap()).await.unwrap(), vec![], "nothing due");
+    let keys = rt.session_keys().await.unwrap();
+
+    // A day later the server has lost it: put back at the same address.
+    clock.advance(DAY);
+    backend.blobs.lock().unwrap().clear();
+    let steps = rt.avatars.keep_groups(&keys).await.unwrap();
+    assert_eq!(steps, vec![(g.id.clone(), GroupStep::Check { server_id: "fixed".into(), sha: sha.clone() })]);
+    assert!(backend.get(&sha).is_some(), "put back");
+    assert_eq!(rt.group_get(&g.id).await.unwrap().picture, url, "the log is not written");
+
+    // Five days after the upload: fetched past the caches.
+    clock.advance(4 * DAY);
+    let steps = rt.avatars.keep_groups(&keys).await.unwrap();
+    assert!(steps.contains(&(g.id.clone(), GroupStep::Touch { url: url.clone(), server_id: "fixed".into(), sha: sha.clone() })), "{steps:?}");
+    assert!(net.fresh.lock().unwrap().iter().any(|u| u.starts_with(&format!("{url}?k="))));
+
+    // Another device of mine, which has not the file: it takes the picture on.
+    let file = dir.path().join("avatars").join("group").join(format!("{sha}.jpg"));
+    std::fs::remove_file(&file).unwrap();
+    messenger_store::group_avatar::clear(&rt.store, &g.id).await.unwrap();
+    let steps = rt.avatars.keep_groups(&keys).await.unwrap();
+    assert_eq!(
+        steps,
+        vec![
+            (g.id.clone(), GroupStep::Adopt { url: url.clone(), sha: sha.clone(), server_id: Some("fixed".into()) }),
+            (g.id.clone(), GroupStep::Download { url: url.clone(), sha: sha.clone() }),
+        ]
+    );
+    assert!(file.exists());
+
+    // Another manager took it away, as the log here now says: down from my server.
+    let mut row = messenger_store::groups::get(&rt.store, &g.id).await.unwrap().unwrap();
+    row.picture = String::new();
+    messenger_store::groups::upsert(&rt.store, &row).await.unwrap();
+    let steps = rt.avatars.keep_groups(&keys).await.unwrap();
+    assert_eq!(steps, vec![(g.id.clone(), GroupStep::Forget { sha: sha.clone(), keep_file: false, take_down: true })]);
+    let b = backend.clone();
+    eventually("taken down", move || b.is_empty()).await;
+    assert!(!file.exists());
+    rt.shutdown().await;
+}

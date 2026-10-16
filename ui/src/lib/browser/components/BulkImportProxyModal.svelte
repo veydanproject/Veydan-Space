@@ -394,7 +394,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
     font-weight: var(--fw-bold);
     text-transform: uppercase;
     letter-spacing: 0.4px;

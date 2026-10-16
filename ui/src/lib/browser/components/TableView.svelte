@@ -267,8 +267,7 @@
   }
   thead th {
     padding: var(--sp-3) var(--sp-3); text-align: left;
-    color: var(--text-3); font-weight: var(--fw-bold); font-size: var(--fs-2xs);
-    text-transform: uppercase; letter-spacing: 0.7px; white-space: nowrap;
+    color: var(--text-2); font-weight: var(--fw-semibold); font-size: var(--fs-xs); white-space: nowrap;
   }
   .th-num { width: 52px; }
   .th-actions { width: 112px; text-align: right; }
@@ -300,7 +299,7 @@
 
   /* Name */
   .td-name { white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
-  .profile-name { font-weight: var(--fw-semibold); font-size: 0.9rem; color: var(--text); }
+  .profile-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); }
   .running-pill {
     display: inline-flex; align-items: center; gap: 0.2rem;
     margin-left: 0.4rem; font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
@@ -312,9 +311,9 @@
   .td-os { white-space: nowrap; }
   .os-chip {
     display: inline-flex; align-items: center; gap: 5px;
-    padding: 4px 10px; border-radius: 7px;
+    padding: 4px 10px; border-radius: var(--radius-sm);
     background: var(--surface-2); font-family: var(--font-mono);
-    font-size: 0.78rem; color: var(--text-body);
+    font-size: var(--fs-sm); color: var(--text-body);
   }
   .os-icon { font-size: var(--fs-base); }
   .os-label { color: var(--text-body); }
@@ -335,7 +334,7 @@
   .proxy-type {
     font-family: var(--font-mono);
     font-size: var(--fs-2xs); font-weight: var(--fw-semibold); letter-spacing: 0.04em;
-    padding: 0.15rem 0.45rem; border-radius: 7px;
+    padding: 0.15rem 0.45rem; border-radius: var(--radius-sm);
     background: var(--surface-2); color: var(--text-2);
   }
   .no-proxy { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text-dim); font-size: var(--fs-sm); }

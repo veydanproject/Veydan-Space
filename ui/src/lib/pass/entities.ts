@@ -8,6 +8,7 @@
  */
 
 import type { Component } from 'svelte';
+import { copied, secretCopied } from '$lib/core/ui/toast.svelte';
 import { api } from '$lib/pass/api';
 import { directory } from '$lib/core/directory';
 import type { EntityKindDef } from '$lib/core/module';
@@ -20,12 +21,14 @@ import { passwordStore } from '$lib/pass/store/passwords.svelte';
 /** Backend clipboard: actions run after awaited calls, where `navigator.clipboard` is denied. */
 async function copyText(text: string): Promise<void> {
   await api.system.clipboardWriteText(text);
+  copied();
 }
 
 /** Desktop writes the clipboard in Rust. Mobile falls back to reveal. */
 async function copyPassword(id: string): Promise<void> {
   try {
     await api.passwords.copy(id);
+    secretCopied();
     return;
   } catch (e) {
     const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: string }).code) : '';

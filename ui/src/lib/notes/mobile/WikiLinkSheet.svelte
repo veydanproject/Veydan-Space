@@ -171,7 +171,7 @@
     min-height: 44px;
     padding: 0 14px;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: var(--m-field);
     color: var(--text);
     font: inherit;
@@ -192,11 +192,11 @@
   .ico { color: var(--text-3); display: inline-flex; flex-shrink: 0; }
   .ph { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .muted { color: var(--text-3); }
-  .hints { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: var(--sp-3) var(--sp-2) 0; font-size: 13px; }
+  .hints { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: var(--sp-3) var(--sp-2) 0; font-size: var(--fs-sm); }
   .hint {
     display: inline-flex; align-items: center; gap: 4px;
     min-height: 32px; padding: 0 10px;
-    border: 1px solid var(--border); border-radius: 999px;
-    background: transparent; color: var(--text-2); font: inherit; font-size: 13px; font-family: var(--font-mono);
+    border: 1px solid var(--border); border-radius: var(--radius-pill);
+    background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); font-family: var(--font-mono);
   }
 </style>

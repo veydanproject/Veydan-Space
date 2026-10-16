@@ -533,7 +533,7 @@
 
   .header-title h3 {
     margin: 0;
-    font-size: 1.15rem;
+    font-size: var(--fs-lg);
     font-weight: var(--fw-extrabold);
     letter-spacing: -0.3px;
   }
@@ -555,7 +555,7 @@
     justify-content: center;
     width: 34px;
     height: 34px;
-    border-radius: 9px;
+    border-radius: var(--radius);
     transition: all var(--dur-fast);
   }
 
@@ -597,7 +597,7 @@
   .search-spinner {
     position: absolute;
     right: 0.6rem;
-    color: var(--accent);
+    color: var(--accent-text);
     display: flex;
     animation: spin 1s linear infinite;
   }
@@ -666,12 +666,12 @@
   .list-title-group { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .list-title {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: var(--fs-xl);
     font-weight: var(--fw-extrabold);
     letter-spacing: -0.3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .list-sub { margin: 0; font-size: 0.78rem; color: var(--text-faint); }
+  .list-sub { margin: 0; font-size: var(--fs-sm); color: var(--text-faint); }
 
   .list-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .list-actions .icon-btn { width: 32px; height: 32px; }
@@ -721,7 +721,7 @@
   .create-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-pane);
     padding: var(--sp-5);
     width: 320px;
     display: flex;

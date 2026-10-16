@@ -626,7 +626,7 @@
   .back-link:hover { color: var(--text); }
 
   /* Workspace name in breadcrumb — accent per redesign */
-  .ws-name { font-weight: var(--fw-bold); font-size: 1.15rem; color: var(--accent-text); }
+  .ws-name { font-weight: var(--fw-bold); font-size: var(--fs-lg); color: var(--accent-text); }
 
   .ws-meta { display: flex; align-items: center; gap: 0.4rem; flex: 1; }
 
@@ -668,8 +668,7 @@
   }
   .proxy-table th {
     padding: var(--sp-3) var(--sp-4); text-align: left;
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-3);
-    text-transform: uppercase; letter-spacing: 0.7px; white-space: nowrap;
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); white-space: nowrap;
   }
   .proxy-table td { padding: var(--sp-3) var(--sp-4); vertical-align: middle; }
   .proxy-row { border-bottom: 1px solid var(--surface-2); cursor: pointer; transition: background 0.12s; }
@@ -697,7 +696,7 @@
 
   .status-badge {
     display: inline-flex; align-items: center; gap: 7px;
-    font-size: 0.72rem; font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px;
+    font-size: var(--fs-2xs); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px;
     padding: 4px 11px; border-radius: var(--radius-sm);
   }
   .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

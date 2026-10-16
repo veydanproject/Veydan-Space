@@ -102,14 +102,14 @@
     background: var(--surface-drawer); box-shadow: var(--shadow-lg);
   }
   header { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
-  strong { flex: 1; min-width: 0; font-size: 15px; }
-  .count { color: var(--text-2); font-size: 13px; }
+  strong { flex: 1; min-width: 0; font-size: var(--fs-body); }
+  .count { color: var(--text-2); font-size: var(--fs-sm); }
   .hide { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-right: calc(var(--sp-2) * -1); border: 0; border-radius: 50%; background: none; color: var(--text-3); cursor: pointer; }
-  .bar { height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
-  .bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.2s ease; }
+  .bar { height: 6px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent); transition: width 0.2s ease; }
   ul { list-style: none; margin: var(--sp-1) 0 0; padding: 0; }
   li + li { border-top: 1px solid var(--m-card-border, var(--border)); }
-  .line { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 44px; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 14.5px; text-align: left; text-decoration: none; cursor: pointer; }
+  .line { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 44px; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: var(--fs-base); text-align: left; text-decoration: none; cursor: pointer; }
   .line span { flex: 1; min-width: 0; }
   .line :global(svg) { color: var(--text-3); flex-shrink: 0; }
   .line.done { color: var(--text-2); cursor: default; }

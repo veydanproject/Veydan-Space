@@ -129,7 +129,7 @@
   .app-frame {
     position: fixed;
     inset: 0;
-    background: var(--bg);
+    background: var(--bg-image), var(--bg);
   }
   /* CSD (Linux): rounded, shadowed panel with a gutter for the drop shadow. */
   .app-frame.csd {
@@ -158,26 +158,25 @@
   .titlebar {
     display: flex;
     align-items: stretch;
-    height: 34px;
+    height: 32px;
     flex-shrink: 0;
-    padding-left: 12px;
-    background: var(--chrome);
+    padding-left: var(--sp-2);
+    background: transparent;
     border-bottom: 1px solid var(--border);
   }
   .titlebar-title {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.78rem;
+    font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     color: var(--text-2);
-    letter-spacing: 0.1px;
     -webkit-user-select: none;
     user-select: none;
   }
   .titlebar-logo {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     object-fit: contain;
   }
   /* Empty flexible middle — the primary drag area. */
@@ -198,7 +197,7 @@
     border-radius: 0;
     background: transparent;
     color: var(--text-soft);
-    font-size: 0.78rem;
+    font-size: var(--fs-sm);
     font-weight: var(--fw-semibold);
     cursor: pointer;
     transition: background 0.12s, color 0.12s;

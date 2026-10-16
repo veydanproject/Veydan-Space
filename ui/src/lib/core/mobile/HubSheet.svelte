@@ -58,7 +58,7 @@
     padding-bottom: var(--sp-2);
   }
   .head img { width: 40px; height: 40px; object-fit: contain; margin-bottom: var(--sp-1); }
-  h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
-  p { margin: 0; color: var(--text-2); font-size: 13px; }
+  h2 { margin: 0; font-size: var(--fs-xl); font-weight: 800; letter-spacing: -0.02em; }
+  p { margin: 0; color: var(--text-2); font-size: var(--fs-sm); }
   .m-grid { padding-bottom: var(--sp-2); }
 </style>

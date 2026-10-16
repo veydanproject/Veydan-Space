@@ -254,6 +254,6 @@
     color: var(--accent-text);
   }
   .ws-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .muted { color: var(--text-2); font-size: 0.85rem; }
+  .muted { color: var(--text-2); font-size: var(--fs-base); }
   .back { margin-bottom: var(--sp-3); }
 </style>

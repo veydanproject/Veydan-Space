@@ -497,11 +497,11 @@
   .search-input {
     background: var(--surface-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-pill);
     width: 100%;
     padding: 0 1.75rem 0 var(--sp-8);
-    font-size: var(--fs-sm);
-    height: 38px;
+    font-size: var(--fs-base);
+    height: var(--control-h);
     outline: none;
     transition: border-color 0.15s;
   }
@@ -511,19 +511,16 @@
   .search-spinner {
     position: absolute;
     right: 0.5rem;
-    color: var(--accent);
+    color: var(--accent-text);
     display: flex;
     animation: spin 1s linear infinite;
   }
 
+  /* Three floating panes; the resize handles are the 12px gaps between them. */
   .page-body {
     flex: 1;
     display: flex;
-    overflow: hidden;
-    border: 1px solid var(--border);
     min-height: 0;
-    border-radius: var(--radius-lg);
-    background: var(--surface);
   }
 
   .page-body.is-dragging {
@@ -532,7 +529,7 @@
   }
 
   .col-resizer {
-    width: 8px;
+    width: var(--sp-3);
     flex-shrink: 0;
     cursor: col-resize;
     position: relative;
@@ -547,9 +544,10 @@
     left: 50%;
     width: 1px;
     transform: translateX(-50%);
-    background: var(--border);
+    background: transparent;
     transition: background 0.15s, width 0.1s;
   }
+  .col-resizer:hover::before { background: var(--border-2); }
 
   .col-resizer.active::before {
     background: var(--accent);
@@ -562,6 +560,12 @@
     flex-direction: column;
     overflow-y: auto;
     min-width: 100px;
+    border-radius: var(--radius-pane);
+    background: var(--pane);
+    border: 1px solid var(--pane-border);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter);
+    backdrop-filter: var(--pane-filter);
   }
 
   /* The list or table gives way before the note does (.editor-col). */
@@ -572,6 +576,12 @@
     overflow: hidden;
     min-width: 140px;
     container-type: inline-size;
+    border-radius: var(--radius-pane);
+    background: var(--pane);
+    border: 1px solid var(--pane-border);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter);
+    backdrop-filter: var(--pane-filter);
   }
 
   .list-header {
@@ -587,12 +597,12 @@
 
   .list-title-group { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .list-title {
-    font-size: 1.25rem;
-    font-weight: var(--fw-extrabold);
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-bold);
     letter-spacing: -0.3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .list-sub { font-size: 0.78rem; color: var(--text-faint); }
+  .list-sub { font-size: var(--fs-xs); color: var(--text-2); }
 
   /* The palette field grows; the controls after it keep their size and wrap as a group when the column is narrow */
   .list-actions {
@@ -614,14 +624,14 @@
   .palette-field {
     flex: 1 1 120px;
     min-width: 0;
-    height: 36px;
+    height: var(--control-h);
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
     padding: 0 0.6rem;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg-2);
+    border-radius: var(--radius);
+    background: var(--surface-3);
     color: var(--text-3);
     font-size: var(--fs-sm);
     text-align: left;
@@ -631,7 +641,7 @@
   .palette-placeholder { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .palette-field kbd {
     font-size: var(--fs-2xs); color: var(--text-3);
-    border: 1px solid var(--border); border-radius: 4px; padding: 0 0.3rem; flex-shrink: 0;
+    border: 1px solid var(--border); border-radius: var(--radius-xs); padding: 0 0.3rem; flex-shrink: 0;
   }
   .list-actions .icon-btn { width: 36px; height: 36px; }
 
@@ -643,14 +653,13 @@
     height: 36px;
     padding: 0;
     border: 0;
-    border-radius: 50%;
-    background: var(--accent-grad);
+    border-radius: var(--radius);
+    background: var(--accent);
     color: #fff;
-    box-shadow: var(--shadow-accent);
     cursor: pointer;
     flex-shrink: 0;
   }
-  .btn-new:hover { filter: brightness(1.08); }
+  .btn-new:hover { background: var(--accent-hover); }
 
   /* Narrow list column: title on its own line, the field shrinks to an icon */
   @container (max-width: 560px) {
@@ -675,6 +684,12 @@
     flex-direction: column;
     overflow: hidden;
     min-width: 360px;
+    border-radius: var(--radius-pane);
+    background: var(--pane);
+    border: 1px solid var(--pane-border);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter);
+    backdrop-filter: var(--pane-filter);
   }
 
   /* New note dialog */

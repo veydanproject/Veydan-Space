@@ -395,9 +395,12 @@
     min-width: 0;
     min-height: 0;
     padding: var(--sp-3);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    background: var(--pane);
+    border: 1px solid var(--pane-border);
+    border-radius: var(--radius-pane);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter);
+    backdrop-filter: var(--pane-filter);
   }
   .file-panel.focused {
     border-color: var(--accent-border);

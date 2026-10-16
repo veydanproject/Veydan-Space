@@ -5,14 +5,11 @@
  * Veydan Space — design tokens (single source of truth)
  * Imported by each shell (DesktopShell, MobileShell) and by StartErrorScreen.
  *
- * Palette: redesign "Variant A" (design handoff 2026-07).
- * Dark is the primary product theme; the light block mirrors it with the same
- * brand purple accent and violet-tinted neutrals (hue ~248°).
- *
  * Layers:
  *   :root              — theme-independent scales (spacing, type, radius, z, size, motion)
- *   [data-theme=…]     — themed colour tokens (dark / light)
- *   [data-theme=…] {aliases} — compatibility aliases mapping legacy/leaked names
+ *   palettes/*.css     — the colour tokens: <html data-theme="dark|light"> picks the
+ *                        theme, data-palette the palette (none = quiet, the default)
+ *   [data-theme] {aliases} — compatibility aliases mapping legacy/leaked names
  *                        onto canonical tokens, so stray var() refs stop
  *                        silently collapsing to transparent / inherited.
  *
@@ -20,6 +17,8 @@
  *               --text / --text-2 / --text-3 / --accent / --success / --danger / --warn-*
  * Do NOT introduce new ad-hoc names in components — extend this file instead.
  * ========================================================================== */
+
+@import './palettes/quiet.css';
 
 :root {
   /* ── Fonts ── (bundled via @fontsource-variable and core/fonts/cjk.css, imported by the shells)
@@ -42,16 +41,19 @@
   --sp-10:  40px;
   --sp-12:  48px;
 
-  /* ── Type scale ── (snap raw sizes to the nearest step; see STYLEGUIDE) */
-  --fs-2xs:  0.7rem;    /* micro: counts, tiny labels, dot text */
-  --fs-xs:   0.75rem;   /* captions, chips, table meta */
-  --fs-sm:   0.8rem;    /* secondary text, hints */
-  --fs-base: 0.875rem;  /* 14px — body / controls (matches global input/button) */
-  --fs-md:   1rem;      /* emphasis / dialog titles */
-  --fs-lg:   1.15rem;   /* section titles */
-  --fs-xl:   1.4rem;    /* page h1 */
-  --fs-2xl:  1.75rem;   /* hero / page headers (28px) */
-  --fs-3xl:  2rem;      /* note reader title (32px) */
+  /* ── Type scale ── (snap raw sizes to the nearest step; see STYLEGUIDE)
+     «Quiet Glass»: micro and caption 12, secondary 13, control 14, body 15,
+     section 16, dialog 18, title 20, H1 28. */
+  --fs-2xs:  0.75rem;   /* 12px micro: counts, tiny labels, dot text */
+  --fs-xs:   0.75rem;   /* 12px captions, chips, table meta */
+  --fs-sm:   0.8125rem; /* 13px secondary text, hints */
+  --fs-base: 0.875rem;  /* 14px — controls (matches global input/button) */
+  --fs-body: 0.9375rem; /* 15px — long text: messages, descriptions, note body */
+  --fs-md:   1rem;      /* 16px emphasis / section and card titles */
+  --fs-lg:   1.125rem;  /* 18px dialog titles, phone app bar */
+  --fs-xl:   1.25rem;   /* 20px page / list / column titles */
+  --fs-2xl:  1.75rem;   /* 28px H1, hero / page headers */
+  --fs-3xl:  2rem;      /* 32px note reader title */
 
   --fw-normal: 400;
   --fw-medium: 500;
@@ -61,15 +63,21 @@
 
   --lh-tight: 1.2;
   --lh-base:  1.5;
+  --lh-body:  1.4667;  /* 22px on 15px body text */
 
-  /* ── Radius ── (theme-independent) */
-  --radius-xs:    4px;
-  --radius-sm:    8px;   /* chips / badges / icon buttons (design: 7–9px) */
-  --radius:       10px;  /* buttons / inputs (design: 9–11px) */
-  --radius-field: 11px;  /* tall drawer form fields (46px) */
-  --radius-md:    12px;  /* nested cards (profile cards, icon tiles) */
-  --radius-lg:    16px;  /* cards / tables / sections */
-  --radius-pill:  999px; /* toggle knobs / status dots only — badges are rounded-rect now */
+  /* ── Radius ── (theme-independent; «Quiet Glass» scale) */
+  --radius-xs:    4px;   /* small kind tiles, checkboxes */
+  --radius-badge: 6px;   /* counters, kind chips */
+  --radius-sm:    8px;   /* status pills, icon tiles, menu items, 32px buttons */
+  --radius:       10px;  /* buttons / inputs / icon buttons / toasts */
+  --radius-field: 10px;  /* tall form fields (same as --radius) */
+  --radius-md:    12px;  /* nested cards, menus, popovers */
+  --radius-lg:    16px;  /* list rows, tables, small tiles */
+  --radius-head:  18px;  /* floating header plates */
+  --radius-pane:  20px;  /* floating panes: module columns, panels */
+  --radius-card:  24px;  /* cards, home tiles, dialogs, call windows, sheets */
+  --radius-bar:   26px;  /* phone floating bars: tab bar, composer */
+  --radius-pill:  999px; /* chips, search fields, toggles, pills */
 
   /* ── Layout heights ── */
   --topbar-h: 64px;
@@ -78,17 +86,16 @@
      inside the rounded panel and below its title bar. */
   --overlay-inset: 0px;
   --overlay-radius: 0px;
-  /* Height of the settings page's scroller; the page sets it for its sticky nav. */
-  --settings-view-h: 100vh;
   --dock-h:   36px;
   --bar-h:    36px;   /* ssh session bar / inspector bar / inspector rulers offset */
-  --control-h: 38px;  /* высота контролов в панелях фильтров (поиск / select / кнопки) */
-  --control-h-lg: 46px; /* поля форм в drawer'ах, сегмент-кнопки */
+  --control-h: 40px;  /* высота контролов: кнопки, поиск, select в панелях фильтров */
+  --control-h-sm: 32px; /* маленькие кнопки */
+  --control-h-lg: 44px; /* поля форм в drawer'ах, сегмент-кнопки, касание */
 
   /* ── Content rail (app width — shared by all routes + topbar) ── */
-  --page-max:        1280px;  /* standard content rail — every route + topbar inner */
+  --page-max:        1680px;  /* content rail of a page: the window's width up to this */
   --page-max-narrow: 820px;   /* reading/forms column (settings) */
-  --rail-pad-x:      1.75rem; /* shared horizontal inset for topbar + content, so rails align */
+  --rail-pad-x:      var(--sp-6); /* the page's inset from the window's sides */
 
   /* ── Panel / dialog widths ── */
   --drawer-w:    440px;  /* profile detail */
@@ -105,115 +112,36 @@
   --z-modal:     200;  /* centered dialogs */
   --z-popover:   500;  /* dropdowns / menus */
   --z-toast:     900;
+  --z-tooltip:   950;
   --z-inspector: 8000; /* inspector overlay family */
   --z-max:       9999;
 
   /* ── Motion ── */
+  --dur-press: 0.1s;
   --dur-fast: 0.15s;
   --dur-base: 0.2s;
   --dur-drawer: 0.28s;
   --ease:     cubic-bezier(0.4, 0, 0.2, 1);
   --ease-drawer: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* ── Glass ── (the colours are the palette's) */
+  --pane-filter:  blur(24px) saturate(130%);
+  --glass-filter: blur(20px) saturate(160%);
 }
 
 /* The ideographs Chinese, Japanese and Korean share take the glyphs of the UI's language. */
 :root:lang(ja) { --font-cjk: 'Veydan JP', 'Veydan SC', 'Veydan KR'; }
 :root:lang(ko) { --font-cjk: 'Veydan KR', 'Veydan SC', 'Veydan JP'; }
 
-/* ── Colours: DARK ── */
-[data-theme='dark'] {
-  color-scheme: dark;
-  --bg:          #08080c;
-  --bg-2:        #0b0b10;  /* chrome: header / dock / session bar */
-  --chrome:      #0b0b10;  /* window titlebar (CSD) */
-  --surface:     #0e0e14;  /* cards / sections / tables */
-  --surface-2:   #14141b;  /* nested: profile cards, mono chips */
-  --surface-3:   #101017;  /* form fields / segment containers / filter chips */
-  --surface-hover: #181820;
-  --surface-row-hover: #12121a;  /* table row hover — subtler than card hover */
-  --surface-drawer: #0b0b11;
-  --surface-drawer-footer: #0c0c12;
-  --toggle-off:  #22222c;  /* toggle track in "off" state */
-  --border:      #1c1c26;
-  --border-2:    #2c2c38;  /* hover border */
-  --text:        #eaeaf0;
-  --text-2:      #8a8a96;
-  --text-3:      #5c5c68;  /* dimmest: placeholders, table header labels */
-  --text-body:   #c1c1cb;  /* long-form body text (note reader, descriptions) */
-  --text-soft:   #a6a6b2;  /* metric text, default icon-button glyphs */
-  --text-faint:  #7f7f8b;  /* field labels, sublabels */
-  --text-dim:    #6a6a76;  /* "без прокси", stopped status, em-dashes */
-
-  --accent:        #8b7bff;
-  --accent-hover:  #6d5cf0;
-  --accent-bg:     rgba(124, 108, 246, 0.15);
-  --accent-border: rgba(124, 108, 246, 0.45);
-  --accent-grad:   linear-gradient(135deg, #8b7bff, #6d5cf0);
-  --accent-text:   #b5a8ff;  /* active nav / tabs */
-  --accent-text-2: #a99bff;  /* mono badges */
-  --accent-text-3: #9d8dff;  /* inline links ("Открыть →") */
-  --accent-tint:        rgba(139, 123, 255, 0.12);  /* tag / badge fills */
-  --accent-tint-border: rgba(139, 123, 255, 0.3);
-
-  --success:        #34d399;
-  --success-bg:     rgba(52, 211, 153, 0.12);
-  --success-text:   #34d399;
-  --success-border: rgba(52, 211, 153, 0.3);
-  --success-grad:   linear-gradient(135deg, #34d399, #10b981);
-  --danger:         #e5484d;  /* solid danger buttons */
-  --danger-bg:      rgba(242, 109, 109, 0.14);
-  --danger-text:    #f26d6d;
-  --danger-border:  rgba(242, 109, 109, 0.3);
-  --warn-bg:        rgba(245, 196, 81, 0.12);
-  --warn-text:      #f5c451;
-  --warn-border:    rgba(245, 196, 81, 0.4);
-
-  /* Category colours (workspaces / proxy types) */
-  --cat-purple: #8b7bff;
-  --cat-blue:   #60a5fa;
-  --cat-teal:   #2dd4bf;
-  --cat-pink:   #f472b6;
-
-  /* The palette of a bio (messenger contacts/BioView): text colours, each
-     WCAG AA (4.5:1) or more on every surface of the theme and on a tinted
-     (outgoing) bubble. */
-  --bio-red:    #f87171;
-  --bio-orange: #fb923c;
-  --bio-yellow: #facc15;
-  --bio-green:  #4ade80;
-  --bio-teal:   #2dd4bf;
-  --bio-blue:   #60a5fa;
-  --bio-purple: #a78bfa;
-  --bio-pink:   #f472b6;
-  --bio-gray:   #a1a1aa;
-
-  /* A chip coloured from data (`.tinted`, base.css): the tint under it, its
-     pressed tint, its border, and the share of the colour in its text (the
-     rest is --text). The ink share is a step under the largest one that keeps
-     WCAG AA 4.5:1 for any colour on any surface of the theme;
-     chip-contrast.test.ts computes it, change these only with that test.
-     --chip-fade: the opacity of a × or a secondary text inside the chip
-     (the ink, faded), 3:1 or more. */
-  --chip-tint:        20%;
-  --chip-tint-strong: 30%;
-  --chip-edge:        50%;
-  --chip-ink:         36%;
-  --chip-fade:        0.75;
-
-  --shadow:      0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-lg:   0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-accent: 0 5px 14px rgba(124, 108, 246, 0.33);
-  --shadow-danger: 0 5px 16px rgba(229, 72, 77, 0.3);
-  --shadow-drawer: -24px 0 60px rgba(0, 0, 0, 0.5);
-  --shadow-note-active: 0 0 0 1px rgba(124, 108, 246, 0.15), 0 8px 22px rgba(0, 0, 0, 0.35);
-  --shadow-knob: 0 2px 5px rgba(0, 0, 0, 0.4);  /* toggle knob */
-
-  --bg-glow:  radial-gradient(1200px 600px at 80% -10%, rgba(124, 108, 246, 0.06), transparent 60%);
-  --backdrop: rgba(4, 4, 8, 0.55);
-
-  /* Topology graph (canvas reads these at draw time) */
-  --graph-edge:      rgba(138, 138, 150, 0.2);
-  --graph-node-ring: rgba(255, 255, 255, 0.4);
+/* Resolved where a theme is set, so they follow its palette. */
+[data-theme] {
+  /* The window: four soft spots of glow over the base colour; the panes take
+     their colour from it. Painted as `background: var(--bg-image), var(--bg)`. */
+  --bg-image:
+    radial-gradient(circle 520px at 200px 160px, var(--glow-1), transparent),
+    radial-gradient(circle 460px at calc(100% - 150px) 190px, var(--glow-2), transparent),
+    radial-gradient(circle 500px at calc(100% - 470px) calc(100% - 90px), var(--glow-3), transparent),
+    radial-gradient(circle 460px at 66% 60%, var(--glow-1), transparent);
 
   /* ── Compatibility aliases → canonical tokens ──
      These names leaked in from a second naming scheme and were referenced
@@ -223,15 +151,8 @@
   --text-1:            var(--text);
   --text-4:            var(--text-3);
   --text-muted:        var(--text-2);
-  --bg-1:              var(--surface);
-  --bg-3:              var(--surface-2);
-  --bg2:               var(--surface-2);
-  --bg3:               var(--surface-2);
-  --bg-dark:           var(--bg);
   --border-strong:     var(--border-2);
-  --error:             var(--danger);
   --warn:              var(--warn-text);
-  --warning:           var(--warn-text);
   --color-warning:     var(--warn-text);
   --color-bg-soft:     var(--surface);
   --color-border-soft: var(--border);
@@ -240,117 +161,24 @@
   --color-text-muted:  var(--text-2);
 }
 
-/* ── Colours: LIGHT ── ("Variant A — Light", mirrors the dark product theme)
-   Neutrals are violet-tinted cool grays (hue ~248°) mirroring the dark
-   #08080c→#eaeaf0 axis; accent steps down to #6d5cf0 for contrast on white.
-   Text tiers keep AA on their surfaces (ratios noted vs #ffffff). */
-[data-theme='light'] {
-  color-scheme: light;
-  --bg:          #f4f3f8;  /* page bg — violet-tinted */
-  --bg-2:        #fafafd;  /* chrome: header / dock / session bar */
-  --chrome:      #fafafd;  /* window titlebar (CSD) */
-  --surface:     #ffffff;  /* cards / sections / tables */
-  --surface-2:   #f6f5fa;  /* nested: profile cards, mono chips */
-  --surface-3:   #f8f7fc;  /* form fields / segment containers / filter chips */
-  --surface-hover: #efeef6;
-  --surface-row-hover: #f8f8fc;  /* table row hover — subtler than card hover */
-  --surface-drawer: #fcfcfe;
-  --surface-drawer-footer: #f7f7fb;
-  --toggle-off:  #d5d4e2;
-  --border:      #e6e5ef;
-  --border-2:    #cfcede;  /* hover border */
-  --text:        #16161e;  /* 16.8:1 */
-  --text-2:      #666672;  /* 5.5:1 */
-  --text-3:      #9898a6;  /* dimmest: placeholders, table header labels */
-  --text-body:   #33333e;  /* long-form body text */
-  --text-soft:   #4c4c58;  /* metric text, default icon-button glyphs */
-  --text-faint:  #757584;  /* field labels, sublabels */
-  --text-dim:    #82828f;  /* stopped status, em-dashes */
-
-  --accent:        #6d5cf0;  /* brand purple, darker step for light bg */
-  --accent-hover:  #5a49dd;
-  --accent-bg:     rgba(109, 92, 240, 0.1);
-  --accent-border: rgba(109, 92, 240, 0.45);
-  --accent-grad:   linear-gradient(135deg, #8b7bff, #6d5cf0);  /* brand, unchanged */
-  --accent-text:   #5a49dd;  /* active nav / tabs */
-  --accent-text-2: #6353e6;  /* mono badges */
-  --accent-text-3: #5f4ee3;  /* inline links */
-  --accent-tint:        rgba(109, 92, 240, 0.1);
-  --accent-tint-border: rgba(109, 92, 240, 0.32);
-
-  --success:        #0e9f6e;
-  --success-bg:     rgba(16, 185, 129, 0.12);
-  --success-text:   #0a7d57;
-  --success-border: rgba(16, 185, 129, 0.38);
-  --success-grad:   linear-gradient(135deg, #10b981, #0c8a5f);
-  --danger:         #d63640;
-  --danger-bg:      rgba(217, 45, 54, 0.1);
-  --danger-text:    #c92a32;
-  --danger-border:  rgba(217, 45, 54, 0.32);
-  --warn-bg:        rgba(214, 158, 20, 0.14);
-  --warn-text:      #9a6700;
-  --warn-border:    rgba(178, 128, 12, 0.42);
-
-  /* Category colours — one step darker than dark theme for light-bg legibility */
-  --cat-purple: #6d5cf0;
-  --cat-blue:   #3b82f6;
-  --cat-teal:   #0d9488;
-  --cat-pink:   #db2777;
-
-  /* The palette of a bio (messenger contacts/BioView): text colours, each
-     WCAG AA (4.5:1) or more on every surface of the theme and on a tinted
-     (outgoing) bubble. */
-  --bio-red:    #b91c1c;
-  --bio-orange: #a63a0c;
-  --bio-yellow: #7f5400;
-  --bio-green:  #13703a;
-  --bio-teal:   #0d6b64;
-  --bio-blue:   #1d4ed8;
-  --bio-purple: #7e22ce;
-  --bio-pink:   #be185d;
-  --bio-gray:   #52525b;
-
-  /* A chip coloured from data (`.tinted`): as in the dark block. The ink
-     share is lower here: a pale colour on white needs more of the text. */
-  --chip-tint:        16%;
-  --chip-tint-strong: 26%;
-  --chip-edge:        55%;
-  --chip-ink:         32%;
-  --chip-fade:        0.75;
-
-  /* Shadows — violet-gray ink instead of pure black */
-  --shadow:      0 2px 8px rgba(23, 20, 60, 0.08);
-  --shadow-lg:   0 8px 24px rgba(23, 20, 60, 0.13);
-  --shadow-accent: 0 5px 14px rgba(109, 92, 240, 0.28);
-  --shadow-danger: 0 5px 16px rgba(214, 54, 64, 0.22);
-  --shadow-drawer: -24px 0 60px rgba(23, 20, 60, 0.14);
-  --shadow-note-active: 0 0 0 1px rgba(109, 92, 240, 0.18), 0 8px 22px rgba(23, 20, 60, 0.1);
-  --shadow-knob: 0 1px 3px rgba(23, 20, 60, 0.25);
-
-  --bg-glow:  radial-gradient(1200px 600px at 80% -10%, rgba(124, 108, 246, 0.07), transparent 60%);
-  --backdrop: rgba(22, 20, 42, 0.35);
-
-  /* Topology graph (canvas reads these at draw time) */
-  --graph-edge:      rgba(90, 90, 115, 0.28);
-  --graph-node-ring: rgba(255, 255, 255, 0.9);
-
-  /* aliases (resolve to this theme's canonical values) */
-  --text-1:            var(--text);
-  --text-4:            var(--text-3);
-  --text-muted:        var(--text-2);
-  --bg-1:              var(--surface);
-  --bg-3:              var(--surface-2);
-  --bg2:               var(--surface-2);
-  --bg3:               var(--surface-2);
-  --bg-dark:           var(--bg);
-  --border-strong:     var(--border-2);
-  --error:             var(--danger);
-  --warn:              var(--warn-text);
-  --warning:           var(--warn-text);
-  --color-warning:     var(--warn-text);
-  --color-bg-soft:     var(--surface);
-  --color-border-soft: var(--border);
-  --color-brand-500:   var(--accent);
-  --color-text-main:   var(--text);
-  --color-text-muted:  var(--text-2);
+/* No glass where the system asks for less transparency, nor where the
+   engine draws no backdrop filter: the panes and layers are opaque. */
+@media (prefers-reduced-transparency: reduce) {
+  [data-theme] {
+    --pane: var(--surface);
+    --pane-head: var(--surface);
+    --pane-strong: var(--surface);
+    --glass-bg: var(--surface);
+    --glass-bg-raised: var(--surface-2);
+    --glass-bar: var(--bg-2);
+    --pane-filter: none;
+    --glass-filter: none;
+  }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-theme] {
+    --glass-bg: var(--surface);
+    --glass-bg-raised: var(--surface-2);
+    --glass-bar: var(--bg-2);
+  }
 }

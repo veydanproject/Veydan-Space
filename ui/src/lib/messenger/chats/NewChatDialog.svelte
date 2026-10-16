@@ -21,9 +21,21 @@
   import { contactHaystacks, matchesQuery } from '../shared/search';
   import { inviteStore } from '../invites/inviteStore.svelte';
   import { addressKind, invitedContact, normalizeCode, type InvitedContact } from '../invites/invites';
+  import { goto } from '$app/navigation';
+  import { contactsHref, qrHref } from '../mobile/routes';
 
-  interface Props { open: boolean; onopened?: () => void }
-  let { open = $bindable(), onopened }: Props = $props();
+  interface Props {
+    open: boolean;
+    onopened?: () => void;
+    /** A phone: the contacts and the QR codes are reached from here (the list has no button of its own for them). */
+    shortcuts?: boolean;
+  }
+  let { open = $bindable(), onopened, shortcuts = false }: Props = $props();
+
+  function go(href: string) {
+    open = false;
+    void goto(href);
+  }
 
   let key = $state('');
   let busy = $state(false);
@@ -120,6 +132,14 @@
     <input type="text" bind:value={key} placeholder={$t('msg_newchat_placeholder')} aria-label={$t('msg_newchat_placeholder')} spellcheck="false" disabled={busy}
       onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) enter(); }} />
 
+    {#if shortcuts && !q}
+      <ul class="list shortcuts">
+        <li><button class="row" onclick={() => go(contactsHref())}><span class="sc"><Icon name="book-user" size={18} /></span><span class="name">{$t('msg_contacts_title')}</span><Icon name="chevron-right" size={16} /></button></li>
+        <li><button class="row" onclick={() => go(qrHref(true))}><span class="sc"><Icon name="scan" size={18} /></span><span class="name">{$t('msg_newchat_scan')}</span><Icon name="chevron-right" size={16} /></button></li>
+        <li><button class="row" onclick={() => go(qrHref())}><span class="sc"><Icon name="qr-code" size={18} /></span><span class="name">{$t('msg_newchat_my_qr')}</span><Icon name="chevron-right" size={16} /></button></li>
+      </ul>
+    {/if}
+
     {#if linkError}<div class="error-msg">{linkError}</div>{/if}
     {#if link}
       <div class="person">
@@ -197,6 +217,10 @@
   }
   .row:hover:not(:disabled) { background: var(--surface-row-hover); }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shortcuts { max-height: none; }
+  .shortcuts .row { min-height: 48px; color: var(--text-2); }
+  .shortcuts .name { color: var(--text); }
+  .sc { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-tint); color: var(--accent-text-2); }
   code { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
   @media (pointer: coarse) {

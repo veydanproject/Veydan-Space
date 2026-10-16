@@ -256,7 +256,7 @@
     border-radius: var(--radius-field);
     height: 42px;
     padding: 0 var(--sp-4);
-    font-size: 0.9rem;
+    font-size: var(--fs-base);
     font-weight: var(--fw-semibold);
     box-shadow: var(--shadow-accent);
     cursor: pointer;

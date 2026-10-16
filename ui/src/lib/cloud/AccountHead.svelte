@@ -3,6 +3,7 @@
 
 <!-- The head of the page «Account»: who the account is — the name of the profile and the address of the key, a tap away from the clipboard — or, on a device without one, the way to make it. The owner of the key answers (core/account). -->
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { accountName, accountSource, shortNpub, type AccountProfile } from '$lib/core/account';
   import { t } from '$lib/core/i18n';
@@ -17,6 +18,7 @@
     if (!profile) return;
     try {
       await navigator.clipboard.writeText(profile.npub);
+      copiedToast();
       copied = true;
       setTimeout(() => (copied = false), 1500);
     } catch {
@@ -47,9 +49,9 @@
   .head { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); padding: var(--sp-2) 0 var(--sp-3); }
   .ava {
     display: inline-flex; align-items: center; justify-content: center; width: 68px; height: 68px; border-radius: 50%; flex-shrink: 0;
-    background: var(--accent-grad); color: #fff; font-size: 28px; font-weight: 800; margin-bottom: var(--sp-2);
+    background: var(--accent-grad); color: #fff; font-size: var(--fs-2xl); font-weight: 800; margin-bottom: var(--sp-2);
   }
-  .ava.ghost { background: var(--accent-tint); color: var(--accent); }
+  .ava.ghost { background: var(--accent-tint); color: var(--accent-text); }
   strong { font-size: var(--fs-lg, 19px); font-weight: var(--fw-bold); text-align: center; overflow-wrap: anywhere; }
   .npub {
     display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 var(--sp-2); border: 0; border-radius: var(--radius-sm);

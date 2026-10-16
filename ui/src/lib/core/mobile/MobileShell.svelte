@@ -20,6 +20,7 @@
   import { leavesOff, registry } from '$lib/core/registry';
   import Wizard from '$lib/core/onboarding/Wizard.svelte';
   import ConfirmHost from '$lib/core/ui/ConfirmHost.svelte';
+  import ToastHost from '$lib/core/ui/ToastHost.svelte';
   import { startUpdateCheck } from '$lib/core/store/update-check.svelte';
   import { t } from '$lib/core/mobile/i18n';
 
@@ -112,6 +113,7 @@
 {#if !appLock.gated}
   <ConfirmHost />
 {/if}
+<ToastHost />
 
 <style>
   .shell {
@@ -121,10 +123,10 @@
     /* Nothing of the shell may make the document scroll: a focus or a
        scroll-into-view would move the header under the status area. */
     overflow: clip;
-    background: var(--bg);
+    background: var(--bg-image), var(--bg);
   }
   /* Home has no header: the strip under the status bar is the page's own colour. */
-  .shell.home .screen { background: var(--bg); }
+  .shell.home .screen { background: transparent; }
   .screen {
     flex: 1;
     min-height: 0;
@@ -132,7 +134,7 @@
     display: flex;
     flex-direction: column;
     padding-top: var(--sat);
-    background: var(--m-nav);
+    background: linear-gradient(var(--m-head), var(--m-head)) top / 100% var(--sat) no-repeat;
   }
   .screen > :global(.m-page) {
     flex: 1;

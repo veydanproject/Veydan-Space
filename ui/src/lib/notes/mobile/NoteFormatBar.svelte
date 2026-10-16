@@ -100,7 +100,7 @@
     height: 36px;
     padding: 0;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-2);
   }
@@ -108,7 +108,7 @@
   .fb:disabled { opacity: 0.35; }
   .h-label {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-xs);
     font-weight: 700;
   }
   .sep {
@@ -123,7 +123,7 @@
     flex-shrink: 0;
     display: inline-flex;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
   .mode {
@@ -137,5 +137,5 @@
     background: transparent;
     color: var(--text-2);
   }
-  .mode.on { color: var(--accent); background: var(--accent-tint); }
+  .mode.on { color: var(--accent-text); background: var(--accent-tint); }
 </style>

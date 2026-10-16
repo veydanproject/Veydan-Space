@@ -38,5 +38,5 @@
     color: var(--text-2);
   }
   .lost p { margin: 0; }
-  .lost a { color: var(--accent); font-weight: 600; }
+  .lost a { color: var(--accent-text); font-weight: 600; }
 </style>

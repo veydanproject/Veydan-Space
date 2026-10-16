@@ -6,16 +6,20 @@
   import Icon from '$lib/core/Icon.svelte';
   import { onKeyboard } from '$lib/core/mobile/keyboard';
   import { t } from '$lib/core/mobile/i18n';
+  import { backdropIn, backdropOut, sheetIn, sheetOut } from '$lib/core/ui/motion';
+  import { portal } from '$lib/core/portal';
 
   interface Props {
     open: boolean;
     title?: string;
     onclose: () => void;
     onback?: () => void;
+    /** The × of the head (default true); a question with its own «Отмена» has none (design kit, dialog on a phone). */
+    closable?: boolean;
     children: Snippet;
   }
 
-  let { open, title = '', onclose, onback, children }: Props = $props();
+  let { open, title = '', onclose, onback, closable = true, children }: Props = $props();
 
   let sheetEl = $state<HTMLDivElement>();
   let dragY = $state(0);
@@ -65,10 +69,14 @@
 </script>
 
 {#if open}
-  <div class="m-dim" onclick={onclose} role="presentation"></div>
+  <!-- On the body: a sheet opened from inside a glass bar (backdrop-filter makes a box for `fixed`) would sit on the bar instead of the screen. -->
+  <div class="m-dim" use:portal in:backdropIn out:backdropOut onclick={onclose} role="presentation"></div>
   <div
     bind:this={sheetEl}
     class="m-sheet"
+    use:portal
+    in:sheetIn
+    out:sheetOut
     class:dragging
     role="dialog"
     aria-modal="true"
@@ -102,9 +110,9 @@
           </button>
         {/if}
         <h2>{title}</h2>
-        <button type="button" class="m-ibtn" onclick={onclose} aria-label={$t('common_close')} onpointerdown={(e) => e.stopPropagation()}>
+        {#if closable}<button type="button" class="m-ibtn" onclick={onclose} aria-label={$t('common_close')} onpointerdown={(e) => e.stopPropagation()}>
           <Icon name="x" size={20} />
-        </button>
+        </button>{/if}
       </div>
     {/if}
     <div class="body">
@@ -134,10 +142,10 @@
   .handle::after {
     content: '';
     display: block;
-    width: 40px;
+    width: 36px;
     height: 4px;
-    border-radius: 2px;
-    background: var(--border-2);
+    border-radius: var(--radius-pill);
+    background: var(--border-2); /* the kit's --track */
     margin: 0 auto;
   }
   .head {
@@ -148,7 +156,7 @@
     touch-action: none;
     flex-shrink: 0;
   }
-  h2 { flex: 1; margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.01em; pointer-events: none; }
+  h2 { flex: 1; margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); pointer-events: none; }
   .body {
     flex: 0 1 auto;
     min-height: 0;

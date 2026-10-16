@@ -198,7 +198,7 @@
   textarea {
     width: 100%;
     resize: none;
-    font-size: 14px;
+    font-size: var(--fs-base);
   }
   .preview {
     display: flex;

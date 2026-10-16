@@ -6,10 +6,12 @@
   a tap opens it, a long press offers copy, edit and delete in a sheet.
 -->
 <script lang="ts">
+  import { toast } from '$lib/core/ui/toast.svelte';
   import { hasHome } from '$lib/core/mobile/nav';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
+  import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import PasswordRow from '$lib/pass/mobile/PasswordRow.svelte';
   import PasswordLockBadge from '$lib/pass/components/PasswordLockBadge.svelte';
@@ -32,11 +34,9 @@
   let loaded = $state(false);
   let search = $state('');
   let error = $state('');
-  let toast = $state('');
   let menu = $state<PasswordEntry | null>(null);
   let unlockOpen = $state(false);
   let pendingCopy = $state<PasswordEntry | null>(null);
-  let toastTimer: ReturnType<typeof setTimeout>;
 
   const canAdd = $derived(!appLock.locked && appLock.status.vault !== 'mismatch');
 
@@ -73,11 +73,6 @@
 
   const period = (entry: PasswordEntry) => totpStore.list.find((item) => item.id === entry.totp_ids[0])?.period ?? 30;
 
-  function showToast(text: string) {
-    clearTimeout(toastTimer);
-    toast = text;
-    toastTimer = setTimeout(() => (toast = ''), 1600);
-  }
 
   async function writeClipboard(value: string) {
     try {
@@ -99,7 +94,7 @@
     menu = null;
     if (!entry.username) return;
     await writeClipboard(entry.username);
-    showToast($t('pw_copied'));
+    toast.success($t('pw_copied'));
   }
 
   async function copyPassword(entry: PasswordEntry) {
@@ -111,8 +106,7 @@
     }
     try {
       const value = (await api.passwords.reveal(entry.id, 'password')).value;
-      await copySecret(value);
-      showToast($t('pw_copied'));
+      await copySecret(value, { toast: $t('pw_copied') });
     } catch (e) {
       if (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed')) {
         pendingCopy = entry;
@@ -143,7 +137,6 @@
     void load();
     const unlisten = onSyncChanged(['password', 'password_vault'], () => void load());
     return () => {
-      clearTimeout(toastTimer);
       void unlisten.then((fn) => fn());
     };
   });
@@ -168,7 +161,8 @@
   <div class="m-body">
     {#if error}<div class="m-error">{error}</div>{/if}
     {#if !loaded}
-      <!-- Nothing yet: no empty-state flash before the list arrives. -->
+      <!-- The shape of the rows, no empty-state flash before the list arrives. -->
+      <Skeleton height={56} avatar="square" />
     {:else if entries.length === 0}
       <div class="m-empty">
         <Icon name="lock" size={40} />
@@ -196,7 +190,6 @@
         {/each}
       </div>
     {/if}
-    {#if toast}<div class="toast">{toast}</div>{/if}
   </div>
 </div>
 
@@ -235,7 +228,7 @@
 
 <style>
   .title-with-badge { display: flex; align-items: center; gap: 2px; }
-  .list { padding-bottom: var(--sp-6); }
+  .list { gap: 2px; padding-bottom: var(--sp-6); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
   .danger { color: var(--danger-text); }
 </style>

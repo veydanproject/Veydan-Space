@@ -12,11 +12,16 @@ export type { NavItem };
 /**
  * The root bar. Space: Home, which opens the default module when one is
  * set, and Settings. A product of one module has no Home (platform-spec
- * 11.7): its bar is that module's own screens, then Settings.
+ * 11.7): its bar is that module's own screens, then Settings — the bar the
+ * module gives its first screen when it has one (the chat's tabs, Settings
+ * at their end), so Settings keeps the same bar.
  */
 export function rootNav(): NavItem[] {
   const settings: NavItem = { id: 'settings', title: 'app_settings', icon: 'settings', href: '/settings' };
   const only = registry.only;
+  const home = only && registry.homeRoute(only);
+  const own = home ? only.bar?.(new URL(home, 'http://app')) : undefined;
+  if (own) return own;
   if (only && only.nav.length > 0) return [...only.nav, settings];
   const app = registry.navItem(loadDefaultApp());
   return [{ id: 'home', title: 'nav_home', icon: 'home', href: app?.href ?? (only && registry.homeRoute(only)) ?? '/' }, settings];

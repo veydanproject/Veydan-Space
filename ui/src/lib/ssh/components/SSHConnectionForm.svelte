@@ -446,7 +446,7 @@
   .form-group { display: flex; flex-direction: column; gap: 8px; }
   /* Caps field labels per redesign drawer-form spec */
   label, .field-label {
-    font-size: 0.72rem; text-transform: uppercase; color: var(--text-faint);
+    font-size: var(--fs-2xs); text-transform: uppercase; color: var(--text-faint);
     font-weight: var(--fw-bold); letter-spacing: 0.5px;
   }
   /* Tall drawer form fields (46px / radius 11) */
@@ -458,12 +458,12 @@
     color: var(--text);
     padding: 0 14px;
     height: var(--control-h-lg);
-    font-size: 0.9rem;
+    font-size: var(--fs-base);
     font-family: inherit;
     resize: vertical;
   }
   select { padding-right: 2.2rem; }
-  textarea { height: auto; min-height: 96px; padding: 12px 14px; font-size: 0.8rem; }
+  textarea { height: auto; min-height: 96px; padding: 12px 14px; font-size: var(--fs-sm); }
   input:focus, select:focus, textarea:focus {
     outline: none;
     border-color: var(--accent-border);
@@ -475,21 +475,21 @@
     padding: 1rem 0;
   }
   .toggle-info { display: flex; flex-direction: column; gap: 4px; }
-  .toggle-text { font-size: 0.95rem; font-weight: var(--fw-semibold); color: var(--text); text-transform: none; letter-spacing: 0; }
+  .toggle-text { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); text-transform: none; letter-spacing: 0; }
   .toggle-btn {
     position: relative; flex-shrink: 0;
-    width: 54px; height: 30px;
-    background: var(--toggle-off); border: none; border-radius: 999px;
+    width: 40px; height: 24px;
+    background: var(--toggle-off); border: none; border-radius: var(--radius-pill);
     cursor: pointer; padding: 0; transition: background 0.2s;
   }
   .toggle-btn.active { background: var(--accent-hover); }
   .toggle-thumb {
     position: absolute; top: 3px; left: 3px;
-    width: 24px; height: 24px; border-radius: 50%;
+    width: 18px; height: 18px; border-radius: 50%;
     background: #fff; transition: transform 0.2s;
     box-shadow: var(--shadow-knob);
   }
-  .toggle-btn.active .toggle-thumb { transform: translateX(24px); }
+  .toggle-btn.active .toggle-thumb { transform: translateX(16px); }
 
   /* Workspace tag picker */
   .tag-grid { display: flex; flex-wrap: wrap; gap: 0.4rem; }
@@ -507,5 +507,5 @@
   summary:hover { color: var(--text); }
   .advanced-body { padding: var(--sp-2) 1rem 1rem; display: flex; flex-direction: column; gap: var(--sp-3); }
   .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: var(--sp-2); }
-  .form-actions .btn { height: 42px; border-radius: var(--radius-field); padding: 0 20px; }
+  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 </style>

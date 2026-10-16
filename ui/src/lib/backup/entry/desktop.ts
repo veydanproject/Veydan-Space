@@ -12,6 +12,6 @@ export const module: ModuleDef = {
   ...common,
   nav: [],
   settings: [
-    { id: 'backup', title: 'settings_backup_section', group: 'settings_group_data', order: 50, hint: 'settings_backup_hint', component: BackupCard },
+    { id: 'backup', title: 'settings_backup_section', group: 'settings_group_data', order: 50, hint: 'settings_backup_hint', icon: 'archive', component: BackupCard },
   ],
 };

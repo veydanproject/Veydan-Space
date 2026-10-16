@@ -214,7 +214,7 @@
   .m .plans { grid-template-columns: 1fr; gap: var(--sp-2); }
   .plan {
     display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-5);
-    border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface);
+    border-radius: var(--radius-card); border: 1px solid var(--border); background: var(--surface);
   }
   .m .plan { padding: var(--sp-4); gap: var(--sp-3); }
   /* The plan the page points at carries the accent; the plan in use, the quiet mark of a thing already had. */
@@ -234,11 +234,11 @@
   .features li { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); line-height: 1.4; color: var(--text-body); }
   .features li :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--success-text); }
   .features li.more { color: var(--text); font-weight: var(--fw-semibold); }
-  .m .features li { font-size: 14px; }
+  .m .features li { font-size: var(--fs-base); }
 
   .cta { display: flex; }
   .cta .btn { flex: 1; justify-content: center; }
-  .m .cta .btn { min-height: 48px; font-size: 15px; }
+  .m .cta .btn { min-height: 48px; font-size: var(--fs-body); }
   .quiet { font-size: var(--fs-sm); color: var(--text-3); min-height: var(--control-h); display: flex; align-items: center; }
   .note { margin: var(--sp-1) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
 </style>

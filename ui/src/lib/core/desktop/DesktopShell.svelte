@@ -24,6 +24,8 @@
   import SetupCard from '$lib/core/onboarding/SetupCard.svelte';
   import Wizard from '$lib/core/onboarding/Wizard.svelte';
   import ConfirmHost from '$lib/core/ui/ConfirmHost.svelte';
+  import ToastHost from '$lib/core/ui/ToastHost.svelte';
+  import { installTooltips } from '$lib/core/ui/tooltip';
   import { appLock } from '$lib/core/lock/store.svelte';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
   import { updaterStore } from '$lib/core/store/updater.svelte';
@@ -170,6 +172,7 @@
     const unsub = theme.subscribe((val) => {
       document.body.dataset.theme = val;
     });
+    const uninstallTooltips = installTooltips();
 
     // Notes popout: only theme + window chrome. Main window owns tray / dock / updater,
     // and starts the modules (their stores, subscriptions and tray entries).
@@ -201,6 +204,7 @@
     }
 
     return () => {
+      uninstallTooltips();
       unsub();
       if (updateTimer) clearTimeout(updateTimer);
       window.removeEventListener('keydown', handleKeyBack);
@@ -285,7 +289,8 @@
     return $page.url.pathname.startsWith(href);
   }
 
-  const fullWidth = $derived(standaloneNotes || registry.fullWidth($page.url.pathname));
+  // Settings are two panes 12 from the window's sides, like a module's columns.
+  const fullWidth = $derived(standaloneNotes || registry.fullWidth($page.url.pathname) || $page.url.pathname === '/settings');
 </script>
 
 {#snippet toolButton(tool: ToolItem)}
@@ -358,7 +363,7 @@
   <AppLockGate>
   {#if !standaloneNotes && !(single && isCsd)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <header class="topbar" class:slim={single}>
+    <header class="topbar" class:slim={single} class:csd={isCsd}>
      <div class="topbar-inner" class:fit-tight={navFit >= 1} bind:this={topbarInner}>
       <a href="/" class="topbar-brand">
         <span class="brand-tile">
@@ -385,7 +390,7 @@
             title={navFit >= 2 ? $t(item.title as TranslationKey) : undefined}
             aria-label={navFit >= 2 ? $t(item.title as TranslationKey) : undefined}
           >
-            <Icon name={item.icon} size={14} />
+            <Icon name={item.icon} size={16} />
             <span class="nav-label" class:hidden={navFit >= 2}>{$t(item.title as TranslationKey)}</span>
             {#if badge > 0}<span class="nav-badge">{badge > 99 ? '99+' : badge}</span>{/if}
           </a>
@@ -469,6 +474,7 @@
 {#if !appLock.gated}
   <ConfirmHost />
 {/if}
+<ToastHost />
 <UIInspector />
 
 <style>
@@ -486,43 +492,46 @@
     color: var(--text-2);
   }
 
-  /* ── Top Bar ── */
+  /* ── Top Bar ── a floating glass plate: 12 from the sides of the window
+     like the panes below it, 4 under the window's own title bar. */
   .topbar {
     height: var(--topbar-h);
-    background: color-mix(in srgb, var(--bg-2) 85%, transparent);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--border);
+    margin: var(--sp-3) var(--sp-3) 0;
+    padding: 0 var(--sp-3) 0 var(--sp-4);
+    border-radius: var(--radius-head);
+    background: var(--pane);
+    -webkit-backdrop-filter: var(--pane-filter);
+    backdrop-filter: var(--pane-filter);
+    border: 1px solid var(--pane-border);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
     display: flex;
     align-items: center;
-    padding: 0 var(--rail-pad-x);
     flex-shrink: 0;
     z-index: 10;
   }
+  .topbar.csd { margin-top: var(--sp-1); }
 
   /* One module: the bar holds the name and the tools only. */
-  .topbar.slim { height: 48px; }
+  .topbar.slim { height: 52px; }
   .topbar.slim .brand-tile,
   .topbar.slim .brand-logo { width: 26px; height: 26px; }
   .topbar.slim .brand-name { font-size: var(--fs-base); }
   .topbar.slim .nav-link,
-  .topbar.slim .theme-toggle { height: 32px; }
-  .topbar.slim .theme-toggle { width: 32px; }
+  .topbar.slim .theme-toggle { height: 34px; }
+  .topbar.slim .theme-toggle { width: 34px; }
 
-  /* Inner rail — aligns topbar contents with the page content rail below */
   .topbar-inner {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: var(--sp-5);
     width: 100%;
-    max-width: var(--page-max);
-    margin-inline: auto;
+    min-width: 0;
   }
 
   .topbar-brand {
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: var(--sp-2);
     text-decoration: none;
     color: var(--text);
     flex-shrink: 0;
@@ -532,51 +541,53 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     flex-shrink: 0;
   }
 
   .brand-logo {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     object-fit: contain;
   }
 
   .brand-name {
-    font-weight: var(--fw-bold);
-    font-size: 1rem;
-    letter-spacing: -0.2px;
+    font-weight: var(--fw-extrabold);
+    font-size: var(--fs-md);
+    white-space: nowrap;
   }
 
   .topbar-nav {
     display: flex;
     align-items: center;
-    gap: 0.2rem;
+    gap: 2px;
     flex: 1;
+    min-width: 0;
   }
 
   .nav-badge {
-    min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-pill);
+    min-width: 20px; height: 20px; padding: 0 var(--sp-1); border-radius: var(--radius-badge);
     background: var(--accent); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold);
     display: inline-flex; align-items: center; justify-content: center;
   }
   .nav-link {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 38px;
-    padding: 0 14px;
-    border-radius: var(--radius);
+    gap: var(--sp-2);
+    height: var(--control-h);
+    padding: 0 var(--sp-3);
+    border-radius: var(--radius-lg);
     text-decoration: none;
     color: var(--text-2);
     font-size: var(--fs-base);
     font-weight: var(--fw-semibold);
-    transition: all 0.15s;
+    white-space: nowrap;
+    transition: background var(--dur-fast), color var(--dur-fast);
   }
 
-  .nav-link:hover { background: var(--surface); color: var(--text); }
-  .nav-link.active { background: var(--accent-bg); color: var(--accent-text); }
+  .nav-link:hover { background: var(--surface-hover); color: var(--text); }
+  .nav-link.active { background: var(--accent-bg); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-border); }
 
   /* The steps of fitNav(): tighter spacing, then icons only. Each element
      carries its own class: WebKitGTK does not restyle descendants when only
@@ -589,23 +600,26 @@
   .topbar-right {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--sp-1);
     margin-left: auto;
   }
 
+  /* The quick buttons: 36, flat until hovered, an 18px glyph. */
   .theme-toggle {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
-    background: var(--surface-3);
-    border: 1px solid var(--border);
-    border-radius: 9px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
     color: var(--text-soft);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
   }
+  .theme-toggle > :global(.icon) { width: 18px; height: 18px; }
   .theme-toggle.labelled {
     width: auto;
     gap: 6px;
@@ -621,13 +635,13 @@
   .content {
     flex: 1;
     overflow-y: auto;
-    scrollbar-gutter: stable both-edges;  /* symmetric so content rail shares the topbar rail's center line */
-    padding: 1.5rem var(--rail-pad-x);
-    background: var(--bg);
+    scrollbar-gutter: stable;
+    padding: var(--sp-6) var(--rail-pad-x);
+    background: transparent;
     min-height: 0;
   }
   .content--full {
-    padding: 0.75rem;
+    padding: var(--sp-3);
     scrollbar-gutter: auto;
   }
 

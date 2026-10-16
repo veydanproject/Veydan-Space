@@ -4,6 +4,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t, locale } from '$lib/core/i18n';
+  import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import { formatDate, formatTime } from '$lib/core/utils';
   import type { SshConnection } from '$lib/ssh/types';
   import Icon from '$lib/core/Icon.svelte';
@@ -186,7 +187,7 @@
   </div>
 
   {#if loading}
-    <div class="empty-state">{$t('loading')}</div>
+    <div class="table-wrap"><Skeleton rows={5} height={48} size={24} avatar="square" trailing /></div>
   {:else if sshStore.connections.length === 0}
     <div class="empty-state">
       <div class="empty-icon"><Icon name="terminal" size={40} strokeWidth={1.5} /></div>
@@ -376,8 +377,7 @@
 
   .ssh-table th {
     padding: var(--sp-3) var(--sp-4); text-align: left;
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-3);
-    text-transform: uppercase; letter-spacing: 0.7px;
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
@@ -402,13 +402,13 @@
 
   .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .conn-name { font-weight: var(--fw-semibold); font-size: 0.9rem; color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conn-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .auth-tags { display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
 
   code {
     font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body);
-    background: var(--surface-2); padding: 5px 10px; border-radius: 7px;
+    background: var(--surface-2); padding: 5px 10px; border-radius: var(--radius-sm);
     display: inline-block; max-width: 100%; vertical-align: middle;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -422,8 +422,8 @@
   .auth-key { background: var(--accent-tint); color: var(--accent-text-2); }
   .auth-key_password { background: var(--warn-bg); color: var(--warn-text); }
 
-  .tag-2fa { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; padding: 0.15rem var(--sp-2); border-radius: 999px; background: var(--success-bg); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success-text); }
-  .tag-proxy { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; padding: 0.15rem var(--sp-2); border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); }
+  .tag-2fa { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; padding: 0.15rem var(--sp-2); border-radius: var(--radius-pill); background: var(--success-bg); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success-text); }
+  .tag-proxy { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; padding: 0.15rem var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); }
 
   .status-dot {
     display: inline-block;
@@ -449,7 +449,7 @@
     display: inline-block; max-width: 100%;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     background: var(--accent-bg); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
-    color: var(--accent); border-radius: 999px;
+    color: var(--accent-text); border-radius: var(--radius-pill);
     font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.03em;
     padding: 0.15rem var(--sp-2); cursor: pointer;
     transition: all 0.15s;

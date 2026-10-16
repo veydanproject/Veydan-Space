@@ -39,19 +39,23 @@ pub(crate) fn dev_url<R: Runtime, M: Manager<R>>(manager: &M) -> Option<Url> {
     }
 }
 
-/// A web or mail link: to the user's browser or mail client.
-#[cfg(desktop)]
+/// A web or mail link: to the user's browser or mail client. Off the
+/// thread of the navigation: on a phone that is the main thread, where the
+/// opener's plugin answers.
 fn open_outside<R: Runtime>(app: &tauri::AppHandle<R>, url: &Url) {
     use tauri_plugin_opener::OpenerExt;
     if matches!(url.scheme(), "http" | "https" | "mailto") {
-        if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
-            eprintln!("[navigation] cannot open {url}: {e}");
-        }
+        let (app, url) = (app.clone(), url.clone());
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
+                eprintln!("[navigation] cannot open {url}: {e}");
+            }
+        });
     }
 }
 
 /// Keep a window on the pages of the app (platform-spec 5.2): a navigation
-/// anywhere else is refused, and on a computer a web or mail link goes to
+/// anywhere else is refused, and a web or mail link goes to
 /// the browser or the mail client, as `open_url` does; a page asking for a
 /// new window gets none.
 pub fn guard_window<'a, R: Runtime, M: Manager<R>>(
@@ -59,13 +63,11 @@ pub fn guard_window<'a, R: Runtime, M: Manager<R>>(
     builder: WebviewWindowBuilder<'a, R, M>,
 ) -> WebviewWindowBuilder<'a, R, M> {
     let dev = dev_url(manager);
-    #[cfg(desktop)]
     let app = manager.app_handle().clone();
     let builder = builder.on_navigation(move |url| {
         if is_own(url, dev.as_ref()) {
             return true;
         }
-        #[cfg(desktop)]
         open_outside(&app, url);
         false
     });

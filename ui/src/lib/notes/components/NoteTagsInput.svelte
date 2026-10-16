@@ -254,7 +254,7 @@
     font-size: var(--fs-2xs);
     line-height: 1;
     padding: 0.2rem 0.45rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border-width: 1px;
     border-style: solid;
     font-weight: 500;
@@ -294,7 +294,7 @@
     padding: 0;
     transition: all 0.15s;
   }
-  .add-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .add-btn:hover { border-color: var(--accent); color: var(--accent-text); }
 
   .popup {
     position: absolute;

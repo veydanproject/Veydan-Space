@@ -257,7 +257,7 @@
   .more { align-self: center; }
   @media (pointer: coarse) {
     .icon { padding: 10px; }
-    .search input { font-size: 16px; min-height: 40px; }
+    .search input { font-size: var(--fs-md); min-height: 40px; }
     .tick { margin-top: 4px; }
   }
 </style>

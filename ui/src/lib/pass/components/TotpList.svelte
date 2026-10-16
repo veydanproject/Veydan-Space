@@ -211,7 +211,7 @@
   .list {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 2px;
     container-type: inline-size;
   }
 
@@ -219,14 +219,15 @@
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    padding: 0.875rem;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    transition: border-color var(--dur-fast);
+    padding: var(--sp-2) var(--sp-3);
+    min-height: 64px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
+    transition: background var(--dur-fast);
   }
 
-  .entry:hover { border-color: var(--border-2); }
+  .entry:hover { background: var(--surface-hover); }
 
   .entry-info {
     flex: 1;
@@ -235,7 +236,7 @@
 
   /* One line: a long account name ends in an ellipsis (the whole name is the tooltip). */
   .entry-name {
-    font-size: var(--fs-base);
+    font-size: var(--fs-body);
     font-weight: var(--fw-semibold);
     color: var(--text);
     overflow: hidden;

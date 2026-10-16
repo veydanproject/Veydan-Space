@@ -4,12 +4,14 @@
 /** The ssh module as owner of the kind `ssh` in the catalog of entities (platform-spec 10.1). */
 
 import { goto } from '$app/navigation';
+import { copied } from '$lib/core/ui/toast.svelte';
 import { api } from '$lib/ssh/api';
 import type { EntityKindDef } from '$lib/core/module';
 import { sshStore } from '$lib/ssh/store/ssh.svelte';
 
 async function copyText(text: string): Promise<void> {
   await api.system.clipboardWriteText(text);
+  copied();
 }
 
 export const sshEntities: EntityKindDef[] = [

@@ -8,6 +8,7 @@
   copy, optional file save, acknowledge, done.
 -->
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
   import { isMobile } from '$lib/core/platform';
@@ -69,6 +70,7 @@
 
   async function copy() {
     await navigator.clipboard.writeText(code);
+    copiedToast();
     copied = true;
     clearTimeout(copyTimer);
     copyTimer = setTimeout(() => (copied = false), 2000);
@@ -182,7 +184,7 @@
     border: 1px dashed var(--accent-border);
     border-radius: var(--radius-md);
     background: var(--surface-2);
-    font-size: 1.05rem;
+    font-size: var(--fs-md);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-align: center;
@@ -202,7 +204,7 @@
     border: 1px dashed var(--accent-border);
     border-radius: var(--radius-md);
     background: var(--surface-2);
-    font-size: 1rem;
+    font-size: var(--fs-md);
     font-weight: 600;
     color: var(--text);
     user-select: all;
@@ -219,7 +221,7 @@
     padding: 6px 10px;
     font: inherit;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     background: var(--bg-2);
     color: var(--text);
   }

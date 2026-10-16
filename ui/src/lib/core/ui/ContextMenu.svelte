@@ -3,9 +3,12 @@
 
 <!--
   Generic right-click menu. Positioned at a viewport coordinate and clamped to
-  stay on screen; closes on outside-click, Escape, or after an item fires.
+  stay on screen; closes on outside-click, Escape, Tab, or after an item fires.
   Modelled on CustomSelect's fixed-positioned popover. On a phone the same
   items are a bottom sheet (the long press that asked for it places nothing).
+  Design kit, menu: grows from the point in 150 ms and fades in 100 ms (M05);
+  ↓/↑ (round), Home/End and the first letters move between the items, Enter
+  fires one, Escape gives the focus back to where it was.
 -->
 <script lang="ts">
   import { onMount, onDestroy, type Snippet } from 'svelte';
@@ -13,6 +16,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { isMobile } from '$lib/core/platform';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
+  import { menuOut } from './motion';
 
   export interface MenuItem {
     type?: 'item';
@@ -33,32 +37,74 @@
     onclose: () => void;
     /** Optional header rendered above the items (e.g. the target name). */
     header?: Snippet;
+    /** 'point': its corner at (x, y), the default; 'above': centred over (x, y), 8 above it (below when there is no room). */
+    place?: 'point' | 'above';
   }
 
-  let { open = $bindable(), x, y, items, onclose, header }: Props = $props();
+  let { open = $bindable(), x, y, items, onclose, header, place = 'point' }: Props = $props();
 
   let menuEl = $state<HTMLDivElement | null>(null);
   let style = $state('');
+  let origin = $state('top left');
+  let returnFocus: HTMLElement | null = null;
+  let buf = '';
+  let bufTimer: ReturnType<typeof setTimeout> | undefined;
 
   function reposition() {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const w = menuEl?.offsetWidth ?? 220;
     const h = menuEl?.offsetHeight ?? 240;
-    let left = x;
-    let top = y;
+    let left = place === 'above' ? x - w / 2 : x;
+    let top = place === 'above' ? (y - h - 8 >= 4 ? y - h - 8 : y + 8) : y;
+    if (left < 4) left = 4;
     if (left + w > vw - 4) left = vw - w - 4;
     if (top + h > vh - 4) top = Math.max(4, vh - h - 4);
     style = `left:${left}px;top:${top}px`;
+    origin = `${Math.round(x - left)}px ${Math.round(y - top)}px`;
   }
 
   $effect(() => {
     if (open) {
       // measure after render, then clamp
       style = `left:${x}px;top:${y}px;visibility:hidden`;
-      requestAnimationFrame(reposition);
+      requestAnimationFrame(() => {
+        reposition();
+        if (isMobile || !menuEl) return;
+        // The keys go to the menu; the focus comes back where it was when it closes.
+        const active = document.activeElement;
+        returnFocus = active instanceof HTMLElement && active !== document.body ? active : null;
+        menuEl.focus({ preventScroll: true });
+      });
     }
   });
+
+  const enabled = () => [...(menuEl?.querySelectorAll<HTMLButtonElement>('.menu-item:not(:disabled)') ?? [])];
+
+  function navigate(e: KeyboardEvent): boolean {
+    const list = enabled();
+    if (!list.length) return false;
+    const i = list.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      const n = e.key === 'Home' ? 0
+        : e.key === 'End' ? list.length - 1
+        : e.key === 'ArrowDown' ? (i + 1) % list.length
+        : i < 0 ? list.length - 1 : (i - 1 + list.length) % list.length;
+      list[n].focus();
+      return true;
+    }
+    if (e.key.length === 1 && /\S/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      clearTimeout(bufTimer);
+      buf += e.key.toLocaleLowerCase();
+      bufTimer = setTimeout(() => (buf = ''), 500);
+      const from = i < 0 ? 0 : i + (buf.length === 1 ? 1 : 0);
+      const order = [...list.slice(from), ...list.slice(0, from)];
+      const hit = order.find((b) => (b.querySelector('.menu-label')?.textContent ?? '').trim().toLocaleLowerCase().startsWith(buf));
+      hit?.focus();
+      return true;
+    }
+    return false;
+  }
 
   // The finger that held for the menu may lift over the sheet's backdrop:
   // that lift is not a tap that dismisses the sheet.
@@ -70,9 +116,11 @@
     if (performance.now() - openedAt > 350) close();
   }
 
-  function close() {
+  function close(refocus = false) {
     open = false;
     onclose();
+    if (refocus) returnFocus?.focus({ preventScroll: true });
+    returnFocus = null;
   }
 
   function fire(item: MenuItem) {
@@ -82,10 +130,15 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && open) {
+    if (!open) return;
+    if (e.key === 'Escape') {
       e.stopPropagation();
-      close();
+      close(true);
+      return;
     }
+    if (isMobile) return;
+    if (e.key === 'Tab') { close(); return; }
+    if (navigate(e)) { e.preventDefault(); e.stopPropagation(); }
   }
   function onOutside(e: MouseEvent) {
     if (open && menuEl && !menuEl.contains(e.target as Node)) close();
@@ -130,7 +183,7 @@
     </BottomSheet>
   </div>
 {:else if open && !isMobile}
-  <div bind:this={menuEl} class="context-menu" style={style} use:portal role="menu">
+  <div bind:this={menuEl} class="context-menu" style={style} style:transform-origin={origin} use:portal role="menu" tabindex="-1" out:menuOut>
     {#if header}
       <div class="menu-header">{@render header()}</div>
     {/if}
@@ -161,10 +214,21 @@
     min-width: 200px;
     max-width: 320px;
     padding: 4px;
-    background: var(--surface-drawer);
-    border: 1px solid var(--border-2);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-lg);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
+    outline: none;
+    animation: menu-in var(--dur-fast) var(--ease) both;
+  }
+  @keyframes menu-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .context-menu { animation: none; }
   }
 
   .menu-header {
@@ -183,20 +247,24 @@
     align-items: center;
     gap: var(--sp-2);
     width: 100%;
-    padding: var(--sp-2) var(--sp-2);
+    min-height: 36px;
+    padding: var(--sp-1) var(--sp-3);
     background: transparent;
     border: none;
     border-radius: var(--radius-sm);
     color: var(--text);
-    font-size: var(--fs-sm);
+    font-size: var(--fs-base);
     font-family: inherit;
     text-align: left;
     cursor: pointer;
   }
-  .menu-item:hover:not(:disabled) { background: var(--surface-hover); }
+  .menu-item:hover:not(:disabled),
+  .menu-item:focus:not(:disabled) { background: var(--surface-hover); outline: none; }
+  .menu-item:focus-visible { box-shadow: inset 0 0 0 1.5px var(--accent-border); }
   .menu-item:disabled { color: var(--text-3); cursor: default; }
   .menu-item.danger { color: var(--danger-text); }
-  .menu-item.danger:hover:not(:disabled) { background: var(--danger-bg); }
+  .menu-item.danger:hover:not(:disabled),
+  .menu-item.danger:focus:not(:disabled) { background: var(--danger-bg); }
 
   .menu-item :global(svg) { flex-shrink: 0; color: var(--text-2); }
   .menu-item.danger :global(svg) { color: var(--danger-text); }
@@ -225,7 +293,7 @@
   .sheet-menu-header {
     padding: 0 var(--sp-1) var(--sp-2);
     color: var(--text-2);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -243,7 +311,7 @@
     border-radius: var(--radius-md);
     color: var(--text);
     font: inherit;
-    font-size: 16px;
+    font-size: var(--fs-md);
     text-align: left;
   }
   .sheet-item:active:not(:disabled) { background: var(--surface-2); }

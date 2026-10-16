@@ -48,11 +48,11 @@
     min-height: 48px;
     padding: 0 var(--sp-2);
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--text);
     font: inherit;
-    font-size: 15px;
+    font-size: var(--fs-body);
     text-align: left;
   }
   .pick.on { background: var(--accent-bg); }

@@ -134,7 +134,7 @@
   .month { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); padding-top: var(--sp-2); }
   .month:first-child { padding-top: 0; }
   .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
-  .cell { aspect-ratio: 1; overflow: hidden; border-radius: 4px; }
+  .cell { aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-xs); }
   .cell :global(.placeholder-name) { display: none; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
   .item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

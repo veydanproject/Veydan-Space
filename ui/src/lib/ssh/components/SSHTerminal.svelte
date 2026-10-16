@@ -137,12 +137,12 @@
       fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', Menlo, monospace",
       // The terminal viewport is ALWAYS dark, regardless of app theme: remote
       // ANSI output (vim, htop, dotfiles) assumes a dark background.
-      // Palette matches the redesign dark theme (JS data — xterm can't read CSS vars)
+      // Palette matches the dark half of the palette «quiet» (JS data — xterm can't read CSS vars)
       theme: {
-        background: '#0b0b11',
-        foreground: '#eaeaf0',
-        cursor: '#8b7bff',
-        selectionBackground: 'rgba(139,123,255,0.25)',
+        background: '#15171e',
+        foreground: '#eef1f7',
+        cursor: '#b9b1f2',
+        selectionBackground: 'rgba(112,102,198,0.35)',
       },
       scrollback: 5000,
       allowProposedApi: true,
@@ -506,7 +506,7 @@
     overflow: hidden;
     padding: 0.2rem 0.25rem;
     /* Always dark to match the fixed xterm palette — no light seams around the canvas */
-    background: #0b0b11;
+    background: #15171e;
     color-scheme: dark;
   }
   .xterm-container :global(.xterm) { height: 100%; width: 100%; }
@@ -527,7 +527,7 @@
   .prompt-card {
     background: var(--surface-drawer);
     border: 1px solid var(--border-2);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     padding: var(--sp-5) var(--sp-6);
     min-width: 320px;
     max-width: 480px;
@@ -567,7 +567,7 @@
   .prompt-field input {
     background: var(--surface-3);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-badge);
     padding: 0.45rem 0.6rem;
     color: var(--text);
     font-size: var(--fs-sm);

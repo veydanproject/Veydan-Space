@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { api } from '$lib/browser/api';
   import type { Profile, ProfileRawData, CookieEntry } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
@@ -40,7 +41,7 @@
   }
 
   function copyToClipboard(text: string) {
-    navigator.clipboard.writeText(text).catch(() => {});
+    navigator.clipboard.writeText(text).then(() => copiedToast()).catch(() => {});
   }
 
   async function exportCookies() {

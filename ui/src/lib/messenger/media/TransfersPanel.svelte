@@ -165,7 +165,7 @@
   .go:hover:not(:disabled) { background: var(--surface-3); }
   .go:disabled { cursor: default; }
   .kind {
-    position: relative; width: 34px; height: 34px; flex-shrink: 0; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center;
+    position: relative; width: 34px; height: 34px; flex-shrink: 0; border-radius: var(--radius); display: inline-flex; align-items: center; justify-content: center;
     background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-text-2);
   }
   .failed .kind { background: var(--danger-bg); color: var(--danger-text); }

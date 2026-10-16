@@ -79,7 +79,7 @@ pub use links::LinkView;
 pub use calls::{CallBackends, RegistrySource};
 pub use call_nodes::{CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust};
 pub use calls::{
-    CallDirection, CallEnded, CallIncoming, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase,
+    CallDirection, CallEnded, CallIncoming, CallLimits, CallLogEntry, CallLogKind, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase,
     CallState, CallStats, CallVia, CallView, GroupCallAnnounced, GroupCallEnded, GroupCallLevel, GroupCallPhase,
     GroupCallState, GroupCallView, GroupParticipant, MediaEngine, ReconnectReason, RelayPolicy, UI_EVENT_CALL_ENDED,
     UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_STATE, UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_LEVEL,
@@ -410,6 +410,8 @@ impl MessengerRuntime {
         self.calls.service.set_signer(Some(keys_for_dm.clone()));
         self.group_calls.service.set_signer(Some(keys_for_dm));
         *self.session.lock().await = Some(session);
+        // What the notifications showed while the app was away.
+        self.take_pushed().await;
         // Who was approved on another device before the book followed it.
         match self.dm.fill_book_once().await {
             Ok(added) if !added.is_empty() => {
@@ -432,6 +434,30 @@ impl MessengerRuntime {
             }
         }
         Ok(())
+    }
+
+    /// Takes the events the push handler showed and left
+    /// (`messenger_ingress::push_inbox`) into the ingress of the running
+    /// session, as history; how many. As a session starts and on every
+    /// beat: the chat a notification opens holds its message before a
+    /// relay answers, and the copy the relay brings later is a duplicate.
+    pub async fn take_pushed(&self) -> usize {
+        if self.session.lock().await.is_none() {
+            return 0;
+        }
+        let events = messenger_ingress::push_inbox::take(&self.config.push_inbox_dir());
+        if events.is_empty() {
+            return 0;
+        }
+        let pool = self.relays.pool().await;
+        let mut taken = 0;
+        for raw in events {
+            match pool.inject(raw).await {
+                Ok(()) => taken += 1,
+                Err(e) => eprintln!("messenger: an event of a push is not taken: {e}"),
+            }
+        }
+        taken
     }
 
     /// Tell the world where we read DMs (kind 10050): our enabled write
@@ -1647,6 +1673,32 @@ mod tests {
     async fn last_from(rt: &MessengerRuntime, peer: &Keys) -> MessageView {
         let chat = messenger_store::chats::dm_chat_id(&peer.public_key().to_hex());
         rt.dm().messages(&chat, None, 50).await.unwrap().pop().expect("a message")
+    }
+
+    /// A message the push handler showed and left is in its chat before
+    /// any relay answers, taken as history: the system told of it already,
+    /// and the app does not again. It is taken once.
+    #[tokio::test]
+    async fn a_message_a_push_showed_is_in_its_chat_without_a_relay() {
+        let (_d, rt, _, me) = device(None).await;
+        let bob = Keys::generate();
+        let wrap = PrivateDirectMessageBuilder::new(me.public_key(), "from the push").finalize(&bob).unwrap();
+        let raw = RawEvent {
+            id: EventId::parse(&wrap.id.to_hex()).unwrap(),
+            kind: wrap.kind.as_u16(),
+            pubkey: PubKey::parse(&wrap.pubkey.to_hex()).unwrap(),
+            created_at: Timestamp(wrap.created_at.as_secs() as i64),
+            json: serde_json::to_value(&wrap).unwrap(),
+            source: EventSource::Relay { url: RelayUrl::parse("wss://relay.example").unwrap() },
+        };
+        let inbox = rt.config().push_inbox_dir();
+        assert!(messenger_ingress::push_inbox::keep(&inbox, &raw).unwrap());
+        let mut ui = rt.ui_events();
+        assert_eq!(rt.take_pushed().await, 1);
+        let ev = event_named(&mut ui, messenger_dm::UI_EVENT_DM_MESSAGE, 10).await;
+        assert_eq!(ev.payload["historical"], true);
+        assert_eq!(last_from(&rt, &bob).await.text.as_deref(), Some("from the push"));
+        assert_eq!(rt.take_pushed().await, 0, "taken once");
     }
 
     #[tokio::test]

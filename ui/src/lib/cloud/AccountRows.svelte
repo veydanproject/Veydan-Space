@@ -64,22 +64,34 @@
     <span class="go">{$t('cloud_account_create')}</span>
   </a>
 {/if}
-<a class="m-row" href="/settings/sync">
-  <span class="m-row-label">{$t('settings_sync_section')}</span>
-  <span class="m-row-value" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
+<a class="m-row sync" href="/settings/sync">
+  <span class="tile"><Icon name="refresh-cw" size={20} /></span>
+  <span class="words">
+    <span class="m-row-label">{$t('settings_sync_section')}</span>
+    <span class="sub" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
+  </span>
   <span class="chev"><Icon name="chevron-right" size={16} /></span>
 </a>
 
 <style>
+  /* The rows of the design kit's settings: a tile, the name, its value under it. */
+  .m-row { gap: var(--sp-3); padding-left: var(--sp-3); padding-right: var(--sp-3); }
   .who { min-height: 72px; padding-top: var(--sp-3); padding-bottom: var(--sp-3); }
+  .sync { min-height: 60px; border-bottom: 0; }
+  .tile {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 36px; height: 36px; margin: 0 6px; border-radius: var(--radius-md);
+    background: var(--m-seg); color: var(--text-soft);
+  }
+  .sync .m-row-label { flex: none; font-weight: var(--fw-medium); }
   .ava {
     display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
-    background: var(--accent-grad); color: #fff; font-size: 20px; font-weight: 800;
+    background: var(--accent-grad); color: #fff; font-size: var(--fs-xl); font-weight: 800;
   }
-  .ava.ghost { background: var(--accent-tint); color: var(--accent); }
+  .ava.ghost { background: var(--accent-tint); color: var(--accent-text); }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  strong { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: 13px; color: var(--text-2); line-height: 1.35; }
-  .go { flex-shrink: 0; padding: 6px 12px; border-radius: 999px; background: var(--accent-tint); color: var(--accent-text); font-size: 13px; font-weight: 700; }
+  strong { font-size: var(--fs-md); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.35; }
+  .go { flex-shrink: 0; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text); font-size: var(--fs-sm); font-weight: 700; }
   .ok { color: var(--success-text); font-weight: 600; }
 </style>

@@ -86,7 +86,7 @@
     min-height: 36px;
     padding: 0 0.6rem;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: transparent;
     color: var(--text-2);
     font: inherit;
@@ -95,10 +95,10 @@
   .live:hover { border-color: var(--border-2); }
   .live.copied { border-color: var(--success-text); }
   .live.compact { border: 0; padding: 0 0.25rem; min-height: 44px; gap: 0.4rem; }
-  .live.compact .code { font-size: 16px; }
+  .live.compact .code { font-size: var(--fs-md); }
   .code {
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 700;
     letter-spacing: 0.06em;
     white-space: nowrap;

@@ -139,7 +139,7 @@
   /* The small place: top right, clear of the buttons at the bottom; on a
      phone under its top bar. */
   .tile-place.small {
-    z-index: 3; pointer-events: none; border-radius: 10px;
+    z-index: 3; pointer-events: none; border-radius: var(--radius);
     inset: var(--pip-at); width: var(--pip-w); aspect-ratio: var(--pip-ratio);
   }
   .tile-place.hidden { opacity: 0; }
@@ -148,7 +148,7 @@
 
   .pip {
     position: absolute; z-index: 4; inset: var(--pip-at); width: var(--pip-w); aspect-ratio: var(--pip-ratio);
-    border-radius: 10px; border: 1.5px solid rgba(255, 255, 255, 0.55); padding: 0; margin: 0; cursor: pointer;
+    border-radius: var(--radius); border: 1.5px solid rgba(255, 255, 255, 0.55); padding: 0; margin: 0; cursor: pointer;
     background: transparent; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
     display: flex; align-items: center; justify-content: center;
     transition: border-color var(--dur-fast) var(--ease);

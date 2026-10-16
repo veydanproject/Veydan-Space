@@ -187,7 +187,7 @@
   .scanner.live { background: transparent; color: #fff; }
 
   .top { position: relative; z-index: 1; display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; }
-  .top h1 { margin: 0; font-size: 18px; font-weight: var(--fw-bold); }
+  .top h1 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); }
   .round {
     display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%;
     border: 0; background: var(--surface-3); color: inherit;
@@ -215,13 +215,13 @@
   @keyframes sweep { to { top: 90%; } }
   @media (prefers-reduced-motion: reduce) { .line { animation: none; top: 50%; } }
 
-  .hint { position: relative; z-index: 1; margin: 0; max-width: 300px; text-align: center; font-size: 15px; line-height: 1.45; font-weight: var(--fw-medium); }
+  .hint { position: relative; z-index: 1; margin: 0; max-width: 300px; text-align: center; font-size: var(--fs-body); line-height: 1.45; font-weight: var(--fw-medium); }
   /* Over a bright picture the words keep a ground of their own. */
   .live .hint { padding: var(--sp-2) var(--sp-4); border-radius: var(--radius-md); background: var(--backdrop); }
   .bottom { position: relative; z-index: 1; display: flex; justify-content: center; }
   .pill {
     min-height: 48px; padding: 0 var(--sp-6); border-radius: var(--radius-pill); border: 0;
-    background: var(--surface-3); color: inherit; font: inherit; font-size: 15px; font-weight: var(--fw-semibold);
+    background: var(--surface-3); color: inherit; font: inherit; font-size: var(--fs-body); font-weight: var(--fw-semibold);
   }
   .live .pill { background: var(--backdrop); }
 
@@ -230,7 +230,7 @@
     display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 50%;
     background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border);
   }
-  .lead { margin: 0; max-width: 300px; font-size: 15px; line-height: 1.45; color: var(--text-2); }
+  .lead { margin: 0; max-width: 300px; font-size: var(--fs-body); line-height: 1.45; color: var(--text-2); }
   .buttons { display: flex; flex-direction: column; gap: var(--sp-2); align-self: stretch; }
-  .buttons .btn { width: 100%; justify-content: center; min-height: 48px; font-size: 15px; }
+  .buttons .btn { width: 100%; justify-content: center; min-height: 48px; font-size: var(--fs-body); }
 </style>

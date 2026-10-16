@@ -245,7 +245,7 @@
     width: 100%; max-width: 420px;
     display: flex; align-items: flex-start; gap: var(--sp-3);
     padding: var(--sp-3) var(--sp-3) calc(var(--sp-3) + 2px);
-    border: 1px solid var(--border); border-radius: var(--radius-lg);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
     background: var(--surface); color: var(--text);
     box-shadow: 0 10px 28px rgb(0 0 0 / 0.18);
     transform: translate(var(--dx), var(--dy)); opacity: var(--fade);

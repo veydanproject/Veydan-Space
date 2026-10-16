@@ -46,17 +46,17 @@
 
 <style>
   .pref { display: flex; flex-direction: column; gap: 6px; }
-  .label { font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+  .label { font-size: var(--fs-2xs); font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
   .presets { display: flex; gap: 8px; flex-wrap: wrap; }
   .preset {
     min-height: 34px;
     padding: 0 14px;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--m-seg, var(--surface-2));
     color: var(--text);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     cursor: pointer;
   }

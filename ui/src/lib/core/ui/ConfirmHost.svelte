@@ -20,7 +20,7 @@
 </script>
 
 {#if isMobile}
-  <Dialog open={q !== null} title={q?.title ?? ''} onclose={() => confirmState.answer(false)}>
+  <Dialog open={q !== null} title={q?.title ?? ''} closable={false} onclose={() => confirmState.answer(false)}>
     {#if q?.message}<p class="message">{q.message}</p>{/if}
     {#snippet footer()}
       <button type="button" class="btn btn-ghost" onclick={() => confirmState.answer(false)}>{no}</button>

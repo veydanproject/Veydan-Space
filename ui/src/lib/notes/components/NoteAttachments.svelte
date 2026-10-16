@@ -271,7 +271,7 @@
     border: none;
     color: var(--text-3);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     padding: 0.15rem 0.3rem;
     display: inline-flex;
     align-items: center;
@@ -288,7 +288,7 @@
     font-size: var(--fs-xs);
     color: var(--text-2);
     padding: 0.15rem 0.2rem;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
   }
   .att-item:hover { background: var(--surface-2); }
   .att-name {
@@ -309,7 +309,7 @@
   .att-size { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
   .att-player { padding: 0.2rem 0.2rem 0.4rem; }
   .att-player audio { width: 100%; height: 32px; }
-  .att-player video { width: 100%; max-height: 150px; border-radius: 6px; background: #000; }
+  .att-player video { width: 100%; max-height: 150px; border-radius: var(--radius-badge); background: #000; }
   .att-busy { opacity: 0.8; }
   .att-error { color: var(--danger); }
 </style>

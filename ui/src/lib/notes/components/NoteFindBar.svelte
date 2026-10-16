@@ -159,7 +159,7 @@
     border: none;
     color: var(--text-2);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     display: inline-flex;
     align-items: center;
     padding: 0.15rem 0.3rem;
@@ -167,5 +167,5 @@
   .fb-text { font-size: var(--fs-2xs); white-space: nowrap; }
   .fb-btn:hover:not(:disabled), .fb-text:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
   .fb-btn:disabled, .fb-text:disabled { opacity: 0.4; cursor: default; }
-  .fb-btn.active { color: var(--accent); }
+  .fb-btn.active { color: var(--accent-text); }
 </style>

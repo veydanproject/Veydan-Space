@@ -60,7 +60,7 @@
 <style>
   .sync-badge {
     display: inline-flex; align-items: center; gap: 0.3rem;
-    padding: 0.1rem 0.45rem; border-radius: 999px;
+    padding: 0.1rem 0.45rem; border-radius: var(--radius-pill);
     font-size: var(--fs-xs); border: 1px solid var(--border);
     white-space: nowrap;
   }

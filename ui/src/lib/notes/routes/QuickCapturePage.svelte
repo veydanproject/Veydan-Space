@@ -140,7 +140,7 @@
     font-size: var(--fs-sm);
     line-height: 1.5;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     background: var(--bg-2);
     color: var(--text);
   }
@@ -151,7 +151,7 @@
     padding: 0.35rem 0.5rem;
     font-size: var(--fs-xs);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-badge);
     /* The colour alone: the folder select keeps the global chevron. */
     background-color: var(--bg-2);
     color: var(--text);

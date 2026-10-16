@@ -129,7 +129,7 @@
     height: 48px;
     padding: 0;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--text-2);
     display: inline-flex;

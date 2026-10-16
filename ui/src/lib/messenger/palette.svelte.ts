@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 // The messenger's commands of the desktop palette (`ModuleDef.palette`): new
-// chat, new group, contacts, settings, the requests, and a chat by its name.
+// chat, new group, new call, the groups, the calls, contacts, settings, the
+// requests, and a chat by its name.
 // The module gives them as data; the page answers the request it finds here.
 
 import { get } from 'svelte/store';
@@ -15,7 +16,7 @@ import { openChat } from './content/actions';
 import { requestStore, requestsUi } from './requests/requestStore.svelte';
 import { BASE } from './mobile/routes';
 
-export type PaletteRequest = 'newChat' | 'newGroup' | 'contacts' | 'settings';
+export type PaletteRequest = 'newChat' | 'newGroup' | 'newCall' | 'groups' | 'calls' | 'contacts' | 'settings';
 
 /** What the palette asked the messenger page to show; the page takes it and clears it. */
 export const paletteUi = $state<{ request: PaletteRequest | null }>({ request: null });
@@ -32,6 +33,9 @@ export function messengerPalette(): PaletteCommand[] {
   return [
     { id: 'messenger.new-chat', title: tr('msg_newchat_title'), keywords: 'new chat message write', icon: 'message-circle-plus', group, run: () => request('newChat') },
     { id: 'messenger.new-group', title: tr('msg_group_new_title'), keywords: 'new group', icon: 'users-plus', group, run: () => request('newGroup') },
+    { id: 'messenger.new-call', title: tr('msg_calls_new'), keywords: 'new call phone ring', icon: 'phone', group, run: () => request('newCall') },
+    { id: 'messenger.groups', title: tr('msg_nav_groups'), keywords: 'groups', icon: 'users', group, run: () => request('groups') },
+    { id: 'messenger.calls', title: tr('msg_nav_calls'), keywords: 'calls journal history missed', icon: 'phone', group, run: () => request('calls') },
     { id: 'messenger.contacts', title: tr('msg_contacts_title'), keywords: 'contacts people', icon: 'book-user', group, run: () => request('contacts') },
     { id: 'messenger.settings', title: tr('msg_settings_title_full'), keywords: 'chat messenger settings relays', icon: 'user-cog', group, run: () => request('settings') },
     // The requests of strangers are reached through their own row only: a

@@ -64,6 +64,6 @@
   .note { color: var(--text-2); font-size: var(--fs-xs); margin: 0; }
 
   .add.stacked { flex-direction: column; flex-wrap: nowrap; }
-  .add.stacked input, .add.stacked input.nick { flex: none; width: 100%; min-width: 0; border-radius: var(--radius); font-size: 16px; }
+  .add.stacked input, .add.stacked input.nick { flex: none; width: 100%; min-width: 0; border-radius: var(--radius); font-size: var(--fs-md); }
   .add.stacked .btn { justify-content: center; }
 </style>

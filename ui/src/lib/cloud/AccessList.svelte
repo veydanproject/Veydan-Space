@@ -220,5 +220,5 @@
     display: inline-flex; align-items: center; min-height: 32px; padding: 0 var(--sp-1); border: 0; background: none; cursor: pointer;
     color: var(--accent-text-3); font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold);
   }
-  .how.m .link { min-height: 44px; font-size: 14px; }
+  .how.m .link { min-height: 44px; font-size: var(--fs-base); }
 </style>

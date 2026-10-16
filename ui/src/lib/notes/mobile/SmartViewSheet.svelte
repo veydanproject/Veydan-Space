@@ -186,7 +186,7 @@
 </BottomSheet>
 
 <style>
-  .input { width: 100%; border: 0; border-radius: 12px; background: var(--m-field); padding: 0 14px; }
+  .input { width: 100%; border: 0; border-radius: var(--radius-md); background: var(--m-field); padding: 0 14px; }
   .swatches { display: flex; gap: 12px; flex-wrap: wrap; padding: 3px; }
   .swatch {
     width: 32px;
@@ -205,7 +205,7 @@
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 0;
     background: var(--m-seg);
     color: var(--text);
@@ -221,7 +221,7 @@
     justify-content: space-between;
     gap: var(--sp-3);
     min-height: var(--touch);
-    font-size: 15px;
+    font-size: var(--fs-body);
   }
   .days { width: 4rem; min-height: var(--touch); }
   .days-lbl { color: var(--text-2); font-size: var(--fs-sm); }

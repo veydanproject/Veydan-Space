@@ -4,7 +4,9 @@
 //! From a push to a notice: the event opened, the chat looked up, the
 //! rules of the chat applied. Everything the app would decide about the
 //! message is decided the same way here, from the same rows, only
-//! nothing is written: the app writes when it runs.
+//! nothing is written to them: the app writes when it runs. What is shown
+//! is left for it as it came (`messenger_ingress::push_inbox`), so that the
+//! chat the notification opens holds the message before a relay answers.
 
 use crate::bundle::KeyBundle;
 use crate::fetch;
@@ -25,9 +27,10 @@ use messenger_dm::DmService;
 use messenger_groups::wire::{self, Opened, T_INVITE, T_JOIN_REQUEST, T_WELCOME};
 use messenger_groups::service::{invite_standing_in, InviteStanding, MEMBERSHIP_JOINED};
 use messenger_ingress::classify::KIND_DM_RUMOR;
+use messenger_ingress::push_inbox;
 use messenger_store::{calls, chats, groups, messages, Store};
 use nostr::key::Keys;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Says what the push is about. `data_dir` is the messenger's data
@@ -49,7 +52,7 @@ pub async fn describe_as(config: &MessengerConfig, bundle: Option<&KeyBundle>, p
     let store = Store::open_read_only(config).await?;
     let out = match bundle {
         Some(bundle) => match bundle.keys() {
-            Ok(keys) => Describe::new(store.clone(), keys, config.bot_pubkey.as_deref()).run(bundle, push).await,
+            Ok(keys) => Describe::new(store.clone(), keys, config.bot_pubkey.as_deref(), config.push_inbox_dir()).run(bundle, push).await,
             Err(e) => Err(e),
         },
         None if push.call => Ok(Outcome::Quiet { reason: Reason::NoKeys }),
@@ -65,15 +68,17 @@ struct Describe {
     me: PubKey,
     contacts: ContactService,
     dm: DmService,
+    /// Where what is shown is left for the app.
+    inbox: PathBuf,
 }
 
 impl Describe {
-    fn new(store: Store, keys: Keys, bot: Option<&str>) -> Self {
+    fn new(store: Store, keys: Keys, bot: Option<&str>, inbox: PathBuf) -> Self {
         let profiles = ProfileService::new(store.clone());
         let contacts = ContactService::new(store.clone(), profiles.clone());
         let dm = DmService::new(store.clone(), contacts.clone(), profiles, Arc::new(SystemClock)).with_bot(bot);
         let me = PubKey::parse(&keys.public_key().to_hex()).expect("a public key is 64 hex chars");
-        Self { store, keys, me, contacts, dm }
+        Self { store, keys, me, contacts, dm, inbox }
     }
 
     async fn run(&self, bundle: &KeyBundle, push: &PushData) -> Result<Outcome> {
@@ -109,18 +114,27 @@ impl Describe {
             return Ok(Outcome::Quiet { reason: Reason::Own });
         }
 
-        match messenger_ingress::classify(&raw, Some(&self.keys)) {
-            Inbound::Dm(dm) => self.dm_notice(dm, &settings, push.count).await,
+        let outcome = match messenger_ingress::classify(&raw, Some(&self.keys)) {
+            Inbound::Dm(dm) => self.dm_notice(dm, &settings, push.count).await?,
             Inbound::Group(g) => match bundle.group_key(&g.group_id, g.key_id.as_deref().unwrap_or_default()) {
-                Some(key) => self.group_notice(&g.group_id, &key, &g.ciphertext, &settings, push.count).await,
+                Some(key) => self.group_notice(&g.group_id, &key, &g.ciphertext, &settings, push.count).await?,
                 // A key this device does not have yet: the app will, when it runs.
                 None => {
                     plain.chat = Some(groups::group_chat_id(&g.group_id));
-                    Ok(Outcome::Plain(plain))
+                    Outcome::Plain(plain)
                 }
             },
-            _ => Ok(Outcome::Quiet { reason: Reason::Invalid }),
+            _ => Outcome::Quiet { reason: Reason::Invalid },
+        };
+        // The message the notification shows waits in the chat it opens,
+        // before the app reaches a relay. A message that stays quiet is
+        // the relay's to bring: nothing was promised of it.
+        if matches!(outcome, Outcome::Show(_)) {
+            if let Err(e) = push_inbox::keep(&self.inbox, &raw) {
+                eprintln!("messenger notify: the event is not left for the app: {e}");
+            }
         }
+        Ok(outcome)
     }
 
 

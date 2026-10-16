@@ -721,8 +721,10 @@ impl MessengerRuntime {
     /// Every beat looks at the relays for what the app shows, and tells the
     /// page when that changed. When a relay comes back, what waits in the
     /// outbox goes at once instead of after its backoff, and so does a
-    /// transfer that waits for its next attempt.
+    /// transfer that waits for its next attempt. What a push brought and
+    /// the phone showed is taken in on the beat (`take_pushed`).
     pub async fn net_beat(&self, beat: Duration) {
+        self.take_pushed().await;
         let pool = self.relays.pool().await;
         if let Some(gap) = self.net.beat(beat) {
             self.net.woke();

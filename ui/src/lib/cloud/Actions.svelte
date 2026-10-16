@@ -15,5 +15,5 @@
   .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; align-items: center; }
   .actions.start { justify-content: flex-start; }
   .actions.m { flex-direction: column-reverse; align-items: stretch; flex-wrap: nowrap; }
-  .actions.m :global(.btn) { width: 100%; justify-content: center; min-height: 48px; font-size: 15px; }
+  .actions.m :global(.btn) { width: 100%; justify-content: center; min-height: 48px; font-size: var(--fs-body); }
 </style>

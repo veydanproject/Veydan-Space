@@ -51,9 +51,9 @@
 
 <style>
   .chip {
-    display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border-radius: var(--radius-pill);
     border: 1px solid var(--m-card-border, var(--border)); background: var(--m-card, var(--surface-2)); color: var(--text);
-    font: inherit; font-size: 13px; font-weight: var(--fw-semibold);
+    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold);
   }
   .desk { display: flex; flex-direction: column; gap: var(--sp-2); }
   .label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-xs); }

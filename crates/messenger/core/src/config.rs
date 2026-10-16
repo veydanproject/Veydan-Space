@@ -60,6 +60,12 @@ impl MessengerConfig {
         self.data_dir.join("tmp")
     }
 
+    /// Events the push handler opened and showed, left for the app to take
+    /// (`messenger_ingress::push_inbox`).
+    pub fn push_inbox_dir(&self) -> PathBuf {
+        self.data_dir.join("push-inbox")
+    }
+
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }

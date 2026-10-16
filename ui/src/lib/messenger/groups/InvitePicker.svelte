@@ -85,5 +85,5 @@
   .row { display: flex; align-items: center; gap: var(--sp-3); padding: 6px 8px; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .done { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text, var(--success)); }
-  @media (pointer: coarse) { input { font-size: 16px; min-height: 44px; } }
+  @media (pointer: coarse) { input { font-size: var(--fs-md); min-height: 44px; } }
 </style>

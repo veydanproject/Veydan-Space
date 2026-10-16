@@ -5,8 +5,9 @@
 #   FAIL: a component or stylesheet references a CSS custom property that
 #         nothing defines. This is the exact class of bug that made panels
 #         render transparent/inherited. A reference resolves when the name is
-#           1. a token: declared in a `:root` or `[data-theme=…]` block of
-#              ui/src/lib/core/styles/tokens.css or ui/src/lib/core/styles/mobile.css;
+#           1. a token: declared in a `:root` or `[data-theme…]` block of
+#              ui/src/lib/core/styles/tokens.css, of a palette in
+#              ui/src/lib/core/styles/palettes/ or of ui/src/lib/core/styles/mobile.css;
 #           2. local: declared in the same file — in its CSS, in a `style="…"`
 #              attribute or by a `style:--name` directive;
 #           3. listed in RUNTIME_VARS below: set from another file at run time.
@@ -31,6 +32,8 @@ cd "$(dirname "$0")/.." || exit 2
 
 SRC="ui/src"
 TOKENS="$SRC/lib/core/styles/tokens.css"
+# The colours: one file a palette, imported by tokens.css.
+PALETTES="$SRC/lib/core/styles/palettes"
 # Loaded by MobileShell only: its tokens exist on the phone, not on the desk.
 # The Android insets --sat/--sab/--sal/--sar are declared there through env();
 # MainActivity overwrites them with the real values.
@@ -52,18 +55,19 @@ RUNTIME_VARS="
 #   --inspector-bar-height  UIInspector.svelte, setProperty on <html>; read by
 #                           DesktopShell.svelte
 
-# Declarations of the root and theme blocks only: a custom property declared
-# inside a class rule is local to that rule's file, not a token.
+# Declarations of the root and theme blocks only (a palette's are
+# [data-palette=…][data-theme=…]): a custom property declared inside a class
+# rule is local to that rule's file, not a token.
 tokens_of() {
-  awk '/^(:root|\[data-theme=[^]]*\])[ \t]*\{/ { on = 1 } /^\}/ { on = 0 } on' "$1" \
+  awk '/^(:root|(\[data-palette=[^]]*\])?\[data-theme(=[^]]*)?\])[ \t]*\{/ { on = 1 } /^\}/ { on = 0 } on' "$@" \
     | grep -oE '^\s*--[a-z0-9-]+:' | tr -d ' \t:' | sort -u
 }
 
-for f in "$TOKENS" "$MOBILE"; do
+for f in "$TOKENS" "$MOBILE" "$PALETTES/quiet.css"; do
   [ -f "$f" ] || { echo "check-styles: $f not found"; exit 2; }
 done
 
-desk_tokens=$(tokens_of "$TOKENS")
+desk_tokens=$(tokens_of "$TOKENS" "$PALETTES"/*.css)
 mobile_tokens=$(tokens_of "$MOBILE")
 defined=$(printf '%s\n' "$desk_tokens" "$mobile_tokens" $RUNTIME_VARS | sort -u)
 

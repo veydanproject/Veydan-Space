@@ -167,7 +167,7 @@
   .actions { display: flex; align-items: center; gap: var(--sp-3); }
   .saved { font-size: var(--fs-xs); color: var(--success-text, var(--success)); }
   @media (pointer: coarse) {
-    .field { font-size: 16px; min-height: 44px; }
+    .field { font-size: var(--fs-md); min-height: 44px; }
     .chip { min-height: 40px; padding-inline: 12px; }
   }
 </style>

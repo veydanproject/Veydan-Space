@@ -2,9 +2,11 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import Icon from '$lib/core/Icon.svelte';
+
   export type SettingsNavGroup = {
     label: string;
-    items: { id: string; label: string }[];
+    items: { id: string; label: string; icon: string }[];
   };
 
   let {
@@ -19,17 +21,11 @@
 
   let navEl = $state<HTMLElement | null>(null);
 
-  // The nav scrolls inside itself (it is taller than a small window): the
-  // active entry follows the page into view. Only the nav scrolls, never the page.
+  // The pane of the nav scrolls (it is taller than a small window): the
+  // active entry stays in view.
   $effect(() => {
     void active;
-    const nav = navEl;
-    const item = nav?.querySelector<HTMLElement>('.nav-item.active');
-    if (!nav || !item) return;
-    const n = nav.getBoundingClientRect();
-    const r = item.getBoundingClientRect();
-    if (r.top < n.top) nav.scrollTop -= n.top - r.top + 8;
-    else if (r.bottom > n.bottom) nav.scrollTop += r.bottom - n.bottom + 8;
+    navEl?.querySelector<HTMLElement>('.nav-item.active')?.scrollIntoView({ block: 'nearest' });
   });
 </script>
 
@@ -46,7 +42,8 @@
           title={item.label}
           onclick={() => onselect(item.id)}
         >
-          {item.label}
+          <Icon name={item.icon} size={20} />
+          <span class="nav-label">{item.label}</span>
         </button>
       {/each}
     </div>
@@ -54,32 +51,24 @@
 </nav>
 
 <style>
+  /* The sections of Settings, in their own pane (the page scrolls it). */
   .settings-nav {
-    position: sticky;
-    top: 0;
-    align-self: start;
     display: flex;
     flex-direction: column;
-    gap: var(--sp-3);
-    width: 200px;
-    padding-top: var(--sp-2);
-    /* The height of the page's scroller (set by the settings page), less its
-       padding: the window's title bar, frame and banners are not the nav's to count. */
-    max-height: calc(var(--settings-view-h, 100vh) - var(--sp-6) * 2);
-    overflow-y: auto;
-    scrollbar-width: thin;
+    gap: var(--sp-4);
   }
   .nav-group { display: flex; flex-direction: column; gap: 2px; }
-  .section-label { padding: 0 var(--sp-3); margin-bottom: var(--sp-1); }
+  /* The kit's group label: plain case, 12/600. */
+  .section-label { padding: 0 var(--sp-3); margin-bottom: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); text-transform: none; letter-spacing: 0; }
   .nav-item {
-    display: block; width: 100%; text-align: left;
-    padding: 0.3rem var(--sp-3);
-    /* One line in either weight: the bold active entry does not wrap and push the rest down. */
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    background: none; border: none; border-radius: var(--radius-sm);
-    color: var(--text-2); font-size: var(--fs-sm); cursor: pointer;
-    transition: background 0.15s, color 0.15s;
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 40px; text-align: left;
+    padding: 0 var(--sp-3);
+    background: none; border: none; border-radius: var(--radius);
+    color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer;
+    transition: background var(--dur-fast), color var(--dur-fast);
   }
-  .nav-item:hover { background: var(--surface-2); color: var(--text); }
-  .nav-item.active { background: var(--accent-bg); color: var(--accent-text); font-weight: var(--fw-semibold); }
+  .nav-item:hover { background: var(--surface-hover); color: var(--text); }
+  .nav-item.active { background: var(--accent-bg); color: var(--accent-text); }
+  .nav-item :global(.icon) { flex-shrink: 0; }
+  .nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

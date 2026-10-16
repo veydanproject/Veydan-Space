@@ -104,5 +104,5 @@
   .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .row .btn-primary, .box > .btn { flex: 1; justify-content: center; }
   .error { font-size: var(--fs-xs); color: var(--danger-text); line-height: 1.4; }
-  @media (pointer: coarse) { .note { font-size: 16px; } }
+  @media (pointer: coarse) { .note { font-size: var(--fs-md); } }
 </style>

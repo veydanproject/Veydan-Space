@@ -7,7 +7,8 @@ import { longpress } from './longpress';
 // No DOM in these tests: a node that only keeps its listeners is enough.
 function fakeNode() {
   const listeners = new Map<string, (e: unknown) => void>();
-  const node = { addEventListener: (type: string, fn: (e: unknown) => void) => listeners.set(type, fn), removeEventListener: () => {} };
+  const classList = { toggle: () => {}, add: () => {}, remove: () => {}, contains: () => false };
+  const node = { classList, addEventListener: (type: string, fn: (e: unknown) => void) => listeners.set(type, fn), removeEventListener: () => {} };
   return { node: node as unknown as HTMLElement, fire: (type: string, e: unknown) => listeners.get(type)?.(e) };
 }
 

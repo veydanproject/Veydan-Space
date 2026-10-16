@@ -1271,6 +1271,26 @@ pub async fn messenger_group_act(
     messenger.runtime()?.group_act(&group_id, body).await.map_err(map_err)
 }
 
+/// Make the part `rect` of the prepared picture (`messenger_avatar_prepare`)
+/// the picture of a group I manage; the group as it is now.
+#[tauri::command]
+pub async fn messenger_group_avatar_set(
+    group_id: String,
+    token: String,
+    rect: messenger_runtime::CropRect,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<GroupView> {
+    messenger.runtime()?.group_avatar_set(&group_id, &token, rect).await.map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn messenger_group_avatar_remove(
+    group_id: String,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<GroupView> {
+    messenger.runtime()?.group_avatar_remove(&group_id).await.map_err(map_err)
+}
+
 #[tauri::command]
 pub async fn messenger_group_rotate_link(
     group_id: String,
@@ -1731,9 +1751,15 @@ fn open_external(app: &tauri::AppHandle, target: &str, is_path: bool) -> CmdResu
     res.map_err(|e| AppError::Other(e.to_string()))
 }
 
+/// A phone: a link goes to the system's browser (an intent); a received
+/// file is not opened by another app from here.
 #[cfg(not(desktop))]
-fn open_external(_app: &tauri::AppHandle, _target: &str, _is_path: bool) -> CmdResult<()> {
-    Err(AppError::Other("not available on this platform".into()))
+fn open_external(app: &tauri::AppHandle, target: &str, is_path: bool) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    if is_path {
+        return Err(AppError::Other("not available on this platform".into()));
+    }
+    app.opener().open_url(target, None::<&str>).map_err(|e| AppError::Other(e.to_string()))
 }
 
 /// What the recorder in the UI produced. Bytes travel as base64: mobile

@@ -208,29 +208,38 @@
     </div>
   {/each}
 
-  <div class="m-section">{$t('settings_main')}</div>
+  <div class="m-section set-h"><Icon name="settings" size={16} />{$t('settings_main')}</div>
   <div class="m-list">
     {#if startChoice}
-      <button type="button" class="m-row" onclick={() => (picker = 'app')}>
-        <span class="m-row-label">{startTitle}</span>
-        <span class="m-row-value">{defaultAppLabel}</span>
+      <button type="button" class="m-row set-row" onclick={() => (picker = 'app')}>
+        <span class="set-tile"><Icon name="home" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{startTitle}</span>
+          <span class="m-row-value">{defaultAppLabel}</span>
+        </span>
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </button>
     {/if}
-    <button type="button" class="m-row" onclick={() => (picker = 'theme')}>
-      <span class="m-row-label">{$t('settings_theme')}</span>
-      <span class="m-row-value">{themeLabel}</span>
+    <button type="button" class="m-row set-row" onclick={() => (picker = 'theme')}>
+        <span class="set-tile"><Icon name="sun" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_theme')}</span>
+          <span class="m-row-value">{themeLabel}</span>
+        </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
-    <button type="button" class="m-row" onclick={() => (picker = 'lang')}>
-      <span class="m-row-label">{$t('settings_language')}</span>
-      <span class="m-row-value">{localeLabel}</span>
+    <button type="button" class="m-row set-row" onclick={() => (picker = 'lang')}>
+        <span class="set-tile"><Icon name="globe" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_language')}</span>
+          <span class="m-row-value">{localeLabel}</span>
+        </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
   </div>
 
   {#if withModules}
-    <div class="m-section">{$t('modules_section')}</div>
+    <div class="m-section set-h"><Icon name="layout-grid" size={16} />{$t('modules_section')}</div>
     <div class="m-list">
       <ModulesSettings mobile />
     </div>
@@ -238,34 +247,40 @@
   {/if}
 
   {#each sections as section (section.id)}
-    <div class="m-section">{$t(section.group)}</div>
+    <div class="m-section set-h"><Icon name="layers" size={16} />{$t(section.group)}</div>
     <div class="m-list">
       <section.component />
     </div>
   {/each}
 
-  <div class="m-section">{$t('settings_security')}</div>
+  <div class="m-section set-h"><Icon name="lock" size={16} />{$t('settings_security')}</div>
   <div class="m-list">
-    <a class="m-row" href="/settings/lock">
-      <span class="m-row-label">{$t('settings_lock_section')} <span class="badge badge-warn">{$t('settings_sync_beta')}</span></span>
-      <span class="m-row-value" class:ok={appLock.status.enabled}>{appLock.ready ? lockLabel : ''}</span>
+    <a class="m-row set-row" href="/settings/lock">
+        <span class="set-tile"><Icon name="lock" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_lock_section')} <span class="badge badge-warn">{$t('settings_sync_beta')}</span></span>
+          <span class="m-row-value" class:ok={appLock.status.enabled}>{appLock.ready ? lockLabel : ''}</span>
+        </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </a>
   </div>
 
   <!-- With an account on the page, its card leads to sync. -->
   {#if accountSections.length === 0}
-    <div class="m-section">{$t('settings_data')}</div>
+    <div class="m-section set-h"><Icon name="refresh-cw" size={16} />{$t('settings_data')}</div>
     <div class="m-list">
-      <a class="m-row" href="/settings/sync">
-        <span class="m-row-label">{$t('settings_sync_section')}</span>
-        <span class="m-row-value" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
+      <a class="m-row set-row" href="/settings/sync">
+        <span class="set-tile"><Icon name="refresh-cw" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_sync_section')}</span>
+          <span class="m-row-value" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
+        </span>
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </a>
     </div>
   {/if}
 
-  <div class="m-section">{$t('settings_about')}</div>
+  <div class="m-section set-h"><Icon name="info" size={16} />{$t('settings_about')}</div>
   <div class="m-list">
     <div class="m-row about-head">
       <img src="/logo.png" alt="" class="about-logo" />
@@ -276,17 +291,21 @@
     </div>
     <button
       type="button"
-      class="m-row"
+      class="m-row set-row"
       disabled={updateCheck.status === 'checking'}
       onclick={() => updateCheck.check()}
     >
-      <span class="m-row-label">{$t('update_check')}</span>
-      <span class="m-row-value" class:ok={updateCheck.status === 'upToDate'} class:new={updateCheck.status === 'available'}>
-        {updateLabel}
-      </span>
+        <span class="set-tile"><Icon name="download" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('update_check')}</span>
+          <span class="m-row-value" class:ok={updateCheck.status === 'upToDate'} class:new={updateCheck.status === 'available'}>{updateLabel}</span>
+        </span>
     </button>
-    <button type="button" class="m-row" onclick={() => (bugOpen = true)}>
-      <span class="m-row-label">{$t('settings_bug_report')}</span>
+    <button type="button" class="m-row set-row" onclick={() => (bugOpen = true)}>
+        <span class="set-tile"><Icon name="alert-triangle" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_bug_report')}</span>
+        </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
   </div>
@@ -297,25 +316,37 @@
   <BugReportDialog bind:open={bugOpen} />
 
   <!-- For developers: rows of the same height as every other, the destructive one marked. -->
-  <div class="m-section">{$t('dev_sync_link')}</div>
+  <div class="m-section set-h"><Icon name="code" size={16} />{$t('dev_sync_link')}</div>
   <div class="m-list">
-    <a class="m-row" href="/settings/dev">
-      <span class="m-row-label">{$t('dev_sync_title')}</span>
+    <a class="m-row set-row" href="/settings/dev">
+        <span class="set-tile"><Icon name="code" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('dev_sync_title')}</span>
+        </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </a>
     {#if hasDemo}
-      <button type="button" class="m-row" onclick={() => (picker = 'demoLang')}>
-        <span class="m-row-label">{$t('settings_demo_locale')}</span>
-        <span class="m-row-value">{demoLocaleLabel}</span>
+      <button type="button" class="m-row set-row" onclick={() => (picker = 'demoLang')}>
+        <span class="set-tile"><Icon name="globe" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_demo_locale')}</span>
+          <span class="m-row-value">{demoLocaleLabel}</span>
+        </span>
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </button>
-      <button type="button" class="m-row" disabled={demoBusy || clearBusy} onclick={askLoadDemo}>
-        <span class="m-row-label">{demoBusy ? $t('settings_demo_loading') : $t('settings_demo_load')}</span>
+      <button type="button" class="m-row set-row" disabled={demoBusy || clearBusy} onclick={askLoadDemo}>
+        <span class="set-tile"><Icon name="file-plus" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{demoBusy ? $t('settings_demo_loading') : $t('settings_demo_load')}</span>
+        </span>
       </button>
     {/if}
     {#if hasData}
-      <button type="button" class="m-row danger" disabled={demoBusy || clearBusy} onclick={askClearData}>
-        {clearBusy ? $t('settings_clear_clearing') : $t('settings_clear_data')}
+      <button type="button" class="m-row set-row set-danger" disabled={demoBusy || clearBusy} onclick={askClearData}>
+        <span class="set-tile"><Icon name="trash" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{clearBusy ? $t('settings_clear_clearing') : $t('settings_clear_data')}</span>
+        </span>
       </button>
     {/if}
   </div>
@@ -373,21 +404,37 @@
 <style>
   .ok { color: var(--success-text); font-weight: 600; }
   .account { margin-top: var(--sp-3); }
-  .new { color: var(--accent); font-weight: 600; }
+  .new { color: var(--accent-text); font-weight: 600; }
   .update-card {
     display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2);
     margin-top: var(--sp-3); padding: var(--sp-4);
     border-color: var(--accent-border);
   }
-  .update-title { font-size: 15px; font-weight: 700; color: var(--text); }
+  .update-title { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
   .update-open { margin-top: var(--sp-1); }
   .update-err { margin-top: var(--sp-2); }
   .about-head { gap: var(--sp-3); }
   .about-logo { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }
   .about-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .mono { font-size: 12px; }
+  .mono { font-size: var(--fs-xs); }
   .under-list { margin-top: var(--sp-2); padding: 0 var(--sp-1); }
   .m-row:disabled { opacity: 0.5; }
-  .ok-msg { margin: var(--sp-2) var(--sp-1) 0; font-size: 13px; color: var(--success-text); }
-  .err-msg { margin: var(--sp-2) var(--sp-1) 0; font-size: 13px; color: var(--danger-text); }
+
+  /* The rows of the design kit: a tile with the icon, the name, its value under it. */
+  .set-h { display: flex; align-items: center; gap: var(--sp-2); }
+  .set-h :global(.icon) { color: var(--text-2); }
+  .m-list:has(.set-row) { padding: var(--sp-1); }
+  .set-row { gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-3); border-bottom: 0; border-radius: var(--radius-lg); }
+  .set-tile {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 36px; height: 36px; border-radius: var(--radius-md);
+    background: var(--m-seg); color: var(--text-soft);
+  }
+  .set-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .set-text .m-row-label { flex: none; font-weight: var(--fw-medium); }
+  .set-text .m-row-value { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; }
+  .set-danger { color: var(--danger-text); }
+  .set-danger .set-tile { background: var(--danger-bg); color: var(--danger-text); }
+  .ok-msg { margin: var(--sp-2) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--success-text); }
+  .err-msg { margin: var(--sp-2) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--danger-text); }
 </style>

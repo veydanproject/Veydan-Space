@@ -173,6 +173,6 @@
   .found { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); overflow-wrap: anywhere; }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
   .hint.bad { color: var(--danger-text); }
-  @media (pointer: coarse) { .field { font-size: 16px; } }
+  @media (pointer: coarse) { .field { font-size: var(--fs-md); } }
   @media (max-width: 420px) { .kinds { grid-template-columns: 1fr; } }
 </style>

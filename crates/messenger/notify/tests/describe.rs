@@ -152,6 +152,27 @@ async fn a_text_from_a_contact_names_them_and_says_what() {
     assert_eq!(n.count, 1);
 }
 
+/// What the phone shows is left for the app, as it came, so that the
+/// chat the notification opens holds it before a relay answers; what
+/// stays quiet is not.
+#[tokio::test]
+async fn a_message_shown_is_left_for_the_app_and_a_quiet_one_is_not() {
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+    let inbox = MessengerConfig::new(phone.dir.path().join("messenger")).push_inbox_dir();
+
+    let event = dm_from(&alice, &phone, &Envelope::text("hello"), 1_000_000);
+    shown(phone.describe(dm_push(&event)).await);
+    phone.dm.act(&phone.keys, &pk(&alice), Action::Block).await.unwrap();
+    quiet(phone.describe(dm_push(&dm_from(&alice, &phone, &Envelope::text("?"), 1_000_001))).await);
+
+    let left = messenger_ingress::push_inbox::take(&inbox);
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].id.as_hex(), event["id"].as_str().unwrap());
+    assert_eq!(left[0].json, event);
+}
+
 /// A stranger's first word goes into the queue of requests, which the
 /// app tells by its count: the phone shows nothing for it, nor for a copy
 /// of it, nor for anything the stranger says before an answer.

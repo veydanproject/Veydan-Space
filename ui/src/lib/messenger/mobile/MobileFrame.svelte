@@ -56,17 +56,17 @@
 <ConfirmHost />
 
 <style>
-  .msg-m { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+  .msg-m { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; }
   .bar {
     display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; min-height: 52px;
-    padding: var(--sp-1) var(--sp-2); background: var(--m-nav, var(--surface)); border-bottom: 1px solid var(--border);
+    padding: var(--sp-1) var(--sp-2); background: var(--m-head, var(--surface)); border-bottom: 1px solid var(--border);
   }
-  h1 { margin: 0; font-size: 20px; font-weight: var(--fw-extrabold); letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   h1.inset { padding-left: var(--sp-2); }
   .spacer { flex: 1; }
   .bar :global(.ibtn), .ibtn {
     display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0;
-    border: none; border-radius: 12px; background: none; color: var(--text); padding: 0;
+    border: none; border-radius: var(--radius-md); background: none; color: var(--text); padding: 0;
   }
   .bar :global(.ibtn:active), .ibtn:active { background: var(--surface-3); }
   .bar :global(.ibtn.accent) { color: var(--accent-text-2); }

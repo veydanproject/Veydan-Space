@@ -12,6 +12,6 @@ export const module: ModuleDef = {
   ...common,
   nav: [],
   settings: [
-    { id: 'tor', title: 'settings_tor_title', group: 'settings_group_browser', order: 20, hint: 'settings_tor_hint', component: TorCard },
+    { id: 'tor', title: 'settings_tor_title', group: 'settings_group_browser', order: 20, hint: 'settings_tor_hint', icon: 'network', component: TorCard },
   ],
 };

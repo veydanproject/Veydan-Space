@@ -262,11 +262,11 @@
   .error-msg { font-size: var(--fs-sm); color: var(--danger-text); }
   .version-table { display: flex; flex-direction: column; gap: 0.35rem; }
   .version-row { display: flex; align-items: baseline; gap: var(--sp-2); }
-  .version-label { font-size: 0.82rem; color: var(--text-faint); min-width: 120px; flex-shrink: 0; }
+  .version-label { font-size: var(--fs-sm); color: var(--text-faint); min-width: 120px; flex-shrink: 0; }
   .version-value { font-size: var(--fs-sm); color: var(--text-body); font-family: var(--font-mono); }
   .path-value { font-size: var(--fs-2xs); word-break: break-all; }
   .progress-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
-  .progress-bar { height: 5px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
-  .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.2s ease; }
+  .progress-bar { height: 5px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .progress-label { font-size: var(--fs-2xs); color: var(--text-2); font-family: var(--font-mono); }
 </style>

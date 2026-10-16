@@ -13,13 +13,13 @@ import type { BotCard } from './generated/bot';
 export type { BridgeView, NetCheck, NetMode, NetStatus, Verdict } from './generated/net';
 import type { NetCheck, NetMode, NetStatus } from './generated/net';
 export type {
-  CallDirection, CallEnded, CallLimits, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState, CallStats, CallView, CallVia, RelayPolicy,
+  CallDirection, CallEnded, CallLimits, CallLogEntry, CallLogKind, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState, CallStats, CallView, CallVia, RelayPolicy,
   CameraInfo, ScreenInfo, VideoInput, VideoQuality, VideoSize, VideoTrack,
   CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust,
   GroupCallAnnounced, GroupCallEnded, GroupCallLevel, GroupCallPhase, GroupCallState, GroupCallView, GroupParticipant,
 } from './generated/calls';
 import type {
-  CallMedia, CallNodeInput, CallNodesView, CallState, CallTrust, CallView, CameraInfo, GroupCallState, GroupCallView, RelayPolicy, ScreenInfo, VideoInput,
+  CallLogEntry, CallMedia, CallNodeInput, CallNodesView, CallState, CallTrust, CallView, CameraInfo, GroupCallState, GroupCallView, RelayPolicy, ScreenInfo, VideoInput,
   VideoQuality, VideoTrack,
 } from './generated/calls';
 
@@ -902,7 +902,8 @@ function mockOwnSet(input: MessengerProfileInput): MessengerProfile {
   return mockOwnProfile;
 }
 
-function mockAvatarSet(token: string, rect: CropRect): MessengerProfile {
+/** The picked picture, cropped and "uploaded": its address. */
+function mockPicturePut(token: string, rect: CropRect): string {
   if (!mockAvatarPick || mockAvatarPick.token !== token) throw new Error('avatar_expired');
   const ok = [rect.x, rect.y, rect.w, rect.h].every(Number.isFinite) && rect.w > 0 && rect.h > 0
     && rect.x >= 0 && rect.y >= 0 && rect.x + rect.w <= 1.0001 && rect.y + rect.h <= 1.0001;
@@ -912,7 +913,12 @@ function mockAvatarSet(token: string, rect: CropRect): MessengerProfile {
   const url = `${DEMO_PICTURE_BASE}${sha}`;
   mockAvatars.set(url, demoPicture(url, 256));
   mockAvatarPick = null;
-  mockOwnProfile = { ...(mockOwnProfile ?? emptyProfile(mockIdentity?.pubkey ?? 'ab'.repeat(32))), picture: url, event_created_at: Math.floor(Date.now() / 1000) };
+  return url;
+}
+
+function mockAvatarSet(token: string, rect: CropRect): MessengerProfile {
+  const url = mockPicturePut(token, rect);
+  mockOwnProfile ={ ...(mockOwnProfile ?? emptyProfile(mockIdentity?.pubkey ?? 'ab'.repeat(32))), picture: url, event_created_at: Math.floor(Date.now() / 1000) };
   return mockOwnProfile;
 }
 
@@ -1573,6 +1579,20 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     if (g.membership !== 'joined') mockChats = mockChats.map((c) => (c.id === g.chat_id ? { ...c, can_send: false } : c));
     return g;
   },
+  messenger_group_avatar_set: (a) => {
+    const g = mockGroup(String(a?.groupId));
+    if (!g.my_role || !['owner', 'admin'].includes(g.my_role)) throw new Error('group_not_permitted');
+    g.picture = mockPicturePut(String(a?.token), (a?.rect ?? {}) as CropRect);
+    mockChats = mockChats.map((c) => (c.id === g.chat_id ? { ...c, picture: g.picture } : c));
+    return g;
+  },
+  messenger_group_avatar_remove: (a) => {
+    const g = mockGroup(String(a?.groupId));
+    if (!g.my_role || !['owner', 'admin'].includes(g.my_role)) throw new Error('group_not_permitted');
+    g.picture = '';
+    mockChats = mockChats.map((c) => (c.id === g.chat_id ? { ...c, picture: null } : c));
+    return g;
+  },
   messenger_group_rotate_link: (a) => {
     const g = mockGroup(String(a?.groupId));
     const e = Number(/&e=(\d+)/.exec(g.link ?? '')?.[1] ?? 0) + 1;
@@ -1823,6 +1843,7 @@ Object.assign(devMocks, demoCallMocks({
   lines: (chatId) => (mockMessages[chatId] ??= []),
   touch: (chatId, at) => { mockChats = mockChats.map((c) => (c.id === chatId ? { ...c, last_message_at: at, last_preview: '📞' } : c)); },
   me: () => mockIdentity?.pubkey ?? '',
+  group: () => mockGroups.find((g) => g.membership === 'joined')?.id ?? null,
   members: (groupId) => mockGroups.find((g) => g.id === groupId && g.membership === 'joined')?.members.map((m) => m.pubkey) ?? [],
 }));
 // The call nodes of the settings: net/callNodesDemo.ts.
@@ -2136,6 +2157,21 @@ export const messengerApi = {
   },
 
   /**
+   * The journal of calls (the section «Звонки»): the calls that are over,
+   * of two and of groups, newest first. Taking one out leaves its line in
+   * the chat.
+   */
+  callLog: {
+    /** A page strictly older than `before` (a `started_at`). */
+    list: (before?: number, limit = 50) => invoke<CallLogEntry[]>('messenger_call_history', { before: before ?? null, limit }),
+    hide: (callIds: string[]) => invoke<void>('messenger_call_history_hide', { callIds }),
+    clear: () => invoke<void>('messenger_call_history_clear'),
+    /** The missed calls since the journal was last shown. */
+    missed: () => invoke<number>('messenger_calls_missed'),
+    markSeen: () => invoke<void>('messenger_calls_mark_seen'),
+  },
+
+  /**
    * Calls of a group: a room on a call node, the group told by its own
    * notes. One call of either kind at a time: the runtime refuses a group
    * call during a call of two and the other way round. Events:
@@ -2192,6 +2228,15 @@ export const messengerApi = {
       invoke<MessengerGroup>('messenger_group_answer_request', { groupId, requester, approve }),
     act: (groupId: string, action: GroupAction) => invoke<MessengerGroup>('messenger_group_act', { groupId, action }),
     rotateLink: (groupId: string) => invoke<MessengerGroup>('messenger_group_rotate_link', { groupId }),
+    /**
+     * Crops the picture of `avatar.prepare` (fractions 0..1 of the preview),
+     * uploads it to my media servers and names it in the group's log; for a
+     * manager. Errors: `group_not_permitted`, `avatar_expired`,
+     * `avatar_bad_crop`, `err.media_no_server`.
+     */
+    avatarSet: (groupId: string, token: string, rect: CropRect) =>
+      invoke<MessengerGroup>('messenger_group_avatar_set', { groupId, token, rect }),
+    avatarRemove: (groupId: string) => invoke<MessengerGroup>('messenger_group_avatar_remove', { groupId }),
     /** SVG of the QR code of the link. */
     linkQr: (groupId: string) => invoke<string>('messenger_group_link_qr', { groupId }),
     forget: (groupId: string) => invoke<void>('messenger_group_forget', { groupId }),

@@ -71,10 +71,10 @@
   .tile.danger { background: var(--danger-bg); color: var(--danger-text); }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .title { font-size: var(--fs-base); font-weight: var(--fw-semibold); line-height: 1.3; }
-  .m .title { font-size: 15px; }
+  .m .title { font-size: var(--fs-body); }
   .danger .title { color: var(--danger-text); }
   .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4; }
-  .m .sub { font-size: 13px; }
+  .m .sub { font-size: var(--fs-sm); }
   .trailing { flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--sp-2); }
   .chev { flex-shrink: 0; display: inline-flex; color: var(--text-3); }
 </style>

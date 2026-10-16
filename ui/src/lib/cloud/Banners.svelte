@@ -22,7 +22,7 @@
   }
   .banners.m {
     left: var(--sp-3); right: var(--sp-3); width: auto;
-    bottom: calc(var(--nav-h, 64px) + var(--sab, 0px) + var(--sp-3));
+    bottom: calc(var(--nav-h, 64px) + var(--nav-gap, 0px) + var(--sab, 0px) + var(--sp-3));
     max-height: 70vh;
   }
   .banners > :global(*) { pointer-events: auto; }

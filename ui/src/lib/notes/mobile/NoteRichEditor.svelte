@@ -370,7 +370,7 @@
     overflow-y: auto;
     outline: none;
     padding: var(--sp-2) 0;
-    font-size: 15px;
+    font-size: var(--fs-body);
     line-height: 1.6;
     word-wrap: break-word;
     white-space: pre-wrap;
@@ -391,7 +391,7 @@
   }
   .host :global(a.wiki-entity) {
     padding: 0 0.4em;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
     color: var(--text);
     background: var(--surface-2);
@@ -401,7 +401,7 @@
     font-size: 0.88em;
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     padding: 0.05em 0.35em;
   }
   .host :global(pre) {
@@ -413,7 +413,7 @@
     border-radius: var(--radius-md, 8px);
     font-family: var(--font-mono);
   }
-  .host :global(pre code) { background: none; border: none; padding: 0; font-size: 13px; }
+  .host :global(pre code) { background: none; border: none; padding: 0; font-size: var(--fs-sm); }
   .host :global(blockquote) {
     margin: 0 0 1em;
     padding-left: var(--sp-3);
@@ -449,7 +449,7 @@
     height: 22px;
     background: var(--accent);
     border: 2px solid var(--surface);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     z-index: 2;
     display: none;
     touch-action: none;

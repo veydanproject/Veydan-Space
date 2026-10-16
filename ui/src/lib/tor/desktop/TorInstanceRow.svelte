@@ -151,8 +151,8 @@
   .warn-msg { font-size: var(--fs-sm); color: var(--warn-text); }
   .error-msg { font-size: var(--fs-sm); color: var(--danger-text); }
   .progress-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
-  .progress-bar { height: 5px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
-  .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.2s ease; }
+  .progress-bar { height: 5px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .progress-label { font-size: var(--fs-2xs); color: var(--text-2); font-family: var(--font-mono); }
   .log {
     margin: 0; max-height: 260px; overflow: auto; padding: var(--sp-2) var(--sp-3);

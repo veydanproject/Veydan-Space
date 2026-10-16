@@ -84,19 +84,23 @@
       .sort((x, y) => x.order - y.order)
       .map((block) => {
         const core = CORE_BLOCKS.find((c) => c.group === block.group);
-        const item = (sec: SettingsSection) => ({ id: sec.id, label: $t(sec.title as TranslationKey) });
+        const item = (sec: SettingsSection) => ({ id: sec.id, label: $t(sec.title as TranslationKey), icon: sec.icon ?? 'settings' });
         return {
           label: $t(block.group as TranslationKey),
           items: core
             ? [
                 ...joining(core.group, true).sections.map(item),
-                ...core.ids.map((id) => ({ id, label: coreLabel(id) })),
+                ...core.ids.map((id) => ({ id, label: coreLabel(id), icon: CORE_ICONS[id] ?? 'settings' })),
                 ...joining(core.group, false).sections.map(item),
               ]
             : block.sections.map(item),
         };
       }),
   );
+  const CORE_ICONS: Record<string, string> = {
+    modules: 'layout-grid', language: 'globe', theme: 'sun', devtools: 'code', hotkeys: 'keyboard',
+    tray: 'monitor', lock: 'lock', sync: 'refresh-cw', updates: 'download', about: 'info',
+  };
   function coreLabel(id: string): string {
     switch (id) {
       case 'modules': return $t('modules_section');
@@ -112,70 +116,31 @@
     }
   }
   let activeSection = $state(blocksBetween(-Infinity, 20)[0]?.sections[0]?.id ?? (withModules ? 'modules' : 'language'));
-  let sectionsEl = $state<HTMLElement | null>(null);
-  let layoutEl = $state<HTMLElement | null>(null);
-  // Set on nav click; scroll-spy stays quiet until the smooth scroll settles
-  let navScrolling = false;
+  let scrollEl = $state<HTMLElement | null>(null);
+  const navItems = $derived(navGroups.flatMap((g) => g.items));
+  const activeLabel = $derived(navItems.find((it) => it.id === activeSection)?.label ?? '');
+  const activeBadge = $derived(moduleSections.find((sec) => sec.id === activeSection)?.badge);
 
-  function scrollToSection(id: string) {
+  /**
+   * One section a page (the design kit’s settings): the choice shows its
+   * card, the others stay mounted and hidden, and the address keeps it
+   * (`/settings#updates`, the palette’s "Check for updates").
+   */
+  function selectSection(id: string) {
     activeSection = id;
-    navScrolling = true;
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (scrollEl) scrollEl.scrollTop = 0;
+    if (location.hash !== `#${id}`) history.replaceState(history.state, '', `#${id}`);
   }
-
-  function scrollParent(el: HTMLElement): HTMLElement {
-    let p = el.parentElement;
-    while (p && !/auto|scroll/.test(getComputedStyle(p).overflowY)) p = p.parentElement;
-    return p ?? document.documentElement;
+  function sectionFromHash() {
+    const wanted = location.hash.slice(1);
+    if (wanted && navItems.some((it) => it.id === wanted)) selectSection(wanted);
   }
+  /** What is not the chosen section is hidden (a rule of its own: the cards come and go with the modules). */
+  const hideOthers = $derived(
+    `<style>.settings-main > [id]:not([id="${CSS.escape(activeSection)}"]) { display: none !important; }</style>`,
+  );
 
-  // Scroll-spy: active = last section above the 25% line, or the last one at the bottom
-  function observeSections(): () => void {
-    if (!sectionsEl) return () => {};
-    const sections = [...sectionsEl.querySelectorAll<HTMLElement>(':scope > [id]')];
-    const scroller = scrollParent(sectionsEl);
-    let settleTimer: ReturnType<typeof setTimeout> | undefined;
-
-    // The nav is as tall as the scroller lets it be (SettingsNav.svelte).
-    const fit = () => layoutEl?.style.setProperty('--settings-view-h', `${scroller.clientHeight}px`);
-    const sizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
-    sizes?.observe(scroller);
-    fit();
-
-    const update = () => {
-      const line = scroller.getBoundingClientRect().top + scroller.clientHeight * 0.25;
-      const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
-      const current = atBottom
-        ? sections.at(-1)
-        : sections.findLast((s) => s.getBoundingClientRect().top <= line) ?? sections[0];
-      if (current) activeSection = current.id;
-    };
-    const onScroll = () => {
-      if (!navScrolling) return update();
-      clearTimeout(settleTimer);
-      settleTimer = setTimeout(() => (navScrolling = false), 150);
-    };
-
-    update();
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      clearTimeout(settleTimer);
-      sizes?.disconnect();
-      scroller.removeEventListener('scroll', onScroll);
-    };
-  }
-
-  const THEME_PRESETS = {
-    chrome: {
-      dark: ['#0b0b10', '#14141c', '#1c1c26', '#0e1620', '#16120e', '#1a1224'],
-      light: ['#fafafd', '#ffffff', '#f0eef8', '#ebe8f2', '#f4f1ea', '#efe8f0'],
-    },
-    accent: ['#8b7bff', '#6d5cf0', '#60a5fa', '#2dd4bf', '#f472b6', '#34d399'],
-    bg: {
-      dark: ['#08080c', '#0c0c12', '#101018', '#0a1016', '#12100c', '#100c16'],
-      light: ['#f4f3f8', '#ffffff', '#eeeef4', '#f6f4ee', '#f2eef8', '#eaeaf0'],
-    },
-  } as const;
+  const ACCENT_PRESETS = ['#7066c6', '#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6', '#34d399'];
 
   /** The user's choice: shown here, remembered by this device and saved for the extension and the other computers (it syncs). */
   function chooseLanguage(code: Locale) {
@@ -249,10 +214,10 @@
   }
 
   onMount(async () => {
-    unlisteners.push(observeSections());
-    // A link to one card (`/settings#updates`, the palette's "Check for updates").
-    const wanted = location.hash.slice(1);
-    if (wanted && document.getElementById(wanted)) scrollToSection(wanted);
+    // A link to one section (`/settings#updates`, the palette's "Check for updates").
+    sectionFromHash();
+    window.addEventListener('hashchange', sectionFromHash);
+    unlisteners.push(() => window.removeEventListener('hashchange', sectionFromHash));
 
     if (isTauri) {
       const { getVersion } = await import('@tauri-apps/api/app');
@@ -381,11 +346,21 @@
   {/each}
 {/snippet}
 
-<div class="page settings-layout" bind:this={layoutEl}>
-  <SettingsNav groups={navGroups} active={activeSection} onselect={scrollToSection} />
+<svelte:head>{@html hideOthers}</svelte:head>
 
-  <div class="settings-main" bind:this={sectionsEl}>
-  <h1>{$t('settings_title')}</h1>
+<div class="settings-layout">
+  <aside class="settings-side">
+    <h1 class="side-title">{$t('settings_title')}</h1>
+    <SettingsNav groups={navGroups} active={activeSection} onselect={selectSection} />
+  </aside>
+
+  <section class="settings-pane">
+  <header class="pane-head">
+    <h2 class="pane-title">{activeLabel}</h2>
+    {#if activeBadge}<span class="badge badge-warn">{$t(activeBadge as TranslationKey)}</span>{/if}
+  </header>
+  <div class="pane-scroll" bind:this={scrollEl}>
+  <div class="settings-main">
 
   <!-- The modules' cards before the general block: the browser's Camoufox. -->
   {@render moduleCards(blocksBetween(-Infinity, 20))}
@@ -438,22 +413,10 @@
     </div>
     <div class="theme-customize">
       <ColorField
-        label={$t('settings_theme_chrome')}
-        value={resolvedOverride($themeCustom, $theme, 'chrome')}
-        presets={[...THEME_PRESETS.chrome[$theme]]}
-        onchange={(hex) => setThemeOverride('chrome', hex)}
-      />
-      <ColorField
         label={$t('settings_theme_accent')}
         value={resolvedOverride($themeCustom, $theme, 'accent')}
-        presets={[...THEME_PRESETS.accent]}
+        presets={ACCENT_PRESETS}
         onchange={(hex) => setThemeOverride('accent', hex)}
-      />
-      <ColorField
-        label={$t('settings_theme_bg')}
-        value={resolvedOverride($themeCustom, $theme, 'bg')}
-        presets={[...THEME_PRESETS.bg[$theme]]}
-        onchange={(hex) => setThemeOverride('bg', hex)}
       />
       <button
         type="button"
@@ -687,7 +650,7 @@
 
   <BugReportDialog bind:open={bugOpen} />
 
-  <div class="demo-foot">
+  <div class="demo-foot" class:off={activeSection !== 'about'}>
     {#if hasDemo}
       <span class="demo-label">{$t('settings_demo_locale')}</span>
       <button type="button" class="demo-chip" class:active={demoLocale === 'en'} onclick={() => (demoLocale = 'en')}>
@@ -710,6 +673,8 @@
   {#if dataMsg}<p class="ok-msg">{dataMsg}</p>{/if}
   {#if dataError}<div class="error-msg">{dataError}</div>{/if}
   </div>
+  </div>
+  </section>
 </div>
 
 {#if pendingData}
@@ -751,25 +716,53 @@
 <style>
   /* Rules written as `.settings-main :global(…)` are the card primitives the
      modules' cards (rendered inside this page) are styled with too. */
-  /* Two columns: sticky nav + content rail of --page-max-narrow width */
+  /* Two floating panes 12 apart: the sections (280) and the chosen one. */
   .settings-layout {
-    --nav-w: 200px;
-    --page-max: calc(var(--page-max-narrow) + var(--nav-w) + var(--sp-8));
     display: grid;
-    grid-template-columns: var(--nav-w) minmax(0, 1fr);
-    column-gap: var(--sp-8);
-    align-items: start;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: var(--sp-3);
+    height: 100%;
+    min-height: 0;
   }
-  .settings-main { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
-  .settings-main > [id] { scroll-margin-top: var(--sp-3); }
-
   @media (max-width: 960px) {
-    .settings-layout { --page-max: var(--page-max-narrow); grid-template-columns: minmax(0, 1fr); }
-    .settings-layout > :global(.settings-nav) { display: none; }
+    .settings-layout { grid-template-columns: 220px minmax(0, 1fr); }
   }
-
-  /* bare h1 (not inside .page-header) — global .page-header h1 doesn't apply */
-  h1 { font-size: var(--fs-2xl); font-weight: var(--fw-extrabold); letter-spacing: -0.6px; margin-bottom: var(--sp-2); }
+  .settings-side,
+  .settings-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-radius: var(--radius-pane);
+    background: var(--pane);
+    -webkit-backdrop-filter: var(--pane-filter);
+    backdrop-filter: var(--pane-filter);
+    border: 1px solid var(--pane-border);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    overflow: hidden;
+  }
+  .settings-side { padding: var(--sp-5) var(--sp-3) var(--sp-3); gap: var(--sp-4); overflow-y: auto; scrollbar-width: thin; }
+  .side-title { padding: 0 var(--sp-2); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.4; }
+  .pane-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-shrink: 0;
+    min-height: 64px;
+    padding: var(--sp-4) var(--sp-6) 0;
+  }
+  .pane-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.4; }
+  .pane-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+  .settings-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    max-width: calc(var(--page-max-narrow) + var(--sp-6) * 2);
+    min-width: 0;
+    padding: var(--sp-6) var(--sp-6) var(--sp-8);
+  }
+  .off { display: none !important; }
+  /* The section's name is the pane's title: its card does not repeat it. */
+  .settings-main > .card > .card-title:first-child { display: none; }
 
   /* local deltas over global .card: bg, internal flex layout, gap, shadow */
   .card {
@@ -800,7 +793,7 @@
 
   .settings-main :global(.version-table) { display: flex; flex-direction: column; gap: 0.35rem; }
   .settings-main :global(.version-row) { display: flex; align-items: baseline; gap: var(--sp-2); }
-  .settings-main :global(.version-label) { font-size: 0.82rem; color: var(--text-faint); min-width: 120px; flex-shrink: 0; }
+  .settings-main :global(.version-label) { font-size: var(--fs-sm); color: var(--text-faint); min-width: 120px; flex-shrink: 0; }
   .settings-main :global(.version-value) { font-size: var(--fs-sm); color: var(--text-body); font-family: var(--font-mono); }
   .settings-main :global(.path-value) { font-size: var(--fs-2xs); word-break: break-all; }
 
@@ -832,7 +825,7 @@
   }
   .demo-label, .demo-chip, .demo-link {
     border: none; background: transparent; color: var(--text-faint);
-    font-size: 0.72rem; line-height: 1.2; padding: 0.1rem 0.2rem;
+    font-size: var(--fs-2xs); line-height: 1.2; padding: 0.1rem 0.2rem;
     text-decoration: none;
   }
   .demo-chip, .demo-link { cursor: pointer; }
@@ -845,8 +838,8 @@
   .settings-main :global(.btn-row) { display: flex; gap: var(--sp-2); align-items: center; }
 
   .settings-main :global(.progress-wrap) { display: flex; flex-direction: column; gap: 0.3rem; }
-  .settings-main :global(.progress-bar) { height: 5px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
-  .settings-main :global(.progress-fill) { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.2s ease; }
+  .settings-main :global(.progress-bar) { height: 5px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
+  .settings-main :global(.progress-fill) { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .settings-main :global(.progress-label) { font-size: var(--fs-2xs); color: var(--text-2); font-family: var(--font-mono); }
 
   .lang-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.625rem; }
@@ -856,7 +849,7 @@
     display: flex; align-items: center; gap: 9px;
     height: var(--control-h-lg); padding: 0 20px; background: var(--surface-3);
     border: 1px solid var(--border); border-radius: var(--radius-field);
-    color: var(--text-body); font-size: 0.9rem; font-weight: var(--fw-semibold); cursor: pointer;
+    color: var(--text-body); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer;
     transition: all 0.15s; min-width: 130px;
   }
   .lang-btn:hover { border-color: var(--border-2); color: var(--text); }
@@ -901,7 +894,7 @@
     display: flex; align-items: center; gap: 9px;
     height: var(--control-h-lg); padding: 0 20px; background: var(--surface-3);
     border: 1px solid var(--border); border-radius: var(--radius-field);
-    color: var(--text-body); font-size: 0.9rem; font-weight: var(--fw-semibold); cursor: pointer;
+    color: var(--text-body); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer;
     transition: all 0.15s; min-width: 110px;
   }
   .theme-opt:hover:not(:disabled) { border-color: var(--border-2); color: var(--text); }
@@ -924,7 +917,7 @@
   .settings-main :global(.dir-input) {
     flex: 1; height: 44px; background: var(--surface-3); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 0 var(--sp-3);
-    font-size: 0.82rem; color: var(--text-body); font-family: var(--font-mono);
+    font-size: var(--fs-sm); color: var(--text-body); font-family: var(--font-mono);
     outline: none; text-overflow: ellipsis;
   }
   .settings-main :global(.dir-input:focus) { border-color: var(--accent-border); }

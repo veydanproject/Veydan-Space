@@ -139,14 +139,14 @@
     padding: var(--sp-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 8px);
-    font-size: 14px;
+    font-size: var(--fs-base);
     line-height: 1.55;
     word-break: break-word;
     user-select: text;
     -webkit-user-select: text;
   }
   .preview :global(img) { max-width: 100%; border-radius: var(--radius-md, 8px); }
-  .preview :global(pre) { overflow-x: auto; padding: var(--sp-2); background: var(--surface-2); border-radius: 6px; font-size: 12px; }
+  .preview :global(pre) { overflow-x: auto; padding: var(--sp-2); background: var(--surface-2); border-radius: var(--radius-badge); font-size: var(--fs-xs); }
   .preview :global(code) { font-family: var(--font-mono); }
   .preview :global(a) { color: var(--accent-text); }
   .preview :global(h1), .preview :global(h2), .preview :global(h3) { margin: var(--sp-2) 0 var(--sp-1); }

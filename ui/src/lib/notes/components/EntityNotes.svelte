@@ -88,7 +88,7 @@
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
   .row {
     display: flex; align-items: center; gap: 0.5rem; width: 100%;
-    padding: 0.3rem 0.45rem; border: 0; border-radius: 4px;
+    padding: 0.3rem 0.45rem; border: 0; border-radius: var(--radius-xs);
     background: transparent; color: var(--text); text-align: left; cursor: pointer;
   }
   .row:hover { background: var(--surface-2); }

@@ -8,6 +8,7 @@
   import TotpList from './TotpList.svelte';
   import TotpAddModal from './TotpAddModal.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Skeleton from '$lib/core/ui/Skeleton.svelte';
 
   interface Props {
     profileId: string;
@@ -34,7 +35,7 @@
   </div>
 
   {#if totpStore.loading && !totpStore.loaded}
-    <div class="loading">{$t('loading')}</div>
+    <Skeleton rows={4} height={64} avatar="square" trailing />
   {:else}
     <TotpList
       {entries}
@@ -65,22 +66,15 @@
   }
 
   .toolbar-count {
-    font-size: 0.78rem;
+    font-size: var(--fs-sm);
     color: var(--text-faint);
   }
 
   .toolbar-add {
     height: 34px;
     padding: 0 13px;
-    font-size: 0.82rem;
-    border-radius: 9px;
-  }
-
-  .loading {
     font-size: var(--fs-sm);
-    color: var(--text-2);
-    padding: var(--sp-4) 0;
-    text-align: center;
+    border-radius: var(--radius);
   }
 
   /* .btn / .btn-ghost / .btn-sm are global primitives (base.css) */

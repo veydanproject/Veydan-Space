@@ -10,20 +10,20 @@
   let open = $derived(confirmStore.current !== null);
 </script>
 
-<Dialog {open} width="min(420px, calc(100vw - 32px))" onclose={() => confirmStore.answer(false)}>
+<Dialog {open} width="min(420px, calc(100vw - 32px))" closable={false} onclose={() => confirmStore.answer(false)}>
   {#if confirmStore.current}
     <p class="text">{confirmStore.current.text}</p>
-    <div class="actions">
+  {/if}
+  {#snippet footer()}
+    {#if confirmStore.current}
       <button class="btn btn-ghost" onclick={() => confirmStore.answer(false)}>{$t('msg_back')}</button>
-      <button class="btn btn-primary" class:danger={confirmStore.current.danger} onclick={() => confirmStore.answer(true)}>
+      <button class="btn" class:btn-danger={confirmStore.current.danger} class:btn-primary={!confirmStore.current.danger} onclick={() => confirmStore.answer(true)}>
         {confirmStore.current.confirmLabel}
       </button>
-    </div>
-  {/if}
+    {/if}
+  {/snippet}
 </Dialog>
 
 <style>
-  .text { margin: 0 0 var(--sp-4); font-size: var(--fs-sm); line-height: 1.5; color: var(--text-body); }
-  .actions { display: flex; justify-content: flex-end; gap: var(--sp-2); flex-wrap: wrap; }
-  .btn.danger { background: var(--danger); box-shadow: none; }
+  .text { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-body); }
 </style>

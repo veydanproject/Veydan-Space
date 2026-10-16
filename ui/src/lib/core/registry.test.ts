@@ -218,6 +218,20 @@ describe('the registry', () => {
     expect(rootNav()[0].href).toBe('/');
   });
 
+  it('gives that product the bar of its first screen when the module has one, Settings too (the chat\'s tabs)', () => {
+    const tabs = [
+      { id: 'chats', title: 'ctx_kind_note', icon: 'message-circle', href: '/messenger' },
+      { id: 'calls', title: 'ctx_kind_note', icon: 'phone', href: '/messenger/calls' },
+      { id: 'settings', title: 'app_settings', icon: 'settings', href: '/settings' },
+    ] as const;
+    const withTabs: ModuleDef = { ...chat, nav: [{ id: 'messenger', title: 'ctx_kind_note', icon: 'message-circle', href: '/messenger' }], bar: (url) => (url.pathname === '/messenger' ? [...tabs] : undefined) };
+    use(withTabs, backup);
+    expect(rootNav().map((n) => n.id)).toEqual(['chats', 'calls', 'settings']);
+    // Space keeps Home: the tabs are the messenger's own screens only.
+    use(browser, withTabs, backup);
+    expect(rootNav().map((n) => n.id)).toEqual(['home', 'settings']);
+  });
+
   it('leaves out quick access to a module where the module is the whole product (Pass)', () => {
     const pass: ModuleDef = {
       ...chat,

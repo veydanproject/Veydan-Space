@@ -2,8 +2,10 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { secretCopied, toast } from '$lib/core/ui/toast.svelte';
   import { api } from '$lib/pass/api';
   import { copySecret } from '$lib/pass/clipboard';
+  import { AutoHide } from '$lib/pass/autohide.svelte';
   import { safeExternalUrl } from '$lib/pass/safe-url';
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
@@ -29,9 +31,18 @@
   let { entry, onedit, ondeleted }: Props = $props();
 
   let revealed = $state('');
+  const hide = new AutoHide(() => (revealed = ''));
+  $effect(() => () => hide.stop());
   let note = $state('');
   let error = $state('');
-  let toast = $state('');
+  /** The copy button shows a check for 2 s. */
+  let copied = $state(false);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  function flip() {
+    copied = true;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied = false), 2000);
+  }
   let unlockOpen = $state(false);
   let afterUnlock = $state<(() => void) | null>(null);
 
@@ -57,6 +68,7 @@
   $effect(() => {
     if (!unlocked) {
       revealed = '';
+      hide.stop();
       note = '';
       return;
     }
@@ -110,9 +122,11 @@
     try {
       if (revealed) {
         revealed = '';
+        hide.stop();
         return;
       }
       revealed = (await api.passwords.reveal(entry.id, 'password')).value;
+      hide.start();
     } catch (e) {
       fail(e);
     }
@@ -143,7 +157,8 @@
     error = '';
     try {
       await api.passwords.copy(entry.id);
-      toast = $t('pw_copied');
+      flip();
+      secretCopied($t('pw_copied'));
     } catch (e) {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: string }).code) : '';
       if (code === 'vault_locked' || code === 'vault_mismatch' || code === 'decrypt_failed') {
@@ -152,8 +167,8 @@
       }
       try {
         const value = (await api.passwords.reveal(entry.id, 'password')).value;
-        await copySecret(value);
-        toast = $t('pw_copied');
+        await copySecret(value, { toast: $t('pw_copied') });
+        flip();
       } catch (err) {
         fail(err);
       }
@@ -163,7 +178,7 @@
   async function copyUsername() {
     if (!entry.username) return;
     await navigator.clipboard.writeText(entry.username);
-    toast = $t('pw_copied');
+    toast.success($t('pw_copied'));
   }
 
   async function remove() {
@@ -204,14 +219,15 @@
       <button type="button" class="icon-btn" onclick={reveal} aria-label={$t(revealed ? 'pw_btn_hide' : 'pw_btn_reveal')}>
         <Icon name={revealed ? 'eye-off' : 'eye'} size={14} />
       </button>
-      <button type="button" class="icon-btn" class:ok={toast === $t('pw_copied')} onclick={copyPassword} aria-label={$t('pw_btn_copy')}>
-        <Icon name={toast === $t('pw_copied') ? 'check' : 'copy'} size={14} />
+      <button type="button" class="icon-btn" class:ok={copied} onclick={copyPassword} aria-label={$t('pw_btn_copy')}>
+        <Icon name={copied ? 'check' : 'copy'} size={14} />
       </button>
     {:else}
       <button type="button" class="icon-btn" onclick={() => askUnlock(() => void copyPassword())} aria-label={$t('lock_title')}>
         <Icon name="lock" size={14} />
       </button>
     {/if}
+    {#if unlocked && revealed && hide.left}<span class="autohide">{$t('pw_autohide_in', { n: String(hide.left) })}</span>{/if}
   </div>
   {#if note}
     <div class="line">
@@ -247,7 +263,6 @@
     </div>
   {/each}
   {#if error}<p class="err">{error}</p>{/if}
-  {#if toast}<p class="ok">{toast}</p>{/if}
   <VaultUnlock bind:open={unlockOpen} onunlocked={onUnlocked} />
   {#if unlocked}
     <div class="actions">
@@ -260,14 +275,16 @@
 <style>
   .card { display: flex; flex-direction: column; gap: var(--sp-3); }
   /* A long value without spaces wraps inside the card instead of running past its border */
-  h2 { margin: 0; font-size: 1.05rem; min-width: 0; overflow-wrap: anywhere; }
-  .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: 0.85rem; }
+  h2 { margin: 0; font-size: var(--fs-md); min-width: 0; overflow-wrap: anywhere; }
+  .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); }
   /* The row label only (the pin mark is a span too) */
   .line > span:first-child { color: var(--text-2); min-width: 72px; }
   .line > strong, .line > a, .line > p { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
   .line > p { white-space: pre-wrap; }
+  /* «Скроется через N с» under a shown password, from the value's edge. */
+  .line > .autohide { flex-basis: 100%; padding-left: calc(72px + var(--sp-2)); margin-top: -4px; font-size: var(--fs-xs); color: var(--text-2); }
   .totp-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .primary { display: inline-flex; color: var(--accent); }
+  .primary { display: inline-flex; color: var(--accent-text); }
   a { color: var(--text); }
   .err { color: var(--danger-text); margin: 0; }
   .ok { color: var(--success-text); margin: 0; }
@@ -283,10 +300,10 @@
     gap: 4px;
     border-width: 1px;
     border-style: solid;
-    border-radius: 99px;
+    border-radius: var(--radius-pill);
     max-width: 100%;
     padding: 2px 8px;
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

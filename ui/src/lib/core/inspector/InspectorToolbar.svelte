@@ -184,7 +184,7 @@
     border-bottom: 1px solid rgba(99, 102, 241, 0.3);
     backdrop-filter: blur(6px);
     pointer-events: auto;
-    font-size: 0.72rem;
+    font-size: var(--fs-2xs);
     color: #cbd5e1;
     overflow-x: auto;
     overflow-y: hidden;
@@ -223,11 +223,11 @@
   button {
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     color: #94a3b8;
     padding: 0.15rem 0.4rem;
     cursor: pointer;
-    font-size: 0.72rem;
+    font-size: var(--fs-2xs);
     white-space: nowrap;
     transition: all 0.1s;
   }
@@ -257,9 +257,9 @@
   select.preset-select {
     background: rgba(30, 41, 59, 0.9);
     border: 1px solid rgba(99, 102, 241, 0.3);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     color: #cbd5e1;
-    font-size: 0.72rem;
+    font-size: var(--fs-2xs);
     padding: 0.1rem 0.25rem;
     cursor: pointer;
   }
@@ -267,9 +267,9 @@
   input.preset-input {
     background: rgba(30, 41, 59, 0.9);
     border: 1px solid rgba(99, 102, 241, 0.4);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     color: #e2e8f0;
-    font-size: 0.72rem;
+    font-size: var(--fs-2xs);
     padding: 0.15rem 0.35rem;
     width: 120px;
   }
@@ -284,7 +284,7 @@
     height: 24px;
     padding: 1px;
     border: 1px solid rgba(99, 102, 241, 0.3);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     background: transparent;
     cursor: pointer;
     flex-shrink: 0;

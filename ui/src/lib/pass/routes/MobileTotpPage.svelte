@@ -25,7 +25,6 @@
   let workspaceNames = $state<Map<string, string>>(new Map());
   let tagColors = $state<Map<string, string>>(new Map());
   let error = $state('');
-  let toast = $state('');
   let menu = $state<TotpEntry | null>(null);
   let search = $state('');
 
@@ -37,7 +36,6 @@
       [e.name, e.issuer ?? '', ...entryChips(e).map((c) => c.label)].some((s) => s.toLowerCase().includes(q)),
     );
   });
-  let toastTimer: ReturnType<typeof setTimeout>;
   let tick: ReturnType<typeof setInterval>;
 
   const RADIUS = 12;
@@ -121,17 +119,11 @@
     }
   }
 
-  function showToast(msg: string) {
-    clearTimeout(toastTimer);
-    toast = msg;
-    toastTimer = setTimeout(() => (toast = ''), 1600);
-  }
 
   async function copy(entry: TotpEntry) {
     const code = codes.get(entry.id);
     if (!code) return;
     await copySecret(code.code);
-    showToast($t('totp_copied'));
   }
 
   async function remove() {
@@ -155,7 +147,6 @@
   });
   onDestroy(() => {
     clearInterval(tick);
-    clearTimeout(toastTimer);
   });
 </script>
 
@@ -228,9 +219,6 @@
     </div>
   {/if}
 
-  {#if toast}
-    <div class="toast">{toast}</div>
-  {/if}
   </div>
 </div>
 
@@ -261,14 +249,15 @@
     text-align: left;
     width: 100%;
   }
-  .item:active { background: var(--surface-2); }
+  .item { background: transparent; border-color: transparent; box-shadow: none; border-radius: var(--radius-lg); }
+  .item:active { background: var(--surface-hover); }
   .meta { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-  .name { font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .account { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-body); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
   .code {
     font-family: var(--font-mono);
-    font-size: 20px;
+    font-size: var(--fs-xl);
     font-weight: 700;
     letter-spacing: 0.04em;
     color: var(--text);
@@ -278,7 +267,7 @@
   .ring circle { fill: none; stroke-width: 3; }
   .track { stroke: var(--border); }
   .progress { transition: stroke-dashoffset 0.9s linear; }
-  .m-cards { padding-bottom: var(--sp-6); }
+  .m-cards { gap: 2px; padding-bottom: var(--sp-6); }
   .danger { color: var(--danger-text); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
 </style>

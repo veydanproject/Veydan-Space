@@ -215,7 +215,7 @@
     border-radius: 0;
     background: var(--accent);
     color: #fff;
-    font-size: 11px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
   }
   .rbtn.danger { background: var(--danger); }

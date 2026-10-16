@@ -2,11 +2,13 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import { drafts } from '../shared/drafts.svelte';
   import type { Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import EmojiPicker from '../shared/emoji/EmojiPicker.svelte';
   import { usageStore } from '../shared/emoji/usageStore.svelte';
+  import { onKeyboard } from '../shared/keyboard';
   import RecorderBar from '../media/RecorderBar.svelte';
   import CircleRecorder from '../media/CircleRecorder.svelte';
   import TouchRecorder from '../media/TouchRecorder.svelte';
@@ -45,6 +47,160 @@
   }: Props = $props();
 
   let emojiOpen = $state(false);
+
+  // The phone (design kit, M23): the emoji panel takes the place of the
+  // on-screen keyboard under the composer, at its height, so the composer does
+  // not jump. The field keeps the caret with inputmode="none" (the keyboard
+  // stays down); the smile button turns into a keyboard and back. The panel's
+  // height is what the keyboard leaves free of the keyboard's own height: it
+  // grows as the keyboard goes down and shrinks as it comes up.
+  // 'open' — the panel; 'tokb' — giving way to the keyboard; 'down' — both going.
+  // Like a sheet, the panel can be pulled up by its grip (to look for an
+  // emoji), and folded by its button.
+  let dock = $state<'' | 'open' | 'tokb' | 'down'>('');
+  let expanded = $state(false);
+  let dragH = $state<number | null>(null);
+  /** The height animates — not while it follows the keyboard or a finger (the composer would jump). */
+  let glide = $state(true);
+  let kbNow = $state(0);
+  let kbH = $state(280);
+  let root = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    if (!touch) return;
+    return onKeyboard((inset) => {
+      kbNow = inset;
+      if (inset > 120) kbH = inset;
+    });
+  });
+  const maxH = () => Math.round(window.innerHeight * 0.72);
+  const baseH = $derived(Math.max(kbH - kbNow, 0));
+  const dockH = $derived(
+    dragH ?? (dock === 'down' || dock === '' ? 0 : dock === 'open' && expanded ? Math.max(maxH() - kbNow, 0) : baseH),
+  );
+  // With the panel the composer gives up its bottom padding (10 + the home
+  // indicator) and the panel takes it in: the row above stays exactly where
+  // it was in every step. The keyboard's inset already holds the home
+  // indicator, so a panel in its place adds the 10 alone — the same gap above
+  // it as above the keyboard, which then seems to slide over the panel; an
+  // empty one is the padding itself.
+  const dockCss = $derived(dockH > 0 ? `${dockH + 10}px` : 'calc(10px + var(--sab, 0px))');
+  // Giving way ends when the keyboard is up (or, failing that, after a while); going down after the shrink.
+  $effect(() => {
+    if (dock === 'tokb' && kbNow >= kbH - 8) dock = '';
+    if (dock !== 'tokb' && dock !== 'down') return;
+    const timer = setTimeout(() => (dock = ''), dock === 'down' ? 220 : 800);
+    return () => clearTimeout(timer);
+  });
+  // The conversation keeps its bottom while the panel changes height (ChatWindow follows the keyboard's event).
+  $effect(() => {
+    void dockH;
+    const timer = setTimeout(() => window.dispatchEvent(new Event('veydan-keyboard')), 220);
+    return () => clearTimeout(timer);
+  });
+  // A tap outside the composer and the panel takes both down.
+  $effect(() => {
+    if (dock !== 'open') return;
+    const outside = (e: PointerEvent) => {
+      if (root?.contains(e.target as Node)) return;
+      if ((e.target as HTMLElement).closest?.('.m-sheet, .context-menu')) return;
+      closeDock();
+      el?.blur();
+    };
+    // The attach button opens its own sheet in the panel's place. Not on the finger going down: the composer
+    // would slide down under the finger, and the tap would land on whatever came under it (a picture).
+    const attach = (e: MouseEvent) => {
+      if (root?.contains(e.target as Node) && (e.target as HTMLElement).closest?.('.attach')) closeDock();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('click', attach, true);
+    return () => {
+      document.removeEventListener('pointerdown', outside, true);
+      document.removeEventListener('click', attach, true);
+    };
+  });
+
+  /** Refocus the field so that the browser applies its inputmode (shows or hides the keyboard). */
+  function refocus() {
+    if (!el) return;
+    if (document.activeElement === el) el.blur();
+    el.focus({ preventScroll: true });
+  }
+  function openDock() {
+    el?.setAttribute('inputmode', 'none');
+    // Over an open keyboard the panel takes its place as the keyboard goes: no animation of its own.
+    glide = kbNow < 40;
+    expanded = false;
+    dock = 'open';
+    refocus();
+  }
+  function toKeyboard() {
+    el?.removeAttribute('inputmode');
+    glide = true;
+    expanded = false;
+    dock = 'tokb';
+    refocus();
+  }
+  function closeDock() {
+    el?.removeAttribute('inputmode');
+    glide = true;
+    expanded = false;
+    if (dock === 'open') dock = 'down';
+  }
+  /** The fold button: a pulled-up panel back to its place, otherwise both down. */
+  function fold() {
+    if (expanded) { glide = true; expanded = false; return; }
+    closeDock();
+    el?.blur();
+  }
+
+  // The grip: a tap pulls the panel up or back; a drag follows the finger and lets go to the nearest place
+  // (up, its own place, or down and away).
+  let grip: { y: number; h: number; moved: boolean } | null = null;
+  function gripDown(e: PointerEvent) {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    grip = { y: e.clientY, h: dockH, moved: false };
+  }
+  function gripMove(e: PointerEvent) {
+    if (!grip) return;
+    const dy = e.clientY - grip.y;
+    if (!grip.moved && Math.abs(dy) < 6) return;
+    grip.moved = true;
+    glide = false;
+    dragH = Math.min(Math.max(grip.h - dy, 0), maxH());
+  }
+  function gripUp() {
+    if (!grip) return;
+    const { moved } = grip;
+    grip = null;
+    const h = dragH;
+    dragH = null;
+    glide = true;
+    if (!moved) { expanded = !expanded; return; }
+    if (h === null) return;
+    if (h > baseH + 60) expanded = true;
+    else if (h < baseH - 80) { expanded = false; closeDock(); el?.blur(); }
+    else expanded = false;
+  }
+  function toggleEmoji() {
+    if (!touch) { emojiOpen = !emojiOpen; return; }
+    if (dock === 'open') toKeyboard(); else openDock();
+  }
+  /** «Стереть» of the panel: the symbol before the caret (a whole emoji, flags and families too). */
+  function erase() {
+    if (!el) return;
+    const a = el.selectionStart ?? text.length;
+    const b = el.selectionEnd ?? text.length;
+    let from = a;
+    if (a === b) {
+      if (a === 0) return;
+      const before = text.slice(0, a);
+      const seg = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(before)] : null;
+      from = seg && seg.length ? seg[seg.length - 1].index : a - 1;
+    }
+    text = text.slice(0, from) + text.slice(b);
+    queueMicrotask(() => { el!.selectionStart = el!.selectionEnd = from; resize(); });
+  }
   let recording = $state<"voice" | "circle" | null>(null);
   let recError = $state("");
   const voiceOk = captureSupported("voice");
@@ -53,6 +209,7 @@
   function startRecording(kind: "voice" | "circle") {
     recError = "";
     emojiOpen = false;
+    closeDock();
     recording = kind;
   }
 
@@ -120,6 +277,7 @@
       recError = "";
       hint = "";
       emojiOpen = false;
+      closeDock();
       heldLocked = false;
       heldPhase = "recording";
       held = mode;
@@ -159,7 +317,6 @@
     act({ type: "cancel" });
   }
 
-  const drafts: Map<string, string> = ((globalThis as Record<string, unknown>).__msgDrafts ??= new Map()) as Map<string, string>;
   const MAX_BYTES = 32 * 1024;
   let text = $state('');
   let el = $state<HTMLTextAreaElement | null>(null);
@@ -193,7 +350,11 @@
     text = key ? (drafts.get(key) ?? "") : "";
     queueMicrotask(() => { resize(); if (autofocus) el?.focus(); });
   });
-  $effect(() => { if (draftKey && !editing) drafts.set(draftKey, text); });
+  $effect(() => {
+    if (!draftKey || editing) return;
+    if (text.trim()) drafts.set(draftKey, text);
+    else drafts.delete(draftKey);
+  });
 
   function resize() {
     if (!el) return;
@@ -238,10 +399,7 @@
   }
 </script>
 
-<div class="composer">
-  {#if emojiOpen}
-    <EmojiPicker onpick={(e) => { insert(e); usageStore.used(e); }} onclose={() => (emojiOpen = false)} />
-  {/if}
+<div class="composer" class:docked={touch && !!dock} bind:this={root}>
   {#if editing || replyTo}
     <div class="context">
       <Icon name={editing ? 'pencil' : 'reply'} size={14} />
@@ -265,14 +423,15 @@
       {/if}
         <!-- Stays in the page while a recording goes: taking the field away would close the keyboard. -->
         <div class="field" class:away={!!held}>
-          <button class="tool" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
-            onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} aria-label={$t("msg_emoji_title")}>
-            <Icon name="smile" size={21} />
+          <button class="tool" data-emoji-toggle tabindex="-1" {disabled} aria-expanded={dock === 'open'}
+            onpointerdown={keepFocus} onmousedown={keepFocus} onclick={toggleEmoji} aria-label={dock === 'open' ? $t('msg_emoji_keyboard') : $t('msg_emoji_title')}>
+            <Icon name={dock === 'open' ? 'keyboard' : 'smile'} size={21} />
           </button>
+          <!-- A tap on the field while the panel is open brings the keyboard back. -->
           <textarea
             bind:this={el} bind:value={text} rows="1" {disabled}
             placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
-            oninput={resize} {onkeydown}
+            oninput={resize} {onkeydown} onpointerdown={() => { if (dock === 'open') { el?.removeAttribute('inputmode'); dock = 'tokb'; } }}
           ></textarea>
           {#if tools}{@render tools()}{/if}
         </div>
@@ -297,16 +456,22 @@
     {:else if recording === "voice"}
       <RecorderBar oncancel={() => (recording = null)} ondone={(c) => recorded("voice", c)} onerror={recordingFailed} />
     {:else}
+    <!-- The order of the design kit: attach · the field with the smile at its end · circle · voice · send (with nothing to send it waits, dimmed, beside the voice; typing hides the recording buttons). -->
     {#if tools}{@render tools()}{/if}
-    <button class="tool" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
-      onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} title={$t("msg_emoji_title")}>
-      <Icon name="smile" size={18} />
-    </button>
-    <textarea
-      bind:this={el} bind:value={text} rows="1" {disabled}
-      placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
-      oninput={resize} {onkeydown}
-    ></textarea>
+    <div class="dfield">
+      {#if emojiOpen}
+        <EmojiPicker onpick={(e) => { insert(e); usageStore.used(e); }} onclose={() => (emojiOpen = false)} />
+      {/if}
+      <textarea
+        bind:this={el} bind:value={text} rows="1" {disabled}
+        placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
+        oninput={resize} {onkeydown}
+      ></textarea>
+      <button class="tool emoji" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
+        onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} title={$t("msg_emoji_title")}>
+        <Icon name="smile" size={18} />
+      </button>
+    </div>
     {#if canRecordNow}
       {#if circleOk}
         <button class="tool" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => startRecording("circle")} title={$t("msg_rec_circle")}>
@@ -314,20 +479,33 @@
         </button>
       {/if}
       {#if voiceOk}
-        <button class="send" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => startRecording("voice")} title={$t("msg_rec_voice")}>
-          <Icon name="mic" size={17} />
+        <button class="tool voice" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => startRecording("voice")} title={$t("msg_rec_voice")}>
+          <Icon name="mic" size={18} />
         </button>
       {/if}
-    {:else}
-    <button class="send" class:off={!canSend} aria-disabled={!canSend} tabindex="-1"
-      onpointerdown={keepFocus} onmousedown={keepFocus} onclick={submit} title={$t('msg_composer_send')}>
-      <Icon name={editing ? 'check' : 'send'} size={16} />
-    </button>
     {/if}
+    <button class="send" class:off={!canSend} aria-disabled={!canSend} tabindex="-1"
+      onpointerdown={keepFocus} onmousedown={keepFocus} onclick={submit} title={editing ? $t('msg_composer_save') : $t('msg_composer_send')}>
+      <Icon name={editing ? 'check' : 'send'} size={18} />
+    </button>
     {/if}
   </div>
   {#if tooLong}<div class="warn">{$t('msg_composer_too_long')}</div>{/if}
   {#if recError}<div class="warn">{$t(`msg_rec_err_${recError}` as "msg_rec_err_denied")}</div>{/if}
+  {#if touch && dock}
+    <div class="dock" class:glide style:height={dockCss}>
+      <div class="dock-panel">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="grip" onpointerdown={gripDown} onpointermove={gripMove} onpointerup={gripUp} onpointercancel={gripUp}>
+        <button class="grab" tabindex="-1" onclick={(e) => e.preventDefault()} aria-label={expanded ? $t('msg_emoji_collapse') : $t('msg_emoji_expand')}></button>
+        <button class="fold" tabindex="-1" onpointerdown={(e) => { e.preventDefault(); e.stopPropagation(); }} onclick={fold} aria-label={$t('msg_emoji_collapse')} title={$t('msg_emoji_collapse')}>
+          <Icon name="chevron-down" size={20} />
+        </button>
+      </div>
+      <EmojiPicker variant="dock" onpick={(e) => { insert(e); usageStore.used(e); }} onerase={erase} />
+      </div>
+    </div>
+  {/if}
 </div>
 
 {#if recording === "circle"}
@@ -335,57 +513,93 @@
 {/if}
 
 <style>
-  .composer { position: relative; border-top: 1px solid var(--border); background: var(--surface); padding: var(--sp-2) var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
-  .context { display: flex; align-items: center; gap: var(--sp-2); padding: 4px 8px; border-left: 2px solid var(--accent); background: var(--surface-2); border-radius: 4px; color: var(--accent-text-2); }
-  .ctx-thumb { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; border-radius: 4px; background: var(--surface-3); }
+  .composer { position: relative; background: transparent; padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+  .row {
+    padding: 6px; border-radius: var(--radius-card);
+    background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
+  }
+  .row:focus-within { border-color: var(--accent-border); }
+  /* A computer: the field holds the smile at its end, and the emoji panel opens over it, its right edge on the smile. */
+  .dfield { position: relative; flex: 1; min-width: 0; display: flex; align-items: flex-end; }
+  .dfield textarea { flex: 1; min-width: 0; }
+  .dfield :global(.picker) { left: auto; right: 0; bottom: calc(100% + 14px); }
+  .tool.voice { border: 1px solid var(--border-2); }
+  .context { display: flex; align-items: center; gap: var(--sp-2); padding: 4px 8px; border-left: 2px solid var(--accent); background: var(--surface-2); border-radius: var(--radius-xs); color: var(--accent-text-2); }
+  .ctx-thumb { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; border-radius: var(--radius-xs); background: var(--surface-3); }
   .ctx-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .ctx-title { font-size: var(--fs-2xs); font-weight: var(--fw-bold); }
   .ctx-text { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row { display: flex; align-items: flex-end; gap: var(--sp-2); }
   textarea {
-    flex: 1; resize: none; font: inherit; font-size: var(--fs-sm); line-height: 1.45; color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: 18px; padding: 8px 14px;
-    max-height: 180px; min-height: 38px;
+    flex: 1; resize: none; font: inherit; font-size: var(--fs-body); line-height: var(--lh-body); color: var(--text);
+    background: none; border: none; border-radius: 0; padding: 9px 8px;
+    max-height: 180px; min-height: 40px;
   }
-  textarea:focus { outline: none; border-color: var(--accent-border); }
+  textarea:focus { outline: none; box-shadow: none; }
   textarea:disabled { opacity: 0.6; }
   .send {
-    width: 38px; height: 38px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
+    width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
     background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center;
     transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
   }
   .send:hover:not(.off) { filter: brightness(1.1); }
   .send.off { opacity: 0.35; cursor: default; }
-  .tool { width: 38px; height: 38px; flex-shrink: 0; border: none; border-radius: 50%; background: none; color: var(--text-2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-  .tool:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+  .tool { width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; background: none; color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .tool:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
   .tool.on { color: var(--accent-text-2); background: var(--accent-tint); }
   .tool:disabled { opacity: 0.4; cursor: default; }
   .icon { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   .warn { font-size: var(--fs-2xs); color: var(--danger-text); }
+  /* The emoji panel in the place of the keyboard: the composer's whole width, down to the screen's edge. */
+  .composer.docked { padding-bottom: 0; }
+  .dock {
+    display: flex; flex-direction: column;
+    /* Under the row without the column's gap, edge to edge. */
+    margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-2)) 0;
+    padding-top: 10px;
+    overflow: hidden;
+  }
+  /* The panel itself, 10 under the row like the keyboard. */
+  .dock-panel {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    overflow: hidden;
+  }
+  .dock.glide { transition: height var(--dur-drawer) var(--ease-drawer); }
+  /* The grip of a sheet (36×4), and the fold button at its end. */
+  .grip { position: relative; display: flex; justify-content: center; align-items: center; flex-shrink: 0; height: 28px; touch-action: none; }
+  .grab { width: 64px; height: 28px; padding: 0; border: 0; background: none; display: flex; align-items: center; justify-content: center; }
+  .grab::before { content: ''; width: 36px; height: 4px; border-radius: var(--radius-pill); background: var(--border-2); }
+  .fold { position: absolute; right: var(--sp-2); top: 50%; transform: translateY(-50%); width: 36px; height: 28px; padding: 0; border: 0; border-radius: var(--radius); background: none; color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; }
+  .fold:active { background: var(--surface-hover); color: var(--text); }
+  .dock :global(.picker.docked) { flex: 1; min-height: 0; height: auto; border-top: 0; }
+  .dock :global(.picker.docked .body) { padding-bottom: calc(8px + var(--sab, 0px)); }
+  @media (prefers-reduced-motion: reduce) { .dock.glide { transition: none; } }
   /* The phone: a glass bar over the conversation; the field holds its own buttons and stays one line high until the text needs more. */
   @media (pointer: coarse) {
-    .composer {
-      padding: 7px var(--sp-3) calc(var(--sp-2) + var(--sab, 0px));
-      background: color-mix(in srgb, var(--surface) 62%, transparent);
-      -webkit-backdrop-filter: blur(22px) saturate(1.7); backdrop-filter: blur(22px) saturate(1.7);
-      border-top-color: color-mix(in srgb, var(--text) 10%, transparent);
+    .composer { padding: var(--sp-1) var(--sp-2) calc(10px + var(--sab, 0px)); }
+    .row {
+      border-radius: var(--radius-bar);
+      -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     }
+    .row:focus-within { border-color: var(--pane-strong-border); }
     .context { background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent); border-radius: var(--radius-sm); padding: 6px 8px; }
     .field {
       flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 40px; border-radius: 20px;
-      background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent);
-      border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+      background: none;
+      border: 1px solid transparent;
       --attach-w: 40px; --attach-h: 38px;
     }
-    .field:focus-within { border-color: var(--accent-border); }
+    .field:focus-within { border-color: transparent; }
     .field.away { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; opacity: 0; pointer-events: none; border: none; }
-    .field textarea { min-width: 0; border: none; border-radius: 0; background: none; font-size: 16px; line-height: 22px; padding: 8px 2px; min-height: 38px; max-height: 82px; }
+    .field textarea { min-width: 0; border: none; border-radius: 0; background: none; font-size: var(--fs-md); line-height: 22px; padding: 8px 2px; min-height: 38px; max-height: 82px; }
     /* The field shows the focus, not the text inside it. */
     .field textarea:focus { outline: none; box-shadow: none; }
     .field textarea::placeholder { white-space: nowrap; }
     .field .tool { width: 40px; height: 38px; margin-left: 2px; }
-    .field .tool.on { background: none; }
     .send { width: 40px; height: 40px; }
     .record { position: relative; z-index: 3; touch-action: none; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; box-shadow: var(--shadow-accent); transition: transform var(--dur-fast) var(--ease); }
     .record.holding { transition: none; }

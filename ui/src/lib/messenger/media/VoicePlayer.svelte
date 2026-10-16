@@ -3,7 +3,7 @@
 
 <!-- Voice message: play button, outline that fills while playing, time. -->
 <script lang="ts">
-  import { t } from '$lib/core/i18n';
+  import { t, locale, localeTag } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { clockOf } from './capture';
   import { playback } from './playback.svelte';
@@ -22,6 +22,15 @@
 
   let audio = $state<HTMLAudioElement | null>(null);
   let playing = $state(false);
+  /** The speed, once playback started: 1× → 1,5× → 2×. */
+  const RATES = [1, 1.5, 2];
+  let rate = $state(1);
+  let started = $state(false);
+  const rateLabel = $derived(`${rate.toLocaleString(localeTag($locale))}×`);
+  function nextRate() {
+    rate = RATES[(RATES.indexOf(rate) + 1) % RATES.length];
+    if (audio) audio.playbackRate = rate;
+  }
   let position = $state(0);
   let measured = $state(0);
   let wantPlay = false;
@@ -66,11 +75,14 @@
         <i class:done={i / bars.length < progress} style="height:{Math.max(3, Math.round((b / 255) * 24))}px"></i>
       {/each}
     </div>
-    <span class="time">{playing || position > 0 ? clockOf(position) : clockOf(total)}</span>
+    <span class="row">
+      <span class="time">{playing || position > 0 ? clockOf(position) : clockOf(total)}</span>
+      {#if started}<button class="rate" onclick={nextRate} title={rateLabel}>{rateLabel}</button>{/if}
+    </span>
   </div>
   {#if src}
     <audio bind:this={audio} {src} preload="metadata"
-      onplay={() => (playing = true)}
+      onplay={() => { playing = true; started = true; if (audio) audio.playbackRate = rate; }}
       onpause={() => (playing = false)}
       onended={() => { playing = false; position = 0; }}
       ontimeupdate={() => (position = (audio?.currentTime ?? 0) * 1000)}
@@ -92,6 +104,11 @@
   .wave { display: flex; align-items: center; gap: 2px; height: 26px; cursor: pointer; overflow: hidden; }
   .wave i { display: block; flex: 1 1 0; min-width: 2px; max-width: 4px; border-radius: 2px; background: var(--text-3); opacity: 0.55; }
   .wave i.done { background: var(--accent); opacity: 1; }
+  .row { display: flex; align-items: center; gap: var(--sp-2); }
   .time { font-size: var(--fs-2xs); color: var(--text-3); font-family: var(--font-mono); }
+  .rate {
+    height: 18px; padding: 0 6px; border: none; border-radius: var(--radius-pill); background: var(--surface-hover);
+    color: var(--text-2); font: inherit; font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: var(--fw-bold); cursor: pointer;
+  }
   @media (pointer: coarse) { .play { width: 44px; height: 44px; } }
 </style>

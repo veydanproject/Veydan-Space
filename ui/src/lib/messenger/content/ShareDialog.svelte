@@ -194,5 +194,5 @@
   .state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--accent-text-2); flex-shrink: 0; }
   .state.done { color: var(--success-text, var(--success)); }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
-  @media (pointer: coarse) { .search { font-size: 16px; } .row { padding: 9px 8px; } .phone input { width: 18px; height: 18px; } }
+  @media (pointer: coarse) { .search { font-size: var(--fs-md); } .row { padding: 9px 8px; } .phone input { width: 18px; height: 18px; } }
 </style>

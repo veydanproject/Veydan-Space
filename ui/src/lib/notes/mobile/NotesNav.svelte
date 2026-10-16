@@ -478,7 +478,7 @@
     flex-direction: column;
     padding-top: var(--sat);
     animation: slide var(--dur-drawer) var(--ease-drawer);
-    border-radius: 0 24px 24px 0;
+    border-radius: 0 var(--radius-card) var(--radius-card) 0;
   }
   @keyframes slide {
     from { transform: translateX(-100%); }
@@ -491,7 +491,7 @@
     padding: var(--sp-3) var(--sp-2) var(--sp-2) var(--sp-4);
     flex-shrink: 0;
   }
-  .drawer-title { font-weight: 800; font-size: 20px; letter-spacing: -0.02em; }
+  .drawer-title { font-weight: 800; font-size: var(--fs-xl); letter-spacing: -0.02em; }
   .body {
     flex: 1;
     min-height: 0;
@@ -510,16 +510,16 @@
     background: none;
     color: var(--text);
     font: inherit;
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 500;
     text-align: left;
     width: 100%;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
   }
   .item > :global(svg) { color: var(--text-2); }
   .item:active { background: var(--surface-2); }
   .item.on { background: var(--accent-bg); color: var(--accent-text); }
-  .item.on > :global(svg) { color: var(--accent); }
+  .item.on > :global(svg) { color: var(--accent-text); }
   .item.child { padding-left: 40px; }
   .space-row { font-weight: 700; }
   .folder-row { font-weight: 500; }
@@ -537,7 +537,7 @@
   .n {
     margin-left: auto;
     color: var(--text-3);
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     flex-shrink: 0;
   }
@@ -614,13 +614,13 @@
   }
   .brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .brand-name {
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 700;
     letter-spacing: -0.02em;
     color: var(--text-2);
   }
   .brand-ver {
-    font-size: 11px;
+    font-size: var(--fs-2xs);
     font-family: var(--font-mono);
     color: var(--text-3);
   }

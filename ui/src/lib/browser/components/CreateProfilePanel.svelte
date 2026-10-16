@@ -307,9 +307,9 @@
   form :global(input[type='number']) {
     height: var(--control-h-lg);
     border-radius: var(--radius-field);
-    font-size: 0.9rem;
+    font-size: var(--fs-base);
   }
-  form textarea { border-radius: var(--radius-field); font-size: 0.9rem; }
+  form textarea { border-radius: var(--radius-field); font-size: var(--fs-base); }
 
   .warnings {
     background: var(--warn-bg);
@@ -326,7 +326,7 @@
     display: flex; gap: 10px; justify-content: flex-end;
     padding-top: var(--sp-3);
   }
-  .form-actions .btn { height: 42px; border-radius: var(--radius-field); padding: 0 20px; }
+  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 
   .toggle-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -335,21 +335,21 @@
     border-bottom: 1px solid var(--border);
   }
   .toggle-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .toggle-label { font-size: 0.95rem; font-weight: var(--fw-semibold); color: var(--text); }
-  .toggle-hint { font-size: 0.8rem; color: var(--text-faint); line-height: 1.5; max-width: 290px; }
+  .toggle-label { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); }
+  .toggle-hint { font-size: var(--fs-sm); color: var(--text-faint); line-height: 1.5; max-width: 290px; }
 
   .toggle-btn {
     position: relative; flex-shrink: 0;
-    width: 54px; height: 30px;
+    width: 40px; height: 24px;
     background: var(--toggle-off); border: none; border-radius: var(--radius-pill);
     cursor: pointer; padding: 0; transition: background 0.2s;
   }
   .toggle-btn.active { background: var(--accent-hover); }
   .toggle-thumb {
     position: absolute; top: 3px; left: 3px;
-    width: 24px; height: 24px; border-radius: 50%;
+    width: 18px; height: 18px; border-radius: 50%;
     background: #fff; transition: transform 0.2s;
     box-shadow: var(--shadow-knob);
   }
-  .toggle-btn.active .toggle-thumb { transform: translateX(24px); }
+  .toggle-btn.active .toggle-thumb { transform: translateX(16px); }
 </style>

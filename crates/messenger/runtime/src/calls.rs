@@ -73,7 +73,7 @@ use messenger_core::{Effect, Envelope, MessengerError, Outbound, PubKey, Result,
 use messenger_dm::DmService;
 use messenger_groups::{GroupCallSink, GroupService};
 use messenger_ingress::Outbox;
-use messenger_store::{settings, Store};
+use messenger_store::{calls as repo, settings, Store};
 use messenger_transport::manifest::CallNodeClass;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
@@ -803,6 +803,79 @@ pub struct CallIncoming {
     pub busy_with_group: bool,
 }
 
+/// Whose call a line of the journal is: between two, or of a group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum CallLogKind {
+    Dm,
+    Group,
+}
+
+/// A call of the journal (the section «Звонки»), as
+/// `messenger_call_history` lists them: over, newest first.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+pub struct CallLogEntry {
+    pub call_id: String,
+    /// `dm:<hex>` or `group:<id>`; the chat may be gone since.
+    pub chat_id: String,
+    /// The peer (hex) of a call between two, the group id of a group call.
+    pub peer: String,
+    pub kind: CallLogKind,
+    /// `out` when I called (or started the room).
+    pub direction: CallDirection,
+    pub media: CallMedia,
+    /// Unix seconds.
+    #[ts(type = "number")]
+    pub started_at: i64,
+    #[ts(type = "number | null")]
+    pub answered_at: Option<i64>,
+    #[ts(type = "number | null")]
+    pub ended_at: Option<i64>,
+    pub outcome: CallOutcome,
+    /// How long it was talked; `null` for a call nobody took.
+    #[ts(type = "number | null")]
+    pub duration_secs: Option<i64>,
+    pub via_relay: bool,
+    /// Who made the room of a group call (hex).
+    pub started_by: Option<String>,
+    /// How many people a group call saw, me included; 0 between two.
+    pub participants: u32,
+}
+
+impl From<repo::LogRow> for CallLogEntry {
+    fn from(r: repo::LogRow) -> Self {
+        let duration_secs = r.call.duration_secs();
+        let c = r.call;
+        Self {
+            kind: if r.group.kind == repo::KIND_GROUP { CallLogKind::Group } else { CallLogKind::Dm },
+            direction: if c.direction == repo::DIR_OUT { CallDirection::Out } else { CallDirection::In },
+            media: if c.media == repo::MEDIA_VIDEO { CallMedia::Video } else { CallMedia::Audio },
+            outcome: match c.outcome.as_deref() {
+                Some(repo::OUTCOME_MISSED) => CallOutcome::Missed,
+                Some(repo::OUTCOME_DECLINED) => CallOutcome::Declined,
+                Some(repo::OUTCOME_BUSY) => CallOutcome::Busy,
+                Some(repo::OUTCOME_ENDED) => CallOutcome::Ended,
+                _ => CallOutcome::Failed,
+            },
+            duration_secs,
+            call_id: c.call_id,
+            chat_id: c.chat_id,
+            peer: c.peer,
+            started_at: c.started_at,
+            answered_at: c.answered_at,
+            ended_at: c.ended_at,
+            via_relay: c.via_relay,
+            started_by: r.group.started_by,
+            participants: u32::try_from(r.group.participants).unwrap_or(0),
+        }
+    }
+}
+
+/// Now, unix seconds.
+fn now_secs() -> i64 {
+    messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs()
+}
+
 /// The payload of `call.ended`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct CallEnded {
@@ -1505,6 +1578,36 @@ impl MessengerRuntime {
 
     // ─── Group calls ─────────────────────────────────────────────────────
 
+    /// The journal of calls, newest first, strictly older than `before`.
+    pub async fn call_history(&self, before: Option<i64>, limit: i64) -> Result<Vec<CallLogEntry>> {
+        let rows = repo::history(&self.store, before, limit.clamp(1, 500)).await?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    /// Take calls out of the journal (their lines in the chats stay).
+    pub async fn call_history_hide(&self, call_ids: &[String]) -> Result<()> {
+        repo::hide(&self.store, call_ids, now_secs()).await.map(drop)
+    }
+
+    /// Take every call that is over out of the journal.
+    pub async fn call_history_clear(&self) -> Result<()> {
+        repo::hide_all(&self.store, now_secs()).await.map(drop)
+    }
+
+    /// How many calls rang here unanswered since the journal was last looked at.
+    pub async fn calls_missed(&self) -> Result<u32> {
+        let seen = settings::get(&self.store, repo::KEY_SEEN_AT).await?.and_then(|v| v.parse().ok()).unwrap_or(0);
+        Ok(u32::try_from(repo::missed_since(&self.store, seen).await?).unwrap_or(u32::MAX))
+    }
+
+    /// The journal was looked at: what it holds now is no longer new (a
+    /// peer's clock ahead of mine included).
+    pub async fn calls_mark_seen(&self) -> Result<()> {
+        let now = now_secs();
+        let at = repo::latest_start(&self.store).await?.map_or(now, |l| l.max(now));
+        settings::set(&self.store, repo::KEY_SEEN_AT, &at.to_string()).await
+    }
+
     pub fn group_calls(&self) -> &GroupCallService {
         &self.group_calls.service
     }
@@ -1994,6 +2097,15 @@ mod tests {
         assert!(rt.call_state().await.unwrap().call.is_none());
         assert_eq!(engine.sessions().len(), 1);
         assert!(engine.sessions()[0].record().closed);
+
+        // The call is over: it is in the journal, mine, and nothing is new there.
+        let log = rt.call_history(None, 50).await.unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!((log[0].call_id.as_str(), log[0].kind, log[0].direction), (view.call_id.as_str(), CallLogKind::Dm, CallDirection::Out));
+        assert_eq!(rt.calls_missed().await.unwrap(), 0);
+        rt.calls_mark_seen().await.unwrap();
+        rt.call_history_hide(std::slice::from_ref(&view.call_id)).await.unwrap();
+        assert!(rt.call_history(None, 50).await.unwrap().is_empty(), "taken out of the journal");
         rt.shutdown().await;
     }
 

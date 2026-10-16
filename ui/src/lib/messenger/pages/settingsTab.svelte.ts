@@ -18,6 +18,14 @@ export const SETTINGS_TABS: readonly SettingsTab[] = ['profile', 'network', 'not
 /** The tab the next SettingsView shows (or the one shown switches to). */
 export const settingsRequest = $state<{ tab: SettingsTab | null }>({ tab: null });
 
+/** The tab shown now: on a computer the sections are a nav in the list's column (design kit), the section the pane. */
+export const settingsUi = $state<{ tab: SettingsTab }>({ tab: 'profile' });
+
+/** The icon of each section in the nav. */
+export const SETTINGS_ICONS: Record<SettingsTab, string> = {
+  profile: 'key', network: 'wifi', notifications: 'bell', privacy: 'shield', calls: 'phone', diagnostics: 'activity',
+};
+
 /**
  * The settings, on `tab`: the phone's screen of them (`phone`, as
  * `onPhone()` says where the caller is set up), or the desk's pane.

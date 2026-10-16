@@ -7,6 +7,7 @@
 
 import {
   messengerApi,
+  type CropRect,
   type GroupAction,
   type MessengerGroup,
   type MessengerGroupInvite,
@@ -79,6 +80,15 @@ class GroupStore {
 
   async act(groupId: string, action: GroupAction) {
     this.put(await messengerApi.groups.act(groupId, action));
+  }
+
+  /** Cropped picture (token of `messengerApi.avatar.prepare`) → the group's picture, in its log. */
+  async setAvatar(groupId: string, token: string, rect: CropRect) {
+    this.put(await messengerApi.groups.avatarSet(groupId, token, rect));
+  }
+
+  async removeAvatar(groupId: string) {
+    this.put(await messengerApi.groups.avatarRemove(groupId));
   }
 
   async rotateLink(groupId: string) {

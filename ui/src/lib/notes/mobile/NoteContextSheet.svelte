@@ -256,7 +256,7 @@
   .hint { margin: 0 var(--sp-2) var(--sp-3); color: var(--text-3); font-size: var(--fs-xs); }
   .entity { display: flex; flex-direction: column; }
   .entity + .entity { border-top: 1px solid var(--border); }
-  .entity.focus { background: var(--accent-bg); border-radius: 12px; }
+  .entity.focus { background: var(--accent-bg); border-radius: var(--radius-md); }
   .entity.mention .m-row-label { color: var(--text-2); }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

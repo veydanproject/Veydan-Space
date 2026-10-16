@@ -473,7 +473,7 @@
   }
   .pull .spin { animation: spin 1s linear infinite; }
   .pull span { display: inline-flex; }
-  .count { margin: 0 var(--sp-1) var(--sp-3); font-size: 13px; }
+  .count { margin: 0 var(--sp-1) var(--sp-3); font-size: var(--fs-sm); }
   .group {
     padding: var(--sp-3) var(--sp-2) var(--sp-1);
     font-size: var(--fs-xs);
@@ -496,7 +496,7 @@
     border-radius: var(--m-radius);
     box-shadow: var(--m-card-shadow);
     color: var(--danger-text);
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 600;
   }
   .m-cards { padding-bottom: var(--sp-6); }
@@ -524,7 +524,7 @@
     border-radius: 0;
     background: transparent;
     color: var(--text);
-    font-size: 11px;
+    font-size: var(--fs-2xs);
     font-weight: 600;
   }
   .bulk button.danger { color: var(--danger-text); }

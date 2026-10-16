@@ -185,10 +185,10 @@
     background: var(--m-field);
     color: var(--text);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
-  h3 { margin: var(--sp-2) 0 0; font-size: 15px; font-weight: 700; }
+  h3 { margin: var(--sp-2) 0 0; font-size: var(--fs-body); font-weight: 700; }
   .list { display: flex; flex-direction: column; gap: 8px; }
   .row {
     display: flex;
@@ -211,17 +211,17 @@
     color: var(--text);
     text-align: left;
   }
-  .open img { width: 36px; height: 36px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+  .open img { width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius-sm); flex-shrink: 0; }
   .meta { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-  .name { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .size { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
+  .name { font-size: var(--fs-sm); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .size { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-2xs); color: var(--text-3); }
   .size.err { color: var(--danger); }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success-text); flex-shrink: 0; }
   .row.remote .dot { background: var(--text-3); }
   .row.remote .badge { border: 1px dashed var(--m-card-border); background: transparent; color: var(--text-3); }
   .row.remote .name { color: var(--text-2); }
   .row.busy .dot { background: var(--accent); }
-  .row.busy .size { color: var(--accent); }
+  .row.busy .size { color: var(--accent-text); }
   .row.error .dot { background: var(--danger-text); }
   .row.error .size { color: var(--danger-text); }
   .x.primary { background: var(--accent); color: #fff; }

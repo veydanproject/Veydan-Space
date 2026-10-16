@@ -3,6 +3,8 @@
 
 // Long press for touch screens: the counterpart of a right click. Fires
 // once after the finger rested on the element; moving or lifting cancels.
+// While the finger rests the element sinks a little under an accent tint
+// (design kit, M17: .lp-pressing over the 450 ms, .lp-release fading it).
 
 export interface LongPressOptions {
   /** `target` is what the finger went down on: a shared parent finds the part pressed. */
@@ -20,9 +22,21 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
   let target: EventTarget | null = null;
   let fired = false;
 
+  let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+  const press = (on: boolean) => {
+    if (releaseTimer) clearTimeout(releaseTimer);
+    releaseTimer = null;
+    node.classList.toggle('lp-pressing', on);
+    if (!on) {
+      node.classList.add('lp-release');
+      releaseTimer = setTimeout(() => node.classList.remove('lp-release'), 160);
+    } else node.classList.remove('lp-release');
+  };
+
   const clear = () => {
     if (timer) clearTimeout(timer);
     timer = null;
+    if (node.classList.contains('lp-pressing')) press(false);
   };
 
   const down = (e: PointerEvent) => {
@@ -31,9 +45,11 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
     start = { x: e.clientX, y: e.clientY };
     target = e.target;
     clear();
+    press(true);
     timer = setTimeout(() => {
       timer = null;
       fired = true;
+      press(false);
       navigator.vibrate?.(12);
       opts.onpress({ x: start.x, y: start.y, target });
     }, opts.delay ?? 450);
@@ -69,6 +85,7 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
     update(next: LongPressOptions) { opts = next; },
     destroy() {
       clear();
+      if (releaseTimer) clearTimeout(releaseTimer);
       node.removeEventListener('pointerdown', down);
       node.removeEventListener('pointermove', move);
       node.removeEventListener('pointerup', clear);

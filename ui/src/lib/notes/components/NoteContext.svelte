@@ -250,7 +250,7 @@
     margin-top: auto;
   }
   .btn-xs { font-size: var(--fs-2xs); padding: 0.15rem 0.45rem; gap: 0.25rem; }
-  .bind { color: var(--accent); }
+  .bind { color: var(--accent-text); }
   .spinning { opacity: 0.6; }
   .error { grid-column: 1 / -1; font-size: var(--fs-xs); color: var(--danger-text); }
   .pw-actions { display: flex; gap: 0.25rem; margin-left: auto; }
