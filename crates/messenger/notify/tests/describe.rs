@@ -458,6 +458,59 @@ async fn a_group_message_names_the_group_and_the_author() {
     assert!(shown(phone.describe(group_push(&gid, &event)).await).muted);
 }
 
+/// A key the network bans (`msg_banned_keys`, kept by the app from the
+/// manifest) wakes nobody, in a direct chat or a group, a contact or not;
+/// lifted, it rings again.
+#[tokio::test]
+async fn a_key_the_network_bans_is_told_of_nowhere() {
+    let phone = Phone::new().await;
+    let (gid, bob, key) = group_with_bob(&phone).await;
+    befriend(&phone, &bob, "Боб").await;
+    messenger_store::banned::replace(&phone.store, &[bob.public_key().to_hex()]).await.unwrap();
+    let dm = dm_from(&bob, &phone, &Envelope::text("hi"), 1_000_000);
+    assert_eq!(quiet(phone.describe(dm_push(&dm)).await), Reason::Blocked);
+    let event = group_message(&gid, &key, &bob, &Envelope::text("всем привет"), 1_000_001);
+    assert_eq!(quiet(phone.describe(group_push(&gid, &event)).await), Reason::Blocked);
+
+    messenger_store::banned::replace(&phone.store, &[]).await.unwrap();
+    shown(phone.describe(dm_push(&dm)).await);
+    shown(phone.describe(group_push(&gid, &event)).await);
+}
+
+/// A group the network closes (`msg_banned_groups`) wakes nobody: not its
+/// messages, under any settings, nor an invitation to it from a contact;
+/// lifted, both are told again.
+#[tokio::test]
+async fn a_group_the_network_closes_is_told_of_nowhere() {
+    use messenger_groups::wire::{dm_envelope, Invite, INVITE_TTL_SECS, T_INVITE};
+    let phone = Phone::new().await;
+    let (gid, bob, key) = group_with_bob(&phone).await;
+    befriend(&phone, &bob, "Боб").await;
+    let event = group_message(&gid, &key, &bob, &Envelope::text("всем привет"), 1_000_001);
+    let invite = Invite {
+        invite_id: "0a".repeat(16),
+        group_id: "0b".repeat(32),
+        name: "Den".into(),
+        about: String::new(),
+        picture: String::new(),
+        relay: "wss://r.example".into(),
+        members: 2,
+        created_at: now(),
+        expires_at: now() + INVITE_TTL_SECS,
+    };
+    let invitation = dm_from(&bob, &phone, &Envelope::parse(&dm_envelope(T_INVITE, &invite).unwrap()).unwrap(), now());
+    messenger_store::banned::group_replace(&phone.store, &[gid.clone(), invite.group_id.clone()]).await.unwrap();
+    assert_eq!(quiet(phone.describe(group_push(&gid, &event)).await), Reason::Blocked);
+    assert_eq!(quiet(phone.describe(dm_push(&invitation)).await), Reason::Blocked);
+    Settings { content: Content::None, lockscreen_hidden: false }.save(&phone.store).await.unwrap();
+    assert_eq!(quiet(phone.describe(group_push(&gid, &event)).await), Reason::Blocked, "not even «something came»");
+    Settings { content: Content::SenderText, lockscreen_hidden: false }.save(&phone.store).await.unwrap();
+
+    messenger_store::banned::group_replace(&phone.store, &[]).await.unwrap();
+    shown(phone.describe(group_push(&gid, &event)).await);
+    shown(phone.describe(dm_push(&invitation)).await);
+}
+
 #[tokio::test]
 async fn my_own_group_message_edits_and_unknown_keys() {
     let phone = Phone::new().await;

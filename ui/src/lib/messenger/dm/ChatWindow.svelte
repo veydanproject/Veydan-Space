@@ -27,6 +27,7 @@
   import { chatStore } from '../chats/chatStore.svelte';
   import { messengerStore } from '../store.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
+  import { reportStore, type ReportTarget } from '../shared/report.svelte';
   import { onKeyboard } from '../shared/keyboard';
   import { onPhone } from '../shared/phone';
   import { nameStore } from '../groups/names.svelte';
@@ -256,12 +257,20 @@
   const chatItems = $derived.by((): MenuEntry[] => {
     const list: MenuEntry[] = [...(leadEntries ?? [])];
     if (chatEntries) list.push(...chatEntries);
-    else if (chat.mode === "blocked") list.push({ label: $t("msg_rel_cta_unblock"), icon: "lock-open", onselect: () => act("unblock") });
+    // A banned key cannot be unblocked, so the menu has no way back for it.
+    else if (chat.mode === "blocked") { if (!chat.banned) list.push({ label: $t("msg_rel_cta_unblock"), icon: "lock-open", onselect: () => act("unblock") }); }
     else {
       if (chat.is_contact) list.push({ label: $t("msg_rel_cta_remove"), icon: "user", onselect: () => act("remove") });
       // The bot of Veydan Cloud is approved by the build and is nobody's contact.
       else if (chat.mode !== "request_received" && !chat.bot) list.push({ label: $t("msg_rel_cta_add"), icon: "user-plus", onselect: () => act("request") });
       list.push({ label: $t("msg_rel_cta_block"), icon: "ban", danger: true, onselect: () => act("block") });
+    }
+    // A person can be reported even after being blocked; the bot of Veydan Cloud is ours.
+    if (chat.kind === "dm" && chat.peer_pubkey && !chat.bot) {
+      const accused = chat.peer_pubkey;
+      list.push({ label: $t("msg_report"), icon: "alert-triangle", danger: true, onselect: () => reportStore.open({
+        accused, name: chat.title, context: { t: chat.mode === "request_received" ? "request" : "dm" }, canBlock: chat.mode !== "blocked",
+      }) });
     }
     list.push({ type: "separator" });
     list.push({ label: chat.pinned ? $t("msg_chat_unpin") : $t("msg_chat_pin"), icon: "pin", onselect: () => chatStore.setPinned(chat.id, !chat.pinned) });
@@ -459,6 +468,16 @@
     setTimeout(() => { if (highlighted === id) highlighted = null; }, 1400);
   }
 
+  /** Who a report of this message accuses and where; null for what cannot be reported (mine, the app's, the bot's). */
+  function reportTarget(m: MessengerMessage): ReportTarget | null {
+    if (m.direction !== 'in' || m.content_type === 'system' || m.bot_card || chat.bot) return null;
+    if (isGroup) {
+      return { accused: m.sender_pubkey, name: author?.(m.sender_pubkey) ?? chat.title, context: { t: 'group', group_id: chat.id.slice(6) }, messageId: m.id, canBlock: false };
+    }
+    if (!chat.peer_pubkey) return null;
+    return { accused: chat.peer_pubkey, name: chat.title, context: { t: chat.mode === 'request_received' ? 'request' : 'dm' }, messageId: m.id, canBlock: chat.mode !== 'blocked' };
+  }
+
   const items = $derived.by((): MenuEntry[] => {
     const m = menu.m;
     if (!m) return [];
@@ -476,6 +495,9 @@
       }
       const extra = extraEntries?.(m) ?? [];
       if (extra.length) list.push({ type: 'separator' }, ...extra);
+      // Anyone may report what another person wrote, not only a moderator; never a line of the app itself.
+      const reported = reportTarget(m);
+      if (reported) list.push({ label: $t('msg_report'), icon: 'alert-triangle', danger: true, onselect: () => reportStore.open(reported) });
       list.push({ type: 'separator' });
       list.push({ label: $t('msg_message_delete_me'), icon: 'trash-2', danger: true, onselect: () => guard(() => chatStore.remove(m.id, false)) });
       // The author deletes for everyone; a moderator hides instead (the owner's decision 8) where the core keeps marks, and removes where it does not.

@@ -22,6 +22,7 @@
   import { activating, cloudPage } from '$lib/cloud/status.svelte';
   import type { CloudPlanOffer } from '$lib/cloud/api';
   import { dateOf, errorKeyOf, shownAccount, viewOf } from '$lib/cloud/account';
+  import { distribution } from '$lib/core/store/distribution.svelte';
   import { planName } from '$lib/cloud/plans';
   import AccessList from '$lib/cloud/AccessList.svelte';
   import AccountHead from '$lib/cloud/AccountHead.svelte';
@@ -66,6 +67,8 @@
   const plans = $derived(cloudPage.plans?.plans ?? []);
   /** There is a choice of plans on the page: more than one on offer, and a host that answers for them. */
   const canPick = $derived(plans.length > 1 && (view === 'account' || view === 'no_account'));
+  /** An app from a store shows the plans only to read: no prices, no buttons (the store's payments rules). */
+  const viewOnly = $derived(distribution.fromStore);
   /** The card of a frame: `card` on a computer, `m-card` on a phone. */
   const card = isMobile ? 'm-card' : 'card';
 
@@ -152,6 +155,7 @@
 
     {#if canPick}
       <PlanPicker
+        {viewOnly}
         {plans}
         current={account?.plan ?? null}
         canActivate={view === 'no_account'}

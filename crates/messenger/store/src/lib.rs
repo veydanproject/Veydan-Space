@@ -11,6 +11,7 @@
 //! (`settings`, later `identity`, `relays`, `messages`, …).
 
 pub mod avatar_cache;
+pub mod banned;
 pub mod calls;
 pub mod chats;
 pub mod contact_private;
@@ -37,6 +38,7 @@ pub mod profiles;
 pub mod reactions;
 pub mod receipts;
 pub mod relays;
+pub mod reports;
 pub mod settings;
 pub mod shared;
 

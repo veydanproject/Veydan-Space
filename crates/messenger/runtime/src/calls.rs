@@ -2109,6 +2109,88 @@ mod tests {
         rt.shutdown().await;
     }
 
+    /// A key the manifest bans neither rings nor is called, the gate of
+    /// the relationships off or not; the next manifest without it lets its
+    /// call ring again.
+    #[tokio::test]
+    async fn a_call_of_a_banned_key_does_not_ring() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let backends = CallBackends {
+            registry: RegistrySource::Off,
+            ..CallBackends::with_engine(Some(Arc::new(FakeEngine::new())))
+        };
+        let rt = MessengerRuntime::start_with_backends(cfg, Arc::new(MemorySecretStore::unlocked()), backends).await.unwrap();
+        rt.relays().set_silent(true).await.unwrap();
+        use_veydan_offline(&rt).await;
+        rt.identity().create("pw").await.unwrap();
+        rt.refresh_signer().await.unwrap();
+        rt.dm().set_gate(false);
+        let caller = nostr::key::Keys::generate();
+        let peer = messenger_core::PubKey::parse(&caller.public_key().to_hex()).unwrap();
+        let me = rt.session_pubkey().await.unwrap();
+
+        let (mut manifest, _) = rt.relays().current_manifest().await.unwrap();
+        manifest.serial += 1;
+        manifest.banned_keys = vec![peer.as_hex().to_string()];
+        rt.relays().adopt_for_test(&manifest, true).await.unwrap();
+        rt.banned_follow_manifest().await.unwrap();
+        assert!(rt.dm().is_banned(&peer).await.unwrap());
+        assert!(!rt.dm().calls_allowed(&peer).await.unwrap());
+        assert!(matches!(rt.call_start(peer.as_hex(), CallMedia::Audio).await, Err(MessengerError::Invalid(_))));
+
+        let ring = |id: char| {
+            let invite = messenger_calls::signal::Signal::Invite {
+                call_id: id.to_string().repeat(32),
+                media: Media::Audio,
+                sdp: "v=0".into(),
+                ice: vec![],
+                restart: false,
+                live_restart: true,
+            }
+            .to_envelope();
+            let now = messenger_core::Clock::now(&messenger_core::traits::SystemClock);
+            let msg = messenger_core::DmInbound {
+                envelope: messenger_core::inbound::Envelope {
+                    wire_id: messenger_core::EventId::parse(&id.to_string().repeat(64)).unwrap(),
+                    source: messenger_core::EventSource::Server { id: "test".into() },
+                    wire_created_at: now,
+                },
+                rumor_id: messenger_core::EventId::parse(&format!("{}0", id.to_string().repeat(63))).unwrap(),
+                sender: peer.clone(),
+                recipients: vec![me.clone()],
+                created_at: now,
+                content: invite.encode(),
+                reply_to: None,
+                rumor_kind: 14,
+            };
+            let ctx = messenger_core::Context { my_pubkey: me.clone(), session_started_at: now, clock: Arc::new(messenger_core::traits::SystemClock) };
+            (msg, invite, ctx)
+        };
+        let mut events = rt.ui_events();
+        let (msg, invite, ctx) = ring('a');
+        rt.calls().on_dm(&msg, &invite, &ctx).await.unwrap();
+        rt.calls.flush().await;
+        let mut seen = Vec::new();
+        while let Ok(ev) = events.try_recv() {
+            seen.push(ev.name);
+        }
+        assert!(!seen.iter().any(|n| n == UI_EVENT_CALL_INCOMING), "{seen:?}");
+        assert!(rt.call_state().await.unwrap().call.is_none(), "dropped without a word");
+
+        // The ban lifts with the next manifest: the call rings.
+        manifest.serial += 1;
+        manifest.banned_keys.clear();
+        rt.relays().adopt_for_test(&manifest, true).await.unwrap();
+        rt.banned_follow_manifest().await.unwrap();
+        assert!(!rt.dm().is_banned(&peer).await.unwrap());
+        let (msg, invite, ctx) = ring('b');
+        rt.calls().on_dm(&msg, &invite, &ctx).await.unwrap();
+        rt.calls.flush().await;
+        assert!(rt.call_state().await.unwrap().call.is_some(), "rings again");
+        rt.shutdown().await;
+    }
+
     /// The session stops under a call (here: the secrets lock, as on a
     /// logout or the module going off): the call is hung up while the keys
     /// are still here, so the end for the peer waits in the outbox by the

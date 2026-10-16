@@ -32,6 +32,7 @@
   import { formatCommand, keybindingOverrides } from '$lib/core/keybindings';
   import { registry } from '$lib/core/registry';
   import { product } from '$lib/core/product';
+  import { ABUSE_MAIL, LEGAL, openLegal } from '$lib/core/legal';
   import type { Key, SettingsSection } from '$lib/core/module';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -612,6 +613,30 @@
 
     <p class="about-note">{$t('settings_about_license_note')}</p>
 
+    <div class="about-legal-title">{$t('settings_about_legal')}</div>
+    <div class="about-links">
+      <button type="button" class="link-btn" onclick={() => openLegal(LEGAL.privacy)}>
+        <Icon name="external-link" size={14} />
+        <span>{$t('settings_about_privacy')}</span>
+      </button>
+      <button type="button" class="link-btn" onclick={() => openLegal(LEGAL.terms)}>
+        <Icon name="external-link" size={14} />
+        <span>{$t('settings_about_terms')}</span>
+      </button>
+      <button type="button" class="link-btn" onclick={() => openLegal(LEGAL.childSafety)}>
+        <Icon name="external-link" size={14} />
+        <span>{$t('settings_about_child_safety')}</span>
+      </button>
+      <button type="button" class="link-btn" onclick={() => openLegal(LEGAL.deleteAccount)}>
+        <Icon name="external-link" size={14} />
+        <span>{$t('settings_about_delete_account')}</span>
+      </button>
+      <button type="button" class="link-btn" onclick={() => openLegal(ABUSE_MAIL)}>
+        <Icon name="external-link" size={14} />
+        <span>{$t('settings_about_abuse')}</span>
+      </button>
+    </div>
+
     <div class="about-links">
       <button type="button" class="link-btn" onclick={() => (bugOpen = true)}>
         <Icon name="info" size={14} />
@@ -809,6 +834,7 @@
   .about-app { font-size: var(--fs-lg); font-weight: var(--fw-extrabold); letter-spacing: -0.3px; color: var(--text); }
   .about-tagline { font-size: var(--fs-sm); color: var(--text-3); }
   .about-note { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.5; margin: 0; }
+  .about-legal-title { font-size: var(--fs-xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
   .about-links { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
   .link-btn {
     display: inline-flex; align-items: center; gap: 0.4rem;

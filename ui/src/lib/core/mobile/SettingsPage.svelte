@@ -8,6 +8,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { theme, type Theme } from '$lib/core/theme';
   import { api as shared } from '$lib/core/api';
+  import { distribution } from '$lib/core/store/distribution.svelte';
   import type { HostInfo } from '$lib/core/types';
   import { api, onSyncStatus, type SyncStatus } from '$lib/core/mobile/api';
   import { t, locale, type Locale } from '$lib/core/mobile/i18n';
@@ -22,6 +23,7 @@
   import { isWrongSecret } from '$lib/core/lock/secret';
   import DataConfirmFields from '$lib/core/DataConfirmFields.svelte';
   import { product } from '$lib/core/product';
+  import { ABUSE_MAIL, LEGAL, openLegal } from '$lib/core/legal';
   import { updateCheck } from '$lib/core/store/update-check.svelte';
 
   const locales: { id: Locale; label: string }[] = LANGUAGES.map((l) => ({ id: l.code, label: l.native }));
@@ -192,7 +194,7 @@
   </div>
 
   <div class="m-body">
-  {#if updateCheck.status === 'available'}
+  {#if updateCheck.status === 'available' && !distribution.fromStore}
     <div class="m-card update-card">
       <span class="update-title">{$t('update_available', { version: updateCheck.latest })}</span>
       <span class="m-sub">{$t('update_available_hint')}</span>
@@ -289,6 +291,7 @@
         <span class="m-row-value mono">{info ? `${info.version} · ${info.os}/${info.arch}` : ''}</span>
       </div>
     </div>
+    {#if !distribution.fromStore}
     <button
       type="button"
       class="m-row set-row"
@@ -301,6 +304,7 @@
           <span class="m-row-value" class:ok={updateCheck.status === 'upToDate'} class:new={updateCheck.status === 'available'}>{updateLabel}</span>
         </span>
     </button>
+    {/if}
     <button type="button" class="m-row set-row" onclick={() => (bugOpen = true)}>
         <span class="set-tile"><Icon name="alert-triangle" size={20} /></span>
         <span class="set-text">
@@ -308,8 +312,43 @@
         </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.privacy)}>
+        <span class="set-tile"><Icon name="shield" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_about_privacy')}</span>
+        </span>
+      <span class="chev"><Icon name="external-link" size={16} /></span>
+    </button>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.terms)}>
+        <span class="set-tile"><Icon name="file-text" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_about_terms')}</span>
+        </span>
+      <span class="chev"><Icon name="external-link" size={16} /></span>
+    </button>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.childSafety)}>
+        <span class="set-tile"><Icon name="shield" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_about_child_safety')}</span>
+        </span>
+      <span class="chev"><Icon name="external-link" size={16} /></span>
+    </button>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.deleteAccount)}>
+        <span class="set-tile"><Icon name="trash" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_about_delete_account')}</span>
+        </span>
+      <span class="chev"><Icon name="external-link" size={16} /></span>
+    </button>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(ABUSE_MAIL)}>
+        <span class="set-tile"><Icon name="alert-triangle" size={20} /></span>
+        <span class="set-text">
+          <span class="m-row-label">{$t('settings_about_abuse')}</span>
+        </span>
+      <span class="chev"><Icon name="external-link" size={16} /></span>
+    </button>
   </div>
-  {#if updateCheck.status === 'error'}
+  {#if updateCheck.status === 'error' && !distribution.fromStore}
     <p class="err-msg update-err">{$t('settings_update_failed')}</p>
   {/if}
 

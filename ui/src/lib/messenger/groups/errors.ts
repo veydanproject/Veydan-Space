@@ -11,7 +11,7 @@ const KNOWN = new Set([
   'group_not_permitted', 'group_not_member', 'group_muted', 'group_unknown', 'group_already_member', 'group_target_banned',
   'group_author_banned', 'group_stale_link', 'group_no_key', 'group_key_stale', 'group_no_relay', 'group_full', 'group_leave_first',
   'group_invite_expired', 'group_invite_answered', 'group_invite_unknown', 'group_request_unknown', 'group_disbanded',
-  'group_target_not_member', 'group_invalid', 'group_wrong_kind', 'group_closed', 'group_muted_until',
+  'group_target_not_member', 'group_invalid', 'group_wrong_kind', 'group_closed', 'group_muted_until', 'group_banned',
 ]);
 
 /** Text for a refusal of the group module; `null` when the error is not one. */

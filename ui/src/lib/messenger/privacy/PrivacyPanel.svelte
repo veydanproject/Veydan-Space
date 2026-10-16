@@ -114,9 +114,13 @@
             <Avatar url={null} label={b.name} seed={b.peer} size={32} />
             <span class="who-text"><span class="name">{b.name}</span>{#if !namedByKey(b)}<code class="npub">{b.npub.slice(0, 16)}…</code>{/if}</span>
           </span>
-          <button class="btn btn-ghost btn-sm" disabled={privacyStore.unblocking === b.peer} onclick={() => privacyStore.unblock(b.peer)}>
-            {$t('msg_rel_cta_unblock')}
-          </button>
+          {#if b.banned}
+            <span class="muted small">{$t('msg_rel_banned_short')}</span>
+          {:else}
+            <button class="btn btn-ghost btn-sm" disabled={privacyStore.unblocking === b.peer} onclick={() => privacyStore.unblock(b.peer)}>
+              {$t('msg_rel_cta_unblock')}
+            </button>
+          {/if}
         </li>
       {/each}
     </ul>

@@ -30,6 +30,8 @@ pub mod notify_jni;
 pub mod calls;
 // Moderation: requests of strangers, whom I take messages from, groups, invitations.
 pub mod moderation;
+// A report of a person to the moderators of the project, and its way to the server.
+pub mod report;
 /// The calls log of a computer (`calls.log` in the messenger's data folder).
 #[cfg(desktop)]
 pub mod calls_log;
@@ -334,6 +336,8 @@ fn serve(
     tasks.push(calls::spawn_desktop_ring(rt.clone(), desktop.clone()));
     // The service notes of the module cloud, to its seam (cloud_notes.rs).
     tasks.push(crate::cloud_notes::spawn_forwarder(app.clone(), rt.clone()));
+    // Reports that did not reach the moderators are tried again (report.rs).
+    tasks.push(report::spawn_retry(app.clone(), rt.clone()));
     tasks.push(spawn_ui_event_forwarder(
         app.clone(),
         rt.clone(),

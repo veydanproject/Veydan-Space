@@ -35,6 +35,14 @@ pub struct ChatView {
     /// call, no reaction and no «add to contacts» in it.
     #[serde(default)]
     pub bot: bool,
+    /// The network bans the peer of a direct chat (`DmService::is_banned`):
+    /// `mode` is `blocked`, and the screen may say that the person was
+    /// removed from the network. Of a `group:` chat: the network closes
+    /// the group (`GroupService::is_group_banned`, set by the runtime):
+    /// `can_send` is false, and the screen may say that the group was
+    /// removed from the network. What the chat holds stays, as it was.
+    #[serde(default)]
+    pub banned: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

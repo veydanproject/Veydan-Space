@@ -54,13 +54,18 @@
     blocked_by_peer: { tone: 'warn', icon: 'ban', ctas: [] },
   };
 
-  const spec = $derived(chat.mode === 'full_chat' || chat.mode === 'group' ? null : specs[chat.mode]);
+  // A key the network banned cannot be unblocked, so the banner offers nothing.
+  const spec = $derived.by((): Spec | null => {
+    if (chat.mode === 'full_chat' || chat.mode === 'group') return null;
+    if (chat.mode === 'blocked' && chat.banned) return { ...specs.blocked, ctas: [] };
+    return specs[chat.mode];
+  });
 </script>
 
 {#if spec}
   <div class="banner {spec.tone}" role="status">
     <span class="ico"><Icon name={spec.icon} size={16} /></span>
-    <span class="text">{$t(`msg_rel_${chat.mode}` as 'msg_rel_blocked', { name: chat.title })}</span>
+    <span class="text">{chat.mode === 'blocked' && chat.banned ? $t('msg_rel_banned') : $t(`msg_rel_${chat.mode}` as 'msg_rel_blocked', { name: chat.title })}</span>
     {#if spec.ctas.length}
       <span class="ctas">
         {#each spec.ctas as c (c.action)}

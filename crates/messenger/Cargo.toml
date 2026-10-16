@@ -9,7 +9,7 @@
 
 [workspace]
 resolver = "2"
-members = ["core", "vlink", "http", "links", "richtext", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "avatar", "groups", "push", "presence", "notify", "calls", "rtc", "runtime", "testkit"]
+members = ["core", "vlink", "http", "links", "richtext", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "avatar", "groups", "push", "presence", "notify", "calls", "rtc", "runtime", "testkit", "evidence"]
 # The vendored C++ bridge of the engine (crates/messenger/rtc/vendor/webrtc-sys,
 # the [patch] below) is a dependency, not a member: it is built as the
 # registry crate would be, and neither tested nor linted as ours.
@@ -40,6 +40,12 @@ webpki-roots = "1"
 aes-gcm = "0.11"
 sha2 = "0.11"
 hmac = "0.13"
+# NIP-44 v2 done by hand (messenger-evidence): a server checks one message of
+# a conversation with the keys of that message alone, which nostr does not
+# expose. chacha20 is the version nostr's own NIP-44 is built on, hkdf the
+# one that goes with hmac and sha2 above; neither adds a crate to the tree.
+chacha20 = "0.9"
+hkdf = "0.13"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 hex = "0.4"
 base64 = "0.22"
@@ -98,6 +104,7 @@ messenger-calls = { path = "calls" }
 messenger-runtime = { path = "runtime" }
 messenger-testkit = { path = "testkit" }
 messenger-rtc = { path = "rtc" }
+messenger-evidence = { path = "evidence" }
 
 [patch.crates-io]
 # webrtc-sys as published, with four small patches (its PATCH.md): the

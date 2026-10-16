@@ -457,9 +457,12 @@ allowed() {
     presence)  echo "messenger-core messenger-store" ;;
     notify)    echo "messenger-core messenger-store messenger-ingress messenger-contacts messenger-dm messenger-groups messenger-media messenger-transport messenger-vlink" ;;
     calls)     echo "messenger-core messenger-store messenger-dm messenger-vlink" ;;
-    runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence messenger-richtext messenger-avatar messenger-calls messenger-rtc" ;;
+    runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence messenger-richtext messenger-avatar messenger-calls messenger-rtc messenger-evidence" ;;
     testkit)   echo "messenger-core messenger-store messenger-runtime messenger-notify messenger-dm messenger-groups messenger-vlink messenger-calls messenger-rtc" ;;
     rtc)       echo "messenger-core messenger-calls" ;;
+    # The proofs of a report: built by the server of the project too, so
+    # nothing of the messenger but its tests (messenger-spec.md 4.2).
+    evidence)  echo "" ;;
     *)         echo "__unknown__" ;;
   esac
 }
@@ -516,8 +519,20 @@ fi
 #    rows of those two crates in MATRIX above, and is_package() learns the
 #    packages of $infra_deps for it: the check after the matrix refuses a
 #    path dependency that no workspace of this script holds.
+#
+#    One edge more than any "builtOn" says, folder → crate: Veydan Cloud
+#    takes crates/messenger/evidence, the check of the evidence of a report
+#    on a person. The server must run the very verify() the apps run before
+#    they send a report, or the two disagree on what a proof is; the crate
+#    is pure (nostr, chacha20, hkdf, hmac, sha2, serde: no store, network or
+#    framework), so one crate serves both. Not in "builtOn": publish.mjs
+#    turns those into dependencies on Veydan-Link by tag.
+INFRA_EDGES="services/cloud:crates/messenger/evidence"
 while IFS=$'\t' read -r infra_name infra_dir infra_on; do
   [ -n "$infra_name" ] || continue
+  for edge in $INFRA_EDGES; do
+    if [ "${edge%%:*}" = "$infra_dir" ]; then infra_on="$infra_on ${edge#*:}"; fi
+  done
   while IFS=$'\t' read -r pkg dir dep kind path; do
     [ -n "$dep" ] && [ "$dep" != - ] || continue
     case "$dir/" in "$infra_dir"/*) ;; *) continue ;; esac

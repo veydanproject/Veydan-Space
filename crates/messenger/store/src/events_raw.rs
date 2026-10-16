@@ -99,6 +99,34 @@ pub async fn items_tagged_until(store: &Store, kind: u16, value: &str, until: i6
     Ok(rows.into_iter().filter_map(|(id, at)| Some((EventId::parse(&id)?, at))).collect())
 }
 
+/// The event as it came, JSON: what a report proves a message with
+/// (messenger-evidence). `None` when it is not kept here.
+pub async fn raw_json(store: &Store, id: &str) -> Result<Option<String>> {
+    sqlx::query_scalar::<_, String>("SELECT raw_json FROM msg_events_raw WHERE event_id = ?")
+        .bind(id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)
+}
+
+/// `(id, raw_json)` of at most `limit` events of `kind` with `created_at`
+/// in `[since, until]`, the newest first: where a copy of mine is looked
+/// for when no message row names it (a report's own messages, whose row
+/// keeps the id of the peer's copy).
+pub async fn raw_in_window(store: &Store, kind: u16, since: i64, until: i64, limit: i64) -> Result<Vec<(String, String)>> {
+    sqlx::query_as::<_, (String, String)>(
+        "SELECT event_id, raw_json FROM msg_events_raw WHERE kind = ? AND created_at BETWEEN ? AND ?
+         ORDER BY created_at DESC LIMIT ?",
+    )
+    .bind(kind as i64)
+    .bind(since)
+    .bind(until)
+    .bind(limit)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
 pub async fn count(store: &Store) -> Result<i64> {
     sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM msg_events_raw")
         .fetch_one(store.pool())
@@ -150,6 +178,11 @@ mod tests {
         let ids = ids_in_window(&s, 1059, 0, 150, 10).await.unwrap();
         assert_eq!(ids.len(), 1);
         assert_eq!(ids[0].as_hex(), "1".repeat(64));
+        assert_eq!(raw_json(&s, &"2".repeat(64)).await.unwrap().as_deref(), Some("{\"id\":\"2\"}"));
+        assert_eq!(raw_json(&s, &"4".repeat(64)).await.unwrap(), None);
+        let found = raw_in_window(&s, 1059, 100, 200, 10).await.unwrap();
+        assert_eq!(found.iter().map(|(id, _)| &id[..1]).collect::<Vec<_>>(), vec!["2", "1"], "newest first, both bounds in");
+        assert_eq!(raw_in_window(&s, 1059, 0, 1_000, 1).await.unwrap().len(), 1, "the limit holds");
     }
 
     /// `n` events of `kind`, one per second from `from`, with the given

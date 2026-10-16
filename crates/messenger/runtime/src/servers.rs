@@ -138,6 +138,11 @@ impl MessengerRuntime {
     /// The relay or media set changed: media follows the manifest, the
     /// session starts if it could not before, and peers learn our inbox.
     async fn servers_changed(&self) -> Result<()> {
+        // The bans are the network's, not the servers': they follow the
+        // manifest in use with the own servers chosen too.
+        if let Err(e) = self.banned_follow_manifest().await {
+            eprintln!("messenger: the banned keys of the manifest not applied: {e}");
+        }
         // Which servers are the project's decides what goes through a bridge.
         if let Err(e) = self.net_apply().await {
             eprintln!("messenger net: the way to the servers was not set: {e}");

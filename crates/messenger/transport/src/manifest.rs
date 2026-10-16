@@ -21,7 +21,7 @@
 //! Anti-rollback is by `serial`: a manifest is applied only when its serial
 //! is greater than the last applied one.
 
-use messenger_core::{MessengerError, RelayUrl, Result};
+use messenger_core::{MessengerError, PubKey, RelayUrl, Result};
 use messenger_vlink::BridgeRef;
 use nostr::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -78,7 +78,34 @@ pub struct Manifest {
     /// after the user's own and the listed ones. May be empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bridges: Vec<String>,
+    /// Keys the network refuses (internal/messenger-wire.md §1): a person
+    /// found, on a confirmed report, to have harmed a child, by the
+    /// decision of a person of the project, never of a machine. 64 hex,
+    /// lowercase. A client treats each as blocked for as long as the
+    /// manifest names it: nothing of it is shown or let in and nothing goes
+    /// to it, whatever servers carry it. Absent in manifests written before
+    /// it, and left out when empty, so that such a manifest is written, and
+    /// signed, as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub banned_keys: Vec<String>,
+    /// Groups the network closes (internal/messenger-wire.md §1): a group
+    /// found, on a confirmed report, to serve the harm of a child, by the
+    /// decision of a person of the project, as [`Manifest::banned_keys`].
+    /// Each is the `h` of the group's events, at most
+    /// [`MAX_BANNED_GROUP_CHARS`] visible ASCII characters, the list sorted
+    /// and each listed once. A client takes nothing of such a group in and
+    /// sends nothing to it for as long as the manifest names it; what the
+    /// device holds of it stays, shown as closed. Absent in manifests
+    /// written before it, and left out when empty, so that such a manifest
+    /// is written, and signed, as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub banned_groups: Vec<String>,
 }
+
+/// The longest id of a group [`Manifest::banned_groups`] may name: the
+/// longest a report may name (`messenger_evidence::MAX_GROUP_ID_CHARS`), so
+/// that whatever group was reported can be closed.
+pub const MAX_BANNED_GROUP_CHARS: usize = 128;
 
 /// A host of `/vault/` (vstore), as a manifest names it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -311,7 +338,18 @@ impl Manifest {
             .custom_created_at(Timestamp::from_secs(self.issued_at.max(0) as u64))
             .finalize(keys)
             .map_err(|e| MessengerError::Crypto(e.to_string()))?;
-        Ok(serde_json::to_string(&event)?)
+        let signed = serde_json::to_string(&event)?;
+        // A client takes no larger body (`remote::MAX_MANIFEST_BYTES`): one
+        // that grew past it (a long `banned_keys`, some 69 bytes a key in
+        // the event) would leave every device on the manifest before it.
+        if signed.len() > crate::remote::MAX_MANIFEST_BYTES {
+            return Err(MessengerError::Invalid(format!(
+                "the signed manifest is {} bytes, clients take at most {}",
+                signed.len(),
+                crate::remote::MAX_MANIFEST_BYTES
+            )));
+        }
+        Ok(signed)
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -458,7 +496,48 @@ impl Manifest {
                 )));
             }
         }
+        // Written by the project's tooling, which signs through `sign` and
+        // so through this check: a key in another shape is a mistake to
+        // catch before it is published, not one to guess at on a phone.
+        let mut banned = BTreeSet::new();
+        for k in &self.banned_keys {
+            let lower_hex = k.len() == 64 && k.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+            if !lower_hex {
+                return Err(MessengerError::Invalid(format!(
+                    "banned key '{k}' is not 64 lowercase hex"
+                )));
+            }
+            if !banned.insert(k.as_str()) {
+                return Err(MessengerError::Invalid(format!(
+                    "banned key '{k}' is listed twice"
+                )));
+            }
+        }
+        // Sorted, so that one list is always one document and a change of
+        // it reads as one; an id listed twice is out of order too.
+        for (i, g) in self.banned_groups.iter().enumerate() {
+            let shaped = !g.is_empty()
+                && g.len() <= MAX_BANNED_GROUP_CHARS
+                && g.bytes().all(|b| b.is_ascii_graphic());
+            if !shaped {
+                return Err(MessengerError::Invalid(format!(
+                    "banned group '{g}' is not 1 to {MAX_BANNED_GROUP_CHARS} visible ASCII characters"
+                )));
+            }
+            if i > 0 && self.banned_groups[i - 1].as_str() >= g.as_str() {
+                return Err(MessengerError::Invalid(format!(
+                    "banned group '{g}' is out of order or listed twice"
+                )));
+            }
+        }
         Ok(())
+    }
+
+    /// The keys the network refuses ([`Manifest::banned_keys`]). All of
+    /// them: [`Manifest::validate`] refused a manifest with one that does
+    /// not read.
+    pub fn banned(&self) -> Vec<PubKey> {
+        self.banned_keys.iter().filter_map(|k| PubKey::parse(k)).collect()
     }
 
     /// The bridges to start from ([`Manifest::bridges`]), in the manifest's
@@ -685,6 +764,8 @@ mod tests {
             storage: vec![],
             registries: vec![],
             bridges: vec![],
+            banned_keys: vec![],
+            banned_groups: vec![],
         }
     }
 
@@ -768,6 +849,117 @@ mod tests {
             bad(&[], &[&bridge, &bridge.replace(":443", ":8443")]),
             "the same id twice"
         );
+    }
+
+    #[test]
+    fn banned_keys_come_from_the_manifest_and_old_manifests_have_none() {
+        // A manifest written before the field reads, with no key, and is
+        // written again as the same document: its signature still holds.
+        let old = serde_json::to_string(&sample()).unwrap();
+        assert!(!old.contains("banned_keys"));
+        let read = Manifest::parse_content(&old).unwrap();
+        assert!(read.banned_keys.is_empty() && read.banned().is_empty());
+        assert_eq!(serde_json::to_string(&read).unwrap(), old);
+
+        let mut m = sample();
+        m.banned_keys = vec!["ab".repeat(32), "cd".repeat(32)];
+        m.validate().unwrap();
+        assert_eq!(
+            m.banned()
+                .iter()
+                .map(|k| k.as_hex().to_string())
+                .collect::<Vec<_>>(),
+            ["ab".repeat(32), "cd".repeat(32)]
+        );
+
+        // Signed with the rest of the document: read back as it was signed,
+        // and a key changed or taken out of the signed event breaks it.
+        let keys = Keys::generate();
+        let signed = m.sign(&keys).unwrap();
+        assert_eq!(
+            Manifest::parse_signed(&signed, Some(&keys.public_key().to_hex())).unwrap(),
+            m
+        );
+        let changed = signed.replace(&"cd".repeat(32), &"ef".repeat(32));
+        assert_ne!(changed, signed);
+        assert!(
+            Manifest::parse_signed(&changed, None).is_err(),
+            "the list is signed"
+        );
+        // `content` is a JSON string inside the event, so its quotes are escaped.
+        let dropped = signed.replace(&format!(",\\\"{}\\\"", "cd".repeat(32)), "");
+        assert_ne!(
+            dropped, signed,
+            "the pattern must match the serialized event"
+        );
+        assert!(
+            Manifest::parse_signed(&dropped, None).is_err(),
+            "so is what it holds"
+        );
+    }
+
+    #[test]
+    fn banned_keys_are_validated() {
+        let bad = |keys: &[String]| {
+            let mut m = sample();
+            m.banned_keys = keys.to_vec();
+            m.validate().is_err()
+        };
+        assert!(!bad(&["0a".repeat(32)]));
+        assert!(bad(&["0A".repeat(32)]), "lowercase only");
+        assert!(bad(&["0a".repeat(31)]), "too short");
+        assert!(bad(&[format!("npub1{}", "q".repeat(59))]), "hex, not npub");
+        assert!(bad(&[format!(" {}", "0a".repeat(32))]), "no space");
+        assert!(bad(&["0a".repeat(32), "0a".repeat(32)]), "twice");
+
+        // A list no client would fetch is not signed.
+        let mut m = sample();
+        m.banned_keys = (0..1_000u32).map(|i| format!("{i:064x}")).collect();
+        m.validate().unwrap();
+        let err = m.sign(&Keys::generate()).unwrap_err().to_string();
+        assert!(err.contains("clients take at most"), "{err}");
+    }
+
+    #[test]
+    fn banned_groups_come_from_the_manifest_and_old_manifests_have_none() {
+        // A manifest written before the field reads without a group, and is
+        // written again as the same document: its signature still holds.
+        let old = serde_json::to_string(&sample()).unwrap();
+        assert!(!old.contains("banned_groups"));
+        let read = Manifest::parse_content(&old).unwrap();
+        assert!(read.banned_groups.is_empty());
+        assert_eq!(serde_json::to_string(&read).unwrap(), old);
+
+        let mut m = sample();
+        m.banned_groups = vec!["ab".repeat(32), "cd".repeat(32)];
+        m.validate().unwrap();
+        let keys = Keys::generate();
+        let signed = m.sign(&keys).unwrap();
+        let back = Manifest::parse_signed(&signed, Some(&keys.public_key().to_hex())).unwrap();
+        assert_eq!(back, m);
+        assert_eq!(back.banned_groups, ["ab".repeat(32), "cd".repeat(32)]);
+        // `content` is a JSON string inside the event, so its quotes are escaped.
+        let dropped = signed.replace(&format!(",\\\"{}\\\"", "cd".repeat(32)), "");
+        assert_ne!(dropped, signed, "the pattern must match the serialized event");
+        assert!(Manifest::parse_signed(&dropped, None).is_err(), "the list is signed");
+    }
+
+    #[test]
+    fn banned_groups_are_validated() {
+        let bad = |groups: &[String]| {
+            let mut m = sample();
+            m.banned_groups = groups.to_vec();
+            m.validate().is_err()
+        };
+        assert!(!bad(&["0a".repeat(32)]));
+        assert!(!bad(&["a".into(), "b-1_x".into()]), "any visible id, not only hex");
+        assert!(!bad(&["x".repeat(MAX_BANNED_GROUP_CHARS)]));
+        assert!(bad(&["x".repeat(MAX_BANNED_GROUP_CHARS + 1)]), "too long");
+        assert!(bad(&[String::new()]), "empty");
+        assert!(bad(&["a b".into()]), "no space");
+        assert!(bad(&["группа".into()]), "ASCII only");
+        assert!(bad(&["b".into(), "a".into()]), "sorted");
+        assert!(bad(&["a".into(), "a".into()]), "once");
     }
 
     fn vault(url: &str, regions: &[&str], priority: u32) -> ManifestStorage {

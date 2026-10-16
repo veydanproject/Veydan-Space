@@ -55,6 +55,12 @@ describe('who may write to me', () => {
     expect(api.privacyGet).not.toHaveBeenCalled();
   });
 
+  it('keeps the banned flag of a person the network removed', async () => {
+    api.blocked.mockResolvedValueOnce([{ ...b('aa'), banned: true }, b('bb')] as never);
+    await privacyStore.loadDm();
+    expect(privacyStore.blocked?.map((x) => x.banned)).toEqual([true, undefined]);
+  });
+
   it('keeps the words of a runtime that lacks the commands', async () => {
     api.dmSettings.mockRejectedValueOnce(new Error('unknown command'));
     await privacyStore.loadDm();

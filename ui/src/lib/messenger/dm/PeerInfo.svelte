@@ -8,6 +8,7 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { reportStore } from '../shared/report.svelte';
   import PanelHead from '../shared/PanelHead.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import CopyField from '../identity/CopyField.svelte';
@@ -31,6 +32,11 @@
 
   /** A section of what the chat has shared, shown in place of the panel. */
   let section = $state<SharedSection | null>(null);
+
+  function report() {
+    if (!chat.peer_pubkey) return;
+    reportStore.open({ accused: chat.peer_pubkey, name: chat.title, context: { t: 'dm' }, canBlock: chat.mode !== 'blocked' });
+  }
 
   const profile = $derived(chat.peer_pubkey ? nameStore.profile(chat.peer_pubkey) : null);
   const name = $derived(profile?.display_name?.trim() || profile?.name?.trim() || '');
@@ -94,6 +100,10 @@
       {#if chat.peer_npub}<CopyField label={$t('msg_peer_key')} value={chat.peer_npub} mono />{/if}
 
       <SharedMedia chatId={chat.id} onopen={(s) => (section = s)} />
+
+      {#if chat.peer_pubkey && !chat.bot}
+        <button type="button" class="btn btn-ghost danger report" onclick={report}><Icon name="alert-triangle" size={14} />{$t('msg_report')}</button>
+      {/if}
     </div>
   {/if}
 </div>
@@ -109,6 +119,8 @@
   .about { color: var(--text-body); }
   .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .label { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+  .report { align-self: flex-start; }
+  .danger { color: var(--danger-text); }
   .hint { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
   .site {
     display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; text-align: left; cursor: pointer;

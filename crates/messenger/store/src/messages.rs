@@ -101,14 +101,15 @@ pub const REVIEW_RELEASED: &str = "released";
 /// moderator (except my own that a moderator rejected: its author alone
 /// is shown it, with the word that it was), and in a group not of someone
 /// I block in direct messages (the one effect of a block in groups; the
-/// unblock shows them again). `m` is the alias of `msg_messages` in the
-/// query.
-pub const SHOWN: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.blocked = 1))";
+/// unblock shows them again) nor of a key the network bans (`banned`:
+/// all they wrote, while the manifest names them). `m` is the alias of
+/// `msg_messages` in the query.
+pub const SHOWN: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = m.sender_pubkey)))";
 
 /// What a member sees of a group: `SHOWN`, and nothing that still waits
 /// for a moderator unless it is mine. A moderator sees the waiting rows
 /// too (`list` with `moderator`).
-pub const SHOWN_TO_MEMBER: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.blocked = 1)) AND (m.review <> 'pending' OR m.direction = 'out')";
+pub const SHOWN_TO_MEMBER: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = m.sender_pubkey))) AND (m.review <> 'pending' OR m.direction = 'out')";
 
 /// Insert; `false` when a row with this id already exists (a duplicate copy).
 pub async fn insert(store: &Store, m: &NewMessage) -> Result<bool> {
@@ -159,6 +160,52 @@ pub async fn list(store: &Store, chat_id: &str, before: Option<i64>, limit: i64,
     )))
     .bind(chat_id)
     .bind(before.unwrap_or(i64::MAX))
+    .bind(limit)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)?;
+    rows.reverse();
+    Ok(rows)
+}
+
+/// What a report attaches of a chat (`messenger_runtime::report`): the last
+/// `limit` messages written by one of the two `authors` that came over the
+/// wire (they have a `wire_id`) and are still there to see — not hidden,
+/// not deleted, no line of the app's own — up to and including `until`
+/// (`(created_at, id)` of the message the report starts from), the oldest
+/// first. Whatever else the chat holds (in a group, the words of the other
+/// members) is never a report on a person's to hand over.
+///
+/// `authors` `None` is a report on a whole group: there the conduct is the
+/// group's, so the messages of any member count, each under its own
+/// author's signature.
+pub async fn evidence_run(
+    store: &Store,
+    chat_id: &str,
+    authors: Option<(&str, &str)>,
+    until: Option<(i64, &str)>,
+    limit: i64,
+) -> Result<Vec<MessageRow>> {
+    let (until_at, until_id) = until.unwrap_or((i64::MAX, ""));
+    let (any, (first, second)) = match authors {
+        Some(two) => (0, two),
+        None => (1, ("", "")),
+    };
+    let mut rows = sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_messages
+         WHERE chat_id = ? AND (? = 1 OR sender_pubkey IN (?, ?)) AND is_hidden = 0 AND deleted_at IS NULL
+           AND content_type <> 'system' AND wire_id IS NOT NULL
+           AND (created_at < ? OR (created_at = ? AND (? = '' OR id <= ?)))
+         ORDER BY created_at DESC, id DESC LIMIT ?"
+    )))
+    .bind(chat_id)
+    .bind(any)
+    .bind(first)
+    .bind(second)
+    .bind(until_at)
+    .bind(until_at)
+    .bind(until_id)
+    .bind(until_id)
     .bind(limit)
     .fetch_all(store.pool())
     .await
@@ -645,6 +692,33 @@ mod tests {
             outbox_local_id: None,
             media_json: None,
         }
+    }
+
+    /// A report's run: the two parties' messages off the wire, newest ones,
+    /// up to the one it starts from, nothing hidden, deleted or local.
+    #[tokio::test]
+    async fn the_run_of_a_report_is_of_the_two_and_ends_where_it_starts() {
+        let s = Store::open_in_memory().await.unwrap();
+        let row = |id: &str, by: &str, at: i64| NewMessage { wire_id: Some(format!("w{id}")), sender_pubkey: by.into(), ..text(id, "g", DIR_IN, at) };
+        for (id, by, at) in [("a1", "acc", 10), ("m1", "me", 20), ("o1", "other", 30), ("a2", "acc", 40), ("a3", "acc", 40), ("m2", "me", 50)] {
+            insert(&s, &row(id, by, at)).await.unwrap();
+        }
+        insert(&s, &NewMessage { is_hidden: true, ..row("h1", "acc", 45) }).await.unwrap();
+        insert(&s, &NewMessage { content_type: CT_SYSTEM.into(), ..row("s1", "acc", 46) }).await.unwrap();
+        insert(&s, &NewMessage { wire_id: None, ..row("u1", "me", 47) }).await.unwrap();
+        insert(&s, &row("d1", "acc", 48)).await.unwrap();
+        mark_deleted(&s, "d1", 49).await.unwrap();
+        insert(&s, &NewMessage { chat_id: "elsewhere".into(), ..row("x1", "acc", 60) }).await.unwrap();
+
+        let ids = |rows: Vec<MessageRow>| rows.into_iter().map(|r| r.id).collect::<Vec<_>>();
+        let all = evidence_run(&s, "g", Some(("acc", "me")), None, 10).await.unwrap();
+        assert_eq!(ids(all), vec!["a1", "m1", "a2", "a3", "m2"], "the two only, oldest first");
+        let last = evidence_run(&s, "g", Some(("acc", "me")), None, 2).await.unwrap();
+        assert_eq!(ids(last), vec!["a3", "m2"], "the newest ones");
+        let upto = evidence_run(&s, "g", Some(("acc", "me")), Some((40, "a2")), 10).await.unwrap();
+        assert_eq!(ids(upto), vec!["a1", "m1", "a2"], "inclusive of the start, not its twin of the same second");
+        let group = evidence_run(&s, "g", None, None, 10).await.unwrap();
+        assert_eq!(ids(group), vec!["a1", "m1", "o1", "a2", "a3", "m2"], "on a group: every member's, the same rows left out");
     }
 
     #[tokio::test]

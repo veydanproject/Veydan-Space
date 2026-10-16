@@ -15,6 +15,7 @@ pub mod notify;
 /// Region used when the stored one cannot be read.
 pub(crate) const REGION_FALLBACK: &str = "default";
 pub mod avatars;
+mod banned;
 pub mod bindings;
 pub mod call_nodes;
 pub mod calls;
@@ -35,6 +36,9 @@ pub mod reactions;
 pub mod receipts;
 pub mod relations;
 pub mod relays;
+/// A report of a person to the moderators of the project, with the proofs
+/// of the messages it attaches (messenger-evidence).
+pub mod report;
 pub mod servers;
 pub mod session;
 pub mod shared;
@@ -168,6 +172,9 @@ pub struct MessengerRuntime {
     calls: calls::CallsDriver,
     /// Group calls: the other service of the core, over the same engine.
     group_calls: calls::GroupCallsDriver,
+    /// Reports to the moderators: the rate of this device, one round of
+    /// retries at a time (`crate::report`).
+    reports: report::Reports,
 }
 
 impl MessengerRuntime {
@@ -317,7 +324,14 @@ impl MessengerRuntime {
             preparing: media::Preparing::default(),
             calls,
             group_calls,
+            reports: report::Reports::default(),
         };
+        // Before any session: what came while the app was off is judged by
+        // the bans of the manifest in use, one an update of the app brought
+        // included (`banned`).
+        if let Err(e) = rt.banned_follow_manifest().await {
+            eprintln!("messenger: the banned keys of the manifest not applied: {e}");
+        }
         if let Err(e) = rt.seed_media_servers().await {
             eprintln!("messenger: media servers from the manifest not applied: {e}");
         }

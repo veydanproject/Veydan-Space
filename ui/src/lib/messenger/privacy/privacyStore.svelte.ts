@@ -14,7 +14,7 @@
 // asked for, so the list cannot wait for one.
 
 import {
-  messengerApi, messengerError, type BlockedView, type DmFrom, type DmSettings, type MessengerPrivacy, type MessengerUiEvent,
+  messengerApi, messengerError, type BlockedPerson, type DmFrom, type DmSettings, type MessengerPrivacy, type MessengerUiEvent,
 } from '../api';
 import { chatStore } from '../chats/chatStore.svelte';
 import { presenceStore } from '../presence/presenceStore.svelte';
@@ -29,7 +29,7 @@ class PrivacyStore {
   dmBusy = $state(false);
   dmError = $state('');
   /** The people I blocked; `null` until read. */
-  blocked = $state<BlockedView[] | null>(null);
+  blocked = $state<BlockedPerson[] | null>(null);
   /** The key being unblocked: its button waits. */
   unblocking = $state<string | null>(null);
   blockedError = $state('');

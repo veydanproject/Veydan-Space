@@ -220,7 +220,7 @@
   .caption { padding: 0 8px; }
   .uploaded { display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: var(--fs-2xs); color: var(--text-3); }
   .reactions { padding: 2px 5px 0; }
-  .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-size: var(--fs-2xs); color: var(--text-3); line-height: 1; padding: 0 8px 5px; }
+  .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-size: var(--fs-3xs); color: var(--text-3); line-height: 1; padding: 0 8px 5px; }
   .meta.on-picture {
     position: absolute; right: 6px; bottom: 6px; padding: 3px 7px; border-radius: var(--radius-pill);
     background: rgba(0, 0, 0, 0.5); color: #fff; pointer-events: none;

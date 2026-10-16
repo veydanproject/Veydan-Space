@@ -44,6 +44,7 @@
   /* ── Type scale ── (snap raw sizes to the nearest step; see STYLEGUIDE)
      «Quiet Glass»: micro and caption 12, secondary 13, control 14, body 15,
      section 16, dialog 18, title 20, H1 28. */
+  --fs-3xs:  0.5rem;    /* 8px the time under a message: as tall as its ticks */
   --fs-2xs:  0.75rem;   /* 12px micro: counts, tiny labels, dot text */
   --fs-xs:   0.75rem;   /* 12px captions, chips, table meta */
   --fs-sm:   0.8125rem; /* 13px secondary text, hints */

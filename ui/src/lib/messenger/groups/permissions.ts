@@ -80,3 +80,10 @@ export const mutedNow = (m: MessengerGroupMember, now = Date.now() / 1000): bool
 export function losesModeration(before: GroupRole, after: GroupRole | null): boolean {
   return roleRank(before) >= MODERATOR && roleRank(after) < MODERATOR;
 }
+
+/**
+ * The network closed the group (a confirmed case of harm to a child). The
+ * group's own view already carries a `banned` list of members, so the flag
+ * is read from the chat row alone; absent from an older runtime, so false.
+ */
+export const isBannedGroup = (chat: { banned?: boolean } | null | undefined): boolean => !!chat?.banned;

@@ -24,6 +24,7 @@ use crate::moderation::{
     QueueItem, QueuePage, RequestAction, RequestView, RequestsPage, Schedule,
 };
 use crate::net::{BridgeView, NetCheck, NetMode, NetStatus, Verdict};
+use crate::report::{ReportContext, ReportInput, ReportReason, ReportResult, ReportStatus, ReportSubReason, ReportTarget};
 use crate::shared::{SharedCounts, SharedSection};
 use messenger_avatar::CropRect;
 use messenger_media::{Progress, TransferStage, TransferView};
@@ -192,6 +193,13 @@ pub fn moderation_ts() -> String {
     out += &export::<InviteView>(&cfg, "An invitation as `messenger_moderation_invite_list` lists them: `link` for a link and a QR (my contact link with the secret on it), none for a code; `used` counts the keys that came in by it.");
     out += &export::<InviteStatus>(&cfg, "The state of the invitations on this device, as `messenger_moderation_invite_status` answers: `paused_until` when somebody guessed too often (the event `dm.invite_paused` tells of it).");
     out += &export::<BlockedView>(&cfg, "Somebody I block, as `messenger_moderation_blocked` lists them: the key, its npub and what the app calls them.");
+    out += &export::<ReportContext>(&cfg, "Where the conduct reported happened; tagged by `t`. In a group, on a person, only the messages of the person reported and of the reporter are attached; on the group, those of any member.");
+    out += &export::<ReportReason>(&cfg, "What a report is about.");
+    out += &export::<ReportSubReason>(&cfg, "The kind of harm to a child, only with `child_harm`.");
+    out += &export::<ReportTarget>(&cfg, "Whom a report is on: `person` (the default) or `group`, the whole group of the context, whose owner the journal names as the accused.");
+    out += &export::<ReportInput>(&cfg, "A report of a person or of a whole group (`target`) to the moderators of the project, as `messenger_report_send` takes it: `attach` the last ten messages (ending with `message_id`, or the newest; on a group, of any member), `block` the person after it (not in a group). From a group the report carries its name and `message_id`; on a group `accused` is ignored (may be empty). Refusals: `rate_limited` (more than three a minute), `report_*` of a malformed input (`report_target`: a group reported outside of one), or the word of the server.");
+    out += &export::<ReportStatus>(&cfg, "`sent`: the server took it; `queued`: kept on this device and sent when the way is open again (the event `moderation.report` tells of it then).");
+    out += &export::<ReportResult>(&cfg, "What `messenger_report_send` answers: how many messages went and how many of them are proved to be their authors', and whether the person was blocked.");
     out
 }
 

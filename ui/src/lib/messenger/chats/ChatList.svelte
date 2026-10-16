@@ -56,6 +56,8 @@
 
   /** The line under the name: the newest message, or a card of the bot of Veydan Cloud worded by its type. */
   function preview(c: MessengerChat): string {
+    // A group the network closed has nothing new to show; the row says so.
+    if (c.kind === 'group' && c.banned) return $t('msg_group_removed_short');
     if (c.last_preview != null) return c.last_preview;
     const card = chatStore.tailCard(c);
     return card ? $t(botCardLineKey(card, botCards.host)) : $t('msg_chat_no_messages');

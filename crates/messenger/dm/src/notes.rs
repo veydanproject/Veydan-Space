@@ -79,9 +79,13 @@ impl DmService {
         self.notes_allowed(peer).await
     }
 
-    /// Whether I send `peer` notes. Blocked either way: never. With the
-    /// relationship gate off every chat counts as `full_chat`.
+    /// Whether I send `peer` notes. Blocked either way, or banned by the
+    /// network: never. With the relationship gate off every chat counts as
+    /// `full_chat`.
     pub(crate) async fn notes_allowed(&self, peer: &PubKey) -> Result<bool> {
+        if self.is_banned(peer).await? {
+            return Ok(false);
+        }
         // The pinned bot has its chat and nothing else, whatever the row of
         // the relationship says: a device where a build without the pin
         // took the bot for a stranger may have accepted it. No receipt, no
@@ -96,10 +100,11 @@ impl DmService {
         Ok(!self.gate_enabled() || screen_mode(&r) == ScreenMode::FullChat)
     }
 
-    /// Whether one of us blocked the other: then what `peer` notes is dropped.
+    /// Whether one of us blocked the other, or the network bans `peer`:
+    /// then what `peer` notes is dropped.
     async fn blocked_either_way(&self, peer: &PubKey) -> Result<bool> {
         let r = self.load_relation(peer).await?;
-        Ok(r.blocked || r.peer_signal == PeerSignal::Blocked)
+        Ok(r.blocked || r.peer_signal == PeerSignal::Blocked || self.is_banned(peer).await?)
     }
 
     /// Whether a service note of the module `cloud` goes to or comes from

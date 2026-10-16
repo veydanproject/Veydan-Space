@@ -278,6 +278,10 @@ pub struct BlockedView {
     pub npub: String,
     /// What the app calls them: a nickname, a profile name, a short npub.
     pub name: String,
+    /// The network bans them (the manifest's `banned_keys`): the list shows
+    /// it and offers no unblock, which the runtime would refuse anyway.
+    #[serde(default)]
+    pub banned: bool,
 }
 
 /// 16 random bytes as base64url without padding: the secret of a link
@@ -666,7 +670,12 @@ impl MessengerRuntime {
         let mut out = Vec::new();
         for hex in self.dm().blocked_peers().await? {
             let Some(pk) = PubKey::parse(&hex) else { continue };
-            out.push(BlockedView { npub: npub_of(&pk).unwrap_or_default(), name: self.dm().display_name(&pk).await?, peer: hex });
+            out.push(BlockedView {
+                npub: npub_of(&pk).unwrap_or_default(),
+                name: self.dm().display_name(&pk).await?,
+                banned: self.dm().is_banned(&pk).await?,
+                peer: hex,
+            });
         }
         Ok(out)
     }

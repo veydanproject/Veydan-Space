@@ -137,4 +137,76 @@ peer: string, npub: string,
 /**
  * What the app calls them: a nickname, a profile name, a short npub.
  */
-name: string, };
+name: string, 
+/**
+ * The network bans them (the manifest's `banned_keys`): the list shows
+ * it and offers no unblock, which the runtime would refuse anyway.
+ */
+banned: boolean, };
+
+/** Where the conduct reported happened; tagged by `t`. In a group, on a person, only the messages of the person reported and of the reporter are attached; on the group, those of any member. */
+export type ReportContext = { "t": "dm" } | { "t": "group", group_id: string, } | { "t": "request" };
+
+/** What a report is about. */
+export type ReportReason = "child_harm" | "spam" | "harassment" | "illegal" | "other";
+
+/** The kind of harm to a child, only with `child_harm`. */
+export type ReportSubReason = "sexual" | "grooming" | "violence_illegal" | "suicide_selfharm" | "sect_recruitment";
+
+/** Whom a report is on: `person` (the default) or `group`, the whole group of the context, whose owner the journal names as the accused. */
+export type ReportTarget = "person" | "group";
+
+/** A report of a person or of a whole group (`target`) to the moderators of the project, as `messenger_report_send` takes it: `attach` the last ten messages (ending with `message_id`, or the newest; on a group, of any member), `block` the person after it (not in a group). From a group the report carries its name and `message_id`; on a group `accused` is ignored (may be empty). Refusals: `rate_limited` (more than three a minute), `report_*` of a malformed input (`report_target`: a group reported outside of one), or the word of the server. */
+export type ReportInput = { 
+/**
+ * The person reported: hex (an npub is taken too). Ignored for a
+ * report on a group, whose owner the journal of the group names; the
+ * page may pass an empty string then.
+ */
+accused: string, 
+/**
+ * A person (when absent) or the whole group of the context;
+ * `report_target` when a group is reported outside of one.
+ */
+target?: ReportTarget | null, context: ReportContext, reason: ReportReason, 
+/**
+ * Only with `child_harm`.
+ */
+sub_reason?: ReportSubReason | null, 
+/**
+ * The reporter's own words, at most 2000 characters.
+ */
+comment?: string | null, 
+/**
+ * Attach the last messages (up to ten) with their proofs.
+ */
+attach: boolean, 
+/**
+ * The message the report starts from: the attached run ends with it;
+ * with the newest when none.
+ */
+message_id?: string | null, 
+/**
+ * Block the person once the report is made (a chat of two or a
+ * request; ignored for a group).
+ */
+block: boolean, };
+
+/** `sent`: the server took it; `queued`: kept on this device and sent when the way is open again (the event `moderation.report` tells of it then). */
+export type ReportStatus = "sent" | "queued";
+
+/** What `messenger_report_send` answers: how many messages went and how many of them are proved to be their authors', and whether the person was blocked. */
+export type ReportResult = { status: ReportStatus, 
+/**
+ * Messages attached, with a proof or without one.
+ */
+attached: number, 
+/**
+ * Of those, the ones whose author's key is proved (the check the
+ * server makes).
+ */
+proved: number, 
+/**
+ * The person was blocked.
+ */
+blocked: boolean, };

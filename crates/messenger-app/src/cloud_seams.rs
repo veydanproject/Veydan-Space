@@ -79,7 +79,7 @@ pub(crate) fn offer(app: &AppHandle) {
     seams::provide(app, cards);
     let link: Arc<dyn DeviceLink> = wire;
     seams::provide(app, link);
-    let http: Arc<dyn Http> = Arc::new(ProjectHttp { app: app.clone() });
+    let http: Arc<dyn Http> = Arc::new(ProjectHttp::new(app.clone()));
     seams::provide(app, http);
     let vault: Arc<dyn VaultHosts> = Arc::new(ManifestVaultHosts { app: app.clone() });
     seams::provide(app, vault);
@@ -786,6 +786,12 @@ pub struct ProjectHttp {
 }
 
 impl ProjectHttp {
+    /// The way of the app: what the seam `Http` offers the module cloud,
+    /// and what a report of the messenger goes by (commands/report.rs).
+    pub(crate) fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+
     async fn reach_now(&self) -> Result<CloudReach, CloudError> {
         let runtime = self
             .app

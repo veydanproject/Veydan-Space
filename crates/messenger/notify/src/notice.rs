@@ -60,7 +60,9 @@ pub struct Plain {
 pub enum Reason {
     /// Written by me, from another device.
     Own,
-    /// From somebody I blocked, or who blocked me.
+    /// From somebody I blocked, or who blocked me; from a key the network
+    /// bans, or of a group it closes (the manifest's `banned_keys` and
+    /// `banned_groups`).
     Blocked,
     /// An edit, a deletion, a signal: nothing to read.
     NotAMessage,

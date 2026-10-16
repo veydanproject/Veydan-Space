@@ -242,8 +242,8 @@ impl DmService {
     /// or `None`. A wrong secret costs the budget, and the tenth within
     /// the hour pauses the invitations (the event goes to the page); while
     /// paused nothing is looked up. The same wrap refused again (its copy
-    /// from another relay) costs nothing more. A blocked key is let in by
-    /// nothing, and its right secret is no guess.
+    /// from another relay) costs nothing more. A blocked key, or one the
+    /// network bans, is let in by nothing, and its right secret is no guess.
     pub async fn redeem_invite(&self, peer: &PubKey, secret: &str, rumor_id: &str) -> Result<(Option<String>, Vec<Effect>)> {
         let now = self.clock.now().secs();
         if self.invite_paused_until().await?.is_some() {
@@ -251,7 +251,7 @@ impl DmService {
         }
         let found = self.invite_get(&invite_id(secret)).await?;
         if let Some(invite) = found.filter(|i| i.admits(peer, now)) {
-            if self.load_relation(peer).await?.blocked {
+            if self.load_relation(peer).await?.blocked || self.is_banned(peer).await? {
                 return Ok((None, vec![]));
             }
             if dm_invites::add_use(&self.store, &invite.row.id, peer.as_hex(), now).await? {

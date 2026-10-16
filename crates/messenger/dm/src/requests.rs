@@ -102,7 +102,7 @@ impl DmService {
     }
 
     /// The event that tells the UI to count the queue again.
-    pub(crate) async fn request_event(&self, peer: &PubKey) -> Result<UiEvent> {
+    pub async fn request_event(&self, peer: &PubKey) -> Result<UiEvent> {
         Ok(UiEvent {
             name: UI_EVENT_DM_REQUEST.into(),
             payload: serde_json::json!({ "peer": peer.as_hex(), "pending": self.requests_count().await? }),

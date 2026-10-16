@@ -13,6 +13,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import ConfirmHost from '../shared/ConfirmHost.svelte';
+  import ReportHost from '../shared/ReportHost.svelte';
   import { markPhone } from '../shared/phone';
 
   interface Props {
@@ -54,6 +55,7 @@
   </div>
 </div>
 <ConfirmHost />
+<ReportHost />
 
 <style>
   .msg-m { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; }

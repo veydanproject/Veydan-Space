@@ -11,17 +11,23 @@ pub struct HostInfo {
     version: String,
     /// The build loads the demo data (`demo::DEMO_BUILD`): the settings offer it.
     demo: bool,
+    /// The store that installed the app (`"play"`), `null` for any other source:
+    /// the UI then neither checks for updates nor shows prices.
+    store: Option<&'static str>,
 }
 
 /// The version is the product's: `CARGO_PKG_VERSION` here would be the
 /// shell's, the same in every product.
 #[tauri::command]
-pub fn host_info(app: tauri::AppHandle) -> HostInfo {
+// Async: a command that is not runs on the main thread, and the first
+// `distribution::store()` waits for the phone's main thread to answer.
+pub async fn host_info(app: tauri::AppHandle) -> HostInfo {
     HostInfo {
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
         version: app.package_info().version.to_string(),
         demo: crate::demo::DEMO_BUILD,
+        store: crate::distribution::store(),
     }
 }
 

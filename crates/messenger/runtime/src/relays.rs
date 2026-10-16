@@ -565,6 +565,8 @@ mod tests {
             storage: vec![],
             registries: vec![],
             bridges: vec![],
+            banned_keys: vec![],
+            banned_groups: vec![],
         }
     }
 
@@ -598,6 +600,36 @@ mod tests {
         let kept = RelayService::init(store, None).await.unwrap();
         assert_eq!(kept.manifest_serial().await.unwrap(), Some(99));
         kept.shutdown().await;
+    }
+
+    /// The trap of a field new to the app (`banned_keys`): a build that
+    /// did not know it kept the signed event as it came, and its own
+    /// document without the field. The build that knows it reads the
+    /// event again, so the field is there from its first start, with no
+    /// newer serial needed; the stripped document is never taken.
+    #[tokio::test]
+    async fn a_field_an_older_build_did_not_know_is_read_from_the_event_it_kept() {
+        let store = veydan_store().await;
+        let keys = Keys::generate();
+        let banned = "ab".repeat(32);
+        let mut m = Manifest::parse_content(EMBEDDED_MANIFEST_JSON).unwrap();
+        m.serial += 1;
+        m.banned_keys = vec![banned.clone()];
+        let signed = m.sign(&keys).unwrap();
+        let mut stripped = m.clone();
+        stripped.banned_keys.clear();
+        settings::set(&store, KEY_SIGNED, &signed).await.unwrap();
+        settings::set(&store, KEY_JSON, &serde_json::to_string(&stripped).unwrap()).await.unwrap();
+        settings::set(&store, KEY_ORIGIN, "https://example.test/m.json").await.unwrap();
+        settings::set(&store, KEY_SERIAL, &m.serial.to_string()).await.unwrap();
+
+        let svc = RelayService::init(store.clone(), None).await.unwrap();
+        svc.set_pinned(&keys.public_key().to_hex());
+        let (in_use, origin) = svc.current_manifest().await.unwrap();
+        assert_eq!((in_use.serial, origin.as_str()), (m.serial, "https://example.test/m.json"));
+        assert_eq!(in_use.banned_keys, vec![banned], "read from the signed event, not the stripped copy");
+        assert!(!svc.behind_applied().await.unwrap(), "nothing to ask for again");
+        svc.shutdown().await;
     }
 
     #[tokio::test]

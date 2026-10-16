@@ -261,6 +261,10 @@ impl DmService {
             mode: mode.as_str().into(),
             can_send,
             bot: peer.as_ref().is_some_and(|pk| self.is_bot(pk)),
+            banned: match &peer {
+                Some(pk) => self.is_banned(pk).await?,
+                None => false,
+            },
         })
     }
 
@@ -730,6 +734,13 @@ impl DmService {
     pub async fn apply_inbound(&self, msg: DmInbound, ctx: &Context) -> Result<Vec<Effect>> {
         let me = &ctx.my_pubkey;
         let from_me = &msg.sender == me;
+        // Of a key the network bans nothing is taken: no message, no
+        // request, no signal, no edit, no note, no accept by an invitation.
+        // Nothing is stored, so nothing is shown when the ban lifts either;
+        // what came before the ban stays as it was.
+        if !from_me && self.is_banned(&msg.sender).await? {
+            return Ok(vec![]);
+        }
         // A note of my other device: not a message of any chat.
         if msg.rumor_kind == KIND_OWN_RUMOR {
             if !from_me || msg.recipients.iter().any(|p| p != me) {
@@ -4868,5 +4879,108 @@ mod tests {
         assert_eq!(visible(&alice, &erin).await, vec!["[invited]"]);
         // Her accept again (another relay): answered already, nothing twice.
         assert!(alice.receive(&for_peer(&req.outbounds)[0]).await.is_empty());
+    }
+
+    /// What the runtime does when the manifest names `who` (and nobody else).
+    async fn ban(p: &Party, who: &[&Party]) {
+        let keys: Vec<String> = who.iter().map(|w| w.pk().as_hex().to_string()).collect();
+        messenger_store::banned::replace(p.dm.store(), &keys).await.unwrap();
+    }
+
+    /// A key the network bans: the chat with it stays as it was and reads
+    /// as blocked, nothing of it comes in, nothing goes to it, no unblock;
+    /// the ban lifted, things are as the user had them.
+    #[tokio::test]
+    async fn a_banned_key_is_blocked_while_the_manifest_names_it() {
+        let (alice, bob) = mutual().await;
+        let said = bob.dm.prepare_text(&bob.keys, &alice.pk(), "before", None).await.unwrap();
+        alice.receive(&peer_event(&said)).await;
+        let before = visible(&alice, &bob).await;
+        assert!(before.contains(&"before".to_string()));
+
+        ban(&alice, &[&bob]).await;
+        let rel = alice.dm.relation(&bob.pk()).await.unwrap();
+        assert_eq!((rel.mode.as_str(), rel.can_send, rel.banned, rel.blocked), ("blocked", false, true, false), "blocked by the network, not by me");
+        let chat = alice.dm.open_chat(&bob.pk()).await.unwrap();
+        assert!(chat.banned && chat.mode == "blocked" && !chat.can_send);
+        assert_eq!(visible(&alice, &bob).await, before, "nothing of the chat is deleted");
+
+        // In: a message and a signal; nothing is kept or shown.
+        bob.clock.0.fetch_add(10, Ordering::SeqCst);
+        let p = bob.dm.prepare_text(&bob.keys, &alice.pk(), "after", None).await.unwrap();
+        assert!(alice.receive(&peer_event(&p)).await.is_empty());
+        assert!(repo::get(alice.dm.store(), &p.message.id).await.unwrap().is_none(), "not even hidden");
+        let block = bob.dm.act(&bob.keys, &alice.pk(), Action::Block).await.unwrap();
+        for w in for_peer(&block.outbounds) {
+            assert!(alice.receive(&w).await.is_empty());
+        }
+        assert_eq!(alice.dm.load_relation(&bob.pk()).await.unwrap().peer_signal, crate::relationship::PeerSignal::Approved, "the signal was not heard");
+        bob.dm.act(&bob.keys, &alice.pk(), Action::Unblock).await.unwrap();
+        assert_eq!(visible(&alice, &bob).await, before);
+
+        // Out: no message, no note, no call, no request; no unblock. My own
+        // block stays mine to give.
+        assert_eq!(reason(alice.dm.prepare_text(&alice.keys, &bob.pk(), "hi", None).await.unwrap_err()), "peer_banned");
+        assert!(!alice.dm.notes_allowed(&bob.pk()).await.unwrap() && !alice.dm.calls_allowed(&bob.pk()).await.unwrap());
+        assert_eq!(reason(alice.dm.act(&alice.keys, &bob.pk(), Action::Unblock).await.unwrap_err()), "cannot unblock a banned key");
+        assert_eq!(reason(alice.dm.act(&alice.keys, &bob.pk(), Action::Request).await.unwrap_err()), "peer_banned");
+        assert_eq!(reason(alice.dm.request_by_invite(&alice.keys, &bob.pk(), "333333").await.unwrap_err()), "peer_banned", "nor by an invitation of theirs");
+
+        // Lifted: the chat as it was, and the next message lands.
+        ban(&alice, &[]).await;
+        let rel = alice.dm.relation(&bob.pk()).await.unwrap();
+        assert_eq!((rel.mode.as_str(), rel.can_send, rel.banned), ("full_chat", true, false));
+        bob.clock.0.fetch_add(10, Ordering::SeqCst);
+        let p = bob.dm.prepare_text(&bob.keys, &alice.pk(), "again", None).await.unwrap();
+        alice.receive(&peer_event(&p)).await;
+        let now = visible(&alice, &bob).await;
+        assert!(now.contains(&"again".to_string()) && !now.contains(&"after".to_string()), "{now:?}");
+        assert!(alice.dm.prepare_text(&alice.keys, &bob.pk(), "welcome back", None).await.is_ok());
+
+        // A ban does not touch my own block: lifted, it still stands.
+        alice.dm.act(&alice.keys, &bob.pk(), Action::Block).await.unwrap();
+        ban(&alice, &[&bob]).await;
+        ban(&alice, &[]).await;
+        let rel = alice.dm.relation(&bob.pk()).await.unwrap();
+        assert_eq!((rel.mode.as_str(), rel.blocked, rel.banned), ("blocked", true, false));
+    }
+
+    /// A banned stranger asks for nothing: no request lands, one that came
+    /// before leaves the queue (and comes back with the lifted ban), and no
+    /// invitation of mine lets them in.
+    #[tokio::test]
+    async fn a_banned_key_makes_no_request_and_comes_in_by_no_invitation() {
+        let alice = gated().await;
+        let mallory = gated().await;
+        let carol = gated().await;
+        ban(&alice, &[&mallory]).await;
+        let p = mallory.dm.prepare_text(&mallory.keys, &alice.pk(), "hello", None).await.unwrap();
+        assert!(alice.receive(&peer_event(&p)).await.is_empty());
+        for w in for_peer(&p.followups) {
+            assert!(alice.receive(&w).await.is_empty());
+        }
+        assert!(alice.dm.chat(&chats::dm_chat_id(mallory.pk().as_hex())).await.unwrap().is_none(), "no chat is made");
+        assert_eq!(alice.dm.requests_count().await.unwrap(), 0);
+
+        invite_of(&alice, "333333", None, None).await;
+        let req = mallory.dm.request_by_invite(&mallory.keys, &alice.pk(), "333333").await.unwrap();
+        assert!(alice.receive(&for_peer(&req.outbounds)[0]).await.is_empty(), "nothing goes back");
+        assert!(alice.dm.chat(&chats::dm_chat_id(mallory.pk().as_hex())).await.unwrap().is_none());
+        assert_eq!(settings::get(alice.dm.store(), crate::invites::KEY_INVITE_FAILS).await.unwrap(), None, "no guess either");
+
+        // Carol's request came before her ban: it leaves the queue and the
+        // count, the chat stays, as blocked; lifted, it is a request again.
+        deliver_request(&carol, &alice, "hi there", false).await;
+        assert_eq!(alice.dm.requests_count().await.unwrap(), 1);
+        ban(&alice, &[&mallory, &carol]).await;
+        assert_eq!(alice.dm.requests_count().await.unwrap(), 0);
+        assert!(alice.dm.requests(None, 50).await.unwrap().is_empty());
+        assert_eq!(alice.dm.total_unread().await.unwrap(), 0, "nothing of it waits for me");
+        assert_eq!(mode(&alice, &carol).await, "blocked");
+        assert_eq!(visible(&alice, &carol).await, vec!["[request_received]", "hi there"], "the chat stays");
+        assert_eq!(reason(alice.dm.act(&alice.keys, &carol.pk(), Action::Accept).await.unwrap_err()), "peer_banned");
+        ban(&alice, &[&mallory]).await;
+        assert_eq!(alice.dm.requests_count().await.unwrap(), 1);
+        assert_eq!(mode(&alice, &carol).await, "request_received");
     }
 }

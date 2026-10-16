@@ -17,8 +17,8 @@ use crate::wrap::{wrap_as, Wake};
 use messenger_core::traits::UiEvent;
 use messenger_contacts::UI_EVENT_CONTACTS_UPDATED;
 use messenger_core::{Effect, Envelope, MessengerError, Outbound, PubKey, Result};
-use messenger_store::dm_held;
 use messenger_store::dm_relations::{self, RelationRow};
+use messenger_store::{banned, dm_held};
 use messenger_store::{chats, settings};
 use messenger_store::messages::{self as repo, NewMessage};
 use nostr::key::Keys;
@@ -51,6 +51,11 @@ pub struct RelationView {
     pub peer_signal: String,
     pub was_ever_mutual: bool,
     pub can_send: bool,
+    /// The network bans the peer (`DmService::is_banned`): the mode is
+    /// `blocked` whatever `blocked` says, and the screen may say that the
+    /// person was removed from the network rather than blocked by me.
+    #[serde(default)]
+    pub banned: bool,
 }
 
 /// What one of my actions produced.
@@ -142,8 +147,24 @@ impl DmService {
         (screen_mode(before) == ScreenMode::RequestReceived) != (screen_mode(after) == ScreenMode::RequestReceived)
     }
 
-    /// Screen mode and whether the composer may be used.
+    /// Whether the network refuses `peer`: the manifest in use names the
+    /// key in `banned_keys` (a confirmed report of harm to a child, decided
+    /// by a person), kept by the runtime in `msg_banned_keys`. Such a key is
+    /// blocked for as long as the manifest names it, whatever the relation
+    /// stored for it says, and that relation is never changed by the ban:
+    /// a lifted ban leaves it as the user had it. Every gate asks this one
+    /// question; a lookup by the primary key, as cheap as `load_relation`,
+    /// and read by every process that opens the database.
+    pub async fn is_banned(&self, peer: &PubKey) -> Result<bool> {
+        banned::contains(&self.store, peer.as_hex()).await
+    }
+
+    /// Screen mode and whether the composer may be used. A banned key reads
+    /// as blocked, with nothing to send, before any setting is looked at.
     pub(crate) async fn mode_of(&self, chat_id: &str, peer: &PubKey) -> Result<(ScreenMode, bool)> {
+        if self.is_banned(peer).await? {
+            return Ok((ScreenMode::Blocked, false));
+        }
         if !self.gate_enabled() {
             return Ok((ScreenMode::FullChat, true));
         }
@@ -170,6 +191,7 @@ impl DmService {
             peer_signal: r.peer_signal.as_str().into(),
             was_ever_mutual: r.was_ever_mutual,
             can_send,
+            banned: self.is_banned(peer).await?,
         })
     }
 
@@ -245,12 +267,13 @@ impl DmService {
         Ok(added)
     }
 
-    async fn relationship_event(&self, chat_id: &str, peer: &PubKey) -> Result<UiEvent> {
+    pub async fn relationship_event(&self, chat_id: &str, peer: &PubKey) -> Result<UiEvent> {
         let (mode, can_send) = self.mode_of(chat_id, peer).await?;
         Ok(UiEvent {
             name: UI_EVENT_DM_RELATIONSHIP.into(),
             payload: serde_json::json!({
                 "chat_id": chat_id, "peer": peer.as_hex(), "mode": mode.as_str(), "can_send": can_send,
+                "banned": self.is_banned(peer).await?,
             }),
         })
     }
@@ -397,6 +420,17 @@ impl DmService {
     ) -> Result<ActionResult> {
         if peer.as_hex() == keys.public_key().to_hex() {
             return Err(MessengerError::Invalid("that is your own key".into()));
+        }
+        // A banned key is let in by nothing of mine either: no request, no
+        // accept (by an invitation of theirs neither), no unblock. My block,
+        // my removal and my no stay mine to give: they hold after the ban
+        // is lifted.
+        if self.is_banned(peer).await? {
+            match action {
+                Action::Unblock => return Err(MessengerError::Invalid("cannot unblock a banned key".into())),
+                Action::Request | Action::Accept => return Err(MessengerError::Invalid("peer_banned".into())),
+                Action::Block | Action::Remove | Action::Decline => {}
+            }
         }
         // Removing someone does not make a chat: one deleted here stays
         // deleted, and a system line makes it when there is something to
@@ -570,6 +604,9 @@ impl DmService {
     /// changing it is not among what the gate lets them say (`enforced` is
     /// off for the history a fresh database restores, as for their texts).
     pub(crate) async fn hears_hidden(&self, chat_id: &str, peer: &PubKey, content_type: &str, enforced: bool) -> Result<bool> {
+        if self.is_banned(peer).await? {
+            return Ok(false);
+        }
         if !self.gate_enabled() {
             return Ok(true);
         }
@@ -602,8 +639,12 @@ impl DmService {
     // ─── Hooks of the message flow ──────────────────────────────────────────
 
     /// Before storing my regular message. Errors carry the stable reason
-    /// code (`dm_waiting_approval`, …) as the message.
+    /// code (`dm_waiting_approval`, …) as the message; `peer_banned` for a
+    /// key the network bans, whatever the gate's switch says.
     pub(crate) async fn gate_outbound(&self, chat_id: &str, peer: &PubKey, me: &str, is_text: bool) -> Result<OutboundGate> {
+        if peer.as_hex() != me && self.is_banned(peer).await? {
+            return Err(MessengerError::Invalid("peer_banned".into()));
+        }
         if !self.gate_enabled() || peer.as_hex() == me {
             return Ok(OutboundGate { request: false });
         }
@@ -632,6 +673,11 @@ impl DmService {
         historical: bool,
         kind: InboundKind,
     ) -> Result<InboundGate> {
+        // A banned key: nothing is stored, held or shown, and no request
+        // comes of it, whatever the gate's switch says.
+        if self.is_banned(peer).await? {
+            return Ok(InboundGate::Drop);
+        }
         if !self.gate_enabled() {
             return Ok(InboundGate::Pass { effects: vec![], regate: false });
         }
@@ -704,7 +750,7 @@ impl DmService {
     /// it is the one message, the rest stay held. `live` = the raise came
     /// with the running session (a notification may follow).
     pub(crate) async fn regate(&self, chat_id: &str, peer: &PubKey, live: bool) -> Result<Vec<Effect>> {
-        if !self.gate_enabled() {
+        if !self.gate_enabled() || self.is_banned(peer).await? {
             return Ok(vec![]);
         }
         let r = self.load_relation(peer).await?;
@@ -735,8 +781,13 @@ impl DmService {
 
     /// I approved the peer: what they wrote while they waited is theirs to
     /// have said, shown now in its order (the kind check passed when it was
-    /// held). Nothing of it is a request any more.
+    /// held). Nothing of it is a request any more. Of a banned key nothing
+    /// is shown, whoever approved it (an older build of another device of
+    /// mine may): what waited stays held, as evidence, until the ban lifts.
     async fn release_held(&self, chat_id: &str, peer: &PubKey, live: bool) -> Result<Vec<Effect>> {
+        if self.is_banned(peer).await? {
+            return Ok(vec![]);
+        }
         let mut effects = Vec::new();
         for id in dm_held::after(&self.store, chat_id, 0).await? {
             let Some(row) = repo::get(&self.store, &id).await? else { continue };

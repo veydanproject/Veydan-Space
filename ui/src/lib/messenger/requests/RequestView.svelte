@@ -17,6 +17,7 @@
   import MessageContent from '../content/MessageContent.svelte';
   import PanelHead from '../shared/PanelHead.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
+  import { reportStore } from '../shared/report.svelte';
   import { stamp } from '../shared/time';
   import { chatStore } from '../chats/chatStore.svelte';
   import { nameStore } from '../groups/names.svelte';
@@ -51,6 +52,11 @@
       chatStore.markRead(chatId).catch(() => {});
     });
   });
+
+  /** The request is the only thing known of the person; a report that blocked them takes the request away like Block does. */
+  function report() {
+    reportStore.open({ accused: request.peer, name, context: { t: 'request' }, canBlock: true, onsent: (r) => { if (r.blocked) ondone(); } });
+  }
 
   async function act(action: RequestAction) {
     // The request leaves the list while the answer goes: what is needed after it is kept now.
@@ -100,6 +106,7 @@
       <button class="btn btn-primary" disabled={busy} onclick={() => act('accept')}><Icon name="check" size={14} />{$t('msg_rel_cta_accept')}</button>
       <button class="btn btn-ghost" disabled={busy} onclick={() => act('decline')}>{$t('msg_rel_cta_decline')}</button>
       <button class="btn btn-ghost danger" disabled={busy} onclick={() => act('block')}><Icon name="ban" size={14} />{$t('msg_rel_cta_block')}</button>
+      <button class="btn btn-ghost danger" disabled={busy} onclick={report}><Icon name="alert-triangle" size={14} />{$t('msg_report')}</button>
     </div>
   </div>
 </div>

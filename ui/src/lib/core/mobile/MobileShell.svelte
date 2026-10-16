@@ -22,6 +22,7 @@
   import ConfirmHost from '$lib/core/ui/ConfirmHost.svelte';
   import ToastHost from '$lib/core/ui/ToastHost.svelte';
   import { startUpdateCheck } from '$lib/core/store/update-check.svelte';
+  import { distribution, loadDistribution } from '$lib/core/store/distribution.svelte';
   import { t } from '$lib/core/mobile/i18n';
 
   let { children }: { children: Snippet } = $props();
@@ -70,8 +71,14 @@
     void appLock.listen();
     void registry.startAll();
     // A phone has no updater: the product's latest.json, once a day (14.3).
-    const stopUpdateCheck = startUpdateCheck();
+    // An app installed by a store is updated by the store and never checks.
+    let stopUpdateCheck = () => {};
+    let gone = false;
+    void loadDistribution().then(() => {
+      if (!gone && !distribution.fromStore) stopUpdateCheck = startUpdateCheck();
+    });
     return () => {
+      gone = true;
       stopUpdateCheck();
       registry.stopAll();
     };

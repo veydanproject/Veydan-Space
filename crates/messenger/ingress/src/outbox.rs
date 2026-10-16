@@ -13,11 +13,15 @@
 //! (`enqueue_for`) is given up the same way after a time of its own.
 //! Everything else (`enqueue`) is tried until it leaves.
 
-use messenger_core::{Ack, Clock, Outbound, Result, Transport};
-use messenger_store::{outbox as repo, Store};
+use messenger_core::{Ack, Clock, Outbound, Result, Scope, Transport};
+use messenger_store::{banned, outbox as repo, Store};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
+/// Why an item for a group the network closes was given up: the word of
+/// `messenger_groups::service::ERR_GROUP_BANNED`, spelled here again since
+/// this crate does not depend on the groups.
+pub const GROUP_BANNED: &str = "group_banned";
 const BACKOFF_SECS: [i64; 5] = [5, 15, 30, 60, 120];
 /// A `publishing` row older than this is considered abandoned (crash mid-send).
 const STALE_PUBLISHING_SECS: i64 = 60;
@@ -142,6 +146,15 @@ impl Outbox {
                 return Ok(Some(false));
             }
         };
+        // What was queued for a group before the network closed it never
+        // leaves: given up with the word the commands refuse with, so that
+        // a message of it reads as failed rather than waiting forever.
+        if let Outbound::PublishScoped { scope: Scope::Group { id }, .. } = &out {
+            if banned::group_contains(&self.store, id).await? {
+                repo::mark_abandoned(&self.store, &row.local_id, GROUP_BANNED).await?;
+                return Ok(Some(false));
+            }
+        }
         repo::mark_publishing(&self.store, &row.local_id).await?;
         let outcome = match transport.send(out).await {
             Ok(ack) if ack.is_delivered() || is_non_publish(row) => Outcome::Published,
@@ -328,6 +341,28 @@ mod tests {
         for why in ["rate-limited: slow down", "auth-required: who are you", "timeout", "not connected", "premature exit", ""] {
             assert!(!is_refusal(why), "{why}");
         }
+    }
+
+    /// What was queued for a group before the network closed it is given
+    /// up, never sent; another group's goes on.
+    #[tokio::test]
+    async fn what_waits_for_a_closed_group_never_leaves() {
+        let (_clock, made) = setup();
+        let (store, outbox) = made.await;
+        let scoped = |group: &str, c: char| Outbound::PublishScoped {
+            scope: Scope::Group { id: group.into() },
+            event: WireEvent { id: EventId::parse(&c.to_string().repeat(64)).unwrap(), json: serde_json::json!({}) },
+        };
+        let closed = outbox.enqueue_message(scoped("closed", 'b')).await.unwrap();
+        let open = outbox.enqueue_message(scoped("open", 'c')).await.unwrap();
+        banned::group_replace(&store, &["closed".to_string()]).await.unwrap();
+        let t = Scripted::new(vec![accepted()]);
+        let report = outbox.pump(&t).await.unwrap();
+        assert_eq!((report.published, report.abandoned), (1, 1));
+        assert_eq!(*t.calls.lock().unwrap(), 1, "the closed group's never reached the transport");
+        let r = row(&store, &closed).await;
+        assert_eq!((r.state.as_str(), r.last_error.as_deref()), ("abandoned", Some(GROUP_BANNED)));
+        assert_eq!(row(&store, &open).await.state, "published");
     }
 
     #[tokio::test]

@@ -316,8 +316,24 @@ impl GroupService {
         }
         let me = &ctx.my_pubkey;
         let from_me = &msg.sender == me;
-        if !from_me && self.dm.is_blocked(&msg.sender).await? {
+        // A key I block, or one the network bans, is not heard in the
+        // protocol of groups either: no invitation, no request to join, no
+        // welcome, no keys.
+        if !from_me && (self.dm.is_blocked(&msg.sender).await? || self.dm.is_banned(&msg.sender).await?) {
             return Ok(Some(Outcome::default()));
+        }
+        // A group the network closes hears nothing of its protocol: no
+        // invitation is kept, nobody asks in or is welcomed, no answer is
+        // taken. Only the keys its managers hand out are put by, without a
+        // word, so that the group reads again when the ban lifts: the
+        // wrap that brought them counts as seen and never comes again.
+        if let Some(group_id) = envelope.str_field("group_id") {
+            if self.is_group_banned(group_id).await? {
+                if matches!(envelope.t.as_str(), wire::T_KEYS | wire::T_WELCOME) {
+                    self.keys_of_a_closed_group(&envelope, &msg.sender, me).await?;
+                }
+                return Ok(Some(Outcome::default()));
+            }
         }
         let historical = msg.created_at < ctx.session_started_at || matches!(msg.envelope.source, EventSource::Sync { .. });
         let peer = if from_me { msg.recipients.iter().find(|p| *p != me).cloned() } else { Some(msg.sender.clone()) };
@@ -338,6 +354,35 @@ impl GroupService {
         Ok(Some(outcome.unwrap_or_else(|e| {
             Outcome { notes: vec![format!("group: direct message {} dropped: {e}", envelope.t)], ..Default::default() }
         })))
+    }
+
+    /// The keys a key delivery or a welcome carries for a group the network
+    /// closes, kept as `on_keys` keeps them (a group I am in, from me or a
+    /// manager by the log here) and nothing else: no drain of what waits,
+    /// no settling, nothing told. A malformed body is passed by.
+    async fn keys_of_a_closed_group(&self, envelope: &Envelope, sender: &PubKey, me: &PubKey) -> Result<()> {
+        let (group_id, encoded) = match envelope.t.as_str() {
+            wire::T_KEYS => match wire::dm_body::<wire::KeyDelivery>(envelope) {
+                Ok(b) => (b.group_id, b.keys),
+                Err(_) => return Ok(()),
+            },
+            _ => match wire::dm_body::<wire::Welcome>(envelope) {
+                Ok(b) => (b.group_id, b.keys),
+                Err(_) => return Ok(()),
+            },
+        };
+        let Some(row) = repo::get(&self.store, &group_id).await? else { return Ok(()) };
+        if row.membership != MEMBERSHIP_JOINED {
+            return Ok(());
+        }
+        let Some(log) = self.log(&group_id).await? else { return Ok(()) };
+        if !(sender == me || log.state().role_of(sender).is_some_and(Role::is_manager)) {
+            return Ok(());
+        }
+        for key in wire::decode_keys(&encoded).into_iter().take(256) {
+            self.keep_key(&group_id, &key).await?;
+        }
+        Ok(())
     }
 
     async fn on_invite(&self, mut body: wire::Invite, peer: Option<PubKey>, from_me: bool, historical: bool) -> Result<Outcome> {
@@ -848,6 +893,13 @@ impl GroupService {
 
     pub async fn on_event(&self, keys: &Keys, msg: GroupInbound, ctx: &Context) -> Result<Outcome> {
         let mut out = Outcome::default();
+        // Nothing of a group the network closes is taken in, not even held
+        // for a key. The ingress drops it before it is stored as seen, so a
+        // lifted ban asks for it again; this is for whoever calls here
+        // without the ingress.
+        if self.is_group_banned(&msg.group_id).await? {
+            return Ok(out);
+        }
         let Some(row) = repo::get(&self.store, &msg.group_id).await? else { return Ok(out) };
         if !matches!(row.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING) {
             return Ok(out);
@@ -1410,9 +1462,11 @@ impl GroupService {
         // Whether I see it: not hidden by a moderator, not of someone I
         // block in direct messages (the one thing a block does in a
         // group), and not waiting for a moderator unless I am one, or it
-        // is mine. What I do not see counts nowhere and wakes nobody; the
-        // row stays, for the unblock, the approval or the unhide to show.
-        let blocked = !from_me && self.dm.is_blocked(&m.author).await?;
+        // is mine. A key the network bans is blocked here as by me, all it
+        // wrote, without a note of a moderator: a rule of this device. What
+        // I do not see counts nowhere and wakes nobody; the row stays, for
+        // the unblock, the lifted ban, the approval or the unhide to show.
+        let blocked = !from_me && (self.dm.is_blocked(&m.author).await? || self.dm.is_banned(&m.author).await?);
         let waits = row.review == msgs::REVIEW_PENDING;
         let moderator = s.role_of(me).is_some_and(|r| r >= Role::Moderator);
         let shown = row.mod_state == msgs::MOD_SHOWN && !blocked && (!waits || moderator || from_me);

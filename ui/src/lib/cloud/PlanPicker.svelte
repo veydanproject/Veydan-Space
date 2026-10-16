@@ -8,7 +8,9 @@
   chosen once for all the cards, and a longer period says what it saves. A
   plan is turned on with a key of activation, so the button of a paid plan
   opens the key; nothing here takes money. On a phone the cards stack and
-  one is open at a time. The numbers are the server's: the app keeps no
+  one is open at a time. Read only (an app from a store, whose payments
+  rules allow nothing to be bought in the app), a card shows the name and
+  what the plan gives, and the note points to the site. The numbers are the server's: the app keeps no
   table of plans.
 -->
 <script lang="ts">
@@ -38,6 +40,7 @@
     plans,
     current,
     canActivate = false,
+    viewOnly = false,
     activating = false,
     onActivate,
     onKey,
@@ -47,6 +50,8 @@
     current: string | null;
     /** No account yet: the free plan can be activated here. */
     canActivate?: boolean;
+    /** Plans to read only: no prices, no period or currency, no buttons. */
+    viewOnly?: boolean;
     activating?: boolean;
     onActivate: () => void;
     /** Opens the key of activation for a plan. */
@@ -97,6 +102,7 @@
 <section class="picker" class:m={isMobile} id="plans" aria-labelledby="cloud-plans-title">
   <div class="head">
     <h2 id="cloud-plans-title" class={isMobile ? 'm-label' : 'section-label'}>{$t('cloud_plans_title')}</h2>
+    {#if !viewOnly}
     <div class="controls">
       {#if periods.length > 1}
         <div class="seg" role="radiogroup" aria-label={$t('cloud_plan_period')}>
@@ -114,6 +120,7 @@
         </select>
       {/if}
     </div>
+    {/if}
   </div>
 
   <ul class="plans">
@@ -130,6 +137,7 @@
           {#if mine}<span class="badge badge-ok">{$t('cloud_plan_current')}</span>
           {:else if pointed}<span class="badge badge-accent">{$t('cloud_plan_recommended')}</span>{/if}
         </span>
+        {#if !viewOnly}
         <span class="price-row">
           {#if plan.free}
             <span class="price">{$t('cloud_plan_free_price')}</span>
@@ -155,6 +163,7 @@
             &nbsp;
           {/if}
         </span>
+        {/if}
         {/snippet}
         <!-- On a phone the head of a card opens it; on a computer every card is open. -->
         {#if isMobile}
@@ -172,6 +181,7 @@
             <li><Icon name="check" size={14} strokeWidth={2.5} /><span>{$t('cloud_plan_f_recovery')}</span></li>
           </ul>
 
+          {#if !viewOnly}
           <div class="cta">
             {#if plan.free && canActivate}
               <button class="btn btn-primary" type="button" disabled={activating} onclick={onActivate}>
@@ -187,11 +197,12 @@
               </button>
             {/if}
           </div>
+          {/if}
         {/if}
       </li>
     {/each}
   </ul>
-  <p class="note">{$t('cloud_plan_key_note')}</p>
+  <p class="note">{viewOnly ? $t('cloud_plan_site_note') : $t('cloud_plan_key_note')}</p>
 </section>
 
 <style>

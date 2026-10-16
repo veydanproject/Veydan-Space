@@ -16,6 +16,9 @@
 //! metered network where the platform tells (Android), and always when the
 //! user asks (`manual: true`). The time and the answer of the last check are
 //! the local setting `update_checked`; sync does not carry it.
+//!
+//! An app installed by a store (Google Play) never checks: the store updates
+//! it, and both commands refuse before any network or setting is touched.
 
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -247,6 +250,9 @@ pub async fn update_check(
     app: tauri::AppHandle,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<UpdateCheck> {
+    if crate::distribution::store().is_some() {
+        return Err(AppError::other("updates come from the store"));
+    }
     let endpoint = endpoint(&app).ok_or_else(|| AppError::other("the product has no updater endpoint"))?;
     let current = app.package_info().version.to_string();
     let stored = settings::get_json::<Stored>(&core.db, KEY).await;
@@ -270,6 +276,9 @@ pub async fn update_check(
 /// product's own; the UI cannot name another address.
 #[tauri::command]
 pub async fn update_open(app: tauri::AppHandle, core: tauri::State<'_, Core>) -> CmdResult<()> {
+    if crate::distribution::store().is_some() {
+        return Err(AppError::other("updates come from the store"));
+    }
     let endpoint = endpoint(&app).ok_or_else(|| AppError::other("the product has no updater endpoint"))?;
     let stored = settings::get_json::<Stored>(&core.db, KEY).await;
     let page = stored

@@ -249,6 +249,7 @@ messenger_relays_list messenger all
 messenger_relays_remove messenger all
 messenger_relays_set_enabled messenger all
 messenger_relays_set_silent messenger all
+messenger_report_send messenger all
 messenger_servers_use_own messenger all
 messenger_servers_use_veydan messenger all
 messenger_set_enabled messenger all

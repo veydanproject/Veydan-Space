@@ -298,6 +298,10 @@ impl GroupsDriver {
         if repo::get(&self.store, group_id).await?.is_none() {
             return Err(MessengerError::Invalid("group_unknown".into()));
         }
+        // Nothing of a closed group is asked for: it would not be taken.
+        if self.groups.is_group_banned(group_id).await? {
+            return Err(MessengerError::Invalid(messenger_groups::service::ERR_GROUP_BANNED.into()));
+        }
         if let Some((bound, misses)) = oldest_fetched(&self.store, group_id).await {
             if misses >= WINDOW_MISSES_ENOUGH && before >= bound {
                 return Ok(0);
@@ -430,7 +434,11 @@ impl MessengerRuntime {
                 chat.title = g.name;
                 chat.picture = Some(g.picture).filter(|p| !p.is_empty());
                 chat.mode = "group".into();
-                chat.can_send = g.membership == "joined";
+                // A group the network closes keeps its chat here, as it
+                // was, and reads as closed: `banned` says why nothing can
+                // be written.
+                chat.banned = self.groups().is_group_banned(id).await?;
+                chat.can_send = g.membership == "joined" && !chat.banned;
             }
         }
         Ok(chat)

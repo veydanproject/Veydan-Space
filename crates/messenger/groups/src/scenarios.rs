@@ -2886,6 +2886,139 @@ async fn an_unblock_opens_only_what_the_block_closed() {
     assert!(w.notes.is_empty(), "{:?}", w.notes);
 }
 
+/// What the runtime does when the manifest names `banned` (and nobody
+/// else): the table, then the groups they wrote in counted again.
+async fn ban_on(w: &World, device: usize, banned: &[usize]) {
+    let store = w.devices[device].dm.store();
+    let keys: Vec<String> = banned.iter().map(|b| w.pk(*b).as_hex().to_string()).collect();
+    for hex in messenger_store::banned::replace(store, &keys).await.unwrap() {
+        messenger_store::chats::group_chats_follow_block(store, &hex).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_key_the_network_bans_is_hidden_in_groups_without_a_note_and_brings_nobody_in() {
+    let mut w = World::new();
+    let (g, owner, _, u, v) = moderated_group(&mut w).await;
+    // Two groups of u, one invitation to v that came before the ban.
+    let mine = w.create(u, GroupKind::Private, "Mine", true).await;
+    let other = w.create(u, GroupKind::Private, "Other", true).await;
+    let d = &w.devices[u];
+    let (early, o) = d.svc.invite(&d.keys, &mine, &w.pk(v)).await.unwrap();
+    w.run(u, o).await;
+    assert_eq!(w.devices[v].svc.invites("in").await.unwrap().len(), 1);
+    w.say(u, &g, "x").await;
+    w.tick();
+    w.say(owner, &g, "o").await;
+    assert_eq!(w.devices[v].unread(&g).await, 2);
+
+    // Banned on v's device: all u wrote is hidden there, from the first
+    // message, without a note of anybody's; for the others nothing changed.
+    ban_on(&w, v, &[u]).await;
+    assert_eq!(w.devices[v].texts(&g).await, vec!["o"]);
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["x", "o"]);
+    assert_eq!((w.devices[v].unread(&g).await, w.devices[v].preview(&g).await.as_deref()), (1, Some("o")));
+    w.say(u, &g, "y").await;
+    assert_eq!(w.devices[v].texts(&g).await, vec!["o"], "a new one neither");
+    assert_eq!(w.devices[v].unread(&g).await, 1, "and it does not count");
+
+    // The invitation that waited is not offered nor taken; a new one does
+    // not come; v invites u to nothing.
+    assert!(w.devices[v].svc.invites("in").await.unwrap().is_empty());
+    let d = &w.devices[v];
+    assert_eq!(code(d.svc.answer_invite(&d.keys, &early.invite_id, true).await), "peer_banned");
+    let d = &w.devices[u];
+    let (_, o) = d.svc.invite(&d.keys, &other, &w.pk(v)).await.unwrap();
+    w.run(u, o).await;
+    assert!(w.devices[v].svc.invites("in").await.unwrap().is_empty(), "the second one was not taken");
+    let ours = w.create(v, GroupKind::Private, "Ours", true).await;
+    let d = &w.devices[v];
+    assert_eq!(code(d.svc.invite(&d.keys, &ours, &w.pk(u)).await), "peer_banned");
+
+    // The ban lifts: what was kept is shown again; what was refused while
+    // it stood was never kept. The invitation that waited is offered again.
+    ban_on(&w, v, &[]).await;
+    assert_eq!(w.devices[v].texts(&g).await, vec!["x", "o", "y"]);
+    assert_eq!(w.devices[v].svc.invites("in").await.unwrap().len(), 1);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+/// What the runtime does when the manifest closes `groups` (and no other)
+/// on a device: the table, as `banned_groups_follow` writes it.
+async fn close_on(w: &World, device: usize, groups: &[&str]) {
+    let mut ids: Vec<String> = groups.iter().map(|g| g.to_string()).collect();
+    ids.sort();
+    messenger_store::banned::group_replace(w.devices[device].dm.store(), &ids).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_group_the_network_closes_takes_nothing_in_sends_nothing_and_opens_again() {
+    let mut w = World::new();
+    let owner = w.person().await;
+    let u = w.person().await;
+    let v = w.person().await;
+    let g = w.create(owner, GroupKind::Private, "Den", true).await;
+    w.bring(owner, &g, u).await;
+    let before = w.say(owner, &g, "before").await;
+    // An invitation to v that came before the group was closed there.
+    let d = &w.devices[owner];
+    let (early, o) = d.svc.invite(&d.keys, &g, &w.pk(v)).await.unwrap();
+    w.run(owner, o).await;
+    let link = w.devices[owner].group(&g).await.unwrap().link.expect("a manager shares the link");
+
+    // Closed on u's and v's devices: what the group says is not taken in,
+    // and the chat stays as it was.
+    close_on(&w, u, &[&g]).await;
+    close_on(&w, v, &[&g]).await;
+    w.say(owner, &g, "during").await;
+    assert_eq!(w.devices[u].texts(&g).await, vec!["before"]);
+    assert!(!w.devices[u].svc.watched().await.unwrap().contains(&g), "not listened to");
+    let view = w.devices[u].group(&g).await.unwrap();
+    assert_eq!(view.membership, MEMBERSHIP_JOINED, "still a member, by the journal here");
+    assert!(!view.can_post);
+
+    // Nothing goes to it, whatever is done.
+    assert_eq!(code(w.try_say(u, &g, "hello?").await), "group_banned");
+    let d = &w.devices[u];
+    assert_eq!(code(d.svc.prepare_read_receipt(&d.keys, &g, 5_000).await), "group_banned");
+    assert_eq!(code(d.svc.prepare_reaction(&d.keys, &before, "👍").await), "group_banned");
+    assert_eq!(code(d.svc.prepare_call_note(&d.keys, &g, &Envelope::call_join(&"ab".repeat(16), 3)).await), "group_banned");
+    assert_eq!(code(w.act(u, &g, OpBody::Leave).await), "group_banned");
+
+    // The invitation that waited is not offered nor taken, a new one is not
+    // kept, and the link leads nowhere.
+    assert!(w.devices[v].svc.invites("in").await.unwrap().is_empty());
+    let d = &w.devices[v];
+    assert_eq!(code(d.svc.answer_invite(&d.keys, &early.invite_id, true).await), "group_banned");
+    let d = &w.devices[owner];
+    let (_, o) = d.svc.invite(&d.keys, &g, &w.pk(v)).await.unwrap();
+    w.run(owner, o).await;
+    let d = &w.devices[v];
+    assert_eq!(code(d.svc.open_link(&d.keys, &link, "").await), "group_banned");
+    assert!(d.svc.get(&g, &d.pk()).await.unwrap().is_none(), "no row for a closed group");
+
+    // A manager's device closed too: no invitation, no key care.
+    close_on(&w, owner, &[&g]).await;
+    let d = &w.devices[owner];
+    assert_eq!(code(d.svc.invite(&d.keys, &g, &w.pk(v)).await), "group_banned");
+    let o = d.svc.maintain(&d.keys, &g).await.unwrap();
+    assert!(o.publish.is_empty());
+    close_on(&w, owner, &[]).await;
+
+    // The ban lifts: the history brings what was refused, and u writes again.
+    close_on(&w, u, &[]).await;
+    assert!(w.devices[u].svc.watched().await.unwrap().contains(&g));
+    w.catch_up(u).await;
+    assert_eq!(w.devices[u].texts(&g).await, vec!["before", "during"]);
+    w.say(u, &g, "back").await;
+    assert_eq!(w.devices[owner].texts(&g).await, vec!["before", "during", "back"]);
+    close_on(&w, v, &[]).await;
+    let invites = w.devices[v].svc.invites("in").await.unwrap();
+    assert_eq!(invites.len(), 1, "the one that waited, the one of the ban was never kept");
+    assert_eq!(invites[0].invite_id, early.invite_id);
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
 #[tokio::test]
 async fn a_full_page_of_the_queue_keeps_the_lines_of_one_second_together() {
     let mut w = World::new();

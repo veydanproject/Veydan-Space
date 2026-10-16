@@ -119,9 +119,9 @@
 
     <span class="meta">
       <!-- Waiting for a moderator: only its author and the moderators have it at all. -->
-      {#if m.review === 'pending' && !m.deleted}<span class="pending"><Icon name="clock" size={11} />{$t('msg_mod_pending')}</span>{/if}
+      {#if m.review === 'pending' && !m.deleted}<span class="pending"><Icon name="clock" size={9} />{$t('msg_mod_pending')}</span>{/if}
       <!-- Turned down by a moderator: its author alone is shown it, and told so. -->
-      {#if m.review === 'rejected' && !m.deleted}<span class="pending rejected"><Icon name="x" size={11} />{$t('msg_mod_log_reject')}</span>{/if}
+      {#if m.review === 'rejected' && !m.deleted}<span class="pending rejected"><Icon name="x" size={9} />{$t('msg_mod_log_reject')}</span>{/if}
       {#if m.edited_at && !m.deleted}<span>{$t('msg_message_edited')}</span>{/if}
       <span>{clock(m.created_at)}</span>
       {#if out && !m.deleted}
@@ -184,7 +184,7 @@
   }
   .author { font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
   .tomb { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
-  .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-2); line-height: 1; }
+  .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-family: var(--font-mono); font-size: var(--fs-3xs); color: var(--text-2); line-height: 1; }
   .line.out .meta { color: var(--bubble-out-meta); }
   .status { display: inline-flex; }
   .pending {

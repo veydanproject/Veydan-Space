@@ -48,6 +48,10 @@ pub const MEMBERSHIP_REMOVED: &str = "removed";
 pub const MEMBERSHIP_BANNED: &str = "banned";
 pub const MEMBERSHIP_DISBANDED: &str = "disbanded";
 
+/// The word of a refusal to act on a group the network closes
+/// ([`GroupService::is_group_banned`]).
+pub const ERR_GROUP_BANNED: &str = "group_banned";
+
 /// Members a private group can have: every key goes to each of them
 /// inside one event, and an event has a size limit.
 pub const MAX_PRIVATE_MEMBERS: usize = 300;
@@ -427,6 +431,7 @@ impl GroupService {
         if !envelope.is_call() {
             return Err(MessengerError::Invalid("not a word of a call".into()));
         }
+        self.refuse_banned(group_id).await?;
         let me = me_of(keys);
         let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
         let log = self.need_log(group_id).await?;
@@ -451,6 +456,38 @@ impl GroupService {
         self.clock.now().secs()
     }
 
+    /// Whether the network closes the group (`banned_groups` of the
+    /// manifest, kept by the runtime in `msg_banned_groups`): a confirmed
+    /// case of harm to a child, decided by a person. Nothing of such a
+    /// group is taken in and nothing goes to it, by anybody's hand, for as
+    /// long as the manifest names it; what this device holds of it stays,
+    /// and reads as closed. The one question every gate of this crate, the
+    /// ingress and the push handler ask.
+    pub async fn is_group_banned(&self, group_id: &str) -> Result<bool> {
+        messenger_store::banned::group_contains(&self.store, group_id).await
+    }
+
+    /// `group_banned` when the network closes the group: before anything
+    /// is signed, sealed or stored for it.
+    pub(crate) async fn refuse_banned(&self, group_id: &str) -> Result<()> {
+        if self.is_group_banned(group_id).await? {
+            return Err(MessengerError::Invalid(ERR_GROUP_BANNED.into()));
+        }
+        Ok(())
+    }
+
+    /// The owner and the admins of a group as the journal here has them,
+    /// the owner first, then the admins in the order of their keys; `None`
+    /// when no journal of the group is here. For a report on the group:
+    /// whom its measures may reach.
+    pub async fn leaders(&self, group_id: &str) -> Result<Option<(PubKey, Vec<PubKey>)>> {
+        let Some(log) = self.log(group_id).await? else { return Ok(None) };
+        let s = log.state();
+        let mut leaders = vec![s.owner.clone()];
+        leaders.extend(s.managers().into_iter().filter(|p| p != &s.owner));
+        Ok(Some((s.owner.clone(), leaders)))
+    }
+
     // ─── Storage: keys, secrets, log ────────────────────────────────────────
 
     pub(crate) async fn key(&self, group_id: &str, key_id: &KeyId) -> Result<Option<GroupKey>> {
@@ -458,6 +495,30 @@ impl GroupService {
             Some(bytes) => Ok(Some(GroupKey::from_bytes(&bytes)?)),
             None => Ok(None),
         }
+    }
+
+    /// The signed inner message of a sealed event of this group (`outer`,
+    /// the event as a relay holds it, kept in `msg_events_raw`), opened with
+    /// the key its `k` names: what a report hands over as it is, the
+    /// author's signature on it (messenger-evidence `group_proof`). Neither
+    /// is checked here; the proof checks the signature, and the server
+    /// again. `None` when the event is no message of this group, or its key
+    /// is no longer on this device.
+    pub async fn inner_message(&self, group_id: &str, outer: &serde_json::Value) -> Result<Option<serde_json::Value>> {
+        let tag = |name: &str| -> Option<String> {
+            outer["tags"].as_array()?.iter().find_map(|t| {
+                let t = t.as_array()?;
+                (t.first()?.as_str()? == name).then(|| t.get(1)?.as_str().map(String::from))?
+            })
+        };
+        if outer["kind"].as_u64() != Some(u64::from(wire::KIND_GROUP_EVENT)) || tag("h").as_deref() != Some(group_id) {
+            return Ok(None);
+        }
+        let (Some(key_id), Some(content)) = (tag("k"), outer["content"].as_str()) else { return Ok(None) };
+        let Some(key) = self.key(group_id, &KeyId(key_id)).await? else { return Ok(None) };
+        let Ok(plain) = key.open(content) else { return Ok(None) };
+        let Ok(payload) = serde_json::from_slice::<wire::Payload>(&plain) else { return Ok(None) };
+        Ok((payload.t == "msg" && !payload.event.is_null()).then_some(payload.event))
     }
 
     /// Store a key; `true` when it is new on this device.
@@ -764,6 +825,9 @@ impl GroupService {
             _ => None,
         };
         let posting = state.map_or(Err(Closed::NotMember), |s| s.can_post_at(me, now));
+        // A group the network closes takes nothing from anybody; its chat
+        // says so by `ChatView::banned`.
+        let banned_here = self.is_group_banned(&row.id).await?;
         Ok(GroupView {
             chat_id: repo::group_chat_id(&row.id),
             kind: row.kind.clone(),
@@ -776,7 +840,7 @@ impl GroupService {
             my_role: my_role.map(|r| r.as_str().into()),
             muted: state.and_then(|s| s.member(me)).is_some_and(|m| m.muted_at(now)),
             muted_until: state.and_then(|s| s.member(me)).filter(|m| m.muted_at(now)).and_then(|m| m.muted_until),
-            can_post: joined && posting.is_ok(),
+            can_post: joined && posting.is_ok() && !banned_here,
             post_mode: match state.map(|s| s.post_mode).unwrap_or_default() {
                 PostMode::All => "all".into(),
                 PostMode::Managers => "managers".into(),
@@ -882,8 +946,20 @@ impl GroupService {
     pub async fn invites(&self, direction: &str) -> Result<Vec<InviteView>> {
         repo::expire_invites(&self.store, self.now()).await?;
         let statuses: &[&str] = if direction == "in" { &["received"] } else { &["sent", "accepted"] };
-        Ok(repo::invites(&self.store, direction, statuses)
-            .await?
+        // An invitation of a key the network bans is not offered: the row
+        // stays, and comes back if the ban lifts.
+        let mut rows = Vec::new();
+        // Nor one to a group the network closes, either way.
+        for r in repo::invites(&self.store, direction, statuses).await? {
+            let banned = match PubKey::parse(&r.peer) {
+                Some(pk) if r.direction == "in" => self.dm.is_banned(&pk).await?,
+                _ => false,
+            } || self.is_group_banned(&r.group_id).await?;
+            if !banned {
+                rows.push(r);
+            }
+        }
+        Ok(rows
             .into_iter()
             .filter_map(|r| {
                 let p: wire::Invite = serde_json::from_str(&r.payload_json).ok()?;
@@ -906,14 +982,18 @@ impl GroupService {
             .collect())
     }
 
-    /// Groups whose events this device wants from the relays.
+    /// Groups whose events this device wants from the relays. A group the
+    /// network closes is not listened to: nothing of it is taken in anyway,
+    /// and when the ban lifts it is listened to again and its history asked
+    /// for anew (the runtime's `resubscribe`).
     pub async fn watched(&self) -> Result<Vec<String>> {
-        Ok(repo::list(&self.store)
-            .await?
-            .into_iter()
-            .filter(|g| matches!(g.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING))
-            .map(|g| g.id)
-            .collect())
+        let mut out = Vec::new();
+        for g in repo::list(&self.store).await? {
+            if matches!(g.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING) && !self.is_group_banned(&g.id).await? {
+                out.push(g.id);
+            }
+        }
+        Ok(out)
     }
 
     // ─── Building what goes out ─────────────────────────────────────────────
@@ -923,6 +1003,10 @@ impl GroupService {
     ///
     /// `wake` says whether the one it is for should hear of it at once: an
     /// invitation is for a person, a key is for the app.
+    ///
+    /// Nothing goes to a key the network bans (`DmService::is_banned`): not
+    /// a key of a group, not a welcome, not an answer. Quietly, so that
+    /// what goes to every member (a new key) still reaches the others.
     pub(crate) async fn dm(
         &self,
         keys: &Keys,
@@ -931,6 +1015,9 @@ impl GroupService {
         self_copy: bool,
         wake: Wake,
     ) -> Result<Vec<Outbound>> {
+        if self.dm.is_banned(to).await? {
+            return Ok(vec![]);
+        }
         let w = wrap_as(keys, to, &content, self.now(), None, wake)?;
         let mut out = vec![Outbound::PublishToInbox { recipient: to.clone(), event: w.to_peer, hint_relays: self.dm.hints(to).await? }];
         if self_copy {
@@ -1026,6 +1113,9 @@ impl GroupService {
     /// Make an operation of mine, with a new key when the rules ask for
     /// one, check it, apply it, store it, and seal it for the relay.
     pub(crate) async fn operate(&self, keys: &Keys, group_id: &str, body: OpBody) -> Result<(Op, Outcome)> {
+        // Every operation goes to the group's relay, a leave or a disband
+        // too: to a group the network closes nothing goes, whoever acts.
+        self.refuse_banned(group_id).await?;
         let me = me_of(keys);
         let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
         if row.membership != MEMBERSHIP_JOINED && !(row.membership == MEMBERSHIP_JOINING && body == OpBody::Join) {
@@ -1128,6 +1218,9 @@ impl GroupService {
 
     /// The welcome for someone who was just admitted.
     pub(crate) async fn welcome(&self, keys: &Keys, group_id: &str, to: &PubKey) -> Result<Vec<Outbound>> {
+        // A welcome hands over the journal and the keys: nobody is brought
+        // into a group the network closes.
+        self.refuse_banned(group_id).await?;
         let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
         let log = self.need_log(group_id).await?;
         let s = log.state();
@@ -1249,6 +1342,7 @@ impl GroupService {
     }
 
     pub async fn invite(&self, keys: &Keys, group_id: &str, who: &PubKey) -> Result<(InviteView, Outcome)> {
+        self.refuse_banned(group_id).await?;
         let me = me_of(keys);
         let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
         let log = self.need_log(group_id).await?;
@@ -1261,6 +1355,10 @@ impl GroupService {
         }
         if s.is_banned(who) {
             return Err(MessengerError::Invalid("group_target_banned".into()));
+        }
+        // Banned by the network, not by the group: nothing would reach them.
+        if self.dm.is_banned(who).await? {
+            return Err(MessengerError::Invalid("peer_banned".into()));
         }
         let now = self.now();
         let mut id = [0u8; 16];
@@ -1313,6 +1411,16 @@ impl GroupService {
             return Err(MessengerError::Invalid("group_invite_expired".into()));
         }
         let inviter = PubKey::parse(&inv.peer).ok_or_else(|| MessengerError::Storage("bad inviter".into()))?;
+        // An invitation that came before its sender was banned is taken by
+        // nothing: to accept it would let the banned key bring me in.
+        if accept && self.dm.is_banned(&inviter).await? {
+            return Err(MessengerError::Invalid("peer_banned".into()));
+        }
+        // Nor into a group the network closes, whoever invites. A decline
+        // goes to the inviter alone and is let through.
+        if accept {
+            self.refuse_banned(&inv.group_id).await?;
+        }
         repo::set_invite_status(&self.store, invite_id, if accept { "accepted" } else { "declined" }).await?;
         let reply = wire::InviteReply { invite_id: invite_id.to_string(), group_id: inv.group_id.clone(), accept };
         let publish = self.dm(keys, &inviter, wire::dm_envelope(wire::T_INVITE_REPLY, &reply)?, true, Wake::Nobody).await?;
@@ -1324,6 +1432,9 @@ impl GroupService {
     pub async fn open_link(&self, keys: &Keys, link: &str, note: &str) -> Result<(GroupView, Outcome)> {
         let me = me_of(keys);
         let link = GroupLink::parse(link)?;
+        // A link to a group the network closes leads nowhere: no row, no
+        // request to its managers, no join.
+        self.refuse_banned(&link.group_id).await?;
         if let Some(existing) = repo::get(&self.store, &link.group_id).await? {
             if existing.membership == MEMBERSHIP_JOINED {
                 let view = self.view_of(existing, &me).await?;
@@ -1434,6 +1545,7 @@ impl GroupService {
     }
 
     pub async fn reject_request(&self, keys: &Keys, group_id: &str, requester: &PubKey) -> Result<Outcome> {
+        self.refuse_banned(group_id).await?;
         let me = me_of(keys);
         let log = self.need_log(group_id).await?;
         if !log.state().role_of(&me).is_some_and(Role::is_manager) {
@@ -1501,6 +1613,11 @@ impl GroupService {
     /// Also, the history of a group I am joining is here: if its log
     /// still bans me, that is the answer.
     pub async fn maintain(&self, keys: &Keys, group_id: &str) -> Result<Outcome> {
+        // The care of a closed group would send new keys and welcomes to
+        // it: it waits, quietly, for the ban to lift.
+        if self.is_group_banned(group_id).await? {
+            return Ok(Outcome::default());
+        }
         let me = me_of(keys);
         let Some(row) = repo::get(&self.store, group_id).await? else { return Ok(Outcome::default()) };
         // The runtime comes here for every group at the start of a session:
@@ -1594,6 +1711,8 @@ impl GroupService {
         reply_to: Option<&str>,
         media_json: Option<String>,
     ) -> Result<(MessageView, Outbound)> {
+        // Messages, edits, deletions and cards all come through here.
+        self.refuse_banned(group_id).await?;
         let me = me_of(keys);
         let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
         if row.membership != MEMBERSHIP_JOINED {
@@ -1666,6 +1785,7 @@ impl GroupService {
     /// a message, sealed quietly, and kept nowhere here: it is no message of
     /// the chat. A muted member may still say it.
     pub async fn prepare_read_receipt(&self, keys: &Keys, group_id: &str, at: i64) -> Result<Outbound> {
+        self.refuse_banned(group_id).await?;
         let me = me_of(keys);
         let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
         let log = self.need_log(group_id).await?;
@@ -1695,6 +1815,9 @@ impl GroupService {
             return Err(MessengerError::Invalid("message is deleted".into()));
         }
         let group_id = Self::group_of(&row.chat_id)?.to_string();
+        // Before the reaction is applied here: one that never leaves must
+        // not stand under the message as if it had.
+        self.refuse_banned(&group_id).await?;
         let group = repo::get(&self.store, &group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
         if group.membership != MEMBERSHIP_JOINED {
             return Err(MessengerError::Invalid("group_not_member".into()));

@@ -30,6 +30,9 @@ messenger-presence.workspace = true
 messenger-richtext.workspace = true
 messenger-avatar.workspace = true
 messenger-calls.workspace = true
+# The proofs of the messages a report attaches, made and checked by the
+# code the server checks them with.
+messenger-evidence.workspace = true
 # The engine of calls on libwebrtc, behind the feature `rtc` (on by default):
 # a build without it (`--no-default-features`) has no engine, and the host
 # gives one (`MessengerRuntime::start_with_engine`), as the tests do with

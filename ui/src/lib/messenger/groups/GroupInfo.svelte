@@ -32,6 +32,7 @@
   import { MUTE_SPANS, muteUntil, opensAt, type MuteSpan } from './moderation/schedule';
   import { chatStore } from '../chats/chatStore.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
+  import { reportStore } from '../shared/report.svelte';
   import { longpress } from '../shared/longpress';
   import { stamp } from '../shared/time';
   import { messengerApi, type GroupAction, type GroupRole, type MessengerGroup, type MessengerGroupKey, type MessengerGroupMember, type ModAction, type SharedSection } from '../api';
@@ -249,6 +250,9 @@
     const who = nameStore.label(m.pubkey);
     const list: MenuEntry[] = [];
     if (!m.is_me) list.push({ label: $t('msg_group_member_write'), icon: 'message-circle', onselect: () => { chatStore.openPeer(m.pubkey).catch(() => {}); onclose(); } });
+    // Any member may report another, whatever either one's role.
+    if (!m.is_me) list.push({ label: $t('msg_report'), icon: 'alert-triangle', danger: true,
+      onselect: () => reportStore.open({ accused: m.pubkey, name: who, context: { t: 'group', group_id: group.id }, canBlock: false }) });
     for (const role of rolesFor(group, m)) {
       list.push({ label: $t('msg_group_member_make', { role: $t(`msg_group_role_${role}` as 'msg_group_role_admin') }), icon: 'shield',
         onselect: () => demoting(m, role, () => act({ op: 'set_role', who: m.pubkey, role })) });
@@ -465,6 +469,10 @@
       {#if isOwner(group)}
         <p class="hint">{$t('msg_group_owner_hint')}</p>
         <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={disband}><Icon name="trash-2" size={13} />{$t('msg_group_disband')}</button>
+      {/if}
+      {#if !group.banned}
+        <button class="btn btn-ghost btn-sm danger" disabled={busy}
+          onclick={() => reportStore.open({ target: 'group', accused: '', name: group.name, context: { t: 'group', group_id: group.id }, canBlock: false })}><Icon name="alert-triangle" size={13} />{$t('msg_report_group')}</button>
       {/if}
       {#if !joined && group.membership !== 'joining'}
         <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={forget}><Icon name="trash-2" size={13} />{$t('msg_group_forget')}</button>

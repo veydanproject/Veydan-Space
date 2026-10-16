@@ -42,6 +42,8 @@ export interface HostInfo {
   version: string;
   /** The build loads the demo data: a debug build, or a release with the feature `demo`. */
   demo: boolean;
+  /** The store that installed the app (Google Play), null for any other source. */
+  store: 'play' | null;
 }
 
 /** The answer of `update_check` (crates/shell/src/update.rs): the product's

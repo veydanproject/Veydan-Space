@@ -94,11 +94,13 @@ pub async fn set_end_pending(store: &Store, peer: &str, at: i64) -> Result<()> {
 
 /// A relation in the state of a request to me, over the alias `r` of
 /// `msg_dm_relations`: the peer approved, I did not (nor did the request
-/// run out), and I do not block them. The one predicate for "request",
-/// the same `screen_mode` computes (`messenger-dm` checks they agree):
-/// the total unread, the queue and its count read it, and no flag of
-/// `msg_chats` says it twice.
-pub const REQUEST_SQL: &str = "r.blocked = 0 AND r.peer_signal = 'approved' AND r.my_contact NOT IN ('approved', 'expired')";
+/// run out), and I do not block them, nor does the network (`banned`: a
+/// banned key is blocked here for as long as the manifest names it, its
+/// stored block untouched). The one predicate for "request", the same
+/// `screen_mode` computes (`messenger-dm` checks they agree): the total
+/// unread, the queue and its count read it, and no flag of `msg_chats`
+/// says it twice.
+pub const REQUEST_SQL: &str = "r.blocked = 0 AND NOT EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = r.peer_pubkey) AND r.peer_signal = 'approved' AND r.my_contact NOT IN ('approved', 'expired')";
 
 /// One chat of the queue of requests: its id, the peer, and its activity
 /// (`ACTIVITY_SQL`), by which the queue is ordered, paged, aged and capped.

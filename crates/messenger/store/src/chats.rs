@@ -106,12 +106,12 @@ pub async fn recompute_last(store: &Store, id: &str) -> Result<()> {
     sqlx::query(
         "UPDATE msg_chats SET
            last_message_at = (SELECT MAX(created_at) FROM msg_messages
-                               WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1))),
+                               WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))),
            last_preview = (SELECT CASE WHEN content_type = 'media' THEN '📎 ' || COALESCE(text, json_extract(media_json, '$.name'), '')
                                        WHEN content_type = 'contact' THEN '👤 ' || COALESCE(json_extract(media_json, '$.display_name'),
                                                                                          json_extract(media_json, '$.name'), '')
                                        ELSE text END FROM msg_messages
-                           WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1))
+                           WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))
                            ORDER BY created_at DESC LIMIT 1),
            updated_at = ?
          WHERE id = ?",
@@ -172,9 +172,9 @@ pub async fn read_up_to(store: &Store, id: &str, at: i64) -> Result<bool> {
 
 /// A row of `msg_messages` that counts as unread once it is later than
 /// what was read: incoming, shown, not waiting for a moderator, and in a
-/// group not of someone I block in direct messages.
+/// group not of someone I block in direct messages nor of a banned key.
 const COUNTED: &str = "direction = 'in' AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system'
-    AND NOT (chat_id LIKE 'group:%' AND EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1))";
+    AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))";
 
 /// A block in direct messages took effect, or was lifted: the group
 /// chats the peer wrote in show their line of the list without them
@@ -348,12 +348,15 @@ pub async fn cleared_at(store: &Store, id: &str) -> Result<i64> {
 /// What the app counts as waiting: a muted or archived chat keeps its own
 /// counter but stays out of the total (the badge, the tray), and so does a
 /// request of a stranger (`dm_relations::REQUEST_SQL`): the queue of
-/// requests has a count of its own.
+/// requests has a count of its own. The chat of a key the network bans
+/// (`banned`) stays out of it too: it reads as blocked, and nothing of
+/// that person calls for the user any more.
 pub async fn total_unread(store: &Store) -> Result<i64> {
     sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!(
         "SELECT COALESCE(SUM(c.unread), 0) FROM msg_chats c
          LEFT JOIN msg_dm_relations r ON r.peer_pubkey = c.peer_pubkey
-         WHERE c.archived = 0 AND c.muted = 0 AND NOT (c.kind = 'dm' AND r.peer_pubkey IS NOT NULL AND {})",
+         WHERE c.archived = 0 AND c.muted = 0 AND NOT (c.kind = 'dm' AND r.peer_pubkey IS NOT NULL AND {})
+           AND NOT (c.kind = 'dm' AND EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = c.peer_pubkey))",
         crate::dm_relations::REQUEST_SQL
     )))
     .fetch_one(store.pool())

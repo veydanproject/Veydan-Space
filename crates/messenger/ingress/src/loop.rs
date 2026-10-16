@@ -7,7 +7,7 @@
 use crate::classify::{classify, KIND_GIFT_WRAP, KIND_PRESENCE};
 use crate::dispatch::{Dispatcher, EffectSink};
 use messenger_core::{Context, Inbound, RawEvent};
-use messenger_store::{events_raw, Store};
+use messenger_store::{banned, events_raw, Store};
 use nostr::key::Keys;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -86,6 +86,15 @@ impl IngressLoop {
                 // unseen, and the history sync after unlock brings it again.
                 let unread = keys.is_none() && raw.kind == KIND_GIFT_WRAP;
                 let inbound = classify(&raw, keys.as_ref());
+                // An event of a group the network closes (`banned_groups` of
+                // the manifest) is neither handled nor kept as seen: when the
+                // ban lifts, the next history sync brings it again.
+                if let Inbound::Group(g) = &inbound {
+                    if banned::group_contains(&store, &g.group_id).await.unwrap_or(false) {
+                        st.ignored.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
+                }
                 match &inbound {
                     Inbound::Dm(_) => {
                         st.dm.fetch_add(1, Ordering::Relaxed);
@@ -218,6 +227,56 @@ mod tests {
         let (received, dups, dispatched, _, _) = lp.stats.snapshot();
         assert_eq!((received, dups, dispatched), (3, 0, 3));
         assert_eq!(events_raw::count(&store).await.unwrap(), 1, "only the kind-1 note is kept");
+        drop(lp);
+    }
+
+    /// A group handler that counts what reached it.
+    #[derive(Default)]
+    struct Groups(std::sync::atomic::AtomicUsize);
+
+    #[async_trait]
+    impl messenger_core::Handler<messenger_core::GroupInbound> for Groups {
+        async fn handle(&self, _: messenger_core::GroupInbound, _: &Context) -> Result<Vec<messenger_core::Effect>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![])
+        }
+    }
+
+    /// An event of a group the network closes is neither handled nor kept
+    /// as seen, so the copy that comes after the ban lifts is taken.
+    #[tokio::test]
+    async fn an_event_of_a_closed_group_is_not_taken_nor_kept() {
+        let store = Store::open_in_memory().await.unwrap();
+        let me = Keys::generate();
+        let handler = Arc::new(Groups::default());
+        let dispatcher = Arc::new(Dispatcher::new().with_group(handler.clone()));
+        let sink = Arc::new(Sink(Mutex::new(vec![])));
+        let event = |group: &str| {
+            EventBuilder::new(Kind::from(crate::classify::KIND_GROUP_MESSAGE), "sealed")
+                .tag(Tag::parse(["h", group]).unwrap())
+                .finalize(&Keys::generate())
+                .unwrap()
+        };
+        let (closed, open) = (event("closed"), event("open"));
+        banned::group_replace(&store, &["closed".to_string()]).await.unwrap();
+
+        let (tx, rx) = mpsc::channel(8);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher.clone(), ctx_of(&me), sink.clone());
+        tx.send(raw_of(&closed)).await.unwrap();
+        tx.send(raw_of(&open)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(handler.0.load(Ordering::SeqCst), 1, "only the open group's");
+        assert!(!events_raw::contains(&store, &raw_of(&closed).id).await.unwrap(), "not seen");
+        assert!(events_raw::contains(&store, &raw_of(&open).id).await.unwrap());
+        drop(lp);
+
+        banned::group_replace(&store, &[]).await.unwrap();
+        let (tx, rx) = mpsc::channel(8);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher, ctx_of(&me), sink);
+        tx.send(raw_of(&closed)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(handler.0.load(Ordering::SeqCst), 2, "lifted: taken");
+        assert!(events_raw::contains(&store, &raw_of(&closed).id).await.unwrap());
         drop(lp);
     }
 

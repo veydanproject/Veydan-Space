@@ -18,11 +18,12 @@
   import { groupStore } from './groupStore.svelte';
   import { nameStore } from './names.svelte';
   import { groupLine } from './lines';
-  import { canApprove, canHide, canModerate, canSpam, hasModeration, isModerator } from './permissions';
+  import { canApprove, canHide, canModerate, canSpam, hasModeration, isBannedGroup, isModerator } from './permissions';
   import ChoiceDialog from './moderation/ChoiceDialog.svelte';
   import { deviceZone, HIDE_SPANS, hideFrom, opensAt, zoneHint, type HideSpan } from './moderation/schedule';
   import { chatStore } from '../chats/chatStore.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
+  import { reportStore } from '../shared/report.svelte';
   import { onPhone } from '../shared/phone';
   import { messengerApi, messengerError, type MessengerChat, type MessengerMessage, type ModAction } from '../api';
   import { groupRefusal, moderationError } from './errors';
@@ -72,7 +73,8 @@
 
   // What the chat itself may do is decided by the group, not by the row
   // of the chat list (which knows only whether I am in).
-  const view = $derived<MessengerChat>({ ...chat, title: group?.name || chat.title, can_send: !!group?.can_post });
+  const banned = $derived(isBannedGroup(chat));
+  const view = $derived<MessengerChat>({ ...chat, title: group?.name || chat.title, can_send: !!group?.can_post && !banned });
 
   async function run(fn: () => Promise<unknown>) {
     error = ''; busy = true;
@@ -203,6 +205,9 @@
     }
     list.push({ label: $t('msg_group_info'), icon: 'users', onselect: () => { moderation = false; info = true; } });
     if (isModerator(group) && hasModeration(group)) list.push({ label: $t('msg_mod_title'), icon: 'shield', onselect: () => { moderation = true; info = true; } });
+    // A closed group is not reported again: the network has already acted.
+    if (group && !banned) list.push({ label: $t('msg_report_group'), icon: 'alert-triangle', danger: true,
+      onselect: () => reportStore.open({ target: 'group', accused: '', name: view.title, context: { t: 'group', group_id: groupId }, canBlock: false }) });
     if (group?.membership === 'joined' && group.my_role !== 'owner') list.push({ label: $t('msg_group_leave'), icon: 'x', danger: true, onselect: leave });
     if (group && group.membership !== 'joined') list.push({ label: $t('msg_group_forget'), icon: 'trash-2', danger: true, onselect: forget });
     return list;
@@ -236,6 +241,7 @@
 {/snippet}
 
 {#snippet banner()}
+  {#if banned}<div class="strip warn" role="status"><Icon name="alert-triangle" size={13} />{$t('msg_group_removed')}</div>{/if}
   {#if membership === 'joined'}<GroupCallBanner {groupId} />{/if}
   {#if group && group.undecrypted > 0 && membership === 'joined'}
     <div class="strip info"><Icon name="key" size={13} />{$t('msg_group_undecrypted', { n: String(group.undecrypted) })}</div>
@@ -255,10 +261,14 @@
 {#snippet footer()}
   <div class="closed">
     <span>
+      {#if banned}
+        <Icon name="lock" size={13} />{$t('msg_group_removed_short')}
+      {:else}
       <Icon name={membership === 'joining' || membership === 'requested' || (closedText && membership === 'joined') ? 'clock' : 'lock'} size={13} />
       {#if mutedText && membership === 'joined'}{mutedText}
       {:else if closedText && membership === 'joined'}{closedText}
       {:else}{$t(`msg_group_state_${membership}` as 'msg_group_state_left')}{/if}
+      {/if}
     </span>
     {#if membership !== 'joined' && membership !== 'joining'}
       <button class="btn btn-ghost btn-sm" disabled={busy} onclick={forget}>{$t('msg_group_forget')}</button>

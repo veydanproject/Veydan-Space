@@ -169,6 +169,13 @@ export interface MessengerChat {
    * no receipt), so none of that is offered in it, nor «add to contacts».
    */
   bot?: boolean;
+  /**
+   * The network bans the peer (a key its signed manifest names): `mode` is
+   * `blocked` for good, there is no way back, and the screen says why.
+   * A group is closed the same way (a confirmed case of harm to a child).
+   * Absent from an older runtime, so read as false.
+   */
+  banned?: boolean;
 }
 
 export interface MessengerReplyPreview {
@@ -376,10 +383,21 @@ export interface MessengerRelation {
   peer_signal: 'none' | 'approved' | 'blocked' | 'left' | 'declined' | 'revoked';
   was_ever_mutual: boolean;
   can_send: boolean;
+  /** The network bans the peer; see `MessengerChat.banned`. */
+  banned?: boolean;
 }
+
+/**
+ * Somebody I block. `banned` is set when the network named the key; the
+ * generated view does not carry it yet, so it is optional here.
+ */
+// The generated BlockedView carries `banned` now; the name stays for the list and its tests.
+export type BlockedPerson = BlockedView;
 
 /** Stable refusal code inside an error (`dm_waiting_approval`, …), if any. */
 export function dmErrorCode(e: unknown): string | null {
+  // The runtime refuses a banned key with `peer_banned`; the texts are keyed `dm_banned`.
+  if (/\bpeer_banned\b/.test(messengerError(e))) return 'dm_banned';
   // Refusals of a reaction come as their own codes, not under `dm_`.
   const m = /\b(?:dm_[a-z_]+|reaction_(?:limit|invalid))\b/.exec(messengerError(e));
   return m ? m[0] : null;
@@ -1607,7 +1625,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   },
   messenger_dm_blocked: () => mockChats.filter((c) => c.mode === 'blocked').map((c) => c.peer_pubkey),
   messenger_moderation_blocked: (): BlockedView[] =>
-    mockChats.filter((c) => c.mode === 'blocked' && c.peer_pubkey).map((c) => ({ peer: c.peer_pubkey ?? '', npub: c.peer_npub ?? '', name: c.title })),
+    mockChats.filter((c) => c.mode === 'blocked' && c.peer_pubkey).map((c) => ({ peer: c.peer_pubkey ?? '', npub: c.peer_npub ?? '', name: c.title, banned: false })),
   messenger_moderation_invite_create: (a): InviteView => mockInviteCreate(a?.preset as InvitePreset),
   messenger_moderation_invite_list: (): InviteView[] => {
     const now = Math.floor(Date.now() / 1000);
@@ -1878,6 +1896,38 @@ export function messengerErrorCode(e: unknown): string | null {
   return null;
 }
 
+/** Why a person is reported; `child_harm` takes one of the kinds below it. */
+export type ReportReason = 'child_harm' | 'spam' | 'harassment' | 'illegal' | 'other';
+export type ReportSubReason = 'sexual' | 'grooming' | 'violence_illegal' | 'suicide_selfharm' | 'sect_recruitment';
+export type ReportContext = { t: 'dm' } | { t: 'group'; group_id: string } | { t: 'request' };
+
+/** A report of a person to Veydan's moderators (`messenger_report_send`). */
+export interface ReportInput {
+  /** The hex key of the person reported. */
+  accused: string;
+  context: ReportContext;
+  reason: ReportReason;
+  /** Only with `child_harm`. */
+  sub_reason?: ReportSubReason | null;
+  /** At most 2000 characters. */
+  comment?: string | null;
+  /** Attach the last messages (up to 10, ending with `message_id` or the newest). */
+  attach: boolean;
+  message_id?: string | null;
+  /** Block the person after the report (a chat of two or a request only). */
+  block: boolean;
+  /** Whom the report is on; a person when absent. For a group `context` is that group, `accused` is ignored and `block` is false. */
+  target?: 'person' | 'group';
+}
+
+export interface ReportResult {
+  /** `queued`: saved on this device, sent when there is a connection. */
+  status: 'sent' | 'queued';
+  attached: number;
+  proved: number;
+  blocked: boolean;
+}
+
 export const messengerApi = {
   async status(): Promise<MessengerStatus> {
     try {
@@ -2044,6 +2094,10 @@ export const messengerApi = {
     blocked: () => invoke<BlockedView[]>('messenger_moderation_blocked'),
   },
 
+  /** A report of a person to the moderators; the refusal `rate_limited` means too many from this device. */
+  report: {
+    send: (input: ReportInput) => invoke<ReportResult>('messenger_report_send', { input }),
+  },
 
   /** When approved contacts are online; empty while the presence switch is off. */
   presence: {

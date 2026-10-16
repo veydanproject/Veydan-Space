@@ -28,7 +28,7 @@ use messenger_groups::wire::{self, Opened, T_INVITE, T_JOIN_REQUEST, T_WELCOME};
 use messenger_groups::service::{invite_standing_in, InviteStanding, MEMBERSHIP_JOINED};
 use messenger_ingress::classify::KIND_DM_RUMOR;
 use messenger_ingress::push_inbox;
-use messenger_store::{calls, chats, groups, messages, Store};
+use messenger_store::{banned, calls, chats, groups, messages, Store};
 use nostr::key::Keys;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -83,6 +83,13 @@ impl Describe {
 
     async fn run(&self, bundle: &KeyBundle, push: &PushData) -> Result<Outcome> {
         let settings = Settings::load(&self.store).await?;
+        // A push of a group the network closes says nothing, under any
+        // settings: the app takes nothing of the group in.
+        if let Some(group_id) = &push.group_id {
+            if banned::group_contains(&self.store, group_id).await? {
+                return Ok(Outcome::Quiet { reason: Reason::Blocked });
+            }
+        }
         let mut plain = plain(&self.store, push).await?;
         if settings.content == Content::None || bundle.calls_only {
             // Nothing of a message is said, so no message is opened. A
@@ -116,6 +123,8 @@ impl Describe {
 
         let outcome = match messenger_ingress::classify(&raw, Some(&self.keys)) {
             Inbound::Dm(dm) => self.dm_notice(dm, &settings, push.count).await?,
+            // The event may name another group than the push did.
+            Inbound::Group(g) if banned::group_contains(&self.store, &g.group_id).await? => Outcome::Quiet { reason: Reason::Blocked },
             Inbound::Group(g) => match bundle.group_key(&g.group_id, g.key_id.as_deref().unwrap_or_default()) {
                 Some(key) => self.group_notice(&g.group_id, &key, &g.ciphertext, &settings, push.count).await?,
                 // A key this device does not have yet: the app will, when it runs.
@@ -157,7 +166,7 @@ impl Describe {
         if envelope.t != T_CALL_INVITE {
             return Ok(None);
         }
-        if self.dm.load_relation(&dm.sender).await?.blocked {
+        if self.dm.load_relation(&dm.sender).await?.blocked || self.dm.is_banned(&dm.sender).await? {
             return Ok(Some(Outcome::Quiet { reason: Reason::Blocked }));
         }
         // No name and no picture, as nothing of the content is shown.
@@ -245,7 +254,9 @@ impl Describe {
         // stored hidden (a request held back until the old episode ends, or
         // one removed for me elsewhere) was never shown, so nothing is told.
         let relation = self.dm.load_relation(&peer).await?;
-        if relation.blocked {
+        // A key the network bans (`DmService::is_banned`) reads as blocked:
+        // the app drops what it sends, so the phone tells nothing of it.
+        if relation.blocked || self.dm.is_banned(&peer).await? {
             return Ok(Outcome::Quiet { reason: Reason::Blocked });
         }
         if envelope.t == T_CALL_INVITE {
@@ -264,6 +275,16 @@ impl Describe {
         // to the groups before the gate of requests (`GroupService::on_dm`,
         // the block alone, looked at above), and so does this.
         let group = envelope.t.starts_with("group.");
+        // The protocol of a group the network closes is not heard by the
+        // app (`GroupService::on_dm`): no invitation, request or welcome
+        // of it is told here either.
+        if group {
+            if let Some(group_id) = envelope.str_field("group_id") {
+                if banned::group_contains(&self.store, group_id).await? {
+                    return Ok(Outcome::Quiet { reason: Reason::Blocked });
+                }
+            }
+        }
         if !(from_bot || group) {
             // The same gate as the app's, from the same facts: what the
             // message is (a short plain text without a link, or not), whom
@@ -433,6 +454,11 @@ impl Describe {
         };
         if message.author == self.me {
             return Ok(Outcome::Quiet { reason: Reason::Own });
+        }
+        // What a key the network bans writes in a group is hidden by the
+        // app and wakes nobody; neither does the phone.
+        if self.dm.is_banned(&message.author).await? {
+            return Ok(Outcome::Quiet { reason: Reason::Blocked });
         }
         let envelope = Envelope::parse(&message.content).unwrap_or_else(|_| Envelope::text(&message.content));
         let body = match envelope.t.as_str() {

@@ -28,6 +28,7 @@
   import SettingsView from './SettingsView.svelte';
   import { SETTINGS_TABS, SETTINGS_ICONS, settingsUi } from './settingsTab.svelte';
   import ConfirmHost from '../shared/ConfirmHost.svelte';
+  import ReportHost from '../shared/ReportHost.svelte';
   import RequestsList from '../requests/RequestsList.svelte';
   import RequestView from '../requests/RequestView.svelte';
   import { requestStore, requestsUi } from '../requests/requestStore.svelte';
@@ -338,6 +339,7 @@
   </Dialog>
   <Dialer />
   <ConfirmHost />
+  <ReportHost />
 {/if}
 
 <style>

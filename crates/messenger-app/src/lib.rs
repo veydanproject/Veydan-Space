@@ -168,6 +168,7 @@ pub fn module() -> Module {
                 commands::moderation::messenger_moderation_invite_status,
                 commands::moderation::messenger_contact_link_qr,
                 commands::moderation::messenger_moderation_blocked,
+                commands::report::messenger_report_send,
                 commands::messenger_groups_list,
                 commands::messenger_group_get,
                 commands::messenger_group_create,

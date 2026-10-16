@@ -16,6 +16,7 @@
 mod app;
 mod commands;
 pub mod demo;
+mod distribution;
 mod lock;
 mod module;
 mod navigation;
