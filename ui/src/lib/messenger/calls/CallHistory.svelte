@@ -26,7 +26,7 @@
   import type { CallLogEntry, CallMedia } from '../api';
   import CallIcon, { type CallGlyph } from './CallIcon.svelte';
   import { callLog } from './callLog.svelte';
-  import { dialable, dialer, targetOf, type DialTarget } from './dialer.svelte';
+  import { dialable, dialer, targetOf, type DialTarget } from './dial.svelte';
   import { foldLog, isLogMissed, lineOf, logSections, type LogRow } from './log';
   import { callLineWords, duration, groupLineWords } from './words';
 

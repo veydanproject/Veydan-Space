@@ -17,7 +17,7 @@
   import { onPhone } from '../shared/phone';
   import type { CallMedia, MessengerChat } from '../api';
   import CallIcon from './CallIcon.svelte';
-  import { dialable, dialBlock, dialer, targetOf } from './dialer.svelte';
+  import { dialable, dialBlock, dialer, targetOf } from './dial.svelte';
 
   let { open = $bindable() }: { open: boolean } = $props();
 

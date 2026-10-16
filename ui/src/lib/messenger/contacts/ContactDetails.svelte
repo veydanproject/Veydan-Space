@@ -19,7 +19,7 @@
   import ShareDialog from '../content/ShareDialog.svelte';
   import MessageContent from '../content/MessageContent.svelte';
   import CallIcon from '../calls/CallIcon.svelte';
-  import { dialable, dialBlock, dialer, targetOf } from '../calls/dialer.svelte';
+  import { dialable, dialBlock, dialer, targetOf } from '../calls/dial.svelte';
   import BioView from './BioView.svelte';
   import SocialLinks from './SocialLinks.svelte';
   import Avatar from './Avatar.svelte';
