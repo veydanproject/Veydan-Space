@@ -6,7 +6,9 @@
 //! copy of the same message all collapse into one row.
 
 use crate::{storage, Store};
+use messenger_core::envelope::{self, TextFormat};
 use messenger_core::Result;
+use messenger_richtext::md;
 
 pub const DIR_IN: &str = "in";
 pub const DIR_OUT: &str = "out";
@@ -60,6 +62,10 @@ pub struct MessageRow {
     /// Whether it waits for a moderator: `ok` (never held), `pending`,
     /// `approved`, `rejected`. `ok` in a direct chat.
     pub review: String,
+    /// How `text` is written: `` plain, `md` Markdown (036).
+    pub fmt: String,
+    /// A Markdown `text` without its marks; `None` for plain text.
+    pub plain: Option<String>,
 }
 
 /// What a handler or the sender knows when inserting.
@@ -82,7 +88,7 @@ pub struct NewMessage {
     pub media_json: Option<String>,
 }
 
-pub const COLS: &str = "id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json, mod_state, review";
+pub const COLS: &str = "id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json, mod_state, review, fmt, plain";
 
 pub const MOD_SHOWN: &str = "";
 pub const MOD_HIDDEN: &str = "hidden";
@@ -113,9 +119,11 @@ pub const SHOWN_TO_MEMBER: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.r
 
 /// Insert; `false` when a row with this id already exists (a duplicate copy).
 pub async fn insert(store: &Store, m: &NewMessage) -> Result<bool> {
+    let fmt = format_of(&m.envelope_json);
+    let plain = plain_of(m.text.as_deref(), fmt);
     let res = sqlx::query(
-        "INSERT OR IGNORE INTO msg_messages (id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json, mod_state, review)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, '', 'ok')",
+        "INSERT OR IGNORE INTO msg_messages (id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json, mod_state, review, fmt, plain)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, '', 'ok', ?, ?)",
     )
     .bind(&m.id)
     .bind(&m.chat_id)
@@ -133,6 +141,8 @@ pub async fn insert(store: &Store, m: &NewMessage) -> Result<bool> {
     .bind(m.is_hidden)
     .bind(&m.outbox_local_id)
     .bind(&m.media_json)
+    .bind(fmt.name())
+    .bind(plain)
     .execute(store.pool())
     .await
     .map_err(storage)?;
@@ -515,9 +525,26 @@ pub async fn count_in_chat(store: &Store, chat_id: &str) -> Result<i64> {
         .map_err(storage)
 }
 
-pub async fn set_text(store: &Store, id: &str, text: &str, edited_at: i64) -> Result<()> {
-    sqlx::query("UPDATE msg_messages SET text = ?, edited_at = ? WHERE id = ?")
+/// How the words of a row are written, read from the envelope it came in
+/// (or, for a file still uploading, from the `fmt` its placeholder keeps
+/// in `envelope_json`): the store never holds a format the wire did not.
+pub fn format_of(envelope_json: &str) -> TextFormat {
+    let v: serde_json::Value = serde_json::from_str(envelope_json).unwrap_or_default();
+    TextFormat::from_name(v.get(envelope::FIELD_FMT).and_then(|f| f.as_str()))
+}
+
+/// The `plain` column: the text of a Markdown row without its marks.
+fn plain_of(text: Option<&str>, fmt: TextFormat) -> Option<String> {
+    // Marks and nothing else (`---`, `[](…)`): the text itself, not an empty line.
+    fmt.is_markdown().then(|| text.map(md::plain)).flatten().filter(|p| !p.is_empty())
+}
+
+/// An edit: the text and how it is written, both from the edit.
+pub async fn set_text(store: &Store, id: &str, text: &str, fmt: TextFormat, edited_at: i64) -> Result<()> {
+    sqlx::query("UPDATE msg_messages SET text = ?, fmt = ?, plain = ?, edited_at = ? WHERE id = ?")
         .bind(text)
+        .bind(fmt.name())
+        .bind(plain_of(Some(text), fmt))
         .bind(edited_at)
         .bind(id)
         .execute(store.pool())
@@ -528,7 +555,7 @@ pub async fn set_text(store: &Store, id: &str, text: &str, edited_at: i64) -> Re
 
 /// Tombstone: content is dropped, the row stays so the order is stable.
 pub async fn mark_deleted(store: &Store, id: &str, deleted_at: i64) -> Result<()> {
-    sqlx::query("UPDATE msg_messages SET text = NULL, media_json = NULL, deleted_at = ? WHERE id = ?")
+    sqlx::query("UPDATE msg_messages SET text = NULL, plain = NULL, media_json = NULL, deleted_at = ? WHERE id = ?")
         .bind(deleted_at)
         .bind(id)
         .execute(store.pool())
@@ -745,7 +772,7 @@ mod tests {
         assert_eq!(last_visible_incoming_at(&s, "nobody").await.unwrap(), None);
         assert_eq!(pending_for_target(&s, "3").await.unwrap().len(), 1);
 
-        set_text(&s, "3", "changed", 99).await.unwrap();
+        set_text(&s, "3", "changed", TextFormat::Plain, 99).await.unwrap();
         let m = get(&s, "3").await.unwrap().unwrap();
         assert_eq!(m.text.as_deref(), Some("changed"));
         assert_eq!(m.edited_at, Some(99));
@@ -815,7 +842,7 @@ mod tests {
         e1.content_type = CT_EDIT.into();
         e1.target_id = Some("b".into());
         insert(&s, &e1).await.unwrap();
-        set_text(&s, "b", "changed", 25).await.unwrap();
+        set_text(&s, "b", "changed", TextFormat::Plain, 25).await.unwrap();
         let b = get(&s, "b").await.unwrap().unwrap();
         assert_eq!(version_of(&s, &b).await.unwrap(), "e1");
         let mut e0 = e1.clone();

@@ -45,7 +45,7 @@ pub use log::{Insert, KeyStatus, OpLog};
 pub use op::{GroupKind, JoinProof, KeyId, Op, OpBody, OpId, PostMode, Premod, Schedule, OP_VERSION};
 pub use roles::{permits, Action, Role};
 pub use handler::{GroupDmHandler, GroupHandler, Signal, Signals};
-pub use service::{GroupCallSink, GroupService, GroupView, InviteView, KeyView, MemberView, Outcome};
+pub use service::{GroupCallSink, GroupService, GroupView, InviteView, JoinRequestView, KeyView, MemberView, Outcome};
 pub use marks::{ModNote, Review, REASON_SPAM};
 pub use moderation::{LogLine, QueueLine, UI_EVENT_GROUP_MODERATION, UI_EVENT_GROUP_QUEUE};
 pub use schedule::{Status as ScheduleStatus, UnknownTz};

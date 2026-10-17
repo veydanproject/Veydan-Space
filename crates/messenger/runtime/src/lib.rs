@@ -50,7 +50,7 @@ pub mod cloudnotes;
 use messenger_core::outbound::WireEvent;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
 use messenger_contacts::{ContactService, MetaHandler, Nip05Service, ProfileService, ReqwestFetcher};
-use messenger_core::{Clock, EventId, MessengerConfig, MessengerError, Outbound, PubKey, Result, Scope, SecretStore, SubId, Transport};
+use messenger_core::{Clock, EventId, MessengerConfig, MessengerError, Outbound, PubKey, Result, Scope, SecretStore, SubId, TextFormat, Transport};
 use messenger_dm::{Action, DmHandler, DmRoutesHandler, DmService, Prepared};
 use messenger_identity::IdentityService;
 use messenger_media::{MediaService, Recovered};
@@ -78,7 +78,7 @@ pub use messenger_media::{MediaKind, MediaServerInput, MediaServerView, Paused, 
 pub use messenger_contacts::book::{parse_key, ContactPatch};
 pub use messenger_contacts::{ContactView, ProfileInput, ProfileView};
 pub use messenger_identity::{CreatedIdentity, Identity};
-pub use messenger_groups::{GroupKind, GroupView, InviteView, KeyView as GroupKeyView, MemberView, OpBody as GroupOp, Role as GroupRole};
+pub use messenger_groups::{GroupKind, GroupView, InviteView, JoinRequestView, KeyView as GroupKeyView, MemberView, OpBody as GroupOp, Role as GroupRole};
 pub use links::LinkView;
 pub use calls::{CallBackends, RegistrySource};
 pub use call_nodes::{CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust};
@@ -582,16 +582,21 @@ impl MessengerRuntime {
         Ok(self.dm.message(&p.message.id).await?.unwrap_or(p.message))
     }
 
-    /// Send a text to `to`: a person (hex or npub) or a group (`group:<id>`).
+    /// Send a plain text to `to`: a person (hex or npub) or a group (`group:<id>`).
     pub async fn dm_send_text(&self, to: &str, text: &str, reply_to: Option<&str>) -> Result<MessageView> {
+        self.dm_send_text_as(to, text, TextFormat::Plain, reply_to).await
+    }
+
+    /// Send a text written as `format` (plain or Markdown).
+    pub async fn dm_send_text_as(&self, to: &str, text: &str, format: TextFormat, reply_to: Option<&str>) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         if let Some(group) = to.strip_prefix("group:") {
-            return self.group_send_text(group, text, reply_to).await;
+            return self.group_send_text_as(group, text, format, reply_to).await;
         }
         let peer = messenger_contacts::book::parse_key(to)
             .map_err(|_| MessengerError::Invalid("recipient must be an npub or 64-hex public key".into()))?;
         let first = self.dm.chat(&messenger_store::chats::dm_chat_id(peer.as_hex())).await?.is_none();
-        let prepared = self.dm.prepare_text(&keys, &peer, text, reply_to).await?;
+        let prepared = self.dm.prepare_text_as(&keys, &peer, text, format, reply_to).await?;
         if first {
             let _ = self.request_profile(&peer).await;
             let _ = self.resubscribe_meta().await;
@@ -600,11 +605,16 @@ impl MessengerRuntime {
     }
 
     pub async fn dm_edit(&self, message_id: &str, text: &str) -> Result<MessageView> {
+        self.dm_edit_as(message_id, text, TextFormat::Plain).await
+    }
+
+    /// Replace the text of my message and how it is written.
+    pub async fn dm_edit_as(&self, message_id: &str, text: &str, format: TextFormat) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         if self.is_group_message(message_id).await? {
-            return self.group_edit(message_id, text).await;
+            return self.group_edit_as(message_id, text, format).await;
         }
-        let prepared = self.dm.prepare_edit(&keys, message_id, text).await?;
+        let prepared = self.dm.prepare_edit_as(&keys, message_id, text, format).await?;
         self.publish_prepared(prepared).await
     }
 

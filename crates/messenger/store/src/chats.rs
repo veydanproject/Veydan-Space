@@ -107,10 +107,10 @@ pub async fn recompute_last(store: &Store, id: &str) -> Result<()> {
         "UPDATE msg_chats SET
            last_message_at = (SELECT MAX(created_at) FROM msg_messages
                                WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))),
-           last_preview = (SELECT CASE WHEN content_type = 'media' THEN '📎 ' || COALESCE(text, json_extract(media_json, '$.name'), '')
+           last_preview = (SELECT CASE WHEN content_type = 'media' THEN '📎 ' || COALESCE(plain, text, json_extract(media_json, '$.name'), '')
                                        WHEN content_type = 'contact' THEN '👤 ' || COALESCE(json_extract(media_json, '$.display_name'),
                                                                                          json_extract(media_json, '$.name'), '')
-                                       ELSE text END FROM msg_messages
+                                       ELSE COALESCE(plain, text) END FROM msg_messages
                            WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))
                            ORDER BY created_at DESC LIMIT 1),
            updated_at = ?

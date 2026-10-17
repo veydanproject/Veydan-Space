@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 893
+- **Rust / Cargo crates:** 896
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 1049
+- **Total third-party components:** 1052
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -38,8 +38,8 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 | License | Count |
 |---|---:|
-| MIT OR Apache-2.0 | 320 |
-| MIT | 163 |
+| MIT OR Apache-2.0 | 319 |
+| MIT | 164 |
 | MIT OR Apache-2.0 (platform dep) | 115 |
 | Apache-2.0 OR MIT | 111 |
 | MIT (platform dep) | 28 |
@@ -47,9 +47,9 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | Zlib OR Apache-2.0 OR MIT (platform dep) | 16 |
 | Apache-2.0 | 13 |
 | CC0-1.0 | 12 |
+| BSD-3-Clause | 10 |
 | Unlicense OR MIT | 10 |
 | Apache-2.0 OR MIT (platform dep) | 7 |
-| BSD-3-Clause | 7 |
 | ISC | 6 |
 | Apache-2.0 (platform dep) | 5 |
 | MIT OR Apache-2.0 OR Zlib | 5 |
@@ -104,7 +104,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (893)
+## Full acknowledgements — Rust crates (896)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -223,7 +223,7 @@ Thank you to the authors of the following Cargo crates:
 | concurrent-queue | 2.5.0 | Apache-2.0 OR MIT |
 | const-oid | 0.10.2 | Apache-2.0 OR MIT |
 | constant_time_eq | 0.3.1 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
-| constant_time_eq | 0.4.2 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
+| constant_time_eq | 0.6.1 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | cookie | 0.18.1 | MIT OR Apache-2.0 |
 | cookie-factory | 0.3.3 | MIT |
 | core-foundation | 0.7.0 | MIT OR Apache-2.0 * |
@@ -497,7 +497,7 @@ Thank you to the authors of the following Cargo crates:
 | lru | 0.18.5 | MIT |
 | lru-slab | 0.1.2 | MIT OR Apache-2.0 OR Zlib |
 | lz4_flex | 0.13.1 | MIT |
-| lzma-rust2 | 0.16.4 | Apache-2.0 |
+| lzma-rust2 | 0.22.0 | Apache-2.0 |
 | malloc_buf | 0.0.6 | MIT * |
 | markup5ever | 0.38.0 | MIT OR Apache-2.0 |
 | matchit | 0.8.4 | MIT AND BSD-3-Clause |
@@ -519,7 +519,7 @@ Thank you to the authors of the following Cargo crates:
 | nanorand | 0.7.0 | Zlib * |
 | ndk | 0.9.0 | MIT OR Apache-2.0 * |
 | ndk-sys | 0.6.0+11769913 | MIT OR Apache-2.0 * |
-| negentropy | 0.5.1 | MIT |
+| negentropy | 0.5.2 | MIT |
 | new_debug_unreachable | 1.0.6 | MIT |
 | nix | 0.31.3 | MIT |
 | nokhwa | 0.10.11 | Apache-2.0 * |
@@ -612,7 +612,7 @@ Thank you to the authors of the following Cargo crates:
 | portable-atomic-util | 0.2.8 | Apache-2.0 OR MIT * |
 | potential_utf | 0.1.5 | Unicode-3.0 |
 | powerfmt | 0.2.0 | MIT OR Apache-2.0 |
-| ppmd-rust | 1.4.0 | CC0-1.0 OR MIT-0 |
+| ppmd-rust | 1.5.0 | CC0-1.0 OR MIT-0 |
 | ppv-lite86 | 0.2.21 | MIT OR Apache-2.0 |
 | precomputed-hash | 0.1.1 | MIT |
 | primefield | 0.14.0 | Apache-2.0 OR MIT |
@@ -625,6 +625,7 @@ Thank you to the authors of the following Cargo crates:
 | proc-macro-error-attr2 | 2.0.0 | MIT OR Apache-2.0 |
 | proc-macro-error2 | 2.0.1 | MIT OR Apache-2.0 |
 | proc-macro2 | 1.0.106 | MIT OR Apache-2.0 |
+| pulldown-cmark | 0.13.4 | MIT |
 | pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 |
 | qrcode | 0.14.1 | MIT OR Apache-2.0 |
 | quick-error | 2.0.1 | MIT OR Apache-2.0 |
@@ -991,13 +992,15 @@ Thank you to the authors of the following Cargo crates:
 | zerovec-derive | 0.11.3 | Unicode-3.0 |
 | zip | 0.6.6 | MIT |
 | zip | 4.6.1 | MIT * |
-| zip | 8.6.0 | MIT |
+| zip | 9.0.4 | MIT |
 | zlib-rs | 0.6.5 | Zlib |
 | zmij | 1.0.21 | MIT |
 | zopfli | 0.8.3 | Apache-2.0 |
 | zstd | 0.13.3 | MIT |
+| zstd | 0.14.3 | BSD-3-Clause |
 | zstd-safe | 7.2.4 | MIT OR Apache-2.0 |
-| zstd-sys | 2.0.16+zstd.1.5.7 | MIT OR Apache-2.0 |
+| zstd-safe | 8.2.0 | BSD-3-Clause |
+| zstd-sys | 2.1.2+zstd.1.5.7 | BSD-3-Clause |
 | zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib |
 | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib |
 | zvariant | 5.13.1 | MIT |

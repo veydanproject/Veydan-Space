@@ -1,6 +1,6 @@
 [package]
 name = "veydanspace"
-version = "5.1.19"
+version = "5.1.20"
 description = "Workspace for multi-accounting: browser profiles, proxies, SSH, notes, passwords and chat"
 authors = ["Veydan Project"]
 edition = "2021"
@@ -74,7 +74,7 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-opener = "2"
 reqwest = { version = "0.13", features = ["socks", "json", "stream"] }
 which = "8"
-zip = "8"
+zip = "9"
 lz4_flex = "0.13"
 futures-util = "0.3"
 # Capped at 0.39 (libsqlite3-sys 0.37): rusqlite 0.40 needs libsqlite3-sys

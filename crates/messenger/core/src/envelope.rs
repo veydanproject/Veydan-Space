@@ -12,6 +12,43 @@ use serde_json::{Map, Value};
 
 pub const ENVELOPE_VERSION: u32 = 1;
 
+/// `"fmt":"md"` on a `text`, an `edit` or a `media` (its `caption`): the
+/// author wrote the words in Markdown (messenger-richtext::md). Absent,
+/// or any other value, is plain text; a reader before the field shows the
+/// marks as they were typed.
+pub const FIELD_FMT: &str = "fmt";
+
+/// How the words of a text, an edit or a caption are written.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TextFormat {
+    #[default]
+    Plain,
+    Markdown,
+}
+
+impl TextFormat {
+    /// The value of `fmt` in an envelope and of `msg_messages.fmt`;
+    /// `""` for plain text, which is never written into an envelope.
+    pub fn name(self) -> &'static str {
+        match self {
+            TextFormat::Plain => "",
+            TextFormat::Markdown => "md",
+        }
+    }
+
+    /// Anything but `md` is plain text.
+    pub fn from_name(name: Option<&str>) -> Self {
+        match name {
+            Some("md") => TextFormat::Markdown,
+            _ => TextFormat::Plain,
+        }
+    }
+
+    pub fn is_markdown(self) -> bool {
+        self == TextFormat::Markdown
+    }
+}
+
 /// Envelope types this version knows. Unknown ones are carried as-is.
 pub const T_TEXT: &str = "text";
 /// `{"t":"edit","target":"<rumor id>","text":"…"}` — replace a message's text.
@@ -447,6 +484,19 @@ impl Envelope {
             None
         }
     }
+
+    /// The words carry `fmt` only when they are not plain text.
+    pub fn with_format(self, format: TextFormat) -> Self {
+        match format {
+            TextFormat::Plain => self,
+            f => self.with(FIELD_FMT, f.name()),
+        }
+    }
+
+    /// How the words of this text, edit or caption are written.
+    pub fn format(&self) -> TextFormat {
+        TextFormat::from_name(self.str_field(FIELD_FMT))
+    }
 }
 
 #[cfg(test)]
@@ -460,6 +510,23 @@ mod tests {
         let back = Envelope::parse(r#"{"v":1,"t":"text","text":"hello"}"#).unwrap();
         assert_eq!(back, e);
         assert_eq!(back.as_text(), Some("hello"));
+    }
+
+    #[test]
+    fn format_golden_vectors() {
+        let md = Envelope::text("**hi**").with_format(TextFormat::Markdown);
+        assert_eq!(md.encode(), r#"{"v":1,"t":"text","fmt":"md","text":"**hi**"}"#);
+        assert_eq!(Envelope::text("hi").with_format(TextFormat::Plain).encode(), r#"{"v":1,"t":"text","text":"hi"}"#, "plain is never written");
+        assert_eq!(
+            Envelope::edit("ab", "*new*").with_format(TextFormat::Markdown).encode(),
+            r#"{"v":1,"t":"edit","fmt":"md","target":"ab","text":"*new*"}"#
+        );
+        assert_eq!(Envelope::parse(&md.encode()).unwrap().format(), TextFormat::Markdown);
+        assert_eq!(Envelope::text("hi").format(), TextFormat::Plain);
+        for odd in [r#""html""#, r#""MD""#, "1", "null", r#"["md"]"#] {
+            let e = Envelope::parse(&format!(r#"{{"v":1,"t":"text","text":"x","fmt":{odd}}}"#)).unwrap();
+            assert_eq!(e.format(), TextFormat::Plain, "{odd} is plain text");
+        }
     }
 
     #[test]

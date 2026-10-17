@@ -326,7 +326,7 @@ fn patch_zip_file(zip_path: &Path, replacements: &[(&str, &[u8])]) -> Result<(),
 
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).map_err(|e| format!("entry {i}: {e}"))?;
-            let name = entry.name().to_string();
+            let name = entry.name().map_err(|e| format!("entry {i}: {e}"))?.to_string();
             let mut buf = Vec::new();
             entry
                 .read_to_end(&mut buf)

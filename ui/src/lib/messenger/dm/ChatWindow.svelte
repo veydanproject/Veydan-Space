@@ -22,7 +22,7 @@
   import AttachButton from '../media/AttachButton.svelte';
   import MediaViewer from '../media/MediaViewer.svelte';
   import { viewer } from '../media/viewer.svelte';
-  import type { MessengerPicked, MessengerPoster, MessengerRecording } from '../api';
+  import type { MessengerPicked, MessengerPoster, MessengerRecording, TextFormat } from "../api";
   import { posterUrl, videoPoster } from '../media/poster';
   import { chatStore } from '../chats/chatStore.svelte';
   import { messengerStore } from '../store.svelte';
@@ -294,20 +294,20 @@
     try { await fn(); } catch (e) { error = explain(e); }
   }
 
-  async function send(text: string) {
+  async function send(text: string, fmt: TextFormat | null) {
     error = '';
     try {
       if (editing) {
         const id = editing.id;
         editing = null;
-        await chatStore.edit(id, text);
+        await chatStore.edit(id, text, fmt);
       } else if (picked.length) {
-        await sendPicked(text);
+        await sendPicked(text, fmt);
       } else {
         const r = replyTo?.id;
         replyTo = null;
         atBottom = true;
-        await chatStore.send(text, r);
+        await chatStore.send(text, r, fmt);
       }
     } catch (e) {
       error = explain(e);
@@ -382,7 +382,7 @@
    * The caption goes with the last file, so the list of chats shows it.
    * With a reply the text goes on its own after the files, as the reply.
    */
-  async function sendPicked(text: string) {
+  async function sendPicked(text: string, fmt: TextFormat | null) {
     const files = picked.flatMap((x) => (x.file ? [{ ...x.file, poster: x.poster ?? null }] : []));
     const asIs = original;
     picked = [];
@@ -393,7 +393,7 @@
     const batch = files.length > 1 ? crypto.randomUUID() : undefined;
     for (const [i, f] of files.entries()) {
       try {
-        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch, asIs, f.poster);
+        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch, asIs, f.poster, fmt);
       } catch (e) {
         // What did not leave waits again.
         picked = files.slice(i).map(({ poster, ...file }) => ({ key: ++pickSeq, file, poster }));
@@ -401,7 +401,7 @@
         throw e;
       }
     }
-    if (reply && text) await chatStore.send(text, reply);
+    if (reply && text) await chatStore.send(text, reply, fmt);
   }
 
   function openMenu(e: MouseEvent, m: MessengerMessage, album?: MessengerMessage[]) {

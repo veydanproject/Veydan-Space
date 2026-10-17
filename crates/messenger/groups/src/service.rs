@@ -15,7 +15,7 @@ use crate::state::{Closed, GroupState, Rejection};
 use crate::wire::{self, SecretEnvelope};
 use messenger_contacts::ContactCard;
 use messenger_core::traits::{Notice, UiEvent};
-use messenger_core::{Clock, Envelope, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SecretStore};
+use messenger_core::{Clock, Envelope, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SecretStore, TextFormat};
 use messenger_dm::pushtags;
 use messenger_dm::wrap::{wrap_as, Wake};
 use messenger_dm::{DmService, MessageView};
@@ -87,6 +87,23 @@ impl Outcome {
     }
 }
 
+/// A request to join that waits for a manager.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JoinRequestView {
+    pub requester: String,
+    /// The requester's key as people read and copy it (bech32): a stranger
+    /// may have no profile that would carry it.
+    pub npub: String,
+    /// What the requester wrote to the managers: a stranger's text, already
+    /// normalized. Empty when they wrote nothing.
+    pub note: String,
+    /// The date on the request, by the requester's clock.
+    pub created_at: i64,
+    /// When this device took the request in (or its latest words), by my
+    /// clock: the date above is only the requester's claim.
+    pub received_at: i64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemberView {
     pub pubkey: String,
@@ -142,7 +159,10 @@ pub struct GroupView {
     pub members: Vec<MemberView>,
     pub banned: Vec<String>,
     /// Requests waiting for a manager (managers only).
-    pub requests: Vec<String>,
+    pub requests: Vec<JoinRequestView>,
+    /// What I wrote to the managers with my request, while it waits (empty
+    /// otherwise).
+    pub request_note: String,
     /// Link or QR content, for those who may share it.
     pub link: Option<String>,
     /// Events that wait for a key this device does not have yet.
@@ -329,6 +349,15 @@ pub async fn invite_standing_in(store: &Store, group_id: &str, inviter: &PubKey,
     let row = repo::get(store, group_id).await?;
     let log = load_log(store, group_id).await?;
     Ok(invite_standing(row.as_ref(), log.as_ref(), inviter, contact))
+}
+
+/// The note kept in the payload of a request row; empty when there is none
+/// or the payload is not what this build wrote.
+pub(crate) fn note_of(payload_json: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(payload_json)
+        .ok()
+        .and_then(|v| v.get("note").and_then(|n| n.as_str().map(str::to_string)))
+        .unwrap_or_default()
 }
 
 fn key_ref(group_id: &str, key_id: &KeyId) -> String {
@@ -809,9 +838,27 @@ impl GroupService {
             // One that the log has answered already (another manager let
             // them in or banned them) is no question any more.
             let open = |r: &repo::RequestRow| state.is_some_and(|s| PubKey::parse(&r.requester).is_some_and(|p| !s.is_member(&p) && !s.is_banned(&p)));
-            repo::requests(&self.store, &row.id, "in", "pending").await?.into_iter().filter(|r| open(r)).map(|r| r.requester).collect()
+            repo::requests(&self.store, &row.id, "in", "pending").await?
+                .into_iter()
+                .filter(|r| open(r))
+                .map(|r| JoinRequestView {
+                    npub: PubKey::parse(&r.requester).and_then(|p| messenger_links::contact::npub_of(&p)).unwrap_or_else(|| r.requester.clone()),
+                    note: messenger_richtext::normalize(&note_of(&r.payload_json)),
+                    requester: r.requester,
+                    created_at: r.created_at,
+                    received_at: r.updated_at,
+                })
+                .collect()
         } else {
             vec![]
+        };
+        let request_note = if row.membership == MEMBERSHIP_REQUESTED {
+            match repo::request(&self.store, &row.id, me.as_hex(), "out").await? {
+                Some(r) if r.status == "pending" => note_of(&r.payload_json),
+                _ => String::new(),
+            }
+        } else {
+            String::new()
         };
         let link = match (state, joined) {
             (Some(s), true) => match log.as_ref().and_then(|l| l.ordered().next()).map(|c| c.author.clone()) {
@@ -866,6 +913,7 @@ impl GroupService {
             members,
             banned: if manager { state.map(|s| s.banned.iter().cloned().collect()).unwrap_or_default() } else { vec![] },
             requests,
+            request_note,
             link,
             // What was said before I came is not mine to read when the
             // group keeps its history closed: that is not a missing key.
@@ -1482,7 +1530,7 @@ impl GroupService {
                         requester: me.as_hex().to_string(),
                         direction: "out".into(),
                         status: "pending".into(),
-                        payload_json: serde_json::json!({ "asked": ask.iter().map(|p| p.as_hex()).collect::<Vec<_>>() }).to_string(),
+                        payload_json: serde_json::json!({ "asked": ask.iter().map(|p| p.as_hex()).collect::<Vec<_>>(), "note": body.note }).to_string(),
                         created_at: self.now(),
                         updated_at: 0,
                     },
@@ -1771,8 +1819,8 @@ impl GroupService {
             let card = card.filter(|_| content_type == msgs::CT_CONTACT);
             let line = match (&text, content_type, card) {
                 (_, _, Some(card)) => messenger_dm::view::card_line(&card),
-                (Some(t), msgs::CT_MEDIA, _) => format!("📎 {}", messenger_dm::view::preview(t)),
-                (Some(t), _, _) => messenger_dm::view::preview(t),
+                (Some(t), msgs::CT_MEDIA, _) => format!("📎 {}", messenger_dm::view::preview_of(t, envelope.format())),
+                (Some(t), _, _) => messenger_dm::view::preview_of(t, envelope.format()),
                 (None, _, _) => format!("📎 {}", envelope.str_field("name").unwrap_or("file")),
             };
             chats::touch(&self.store, &chat_id, created_at, Some(&line), false).await?;
@@ -1834,6 +1882,18 @@ impl GroupService {
     }
 
     pub async fn prepare_text(&self, keys: &Keys, group_id: &str, text: &str, reply_to: Option<&str>) -> Result<(MessageView, Outbound)> {
+        self.prepare_text_as(keys, group_id, text, TextFormat::Plain, reply_to).await
+    }
+
+    /// A text written as `format`.
+    pub async fn prepare_text_as(
+        &self,
+        keys: &Keys,
+        group_id: &str,
+        text: &str,
+        format: TextFormat,
+        reply_to: Option<&str>,
+    ) -> Result<(MessageView, Outbound)> {
         let text = text.trim();
         if text.is_empty() {
             return Err(MessengerError::Invalid("message is empty".into()));
@@ -1841,7 +1901,7 @@ impl GroupService {
         if text.len() > messenger_dm::service::MAX_TEXT_BYTES {
             return Err(MessengerError::Invalid("message is too long".into()));
         }
-        self.prepare_message(keys, group_id, Envelope::text(text), msgs::CT_TEXT, Some(text.to_string()), reply_to, None).await
+        self.prepare_message(keys, group_id, Envelope::text(text).with_format(format), msgs::CT_TEXT, Some(text.to_string()), reply_to, None).await
     }
 
     /// Send a contact card to the group. The card is sent as it is: the
@@ -1856,8 +1916,13 @@ impl GroupService {
         chat_id.strip_prefix("group:").ok_or_else(|| MessengerError::Invalid("not a group message".into()))
     }
 
-    /// Change the text of my own message.
+    /// Change the text of my own message into plain text.
     pub async fn prepare_edit(&self, keys: &Keys, message_id: &str, text: &str) -> Result<(MessageView, String, Outbound)> {
+        self.prepare_edit_as(keys, message_id, text, TextFormat::Plain).await
+    }
+
+    /// Change the text of my own message and how it is written.
+    pub async fn prepare_edit_as(&self, keys: &Keys, message_id: &str, text: &str, format: TextFormat) -> Result<(MessageView, String, Outbound)> {
         let me = me_of(keys);
         let text = text.trim();
         if text.is_empty() || text.len() > messenger_dm::service::MAX_TEXT_BYTES {
@@ -1868,8 +1933,8 @@ impl GroupService {
             return Err(MessengerError::Invalid("only your own text messages and captions can be edited".into()));
         }
         let group_id = Self::group_of(&row.chat_id)?.to_string();
-        let (hidden, out) = self.prepare_message(keys, &group_id, Envelope::edit(message_id, text), msgs::CT_EDIT, None, None, None).await?;
-        msgs::set_text(&self.store, message_id, text, hidden.created_at).await?;
+        let (hidden, out) = self.prepare_message(keys, &group_id, Envelope::edit(message_id, text).with_format(format), msgs::CT_EDIT, None, None, None).await?;
+        msgs::set_text(&self.store, message_id, text, format, hidden.created_at).await?;
         // A new version: an approval of the old one no longer holds.
         let log = self.need_log(&group_id).await?;
         self.after_edit(&group_id, &log, &row, hidden.created_at).await?;

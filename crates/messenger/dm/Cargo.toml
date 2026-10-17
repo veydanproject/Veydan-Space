@@ -15,6 +15,7 @@ messenger-core.workspace = true
 messenger-store.workspace = true
 messenger-contacts.workspace = true
 messenger-links.workspace = true
+messenger-richtext.workspace = true
 hmac.workspace = true
 sha2.workspace = true
 hex.workspace = true

@@ -482,14 +482,30 @@ impl BlobBackend for BlossomBackend {
         self.base.clone()
     }
 
+    /// BUD-01 `HEAD <base>/<sha256>`. A server may answer the HEAD of a
+    /// missing blob with another status than 404 (Veydan's nginx says
+    /// 403): any such answer is checked by a GET of the first byte, which
+    /// the server answers as it serves the blob to everybody.
     async fn exists(&self, sha256: &str) -> BackendResult<bool> {
         let url = format!("{}/{}", self.base, sha256);
-        let resp = messenger_http::following_route(&host_of(&url), || self.http.head(&url).send())
+        let head = messenger_http::following_route(&host_of(&url), || self.http.head(&url).send())
             .await
             .map_err(route_changed)?
             .map_err(from_reqwest)?;
+        match head.status().as_u16() {
+            200 => return Ok(true),
+            404 => return Ok(false),
+            _ => {}
+        }
+        // A server that ignores the range sends the whole blob: only the
+        // status is read, and the body is dropped unread.
+        let resp =
+            messenger_http::following_route(&host_of(&url), || self.http.get(&url).header("range", "bytes=0-0").send())
+                .await
+                .map_err(route_changed)?
+                .map_err(from_reqwest)?;
         match resp.status().as_u16() {
-            200 => Ok(true),
+            200 | 206 => Ok(true),
             404 => Ok(false),
             _ => Err(fail(resp).await),
         }
@@ -1028,6 +1044,49 @@ mod tests {
         assert_eq!(tag(&ev, "server").as_deref(), Some("127.0.0.1"), "bound to the server it is sent to");
         assert_eq!(ev.content, format!("delete {sha}"));
         assert_eq!(tag(&auth_event(&seen[1]), "x"), Some(gone));
+    }
+
+    async fn requests_of(server: &MockServer, verb: &str) -> usize {
+        server.received_requests().await.unwrap().iter().filter(|r| r.method.as_str() == verb).count()
+    }
+
+    #[tokio::test]
+    async fn blossom_exists_asks_by_head_and_by_a_byte_when_the_head_is_refused() {
+        use wiremock::matchers::header as with_header;
+        let server = MockServer::start().await;
+        let (kept, gone) = ("1".repeat(64), "2".repeat(64));
+        let (refused, lost, broken) = ("3".repeat(64), "4".repeat(64), "5".repeat(64));
+        Mock::given(method("HEAD")).and(path(format!("/{kept}"))).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+        Mock::given(method("HEAD")).and(path(format!("/{gone}"))).respond_with(ResponseTemplate::new(404)).mount(&server).await;
+        // Veydan's nginx: the HEAD of a blob it does not have is 403.
+        Mock::given(method("HEAD")).respond_with(ResponseTemplate::new(403)).mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/{refused}")))
+            .and(with_header("range", "bytes=0-0"))
+            .respond_with(ResponseTemplate::new(206).set_body_bytes(b"x".to_vec()))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET")).and(path(format!("/{lost}"))).respond_with(ResponseTemplate::new(404)).mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/{broken}")))
+            .respond_with(ResponseTemplate::new(502).set_body_string("bad gateway"))
+            .mount(&server)
+            .await;
+        let b = BlossomBackend::new(&server.uri(), Keys::generate()).unwrap();
+        assert!(b.exists(&kept).await.unwrap());
+        assert!(!b.exists(&gone).await.unwrap());
+        assert_eq!(requests_of(&server, "GET").await, 0, "a HEAD that answers is enough");
+
+        assert!(b.exists(&refused).await.unwrap(), "the HEAD is refused, the blob is there");
+        assert!(!b.exists(&lost).await.unwrap(), "the HEAD is refused, the blob is gone");
+        let e = b.exists(&broken).await.unwrap_err();
+        assert_eq!(e.status, Some(502));
+        assert!(e.is_retryable());
+        assert_eq!(requests_of(&server, "GET").await, 3);
+        for r in server.received_requests().await.unwrap().iter().filter(|r| r.method.as_str() == "GET") {
+            assert_eq!(header(r, "range"), "bytes=0-0");
+            assert!(header(r, "authorization").is_empty(), "read as anybody reads it");
+        }
     }
 
     /// A chunk of a few pieces, not a multiple of the piece size.

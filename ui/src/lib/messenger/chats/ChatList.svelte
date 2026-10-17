@@ -23,6 +23,8 @@
   import { requestsHref } from '../mobile/routes';
   import { onPhone } from '../shared/phone';
   import { inSection, type ChatSection } from './sections';
+  import { groupStore } from '../groups/groupStore.svelte';
+  import { answersRequests } from '../groups/permissions';
 
   interface Props {
     query: string;
@@ -33,6 +35,12 @@
   let { query, kind = 'dm', onopen }: Props = $props();
 
   const phone = onPhone();
+
+  /** Requests to join a group of mine that wait for my answer: a manager's count, apart from the unread. */
+  function asking(c: MessengerChat): number {
+    const g = c.kind === 'group' ? groupStore.byChat(c.id) : null;
+    return answersRequests(g) ? g.requests.length : 0;
+  }
 
   let showArchived = $state(false);
   let menu = $state<{ open: boolean; x: number; y: number; chat: MessengerChat | null }>({ open: false, x: 0, y: 0, chat: null });
@@ -117,6 +125,11 @@
           {:else}
             <span class="preview">{preview(c)}</span>
           {/if}
+          {#if asking(c)}
+            <span class="badge asks" title={$t('msg_greq_badge', { n: String(asking(c)) })} aria-label={$t('msg_greq_badge', { n: String(asking(c)) })}>
+              <Icon name="user-plus" size={11} />{asking(c) > 99 ? '99+' : asking(c)}
+            </span>
+          {/if}
           {#if c.unread > 0}<span class="badge" class:muted={c.is_muted}>{c.unread > 99 ? '99+' : c.unread}</span>{/if}
         </span>
       </span>
@@ -192,6 +205,8 @@
     display: inline-flex; align-items: center; justify-content: center;
   }
   .badge.muted { background: var(--surface-3); color: var(--text-2); }
+  /* Requests to join wait: the accent's tint, so the unread count stays the one that calls. */
+  .badge.asks { gap: 3px; background: var(--accent-tint); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }
   .empty {
     display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center;
     padding: var(--sp-8) var(--sp-4); color: var(--text-3);

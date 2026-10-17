@@ -96,7 +96,7 @@ describe('browser dialogs', () => {
 // 'Maximize'`) come from a dictionary; a few words are names in either language.
 describe('English literals in markup', () => {
   /** Product and technical names, the same in every language. */
-  const NAMES = new Set(['Blossom', 'Navigator', 'Esc', 'OK', 'Perimeter', 'Ctrl', 'Shift', 'Alt', 'Cmd', 'Enter', 'Tab']);
+  const NAMES = new Set(['Blossom', 'Navigator', 'Esc', 'OK', 'Perimeter', 'Ctrl', 'Shift', 'Alt', 'Cmd', 'Enter', 'Tab', 'Markdown']);
   /**
    * Whether a text the user reads holds English words. Not counted: names,
    * acronyms (TOTP, JSON, NIP), identifiers (userAgent, WebRTC), single

@@ -215,6 +215,8 @@ export function buildDemo(): DemoData {
     [hex('5e'), 'Спам-бот', '', null, 'blocked', false],
     [hex('6f'), 'Дарья', 'На связи по будням.', 'daria@example.org', 'removed_by_peer', false],
     [hex('8e'), 'Никита Орлов', '', 'nikita@orlov.dev', 'request_received', false],
+    // A contact outside the team who asks to join it.
+    [hex('9a'), 'Марина Соколова', 'Тестирую интерфейсы и ломаю их раньше пользователей.', 'marina@veydan.net', 'full_chat', true],
   ];
   const contacts: MessengerContact[] = [];
   const strangers: MessengerProfile[] = [];
@@ -249,7 +251,30 @@ export function buildDemo(): DemoData {
   }
 
   const day = 86400;
-  const [alice, boris, vera, gleb, bot, daria, nikita] = people.map((p) => p[0]);
+  const [alice, boris, vera, gleb, bot, daria, nikita, marina] = people.map((p) => p[0]);
+  messages[`dm:${marina}`].push(
+    msg(`dm:${marina}`, marina, now - day * 4, 'Привет! Нашла пару багов в списке чатов, скину скриншоты.'),
+    msg(`dm:${marina}`, ME, now - day * 4 + 300, 'Спасибо, жду.'),
+  );
+  // Strangers who ask to join the team: one with a checked address, one
+  // whose address is not checked, one who says nothing of themselves, and
+  // one whose profile never came.
+  const irina = hex('b7'), pavel = hex('d5'), oleg = hex('f3'), unknown = hex('c4');
+  strangers.push(
+    profile(irina, 'Ирина Лебедева', 'Переводчица, волонтёр открытых проектов.\nКазахский, русский, английский.', 'irina@nostr.example'),
+    profile(pavel, 'Pavel', 'Backend, Rust, немного Nostr.', 'pavel@mail.example', { nip05_verified: false }),
+    profile(oleg, 'Олег', '', null),
+  );
+  const asks = (requester: string, note: string, received: number, claimed = received) =>
+    ({ requester, npub: contacts.find((c) => c.pubkey === requester)?.npub ?? strangers.find((p) => p.pubkey === requester)?.npub ?? npub(requester, 'req'), note, created_at: claimed, received_at: received });
+  const joinRequests = [
+    asks(vera, 'Привет! Меня позвала Дарья, я из соседнего отдела. Хочу следить за обсуждениями и помогать с тестами.', now - 600),
+    asks(irina, 'Добрый вечер! Я из сообщества переводчиков, хотела бы помочь с переводом интерфейса на казахский.', now - 2400),
+    asks(marina, 'Борис сказал, что здесь обсуждают релизы. Можно к вам?', now - 3 * 3600),
+    asks(pavel, 'Здравствуйте!\n\nЯ пишу на Rust третий год, последние полгода — клиенты и реле Nostr. Видел ваш доклад про группы с одним ключом и хочу помочь: могу взять ревью кода синхронизации, могу писать тесты на сценарии с несколькими устройствами.\n\nНемного о себе: работал в команде платёжного шлюза, отвечал за отказоустойчивость. Ссылки на код пришлю в личку, если интересно.\n\nСпасибо!', now - day - 5000),
+    asks(unknown, '', now - day * 3, now - day * 3 - 3 * 3600),
+    asks(oleg, 'Хочу присоединиться', now - day * 6),
+  ];
   const a = `dm:${alice}`;
   const m1 = msg(a, alice, now - day * 2 - 4000, 'Привет! Посмотрела макеты мессенджера. В целом очень нравится, но есть пара мыслей по списку чатов.');
   const m2 = msg(a, ME, now - day * 2 - 3900, 'Привет! Давай, рассказывай.');
@@ -338,7 +363,7 @@ export function buildDemo(): DemoData {
       member(daria, 'member', now - day * 3, true, now + 3600), member(gleb, 'member', now - day), member(nikita, 'member', now - 7200),
       member(newbie, 'member', now - 3000),
     ],
-    banned: [bot], requests: [vera], undecrypted: 0,
+    banned: [bot], requests: joinRequests, request_note: '', undecrypted: 0,
     post_mode: 'all', schedule: { tz: 'Europe/Berlin', days: [1, 2, 3, 4, 5], from: '09:00', to: '21:00' }, premod: 'newcomers',
     closed_until: null, needs_update: false, queue: 4,
     key: { id: 'e0aa8b956aaf838d50ee6ab5d8622273', version: 3, cipher: 'AES-256-GCM', source: 'random', link_epoch: 0, since: now - day * 5, by: ME, reason: 'remove', held: true, status: 'good' },
@@ -347,8 +372,8 @@ export function buildDemo(): DemoData {
   const square: MessengerGroup = {
     id: gid('8b'), chat_id: `group:${gid('8b')}`, kind: 'public', name: 'Veydan: открытый чат', about: 'Вход по ссылке. Вежливость обязательна.',
     picture: '', relay: 'wss://node-1.veydan.net', owner: boris, membership: 'joined', my_role: 'member', muted: false, can_post: true, history_for_new: true,
-    members: [member(boris, 'owner', now - day * 40), member(alice, 'admin', now - day * 39), member(ME, 'member', now - day * 2), member(gleb, 'member', now - day)],
-    banned: [], requests: [], undecrypted: 3,
+    members: [member(boris, 'owner', now - day * 40), member(alice, 'admin', now - day * 39), member(ME, 'member', now - day * 2), member(gleb, 'member', now - day), member(marina, 'member', now - day * 10)],
+    banned: [], requests: [], request_note: '', undecrypted: 3,
     // A change of the group came from a newer app: the banner asks for an update.
     post_mode: 'all', schedule: null, premod: 'off', closed_until: null, needs_update: true, queue: 0,
     key: { id: '5a0f3c395349207ca3117c7e8590da77', version: 1, cipher: 'AES-256-GCM', source: 'link', link_epoch: 0, since: now - day * 40, by: boris, reason: 'create', held: true, status: 'deliver' },

@@ -23,17 +23,22 @@
 //! - `parse`: marks and links into spans.
 //! - `link`: what a bare address must look like to be a link.
 //! - `marks`: the marks that pile up over a letter.
+//! - `md`: messages written in Markdown, parsed into blocks; a markup of
+//!   its own, apart from the bio's.
 //!
 //! Everything here is pure, and takes time linear in the input up to
 //! `MAX_INPUT_BYTES`, the most of it that is read.
 
 mod link;
 mod marks;
+pub mod md;
 mod normalize;
 mod parse;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod md_tests;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

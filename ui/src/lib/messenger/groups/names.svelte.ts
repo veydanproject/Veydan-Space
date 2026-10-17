@@ -40,6 +40,15 @@ class NameStore {
     return p ?? null;
   }
 
+  /**
+   * Was their profile asked for and never found? False while it is on its
+   * way, and for a contact or me (the book and my own profile hold theirs).
+   */
+  missing(pubkey: string): boolean {
+    if (this.isMe(pubkey) || messengerStore.contacts.find((x) => x.pubkey === pubkey)?.profile) return false;
+    return this.profiles[pubkey] === null;
+  }
+
   picture(pubkey: string): string | null {
     if (this.isMe(pubkey)) return messengerStore.ownProfile?.picture ?? null;
     const c = messengerStore.contacts.find((x) => x.pubkey === pubkey);

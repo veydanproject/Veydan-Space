@@ -18,7 +18,7 @@ use crate::state::{self, Closed, GroupState};
 use crate::wire::{self, InnerMessage, Opened, SecretEnvelope};
 use messenger_core::envelope::{T_CONTACT, T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_RECEIPT_READ, T_TEXT};
 use messenger_core::traits::{Body, Notice, UiEvent};
-use messenger_core::{Context, DmInbound, Envelope, EventSource, GroupInbound, MessengerError, PubKey, Result};
+use messenger_core::{Context, DmInbound, Envelope, EventSource, GroupInbound, MessengerError, PubKey, Result, TextFormat};
 use messenger_store::groups::{self as repo, GroupRow, PendingRow};
 use messenger_store::messages::{self as msgs, NewMessage};
 use messenger_store::chats;
@@ -576,7 +576,15 @@ impl GroupService {
         if from_me {
             // Asked on another device of mine: the welcome is expected here too.
             let known = repo::request(&self.store, &body.group_id, sender.as_hex(), "out").await?;
-            if known.is_none_or(|r| r.created_at < body.created_at && r.status != "pending") {
+            let note: String = body.note.chars().take(300).collect();
+            if let Some(pending) = known.as_ref().filter(|r| r.status == "pending" && r.created_at < body.created_at) {
+                // Asked again on the other device with new words: the
+                // people asked stay, the note and the date are the new ones.
+                let mut payload = serde_json::from_str::<serde_json::Value>(&pending.payload_json).unwrap_or_else(|_| serde_json::json!({}));
+                payload["note"] = note.clone().into();
+                let row = repo::RequestRow { payload_json: payload.to_string(), created_at: body.created_at, ..pending.clone() };
+                repo::put_request(&self.store, &row).await?;
+            } else if known.is_none_or(|r| r.created_at < body.created_at && r.status != "pending") {
                 repo::put_request(
                     &self.store,
                     &repo::RequestRow {
@@ -584,7 +592,7 @@ impl GroupService {
                         requester: sender.as_hex().to_string(),
                         direction: "out".into(),
                         status: "pending".into(),
-                        payload_json: "{}".into(),
+                        payload_json: serde_json::json!({ "note": note }).to_string(),
                         created_at: body.created_at,
                         updated_at: 0,
                     },
@@ -608,9 +616,18 @@ impl GroupService {
         if body.created_at > self.now() + wire::INVITE_SKEW_SECS {
             return Ok(Outcome::default());
         }
+        let note: String = body.note.chars().take(300).collect();
         if let Some(known) = repo::request(&self.store, &body.group_id, sender.as_hex(), "in").await? {
-            if known.status == "pending" || known.created_at >= body.created_at {
+            if known.created_at >= body.created_at {
                 return Ok(Outcome::default());
+            }
+            if known.status == "pending" {
+                // Asked again while the first request waits: the newer words
+                // replace the older ones. The request keeps its place, so
+                // the limit does not apply, and it does not call again.
+                let row = repo::RequestRow { payload_json: serde_json::json!({ "note": note }).to_string(), created_at: body.created_at, ..known };
+                repo::put_request(&self.store, &row).await?;
+                return Ok(Outcome { events: vec![Self::updated(&body.group_id)], ..Default::default() });
             }
         }
         // Requests that wait are few: the rest is dropped unseen. One taken
@@ -632,7 +649,7 @@ impl GroupService {
                 requester: sender.as_hex().to_string(),
                 direction: "in".into(),
                 status: "pending".into(),
-                payload_json: serde_json::json!({ "note": body.note.chars().take(300).collect::<String>() }).to_string(),
+                payload_json: serde_json::json!({ "note": note }).to_string(),
                 created_at: body.created_at,
                 updated_at: 0,
             },
@@ -1427,7 +1444,7 @@ impl GroupService {
             if row.is_hidden || row.chat_id != chat_id || row.deleted_at.is_some() || row.content_type == msgs::CT_SYSTEM {
                 return Ok(Verdict::Done);
             }
-            let new_text = envelope.str_field("text").map(|t| t.trim().to_string());
+            let new_text = envelope.str_field("text").map(|t| (t.trim().to_string(), envelope.format()));
             if self.change(&log, &row, content_type, &m.author, m.created_at, new_text).await? {
                 chats::recompute_last(&self.store, &chat_id).await?;
                 out.events.push(message_updated(&chat_id, &target));
@@ -1448,7 +1465,7 @@ impl GroupService {
         if let Some(row) = msgs::get(&self.store, &id).await? {
             for p in msgs::pending_for_target(&self.store, &id).await? {
                 let Some(actor) = PubKey::parse(&p.sender_pubkey) else { continue };
-                let new_text = Envelope::parse(&p.envelope_json).ok().and_then(|e| e.str_field("text").map(|t| t.trim().to_string()));
+                let new_text = Envelope::parse(&p.envelope_json).ok().and_then(|e| e.str_field("text").map(|t| (t.trim().to_string(), e.format())));
                 self.change(&log, &row, &p.content_type, &actor, p.created_at, new_text).await?;
             }
         }
@@ -1483,9 +1500,9 @@ impl GroupService {
             line
         } else if content_type == msgs::CT_MEDIA {
             let name = envelope.str_field("name").unwrap_or("file");
-            format!("📎 {}", text.as_deref().map(messenger_dm::view::preview).unwrap_or_else(|| name.to_string()))
+            format!("📎 {}", text.as_deref().map(|t| messenger_dm::view::preview_of(t, envelope.format())).unwrap_or_else(|| name.to_string()))
         } else {
-            text.as_deref().map(messenger_dm::view::preview).unwrap_or_default()
+            text.as_deref().map(|t| messenger_dm::view::preview_of(t, envelope.format())).unwrap_or_default()
         };
         let live = !from_me && !item.historical;
         let floor = self.dm.unread_floor();
@@ -1533,7 +1550,7 @@ impl GroupService {
         content_type: &str,
         actor: &PubKey,
         at: i64,
-        new_text: Option<String>,
+        new_text: Option<(String, TextFormat)>,
     ) -> Result<bool> {
         if at < row.created_at {
             return Ok(false);
@@ -1547,10 +1564,10 @@ impl GroupService {
                 {
                     return Ok(false);
                 }
-                let Some(t) = new_text.filter(|t| !t.is_empty() && t.len() <= messenger_dm::service::MAX_TEXT_BYTES) else {
+                let Some((t, format)) = new_text.filter(|(t, _)| !t.is_empty() && t.len() <= messenger_dm::service::MAX_TEXT_BYTES) else {
                     return Ok(false);
                 };
-                msgs::set_text(&self.store, &row.id, &t, at).await?;
+                msgs::set_text(&self.store, &row.id, &t, format, at).await?;
                 // A new version: what a moderator approved was the old one.
                 self.after_edit(log.group_id(), log, row, at).await?;
                 Ok(true)

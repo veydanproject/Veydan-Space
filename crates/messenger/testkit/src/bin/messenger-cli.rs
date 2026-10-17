@@ -1284,7 +1284,11 @@ async fn main() {
                 println!("banned {b}");
             }
             for r in &g.requests {
-                println!("request {r}");
+                if r.note.is_empty() {
+                    println!("request {}", r.requester);
+                } else {
+                    println!("request {} note={:?}", r.requester, r.note);
+                }
             }
             println!("link: {}", g.link.unwrap_or_else(|| "-".into()));
         }

@@ -16,7 +16,7 @@
 use crate::{MessengerRuntime, REGION_FALLBACK};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use messenger_core::traits::UiEvent;
-use messenger_core::{MessengerError, PubKey, Result};
+use messenger_core::{MessengerError, PubKey, Result, TextFormat};
 use messenger_dm::{DmService, MessageView};
 use messenger_ingress::Outbox;
 pub use messenger_media::descriptor::MAX_SEND_BYTES;
@@ -563,9 +563,11 @@ impl UploadJob {
         match outcome {
             Ok(Some(publishing)) => {
                 let mut descriptor = publishing.descriptor().clone();
-                // The caption lives on the placeholder row.
-                let caption = self.dm.message(&placeholder).await.ok().flatten().and_then(|m| m.text);
-                descriptor.caption = caption;
+                // The caption lives on the placeholder row, and how it is written.
+                let row = self.dm.message(&placeholder).await.ok().flatten();
+                let caption_format = TextFormat::from_name(row.as_ref().and_then(|m| m.fmt.as_deref()));
+                descriptor.caption = row.and_then(|m| m.text);
+                let caption_format = if descriptor.caption.is_some() { caption_format } else { TextFormat::Plain };
                 // What the app knew before the upload (a recording's kind,
                 // length and outline) is on the placeholder too.
                 if let Some(ph) = self.dm.message(&placeholder).await.ok().flatten().and_then(|m| m.media) {
@@ -584,7 +586,7 @@ impl UploadJob {
                         .and_then(|v| v.as_array())
                         .map(|a| a.iter().filter_map(|x| x.as_u64()).map(|x| x.min(255) as u8).collect());
                 }
-                let envelope = descriptor.to_envelope();
+                let envelope = descriptor.to_envelope().with_format(caption_format);
                 let mut local = serde_json::to_value(&descriptor).unwrap_or_else(|_| serde_json::json!({}));
                 local["local_path"] = serde_json::Value::String(local_path);
                 local["transfer_id"] = serde_json::Value::String(transfer_id.clone());
@@ -779,17 +781,19 @@ impl MessengerRuntime {
         batch: Option<&str>,
         original: bool,
     ) -> Result<MessageView> {
-        self.dm_send_file_with(to, path, caption, batch, original, None).await
+        self.dm_send_file_with(to, path, caption, TextFormat::Plain, batch, original, None).await
     }
 
     /// `dm_send_file` with a frame the UI took from a video (`Poster`):
     /// written anew as the preview the other side sees before it fetches
     /// the file. A frame that cannot be read is left out.
+    #[allow(clippy::too_many_arguments)]
     pub async fn dm_send_file_with(
         &self,
         to: &str,
         path: &Path,
         caption: Option<&str>,
+        caption_format: TextFormat,
         batch: Option<&str>,
         original: bool,
         poster: Option<Poster>,
@@ -797,7 +801,7 @@ impl MessengerRuntime {
         if batch.is_some_and(|b| !messenger_media::descriptor::valid_batch(b)) {
             return Err(MessengerError::Invalid("err.bad_batch".into()));
         }
-        self.send_attachment(to, path, caption, None, batch, original, poster).await
+        self.send_attachment(to, path, caption, caption_format, None, batch, original, poster).await
     }
 
     /// Send something recorded in the app (voice message, video circle).
@@ -834,7 +838,7 @@ impl MessengerRuntime {
         tokio::fs::write(&path, &rec.bytes).await?;
         let waveform = rec.waveform.map(|w| w.into_iter().take(messenger_media::descriptor::MAX_WAVEFORM).collect::<Vec<u8>>());
         let meta = AttachmentMeta { kind: rec.kind, mime, duration_ms: rec.duration_ms, waveform };
-        let result = self.send_attachment(to, &path, caption, Some(meta), None, false, None).await;
+        let result = self.send_attachment(to, &path, caption, TextFormat::Plain, Some(meta), None, false, None).await;
         if result.is_err() {
             let _ = tokio::fs::remove_dir_all(&dir).await;
         }
@@ -847,6 +851,7 @@ impl MessengerRuntime {
         to: &str,
         path: &Path,
         caption: Option<&str>,
+        caption_format: TextFormat,
         meta_override: Option<AttachmentMeta>,
         batch: Option<&str>,
         original: bool,
@@ -911,8 +916,8 @@ impl MessengerRuntime {
             fields["batch"] = b.into();
         }
         let placeholder = match (&group, &peer) {
-            (Some(g), _) => self.groups().media_placeholder(&keys, g, fields, caption).await?,
-            (None, Some(peer)) => self.dm.media_placeholder(&keys, peer, fields, caption).await?,
+            (Some(g), _) => self.groups().media_placeholder(&keys, g, fields, caption, caption_format).await?,
+            (None, Some(peer)) => self.dm.media_placeholder(&keys, peer, fields, caption, caption_format).await?,
             (None, None) => return Err(MessengerError::Invalid("no recipient".into())),
         };
         let transfer = match self.media.queue_upload(path, &placeholder.chat_id, &placeholder.id).await {
@@ -1656,7 +1661,7 @@ mod tests {
             .unwrap();
         let poster = Poster { jpeg: B64.encode(&frame), width: 1920, height: 1080 };
 
-        let ph = rt.dm_send_file_with(&peer, &video, None, None, false, Some(poster)).await.unwrap();
+        let ph = rt.dm_send_file_with(&peer, &video, None, TextFormat::Plain, None, false, Some(poster)).await.unwrap();
         let t = transfer_of(&ph);
         until(async || status_of(&rt, &t).await == "done").await;
         let m = sent(&rt, &t).await;
@@ -1667,7 +1672,7 @@ mod tests {
         assert_eq!(messenger_avatar::upright_size(&thumb), Some((160, 90)));
 
         let bad = Poster { jpeg: B64.encode(b"<svg onload=alert(1)>"), width: 0, height: 5 };
-        let ph = rt.dm_send_file_with(&peer, &video, None, None, false, Some(bad)).await.unwrap();
+        let ph = rt.dm_send_file_with(&peer, &video, None, TextFormat::Plain, None, false, Some(bad)).await.unwrap();
         let t = transfer_of(&ph);
         until(async || status_of(&rt, &t).await == "done").await;
         let m = sent(&rt, &t).await;
@@ -1904,7 +1909,7 @@ mod tests {
         let mut up = Vec::new();
         for _ in 0..2 {
             let fields = serde_json::json!({ "name": "notes.bin", "mime": "application/octet-stream", "size": 300_000, "kind": "file" });
-            let ph = rt.dm.media_placeholder(&keys, &peer, fields, None).await.unwrap();
+            let ph = rt.dm.media_placeholder(&keys, &peer, fields, None, messenger_core::TextFormat::Plain).await.unwrap();
             let t = rt.media.queue_upload(&path, &ph.chat_id, &ph.id).await.unwrap();
             rt.dm.media_set_status(&ph.id, "paused", None).await.unwrap();
             up.push((ph.id, t.id));
@@ -2275,7 +2280,7 @@ mod tests {
         let mut up = Vec::new();
         for reason in ["err.network", "err.timeout", "err.file_changed"] {
             let fields = serde_json::json!({ "name": "notes.bin", "mime": "application/octet-stream", "size": 1000, "kind": "file" });
-            let ph = rt.dm.media_placeholder(&keys, &peer, fields, None).await.unwrap();
+            let ph = rt.dm.media_placeholder(&keys, &peer, fields, None, messenger_core::TextFormat::Plain).await.unwrap();
             let t = rt.media.queue_upload(&path, &ph.chat_id, &ph.id).await.unwrap();
             transfers::set_status(&rt.store, &t.id, transfers::ST_FAILED, Some(reason)).await.unwrap();
             up.push(t.id);
@@ -2369,7 +2374,7 @@ mod tests {
             "name": "holiday.png", "mime": "image/png", "kind": "image", "dim": [1600, 1200],
             "size": std::fs::metadata(&big).unwrap().len(), "local_path": big.to_string_lossy(),
         });
-        let ph = rt.dm.media_placeholder(&keys, &peer, fields, None).await.unwrap();
+        let ph = rt.dm.media_placeholder(&keys, &peer, fields, None, messenger_core::TextFormat::Plain).await.unwrap();
         let t = rt.media.queue_upload(&big, &ph.chat_id, &ph.id).await.unwrap().id;
         assert!(rt.media.replace_file(&t, &jpeg).await.unwrap().is_some());
         transfers::set_status(&rt.store, &t, transfers::ST_PAUSED, Some(transfers::REASON_INTERRUPTED)).await.unwrap();

@@ -108,9 +108,9 @@
       <BotCardMessage card={m.bot_card} id={m.id} at={m.created_at} />
     {:else if m.content_type === 'media' && media}
       {@render media(m)}
-      {#if m.text}<MessageContent text={m.text} />{/if}
+      {#if m.text}<MessageContent text={m.text} rich={m.rich} />{/if}
     {:else if m.text}
-      <MessageContent text={m.text} />
+      <MessageContent text={m.text} rich={m.rich} />
     {:else}
       <span class="tomb">{$t('msg_message_unsupported', { type: m.content_type })}</span>
     {/if}

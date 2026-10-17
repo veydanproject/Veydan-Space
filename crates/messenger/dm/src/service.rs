@@ -5,7 +5,7 @@
 //! building; sending is the runtime's job (it enqueues the returned
 //! `Outbound`s and reports the outbox id back with `attach_outbox`).
 
-use crate::view::{preview, ChatView, MessageView, ReactionView, ReplyPreview};
+use crate::view::{preview, preview_of, ChatView, MessageView, ReactionView, ReplyPreview};
 use crate::wrap::{wrap_as, Wake};
 use crate::view::CardView;
 use crate::botcard::BotCard;
@@ -14,7 +14,7 @@ use messenger_contacts::{ContactCard, ContactService, ProfileService};
 use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
 use messenger_core::traits::{Notice, UiEvent};
 use messenger_core::{
-    Clock, Context, DmInbound, Effect, Envelope, EventSource, MessengerError, Outbound, PubKey, RelayUrl, Result,
+    Clock, Context, DmInbound, Effect, Envelope, EventSource, MessengerError, Outbound, PubKey, RelayUrl, Result, TextFormat,
 };
 use messenger_store::chats::{self, ChatRow};
 use messenger_store::messages::{self as repo, MessageRow, NewMessage};
@@ -360,7 +360,7 @@ impl DmService {
                     media: reply_media(&t, deleted),
                     id: t.id,
                     sender_pubkey: t.sender_pubkey,
-                    text: t.text.as_deref().map(preview),
+                    text: t.plain.as_deref().or(t.text.as_deref()).map(preview),
                     deleted,
                     content_type: t.content_type,
                 }
@@ -459,8 +459,20 @@ impl DmService {
         keys.public_key().to_hex()
     }
 
-    /// Store an outgoing text message and build its wraps.
+    /// Store an outgoing plain text message and build its wraps.
     pub async fn prepare_text(&self, keys: &Keys, peer: &PubKey, text: &str, reply_to: Option<&str>) -> Result<Prepared> {
+        self.prepare_text_as(keys, peer, text, TextFormat::Plain, reply_to).await
+    }
+
+    /// Store an outgoing text message written as `format` and build its wraps.
+    pub async fn prepare_text_as(
+        &self,
+        keys: &Keys,
+        peer: &PubKey,
+        text: &str,
+        format: TextFormat,
+        reply_to: Option<&str>,
+    ) -> Result<Prepared> {
         let text = text.trim();
         if text.is_empty() {
             return Err(MessengerError::Invalid("message is empty".into()));
@@ -468,7 +480,7 @@ impl DmService {
         if text.len() > MAX_TEXT_BYTES {
             return Err(MessengerError::Invalid(format!("message is longer than {} KiB", MAX_TEXT_BYTES / 1024)));
         }
-        let envelope = Envelope::text(text);
+        let envelope = Envelope::text(text).with_format(format);
         self.prepare_visible(keys, peer, envelope, repo::CT_TEXT, Some(text.to_string()), reply_to, None).await
     }
 
@@ -487,7 +499,7 @@ impl DmService {
         if text.is_empty() {
             return Err(MessengerError::Invalid("message is empty".into()));
         }
-        if !Self::kind_of_text(text).is_request_text() {
+        if !Self::kind_of_text(text, TextFormat::Plain).is_request_text() {
             return Err(MessengerError::Invalid("dm_request_text".into()));
         }
         let chat_id = chats::dm_chat_id(peer.as_hex());
@@ -545,13 +557,14 @@ impl DmService {
             lead = Some(self.act_with(keys, peer, crate::relationship::Action::Request, true, invite).await?);
         }
         let content = envelope.encode();
+        let format = envelope.format();
         let created_at = self.next_created_at(&chat.id).await?;
         let (id, wire_id, to_peer, to_self) =
             self.publish_pair(keys, peer, &content, created_at, reply_to, Wake::Peer).await?;
         let card = media_json.as_deref().filter(|_| content_type == repo::CT_CONTACT).and_then(|j| serde_json::from_str(j).ok());
         let line = match card {
             Some(card) => crate::view::card_line(&card),
-            None => text.as_deref().map(preview).unwrap_or_else(|| format!("[{content_type}]")),
+            None => text.as_deref().map(|t| preview_of(t, format)).unwrap_or_else(|| format!("[{content_type}]")),
         };
         repo::insert(
             &self.store,
@@ -660,8 +673,14 @@ impl DmService {
         Ok(())
     }
 
-    /// Replace the text of one of our messages, locally and for the peer.
+    /// Replace the text of one of our messages by plain text.
     pub async fn prepare_edit(&self, keys: &Keys, message_id: &str, text: &str) -> Result<Prepared> {
+        self.prepare_edit_as(keys, message_id, text, TextFormat::Plain).await
+    }
+
+    /// Replace the text of one of our messages and how it is written,
+    /// locally and for the peer.
+    pub async fn prepare_edit_as(&self, keys: &Keys, message_id: &str, text: &str, format: TextFormat) -> Result<Prepared> {
         let text = text.trim();
         if text.is_empty() {
             return Err(MessengerError::Invalid("message is empty".into()));
@@ -673,13 +692,13 @@ impl DmService {
         if !editable_row(&row) {
             return Err(MessengerError::Invalid("only text messages and captions can be edited".into()));
         }
-        let content = Envelope::edit(message_id, text).encode();
+        let content = Envelope::edit(message_id, text).with_format(format).encode();
         let created_at = self.next_created_at(&row.chat_id).await?;
         // The peer's phone told of the message; the correction is for the app.
         let (id, wire_id, to_peer, to_self) =
             self.publish_pair(keys, &peer, &content, created_at, None, Wake::Nobody).await?;
         self.insert_hidden(keys, &row.chat_id, &id, &wire_id, repo::CT_EDIT, content, message_id, created_at).await?;
-        repo::set_text(&self.store, message_id, text, created_at).await?;
+        repo::set_text(&self.store, message_id, text, format, created_at).await?;
         chats::recompute_last(&self.store, &row.chat_id).await?;
         let message = self.message(message_id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
         Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups: vec![], followups_first: false, became_contact: false, events: vec![], expiring: false })
@@ -856,7 +875,7 @@ impl DmService {
         let mut held = false;
         let mut regate = false;
         if !from_me && !hidden && repo::get(&self.store, &id).await?.is_none() {
-            let kind = Self::kind_of(&content_type, text.as_deref());
+            let kind = Self::kind_of(&content_type, text.as_deref(), envelope.format());
             match self.gate_inbound(&chat_id, &peer, msg.created_at.secs(), historical, kind).await? {
                 InboundGate::Pass { effects: mut e, regate: r } => {
                     effects.append(&mut e);
@@ -930,7 +949,7 @@ impl DmService {
         }
         if hidden {
             let Some(target) = target else { return Ok(vec![]) };
-            return self.apply_change(&chat_id, &peer, &content_type, &target, &msg, text_of(&envelope), from_me).await;
+            return self.apply_change(&chat_id, &peer, &content_type, &target, &msg, text_of(&envelope), envelope.format(), from_me).await;
         }
 
         effects.extend(
@@ -978,10 +997,12 @@ impl DmService {
             }
             match p.content_type.as_str() {
                 repo::CT_EDIT if editable_type(content_type) => {
-                    let t = Envelope::parse(&p.envelope_json).ok().and_then(|e| text_of(&e));
+                    let edit = Envelope::parse(&p.envelope_json).ok();
+                    let format = edit.as_ref().map(Envelope::format).unwrap_or_default();
+                    let t = edit.as_ref().and_then(text_of);
                     if let Some(t) = t.map(|t| t.trim().to_string()).filter(|t| !t.is_empty() && t.len() <= MAX_TEXT_BYTES) {
-                        if from_me || self.edit_allowed(peer, &t).await? {
-                            repo::set_text(&self.store, id, &t, p.created_at).await?;
+                        if from_me || self.edit_allowed(peer, &t, format).await? {
+                            repo::set_text(&self.store, id, &t, format, p.created_at).await?;
                         }
                     }
                 }
@@ -997,9 +1018,9 @@ impl DmService {
             line
         } else if content_type == repo::CT_MEDIA {
             let name = envelope.str_field("name").unwrap_or("file");
-            format!("📎 {}", text.map(preview).unwrap_or_else(|| name.to_string()))
+            format!("📎 {}", text.map(|t| preview_of(t, envelope.format())).unwrap_or_else(|| name.to_string()))
         } else {
-            text.map(preview).unwrap_or_else(|| format!("[{content_type}]"))
+            text.map(|t| preview_of(t, envelope.format())).unwrap_or_else(|| format!("[{content_type}]"))
         };
         let live_incoming = !from_me && !historical;
         let floor = self.unread_floor.load(Ordering::SeqCst);
@@ -1083,6 +1104,7 @@ impl DmService {
         target: &str,
         msg: &DmInbound,
         new_text: Option<String>,
+        format: TextFormat,
         from_me: bool,
     ) -> Result<Vec<Effect>> {
         let Some(row) = repo::get(&self.store, target).await? else { return Ok(vec![]) };
@@ -1104,10 +1126,10 @@ impl DmService {
                 let Some(t) = new_text.map(|t| t.trim().to_string()).filter(|t| !t.is_empty() && t.len() <= MAX_TEXT_BYTES) else {
                     return Ok(vec![]);
                 };
-                if !from_me && !self.edit_allowed(peer, &t).await? {
+                if !from_me && !self.edit_allowed(peer, &t, format).await? {
                     return Ok(vec![]);
                 }
-                repo::set_text(&self.store, target, &t, at).await?;
+                repo::set_text(&self.store, target, &t, format, at).await?;
             }
             // A card of the bot is not a message its sender takes back: the
             // bot never does, and whoever holds its key would silence the
@@ -1186,6 +1208,7 @@ pub(crate) fn updated(chat_id: &str, message_id: &str) -> UiEvent {
 
 #[cfg(test)]
 mod tests {
+    use crate::view::MdBlock;
     use crate::wrap::wrap;
     use super::*;
     use messenger_core::inbound::Envelope as WireEnvelope;
@@ -1403,6 +1426,57 @@ mod tests {
         bob.receive(&peer_event(&p2)).await;
         bob.dm.delete_local(&p2.message.id).await.unwrap();
         assert!(bob.dm.message(&p2.message.id).await.unwrap().unwrap().deleted);
+    }
+
+    #[test]
+    fn a_strangers_markdown_request_has_nothing_to_click() {
+        let md = |t: &str| DmService::kind_of_text(t, TextFormat::Markdown).is_request_text();
+        assert!(md("**hi**, it is me"));
+        assert!(!md("[hi](https:&#47;&#47;evil.example)"), "an entity spells the address of a mark");
+        assert!(!md("https:&#47;&#47;evil.example"), "an entity spells a bare address");
+        assert!(!md("[hi](https://evil.example)"));
+    }
+
+    #[tokio::test]
+    async fn markdown_travels_with_its_format_and_an_edit_can_change_it() {
+        let alice = Party::new().await;
+        let bob = Party::new().await;
+        let p = alice.dm.prepare_text(&alice.keys, &bob.pk(), "hi", None).await.unwrap();
+        bob.receive(&peer_event(&p)).await;
+        let md = alice.dm.prepare_text_as(&alice.keys, &bob.pk(), "**Plan**\n\n- one\n- `two`", TextFormat::Markdown, Some(&p.message.id)).await.unwrap();
+        assert_eq!(md.message.fmt.as_deref(), Some("md"));
+        assert!(md.message.rich.is_some());
+        bob.receive(&peer_event(&md)).await;
+
+        let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
+        let m = bob.dm.message(&md.message.id).await.unwrap().unwrap();
+        assert_eq!(m.text.as_deref(), Some("**Plan**\n\n- one\n- `two`"), "the text is what the author typed");
+        assert_eq!(m.fmt.as_deref(), Some("md"));
+        let Some([MdBlock::Para { .. }, MdBlock::List { items, .. }]) = m.rich.as_deref() else { panic!("{:?}", m.rich) };
+        assert_eq!(items.len(), 2);
+        assert_eq!(chat.last_preview.as_deref(), Some("Plan\none\ntwo"), "the list of chats shows the words");
+
+        // A quote of it shows the words too.
+        let r = bob.dm.prepare_text(&bob.keys, &alice.pk(), "ok", Some(&md.message.id)).await.unwrap();
+        assert_eq!(r.message.reply_to.unwrap().text.as_deref(), Some("Plan one two"));
+
+        // Edited into plain text: the stars stay stars.
+        let e = alice.dm.prepare_edit(&alice.keys, &md.message.id, "**not bold**").await.unwrap();
+        assert_eq!((e.message.fmt.as_deref(), e.message.rich.is_none()), (None, true));
+        bob.receive(&peer_event(&e)).await;
+        let m = bob.dm.message(&md.message.id).await.unwrap().unwrap();
+        assert_eq!((m.text.as_deref(), m.fmt.as_deref(), m.rich.is_none()), (Some("**not bold**"), None, true));
+
+        // And back into Markdown.
+        let e = alice.dm.prepare_edit_as(&alice.keys, &md.message.id, "*again*", TextFormat::Markdown).await.unwrap();
+        bob.receive(&peer_event(&e)).await;
+        let m = bob.dm.message(&md.message.id).await.unwrap().unwrap();
+        assert_eq!(m.fmt.as_deref(), Some("md"));
+        assert_eq!(bob.dm.open_chat(&alice.pk()).await.unwrap().last_preview.as_deref(), Some("ok"));
+        assert_eq!(
+            messenger_store::messages::get(bob.dm.store(), &md.message.id).await.unwrap().unwrap().plain.as_deref(),
+            Some("again")
+        );
     }
 
     #[tokio::test]
@@ -3130,7 +3204,7 @@ mod tests {
     #[tokio::test]
     async fn placeholder_becomes_a_message_and_reaches_the_peer() {
         let (alice, bob) = mutual().await;
-        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), Some(" look ")).await.unwrap();
+        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), Some(" look "), messenger_core::TextFormat::Plain).await.unwrap();
         assert!(ph.id.starts_with("local:"));
         assert_eq!(ph.status, "uploading");
         assert_eq!(ph.text.as_deref(), Some("look"));
@@ -3162,7 +3236,7 @@ mod tests {
     #[tokio::test]
     async fn a_local_path_in_a_peers_envelope_is_dropped() {
         let (alice, bob) = mutual().await;
-        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), None).await.unwrap();
+        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), None, messenger_core::TextFormat::Plain).await.unwrap();
         // A hostile client puts the fields only Bob's device writes into
         // what travels.
         let envelope = Envelope::new("media")
@@ -3187,7 +3261,7 @@ mod tests {
     #[tokio::test]
     async fn the_caption_of_a_sent_photo_can_be_edited_but_not_while_it_uploads() {
         let (alice, bob) = mutual().await;
-        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), Some("look")).await.unwrap();
+        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), Some("look"), messenger_core::TextFormat::Plain).await.unwrap();
         // The placeholder's id never reaches Bob: an edit of it would be lost.
         assert!(alice.dm.prepare_edit(&alice.keys, &ph.id, "later").await.is_err());
 
@@ -3211,7 +3285,7 @@ mod tests {
     #[tokio::test]
     async fn a_quote_of_a_captionless_photo_says_it_is_a_photo_not_deleted() {
         let (alice, bob) = mutual().await;
-        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), None).await.unwrap();
+        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), None, messenger_core::TextFormat::Plain).await.unwrap();
         // A real small JPEG preview travels with the photo.
         let thumb = "/9j/4AECAw==".to_string(); // FF D8 FF E0 01 02 03
         let envelope = Envelope::new("media").with("kind", "image").with("name", "cat.png").with("key", "k").with("thumb", thumb.as_str());
@@ -3255,7 +3329,7 @@ mod tests {
     #[tokio::test]
     async fn a_quote_of_a_message_taken_back_is_marked_deleted_and_shows_no_media() {
         let (alice, bob) = mutual().await;
-        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), None).await.unwrap();
+        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("cat.png"), None, messenger_core::TextFormat::Plain).await.unwrap();
         let p = alice.dm.media_finish(&alice.keys, &ph.id, Envelope::new("media").with("kind", "image").with("name", "cat.png"), media_fields("cat.png")).await.unwrap();
         bob.receive(&peer_event(&p)).await;
         bob.clock.0.store(1_000_010, Ordering::SeqCst);
@@ -3277,11 +3351,11 @@ mod tests {
     async fn media_is_refused_as_a_first_message_and_discard_cleans_up() {
         let alice = gated().await;
         let bob = gated().await;
-        let err = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("a.png"), None).await.unwrap_err();
+        let err = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("a.png"), None, messenger_core::TextFormat::Plain).await.unwrap_err();
         assert_eq!(reason(err), "dm_first_message_must_be_text");
 
         let (alice, bob) = mutual().await;
-        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("a.png"), None).await.unwrap();
+        let ph = alice.dm.media_placeholder(&alice.keys, &bob.pk(), media_fields("a.png"), None, messenger_core::TextFormat::Plain).await.unwrap();
         assert!(alice.dm.media_discard("not-a-placeholder").await.is_ok());
         let real = alice.dm.prepare_text(&alice.keys, &bob.pk(), "text", None).await.unwrap();
         assert!(alice.dm.media_discard(&real.message.id).await.is_err(), "only placeholders can be discarded");

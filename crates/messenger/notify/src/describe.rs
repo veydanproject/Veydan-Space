@@ -294,7 +294,7 @@ impl Describe {
             // copy of a request already stored is the same request.
             let seen = messages::count_visible_incoming_since(&self.store, &chat_id, relation.request_floor).await?;
             let kind = match envelope.t.as_str() {
-                T_TEXT => DmService::kind_of(messages::CT_TEXT, envelope.as_text()),
+                T_TEXT => DmService::kind_of(messages::CT_TEXT, envelope.as_text(), envelope.format()),
                 _ => InboundKind::Other,
             };
             let dm_from = self.dm.dm_settings().await?.dm_from;

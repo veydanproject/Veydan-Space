@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { GroupRole, MessengerGroup, MessengerGroupMember } from '../api';
-import { canApprove, canHide, canSpam, canTrust, isModerator, losesModeration, mutedNow } from './permissions';
+import { answersRequests, canApprove, canHide, canSpam, canTrust, isModerator, losesModeration, mutedNow, seesModeration } from './permissions';
 
 const ME = 'aa'.repeat(32);
 const member = (pubkey: string, role: GroupRole, over: Partial<MessengerGroupMember> = {}): MessengerGroupMember =>
@@ -18,7 +18,7 @@ function group(mine: GroupRole | null, over: Partial<MessengerGroup> = {}): Mess
       ...(mine ? [member(ME, mine)] : []),
       member('owner', 'owner'), member('admin', 'admin'), member('mod', 'moderator'), member('user', 'member'),
     ],
-    banned: [], requests: [], link: null, undecrypted: 0, key: null,
+    banned: [], requests: [], request_note: '', link: null, undecrypted: 0, key: null,
     post_mode: 'all', schedule: null, premod: 'all', closed_until: null, needs_update: false, queue: 0, ...over,
   };
 }
@@ -60,6 +60,20 @@ describe('the moderation a role is offered', () => {
     expect(canSpam(group('admin'), 'user')).toBe(true);
     expect(canSpam(group('admin'), 'mod')).toBe(true);
     expect(canSpam(group('admin'), 'admin')).toBe(false);
+  });
+
+  it('gives the requests to join to managers, and a panel to whoever has a tab in it', () => {
+    const asks = { requester: 'x', npub: 'npub1x', note: '', created_at: 1, received_at: 1 };
+    expect(answersRequests(group('admin'))).toBe(true);
+    expect(answersRequests(group('moderator'))).toBe(false);
+    expect(answersRequests(group('owner', { kind: 'public' }))).toBe(false);
+    expect(answersRequests(group('owner', { kind: 'public', requests: [asks] }))).toBe(true);
+    // A core without moderation (no queue): the panel holds the requests alone, for a manager.
+    expect(seesModeration(group('admin', { queue: undefined }))).toBe(true);
+    expect(seesModeration(group('moderator', { queue: undefined }))).toBe(false);
+    expect(seesModeration(group('moderator'))).toBe(true);
+    expect(seesModeration(group('member'))).toBe(false);
+    expect(seesModeration(group('owner', { membership: 'left' }))).toBe(false);
   });
 
   it('trusts as it mutes: a moderator on someone below', () => {

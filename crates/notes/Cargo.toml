@@ -44,7 +44,7 @@ veydan-sync-host = { path = "../sync-host" }
 [target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
 # File list from the OS clipboard (webviews hide pasted file paths from JS)
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
-zip = "8"
+zip = "9"
 # age pinned to 0.11 as in the product: 0.12 pulls crates that do not build here.
 age = { version = "0.11", default-features = false }
 

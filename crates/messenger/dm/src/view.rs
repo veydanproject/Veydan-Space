@@ -8,6 +8,8 @@ use messenger_contacts::ContactCard;
 use crate::botcard::BotCard;
 use messenger_store::messages::{MessageRow, CT_BOT_CARD, CT_CONTACT, DIR_IN};
 pub use messenger_store::reactions::ReactionView;
+use messenger_core::TextFormat;
+pub use messenger_richtext::md::{self, MdBlock};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,6 +124,15 @@ pub struct MessageView {
     /// are rows it never sees; absent on every other message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// `md` when `text` is written in Markdown; absent for plain text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fmt: Option<String>,
+    /// Of a Markdown `text`: its blocks, to be rendered as elements and
+    /// text nodes. Absent when the text is plain, or too long or too
+    /// many pieces to be shown as Markdown (`md::parse`): it is then
+    /// shown as plain text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rich: Option<Vec<MdBlock>>,
 }
 
 fn review_ok() -> String {
@@ -142,6 +153,8 @@ impl MessageView {
         let bot_card = if is_bot_card { r.media_json.as_deref().map(BotCard::stored) } else { None };
         // What `media_json` holds of a card is not a file.
         let typed = is_card || r.content_type == CT_BOT_CARD;
+        let markdown = TextFormat::from_name(Some(&r.fmt)).is_markdown();
+        let rich = if markdown { r.text.as_deref().and_then(md::parse) } else { None };
         Self {
             id: r.id,
             chat_id: r.chat_id,
@@ -166,6 +179,8 @@ impl MessageView {
             // The page tells `approved` from `ok` by nothing: both are shown.
             review: if r.review == "pending" || r.review == "rejected" { r.review } else { "ok".into() },
             version: None,
+            fmt: markdown.then(|| TextFormat::Markdown.name().to_string()),
+            rich,
         }
     }
 }
@@ -175,6 +190,14 @@ impl MessageView {
 /// (`chats::recompute_last`).
 pub fn card_line(card: &ContactCard) -> String {
     format!("👤 {}", card.display_name.as_deref().or(card.name.as_deref()).unwrap_or_default())
+}
+
+/// The words of a text, an edit or a caption as one line: a Markdown one
+/// without its marks.
+pub fn preview_of(text: &str, format: TextFormat) -> String {
+    let plain = if format.is_markdown() { md::plain(text) } else { String::new() };
+    // Marks and nothing else (`---`): the text as it was typed.
+    preview(if plain.is_empty() { text } else { &plain })
 }
 
 /// One line for chat lists and notifications.

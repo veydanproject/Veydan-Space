@@ -16,9 +16,10 @@
 //! the media servers change and when my kind 0 changes) makes kind 0 and
 //! this device agree: it takes on a picture set on another device of mine
 //! and fetches its file, forgets one that was removed, moves the picture to
-//! a server I use when its server is no longer one of them, puts it back
-//! when its server lost it, and fetches it every five days so that a
-//! server that forgets what nobody reads keeps it. What it does on a run is
+//! a server I use when its server is no longer one of them, puts a copy
+//! back on whichever of its servers lost it, and fetches every copy from
+//! its own server every five days so that a server that forgets what
+//! nobody read through it keeps it. What it does on a run is
 //! decided from the state alone (`plan`). It puts nothing back and
 //! publishes nothing until a relay has told this session my kind 0, so a
 //! picture removed or replaced on another device of mine while this one
@@ -406,9 +407,11 @@ pub enum Step {
     /// Its server is no longer one I use: put it on those I use and name
     /// the new address in kind 0.
     Rehost { sha: String },
-    /// Ask its server whether it still has it; put it back if not.
+    /// Ask the server of one copy whether it still has it; put it back if
+    /// not. One for every copy; the row counts as checked once all were.
     Check { server_id: String, sha: String },
-    /// Fetch it past the caches to keep it alive; put it back if gone.
+    /// Fetch one copy past the caches to keep it alive; put it back if
+    /// gone. One for every copy; the row counts as touched once all were.
     Touch { url: String, server_id: String, sha: String },
     /// No server of mine can take it now: fetch it past the caches all the
     /// same, so the server it is on keeps it meanwhile.
@@ -451,19 +454,49 @@ pub fn plan(facts: &Facts) -> Vec<Step> {
             if facts.now - touched_at >= TOUCH_EVERY_SECS {
                 steps.push(Step::KeepAlive { url, sha });
             }
+            return steps;
         }
-        None if facts.fresh => steps.push(Step::Rehost { sha }),
-        None => {}
-        Some(server_id) => {
-            if facts.now - checked_at >= CHECK_EVERY_SECS {
-                steps.push(Step::Check { server_id: server_id.into(), sha: sha.clone() });
-            }
-            if facts.now - touched_at >= TOUCH_EVERY_SECS {
-                steps.push(Step::Touch { url, server_id: server_id.into(), sha });
-            }
+        // The move puts it on the servers I use: no copy is looked after
+        // where it was.
+        None if facts.fresh => {
+            steps.push(Step::Rehost { sha });
+            return steps;
+        }
+        None | Some(_) => {}
+    }
+    // Every copy is looked after on its own server: a server counts only
+    // the reads it served itself, and forgets a copy nobody read through
+    // it even while another server is asked for the same blob.
+    let listed = facts.own.as_ref().filter(|r| r.url == url).map(copies_of).unwrap_or_default();
+    let copies = copies_on_my_servers(&url, &sha, listed, &facts.bases);
+    if facts.now - checked_at >= CHECK_EVERY_SECS {
+        for (server_id, _) in &copies {
+            steps.push(Step::Check { server_id: server_id.clone(), sha: sha.clone() });
+        }
+    }
+    if facts.now - touched_at >= TOUCH_EVERY_SECS {
+        for (server_id, copy) in copies {
+            steps.push(Step::Touch { url: copy, server_id, sha: sha.clone() });
         }
     }
     steps
+}
+
+/// `(server id, address)` of every copy of the picture `url` (of `sha`)
+/// that is on a server I can write to now, `url` first, then the others
+/// `listed` (the copies its row names: `OWN_COPIES` of them when this
+/// device put it up, `url` alone when it was taken on from elsewhere or by
+/// an older row). A copy on a server no longer mine is left alone.
+fn copies_on_my_servers(url: &str, sha: &str, listed: Vec<PublicBlob>, bases: &[(String, String)]) -> Vec<(String, String)> {
+    let urls = std::iter::once(url.to_string()).chain(listed.into_iter().map(|c| c.url));
+    let mut out: Vec<(String, String)> = Vec::new();
+    for copy in urls {
+        let Some(server_id) = server_of(&copy, bases).filter(|_| hash_of(&copy).as_deref() == Some(sha)) else { continue };
+        if out.iter().all(|(id, _)| id != server_id) {
+            out.push((server_id.to_string(), copy));
+        }
+    }
+    out
 }
 
 impl Avatars {
@@ -722,8 +755,24 @@ impl Avatars {
             now: self.now(),
         };
         let steps = plan(&facts);
+        // Whether every copy asked (touched) on this run is where it
+        // should be; `None` while none was.
+        let (mut checked, mut touched) = (None, None);
         for step in &steps {
-            self.run_step(keys, step, &facts, profile.as_ref()).await?;
+            let done = self.run_step(keys, step, &facts, profile.as_ref()).await?;
+            match step {
+                Step::Check { .. } => checked = Some(checked.unwrap_or(true) && done),
+                Step::Touch { .. } => touched = Some(touched.unwrap_or(true) && done),
+                _ => {}
+            }
+        }
+        // A copy that could not be asked, or not put back, is asked again
+        // on the next run, the others with it.
+        if checked == Some(true) {
+            own_avatar::mark_checked(&self.store, facts.now).await?;
+        }
+        if touched == Some(true) {
+            own_avatar::mark_touched(&self.store, facts.now).await?;
         }
         Ok(steps)
     }
@@ -736,7 +785,9 @@ impl Avatars {
         Ok(self.profiles.get(&me).await?.map(|p| p.picture) == facts.picture)
     }
 
-    async fn run_step(&self, keys: &Keys, step: &Step, facts: &Facts, profile: Option<&ProfileView>) -> Result<()> {
+    /// One step of `keep`. `false`: the copy of a `Check` or a `Touch` is not
+    /// where it should be (not there and not put back, or not asked).
+    async fn run_step(&self, keys: &Keys, step: &Step, facts: &Facts, profile: Option<&ProfileView>) -> Result<bool> {
         let now = facts.now;
         match step {
             Step::Forget { sha, keep_file } => {
@@ -784,14 +835,14 @@ impl Avatars {
             }
             Step::Rehost { sha } => {
                 if !facts.fresh || !self.still_named(keys, facts).await? {
-                    return Ok(());
+                    return Ok(true);
                 }
-                let Some(mut row) = own_avatar::get(&self.store).await?.filter(|r| r.sha256 == *sha) else { return Ok(()) };
+                let Some(mut row) = own_avatar::get(&self.store).await?.filter(|r| r.sha256 == *sha) else { return Ok(true) };
                 let old = copies_of(&row);
                 let bytes = tokio::fs::read(self.own_path(sha)).await?;
                 let blobs = self.media.upload_public(keys, bytes, JPEG, OWN_COPIES).await?;
                 if !self.still_named(keys, facts).await? {
-                    return Ok(());
+                    return Ok(true);
                 }
                 // Kind 0 first: the row names the new address only once it
                 // is on its way, so a run that stops here is done again.
@@ -811,31 +862,33 @@ impl Avatars {
                 }
                 self.profile_updated(keys);
             }
-            Step::Check { server_id, sha } => match self.media.public_exists(keys, server_id, sha).await {
-                Ok(true) => own_avatar::mark_checked(&self.store, now).await?,
-                Ok(false) => {
-                    if self.put_back(keys, server_id, sha, facts).await? {
-                        own_avatar::mark_checked(&self.store, now).await?;
+            Step::Check { server_id, sha } => {
+                return Ok(match self.media.public_exists(keys, server_id, sha).await {
+                    Ok(true) => true,
+                    Ok(false) => self.put_back_copy(keys, server_id, sha, facts).await,
+                    Err(e) => {
+                        eprintln!("messenger avatar: {server_id} not asked: {e}");
+                        false
                     }
-                }
-                Err(e) => eprintln!("messenger avatar: {server_id} not asked: {e}"),
-            },
-            Step::Touch { url, server_id, sha } => match self.net.own(&unique(url), MAX_FETCH_BYTES, true).await {
-                Ok(Some(body)) if avatar::sha256_hex(&body) == *sha => own_avatar::mark_touched(&self.store, now).await?,
-                Ok(_) => {
-                    if self.put_back(keys, server_id, sha, facts).await? {
-                        own_avatar::mark_touched(&self.store, now).await?;
+                });
+            }
+            Step::Touch { url, server_id, sha } => {
+                return Ok(match self.net.own(&unique(url), MAX_FETCH_BYTES, true).await {
+                    Ok(Some(body)) if avatar::sha256_hex(&body) == *sha => true,
+                    Ok(_) => self.put_back_copy(keys, server_id, sha, facts).await,
+                    Err(e) => {
+                        eprintln!("messenger avatar: {url} not fetched: {e}");
+                        false
                     }
-                }
-                Err(e) => eprintln!("messenger avatar: {url} not fetched: {e}"),
-            },
+                });
+            }
             Step::KeepAlive { url, sha } => match self.net.own(&unique(url), MAX_FETCH_BYTES, true).await {
                 Ok(Some(body)) if avatar::sha256_hex(&body) == *sha => own_avatar::mark_touched(&self.store, now).await?,
                 Ok(_) => eprintln!("messenger avatar: {url} is gone and no server of mine can take it"),
                 Err(e) => eprintln!("messenger avatar: {url} not fetched: {e}"),
             },
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Put my avatar back on a server that lost it, only when my kind 0 is
@@ -849,6 +902,15 @@ impl Avatars {
         self.media.put_public(keys, server_id, bytes, JPEG).await?;
         settings::set(&self.store, KEY_PUT_BACK, sha).await?;
         Ok(true)
+    }
+
+    /// `put_back` of one copy: a server that does not take it keeps the
+    /// run going for the other copies, and is asked again on the next run.
+    async fn put_back_copy(&self, keys: &Keys, server_id: &str, sha: &str, facts: &Facts) -> bool {
+        self.put_back(keys, server_id, sha, facts).await.unwrap_or_else(|e| {
+            eprintln!("messenger avatar: not put back on {server_id}: {e}");
+            false
+        })
     }
 
     /// The bytes of `sha`: from `url`, else from any of my servers. Only

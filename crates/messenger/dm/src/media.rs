@@ -9,7 +9,7 @@
 
 use crate::service::{DmService, Prepared};
 use crate::view::MessageView;
-use messenger_core::{Envelope, MessengerError, PubKey, Result};
+use messenger_core::{Envelope, MessengerError, PubKey, Result, TextFormat};
 use messenger_store::chats;
 use messenger_store::messages::{self as repo, NewMessage};
 use nostr::key::Keys;
@@ -45,6 +45,7 @@ impl DmService {
         peer: &PubKey,
         media_json: serde_json::Value,
         caption: Option<&str>,
+        caption_format: TextFormat,
     ) -> Result<MessageView> {
         let me = keys.public_key().to_hex();
         let chat = chats::ensure_dm(&self.store, peer.as_hex()).await?;
@@ -67,7 +68,11 @@ impl DmService {
                 status: repo::STATUS_UPLOADING.into(),
                 content_type: repo::CT_MEDIA.into(),
                 text: caption.map(str::trim).filter(|c| !c.is_empty()).map(String::from),
-                envelope_json: "{}".into(),
+                // How the caption is written, until the file is up and its envelope is made.
+                envelope_json: match caption_format {
+                    TextFormat::Plain => "{}".into(),
+                    f => serde_json::json!({ messenger_core::envelope::FIELD_FMT: f.name() }).to_string(),
+                },
                 sender_pubkey: me,
                 reply_to_id: None,
                 target_id: None,

@@ -2,7 +2,9 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { drafts } from '../shared/drafts.svelte';
+  import { drafts, markdownDrafts } from '../shared/drafts.svelte';
+  import { applyMark, markOfKey, type Mark } from './format';
+  import { readingOf } from '../content/markdown';
   import type { Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -15,7 +17,7 @@
   import { edgeHold } from '../shared/edge-hold';
   import { HOLD_MS, IDLE, step, type Gesture, type GestureEvent } from './record-gesture';
   import { captureSupported, type Captured } from '../media/capture';
-  import { mediaOf, type MessengerMessage, type MessengerRecording } from '../api';
+  import { mediaOf, type MessengerMessage, type MessengerRecording, type TextFormat } from '../api';
   import { replyLine, replyThumb } from '../push/wording';
 
   interface Props {
@@ -25,7 +27,8 @@
     editing: MessengerMessage | null;
     peerTitle: string;
     oncancel: () => void;
-    onsend: (text: string) => Promise<void>;
+    /** `fmt`: `md` when the words go as Markdown (the format menu was used). */
+    onsend: (text: string, fmt: TextFormat | null) => Promise<void>;
     /** Buttons next to the input (attach); on a phone they stand inside the field. */
     tools?: Snippet;
     /** Keeps an unsent text per conversation. */
@@ -329,6 +332,12 @@
   const canSend = $derived(!disabled && !tooLong && attached !== "loading" && (text.trim().length > 0 || attached === "ready"));
   const canRecordNow = $derived((!!held || (!text.trim() && !attached)) && !editing && !!onrecording && canRecord && !disabled && (voiceOk || circleOk));
 
+  // The words go as Markdown: set by the format menu (or by editing a
+  // Markdown message), shown as a chip over the field, taken off by its ×.
+  // The field holds the marks as they are typed; an empty field is plain.
+  let md = $state(false);
+  $effect(() => { if (!text) md = false; });
+
   // Entering edit mode loads the message text; leaving it clears the field.
   let lastEditing: string | null = null;
   $effect(() => {
@@ -336,6 +345,7 @@
     if (id === lastEditing) return;
     lastEditing = id;
     text = editing?.text ?? '';
+    md = editing?.fmt === 'md';
     queueMicrotask(() => { resize(); el?.focus(); });
   });
   $effect(() => { if (replyTo) el?.focus(); });
@@ -345,16 +355,63 @@
   $effect(() => {
     const key = draftKey;
     if (key === lastKey) return;
-    if (lastKey !== undefined && !editing) drafts.set(lastKey, text);
+    if (lastKey !== undefined && !editing) {
+      drafts.set(lastKey, text);
+      if (md) markdownDrafts.add(lastKey); else markdownDrafts.delete(lastKey);
+    }
     lastKey = key;
     text = key ? (drafts.get(key) ?? "") : "";
+    md = !!key && !!text && markdownDrafts.has(key);
+    sel = null;
     queueMicrotask(() => { resize(); if (autofocus) el?.focus(); });
   });
   $effect(() => {
     if (!draftKey || editing) return;
     if (text.trim()) drafts.set(draftKey, text);
     else drafts.delete(draftKey);
+    if (text.trim() && md) markdownDrafts.add(draftKey); else markdownDrafts.delete(draftKey);
   });
+
+  // The format menu stands while a part of the field is selected. The
+  // selection is kept here as well: a tap on the menu must not lose it.
+  let sel = $state<{ a: number; b: number } | null>(null);
+  function readSel() {
+    if (!el || document.activeElement !== el) return;
+    const a = el.selectionStart ?? 0;
+    const b = el.selectionEnd ?? 0;
+    sel = a === b ? null : { a: Math.min(a, b), b: Math.max(a, b) };
+  }
+  $effect(() => {
+    document.addEventListener('selectionchange', readSel);
+    return () => document.removeEventListener('selectionchange', readSel);
+  });
+
+  /** The buttons of the format menu, with their shortcuts on a computer (`markOfKey`). */
+  const MARKS = [
+    { mark: 'bold', icon: 'bold', label: 'msg_fmt_bold', key: 'B' },
+    { mark: 'italic', icon: 'italic', label: 'msg_fmt_italic', key: 'I' },
+    { mark: 'strike', icon: 'strikethrough', label: 'msg_fmt_strike', key: 'Shift+X' },
+    { mark: 'code', icon: 'code', label: 'msg_fmt_code', key: 'Shift+M' },
+    { mark: 'quote', icon: 'quote', label: 'msg_fmt_quote', key: '' },
+  ] as const satisfies readonly { mark: Mark; icon: string; label: string; key: string }[];
+  const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
+
+  /** A button of the menu, or its shortcut: the mark on the selected part; the message goes as Markdown. */
+  function format(mark: Mark) {
+    if (!el) return;
+    const at = sel ?? { a: el.selectionStart ?? 0, b: el.selectionEnd ?? 0 };
+    if (at.a === at.b) return;
+    const r = applyMark(text, at.a, at.b, mark);
+    text = r.text;
+    md = true;
+    sel = r.start === r.end ? null : { a: r.start, b: r.end };
+    queueMicrotask(() => {
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(r.start, r.end);
+      resize();
+    });
+  }
 
   function resize() {
     if (!el) return;
@@ -379,12 +436,17 @@
     if (!canSend) return;
     const value = text.trim();
     const wasEditing = !!editing;
+    const fmt: TextFormat | null = md && value ? 'md' : null;
     text = '';
+    sel = null;
     queueMicrotask(resize);
     try {
-      await onsend(value);
+      await onsend(value, fmt);
     } catch {
-      if (!text && !wasEditing) text = value;
+      if (!text && !wasEditing) {
+        text = value;
+        md = fmt === 'md';
+      }
       queueMicrotask(resize);
     }
   }
@@ -393,28 +455,57 @@
   const keepFocus = (e: Event) => e.preventDefault();
 
   function onkeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !touch) { e.preventDefault(); submit(); }
+    const mark = touch ? null : markOfKey(e);
+    if (mark && el && el.selectionStart !== el.selectionEnd) { e.preventDefault(); format(mark); }
+    else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !touch) { e.preventDefault(); submit(); }
     else if (e.key === 'Escape' && (replyTo || editing)) { e.preventDefault(); oncancel(); }
     else if (e.key === "ArrowUp" && !text && !editing && oneditlast) { e.preventDefault(); oneditlast(); }
   }
 </script>
+
+{#snippet formatBar()}
+  <div class="fmt" role="toolbar" aria-label={$t('msg_fmt_menu')}>
+    {#each MARKS as m (m.mark)}
+      {@const label = touch || !m.key ? $t(m.label) : `${$t(m.label)} (${MOD}+${m.key})`}
+      <button class="fb" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => format(m.mark)} title={label} aria-label={label}>
+        <Icon name={m.icon} size={16} />
+      </button>
+    {/each}
+    <span class="sep" aria-hidden="true"></span>
+    <button class="fb word" class:on={md} tabindex="-1" aria-pressed={md} onpointerdown={keepFocus} onmousedown={keepFocus}
+      onclick={() => (md = !md)} title={$t(md ? 'msg_fmt_md_off' : 'msg_fmt_md_on')}>Markdown</button>
+  </div>
+{/snippet}
 
 <div class="composer" class:docked={touch && !!dock} bind:this={root}>
   {#if editing || replyTo}
     <div class="context">
       <Icon name={editing ? 'pencil' : 'reply'} size={14} />
       {#if !editing && replyTo}
-        {@const thumb = replyThumb({ text: replyTo.text, deleted: replyTo.deleted, media: { ...mediaOf(replyTo) } })}
+        {@const thumb = replyThumb({ text: readingOf(replyTo), deleted: replyTo.deleted, media: { ...mediaOf(replyTo) } })}
         {#if thumb}<img class="ctx-thumb" src={thumb} alt="" aria-hidden="true" />{/if}
       {/if}
       <span class="ctx-body">
         <span class="ctx-title">{editing ? $t('msg_composer_editing') : $t('msg_composer_reply_to', { name: replyTo!.direction === 'out' ? $t('msg_you') : peerTitle })}</span>
-        <span class="ctx-text">{editing ? (editing.text ?? '') : replyLine({ text: replyTo!.text, deleted: replyTo!.deleted, media: { ...mediaOf(replyTo!) } }, replyTo!.card?.label ?? null, $t)}</span>
+        <span class="ctx-text">{editing ? (editing.text ?? '') : replyLine({ text: readingOf(replyTo!), deleted: replyTo!.deleted, media: { ...mediaOf(replyTo!) } }, replyTo!.card?.label ?? null, $t)}</span>
       </span>
       <button class="icon" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('msg_back')}><Icon name="x" size={14} /></button>
     </div>
   {/if}
   {#if attachments}{@render attachments()}{/if}
+  {#if md || (sel && !touch && !recording)}
+    <div class="above">
+      {#if md}
+        <span class="mdchip" title={$t('msg_fmt_md_on')}>
+          <Icon name="file-code" size={13} /><span>Markdown</span>
+          <button class="icon" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (md = false)} title={$t('msg_fmt_md_off')} aria-label={$t('msg_fmt_md_off')}>
+            <Icon name="x" size={12} />
+          </button>
+        </span>
+      {/if}
+      {#if sel && !touch && !recording}{@render formatBar()}{/if}
+    </div>
+  {/if}
   <div class="row">
     {#if touch}
       {#if held}
@@ -431,7 +522,8 @@
           <textarea
             bind:this={el} bind:value={text} rows="1" {disabled}
             placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
-            oninput={resize} {onkeydown} onpointerdown={() => { if (dock === 'open') { el?.removeAttribute('inputmode'); dock = 'tokb'; } }}
+            oninput={() => { resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onpointerup={readSel} onblur={() => (sel = null)}
+            onpointerdown={() => { if (dock === 'open') { el?.removeAttribute('inputmode'); dock = 'tokb'; } }}
           ></textarea>
           {#if tools}{@render tools()}{/if}
         </div>
@@ -465,7 +557,7 @@
       <textarea
         bind:this={el} bind:value={text} rows="1" {disabled}
         placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
-        oninput={resize} {onkeydown}
+        oninput={() => { resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onmouseup={readSel} onblur={() => (sel = null)}
       ></textarea>
       <button class="tool emoji" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
         onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} title={$t("msg_emoji_title")}>
@@ -490,6 +582,8 @@
     </button>
     {/if}
   </div>
+  <!-- The phone: under the field, above the keyboard, clear of the system's own menu over the selection. -->
+  {#if touch && sel && !held}{@render formatBar()}{/if}
   {#if tooLong}<div class="warn">{$t('msg_composer_too_long')}</div>{/if}
   {#if recError}<div class="warn">{$t(`msg_rec_err_${recError}` as "msg_rec_err_denied")}</div>{/if}
   {#if touch && dock}
@@ -551,6 +645,24 @@
   .icon { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   .warn { font-size: var(--fs-2xs); color: var(--danger-text); }
+  /* Over the field: the chip of Markdown, and on a computer the format menu of a selection. */
+  .above { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-height: 28px; }
+  .mdchip {
+    display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 2px 0 9px; border-radius: var(--radius-pill);
+    background: var(--accent-tint); color: var(--accent-text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+  }
+  .mdchip .icon { padding: 3px; border-radius: 50%; color: inherit; }
+  .fmt {
+    display: inline-flex; align-items: center; gap: 2px; padding: 3px; align-self: flex-start;
+    border-radius: var(--radius); background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
+  }
+  .fb {
+    height: 30px; min-width: 32px; padding: 0 7px; border: none; border-radius: var(--radius-sm); background: none; cursor: pointer;
+    color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+  }
+  .fb:hover { color: var(--text); background: var(--surface-hover); }
+  .fb.on { color: var(--accent-text-2); background: var(--accent-tint); }
+  .sep { width: 1px; height: 18px; margin: 0 3px; background: var(--border-2); }
   /* The emoji panel in the place of the keyboard: the composer's whole width, down to the screen's edge. */
   .composer.docked { padding-bottom: 0; }
   .dock {
@@ -600,6 +712,11 @@
     .field textarea:focus { outline: none; box-shadow: none; }
     .field textarea::placeholder { white-space: nowrap; }
     .field .tool { width: 40px; height: 38px; margin-left: 2px; }
+    .fmt { align-self: center; border-radius: var(--radius-bar); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
+    .fb { height: 36px; min-width: 40px; }
+    .fb:hover { color: var(--text-soft); background: none; }
+    .fb:active { color: var(--text); background: var(--surface-hover); }
+    .fb.on, .fb.on:hover { color: var(--accent-text-2); background: var(--accent-tint); }
     .send { width: 40px; height: 40px; }
     .record { position: relative; z-index: 3; touch-action: none; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; box-shadow: var(--shadow-accent); transition: transform var(--dur-fast) var(--ease); }
     .record.holding { transition: none; }

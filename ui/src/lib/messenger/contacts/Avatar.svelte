@@ -32,6 +32,9 @@
 
   // Only a `data:` picture the runtime made; initials until there is one.
   const picture = $derived(safeDataImage(src) ?? avatarStore.get(url));
+  // While this face is on the page, a picture still on its way is asked
+  // for again now and then (`avatarStore.show`).
+  $effect(() => avatarStore.show(url));
   const shown = $derived(picture && picture !== failed ? picture : null);
 
   const hue = $derived.by(() => {

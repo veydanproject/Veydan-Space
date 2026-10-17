@@ -18,7 +18,8 @@
   import { groupStore } from './groupStore.svelte';
   import { nameStore } from './names.svelte';
   import { groupLine } from './lines';
-  import { canApprove, canHide, canModerate, canSpam, hasModeration, isBannedGroup, isModerator } from './permissions';
+  import { answersRequests, canApprove, canHide, canModerate, canSpam, hasModeration, isBannedGroup, isModerator, seesModeration } from './permissions';
+  import type { ModerationTab } from './moderation/ModerationPanel.svelte';
   import ChoiceDialog from './moderation/ChoiceDialog.svelte';
   import { deviceZone, HIDE_SPANS, hideFrom, opensAt, zoneHint, type HideSpan } from './moderation/schedule';
   import { chatStore } from '../chats/chatStore.svelte';
@@ -42,6 +43,13 @@
   let info = $state(false);
   /** The panel shows the moderation of the group. */
   let moderation = $state(false);
+  /** Its tab, when the moderation is shown. */
+  let modTab = $state<ModerationTab>('queue');
+
+  /** The panel on the moderation, on the tab asked for. */
+  function openModeration(tab: ModerationTab) {
+    modTab = tab; moderation = true; info = true;
+  }
   let error = $state('');
   let busy = $state(false);
 
@@ -204,7 +212,10 @@
       );
     }
     list.push({ label: $t('msg_group_info'), icon: 'users', onselect: () => { moderation = false; info = true; } });
-    if (isModerator(group) && hasModeration(group)) list.push({ label: $t('msg_mod_title'), icon: 'shield', onselect: () => { moderation = true; info = true; } });
+    if (seesModeration(group)) {
+      const tab: ModerationTab = answersRequests(group) && group.requests.length ? 'requests' : hasModeration(group) ? 'queue' : 'requests';
+      list.push({ label: $t('msg_mod_title'), icon: 'shield', onselect: () => openModeration(tab) });
+    }
     // A closed group is not reported again: the network has already acted.
     if (group && !banned) list.push({ label: $t('msg_report_group'), icon: 'alert-triangle', danger: true,
       onselect: () => reportStore.open({ target: 'group', accused: '', name: view.title, context: { t: 'group', group_id: groupId }, canBlock: false }) });
@@ -229,12 +240,12 @@
 {#snippet actions()}
   <GroupCallButton bind:this={callButton} {chat} {group} menuStarts={phone} />
   {#if !phone && isModerator(group) && group.queue}
-    <button class="pill" onclick={() => { moderation = true; info = true; }} title={$t('msg_mod_title')}>
+    <button class="pill" onclick={() => openModeration('queue')} title={$t('msg_mod_title')}>
       <Icon name="shield" size={13} />{group.queue}
     </button>
   {/if}
-  {#if group && group.requests.length > 0}
-    <button class="pill" onclick={() => { moderation = false; info = true; }} title={$t('msg_group_requests')}>
+  {#if answersRequests(group) && group.requests.length > 0}
+    <button class="pill" onclick={() => openModeration('requests')} title={$t('msg_group_requests')}>
       <Icon name="user-plus" size={13} />{group.requests.length}
     </button>
   {/if}
@@ -270,6 +281,9 @@
       {:else}{$t(`msg_group_state_${membership}` as 'msg_group_state_left')}{/if}
       {/if}
     </span>
+    {#if membership === 'requested' && group?.request_note}
+      <span class="mine" title={group.request_note}>{$t('msg_group_request_mine', { note: group.request_note })}</span>
+    {/if}
     {#if membership !== 'joined' && membership !== 'joining'}
       <button class="btn btn-ghost btn-sm" disabled={busy} onclick={forget}>{$t('msg_group_forget')}</button>
     {/if}
@@ -283,7 +297,7 @@
 
 {#snippet panel()}
   {#if group}
-    <GroupInfo {group} bind:moderation onclose={() => (info = false)} onforgotten={() => { info = false; chatStore.close(); chatStore.loadChats().catch(() => {}); onback?.(); }} />
+    <GroupInfo {group} bind:moderation bind:modTab onclose={() => (info = false)} onforgotten={() => { info = false; chatStore.close(); chatStore.loadChats().catch(() => {}); onback?.(); }} />
   {/if}
 {/snippet}
 
@@ -306,4 +320,6 @@
     border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-2);
   }
   .closed span { display: inline-flex; align-items: center; gap: 6px; }
+  /* What I wrote with my request: one line here, the whole of it on hover. */
+  .closed .mine { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

@@ -46,6 +46,22 @@ export const isModerator = (g: MessengerGroup | null): g is MessengerGroup =>
  */
 export const hasModeration = (g: MessengerGroup | null): g is MessengerGroup => !!g && g.queue !== undefined;
 
+/**
+ * Does a manager answer requests to join here? In a private group, where
+ * people ask; a public one lets them in at once, but one still waiting
+ * from before its kind changed is shown.
+ */
+export const answersRequests = (g: MessengerGroup | null): g is MessengerGroup =>
+  !!g && isManager(g) && (g.kind === 'private' || g.requests.length > 0);
+
+/**
+ * Is there a moderation panel for me: the queue and the log for a
+ * moderator where the core moderates, the requests to join for a manager
+ * whatever the core.
+ */
+export const seesModeration = (g: MessengerGroup | null): g is MessengerGroup =>
+  isModerator(g) && (hasModeration(g) || answersRequests(g));
+
 /** Does the group check messages before they are shown? Read defensively: a core without moderation says nothing. */
 export const checksMessages = (g: MessengerGroup | null): boolean => !!g?.premod && g.premod !== 'off';
 

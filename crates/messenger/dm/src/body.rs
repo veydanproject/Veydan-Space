@@ -5,7 +5,7 @@
 //! One reading of an envelope for the push on a phone, the card in the
 //! app and a computer's notification, direct message or group alike.
 
-use crate::view::preview;
+use crate::view::{md, preview};
 use messenger_core::envelope::{T_CONTACT, T_MEDIA, T_TEXT};
 use messenger_core::{Body, Envelope, LinkKind};
 use messenger_links::{ContactLink, LinkType, Uri};
@@ -20,11 +20,19 @@ const MAX_BATCH: usize = 64;
 /// A type from a newer app is told by its text when it has one.
 pub fn body_of(envelope: &Envelope) -> Option<Body> {
     match envelope.t.as_str() {
-        T_TEXT => text(envelope.as_text().unwrap_or_default()),
+        T_TEXT => text(&words(envelope, envelope.as_text())),
         T_MEDIA => Some(media(envelope)),
         T_CONTACT => Some(contact(envelope)),
-        _ => text(envelope.str_field("text").unwrap_or_default()),
+        _ => text(&words(envelope, envelope.str_field("text"))),
     }
+}
+
+/// The words of a text or a caption as they read: a Markdown one without
+/// its marks.
+fn words(envelope: &Envelope, text: Option<&str>) -> String {
+    let text = text.unwrap_or_default();
+    let plain = if envelope.format().is_markdown() { md::plain(text) } else { String::new() };
+    if plain.is_empty() { text.to_string() } else { plain }
 }
 
 fn text(text: &str) -> Option<Body> {
@@ -89,7 +97,7 @@ fn contact(envelope: &Envelope) -> Body {
 fn media(envelope: &Envelope) -> Body {
     let kind = envelope.str_field("kind").filter(|k| MEDIA_KINDS.contains(k)).unwrap_or("file");
     let name = preview(envelope.str_field("name").unwrap_or_default());
-    let caption = envelope.str_field("caption").map(preview).filter(|c| !c.is_empty());
+    let caption = envelope.str_field("caption").map(|c| preview(&words(envelope, Some(c)))).filter(|c| !c.is_empty());
     let duration_ms = envelope.fields.get("duration_ms").and_then(|d| d.as_u64()).filter(|d| *d > 0);
     let batch = envelope
         .str_field("batch")
@@ -116,6 +124,17 @@ mod tests {
         let long = "а".repeat(500);
         let Some(Body::Text { text }) = body_of(&Envelope::text(&long)) else { panic!() };
         assert_eq!(text.chars().count(), 120);
+    }
+
+    #[test]
+    fn markdown_is_told_without_its_marks() {
+        let md = |t: &str| Envelope::text(t).with_format(messenger_core::TextFormat::Markdown);
+        assert_eq!(body_of(&md("# Plan\n\n**bold** and `code`")), Some(Body::Text { text: "Plan bold and code".into() }));
+        assert_eq!(body_of(&Envelope::text("**bold**")), Some(Body::Text { text: "**bold**".into() }), "plain text keeps its stars");
+        let mut caption = file(serde_json::json!({ "kind": "image", "name": "a.jpg", "caption": "*look*" }));
+        caption = caption.with_format(messenger_core::TextFormat::Markdown);
+        let Some(Body::Media { caption, .. }) = body_of(&caption) else { panic!() };
+        assert_eq!(caption.as_deref(), Some("look"));
     }
 
     #[test]

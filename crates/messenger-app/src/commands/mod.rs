@@ -43,7 +43,7 @@ pub mod call_android;
 
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use messenger_core::{MessengerConfig, MessengerError, SecretStore};
+use messenger_core::{MessengerConfig, MessengerError, SecretStore, TextFormat};
 use messenger_core::PubKey;
 use messenger_runtime::{
     ChatView, ContactPatch, ContactView, CreatedIdentity, DmAction, GroupKind, GroupOp, GroupView, Identity, InviteView,
@@ -1085,24 +1085,30 @@ pub async fn messenger_chat_delete(chat_id: String, messenger: tauri::State<'_, 
     Ok(())
 }
 
-/// Send a text DM to an npub/hex key; returns the stored message.
+/// Send a text DM to an npub/hex key; returns the stored message. `fmt`:
+/// `md` when the text is written in Markdown; left out, plain text.
 #[tauri::command]
 pub async fn messenger_dm_send_text(
     to: String,
     text: String,
     reply_to: Option<String>,
+    fmt: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime_unlocked().await?.dm_send_text(&to, &text, reply_to.as_deref()).await.map_err(map_err)
+    let format = TextFormat::from_name(fmt.as_deref());
+    messenger.runtime_unlocked().await?.dm_send_text_as(&to, &text, format, reply_to.as_deref()).await.map_err(map_err)
 }
 
+/// `fmt` as for a new text: an edit says how its text is written.
 #[tauri::command]
 pub async fn messenger_dm_edit(
     message_id: String,
     text: String,
+    fmt: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime_unlocked().await?.dm_edit(&message_id, &text).await.map_err(map_err)
+    let format = TextFormat::from_name(fmt.as_deref());
+    messenger.runtime_unlocked().await?.dm_edit_as(&message_id, &text, format).await.map_err(map_err)
 }
 
 /// Put an emoji on a message, or take mine back. Refusals reach the UI as
@@ -1382,6 +1388,8 @@ pub async fn messenger_dm_send_file(
     to: String,
     path: String,
     caption: Option<String>,
+    // `md` when the caption is written in Markdown.
+    caption_fmt: Option<String>,
     // The same for files picked together: they are shown as one album.
     batch: Option<String>,
     original: Option<bool>,
@@ -1395,7 +1403,15 @@ pub async fn messenger_dm_send_file(
     if !path.starts_with("content://") && !was_picked(&app, &local, rt.config().data_dir()) {
         return Err(AppError::Other(NOT_PICKED.into()));
     }
-    rt.dm_send_file_with(&to, &local, caption.as_deref(), batch.as_deref(), original.unwrap_or(false), poster)
+    rt.dm_send_file_with(
+        &to,
+        &local,
+        caption.as_deref(),
+        TextFormat::from_name(caption_fmt.as_deref()),
+        batch.as_deref(),
+        original.unwrap_or(false),
+        poster,
+    )
         .await
         .map_err(map_err)
 }

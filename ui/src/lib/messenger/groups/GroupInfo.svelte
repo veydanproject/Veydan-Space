@@ -11,7 +11,7 @@
   import { get } from 'svelte/store';
   import { pushState } from '$app/navigation';
   import { page } from '$app/state';
-  import { locale, localeTag, t, type TranslationKey } from '$lib/core/i18n';
+  import { countKey, locale, localeTag, t, type TranslationKey } from '$lib/core/i18n';
   import { membersKey } from '../i18n';
   import { groupError, moderationError } from './errors';
   import Icon from '$lib/core/Icon.svelte';
@@ -26,8 +26,8 @@
   import SharedList from '../content/shared/SharedList.svelte';
   import { groupStore } from './groupStore.svelte';
   import { nameStore, shortKey } from './names.svelte';
-  import { canMute, canRemove, canTrust, checksMessages, hasModeration, isManager, isModerator, isOwner, losesModeration, mutedNow, rolesFor } from './permissions';
-  import ModerationPanel from './moderation/ModerationPanel.svelte';
+  import { canMute, canRemove, canTrust, checksMessages, hasModeration, isManager, isModerator, isOwner, losesModeration, mutedNow, rolesFor, seesModeration } from './permissions';
+  import ModerationPanel, { type ModerationTab } from './moderation/ModerationPanel.svelte';
   import ChoiceDialog from './moderation/ChoiceDialog.svelte';
   import { MUTE_SPANS, muteUntil, opensAt, type MuteSpan } from './moderation/schedule';
   import { chatStore } from '../chats/chatStore.svelte';
@@ -45,8 +45,26 @@
     onforgotten?: () => void;
     /** The panel shows the moderation of the group instead of the group. */
     moderation?: boolean;
+    /** The tab of the moderation shown. */
+    modTab?: ModerationTab;
   }
-  let { group, onclose, onforgotten, moderation = $bindable(false) }: Props = $props();
+  let { group, onclose, onforgotten, moderation = $bindable(false), modTab = $bindable('queue') }: Props = $props();
+
+  /** What waits for me in the moderation, in words: «3 заявки · 2 на проверке». */
+  const waiting = $derived.by(() => {
+    const parts: string[] = [];
+    const asks = isManager(group) ? group.requests.length : 0;
+    const queue = hasModeration(group) ? (group.queue ?? 0) : 0;
+    if (asks) parts.push($t(countKey('msg_greq_count', asks, $locale), { n: String(asks) }));
+    if (queue) parts.push($t(countKey('msg_mod_queue_count', queue, $locale), { n: String(queue) }));
+    return parts.join(' · ');
+  });
+
+  /** The moderation opens where something waits: on the requests when there are any. */
+  function openModeration() {
+    modTab = isManager(group) && group.requests.length ? 'requests' : hasModeration(group) ? 'queue' : 'requests';
+    moderation = true;
+  }
 
   let error = $state('');
   let busy = $state(false);
@@ -320,8 +338,8 @@
 <div class="panel">
   {#if section}
   <SharedList chatId={`group:${group.id}`} {section} onback={() => (section = null)} />
-  {:else if moderation && isModerator(group) && hasModeration(group)}
-  <ModerationPanel {group} onback={() => (moderation = false)} />
+  {:else if moderation && seesModeration(group)}
+  <ModerationPanel {group} bind:tab={modTab} onback={() => (moderation = false)} />
   {:else}
   <PanelHead title={$t('msg_group_info')} onback={editing ? stopEdit : undefined} onclose={close} />
 
@@ -390,28 +408,12 @@
       <div class="state">{$t(`msg_group_state_${group.membership}` as 'msg_group_state_left')}</div>
     {/if}
 
-    {#if joined && group.requests.length}
-      <section class="block">
-        <div class="label">{$t('msg_group_requests')} · {group.requests.length}</div>
-        <ul class="list">
-          {#each group.requests as r (r)}
-            <li class="person">
-              <Avatar url={nameStore.picture(r)} label={nameStore.label(r)} seed={r} size={34} />
-              <span class="who"><span class="who-name">{nameStore.label(r)}</span><code>{shortKey(r)}</code></span>
-              <button class="btn btn-primary btn-sm" disabled={busy} onclick={() => run(() => groupStore.answerRequest(group.id, r, true))}>{$t('msg_group_request_approve')}</button>
-              <button class="icon" disabled={busy} title={$t('msg_group_request_reject')} onclick={() => run(() => groupStore.answerRequest(group.id, r, false))}><Icon name="x" size={15} /></button>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-
-    {#if isModerator(group) && hasModeration(group)}
-      <button class="mod-row" onclick={() => (moderation = true)}>
-        <Icon name="shield" size={16} />
+    {#if seesModeration(group)}
+      <button class="mod-row" class:waits={!!waiting} onclick={openModeration}>
+        <span class="mod-icon"><Icon name="shield" size={16} /></span>
         <span class="mod-text">
-          <span class="mod-name">{$t('msg_mod_title')}{#if group.queue} · {group.queue}{/if}</span>
-          <span class="mod-hint">{$t('msg_mod_row_hint')}</span>
+          <span class="mod-name">{$t('msg_mod_title')}</span>
+          {#if waiting}<span class="mod-waiting">{waiting}</span>{:else}<span class="mod-hint">{$t('msg_mod_row_hint')}</span>{/if}
         </span>
         <Icon name="chevron-right" size={15} />
       </button>
@@ -545,6 +547,14 @@
   .mod-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .mod-name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
   .mod-hint { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.35; }
+  .mod-icon {
+    width: 32px; height: 32px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-2);
+  }
+  /* Something waits: the row says what, in the accent. */
+  .mod-row.waits { border-color: var(--accent-border); }
+  .mod-row.waits .mod-icon { background: var(--accent-tint); color: var(--accent-text); }
+  .mod-waiting { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text); line-height: 1.35; }
   @media (pointer: coarse) {
     .icon { padding: 10px; }
     .person { padding: 9px 8px; }

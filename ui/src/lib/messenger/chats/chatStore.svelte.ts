@@ -13,6 +13,7 @@ import {
   type MessengerPoster,
   type MessengerRecording,
   type MessengerUiEvent,
+  type TextFormat,
 } from '../api';
 import { usageStore } from '../shared/emoji/usageStore.svelte';
 import { chatKind } from './sections';
@@ -330,11 +331,12 @@ class ChatStore {
     return to;
   }
 
-  async send(text: string, replyTo?: string) {
+  /** `fmt`: `md` when the text is written in Markdown. */
+  async send(text: string, replyTo?: string, fmt: TextFormat | null = null) {
     const chat = this.active;
     const to = this.target(chat);
     if (!chat) throw new Error("no chat");
-    const m = await messengerApi.dm.sendText(to, text, replyTo);
+    const m = await messengerApi.dm.sendText(to, text, replyTo, fmt);
     if (this.activeId === chat.id) this.upsert(m);
     this.scheduleChatsRefresh();
     if (chat.kind === 'dm' && !chat.is_contact) refreshContacts();
@@ -373,11 +375,11 @@ class ChatStore {
    * Attach a local file; the placeholder appears at once. Files of one `batch` are shown together.
    * `original`: a picture goes as it is, not compressed.
    */
-  async sendFile(path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null) {
+  async sendFile(path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null, captionFmt: TextFormat | null = null) {
     const chat = this.active;
     const to = this.target(chat);
     if (!chat) throw new Error("no chat");
-    const m = await messengerApi.media.sendFile(to, path, caption, batch, original, poster);
+    const m = await messengerApi.media.sendFile(to, path, caption, batch, original, poster, captionFmt);
     if (this.activeId === chat.id) this.upsert(m);
     this.scheduleChatsRefresh();
     return m;
@@ -393,8 +395,8 @@ class ChatStore {
     return m;
   }
 
-  async edit(messageId: string, text: string) {
-    const m = await messengerApi.dm.edit(messageId, text);
+  async edit(messageId: string, text: string, fmt: TextFormat | null = null) {
+    const m = await messengerApi.dm.edit(messageId, text, fmt);
     this.upsert(m);
     this.scheduleChatsRefresh();
   }

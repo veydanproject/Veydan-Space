@@ -11,14 +11,14 @@
 //! The keeper (`keep_groups`, run with the keeper of my avatar) looks after
 //! the pictures of the groups I manage: it takes on a picture another
 //! manager or another device of mine set and fetches its file when it is
-//! on one of my servers, asks that server once a day whether it still has
-//! it and puts it back at the same address when it does not, and fetches
-//! it every five days so that a server that forgets what nobody reads
-//! keeps it; a picture on a server of somebody else is fetched every five
-//! days all the same. A picture the log no longer names is taken down
-//! from my server, unless another group of mine or my own avatar is the
-//! same picture. What it does on a run is decided from the state alone
-//! (`group_plan`).
+//! on one of my servers, asks the server of every copy once a day whether
+//! it still has it and puts it back at the same address when it does not,
+//! and fetches every copy from its own server every five days so that a
+//! server that forgets what nobody read through it keeps it; a picture on
+//! a server of somebody else is fetched every five days all the same. A
+//! picture the log no longer names is taken down from my server, unless
+//! another group of mine or my own avatar is the same picture. What it
+//! does on a run is decided from the state alone (`group_plan`).
 //!
 //! Unlike my avatar it never moves a picture and never writes the log: the
 //! log of a group is everybody's, and a device that has not caught up with
@@ -26,7 +26,7 @@
 //! back at its own address names nothing new; when the log moves on, the
 //! next run takes it down again.
 
-use super::{copies_of_parts, hash_of, invalid, is_own_encode, joined, server_of, unique, write_whole, Avatars};
+use super::{copies_of_parts, copies_on_my_servers, hash_of, invalid, is_own_encode, joined, server_of, unique, write_whole, Avatars};
 use super::{CHECK_EVERY_SECS, JPEG, MAX_FETCH_BYTES, OWN_COPIES, TOUCH_EVERY_SECS, UI_EVENT_AVATAR_READY};
 use crate::MessengerRuntime;
 use messenger_avatar::{self as avatar, CropRect};
@@ -70,9 +70,11 @@ pub enum GroupStep {
     Adopt { url: String, sha: String, server_id: Option<String> },
     /// Fetch its file, missing on this device: what is put back.
     Download { url: String, sha: String },
-    /// Ask its server whether it still has it; put it back if not.
+    /// Ask the server of one copy whether it still has it; put it back if
+    /// not. One for every copy; the row counts as checked once all were.
     Check { server_id: String, sha: String },
-    /// Fetch it past the caches to keep it alive; put it back if gone.
+    /// Fetch one copy past the caches to keep it alive; put it back if
+    /// gone. One for every copy; the row counts as touched once all were.
     Touch { url: String, server_id: String, sha: String },
     /// On a server not mine: fetch it past the caches all the same, so
     /// that the server keeps it.
@@ -114,15 +116,28 @@ pub fn group_plan(facts: &GroupFacts) -> Vec<GroupStep> {
     }
     let (url, sha, checked_at, touched_at) = current.expect("set above");
     match server_of(&url, &facts.bases) {
-        Some(server_id) => {
+        Some(_) => {
             if !facts.files.contains(&sha) {
                 steps.push(GroupStep::Download { url: url.clone(), sha: sha.clone() });
             }
+            // Every copy on its own server, as for my avatar: each server
+            // forgets a copy nobody read through it.
+            let listed = facts
+                .row
+                .as_ref()
+                .filter(|r| r.url == url)
+                .map(|r| copies_of_parts(&r.copies_json, r.server_id.as_deref(), &r.url))
+                .unwrap_or_default();
+            let copies = copies_on_my_servers(&url, &sha, listed, &facts.bases);
             if facts.now - checked_at >= CHECK_EVERY_SECS {
-                steps.push(GroupStep::Check { server_id: server_id.into(), sha: sha.clone() });
+                for (server_id, _) in &copies {
+                    steps.push(GroupStep::Check { server_id: server_id.clone(), sha: sha.clone() });
+                }
             }
             if facts.now - touched_at >= TOUCH_EVERY_SECS {
-                steps.push(GroupStep::Touch { url, server_id: server_id.into(), sha });
+                for (server_id, copy) in copies {
+                    steps.push(GroupStep::Touch { url: copy, server_id, sha: sha.clone() });
+                }
             }
         }
         // Still in use, only not now: the next run sees.
@@ -228,18 +243,44 @@ impl Avatars {
                 files: self.group_files().await,
                 now: self.now(),
             };
+            // Whether every copy asked (touched) on this run is where it
+            // should be; `None` while none was.
+            let (mut checked, mut touched) = (None, None);
             for step in group_plan(&facts) {
-                if let Err(e) = self.run_group_step(keys, &id, &step, &facts).await {
-                    eprintln!("messenger avatar: group {id}: {e}");
-                    break;
+                let done_here = match self.run_group_step(keys, &id, &step, &facts).await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!("messenger avatar: group {id}: {e}");
+                        break;
+                    }
+                };
+                match step {
+                    GroupStep::Check { .. } => checked = Some(checked.unwrap_or(true) && done_here),
+                    GroupStep::Touch { .. } => touched = Some(touched.unwrap_or(true) && done_here),
+                    _ => {}
                 }
                 done.push((id.clone(), step));
+            }
+            // A copy that could not be asked, or not put back, is asked
+            // again on the next run, the others with it.
+            if checked == Some(true) {
+                if let Err(e) = group_avatar::mark_checked(&self.store, &id, facts.now).await {
+                    eprintln!("messenger avatar: group {id}: {e}");
+                }
+            }
+            if touched == Some(true) {
+                if let Err(e) = group_avatar::mark_touched(&self.store, &id, facts.now).await {
+                    eprintln!("messenger avatar: group {id}: {e}");
+                }
             }
         }
         Ok(done)
     }
 
-    async fn run_group_step(&self, keys: &Keys, group_id: &str, step: &GroupStep, facts: &GroupFacts) -> Result<()> {
+    /// One step of `keep_groups`. `false`: the copy of a `Check` or a
+    /// `Touch` is not where it should be (not there and not put back, or
+    /// not asked).
+    async fn run_group_step(&self, keys: &Keys, group_id: &str, step: &GroupStep, facts: &GroupFacts) -> Result<bool> {
         let now = facts.now;
         match step {
             GroupStep::Forget { sha, keep_file, take_down } => {
@@ -283,29 +324,33 @@ impl Avatars {
                 write_whole(&self.group_path(sha), &bytes).await?;
                 self.emit(UI_EVENT_AVATAR_READY, serde_json::json!({ "url": url }));
             }
-            GroupStep::Check { server_id, sha } => match self.media.public_exists(keys, server_id, sha).await {
-                Ok(true) => group_avatar::mark_checked(&self.store, group_id, now).await?,
-                Ok(false) => {
-                    self.group_put_back(keys, server_id, sha).await?;
-                    group_avatar::mark_checked(&self.store, group_id, now).await?;
-                }
-                Err(e) => eprintln!("messenger avatar: {server_id} not asked: {e}"),
-            },
-            GroupStep::Touch { url, server_id, sha } => match self.net.own(&unique(url), MAX_FETCH_BYTES, true).await {
-                Ok(Some(body)) if avatar::sha256_hex(&body) == *sha => group_avatar::mark_touched(&self.store, group_id, now).await?,
-                Ok(_) => {
-                    self.group_put_back(keys, server_id, sha).await?;
-                    group_avatar::mark_touched(&self.store, group_id, now).await?;
-                }
-                Err(e) => eprintln!("messenger avatar: {url} not fetched: {e}"),
-            },
+            GroupStep::Check { server_id, sha } => {
+                return Ok(match self.media.public_exists(keys, server_id, sha).await {
+                    Ok(true) => true,
+                    Ok(false) => self.group_put_back_copy(keys, server_id, sha).await,
+                    Err(e) => {
+                        eprintln!("messenger avatar: {server_id} not asked: {e}");
+                        false
+                    }
+                });
+            }
+            GroupStep::Touch { url, server_id, sha } => {
+                return Ok(match self.net.own(&unique(url), MAX_FETCH_BYTES, true).await {
+                    Ok(Some(body)) if avatar::sha256_hex(&body) == *sha => true,
+                    Ok(_) => self.group_put_back_copy(keys, server_id, sha).await,
+                    Err(e) => {
+                        eprintln!("messenger avatar: {url} not fetched: {e}");
+                        false
+                    }
+                });
+            }
             GroupStep::KeepAlive { url, sha } => match self.net.foreign(&unique(url), MAX_FETCH_BYTES).await {
                 Ok(body) if avatar::sha256_hex(&body) == *sha => group_avatar::mark_touched(&self.store, group_id, now).await?,
                 Ok(_) => eprintln!("messenger avatar: {url} is not the picture it names"),
                 Err(e) => eprintln!("messenger avatar: {url} not fetched: {e}"),
             },
         }
-        Ok(())
+        Ok(true)
     }
 
     /// The picture back at its own address on a server of mine that lost it.
@@ -313,6 +358,19 @@ impl Avatars {
         let bytes = tokio::fs::read(self.group_path(sha)).await?;
         self.media.put_public(keys, server_id, bytes, JPEG).await?;
         Ok(())
+    }
+
+    /// `group_put_back` of one copy: a server that does not take it keeps
+    /// the run going for the other copies, and is asked again on the next
+    /// run.
+    async fn group_put_back_copy(&self, keys: &Keys, server_id: &str, sha: &str) -> bool {
+        match self.group_put_back(keys, server_id, sha).await {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("messenger avatar: not put back on {server_id}: {e}");
+                false
+            }
+        }
     }
 }
 

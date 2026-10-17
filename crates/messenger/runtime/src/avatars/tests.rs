@@ -409,6 +409,49 @@ fn plan_leaves_pictures_of_other_clients_alone() {
     }
 }
 
+fn copies_json(copies: &[(&str, &str)]) -> String {
+    let list: Vec<PublicBlob> = copies.iter().map(|(id, url)| PublicBlob { server_id: id.to_string(), url: url.to_string() }).collect();
+    serde_json::to_string(&list).unwrap()
+}
+
+/// Two copies of my avatar on two servers: each is asked and fetched on its
+/// own server, since a server forgets a copy nobody read through it.
+#[test]
+fn plan_looks_after_every_copy_on_its_own_server() {
+    let url = format!("https://m.example/{}", sha('a'));
+    let second = format!("https://n.example/{}", sha('a'));
+    let two = |at| own_avatar::OwnAvatar { copies_json: copies_json(&[("m", &url), ("n", &second)]), ..mine('a', at) };
+    assert_eq!(plan(&facts(Some(two(T0)), Some(Some(url.clone())))), vec![], "all fresh");
+    assert_eq!(
+        plan(&facts(Some(two(T0 - TOUCH_EVERY_SECS)), Some(Some(url.clone())))),
+        vec![
+            Step::Check { server_id: "m".into(), sha: sha('a') },
+            Step::Check { server_id: "n".into(), sha: sha('a') },
+            Step::Touch { url: url.clone(), server_id: "m".into(), sha: sha('a') },
+            Step::Touch { url: second.clone(), server_id: "n".into(), sha: sha('a') },
+        ]
+    );
+    // The second server is no longer mine: its copy is left alone.
+    let mut f = facts(Some(two(T0 - CHECK_EVERY_SECS)), Some(Some(url.clone())));
+    f.bases.remove(1);
+    f.known.remove(1);
+    assert_eq!(plan(&f), vec![Step::Check { server_id: "m".into(), sha: sha('a') }]);
+    // The first is in use but cannot be written now: the second is still
+    // looked after.
+    let mut f = facts(Some(two(T0 - CHECK_EVERY_SECS)), Some(Some(url.clone())));
+    f.bases.remove(0);
+    assert_eq!(plan(&f), vec![Step::Check { server_id: "n".into(), sha: sha('a') }]);
+    // A list that names another picture, or a server twice, adds nothing.
+    let other = format!("https://n.example/{}", sha('b'));
+    let odd = own_avatar::OwnAvatar { copies_json: copies_json(&[("m", &url), ("n", &other), ("m", &url)]), ..mine('a', T0 - CHECK_EVERY_SECS) };
+    assert_eq!(plan(&facts(Some(odd), Some(Some(url.clone())))), vec![Step::Check { server_id: "m".into(), sha: sha('a') }]);
+    // Moved off a server no longer used: the move puts up every copy anew.
+    let mut f = facts(Some(two(T0 - TOUCH_EVERY_SECS)), Some(Some(url.clone())));
+    f.bases.remove(0);
+    f.known.remove(0);
+    assert_eq!(plan(&f), vec![Step::Rehost { sha: sha('a') }]);
+}
+
 // ─── Mine ───────────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -690,6 +733,67 @@ async fn over_blossom_two_copies_and_a_move() {
     assert_eq!(r.av.keep(&r.keys).await.unwrap(), vec![Step::Check { server_id: "two".into(), sha: row.sha256.clone() }]);
     let heads = s2.received_requests().await.unwrap().iter().filter(|q| q.method.as_str() == "HEAD").count();
     assert_eq!(heads, 1);
+}
+
+/// Two media hosts over one bucket, each forgetting what nobody read
+/// through it: the copy on the second one is looked after there too, and
+/// put back there when it is gone. Its HEAD is refused (Veydan's nginx
+/// says 403 to the HEAD of a blob it does not have), and a GET decides.
+#[tokio::test]
+async fn the_keeper_looks_after_the_second_copy_where_it_is() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let (s1, s2) = (MockServer::start().await, MockServer::start().await);
+    for s in [&s1, &s2] {
+        Mock::given(method("PUT")).and(path("/upload")).respond_with(ResponseTemplate::new(200)).mount(s).await;
+    }
+    Mock::given(method("HEAD")).respond_with(ResponseTemplate::new(200)).mount(&s1).await;
+    Mock::given(method("HEAD")).respond_with(ResponseTemplate::new(403)).mount(&s2).await;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open_in_memory().await.unwrap();
+    let media = MediaService::new(store.clone(), Arc::new(MemorySecretStore::unlocked()), dir.path()).unwrap();
+    for (id, s, prio) in [("one", &s1, 10), ("two", &s2, 20)] {
+        local_blossom(&store, id, s.uri(), prio).await;
+    }
+    let r = rig_with_media(store, media, MemoryBackend::new(BASE), Keys::generate(), MemNet::default(), dir);
+    let row = r.set(bmp(64, 64, [21, 21, 21])).await;
+    let url2 = format!("{}/{}", s2.uri(), row.sha256);
+    let puts = |reqs: Vec<wiremock::Request>| requests(&reqs, "PUT");
+    assert_eq!((puts(s1.received_requests().await.unwrap()), puts(s2.received_requests().await.unwrap())), (1, 1));
+
+    // A day later the second host has lost its copy.
+    let lost = Mock::given(method("GET")).and(path(format!("/{}", row.sha256))).respond_with(ResponseTemplate::new(404)).mount_as_scoped(&s2).await;
+    r.clock.advance(DAY);
+    assert_eq!(
+        r.av.keep(&r.keys).await.unwrap(),
+        vec![
+            Step::Check { server_id: "one".into(), sha: row.sha256.clone() },
+            Step::Check { server_id: "two".into(), sha: row.sha256.clone() },
+        ]
+    );
+    assert_eq!(puts(s1.received_requests().await.unwrap()), 1, "the first host still has it");
+    assert_eq!(puts(s2.received_requests().await.unwrap()), 2, "put back on the second");
+    assert_eq!(r.row().await.unwrap().checked_at, T0 + DAY);
+    assert_eq!(r.picture().await.as_deref(), Some(row.url.as_str()), "kind 0 names the same address");
+    drop(lost);
+
+    // A day later the HEAD is refused again, but the blob is there.
+    Mock::given(method("GET")).and(path(format!("/{}", row.sha256))).respond_with(ResponseTemplate::new(206)).mount(&s2).await;
+    r.clock.advance(DAY);
+    assert_eq!(r.av.keep(&r.keys).await.unwrap().len(), 2);
+    assert_eq!(puts(s2.received_requests().await.unwrap()), 2, "nothing put back");
+    assert_eq!(r.row().await.unwrap().checked_at, T0 + 2 * DAY);
+
+    // Five days after the upload both copies are fetched, each from its
+    // own host; one that does not answer leaves the row to the next run.
+    r.clock.advance(3 * DAY);
+    let steps = r.av.keep(&r.keys).await.unwrap();
+    assert!(steps.contains(&Step::Touch { url: row.url.clone(), server_id: "one".into(), sha: row.sha256.clone() }), "{steps:?}");
+    assert!(steps.contains(&Step::Touch { url: url2.clone(), server_id: "two".into(), sha: row.sha256.clone() }), "{steps:?}");
+    let fresh = r.net.fresh.lock().unwrap().clone();
+    assert!(fresh.iter().any(|u| u.starts_with(&format!("{}?k=", row.url))), "{fresh:?}");
+    assert!(fresh.iter().any(|u| u.starts_with(&format!("{url2}?k="))), "{fresh:?}");
+    assert_eq!(r.row().await.unwrap().touched_at, T0, "not touched until every copy was");
 }
 
 // ─── Others ─────────────────────────────────────────────────────────────────
@@ -1330,6 +1434,29 @@ fn group_plan_looks_after_the_picture_of_a_group_i_manage() {
     // An address that names no hash was not made by this app.
     assert_eq!(group_plan(&group_facts(None, Some("https://m.example/me.png"), true)), vec![]);
     assert_eq!(group_plan(&group_facts(None, Some(""), true)), vec![]);
+}
+
+#[test]
+fn group_plan_looks_after_every_copy_on_its_own_server() {
+    let url = format!("https://m.example/{}", sha('a'));
+    let second = format!("https://n.example/{}", sha('a'));
+    let mut row = kept("g", 'a', T0 - TOUCH_EVERY_SECS);
+    row.copies_json = copies_json(&[("m", &url), ("n", &second)]);
+    assert_eq!(
+        group_plan(&group_facts(Some(row.clone()), Some(&url), true)),
+        vec![
+            GroupStep::Check { server_id: "m".into(), sha: sha('a') },
+            GroupStep::Check { server_id: "n".into(), sha: sha('a') },
+            GroupStep::Touch { url: url.clone(), server_id: "m".into(), sha: sha('a') },
+            GroupStep::Touch { url: second.clone(), server_id: "n".into(), sha: sha('a') },
+        ]
+    );
+    // The second server is no longer mine: its copy is left alone.
+    row.checked_at = T0;
+    let mut f = group_facts(Some(row), Some(&url), true);
+    f.bases.remove(1);
+    f.known.remove(1);
+    assert_eq!(group_plan(&f), vec![GroupStep::Touch { url, server_id: "m".into(), sha: sha('a') }]);
 }
 
 #[test]

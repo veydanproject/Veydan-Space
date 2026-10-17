@@ -31,6 +31,7 @@ use messenger_media::{Progress, TransferStage, TransferView};
 use messenger_contacts::{CardView, ProfileInput, ProfileView, SocialLink, SocialPlatform, SocialView};
 use messenger_dm::BotCard;
 use messenger_preview::Preview;
+use messenger_richtext::md::{MdBlock, MdInline, MdItem, MdStyle};
 use messenger_richtext::{Color, Span, Style};
 use ts_rs::{Config, TS};
 
@@ -43,6 +44,7 @@ pub const TRANSFER_FILE: &str = "../../../ui/src/lib/messenger/generated/transfe
 pub const CALLS_FILE: &str = "../../../ui/src/lib/messenger/generated/calls.ts";
 pub const BOT_FILE: &str = "../../../ui/src/lib/messenger/generated/bot.ts";
 pub const MODERATION_FILE: &str = "../../../ui/src/lib/messenger/generated/moderation.ts";
+pub const MARKDOWN_FILE: &str = "../../../ui/src/lib/messenger/generated/markdown.ts";
 
 const HEADER: &str = "// SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
@@ -105,6 +107,17 @@ pub fn profile_ts() -> String {
     out += &export::<AvatarPreview>(&cfg, "A picked picture, ready to be cropped.");
     out += &export::<OwnPrivateView>(&cfg, "My phone, which never goes into my public profile, and whether my card carries it by default.");
     out += &export::<ContactPrivateView>(&cfg, "The phone a contact sent me in its own card; `null` when none.");
+    out
+}
+
+/// A message written in Markdown, as the bubble renders it.
+pub fn markdown_ts() -> String {
+    let cfg = Config::new();
+    let mut out = String::from(HEADER);
+    out += &export::<MdStyle>(&cfg, "How a piece of a line is written.");
+    out += &export::<MdInline>(&cfg, "A piece of a line: text, code, a link (its host shown beside its words; none for `veydan://`) or a line break.");
+    out += &export::<MdBlock>(&cfg, "A block of a Markdown message, as the runtime parsed it; rendered as elements and text nodes, never as HTML.");
+    out += &export::<MdItem>(&cfg, "An item of a list: done or not in a task list, and its blocks.");
     out
 }
 
@@ -204,7 +217,7 @@ pub fn moderation_ts() -> String {
 }
 
 /// Every generated file and what it should hold.
-pub fn files() -> [(&'static str, String); 8] {
+pub fn files() -> [(&'static str, String); 9] {
     [
         (LINKS_FILE, links_ts()),
         (SHARED_FILE, shared_ts()),
@@ -214,6 +227,7 @@ pub fn files() -> [(&'static str, String); 8] {
         (CALLS_FILE, calls_ts()),
         (BOT_FILE, bot_ts()),
         (MODERATION_FILE, moderation_ts()),
+        (MARKDOWN_FILE, markdown_ts()),
     ]
 }
 

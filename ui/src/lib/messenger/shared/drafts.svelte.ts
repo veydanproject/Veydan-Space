@@ -8,3 +8,6 @@
 import { SvelteMap } from 'svelte/reactivity';
 
 export const drafts: SvelteMap<string, string> = ((globalThis as Record<string, unknown>).__msgDrafts ??= new SvelteMap()) as SvelteMap<string, string>;
+
+/** The conversations whose draft is written in Markdown (the composer's format menu). */
+export const markdownDrafts: Set<string> = ((globalThis as Record<string, unknown>).__msgMarkdownDrafts ??= new Set()) as Set<string>;

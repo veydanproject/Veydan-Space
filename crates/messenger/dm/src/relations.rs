@@ -16,7 +16,7 @@ use crate::service::{DmService, UI_EVENT_DM_MESSAGE};
 use crate::wrap::{wrap_as, Wake};
 use messenger_core::traits::UiEvent;
 use messenger_contacts::UI_EVENT_CONTACTS_UPDATED;
-use messenger_core::{Effect, Envelope, MessengerError, Outbound, PubKey, Result};
+use messenger_core::{Effect, Envelope, MessengerError, Outbound, PubKey, Result, TextFormat};
 use messenger_store::dm_relations::{self, RelationRow};
 use messenger_store::{banned, dm_held};
 use messenger_store::{chats, settings};
@@ -110,15 +110,23 @@ impl DmService {
     /// What the gate makes of a stored row of the peer, as it made of the
     /// message when it came (`apply_inbound`): a text by its length and its
     /// links, anything else as other.
-    pub fn kind_of(content_type: &str, text: Option<&str>) -> InboundKind {
+    pub fn kind_of(content_type: &str, text: Option<&str>, format: TextFormat) -> InboundKind {
         match (content_type, text) {
-            (repo::CT_TEXT, Some(t)) => Self::kind_of_text(t),
+            (repo::CT_TEXT, Some(t)) => Self::kind_of_text(t, format),
             _ => InboundKind::Other,
         }
     }
 
-    pub fn kind_of_text(text: &str) -> InboundKind {
-        InboundKind::PlainText { chars: text.chars().count(), has_link: crate::body::has_link(text) }
+    /// A Markdown text holds a link when its marks make one, or its words
+    /// spell one once they are read (`https:&#47;&#47;…`): a stranger's
+    /// request has nothing to click either way.
+    pub fn kind_of_text(text: &str, format: TextFormat) -> InboundKind {
+        let has_link = if format.is_markdown() {
+            messenger_richtext::md::holds_link(text, crate::body::has_link)
+        } else {
+            crate::body::has_link(text)
+        };
+        InboundKind::PlainText { chars: text.chars().count(), has_link }
     }
 
     pub(crate) async fn save_relation(&self, peer: &PubKey, r: &Relationship) -> Result<()> {
@@ -629,11 +637,11 @@ impl DmService {
     /// have let in as their one text, so the row of a request never holds
     /// what the gate keeps out. The bot's cards are not edited at all
     /// (`editable_type`), so its key needs no word here.
-    pub(crate) async fn edit_allowed(&self, peer: &PubKey, text: &str) -> Result<bool> {
+    pub(crate) async fn edit_allowed(&self, peer: &PubKey, text: &str, format: TextFormat) -> Result<bool> {
         if !self.gate_enabled() || self.load_relation(peer).await?.my_contact == MyContact::Approved {
             return Ok(true);
         }
-        Ok(Self::kind_of_text(text).is_request_text())
+        Ok(Self::kind_of_text(text, format).is_request_text())
     }
 
     // ─── Hooks of the message flow ──────────────────────────────────────────
@@ -765,7 +773,7 @@ impl DmService {
             }
             // Judged again as it would be coming now: what was held passed
             // the kind check then, and my settings may have changed since.
-            let kind = Self::kind_of(&row.content_type, row.text.as_deref());
+            let kind = Self::kind_of(&row.content_type, row.text.as_deref(), TextFormat::from_name(Some(&row.fmt)));
             if inbound_decision(&r, true, 0, row.created_at, kind, dm_from) != InboundDecision::SaveAsRequest {
                 continue;
             }

@@ -8,7 +8,7 @@
 use crate::relays::RelayService;
 use crate::MessengerRuntime;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
-use messenger_core::{Clock, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SubId, SyncItem, Timestamp, Transport};
+use messenger_core::{Clock, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SubId, SyncItem, TextFormat, Timestamp, Transport};
 use messenger_dm::{ChatView, MessageView};
 use messenger_groups::{GroupKind, GroupService, GroupView, InviteView, OpBody, Outcome, Signal};
 use messenger_ingress::{filters, Outbox};
@@ -584,25 +584,33 @@ impl MessengerRuntime {
     }
 
     pub async fn group_send_text(&self, group_id: &str, text: &str, reply_to: Option<&str>) -> Result<MessageView> {
+        self.group_send_text_as(group_id, text, TextFormat::Plain, reply_to).await
+    }
+
+    pub async fn group_send_text_as(&self, group_id: &str, text: &str, format: TextFormat, reply_to: Option<&str>) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         let (message, out) = {
             let lock = self.groups().lock_of(group_id).await;
             let _guard = lock.lock().await;
             self.group_driver.renew_stale_key(&keys, group_id).await?;
-            self.groups().prepare_text(&keys, group_id, text, reply_to).await?
+            self.groups().prepare_text_as(&keys, group_id, text, format, reply_to).await?
         };
         let id = message.id.clone();
         self.publish_group_message(message, out, &id, true).await
     }
 
     pub async fn group_edit(&self, message_id: &str, text: &str) -> Result<MessageView> {
+        self.group_edit_as(message_id, text, TextFormat::Plain).await
+    }
+
+    pub async fn group_edit_as(&self, message_id: &str, text: &str, format: TextFormat) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         let group_id = self.group_of_message(message_id).await?.ok_or_else(|| MessengerError::Invalid("unknown message".into()))?;
         let (message, tracking, out) = {
             let lock = self.groups().lock_of(&group_id).await;
             let _guard = lock.lock().await;
             self.group_driver.renew_stale_key(&keys, &group_id).await?;
-            self.groups().prepare_edit(&keys, message_id, text).await?
+            self.groups().prepare_edit_as(&keys, message_id, text, format).await?
         };
         self.publish_group_message(message, out, &tracking, false).await
     }

@@ -563,6 +563,53 @@ async fn an_admin_who_leaves_with_a_key_of_their_own_does_not_keep_reading() {
 }
 
 #[tokio::test]
+async fn the_note_of_a_request_reaches_the_managers() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Club", true).await;
+    let link = w.devices[alice].group(&g).await.unwrap().link.expect("managers have the link");
+
+    // The store stamps the row by the wall clock, not by the world's.
+    let wall = messenger_core::traits::SystemClock.now().secs();
+    let v = w.open_link(bob, &link).await;
+    assert_eq!(v.request_note, "let me in", "the sender sees what they wrote");
+    let asked = w.devices[alice].group(&g).await.unwrap();
+    assert_eq!(asked.requests.len(), 1);
+    assert_eq!(asked.requests[0].note, "let me in");
+    assert_eq!(asked.requests[0].requester, w.pk(bob).as_hex());
+    assert_eq!(Some(asked.requests[0].npub.clone()), messenger_links::contact::npub_of(&w.pk(bob)));
+    assert!(asked.requests[0].npub.starts_with("npub1"));
+    assert!(asked.requests[0].received_at >= wall, "when it came is by my clock, whatever date the requester put on it");
+    assert!(asked.request_note.is_empty(), "the manager has no request of their own");
+
+    // Asked again while the first request waits: the new words and the new
+    // date replace the old ones, and nobody is called a second time.
+    let first_date = asked.requests[0].created_at;
+    let later = first_date + 100;
+    let again = crate::wire::JoinRequest { group_id: g.clone(), note: "second try".into(), created_at: later };
+    let bob_keys = w.devices[bob].keys.clone();
+    let o = dm_from(&w, &bob_keys, alice, crate::wire::T_JOIN_REQUEST, &again, later).await;
+    assert!(o.notify.is_empty(), "a request that waits does not ring again");
+    let asked = w.devices[alice].group(&g).await.unwrap();
+    assert_eq!(asked.requests.len(), 1);
+    assert_eq!(asked.requests[0].note, "second try");
+    assert_eq!(asked.requests[0].created_at, later);
+    assert!(asked.requests[0].received_at >= wall, "the new words were taken in now");
+
+    // The same date again, or an older one, changes nothing.
+    let stale = crate::wire::JoinRequest { group_id: g.clone(), note: "stale".into(), created_at: later };
+    dm_from(&w, &bob_keys, alice, crate::wire::T_JOIN_REQUEST, &stale, later).await;
+    assert_eq!(w.devices[alice].group(&g).await.unwrap().requests[0].note, "second try");
+
+    // The note is a stranger's text: it goes through the same cleaning as
+    // any other.
+    let rude = crate::wire::JoinRequest { group_id: g.clone(), note: "hi\u{202e}there".into(), created_at: later + 10 };
+    dm_from(&w, &bob_keys, alice, crate::wire::T_JOIN_REQUEST, &rude, later + 10).await;
+    assert_eq!(w.devices[alice].group(&g).await.unwrap().requests[0].note, messenger_richtext::normalize("hi\u{202e}there"));
+}
+
+#[tokio::test]
 async fn request_through_a_private_link() {
     let mut w = World::new();
     let alice = w.person().await;
@@ -575,7 +622,7 @@ async fn request_through_a_private_link() {
 
     let v = w.open_link(bob, &link).await;
     assert_eq!(v.membership, "requested");
-    assert_eq!(w.devices[alice].group(&g).await.unwrap().requests, vec![w.pk(bob).as_hex().to_string()]);
+    assert_eq!(w.devices[alice].group(&g).await.unwrap().requests.iter().map(|r| r.requester.clone()).collect::<Vec<_>>(), vec![w.pk(bob).as_hex().to_string()]);
     w.tick();
     let a = &w.devices[alice];
     let o = a.svc.approve_request(&a.keys, &g, &w.pk(bob)).await.unwrap();
@@ -612,7 +659,7 @@ async fn a_request_answered_by_one_manager_leaves_the_others() {
     w.open_link(bob, &link).await;
     let bob_hex = w.pk(bob).as_hex().to_string();
     for d in [alice, dave, dave2] {
-        assert_eq!(w.devices[d].group(&g).await.unwrap().requests, vec![bob_hex.clone()], "device {d}");
+        assert_eq!(w.devices[d].group(&g).await.unwrap().requests.iter().map(|r| r.requester.clone()).collect::<Vec<_>>(), vec![bob_hex.clone()], "device {d}");
     }
     w.tick();
     let d = &w.devices[dave];
@@ -636,7 +683,7 @@ async fn a_request_answered_by_one_manager_leaves_the_others() {
 
     // A ban by one manager closes the request on the other too.
     w.open_link(carol, &link).await;
-    assert_eq!(w.devices[alice].group(&g).await.unwrap().requests, vec![w.pk(carol).as_hex().to_string()]);
+    assert_eq!(w.devices[alice].group(&g).await.unwrap().requests.iter().map(|r| r.requester.clone()).collect::<Vec<_>>(), vec![w.pk(carol).as_hex().to_string()]);
     w.act(dave, &g, OpBody::Ban { who: w.pk(carol) }).await.unwrap();
     assert!(w.devices[alice].group(&g).await.unwrap().requests.is_empty());
     let row = messenger_store::groups::request(&w.devices[alice].svc.store, &g, w.pk(carol).as_hex(), "in").await.unwrap().unwrap();
@@ -1257,7 +1304,7 @@ async fn a_quote_of_a_captionless_photo_in_a_group_says_photo_and_a_taken_back_o
     w.tick();
     let fields = serde_json::json!({ "name": "cat.png", "mime": "image/png", "size": 10, "kind": "image" });
     let d = &w.devices[alice];
-    let ph = d.svc.media_placeholder(&d.keys, &g, fields.clone(), None).await.unwrap();
+    let ph = d.svc.media_placeholder(&d.keys, &g, fields.clone(), None, messenger_core::TextFormat::Plain).await.unwrap();
     let envelope = Envelope::new("media").with("kind", "image").with("name", "cat.png").with("key", "k");
     let (photo, out) = d.svc.media_finish(&d.keys, &ph.id, envelope, fields).await.unwrap();
     w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
@@ -1295,7 +1342,7 @@ impl World {
         self.tick();
         let fields = serde_json::json!({ "name": "cat.png", "mime": "image/png", "size": 10, "kind": "image" });
         let d = &self.devices[who];
-        let ph = d.svc.media_placeholder(&d.keys, group, fields.clone(), Some(caption)).await.unwrap();
+        let ph = d.svc.media_placeholder(&d.keys, group, fields.clone(), Some(caption), messenger_core::TextFormat::Plain).await.unwrap();
         // The placeholder's id is replaced once the file is up: nobody would see an edit of it.
         assert!(d.svc.prepare_edit(&d.keys, &ph.id, "too early").await.is_err());
         let envelope = Envelope::new("media").with("kind", "image").with("name", "cat.png").with("caption", caption).with("key", "k");
@@ -1350,6 +1397,42 @@ async fn the_caption_of_my_photo_is_edited_for_members_and_my_other_device() {
     let card = w.send_card(alice, &g, serde_json::json!({ "pubkey": w.pk(alice).as_hex(), "name": "alice" })).await;
     let d = &w.devices[alice];
     assert!(d.svc.prepare_edit(&d.keys, &card, "text").await.is_err());
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn markdown_reaches_every_device_and_an_edit_overtaking_it_keeps_its_format() {
+    use messenger_core::TextFormat;
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let alice2 = w.device(w.devices[alice].keys.clone()).await;
+    let g = w.create(alice, GroupKind::Private, "Notes", true).await;
+    w.bring(alice, &g, bob).await;
+
+    w.tick();
+    let d = &w.devices[alice];
+    let (sent, out) = d.svc.prepare_text_as(&d.keys, &g, "# Plan\n\n`cargo test`", TextFormat::Markdown, None).await.unwrap();
+    w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
+    for who in [alice, alice2, bob] {
+        let list = w.devices[who].visible(&g).await;
+        let m = list.iter().find(|m| m.id == sent.id).expect("the message");
+        assert_eq!((m.fmt.as_deref(), m.rich.is_some()), (Some("md"), true), "device {who}");
+    }
+    let chat = w.devices[bob].dm.chat(&format!("group:{g}")).await.unwrap().unwrap();
+    assert_eq!(chat.last_preview.as_deref(), Some("Plan\ncargo test"), "the words, not the marks");
+
+    // An edit into plain text that comes before its message.
+    w.offline(bob);
+    w.tick();
+    let d = &w.devices[alice];
+    let (late, out) = d.svc.prepare_text_as(&d.keys, &g, "**v1**", TextFormat::Markdown, None).await.unwrap();
+    w.run(alice, Outcome { publish: vec![out], ..Default::default() }).await;
+    w.edit(alice, &late.id, "**v2**").await;
+    w.online(bob).await;
+    let list = w.devices[bob].visible(&g).await;
+    let m = list.iter().find(|m| m.id == late.id).expect("the message");
+    assert_eq!((m.text.as_deref(), m.fmt.as_deref()), (Some("**v2**"), None));
     assert!(w.notes.is_empty(), "{:?}", w.notes);
 }
 

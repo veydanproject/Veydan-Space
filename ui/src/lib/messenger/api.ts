@@ -10,6 +10,7 @@ export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView } from './ge
 export type { SharedCounts, SharedSection } from './generated/shared';
 export type { BotCard } from './generated/bot';
 import type { BotCard } from './generated/bot';
+import type { MdBlock } from './generated/markdown';
 export type { BridgeView, NetCheck, NetMode, NetStatus, Verdict } from './generated/net';
 import type { NetCheck, NetMode, NetStatus } from './generated/net';
 export type {
@@ -231,7 +232,18 @@ export interface MessengerMessage {
   review?: MessageReview;
   /** Groups: the version an approval names (the id of the last edit, else the message's own id). */
   version?: string;
+  /** `md` when `text` (or a caption) is written in Markdown; absent for plain text. */
+  fmt?: TextFormat | null;
+  /**
+   * Of a Markdown text: its blocks as the runtime parsed them. Absent when the
+   * text is plain, or too big to be shown as Markdown: it is then shown as
+   * plain text. Rendered by `content/Markdown.svelte`, never as HTML.
+   */
+  rich?: MdBlock[] | null;
 }
+
+/** How the words of a message are written: `md` Markdown; `null` plain text. */
+export type TextFormat = 'md';
 
 export type MessageReview = 'ok' | 'pending' | 'rejected';
 
@@ -267,6 +279,19 @@ export type GroupPostMode = 'all' | 'managers';
 /** Whose messages wait for a moderator: nobody's, those who joined after it was turned on, or every member's. */
 export type GroupPremod = 'off' | 'newcomers' | 'all';
 
+/** A request to join that waits for a manager. */
+export interface MessengerGroupRequest {
+  requester: string;
+  /** The requester's key as people read and copy it (bech32). */
+  npub: string;
+  /** The requester's words to the managers; empty when they wrote none. */
+  note: string;
+  /** The date on the request, by the requester's clock (unix seconds). */
+  created_at: number;
+  /** When this device took it in (or its latest words), by my clock (unix seconds). */
+  received_at: number;
+}
+
 export interface MessengerGroup {
   id: string;
   chat_id: string;
@@ -286,8 +311,10 @@ export interface MessengerGroup {
   members: MessengerGroupMember[];
   /** Managers only. */
   banned: string[];
-  /** Managers only: who asks to be let in. */
-  requests: string[];
+  /** Managers only: who asks to be let in, and what they wrote. */
+  requests: MessengerGroupRequest[];
+  /** What I wrote to the managers with my request while it waits; empty otherwise. */
+  request_note: string;
   /** For those who may share it. */
   link: string | null;
   /** Events this device has no key for (yet). */
@@ -1370,7 +1397,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const c = mockChat(String(a?.to));
     const now = Math.floor(Date.now() / 1000);
     const target = a?.replyTo ? mockFind(String(a.replyTo)) : undefined;
-    const m: MessengerMessage = { id: `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'text', text: String(a?.text), sender_pubkey: 'ab'.repeat(32), reply_to: target ? { id: target.id, sender_pubkey: target.sender_pubkey, text: target.text, deleted: target.deleted, content_type: target.content_type, media: target.content_type === 'media' && !target.deleted && target.media ? { kind: target.media.kind, name: target.media.name, duration_ms: target.media.duration_ms } : null } : null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null };
+    const m: MessengerMessage = { id: `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'text', text: String(a?.text), fmt: a?.fmt === 'md' ? 'md' : null, sender_pubkey: 'ab'.repeat(32), reply_to: target ? { id: target.id, sender_pubkey: target.sender_pubkey, text: target.text, deleted: target.deleted, content_type: target.content_type, media: target.content_type === 'media' && !target.deleted && target.media ? { kind: target.media.kind, name: target.media.name, duration_ms: target.media.duration_ms } : null } : null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
     mockChats = mockChats.map((x) => x.id === c.id ? { ...x, last_message_at: now, last_preview: m.text } : x);
     return m;
@@ -1378,7 +1405,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_dm_react: (a) => mockReact(String(a?.messageId), String(a?.emoji)),
   messenger_emoji_used: () => undefined,
   messenger_emoji_top: (a) => MOCK_EMOJI_TOP.slice(0, Number(a?.n ?? 24)),
-  messenger_dm_edit: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.text = String(a?.text); m.edited_at = Math.floor(Date.now() / 1000); } return m; },
+  messenger_dm_edit: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.text = String(a?.text); m.fmt = a?.fmt === 'md' ? 'md' : null; m.rich = null; m.edited_at = Math.floor(Date.now() / 1000); } return m; },
   messenger_dm_delete: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.deleted = true; m.text = null; } },
   messenger_dm_retry: () => undefined,
   messenger_media_servers: () => mockMediaServers,
@@ -1535,7 +1562,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
       id, chat_id: `group:${id}`, kind, name: String(a?.name), about: String(a?.about ?? ''), picture: '', relay: 'wss://relay.example',
       owner: 'ab'.repeat(32), membership: 'joined', my_role: 'owner', muted: false, can_post: true, history_for_new: kind === 'public' || Boolean(a?.historyForNew),
       members: [{ pubkey: 'ab'.repeat(32), role: 'owner', muted: false, muted_until: null, trusted: false, joined_at: Math.floor(Date.now() / 1000), is_me: true }],
-      banned: [], requests: [], undecrypted: 0, ...MOCK_MOD_DEFAULTS,
+      banned: [], requests: [], request_note: '', undecrypted: 0, ...MOCK_MOD_DEFAULTS,
       key: { id: id.slice(0, 32), version: 1, cipher: 'AES-256-GCM', source: kind === 'public' ? 'link' : 'random', link_epoch: 0, since: Math.floor(Date.now() / 1000), by: 'ab'.repeat(32), reason: 'create', held: true, status: 'good' },
       link: `veydan://group/${id}?t=${kind}&r=wss%3A%2F%2Frelay.example&o=${'ab'.repeat(32)}&n=${encodeURIComponent(String(a?.name))}${kind === 'public' ? '&s=demo&e=0' : ''}`,
     };
@@ -1557,7 +1584,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
       id: v.group_id, chat_id: `group:${v.group_id}`, kind: v.group_kind, name: v.name, about: '', picture: '', relay: v.relay, owner: v.owner,
       membership: open ? 'joined' : 'requested', my_role: open ? 'member' : null, muted: false, can_post: open, history_for_new: true,
       members: open ? [{ pubkey: 'ab'.repeat(32), role: 'member', muted: false, muted_until: null, trusted: false, joined_at: Math.floor(Date.now() / 1000), is_me: true }] : [],
-      banned: [], requests: [], link: null, undecrypted: 0, key: null, ...MOCK_MOD_DEFAULTS,
+      banned: [], requests: [], request_note: open ? '' : String(a?.note ?? ''), link: null, undecrypted: 0, key: null, ...MOCK_MOD_DEFAULTS,
     };
     mockGroups = [g, ...mockGroups.filter((x) => x.id !== g.id)];
     if (!mockChats.some((c) => c.id === g.chat_id)) {
@@ -1568,7 +1595,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   },
   messenger_group_answer_request: (a) => {
     const g = mockGroup(String(a?.groupId));
-    g.requests = g.requests.filter((r) => r !== a?.requester);
+    g.requests = g.requests.filter((r) => r.requester !== a?.requester);
     if (a?.approve) g.members = [...g.members, { pubkey: String(a?.requester), role: 'member', muted: false, muted_until: null, trusted: false, joined_at: Math.floor(Date.now() / 1000), is_me: false }];
     return g;
   },
@@ -1577,7 +1604,8 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const act = (a?.action ?? {}) as GroupAction;
     switch (act.op) {
       case 'remove': g.members = g.members.filter((m) => m.pubkey !== act.who); break;
-      case 'ban': g.members = g.members.filter((m) => m.pubkey !== act.who); g.banned = [...g.banned, act.who]; break;
+      // A ban answers a request of the one banned, as the log does in the runtime.
+      case 'ban': g.members = g.members.filter((m) => m.pubkey !== act.who); g.banned = [...g.banned, act.who]; g.requests = g.requests.filter((r) => r.requester !== act.who); break;
       case 'unban': g.banned = g.banned.filter((b) => b !== act.who); break;
       case 'set_role': g.members = g.members.map((m) => (m.pubkey === act.who ? { ...m, role: act.role } : m)); break;
       case 'set_muted': g.members = g.members.map((m) => (m.pubkey === act.who ? { ...m, muted: act.muted, muted_until: null } : m)); break;
@@ -2037,9 +2065,12 @@ export const messengerApi = {
   },
 
   dm: {
-    sendText: (to: string, text: string, replyTo?: string) =>
-      invoke<MessengerMessage>('messenger_dm_send_text', { to, text, replyTo: replyTo ?? null }),
-    edit: (messageId: string, text: string) => invoke<MessengerMessage>('messenger_dm_edit', { messageId, text }),
+    /** `fmt`: `md` when the text is written in Markdown. */
+    sendText: (to: string, text: string, replyTo?: string, fmt: TextFormat | null = null) =>
+      invoke<MessengerMessage>('messenger_dm_send_text', { to, text, replyTo: replyTo ?? null, fmt }),
+    /** An edit says how its text is written: plain unless `fmt`. */
+    edit: (messageId: string, text: string, fmt: TextFormat | null = null) =>
+      invoke<MessengerMessage>('messenger_dm_edit', { messageId, text, fmt }),
     /** Toggles my `emoji` on a message: puts it, or takes it back when it is already mine. */
     react: (messageId: string, emoji: string) => invoke<MessengerMessage>('messenger_dm_react', { messageId, emoji }),
     delete: (messageId: string, forEveryone: boolean) => invoke<void>('messenger_dm_delete', { messageId, forEveryone }),
@@ -2325,8 +2356,9 @@ export const messengerApi = {
     importPicked: (path: string) => invoke<MessengerPicked>('messenger_media_import', { path }),
     /** `batch`: the same for files picked together. `original`: a picture goes as it is, not compressed. */
     /** `poster`: a frame of a video, the other side's preview before it fetches the file. */
-    sendFile: (to: string, path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null) =>
-      invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, batch: batch ?? null, original, poster }),
+    /** `captionFmt`: `md` when the caption is written in Markdown. */
+    sendFile: (to: string, path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null, captionFmt: TextFormat | null = null) =>
+      invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, captionFmt: caption?.trim() ? captionFmt : null, batch: batch ?? null, original, poster }),
     download: (messageId: string, manual: boolean) => invoke<string | null>('messenger_media_download', { messageId, manual }),
     /** The file is on a server only its sender named (neither the project's nor mine): fetched only by hand. */
     foreignServer: (messageId: string) => invoke<boolean>('messenger_media_foreign_server', { messageId }),

@@ -53,6 +53,9 @@ getrandom = "0.3"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 wiremock = "0.6"
 ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
+# Messages written in Markdown (messenger-richtext::md): the events of the
+# parser only, never its HTML, which is left out with the default features.
+pulldown-cmark = { version = "0.13", default-features = false }
 # Avatar pictures (messenger-avatar): the formats a phone or a desktop hands
 # over, decoded with limits and written back as a plain JPEG.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }

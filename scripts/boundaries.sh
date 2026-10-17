@@ -189,6 +189,7 @@ crates/lock                      veydan-lock               lib      no
 crates/sync                      veydan-sync               lib      no
 crates/recovery                  veydan-recovery           lib      no
 crates/desktop-notify            desktop-notify            lib      no
+crates/keydist                   keydist                   lib      no
 crates/core                      veydan-core               lib      yes  crates/build-cfg crates/lock
 crates/sync-host                 veydan-sync-host          lib      yes  crates/build-cfg crates/core crates/lock crates/sync
 crates/shell                     veydan-shell              lib      yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host
@@ -430,10 +431,13 @@ while read -r dir _ row_kind _; do
 done <<<"$MATRIX"
 
 # 5. The messenger: its crates depend neither on Tauri nor on the platform.
-#    One path leaves crates/messenger: the crate `vlink` is built on the
+#    Two paths leave crates/messenger: the crate `vlink` is built on the
 #    client of VLink (services/link/crates/vlink-proto,
-#    services/link/crates/vlink-client).
-#    Nothing else of VLink, and no other crate, may follow.
+#    services/link/crates/vlink-client), and the crates that hand out the
+#    keys of a scope (groups, communities, runtime) take the key
+#    distribution of the platform, crates/keydist (platform-spec.md 6.1,
+#    communities-keydist.md). Nothing else of VLink, and no other crate,
+#    may follow.
 #    The crate in crates/messenger/<x> is the package messenger-<x>.
 #    Per-crate allow-list of dependencies inside the messenger:
 allowed() {
@@ -445,12 +449,12 @@ allowed() {
     richtext)  echo "" ;;
     avatar)    echo "messenger-core" ;;
     preview)   echo "messenger-core messenger-http" ;;
-    store)     echo "messenger-core" ;;
+    store)     echo "messenger-core messenger-richtext" ;;
     transport) echo "messenger-core messenger-http messenger-vlink" ;;
     identity)  echo "messenger-core messenger-store" ;;
     ingress)   echo "messenger-core messenger-store messenger-identity" ;;
     contacts)  echo "messenger-core messenger-store messenger-http messenger-richtext messenger-avatar" ;;
-    dm)        echo "messenger-core messenger-store messenger-contacts messenger-links" ;;
+    dm)        echo "messenger-core messenger-store messenger-contacts messenger-links messenger-richtext" ;;
     media)     echo "messenger-core messenger-store messenger-http" ;;
     groups)    echo "messenger-core messenger-store messenger-media messenger-dm messenger-links messenger-contacts messenger-richtext" ;;
     push)      echo "messenger-core messenger-http" ;;
@@ -492,6 +496,11 @@ allowed() {
       fi ;;
     services/link/crates/vlink-proto|services/link/crates/vlink-client)
       [ "$crate" = vlink ] || say "$crate: path dependency outside crates/messenger ('$path')" ;;
+    crates/keydist)
+      case "$crate" in
+        groups|communities|runtime) ;;
+        *) say "$crate: path dependency outside crates/messenger ('$path')" ;;
+      esac ;;
     *) say "$crate: path dependency outside crates/messenger ('$path')" ;;
   esac
 done <<<"$messenger_deps"

@@ -158,7 +158,7 @@
       </div>
     {/if}
     {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} onadd={actions?.react} /></div>{/if}
-    {#each captions as m (m.id)}<div class="caption" data-part={m.id}><MessageContent text={m.text ?? ''} /></div>{/each}
+    {#each captions as m (m.id)}<div class="caption" data-part={m.id}><MessageContent text={m.text ?? ''} rich={m.rich} /></div>{/each}
     {#if !overlay}{@render meta(false)}{/if}
   </div>
     {#if actions && !tail.deleted}

@@ -8,7 +8,7 @@
 //! message, under the group key.
 
 use crate::service::{me_of, refused, GroupService, MEMBERSHIP_JOINED};
-use messenger_core::{Envelope, MessengerError, Outbound, Result};
+use messenger_core::{Envelope, MessengerError, Outbound, Result, TextFormat};
 use messenger_dm::MessageView;
 use messenger_store::groups as repo;
 use messenger_store::messages::{self as msgs, NewMessage};
@@ -31,6 +31,7 @@ impl GroupService {
         group_id: &str,
         media_json: serde_json::Value,
         caption: Option<&str>,
+        caption_format: TextFormat,
     ) -> Result<MessageView> {
         let me = me_of(keys);
         let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
@@ -56,7 +57,11 @@ impl GroupService {
                 status: msgs::STATUS_UPLOADING.into(),
                 content_type: msgs::CT_MEDIA.into(),
                 text: caption.map(str::trim).filter(|c| !c.is_empty()).map(String::from),
-                envelope_json: "{}".into(),
+                // How the caption is written, until the file is up and its envelope is made.
+                envelope_json: match caption_format {
+                    TextFormat::Plain => "{}".into(),
+                    f => serde_json::json!({ messenger_core::envelope::FIELD_FMT: f.name() }).to_string(),
+                },
                 sender_pubkey: me.as_hex().to_string(),
                 reply_to_id: None,
                 target_id: None,
