@@ -35,6 +35,9 @@ pub struct RelayRow {
     pub last_ok_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// The server this relay belongs to (`msg_servers.id`); `None` is the
+    /// home set.
+    pub server_id: Option<String>,
 }
 
 impl RelayRow {
@@ -55,11 +58,13 @@ pub struct RelayUpsert {
     pub enabled: bool,
     pub auth_type: Option<String>,
     pub auth_secret: Option<String>,
+    /// `None`: a relay of the home set.
+    pub server_id: Option<String>,
 }
 
 pub async fn list(store: &Store) -> Result<Vec<RelayRow>> {
     sqlx::query_as::<_, RelayRow>(
-        "SELECT url, relay_id, source, regions_json, read, write, enabled, auth_type, auth_secret, failures, last_ok_at, created_at, updated_at
+        "SELECT url, relay_id, source, regions_json, read, write, enabled, auth_type, auth_secret, failures, last_ok_at, created_at, updated_at, server_id
          FROM msg_relays ORDER BY source, url",
     )
     .fetch_all(store.pool())
@@ -69,7 +74,7 @@ pub async fn list(store: &Store) -> Result<Vec<RelayRow>> {
 
 pub async fn get(store: &Store, url: &str) -> Result<Option<RelayRow>> {
     sqlx::query_as::<_, RelayRow>(
-        "SELECT url, relay_id, source, regions_json, read, write, enabled, auth_type, auth_secret, failures, last_ok_at, created_at, updated_at
+        "SELECT url, relay_id, source, regions_json, read, write, enabled, auth_type, auth_secret, failures, last_ok_at, created_at, updated_at, server_id
          FROM msg_relays WHERE url = ?",
     )
     .bind(url)
@@ -84,19 +89,21 @@ pub async fn upsert(store: &Store, r: &RelayUpsert, overwrite_enabled: bool) -> 
     let now = crate::now();
     let regions = serde_json::to_string(&r.regions).unwrap_or_else(|_| "[]".into());
     let sql = if overwrite_enabled {
-        "INSERT INTO msg_relays (url, relay_id, source, regions_json, read, write, enabled, auth_type, auth_secret, failures, last_ok_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+        "INSERT INTO msg_relays (url, relay_id, source, regions_json, read, write, enabled, auth_type, auth_secret, failures, last_ok_at, created_at, updated_at, server_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
          ON CONFLICT(url) DO UPDATE SET
            relay_id = excluded.relay_id, source = excluded.source, regions_json = excluded.regions_json,
            read = excluded.read, write = excluded.write, enabled = excluded.enabled,
-           auth_type = excluded.auth_type, auth_secret = excluded.auth_secret, updated_at = excluded.updated_at"
+           auth_type = excluded.auth_type, auth_secret = excluded.auth_secret, updated_at = excluded.updated_at,
+           server_id = excluded.server_id"
     } else {
-        "INSERT INTO msg_relays (url, relay_id, source, regions_json, read, write, enabled, auth_type, auth_secret, failures, last_ok_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+        "INSERT INTO msg_relays (url, relay_id, source, regions_json, read, write, enabled, auth_type, auth_secret, failures, last_ok_at, created_at, updated_at, server_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
          ON CONFLICT(url) DO UPDATE SET
            relay_id = excluded.relay_id, source = excluded.source, regions_json = excluded.regions_json,
            read = excluded.read, write = excluded.write, enabled = msg_relays.enabled,
-           auth_type = excluded.auth_type, auth_secret = excluded.auth_secret, updated_at = excluded.updated_at"
+           auth_type = excluded.auth_type, auth_secret = excluded.auth_secret, updated_at = excluded.updated_at,
+           server_id = excluded.server_id"
     };
     sqlx::query(sql)
         .bind(&r.url)
@@ -110,6 +117,7 @@ pub async fn upsert(store: &Store, r: &RelayUpsert, overwrite_enabled: bool) -> 
         .bind(&r.auth_secret)
         .bind(now)
         .bind(now)
+        .bind(&r.server_id)
         .execute(store.pool())
         .await
         .map_err(storage)?;
@@ -193,6 +201,7 @@ mod tests {
             enabled: true,
             auth_type: None,
             auth_secret: None,
+            server_id: None,
         }
     }
 
@@ -224,6 +233,17 @@ mod tests {
         let rows = list(&s).await.unwrap();
         assert_eq!(rows.len(), 1, "collision drops the old row");
         assert_eq!(rows[0].url, "wss://user.example");
+    }
+
+    #[tokio::test]
+    async fn a_relay_names_its_server_and_none_is_home() {
+        let s = Store::open_in_memory().await.unwrap();
+        upsert(&s, &up("wss://home.example", Some("h"), SOURCE_MANIFEST), true).await.unwrap();
+        let mut private = up("wss://mine.example", None, SOURCE_USER);
+        private.server_id = Some("0123456789abcdef".into());
+        upsert(&s, &private, true).await.unwrap();
+        assert_eq!(get(&s, "wss://home.example").await.unwrap().unwrap().server_id, None);
+        assert_eq!(get(&s, "wss://mine.example").await.unwrap().unwrap().server_id.as_deref(), Some("0123456789abcdef"));
     }
 
     #[tokio::test]

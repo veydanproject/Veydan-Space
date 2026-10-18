@@ -8,7 +8,7 @@
 //! nothing else changes. Variants that no handler claims yet are still
 //! present so the dispatcher can log them as `Ignored` with a reason.
 
-use crate::types::{EventId, EventSource, PubKey, Timestamp};
+use crate::types::{EventId, EventSource, PubKey, RelayUrl, Timestamp};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,6 +67,11 @@ pub struct DmInbound {
     /// note from a peer that is not a message.
     #[serde(default = "dm_rumor_kind")]
     pub rumor_kind: u16,
+    /// The server id of the rumor's `srv` tag (`envelope::TAG_SERVER`): the
+    /// sender's word that it belongs to the private chat on that server.
+    /// `None` on a rumor of the home chat and of other clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub srv: Option<String>,
 }
 
 fn dm_rumor_kind() -> u16 {
@@ -101,9 +106,24 @@ pub struct ChannelInbound {
 pub enum MetaInbound {
     Profile { author: PubKey, created_at: Timestamp, content: String },
     Follows { author: PubKey, created_at: Timestamp, follows: Vec<PubKey> },
-    RelayList { author: PubKey, created_at: Timestamp, relays: Vec<(String, Option<String>)> },
+    /// `via`: the relay the list came by, when known; a list heard on a
+    /// private server's relay is that server's (internal/messenger-wire.md,
+    /// «Частный чат»), never the home one.
+    RelayList {
+        author: PubKey,
+        created_at: Timestamp,
+        relays: Vec<(String, Option<String>)>,
+        #[serde(default)]
+        via: Option<RelayUrl>,
+    },
     /// NIP-17 inbox relay list (kind 10050): where to deliver DMs to `author`.
-    DmRelays { author: PubKey, created_at: Timestamp, relays: Vec<String> },
+    DmRelays {
+        author: PubKey,
+        created_at: Timestamp,
+        relays: Vec<String>,
+        #[serde(default)]
+        via: Option<RelayUrl>,
+    },
     /// A presence beat (kind 30315, `d = veydan`). `author` is a presence
     /// key, not a user: only the presence handler knows whose it is.
     /// `expires_at` is the NIP-40 `expiration` tag, when it parses.

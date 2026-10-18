@@ -10,6 +10,7 @@
   import { messengerStore } from '../store.svelte';
   import { messengerError, type RelayState } from '../api';
   import RelayAddForm from './RelayAddForm.svelte';
+  import PrivateServers from '../servers/PrivateServers.svelte';
   import { cloudOnboarding, hasAccount } from '../onboarding/cloud.svelte';
 
   let busy = $state(false);
@@ -190,6 +191,7 @@
   </ul>
 
   <RelayAddForm />
+  <PrivateServers />
   {#if error}<div class="error-msg">{error}</div>{/if}
 </div>
 

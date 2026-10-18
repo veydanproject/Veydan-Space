@@ -225,6 +225,41 @@ impl ProfileService {
         self.sign_own(keys, &me, last, content).await
     }
 
+    /// Our kind 0 as the last one cached for us, with `picture` in place of
+    /// its picture, signed with the same time and not cached: the copy a
+    /// private server gets, which names a picture on that server (or none)
+    /// rather than the home one. Of the same second as the home kind 0, it
+    /// is never newer than it: a device of mine that hears it keeps the
+    /// home one. `None` before I published one.
+    pub async fn build_copy(&self, keys: &Keys, picture: Picture<'_>) -> Result<Option<WireEvent>> {
+        let me = PubKey::parse(&keys.public_key().to_hex()).expect("valid pubkey");
+        let Some(last) = repo::get(&self.store, me.as_hex()).await? else { return Ok(None) };
+        let mut obj: Map<String, Value> = match serde_json::from_str::<Value>(&last.raw_json) {
+            Ok(Value::Object(m)) => m,
+            _ => Map::new(),
+        };
+        match picture {
+            Picture::Keep => {}
+            Picture::Set(url) => {
+                let url = checked_url(Some(url.to_string()), "picture must be a URL")?
+                    .ok_or_else(|| MessengerError::Invalid("picture must be a URL".into()))?;
+                obj.insert("picture".into(), Value::String(url));
+            }
+            Picture::Remove => {
+                obj.remove("picture");
+            }
+        }
+        let created_at = u64::try_from(last.event_created_at).unwrap_or(0);
+        let event = EventBuilder::new(Kind::Metadata, serde_json::to_string(&Value::Object(obj))?)
+            .custom_created_at(nostr::types::Timestamp::from_secs(created_at))
+            .finalize(keys)
+            .map_err(|e| MessengerError::Crypto(e.to_string()))?;
+        Ok(Some(WireEvent {
+            id: messenger_core::EventId::parse(&event.id.to_hex()).ok_or_else(|| MessengerError::Crypto("bad event id".into()))?,
+            json: serde_json::to_value(&event)?,
+        }))
+    }
+
     /// Sign `content` as our kind 0, never older than `last`, and cache it.
     async fn sign_own(&self, keys: &Keys, me: &PubKey, last: Option<repo::ProfileRow>, content: String) -> Result<WireEvent> {
         let not_before = last.map_or(0, |r| r.event_created_at.saturating_add(1));

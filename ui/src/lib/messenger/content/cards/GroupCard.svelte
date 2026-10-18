@@ -11,6 +11,7 @@
   import { groupError } from '../../groups/errors';
   import type { LinkView } from '../../api';
   import { linkActions } from '../actions';
+  import { serverFacts, serverName } from '../../servers/serverAccept.svelte';
 
   interface Props { view: Extract<LinkView, { kind: 'group' }> }
   let { view }: Props = $props();
@@ -62,6 +63,19 @@
     </div>
   </div>
 
+  {#if view.server && stage === 'out'}
+    <!-- The group lives on a server of its own: «Вступить» asks before adding it. -->
+    <div class="server">
+      <span class="whose" class:veydan={view.server.is_veydan}>
+        <Icon name={view.server.is_veydan ? 'shield-check' : 'server-2'} size={12} />{$t('msg_srv_card_group_on', { name: serverName(view.server, tr) })}
+        · {$t(view.server.is_veydan ? 'msg_srv_is_veydan' : 'msg_srv_not_veydan')}
+      </span>
+      <span>{serverFacts(view.server, tr).join(' · ')}</span>
+    </div>
+  {:else if !view.server_known && stage === 'out'}
+    <div class="status closed"><Icon name="server-2" size={12} />{$t('msg_srv_group_unknown')}</div>
+  {/if}
+
   {#if stage === 'wait' || stage === 'closed'}
     <div class="status" class:closed={stage === 'closed'}>
       <Icon name={stage === 'wait' ? 'clock' : 'lock-square-rounded'} size={12} />
@@ -95,6 +109,9 @@
   .sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--text-3); }
   .status { display: flex; align-items: flex-start; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
   .status.closed { color: var(--warn-text); }
+  .server { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
+  .whose { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; color: var(--warn-text); }
+  .whose.veydan { color: var(--success-text); }
   .status :global(svg) { flex-shrink: 0; margin-top: 2px; }
   .note {
     width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);

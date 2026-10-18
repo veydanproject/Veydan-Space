@@ -9,7 +9,7 @@
 // which secret it carries. What the UI does read is what a person types:
 // a code of six digits, said aloud and typed with spaces or a dash.
 
-import type { InviteView, LinkView } from '../api';
+import type { InviteView, LinkView, ServerPreview } from '../api';
 
 /** A QR on the screen lives 15 minutes and is drawn anew while it is shown. */
 export const QR_TTL_SECS = 15 * 60;
@@ -48,6 +48,8 @@ export interface InvitedContact {
   invite: string | null;
   isMe: boolean;
   blocked: boolean;
+  /** The card of the server the person is reached on (`srv=`): the chat is the private one there. */
+  server: ServerPreview | null;
 }
 
 /** The person and the secret of a link the runtime read; `null` for anything but a person's link. */
@@ -60,6 +62,7 @@ export function invitedContact(view: LinkView | undefined | null): InvitedContac
     invite: typeof invite === 'string' && invite ? invite : null,
     isMe: view.is_me,
     blocked: view.blocked,
+    server: view.server ?? null,
   };
 }
 

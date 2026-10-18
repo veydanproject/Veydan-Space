@@ -7,6 +7,10 @@
   import { date } from '../shared/time';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerTranslations } from '../i18n';
+  import { ask } from '$lib/core/ui/confirm.svelte';
+  import type { MessengerPushTicket } from '../api';
+  import { hostOf } from '../servers/serverAccept.svelte';
+  import { serverStore } from '../servers/serverStore.svelte';
   import { pushErrorKey, pushStore } from './pushStore.svelte';
 
   let editingServer = $state(false);
@@ -41,6 +45,25 @@
 
   function day(secs: number | null): string {
     return secs ? date(secs) : '—';
+  }
+
+  /** The push of my private servers, through the gateway; their tickets are read once there is one. */
+  const targets = $derived(status?.enabled ? (status.targets ?? []) : []);
+  let ticketsAsked = false;
+  $effect(() => {
+    if (targets.length && !ticketsAsked) {
+      ticketsAsked = true;
+      void pushStore.loadTickets();
+    }
+  });
+
+  async function revoke(ticket: MessengerPushTicket) {
+    const yes = await ask({
+      title: $t('msg_push_ticket_revoke_title', { ticket: ticket.ticket }),
+      message: $t('msg_push_ticket_revoke_text'),
+      confirmLabel: $t('msg_push_ticket_revoke'),
+    });
+    if (yes) await pushStore.revokeTicket(ticket.ticket);
   }
 
   function startEditing() {
@@ -252,6 +275,61 @@
             </button>
           </div>
         {/if}
+
+        {#if targets.length}
+          <div class="block">
+            <span class="label">{$t('msg_push_targets_title')}</span>
+            <p class="muted small">{$t('msg_push_targets_hint')}</p>
+            <ul class="list">
+              {#each targets as target (target.server_id)}
+                <li class="row">
+                  <span class="dot {target.state === 'registered' ? 'ok' : target.state === 'pending' ? 'pending' : 'failed'}"></span>
+                  <div class="info">
+                    <span class="name">{target.name?.trim() || serverStore.nameOf(target.server_id) || hostOf(target.server)}</span>
+                    <span class="meta">
+                      {#if target.state === 'registered'}
+                        {$t('msg_push_target_registered', { gateway: target.gateway ? hostOf(target.gateway) : '—' })}
+                      {:else}
+                        {tr(`msg_push_target_${target.state === 'pending' ? 'pending' : 'failed'}`)}
+                      {/if}
+                    </span>
+                    {#if target.state === 'failed' && target.error}<span class="meta bad">{errorText(target.error)}</span>{/if}
+                    {#if target.ticket_expires_at}<span class="meta">{$t('msg_push_target_ticket', { date: day(target.ticket_expires_at) })}</span>{/if}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+
+        {#if targets.length || pushStore.tickets?.length}
+          <div class="block">
+            <span class="label">{$t('msg_push_tickets_title')}</span>
+            <p class="muted small">{$t('msg_push_tickets_hint')}</p>
+            {#if pushStore.tickets === null}
+              <p class="muted small">{$t('msg_push_loading')}</p>
+            {:else if pushStore.tickets.length === 0}
+              <p class="muted small">{$t('msg_push_tickets_empty')}</p>
+            {:else}
+              <ul class="list">
+                {#each pushStore.tickets as ticket (ticket.gateway + ticket.ticket)}
+                  <li class="row">
+                    <div class="info">
+                      <span class="name">{ticket.server_id ? serverStore.nameOf(ticket.server_id) || ticket.server_id : $t('msg_push_ticket_other')}</span>
+                      <code>{ticket.ticket} · {hostOf(ticket.gateway)}</code>
+                      <span class="meta">
+                        {$t('msg_push_ticket_meta', { until: day(ticket.expires_at), woke: ticket.last_wake_at ? day(ticket.last_wake_at) : $t('msg_push_ticket_never') })}
+                      </span>
+                    </div>
+                    <button class="btn btn-ghost btn-sm danger" disabled={pushStore.busy} onclick={() => revoke(ticket)}>
+                      {$t('msg_push_ticket_revoke')}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        {/if}
       {/if}
     {/if}
 
@@ -326,6 +404,10 @@
   }
   .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
+  .meta.bad { color: var(--danger-text); }
+  .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn.danger { color: var(--danger-text); flex-shrink: 0; }
+  .dot.failed { background: var(--danger-text); }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); word-break: break-all; }
   .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--danger-text); }
   .dot.ok { background: var(--success-text); }

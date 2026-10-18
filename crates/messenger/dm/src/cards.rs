@@ -7,9 +7,11 @@
 //! reads it, without a phone unless the card is its sender's own. A group
 //! keeps its cards the same way (`received_card`).
 
+use crate::peer::DmPeer;
 use crate::service::{DmService, Prepared};
 use messenger_contacts::card::{self, ContactCard};
-use messenger_core::{Envelope, MessengerError, PubKey, Result};
+use messenger_core::{Envelope, MessengerError, Result};
+use messenger_links::ServerLink;
 use messenger_store::messages as repo;
 use nostr::key::Keys;
 
@@ -17,7 +19,10 @@ use nostr::key::Keys;
 /// without a phone unless the card is the author's own. `None` when the
 /// envelope holds no card worth keeping.
 pub fn received_card(envelope: &Envelope, author: &str) -> Option<ContactCard> {
-    let card = card::validate(envelope.fields.get("card")?).ok()?;
+    let mut card = card::validate(envelope.fields.get("card")?).ok()?;
+    // The card of a server rides only on its sender's own card, and is
+    // kept only as the parser of links reads it, written again.
+    card.server = card.server.as_deref().and_then(|s| ServerLink::parse(s).ok()).map(|s| s.encode());
     Some(if card.pubkey == author { card } else { card.without_phone() })
 }
 
@@ -35,7 +40,7 @@ pub struct StoredCard {
 impl DmService {
     /// Store an outgoing card for `peer` and build its wraps. The card is
     /// sent as it is: the host decides what it holds.
-    pub async fn prepare_card(&self, keys: &Keys, peer: &PubKey, card: &ContactCard) -> Result<Prepared> {
+    pub async fn prepare_card(&self, keys: &Keys, peer: impl Into<DmPeer>, card: &ContactCard) -> Result<Prepared> {
         let json = card.to_json();
         let envelope = Envelope::contact(json.clone());
         self.prepare_visible(keys, peer, envelope, repo::CT_CONTACT, None, None, Some(json.to_string())).await

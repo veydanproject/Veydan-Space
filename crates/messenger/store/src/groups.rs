@@ -34,7 +34,8 @@ pub struct GroupRow {
 
 const COLS: &str = "id, kind, name, about, picture, relay_url, owner, membership, my_role, members, link_epoch, created_at, updated_at, needs_update";
 
-/// Insert or refresh the cached facts of a group.
+/// Insert or refresh the cached facts of a group. The relay is kept in its
+/// normal form (`servers::normalize`), the one a server is found by.
 pub async fn upsert(store: &Store, g: &GroupRow) -> Result<()> {
     let now = crate::now();
     sqlx::query(
@@ -50,7 +51,7 @@ pub async fn upsert(store: &Store, g: &GroupRow) -> Result<()> {
     .bind(&g.name)
     .bind(&g.about)
     .bind(&g.picture)
-    .bind(&g.relay_url)
+    .bind(crate::servers::normalize(&g.relay_url))
     .bind(&g.owner)
     .bind(&g.membership)
     .bind(&g.my_role)
@@ -122,6 +123,54 @@ pub async fn delete(store: &Store, id: &str) -> Result<()> {
     let chat = group_chat_id(id);
     sqlx::query("DELETE FROM msg_messages WHERE chat_id = ?").bind(&chat).execute(&mut *tx).await.map_err(storage)?;
     sqlx::query("DELETE FROM msg_chats WHERE id = ?").bind(&chat).execute(&mut *tx).await.map_err(storage)?;
+    tx.commit().await.map_err(storage)
+}
+
+// ─── Keys owed to the secret store ──────────────────────────────────────────
+
+/// The keys of groups forgotten with their server (`servers::remove_private`)
+/// whose secrets the group service has yet to delete: `[[group, key], …]`
+/// in `msg_settings`. The removal comes by the snapshot too, in a crate
+/// that holds no secret store; the group service empties the list
+/// (`GroupService::forget_gone`).
+pub const SECRETS_OWED: &str = "groups.secrets_owed";
+
+pub(crate) async fn secrets_owed_in(db: &mut sqlx::SqliteConnection) -> Result<Vec<(String, String)>> {
+    let value: Option<String> = sqlx::query_scalar("SELECT value FROM msg_settings WHERE key = ?")
+        .bind(SECRETS_OWED)
+        .fetch_optional(&mut *db)
+        .await
+        .map_err(storage)?;
+    Ok(value.and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default())
+}
+
+pub(crate) async fn set_secrets_owed_in(db: &mut sqlx::SqliteConnection, owed: &[(String, String)]) -> Result<()> {
+    if owed.is_empty() {
+        sqlx::query("DELETE FROM msg_settings WHERE key = ?").bind(SECRETS_OWED).execute(&mut *db).await.map_err(storage)?;
+        return Ok(());
+    }
+    let value = serde_json::to_string(owed)?;
+    sqlx::query("INSERT INTO msg_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(SECRETS_OWED)
+        .bind(value)
+        .execute(&mut *db)
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
+/// The keys whose secrets are owed, `(group, key)`.
+pub async fn secrets_owed(store: &Store) -> Result<Vec<(String, String)>> {
+    let mut conn = store.pool().acquire().await.map_err(storage)?;
+    secrets_owed_in(&mut conn).await
+}
+
+/// Those of `done` are owed no more.
+pub async fn secrets_forgotten(store: &Store, done: &[(String, String)]) -> Result<()> {
+    let mut tx = store.pool().begin().await.map_err(storage)?;
+    let mut owed = secrets_owed_in(&mut tx).await?;
+    owed.retain(|k| !done.contains(k));
+    set_secrets_owed_in(&mut tx, &owed).await?;
     tx.commit().await.map_err(storage)
 }
 
@@ -226,6 +275,15 @@ pub async fn take_pending(store: &Store, group_id: &str, key_id: &str) -> Result
         .await
         .map_err(storage)?;
     Ok(rows)
+}
+
+/// The groups that have something held under `key_id`, in id order.
+pub async fn pending_groups(store: &Store, key_id: &str) -> Result<Vec<String>> {
+    sqlx::query_scalar::<_, String>("SELECT DISTINCT group_id FROM msg_group_pending WHERE key_id = ? ORDER BY group_id")
+        .bind(key_id)
+        .fetch_all(store.pool())
+        .await
+        .map_err(storage)
 }
 
 /// What waits in a bucket, oldest first, left where it is.

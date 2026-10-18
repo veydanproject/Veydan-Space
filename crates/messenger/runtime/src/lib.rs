@@ -9,6 +9,8 @@
 //! talks to this type: the Tauri adapter today, a standalone app or the
 //! `messenger-cli` tomorrow. Nothing here knows about Tauri.
 
+pub mod addr;
+pub mod private;
 pub mod media;
 pub mod notify;
 
@@ -39,6 +41,7 @@ pub mod relays;
 /// A report of a person to the moderators of the project, with the proofs
 /// of the messages it attaches (messenger-evidence).
 pub mod report;
+mod scopes;
 pub mod servers;
 pub mod session;
 pub mod shared;
@@ -50,7 +53,7 @@ pub mod cloudnotes;
 use messenger_core::outbound::WireEvent;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
 use messenger_contacts::{ContactService, MetaHandler, Nip05Service, ProfileService, ReqwestFetcher};
-use messenger_core::{Clock, EventId, MessengerConfig, MessengerError, Outbound, PubKey, Result, Scope, SecretStore, SubId, TextFormat, Transport};
+use messenger_core::{Clock, EventId, MessengerConfig, MessengerError, Outbound, PubKey, Result, SecretStore, SubId, TextFormat, Transport};
 use messenger_dm::{Action, DmHandler, DmRoutesHandler, DmService, Prepared};
 use messenger_identity::IdentityService;
 use messenger_media::{MediaService, Recovered};
@@ -79,7 +82,7 @@ pub use messenger_contacts::book::{parse_key, ContactPatch};
 pub use messenger_contacts::{ContactView, ProfileInput, ProfileView};
 pub use messenger_identity::{CreatedIdentity, Identity};
 pub use messenger_groups::{GroupKind, GroupView, InviteView, JoinRequestView, KeyView as GroupKeyView, MemberView, OpBody as GroupOp, Role as GroupRole};
-pub use links::LinkView;
+pub use links::{LinkView, PrivateServerView, ServerPreview};
 pub use calls::{CallBackends, RegistrySource};
 pub use call_nodes::{CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust};
 pub use calls::{
@@ -150,6 +153,8 @@ pub struct MessengerRuntime {
     previews: preview::LinkPreviews,
     group_driver: groups::GroupsDriver,
     group_signals: tokio::task::JoinHandle<()>,
+    /// Ends the calls of a private server removed (`calls::follow_servers`).
+    calls_follow: tokio::task::JoinHandle<()>,
     outbox: Outbox,
     dispatcher: Arc<Dispatcher>,
     ui: broadcast::Sender<UiEvent>,
@@ -257,6 +262,13 @@ impl MessengerRuntime {
         );
         // A call between two that rings in during a group call is told so.
         calls.link_group_calls(group_calls.service.clone());
+        // The calls of a private server removed by the snapshot end with it.
+        let calls_follow = tokio::spawn(calls::follow_servers(
+            store.clone(),
+            calls.service.clone(),
+            group_calls.service.clone(),
+            ui.subscribe(),
+        ));
         // The chain of the DM handlers: GroupDmHandler → CallDmHandler → DmHandler.
         let dispatcher = Arc::new(
             Dispatcher::new()
@@ -308,6 +320,7 @@ impl MessengerRuntime {
             previews,
             group_driver,
             group_signals,
+            calls_follow,
             outbox,
             dispatcher,
             ui,
@@ -417,6 +430,7 @@ impl MessengerRuntime {
         self.dm.set_signer(Some(keys_for_dm.clone()));
         let session = Session::start(
             self.store.clone(),
+            self.relays.clone(),
             pool,
             keys,
             self.outbox.clone(),
@@ -448,6 +462,7 @@ impl MessengerRuntime {
         if let Err(e) = self.publish_dm_relays(false).await {
             eprintln!("messenger: inbox relay list not published: {e}");
         }
+        self.profile_to_private_servers().await;
         // The keys are here: what the closing of the app interrupted goes on.
         if self.config.resume_transfers {
             match self.resume_interrupted().await {
@@ -485,33 +500,46 @@ impl MessengerRuntime {
 
     /// Tell the world where we read DMs (kind 10050): our enabled write
     /// relays. Published only when the set changed, unless `force`.
+    ///
+    /// Per server (internal/messenger-wire.md, «Серверы»): the home set's
+    /// list names its relays and goes to them; a private server's names its
+    /// own relays and goes to that server alone, so it never learns of the
+    /// others and they never learn of it.
     pub async fn publish_dm_relays(&self, force: bool) -> Result<()> {
-        const KEY: &str = "dm.relays_published";
         let keys = self.session_keys().await?;
-        let mut urls: Vec<String> = self
-            .relays
-            .list()
-            .await?
-            .into_iter()
-            .filter(|r| r.enabled && r.read)
-            .map(|r| r.url)
-            .collect();
+        self.publish_dm_relays_of(&keys, None, force).await?;
+        for server in scopes::private_servers(&self.store).await {
+            if let Err(e) = self.publish_dm_relays_of(&keys, Some(&server), force).await {
+                eprintln!("messenger: the inbox relay list of a private server not published: {e}");
+            }
+        }
+        Ok(())
+    }
+
+    async fn publish_dm_relays_of(&self, keys: &Keys, server: Option<&str>, force: bool) -> Result<()> {
+        // The home set's under the key it always had.
+        let key = scopes::sub_id("dm.relays_published", server);
+        let mut urls: Vec<String> = self.relays.enabled_of(server).await?.into_iter().filter(|r| r.read).map(|r| r.url).collect();
         urls.sort();
         let fingerprint = format!("{}|{}", keys.public_key().to_hex(), urls.join(","));
-        if urls.is_empty() || (!force && settings::get(&self.store, KEY).await?.as_deref() == Some(fingerprint.as_str())) {
+        if urls.is_empty() || (!force && settings::get(&self.store, &key).await?.as_deref() == Some(fingerprint.as_str())) {
             return Ok(());
         }
         let mut builder = EventBuilder::new(Kind::InboxRelays, "");
         for u in &urls {
             builder = builder.tag(Tag::parse(["relay", u.as_str()]).map_err(|e| MessengerError::Invalid(e.to_string()))?);
         }
-        let event = builder.finalize(&keys).map_err(|e| MessengerError::Crypto(e.to_string()))?;
+        let event = builder.finalize(keys).map_err(|e| MessengerError::Crypto(e.to_string()))?;
         let event = WireEvent {
             id: EventId::parse(&event.id.to_hex()).expect("event id is hex"),
             json: serde_json::to_value(&event)?,
         };
-        self.outbox.enqueue(Outbound::PublishOwn { event }).await?;
-        settings::set(&self.store, KEY, &fingerprint).await?;
+        let out = match server {
+            None => Outbound::PublishOwn { event },
+            Some(_) => Outbound::PublishScoped { scope: scopes::of_server(server), event },
+        };
+        self.outbox.enqueue(out).await?;
+        settings::set(&self.store, &key, &fingerprint).await?;
         Ok(())
     }
 
@@ -534,12 +562,14 @@ impl MessengerRuntime {
     /// start following the peer's profile and inbox relays. The profile is
     /// asked again at every opening, as the UI does for a chat opened from
     /// the list (`profiles.request`).
+    /// `peer@<server id>` opens the private chat on that server.
     pub async fn chat_open(&self, peer: &str) -> Result<ChatView> {
-        let pk = messenger_contacts::book::parse_key(peer)?;
-        let existed = self.dm.chat(&messenger_store::chats::dm_chat_id(pk.as_hex())).await?.is_some();
-        let view = self.dm.open_chat(&pk).await?;
+        let chat = self.peer_addr(peer).await?;
+        let pk = chat.key.clone();
+        let existed = self.dm.chat(&chat.chat_id()).await?.is_some();
+        let view = self.dm.open_chat(&chat).await?;
         if self.session.lock().await.is_some() {
-            let _ = self.request_profile(&pk).await;
+            let _ = self.request_profile_on(&pk, chat.server()).await;
             if !existed {
                 let _ = self.resubscribe_meta().await;
             }
@@ -548,7 +578,7 @@ impl MessengerRuntime {
     }
 
     async fn publish_prepared(&self, p: Prepared) -> Result<MessageView> {
-        let peer = p.message.chat_id.strip_prefix("dm:").and_then(PubKey::parse);
+        let peer = messenger_dm::DmPeer::of_chat(&p.message.chat_id).map(|c| c.key);
         // A new message is tried for an hour, both copies; an edit or a
         // deletion until it leaves.
         // By an invitation the accept leads: it opens the door the text
@@ -602,12 +632,11 @@ impl MessengerRuntime {
         if let Some(group) = to.strip_prefix("group:") {
             return self.group_send_text_as(group, text, format, reply_to).await;
         }
-        let peer = messenger_contacts::book::parse_key(to)
-            .map_err(|_| MessengerError::Invalid("recipient must be an npub or 64-hex public key".into()))?;
-        let first = self.dm.chat(&messenger_store::chats::dm_chat_id(peer.as_hex())).await?.is_none();
-        let prepared = self.dm.prepare_text_as(&keys, &peer, text, format, reply_to).await?;
+        let chat = self.peer_addr(to).await?;
+        let first = self.dm.chat(&chat.chat_id()).await?.is_none();
+        let prepared = self.dm.prepare_text_as(&keys, &chat, text, format, reply_to).await?;
         if first {
-            let _ = self.request_profile(&peer).await;
+            let _ = self.request_profile_on(&chat.key, chat.server()).await;
             let _ = self.resubscribe_meta().await;
         }
         self.publish_prepared(prepared).await
@@ -664,11 +693,25 @@ impl MessengerRuntime {
 
     /// A note for my other devices (`messenger_dm::own`). What is done here
     /// stays done when the note cannot leave: locked, or a broken outbox.
+    /// A note about a private chat or a group of a private server (read, a
+    /// message removed for me) goes to its server alone, where my devices
+    /// that have it hear it.
     async fn tell_own_devices(&self, note: &messenger_core::Envelope) {
         let Ok(keys) = self.session_keys().await else { return };
+        let chat = note.str_field("chat").unwrap_or("");
+        // A group of a private server too: the note goes where the group
+        // lives, and nowhere when that is not read (a group of a server
+        // removed on purpose is closed, never the home set's).
+        let server = match chat.strip_prefix("group:") {
+            Some(group) => match scopes::server_of_group(&self.store, group).await {
+                Ok(server) => server,
+                Err(_) => return,
+            },
+            None => messenger_dm::DmPeer::of_chat(chat).and_then(|c| c.server),
+        };
         let sent = async {
-            let event = messenger_dm::wrap::wrap_own(&keys, &note.encode(), SystemClock.now().secs())?;
-            self.enqueue_and_pump(Outbound::PublishOwn { event }).await
+            let event = messenger_dm::wrap::wrap_own_on(&keys, &note.encode(), SystemClock.now().secs(), server.as_deref())?;
+            self.enqueue_and_pump(messenger_dm::to_my_devices(server.as_deref(), event)).await
         };
         if let Err(e) = sent.await {
             let _ = self.ui.send(UiEvent {
@@ -678,18 +721,22 @@ impl MessengerRuntime {
         }
     }
 
+    /// The relation with `peer`: `<key>` the home chat's, `<key>@<server>`
+    /// a private chat's (`addr`).
     pub async fn dm_relation(&self, peer: &str) -> Result<RelationView> {
-        let pk = messenger_contacts::book::parse_key(peer)?;
-        self.dm.relation(&pk).await
+        let chat = self.peer_addr(peer).await?;
+        self.dm.relation(&chat).await
     }
 
     /// Relationship action: request, accept, decline, block, unblock,
     /// remove. Publishes the signals and keeps the address book in step.
+    /// In a private chat (`<key>@<server>`) it is that chat's relation,
+    /// and the signals go to its server.
     pub async fn dm_act(&self, peer: &str, action: Action) -> Result<RelationView> {
         let keys = self.session_keys().await?;
-        let pk = messenger_contacts::book::parse_key(peer)?;
-        let result = self.dm.act(&keys, &pk, action).await?;
-        self.after_act(&keys, &pk, action, result).await
+        let chat = self.peer_addr(peer).await?;
+        let result = self.dm.act(&keys, &chat, action).await?;
+        self.after_act(&keys, &chat, action, result).await
     }
 
     /// A request to `peer` by an invitation of theirs (`invite`, the
@@ -701,37 +748,50 @@ impl MessengerRuntime {
     /// add of a contact.
     pub async fn dm_request(&self, peer: &str, invite: Option<&str>, text: Option<&str>) -> Result<RelationView> {
         let keys = self.session_keys().await?;
-        let pk = messenger_contacts::book::parse_key(peer)?;
+        let chat = self.peer_addr(peer).await?;
         match (invite, text) {
             (None, None) => self.dm_act(peer, Action::Request).await,
             (None, Some(text)) => {
-                self.dm_send_text(pk.as_hex(), text, None).await?;
-                self.dm.relation(&pk).await
+                self.dm_send_text(peer, text, None).await?;
+                self.dm.relation(&chat).await
             }
             (Some(invite), None) => {
-                let result = self.dm.request_by_invite(&keys, &pk, invite).await?;
-                self.after_act(&keys, &pk, Action::Request, result).await
+                let result = self.dm.request_by_invite(&keys, &chat, invite).await?;
+                self.after_act(&keys, &chat, Action::Request, result).await
             }
             (Some(invite), Some(text)) => {
-                let first = self.dm.chat(&messenger_store::chats::dm_chat_id(pk.as_hex())).await?.is_none();
-                let prepared = self.dm.prepare_request_text(&keys, &pk, text, invite).await?;
+                let first = self.dm.chat(&chat.chat_id()).await?.is_none();
+                let prepared = self.dm.prepare_request_text(&keys, &chat, text, invite).await?;
                 if first {
-                    let _ = self.request_profile(&pk).await;
+                    let _ = self.request_profile_on(&chat.key, chat.server()).await;
                     let _ = self.resubscribe_meta().await;
                 }
                 self.publish_prepared(prepared).await?;
-                self.dm.relation(&pk).await
+                self.dm.relation(&chat).await
             }
         }
     }
 
     /// What follows an action of mine on the relationship: the signals go
     /// out, the address book, the profile and presence follow, the page is
-    /// told.
-    async fn after_act(&self, keys: &Keys, pk: &PubKey, action: Action, result: messenger_dm::ActionResult) -> Result<RelationView> {
-        let pk = pk.clone();
+    /// told. The book and presence are of the home set: an action in a
+    /// private chat leaves them as they are.
+    async fn after_act(&self, keys: &Keys, chat: &messenger_dm::DmPeer, action: Action, result: messenger_dm::ActionResult) -> Result<RelationView> {
+        let pk = chat.key.clone();
         for out in result.outbounds {
             self.outbox.enqueue(out).await?;
+        }
+        if chat.is_private() {
+            if matches!(action, Action::Accept | Action::Request) {
+                let _ = self.request_profile_on(&pk, chat.server()).await;
+                let _ = self.resubscribe_meta().await;
+            }
+            for ev in result.events {
+                let _ = self.ui.send(ev);
+            }
+            let _ = self.ui.send(UiEvent { name: "chats.updated".into(), payload: serde_json::json!({}) });
+            self.outbox.kick();
+            return Ok(result.relation);
         }
         let me = PubKey::parse(&keys.public_key().to_hex()).expect("valid pubkey");
         let is_contact = self.contacts.is_contact(&pk).await?;
@@ -797,11 +857,18 @@ impl MessengerRuntime {
     /// Ask relays for one profile (answer arrives through ingress as
     /// `profile.updated`). Cheap, idempotent per pubkey.
     pub async fn request_profile(&self, pubkey: &PubKey) -> Result<()> {
+        self.request_profile_on(pubkey, None).await
+    }
+
+    /// The same on `server`: the peer of a private chat publishes its
+    /// profile there (and may have none at home), and nothing of the
+    /// private chat is asked of the home set.
+    pub(crate) async fn request_profile_on(&self, pubkey: &PubKey, server: Option<&str>) -> Result<()> {
         let pool = self.relays.pool().await;
         pool.send(Outbound::Subscribe {
-            id: SubId(format!("profile-{}", pubkey.short())),
+            id: SubId(scopes::sub_id(&format!("profile-{}", pubkey.short()), server)),
             filter: filters::profile_of(pubkey),
-            scope: Scope::Own,
+            scope: scopes::of_server(server),
         })
         .await?;
         Ok(())
@@ -823,6 +890,7 @@ impl MessengerRuntime {
         let keys = self.session_keys().await?;
         let event = self.profiles.build_own(&keys, input, messenger_contacts::Picture::Keep).await?;
         self.enqueue_and_pump(Outbound::PublishOwn { event }).await?;
+        self.profile_to_private_servers().await;
         let me = PubKey::parse(&keys.public_key().to_hex()).expect("valid pubkey");
         self.profiles.get(&me).await?.ok_or_else(|| MessengerError::Storage("own profile missing after publish".into()))
     }
@@ -942,8 +1010,8 @@ impl MessengerRuntime {
         self.calls.service.set_signer(None);
         self.group_calls.service.set_signer(None);
         if goodbye {
-            let pool = self.relays.pool().await;
-            if tokio::time::timeout(calls::GOODBYE_WAIT, self.outbox.pump(pool.as_ref())).await.is_err() {
+            let routed = scopes::Routed { store: self.store.clone(), pool: self.relays.pool().await };
+            if tokio::time::timeout(calls::GOODBYE_WAIT, self.outbox.pump(&routed)).await.is_err() {
                 eprintln!("messenger calls: the end of the call waits for the next session");
             }
         }
@@ -1020,6 +1088,7 @@ impl MessengerRuntime {
         self.media.release();
         self.stop_session().await;
         self.group_signals.abort();
+        self.calls_follow.abort();
         self.calls.stop();
         self.group_calls.stop();
         self.relays.shutdown().await;
@@ -1210,6 +1279,7 @@ mod tests {
             content,
             reply_to: None,
             rumor_kind: 14,
+            srv: None,
         }
     }
 
@@ -1253,7 +1323,7 @@ mod tests {
     async fn publish_name(relay: &LocalRelay, who: &Keys, name: &str) {
         let url = RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
         let pool = RelayPool::new(None);
-        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         connected(&pool).await;
         let event = EventBuilder::new(Kind::Metadata, serde_json::json!({ "name": name }).to_string()).finalize(who).unwrap();
         let event = WireEvent { id: EventId::parse(&event.id.to_hex()).unwrap(), json: serde_json::to_value(&event).unwrap() };
@@ -1272,6 +1342,166 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         name
+    }
+
+    // ─── Servers: a private server hears only what names it ─────────────────
+
+    /// The events of `author` one relay holds, read by a pool of its own.
+    async fn events_on(url: &str, author: &PubKey) -> Vec<serde_json::Value> {
+        let pool = RelayPool::new(None);
+        let url = RelayUrl::parse(url).unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
+        connected(&pool).await;
+        let filter = messenger_core::outbound::Filter(serde_json::json!({ "authors": [author.as_hex()] }));
+        let found = pool.fetch(&filter, &messenger_core::Scope::Own, Duration::from_secs(3)).await.unwrap();
+        pool.shutdown().await;
+        found
+    }
+
+    /// The relays an inbox relay list (kind 10050) names.
+    fn inbox_relays(list: &serde_json::Value) -> Vec<String> {
+        list["tags"].as_array().unwrap().iter().filter(|t| t[0] == "relay").map(|t| t[1].as_str().unwrap().to_string()).collect()
+    }
+
+    /// A runtime on a relay of its own (the home set) and a private server
+    /// put in as the card of a later stage will: the home relay gets a home
+    /// server row; each server gets the inbox list that names it alone; a
+    /// wrap to me on the private relay comes in by the private server's own
+    /// subscription; a group of the private server publishes there, and
+    /// nothing of mine but its own inbox list lands on it.
+    #[tokio::test]
+    async fn a_private_server_hears_only_what_names_it() {
+        use messenger_store::{groups as group_repo, relays as relay_repo, servers};
+        let home = LocalRelay::builder().build();
+        home.run().await.unwrap();
+        let home_url = home.url().await.as_str_without_trailing_slash().to_string();
+        let private = LocalRelay::builder().build();
+        private.run().await.unwrap();
+        let private_url = private.url().await.as_str_without_trailing_slash().to_string();
+
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+        rt.relays().add_user(&home_url, None).await.unwrap();
+        rt.servers_use_own().await.unwrap();
+        let homes = servers::home(rt.store()).await.unwrap();
+        assert_eq!(homes.iter().map(|s| s.relay_url.as_str()).collect::<Vec<_>>(), vec![home_url.as_str()], "a home row per relay");
+        assert_eq!(homes[0].id, servers::id_of(&home_url));
+
+        let server = servers::ServerRow {
+            id: String::new(),
+            kind: servers::KIND_PRIVATE.into(),
+            name: Some("Мой".into()),
+            relay_url: private_url.clone(),
+            relay_key: None,
+            media_url: None,
+            call_node: None,
+            push_mode: servers::PUSH_OFF.into(),
+            source: Some("card".into()),
+            added_at: 0,
+        };
+        let id = servers::put(rt.store(), &server).await.unwrap();
+        relay_repo::upsert(
+            rt.store(),
+            &relay_repo::RelayUpsert {
+                url: private_url.clone(),
+                relay_id: None,
+                source: "server".into(),
+                regions: vec![],
+                read: true,
+                write: true,
+                enabled: true,
+                auth_type: None,
+                auth_secret: None,
+                server_id: Some(id.clone()),
+            },
+            true,
+        )
+        .await
+        .unwrap();
+        rt.relays().reload().await.unwrap();
+        assert_eq!(servers::home(rt.store()).await.unwrap().len(), 1, "the private relay makes no home row");
+        let configured = rt.relays().pool().await.configured();
+        assert_eq!(configured.iter().find(|c| c.url.as_str() == private_url).unwrap().server_id.as_deref(), Some(id.as_str()));
+
+        rt.identity().create("pw").await.unwrap();
+        assert!(rt.refresh_signer().await.unwrap());
+        connected(&*rt.relays().pool().await).await;
+        let me = rt.session_pubkey().await.unwrap();
+
+        // Each server its own inbox list, naming itself alone.
+        let mut lists = (Vec::new(), Vec::new());
+        for _ in 0..50 {
+            lists = (events_on(&home_url, &me).await, events_on(&private_url, &me).await);
+            let has = |v: &Vec<serde_json::Value>| v.iter().any(|e| e["kind"] == 10050);
+            if has(&lists.0) && has(&lists.1) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let list_of = |v: &Vec<serde_json::Value>| v.iter().find(|e| e["kind"] == 10050).cloned().expect("an inbox list");
+        assert_eq!(inbox_relays(&list_of(&lists.0)), vec![home_url.clone()]);
+        assert_eq!(inbox_relays(&list_of(&lists.1)), vec![private_url.clone()]);
+
+        // A wrap to me on the private relay alone reaches ingress.
+        let bob = Keys::generate();
+        let wrapped = messenger_dm::wrap::wrap(&bob, &me, "on the private server", SystemClock.now().secs(), None).unwrap();
+        let to_private = RelayPool::new(None);
+        let url = RelayUrl::parse(&private_url).unwrap();
+        to_private.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
+        connected(&to_private).await;
+        assert!(to_private.send(Outbound::PublishOwn { event: wrapped.to_peer.clone() }).await.unwrap().is_delivered());
+        to_private.shutdown().await;
+        let mut arrived = false;
+        for _ in 0..50 {
+            if messenger_store::events_raw::contains(rt.store(), &wrapped.to_peer.id).await.unwrap() {
+                arrived = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(arrived, "the private server's inbox is listened to");
+
+        // A group of the private server publishes there, and not at home.
+        let group = "a".repeat(64);
+        group_repo::upsert(
+            rt.store(),
+            &group_repo::GroupRow {
+                id: group.clone(),
+                kind: "private".into(),
+                name: "Team".into(),
+                about: String::new(),
+                picture: String::new(),
+                relay_url: private_url.clone(),
+                owner: me.as_hex().to_string(),
+                membership: "joined".into(),
+                my_role: Some("owner".into()),
+                members: 1,
+                link_epoch: 0,
+                created_at: 0,
+                updated_at: 0,
+                needs_update: false,
+            },
+        )
+        .await
+        .unwrap();
+        let keys = rt.session_keys().await.unwrap();
+        let note = EventBuilder::new(Kind::from(1u16), "to the group").finalize(&keys).unwrap();
+        let event = WireEvent { id: EventId::parse(&note.id.to_hex()).unwrap(), json: serde_json::to_value(&note).unwrap() };
+        rt.outbox().enqueue(Outbound::PublishScoped { scope: messenger_core::Scope::Group { id: group }, event }).await.unwrap();
+        rt.outbox().kick();
+        let mut on_private = Vec::new();
+        for _ in 0..50 {
+            on_private = events_on(&private_url, &me).await;
+            if on_private.iter().any(|e| e["kind"] == 1) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let kinds: std::collections::BTreeSet<u64> = on_private.iter().filter_map(|e| e["kind"].as_u64()).collect();
+        assert_eq!(kinds, [1, 10050].into_iter().collect(), "the group's note and the server's own inbox list, nothing else");
+        assert!(!events_on(&home_url, &me).await.iter().any(|e| e["kind"] == 1), "the group's note is not at home");
+        rt.shutdown().await;
     }
 
     #[tokio::test]
@@ -1343,6 +1573,7 @@ mod tests {
             rt.store(),
             &messenger_store::dm_relations::RelationRow {
                 peer_pubkey: peer.as_hex().to_string(),
+                server_id: String::new(),
                 my_contact: "approved".into(),
                 blocked: false,
                 peer_signal: "approved".into(),
@@ -1471,7 +1702,7 @@ mod tests {
     async fn stranger_wrote(relay: &LocalRelay, who: &Keys, me: &PubKey, text: &str, at: i64) {
         let url = RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
         let pool = RelayPool::new(None);
-        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         connected(&pool).await;
         let w = messenger_dm::wrap::wrap_as(who, me, &messenger_core::Envelope::text(text).encode(), at, None, messenger_dm::wrap::Wake::Peer).unwrap();
         pool.send(Outbound::PublishOwn { event: w.to_peer }).await.unwrap();
@@ -1493,7 +1724,7 @@ mod tests {
 
     async fn visible(rt: &MessengerRuntime, peer: &PubKey) -> usize {
         // The texts; not the system line of a request accepted.
-        rt.dm().messages(&messenger_store::chats::dm_chat_id(peer.as_hex()), None, 50).await.unwrap().iter().filter(|m| m.content_type != "system").count()
+        rt.dm().messages(&messenger_store::chats::dm_chat_id(peer.as_hex(), None), None, 50).await.unwrap().iter().filter(|m| m.content_type != "system").count()
     }
 
     #[tokio::test]
@@ -1574,7 +1805,7 @@ mod tests {
         let id = EventId::parse(&event.id.to_hex()).unwrap();
         let url = RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
         let pool = RelayPool::new(None);
-        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         connected(&pool).await;
         pool.send(Outbound::PublishOwn { event: WireEvent { id: id.clone(), json: serde_json::to_value(&event).unwrap() } }).await.unwrap();
         pool.shutdown().await;
@@ -1704,7 +1935,7 @@ mod tests {
 
     /// The newest message of the direct chat with `peer`.
     async fn last_from(rt: &MessengerRuntime, peer: &Keys) -> MessageView {
-        let chat = messenger_store::chats::dm_chat_id(&peer.public_key().to_hex());
+        let chat = messenger_store::chats::dm_chat_id(&peer.public_key().to_hex(), None);
         rt.dm().messages(&chat, None, 50).await.unwrap().pop().expect("a message")
     }
 
@@ -1798,7 +2029,7 @@ mod tests {
         rt.identity().create("pw").await.unwrap();
         assert!(rt.refresh_signer().await.unwrap());
         let me = rt.session_keys().await.unwrap();
-        let chat = messenger_store::chats::dm_chat_id(&bot.public_key().to_hex());
+        let chat = messenger_store::chats::dm_chat_id(&bot.public_key().to_hex(), None);
 
         // The gate is on, as in the app: a card and an alert in plain words
         // come through the whole chain into one chat, with no request.

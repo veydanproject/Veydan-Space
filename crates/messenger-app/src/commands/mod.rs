@@ -47,7 +47,7 @@ use messenger_core::{MessengerConfig, MessengerError, SecretStore, TextFormat};
 use messenger_core::PubKey;
 use messenger_runtime::{
     ChatView, ContactPatch, ContactView, CreatedIdentity, DmAction, GroupKind, GroupOp, GroupView, Identity, InviteView,
-    LinkPreview, LinkView, ManifestCheck, ManifestInfo, MessageView,
+    LinkPreview, LinkView, ManifestCheck, ManifestInfo, MessageView, PrivateServerView, ServerPreview,
     MediaKind, MediaServerInput, MediaServerView, MessengerRuntime, Recording, RelationView, TransferView,
     PresenceView, PrivacySettings, ProfileView, RelayView,
     RuntimeStatus, SharedCounts, SharedSection,
@@ -897,15 +897,23 @@ pub async fn messenger_contact_private_get(
 
 /// Send a contact card to `chat` (a person or `group:<id>`): mine when
 /// `pubkey` is `null`, with my phone when `include_phone`; another
-/// person's never carries a phone.
+/// person's never carries a phone. `server` (a private server of mine)
+/// puts its card on my card, and approves the person in the private chat
+/// there.
 #[tauri::command]
 pub async fn messenger_card_send(
     chat: String,
     pubkey: Option<String>,
     include_phone: bool,
+    server: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime_unlocked().await?.card_send(&chat, pubkey.as_deref(), include_phone).await.map_err(map_err)
+    messenger
+        .runtime_unlocked()
+        .await?
+        .card_send_with_server(&chat, pubkey.as_deref(), include_phone, server.as_deref())
+        .await
+        .map_err(map_err)
 }
 
 /// "Add contact" on a received card. Errors: `card_unknown`, `card_is_me`.
@@ -1201,13 +1209,15 @@ pub async fn messenger_group_get(
     messenger.runtime()?.group_get(&group_id).await.map_err(map_err)
 }
 
-/// `kind`: public | private.
+/// `kind`: public | private. `server`: the id of the private server the
+/// group lives on; none for the home set.
 #[tauri::command]
 pub async fn messenger_group_create(
     kind: String,
     name: String,
     about: Option<String>,
     history_for_new: Option<bool>,
+    server: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupView> {
     let kind = match kind.as_str() {
@@ -1217,7 +1227,7 @@ pub async fn messenger_group_create(
     };
     messenger
         .runtime()?
-        .group_create(kind, &name, about.as_deref().unwrap_or(""), history_for_new.unwrap_or(true))
+        .group_create(kind, &name, about.as_deref().unwrap_or(""), history_for_new.unwrap_or(true), server.as_deref())
         .await
         .map_err(map_err)
 }
@@ -1790,10 +1800,16 @@ pub async fn messenger_links_inspect(
     messenger.runtime()?.links_inspect(&links).await.map_err(map_err)
 }
 
-/// The `veydan://contact/…` link of a person, to share.
+/// The `veydan://contact/…` link of a person, to share. With `server` (a
+/// private server of mine), the link of the private chat there: it carries
+/// the server's card (`srv=`) and names its relay alone.
 #[tauri::command]
-pub async fn messenger_contact_link(pubkey: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<String> {
-    messenger.runtime()?.contact_link(&parse_pubkey(&pubkey)?).await.map_err(map_err)
+pub async fn messenger_contact_link(
+    pubkey: String,
+    server: Option<String>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<String> {
+    messenger.runtime()?.contact_link_on(&parse_pubkey(&pubkey)?, None, server.as_deref()).await.map_err(map_err)
 }
 
 /// Title, description and picture of an https page. Asks the page: call
@@ -1963,6 +1979,53 @@ pub async fn messenger_servers_use_veydan(messenger: tauri::State<'_, MessengerS
 #[tauri::command]
 pub async fn messenger_servers_use_own(messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
     messenger.runtime()?.servers_use_own().await.map_err(map_err)
+}
+
+/// Remove a private server (its id, the one `<npub|hex>@<id>` names) here
+/// and on every device of mine, with its chats; `server_unknown` for an id
+/// that is no private server of this device.
+#[tauri::command]
+pub async fn messenger_server_remove(id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    messenger.runtime()?.server_remove_private(&id).await.map_err(map_err)
+}
+
+/// What the server of a link is (a server card, or the link of a person or
+/// a group with `srv=`), before anything is added: the dialog «Добавить
+/// сервер?» shows it. `server_link_none` for a link that carries none.
+#[tauri::command]
+pub async fn messenger_server_preview(link: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<ServerPreview> {
+    messenger.runtime()?.server_preview(&link).await.map_err(map_err)
+}
+
+/// Add the server of a link after the user said yes: a private server here
+/// and on every device of mine (one of the home set is left as it is). Its id.
+#[tauri::command]
+pub async fn messenger_server_accept(link: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<String> {
+    messenger.runtime()?.server_accept(&link).await.map_err(map_err)
+}
+
+/// Open the private chat with `peer` on private server `server_id` of mine,
+/// approved on my side and told at once (with the secret of the link's
+/// invitation, when it has one), so the peer's side opens too.
+#[tauri::command]
+pub async fn messenger_contact_open_private(
+    peer: String,
+    server_id: String,
+    invite: Option<String>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<ChatView> {
+    messenger
+        .runtime_unlocked()
+        .await?
+        .contact_open_private(&peer, &server_id, invite.as_deref())
+        .await
+        .map_err(map_err)
+}
+
+/// My private servers, without their keys.
+#[tauri::command]
+pub async fn messenger_servers_private(messenger: tauri::State<'_, MessengerState>) -> CmdResult<Vec<PrivateServerView>> {
+    messenger.runtime()?.servers_private_view().await.map_err(map_err)
 }
 
 /// Ask the project for a newer manifest now. `None` with the own servers.

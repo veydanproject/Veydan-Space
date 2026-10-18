@@ -9,9 +9,9 @@
 
 use crate::MessengerRuntime;
 use messenger_core::traits::SystemClock;
-use messenger_core::{Clock, Envelope, MessengerError, Outbound, PubKey, Result};
+use messenger_core::{Clock, Envelope, MessengerError, Outbound, Result};
 use messenger_dm::wrap::wrap_note;
-use messenger_dm::DmService;
+use messenger_dm::{DmPeer, DmService};
 use messenger_groups::GroupService;
 use messenger_ingress::Outbox;
 use nostr::key::Keys;
@@ -50,22 +50,24 @@ pub(crate) async fn flush(dm: &DmService, groups: &GroupService, outbox: &Outbox
         Ok(sent) => queued |= sent,
         Err(e) => eprintln!("messenger own profile: {e}"),
     }
-    for (_, peer, ids) in dm.take_due_delivered(now).await? {
-        let Some(peer) = PubKey::parse(&peer).filter(|p| p.as_hex() != me) else { continue };
+    for (chat_id, _, ids) in dm.take_due_delivered(now).await? {
+        // A receipt is of the chat the messages came in: a private chat's
+        // goes to its server, as they came.
+        let Some(peer) = DmPeer::of_chat(&chat_id).filter(|p| p.key.as_hex() != me) else { continue };
         let note = Envelope::receipt_delivered(&ids);
         match note_to(dm, outbox, keys, &peer, &note, now).await {
             Ok(()) => queued = true,
             Err(e) => {
-                eprintln!("messenger receipts: delivered to {}: {e}", peer.as_hex());
+                eprintln!("messenger receipts: delivered to {}: {e}", peer.key.as_hex());
                 if let Err(e) = dm.owe_delivered_again(&ids).await {
-                    eprintln!("messenger receipts: delivered to {}, lost: {e}", peer.as_hex());
+                    eprintln!("messenger receipts: delivered to {}, lost: {e}", peer.key.as_hex());
                 }
             }
         }
     }
     for (chat_id, at) in dm.take_due_read().await? {
-        let sent = if let Some(peer) = chat_id.strip_prefix("dm:").and_then(PubKey::parse) {
-            if peer.as_hex() == me {
+        let sent = if let Some(peer) = DmPeer::of_chat(&chat_id) {
+            if peer.key.as_hex() == me {
                 continue;
             }
             note_to(dm, outbox, keys, &peer, &Envelope::receipt_read(at), now).await
@@ -106,14 +108,16 @@ pub(crate) async fn flush(dm: &DmService, groups: &GroupService, outbox: &Outbox
     Ok(())
 }
 
-async fn note_to(dm: &DmService, outbox: &Outbox, keys: &Keys, peer: &PubKey, note: &Envelope, now: i64) -> Result<()> {
+async fn note_to(dm: &DmService, outbox: &Outbox, keys: &Keys, peer: &DmPeer, note: &Envelope, now: i64) -> Result<()> {
     outbox.enqueue_for(to_peer(dm, keys, peer, note, now).await?, RECEIPT_TTL_SECS).await?;
     Ok(())
 }
 
-async fn to_peer(dm: &DmService, keys: &Keys, peer: &PubKey, note: &Envelope, now: i64) -> Result<Outbound> {
+/// The note to the peer of the chat, by the way of the chat: the inbox of
+/// the home chat, the server of a private one.
+async fn to_peer(dm: &DmService, keys: &Keys, peer: &DmPeer, note: &Envelope, now: i64) -> Result<Outbound> {
     let w = wrap_note(keys, peer, &note.encode(), now, false, Some(now + RECEIPT_EXPIRATION_SECS))?;
-    Ok(Outbound::PublishToInbox { recipient: peer.clone(), event: w.to_peer, hint_relays: dm.hints(peer).await? })
+    dm.route_to_peer(peer, w.to_peer).await
 }
 
 /// Runs for the life of a session.
@@ -139,7 +143,7 @@ impl MessengerRuntime {
 pub(crate) mod tests {
     use super::*;
     use messenger_core::inbound::Envelope as WireEnvelope;
-    use messenger_core::{Context, DmInbound, EventId, EventSource, MessengerConfig, RelayUrl, Timestamp};
+    use messenger_core::{Context, DmInbound, EventId, EventSource, MessengerConfig, PubKey, RelayUrl, Timestamp};
     use messenger_testkit::MemorySecretStore;
     use nostr::nips::nip59::UnwrappedGift;
     use nostr::prelude::Event;
@@ -172,6 +176,7 @@ pub(crate) mod tests {
             content: Envelope::text("hi").encode(),
             reply_to: None,
             rumor_kind: 14,
+            srv: None,
         };
         let ctx = Context { my_pubkey: me, session_started_at: Timestamp(now - 10), clock: Arc::new(SystemClock) };
         rt.dm().apply_inbound(msg, &ctx).await.unwrap();
@@ -203,7 +208,7 @@ pub(crate) mod tests {
     async fn a_chat_read_here_leaves_as_notes_with_a_deadline() {
         let peer = Keys::generate();
         let (_dir, rt, now) = with_a_message_of(&peer).await;
-        rt.chat_mark_read(&messenger_store::chats::dm_chat_id(&peer.public_key().to_hex())).await.unwrap();
+        rt.chat_mark_read(&messenger_store::chats::dm_chat_id(&peer.public_key().to_hex(), None)).await.unwrap();
 
         let said = notes_for(&rt, &peer, now).await;
         assert_eq!(said, vec![Envelope::receipt_delivered(&["22".repeat(32)]), Envelope::receipt_read(now)]);
@@ -220,7 +225,7 @@ pub(crate) mod tests {
         // Where to reach the peer cannot be read for now: no note can be built.
         let pool = rt.store().pool();
         sqlx::query("ALTER TABLE msg_dm_routes RENAME TO msg_dm_routes_away").execute(pool).await.unwrap();
-        rt.chat_mark_read(&messenger_store::chats::dm_chat_id(&peer.public_key().to_hex())).await.unwrap();
+        rt.chat_mark_read(&messenger_store::chats::dm_chat_id(&peer.public_key().to_hex(), None)).await.unwrap();
         assert!(notes_for(&rt, &peer, now).await.is_empty());
 
         sqlx::query("ALTER TABLE msg_dm_routes_away RENAME TO msg_dm_routes").execute(pool).await.unwrap();

@@ -78,6 +78,31 @@ pub async fn items_since(store: &Store, kind: u16, since: i64) -> Result<Vec<(Ev
     items_in_window(store, kind, since, i64::MAX).await
 }
 
+/// `(id, created_at, relay)` of every known event of `kind` since `since`,
+/// with the relay it came by (live or as history; `None` when its source
+/// names none or cannot be read): the local set of a reconciliation by
+/// cursor, which the caller keeps to the events of one server.
+pub async fn items_since_with_relay(store: &Store, kind: u16, since: i64) -> Result<Vec<(EventId, i64, Option<String>)>> {
+    let rows = sqlx::query_as::<_, (String, i64, String)>(
+        "SELECT event_id, created_at, source_json FROM msg_events_raw WHERE kind = ? AND created_at >= ?
+         ORDER BY created_at DESC",
+    )
+    .bind(kind as i64)
+    .bind(since)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, at, source)| {
+            let relay = serde_json::from_str::<messenger_core::EventSource>(&source)
+                .ok()
+                .and_then(|s| s.relay_url().map(|u| u.as_str().to_string()));
+            Some((EventId::parse(&id)?, at, relay))
+        })
+        .collect())
+}
+
 /// `(id, created_at)` of the known events of `kind` up to `until` that
 /// carry this tag value (a group id in its `h` tag): the local set of one
 /// window of a group's history. The value is looked for in the stored
@@ -92,6 +117,27 @@ pub async fn items_tagged_until(store: &Store, kind: u16, value: &str, until: i6
     )
     .bind(kind as i64)
     .bind(until)
+    .bind(format!("%\"{value}\"%"))
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(rows.into_iter().filter_map(|(id, at)| Some((EventId::parse(&id)?, at))).collect())
+}
+
+/// `(id, created_at)` of the known events of `kind` since `since` that
+/// carry this tag value, as `items_tagged_until`: the local set of a
+/// reconciliation by cursor with one server, which hears of the ids of its
+/// own groups and of no others.
+pub async fn items_tagged_since(store: &Store, kind: u16, value: &str, since: i64) -> Result<Vec<(EventId, i64)>> {
+    if value.len() < 32 || !value.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT event_id, created_at FROM msg_events_raw WHERE kind = ? AND created_at >= ? AND raw_json LIKE ?
+         ORDER BY created_at DESC",
+    )
+    .bind(kind as i64)
+    .bind(since)
     .bind(format!("%\"{value}\"%"))
     .fetch_all(store.pool())
     .await

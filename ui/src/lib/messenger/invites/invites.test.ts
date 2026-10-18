@@ -60,8 +60,17 @@ describe('the address of a new chat', () => {
 describe('a link the runtime read', () => {
   it('names the person and the secret it carries', () => {
     expect(invitedContact(contactView({ invite: 'q7Vd0xKp3LmN8sRt2WyZaA' }))).toEqual({
-      pubkey: 'ab'.repeat(32), name: 'Vera', invite: 'q7Vd0xKp3LmN8sRt2WyZaA', isMe: false, blocked: false,
+      pubkey: 'ab'.repeat(32), name: 'Vera', invite: 'q7Vd0xKp3LmN8sRt2WyZaA', isMe: false, blocked: false, server: null,
     });
+  });
+
+  it('carries the card of the server the person is on, when the link has one', () => {
+    const server = {
+      link: 'veydan://server/e06676e9354ae2e2?u=wss%3A%2F%2Frelay.s1.example&k=&p=off&n=S1', id: 'e06676e9354ae2e2', name: 'S1',
+      relay: 'wss://relay.s1.example', media: null, call_node: null, push_url: null, push: 'off', known: false, is_veydan: false,
+    };
+    expect(invitedContact(contactView({ server }))?.server).toEqual(server);
+    expect(invitedContact(contactView())?.server).toBeNull();
   });
 
   it('without a secret, or from a runtime that does not say one, is a plain link of a person', () => {

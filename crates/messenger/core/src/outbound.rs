@@ -7,14 +7,20 @@
 use crate::types::{EventId, PubKey, RelayUrl, SubId, Timestamp};
 use serde::{Deserialize, Serialize};
 
-/// Routing scope for scoped publish/subscribe (groups, channels, servers).
+/// Routing scope for scoped publish/subscribe/sync (internal/messenger-wire.md,
+/// «Серверы»). Nothing reaches a private server unless its scope names it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "scope", rename_all = "snake_case")]
 pub enum Scope {
-    /// The user's own enabled relays.
+    /// The home set: the enabled relays of no private server.
     Own,
+    /// The relays of the group's server. The runtime resolves it before
+    /// the pool (`Server` for a group of a private server, `Own` for one of
+    /// the home set); the stored request keeps the group, which the outbox
+    /// reads.
     Group { id: String },
     Channel { id: String },
+    /// Exactly the relays of one server (`msg_servers.id`).
     Server { id: String },
 }
 

@@ -23,6 +23,7 @@
 //! names one that never does; such rows are swept a week after they came
 //! (`prune_reactions_if_due`), and a deleted chat takes its own along.
 
+use crate::peer::DmPeer;
 use crate::relationship::{outbound_permission, DenyReason, OutboundPermission};
 use crate::service::{updated, DmService};
 use crate::view::MessageView;
@@ -180,13 +181,11 @@ impl DmService {
         if row.deleted_at.is_some() {
             return Err(MessengerError::Invalid("message is deleted".into()));
         }
-        let peer = row
-            .chat_id
-            .strip_prefix("dm:")
-            .and_then(PubKey::parse)
-            .ok_or_else(|| MessengerError::Invalid("not a direct chat".into()))?;
+        // The chat of the message, the private one included: the note goes
+        // by its way (`DmPeer::to_peer`), its server and nowhere else.
+        let peer = DmPeer::of_chat(&row.chat_id).ok_or_else(|| MessengerError::Invalid("not a direct chat".into()))?;
         let me = PubKey::parse(&keys.public_key().to_hex()).ok_or_else(|| MessengerError::Crypto("bad key".into()))?;
-        if peer == me {
+        if peer.key == me {
             return Err(MessengerError::Invalid("not a direct chat".into()));
         }
         if !self.notes_allowed(&peer).await? {
@@ -201,8 +200,8 @@ impl DmService {
         }
         let (set, at) = self.react_locally(&row.chat_id, &me, &row.id, emoji).await?;
         let w = wrap_note(keys, &peer, &Envelope::reaction(&row.id, emoji, set).encode(), at, true, None)?;
-        let to_peer = Outbound::PublishToInbox { recipient: peer.clone(), event: w.to_peer, hint_relays: self.hints(&peer).await? };
-        let to_self = w.to_self.map(|event| Outbound::PublishOwn { event });
+        let to_peer = self.route_to_peer(&peer, w.to_peer).await?;
+        let to_self = w.to_self.map(|event| peer.to_self(event));
         let message = self.message(&row.id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
         Ok(PreparedReaction { chat_id: row.chat_id, message, to_peer, to_self })
     }

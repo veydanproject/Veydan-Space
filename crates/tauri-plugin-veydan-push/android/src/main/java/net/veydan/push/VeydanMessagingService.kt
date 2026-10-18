@@ -25,7 +25,49 @@ class VeydanMessagingService : FirebaseMessagingService() {
       Log.w(PushState.TAG, "push dropped: no type")
       return
     }
-    Log.i(PushState.TAG, "push type=${push.type} trace=${push.trace}: ${handle(push)}")
+    val outcome = if (push.type == Push.TYPE_SEALED) sealed(message.data) else handle(push)
+    Log.i(PushState.TAG, "push type=${push.type} trace=${push.trace}: $outcome")
+  }
+
+  /**
+   * A push of a private server, sealed to this phone's push key and carried
+   * by the gateway. The core opens it with the key the app left, and only
+   * when it is sealed by a server the phone registered at; what is inside
+   * goes the way of every push. The question a server asks when the phone
+   * registers there (`check`) shows nothing. Without keys (a PIN guards the
+   * app) nothing can be opened, and the notification says only that
+   * something came, as a push of the home server does then.
+   */
+  private fun sealed(data: Map<String, String>): String {
+    if (PushState.muted(this)) {
+      return "not shown, muted by the app"
+    }
+    val bundle = Keys.read(this) ?: ByteArray(0)
+    val answer = try {
+      Core.unseal(this, bundle, data)
+    } finally {
+      bundle.fill(0)
+    } ?: return "dropped: no answer from the core"
+    return when (answer.optString("outcome")) {
+      "open" -> {
+        val json = answer.optJSONObject("data") ?: return "dropped: the core opened nothing"
+        val inner = buildMap { json.keys().forEach { key -> put(key, json.optString(key)) } }
+        val push = Push.from(inner) ?: return "dropped: what is inside has no type"
+        if (push.type == Push.TYPE_SEALED) return "dropped: a seal in a seal"
+        // A private server speaks of its relay alone: a word of the network
+        // (a broadcast, a manifest update) would be shown as Veydan's own.
+        if (push.type !in Push.SEALED_TYPES) return "dropped: a type a private server has no word in (${push.type})"
+        "opened, type=${push.type} trace=${push.trace}: ${handle(push)}"
+      }
+      "check" -> "not shown, the check of a registration"
+      "no_keys" -> {
+        if (PushState.visible && PushState.live) return "not shown, the app is on the screen"
+        val notice = PlainNotice(kind = Push.TYPE_DM, chat = null, title = null, muted = false, count = 1)
+        if (Notifier.showPlain(this, notice)) "shown plain (sealed, no keys)" else "not shown, notifications are off"
+      }
+      "dropped" -> "dropped: ${answer.optString("reason")}"
+      else -> "dropped: ${answer.optString("error")}"
+    }
   }
 
   private fun handle(push: Push): String {

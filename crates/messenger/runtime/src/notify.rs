@@ -20,11 +20,16 @@ impl MessengerRuntime {
         let Ok(keys) = self.session_keys().await else {
             return Ok(None);
         };
+        // The push key opens the sealed pushes of my private servers
+        // (`push::gateway`), whatever the content shown: what is inside
+        // is a push like any other, and the rules apply to it.
+        // One that cannot be read leaves the rest of the bundle as it was.
+        let push_key = self.push_key(&keys.public_key().to_hex(), false).await.unwrap_or(None);
         if self.notify_calls_only().await? {
-            return Ok(Some(KeyBundle::for_calls_only(&keys)));
+            return Ok(Some(KeyBundle::for_calls_only(&keys).with_push_key(push_key.as_ref())));
         }
         let groups = self.groups().export_keys().await?.iter().map(|(g, k)| GroupKeyEntry::of(g, k)).collect();
-        Ok(Some(KeyBundle::new(&keys, groups)))
+        Ok(Some(KeyBundle::new(&keys, groups).with_push_key(push_key.as_ref())))
     }
 
     /// Changes when `notify_bundle` would; costs no secret.
@@ -33,10 +38,11 @@ impl MessengerRuntime {
             return Ok(None);
         };
         let me = keys.public_key().to_hex();
+        let push = self.push_key_public(&me).await?.unwrap_or_default();
         if self.notify_calls_only().await? {
-            return Ok(Some(format!("{me}|calls")));
+            return Ok(Some(format!("{me}|calls|{push}")));
         }
-        Ok(Some(format!("{}|{}", me, self.groups().keys_fingerprint().await?)))
+        Ok(Some(format!("{}|{}|{push}", me, self.groups().keys_fingerprint().await?)))
     }
 
     async fn notify_calls_only(&self) -> Result<bool> {

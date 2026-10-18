@@ -14,10 +14,10 @@ use messenger_contacts::{ContactService, ProfileService};
 use messenger_core::inbound::Envelope as WireEnvelope;
 use messenger_core::outbound::WireEvent;
 use messenger_core::{
-    Clock, Context, DmInbound, EventId, EventSource, GroupInbound, Outbound, PubKey, RelayUrl, Result, SecretStore, Timestamp,
+    Clock, Context, DmInbound, EventId, EventSource, GroupInbound, Outbound, PubKey, RelayUrl, Result, Scope, SecretStore, Timestamp,
 };
 use messenger_dm::{pushtags, DmService, MessageView};
-use messenger_store::Store;
+use messenger_store::{servers, Store};
 use nostr::key::Keys;
 use nostr::nips::nip59::UnwrappedGift;
 use nostr::prelude::Event;
@@ -98,17 +98,38 @@ struct World {
     /// Every group event ever published, as the relay keeps them.
     relay: Vec<WireEvent>,
     notes: Vec<String>,
+    /// Everything published, in order, as it left, with whose device sent it.
+    sent: Vec<(usize, Outbound)>,
+    /// The relay everything comes by: `RELAY`, of every device's home set.
+    by: String,
 }
 
 const RELAY: &str = "wss://relay.example";
 
+fn server_row(url: &str, kind: &str) -> servers::ServerRow {
+    servers::ServerRow {
+        id: String::new(),
+        kind: kind.into(),
+        name: None,
+        relay_url: url.into(),
+        relay_key: None,
+        media_url: None,
+        call_node: None,
+        push_mode: servers::PUSH_OFF.into(),
+        source: None,
+        added_at: 0,
+    }
+}
+
 impl World {
     fn new() -> Self {
-        Self { clock: Arc::new(TestClock(AtomicI64::new(2_000))), devices: vec![], relay: vec![], notes: vec![] }
+        Self { clock: Arc::new(TestClock(AtomicI64::new(2_000))), devices: vec![], relay: vec![], notes: vec![], sent: vec![], by: RELAY.into() }
     }
 
     async fn device(&mut self, keys: Keys) -> usize {
         let store = Store::open_in_memory().await.unwrap();
+        // The relay of the world is a server of the home set of everyone.
+        servers::put(&store, &server_row(RELAY, servers::KIND_HOME)).await.unwrap();
         let profiles = ProfileService::new(store.clone());
         let contacts = ContactService::new(store.clone(), profiles.clone());
         let dm = DmService::new(store.clone(), contacts, profiles, self.clock.clone());
@@ -147,7 +168,14 @@ impl World {
                 queue.push_back((origin, o));
             }
             for out in outcome.publish {
+                self.sent.push((origin, out.clone()));
                 let (wire, to): (Wire, Vec<usize>) = match out {
+                    // A wrap scoped to a server (a word of a group of a
+                    // private server): to whom its `p` names.
+                    Outbound::PublishScoped { event, .. } if event.json["kind"] == 1059 => {
+                        let p = event.json["tags"].as_array().and_then(|t| t.iter().find(|t| t[0] == "p")).and_then(|t| t[1].as_str()).and_then(PubKey::parse);
+                        (Wire::Dm(event), (0..self.devices.len()).filter(|i| Some(self.pk(*i)) == p).collect())
+                    }
                     Outbound::PublishScoped { event, .. } => {
                         self.relay.push(event.clone());
                         (Wire::Group(event), (0..self.devices.len()).collect())
@@ -176,7 +204,7 @@ impl World {
 
     async fn deliver(&self, i: usize, wire: &Wire, via_sync: bool) -> Outcome {
         let d = &self.devices[i];
-        let url = RelayUrl::parse(RELAY).unwrap();
+        let url = RelayUrl::parse(&self.by).unwrap();
         let source = if via_sync { EventSource::Sync { url } } else { EventSource::Relay { url } };
         match wire {
             Wire::Group(event) => {
@@ -211,6 +239,7 @@ impl World {
                     content: rumor.content.clone(),
                     reply_to: None,
                     rumor_kind: rumor.kind.as_u16(),
+                    srv: tags("srv").into_iter().next(),
                 };
                 d.svc.on_dm(&d.keys, &msg, &d.ctx()).await.unwrap().expect("a group message")
             }
@@ -1566,6 +1595,7 @@ async fn dm_from<T: serde::Serialize>(w: &World, from: &Keys, to: usize, t: &str
         content: crate::wire::dm_envelope(t, body).unwrap(),
         reply_to: None,
         rumor_kind: 14,
+        srv: None,
     };
     d.svc.on_dm(&d.keys, &msg, &d.ctx()).await.unwrap().expect("a group message")
 }
@@ -3163,4 +3193,179 @@ async fn an_operation_kept_for_an_update_holds_its_children_back_in_the_log() {
     assert!(!log.contains(&ahead.id()) && !log.contains(&child.id()));
     assert_eq!(log.missing(), vec![ahead.id()]);
     assert_eq!(crate::service::ops_ahead(&d.svc.store, &g).await.unwrap(), 1, "and it counts as waiting for an update");
+}
+
+/// A group of a private server lives there, and only there
+/// (internal/messenger-wire.md, «Группы на сервере»). Alice has the home
+/// set and the server S1 as a private one, on two devices; Bob's home set
+/// is S1 itself; Carol has the home set alone. Alice makes the group on
+/// S1: her other device gets it by a welcome to herself on S1, Bob asks
+/// in by the link and is let in, Carol is told the server is unknown and
+/// hears nothing of an invitation. Every word Alice's devices send of the
+/// group (operations, messages, a receipt, a reaction, an edit, a note of
+/// a call, the invitation, the welcomes) is scoped to the group or to S1,
+/// never to an inbox or a relay of the home set; an event of the group
+/// that comes by a relay of the home set is dropped, and taken when it
+/// comes by S1.
+#[tokio::test]
+async fn a_group_of_a_private_server_lives_there_alone() {
+    const S1: &str = "wss://s1.example";
+    let mut w = World::new();
+    let alice = w.person().await;
+    let alice2 = w.device(w.devices[alice].keys.clone()).await;
+    let bob = w.person().await;
+    let carol = w.person().await;
+    for (d, kind) in [(alice, servers::KIND_PRIVATE), (alice2, servers::KIND_PRIVATE), (bob, servers::KIND_HOME)] {
+        servers::put(&w.devices[d].svc.store, &server_row(S1, kind)).await.unwrap();
+    }
+    let s1 = servers::id_of(S1);
+    w.by = S1.into();
+
+    w.tick();
+    let (view, o) = {
+        let d = &w.devices[alice];
+        d.svc.create(&d.keys, GroupKind::Private, "On S1", "", true, &RelayUrl::parse(S1).unwrap()).await.unwrap()
+    };
+    w.run(alice, o).await;
+    let g = view.id.clone();
+    assert_eq!((view.relay.as_str(), view.server_id.as_deref()), (S1, Some(s1.as_str())));
+    assert_eq!(w.devices[alice].svc.server_of(&g).await.unwrap().as_deref(), Some(s1.as_str()));
+    let other = w.devices[alice2].group(&g).await.expect("my other device got the group by the welcome on S1");
+    assert_eq!((other.membership.as_str(), other.server_id.as_deref()), ("joined", Some(s1.as_str())));
+
+    // Bob, at home on S1, asks in by the link and is let in; for him the
+    // group is of his home set.
+    let link = view.link.clone().expect("the owner may share the link");
+    w.open_link(bob, &link).await;
+    let a = &w.devices[alice];
+    let o = a.svc.approve_request(&a.keys, &g, &w.pk(bob)).await.unwrap();
+    w.run(alice, o).await;
+    let seen = w.devices[bob].group(&g).await.unwrap();
+    assert_eq!((seen.membership.as_str(), seen.server_id), ("joined", None), "S1 is Bob's home");
+    assert_eq!(w.devices[bob].svc.server_of(&g).await.unwrap(), None);
+
+    // Carol has no S1: the link leads nowhere, an invitation never comes.
+    let c = &w.devices[carol];
+    assert_eq!(code(c.svc.open_link(&c.keys, &link, "").await), ERR_SERVER_UNKNOWN);
+    assert!(c.svc.get(&g, &w.pk(carol)).await.unwrap().is_none(), "nothing written for it");
+    w.tick();
+    let (_, o) = {
+        let a = &w.devices[alice];
+        a.svc.invite(&a.keys, &g, &w.pk(carol)).await.unwrap()
+    };
+    w.run(alice, o).await;
+    assert!(w.devices[carol].svc.invites("in").await.unwrap().is_empty(), "a word of a server Carol does not have");
+
+    // Everything of the group, both ways.
+    let first = w.say(alice, &g, "hello on s1").await;
+    w.say(bob, &g, "back").await;
+    assert_eq!(w.devices[alice2].texts(&g).await, vec!["hello on s1", "back"]);
+    w.tick();
+    let (a, b) = (&w.devices[alice], &w.devices[bob]);
+    let mut outs = vec![a.svc.prepare_read_receipt(&a.keys, &g, w.clock.now().secs()).await.unwrap()];
+    outs.push(a.svc.prepare_reaction(&a.keys, &first, "👍").await.unwrap().1);
+    outs.push(a.svc.prepare_edit(&a.keys, &first, "hello on s1, edited").await.unwrap().2);
+    outs.push(a.svc.prepare_call_note(&a.keys, &g, &messenger_core::Envelope::call_join(&"ab".repeat(16), 3)).await.unwrap());
+    let bobs = b.svc.prepare_text(&b.keys, &g, "late", None).await.unwrap().1;
+    w.run(alice, Outcome { publish: outs, ..Default::default() }).await;
+    w.act(alice, &g, OpBody::RotateKey).await.unwrap();
+    assert_eq!(w.devices[alice2].texts(&g).await, vec!["hello on s1, edited", "back"]);
+
+    // Bob's message by a relay of the home set: dropped, not the group's
+    // word; the same by S1: taken.
+    let Outbound::PublishScoped { event, .. } = &bobs else { panic!("{bobs:?}") };
+    w.by = RELAY.into();
+    let o = w.deliver(alice, &Wire::Group(event.clone()), false).await;
+    assert!(o.notes.iter().any(|n| n.contains("not of the group's server")), "{:?}", o.notes);
+    assert!(!w.devices[alice].texts(&g).await.contains(&"late".to_string()));
+    w.by = S1.into();
+    let o = w.deliver(alice, &Wire::Group(event.clone()), false).await;
+    w.run(alice, o).await;
+    assert!(w.devices[alice].texts(&g).await.contains(&"late".to_string()));
+
+    // Not one word of Alice's devices to an inbox or a relay of the home set.
+    let mine: Vec<&Outbound> = w.sent.iter().filter(|(d, _)| *d == alice || *d == alice2).map(|(_, o)| o).collect();
+    assert!(mine.len() > 10, "{}", mine.len());
+    let mut to_server = 0;
+    for out in mine {
+        match out {
+            Outbound::PublishScoped { scope: Scope::Group { id }, .. } => assert_eq!(id, &g),
+            Outbound::PublishScoped { scope: Scope::Server { id }, event } => {
+                assert_eq!(id, &s1);
+                assert_eq!(event.json["kind"], 1059, "a word of the protocol, as in a private chat");
+                to_server += 1;
+            }
+            other => panic!("left for the home set: {other:?}"),
+        }
+    }
+    assert!(to_server >= 3, "the welcomes and the invitation: {to_server}");
+}
+
+/// A group whose relay is no server of mine never becomes a group of the
+/// home set by an invitation or a welcome (internal/messenger-wire.md,
+/// «Группы на сервере»). R2 is of the home set of Alice's first device;
+/// her second device and Carol have it not. Carol's invitation waits,
+/// listed with its relay, and an accept is `server_unknown` until she adds
+/// R2; then it is accepted, and the group is of her private server R2.
+/// The welcome of Alice's own to her second device is held, no group
+/// made of it, and read when R2 comes there.
+#[tokio::test]
+async fn a_group_on_a_server_i_have_not_waits_for_it() {
+    const R2: &str = "wss://r2.example";
+    let mut w = World::new();
+    let alice = w.person().await;
+    let alice2 = w.device(w.devices[alice].keys.clone()).await;
+    let carol = w.person().await;
+    servers::put(&w.devices[alice].svc.store, &server_row(R2, servers::KIND_HOME)).await.unwrap();
+    let r2 = servers::id_of(R2);
+    w.by = R2.into();
+
+    w.tick();
+    let (view, o) = {
+        let d = &w.devices[alice];
+        d.svc.create(&d.keys, GroupKind::Private, "On R2", "", true, &RelayUrl::parse(R2).unwrap()).await.unwrap()
+    };
+    w.run(alice, o).await;
+    let g = view.id.clone();
+    assert_eq!(view.server_id, None, "R2 is Alice's home");
+    assert!(w.devices[alice2].group(&g).await.is_none(), "no group of the home set made of my own welcome");
+    assert!(w.notes.iter().any(|n| n.contains("held until it is")), "{:?}", w.notes);
+
+    w.tick();
+    let (_, o) = {
+        let a = &w.devices[alice];
+        a.svc.invite(&a.keys, &g, &w.pk(carol)).await.unwrap()
+    };
+    w.run(alice, o).await;
+    let c = &w.devices[carol];
+    let invites = c.svc.invites("in").await.unwrap();
+    assert_eq!(invites.len(), 1);
+    let inv = invites[0].clone();
+    assert_eq!((inv.relay.as_str(), inv.server_known), (R2, false));
+    assert_eq!(code(c.svc.answer_invite(&c.keys, &inv.invite_id, true).await), ERR_SERVER_UNKNOWN);
+    assert!(c.svc.get(&g, &w.pk(carol)).await.unwrap().is_none(), "nothing written for it");
+    let waiting = c.svc.invites("in").await.unwrap();
+    assert_eq!((waiting.len(), waiting[0].status.as_str()), (1, "received"), "the invitation waits");
+
+    // Carol adds R2: the same invitation is accepted, the group is of R2.
+    servers::put(&c.svc.store, &server_row(R2, servers::KIND_PRIVATE)).await.unwrap();
+    assert!(c.svc.invites("in").await.unwrap()[0].server_known);
+    w.tick();
+    let o = {
+        let c = &w.devices[carol];
+        c.svc.answer_invite(&c.keys, &inv.invite_id, true).await.unwrap()
+    };
+    w.run(carol, o).await;
+    let joined = w.devices[carol].group(&g).await.expect("let in");
+    assert_eq!((joined.membership.as_str(), joined.server_id.as_deref()), ("joined", Some(r2.as_str())));
+
+    // R2 comes to Alice's second device: the welcome held is read.
+    servers::put(&w.devices[alice2].svc.store, &server_row(R2, servers::KIND_PRIVATE)).await.unwrap();
+    let o = {
+        let d = &w.devices[alice2];
+        d.svc.welcomes_of_servers_that_came(&d.keys).await.unwrap()
+    };
+    w.run(alice2, o).await;
+    let mine = w.devices[alice2].group(&g).await.expect("the held welcome made the group");
+    assert_eq!((mine.membership.as_str(), mine.server_id.as_deref()), ("joined", Some(r2.as_str())));
 }

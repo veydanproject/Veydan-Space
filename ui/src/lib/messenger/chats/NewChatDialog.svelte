@@ -22,7 +22,11 @@
   import { inviteStore } from '../invites/inviteStore.svelte';
   import { addressKind, invitedContact, normalizeCode, type InvitedContact } from '../invites/invites';
   import { goto } from '$app/navigation';
+  import { get } from 'svelte/store';
   import { contactsHref, qrHref } from '../mobile/routes';
+  import { acceptServer, serverName } from '../servers/serverAccept.svelte';
+
+  const tr = (k: string, params?: Record<string, string>) => get(t)(k as 'msg_you', params);
 
   interface Props {
     open: boolean;
@@ -58,8 +62,10 @@
   /** The secret that goes with the request: the link's, else the typed code. */
   const linkInvite = $derived(kind === 'link' ? (link?.invite ?? null) : null);
   const typedCode = $derived(codeOpen ? normalizeCode(code) : null);
+  /** The server of a pasted link (`srv=`): the chat is the private one there, after «Добавить сервер?». */
+  const privateServer = $derived(kind === 'link' ? (link?.server ?? null) : null);
   /** The request goes with a secret and maybe a message: one «Отправить» instead of opening the chat. */
-  const sending = $derived(!!peer && (!!linkInvite || codeOpen));
+  const sending = $derived(!!peer && !privateServer && (!!linkInvite || codeOpen));
 
   // A pasted link is read by the runtime; the answer counts only for the text it was asked about.
   let asked = '';
@@ -116,12 +122,32 @@
     } finally { busy = false; }
   }
 
+  /**
+   * The private chat on the server of the link: the server is added after
+   * the question (nothing happens on «Отмена»), then the chat opens there,
+   * approved on my side and told at once, with the link's secret.
+   */
+  async function openPrivate() {
+    if (!link || !privateServer || busy) return;
+    error = ''; busy = true;
+    try {
+      const id = await acceptServer(privateServer);
+      if (!id) return;
+      const chat = await messengerApi.servers.openPrivate(link.pubkey, id, link.invite);
+      await chatStore.openPeer(chat.id);
+      open = false; reset();
+      onopened?.();
+    } catch (e) { error = messengerError(e); }
+    finally { busy = false; }
+  }
+
   const pick = (c: MessengerContact) => start(c.pubkey);
 
   /** A key starts its chat; a name does when it leaves one contact; with a secret, the request goes. */
   function enter() {
     if (busy) return;
-    if (sending) send();
+    if (privateServer) openPrivate();
+    else if (sending) send();
     else if (peer) start(peer);
     else if (contacts.length === 1) pick(contacts[0]);
   }
@@ -147,11 +173,16 @@
         <span class="person-text">
           <span class="name">{link.name || `${link.pubkey.slice(0, 12)}…`}</span>
           {#if link.invite}<span class="note"><Icon name="check-circle" size={12} />{$t('msg_inv_link_has_invite')}</span>{/if}
+          {#if privateServer}<span class="server-note"><Icon name={privateServer.is_veydan ? 'shield-check' : 'server-2'} size={12} />{$t('msg_srv_card_private_chat', { name: serverName(privateServer, tr) })}</span>{/if}
         </span>
       </div>
     {/if}
 
-    {#if peer && !linkInvite}
+    {#if privateServer}
+      <button class="btn btn-primary" disabled={busy} onclick={openPrivate}>
+        <Icon name="message-circle" size={13} />{$t('msg_srv_card_open_private')}
+      </button>
+    {:else if peer && !linkInvite}
       {#if codeOpen}
         <input class="code mono" type="text" inputmode="numeric" autocomplete="one-time-code" bind:value={code} placeholder={$t('msg_inv_code_placeholder')}
           disabled={busy} aria-label={$t('msg_inv_code_placeholder')} />
@@ -165,7 +196,7 @@
       <button class="btn btn-primary" disabled={busy || (codeOpen && !linkInvite && (!typedCode || !text.trim()))} onclick={send}>
         <Icon name="send" size={13} />{$t('msg_inv_send')}
       </button>
-    {:else if peer}
+    {:else if peer && !privateServer}
       <button class="btn btn-primary" disabled={busy} onclick={() => peer && start(peer)}>{$t('msg_newchat_start')}</button>
     {/if}
     {#if error}<div class="error-msg">{error}</div>{/if}
@@ -208,6 +239,7 @@
   .person { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .person-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text); }
+  .server-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); }
   .btn :global(svg) { margin-right: 2px; }
   .label { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); }
   .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }

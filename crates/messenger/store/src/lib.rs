@@ -39,6 +39,7 @@ pub mod reactions;
 pub mod receipts;
 pub mod relays;
 pub mod reports;
+pub mod servers;
 pub mod settings;
 pub mod shared;
 
@@ -170,14 +171,14 @@ mod tests {
         assert!(Store::open_read_only(&cfg).await.is_err(), "no database yet");
 
         let app = Store::open(&cfg).await.unwrap();
-        chats::ensure_dm(&app, "aa").await.unwrap();
+        chats::ensure_dm(&app, "aa", None).await.unwrap();
         let reader = Store::open_read_only(&cfg).await.unwrap();
         assert_eq!(reader.schema_version().await.unwrap(), Store::latest_migration());
         assert!(chats::get(&reader, "dm:aa").await.unwrap().is_some());
         assert!(chats::set_pinned(&reader, "dm:aa", true, 1).await.is_err(), "read-only");
 
         // Written after the reader opened: still seen (WAL, no snapshot held).
-        chats::ensure_dm(&app, "bb").await.unwrap();
+        chats::ensure_dm(&app, "bb", None).await.unwrap();
         assert!(chats::get(&reader, "dm:bb").await.unwrap().is_some());
         reader.close().await;
 

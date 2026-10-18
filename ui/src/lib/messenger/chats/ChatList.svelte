@@ -26,6 +26,7 @@
   import { inSection, type ChatSection } from './sections';
   import { groupStore } from '../groups/groupStore.svelte';
   import { answersRequests } from '../groups/permissions';
+  import ServerLabel from '../servers/ServerLabel.svelte';
 
   interface Props {
     query: string;
@@ -118,6 +119,7 @@
         <span class="top">
           {#if c.kind === "group"}<span class="dim"><Icon name="users" size={12} /></span>{/if}
           <span class="title">{c.title}</span>
+          {#if c.server_id}<ServerLabel server={c.server_id} />{/if}
           {#if c.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}
           {#if c.pinned}<span class="dim"><Icon name="pin" size={12} /></span>{/if}
           <span class="stamp">{listStamp(c.last_message_at)}</span>

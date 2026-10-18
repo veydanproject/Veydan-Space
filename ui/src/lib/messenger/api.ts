@@ -6,7 +6,7 @@
 // that knows command names (internal/messenger-spec.md §4.6).
 
 // Types the runtime writes for itself (`make msg-types`); never by hand.
-export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView } from './generated/links';
+export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView, PrivateServerView, ServerPreview } from './generated/links';
 export type { SharedCounts, SharedSection } from './generated/shared';
 export type { BotCard } from './generated/bot';
 import type { BotCard } from './generated/bot';
@@ -152,6 +152,11 @@ export type ChatMode =
 export interface MessengerChat {
   id: string;
   kind: 'dm' | 'group' | string;
+  /**
+   * The private server the chat lives on: a private chat (`dm:<peer>@<id>`)
+   * or a group whose relay is that server's. Absent for the home set.
+   */
+  server_id?: string | null;
   peer_pubkey: string | null;
   peer_npub: string | null;
   title: string;
@@ -701,6 +706,44 @@ export interface MessengerPushStatus {
   /** `push_unreachable: …`, `push_refused_<code>: … (request <id>)` */
   error: string | null;
   relays: MessengerPushRelay[];
+  /**
+   * The push servers of my private servers, told through the gateway
+   * (internal/messenger-wire.md, «Push через шлюз»), one per server whose
+   * push is on. Absent from an older runtime.
+   */
+  targets?: MessengerPushTarget[];
+}
+
+/** Where the push of one private server stands. */
+export interface MessengerPushTarget {
+  server_id: string;
+  name: string | null;
+  /** The push server of the server. */
+  server: string;
+  /** The gateway of the Veydan network it wakes this device through, as it said. */
+  gateway: string | null;
+  /** `pending` | `registered` | `failed` (then `error`). */
+  state: 'pending' | 'registered' | 'failed' | string;
+  /** `push_gateway_unknown: …`, `push_ticket_limit: …`, `push_no_gateway: …`, `push_gateway_pending: …`, or as at home. */
+  error: string | null;
+  last_ok_at: number | null;
+  expires_at: number | null;
+  /** When the ticket it holds runs out; it is renewed a week before. */
+  ticket_expires_at: number | null;
+  relays: MessengerPushRelay[];
+}
+
+/** A live ticket of mine at a gateway: the right of one private server to wake this phone. */
+export interface MessengerPushTicket {
+  gateway: string;
+  /** Its first 8 hex and `…`. */
+  ticket: string;
+  device_id: string;
+  issued_at: number;
+  expires_at: number;
+  last_wake_at: number | null;
+  /** The private server of this device that holds it; `null` for one this device does not use. */
+  server_id: string | null;
 }
 
 export interface MessengerPushView {
@@ -853,9 +896,10 @@ import {
   DEMO_PICTURE_BASE, DEMO_PLATFORMS,
 } from './devDemo';
 import type { ExternalUrl, InternalLinkText } from './content/types';
-import type { GroupMembership, LinkPreview, LinkView } from './generated/links';
+import type { GroupMembership, LinkPreview, LinkView, PrivateServerView, ServerPreview } from './generated/links';
 import type { SharedCounts, SharedSection } from './generated/shared';
 import { inSection } from './content/shared/sections';
+import { parseAddress } from './chats/address';
 import { demoCallMocks } from './calls/demo';
 import { demoCallNodeMocks, demoNodeIsMine, demoNodeOf } from './net/callNodesDemo';
 
@@ -975,16 +1019,24 @@ function mockAvatarSet(token: string, rect: CropRect): MessengerProfile {
   return mockOwnProfile;
 }
 
-function mockCardSend(chat: string, pubkey: string | null, includePhone: boolean): MessengerMessage {
+function mockCardSend(chat: string, pubkey: string | null, includePhone: boolean, server: string | null = null): MessengerMessage {
   const c = mockChat(chat.replace(/^dm:/, ''));
   const me = mockIdentity?.pubkey ?? 'ab'.repeat(32);
   const whose = pubkey && pubkey !== me ? pubkey : null;
+  if (server && whose) throw new Error('card_server_not_mine');
+  // The card of a server carries its key: to a person only, never into a group.
+  if (server && c.kind === 'group') throw new Error('card_server_group');
+  const mine = server ? mockPrivateServers.find((s) => s.id === server) : undefined;
+  if (server && !mine) throw new Error('server_unknown');
   let card: CardView;
   if (!whose) {
     const phone = includePhone ? mockOwnPrivate.phone : null;
     const g = c.kind === 'group' ? mockGroups.find((x) => x.chat_id === c.id) : undefined;
     if (phone && g && g.kind !== 'private') throw new Error('phone_public_group');
-    card = demoCard(mockOwnProfile ?? emptyProfile(me), phone, { is_me: true });
+    const link = mine
+      ? `veydan://server/${mine.id}?u=${encodeURIComponent(mine.relay)}&k=demo${mine.media ? `&m=${encodeURIComponent(mine.media)}` : ''}&p=${mine.push}&n=${encodeURIComponent(mine.name ?? '')}`
+      : null;
+    card = demoCard(mockOwnProfile ?? emptyProfile(me), phone, { is_me: true, server: link });
   } else {
     const contact = mockContacts.find((x) => x.pubkey === whose);
     card = demoCard(contact?.profile ?? emptyProfile(whose), null, { is_contact: !!contact });
@@ -1036,7 +1088,20 @@ function mockChat(peer: string): MessengerChat {
     const g = mockChats.find((x) => x.id === peer);
     if (g) return g;
   }
-  const hex = peer.startsWith('npub') ? 'ef'.repeat(32) : peer;
+  // An address as the runtime reads it: `<key>`, `<key>@<server>`, or a chat id of either.
+  const addr = parseAddress(peer);
+  const hex = addr.peer.startsWith('npub') ? 'ef'.repeat(32) : addr.peer;
+  if (addr.server) {
+    const at = `dm:${hex}@${addr.server}`;
+    const known = mockChats.find((x) => x.id === at);
+    if (known) return known;
+    if (!mockPrivateServers.some((s) => s.id === addr.server)) throw new Error('server_unknown');
+    const base = mockChat(hex);
+    const made: MessengerChat = { ...base, id: at, server_id: addr.server, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'full_chat', can_send: true };
+    mockChats = [made, ...mockChats];
+    mockMessages[at] = [];
+    return made;
+  }
   const id = `dm:${hex}`;
   let c = mockChats.find((x) => x.id === id);
   if (!c) {
@@ -1285,6 +1350,80 @@ function mockReact(id: string, emoji: string): MessengerMessage {
   return { ...m };
 }
 
+/** The private servers of the demo (the runtime keeps their keys; the page never sees them). */
+let mockPrivateServers: PrivateServerView[] = demo?.privateServers ?? [];
+
+/**
+ * The push of the demo's private servers, while pushes are on: a server of
+ * the `example.org` zone names a gateway that is no push server of the
+ * network and fails with it; the others are woken through the home one.
+ */
+function mockTargets(): MessengerPushTarget[] {
+  if (!mockPush.status.enabled) return [];
+  const now = Math.floor(Date.now() / 1000);
+  return mockPrivateServers.filter((s) => s.push === 'veydan').map((s) => {
+    const host = s.relay.replace(/^wss?:\/\//, '').replace(/^relay\./, '');
+    const foreign = host.endsWith('example.org');
+    return {
+      server_id: s.id, name: s.name, server: `https://push.${host}`,
+      gateway: foreign ? `https://gw.${host}` : (mockPush.status.server ?? null),
+      state: foreign ? 'failed' : 'registered',
+      error: foreign ? `push_gateway_unknown: https://gw.${host} is no push server of the Veydan network` : null,
+      last_ok_at: foreign ? null : now - 600, expires_at: foreign ? null : now + 7 * 86400,
+      ticket_expires_at: foreign ? null : now + 23 * 86400,
+      relays: foreign ? [] : [{ url: s.relay, status: 'ok' }],
+    };
+  });
+}
+
+function mockPushView(): MessengerPushView {
+  return { ...mockPush, status: { ...mockPush.status, targets: mockTargets() } };
+}
+
+/** The tickets the demo's gateway holds: one per server it wakes, and one of another install. */
+let mockTickets: MessengerPushTicket[] = (() => {
+  const now = Math.floor(Date.now() / 1000);
+  return [
+    ...mockPrivateServers.filter((s) => s.push === 'veydan' && !s.relay.includes('example.org')).map((s, i) => ({
+      gateway: 'https://vpush.veydan.net', ticket: `${(0x3fa91c27 + i).toString(16)}…`, device_id: 'd1'.repeat(16),
+      issued_at: now - 7 * 86400, expires_at: now + 23 * 86400, last_wake_at: now - 1800, server_id: s.id,
+    })),
+    {
+      gateway: 'https://vpush.veydan.net', ticket: '9b04e7d1…', device_id: 'e2'.repeat(16),
+      issued_at: now - 40 * 86400, expires_at: now + 2 * 86400, last_wake_at: null, server_id: null,
+    },
+  ];
+})();
+
+/** A demo server's card: the runtime checks the id against the relay; the preview takes it as written. */
+function mockServerOf(link: string): ServerPreview | null {
+  const m = /^veydan:\/\/server\/([0-9a-fA-F]{16})\?(.*)$/.exec(link.trim());
+  if (!m) return null;
+  const p = new URLSearchParams(m[2]);
+  const relay = (p.get('u') ?? '').toLowerCase().replace(/\/+$/, '');
+  if (!/^wss?:\/\/[^/?#]+$/.test(relay)) return null;
+  const id = m[1].toLowerCase();
+  const push = p.get('p') || 'off';
+  if (push !== 'off' && push !== 'veydan') return null;
+  return {
+    link: link.trim(), id, name: p.get('n') ?? '', relay, media: p.get('m') || null, call_node: p.get('c') || null, push_url: p.get('pu') || null, push,
+    known: mockPrivateServers.some((s) => s.id === id) || mockRelays.some((r) => r.url === relay),
+    is_veydan: /\.veydan\.net$/.test(relay.replace(/^wss?:\/\//, '').replace(/:\d+$/, '')),
+  };
+}
+
+/** The card a `srv=` carries: base64url of a server link, without padding. */
+function mockSrvOf(params: URLSearchParams): ServerPreview | null {
+  const raw = params.get('srv');
+  if (!raw) return null;
+  try {
+    const b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+    return mockServerOf(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
+  } catch {
+    return null;
+  }
+}
+
 /** Browser preview only: in the app links are taken apart by the runtime. */
 function mockInspect(text: string): LinkView {
   const link = text.trim();
@@ -1300,9 +1439,13 @@ function mockInspect(text: string): LinkView {
     const view: ContactLinkView = {
       kind: 'contact', link: link.startsWith('veydan://') ? link : `veydan://contact/${npub}`, pubkey: c?.pubkey ?? (me ? mockIdentity?.pubkey : undefined) ?? 'ef'.repeat(32), npub,
       name: c ? contactLabel(c) : me ? profileLabel(mockOwnProfile) : hint, picture: null, nip05: c?.profile?.nip05 ?? null,
-      is_me: me, is_contact: !!c, blocked: false, invite,
+      is_me: me, is_contact: !!c, blocked: false, invite, server: mockSrvOf(params),
     };
     return view;
+  }
+  if (link.startsWith('veydan://server/')) {
+    const server = mockServerOf(link);
+    return server ? { kind: 'server', ...server } : { kind: 'invalid', code: 'link_bad_id' };
   }
   const m = /^veydan:\/\/([a-z]+(?:-[a-z]+)*)\/([A-Za-z0-9._~-]+)(?:\?(.*))?$/.exec(link);
   if (!m) return { kind: 'invalid', code: link.startsWith('veydan://') ? 'link_bad_id' : 'link_bad_scheme' };
@@ -1328,6 +1471,11 @@ function mockInspect(text: string): LinkView {
   return {
     kind: 'group', link, group_id: m[2], group_kind: t, name: g?.name || p.get('n') || '', relay: p.get('r') ?? '', owner: p.get('o') ?? '',
     picture: g?.picture || null, members: g?.members.length || null, membership: g?.membership ?? null,
+    server: mockSrvOf(p),
+    server_known: (() => {
+      const relay = (p.get('r') ?? '').toLowerCase().replace(/\/+$/, '');
+      return mockRelays.some((r) => r.url === relay) || mockPrivateServers.some((s) => s.relay === relay) || !!g;
+    })(),
   };
 }
 
@@ -1537,7 +1685,12 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_links_inspect: (a) => ((a?.links ?? []) as string[]).map((l) => mockInspect(l)),
   messenger_contact_link: (a) => {
     const c = mockContacts.find((x) => x.pubkey === a?.pubkey);
-    return `veydan://contact/${c?.npub ?? `npub1${String(a?.pubkey).slice(0, 58)}`}${c ? `?n=${encodeURIComponent(contactLabel(c))}` : ''}`;
+    const s = a?.server ? mockPrivateServers.find((x) => x.id === a.server) : undefined;
+    if (a?.server && !s) throw new Error('server_unknown');
+    const params = [c ? `n=${encodeURIComponent(contactLabel(c))}` : '', s ? `srv=${btoa(`veydan://server/${s.id}?u=${encodeURIComponent(s.relay)}&k=demo&p=${s.push}&n=${encodeURIComponent(s.name ?? '')}`).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}` : '']
+      .filter(Boolean)
+      .join('&');
+    return `veydan://contact/${c?.npub ?? `npub1${String(a?.pubkey).slice(0, 58)}`}${params ? `?${params}` : ''}`;
   },
   messenger_link_preview: (a) => {
     const host = new URL(String(a?.url)).hostname;
@@ -1582,16 +1735,19 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_group_create: (a) => {
     const id = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     const kind = a?.kind === 'public' ? 'public' : 'private';
+    const srv = a?.server ? mockPrivateServers.find((s) => s.id === a.server) : undefined;
+    if (a?.server && !srv) throw new Error('server_unknown');
+    const relay = srv?.relay ?? 'wss://relay.example';
     const g: MessengerGroup = {
-      id, chat_id: `group:${id}`, kind, name: String(a?.name), about: String(a?.about ?? ''), picture: '', relay: 'wss://relay.example',
+      id, chat_id: `group:${id}`, kind, name: String(a?.name), about: String(a?.about ?? ''), picture: '', relay,
       owner: 'ab'.repeat(32), membership: 'joined', my_role: 'owner', muted: false, can_post: true, history_for_new: kind === 'public' || Boolean(a?.historyForNew),
       members: [{ pubkey: 'ab'.repeat(32), role: 'owner', muted: false, muted_until: null, trusted: false, joined_at: Math.floor(Date.now() / 1000), is_me: true }],
       banned: [], requests: [], request_note: '', undecrypted: 0, ...MOCK_MOD_DEFAULTS,
       key: { id: id.slice(0, 32), version: 1, cipher: 'AES-256-GCM', source: kind === 'public' ? 'link' : 'random', link_epoch: 0, since: Math.floor(Date.now() / 1000), by: 'ab'.repeat(32), reason: 'create', held: true, status: 'good' },
-      link: `veydan://group/${id}?t=${kind}&r=wss%3A%2F%2Frelay.example&o=${'ab'.repeat(32)}&n=${encodeURIComponent(String(a?.name))}${kind === 'public' ? '&s=demo&e=0' : ''}`,
+      link: `veydan://group/${id}?t=${kind}&r=${encodeURIComponent(relay)}&o=${'ab'.repeat(32)}&n=${encodeURIComponent(String(a?.name))}${kind === 'public' ? '&s=demo&e=0' : ''}`,
     };
     mockGroups = [g, ...mockGroups];
-    mockChats = [{ id: g.chat_id, kind: 'group', peer_pubkey: null, peer_npub: null, title: g.name, picture: null, is_contact: false, is_muted: false, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'group', can_send: true }, ...mockChats];
+    mockChats = [{ id: g.chat_id, kind: 'group', server_id: srv?.id ?? null, peer_pubkey: null, peer_npub: null, title: g.name, picture: null, is_contact: false, is_muted: false, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'group', can_send: true }, ...mockChats];
     mockMessages[g.chat_id] = [];
     return g;
   },
@@ -1724,7 +1880,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     return mockOwnPrivate;
   },
   messenger_contact_private_get: (a): ContactPrivateView => ({ pubkey: String(a?.pubkey), phone: mockContactPhones[String(a?.pubkey)] ?? null }),
-  messenger_card_send: (a) => mockCardSend(String(a?.chat), (a?.pubkey as string | null) ?? null, Boolean(a?.includePhone)),
+  messenger_card_send: (a) => mockCardSend(String(a?.chat), (a?.pubkey as string | null) ?? null, Boolean(a?.includePhone), (a?.server as string | null) ?? null),
   messenger_card_accept: (a) => mockCardAccept(String(a?.messageId)),
   messenger_contacts_list: () => mockContacts,
   messenger_contacts_add: (a) => {
@@ -1759,6 +1915,49 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     mockServersMode = 'own';
     mockRelays = mockRelays.filter((r) => r.source === 'user');
     mockMediaServers = mockMediaServers.filter((s) => s.source === 'user');
+  },
+  messenger_server_preview: (a) => {
+    const view = mockInspect(String(a?.link));
+    const server = view.kind === 'server' ? view : view.kind === 'contact' || view.kind === 'group' ? view.server : null;
+    if (!server) throw new Error(view.kind === 'invalid' ? view.code : 'server_link_none');
+    const { kind: _kind, ...preview } = { kind: 'server', ...server };
+    return preview;
+  },
+  messenger_server_accept: async (a) => {
+    await new Promise((r) => setTimeout(r, 400));
+    const view = mockInspect(String(a?.link));
+    const s = view.kind === 'server' ? view : view.kind === 'contact' || view.kind === 'group' ? view.server : null;
+    if (!s) throw new Error('server_link_none');
+    if (mockRelays.some((r) => r.url === s.relay)) return s.id;
+    const row: PrivateServerView = {
+      id: s.id, name: s.is_veydan ? 'Veydan' : s.name || null, relay: s.relay, media: s.media, call_node: s.call_node, push: s.push,
+      added_at: Math.floor(Date.now() / 1000), chats: 0, groups: 0,
+    };
+    mockPrivateServers = [...mockPrivateServers.filter((x) => x.id !== s.id), row];
+    return s.id;
+  },
+  messenger_servers_private: (): PrivateServerView[] => mockPrivateServers.map((s) => ({
+    ...s,
+    chats: mockChats.filter((c) => c.kind === 'dm' && c.id.endsWith(`@${s.id}`)).length,
+    groups: mockGroups.filter((g) => g.relay === s.relay).length,
+  })),
+  messenger_server_remove: (a) => {
+    if (!mockPrivateServers.some((s) => s.id === a?.id)) throw new Error('server_unknown');
+    mockPrivateServers = mockPrivateServers.filter((s) => s.id !== a?.id);
+    mockChats = mockChats.filter((c) => !c.id.endsWith(`@${String(a?.id)}`));
+  },
+  messenger_contact_open_private: (a) => {
+    const server = String(a?.serverId);
+    if (!mockPrivateServers.some((s) => s.id === server)) throw new Error('server_unknown');
+    const base = mockChat(String(a?.peer));
+    const id = `${base.id}@${server}`;
+    let c = mockChats.find((x) => x.id === id);
+    if (!c) {
+      c = { ...base, id, server_id: server, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'full_chat', can_send: true };
+      mockChats = [c, ...mockChats];
+      mockMessages[id] = [];
+    }
+    return c;
   },
   messenger_manifest_refresh: () => (mockServersMode === 'veydan' ? mockManifestCheck() : null),
   messenger_manifest_set_region: (a) => { mockRegion = String(a?.region); },
@@ -1796,7 +1995,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_identity_export: () => 'ncryptsec1devbackupdevbackupdevbackup',
   messenger_identity_delete: () => { mockIdentity = null; },
   // In the browser the phone is played: the panel can be looked at and clicked through.
-  messenger_push_status: (): MessengerPushView => mockPush,
+  messenger_push_status: (): MessengerPushView => mockPushView(),
   messenger_push_set_enabled: (a): MessengerPushView => {
     const on = Boolean(a?.enabled);
     const now = Math.floor(Date.now() / 1000);
@@ -1815,19 +2014,27 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
           : [],
       },
     };
-    return mockPush;
+    return mockPushView();
   },
   messenger_push_mark_offered: () => { mockPush = { ...mockPush, status: { ...mockPush.status, offered: true } }; },
   messenger_push_set_server: (a): MessengerPushView => {
     const url = a?.url ? String(a.url) : null;
     mockPush = { ...mockPush, status: { ...mockPush.status, server: url ?? 'https://vpush.veydan.net', server_custom: Boolean(url) } };
-    return mockPush;
+    return mockPushView();
   },
   messenger_push_set_prefs: (a): MessengerPushView => {
     mockPush = { ...mockPush, status: { ...mockPush.status, dm: Boolean(a?.dm), groups: Boolean(a?.groups) } };
-    return mockPush;
+    return mockPushView();
   },
-  messenger_push_refresh: (): MessengerPushView => mockPush,
+  messenger_push_refresh: (): MessengerPushView => mockPushView(),
+  messenger_push_tickets: (): MessengerPushTicket[] => (mockPush.status.enabled ? mockTickets : []),
+  messenger_push_ticket_revoke: (a): number => {
+    const prefix = String(a?.prefix ?? '').replace(/…$/, '').toLowerCase();
+    if (prefix.length < 8) throw new Error('a ticket is named by 8 hex at least');
+    const before = mockTickets.length;
+    mockTickets = mockTickets.filter((x) => !x.ticket.startsWith(prefix));
+    return before - mockTickets.length;
+  },
   messenger_push_test: (): MessengerPushTest => ({ outcome: 'delivered', trace: '5f3a9c1e' }),
   messenger_push_take_tap: () => null,
   messenger_push_clear: () => undefined,
@@ -1846,8 +2053,8 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   },
   messenger_moderation_requests_count: () => mockRequests().length,
   messenger_moderation_request_act: (a) => {
-    const peer = String(a?.peer);
-    const id = `dm:${peer}`;
+    // `<peer>` or `<peer>@<server>`: the request of a private chat is that chat's.
+    const id = `dm:${String(a?.peer).replace(/^dm:/, '')}`;
     const next: Record<string, Partial<MessengerChat>> = {
       accept: { mode: 'full_chat', can_send: true, is_contact: true },
       decline: { mode: 'request_declined_by_me', can_send: false },
@@ -1857,7 +2064,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     if (!change) throw new Error('invalid action');
     mockChats = mockChats.map((c) => (c.id === id ? { ...c, ...change, unread: 0 } : c));
     demoEmit('dm.relationship', { chat_id: id });
-    demoEmit('dm.request', { peer, pending: mockRequests().length });
+    demoEmit('dm.request', { peer: parseAddress(String(a?.peer)).peer, pending: mockRequests().length });
   },
   messenger_moderation_dm_settings: () => mockDmSettings,
   messenger_moderation_dm_settings_set: (a) => { mockDmSettings = { ...(a?.settings as DmSettings) }; },
@@ -1995,8 +2202,11 @@ export const messengerApi = {
   links: {
     /** One answer per link, in the order asked. Asks nothing of the network. */
     inspect: (links: InternalLinkText[]) => invoke<LinkView[]>('messenger_links_inspect', { links }),
-    /** The link of a person, to share. */
-    contact: (pubkey: string) => invoke<string>('messenger_contact_link', { pubkey }),
+    /**
+     * The link of a person, to share. With `server` (a private server of
+     * mine), the link of the private chat there: it carries the server's card.
+     */
+    contact: (pubkey: string, server?: string) => invoke<string>('messenger_contact_link', { pubkey, server: server ?? null }),
     /** My link with the invitation `id` in it, drawn as a QR code (SVG text). */
     contactQr: (id: string) => invoke<string>('messenger_contact_link_qr', { id }),
     /** Asks the page: only when the user said so. */
@@ -2018,6 +2228,10 @@ export const messengerApi = {
     setServer: (url: string | null) => invoke<MessengerPushView>('messenger_push_set_server', { url }),
     setPrefs: (dm: boolean, groups: boolean) => invoke<MessengerPushView>('messenger_push_set_prefs', { dm, groups }),
     refresh: () => invoke<MessengerPushView>('messenger_push_refresh'),
+    /** The tickets of mine the gateways hold, each with the private server that uses it. */
+    tickets: () => invoke<MessengerPushTicket[]>('messenger_push_tickets'),
+    /** Takes back a ticket (its first 8 hex at least); its server gets a new one at the next round. How many gateways took one back. */
+    revokeTicket: (prefix: string) => invoke<number>('messenger_push_ticket_revoke', { prefix }),
     test: () => invoke<MessengerPushTest>('messenger_push_test'),
     takeTap: () => invoke<MessengerPushTap | null>('messenger_push_take_tap'),
     notify: () => invoke<MessengerNotifySettings>('messenger_notify_get'),
@@ -2056,6 +2270,24 @@ export const messengerApi = {
     useVeydan: () => invoke<MessengerManifestCheck>('messenger_servers_use_veydan'),
     useOwn: () => invoke<void>('messenger_servers_use_own'),
     refreshManifest: () => invoke<MessengerManifestCheck | null>('messenger_manifest_refresh'),
+  },
+
+  /**
+   * Servers reached by their card (internal/messenger-wire.md, «Принятие
+   * сервера»): nothing is added before the user saw what and said yes.
+   */
+  servers: {
+    /** What the server of a link is (a card, or a link of a person or a group with `srv=`). Error: `server_link_none`. */
+    preview: (link: string) => invoke<ServerPreview>('messenger_server_preview', { link }),
+    /** Adds it, here and on every device of mine; one of the home set is left as it is. Its id. */
+    accept: (link: string) => invoke<string>('messenger_server_accept', { link }),
+    /** My private servers, without their keys. */
+    list: () => invoke<PrivateServerView[]>('messenger_servers_private'),
+    /** Removes a private server here and on every device of mine, with its chats. */
+    remove: (id: string) => invoke<void>('messenger_server_remove', { id }),
+    /** The private chat with a person on a private server of mine, approved and told at once. */
+    openPrivate: (peer: string, serverId: string, invite?: string | null) =>
+      invoke<MessengerChat>('messenger_contact_open_private', { peer, serverId, invite: invite ?? null }),
   },
 
   /** The way to the project's servers: directly, or through a bridge. */
@@ -2327,8 +2559,9 @@ export const messengerApi = {
   groups: {
     list: () => invoke<MessengerGroup[]>('messenger_groups_list'),
     get: (groupId: string) => invoke<MessengerGroup>('messenger_group_get', { groupId }),
-    create: (kind: 'public' | 'private', name: string, about: string, historyForNew: boolean) =>
-      invoke<MessengerGroup>('messenger_group_create', { kind, name, about, historyForNew }),
+    /** `server`: a private server of mine the group lives on; none: the home set (internal/messenger-wire.md, «Группы на сервере»). */
+    create: (kind: 'public' | 'private', name: string, about: string, historyForNew: boolean, server: string | null = null) =>
+      invoke<MessengerGroup>('messenger_group_create', { kind, name, about, historyForNew, server }),
     invite: (groupId: string, who: string) => invoke<MessengerGroupInvite>('messenger_group_invite', { groupId, who }),
     invites: (direction: 'in' | 'out') => invoke<MessengerGroupInvite[]>('messenger_group_invites', { direction }),
     answerInvite: (inviteId: string, accept: boolean) => invoke<void>('messenger_group_answer_invite', { inviteId, accept }),
@@ -2468,10 +2701,12 @@ export const messengerApi = {
      * Sends a card to `chat` (a person, `dm:<hex>` or `group:<id>`): mine
      * when `pubkey` is `null` (with my phone when `includePhone`), else
      * that person's public profile, never a phone.
-     * Errors: `phone_public_group`, `card_too_large`.
+     * Errors: `phone_public_group`, `card_too_large`. `server` (a private
+     * server of mine) puts its card on my own card (`card_server_not_mine`
+     * for another person's) and approves the person in the private chat there.
      */
-    send: (chat: string, pubkey: string | null, includePhone: boolean) =>
-      invoke<MessengerMessage>('messenger_card_send', { chat, pubkey, includePhone }),
+    send: (chat: string, pubkey: string | null, includePhone: boolean, server?: string | null) =>
+      invoke<MessengerMessage>('messenger_card_send', { chat, pubkey, includePhone, server: server ?? null }),
     /** "Add contact" on a received card. Errors: `card_unknown`, `card_is_me`. */
     accept: (messageId: string) => invoke<MessengerMessage>('messenger_card_accept', { messageId }),
   },

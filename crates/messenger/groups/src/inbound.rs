@@ -21,7 +21,7 @@ use messenger_core::traits::{Body, Notice, UiEvent};
 use messenger_core::{Context, DmInbound, Envelope, EventSource, GroupInbound, MessengerError, PubKey, Result, TextFormat};
 use messenger_store::groups::{self as repo, GroupRow, PendingRow};
 use messenger_store::messages::{self as msgs, NewMessage};
-use messenger_store::chats;
+use messenger_store::{chats, servers};
 use nostr::key::Keys;
 
 /// Bucket of welcomes that arrived before my own consent did.
@@ -318,7 +318,10 @@ impl GroupService {
         let from_me = &msg.sender == me;
         // A key I block, or one the network bans, is not heard in the
         // protocol of groups either: no invitation, no request to join, no
-        // welcome, no keys.
+        // welcome, no keys. The block is the one of the home chat with them
+        // (`msg_dm_relations.server_id = ''`), whatever server the group
+        // lives on: a block is of a person in groups, and a private chat
+        // with them on a server keeps its own relation for that chat alone.
         if !from_me && (self.dm.is_blocked(&msg.sender).await? || self.dm.is_banned(&msg.sender).await?) {
             return Ok(Some(Outcome::default()));
         }
@@ -333,6 +336,21 @@ impl GroupService {
                     self.keys_of_a_closed_group(&envelope, &msg.sender, me).await?;
                 }
                 return Ok(Some(Outcome::default()));
+            }
+        }
+        // A word of a group comes from where the group lives (the wire
+        // document, «Группы на сервере»): the server of the wrap,
+        // told as for a message of a chat (`srv`, else the relay it came by,
+        // else home), is the group's. A server this device does not have
+        // brings no word of any group, and one of another server than the
+        // group's is dropped.
+        let Some(came_by) = self.dm.server_of_inbound(msg).await? else { return Ok(Some(Outcome::default())) };
+        if let Some(group_id) = envelope.str_field("group_id") {
+            if !self.heard_where_it_lives(&envelope, group_id, came_by.as_deref()).await? {
+                return Ok(Some(Outcome {
+                    notes: vec![format!("group: {} by a server not the group's, dropped", envelope.t)],
+                    ..Default::default()
+                }));
             }
         }
         let historical = msg.created_at < ctx.session_started_at || matches!(msg.envelope.source, EventSource::Sync { .. });
@@ -354,6 +372,24 @@ impl GroupService {
         Ok(Some(outcome.unwrap_or_else(|e| {
             Outcome { notes: vec![format!("group: direct message {} dropped: {e}", envelope.t)], ..Default::default() }
         })))
+    }
+
+    /// Whether a word of the group protocol about `group_id` that came by
+    /// `came_by` (`None`: the home set) came from the group's server: that
+    /// of the relay of its row; for a group with no row here, that of the
+    /// relay an invitation or a welcome names (the one the group will be
+    /// kept on). Any other word of a group not known here is taken as
+    /// before: it is an answer, or a copy of my own, about a group it
+    /// cannot bring in.
+    async fn heard_where_it_lives(&self, envelope: &Envelope, group_id: &str, came_by: Option<&str>) -> Result<bool> {
+        let lives_on = match repo::get(&self.store, group_id).await? {
+            Some(row) => self.server_of_relay(&row.relay_url).await?,
+            None if matches!(envelope.t.as_str(), wire::T_INVITE | wire::T_WELCOME) => {
+                self.server_of_relay(envelope.str_field("relay").unwrap_or("")).await?
+            }
+            None => return Ok(true),
+        };
+        Ok(lives_on.as_deref() == came_by)
     }
 
     /// The keys a key delivery or a welcome carries for a group the network
@@ -441,7 +477,7 @@ impl GroupService {
             payload: serde_json::json!({ "invite_id": body.invite_id, "group_id": body.group_id }),
         });
         // Nothing is told of a person whose chat is muted.
-        if !from_me && !historical && vouched && !chats::is_muted(&self.store, &chats::dm_chat_id(peer.as_hex())).await? {
+        if !from_me && !historical && vouched && !chats::is_muted(&self.store, &chats::dm_chat_id(peer.as_hex(), None)).await? {
             out.notify.push(Notice {
                 title: body.name.clone(),
                 body: Some(Body::Invite { group_name: body.name.clone() }),
@@ -747,7 +783,15 @@ impl GroupService {
                 _ => {}
             }
         }
-        if !from_me && !self.consent(&group_id, me).await? {
+        // A group lives on the server of its relay: a welcome to a group
+        // not here whose relay is no server of mine (a welcome of my own
+        // from a device that has that server, a consent of before the
+        // check) would make it a group of the home set. It is held, as one
+        // that came before my consent is, and read again when a server
+        // comes (`welcomes_of_servers_that_came`).
+        let new_here = row.as_ref().is_none_or(|r| r.relay_url.trim().is_empty());
+        let unknown_relay = new_here && !self.relay_is_mine(&body.relay).await?;
+        if unknown_relay || (!from_me && !self.consent(&group_id, me).await?) {
             repo::add_pending(
                 &self.store,
                 &PendingRow {
@@ -760,7 +804,12 @@ impl GroupService {
                 },
             )
             .await?;
-            return Ok(Outcome::default());
+            let notes = if unknown_relay {
+                vec!["group: a welcome to a group on a relay that is no server of mine, held until it is".into()]
+            } else {
+                Vec::new()
+            };
+            return Ok(Outcome { notes, ..Default::default() });
         }
 
         // The log as the welcome tells it, every operation verified. One
@@ -885,6 +934,30 @@ impl GroupService {
         Ok(out)
     }
 
+    /// A server came (by hand, a card, the snapshot): the welcomes held
+    /// because their group's relay was no server of mine (`on_welcome`)
+    /// are read again for each group whose relay now is one. One still
+    /// waiting for my consent is held again, as before.
+    pub async fn welcomes_of_servers_that_came(&self, keys: &Keys) -> Result<Outcome> {
+        let me = PubKey::parse(&keys.public_key().to_hex()).ok_or_else(|| MessengerError::Crypto("bad key".into()))?;
+        let ctx = Context { my_pubkey: me, session_started_at: self.clock.now(), clock: self.clock.clone() };
+        let mut out = Outcome::default();
+        for group_id in repo::pending_groups(&self.store, BUCKET_WELCOME).await? {
+            let mut now_known = false;
+            for row in repo::pending_in(&self.store, &group_id, BUCKET_WELCOME).await? {
+                let relay = serde_json::from_str::<serde_json::Value>(&row.ciphertext)
+                    .ok()
+                    .and_then(|v| v["body"]["relay"].as_str().map(String::from))
+                    .unwrap_or_default();
+                now_known |= !relay.trim().is_empty() && servers::by_relay_url(&self.store, &relay).await?.is_some();
+            }
+            if now_known {
+                out.merge(self.held_welcomes(keys, &group_id, &ctx).await?);
+            }
+        }
+        Ok(out)
+    }
+
     async fn on_keys(&self, keys: &Keys, body: wire::KeyDelivery, sender: &PubKey, ctx: &Context) -> Result<Outcome> {
         let me = &ctx.my_pubkey;
         let Some(row) = repo::get(&self.store, &body.group_id).await? else { return Ok(Outcome::default()) };
@@ -920,6 +993,16 @@ impl GroupService {
         }
         let Some(row) = repo::get(&self.store, &msg.group_id).await? else { return Ok(out) };
         if !matches!(row.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING) {
+            return Ok(out);
+        }
+        // A group lives on its server, and only there (the wire
+        // document, «Группы на сервере»): an event by a relay of another
+        // server is not the group's word. The ingress drops it before it is
+        // stored as seen (`servers::group_heard_on`); this is for whoever
+        // calls here without the ingress.
+        let relay = msg.envelope.source.relay_url().map(|u| u.as_str());
+        if !servers::group_heard_on(&self.store, &msg.group_id, relay).await? {
+            out.notes.push("group: an event by a relay not of the group's server, dropped".into());
             return Ok(out);
         }
         let Some(key_id) = msg.key_id.clone().filter(|k| k.len() == 32 && k.bytes().all(|b| b.is_ascii_hexdigit())) else {
@@ -1484,6 +1567,7 @@ impl GroupService {
         // wrote, without a note of a moderator: a rule of this device. What
         // I do not see counts nowhere and wakes nobody; the row stays, for
         // the unblock, the lifted ban, the approval or the unhide to show.
+        // The block is the home chat's, in a group of any server (above, `on_dm`).
         let blocked = !from_me && (self.dm.is_blocked(&m.author).await? || self.dm.is_banned(&m.author).await?);
         let waits = row.review == msgs::REVIEW_PENDING;
         let moderator = s.role_of(me).is_some_and(|r| r >= Role::Moderator);

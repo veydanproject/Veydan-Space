@@ -440,6 +440,7 @@ impl CallsDriver {
 /// keys there are no members and no notes.
 struct GroupsDoor {
     groups: GroupService,
+    store: Store,
 }
 
 impl GroupsDoor {
@@ -472,6 +473,14 @@ impl GroupAccess for GroupsDoor {
             class: NodeClass::Group,
             access_key: key,
         }))
+    }
+
+    /// A group of a private server: that server's own node, or none.
+    async fn server_nodes(&self, group_id: &str) -> Result<Option<Vec<CallNode>>> {
+        match self.groups.server_of(group_id).await? {
+            Some(id) => Ok(Some(messenger_calls::service::private_nodes(&self.store, &id).await?)),
+            None => Ok(None),
+        }
     }
 
     async fn seal_note(&self, group_id: &str, envelope: &Envelope) -> Result<Outbound> {
@@ -546,10 +555,11 @@ impl GroupCallsDriver {
         ui: broadcast::Sender<UiEvent>,
     ) -> Self {
         let (service, rx) = GroupCallService::new(
-            store,
+            store.clone(),
             dm,
             Arc::new(GroupsDoor {
                 groups: groups.clone(),
+                store,
             }),
             engine.unwrap_or_else(|| Arc::new(NoEngine)),
             servers,
@@ -741,6 +751,10 @@ pub struct CallView {
     /// The peer, hex.
     pub peer: String,
     pub chat_id: String,
+    /// The private server of the chat of the call; absent for the home chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub server_id: Option<String>,
     pub direction: CallDirection,
     pub media: CallMedia,
     pub phase: CallPhase,
@@ -1263,6 +1277,7 @@ impl From<CoreView> for CallView {
             call_id: v.call_id,
             peer: v.peer,
             chat_id: v.chat_id,
+            server_id: v.server_id,
             direction: match v.direction {
                 Direction::In => CallDirection::In,
                 Direction::Out => CallDirection::Out,
@@ -1323,6 +1338,69 @@ fn node_view(n: &CallNode) -> CallNodeView {
     }
 }
 
+// ─── Calls of a removed private server ───────────────────────────────────────
+
+/// The calls of what a private server takes with it end with it
+/// (internal/messenger-wire.md, «Серверы на всех устройствах»): the call
+/// between two of one of `chats` (its private chats) is hung up — the end
+/// goes to the peer while the server is still here — and the group call
+/// of one of `groups` is left. Called before the removal by hand.
+pub(crate) async fn end_calls_of(calls: &CallService, group_calls: &GroupCallService, chats: &[String], groups: &[String]) {
+    if let Some(c) = calls.current().await {
+        if chats.contains(&c.chat_id) {
+            if let Err(e) = calls.end(&c.call_id).await {
+                eprintln!("messenger calls: the call of a removed server did not end: {e}");
+            }
+        }
+    }
+    if let Some(g) = group_calls.current().await {
+        if groups.contains(&g.group_id) {
+            if let Err(e) = group_calls.leave().await {
+                eprintln!("messenger calls: the group call of a removed server was not left: {e}");
+            }
+        }
+    }
+}
+
+/// After my servers changed (a removal the snapshot of my relations
+/// brought, which takes the chats and groups in the store): the call
+/// between two whose private server is mine no more ends, and the group
+/// call whose group is gone or closed (`servers::group_closed`) is left.
+pub(crate) async fn end_calls_of_gone_servers(store: &Store, calls: &CallService, group_calls: &GroupCallService) {
+    if let Some(c) = calls.current().await {
+        if let Some(id) = c.server_id.as_deref() {
+            let mine = matches!(messenger_store::servers::get(store, id).await, Ok(Some(s)) if s.is_private());
+            if !mine {
+                if let Err(e) = calls.end(&c.call_id).await {
+                    eprintln!("messenger calls: the call of a removed server did not end: {e}");
+                }
+            }
+        }
+    }
+    if let Some(g) = group_calls.current().await {
+        let here = matches!(messenger_store::groups::get(store, &g.group_id).await, Ok(Some(_)));
+        let closed = messenger_store::servers::group_closed(store, &g.group_id).await.unwrap_or(false);
+        if !here || closed {
+            if let Err(e) = group_calls.leave().await {
+                eprintln!("messenger calls: the group call of a removed server was not left: {e}");
+            }
+        }
+    }
+}
+
+/// For as long as the runtime runs: each change of my servers
+/// (`servers.updated`) ends the calls of a server gone.
+pub(crate) async fn follow_servers(store: Store, calls: CallService, group_calls: GroupCallService, mut told: broadcast::Receiver<UiEvent>) {
+    loop {
+        match told.recv().await {
+            Ok(ev) if ev.name != crate::private::UI_EVENT_SERVERS_UPDATED => continue,
+            Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(broadcast::error::RecvError::Closed) => return,
+        }
+        end_calls_of_gone_servers(&store, &calls, &group_calls).await;
+    }
+}
+
 // ─── The runtime's side ──────────────────────────────────────────────────────
 
 impl MessengerRuntime {
@@ -1330,14 +1408,16 @@ impl MessengerRuntime {
         &self.calls.service
     }
 
-    /// Call `peer` (hex or npub). Refused for anybody we are not in a
-    /// mutual chat with, and while a call is under way (of either kind).
+    /// Call `peer` (hex or npub; `<key>@<server>` in the private chat on
+    /// that server, carried by its node alone). Refused for anybody we are
+    /// not in a mutual chat with, and while a call is under way (of either
+    /// kind).
     pub async fn call_start(&self, peer: &str, media: CallMedia) -> Result<CallView> {
-        let pk = messenger_contacts::book::parse_key(peer)?;
+        let chat = self.peer_addr(peer).await?;
         self.no_group_call().await?;
         self.calls
             .service
-            .start(&pk, media.into())
+            .start(&chat, media.into())
             .await
             .map(Into::into)
     }
@@ -1749,7 +1829,8 @@ mod tests {
         let core = CoreView {
             call_id: "c1".into(),
             peer: "ab".repeat(32),
-            chat_id: format!("dm:{}", "ab".repeat(32)),
+            chat_id: format!("dm:{}@0123456789abcdef", "ab".repeat(32)),
+            server_id: Some("0123456789abcdef".into()),
             direction: messenger_calls::Direction::In,
             media: Media::Video,
             phase: messenger_calls::Phase::Reconnecting,
@@ -2169,6 +2250,7 @@ mod tests {
                 content: invite.encode(),
                 reply_to: None,
                 rumor_kind: 14,
+                srv: None,
             };
             let ctx = messenger_core::Context { my_pubkey: me.clone(), session_started_at: now, clock: Arc::new(messenger_core::traits::SystemClock) };
             (msg, invite, ctx)
@@ -2388,7 +2470,7 @@ mod tests {
         .await
         .unwrap();
         let group = rt
-            .group_create(messenger_groups::GroupKind::Private, "Team", "", true)
+            .group_create(messenger_groups::GroupKind::Private, "Team", "", true, None)
             .await
             .unwrap();
         assert!(rt
@@ -2570,7 +2652,7 @@ mod tests {
         .await
         .unwrap();
         let group = rt
-            .group_create(messenger_groups::GroupKind::Private, "Team", "", true)
+            .group_create(messenger_groups::GroupKind::Private, "Team", "", true, None)
             .await
             .unwrap();
         let frame = || PushedFrame {
@@ -2649,6 +2731,7 @@ mod tests {
             content: invite.encode(),
             reply_to: None,
             rumor_kind: 14,
+            srv: None,
         };
         let ctx = messenger_core::Context {
             my_pubkey: me,
@@ -2700,6 +2783,101 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.outcome.as_deref(), Some("ended"));
+        rt.shutdown().await;
+    }
+
+    /// A removed private server takes its calls: the group call of its
+    /// group, removed by hand, is left; the call of its private chat,
+    /// removed by the snapshot of my relations (the store takes the
+    /// server, the runtime hears `servers.updated`), is hung up.
+    #[tokio::test]
+    async fn a_removed_server_ends_its_calls() {
+        use messenger_testkit::FakeNode;
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let engine = FakeEngine::new();
+        let node = FakeNode::new(engine.clone());
+        node.set_now(messenger_core::Clock::now(&messenger_core::traits::SystemClock).secs() as u64);
+        let backends = CallBackends {
+            engine: Some(Arc::new(engine.clone())),
+            nodes: node.client(),
+            rooms: Arc::new(node.clone()),
+            registry: RegistrySource::Off,
+        };
+        let rt = MessengerRuntime::start_with_backends(cfg, Arc::new(MemorySecretStore::unlocked()), backends).await.unwrap();
+        rt.relays().set_silent(true).await.unwrap();
+        use_veydan_offline(&rt).await;
+        rt.identity().create("pw").await.unwrap();
+        rt.refresh_signer().await.unwrap();
+        rt.dm().set_gate(false);
+        let s1 = rt
+            .server_put_private(&crate::private::PrivateServerInput {
+                relay_url: "wss://s1.example".into(),
+                call_node: Some(node.reference().to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let s2 = rt
+            .server_put_private(&crate::private::PrivateServerInput { relay_url: "wss://s2.example".into(), ..Default::default() })
+            .await
+            .unwrap();
+
+        // A group call in a group of S1, on its node; S1 removed by hand.
+        let group = rt.group_create(messenger_groups::GroupKind::Private, "On S1", "", true, Some(&s1)).await.unwrap();
+        rt.group_call_start(&group.id, CallMedia::Audio).await.unwrap();
+        assert!(rt.group_calls().current().await.is_some());
+        rt.server_remove_private(&s1).await.unwrap();
+        assert!(
+            rt.group_calls().current().await.is_none_or(|g| g.phase == CoreGroupPhase::Left),
+            "the group call is left"
+        );
+
+        // A call ringing in my private chat on S2; S2 taken by the snapshot.
+        let caller = nostr::key::Keys::generate();
+        let peer = PubKey::parse(&caller.public_key().to_hex()).unwrap();
+        let me = rt.session_pubkey().await.unwrap();
+        let invite = messenger_calls::signal::Signal::Invite {
+            call_id: "c".repeat(32),
+            media: Media::Audio,
+            sdp: "v=0".into(),
+            ice: vec![],
+            restart: false,
+            live_restart: true,
+        }
+        .to_envelope();
+        let now = messenger_core::Clock::now(&messenger_core::traits::SystemClock);
+        let msg = messenger_core::DmInbound {
+            envelope: messenger_core::inbound::Envelope {
+                wire_id: messenger_core::EventId::parse(&"c".repeat(64)).unwrap(),
+                source: messenger_core::EventSource::Server { id: "test".into() },
+                wire_created_at: now,
+            },
+            rumor_id: messenger_core::EventId::parse(&format!("{}0", "c".repeat(63))).unwrap(),
+            sender: peer.clone(),
+            recipients: vec![me.clone()],
+            created_at: now,
+            content: invite.encode(),
+            reply_to: None,
+            rumor_kind: 14,
+            srv: Some(s2.clone()),
+        };
+        let ctx = messenger_core::Context { my_pubkey: me.clone(), session_started_at: now, clock: Arc::new(messenger_core::traits::SystemClock) };
+        rt.calls().on_dm(&msg, &invite, &ctx).await.unwrap();
+        rt.calls.flush().await;
+        let ringing = rt.calls().current().await.expect("the call rings");
+        assert_eq!(ringing.server_id.as_deref(), Some(s2.as_str()));
+        messenger_store::servers::remove_private(rt.store(), &s2).await.unwrap().unwrap();
+        let _ = rt.ui.send(UiEvent { name: crate::private::UI_EVENT_SERVERS_UPDATED.into(), payload: serde_json::json!({}) });
+        let mut ended = false;
+        for _ in 0..50 {
+            if rt.calls().current().await.is_none() {
+                ended = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(ended, "the call of a server gone is hung up");
         rt.shutdown().await;
     }
 

@@ -15,6 +15,7 @@
 //! - `bridge`: the link of a VLink bridge to the project's servers (`veydan://vlink/…`).
 //! - `call_node`: the link of a private call node with an invitation to it (`veydan://call-node/…`).
 //! - `recover`: the link to a trusted person of a request of recovery (`veydan://recover/…`).
+//! - `server`: the card of a server (`veydan://server/…`), alone or riding on the link of a person or a group (`srv=`).
 //! - `error`: refusals, as stable codes.
 //!
 //! Everything in this crate is pure: no network, no storage, no clock.
@@ -25,6 +26,7 @@ pub mod contact;
 pub mod error;
 pub mod kind;
 pub mod recover;
+pub mod server;
 pub mod uri;
 
 pub use bridge::BridgeLink;
@@ -33,4 +35,5 @@ pub use contact::{contact_link, is_invite_secret, ContactLink, INVITE_LINK_CHARS
 pub use error::LinkError;
 pub use kind::LinkType;
 pub use recover::RecoverLink;
+pub use server::{server_id, ServerLink};
 pub use uri::{Uri, UriBuilder, MAX_LINK_LEN, SCHEME};

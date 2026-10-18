@@ -16,6 +16,7 @@
 <script lang="ts">
   import { countKey, locale, localeTag, t } from '$lib/core/i18n';
   import type { MessengerMessage } from '../api';
+  import { chatAddress } from '../chats/address';
   import { chatStore } from '../chats/chatStore.svelte';
   import { nameStore } from '../groups/names.svelte';
   import { onPhone } from '../shared/phone';
@@ -80,8 +81,10 @@
       else if (why) refuse(why);
       return;
     }
-    if (!chat?.peer_pubkey) return;
-    const { view, refusal: why } = await callStore.dial(chat.peer_pubkey, line.media);
+    // A private chat's call goes on its server (the node of S1), not home.
+    const to = chatAddress(chat);
+    if (!to) return;
+    const { view, refusal: why } = await callStore.dial(to, line.media);
     if (!view && why) refuse(why);
   }
 

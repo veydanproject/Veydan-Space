@@ -20,6 +20,8 @@
   import { messengerStore } from '../store.svelte';
   import { dmErrorCode, messengerError, profileErrorCode, type MessengerChat } from '../api';
   import { chatMatches, contactHaystacks } from '../shared/search';
+  import { serverStore } from '../servers/serverStore.svelte';
+  import { hostOf } from '../servers/serverAccept.svelte';
 
   interface Props {
     open: boolean;
@@ -39,6 +41,8 @@
   let sent = $state<string[]>([]);
   /** My card only: my phone goes with it. */
   let includePhone = $state(false);
+  /** My card only: the private server of mine whose card goes with it, and whose private chat the person is asked into. */
+  let server = $state('');
 
   const mine = $derived(!!card && card.pubkey === null);
   const myPhone = $derived(messengerStore.ownPrivate?.phone ?? null);
@@ -50,11 +54,12 @@
   let phoneTouched = false;
   $effect(() => {
     if (open && !wasOpen) {
-      query = ''; error = ''; sent = []; includePhone = false; phoneTouched = false;
+      query = ''; error = ''; sent = []; includePhone = false; phoneTouched = false; server = '';
       const mySession = ++session;
       if (card) {
         text = '';
         if (card.pubkey === null) {
+          void serverStore.load();
           const set = (v: { share_phone: boolean; phone: string | null } | null) => {
             if (mySession !== session || !open || phoneTouched) return;
             includePhone = !!v?.phone && v.share_phone;
@@ -72,8 +77,14 @@
   });
 
   const haystacks = $derived(contactHaystacks(messengerStore.contacts));
+  /**
+   * The card of a server carries its key, the only way in: it goes to a
+   * person, never into a group (the runtime refuses it, `card_server_group`).
+   * With a server chosen, the groups are not offered.
+   */
+  const withServer = $derived(mine && !!server);
   const chats = $derived(
-    chatStore.chats.filter((c) => c.can_send && !c.archived && c.id !== exclude && chatMatches(c, query, haystacks)),
+    chatStore.chats.filter((c) => c.can_send && !c.archived && c.id !== exclude && !(withServer && c.kind === 'group') && chatMatches(c, query, haystacks)),
   );
 
   /** Whose card, as the dialog shows it. */
@@ -94,7 +105,7 @@
     if (!card && !text) return;
     error = ''; busy = true;
     try {
-      if (card) await chatStore.sendCard(chat, card.pubkey, mine && includePhone && !!myPhone);
+      if (card) await chatStore.sendCard(chat, card.pubkey, mine && includePhone && !!myPhone, mine && server ? server : null);
       else await chatStore.sendTo(chat, text);
       sent = [...sent, chat.id];
     } catch (e) {
@@ -130,6 +141,16 @@
           </label>
         {:else if messengerStore.ownPrivate}
           <p class="hint">{$t('msg_profile_send_card_no_phone')}</p>
+        {/if}
+        {#if serverStore.list?.length}
+          <!-- The card of a private server of mine rides on my card: the person may open a private chat with me there. -->
+          <label class="server">
+            <span>{$t('msg_srv_card_invite')}</span>
+            <select bind:value={server} disabled={busy}>
+              <option value="">{$t('msg_srv_card_invite_none')}</option>
+              {#each serverStore.list as s (s.id)}<option value={s.id}>{s.name?.trim() || hostOf(s.relay)}</option>{/each}
+            </select>
+          </label>
         {/if}
       {/if}
     {:else if text}<div class="what"><MessageContent {text} /></div>{/if}
@@ -179,6 +200,11 @@
   .phone input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .num { font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
+  .server { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-sm); }
+  .server select {
+    font: inherit; color: var(--text); background: var(--surface-2); min-width: 0; max-width: 100%;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 8px;
+  }
   .phone-hint { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
   .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row {

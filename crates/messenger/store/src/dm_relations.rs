@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! `msg_dm_relations`: raw relationship state per peer. Meaning and
-//! transitions live in `messenger-dm`; this is storage only.
+//! `msg_dm_relations`: raw relationship state per peer and server (the
+//! home chat is `''`, a private chat its server, migration 040). Meaning
+//! and transitions live in `messenger-dm`; this is storage only.
 
 use crate::{storage, Store};
 use messenger_core::Result;
@@ -10,6 +11,9 @@ use messenger_core::Result;
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
 pub struct RelationRow {
     pub peer_pubkey: String,
+    /// The private server of the chat this relation is of; `''` for the
+    /// home chat.
+    pub server_id: String,
     pub my_contact: String,
     pub blocked: bool,
     pub peer_signal: String,
@@ -24,30 +28,38 @@ pub struct RelationRow {
     pub updated_at: i64,
 }
 
-pub async fn get(store: &Store, peer: &str) -> Result<Option<RelationRow>> {
-    sqlx::query_as::<_, RelationRow>(
-        "SELECT peer_pubkey, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, decided_at, created_at, updated_at
-         FROM msg_dm_relations WHERE peer_pubkey = ?",
-    )
+/// The key a server has in the table: `''` for the home set.
+pub fn server_key(server: Option<&str>) -> &str {
+    server.unwrap_or("")
+}
+
+const COLS: &str = "peer_pubkey, server_id, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, decided_at, created_at, updated_at";
+
+pub async fn get(store: &Store, peer: &str, server: Option<&str>) -> Result<Option<RelationRow>> {
+    sqlx::query_as::<_, RelationRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_dm_relations WHERE peer_pubkey = ? AND server_id = ?"
+    )))
     .bind(peer)
+    .bind(server_key(server))
     .fetch_optional(store.pool())
     .await
     .map_err(storage)
 }
 
-/// Insert or replace the whole state of one peer.
+/// Insert or replace the whole state of one peer on one server.
 pub async fn put(store: &Store, r: &RelationRow) -> Result<()> {
     let now = crate::now();
     sqlx::query(
-        "INSERT INTO msg_dm_relations (peer_pubkey, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, decided_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(peer_pubkey) DO UPDATE SET
+        "INSERT INTO msg_dm_relations (peer_pubkey, server_id, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, decided_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(peer_pubkey, server_id) DO UPDATE SET
            my_contact = excluded.my_contact, blocked = excluded.blocked, peer_signal = excluded.peer_signal,
            was_ever_mutual = excluded.was_ever_mutual, last_signal_at = excluded.last_signal_at,
            last_my_signal_at = excluded.last_my_signal_at, request_floor = excluded.request_floor,
            decided_at = excluded.decided_at, updated_at = excluded.updated_at",
     )
     .bind(&r.peer_pubkey)
+    .bind(&r.server_id)
     .bind(&r.my_contact)
     .bind(r.blocked)
     .bind(&r.peer_signal)
@@ -66,23 +78,27 @@ pub async fn put(store: &Store, r: &RelationRow) -> Result<()> {
 
 /// The time of an episode end of the peer that no stored message of theirs
 /// has accounted for yet (migration 026); 0 when none waits.
-pub async fn end_pending(store: &Store, peer: &str) -> Result<i64> {
-    Ok(sqlx::query_scalar::<_, i64>("SELECT request_end_pending FROM msg_dm_relations WHERE peer_pubkey = ?")
-        .bind(peer)
-        .fetch_optional(store.pool())
-        .await
-        .map_err(storage)?
-        .unwrap_or(0))
+pub async fn end_pending(store: &Store, peer: &str, server: Option<&str>) -> Result<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        "SELECT request_end_pending FROM msg_dm_relations WHERE peer_pubkey = ? AND server_id = ?",
+    )
+    .bind(peer)
+    .bind(server_key(server))
+    .fetch_optional(store.pool())
+    .await
+    .map_err(storage)?
+    .unwrap_or(0))
 }
 
 /// Set (or with 0 clear) the waiting episode end of a peer. `put` keeps it.
-pub async fn set_end_pending(store: &Store, peer: &str, at: i64) -> Result<()> {
+pub async fn set_end_pending(store: &Store, peer: &str, server: Option<&str>, at: i64) -> Result<()> {
     let now = crate::now();
     sqlx::query(
-        "INSERT INTO msg_dm_relations (peer_pubkey, request_end_pending, created_at, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(peer_pubkey) DO UPDATE SET request_end_pending = excluded.request_end_pending",
+        "INSERT INTO msg_dm_relations (peer_pubkey, server_id, request_end_pending, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(peer_pubkey, server_id) DO UPDATE SET request_end_pending = excluded.request_end_pending",
     )
     .bind(peer)
+    .bind(server_key(server))
     .bind(at)
     .bind(now)
     .bind(now)
@@ -107,9 +123,10 @@ pub const REQUEST_SQL: &str = "r.blocked = 0 AND NOT EXISTS (SELECT 1 FROM msg_b
 pub type RequestRow = (String, String, i64);
 
 /// The DM chats in the state of a request, with the relation of their
-/// peer: a request is a chat, so a relation without a chat (deleted here)
-/// is not one.
-const REQUEST_FROM: &str = "FROM msg_chats c JOIN msg_dm_relations r ON r.peer_pubkey = c.peer_pubkey WHERE c.kind = 'dm' AND ";
+/// peer on their server: a request is a chat, so a relation without a
+/// chat (deleted here) is not one, and a private chat is a request by its
+/// own relation, not by the home one.
+const REQUEST_FROM: &str = "FROM msg_chats c JOIN msg_dm_relations r ON r.peer_pubkey = c.peer_pubkey AND r.server_id = COALESCE(c.server_id, '') WHERE c.kind = 'dm' AND ";
 
 /// When a request was last active, over the alias `c` of `msg_chats`: the
 /// time of its newest message, but no later than this device last wrote
@@ -154,32 +171,57 @@ pub async fn oldest_requests(store: &Store, n: i64) -> Result<Vec<RequestRow>> {
     .map_err(storage)
 }
 
+/// The peers I block in the home chat, the newest block first. A block of
+/// a private chat is that chat's alone and is not listed here (the list
+/// of blocked people is of the home set).
 pub async fn blocked_peers(store: &Store) -> Result<Vec<String>> {
-    sqlx::query_scalar::<_, String>("SELECT peer_pubkey FROM msg_dm_relations WHERE blocked = 1 ORDER BY updated_at DESC")
-        .fetch_all(store.pool())
-        .await
-        .map_err(storage)
-}
-
-/// Every peer I decided about: blocked, `my_contact` other than none, or
-/// a time of a decision (a contact removed, a block lifted: nothing else
-/// is left of it). What the snapshot of my relations carries
-/// (`messenger-dm::snapshot`); the rows of peers who only wrote to me are
-/// not decisions.
-pub async fn decided_rows(store: &Store) -> Result<Vec<RelationRow>> {
-    sqlx::query_as::<_, RelationRow>(
-        "SELECT peer_pubkey, my_contact, blocked, peer_signal, was_ever_mutual, last_signal_at, last_my_signal_at, request_floor, decided_at, created_at, updated_at
-         FROM msg_dm_relations WHERE blocked = 1 OR my_contact != 'none' OR decided_at > 0 ORDER BY decided_at DESC, peer_pubkey ASC",
+    sqlx::query_scalar::<_, String>(
+        "SELECT peer_pubkey FROM msg_dm_relations WHERE server_id = '' AND blocked = 1 ORDER BY updated_at DESC",
     )
     .fetch_all(store.pool())
     .await
     .map_err(storage)
 }
 
-/// Peers I approved and did not block: who belongs in my address book.
+/// Every peer I decided about in the home chat: blocked, `my_contact`
+/// other than none, or a time of a decision (a contact removed, a block
+/// lifted: nothing else is left of it). What the snapshot of my relations
+/// carries (`messenger-dm::snapshot`); the rows of peers who only wrote
+/// to me are not decisions. The relations of private chats travel in a
+/// list of their own (`decided_private_rows`) and by the copies of their
+/// signals on their server.
+pub async fn decided_rows(store: &Store) -> Result<Vec<RelationRow>> {
+    sqlx::query_as::<_, RelationRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_dm_relations
+         WHERE server_id = '' AND (blocked = 1 OR my_contact != 'none' OR decided_at > 0) ORDER BY decided_at DESC, peer_pubkey ASC"
+    )))
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// Every peer I decided about in a private chat of a private server this
+/// device has, as `decided_rows` does for the home chats: what the
+/// snapshot carries as `private_peers` (internal/messenger-wire.md,
+/// «Серверы на всех устройствах»), apart from the home list an older build
+/// would take for the home chat.
+pub async fn decided_private_rows(store: &Store) -> Result<Vec<RelationRow>> {
+    sqlx::query_as::<_, RelationRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_dm_relations
+         WHERE server_id != '' AND server_id IN (SELECT id FROM msg_servers WHERE kind = 'private')
+           AND (blocked = 1 OR my_contact != 'none' OR decided_at > 0) ORDER BY decided_at DESC, peer_pubkey ASC, server_id ASC"
+    )))
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// Peers I approved in the home chat and did not block there: who belongs
+/// in my address book. The book is of the home set; approving someone in
+/// a private chat does not put them in it.
 pub async fn approved_peers(store: &Store) -> Result<Vec<String>> {
     sqlx::query_scalar::<_, String>(
-        "SELECT peer_pubkey FROM msg_dm_relations WHERE my_contact = 'approved' AND blocked = 0 ORDER BY updated_at DESC",
+        "SELECT peer_pubkey FROM msg_dm_relations WHERE server_id = '' AND my_contact = 'approved' AND blocked = 0 ORDER BY updated_at DESC",
     )
     .fetch_all(store.pool())
     .await
@@ -193,9 +235,10 @@ mod tests {
     #[tokio::test]
     async fn put_get_and_the_blocked_and_approved_lists() {
         let s = Store::open_in_memory().await.unwrap();
-        assert!(get(&s, "p").await.unwrap().is_none());
+        assert!(get(&s, "p", None).await.unwrap().is_none());
         let mut r = RelationRow {
             peer_pubkey: "p".into(),
+            server_id: String::new(),
             my_contact: "approved".into(),
             blocked: false,
             peer_signal: "none".into(),
@@ -213,7 +256,7 @@ mod tests {
         r.last_signal_at = 7;
         r.request_floor = 5;
         put(&s, &r).await.unwrap();
-        let got = get(&s, "p").await.unwrap().unwrap();
+        let got = get(&s, "p", None).await.unwrap().unwrap();
         assert!(got.blocked);
         assert_eq!(got.peer_signal, "approved");
         assert_eq!(got.last_signal_at, 7);
@@ -251,6 +294,7 @@ mod tests {
         let s = Store::open_in_memory().await.unwrap();
         let row = |peer: &str, mine: &str, blocked: bool, theirs: &str| RelationRow {
             peer_pubkey: peer.into(),
+            server_id: String::new(),
             my_contact: mine.into(),
             blocked,
             peer_signal: theirs.into(),
@@ -272,7 +316,7 @@ mod tests {
             (row("silent", "none", false, "none"), 700),
         ] {
             put(&s, &r).await.unwrap();
-            crate::chats::ensure_dm(&s, &r.peer_pubkey).await.unwrap();
+            crate::chats::ensure_dm(&s, &r.peer_pubkey, None).await.unwrap();
             crate::chats::touch(&s, &format!("dm:{}", r.peer_pubkey), at, Some("hi"), true).await.unwrap();
         }
         // A request without its chat (deleted here) is not in the queue.
@@ -290,7 +334,7 @@ mod tests {
         // are never the oldest beside it.
         let before = crate::now();
         put(&s, &row("future", "none", false, "approved")).await.unwrap();
-        crate::chats::ensure_dm(&s, "future").await.unwrap();
+        crate::chats::ensure_dm(&s, "future", None).await.unwrap();
         crate::chats::touch(&s, "dm:future", 4_102_444_800, Some("from 2100"), true).await.unwrap();
         let rows = request_rows(&s, None, 10).await.unwrap();
         let activity = rows.iter().find(|(id, _, _)| id == "dm:future").unwrap().2;
@@ -303,16 +347,16 @@ mod tests {
     #[tokio::test]
     async fn a_waiting_episode_end_survives_a_put_and_is_cleared_apart() {
         let s = Store::open_in_memory().await.unwrap();
-        assert_eq!(end_pending(&s, "p").await.unwrap(), 0);
-        set_end_pending(&s, "p", 70).await.unwrap();
-        assert_eq!(end_pending(&s, "p").await.unwrap(), 70, "a row is made for it");
-        let r = get(&s, "p").await.unwrap().unwrap();
+        assert_eq!(end_pending(&s, "p", None).await.unwrap(), 0);
+        set_end_pending(&s, "p", None, 70).await.unwrap();
+        assert_eq!(end_pending(&s, "p", None).await.unwrap(), 70, "a row is made for it");
+        let r = get(&s, "p", None).await.unwrap().unwrap();
         assert_eq!((r.my_contact.as_str(), r.peer_signal.as_str(), r.request_floor), ("none", "none", 0));
         put(&s, &RelationRow { last_signal_at: 9, ..r }).await.unwrap();
-        assert_eq!(end_pending(&s, "p").await.unwrap(), 70, "put keeps it");
-        set_end_pending(&s, "p", 0).await.unwrap();
-        assert_eq!(end_pending(&s, "p").await.unwrap(), 0);
-        assert_eq!(get(&s, "p").await.unwrap().unwrap().last_signal_at, 9);
+        assert_eq!(end_pending(&s, "p", None).await.unwrap(), 70, "put keeps it");
+        set_end_pending(&s, "p", None, 0).await.unwrap();
+        assert_eq!(end_pending(&s, "p", None).await.unwrap(), 0);
+        assert_eq!(get(&s, "p", None).await.unwrap().unwrap().last_signal_at, 9);
     }
 
     #[tokio::test]
@@ -321,6 +365,7 @@ mod tests {
         let now = crate::now();
         let row = |peer: &str, mine: &str, theirs: &str, floor: i64| RelationRow {
             peer_pubkey: peer.into(),
+            server_id: String::new(),
             my_contact: mine.into(),
             blocked: false,
             peer_signal: theirs.into(),
@@ -343,12 +388,57 @@ mod tests {
         sqlx::raw_sql(include_str!("../migrations/024_dm_request_floor_fix.sql")).execute(s.pool()).await.unwrap();
         let floor = |p: &'static str| {
             let s = s.clone();
-            async move { get(&s, p).await.unwrap().unwrap().request_floor }
+            async move { get(&s, p, None).await.unwrap().unwrap().request_floor }
         };
         assert_eq!(floor("declined").await, 0, "my no ends no episode");
         assert_eq!(floor("declined-then-left").await, 500, "their removal after my no does");
         assert_eq!(floor("removed").await, 600);
         let capped = floor("future").await;
         assert!(capped >= now + 300 && capped <= crate::now() + 300, "{capped}");
+    }
+
+    /// The relation of a private chat is its own: a block at home leaves
+    /// the private chat open, the queue and the lists read each by its
+    /// chat, and the address book and the snapshot see the home one only.
+    #[tokio::test]
+    async fn a_relation_is_kept_per_server() {
+        let s = Store::open_in_memory().await.unwrap();
+        let row = |server: &str, mine: &str, blocked: bool, theirs: &str| RelationRow {
+            peer_pubkey: "p".into(),
+            server_id: server.into(),
+            my_contact: mine.into(),
+            blocked,
+            peer_signal: theirs.into(),
+            was_ever_mutual: false,
+            last_signal_at: 0,
+            last_my_signal_at: 0,
+            request_floor: 0,
+            decided_at: 1,
+            created_at: 0,
+            updated_at: 0,
+        };
+        put(&s, &row("", "none", true, "none")).await.unwrap();
+        put(&s, &row("s1", "none", false, "approved")).await.unwrap();
+        assert!(get(&s, "p", None).await.unwrap().unwrap().blocked);
+        assert!(!get(&s, "p", Some("s1")).await.unwrap().unwrap().blocked, "open on the server");
+        assert!(get(&s, "p", Some("s2")).await.unwrap().is_none());
+        set_end_pending(&s, "p", Some("s1"), 40).await.unwrap();
+        assert_eq!(end_pending(&s, "p", Some("s1")).await.unwrap(), 40);
+        assert_eq!(end_pending(&s, "p", None).await.unwrap(), 0, "the home relation waits for nothing");
+
+        crate::chats::ensure_dm(&s, "p", None).await.unwrap();
+        let private = crate::chats::ensure_dm(&s, "p", Some("s1")).await.unwrap();
+        assert_eq!(private.id, "dm:p@s1");
+        assert_eq!(private.server_id.as_deref(), Some("s1"));
+        crate::chats::touch(&s, "dm:p@s1", 10, Some("hi"), true).await.unwrap();
+        let ids: Vec<String> = request_rows(&s, None, 10).await.unwrap().into_iter().map(|(id, _, _)| id).collect();
+        assert_eq!(ids, vec!["dm:p@s1".to_string()], "a request of the private chat, none of the home one");
+        assert_eq!(crate::chats::total_unread(&s).await.unwrap(), 0, "a request is not counted as waiting");
+
+        assert_eq!(blocked_peers(&s).await.unwrap(), vec!["p".to_string()]);
+        let decided: Vec<String> = decided_rows(&s).await.unwrap().into_iter().map(|r| r.server_id).collect();
+        assert_eq!(decided, vec![String::new()], "the snapshot carries the home relation");
+        put(&s, &row("s1", "approved", false, "approved")).await.unwrap();
+        assert!(approved_peers(&s).await.unwrap().is_empty(), "the book is of the home set");
     }
 }

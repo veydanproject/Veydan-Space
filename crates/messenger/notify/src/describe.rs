@@ -23,12 +23,12 @@ use messenger_core::{Envelope, EventSource, Inbound, MessengerConfig, MessengerE
 use messenger_dm::pushtags::{author_key, author_mark};
 use messenger_dm::relationship::{inbound_decision, screen_mode, InboundDecision, InboundKind, ScreenMode};
 use messenger_dm::body::body_of;
-use messenger_dm::DmService;
+use messenger_dm::{DmPeer, DmService};
 use messenger_groups::wire::{self, Opened, T_INVITE, T_JOIN_REQUEST, T_WELCOME};
 use messenger_groups::service::{invite_standing_in, InviteStanding, MEMBERSHIP_JOINED};
 use messenger_ingress::classify::KIND_DM_RUMOR;
 use messenger_ingress::push_inbox;
-use messenger_store::{banned, calls, chats, groups, messages, Store};
+use messenger_store::{banned, calls, chats, groups, messages, servers, Store};
 use nostr::key::Keys;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -174,12 +174,13 @@ impl Describe {
         if envelope.t != T_CALL_INVITE {
             return Ok(None);
         }
-        if self.dm.load_relation(&dm.sender).await?.blocked || self.dm.is_banned(&dm.sender).await? {
+        let Some(chat) = self.chat_of(&dm, dm.sender.clone()).await? else { return Ok(Some(Outcome::Quiet { reason: Reason::NotForMe })) };
+        if self.dm.load_relation(&chat).await?.blocked || self.dm.is_banned(&dm.sender).await? {
             return Ok(Some(Outcome::Quiet { reason: Reason::Blocked }));
         }
         // No name and no picture, as nothing of the content is shown.
         let settings = Settings { content: Content::None, ..*settings };
-        self.call_notice(&dm.sender, &envelope, dm.created_at.0, &settings).await.map(Some)
+        self.call_notice(&chat, &envelope, dm.created_at.0, &settings).await.map(Some)
     }
 
     /// A note of a call (kind 30079) that reached the phone by push: the
@@ -196,12 +197,23 @@ impl Describe {
         } else {
             // The caller gave up before I answered. The caller's other
             // words (an answer, a refusal) are for the app that calls.
-            envelope.t == T_CALL_END && self.dm.calls_allowed(&dm.sender).await?
+            match self.chat_of(dm, dm.sender.clone()).await? {
+                Some(chat) => envelope.t == T_CALL_END && self.dm.calls_allowed(&chat).await?,
+                None => false,
+            }
         };
         if !ends {
             return quiet;
         }
         Ok(Outcome::CallEnd(CallEnd { call_id: call_id.to_string() }))
+    }
+
+    /// The chat a pushed wrap of `peer` is of, as the app files it
+    /// (`DmService::server_of_inbound`): by its `srv` tag, the relay the
+    /// push names, or the home chat. `None`: a server this device does not
+    /// have, whose wrap the app drops.
+    async fn chat_of(&self, dm: &messenger_core::DmInbound, peer: PubKey) -> Result<Option<DmPeer>> {
+        Ok(self.dm.server_of_inbound(dm).await?.map(|server| DmPeer::on(peer, server.as_deref())))
     }
 
     async fn event_of(&self, push: &PushData) -> Result<Option<RawEvent>> {
@@ -253,7 +265,9 @@ impl Describe {
             return Ok(Outcome::Quiet { reason: Reason::Own });
         }
         let peer = dm.sender.clone();
-        let chat_id = chats::dm_chat_id(peer.as_hex());
+        // The chat it is of: the home one, or a private server's.
+        let Some(chat) = self.chat_of(&dm, peer.clone()).await? else { return Ok(Outcome::Quiet { reason: Reason::NotForMe }) };
+        let chat_id = chat.chat_id();
         // Other NIP-17 clients send bare text; read it as a text message.
         let envelope = Envelope::parse(&dm.content).unwrap_or_else(|_| Envelope::text(&dm.content));
 
@@ -261,14 +275,14 @@ impl Describe {
         // A copy of something stored and shown was let in when it came; a row
         // stored hidden (a request held back until the old episode ends, or
         // one removed for me elsewhere) was never shown, so nothing is told.
-        let relation = self.dm.load_relation(&peer).await?;
+        let relation = self.dm.load_relation(&chat).await?;
         // A key the network bans (`DmService::is_banned`) reads as blocked:
         // the app drops what it sends, so the phone tells nothing of it.
         if relation.blocked || self.dm.is_banned(&peer).await? {
             return Ok(Outcome::Quiet { reason: Reason::Blocked });
         }
         if envelope.t == T_CALL_INVITE {
-            return self.call_notice(&peer, &envelope, dm.created_at.0, settings).await;
+            return self.call_notice(&chat, &envelope, dm.created_at.0, settings).await;
         }
         let row = messages::get(&self.store, dm.rumor_id.as_hex()).await?;
         if row.as_ref().is_some_and(|r| r.is_hidden) {
@@ -278,7 +292,7 @@ impl Describe {
         // The pinned bot of Veydan Cloud is approved beforehand: what it
         // writes is a message of its chat, never a request, and its block
         // was looked at above. Its signals are not heard.
-        let from_bot = self.dm.is_bot(&peer);
+        let from_bot = !chat.is_private() && self.dm.is_bot(&peer);
         // The protocol of groups is no message of the chat: the app hands it
         // to the groups before the gate of requests (`GroupService::on_dm`,
         // the block alone, looked at above), and so does this.
@@ -324,6 +338,8 @@ impl Describe {
         }
         let kind = ChatKind::Dm;
 
+        // The private server of the chat, for its name in the title.
+        let server = chat.server.clone();
         let (body, chat) = match envelope.t.as_str() {
             T_TEXT | T_MEDIA => (body_of(&envelope), Some(chat_id.clone())),
             // A card the app would drop is nothing to tell of.
@@ -375,6 +391,7 @@ impl Describe {
             Some(view) => (view.title, view.picture),
             None => self.contacts.face_of(&peer).await?,
         };
+        let title = on_server(&self.store, server.as_deref(), title).await?;
         Ok(Outcome::Show(Notice {
             kind,
             chat,
@@ -398,7 +415,7 @@ impl Describe {
     /// that is over is the "empty" notification of a phone. What the phone
     /// rings with is who calls, by the chat's name (nobody under "no
     /// content"); the app shows the rest.
-    async fn call_notice(&self, peer: &PubKey, envelope: &Envelope, created_at: i64, settings: &Settings) -> Result<Outcome> {
+    async fn call_notice(&self, chat: &DmPeer, envelope: &Envelope, created_at: i64, settings: &Settings) -> Result<Outcome> {
         if envelope.fields.get("restart").and_then(serde_json::Value::as_bool).unwrap_or(false) {
             return Ok(Outcome::Quiet { reason: Reason::NotAMessage });
         }
@@ -407,7 +424,8 @@ impl Describe {
         let (Some(call_id), Some(media)) = (call_id, media) else {
             return Ok(Outcome::Quiet { reason: Reason::Invalid });
         };
-        if !self.dm.calls_allowed(peer).await? {
+        let peer = &chat.key;
+        if !self.dm.calls_allowed(chat).await? {
             return Ok(Outcome::Quiet { reason: Reason::NotForMe });
         }
         let now = SystemClock.now().secs();
@@ -418,14 +436,15 @@ impl Describe {
         if calls::get(&self.store, call_id).await?.is_some_and(|row| call_over(&row)) {
             return Ok(Outcome::Quiet { reason: Reason::Over });
         }
-        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let chat_id = chat.chat_id();
         let (name, picture) = if settings.content == Content::None {
             (String::new(), None)
         } else {
-            match self.dm.chat(&chat_id).await? {
+            let (name, picture) = match self.dm.chat(&chat_id).await? {
                 Some(view) => (view.title, view.picture),
                 None => self.contacts.face_of(peer).await?,
-            }
+            };
+            (on_server(&self.store, chat.server(), name).await?, picture)
         };
         Ok(Outcome::Call(CallNotice {
             call_id: call_id.to_string(),
@@ -527,6 +546,33 @@ pub fn call_over(row: &calls::CallRow) -> bool {
 }
 
 /// A call id as the core of calls makes it: 16 random bytes, hex.
+/// The name of a private chat names its server too («Alice · S1»): the
+/// home chat with the same person is called the same, and a notification
+/// must tell the two apart (internal/messenger-wire.md, «Частный чат»). The
+/// server goes by its name, else by its relay's host; a home chat, an empty
+/// name (no content) and a server this device has not are left as they are.
+async fn on_server(store: &Store, server: Option<&str>, title: String) -> Result<String> {
+    let Some(id) = server else { return Ok(title) };
+    if title.is_empty() {
+        return Ok(title);
+    }
+    let Some(server) = servers::get(store, id).await?.filter(|s| s.is_private()) else { return Ok(title) };
+    let name = server
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| host_of(&server.relay_url));
+    Ok(format!("{title} · {name}"))
+}
+
+/// `wss://relay.s1.example/x` → `relay.s1.example`.
+fn host_of(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    rest.split(['/', '?', '#']).next().unwrap_or(rest).to_string()
+}
+
 fn is_call_id(s: &str) -> bool {
     s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
@@ -623,5 +669,36 @@ mod tests {
         assert!(call_over(&calls::CallRow { answered_at: Some(2), ..open.clone() }));
         assert!(call_over(&calls::CallRow { ended_at: Some(2), ..open.clone() }));
         assert!(call_over(&calls::CallRow { outcome: Some("missed".into()), ..open.clone() }));
+    }
+
+    /// A private chat is told apart from the home chat with the same
+    /// person by its server: its name, else the host of its relay.
+    #[tokio::test]
+    async fn the_title_of_a_private_chat_names_its_server() {
+        let store = Store::open_in_memory().await.unwrap();
+        let row = |url: &str, name: Option<&str>| servers::ServerRow {
+            id: String::new(),
+            kind: servers::KIND_PRIVATE.into(),
+            name: name.map(str::to_string),
+            relay_url: url.into(),
+            relay_key: None,
+            media_url: None,
+            call_node: None,
+            push_mode: servers::PUSH_OFF.into(),
+            source: None,
+            added_at: 0,
+        };
+        let named = servers::put_private(&store, &row("wss://relay.s1.example", Some(" S1 "))).await.unwrap();
+        let bare = servers::put_private(&store, &row("wss://relay.s2.example/", None)).await.unwrap();
+        let title = |server: Option<String>, t: &str| {
+            let store = store.clone();
+            let t = t.to_string();
+            async move { on_server(&store, server.as_deref(), t).await.unwrap() }
+        };
+        assert_eq!(title(None, "Alice").await, "Alice", "the home chat");
+        assert_eq!(title(Some(named.clone()), "Alice").await, "Alice · S1");
+        assert_eq!(title(Some(bare), "Alice").await, "Alice · relay.s2.example");
+        assert_eq!(title(Some(named), "").await, "", "no content: no name either");
+        assert_eq!(title(Some("0123456789abcdef".into()), "Alice").await, "Alice", "a server this device has not");
     }
 }

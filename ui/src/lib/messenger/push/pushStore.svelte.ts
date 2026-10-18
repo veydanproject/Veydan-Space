@@ -11,6 +11,7 @@ import {
   type MessengerDesktopNotify,
   type MessengerNotifySettings,
   type MessengerPushTest,
+  type MessengerPushTicket,
   type MessengerPushView,
 } from '../api';
 
@@ -100,6 +101,34 @@ class PushStore {
   setDesk = (enabled: boolean, sound: boolean) => this.deskRun(() => messengerApi.desktopNotify.set(enabled, sound));
   keepRunning = () => this.deskRun(() => messengerApi.desktopNotify.keepRunning());
   testDesk = (title: string, body: string) => this.deskRun(() => messengerApi.desktopNotify.test(title, body));
+
+  /**
+   * The tickets the gateways hold for my private servers («Талоны»): `null`
+   * until read. A revoked one stops its server from waking this phone until
+   * the next round gives it a new one.
+   */
+  tickets = $state<MessengerPushTicket[] | null>(null);
+  loadTickets = async () => {
+    try {
+      this.tickets = await messengerApi.push.tickets();
+    } catch (e) {
+      this.tickets = this.tickets ?? [];
+      this.error = messengerError(e);
+    }
+  };
+  revokeTicket = async (ticket: string) => {
+    this.error = '';
+    this.busy = true;
+    try {
+      await messengerApi.push.revokeTicket(ticket);
+      this.tickets = await messengerApi.push.tickets();
+      this.view = await messengerApi.push.status();
+    } catch (e) {
+      this.error = messengerError(e);
+    } finally {
+      this.busy = false;
+    }
+  };
 
   /** "Not now": the question is not asked again. */
   decline = () =>

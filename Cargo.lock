@@ -4278,8 +4278,10 @@ dependencies = [
 name = "messenger-links"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "messenger-core",
  "nostr",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -4310,6 +4312,7 @@ dependencies = [
 name = "messenger-notify"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "hex",
  "messenger-contacts",
  "messenger-core",
@@ -4441,10 +4444,12 @@ dependencies = [
 name = "messenger-store"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "messenger-core",
  "messenger-richtext",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "sqlx",
  "thiserror 2.0.18",
  "tokio",

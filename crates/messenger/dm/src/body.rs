@@ -8,7 +8,7 @@
 use crate::view::{md, preview};
 use messenger_core::envelope::{T_CONTACT, T_MEDIA, T_TEXT};
 use messenger_core::{Body, Envelope, LinkKind};
-use messenger_links::{ContactLink, LinkType, Uri};
+use messenger_links::{ContactLink, LinkType, ServerLink, Uri};
 use messenger_store::messages::{self as repo, MessageRow};
 
 /// The kinds of media the app sends; any other is told as a file.
@@ -52,7 +52,7 @@ pub fn body_of_row(row: &MessageRow) -> Option<Body> {
             Some(Body::Media {
                 kind: kind.to_string(),
                 name: preview(field("name").unwrap_or_default()),
-                caption: words.map(preview).filter(|c| !c.is_empty()),
+                caption: words.map(|w| preview(&redact_secrets(w))).filter(|c| !c.is_empty()),
                 duration_ms: m.get("duration_ms").and_then(|d| d.as_u64()).filter(|d| *d > 0),
                 batch: field("batch").filter(|b| !b.is_empty() && b.len() <= MAX_BATCH).map(String::from),
             })
@@ -69,8 +69,57 @@ fn text(text: &str) -> Option<Body> {
     if let Some(link) = link(text.trim()) {
         return Some(link);
     }
-    let text = preview(text);
+    let text = preview(&redact_secrets(text));
     (!text.is_empty()).then_some(Body::Text { text })
+}
+
+/// The parameters of a link of the app that let somebody in and are no
+/// word to show: the app key of a server card (`k`) and the card of a
+/// server riding on a link of a person or a group (`srv`, which carries
+/// the key in it).
+const SECRET_PARAMS: [&str; 2] = ["k", "srv"];
+
+/// A text as a line of the list of chats or a notification may show it:
+/// in every `veydan://` link in it, the value of `k=` and of `srv=` is
+/// `…`. The chat shows the message as it came; a line seen on a locked
+/// screen or over a shoulder does not show the key of a server.
+pub fn redact_secrets(text: &str) -> String {
+    // ASCII lowercase keeps every byte where it was.
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while let Some(found) = lower[at..].find(messenger_links::uri::SCHEME) {
+        let start = at + found;
+        let end = text[start..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\'' | '`' | ')' | ']'))
+            .map_or(text.len(), |n| start + n);
+        out.push_str(&text[at..start]);
+        out.push_str(&redact_link(&text[start..end]));
+        at = end;
+    }
+    out.push_str(&text[at..]);
+    out
+}
+
+fn redact_link(link: &str) -> String {
+    let Some((head, rest)) = link.split_once('?') else { return link.to_string() };
+    let (query, fragment) = match rest.split_once('#') {
+        Some((q, f)) => (q, Some(f)),
+        None => (rest, None),
+    };
+    let pairs: Vec<String> = query
+        .split('&')
+        .map(|pair| match pair.split_once('=') {
+            Some((k, v)) if !v.is_empty() && SECRET_PARAMS.iter().any(|s| s.eq_ignore_ascii_case(k)) => format!("{k}=…"),
+            _ => pair.to_string(),
+        })
+        .collect();
+    let mut out = format!("{head}?{}", pairs.join("&"));
+    if let Some(f) = fragment {
+        out.push('#');
+        out.push_str(f);
+    }
+    out
 }
 
 /// A text that is one link and nothing else, as what the link names. A
@@ -89,6 +138,15 @@ fn link(text: &str) -> Option<Body> {
             LinkType::Contact => {
                 let name = ContactLink::from_uri(&uri).map(|c| c.name).unwrap_or_default();
                 Some(Body::Link { link: LinkKind::Contact, title: preview(&name) })
+            }
+            // The card of a server is told by its name and the host of its
+            // relay, never as written: the text carries its app key.
+            LinkType::Server => {
+                let card = ServerLink::from_uri(&uri).ok()?;
+                let host = card.relay.as_str().split_once("://").map_or(card.relay.as_str(), |(_, h)| h).to_string();
+                let name = clean(&card.name);
+                let text = if name.is_empty() { host } else { format!("{name} ({host})") };
+                Some(Body::Text { text: preview(&text) })
             }
             // A bridge, a call node or a request of recovery has no name to
             // show; the text of the link stands.
@@ -127,7 +185,7 @@ fn contact(envelope: &Envelope) -> Body {
 fn media(envelope: &Envelope) -> Body {
     let kind = envelope.str_field("kind").filter(|k| MEDIA_KINDS.contains(k)).unwrap_or("file");
     let name = preview(envelope.str_field("name").unwrap_or_default());
-    let caption = envelope.str_field("caption").map(|c| preview(&words(envelope, Some(c)))).filter(|c| !c.is_empty());
+    let caption = envelope.str_field("caption").map(|c| preview(&redact_secrets(&words(envelope, Some(c))))).filter(|c| !c.is_empty());
     let duration_ms = envelope.fields.get("duration_ms").and_then(|d| d.as_u64()).filter(|d| *d > 0);
     let batch = envelope
         .str_field("batch")
@@ -228,8 +286,57 @@ mod tests {
         let contact = UriBuilder::new(&LinkType::Contact, npub).param("n", "Анна").build();
         assert_eq!(body_of(&Envelope::text(&contact)), Some(Body::Link { link: LinkKind::Contact, title: "Анна".into() }));
 
+        // The card of a server: its name and host, never its app key.
+        let server = messenger_links::ServerLink {
+            key: Some("app-key".into()),
+            name: "S1".into(),
+            ..messenger_links::ServerLink::new(messenger_core::RelayUrl::parse("wss://relay.s1.example").unwrap())
+        };
+        assert_eq!(body_of(&Envelope::text(&server.encode())), Some(Body::Text { text: "S1 (relay.s1.example)".into() }));
+
         // A link of a kind this app does not know is shown as it came.
         assert_eq!(body_of(&Envelope::text("veydan://poll/abc")), Some(Body::Text { text: "veydan://poll/abc".into() }));
+    }
+
+    /// A key of a server in a text among words, a server card the parser
+    /// refuses, a `srv=` on a person's or a group's link: the line of the
+    /// list and of a notification shows `…` in their place.
+    #[test]
+    fn the_key_of_a_server_is_not_in_a_line() {
+        let server = messenger_links::ServerLink {
+            key: Some("s3cr3t-app-key".into()),
+            name: "S1".into(),
+            ..messenger_links::ServerLink::new(messenger_core::RelayUrl::parse("wss://relay.s1.example").unwrap())
+        };
+        let card = server.encode();
+        let npub = "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6";
+        let person = UriBuilder::new(&LinkType::Contact, npub).param("n", "Анна").param("srv", &server.srv_param()).build();
+        let srv = server.srv_param();
+        let lines = [
+            format!("наш сервер: {card} — добавь"),
+            format!("{card} ещё раз"),
+            // A card of a relay in clear, which the parser refuses, alone.
+            card.replace("wss%3A%2F%2F", "ws%3A%2F%2F"),
+            format!("пиши мне там: {person}"),
+            format!("(veydan://group/{}?r=wss%3A%2F%2Fr&SRV={srv}#x)", "ab".repeat(32)),
+        ];
+        for text in &lines {
+            let Some(Body::Text { text: line }) = body_of(&Envelope::text(text)) else { panic!("{text}") };
+            // Cut at 120 characters or not, nothing of the key is left.
+            assert!(!line.contains("s3cr3t") && !line.contains(&srv[..12]), "{line}");
+        }
+        assert!(redact_secrets(&lines[3]).ends_with("&srv=…"), "{}", redact_secrets(&lines[3]));
+        assert!(redact_secrets(&lines[4]).ends_with("&SRV=…#x)"), "{}", redact_secrets(&lines[4]));
+        assert_eq!(redact_secrets(&format!("x {card} y")), format!("x {} y", card.replace("k=s3cr3t-app-key", "k=…")));
+        assert_eq!(redact_secrets("veydan://server/ab?u=x&k=&p=off"), "veydan://server/ab?u=x&k=&p=off", "an empty key is none");
+        assert_eq!(redact_secrets("k=1 https://x.org/?k=2"), "k=1 https://x.org/?k=2", "only links of the app");
+        // A caption, and a stored message as the list reads it.
+        let photo = file(serde_json::json!({ "kind": "image", "name": "a.jpg", "caption": format!("ключ: {card}") }));
+        let Some(Body::Media { caption: Some(caption), .. }) = body_of(&photo) else { panic!() };
+        assert!(!caption.contains("s3cr3t"), "{caption}");
+        let stored = row("text", Some(&lines[0]), None, None);
+        let Some(Body::Text { text: line }) = body_of_row(&stored) else { panic!() };
+        assert!(!line.contains("s3cr3t"), "{line}");
     }
 
     #[test]

@@ -158,7 +158,7 @@ pub struct FoundCode {
 pub async fn find_link_code(relays: &[RelayConfig], d: &str) -> Result<Option<FoundCode>> {
     let pool = open_pool(relays, None).await?;
     let filter = Filter(serde_json::json!({ "kinds": [KIND_LINK_CODE], "#d": [d] }));
-    let found = pool.fetch(&filter, FETCH_PATIENCE).await;
+    let found = pool.fetch(&filter, &messenger_core::Scope::Own, FETCH_PATIENCE).await;
     pool.shutdown().await;
     let at = now();
     Ok(found?
@@ -203,6 +203,7 @@ impl MessengerRuntime {
                     read: r.read,
                     write: r.write,
                     api_key: r.auth.as_ref().and_then(|a| a.secret().map(String::from)),
+                    server_id: None,
                 })
             })
             .collect())
@@ -318,6 +319,7 @@ mod tests {
                 read: true,
                 write: true,
                 api_key: None,
+                server_id: None,
             }],
         )
     }
@@ -331,7 +333,7 @@ mod tests {
         let filter =
             Filter(serde_json::json!({ "kinds": [1059], "#p": [to.public_key().to_hex()] }));
         let n = pool
-            .fetch(&filter, FETCH_PATIENCE)
+            .fetch(&filter, &messenger_core::Scope::Own, FETCH_PATIENCE)
             .await
             .expect("fetch")
             .len();
@@ -501,6 +503,7 @@ mod tests {
             read: true,
             write: true,
             api_key: None,
+            server_id: None,
         }];
         let started = tokio::time::Instant::now();
         assert!(matches!(

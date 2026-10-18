@@ -334,10 +334,11 @@ impl MessengerRuntime {
     /// changes nothing and sends nothing: the page may press twice, and
     /// an accept said again would go out again as a signal. A no to a
     /// request that ran out meanwhile is done too: an expiry tells the
-    /// peer nothing, and the no would.
+    /// peer nothing, and the no would. `<key>@<server>` (`addr`) answers
+    /// the request of the private chat on that server, by its relation.
     pub async fn request_act(&self, peer: &str, action: RequestAction) -> Result<()> {
-        let pk = messenger_contacts::book::parse_key(peer)?;
-        let r = self.dm().load_relation(&pk).await?;
+        let chat = self.peer_addr(peer).await?;
+        let r = self.dm().load_relation(chat).await?;
         let (action, done) = match action {
             RequestAction::Accept => (Action::Accept, r.my_contact == MyContact::Approved && !r.blocked),
             RequestAction::Decline => (Action::Decline, matches!(r.my_contact, MyContact::Declined | MyContact::Expired) && !r.blocked),
@@ -346,7 +347,7 @@ impl MessengerRuntime {
         if done {
             return Ok(());
         }
-        self.dm_act(pk.as_hex(), action).await?;
+        self.dm_act(peer, action).await?;
         Ok(())
     }
 
@@ -582,6 +583,13 @@ impl MessengerRuntime {
     /// number of zero (`invite_ttl`, `invite_max_uses`), my own key as
     /// the person (`invite_for`).
     pub async fn invite_create(&self, p: InvitePreset) -> Result<InviteView> {
+        let made = self.invite_make(p).await?;
+        self.invite_view(made).await
+    }
+
+    /// The invitation of `invite_create`, stored, not yet shown (the view
+    /// writes my link, which may itself ask for one: `contact_link_on`).
+    pub(crate) async fn invite_make(&self, p: InvitePreset) -> Result<Invite> {
         let kind = InviteKind::parse(&p.kind).ok_or_else(|| MessengerError::Invalid("invite_kind".into()))?;
         if p.ttl_secs.is_some_and(|t| t <= 0) {
             return Err(MessengerError::Invalid("invite_ttl".into()));
@@ -613,11 +621,9 @@ impl MessengerRuntime {
             }
         };
         let now = SystemClock.now().secs();
-        let made = self
-            .dm()
+        self.dm()
             .invite_create(InviteNew { secret, kind, label: p.label, expires_at: ttl.map(|t| now + t), max_uses, for_pubkey })
-            .await?;
-        self.invite_view(made).await
+            .await
     }
 
     /// Every invitation of mine: the ones that still admit first.
@@ -812,9 +818,18 @@ mod tests {
         rt.dm().apply_inbound(msg, &ctx_of(me, at)).await.unwrap();
     }
 
-    /// How many wraps wait in the outbox: a signal sent is one more.
+    /// How many wraps wait in the outbox: a signal sent is one more. The
+    /// snapshot of my relations (kind 30078) is not counted: the publisher
+    /// of the list queues it by itself, `PUBLISH_AFTER` after a decision,
+    /// and in a slow run it lands between two counts of a test.
     async fn queued(rt: &MessengerRuntime) -> usize {
-        messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap().len()
+        let rows = messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap();
+        rows.iter()
+            .filter(|r| {
+                !matches!(r.outbound(), Ok(messenger_core::Outbound::PublishOwn { event })
+                    if event.json["kind"] == messenger_core::relations::KIND_RELATIONS)
+            })
+            .count()
     }
 
     #[tokio::test]
@@ -890,6 +905,69 @@ mod tests {
         assert_eq!(rt.dm_blocked().await.unwrap(), vec![carl.public_key().to_hex()]);
         // Nobody asked: nothing to answer, and the error says so.
         assert!(rt.request_act(&Keys::generate().public_key().to_hex(), RequestAction::Accept).await.is_err());
+        rt.shutdown().await;
+    }
+
+    /// What the outbox holds besides the snapshot of my relations: wraps
+    /// for the home set (an inbox or my relays) and wraps for one server.
+    async fn queued_by_scope(rt: &MessengerRuntime) -> (usize, Vec<String>) {
+        let rows = messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap();
+        let (mut home, mut servers) = (0, Vec::new());
+        for r in rows {
+            match r.outbound().unwrap() {
+                messenger_core::Outbound::PublishOwn { event } if event.json["kind"] == messenger_core::relations::KIND_RELATIONS => {}
+                messenger_core::Outbound::PublishScoped { scope: messenger_core::Scope::Server { id }, .. } => servers.push(id),
+                _ => home += 1,
+            }
+        }
+        (home, servers)
+    }
+
+    /// A request in a private chat is answered in that chat, by its
+    /// address (the `chat_id` of the row): the signal goes to its server,
+    /// the home relation and the address book stay as they were; a block
+    /// is that chat's alone. The rows say which server.
+    #[tokio::test]
+    async fn a_request_of_a_private_chat_is_answered_there_and_not_at_home() {
+        let (_dir, rt, me) = started().await;
+        let s1 = rt
+            .server_put_private(&crate::private::PrivateServerInput { relay_url: "wss://s1.example".into(), name: Some("S1".into()), ..Default::default() })
+            .await
+            .unwrap();
+        let (anna, bob) = (Keys::generate(), Keys::generate());
+        let t = now() - 50;
+        for (i, who) in [&anna, &bob].into_iter().enumerate() {
+            let mut msg = dm_inbound(&pk_of(who), &me, messenger_core::Envelope::text("hi on s1").encode(), t + i as i64);
+            msg.srv = Some(s1.clone());
+            rt.dm().apply_inbound(msg, &ctx_of(&me, t)).await.unwrap();
+        }
+        let page = rt.requests(None, 50).await.unwrap();
+        assert_eq!(page.total, 2);
+        let anna_on_s1 = format!("{}@{s1}", anna.public_key().to_hex());
+        let row = page.items.iter().find(|r| r.peer == anna.public_key().to_hex()).unwrap();
+        assert_eq!((row.chat_id.as_str(), row.server_id.as_deref()), (format!("dm:{anna_on_s1}").as_str(), Some(s1.as_str())));
+
+        let (home_before, _) = queued_by_scope(&rt).await;
+        rt.request_act(&row.chat_id, RequestAction::Accept).await.unwrap();
+        let (home_after, on_servers) = queued_by_scope(&rt).await;
+        assert_eq!(home_after, home_before, "nothing of the accept goes home");
+        assert!(!on_servers.is_empty() && on_servers.iter().all(|id| id == &s1), "the accept went to S1: {on_servers:?}");
+        assert_eq!(rt.dm_relation(&anna_on_s1).await.unwrap().my_contact, "approved");
+        assert_eq!(rt.dm_relation(&anna.public_key().to_hex()).await.unwrap().my_contact, "none", "the home relation is untouched");
+        assert!(rt.dm().chat(&format!("dm:{}", anna.public_key().to_hex())).await.unwrap().is_none(), "no home chat came of it");
+        assert!(!rt.contacts().is_contact(&pk_of(&anna)).await.unwrap(), "nor a contact of the book");
+        assert_eq!(rt.requests_count().await.unwrap(), 1);
+
+        // The address `<key>@<server>` does the same; a block is the chat's.
+        rt.request_act(&format!("{}@{s1}", bob.public_key().to_hex()), RequestAction::Block).await.unwrap();
+        assert!(rt.dm_relation(&format!("{}@{s1}", bob.public_key().to_hex())).await.unwrap().blocked);
+        assert!(!rt.dm_relation(&bob.public_key().to_hex()).await.unwrap().blocked, "not blocked at home");
+        assert!(rt.dm_blocked().await.unwrap().is_empty(), "the list of blocked people is of the home set");
+        assert_eq!(rt.requests_count().await.unwrap(), 0);
+        let (home_end, _) = queued_by_scope(&rt).await;
+        assert_eq!(home_end, home_before, "nothing of the block goes home");
+        // A server this device has not: refused, nothing done.
+        assert!(rt.request_act(&format!("{}@{}", anna.public_key().to_hex(), "f".repeat(16)), RequestAction::Decline).await.is_err());
         rt.shutdown().await;
     }
 
@@ -980,7 +1058,7 @@ mod tests {
     #[tokio::test]
     async fn the_rules_of_posting_round_trip_and_the_queue_and_log_answer() {
         let (_dir, rt, me) = started().await;
-        let g = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true).await.unwrap();
+        let g = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true, None).await.unwrap();
         assert_eq!((g.queue, g.needs_update), (0, false));
         let defaults = rt.group_mod_settings(&g.id).await.unwrap();
         assert_eq!(defaults, GroupModSettings { post_mode: "all".into(), schedule: None, premod: "off".into() });
@@ -1110,7 +1188,7 @@ mod tests {
     /// A group of the owner's device with two members let in and every
     /// message checked.
     async fn moderated(rt: &MessengerRuntime) -> (GroupView, Keys, Keys) {
-        let g = rt.group_create(GroupKind::Private, "Team", "", true).await.unwrap();
+        let g = rt.group_create(GroupKind::Private, "Team", "", true, None).await.unwrap();
         let (bob, carol) = (Keys::generate(), Keys::generate());
         // Let in by the owner's own operation of the journal, handed in
         // as the relay would hand it back: the invitation and its answer
@@ -1448,7 +1526,7 @@ mod tests {
         let r = rt.dm_request(&carol, Some("123456"), Some("hi, it is me")).await.unwrap();
         assert_eq!(r.mode, "request_sent");
         assert_eq!(queued(&rt).await - before, 4, "the text and the accept, each with its copy");
-        let rows = messenger_store::messages::list(rt.store(), &messenger_store::chats::dm_chat_id(&carol), None, 10, true).await.unwrap();
+        let rows = messenger_store::messages::list(rt.store(), &messenger_store::chats::dm_chat_id(&carol, None), None, 10, true).await.unwrap();
         assert!(rows.iter().any(|m| m.text.as_deref() == Some("hi, it is me")));
         assert_eq!(controls_of(&rt, &carol).await, vec![Some("123456".to_string())]);
         assert!(rt.contacts().is_contact(&PubKey::parse(&carol).unwrap()).await.unwrap());
@@ -1477,7 +1555,7 @@ mod tests {
     async fn controls_of(rt: &MessengerRuntime, peer: &str) -> Vec<Option<String>> {
         let rows: Vec<String> =
             sqlx::query_scalar("SELECT envelope_json FROM msg_messages WHERE chat_id = ? AND content_type = 'control' ORDER BY created_at")
-                .bind(messenger_store::chats::dm_chat_id(peer))
+                .bind(messenger_store::chats::dm_chat_id(peer, None))
                 .fetch_all(rt.store().pool())
                 .await
                 .unwrap();

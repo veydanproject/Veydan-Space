@@ -20,7 +20,9 @@
 //! set once more for what it is (the revision, whether it is whole), which
 //! changes nothing twice.
 
+use crate::private::{Listening, UI_EVENT_SERVERS_UPDATED};
 use crate::session::history_catch_up;
+use crate::RelayService;
 use async_trait::async_trait;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
 use messenger_core::{Clock, Context, Effect, EventId, Handler, MetaInbound, Outbound, PubKey, Result, Scope, SubId, Timestamp, Transport};
@@ -100,6 +102,11 @@ fn told(applied: &Applied, start: bool) -> Vec<Effect> {
         // muted, pinned or archived on another device of mine.
         out.push(Effect::Emit(UiEvent { name: messenger_dm::UI_EVENT_CHATS_UPDATED.into(), payload: serde_json::json!({}) }));
     }
+    if applied.servers_changed {
+        // A private server came from another device of mine, or went: the
+        // page shows the list again, and the session listens to it.
+        out.push(Effect::Emit(UiEvent { name: UI_EVENT_SERVERS_UPDATED.into(), payload: serde_json::json!({}) }));
+    }
     out
 }
 
@@ -107,9 +114,16 @@ fn told(applied: &Applied, start: bool) -> Vec<Effect> {
 /// then the live subscriptions (the snapshot, the inbox), then the
 /// history catch-up. A task, not the start itself, so that a start
 /// without relays is not held up by the wait for one.
+///
+/// Then, for as long as the session runs, it follows the list of my
+/// private servers (`UI_EVENT_SERVERS_UPDATED`: one put in or removed
+/// here, or taken from the snapshot of another device of mine): a server
+/// that came is listened to and its history caught up, one that went is
+/// let go (`private::Listening`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn open_inbox(
     store: Store,
+    relays: Arc<RelayService>,
     pool: Arc<RelayPool>,
     keys: Keys,
     dm: DmService,
@@ -118,6 +132,9 @@ pub(crate) async fn open_inbox(
     started_at: Timestamp,
     ui: broadcast::Sender<UiEvent>,
 ) {
+    // Before the list is read: a server it brings is told while the start
+    // is still under way, and must not be missed.
+    let mut told = ui.subscribe();
     read_list(&store, &pool, &keys, &dm, &outbox, &me, &ui).await;
     // A decision of the last run that was not published (the app closed
     // inside `PUBLISH_AFTER`): the mark outlived the close in the store,
@@ -129,15 +146,38 @@ pub(crate) async fn open_inbox(
             eprintln!("messenger relations: {e}");
         }
     }
+    // My list lives on the home set alone.
     let subscribe = |id: &str, filter| Outbound::Subscribe { id: SubId(id.into()), filter, scope: Scope::Own };
     if let Err(e) = pool.send(subscribe(filters::SUB_RELATIONS, filters::relations_live(&me))).await {
         eprintln!("messenger relations: the list is not followed: {e}");
     }
+    // The inbox on every server where peers may write to me: the home set
+    // under the id it always had, each private server under its own, with a
+    // catch-up and a cursor of its own (internal/messenger-wire.md,
+    // «Серверы»). With no private server, the home set's alone, as before.
     let since = Timestamp(started_at.secs() - filters::DM_LIVE_MARGIN_SECS);
-    if let Err(e) = pool.send(subscribe(filters::SUB_DM_LIVE, filters::dm_inbox(&me, since))).await {
+    let home = Outbound::Subscribe { id: SubId(filters::SUB_DM_LIVE.into()), filter: filters::dm_inbox(&me, since), scope: Scope::Own };
+    if let Err(e) = pool.send(home).await {
         let _ = ui.send(UiEvent { name: "error".into(), payload: serde_json::json!({ "family": "inbox", "error": e.to_string() }) });
     }
-    history_catch_up(store, pool, me, started_at, ui).await;
+    let mut listening = Listening::new(me.clone(), since);
+    let mut servers: Vec<Option<String>> = vec![None];
+    servers.extend(listening.follow(&store, &relays, &pool, &ui).await.into_iter().map(Some));
+    // The home set first: a private server that is down holds back only
+    // the ones after it.
+    for server in servers {
+        history_catch_up(store.clone(), pool.clone(), me.clone(), started_at, ui.clone(), server).await;
+    }
+    loop {
+        match told.recv().await {
+            Ok(ev) if ev.name != UI_EVENT_SERVERS_UPDATED => continue,
+            Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(broadcast::error::RecvError::Closed) => return,
+        }
+        for server in listening.follow(&store, &relays, &pool, &ui).await {
+            history_catch_up(store.clone(), pool.clone(), me.clone(), started_at, ui.clone(), Some(server)).await;
+        }
+    }
 }
 
 /// The snapshot from every connected relay, applied, and what this device
@@ -206,10 +246,10 @@ async fn local_rev(store: &Store) -> u64 {
 /// apply in time is applied here, and what it did changes nothing twice.
 async fn fetch_and_apply(store: &Store, pool: &RelayPool, keys: &Keys, dm: &DmService, me: &PubKey) -> Result<(Applied, Vec<Effect>)> {
     let my_key = keys.public_key();
-    let mut found = pool.fetch(&filters::relations_header(me), FETCH_PATIENCE).await?;
+    let mut found = pool.fetch(&filters::relations_header(me), &Scope::Own, FETCH_PATIENCE).await?;
     let pages = found.iter().filter_map(|j| Piece::of_json(j, &my_key)).filter_map(|p| pages_named(keys, &p)).max().unwrap_or(1);
     if pages > 1 {
-        found.extend(pool.fetch(&filters::relations_pages(me, pages), FETCH_PATIENCE).await?);
+        found.extend(pool.fetch(&filters::relations_pages(me, pages), &Scope::Own, FETCH_PATIENCE).await?);
     }
     let ids: Vec<EventId> = found.iter().filter_map(|j| EventId::parse(j["id"].as_str()?)).collect();
     let deadline = tokio::time::Instant::now() + APPLY_WAIT;

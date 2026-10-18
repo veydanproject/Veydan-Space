@@ -71,11 +71,11 @@ no picker yet.
 - Chat: `--bubble-in-*` / `--bubble-out-*`; a held row or bubble `--press-tint`.
 - Semantic: `--success*` (+`-border`, `-grad`), `--danger*` (+`-border`, `--shadow-danger`), `--warn-*` (+`-border`).
 - Category colours (workspaces / proxy types): `--cat-purple` / `--cat-blue` / `--cat-teal` / `--cat-pink`.
-- Fonts: `--font-ui` (IBM Plex Sans Variable, the whole UI and the messages) · `--font-mono` (JetBrains Mono Variable — secrets, hosts, versions, IDs).
+- Fonts: `--font-ui` (Manrope Variable) · `--font-mono` (JetBrains Mono Variable — secrets, hosts, versions, IDs).
 - Spacing (4px grid): `--sp-1`=4 … `--sp-6`=24, `--sp-8`=32, `--sp-10`=40, `--sp-12`=48.
 - Type: `--fs-xs` 12 (captions) · `--fs-sm` 13 (secondary) · `--fs-base` 14 (controls) ·
   `--fs-body` 15 (messages, long text; `--lh-body` 22) · `--fs-md` 16 (section titles) ·
-  `--fs-lg` 18 (dialog titles) · `--fs-xl` 20 (pane titles) · `--fs-2xl` 28 (H1); weights up to `--fw-extrabold` 700 (the heaviest of IBM Plex Sans).
+  `--fs-lg` 18 (dialog titles) · `--fs-xl` 20 (pane titles) · `--fs-2xl` 28 (H1); weights up to `--fw-extrabold` 800.
 - Radius: `--radius-xs` 4 · `--radius-badge` 6 · `--radius-sm` 8 (menu items, small buttons) ·
   `--radius` 10 (buttons, fields) · `--radius-md` 12 (menus, nested) · `--radius-lg` 16 (list rows) ·
   `--radius-head` 18 (header plates) · `--radius-pane` 20 (panes) · `--radius-card` 24 (cards, dialogs, sheets) ·

@@ -2,8 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import '@fontsource-variable/ibm-plex-sans/wght.css';
-  import '@fontsource-variable/ibm-plex-sans/wght-italic.css';
+  import '@fontsource-variable/manrope/index.css';
   import '@fontsource-variable/jetbrains-mono/index.css';
   import '$lib/core/fonts/cjk.css';
   import '$lib/core/styles/tokens.css';

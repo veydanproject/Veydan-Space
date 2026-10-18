@@ -7,7 +7,7 @@
 use crate::classify::{classify, KIND_GIFT_WRAP, KIND_PRESENCE};
 use crate::dispatch::{Dispatcher, EffectSink};
 use messenger_core::{Context, Inbound, RawEvent};
-use messenger_store::{banned, events_raw, Store};
+use messenger_store::{banned, events_raw, servers, Store};
 use nostr::key::Keys;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -91,6 +91,16 @@ impl IngressLoop {
                 // ban lifts, the next history sync brings it again.
                 if let Inbound::Group(g) = &inbound {
                     if banned::group_contains(&store, &g.group_id).await.unwrap_or(false) {
+                        st.ignored.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
+                    // A group lives on its server, and only there
+                    // (`servers::group_heard_on`): its event by another
+                    // relay is not taken, nor kept as seen, so the copy of
+                    // the group's own server is taken when it comes.
+                    let relay = g.envelope.source.relay_url().map(|u| u.as_str());
+                    if !servers::group_heard_on(&store, &g.group_id, relay).await.unwrap_or(true) {
+                        eprintln!("messenger ingress: an event of a group by a relay not of the group's server, dropped");
                         st.ignored.fetch_add(1, Ordering::Relaxed);
                         continue;
                     }
@@ -277,6 +287,75 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert_eq!(handler.0.load(Ordering::SeqCst), 2, "lifted: taken");
         assert!(events_raw::contains(&store, &raw_of(&closed).id).await.unwrap());
+        drop(lp);
+    }
+
+    /// A group of a private server is heard from that server's relay
+    /// alone: its event by a relay of the home set is neither handled nor
+    /// kept as seen, and the same event by the server's relay is taken; a
+    /// group of the home set is heard by any relay but a private server's.
+    #[tokio::test]
+    async fn an_event_of_a_group_is_taken_from_its_server_alone() {
+        let store = Store::open_in_memory().await.unwrap();
+        let me = Keys::generate();
+        let handler = Arc::new(Groups::default());
+        let dispatcher = Arc::new(Dispatcher::new().with_group(handler.clone()));
+        let sink = Arc::new(Sink(Mutex::new(vec![])));
+        let server = |url: &str, kind: &str| servers::ServerRow {
+            id: String::new(),
+            kind: kind.into(),
+            name: None,
+            relay_url: url.into(),
+            relay_key: None,
+            media_url: None,
+            call_node: None,
+            push_mode: servers::PUSH_OFF.into(),
+            source: None,
+            added_at: 0,
+        };
+        servers::put(&store, &server("wss://s1.example", servers::KIND_PRIVATE)).await.unwrap();
+        servers::put(&store, &server("wss://home.example", servers::KIND_HOME)).await.unwrap();
+        let group = |id: &str, relay: &str| messenger_store::groups::GroupRow {
+            id: id.into(),
+            kind: "private".into(),
+            name: "Team".into(),
+            about: String::new(),
+            picture: String::new(),
+            relay_url: relay.into(),
+            owner: "o".into(),
+            membership: "joined".into(),
+            my_role: None,
+            members: 1,
+            link_epoch: 0,
+            created_at: 0,
+            updated_at: 0,
+            needs_update: false,
+        };
+        messenger_store::groups::upsert(&store, &group("on-s1", "wss://S1.example/")).await.unwrap();
+        messenger_store::groups::upsert(&store, &group("at-home", "wss://home.example")).await.unwrap();
+        let event = |group: &str| {
+            EventBuilder::new(Kind::from(crate::classify::KIND_GROUP_MESSAGE), "sealed")
+                .tag(Tag::parse(["h", group]).unwrap())
+                .finalize(&Keys::generate())
+                .unwrap()
+        };
+        let by = |event: &Event, url: &str| RawEvent { source: EventSource::Relay { url: RelayUrl::parse(url).unwrap() }, ..raw_of(event) };
+        let (private, home) = (event("on-s1"), event("at-home"));
+
+        let (tx, rx) = mpsc::channel(8);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher, ctx_of(&me), sink);
+        tx.send(by(&private, "wss://home.example")).await.unwrap();
+        tx.send(by(&home, "wss://s1.example")).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(handler.0.load(Ordering::SeqCst), 0, "each by the other's relay");
+        assert!(!events_raw::contains(&store, &raw_of(&private).id).await.unwrap(), "not seen");
+        assert!(!events_raw::contains(&store, &raw_of(&home).id).await.unwrap(), "not seen");
+        tx.send(by(&private, "wss://s1.example")).await.unwrap();
+        tx.send(by(&home, "wss://home.example")).await.unwrap();
+        tx.send(by(&event("at-home"), "wss://unknown.example")).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(handler.0.load(Ordering::SeqCst), 3, "each by its own server; home by a relay of no server");
+        assert!(events_raw::contains(&store, &raw_of(&private).id).await.unwrap());
         drop(lp);
     }
 

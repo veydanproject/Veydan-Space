@@ -9,6 +9,7 @@ use crate::view::{preview, preview_of, ChatView, MessageView, ReactionView, Repl
 use crate::wrap::{wrap_as, Wake};
 use crate::view::CardView;
 use crate::botcard::BotCard;
+use crate::peer::DmPeer;
 use crate::relations::InboundGate;
 use messenger_contacts::{ContactCard, ContactService, ProfileService};
 use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
@@ -19,7 +20,7 @@ use messenger_core::{
 use messenger_store::chats::{self, ChatRow};
 use messenger_store::messages::{self as repo, MessageRow, NewMessage};
 use messenger_store::shared::{self, Counts, Section};
-use messenger_store::{dm_held, dm_routes, reactions, receipts, settings, Store};
+use messenger_store::{dm_held, dm_routes, reactions, receipts, servers, settings, Store};
 use nostr::key::Keys;
 use nostr::nips::nip19::ToBech32;
 use nostr::prelude::PublicKey;
@@ -63,7 +64,7 @@ pub struct Prepared {
 /// What `land` shows: a message being stored, or a held one let through.
 struct Landing<'a> {
     chat_id: &'a str,
-    peer: &'a PubKey,
+    peer: &'a DmPeer,
     id: &'a str,
     envelope: &'a Envelope,
     content_type: &'a str,
@@ -194,9 +195,11 @@ impl DmService {
         }
     }
 
-    /// Open (creating if needed) the DM chat with `peer`.
-    pub async fn open_chat(&self, peer: &PubKey) -> Result<ChatView> {
-        let row = chats::ensure_dm(&self.store, peer.as_hex()).await?;
+    /// Open (creating if needed) the DM chat with `peer`: the home chat for
+    /// a `&PubKey`, the private one for a `DmPeer` on a server.
+    pub async fn open_chat(&self, peer: impl Into<DmPeer>) -> Result<ChatView> {
+        let peer = peer.into();
+        let row = chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
         self.chat_view(row).await
     }
 
@@ -239,7 +242,8 @@ impl DmService {
     }
 
     async fn chat_view(&self, r: ChatRow) -> Result<ChatView> {
-        let peer = r.peer_pubkey.as_deref().and_then(PubKey::parse);
+        let chat = DmPeer::of_row(&r);
+        let peer = chat.as_ref().map(|c| c.key.clone());
         let (mut title, mut picture, mut is_contact) = (String::new(), None, false);
         let mut npub = None;
         if let Some(pk) = &peer {
@@ -263,13 +267,14 @@ impl DmService {
             Some(row) if Some(row.created_at) == r.last_message_at => crate::body::body_of_row(&row),
             _ => None,
         };
-        let (mode, can_send) = match &peer {
-            Some(pk) => self.mode_of(&r.id, pk).await?,
+        let (mode, can_send) = match &chat {
+            Some(c) => self.mode_of(&r.id, c).await?,
             None => (crate::relationship::ScreenMode::FullChat, true),
         };
         Ok(ChatView {
             id: r.id,
             kind: r.kind,
+            server_id: r.server_id,
             peer_pubkey: r.peer_pubkey,
             peer_npub: npub,
             title,
@@ -279,12 +284,14 @@ impl DmService {
             unread: r.unread,
             last_message_at: r.last_message_at,
             last_body,
-            last_preview: r.last_preview,
+            // The line the store keeps is the text as it came: a key of a
+            // server in it is not shown in the list (`body::redact_secrets`).
+            last_preview: r.last_preview.map(|p| crate::body::redact_secrets(&p)),
             pinned: r.pinned,
             archived: r.archived,
             mode: mode.as_str().into(),
             can_send,
-            bot: peer.as_ref().is_some_and(|pk| self.is_bot(pk)),
+            bot: chat.as_ref().is_some_and(|c| self.is_bot_chat(c)),
             banned: match &peer {
                 Some(pk) => self.is_banned(pk).await?,
                 None => false,
@@ -347,7 +354,7 @@ impl DmService {
     /// What the peers told of a chat, read once for a whole list.
     async fn marks(&self, chat_id: &str) -> Result<Marks> {
         Ok(Marks {
-            peer: chat_id.strip_prefix("dm:").map(String::from),
+            peer: chats::parse_dm_chat_id(chat_id).map(|(peer, _)| peer.to_string()),
             reads: receipts::peer_reads(&self.store, chat_id).await?,
             show_read: settings::get_bool(&self.store, crate::notes::KEY_READ_RECEIPTS, true).await?,
             me: self.my_key().await?,
@@ -435,13 +442,22 @@ impl DmService {
         }
     }
 
-    /// Where to deliver DMs for `peer`, best first.
+    /// Where to deliver DMs of the home chat with `peer`, best first.
     pub async fn hints(&self, peer: &PubKey) -> Result<Vec<RelayUrl>> {
-        Ok(dm_routes::for_peer(&self.store, peer.as_hex())
+        Ok(dm_routes::for_peer(&self.store, peer.as_hex(), None)
             .await?
             .iter()
             .filter_map(|u| RelayUrl::parse(u))
             .collect())
+    }
+
+    /// How the peer's copy of something of the chat with `peer` leaves:
+    /// to the peer's inbox relays for the home chat, to the relays of its
+    /// server for a private chat (`DmPeer::to_peer`), whose inbox lists of
+    /// other servers are never asked.
+    pub async fn route_to_peer(&self, peer: &DmPeer, event: messenger_core::outbound::WireEvent) -> Result<Outbound> {
+        let hints = if peer.is_private() { vec![] } else { self.hints(&peer.key).await? };
+        Ok(peer.to_peer(event, hints))
     }
 
     /// Application time for the next outgoing rumor: never earlier than
@@ -462,20 +478,21 @@ impl DmService {
         })
     }
 
+    /// The two copies of one rumor of the chat with `peer`, each by the way
+    /// of the chat: a private chat's go to its server and nowhere else.
     async fn publish_pair(
         &self,
         keys: &Keys,
-        peer: &PubKey,
+        peer: &DmPeer,
         content: &str,
         created_at: i64,
         reply_to: Option<&str>,
         wake: Wake,
     ) -> Result<(String, String, Outbound, Option<Outbound>)> {
         let w = wrap_as(keys, peer, content, created_at, reply_to, wake)?;
-        let hint_relays = self.hints(peer).await?;
         let wire_id = w.to_peer.id.as_hex().to_string();
-        let to_peer = Outbound::PublishToInbox { recipient: peer.clone(), event: w.to_peer, hint_relays };
-        let to_self = w.to_self.map(|event| Outbound::PublishOwn { event });
+        let to_peer = self.route_to_peer(peer, w.to_peer).await?;
+        let to_self = w.to_self.map(|event| peer.to_self(event));
         Ok((w.rumor_id.as_hex().to_string(), wire_id, to_peer, to_self))
     }
 
@@ -484,7 +501,7 @@ impl DmService {
     }
 
     /// Store an outgoing plain text message and build its wraps.
-    pub async fn prepare_text(&self, keys: &Keys, peer: &PubKey, text: &str, reply_to: Option<&str>) -> Result<Prepared> {
+    pub async fn prepare_text(&self, keys: &Keys, peer: impl Into<DmPeer>, text: &str, reply_to: Option<&str>) -> Result<Prepared> {
         self.prepare_text_as(keys, peer, text, TextFormat::Plain, reply_to).await
     }
 
@@ -492,7 +509,7 @@ impl DmService {
     pub async fn prepare_text_as(
         &self,
         keys: &Keys,
-        peer: &PubKey,
+        peer: impl Into<DmPeer>,
         text: &str,
         format: TextFormat,
         reply_to: Option<&str>,
@@ -517,7 +534,7 @@ impl DmService {
     /// `MAX_REQUEST_CHARS` (`dm_request_text`): the receiver's gate takes a
     /// stranger's first text plain and short only, and the text may land
     /// there before the accept that would have opened the chat to it.
-    pub async fn prepare_request_text(&self, keys: &Keys, peer: &PubKey, text: &str, invite: &str) -> Result<Prepared> {
+    pub async fn prepare_request_text(&self, keys: &Keys, peer: impl Into<DmPeer>, text: &str, invite: &str) -> Result<Prepared> {
         crate::relations::check_invite_secret(invite)?;
         let text = text.trim();
         if text.is_empty() {
@@ -526,12 +543,13 @@ impl DmService {
         if !Self::kind_of_text(text, TextFormat::Plain).is_request_text() {
             return Err(MessengerError::Invalid("dm_request_text".into()));
         }
-        let chat_id = chats::dm_chat_id(peer.as_hex());
-        let gate = self.gate_outbound(&chat_id, peer, &Self::me(keys), true).await?;
+        let peer = peer.into();
+        let chat_id = peer.chat_id();
+        let gate = self.gate_outbound(&chat_id, &peer, &Self::me(keys), true).await?;
         if !gate.request {
             return Err(MessengerError::Invalid("dm_not_a_request".into()));
         }
-        self.prepare_visible_with(keys, peer, Envelope::text(text), repo::CT_TEXT, Some(text.to_string()), None, None, Some(invite)).await
+        self.prepare_visible_with(keys, &peer, Envelope::text(text), repo::CT_TEXT, Some(text.to_string()), None, None, Some(invite)).await
     }
 
     /// Store an outgoing message of any visible type (media uses this).
@@ -539,14 +557,14 @@ impl DmService {
     pub async fn prepare_visible(
         &self,
         keys: &Keys,
-        peer: &PubKey,
+        peer: impl Into<DmPeer>,
         envelope: Envelope,
         content_type: &str,
         text: Option<String>,
         reply_to: Option<&str>,
         media_json: Option<String>,
     ) -> Result<Prepared> {
-        self.prepare_visible_with(keys, peer, envelope, content_type, text, reply_to, media_json, None).await
+        self.prepare_visible_with(keys, &peer.into(), envelope, content_type, text, reply_to, media_json, None).await
     }
 
     /// `invite`: the secret that rides on the accept of a request.
@@ -554,7 +572,7 @@ impl DmService {
     async fn prepare_visible_with(
         &self,
         keys: &Keys,
-        peer: &PubKey,
+        peer: &DmPeer,
         envelope: Envelope,
         content_type: &str,
         text: Option<String>,
@@ -562,7 +580,7 @@ impl DmService {
         media_json: Option<String>,
         invite: Option<&str>,
     ) -> Result<Prepared> {
-        let chat = chats::ensure_dm(&self.store, peer.as_hex()).await?;
+        let chat = chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
         if let Some(id) = reply_to {
             match repo::get(&self.store, id).await? {
                 Some(t) if t.chat_id == chat.id && !t.is_hidden => {}
@@ -615,10 +633,12 @@ impl DmService {
         let message = self.message(&id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
         let (mut followups, mut events, mut became_contact) = (Vec::new(), Vec::new(), false);
         let mut followups_first = false;
+        // The address book is of the home set: a request in a private chat
+        // makes a contact of that chat, not of the book.
         if let Some(result) = lead {
             followups = result.outbounds;
             events = result.events;
-            became_contact = true;
+            became_contact = !peer.is_private();
             followups_first = true;
         } else if gate.request {
             // The text is stored first, the accept follows it: a request
@@ -626,12 +646,12 @@ impl DmService {
             let result = self.act_with(keys, peer, crate::relationship::Action::Request, true, invite).await?;
             followups = result.outbounds;
             events = result.events;
-            became_contact = true;
+            became_contact = !peer.is_private();
         }
         Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups, followups_first, became_contact, events, expiring: true })
     }
 
-    async fn own_target(&self, keys: &Keys, message_id: &str) -> Result<(MessageRow, PubKey)> {
+    async fn own_target(&self, keys: &Keys, message_id: &str) -> Result<(MessageRow, DmPeer)> {
         let row = repo::get(&self.store, message_id)
             .await?
             .filter(|r| !r.is_hidden)
@@ -640,7 +660,7 @@ impl DmService {
             return Err(MessengerError::Invalid("only your own messages can be changed for everyone".into()));
         }
         if self.gate_enabled() {
-            if let Some(peer) = chats::get(&self.store, &row.chat_id).await?.and_then(|c| c.peer_pubkey).as_deref().and_then(PubKey::parse) {
+            if let Some(peer) = chats::get(&self.store, &row.chat_id).await?.as_ref().and_then(DmPeer::of_row) {
                 let r = self.load_relation(&peer).await?;
                 if r.blocked || r.peer_signal == crate::relationship::PeerSignal::Blocked {
                     return Err(MessengerError::Invalid("dm_blocked".into()));
@@ -653,11 +673,7 @@ impl DmService {
         let chat = chats::get(&self.store, &row.chat_id)
             .await?
             .ok_or_else(|| MessengerError::Storage("chat missing".into()))?;
-        let peer = chat
-            .peer_pubkey
-            .as_deref()
-            .and_then(PubKey::parse)
-            .ok_or_else(|| MessengerError::Storage("chat has no peer".into()))?;
+        let peer = DmPeer::of_row(&chat).ok_or_else(|| MessengerError::Storage("chat has no peer".into()))?;
         Ok((row, peer))
     }
 
@@ -774,6 +790,42 @@ impl DmService {
 
     // ─── Inbound ────────────────────────────────────────────────────────────
 
+    /// The chat a wrap is of (internal/messenger-wire.md, «Частный чат»):
+    /// the private server its rumor names (`srv`); without one, the private
+    /// server whose relay it came by, which a client that knows no `srv`
+    /// writes to; else the home set (`Some(None)`). A wrap pushed to the
+    /// phone names no relay of a server, and goes by its tag alone. `None`:
+    /// the rumor names a server this device does not have, so there is no
+    /// chat to file it under, and it is dropped; so is a wrap without a tag
+    /// that came by the relay of a private server removed on purpose
+    /// (`servers::private_of_relay`), never filed at home. A server of my
+    /// home set named by the tag is the home chat: what goes there reaches
+    /// me there.
+    pub async fn server_of_inbound(&self, msg: &DmInbound) -> Result<Option<Option<String>>> {
+        if let Some(id) = &msg.srv {
+            return Ok(match servers::get(&self.store, id).await? {
+                Some(s) if s.is_private() => Some(Some(s.id)),
+                Some(_) => Some(None),
+                None => {
+                    eprintln!("messenger dm: a wrap of a private chat on a server this device does not have, dropped");
+                    None
+                }
+            });
+        }
+        let url = match &msg.envelope.source {
+            EventSource::Relay { url } | EventSource::Sync { url } => url,
+            EventSource::Server { .. } => return Ok(Some(None)),
+        };
+        match servers::private_of_relay(&self.store, url.as_str()).await {
+            Ok(server) => Ok(Some(server)),
+            Err(e) if servers::is_unknown(&e) => {
+                eprintln!("messenger dm: a wrap by the relay of a removed server, dropped");
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub async fn apply_inbound(&self, msg: DmInbound, ctx: &Context) -> Result<Vec<Effect>> {
         let me = &ctx.my_pubkey;
         let from_me = &msg.sender == me;
@@ -784,6 +836,8 @@ impl DmService {
         if !from_me && self.is_banned(&msg.sender).await? {
             return Ok(vec![]);
         }
+        // Which chat it is of: the home one, or a private server's.
+        let Some(server) = self.server_of_inbound(&msg).await? else { return Ok(vec![]) };
         // A note of my other device: not a message of any chat.
         if msg.rumor_kind == KIND_OWN_RUMOR {
             if !from_me || msg.recipients.iter().any(|p| p != me) {
@@ -794,23 +848,24 @@ impl DmService {
         }
         // A note between the peer and me: not a message of the chat either.
         if msg.rumor_kind == KIND_PEER_NOTE_RUMOR {
-            return self.apply_peer_note(&msg, ctx).await;
+            return self.apply_peer_note(&msg, ctx, server.as_deref()).await;
         }
         let peer = if from_me {
             msg.recipients.iter().find(|p| *p != me).cloned().unwrap_or_else(|| me.clone())
         } else {
             msg.sender.clone()
         };
+        let peer = DmPeer::on(peer, server.as_deref());
         let historical =
             msg.created_at < ctx.session_started_at || matches!(msg.envelope.source, EventSource::Sync { .. });
         // The chat row is made only when something visible lands in it, so
         // a copy, a dropped message or a hidden row does not bring back a
         // chat deleted here.
-        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let chat_id = peer.chat_id();
         let id = msg.rumor_id.as_hex().to_string();
         let mut effects: Vec<Effect> = Vec::new();
-        // Sealed by the pinned bot of Veydan Cloud.
-        let from_bot = !from_me && self.is_bot(&msg.sender);
+        // Sealed by the pinned bot of Veydan Cloud, in its home chat.
+        let from_bot = !from_me && self.is_bot_chat(&peer);
 
         // Other NIP-17 clients send bare text; read it as a text message.
         let mut envelope = Envelope::parse(&msg.content).unwrap_or_else(|_| Envelope::text(&msg.content));
@@ -1051,7 +1106,7 @@ impl DmService {
         let live_incoming = !from_me && !historical;
         let floor = self.unread_floor.load(Ordering::SeqCst);
         let counts_unread = !from_me && !hidden_before && (live_incoming || (floor >= 0 && at >= floor));
-        chats::ensure_dm(&self.store, peer.as_hex()).await?;
+        chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
         chats::touch(&self.store, chat_id, at, Some(&line), counts_unread).await?;
         chats::recompute_last(&self.store, chat_id).await?;
         if from_me {
@@ -1069,7 +1124,7 @@ impl DmService {
                     // A request of a stranger is told by its queue, not by
                     // a notification: the queue is counted again, and kept
                     // to its size.
-                    effects.push(Effect::Emit(self.request_event(peer).await?));
+                    effects.push(Effect::Emit(self.request_event(&peer.key).await?));
                     effects.extend(self.cap_requests(self.clock.now().secs()).await?);
                 } else if live_incoming && !view.deleted && !c.is_muted {
                     // A card of the bot is worded by the app where it is
@@ -1079,7 +1134,7 @@ impl DmService {
                         title: c.title,
                         body,
                         chat_id: Some(chat_id.to_string()),
-                        sender: Some(peer.as_hex().to_string()),
+                        sender: Some(peer.key.as_hex().to_string()),
                         request: false,
                     }));
                 }
@@ -1093,6 +1148,9 @@ impl DmService {
     /// through came with the running session.
     pub(crate) async fn land_row(&self, row: MessageRow, live: bool) -> Result<Vec<Effect>> {
         let Some(sender) = PubKey::parse(&row.sender_pubkey) else { return Ok(vec![]) };
+        // Held in the chat it came to: the home one or a private one.
+        let Some(chat) = DmPeer::of_chat(&row.chat_id) else { return Ok(vec![]) };
+        let peer = chat.with_key(sender.clone());
         // Stored as `apply_inbound` checked it: bare text of other clients
         // as it came, a card as it was cleaned.
         let envelope = Envelope::parse(&row.envelope_json).unwrap_or_else(|_| Envelope::text(&row.envelope_json));
@@ -1103,7 +1161,7 @@ impl DmService {
         };
         self.land(Landing {
             chat_id: &row.chat_id,
-            peer: &sender,
+            peer: &peer,
             id: &row.id,
             envelope: &envelope,
             content_type: &row.content_type,
@@ -1125,7 +1183,7 @@ impl DmService {
     async fn apply_change(
         &self,
         chat_id: &str,
-        peer: &PubKey,
+        peer: &DmPeer,
         content_type: &str,
         target: &str,
         msg: &DmInbound,
@@ -1289,12 +1347,24 @@ mod tests {
         }
 
         async fn receive_from(&self, event: &WireEvent, via_sync: bool) -> Vec<Effect> {
+            self.receive_by(event, "wss://r.example", via_sync).await
+        }
+
+        /// As it comes by the relay `url`.
+        async fn receive_by(&self, event: &WireEvent, url: &str, via_sync: bool) -> Vec<Effect> {
             let ev: Event = serde_json::from_value(event.json.clone()).unwrap();
             let u = UnwrappedGift::from_gift_wrap(&self.keys, &ev).expect("addressed to this party");
             let mut rumor = u.rumor.clone();
             rumor.ensure_id();
-            let url = RelayUrl::parse("wss://r.example").unwrap();
+            let url = RelayUrl::parse(url).unwrap();
+            let srv = rumor
+                .tags
+                .iter()
+                .filter(|t| t.kind() == messenger_core::envelope::TAG_SERVER)
+                .filter_map(|t| t.as_slice().get(1).cloned())
+                .next();
             let msg = DmInbound {
+                srv,
                 envelope: WireEnvelope {
                     wire_id: event.id.clone(),
                     source: if via_sync { EventSource::Sync { url } } else { EventSource::Relay { url } },
@@ -1434,7 +1504,7 @@ mod tests {
 
         // Bob cannot edit or delete Alice's message.
         assert!(bob.dm.prepare_edit(&bob.keys, &p.message.id, "hacked").await.is_err());
-        let forged = wrap(&bob.keys, &alice.pk(), &Envelope::edit(&p.message.id, "hacked").encode(), 1_000_100, None).unwrap();
+        let forged = wrap(&bob.keys, alice.pk(), &Envelope::edit(&p.message.id, "hacked").encode(), 1_000_100, None).unwrap();
         assert!(alice.receive(&forged.to_peer).await.is_empty());
         let a_chat = alice.dm.open_chat(&bob.pk()).await.unwrap();
         assert_eq!(alice.dm.messages(&a_chat.id, None, 50).await.unwrap()[0].text.as_deref(), Some("first"));
@@ -1614,7 +1684,7 @@ mod tests {
         let b2 = bob.dm.prepare_text(&bob.keys, &alice.pk(), "two", None).await.unwrap();
         bob.clock.0.store(1_000_020, Ordering::SeqCst);
         let b3 = bob.dm.prepare_text(&bob.keys, &alice.pk(), "three", None).await.unwrap();
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
 
         // The phone was away: the notes come before the messages they name.
         let read = Envelope::own_read(&chat_id, b2.message.created_at);
@@ -1644,11 +1714,11 @@ mod tests {
         let bob = Party::new().await;
         bob.contacts.add(&bob.pk(), alice.pk().as_hex(), Some("Al")).await.unwrap();
 
-        let bare = wrap(&alice.keys, &bob.pk(), "just text, no envelope", 1_000_001, None).unwrap();
+        let bare = wrap(&alice.keys, bob.pk(), "just text, no envelope", 1_000_001, None).unwrap();
         assert_eq!(names(&bob.receive(&bare.to_peer).await), vec!["dm.message", "notify"]);
-        let sticker = wrap(&alice.keys, &bob.pk(), r#"{"v":1,"t":"sticker","pack":"p","text":"alt"}"#, 1_000_002, None).unwrap();
+        let sticker = wrap(&alice.keys, bob.pk(), r#"{"v":1,"t":"sticker","pack":"p","text":"alt"}"#, 1_000_002, None).unwrap();
         bob.receive(&sticker.to_peer).await;
-        let control = wrap(&alice.keys, &bob.pk(), &Envelope::control("dm_accept").encode(), 1_000_003, None).unwrap();
+        let control = wrap(&alice.keys, bob.pk(), &Envelope::control("dm_accept").encode(), 1_000_003, None).unwrap();
         assert!(bob.receive(&control.to_peer).await.is_empty(), "control rows are hidden");
 
         let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
@@ -1661,7 +1731,7 @@ mod tests {
 
         bob.dm.set_muted(&chat.id, true).await.unwrap();
         assert!(bob.dm.chat(&chat.id).await.unwrap().unwrap().is_muted);
-        let quiet = wrap(&alice.keys, &bob.pk(), &Envelope::text("psst").encode(), 1_000_004, None).unwrap();
+        let quiet = wrap(&alice.keys, bob.pk(), &Envelope::text("psst").encode(), 1_000_004, None).unwrap();
         assert_eq!(names(&bob.receive(&quiet.to_peer).await), vec!["dm.message"], "muted chats do not notify");
         assert_eq!(bob.dm.open_chat(&alice.pk()).await.unwrap().unread, 3);
     }
@@ -1707,6 +1777,7 @@ mod tests {
                 author: bob.pk(),
                 created_at: Timestamp(5),
                 relays: vec!["wss://inbox.example/".into(), "not a url".into(), "wss://inbox.example".into()],
+                via: None,
             },
             &alice.ctx(),
         )
@@ -1730,8 +1801,8 @@ mod tests {
         // session starts at 1_000_000 and fetches it as history.
         bob.dm.set_unread_floor(999_500);
         bob.session_started_at = 1_000_000;
-        let missed = wrap(&alice.keys, &bob.pk(), &Envelope::text("while you were away").encode(), 999_800, None).unwrap();
-        let old = wrap(&alice.keys, &bob.pk(), &Envelope::text("ancient").encode(), 900_000, None).unwrap();
+        let missed = wrap(&alice.keys, bob.pk(), &Envelope::text("while you were away").encode(), 999_800, None).unwrap();
+        let old = wrap(&alice.keys, bob.pk(), &Envelope::text("ancient").encode(), 900_000, None).unwrap();
         assert_eq!(names(&bob.receive_from(&missed.to_peer, true).await), vec!["dm.message"], "no notification");
         bob.receive_from(&old.to_peer, true).await;
         assert_eq!(bob.dm.open_chat(&alice.pk()).await.unwrap().unread, 1, "only the missed one");
@@ -1841,7 +1912,7 @@ mod tests {
         assert_eq!(reason(bob.dm.prepare_text(&bob.keys, &alice.pk(), "hi", None).await.unwrap_err()), "dm_answer_request_first");
 
         // A pushy sender forging a second message gets nowhere.
-        let spam = wrap(&alice.keys, &bob.pk(), &Envelope::text("answer me!").encode(), 1_000_050, None).unwrap();
+        let spam = wrap(&alice.keys, bob.pk(), &Envelope::text("answer me!").encode(), 1_000_050, None).unwrap();
         assert!(bob.receive(&spam.to_peer).await.is_empty());
         assert_eq!(visible(&bob, &alice).await.len(), 2);
 
@@ -1892,11 +1963,11 @@ mod tests {
         // A stranger's signal before any word of theirs is not heard and
         // leaves nothing behind, not even its hidden row: their will is
         // implied by the text.
-        let chat_id = chats::dm_chat_id(alice.pk().as_hex());
+        let chat_id = chats::dm_chat_id(alice.pk().as_hex(), None);
         assert!(bob.receive(&for_peer(&p.followups)[0]).await.is_empty());
         assert_eq!(mode(&bob, &alice).await, "first_contact");
         assert!(bob.dm.chat(&chat_id).await.unwrap().is_none(), "no chat");
-        assert!(dm_relations::get(bob.dm.store(), alice.pk().as_hex()).await.unwrap().is_none(), "no row");
+        assert!(dm_relations::get(bob.dm.store(), alice.pk().as_hex(), None).await.unwrap().is_none(), "no row");
         assert_eq!(repo::count_in_chat(bob.dm.store(), &chat_id).await.unwrap(), 0, "no message row either");
         bob.receive(&peer_event(&p)).await;
         assert_eq!(mode(&bob, &alice).await, "request_received");
@@ -1953,7 +2024,7 @@ mod tests {
         bare_text(&alice, &bob, "hello", 5_000).await;
         assert_eq!(mode(&bob, &alice).await, "request_received");
         assert_eq!(bob.dm.load_relation(&alice.pk()).await.unwrap().last_signal_at, 5_000);
-        let removed = wrap(&alice.keys, &bob.pk(), &Envelope::control("contact_removed").encode(), 10, None).unwrap();
+        let removed = wrap(&alice.keys, bob.pk(), &Envelope::control("contact_removed").encode(), 10, None).unwrap();
         bob.receive(&removed.to_peer).await;
         assert_eq!(mode(&bob, &alice).await, "request_received");
         assert!(visible(&bob, &alice).await.contains(&"hello".to_string()));
@@ -1984,7 +2055,7 @@ mod tests {
         let (alice, bob) = mutual().await;
         let name = format!("x\u{202E}{}", "y".repeat(2_000));
         let content = serde_json::json!({ "v": 1, "t": name, "text": "a text" }).to_string();
-        let w = wrap(&alice.keys, &bob.pk(), &content, 1_000_100, None).unwrap();
+        let w = wrap(&alice.keys, bob.pk(), &content, 1_000_100, None).unwrap();
         assert!(names(&bob.receive(&w.to_peer).await).contains(&"dm.message".to_string()));
         let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
         let msgs = bob.dm.messages(&chat.id, None, 100).await.unwrap();
@@ -2065,7 +2136,7 @@ mod tests {
     async fn new_request_stands(alice: &Party, bob: &Party, text: &str, case: &str) {
         assert_eq!(mode(bob, alice).await, "request_received", "{case}");
         assert!(visible(bob, alice).await.contains(&text.to_string()), "{case}: the request text is shown");
-        let spam = wrap(&alice.keys, &bob.pk(), &Envelope::text("and more").encode(), 2_000_000, None).unwrap();
+        let spam = wrap(&alice.keys, bob.pk(), &Envelope::text("and more").encode(), 2_000_000, None).unwrap();
         assert!(bob.receive(&spam.to_peer).await.is_empty(), "{case}: still one message per request");
         assert!(dm_held::is_held(bob.dm.store(), spam.rumor_id.as_hex()).await.unwrap(), "{case}: held");
         bob.dm.act(&bob.keys, &alice.pk(), Action::Accept).await.unwrap();
@@ -2077,7 +2148,7 @@ mod tests {
     }
 
     async fn held_count(p: &Party, peer: &Party) -> i64 {
-        dm_held::count(p.dm.store(), &chats::dm_chat_id(peer.pk().as_hex())).await.unwrap()
+        dm_held::count(p.dm.store(), &chats::dm_chat_id(peer.pk().as_hex(), None)).await.unwrap()
     }
 
     #[tokio::test]
@@ -2099,7 +2170,7 @@ mod tests {
             assert!(alice.dm.open_chat(&bob.pk()).await.unwrap().can_send, "the composer promises a new request");
 
             // Written before she left: still not delivered.
-            let late = wrap(&alice.keys, &bob.pk(), &Envelope::text("from before").encode(), m.message.created_at + 1, None).unwrap();
+            let late = wrap(&alice.keys, bob.pk(), &Envelope::text("from before").encode(), m.message.created_at + 1, None).unwrap();
             assert!(bob.receive(&late.to_peer).await.is_empty());
 
             new_request_lands(&alice, &bob, "again", accept_first).await;
@@ -2147,7 +2218,7 @@ mod tests {
     /// A raw text of `from` to `to` (no `dm_accept`, as a plain NIP-17 or a
     /// modified client sends it) at the rumor time `at`.
     async fn bare_text(from: &Party, to: &Party, text: &str, at: i64) -> Vec<Effect> {
-        let w = wrap(&from.keys, &to.pk(), &Envelope::text(text).encode(), at, None).unwrap();
+        let w = wrap(&from.keys, to.pk(), &Envelope::text(text).encode(), at, None).unwrap();
         to.receive(&w.to_peer).await
     }
 
@@ -2171,7 +2242,7 @@ mod tests {
         assert_eq!(mode(&bob, &alice).await, "request_received");
         // A withdrawal dated 2100 over her own (implied) approval: a no-op
         // that must not lift the limit for good.
-        let cancel = wrap(&alice.keys, &bob.pk(), &Envelope::control("request_cancelled").encode(), YEAR_2100, None).unwrap();
+        let cancel = wrap(&alice.keys, bob.pk(), &Envelope::control("request_cancelled").encode(), YEAR_2100, None).unwrap();
         bob.receive(&cancel.to_peer).await;
         assert_eq!(mode(&bob, &alice).await, "request_received");
         bare_text(&alice, &bob, "one", 1_000_002).await;
@@ -2181,7 +2252,7 @@ mod tests {
         assert!(shown.contains(&"hello".to_string()));
         // "two" is held, not shown; her accept ends nothing and frees nothing.
         assert_eq!(held_count(&bob, &alice).await, 1);
-        let accept = wrap(&alice.keys, &bob.pk(), &Envelope::control("dm_accept").encode(), YEAR_2100, None).unwrap();
+        let accept = wrap(&alice.keys, bob.pk(), &Envelope::control("dm_accept").encode(), YEAR_2100, None).unwrap();
         bob.receive(&accept.to_peer).await;
         assert_eq!(count(&visible(&bob, &alice).await, &["one", "two"]), 1);
 
@@ -2190,9 +2261,9 @@ mod tests {
         // request and the rest wait held, a backdated one too.
         let alice = gated().await;
         let bob = gated().await;
-        let cancel = wrap(&alice.keys, &bob.pk(), &Envelope::control("request_cancelled").encode(), YEAR_2100, None).unwrap();
+        let cancel = wrap(&alice.keys, bob.pk(), &Envelope::control("request_cancelled").encode(), YEAR_2100, None).unwrap();
         assert!(bob.receive(&cancel.to_peer).await.is_empty());
-        assert_eq!(dm_relations::end_pending(bob.dm.store(), alice.pk().as_hex()).await.unwrap(), 0, "no end waits");
+        assert_eq!(dm_relations::end_pending(bob.dm.store(), alice.pk().as_hex(), None).await.unwrap(), 0, "no end waits");
         for (i, text) in ["a", "b", "c", "d"].into_iter().enumerate() {
             bare_text(&alice, &bob, text, 1_000_001 + i as i64).await;
         }
@@ -2312,7 +2383,7 @@ mod tests {
             if new_accept_first {
                 assert!(bob.receive(&for_peer(&again.followups)[0]).await.is_empty(), "{case}");
             }
-            assert!(dm_relations::get(bob.dm.store(), alice.pk().as_hex()).await.unwrap().is_none(), "{case}: no row of her yet");
+            assert!(dm_relations::get(bob.dm.store(), alice.pk().as_hex(), None).await.unwrap().is_none(), "{case}: no row of her yet");
             bob.receive(&peer_event(&hi)).await;
             bob.receive(&for_peer(&hi.followups)[0]).await;
             bob.receive(&peer_event(&again)).await;
@@ -2340,7 +2411,7 @@ mod tests {
         }
         let r = alice.dm.act(&alice.keys, &bob.pk(), Action::Remove).await.unwrap();
         let again = alice.dm.prepare_text(&alice.keys, &bob.pk(), "please reconsider", None).await.unwrap();
-        let third = wrap(&alice.keys, &bob.pk(), &Envelope::text("and also").encode(), again.message.created_at + 5, None).unwrap();
+        let third = wrap(&alice.keys, bob.pk(), &Envelope::text("and also").encode(), again.message.created_at + 5, None).unwrap();
         bob.receive(&peer_event(&again)).await;
         bob.receive(&third.to_peer).await;
         assert_eq!(held_count(&bob, &alice).await, 2);
@@ -2352,7 +2423,7 @@ mod tests {
 
         let t = again.message.created_at + 5;
         for (i, action) in ["dm_accept", "dm_block", "dm_unblock", "dm_accept"].into_iter().enumerate() {
-            let s = wrap(&alice.keys, &bob.pk(), &Envelope::control(action).encode(), t + 10 + i as i64, None).unwrap();
+            let s = wrap(&alice.keys, bob.pk(), &Envelope::control(action).encode(), t + 10 + i as i64, None).unwrap();
             bob.receive(&s.to_peer).await;
         }
         let shown = visible(&bob, &alice).await;
@@ -2373,7 +2444,7 @@ mod tests {
         let again = alice.dm.prepare_text(&alice.keys, &bob.pk(), "second try", None).await.unwrap();
         bob.receive(&peer_event(&again)).await;
         bob.receive(&for_peer(&again.followups)[0]).await;
-        let more = wrap(&alice.keys, &bob.pk(), &Envelope::text("more").encode(), again.message.created_at + 5, None).unwrap();
+        let more = wrap(&alice.keys, bob.pk(), &Envelope::text("more").encode(), again.message.created_at + 5, None).unwrap();
         bob.receive(&more.to_peer).await;
         assert_eq!(held_count(&bob, &alice).await, 1);
         bob.receive(&for_peer(&w.outbounds)[0]).await;
@@ -2401,7 +2472,7 @@ mod tests {
             }
             let target = if how.ends_with("elsewhere") { &device2 } else { &bob };
             match how {
-                "delete" => bob.dm.delete_chat(&chats::dm_chat_id(alice.pk().as_hex())).await.unwrap(),
+                "delete" => bob.dm.delete_chat(&chats::dm_chat_id(alice.pk().as_hex(), None)).await.unwrap(),
                 _ => {
                     let action = if how.starts_with("accept") { Action::Accept } else { Action::Block };
                     let out = bob.dm.act(&bob.keys, &alice.pk(), action).await.unwrap();
@@ -2410,7 +2481,7 @@ mod tests {
             }
             assert_eq!(held_count(target, &alice).await, 0, "{how}");
             assert_eq!(held_count(&bob, &alice).await, 0, "{how}");
-            let rows = repo::list(target.dm.store(), &chats::dm_chat_id(alice.pk().as_hex()), None, 100, false).await.unwrap();
+            let rows = repo::list(target.dm.store(), &chats::dm_chat_id(alice.pk().as_hex(), None), None, 100, false).await.unwrap();
             let shown = rows.iter().any(|m| m.text.as_deref() == Some("hello?") && !m.is_hidden);
             // Accepted: what waited is theirs to have said, in its order.
             // Blocked or deleted: never shown.
@@ -2420,7 +2491,7 @@ mod tests {
 
     /// A wrap of `from` to `to` with any envelope, at the rumor time `at`.
     async fn deliver(from: &Party, to: &Party, envelope: &Envelope, at: i64) -> Vec<Effect> {
-        let w = wrap(&from.keys, &to.pk(), &envelope.encode(), at, None).unwrap();
+        let w = wrap(&from.keys, to.pk(), &envelope.encode(), at, None).unwrap();
         to.receive(&w.to_peer).await
     }
 
@@ -2433,7 +2504,7 @@ mod tests {
     async fn only_a_short_plain_text_of_a_stranger_gets_through_or_is_held() {
         let alice = gated().await;
         let bob = gated().await;
-        let chat_id = chats::dm_chat_id(alice.pk().as_hex());
+        let chat_id = chats::dm_chat_id(alice.pk().as_hex(), None);
         let card = Envelope::contact(serde_json::json!({ "pubkey": "ab".repeat(32), "name": "anna" }));
         let file = Envelope::new("media").with("kind", "image").with("name", "cat.png").with("key", "k");
         let odd = Envelope::new("poll").with("text", "vote");
@@ -2488,13 +2559,13 @@ mod tests {
     async fn an_edit_that_overtakes_the_request_text_does_not_rewrite_it() {
         let alice = gated().await;
         let bob = gated().await;
-        let chat_id = chats::dm_chat_id(alice.pk().as_hex());
+        let chat_id = chats::dm_chat_id(alice.pk().as_hex(), None);
         // Alice is Bob's contact once he wrote to her: her edits are taken,
         // one that overtakes its text too (`edit_that_overtakes_its_target_is_applied_on_arrival`).
         // A stranger's overtaking edit is dropped like any of theirs, so
         // nothing waits for the text; and were one waiting from a time she
         // was a contact, the text she puts in is held to the gate.
-        let text = wrap(&alice.keys, &bob.pk(), &Envelope::text("hello").encode(), 1_000_001, None).unwrap();
+        let text = wrap(&alice.keys, bob.pk(), &Envelope::text("hello").encode(), 1_000_001, None).unwrap();
         let id = text.rumor_id.as_hex().to_string();
         assert!(deliver(&alice, &bob, &Envelope::edit(&id, "see https://evil.example"), 1_000_002).await.is_empty());
         assert_eq!(repo::count_in_chat(bob.dm.store(), &chat_id).await.unwrap(), 0, "nothing waits");
@@ -2548,7 +2619,7 @@ mod tests {
         assert_eq!(q.len(), 2);
         assert_eq!((q[0].peer.as_str(), q[0].text.as_str(), q[0].at, q[0].held), (carol.pk().as_hex(), "hi, I am Carol", 1_000_010, 0));
         assert_eq!((q[1].peer.as_str(), q[1].text.as_str(), q[1].at, q[1].held), (alice.pk().as_hex(), "hi, I am Alice", 1_000_001, 1));
-        assert_eq!(q[0].chat_id, chats::dm_chat_id(carol.pk().as_hex()));
+        assert_eq!(q[0].chat_id, chats::dm_chat_id(carol.pk().as_hex(), None));
         assert!(q[0].name.starts_with("npub1") && q[0].name.contains('…'), "a short npub without a profile: {}", q[0].name);
         assert_eq!(bob.dm.requests(Some(q[0].at), 10).await.unwrap().len(), 1, "paged by `at`");
         assert_eq!(bob.dm.requests(Some(q[1].at), 10).await.unwrap().len(), 0);
@@ -2571,7 +2642,7 @@ mod tests {
     async fn a_request_runs_out_after_the_term_and_its_key_is_shut() {
         let alice = gated().await;
         let bob = gated().await;
-        let chat_id = chats::dm_chat_id(alice.pk().as_hex());
+        let chat_id = chats::dm_chat_id(alice.pk().as_hex(), None);
         bare_text(&alice, &bob, "hello", 1_000_001).await;
         bare_text(&alice, &bob, "hello?", 1_000_002).await;
         assert_eq!(held_count(&bob, &alice).await, 1);
@@ -2595,7 +2666,7 @@ mod tests {
         // change nothing of what the screen shows.
         assert!(bare_text(&alice, &bob, "are you there?", 1_000_100).await.is_empty());
         assert!(bob.dm.chat(&chat_id).await.unwrap().is_none());
-        let accept = wrap(&alice.keys, &bob.pk(), &Envelope::control("dm_accept").encode(), 1_000_101, None).unwrap();
+        let accept = wrap(&alice.keys, bob.pk(), &Envelope::control("dm_accept").encode(), 1_000_101, None).unwrap();
         bob.receive(&accept.to_peer).await;
         assert_eq!(mode(&bob, &alice).await, "request_declined_by_me");
         assert_eq!(bob.dm.requests_count().await.unwrap(), 0);
@@ -2639,6 +2710,7 @@ mod tests {
                 bob.dm.store(),
                 &dm_relations::RelationRow {
                     peer_pubkey: peer.clone(),
+                    server_id: String::new(),
                     my_contact: "none".into(),
                     blocked: false,
                     peer_signal: "approved".into(),
@@ -2653,8 +2725,8 @@ mod tests {
             )
             .await
             .unwrap();
-            chats::ensure_dm(bob.dm.store(), &peer).await.unwrap();
-            chats::touch(bob.dm.store(), &chats::dm_chat_id(&peer), 900_000 + i, Some("hi"), true).await.unwrap();
+            chats::ensure_dm(bob.dm.store(), &peer, None).await.unwrap();
+            chats::touch(bob.dm.store(), &chats::dm_chat_id(&peer, None), 900_000 + i, Some("hi"), true).await.unwrap();
         }
         assert_eq!(bob.dm.requests_count().await.unwrap() as i64, MAX_REQUESTS);
         assert!(bob.dm.sweep_requests(1_000_000).await.unwrap().is_empty(), "full, not over");
@@ -2663,8 +2735,8 @@ mod tests {
     /// Whether the `i`th made-up request of `fill_queue` was pushed out.
     async fn pushed_out(bob: &Party, i: i64) -> bool {
         let peer = format!("{i:064x}");
-        let r = dm_relations::get(bob.dm.store(), &peer).await.unwrap().unwrap();
-        bob.dm.chat(&chats::dm_chat_id(&peer)).await.unwrap().is_none() && r.my_contact == "expired"
+        let r = dm_relations::get(bob.dm.store(), &peer, None).await.unwrap().unwrap();
+        bob.dm.chat(&chats::dm_chat_id(&peer, None)).await.unwrap().is_none() && r.my_contact == "expired"
     }
 
     /// The queue holds `MAX_REQUESTS`: the one past it pushes the request
@@ -2677,7 +2749,7 @@ mod tests {
         let fx = bare_text(&alice, &bob, "one more", 1_000_001).await;
         assert_eq!(bob.dm.requests_count().await.unwrap() as i64, MAX_REQUESTS);
         assert!(pushed_out(&bob, 1).await, "the oldest is gone");
-        assert_eq!(dm_relations::get(bob.dm.store(), &format!("{:064x}", 1)).await.unwrap().unwrap().decided_at, 1_000_000);
+        assert_eq!(dm_relations::get(bob.dm.store(), &format!("{:064x}", 1), None).await.unwrap().unwrap().decided_at, 1_000_000);
         assert_eq!(request_events(&fx).len(), 2, "told as it lands and as the oldest goes: {:?}", names(&fx));
         assert_eq!(request_events(&fx).last().unwrap()["pending"], MAX_REQUESTS);
         assert_eq!(mode(&bob, &alice).await, "request_received", "the new one stays");
@@ -2703,7 +2775,7 @@ mod tests {
         assert_eq!(bob.dm.requests_count().await.unwrap(), 0);
         fill_queue(&bob).await;
 
-        let accept = wrap(&alice.keys, &bob.pk(), &Envelope::control("dm_accept").encode(), 1_000_010, None).unwrap();
+        let accept = wrap(&alice.keys, bob.pk(), &Envelope::control("dm_accept").encode(), 1_000_010, None).unwrap();
         let fx = bob.receive(&accept.to_peer).await;
         assert_eq!(mode(&bob, &alice).await, "request_received", "a fresh accept after my no asks again");
         assert_eq!(bob.dm.requests_count().await.unwrap() as i64, MAX_REQUESTS);
@@ -2716,7 +2788,7 @@ mod tests {
         let fx = bob.receive(&own_copy(&unb.outbounds)).await;
         // Blocking a stranger took her chat with it; the unblock lets her
         // write anew but brings nothing back, so the queue stays as it was.
-        assert!(bob.dm.chat(&chats::dm_chat_id(carol.pk().as_hex())).await.unwrap().is_none(), "her chat went with the block");
+        assert!(bob.dm.chat(&chats::dm_chat_id(carol.pk().as_hex(), None)).await.unwrap().is_none(), "her chat went with the block");
         assert_eq!(bob.dm.requests_count().await.unwrap() as i64, MAX_REQUESTS);
         assert!(!pushed_out(&bob, 2).await, "nothing came back, nothing went");
         assert!(!request_events(&fx).is_empty(), "{:?}", names(&fx));
@@ -2768,14 +2840,14 @@ mod tests {
     async fn contacts_only_leaves_no_trace_of_a_stranger() {
         let alice = gated().await;
         let bob = gated().await;
-        let chat_id = chats::dm_chat_id(alice.pk().as_hex());
+        let chat_id = chats::dm_chat_id(alice.pk().as_hex(), None);
         bob.dm.dm_settings_set(DmSettings { dm_from: "contacts".into(), keep_days: 7 }).await.unwrap();
         let p = alice.dm.prepare_text(&alice.keys, &bob.pk(), "let me in", None).await.unwrap();
         assert!(bob.receive(&peer_event(&p)).await.is_empty());
         assert!(bob.receive(&for_peer(&p.followups)[0]).await.is_empty());
         assert!(deliver(&alice, &bob, &Envelope::edit(&p.message.id, "let me in?"), 1_000_002).await.is_empty());
         assert!(bob.dm.chat(&chat_id).await.unwrap().is_none());
-        assert!(dm_relations::get(bob.dm.store(), alice.pk().as_hex()).await.unwrap().is_none(), "no row");
+        assert!(dm_relations::get(bob.dm.store(), alice.pk().as_hex(), None).await.unwrap().is_none(), "no row");
         assert_eq!(repo::count_in_chat(bob.dm.store(), &chat_id).await.unwrap(), 0, "neither her signal nor her edit left a row");
         assert_eq!(bob.dm.requests_count().await.unwrap(), 0);
         // One I asked first is my contact: her answer and her accept count.
@@ -2876,7 +2948,7 @@ mod tests {
     #[tokio::test]
     async fn a_deleted_chat_stays_deleted_when_its_history_comes_back() {
         let (alice, bob, mine, reply) = talked().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         alice.dm.delete_chat(&chat_id).await.unwrap();
 
         // A new session re-syncs my copies and Bob's wrap; a copy can also
@@ -2905,7 +2977,7 @@ mod tests {
     #[tokio::test]
     async fn a_message_this_device_never_had_comes_in_after_the_deletion() {
         let (alice, bob, _, reply) = talked().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         // Bob writes while Alice is away; she deletes the chat before
         // catch-up brings his message.
         let missed = bob.dm.prepare_text(&bob.keys, &alice.pk(), "are you there?", None).await.unwrap();
@@ -2926,7 +2998,7 @@ mod tests {
     #[tokio::test]
     async fn a_chat_deleted_on_one_device_stays_out_of_a_new_one() {
         let (alice, bob, mine, reply) = talked().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         alice.dm.delete_chat_by_me(&chat_id).await.unwrap();
         assert!(alice.dm.relations_owed().await.unwrap(), "the deletion is published");
 
@@ -2950,7 +3022,7 @@ mod tests {
     #[tokio::test]
     async fn a_message_dated_far_ahead_does_not_push_the_deletion_into_the_future() {
         let (alice, bob, _, _) = talked().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         bob.clock.0.store(2_000_000, Ordering::SeqCst);
         let ahead = bob.dm.prepare_text(&bob.keys, &alice.pk(), "from a clock far ahead", None).await.unwrap();
         alice.receive(&peer_event(&ahead)).await;
@@ -2964,7 +3036,7 @@ mod tests {
         let p = alice.dm.prepare_text(&alice.keys, &bob.pk(), "back", None).await.unwrap();
         assert!(p.message.created_at <= 1_000_000 + chats::CLEARED_SKEW_SECS + 1);
         bob.clock.0.store(1_000_010, Ordering::SeqCst);
-        let late = wrap(&bob.keys, &alice.pk(), &Envelope::text("on time").encode(), 1_000_010, None).unwrap();
+        let late = wrap(&bob.keys, alice.pk(), &Envelope::text("on time").encode(), 1_000_010, None).unwrap();
         alice.receive_from(&late.to_peer, true).await;
         let mut seen = visible(&alice, &bob).await;
         seen.sort();
@@ -2975,10 +3047,10 @@ mod tests {
     async fn a_request_right_after_the_deletion_keeps_its_line() {
         let alice = gated().await;
         let bob = gated().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         alice.dm.delete_chat(&chat_id).await.unwrap();
         let at = chats::cleared_at(alice.dm.store(), &chat_id).await.unwrap() + 1;
-        let p = wrap(&bob.keys, &alice.pk(), &Envelope::text("hello").encode(), at, None).unwrap();
+        let p = wrap(&bob.keys, alice.pk(), &Envelope::text("hello").encode(), at, None).unwrap();
         alice.receive(&p.to_peer).await;
         assert_eq!(visible(&alice, &bob).await, vec!["[request_received]", "hello"]);
     }
@@ -2986,7 +3058,7 @@ mod tests {
     #[tokio::test]
     async fn removing_a_contact_does_not_bring_back_a_deleted_chat() {
         let (alice, bob, mine, _) = talked().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         alice.dm.delete_chat(&chat_id).await.unwrap();
 
         let r = alice.dm.act(&alice.keys, &bob.pk(), Action::Remove).await.unwrap();
@@ -3014,7 +3086,7 @@ mod tests {
     #[tokio::test]
     async fn a_chat_deleted_after_removing_the_contact_stays_deleted() {
         let (alice, bob, mine, reply) = talked().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         let r = alice.dm.act(&alice.keys, &bob.pk(), Action::Remove).await.unwrap();
         assert!(visible(&alice, &bob).await.contains(&"[contact_removed]".to_string()));
         alice.dm.delete_chat(&chat_id).await.unwrap();
@@ -3030,7 +3102,7 @@ mod tests {
     #[tokio::test]
     async fn a_signal_from_before_the_deletion_counts_and_shows_nothing() {
         let (alice, bob, _, _) = talked().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         // Bob removes Alice while she is away; she deletes the chat later.
         let r = bob.dm.act(&bob.keys, &alice.pk(), Action::Remove).await.unwrap();
         alice.clock.0.store(1_000_500, Ordering::SeqCst);
@@ -3044,11 +3116,11 @@ mod tests {
     async fn a_message_the_gate_drops_makes_no_chat() {
         let alice = gated().await;
         let bob = gated().await;
-        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
         alice.dm.act(&alice.keys, &bob.pk(), Action::Block).await.unwrap();
         alice.dm.delete_chat(&chat_id).await.unwrap();
         bob.clock.0.store(1_000_100, Ordering::SeqCst);
-        let p = wrap(&bob.keys, &alice.pk(), &Envelope::text("let me in").encode(), 1_000_100, None).unwrap();
+        let p = wrap(&bob.keys, alice.pk(), &Envelope::text("let me in").encode(), 1_000_100, None).unwrap();
         assert!(alice.receive(&p.to_peer).await.is_empty());
         assert!(alice.dm.chat(&chat_id).await.unwrap().is_none());
     }
@@ -3081,8 +3153,8 @@ mod tests {
         let mut bob = gated().await;
         bob.session_started_at = 2_000_000; // everything below is history
         bob.dm.act(&bob.keys, &alice.pk(), Action::Request).await.unwrap();
-        let accept = wrap(&alice.keys, &bob.pk(), &Envelope::control("dm_accept").encode(), 100, None).unwrap();
-        let block = wrap(&alice.keys, &bob.pk(), &Envelope::control("dm_block").encode(), 200, None).unwrap();
+        let accept = wrap(&alice.keys, bob.pk(), &Envelope::control("dm_accept").encode(), 100, None).unwrap();
+        let block = wrap(&alice.keys, bob.pk(), &Envelope::control("dm_block").encode(), 200, None).unwrap();
         // Newest first, as a relay may deliver.
         assert!(sends(&bob.receive_from(&block.to_peer, true).await).is_empty());
         let fx = bob.receive_from(&accept.to_peer, true).await;
@@ -3094,7 +3166,7 @@ mod tests {
         let mut dave = gated().await;
         dave.session_started_at = 2_000_000;
         dave.dm.act(&dave.keys, &carol.pk(), Action::Request).await.unwrap();
-        let a = wrap(&carol.keys, &dave.pk(), &Envelope::control("dm_accept").encode(), 100, None).unwrap();
+        let a = wrap(&carol.keys, dave.pk(), &Envelope::control("dm_accept").encode(), 100, None).unwrap();
         assert!(sends(&dave.receive_from(&a.to_peer, true).await).is_empty());
         assert_eq!(mode(&dave, &carol).await, "full_chat");
     }
@@ -3105,7 +3177,7 @@ mod tests {
         let bob = gated().await;
         alice.dm.prepare_text(&alice.keys, &bob.pk(), "hello from veydan", None).await.unwrap();
         assert_eq!(mode(&alice, &bob).await, "request_sent");
-        let reply = wrap(&bob.keys, &alice.pk(), "hello from another app", 1_000_100, None).unwrap();
+        let reply = wrap(&bob.keys, alice.pk(), "hello from another app", 1_000_100, None).unwrap();
         alice.receive(&reply.to_peer).await;
         assert_eq!(mode(&alice, &bob).await, "full_chat");
         alice.dm.prepare_text(&alice.keys, &bob.pk(), "nice", None).await.unwrap();
@@ -3119,7 +3191,7 @@ mod tests {
         // next session starts at 1_001_000 and sees it as history.
         bob.dm.set_unread_floor(1_000_200);
         bob.session_started_at = 1_001_000;
-        let m = wrap(&alice.keys, &bob.pk(), &Envelope::text("psst").encode(), 1_000_300, None).unwrap();
+        let m = wrap(&alice.keys, bob.pk(), &Envelope::text("psst").encode(), 1_000_300, None).unwrap();
         assert!(bob.receive_from(&m.to_peer, true).await.is_empty());
         assert!(!visible(&bob, &alice).await.contains(&"psst".to_string()));
     }
@@ -3230,7 +3302,7 @@ mod tests {
         alice.dm.act(&alice.keys, &carol.pk(), Action::Request).await.unwrap();
         alice.contacts.add(&alice.pk(), bob.pk().as_hex(), None).await.unwrap();
         alice.contacts.remove(&bob.pk()).await.unwrap();
-        let mut inferred = dm_relations::get(&alice.dm.store, bob.pk().as_hex()).await.unwrap().unwrap();
+        let mut inferred = dm_relations::get(&alice.dm.store, bob.pk().as_hex(), None).await.unwrap().unwrap();
         assert_eq!(inferred.my_contact, "approved");
         inferred.last_my_signal_at = 0;
         dm_relations::put(&alice.dm.store, &inferred).await.unwrap();
@@ -3238,7 +3310,7 @@ mod tests {
         alice.contacts.add(&alice.pk(), carol.pk().as_hex(), None).await.unwrap();
         alice.contacts.remove(&carol.pk()).await.unwrap();
         let removed_at = messenger_store::contacts::get(&alice.dm.store, carol.pk().as_hex()).await.unwrap().unwrap().deleted_at.unwrap();
-        let mut again = dm_relations::get(&alice.dm.store, carol.pk().as_hex()).await.unwrap().unwrap();
+        let mut again = dm_relations::get(&alice.dm.store, carol.pk().as_hex(), None).await.unwrap().unwrap();
         again.last_my_signal_at = removed_at + 60;
         dm_relations::put(&alice.dm.store, &again).await.unwrap();
 
@@ -3427,7 +3499,7 @@ mod tests {
     /// A receipt as the runtime builds it: to the peer only, out of sight.
     fn receipt(from: &Party, to: &Party, note: &Envelope) -> WireEvent {
         let now = from.clock.now().secs();
-        let w = crate::wrap::wrap_note(&from.keys, &to.pk(), &note.encode(), now, false, Some(now + 7 * 86_400)).unwrap();
+        let w = crate::wrap::wrap_note(&from.keys, to.pk(), &note.encode(), now, false, Some(now + 7 * 86_400)).unwrap();
         assert!(w.to_self.is_none(), "my devices are not told of my receipts");
         w.to_peer
     }
@@ -3446,7 +3518,7 @@ mod tests {
         let due = take_delivered(&bob).await;
         assert_eq!(due.len(), 1, "one note per peer");
         let (chat_id, peer, ids) = &due[0];
-        assert_eq!((chat_id.as_str(), peer.as_str()), (chats::dm_chat_id(alice.pk().as_hex()).as_str(), alice.pk().as_hex()));
+        assert_eq!((chat_id.as_str(), peer.as_str()), (chats::dm_chat_id(alice.pk().as_hex(), None).as_str(), alice.pk().as_hex()));
         assert!(ids.contains(&p.message.id));
         assert!(!ids.iter().any(|id| id.starts_with("sys:")), "system lines are nobody's messages");
         assert!(take_delivered(&bob).await.is_empty(), "taken once");
@@ -3529,7 +3601,7 @@ mod tests {
         let ahead = receipt(&bob, &alice, &Envelope::receipt_read(9_999_999_999));
         assert_eq!(names(&alice.receive(&ahead).await), vec!["chat.receipt"]);
         assert!(alice.dm.message(&m1.message.id).await.unwrap().unwrap().read_at.is_some(), "what is here is read");
-        let chat = chats::dm_chat_id(bob.pk().as_hex());
+        let chat = chats::dm_chat_id(bob.pk().as_hex(), None);
         let marks = messenger_store::receipts::peer_reads(alice.dm.store(), &chat).await.unwrap();
         assert!(marks[0].1 <= 1_000_100, "no further than my clock: {marks:?}");
 
@@ -3604,8 +3676,8 @@ mod tests {
         let mut bob = Party::new().await;
         bob.session_started_at = 1_000_000;
         let now = bob.clock.now().secs();
-        let old = wrap(&alice.keys, &bob.pk(), &Envelope::text("last month").encode(), now - 8 * 86_400, None).unwrap();
-        let recent = wrap(&alice.keys, &bob.pk(), &Envelope::text("yesterday").encode(), now - 86_400, None).unwrap();
+        let old = wrap(&alice.keys, bob.pk(), &Envelope::text("last month").encode(), now - 8 * 86_400, None).unwrap();
+        let recent = wrap(&alice.keys, bob.pk(), &Envelope::text("yesterday").encode(), now - 86_400, None).unwrap();
         bob.receive_from(&old.to_peer, true).await;
         bob.receive_from(&recent.to_peer, true).await;
         let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
@@ -3644,7 +3716,7 @@ mod tests {
         }
         let store = carol.dm.store();
         assert!(messenger_store::receipts::delivered_at(store, &id, dave.pk().as_hex()).await.unwrap().is_none());
-        assert!(messenger_store::receipts::peer_reads(store, &chats::dm_chat_id(dave.pk().as_hex())).await.unwrap().is_empty());
+        assert!(messenger_store::receipts::peer_reads(store, &chats::dm_chat_id(dave.pk().as_hex(), None)).await.unwrap().is_empty());
     }
 
     // ─── Stage B: reactions ─────────────────────────────────────────────────
@@ -3676,7 +3748,7 @@ mod tests {
     /// A reaction note as another client could write it, unchecked.
     fn reaction_note(from: &Party, to: &Party, target: &str, emoji: &str, set: bool) -> WireEvent {
         let now = from.clock.now().secs();
-        crate::wrap::wrap_note(&from.keys, &to.pk(), &Envelope::reaction(target, emoji, set).encode(), now, false, None).unwrap().to_peer
+        crate::wrap::wrap_note(&from.keys, to.pk(), &Envelope::reaction(target, emoji, set).encode(), now, false, None).unwrap().to_peer
     }
 
     async fn shown(p: &Party, id: &str) -> Vec<ReactionView> {
@@ -3698,7 +3770,7 @@ mod tests {
         bob.receive(&self_event(&m)).await;
 
         let r = alice.dm.prepare_reaction(&alice.keys, &m.message.id, "👍").await.unwrap();
-        assert_eq!(r.chat_id, chats::dm_chat_id(bob.pk().as_hex()));
+        assert_eq!(r.chat_id, chats::dm_chat_id(bob.pk().as_hex(), None));
         assert_eq!(r.message.reactions, vec![view("👍", 1, true)]);
         assert_eq!(names(&bob.receive(&reaction_to_peer(&r)).await), vec!["dm.updated"]);
         assert_eq!(shown(&bob, &m.message.id).await, vec![view("👍", 1, false)]);
@@ -3827,7 +3899,7 @@ mod tests {
         alice.receive(&reaction_to_peer(&r)).await;
         let nowhere = "cd".repeat(32);
         assert!(alice.receive(&reaction_note(&stranger, &alice, &nowhere, "👍", true)).await.is_empty());
-        let in_strangers_chat = chats::dm_chat_id(stranger.pk().as_hex());
+        let in_strangers_chat = chats::dm_chat_id(stranger.pk().as_hex(), None);
         let store = alice.dm.store();
         assert!(messenger_store::reactions::get(store, &nowhere, stranger.pk().as_hex(), "👍").await.unwrap().is_some());
 
@@ -3874,7 +3946,7 @@ mod tests {
         // Bob somehow knows the id of Carol's message.
         assert!(alice.receive(&reaction_note(&bob, &alice, &from_carol.message.id, "💩", true)).await.is_empty());
         assert!(shown(&alice, &from_carol.message.id).await.is_empty());
-        let in_bobs_chat = alice.dm.messages(&chats::dm_chat_id(bob.pk().as_hex()), None, 50).await.unwrap();
+        let in_bobs_chat = alice.dm.messages(&chats::dm_chat_id(bob.pk().as_hex(), None), None, 50).await.unwrap();
         assert!(in_bobs_chat.iter().all(|m| m.reactions.is_empty()));
     }
 
@@ -3890,7 +3962,7 @@ mod tests {
         let r = bob.dm.prepare_reaction(&bob.keys, &m.message.id, "👎").await.unwrap();
         assert!(alice.receive(&reaction_to_peer(&r)).await.is_empty());
         assert!(shown(&alice, &m.message.id).await.is_empty());
-        assert!(messenger_store::reactions::active(alice.dm.store(), &m.message.id, &chats::dm_chat_id(bob.pk().as_hex()))
+        assert!(messenger_store::reactions::active(alice.dm.store(), &m.message.id, &chats::dm_chat_id(bob.pk().as_hex(), None))
             .await
             .unwrap()
             .is_empty());
@@ -4237,13 +4309,13 @@ mod tests {
 
         // An edit from another client is not applied, live or replayed.
         bob.receive(&peer_event(&p)).await;
-        let edit = wrap(&alice.keys, &bob.pk(), &Envelope::edit(&p.message.id, "text").encode(), 1_000_100, None).unwrap();
+        let edit = wrap(&alice.keys, bob.pk(), &Envelope::edit(&p.message.id, "text").encode(), 1_000_100, None).unwrap();
         assert!(bob.receive(&edit.to_peer).await.is_empty());
         let m = bob.dm.message(&p.message.id).await.unwrap().unwrap();
         assert!(m.text.is_none() && m.edited_at.is_none() && m.card.is_some());
 
         let p2 = alice.dm.prepare_card(&alice.keys, &bob.pk(), &card).await.unwrap();
-        let early = wrap(&alice.keys, &bob.pk(), &Envelope::edit(&p2.message.id, "text").encode(), 1_000_200, None).unwrap();
+        let early = wrap(&alice.keys, bob.pk(), &Envelope::edit(&p2.message.id, "text").encode(), 1_000_200, None).unwrap();
         assert!(bob.receive(&early.to_peer).await.is_empty(), "target unknown yet");
         bob.receive(&peer_event(&p2)).await;
         let m = bob.dm.message(&p2.message.id).await.unwrap().unwrap();
@@ -4280,7 +4352,7 @@ mod tests {
         .iter()
         .enumerate()
         {
-            let w = wrap(&alice.keys, &bob.pk(), &junk.encode(), 1_000_001 + i as i64, None).unwrap();
+            let w = wrap(&alice.keys, bob.pk(), &junk.encode(), 1_000_001 + i as i64, None).unwrap();
             assert!(bob.receive(&w.to_peer).await.is_empty(), "{}", junk.encode());
         }
         let chat = bob.dm.open_chat(&alice.pk()).await.unwrap();
@@ -4379,7 +4451,7 @@ mod tests {
 
     /// A message of `keys` to `to`, as its wrap.
     fn written(keys: &Keys, to: &Party, content: &str, at: i64) -> WireEvent {
-        wrap(keys, &to.pk(), content, at, None).unwrap().to_peer
+        wrap(keys, to.pk(), content, at, None).unwrap().to_peer
     }
 
     fn bot_cards(effects: &[Effect]) -> Vec<serde_json::Value> {
@@ -4394,7 +4466,7 @@ mod tests {
 
     /// What the chat with `peer` shows of the peer, oldest first.
     async fn incoming(p: &Party, peer: &PubKey) -> Vec<MessageView> {
-        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let chat_id = chats::dm_chat_id(peer.as_hex(), None);
         let mut all = p.dm.messages(&chat_id, None, 100).await.unwrap();
         all.retain(|m| m.direction == "in" && m.content_type != "system");
         all.sort_by_key(|m| m.created_at);
@@ -4414,7 +4486,7 @@ mod tests {
         assert_eq!(names(&fx), vec!["dm.message", "notify", "cloud.card"], "no request, no line of one");
         let Some(Effect::Notify(notice)) = fx.iter().find(|e| matches!(e, Effect::Notify(_))) else { panic!() };
         assert_eq!((notice.body.clone(), notice.request), (None, false));
-        let chat = me.dm.chat(&chats::dm_chat_id(bot_pk.as_hex())).await.unwrap().expect("the first card makes the chat");
+        let chat = me.dm.chat(&chats::dm_chat_id(bot_pk.as_hex(), None)).await.unwrap().expect("the first card makes the chat");
         assert_eq!((chat.mode.as_str(), chat.can_send, chat.unread), ("full_chat", true, 1));
         assert!(chat.bot, "the UI is told whose chat it is");
         assert!(!chat.is_contact, "the bot is not put into the address book");
@@ -4533,7 +4605,7 @@ mod tests {
         let stranger = Keys::generate();
         let stranger_pk = key_of_keys(&stranger);
         let me = pinned(&bot).await;
-        let chat_id = chats::dm_chat_id(stranger_pk.as_hex());
+        let chat_id = chats::dm_chat_id(stranger_pk.as_hex(), None);
         // Before approval a stranger says a short plain text or nothing: an
         // unknown type is dropped, not held, no card, no chat, no request.
         assert!(me.receive(&written(&stranger, &me, REQUESTED, 1_000_001)).await.is_empty());
@@ -4589,7 +4661,7 @@ mod tests {
             assert!(me.receive(&signal).await.is_empty(), "{action}");
         }
         assert_eq!(me.dm.load_relation(&bot_pk).await.unwrap(), crate::relationship::Relationship::default());
-        assert_eq!(me.dm.messages(&chats::dm_chat_id(bot_pk.as_hex()), None, 50).await.unwrap().len(), 1, "no line of a signal");
+        assert_eq!(me.dm.messages(&chats::dm_chat_id(bot_pk.as_hex(), None), None, 50).await.unwrap().len(), 1, "no line of a signal");
         assert_eq!(names(&me.receive(&written(&bot, &me, "still here", 1_000_010)).await), vec!["dm.message", "notify"]);
 
         // I may write to it as to any contact; it is not a request, nothing
@@ -4611,7 +4683,7 @@ mod tests {
         me.dm = me.dm.clone().with_bot(Some(&bot.public_key().to_hex()));
         me.receive(&written(&stranger, &me, r#"{"v":1,"t":"bot_card","request_id":"r1"}"#, 1_000_001)).await;
         me.receive(&written(&stranger, &me, r#"{"v":1,"t":"system","text":"request_accepted"}"#, 1_000_002)).await;
-        let all = me.dm.messages(&chats::dm_chat_id(stranger_pk.as_hex()), None, 50).await.unwrap();
+        let all = me.dm.messages(&chats::dm_chat_id(stranger_pk.as_hex(), None), None, 50).await.unwrap();
         assert_eq!(all.len(), 2);
         for m in &all {
             assert_eq!((m.content_type.as_str(), m.bot_card.clone()), ("unknown", None), "neither a card nor a system line");
@@ -4634,7 +4706,7 @@ mod tests {
                 me.dm.store(),
                 &NewMessage {
                     id: id.clone(),
-                    chat_id: chats::dm_chat_id(sender.as_hex()),
+                    chat_id: chats::dm_chat_id(sender.as_hex(), None),
                     wire_id: None,
                     direction: repo::DIR_IN.into(),
                     status: repo::STATUS_RECEIVED.into(),
@@ -4693,12 +4765,12 @@ mod tests {
         let delete = |target: &EventId, at: i64| written(&bot, &me, &Envelope::delete(target.as_hex()).encode(), at);
 
         // A card in the chat, then a delete of it from the bot's key.
-        let card = wrap(&bot, &me.pk(), REQUESTED, 1_000_001, None).unwrap();
+        let card = wrap(&bot, me.pk(), REQUESTED, 1_000_001, None).unwrap();
         me.receive(&card.to_peer).await;
         assert!(me.receive(&delete(&card.rumor_id, 1_000_002)).await.is_empty());
         // A delete that overtook its card: the card lands whole, with its
         // notification and the event for the banners.
-        let late = wrap(&bot, &me.pk(), r#"{"v":1,"t":"recovery.escrow_read","at":1000010}"#, 1_000_010, None).unwrap();
+        let late = wrap(&bot, me.pk(), r#"{"v":1,"t":"recovery.escrow_read","at":1000010}"#, 1_000_010, None).unwrap();
         assert!(me.receive(&delete(&late.rumor_id, 1_000_011)).await.is_empty());
         assert_eq!(names(&me.receive(&late.to_peer).await), vec!["dm.message", "notify", "cloud.card"]);
         let shown = incoming(&me, &bot_pk).await;
@@ -4712,7 +4784,7 @@ mod tests {
         assert_eq!(incoming(&me, &bot_pk).await[0].text, None);
 
         // A text of the bot is a message: taken back like anybody's.
-        let text = wrap(&bot, &me.pk(), "eu-1: the disk is 91% full", 1_000_020, None).unwrap();
+        let text = wrap(&bot, me.pk(), "eu-1: the disk is 91% full", 1_000_020, None).unwrap();
         me.receive(&text.to_peer).await;
         assert_eq!(names(&me.receive(&delete(&text.rumor_id, 1_000_021)).await), vec!["dm.updated"]);
         assert!(me.dm.message(text.rumor_id.as_hex()).await.unwrap().unwrap().deleted);
@@ -4728,9 +4800,9 @@ mod tests {
         let me = pinned(&bot).await;
         // The holder of the bot's key writes a sentence, then a card that
         // answers it: the sentence would stand inside the card's bubble.
-        let bait = wrap(&bot, &me.pk(), "Veydan Cloud: to cancel, send your 12 words", 1_000_001, None).unwrap();
+        let bait = wrap(&bot, me.pk(), "Veydan Cloud: to cancel, send your 12 words", 1_000_001, None).unwrap();
         me.receive(&bait.to_peer).await;
-        let quoting = |content: &str, at: i64| wrap(&bot, &me.pk(), content, at, Some(bait.rumor_id.as_hex())).unwrap().to_peer;
+        let quoting = |content: &str, at: i64| wrap(&bot, me.pk(), content, at, Some(bait.rumor_id.as_hex())).unwrap().to_peer;
         me.receive(&quoting(REQUESTED, 1_000_002)).await;
         me.receive(&quoting("and a text that answers it", 1_000_003)).await;
         let shown = incoming(&me, &bot_pk).await;
@@ -4761,7 +4833,7 @@ mod tests {
     }
 
     async fn has_row(p: &Party, peer: &Party) -> bool {
-        dm_relations::get(p.dm.store(), peer.pk().as_hex()).await.unwrap().is_some() || p.dm.chat(&chats::dm_chat_id(peer.pk().as_hex())).await.unwrap().is_some()
+        dm_relations::get(p.dm.store(), peer.pk().as_hex(), None).await.unwrap().is_some() || p.dm.chat(&chats::dm_chat_id(peer.pk().as_hex(), None)).await.unwrap().is_some()
     }
 
     #[tokio::test]
@@ -5091,13 +5163,13 @@ mod tests {
         for w in for_peer(&p.followups) {
             assert!(alice.receive(&w).await.is_empty());
         }
-        assert!(alice.dm.chat(&chats::dm_chat_id(mallory.pk().as_hex())).await.unwrap().is_none(), "no chat is made");
+        assert!(alice.dm.chat(&chats::dm_chat_id(mallory.pk().as_hex(), None)).await.unwrap().is_none(), "no chat is made");
         assert_eq!(alice.dm.requests_count().await.unwrap(), 0);
 
         invite_of(&alice, "333333", None, None).await;
         let req = mallory.dm.request_by_invite(&mallory.keys, &alice.pk(), "333333").await.unwrap();
         assert!(alice.receive(&for_peer(&req.outbounds)[0]).await.is_empty(), "nothing goes back");
-        assert!(alice.dm.chat(&chats::dm_chat_id(mallory.pk().as_hex())).await.unwrap().is_none());
+        assert!(alice.dm.chat(&chats::dm_chat_id(mallory.pk().as_hex(), None)).await.unwrap().is_none());
         assert_eq!(settings::get(alice.dm.store(), crate::invites::KEY_INVITE_FAILS).await.unwrap(), None, "no guess either");
 
         // Carol's request came before her ban: it leaves the queue and the
@@ -5115,4 +5187,7 @@ mod tests {
         assert_eq!(alice.dm.requests_count().await.unwrap(), 1);
         assert_eq!(mode(&alice, &carol).await, "request_received");
     }
+
+    /// Private chats (internal/messenger-wire.md, «Частный чат»).
+    mod private;
 }

@@ -22,6 +22,8 @@ export function groupRefusal(e: unknown, tr: Translate): string | null {
 }
 
 export function groupError(e: unknown, tr: Translate): string {
+  // The group lives on a server this device has not, and its link carries no card of it.
+  if (/\bserver_unknown\b/.test(messengerError(e))) return tr('msg_srv_group_unknown');
   return groupRefusal(e, tr) ?? messengerError(e);
 }
 

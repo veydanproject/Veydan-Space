@@ -31,7 +31,7 @@ fn pk(keys: &Keys) -> PubKey {
 
 /// A message as the app sends it: both wraps, the peer's and my own copy.
 fn send(from: &Keys, to: &Keys, envelope: &Envelope, at: i64) -> (Event, Event, String) {
-    let w = messenger_dm::wrap::wrap(from, &pk(to), &envelope.encode(), at, None).unwrap();
+    let w = messenger_dm::wrap::wrap(from, pk(to), &envelope.encode(), at, None).unwrap();
     let peer: Event = serde_json::from_value(w.to_peer.json).unwrap();
     let mine: Event = serde_json::from_value(w.to_self.expect("a copy for me").json).unwrap();
     (peer, mine, w.rumor_id.as_hex().to_string())
@@ -728,7 +728,7 @@ fn a_note_is_no_message() {
     let (alice, bob) = (Keys::generate(), Keys::generate());
     let w = messenger_dm::wrap::wrap_note(
         &alice,
-        &pk(&bob),
+        pk(&bob),
         &Envelope::reaction(&"ab".repeat(32), "👎", true).encode(),
         now(),
         false,

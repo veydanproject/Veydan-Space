@@ -65,7 +65,7 @@
     if (action === 'block' && !(await confirmStore.ask($t('msg_rel_confirm_block', { name: who }), $t('msg_rel_cta_block'), true))) return;
     error = '';
     try {
-      await requestStore.act(peer, action);
+      await requestStore.act(peer, action, chatId);
     } catch (e) {
       const code = dmErrorCode(e);
       error = code ? $t(`msg_err_${code}` as 'msg_err_dm_blocked', { name: who }) : messengerError(e);

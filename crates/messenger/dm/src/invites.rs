@@ -24,6 +24,7 @@
 //! device keeps its own budget and pause: whichever of them answers, the
 //! peer is in.
 
+use crate::peer::DmPeer;
 use crate::service::DmService;
 use messenger_core::traits::UiEvent;
 use messenger_core::{Effect, MessengerError, PubKey, Result};
@@ -244,17 +245,19 @@ impl DmService {
     /// paused nothing is looked up. The same wrap refused again (its copy
     /// from another relay) costs nothing more. A blocked key, or one the
     /// network bans, is let in by nothing, and its right secret is no guess.
-    pub async fn redeem_invite(&self, peer: &PubKey, secret: &str, rumor_id: &str) -> Result<(Option<String>, Vec<Effect>)> {
+    pub async fn redeem_invite(&self, peer: impl Into<DmPeer>, secret: &str, rumor_id: &str) -> Result<(Option<String>, Vec<Effect>)> {
+        let peer = peer.into();
         let now = self.clock.now().secs();
         if self.invite_paused_until().await?.is_some() {
             return Ok((None, vec![]));
         }
         let found = self.invite_get(&invite_id(secret)).await?;
-        if let Some(invite) = found.filter(|i| i.admits(peer, now)) {
-            if self.load_relation(peer).await?.blocked || self.is_banned(peer).await? {
+        if let Some(invite) = found.filter(|i| i.admits(&peer.key, now)) {
+            // My block in the chat it opens: the home one, or a private one.
+            if self.load_relation(&peer).await?.blocked || self.is_banned(&peer.key).await? {
                 return Ok((None, vec![]));
             }
-            if dm_invites::add_use(&self.store, &invite.row.id, peer.as_hex(), now).await? {
+            if dm_invites::add_use(&self.store, &invite.row.id, peer.key.as_hex(), now).await? {
                 self.mark_relations_owed().await?;
             }
             return Ok((Some(invite.row.id), vec![]));

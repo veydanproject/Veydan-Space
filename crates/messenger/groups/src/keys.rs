@@ -14,7 +14,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use base64::engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD as B64URL};
 use base64::Engine as _;
 use messenger_core::{MessengerError, PubKey, RelayUrl, Result};
-use messenger_links::{LinkError, LinkType, Uri, UriBuilder};
+use messenger_links::{server_id, LinkError, LinkType, ServerLink, Uri, UriBuilder};
 use sha2::{Digest, Sha256};
 
 const NONCE_LEN: usize = 12;
@@ -138,6 +138,11 @@ pub struct GroupLink {
     /// Public only.
     pub secret: Option<LinkSecret>,
     pub link_epoch: u32,
+    /// The card of the server the group lives on (`srv=`), when it is a
+    /// private server of whoever shared the link: its relay is `relay`.
+    /// Whoever opens the link adds the server, after asking, and joins
+    /// there (internal/messenger-wire.md, «Ссылка»).
+    pub srv: Option<ServerLink>,
 }
 
 const MAX_LINK_MANAGERS: usize = 3;
@@ -156,6 +161,9 @@ impl GroupLink {
             .list("m", self.managers.iter().take(MAX_LINK_MANAGERS).map(|p| p.as_hex()));
         if let Some(secret) = &self.secret {
             b = b.param("s", &B64URL.encode(secret.0)).param("e", &self.link_epoch.to_string());
+        }
+        if let Some(srv) = &self.srv {
+            b = b.param("srv", &srv.srv_param());
         }
         b.build()
     }
@@ -200,7 +208,20 @@ impl GroupLink {
         if (kind == GroupKind::Public) != secret.is_some() {
             return Err(bad("a public link carries a secret, a private one does not"));
         }
-        Ok(Self { group_id: group_id.to_string(), kind, relay, name, owner, managers, secret, link_epoch })
+        // The card of the group's server, of the relay `r=` names and no
+        // other: a card of another server would add a server the group
+        // does not live on.
+        let srv = match uri.raw("srv") {
+            Some(raw) => {
+                let srv = ServerLink::from_srv(raw).map_err(|_| bad("server"))?;
+                if srv.id != server_id(relay.as_str()) {
+                    return Err(bad("server"));
+                }
+                Some(srv)
+            }
+            None => None,
+        };
+        Ok(Self { group_id: group_id.to_string(), kind, relay, name, owner, managers, secret, link_epoch, srv })
     }
 }
 
@@ -256,6 +277,7 @@ mod tests {
             managers: vec![],
             secret: Some(LinkSecret::from_bytes(&[9u8; 32]).unwrap()),
             link_epoch: 3,
+            srv: None,
         };
         let text = public.encode();
         assert!(text.starts_with("veydan://group/"));
@@ -274,6 +296,32 @@ mod tests {
         assert_eq!(back.managers.len(), 3, "at most three managers in a link");
         assert_eq!(back.kind, GroupKind::Private);
         assert!(back.secret.is_none());
+    }
+
+    #[test]
+    fn a_link_carries_the_card_of_its_server() {
+        let relay = RelayUrl::parse("wss://relay.s1.example").unwrap();
+        let card = ServerLink { key: Some("app-key".into()), name: "S1".into(), ..ServerLink::new(relay.clone()) };
+        let link = GroupLink {
+            group_id: GID.into(),
+            kind: GroupKind::Private,
+            relay: relay.clone(),
+            name: "On S1".into(),
+            owner: pk("a"),
+            managers: vec![pk("a")],
+            secret: None,
+            link_epoch: 0,
+            srv: Some(card.clone()),
+        };
+        let text = link.encode();
+        assert!(text.contains(&format!("&srv={}", card.srv_param())));
+        assert_eq!(GroupLink::parse(&text).unwrap(), link);
+
+        // The card of another server than the group's relay: refused.
+        let other = ServerLink::new(RelayUrl::parse("wss://relay.s2.example").unwrap());
+        let wrong = GroupLink { srv: Some(other), ..link.clone() }.encode();
+        assert!(GroupLink::parse(&wrong).is_err());
+        assert!(GroupLink::parse(&format!("{}&srv=AAAA", GroupLink { srv: None, ..link }.encode())).is_err());
     }
 
     #[test]

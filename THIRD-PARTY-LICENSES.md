@@ -1216,7 +1216,7 @@ The full notices are the `LICENSE.md` of each archive and
 
 Bundled with the UI, under the SIL Open Font License 1.1 (OFL-1.1):
 
-- **IBM Plex Sans** — @fontsource-variable/ibm-plex-sans
+- **Manrope** — @fontsource-variable/manrope
 - **JetBrains Mono** — @fontsource-variable/jetbrains-mono
 - **Noto Color Emoji** — @fontsource/noto-color-emoji
 - **Noto Sans SC, Noto Sans JP, Noto Sans KR** — github.com/google/fonts, cut down to the characters of the UI's Chinese, Japanese and Korean strings (`ui/src/lib/core/fonts`, made by `scripts/fonts-cjk.mjs`); also in the web clipper of Veydan Space

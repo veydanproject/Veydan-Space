@@ -66,8 +66,9 @@ class GroupStore {
     }, 250));
   }
 
-  async create(kind: 'public' | 'private', name: string, about: string, historyForNew: boolean) {
-    const g = await messengerApi.groups.create(kind, name, about, historyForNew);
+  /** `server`: a private server of mine the group lives on; `null`: the home set. */
+  async create(kind: 'public' | 'private', name: string, about: string, historyForNew: boolean, server: string | null = null) {
+    const g = await messengerApi.groups.create(kind, name, about, historyForNew, server);
     this.put(g);
     return g;
   }

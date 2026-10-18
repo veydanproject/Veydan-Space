@@ -16,6 +16,8 @@ messenger-richtext.workspace = true
 sqlx.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
 tokio = { workspace = true, features = ["fs"] }
 thiserror.workspace = true
 

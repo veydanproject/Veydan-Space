@@ -16,7 +16,7 @@
 //! On a desktop the commands exist and say that pushes are not supported.
 
 use super::{map_err, MessengerState};
-use messenger_runtime::push::PushStatus;
+use messenger_runtime::push::{PushStatus, PushTicket};
 use serde::Serialize;
 use veydan_core::{AppError, CmdResult};
 use veydan_lock::Lock;
@@ -414,6 +414,22 @@ pub async fn messenger_push_test(messenger: tauri::State<'_, MessengerState>) ->
     Ok(PushTest { outcome: answer.outcome, trace: answer.trace })
 }
 
+/// The tickets of this identity the gateways hold, each with the private
+/// server of this device that uses it (internal/messenger-wire.md, «Push
+/// через шлюз»). A gateway that cannot be asked is left out.
+#[tauri::command]
+pub async fn messenger_push_tickets(messenger: tauri::State<'_, MessengerState>) -> CmdResult<Vec<PushTicket>> {
+    messenger.runtime()?.push_tickets_list().await.map_err(map_err)
+}
+
+/// Takes back the ticket that begins with `prefix` (8 hex at least) at
+/// every gateway; a private server of mine that held it gets a new one at
+/// the next round. How many gateways took one back.
+#[tauri::command]
+pub async fn messenger_push_ticket_revoke(prefix: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<usize> {
+    messenger.runtime()?.push_ticket_revoke(&prefix).await.map_err(map_err)
+}
+
 /// The tapped notification, once. Asked at start, to learn about the tap
 /// that opened the app, and after every `EVENT_TAP`.
 #[tauri::command]
@@ -493,6 +509,7 @@ async fn keep_handler_keys(app: tauri::AppHandle, rt: std::sync::Arc<messenger_r
     use tauri::Manager;
 
     let Some(push) = app.try_state::<VeydanPush<tauri::Wry>>() else { return };
+    let mut events = rt.ui_events();
 
     // What the handler has now: a fingerprint of the bundle, or nothing.
     // Unknown at start, so the first round always speaks.
@@ -520,6 +537,24 @@ async fn keep_handler_keys(app: tauri::AppHandle, rt: std::sync::Arc<messenger_r
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_secs(20)) => {}
             _ = KEYS_KICK.notified() => {}
+            _ = push_key_made(&mut events) => {}
+        }
+    }
+}
+
+/// Waits until the runtime says it made a push key
+/// (`UI_EVENT_PUSH_KEY`): the private server it is made for asks with a
+/// sealed push right after the registration, and the handler must hold
+/// the key by then. Events missed while the receiver lagged count as one.
+#[cfg(target_os = "android")]
+async fn push_key_made(events: &mut tokio::sync::broadcast::Receiver<messenger_core::traits::UiEvent>) {
+    use tokio::sync::broadcast::error::RecvError;
+    loop {
+        match events.recv().await {
+            Ok(ev) if ev.name == messenger_runtime::push::UI_EVENT_PUSH_KEY => return,
+            Ok(_) => {}
+            Err(RecvError::Lagged(_)) => return,
+            Err(RecvError::Closed) => std::future::pending::<()>().await,
         }
     }
 }

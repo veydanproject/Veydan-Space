@@ -51,18 +51,43 @@ pub struct KeyBundle {
     #[serde(default)]
     #[zeroize(skip)]
     pub calls_only: bool,
+    /// Hex of the secret of the push key of the device: what opens a push
+    /// of a private server, sealed to it and carried by the gateway
+    /// (internal/messenger-wire.md, «Push через шлюз»). It opens nothing
+    /// else. Absent while the device registered at no private server, and
+    /// in a bundle written before the gateway.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_key: Option<String>,
 }
 
 impl KeyBundle {
     pub fn new(keys: &Keys, groups: Vec<GroupKeyEntry>) -> Self {
-        Self { v: BUNDLE_VERSION, nsec: keys.secret_key().to_secret_hex(), groups, calls_only: false }
+        Self { v: BUNDLE_VERSION, nsec: keys.secret_key().to_secret_hex(), groups, calls_only: false, push_key: None }
     }
 
     /// The identity's key alone, for calls alone (see `calls_only`): no
     /// keys of groups, since nothing of a group is opened with it. Never
     /// under a PIN: the key inside is the identity's whole key.
     pub fn for_calls_only(keys: &Keys) -> Self {
-        Self { v: BUNDLE_VERSION, nsec: keys.secret_key().to_secret_hex(), groups: Vec::new(), calls_only: true }
+        Self {
+            v: BUNDLE_VERSION,
+            nsec: keys.secret_key().to_secret_hex(),
+            groups: Vec::new(),
+            calls_only: true,
+            push_key: None,
+        }
+    }
+
+    /// The same bundle, with the push key of the device to open sealed
+    /// pushes with.
+    pub fn with_push_key(mut self, push_key: Option<&Keys>) -> Self {
+        self.push_key = push_key.map(|k| k.secret_key().to_secret_hex());
+        self
+    }
+
+    /// The push key of the device, when the bundle has one that reads.
+    pub fn push_keys(&self) -> Option<Keys> {
+        self.push_key.as_deref().and_then(|hex| Keys::parse(hex).ok())
     }
 
     pub fn from_json(bytes: &[u8]) -> Result<Self> {

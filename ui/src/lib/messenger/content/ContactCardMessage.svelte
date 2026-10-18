@@ -14,7 +14,9 @@
   import BioView from '../contacts/BioView.svelte';
   import SocialLinks from '../contacts/SocialLinks.svelte';
   import { messengerStore } from '../store.svelte';
-  import { dmErrorCode, messengerError, profileErrorCode, type MessengerMessage } from '../api';
+  import { get } from 'svelte/store';
+  import { dmErrorCode, messengerApi, messengerError, profileErrorCode, type MessengerMessage, type ServerPreview } from '../api';
+  import { serverFacts, serverName } from '../servers/serverAccept.svelte';
   import { cardActions, linkActions } from './actions';
   import type { ExternalUrl } from './types';
 
@@ -73,6 +75,19 @@
 
   const accept = () => run(async () => { await cardActions.accept(m.id); added = true; });
   const write = () => card && run(() => cardActions.write(card.pubkey));
+  const openPrivate = () => card && run(() => cardActions.openPrivate(card));
+
+  // The server the card offers a private chat on, as the runtime reads its card.
+  let server = $state<ServerPreview | null>(null);
+  $effect(() => {
+    const link = card?.server ?? null;
+    server = null;
+    if (!link) return;
+    let live = true;
+    messengerApi.servers.preview(link).then((s) => { if (live) server = s; }).catch(() => {});
+    return () => { live = false; };
+  });
+  const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'msg_you', params);
 
   function copyPhone() {
     if (!card?.phone) return;
@@ -126,6 +141,19 @@
             title={ownCard ? $t('msg_card_phone_hint') : $t('msg_card_copy')} aria-label="{$t('msg_card_phone')}: {card.phone}. {$t('msg_card_copy')}">
             <Icon name="phone" size={13} /><span class="value">{card.phone}</span>
             <span class="copy" class:done={copied}><Icon name={copied ? 'check' : 'copy'} size={12} />{copied ? $t('msg_card_copied') : ''}</span>
+          </button>
+        {/if}
+      </div>
+    {/if}
+
+    {#if server}
+      <!-- The sender's server: a private chat with them there. -->
+      <div class="server">
+        <span class="offer"><Icon name={server.is_veydan ? 'shield-check' : 'server-2'} size={13} />{$t('msg_srv_card_private_chat', { name: serverName(server, tr) })}</span>
+        <span class="whose" class:veydan={server.is_veydan}>{$t(server.is_veydan ? 'msg_srv_is_veydan' : 'msg_srv_not_veydan')} · {serverFacts(server, tr).join(' · ')}</span>
+        {#if m.direction === 'in' && !card.is_me && !card.blocked}
+          <button class="btn btn-ghost btn-sm" disabled={busy} onclick={openPrivate}>
+            <Icon name="message-circle" size={13} />{$t('msg_srv_card_open_private')}
           </button>
         {/if}
       </div>
@@ -190,6 +218,10 @@
   .value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
   .copy { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: var(--fs-2xs); color: var(--text-3); }
   .copy.done { color: var(--success-text, var(--success)); }
+  .server { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
+  .offer { display: inline-flex; align-items: center; gap: 5px; color: var(--text); font-weight: var(--fw-semibold); }
+  .whose { color: var(--warn-text); }
+  .whose.veydan { color: var(--success-text); }
   .status { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); }
   .status.closed { color: var(--warn-text); }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

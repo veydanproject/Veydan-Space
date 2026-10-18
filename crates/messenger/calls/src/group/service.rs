@@ -1530,13 +1530,23 @@ impl Inner {
 
     /// The nodes a room of `group_id` may be made on, or sat on through:
     /// the one pinned to the group (class `Group`), then the sets of
-    /// servers; nodes judged gone lately left out.
+    /// servers — for a group of a private server its server's own node
+    /// alone (`GroupAccess::server_nodes`), and none when that cannot be
+    /// told; nodes judged gone lately left out.
     async fn candidates(&self, group_id: &str, bad: &HashMap<BridgeId, Instant>) -> Vec<CallNode> {
         let mut out: Vec<CallNode> = Vec::new();
         if let Some(pinned) = self.pinned(group_id).await {
             out.push(pinned);
         }
-        for n in self.servers.call_nodes().await.unwrap_or_default() {
+        let set = match self.groups.server_nodes(group_id).await {
+            Ok(Some(nodes)) => nodes,
+            Ok(None) => self.servers.call_nodes().await.unwrap_or_default(),
+            Err(e) => {
+                tracing::warn!(error = %e, "group call: the server of the group was not read: no node of the sets");
+                Vec::new()
+            }
+        };
+        for n in set {
             if !out.iter().any(|o| o.node.id == n.node.id) {
                 out.push(n);
             }

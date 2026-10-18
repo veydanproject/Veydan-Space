@@ -6,14 +6,15 @@
 //! fetching their history, and looking after the keys.
 
 use crate::relays::RelayService;
+use crate::scopes;
 use crate::MessengerRuntime;
 use messenger_core::traits::{RelayState, SystemClock, UiEvent};
 use messenger_core::{Clock, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SubId, SyncItem, TextFormat, Timestamp, Transport};
 use messenger_dm::{ChatView, MessageView};
 use messenger_groups::{GroupKind, GroupService, GroupView, InviteView, OpBody, Outcome, Signal};
 use messenger_ingress::{filters, Outbox};
-use messenger_store::{cursors, events_raw, groups as repo, settings, Store};
-use std::collections::HashSet;
+use messenger_store::{cursors, events_raw, groups as repo, servers, settings, Store};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, Mutex};
@@ -57,32 +58,73 @@ async fn note_window(store: &Store, group_id: &str, before: i64, received: u32) 
     let _ = settings::set(store, &oldest_fetched_key(group_id), &format!("{} {misses}", before.min(bound))).await;
 }
 
-/// Ask the relays for everything of `ids` since `since` that this device
-/// lacks: every local id of the window goes along, so that Negentropy
-/// sends back only what is missing.
-pub(crate) async fn request_since(store: &Store, transport: &dyn Transport, ids: &[String], since: Option<i64>) -> Result<()> {
-    let local = events_raw::items_since(store, KIND_GROUP_EVENT, since.unwrap_or(0))
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(id, at)| SyncItem { id, created_at: Timestamp(at) })
-        .collect();
+/// Ask the relays of `scope` (the server the groups live on) for
+/// everything of `ids` since `since` that this device lacks: every local
+/// id of the window goes along, so that Negentropy sends back only what is
+/// missing.
+pub(crate) async fn request_since(
+    store: &Store,
+    transport: &dyn Transport,
+    scope: Scope,
+    ids: &[String],
+    since: Option<i64>,
+) -> Result<()> {
+    // A server hears of the ids of its own groups alone: what this device
+    // holds of the groups of other servers is none of its business. A
+    // private server's are those of `ids`; the home set's all but those of
+    // the groups of private servers.
+    let since_at = since.unwrap_or(0);
+    let local = match &scope {
+        Scope::Server { .. } => {
+            let mut items = Vec::new();
+            for id in ids {
+                items.extend(events_raw::items_tagged_since(store, KIND_GROUP_EVENT, id, since_at).await.unwrap_or_default());
+            }
+            items
+        }
+        _ => {
+            let mut items = events_raw::items_since(store, KIND_GROUP_EVENT, since_at).await.unwrap_or_default();
+            let mut elsewhere = HashSet::new();
+            for g in repo::list(store).await.unwrap_or_default() {
+                // A group of a private server, or of one removed on
+                // purpose (`servers::group_closed`): not the home set's.
+                if !matches!(servers::of_group(store, &g.id).await, Ok(None)) {
+                    let theirs = events_raw::items_tagged_since(store, KIND_GROUP_EVENT, &g.id, since_at).await.unwrap_or_default();
+                    elsewhere.extend(theirs.into_iter().map(|(id, _)| id.as_hex().to_string()));
+                }
+            }
+            if !elsewhere.is_empty() {
+                items.retain(|(id, _)| !elsewhere.contains(id.as_hex()));
+            }
+            items
+        }
+    }
+    .into_iter()
+    .map(|(id, at)| SyncItem { id, created_at: Timestamp(at) })
+    .collect();
     let filter = filters::group_events(ids, since.map(Timestamp));
-    transport.send(Outbound::Sync { scope: Scope::Own, filter, local }).await?;
+    transport.send(Outbound::Sync { scope, filter, local }).await?;
     Ok(())
 }
 
-/// Ask the relays for one window of a group's past: the newest `limit`
-/// events up to `before` that this device lacks. The local side of the
-/// comparison is this group's events of the same window and nothing
-/// else, so the relays see the same set they hold. How many of them this
-/// device already had.
-pub(crate) async fn request_window(store: &Store, transport: &dyn Transport, group_id: &str, before: i64, limit: u32) -> Result<usize> {
+/// Ask the relays of `scope` (the group's server) for one window of a
+/// group's past: the newest `limit` events up to `before` that this device
+/// lacks. The local side of the comparison is this group's events of the
+/// same window and nothing else, so the relays see the same set they hold.
+/// How many of them this device already had.
+pub(crate) async fn request_window(
+    store: &Store,
+    transport: &dyn Transport,
+    scope: Scope,
+    group_id: &str,
+    before: i64,
+    limit: u32,
+) -> Result<usize> {
     let local = events_raw::items_tagged_until(store, KIND_GROUP_EVENT, group_id, before).await?;
     let known = local.len();
     let local = local.into_iter().map(|(id, at)| SyncItem { id, created_at: Timestamp(at) }).collect();
     let filter = filters::group_events_until(&[group_id.to_string()], Timestamp(before), limit as usize);
-    transport.send(Outbound::Sync { scope: Scope::Own, filter, local }).await?;
+    transport.send(Outbound::Sync { scope, filter, local }).await?;
     Ok(known)
 }
 
@@ -122,6 +164,12 @@ pub struct GroupsDriver {
     pub(crate) ui: broadcast::Sender<UiEvent>,
     /// Groups whose history was asked for in this session.
     synced: Arc<Mutex<HashSet<String>>>,
+    /// The private servers whose groups are listened to now, each under a
+    /// subscription of its own (the home set's is `SUB_GROUPS`).
+    listened: Arc<Mutex<HashSet<String>>>,
+    /// The private servers this session has taken up the groups of: those
+    /// of its start, and each that came since (`servers_changed`).
+    servers_known: Arc<Mutex<HashSet<String>>>,
 }
 
 impl GroupsDriver {
@@ -133,7 +181,93 @@ impl GroupsDriver {
         outbox: Outbox,
         ui: broadcast::Sender<UiEvent>,
     ) -> Self {
-        Self { groups, store, relays, outbox, ui, synced: Arc::default() }
+        Self {
+            groups,
+            store,
+            relays,
+            outbox,
+            ui,
+            synced: Arc::default(),
+            listened: Arc::default(),
+            servers_known: Arc::default(),
+        }
+    }
+
+    /// `ids` by the server each group lives on (`None`: the home set), in
+    /// the order given. A group whose server is not read is left out: a
+    /// group of a private server removed on purpose is closed
+    /// (`servers::group_closed`), and none is asked of the home set in its
+    /// stead.
+    async fn by_server(&self, ids: &[String]) -> BTreeMap<Option<String>, Vec<String>> {
+        let mut parts: BTreeMap<Option<String>, Vec<String>> = BTreeMap::new();
+        for id in ids {
+            match scopes::server_of_group(&self.store, id).await {
+                Ok(server) => parts.entry(server).or_default().push(id.clone()),
+                Err(e) if servers::is_unknown(&e) => {}
+                Err(e) => eprintln!("messenger groups: the server of a group was not read, it is not asked: {e}"),
+            }
+        }
+        parts
+    }
+
+    /// The list of my private servers changed (`UI_EVENT_SERVERS_UPDATED`:
+    /// one put in or removed here, or by the snapshot of another device of
+    /// mine). What the groups of a removed one left outside the store goes
+    /// (`GroupService::forget_gone`); the pool takes the relays as they now
+    /// are; the groups here that now live on a server that came (their
+    /// relay was no server of mine) catch up its past by its cursor; and
+    /// the subscriptions follow: `groups@<id>` of a server my groups live
+    /// on, none of one they no longer do. Without a session only the first.
+    /// Nothing more when the servers are those this session knows.
+    pub(crate) async fn servers_changed(&self) {
+        if let Err(e) = self.groups.forget_gone().await {
+            eprintln!("messenger groups: what the groups of a removed server left was not forgotten: {e}");
+        }
+        if self.groups.signer().is_none() {
+            return;
+        }
+        let now: HashSet<String> = scopes::private_servers(&self.store).await.into_iter().collect();
+        let came: HashSet<String> = {
+            let mut known = self.servers_known.lock().await;
+            if *known == now {
+                return;
+            }
+            let came = now.difference(&known).cloned().collect();
+            *known = now;
+            came
+        };
+        if let Err(e) = self.relays.reload().await {
+            eprintln!("messenger groups: the relays were not reloaded: {e}");
+        }
+        if !came.is_empty() {
+            // A welcome held for the relay of a server I had not is read
+            // now that it is mine (`GroupService::on_welcome`).
+            if let Some(keys) = self.groups.signer() {
+                match self.groups.welcomes_of_servers_that_came(&keys).await {
+                    Ok(o) => {
+                        if let Err(e) = self.apply(o).await {
+                            eprintln!("messenger groups: a held welcome was not carried out: {e}");
+                        }
+                    }
+                    Err(e) => eprintln!("messenger groups: the held welcomes were not read: {e}"),
+                }
+            }
+            let ids = self.groups.watched().await.unwrap_or_default();
+            for (server, part) in self.by_server(&ids).await {
+                if server.as_ref().is_some_and(|s| came.contains(s)) {
+                    // Asked anew, of their server: what the home set gave
+                    // them is not what it holds.
+                    {
+                        let mut synced = self.synced.lock().await;
+                        for g in &part {
+                            synced.remove(g);
+                        }
+                    }
+                    self.catch_up(server, part).await;
+                }
+            }
+        }
+        self.resubscribe().await;
     }
 
     fn me(&self) -> Option<PubKey> {
@@ -185,20 +319,39 @@ impl GroupsDriver {
             }
         };
         let pool = self.relays.pool().await;
-        if ids.is_empty() {
+        // One subscription per server my groups live on, each to that
+        // server alone; a server none of them lives on any more is no
+        // longer listened to.
+        let parts = self.by_server(&ids).await;
+        let gone: Vec<String> = {
+            let now: HashSet<String> = parts.keys().flatten().cloned().collect();
+            let mut listened = self.listened.lock().await;
+            let gone = listened.difference(&now).cloned().collect();
+            *listened = now;
+            gone
+        };
+        for server in gone {
+            let _ = pool.send(Outbound::Unsubscribe { id: SubId(scopes::sub_id(filters::SUB_GROUPS, Some(&server))) }).await;
+            let _ = pool.send(Outbound::Unsubscribe { id: SubId(scopes::sub_id(SUB_GROUP_PROFILES, Some(&server))) }).await;
+        }
+        if !parts.contains_key(&None) {
             let _ = pool.send(Outbound::Unsubscribe { id: SubId(filters::SUB_GROUPS.into()) }).await;
+        }
+        if ids.is_empty() {
             return;
         }
         let since = Timestamp(SystemClock.now().secs() - filters::GROUP_LIVE_MARGIN_SECS);
-        if let Err(e) = pool
-            .send(Outbound::Subscribe {
-                id: SubId(filters::SUB_GROUPS.into()),
-                filter: filters::group_events(&ids, Some(since)),
-                scope: Scope::Own,
-            })
-            .await
-        {
-            eprintln!("messenger groups: subscription failed: {e}");
+        for (server, part) in &parts {
+            if let Err(e) = pool
+                .send(Outbound::Subscribe {
+                    id: SubId(scopes::sub_id(filters::SUB_GROUPS, server.as_deref())),
+                    filter: filters::group_events(part, Some(since)),
+                    scope: scopes::of_server(server.as_deref()),
+                })
+                .await
+            {
+                eprintln!("messenger groups: subscription failed: {e}");
+            }
         }
         self.follow_members().await;
 
@@ -215,11 +368,14 @@ impl GroupsDriver {
         }
     }
 
-    /// Profiles of the people in my groups, so that they have names.
+    /// Profiles of the people in my groups, so that they have names: those
+    /// of the groups of each server asked of that server alone, so that the
+    /// home set never hears who is in a group of a private server.
     async fn follow_members(&self) {
         let Some(me) = self.me() else { return };
-        let mut authors: Vec<PubKey> = Vec::new();
+        let mut parts: BTreeMap<Option<String>, Vec<PubKey>> = BTreeMap::new();
         for g in self.groups.list(&me).await.unwrap_or_default() {
+            let authors = parts.entry(g.server_id.clone()).or_default();
             for m in g.members {
                 if let Some(pk) = PubKey::parse(&m.pubkey) {
                     if !authors.contains(&pk) && authors.len() < MAX_PROFILE_AUTHORS {
@@ -228,13 +384,16 @@ impl GroupsDriver {
                 }
             }
         }
-        if authors.is_empty() {
-            return;
-        }
         let pool = self.relays.pool().await;
-        let _ = pool
-            .send(Outbound::Subscribe { id: SubId(SUB_GROUP_PROFILES.into()), filter: filters::profiles(&authors), scope: Scope::Own })
-            .await;
+        for (server, authors) in parts.into_iter().filter(|(_, a)| !a.is_empty()) {
+            let _ = pool
+                .send(Outbound::Subscribe {
+                    id: SubId(scopes::sub_id(SUB_GROUP_PROFILES, server.as_deref())),
+                    filter: filters::profiles(&authors),
+                    scope: scopes::of_server(server.as_deref()),
+                })
+                .await;
+        }
     }
 
     async fn wait_for_relay(&self) -> bool {
@@ -265,23 +424,31 @@ impl GroupsDriver {
         }
         let started = SystemClock.now().secs();
         let pool = self.relays.pool().await;
-        match request_since(&self.store, pool.as_ref(), &ids, since).await {
-            Ok(()) => {
-                if since.is_some() {
-                    let _ = cursors::advance(&self.store, filters::CURSOR_GROUPS, cursors::ANY_RELAY, started).await;
+        // Each server for its own groups, with a cursor of its own.
+        let mut asked = Vec::new();
+        for (server, part) in self.by_server(&ids).await {
+            match request_since(&self.store, pool.as_ref(), scopes::of_server(server.as_deref()), &part, since).await {
+                Ok(()) => {
+                    if since.is_some() {
+                        let key = cursors::of_server(server.as_deref());
+                        let _ = cursors::advance(&self.store, filters::CURSOR_GROUPS, key, started).await;
+                    }
+                    asked.extend(part);
                 }
-            }
-            Err(e) => {
-                eprintln!("messenger groups: history not fetched: {e}");
-                let mut synced = self.synced.lock().await;
-                for g in &ids {
-                    synced.remove(g);
+                Err(e) => {
+                    eprintln!("messenger groups: history not fetched: {e}");
+                    let mut synced = self.synced.lock().await;
+                    for g in &part {
+                        synced.remove(g);
+                    }
                 }
-                return;
             }
         }
+        if asked.is_empty() {
+            return;
+        }
         tokio::time::sleep(SETTLE_AFTER_SYNC).await;
-        for g in ids {
+        for g in asked {
             self.maintain_now(&g).await;
         }
     }
@@ -311,7 +478,8 @@ impl GroupsDriver {
             return Err(MessengerError::Transport("no relay connected".into()));
         }
         let pool = self.relays.pool().await;
-        let known = request_window(&self.store, pool.as_ref(), group_id, before, limit).await?;
+        let scope = scopes::of_server(scopes::server_of_group(&self.store, group_id).await?.as_deref());
+        let known = request_window(&self.store, pool.as_ref(), scope, group_id, before, limit).await?;
         let received = settle_window(&self.store, group_id, before, known).await;
         note_window(&self.store, group_id, before, received).await;
         self.maintain_now(group_id).await;
@@ -321,8 +489,28 @@ impl GroupsDriver {
     /// A session began: listen, and catch up on what was missed.
     pub(crate) async fn session_started(&self) {
         self.synced.lock().await.clear();
+        // The keys of groups a removal took while the secrets were locked.
+        if let Err(e) = self.groups.forget_gone().await {
+            eprintln!("messenger groups: what the groups of a removed server left was not forgotten: {e}");
+        }
+        // Each server that comes from now on is taken up by `servers_changed`.
+        *self.servers_known.lock().await = scopes::private_servers(&self.store).await.into_iter().collect();
         let ids = self.groups.watched().await.unwrap_or_default();
-        let cursor = cursors::get(&self.store, filters::CURSOR_GROUPS, cursors::ANY_RELAY).await.ok().flatten();
+        // Each server by its own cursor; the home set's always, so that it
+        // starts even before the first group.
+        let mut parts = self.by_server(&ids).await;
+        parts.entry(None).or_default();
+        for (server, part) in parts {
+            self.catch_up(server, part).await;
+        }
+        self.resubscribe().await;
+    }
+
+    /// The catch-up of the groups `ids` of one server at the start of a
+    /// session, by that server's cursor.
+    async fn catch_up(&self, server: Option<String>, ids: Vec<String>) {
+        let key = cursors::of_server(server.as_deref());
+        let cursor = cursors::get(&self.store, filters::CURSOR_GROUPS, key).await.ok().flatten();
         if let (Some(cursor), false) = (cursor, ids.is_empty()) {
             // Known groups: only what is newer than the last catch-up.
             // Groups that joined since have no history here and get all of it.
@@ -351,9 +539,8 @@ impl GroupsDriver {
             let this = self.clone();
             tokio::spawn(async move { this.history(ids, Some(0)).await });
         } else {
-            let _ = cursors::advance(&self.store, filters::CURSOR_GROUPS, cursors::ANY_RELAY, SystemClock.now().secs()).await;
+            let _ = cursors::advance(&self.store, filters::CURSOR_GROUPS, key, SystemClock.now().secs()).await;
         }
-        self.resubscribe().await;
     }
 
     async fn maintain_now(&self, group_id: &str) {
@@ -399,13 +586,28 @@ impl GroupsDriver {
         });
     }
 
-    /// What the handlers ask for.
+    /// What the handlers ask for, and the list of my private servers
+    /// followed for as long as the runtime runs (`servers_changed`): a
+    /// server put in or taken from the snapshot mid-session is heard for
+    /// groups too, one removed lets go of them.
     pub(crate) async fn run(self, mut signals: mpsc::UnboundedReceiver<Signal>) {
-        while let Some(s) = signals.recv().await {
-            match s {
-                Signal::Resubscribe => self.resubscribe().await,
-                Signal::Maintain(g) => self.maintain_later(g),
-                Signal::Note(n) => eprintln!("messenger groups: {n}"),
+        let mut told = self.ui.subscribe();
+        let mut open = true;
+        loop {
+            tokio::select! {
+                s = signals.recv() => match s {
+                    Some(Signal::Resubscribe) => self.resubscribe().await,
+                    Some(Signal::Maintain(g)) => self.maintain_later(g),
+                    Some(Signal::Note(n)) => eprintln!("messenger groups: {n}"),
+                    None => return,
+                },
+                ev = told.recv(), if open => match ev {
+                    Ok(ev) if ev.name == crate::private::UI_EVENT_SERVERS_UPDATED => self.servers_changed().await,
+                    Ok(_) => {}
+                    // Missed events may have been one of them.
+                    Err(broadcast::error::RecvError::Lagged(_)) => self.servers_changed().await,
+                    Err(broadcast::error::RecvError::Closed) => open = false,
+                },
             }
         }
     }
@@ -416,12 +618,23 @@ impl MessengerRuntime {
         &self.group_driver.groups
     }
 
-    async fn group_relay(&self) -> Result<RelayUrl> {
+    /// Where a new group lives (internal/messenger-wire.md, «Группы на
+    /// сервере»): a write relay of the home set, or the relay of the private
+    /// server `server` (`server_unknown` for one this device does not have),
+    /// whose group it is from then on: everything of it goes there alone.
+    async fn group_relay(&self, server: Option<&str>) -> Result<RelayUrl> {
+        if let Some(id) = server {
+            let row = servers::get(&self.store, id)
+                .await?
+                .filter(|s| s.is_private())
+                .ok_or_else(|| MessengerError::Invalid(messenger_groups::service::ERR_SERVER_UNKNOWN.into()))?;
+            return RelayUrl::parse(&row.relay_url).ok_or_else(|| MessengerError::Invalid("group_no_relay".into()));
+        }
         self.relays
-            .list()
+            .enabled_of(None)
             .await?
             .into_iter()
-            .filter(|r| r.enabled && r.write)
+            .filter(|r| r.write)
             .find_map(|r| RelayUrl::parse(&r.url))
             .ok_or_else(|| MessengerError::Invalid("group_no_relay".into()))
     }
@@ -438,7 +651,19 @@ impl MessengerRuntime {
                 // was, and reads as closed: `banned` says why nothing can
                 // be written.
                 chat.banned = self.groups().is_group_banned(id).await?;
-                chat.can_send = g.membership == "joined" && !chat.banned;
+                // The private server the group lives on, by its relay; the
+                // id of the chat stays `group:<id>`. A group of a private
+                // server removed on purpose names none, and nothing can be
+                // written in it (`servers::group_closed`).
+                let closed = match servers::private_of_relay(&self.store, &g.relay_url).await {
+                    Ok(server) => {
+                        chat.server_id = server;
+                        false
+                    }
+                    Err(e) if servers::is_unknown(&e) => true,
+                    Err(e) => return Err(e),
+                };
+                chat.can_send = g.membership == "joined" && !chat.banned && !closed;
             }
         }
         Ok(chat)
@@ -472,9 +697,11 @@ impl MessengerRuntime {
         self.groups().get(group_id, &me).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))
     }
 
-    pub async fn group_create(&self, kind: GroupKind, name: &str, about: &str, history_for_new: bool) -> Result<GroupView> {
+    /// A new group: of the home set, or of the private server `server`
+    /// (its id), where it lives and only there.
+    pub async fn group_create(&self, kind: GroupKind, name: &str, about: &str, history_for_new: bool, server: Option<&str>) -> Result<GroupView> {
         let keys = self.session_keys().await?;
-        let relay = self.group_relay().await?;
+        let relay = self.group_relay(server.map(str::trim).filter(|s| !s.is_empty())).await?;
         let (view, outcome) = self.groups().create(&keys, kind, name, about, history_for_new, &relay).await?;
         self.group_driver.apply(outcome).await?;
         Ok(view)
@@ -501,7 +728,10 @@ impl MessengerRuntime {
         self.group_driver.apply(outcome).await
     }
 
-    /// Open a `veydan://group/…` link: join (public) or ask (private).
+    /// Open a `veydan://group/…` link: join (public) or ask (private), on
+    /// the server its `r=` names (of the home set or a private one of
+    /// mine); a relay that is no server of mine is `server_unknown`, and
+    /// nothing is written or sent for it.
     pub async fn group_open_link(&self, link: &str, note: &str) -> Result<GroupView> {
         let keys = self.session_keys().await?;
         let (view, outcome) = self.groups().open_link(&keys, link.trim(), note).await?;
@@ -715,14 +945,14 @@ mod tests {
         let g = "c".repeat(64);
         fill(&store, &g, 1_000, 30_000).await;
         let t = FakeTransport::new();
-        request_since(&store, &t, std::slice::from_ref(&g), Some(500)).await.unwrap();
+        request_since(&store, &t, Scope::Own, std::slice::from_ref(&g), Some(500)).await.unwrap();
         let sent = t.sent();
         let (filter, local) = sync_of(&sent[0]);
         assert_eq!(local.len(), 30_000, "nothing is cut off");
         assert_eq!(filter["since"], 500);
         assert!(filter.get("until").is_none());
         let t = FakeTransport::new();
-        request_since(&store, &t, &[g], Some(21_000)).await.unwrap();
+        request_since(&store, &t, Scope::Own, &[g], Some(21_000)).await.unwrap();
         assert_eq!(sync_of(&t.sent()[0]).1.len(), 10_000, "by the cursor: what is newer than it");
     }
 
@@ -736,7 +966,7 @@ mod tests {
         fill(&store, &mine, 1_000, 100).await;
         fill(&store, &other, 1_000, 100).await;
         let t = FakeTransport::new();
-        let known = request_window(&store, &t, &mine, 1_049, 200).await.unwrap();
+        let known = request_window(&store, &t, Scope::Own, &mine, 1_049, 200).await.unwrap();
         assert_eq!(known, 50);
         let sent = t.sent();
         let (filter, local) = sync_of(&sent[0]);

@@ -37,6 +37,8 @@
   import { mediaErrorText, tooLargeName } from '../media/errors';
   import { bytes } from '../shared/format';
   import TransfersChip from './TransfersChip.svelte';
+  import ServerLabel from '../servers/ServerLabel.svelte';
+  import { serverStore } from '../servers/serverStore.svelte';
 
   interface Props {
     chat: MessengerChat;
@@ -661,7 +663,7 @@
     {#snippet identity()}
       <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={36} online={presence === 'online'} />
       <div class="who">
-        <div class="title">{chat.title}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
+        <div class="title"><span class="t-name">{chat.title}</span>{#if chat.server_id}<ServerLabel server={chat.server_id} />{/if}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
         <div class="sub">
           {#if !sessionActive}{$t('msg_chat_locked')}
           {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
@@ -706,7 +708,12 @@
       <div class="placeholder">
         <Icon name="lock-check" size={22} />
         <p>{$t('msg_chat_empty')}</p>
-        <span>{$t('msg_chat_empty_hint')}</span>
+        {#if chat.server_id && !isGroup}
+          <!-- A private chat (one my card with a server opened, too) has nothing yet: where it lives, and that it is empty. -->
+          <span>{$t('msg_srv_chat_empty_hint', { name: serverStore.nameOf(chat.server_id) || $t('msg_srv_label_bare') })}</span>
+        {:else}
+          <span>{$t('msg_chat_empty_hint')}</span>
+        {/if}
       </div>
     {:else}
       <Timeline messages={chatStore.messages} many={isGroup} systemText={systemLine} {bubble} {album} />
@@ -766,6 +773,7 @@
   .ident.clickable:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .dim { color: var(--text-3); display: inline-flex; }
   .sub { font-size: var(--fs-2xs); color: var(--text-3); }
   .sub code { font-family: var(--font-mono); }

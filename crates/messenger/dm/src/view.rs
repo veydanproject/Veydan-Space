@@ -16,6 +16,10 @@ use serde::{Deserialize, Serialize};
 pub struct ChatView {
     pub id: String,
     pub kind: String,
+    /// The private server of a private chat (internal/messenger-wire.md,
+    /// «Частный чат»); absent for the home set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
     pub peer_pubkey: Option<String>,
     pub peer_npub: Option<String>,
     /// Nickname → profile name → short npub.
@@ -155,8 +159,9 @@ impl MessageView {
         // build before the cards kept the type of the wire as it came, so
         // a row without a card is a stranger's `{"t":"bot_card"}` and stays
         // a message of a type this app does not know.
-        let is_bot_card =
-            r.content_type == CT_BOT_CARD && r.direction == DIR_IN && r.chat_id.strip_prefix("dm:") == Some(r.sender_pubkey.as_str());
+        let is_bot_card = r.content_type == CT_BOT_CARD
+            && r.direction == DIR_IN
+            && messenger_store::chats::parse_dm_chat_id(&r.chat_id) == Some((r.sender_pubkey.as_str(), None));
         let bot_card = if is_bot_card { r.media_json.as_deref().map(BotCard::stored) } else { None };
         // What `media_json` holds of a card is not a file.
         let typed = is_card || r.content_type == CT_BOT_CARD;

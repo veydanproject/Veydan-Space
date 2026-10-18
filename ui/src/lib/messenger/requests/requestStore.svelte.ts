@@ -8,6 +8,7 @@
 // event costs nothing but a late count.
 
 import { messengerApi, type MessengerUiEvent, type RequestAction, type RequestView } from '../api';
+import { parseAddress } from '../chats/address';
 import { chatStore } from '../chats/chatStore.svelte';
 
 const PAGE = 50;
@@ -90,15 +91,17 @@ class RequestStore {
    * and so is the book: accepting adds the person to it. Refusals throw:
    * the view words them.
    */
-  async act(peer: string, action: RequestAction): Promise<void> {
+  async act(peer: string, action: RequestAction, chatId = `dm:${peer}`): Promise<void> {
     this.acting = peer;
+    // A request in a private chat is answered there: its peer with its server.
+    const { server } = parseAddress(chatId);
     try {
-      await messengerApi.moderation.requestAct(peer, action);
+      await messengerApi.moderation.requestAct(server ? `${peer}@${server}` : peer, action);
     } finally {
       this.acting = null;
     }
-    const had = this.items.some((r) => r.peer === peer);
-    this.items = this.items.filter((r) => r.peer !== peer);
+    const had = this.items.some((r) => r.chat_id === chatId);
+    this.items = this.items.filter((r) => r.chat_id !== chatId);
     if (had) this.count = Math.max(0, this.count - 1);
     if (this.selected === peer) this.selected = null;
     await chatStore.loadChats().catch(() => {});

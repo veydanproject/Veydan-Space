@@ -135,10 +135,46 @@ impl MessengerRuntime {
     /// never goes to a public group, which anyone with its link reads:
     /// `phone_public_group`.
     pub async fn card_send(&self, chat: &str, pubkey: Option<&str>, include_phone: bool) -> Result<MessageView> {
+        self.card_send_with_server(chat, pubkey, include_phone, None).await
+    }
+
+    /// The same, my own card carrying the card of private server `server`
+    /// of mine (`server_unknown` for one this device does not have;
+    /// `card_server_not_mine` for the card of somebody else): whoever gets
+    /// it may add the server and open a private chat with me there
+    /// (internal/messenger-wire.md, §9.4). Sent to a person, it approves
+    /// them in that private chat on my side, silently: giving them the
+    /// server is asking them there, so their accept, when they open the
+    /// chat (`contact_open_private`), opens it on both sides at once.
+    ///
+    /// Never into a group (`card_server_group`): the card carries the app
+    /// key, the only thing that lets anybody in to the server, and a group
+    /// is many people (a public one: anybody with its link). A server is
+    /// given to a person.
+    pub async fn card_send_with_server(&self, chat: &str, pubkey: Option<&str>, include_phone: bool, server: Option<&str>) -> Result<MessageView> {
         let keys = self.session_keys().await?;
-        let card = self.card_of(&keys, pubkey, include_phone).await?;
+        let server = server.map(str::trim).filter(|s| !s.is_empty());
+        if server.is_some() && chat.trim().strip_prefix("dm:").unwrap_or(chat.trim()).starts_with("group:") {
+            return Err(MessengerError::Invalid("card_server_group".into()));
+        }
+        let server_card = match server {
+            Some(id) => {
+                let me = keys.public_key().to_hex();
+                let whose = pubkey.map(str::trim).filter(|p| !p.is_empty());
+                if whose.is_some_and(|p| messenger_contacts::book::parse_key(p).map_or(true, |k| k.as_hex() != me)) {
+                    return Err(MessengerError::Invalid("card_server_not_mine".into()));
+                }
+                Some((id.to_string(), self.server_card(id).await?.encode()))
+            }
+            None => None,
+        };
         let to = chat.strip_prefix("dm:").unwrap_or(chat);
         if let Some(group) = to.strip_prefix("group:") {
+            // My card in a group of a private server names that server's
+            // relays, as in a private chat there.
+            let server = crate::scopes::server_of_group(&self.store, group).await?;
+            // No server card here: refused above.
+            let card = self.card_of(&keys, pubkey, include_phone, server.as_deref()).await?;
             if card.phone.is_some() {
                 let me = PubKey::parse(&keys.public_key().to_hex()).expect("valid pubkey");
                 // An unknown group is refused below as such.
@@ -155,19 +191,46 @@ impl MessengerRuntime {
             let id = message.id.clone();
             return self.publish_group_message(message, out, &id, true).await;
         }
-        let peer = messenger_contacts::book::parse_key(to)
-            .map_err(|_| MessengerError::Invalid("recipient must be an npub or 64-hex public key".into()))?;
-        let first = self.dm.chat(&messenger_store::chats::dm_chat_id(peer.as_hex())).await?.is_none();
+        // A person, in the home chat or a private one (`<key>@<server>`).
+        let peer = self.peer_addr(to).await?;
+        let card = self.card_of(&keys, pubkey, include_phone, peer.server()).await?;
+        let card = card.with_server(server_card.as_ref().map(|(_, link)| link.as_str()))?;
+        let first = self.dm.chat(&peer.chat_id()).await?.is_none();
         let prepared = self.dm.prepare_card(&keys, &peer, &card).await?;
         if first {
-            let _ = self.request_profile(&peer).await;
+            let _ = self.request_profile_on(&peer.key, peer.server()).await;
             let _ = self.resubscribe_meta().await;
         }
-        self.publish_prepared(prepared).await
+        let sent = self.publish_prepared(prepared).await?;
+        if let Some((id, _)) = server_card {
+            self.approve_on_server(&keys, &peer.key, &id).await?;
+        }
+        Ok(sent)
     }
 
-    /// The card of `pubkey` (`None`: mine) as this device can make it.
-    async fn card_of(&self, keys: &Keys, pubkey: Option<&str>, include_phone: bool) -> Result<ContactCard> {
+    /// I gave `peer` the card of my private server `server`: they are
+    /// approved in the private chat there, silently (no signal, and no
+    /// request of mine to answer), unless I decided about them there
+    /// already (approved, or blocked: a block stands).
+    async fn approve_on_server(&self, keys: &Keys, peer: &PubKey, server: &str) -> Result<()> {
+        if peer.as_hex() == keys.public_key().to_hex() {
+            return Ok(());
+        }
+        let chat = messenger_dm::DmPeer::on(peer.clone(), Some(server));
+        let relation = self.dm.relation(&chat).await?;
+        if relation.my_contact == "approved" || relation.blocked {
+            return Ok(());
+        }
+        let result = self.dm.act(keys, &chat, messenger_dm::Action::Request).await?;
+        self.after_act(keys, &chat, messenger_dm::Action::Request, result).await?;
+        Ok(())
+    }
+
+    /// The card of `pubkey` (`None`: mine) as this device can make it. The
+    /// relays it names are of the chat it goes to (`server`, `None` for the
+    /// home set): my card in a private chat names that server's relays, and
+    /// never tells its peer where I am at home.
+    async fn card_of(&self, keys: &Keys, pubkey: Option<&str>, include_phone: bool, server: Option<&str>) -> Result<ContactCard> {
         let me = PubKey::parse(&keys.public_key().to_hex()).expect("valid pubkey");
         let pk = match pubkey.map(str::trim).filter(|p| !p.is_empty()) {
             Some(p) => messenger_contacts::book::parse_key(p)?,
@@ -176,11 +239,11 @@ impl MessengerRuntime {
         let mine = pk == me;
         let profile = self.profiles.get(&pk).await?.unwrap_or_else(|| bare_profile(&pk));
         let (relays, phone) = if mine {
-            let relays = self.relays.list().await?.into_iter().filter(|r| r.enabled && r.read).map(|r| r.url).collect();
+            let relays = self.relays.enabled_of(server).await?.into_iter().filter(|r| r.read).map(|r| r.url).collect();
             let phone = if include_phone { self.dm.own_private().await?.phone } else { None };
             (relays, phone)
         } else {
-            (dm_routes::for_peer(&self.store, pk.as_hex()).await?, None)
+            (dm_routes::for_peer(&self.store, pk.as_hex(), server).await?, None)
         };
         let avatar = match profile.picture.as_deref() {
             Some(url) => self.avatars.local_bytes(url).await,

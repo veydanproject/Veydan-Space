@@ -50,9 +50,24 @@ impl MessengerRuntime {
 
     /// Use the project's servers: fetch its manifest now and apply it, or the
     /// built-in one when it cannot be had. Servers the user added stay.
+    /// `server_is_home` (and nothing changed) while a relay of the manifest
+    /// is the relay of a private server of this device: that server is to
+    /// be removed first.
     pub async fn servers_use_veydan(&self) -> Result<ManifestCheck> {
+        self.relays.refuse_current_private_relays().await?;
+        let before = self.relays.servers_mode().await?;
         self.relays.set_servers_mode(ServersMode::Veydan).await?;
-        let check = self.manifest_check(true).await?;
+        let check = match self.manifest_check(true).await {
+            Ok(check) => check,
+            // A newer manifest names it: the choice stays as it was.
+            Err(e) if messenger_store::servers::is_server_is_home(&e) => {
+                if let Some(mode) = before {
+                    self.relays.set_servers_mode(mode).await?;
+                }
+                return Err(e);
+            }
+            Err(e) => return Err(e),
+        };
         self.servers_changed().await?;
         Ok(check)
     }
@@ -348,6 +363,60 @@ mod tests {
         assert!(embedded_urls(None).iter().all(|u| now.contains(u)) && now.contains(&"wss://mine.example".to_string()));
         s.rt.servers_use_own().await.unwrap();
         assert_eq!(urls(&s.rt).await, vec!["wss://mine.example".to_string()]);
+        s.rt.shutdown().await;
+    }
+
+    /// A relay of the manifest that is the relay of a private server here
+    /// (the Veydan relay put in as the private server «Veydan» on the own
+    /// servers) is never made a home relay over it: the choice of the
+    /// Veydan servers, a newer manifest and an own relay of that address
+    /// are `server_is_home`, naming the server, and nothing changes; once
+    /// the server is removed, the choice goes through.
+    #[tokio::test]
+    async fn a_relay_of_a_private_server_never_becomes_a_home_one() {
+        let s = setup().await;
+        s.rt.relays().add_user("wss://mine.example", None).await.unwrap();
+        s.rt.servers_use_own().await.unwrap();
+        let veydan = embedded_urls(None)[0].clone();
+        let id = s
+            .rt
+            .server_put_private(&crate::private::PrivateServerInput { relay_url: veydan.clone(), name: Some("Veydan".into()), ..Default::default() })
+            .await
+            .unwrap();
+        let private_row = || async { messenger_store::relays::get(s.rt.store(), &veydan).await.unwrap().map(|r| r.server_id) };
+        // Nor the other way: my own relay is not put in as a private server.
+        let err = s
+            .rt
+            .server_put_private(&crate::private::PrivateServerInput { relay_url: "wss://mine.example".into(), ..Default::default() })
+            .await
+            .unwrap_err();
+        assert!(messenger_store::servers::is_server_is_home(&err), "{err}");
+        assert_eq!(private_row().await, Some(Some(id.clone())));
+
+        let err = s.rt.servers_use_veydan().await.unwrap_err();
+        assert!(messenger_store::servers::is_server_is_home(&err), "{err}");
+        assert!(err.to_string().contains("Veydan") && err.to_string().contains(&veydan), "names the server: {err}");
+        assert_eq!(s.rt.servers_mode().await.unwrap(), Some(ServersMode::Own), "the choice stays");
+        assert_eq!(private_row().await, Some(Some(id.clone())), "its row is the server's");
+        assert_eq!(s.fake.calls.load(Ordering::SeqCst), 0, "nothing was asked");
+
+        let other_spelling = format!("wss://{}/", veydan.trim_start_matches("wss://").to_uppercase());
+        let err = s.rt.relays().add_user(&other_spelling, None).await.unwrap_err();
+        assert!(messenger_store::servers::is_server_is_home(&err), "{err}");
+
+        // The server removed: the Veydan servers are chosen.
+        s.rt.server_remove_private(&id).await.unwrap();
+        s.rt.servers_use_veydan().await.unwrap();
+        assert_eq!(private_row().await, Some(None), "a home relay now");
+
+        // A newer manifest naming the relay of a private server is refused,
+        // the rows as they were.
+        let s2 = "wss://s2.example";
+        s.rt.server_put_private(&crate::private::PrivateServerInput { relay_url: s2.into(), ..Default::default() }).await.unwrap();
+        publish(&s, embedded_serial() + 1, s2);
+        let err = s.rt.manifest_refresh(true).await.unwrap_err();
+        assert!(messenger_store::servers::is_server_is_home(&err), "{err}");
+        assert!(urls(&s.rt).await.contains(&veydan), "the manifest in use stands");
         s.rt.shutdown().await;
     }
 

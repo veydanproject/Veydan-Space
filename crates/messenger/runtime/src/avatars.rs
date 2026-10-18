@@ -1015,7 +1015,7 @@ impl Avatars {
             }
         }
         for peer in profiles::with_picture(&self.store, url).await? {
-            let relation = dm_relations::get(&self.store, &peer).await?;
+            let relation = dm_relations::get(&self.store, &peer, None).await?;
             if relation.as_ref().is_some_and(|r| r.blocked) {
                 continue;
             }
@@ -1196,12 +1196,14 @@ impl MessengerRuntime {
     pub async fn avatar_set(&self, token: &str, rect: CropRect) -> Result<ProfileView> {
         let keys = self.session_keys().await?;
         self.avatars.set(&keys, token, rect).await?;
+        self.profile_to_private_servers().await;
         self.own_profile_now(&keys).await
     }
 
     pub async fn avatar_remove(&self) -> Result<ProfileView> {
         let keys = self.session_keys().await?;
         self.avatars.remove(&keys).await?;
+        self.profile_to_private_servers().await;
         self.own_profile_now(&keys).await
     }
 

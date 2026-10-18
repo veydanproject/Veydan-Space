@@ -123,6 +123,13 @@ pub fn open_dm(keys: &Keys, event: &WireEvent, via_sync: bool) -> Option<DmInbou
         content: rumor.content.clone(),
         reply_to: rumor.tags.iter().filter(|t| t.kind() == "e").filter_map(|t| t.as_slice().get(1)).filter_map(|s| EventId::parse(s)).next(),
         rumor_kind: rumor.kind.as_u16(),
+        srv: rumor
+            .tags
+            .iter()
+            .filter(|t| t.kind() == messenger_core::envelope::TAG_SERVER)
+            .filter_map(|t| t.as_slice().get(1))
+            .next()
+            .cloned(),
     })
 }
 

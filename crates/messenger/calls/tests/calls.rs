@@ -139,7 +139,7 @@ impl Party {
 
     /// The call lines in the chat with `peer`, oldest first: the details.
     async fn feed(&self, peer: &Party) -> Vec<serde_json::Value> {
-        let chat = chats::dm_chat_id(peer.pk().as_hex());
+        let chat = chats::dm_chat_id(peer.pk().as_hex(), None);
         self.dm
             .messages(&chat, None, 100)
             .await
@@ -243,17 +243,27 @@ impl World {
     }
 
     async fn carry(&self, from: &Party, out: Outbound) {
-        let (event, recipients): (WireEvent, Vec<PubKey>) = match out {
-            Outbound::PublishToInbox { recipient, event, .. } => (event, vec![recipient]),
+        // A wrap to a private server reaches whoever has that server.
+        let (event, recipients, server): (WireEvent, Vec<PubKey>, Option<String>) = match out {
+            Outbound::PublishToInbox { recipient, event, .. } => (event, vec![recipient], None),
             Outbound::PublishOwn { event } => {
                 let r = wrap_recipients(&event);
-                (event, r)
+                (event, r, None)
+            }
+            Outbound::PublishScoped { scope: messenger_core::Scope::Server { id }, event } => {
+                let r = wrap_recipients(&event);
+                (event, r, Some(id))
             }
             other => panic!("{}: unexpected {other:?}", from.name),
         };
         for party in &self.parties {
             if !recipients.contains(&party.pk()) || *party.deaf.lock().unwrap() {
                 continue;
+            }
+            if let Some(id) = &server {
+                if messenger_store::servers::get(&party.store, id).await.unwrap().is_none() {
+                    continue;
+                }
             }
             let Some(msg) = open_dm(&party.keys, &event, false) else { continue };
             // What the handler returns (the DM module's own answers) goes
@@ -293,9 +303,9 @@ impl World {
     async fn carry_made(&self, from: &Party, to: &Party, envelope: &Envelope, at: i64) {
         let content = envelope.encode();
         let w = if envelope.t == "call.invite" {
-            messenger_dm::wrap::wrap_expiring(&from.keys, &to.pk(), &content, at, at + 60).unwrap()
+            messenger_dm::wrap::wrap_expiring(&from.keys, to.pk(), &content, at, at + 60).unwrap()
         } else {
-            messenger_dm::wrap::wrap_note(&from.keys, &to.pk(), &content, at, false, Some(at + 300)).unwrap()
+            messenger_dm::wrap::wrap_note(&from.keys, to.pk(), &content, at, false, Some(at + 300)).unwrap()
         };
         self.carry(from, Outbound::PublishToInbox { recipient: to.pk(), event: w.to_peer, hint_relays: vec![] }).await;
     }
@@ -394,7 +404,7 @@ async fn a_full_call_on_the_fake_engine() {
     assert_eq!(line[0]["via"], "direct");
     assert_eq!(alice.feed(bob).await[0]["direction"], "out");
     // A call is no message of the chat.
-    let chat = chats::get(&bob.store, &chats::dm_chat_id(alice.pk().as_hex())).await.unwrap().unwrap();
+    let chat = chats::get(&bob.store, &chats::dm_chat_id(alice.pk().as_hex(), None)).await.unwrap().unwrap();
     assert_eq!(chat.unread, 0);
     assert_eq!(chat.last_preview.as_deref(), Some("📞"));
 }
@@ -491,7 +501,7 @@ async fn an_old_invitation_is_a_missed_call() {
     assert_eq!(rows[0].outcome.as_deref(), Some("missed"));
     assert_eq!(rows[0].media, "video");
     assert_eq!(bob.feed(alice).await[0]["outcome"], "missed");
-    let chat = chats::get(&bob.store, &chats::dm_chat_id(alice.pk().as_hex())).await.unwrap().unwrap();
+    let chat = chats::get(&bob.store, &chats::dm_chat_id(alice.pk().as_hex(), None)).await.unwrap().unwrap();
     assert_eq!(chat.unread, 1, "a missed call is something to see");
 
     // Alice gave up at the timeout: missed on her side too, told to Bob.
@@ -1418,7 +1428,7 @@ async fn the_history_of_a_call_may_come_backwards() {
     assert_eq!(row.outcome.as_deref(), Some("ended"), "taken on my other device, not missed");
     assert!(row.answered_at.is_some());
     assert_eq!(row.duration_secs(), Some(10));
-    let chat = chats::get(&bob2.store, &chats::dm_chat_id(alice.pk().as_hex())).await.unwrap().unwrap();
+    let chat = chats::get(&bob2.store, &chats::dm_chat_id(alice.pk().as_hex(), None)).await.unwrap().unwrap();
     assert_eq!(chat.unread, 0);
     assert_eq!(bob2.feed(alice).await[0]["outcome"], "ended");
 }
@@ -1519,7 +1529,7 @@ async fn a_stranger_cannot_call_and_a_contact_can() {
     assert!(carol.calls.current().await.is_none());
     let sent_before = bob.sent.lock().unwrap().len();
     let invite = Envelope::call_invite(&"ab".repeat(16), "audio", "fake-offer:9:0", vec![], false).encode();
-    let wrapped = messenger_dm::wrap::wrap_expiring(&carol.keys, &bob.pk(), &invite, w.now(), w.now() + 60).unwrap();
+    let wrapped = messenger_dm::wrap::wrap_expiring(&carol.keys, bob.pk(), &invite, w.now(), w.now() + 60).unwrap();
     w.carry(carol, Outbound::PublishToInbox { recipient: bob.pk(), event: wrapped.to_peer, hint_relays: vec![] }).await;
     w.settle().await;
     assert!(bob.incoming().is_empty());
@@ -1909,4 +1919,62 @@ async fn a_camera_that_goes_away_turns_my_video_off_and_tells_the_peer() {
     assert_eq!(signals_of(alice, bob, "call.video").len(), 2);
     alice.calls.end(&view.call_id).await.unwrap();
     w.settle().await;
+}
+
+/// A call of a private chat (internal/messenger-wire.md, «Частный чат»):
+/// every signal of it, my own copies too, goes to the server of the chat
+/// and nowhere else; it is on record in the private chat; and with no node
+/// of its own the server's call goes direct, never through a node of the
+/// sets of the home set.
+#[tokio::test]
+async fn a_call_of_a_private_chat_goes_by_its_server_alone() {
+    let w = World::new(&[("alice", None), ("bob", None)], false).await;
+    let (alice, bob) = (w.p(0), w.p(1));
+    let mut ids = Vec::new();
+    for p in [alice, bob] {
+        let row = messenger_store::servers::ServerRow {
+            id: String::new(),
+            kind: messenger_store::servers::KIND_PRIVATE.into(),
+            name: None,
+            relay_url: "wss://s1.example".into(),
+            relay_key: None,
+            media_url: None,
+            call_node: None,
+            push_mode: messenger_store::servers::PUSH_OFF.into(),
+            source: None,
+            added_at: 0,
+        };
+        ids.push(messenger_store::servers::put(&p.store, &row).await.unwrap());
+    }
+    let s1 = ids[0].clone();
+    let view = alice.calls.start(messenger_dm::DmPeer::on(bob.pk(), Some(&s1)), Media::Audio).await.unwrap();
+    assert_eq!(view.server_id.as_deref(), Some(s1.as_str()));
+    assert_eq!(view.chat_id, chats::dm_chat_id(bob.pk().as_hex(), Some(&s1)));
+    assert!(view.nodes.is_empty(), "no node of the home set");
+    w.settle().await;
+    let ringing = bob.incoming();
+    assert_eq!(ringing.len(), 1);
+    assert_eq!(ringing[0].server_id.as_deref(), Some(s1.as_str()), "it rings in the private chat");
+    bob.calls.accept(&view.call_id).await.unwrap();
+    w.settle().await;
+    for p in [alice, bob] {
+        assert_eq!(p.last_state().unwrap().phase, Phase::Active, "{}", p.name);
+    }
+    alice.calls.end(&view.call_id).await.unwrap();
+    w.settle().await;
+    for p in [alice, bob] {
+        let sent = p.sent.lock().unwrap().clone();
+        assert!(!sent.is_empty());
+        for out in &sent {
+            assert!(
+                matches!(out, Outbound::PublishScoped { scope: messenger_core::Scope::Server { id }, .. } if *id == s1),
+                "{}: {out:?}",
+                p.name
+            );
+        }
+        let rows = p.records().await;
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].chat_id.ends_with(&format!("@{s1}")), "on record in the private chat");
+    }
+    assert!(chats::get(&bob.store, &chats::dm_chat_id(alice.pk().as_hex(), None)).await.unwrap().is_none(), "no home chat came of it");
 }

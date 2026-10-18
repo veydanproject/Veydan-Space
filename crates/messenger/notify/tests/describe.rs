@@ -104,7 +104,7 @@ fn group_push(group_id: &str, event: &serde_json::Value) -> PushData {
 }
 
 fn dm_from(sender: &Keys, to: &Phone, envelope: &Envelope, at: i64) -> serde_json::Value {
-    wrap(sender, &to.me(), &envelope.encode(), at, None).unwrap().to_peer.json
+    wrap(sender, to.me(), &envelope.encode(), at, None).unwrap().to_peer.json
 }
 
 fn shown(outcome: Outcome) -> messenger_notify::Notice {
@@ -294,7 +294,7 @@ async fn blocked_muted_and_my_own_messages() {
 
     // My copy of a message of mine, from another device.
     let bob = Keys::generate();
-    let mine = wrap_as(&phone.keys, &pk(&bob), &Envelope::text("from my other phone").encode(), 1_000_002, None, Wake::Peer)
+    let mine = wrap_as(&phone.keys, pk(&bob), &Envelope::text("from my other phone").encode(), 1_000_002, None, Wake::Peer)
         .unwrap()
         .to_self
         .unwrap()
@@ -321,12 +321,12 @@ async fn notes_from_a_peer_and_between_my_devices_are_not_messages() {
 
     // A receipt, and a note whose type nobody knows yet: neither is named.
     for envelope in [Envelope::receipt_read(1_000_000), Envelope::new("reaction.future")] {
-        let note = wrap_note(&alice, &phone.me(), &envelope.encode(), 1_000_000, false, None).unwrap().to_peer.json;
+        let note = wrap_note(&alice, phone.me(), &envelope.encode(), 1_000_000, false, None).unwrap().to_peer.json;
         assert_eq!(quiet(phone.describe(dm_push(&note)).await), Reason::NotAMessage, "{}", envelope.t);
     }
     // A note from a stranger is not a request either.
     let stranger = Keys::generate();
-    let note = wrap_note(&stranger, &phone.me(), &Envelope::text("hi").encode(), 1_000_000, false, None).unwrap().to_peer.json;
+    let note = wrap_note(&stranger, phone.me(), &Envelope::text("hi").encode(), 1_000_000, false, None).unwrap().to_peer.json;
     assert_eq!(quiet(phone.describe(dm_push(&note)).await), Reason::NotAMessage);
 
     let own = wrap_own(&phone.keys, &Envelope::own_read("dm:x", 1).encode(), 1_000_000).unwrap().json;
@@ -790,8 +790,8 @@ async fn the_end_of_a_call_stops_the_ringing_by_push() {
         Outcome::CallEnd(end) => end.call_id,
         other => panic!("expected the end of a call, got {other:?}"),
     };
-    let mine = |envelope: &Envelope| wrap_note_as(&phone.keys, &pk(&alice), &envelope.encode(), at, Some(at + 300), Wake::Nobody, Some(Wake::CallEnd)).unwrap().to_self.unwrap().json;
-    let theirs = |from: &Keys, envelope: &Envelope| wrap_note_as(from, &phone.me(), &envelope.encode(), at, Some(at + 300), Wake::CallEnd, None).unwrap().to_peer.json;
+    let mine = |envelope: &Envelope| wrap_note_as(&phone.keys, pk(&alice), &envelope.encode(), at, Some(at + 300), Wake::Nobody, Some(Wake::CallEnd)).unwrap().to_self.unwrap().json;
+    let theirs = |from: &Keys, envelope: &Envelope| wrap_note_as(from, phone.me(), &envelope.encode(), at, Some(at + 300), Wake::CallEnd, None).unwrap().to_peer.json;
 
     for envelope in [
         Envelope::call_answer(id, "v=0", vec![]),
@@ -849,7 +849,7 @@ async fn keys_for_calls_alone_ring_and_say_nothing_of_messages() {
     assert!(call.picture.is_none());
     assert!(matches!(phone.describe_with(&bundle, dm_push(&invite)).await, Outcome::Plain(_)), "unmarked: not opened");
 
-    let answer = wrap_note_as(&phone.keys, &pk(&alice), &Envelope::call_answer(id, "v=0", vec![]).encode(), at, None, Wake::Nobody, Some(Wake::CallEnd)).unwrap().to_self.unwrap().json;
+    let answer = wrap_note_as(&phone.keys, pk(&alice), &Envelope::call_answer(id, "v=0", vec![]).encode(), at, None, Wake::Nobody, Some(Wake::CallEnd)).unwrap().to_self.unwrap().json;
     assert!(matches!(phone.describe_with(&bundle, marked(&answer)).await, Outcome::CallEnd(_)));
 }
 
@@ -941,7 +941,7 @@ async fn a_call_push_without_keys_rings_nothing_and_says_nothing() {
 
     let invite = dm_from(&alice, &phone, &Envelope::call_invite(id, "audio", "v=0", vec![], false), at);
     assert_eq!(quiet(describe(&dir, None, &marked(&invite)).await.unwrap()), Reason::NoKeys);
-    let end = wrap_note_as(&phone.keys, &pk(&alice), &Envelope::call_answer(id, "v=0", vec![]).encode(), at, None, Wake::Nobody, Some(Wake::CallEnd)).unwrap().to_self.unwrap().json;
+    let end = wrap_note_as(&phone.keys, pk(&alice), &Envelope::call_answer(id, "v=0", vec![]).encode(), at, None, Wake::Nobody, Some(Wake::CallEnd)).unwrap().to_self.unwrap().json;
     assert_eq!(quiet(describe(&dir, None, &marked(&end)).await.unwrap()), Reason::NoKeys);
     // A call named by id and relay, not carried: no keys would open it either.
     let named = push_with(&[("type", "dm"), ("event_id", &"ef".repeat(32)), ("relay", "ws://127.0.0.1:1"), ("call", "1")]);
@@ -973,7 +973,7 @@ async fn the_pinned_bot_is_no_request_and_its_card_says_no_word_of_its_own() {
     assert_eq!((n.kind, n.chat.as_deref(), n.body.clone()), (ChatKind::Dm, Some(chat.as_str()), None));
     // An alert in plain words is a message like any other, and a second
     // one is not held back.
-    let alert = wrap(&bot, &phone.me(), "eu-1: the disk is 91% full", 1_000_001, None).unwrap().to_peer.json;
+    let alert = wrap(&bot, phone.me(), "eu-1: the disk is 91% full", 1_000_001, None).unwrap().to_peer.json;
     let n = shown(messenger_notify::describe_as(&config, Some(&bundle), &dm_push(&alert)).await.unwrap());
     assert_eq!((n.kind, n.body), (ChatKind::Dm, Some(Body::Text { text: "eu-1: the disk is 91% full".into() })));
     // A signal of the bot is no message; a call of it rings nothing.

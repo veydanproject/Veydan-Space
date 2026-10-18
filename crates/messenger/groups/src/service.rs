@@ -18,10 +18,10 @@ use messenger_core::traits::{Notice, UiEvent};
 use messenger_core::{Clock, Envelope, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SecretStore, TextFormat};
 use messenger_dm::pushtags;
 use messenger_dm::wrap::{wrap_as, Wake};
-use messenger_dm::{DmService, MessageView};
+use messenger_dm::{DmPeer, DmService, MessageView};
 use messenger_store::groups::{self as repo, GroupRow};
 use messenger_store::messages::{self as msgs, NewMessage};
-use messenger_store::{chats, Store};
+use messenger_store::{chats, servers, Store};
 use nostr::key::Keys;
 use nostr::prelude::Event;
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,11 @@ pub const MEMBERSHIP_DISBANDED: &str = "disbanded";
 /// The word of a refusal to act on a group the network closes
 /// ([`GroupService::is_group_banned`]).
 pub const ERR_GROUP_BANNED: &str = "group_banned";
+
+/// The word of a refusal to join a group on a server this device does not
+/// have (a link whose relay is no server of mine), as the runtime says it
+/// of a peer address.
+pub const ERR_SERVER_UNKNOWN: &str = servers::ERR_SERVER_UNKNOWN;
 
 /// Members a private group can have: every key goes to each of them
 /// inside one event, and an event has a size limit.
@@ -128,6 +133,10 @@ pub struct GroupView {
     pub about: String,
     pub picture: String,
     pub relay: String,
+    /// The private server the group lives on (internal/messenger-wire.md,
+    /// «Группы на сервере»): that of its relay. Absent for the home set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
     pub owner: String,
     pub membership: String,
     pub my_role: Option<String>,
@@ -211,6 +220,14 @@ pub struct InviteView {
     /// my contact (`InviteStanding::Vouched`); otherwise it is their word
     /// alone. Outgoing: always.
     pub vouched: bool,
+    /// The relay of the group, as the invitation names it.
+    #[serde(default)]
+    pub relay: String,
+    /// The relay is a server of mine (of the home set or a private one).
+    /// When not, an accept is `server_unknown` and the invitation waits
+    /// until the server is added.
+    #[serde(default)]
+    pub server_known: bool,
 }
 
 /// Where the `call.*` notes of a group go (the core of group calls,
@@ -874,8 +891,16 @@ impl GroupService {
         let posting = state.map_or(Err(Closed::NotMember), |s| s.can_post_at(me, now));
         // A group the network closes takes nothing from anybody; its chat
         // says so by `ChatView::banned`.
-        let banned_here = self.is_group_banned(&row.id).await?;
+        // A group of a private server removed on purpose names no server
+        // and takes nothing (`servers::group_closed`).
+        let (server_id, closed_here) = match self.server_of_relay(&row.relay_url).await {
+            Ok(server) => (server, false),
+            Err(e) if servers::is_unknown(&e) => (None, true),
+            Err(e) => return Err(e),
+        };
+        let shut_here = self.is_group_banned(&row.id).await? || closed_here;
         Ok(GroupView {
+            server_id,
             chat_id: repo::group_chat_id(&row.id),
             kind: row.kind.clone(),
             name: row.name.clone(),
@@ -887,7 +912,7 @@ impl GroupService {
             my_role: my_role.map(|r| r.as_str().into()),
             muted: state.and_then(|s| s.member(me)).is_some_and(|m| m.muted_at(now)),
             muted_until: state.and_then(|s| s.member(me)).filter(|m| m.muted_at(now)).and_then(|m| m.muted_until),
-            can_post: joined && posting.is_ok() && !banned_here,
+            can_post: joined && posting.is_ok() && !shut_here,
             post_mode: match state.map(|s| s.post_mode).unwrap_or_default() {
                 PostMode::All => "all".into(),
                 PostMode::Managers => "managers".into(),
@@ -968,6 +993,24 @@ impl GroupService {
     /// whom to ask) by managers.
     /// The link names the creator: that is how a newcomer tells the group
     /// from an imitation. Who to ask is in the list of managers.
+    /// The card of the private server of `relay_url`, for the `srv=` of
+    /// the group's link: whoever opens the link and has not the server
+    /// adds it first (internal/messenger-wire.md, «Ссылка»). `None` for a
+    /// relay of the home set or of no server of mine.
+    async fn server_card(&self, relay_url: &str) -> Result<Option<messenger_links::ServerLink>> {
+        let Some(s) = servers::by_relay_url(&self.store, relay_url).await?.filter(|s| s.is_private()) else { return Ok(None) };
+        let push_url = servers::push_of(&self.store, &s.id).await?.and_then(|p| p.push_url);
+        Ok(messenger_links::ServerLink::of_parts(
+            &s.relay_url,
+            s.relay_key.as_deref(),
+            s.media_url.as_deref(),
+            s.call_node.as_deref(),
+            push_url.as_deref(),
+            &s.push_mode,
+            s.name.as_deref(),
+        ))
+    }
+
     async fn link_for(&self, row: &GroupRow, s: &GroupState, creator: &PubKey, manager: bool) -> Result<Option<String>> {
         let Some(relay) = RelayUrl::parse(&row.relay_url) else { return Ok(None) };
         let base = GroupLink {
@@ -979,6 +1022,7 @@ impl GroupService {
             managers: vec![],
             secret: None,
             link_epoch: s.link_epoch,
+            srv: self.server_card(&row.relay_url).await?,
         };
         Ok(match s.kind {
             GroupKind::Public => self.link_secret(&row.id, s.link_epoch).await?.map(|secret| GroupLink { secret: Some(secret), ..base }.encode()),
@@ -1007,37 +1051,44 @@ impl GroupService {
                 rows.push(r);
             }
         }
-        Ok(rows
-            .into_iter()
-            .filter_map(|r| {
-                let p: wire::Invite = serde_json::from_str(&r.payload_json).ok()?;
-                let vouched = r.direction != "in" || vouched_of(&r);
-                Some(InviteView {
-                    invite_id: r.invite_id,
-                    group_id: r.group_id,
-                    name: p.name,
-                    about: messenger_richtext::normalize(&p.about),
-                    picture: p.picture,
-                    members: p.members,
-                    peer: r.peer,
-                    direction: r.direction,
-                    status: r.status,
-                    created_at: r.created_at,
-                    expires_at: r.expires_at,
-                    vouched,
-                })
-            })
-            .collect())
+        let mut out = Vec::with_capacity(rows.len());
+        for r in rows {
+            let Ok(p) = serde_json::from_str::<wire::Invite>(&r.payload_json) else { continue };
+            let vouched = r.direction != "in" || vouched_of(&r);
+            let server_known = self.relay_is_mine(&p.relay).await?;
+            out.push(InviteView {
+                invite_id: r.invite_id,
+                group_id: r.group_id,
+                name: p.name,
+                about: messenger_richtext::normalize(&p.about),
+                picture: p.picture,
+                members: p.members,
+                peer: r.peer,
+                direction: r.direction,
+                status: r.status,
+                created_at: r.created_at,
+                expires_at: r.expires_at,
+                vouched,
+                relay: p.relay,
+                server_known,
+            });
+        }
+        Ok(out)
     }
 
     /// Groups whose events this device wants from the relays. A group the
     /// network closes is not listened to: nothing of it is taken in anyway,
     /// and when the ban lifts it is listened to again and its history asked
-    /// for anew (the runtime's `resubscribe`).
+    /// for anew (the runtime's `resubscribe`). Nor is a group of a private
+    /// server removed on purpose (`servers::group_closed`): it would be
+    /// listened to at home.
     pub async fn watched(&self) -> Result<Vec<String>> {
         let mut out = Vec::new();
         for g in repo::list(&self.store).await? {
-            if matches!(g.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING) && !self.is_group_banned(&g.id).await? {
+            if matches!(g.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING)
+                && !self.is_group_banned(&g.id).await?
+                && !servers::group_closed(&self.store, &g.id).await?
+            {
                 out.push(g.id);
             }
         }
@@ -1055,9 +1106,35 @@ impl GroupService {
     /// Nothing goes to a key the network bans (`DmService::is_banned`): not
     /// a key of a group, not a welcome, not an answer. Quietly, so that
     /// what goes to every member (a new key) still reaches the others.
+    ///
+    /// It goes where the group lives (internal/messenger-wire.md, «Группы
+    /// на сервере»): for a group of the home set to the inbox relays of the
+    /// one it is for and my copy to my relays, as before; for a group of a
+    /// private server as in the private chat with that person on that
+    /// server (`DmPeer`): the rumor carries the server's `srv` tag, and
+    /// both copies go to the server alone, never to an inbox or a relay of
+    /// the home set. My welcome to myself, which brings the group to my
+    /// other devices, goes the same way.
     pub(crate) async fn dm(
         &self,
         keys: &Keys,
+        group_id: &str,
+        to: &PubKey,
+        content: String,
+        self_copy: bool,
+        wake: Wake,
+    ) -> Result<Vec<Outbound>> {
+        let server = self.server_of(group_id).await?;
+        self.dm_on(keys, server.as_deref(), to, content, self_copy, wake).await
+    }
+
+    /// `dm` for a group of `server` (`None`: the home set), when the group
+    /// has no row here to say it: the answer to an invitation, by the relay
+    /// the invitation named.
+    pub(crate) async fn dm_on(
+        &self,
+        keys: &Keys,
+        server: Option<&str>,
         to: &PubKey,
         content: String,
         self_copy: bool,
@@ -1066,14 +1143,53 @@ impl GroupService {
         if self.dm.is_banned(to).await? {
             return Ok(vec![]);
         }
-        let w = wrap_as(keys, to, &content, self.now(), None, wake)?;
-        let mut out = vec![Outbound::PublishToInbox { recipient: to.clone(), event: w.to_peer, hint_relays: self.dm.hints(to).await? }];
+        let peer = DmPeer::on(to.clone(), server);
+        let w = wrap_as(keys, &peer, &content, self.now(), None, wake)?;
+        let mut out = vec![self.dm.route_to_peer(&peer, w.to_peer).await?];
         if self_copy {
             if let Some(event) = w.to_self {
-                out.push(Outbound::PublishOwn { event });
+                out.push(peer.to_self(event));
             }
         }
         Ok(out)
+    }
+
+    /// The private server group `group_id` lives on; `None` for the home
+    /// set (`servers::of_group`).
+    pub async fn server_of(&self, group_id: &str) -> Result<Option<String>> {
+        servers::of_group(&self.store, group_id).await
+    }
+
+    /// The private server of the relay `relay` (a link's `r=`, the `relay`
+    /// of an invitation or a welcome); `None` for the home set, an empty
+    /// one, and a relay that is no server of mine.
+    pub(crate) async fn server_of_relay(&self, relay: &str) -> Result<Option<String>> {
+        if relay.trim().is_empty() {
+            return Ok(None);
+        }
+        servers::private_of_relay(&self.store, relay).await
+    }
+
+    /// The server of the group an invitation of mine is to, by the relay it
+    /// names (the group has no row here until I am in it).
+    pub(crate) async fn server_of_invite(&self, row: &repo::InviteRow) -> Result<Option<String>> {
+        self.server_of_relay(&Self::relay_of_invite(row)).await
+    }
+
+    /// The relay an invitation names (the group's); empty when it names none.
+    pub(crate) fn relay_of_invite(row: &repo::InviteRow) -> String {
+        serde_json::from_str::<serde_json::Value>(&row.payload_json)
+            .ok()
+            .and_then(|v| v.get("relay").and_then(|r| r.as_str()).map(String::from))
+            .unwrap_or_default()
+    }
+
+    /// Whether `relay` is the relay of a server of mine, of the home set
+    /// or a private one (a row of `msg_servers`): where a group I come
+    /// into by a link, an invitation or a welcome may live. An empty one
+    /// (a word of before relays were named) is the home set's.
+    pub(crate) async fn relay_is_mine(&self, relay: &str) -> Result<bool> {
+        Ok(relay.trim().is_empty() || servers::by_relay_url(&self.store, relay).await?.is_some())
     }
 
     pub(crate) fn scoped(group_id: &str, event: messenger_core::outbound::WireEvent) -> Outbound {
@@ -1290,7 +1406,7 @@ impl GroupService {
                 GroupKind::Private => None,
             },
         };
-        self.dm(keys, to, wire::dm_envelope(wire::T_WELCOME, &body)?, false, Wake::Peer).await
+        self.dm(keys, group_id, to, wire::dm_envelope(wire::T_WELCOME, &body)?, false, Wake::Peer).await
     }
 
     // ─── What the user does ─────────────────────────────────────────────────
@@ -1437,7 +1553,7 @@ impl GroupService {
             },
         )
         .await?;
-        let publish = self.dm(keys, who, wire::dm_envelope(wire::T_INVITE, &body)?, false, Wake::Peer).await?;
+        let publish = self.dm(keys, group_id, who, wire::dm_envelope(wire::T_INVITE, &body)?, false, Wake::Peer).await?;
         let view = self.invites("out").await?.into_iter().find(|i| i.invite_id == body.invite_id);
         Ok((
             view.ok_or_else(|| MessengerError::Storage("invite vanished".into()))?,
@@ -1468,10 +1584,19 @@ impl GroupService {
         // goes to the inviter alone and is let through.
         if accept {
             self.refuse_banned(&inv.group_id).await?;
+            // Nor into a group whose relay is no server of mine, as a link
+            // to it leads nowhere (`open_link`): it would become a group of
+            // the home set. The invitation waits, listed with its relay,
+            // until the server is added; then it is accepted as any.
+            if !self.relay_is_mine(&Self::relay_of_invite(&inv)).await? {
+                return Err(MessengerError::Invalid(ERR_SERVER_UNKNOWN.into()));
+            }
         }
         repo::set_invite_status(&self.store, invite_id, if accept { "accepted" } else { "declined" }).await?;
         let reply = wire::InviteReply { invite_id: invite_id.to_string(), group_id: inv.group_id.clone(), accept };
-        let publish = self.dm(keys, &inviter, wire::dm_envelope(wire::T_INVITE_REPLY, &reply)?, true, Wake::Nobody).await?;
+        // Where the invitation came from: the server of the group.
+        let server = self.server_of_invite(&inv).await?;
+        let publish = self.dm_on(keys, server.as_deref(), &inviter, wire::dm_envelope(wire::T_INVITE_REPLY, &reply)?, true, Wake::Nobody).await?;
         Ok(Outcome { publish, events: vec![Self::updated(&inv.group_id)], ..Default::default() })
     }
 
@@ -1490,6 +1615,14 @@ impl GroupService {
             }
             // A ban here is only what I knew when I stopped listening: it
             // may be lifted since. The group's log answers, not this row.
+        }
+        // A group lives on the server of its relay (internal/messenger-wire.md,
+        // «Группы на сервере»): the link's `r=` names one of mine, of the
+        // home set or a private one, and the group is joined there; a relay
+        // that is no server of mine leads nowhere yet (a server card adds
+        // it), and nothing is written for it.
+        if servers::by_relay_url(&self.store, link.relay.as_str()).await?.is_none() {
+            return Err(MessengerError::Invalid(ERR_SERVER_UNKNOWN.into()));
         }
         let mut row = GroupRow {
             id: link.group_id.clone(),
@@ -1538,7 +1671,7 @@ impl GroupService {
                 .await?;
                 let content = wire::dm_envelope(wire::T_JOIN_REQUEST, &body)?;
                 for (i, manager) in ask.iter().enumerate() {
-                    outcome.publish.extend(self.dm(keys, manager, content.clone(), i == 0, Wake::Peer).await?);
+                    outcome.publish.extend(self.dm(keys, &link.group_id, manager, content.clone(), i == 0, Wake::Peer).await?);
                 }
             }
         }
@@ -1609,7 +1742,7 @@ impl GroupService {
             .ok_or_else(|| MessengerError::Invalid("group_request_unknown".into()))?;
         repo::put_request(&self.store, &repo::RequestRow { status: "rejected".into(), ..req }).await?;
         let body = wire::Rejected { group_id: group_id.to_string() };
-        let publish = self.dm(keys, requester, wire::dm_envelope(wire::T_REJECTED, &body)?, false, Wake::Nobody).await?;
+        let publish = self.dm(keys, group_id, requester, wire::dm_envelope(wire::T_REJECTED, &body)?, false, Wake::Nobody).await?;
         Ok(Outcome { publish, events: vec![Self::updated(group_id)], ..Default::default() })
     }
 
@@ -1655,6 +1788,37 @@ impl GroupService {
         messenger_store::events_raw::forget_tagged(&self.store, wire::KIND_GROUP_EVENT, group_id).await?;
         self.forget_log(group_id).await;
         Ok(Outcome { events: vec![Self::updated(group_id)], resubscribe: true, ..Default::default() })
+    }
+
+    /// What the groups that went with a removed private server
+    /// (`servers::remove_private`, by hand or by the snapshot of my
+    /// relations) left outside the store: their keys in the secret store
+    /// (`repo::SECRETS_OWED`), and what this service holds in memory of a
+    /// group no longer here. A key the secret store does not let go of
+    /// (locked) stays owed for the next time. Cheap when nothing went.
+    pub async fn forget_gone(&self) -> Result<()> {
+        let owed = repo::secrets_owed(&self.store).await?;
+        let mut done = Vec::new();
+        for (group_id, key_id) in owed {
+            if self.secrets.delete(&key_ref(&group_id, &KeyId(key_id.clone()))).await.is_ok() {
+                done.push((group_id, key_id));
+            }
+        }
+        if !done.is_empty() {
+            repo::secrets_forgotten(&self.store, &done).await?;
+        }
+        // One lock at a time: never two held together.
+        let mut held: std::collections::BTreeSet<String> = self.logs.lock().await.keys().cloned().collect();
+        held.extend(self.lined.lock().await.keys().cloned());
+        held.extend(self.marks_seen.lock().await.keys().cloned());
+        for group_id in held {
+            if repo::get(&self.store, &group_id).await?.is_none() {
+                self.forget_log(&group_id).await;
+                self.lined.lock().await.remove(&group_id);
+                self.marks_seen.lock().await.remove(&group_id);
+            }
+        }
+        Ok(())
     }
 
     /// What a manager's device does by itself when the key needs care.
@@ -1713,7 +1877,7 @@ impl GroupService {
                 let body = wire::KeyDelivery { group_id: group_id.to_string(), keys: wire::encode_keys(&held) };
                 let content = wire::dm_envelope(wire::T_KEYS, &body)?;
                 for who in list {
-                    outcome.publish.extend(self.dm(keys, &who, content.clone(), false, Wake::Nobody).await?);
+                    outcome.publish.extend(self.dm(keys, group_id, &who, content.clone(), false, Wake::Nobody).await?);
                 }
                 Ok(outcome)
             }

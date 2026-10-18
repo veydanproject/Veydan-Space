@@ -58,11 +58,24 @@ internal data class Push(
     const val TYPE_TEST = "test"
     const val TYPE_BROADCAST = "broadcast"
     const val TYPE_MANIFEST = "manifest_update"
+    /**
+     * A push of a private server, sealed to this phone's push key and
+     * carried by the gateway of the Veydan network: the core opens it, and
+     * what is inside is handled as a push of its own.
+     */
+    const val TYPE_SEALED = "sealed"
+    /**
+     * What a sealed push may hold, as `INNER_TYPES` of the core
+     * (messenger_notify::sealed): the words of a relay. Anything else is
+     * the network's word and is dropped.
+     */
+    val SEALED_TYPES = setOf(TYPE_DM, TYPE_GROUP, TYPE_SYNC, TYPE_TEST)
 
     private val TYPE = Regex("^[a-z_]{1,32}$")
     private val HEX64 = Regex("^[0-9a-f]{64}$")
     private val TRACE = Regex("^[0-9A-Za-z_-]{1,64}$")
-    private val CHAT = Regex("^(dm|group):[0-9a-f]{64}$")
+    /** As `CHAT` of ui/src/lib/messenger/push/bridge.ts: a private chat names its server, `@<16 hex>`. */
+    private val CHAT = Regex("^(dm:[0-9a-f]{64}(@[0-9a-f]{16})?|group:[0-9a-f]{64})$")
 
     fun from(data: Map<String, String>): Push? {
       val type = data["type"]?.takeIf { TYPE.matches(it) } ?: return null
@@ -80,7 +93,7 @@ internal data class Push(
       )
     }
 
-    /** `dm:<pubkey>` or `group:<id>`: what a notification is tagged with and a tap opens. */
+    /** `dm:<pubkey>`, `dm:<pubkey>@<server id>` or `group:<id>`: what a notification is tagged with and a tap opens. */
     fun isChatKey(key: String): Boolean = CHAT.matches(key)
   }
 }

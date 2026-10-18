@@ -7,9 +7,15 @@
 /** One request of a stranger: the chat, who, the one text that shows, when, and how many of their words wait behind it. */
 export type RequestView = { 
 /**
- * `dm:<hex>`
+ * `dm:<hex>`, or `dm:<hex>@<server id>` for a request in a private
+ * chat: the address an answer to it takes
+ * (`messenger_moderation_request_act`), so it lands in that chat.
  */
 chat_id: string, 
+/**
+ * The private server of the request's chat; absent for the home chat.
+ */
+server_id?: string, 
 /**
  * Hex pubkey of the stranger.
  */
@@ -168,9 +174,12 @@ export type ReportTarget = "person" | "group";
 /** A report of a person or of a whole group (`target`) to the moderators of the project, as `messenger_report_send` takes it: `attach` the last ten messages (ending with `message_id`, or the newest; on a group, of any member), `block` the person after it (not in a group). From a group the report carries its name and `message_id`; on a group `accused` is ignored (may be empty). Refusals: `rate_limited` (more than three a minute), `report_*` of a malformed input (`report_target`: a group reported outside of one), or the word of the server. */
 export type ReportInput = { 
 /**
- * The person reported: hex (an npub is taken too). Ignored for a
- * report on a group, whose owner the journal of the group names; the
- * page may pass an empty string then.
+ * The person reported: hex (an npub is taken too), or the address of
+ * a private chat (`<hex>@<server id>`, or its chat id) for a report
+ * from it; a bare key with a `message_id` of a private chat with that
+ * person is that chat too. Ignored for a report on a group, whose
+ * owner the journal of the group names; the page may pass an empty
+ * string then.
  */
 accused: string, 
 /**

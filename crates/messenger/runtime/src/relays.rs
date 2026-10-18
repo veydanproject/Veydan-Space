@@ -9,7 +9,7 @@
 
 use messenger_core::traits::RelayState;
 use messenger_core::{MessengerError, RelayUrl, Result, Transport};
-use messenger_store::{relays as repo, settings, Store};
+use messenger_store::{relays as repo, servers, settings, Store};
 use messenger_transport::manifest::{diff_relays, StoredRelay, REGION_DEFAULT};
 use messenger_transport::{Manifest, RelayChanges, RelayConfig, RelayPool, EMBEDDED_MANIFEST_JSON, PROJECT_MANIFEST_PUBKEY};
 use nostr::key::Keys;
@@ -125,7 +125,17 @@ impl RelayService {
         if svc.servers_mode().await? == Some(ServersMode::Veydan) {
             let (current, _, _) = svc.in_use().await?;
             if current.passes_anti_rollback(svc.manifest_serial().await?) {
-                svc.adopt_current(false).await?;
+                // A manifest of the update naming the relay of a private
+                // server here is not applied; the app starts on the rows
+                // it has, and the page says why when the user chooses.
+                match svc.adopt_current(false).await {
+                    Err(e) if servers::is_server_is_home(&e) => {
+                        eprintln!("messenger relays: the manifest of this build is not applied: {e}");
+                    }
+                    other => {
+                        other?;
+                    }
+                }
             }
         }
         if svc.is_silent().await? {
@@ -305,8 +315,34 @@ impl RelayService {
         self.reload().await
     }
 
+    /// `server_is_home` when a relay `m` names for the current region is
+    /// the relay of a private server of this device (one put in as the
+    /// private server «Veydan» while the own servers were chosen): applied,
+    /// its row would be the home set's while the server is private, and a
+    /// wrap of the home set from that relay would be filed in a private
+    /// chat. The server is to be removed first.
+    pub async fn refuse_private_relays(&self, m: &Manifest) -> Result<()> {
+        let region = self.region().await?;
+        for r in m.relays_for_region(&region) {
+            if let Some(row) = servers::private_by_relay(&self.store, &r.url).await? {
+                return Err(servers::server_is_home(&row));
+            }
+        }
+        Ok(())
+    }
+
+    /// The manifest in use, refused as `apply_manifest` would refuse it
+    /// (`refuse_private_relays`): asked before the Veydan servers are
+    /// chosen, so a refusal leaves the choice as it was.
+    pub async fn refuse_current_private_relays(&self) -> Result<()> {
+        let (m, _, _) = self.in_use().await?;
+        self.refuse_private_relays(&m).await
+    }
+
     /// Apply `m` for the current region. Refused when the serial does not
-    /// advance, unless `force` (region switch re-applies the same manifest).
+    /// advance, unless `force` (region switch re-applies the same manifest),
+    /// and when one of its relays is a private server's
+    /// (`refuse_private_relays`): nothing is written then.
     pub async fn apply_manifest(&self, m: &Manifest, force: bool) -> Result<RelayChanges> {
         if !force && !m.passes_anti_rollback(self.manifest_serial().await?) {
             return Err(MessengerError::Invalid(format!(
@@ -314,6 +350,7 @@ impl RelayService {
                 m.serial
             )));
         }
+        self.refuse_private_relays(m).await?;
         let region = self.region().await?;
         let target = m.relays_for_region(&region);
         let stored: Vec<StoredRelay> = repo::list(&self.store)
@@ -355,6 +392,7 @@ impl RelayService {
                     enabled: true,
                     auth_type: r.auth.as_ref().map(|a| a.type_name().to_string()),
                     auth_secret: r.auth.as_ref().and_then(|a| a.secret().map(String::from)),
+                    server_id: None,
                 },
                 false,
             )
@@ -423,10 +461,24 @@ impl RelayService {
             .collect())
     }
 
+    /// The enabled relay rows of one server: `None` the home set.
+    pub(crate) async fn enabled_of(&self, server: Option<&str>) -> Result<Vec<repo::RelayRow>> {
+        Ok(repo::list(&self.store)
+            .await?
+            .into_iter()
+            .filter(|r| r.enabled && r.server_id.as_deref() == server)
+            .collect())
+    }
+
     pub async fn add_user(&self, url: &str, api_key: Option<String>) -> Result<RelayView> {
         let parsed = RelayUrl::parse(url).ok_or_else(|| {
             MessengerError::Invalid("relay url must be ws:// or wss:// with a host".into())
         })?;
+        // A private server's relay is that server's: an own relay of the
+        // home set it is not, whatever its spelling.
+        if let Some(row) = servers::private_by_relay(&self.store, parsed.as_str()).await? {
+            return Err(servers::server_is_home(&row));
+        }
         if repo::get(&self.store, parsed.as_str()).await?.is_some() {
             return Err(MessengerError::Invalid(
                 "this relay is already configured".into(),
@@ -444,6 +496,7 @@ impl RelayService {
                 enabled: true,
                 auth_type: api_key.as_ref().map(|_| "api_key".to_string()),
                 auth_secret: api_key.filter(|k| !k.trim().is_empty()),
+                server_id: None,
             },
             true,
         )
@@ -493,11 +546,12 @@ impl RelayService {
     /// Push the enabled rows into the live pool. Until the user has chosen
     /// whose servers to use, the pool gets none and connects nowhere.
     pub async fn reload(&self) -> Result<()> {
-        if self.servers_mode().await?.is_none() {
+        let Some(mode) = self.servers_mode().await? else {
             return self.pool.read().await.set_relays(Vec::new()).await;
-        }
-        let relays: Vec<RelayConfig> = repo::list(&self.store)
-            .await?
+        };
+        let rows = repo::list(&self.store).await?;
+        self.keep_home_servers(&rows, mode).await?;
+        let relays: Vec<RelayConfig> = rows
             .into_iter()
             .filter(|r| r.enabled)
             .filter_map(|r| {
@@ -506,10 +560,58 @@ impl RelayService {
                     read: r.read,
                     write: r.write,
                     api_key: r.auth_secret,
+                    // NULL for every relay of the home set.
+                    server_id: r.server_id,
                 })
             })
             .collect();
         self.pool.read().await.set_relays(relays).await
+    }
+
+    /// The `home` servers of `msg_servers`, as the relays of the home set
+    /// stand: one row per relay url, made when the relay comes (the Veydan
+    /// servers chosen, a manifest applied, a relay of mine added), gone
+    /// when it goes. One row per relay rather than one for the whole set:
+    /// a server is one relay with its key, the home set of the manifest is
+    /// several of them, and a group's relay is told a home one by its own
+    /// row, the same way in both modes. Disabled relays keep their row: the
+    /// server is still mine.
+    async fn keep_home_servers(&self, rows: &[repo::RelayRow], mode: ServersMode) -> Result<()> {
+        let home: Vec<&repo::RelayRow> = rows.iter().filter(|r| r.server_id.is_none()).collect();
+        let wanted: std::collections::HashSet<String> = home.iter().map(|r| servers::id_of(&r.url)).collect();
+        for old in servers::home(&self.store).await? {
+            if !wanted.contains(&old.id) {
+                servers::remove(&self.store, &old.id).await?;
+            }
+        }
+        for r in home {
+            // A relay already known as a private server's stays that.
+            if servers::by_relay_url(&self.store, &r.url).await?.is_some_and(|s| s.is_private()) {
+                continue;
+            }
+            let push_mode = if mode == ServersMode::Veydan && r.source == repo::SOURCE_MANIFEST {
+                servers::PUSH_VEYDAN
+            } else {
+                servers::PUSH_OFF
+            };
+            servers::put(
+                &self.store,
+                &servers::ServerRow {
+                    id: String::new(),
+                    kind: servers::KIND_HOME.into(),
+                    name: r.relay_id.clone(),
+                    relay_url: r.url.clone(),
+                    relay_key: r.auth_secret.clone(),
+                    media_url: None,
+                    call_node: None,
+                    push_mode: push_mode.into(),
+                    source: Some(r.source.clone()),
+                    added_at: 0,
+                },
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     pub async fn shutdown(&self) {
@@ -726,6 +828,74 @@ mod tests {
             .unwrap()
             .iter()
             .all(|r| r.url != "wss://mine.example"));
+        svc.shutdown().await;
+    }
+
+    /// The home servers follow the relays of the home set: one row per
+    /// relay url, made and dropped with it, the push mode the project's for
+    /// a manifest relay; a relay of a private server makes none and keeps
+    /// its server in the pool.
+    #[tokio::test]
+    async fn the_home_servers_follow_the_relays_of_the_home_set() {
+        let store = veydan_store().await;
+        let svc = RelayService::init(store.clone(), None).await.unwrap();
+        let ids = |rows: Vec<servers::ServerRow>| rows.into_iter().map(|s| s.id).collect::<std::collections::BTreeSet<_>>();
+        let relay_ids = |rows: Vec<RelayView>| rows.into_iter().map(|r| servers::id_of(&r.url)).collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(ids(servers::home(&store).await.unwrap()), relay_ids(svc.list().await.unwrap()));
+        assert!(servers::home(&store).await.unwrap().iter().all(|s| s.push_mode == servers::PUSH_VEYDAN && s.name.is_some()));
+
+        svc.add_user("wss://mine.example", Some("k1".into())).await.unwrap();
+        let mine = servers::by_relay_url(&store, "wss://mine.example").await.unwrap().unwrap();
+        assert_eq!((mine.kind.as_str(), mine.push_mode.as_str(), mine.relay_key.as_deref()), (servers::KIND_HOME, servers::PUSH_OFF, Some("k1")));
+        svc.set_enabled("wss://mine.example", false).await.unwrap();
+        assert!(servers::by_relay_url(&store, "wss://mine.example").await.unwrap().is_some(), "a disabled relay is still mine");
+        svc.remove_user("wss://mine.example").await.unwrap();
+        assert!(servers::by_relay_url(&store, "wss://mine.example").await.unwrap().is_none());
+
+        let private = servers::put(
+            &store,
+            &servers::ServerRow {
+                id: String::new(),
+                kind: servers::KIND_PRIVATE.into(),
+                name: None,
+                relay_url: "wss://private.example".into(),
+                relay_key: Some("app".into()),
+                media_url: None,
+                call_node: None,
+                push_mode: servers::PUSH_OFF.into(),
+                source: None,
+                added_at: 0,
+            },
+        )
+        .await
+        .unwrap();
+        repo::upsert(
+            &store,
+            &repo::RelayUpsert {
+                url: "wss://private.example".into(),
+                relay_id: None,
+                source: "server".into(),
+                regions: vec![],
+                read: true,
+                write: true,
+                enabled: true,
+                auth_type: Some("api_key".into()),
+                auth_secret: Some("app".into()),
+                server_id: Some(private.clone()),
+            },
+            true,
+        )
+        .await
+        .unwrap();
+        svc.reload().await.unwrap();
+        assert_eq!(servers::get(&store, &private).await.unwrap().unwrap().kind, servers::KIND_PRIVATE, "stays private");
+        assert!(!ids(servers::home(&store).await.unwrap()).contains(&private));
+        let configured = svc.pool().await.configured();
+        let of = |url: &str| configured.iter().find(|c| c.url.as_str() == url).unwrap().server_id.clone();
+        assert_eq!(of("wss://private.example"), Some(private.clone()));
+        assert!(configured.iter().filter(|c| c.url.as_str() != "wss://private.example").all(|c| c.server_id.is_none()));
+        assert!(svc.enabled_of(None).await.unwrap().iter().all(|r| r.url != "wss://private.example"));
+        assert_eq!(svc.enabled_of(Some(&private)).await.unwrap().len(), 1);
         svc.shutdown().await;
     }
 

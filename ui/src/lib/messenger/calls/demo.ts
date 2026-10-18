@@ -322,7 +322,8 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
     if (group.active()) throw { code: 'invalid', message: 'a group call is under way' };
     const chat = host.chat(String(a?.peer ?? ''));
     if (chat.mode !== 'full_chat') throw { code: 'other', message: 'calls go to contacts only' };
-    const view = newCall(chat.peer_pubkey ?? '', 'out', (a?.media as CallMedia) ?? 'audio');
+    // The address, not the bare peer: a private chat's call is that chat's.
+    const view = newCall(String(a?.peer ?? ''), 'out', (a?.media as CallMedia) ?? 'audio');
     line(view, null, null);
     put(view);
     if (hold) return view;

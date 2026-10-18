@@ -27,12 +27,12 @@ use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use messenger_core::traits::{SystemClock, UiEvent};
 use messenger_core::{Clock, MessengerError, Result};
-use messenger_dm::Action;
+use messenger_dm::{Action, DmPeer};
 use messenger_evidence::{
     Attached, Context, Proof, Reason, Report, MAX_COMMENT_CHARS, MAX_MESSAGES, REPORT_VERSION,
 };
 use messenger_store::messages::{self as msgs, MessageRow};
-use messenger_store::{chats, events_raw, groups as group_rows, reports as rows};
+use messenger_store::{events_raw, groups as group_rows, reports as rows};
 use nostr::event::{Event, Kind, UnsignedEvent};
 use nostr::key::Keys;
 use nostr::nips::nip44::{self, v2::ConversationKey};
@@ -134,9 +134,12 @@ pub enum ReportTarget {
 /// A report as `messenger_report_send` takes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ReportInput {
-    /// The person reported: hex (an npub is taken too). Ignored for a
-    /// report on a group, whose owner the journal of the group names; the
-    /// page may pass an empty string then.
+    /// The person reported: hex (an npub is taken too), or the address of
+    /// a private chat (`<hex>@<server id>`, or its chat id) for a report
+    /// from it; a bare key with a `message_id` of a private chat with that
+    /// person is that chat too. Ignored for a report on a group, whose
+    /// owner the journal of the group names; the page may pass an empty
+    /// string then.
     pub accused: String,
     /// A person (when absent) or the whole group of the context;
     /// `report_target` when a group is reported outside of one.
@@ -270,7 +273,7 @@ impl MessengerRuntime {
         sender: &dyn ReportSender,
     ) -> Result<ReportResult> {
         let keys = self.session_keys().await?;
-        let report = self.report_make(&keys, &input).await?;
+        let (report, chat) = self.report_make(&keys, &input).await?;
         let now = report.created_at;
         let verified = messenger_evidence::verify(&report, now);
         if let Some(why) = verified.refused {
@@ -302,8 +305,10 @@ impl MessengerRuntime {
             Delivery::NoWay { why } => return Err(MessengerError::Invalid(why)),
         };
         let blocked = input.block && !matches!(input.context, ReportContext::Group { .. });
+        // The block of the chat reported: a private chat's is that chat's
+        // alone, as from its banner, and nothing of it goes home.
         if blocked {
-            self.dm_act(&report.accused, Action::Block).await?;
+            self.dm_act(&chat, Action::Block).await?;
         }
         Ok(ReportResult {
             status,
@@ -313,8 +318,9 @@ impl MessengerRuntime {
         })
     }
 
-    /// The report the input asks for, its messages gathered, not sent.
-    async fn report_make(&self, keys: &Keys, input: &ReportInput) -> Result<Report> {
+    /// The report the input asks for, its messages gathered, not sent;
+    /// beside it, the chat of the two (its id), which a block takes.
+    async fn report_make(&self, keys: &Keys, input: &ReportInput) -> Result<(Report, String)> {
         let me = keys.public_key().to_hex();
         let target = input.target.unwrap_or_default();
         let group_id = match &input.context {
@@ -327,11 +333,11 @@ impl MessengerRuntime {
             Some(id) => Some(group_rows::get(self.store(), id).await?.ok_or_else(|| invalid("report_group"))?),
             None => None,
         };
-        let (accused, group_admins) = match (target, group_id) {
+        let (accused, group_admins, addressed) = match (target, group_id) {
             (ReportTarget::Person, _) => {
-                let accused = messenger_contacts::book::parse_key(&input.accused)
-                    .map_err(|_| invalid("report_accused"))?;
-                (accused.as_hex().to_string(), Vec::new())
+                let addressed =
+                    crate::addr::parse(&input.accused).map_err(|_| invalid("report_accused"))?;
+                (addressed.key.as_hex().to_string(), Vec::new(), Some(addressed))
             }
             (ReportTarget::Group, None) => return Err(invalid("report_target")),
             // The journal decides who answers for the group, not the page:
@@ -344,7 +350,7 @@ impl MessengerRuntime {
                     .take(messenger_evidence::MAX_GROUP_ADMINS)
                     .map(|k| k.as_hex().to_string())
                     .collect();
-                (owner.as_hex().to_string(), admins)
+                (owner.as_hex().to_string(), admins, None)
             }
         };
         if accused == me {
@@ -356,9 +362,13 @@ impl MessengerRuntime {
             .as_ref()
             .map(|g| g.name.trim().chars().take(messenger_evidence::MAX_GROUP_NAME_CHARS).collect::<String>())
             .filter(|n| !n.is_empty());
-        let chat_id = match group_id {
-            Some(id) => group_rows::group_chat_id(id),
-            None => chats::dm_chat_id(&accused),
+        let chat_id = match (group_id, addressed) {
+            (Some(id), _) => group_rows::group_chat_id(id),
+            (None, Some(addressed)) => self
+                .report_chat(addressed, input.message_id.as_deref())
+                .await?
+                .chat_id(),
+            (None, None) => return Err(invalid("report_target")),
         };
         // The message the report was opened on is one of this chat, or the
         // report is malformed, attached messages or not.
@@ -414,7 +424,7 @@ impl MessengerRuntime {
         } else {
             Vec::new()
         };
-        Ok(Report {
+        let report = Report {
             target: match target {
                 ReportTarget::Person => messenger_evidence::Target::Person,
                 ReportTarget::Group => messenger_evidence::Target::Group,
@@ -437,7 +447,27 @@ impl MessengerRuntime {
             context,
             messages,
             created_at: SystemClock.now().secs(),
-        })
+        };
+        Ok((report, chat_id))
+    }
+
+    /// The chat of two a report on a person is about: the one the address
+    /// of the accused names (a private chat's `<key>@<server id>` or its
+    /// chat id, on a server of mine), else the chat of the message the
+    /// report was opened on when that is a chat with the accused (the page
+    /// may pass the bare key from a private chat), else the home chat.
+    async fn report_chat(&self, addressed: DmPeer, message_id: Option<&str>) -> Result<DmPeer> {
+        if addressed.is_private() {
+            return self.peer_addr(&addressed.chat_id()).await;
+        }
+        let Some(id) = message_id else {
+            return Ok(addressed);
+        };
+        let of_message = msgs::get(self.store(), id)
+            .await?
+            .and_then(|row| DmPeer::of_chat(&row.chat_id))
+            .filter(|chat| chat.key == addressed.key);
+        Ok(of_message.unwrap_or(addressed))
     }
 
     /// The last messages of `chat_id` written by one of `authors` (the
@@ -699,6 +729,7 @@ mod tests {
     use messenger_core::{
         Envelope, EventSource, MessengerConfig, PubKey, RawEvent, RelayUrl, Timestamp,
     };
+    use messenger_store::chats;
     use messenger_store::messages::NewMessage;
     use messenger_testkit::{open_dm, MemorySecretStore};
     use std::sync::{Arc, Mutex};
@@ -807,13 +838,13 @@ mod tests {
 
     /// `text` of `peer` to me, dated after everything in the chat.
     async fn from_peer(rt: &MessengerRuntime, me: &Keys, peer: &Keys, text: &str) -> String {
-        let chat = chats::dm_chat_id(&peer.public_key().to_hex());
+        let chat = chats::dm_chat_id(&peer.public_key().to_hex(), None);
         let at = msgs::last_created_at(rt.store(), &chat)
             .await
             .unwrap()
             .map_or(now() - 600, |l| l + 1);
         let w =
-            messenger_dm::wrap::wrap(peer, &pk_of(me), &Envelope::text(text).encode(), at, None)
+            messenger_dm::wrap::wrap(peer, pk_of(me), &Envelope::text(text).encode(), at, None)
                 .unwrap();
         receive(rt, me, &w.to_peer).await;
         w.rumor_id.as_hex().to_string()
@@ -978,7 +1009,7 @@ mod tests {
     async fn a_group_report_carries_the_two_parties_only() {
         let (_dir, rt, me) = started(false).await;
         let g = rt
-            .group_create(messenger_groups::GroupKind::Private, "Team", "", true)
+            .group_create(messenger_groups::GroupKind::Private, "Team", "", true, None)
             .await
             .unwrap();
         let (_, key) = rt
@@ -1164,7 +1195,7 @@ mod tests {
         carl: &Keys,
     ) -> (messenger_groups::GroupView, messenger_groups::GroupKey) {
         let g = rt
-            .group_create(messenger_groups::GroupKind::Private, "Team", "", true)
+            .group_create(messenger_groups::GroupKind::Private, "Team", "", true, None)
             .await
             .unwrap();
         for who in [bob, carl] {
@@ -1344,6 +1375,101 @@ mod tests {
         rt.shutdown().await;
     }
 
+    /// A report from a private chat is of that chat: by the message it was
+    /// opened on (the page may pass the bare key) or by the address of the
+    /// chat; its messages go with their proofs, and the block is the
+    /// chat's alone — the home chat with the same person stays open.
+    #[tokio::test]
+    async fn a_report_from_a_private_chat_is_of_that_chat() {
+        let (_dir, rt, me) = started(false).await;
+        let s1 = rt
+            .server_put_private(&crate::private::PrivateServerInput {
+                relay_url: "wss://s1.example".into(),
+                name: Some("S1".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let bob = Keys::generate();
+        let bob_hex = bob.public_key().to_hex();
+        let on_s1 = messenger_dm::DmPeer::on(pk_of(&me), Some(&s1));
+        let mut sent = Vec::new();
+        for (i, text) in ["first on s1", "second on s1"].into_iter().enumerate() {
+            let w = messenger_dm::wrap::wrap(
+                &bob,
+                on_s1.clone(),
+                &Envelope::text(text).encode(),
+                now() - 60 + i as i64,
+                None,
+            )
+            .unwrap();
+            receive(&rt, &me, &w.to_peer).await;
+            sent.push(w.rumor_id.as_hex().to_string());
+        }
+        let private_chat = format!("dm:{bob_hex}@{s1}");
+        assert_eq!(
+            msgs::count_in_chat(rt.store(), &private_chat).await.unwrap(),
+            2
+        );
+        let home_chat = chats::dm_chat_id(&bob_hex, None);
+        assert_eq!(msgs::count_in_chat(rt.store(), &home_chat).await.unwrap(), 0);
+
+        // The bare key and a message of the private chat.
+        let fake = Fake::default();
+        let r = rt
+            .report_send(
+                ReportInput {
+                    message_id: Some(sent[1].clone()),
+                    ..input(&bob, ReportContext::Dm)
+                },
+                &fake,
+            )
+            .await
+            .unwrap();
+        assert_eq!((r.attached, r.proved), (2, 2));
+        assert_eq!(ids(&fake.last()), sent);
+        assert_eq!(fake.last().accused, bob_hex, "the accused is the key");
+
+        // The address of the chat, with a block: the block is the chat's.
+        let r = rt
+            .report_send(
+                ReportInput {
+                    accused: format!("{bob_hex}@{s1}"),
+                    block: true,
+                    ..input(&bob, ReportContext::Dm)
+                },
+                &fake,
+            )
+            .await
+            .unwrap();
+        assert_eq!((r.attached, r.blocked), (2, true));
+        assert!(
+            rt.dm_relation(&format!("{bob_hex}@{s1}"))
+                .await
+                .unwrap()
+                .blocked
+        );
+        assert!(
+            !rt.dm_relation(&bob_hex).await.unwrap().blocked,
+            "the home chat with him is not blocked"
+        );
+        assert!(rt.dm_blocked().await.unwrap().is_empty());
+
+        // A server this device has not: refused.
+        let err = rt
+            .report_send(
+                ReportInput {
+                    accused: format!("{bob_hex}@{}", "f".repeat(16)),
+                    ..input(&bob, ReportContext::Dm)
+                },
+                &fake,
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("server_unknown"), "{err}");
+        rt.shutdown().await;
+    }
+
     /// A stranger blocked with the report: what he wrote is in the report,
     /// gathered before the block took the chat away.
     #[tokio::test]
@@ -1351,7 +1477,7 @@ mod tests {
         let (_dir, rt, me) = started(true).await;
         let spammer = Keys::generate();
         let first = from_peer(&rt, &me, &spammer, "cheap coins here").await;
-        let chat = chats::dm_chat_id(&spammer.public_key().to_hex());
+        let chat = chats::dm_chat_id(&spammer.public_key().to_hex(), None);
         assert!(
             msgs::count_in_chat(rt.store(), &chat).await.unwrap() >= 1,
             "a request"

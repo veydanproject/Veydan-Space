@@ -9,7 +9,8 @@
 
 use messenger_push::client::PushError;
 use messenger_push::{
-    Channel, DeviceAnswer, DevicePut, GroupWatch, Info, Prefs, RelayStatus, RelayWatch, VpushClient,
+    Channel, DeviceAnswer, DevicePut, ErrorBody, GroupWatch, Info, Prefs, RelayStatus, RelayWatch, TicketAsk,
+    TicketIssued, TicketList, TicketsInfo, VpushClient, Wake,
 };
 use nostr::key::Keys;
 use serde_json::{json, Value};
@@ -246,4 +247,122 @@ async fn a_test_push_is_asked_for() {
         .await;
     let answer = client.test(&Keys::generate(), "abcdef0123456789").await.unwrap();
     assert_eq!((answer.outcome.as_str(), answer.trace.as_str()), ("delivered", "9583cb58"));
+}
+
+// ─── The gateway (spec/protocol.md, "The gateway") ──────────────────────────
+
+#[test]
+fn a_registration_through_the_gateway_is_the_servers_example() {
+    let sent = DevicePut {
+        app_id: "net.veydan.mobile".into(),
+        channel: Channel::Gateway {
+            ticket: "7a4e2c1f9b8d06e35a1c4f2e8b7d9a0c3e5f1b2d4a6c8e0f1a3b5c7d9e1f2a4b".into(),
+            pubkey: "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa".into(),
+        },
+        app_version: Some("4.1.0".into()),
+        prefs: Prefs::default(),
+        author_key: None,
+        relays: vec![RelayWatch { url: "wss://relay.my-server.example".into(), dm: true, groups: true }],
+        groups: vec![],
+    };
+    let example: Value = serde_json::from_str(&golden("device_put_gateway.json")).unwrap();
+    assert_eq!(serde_json::to_value(&sent).unwrap(), example);
+    let back: DevicePut = serde_json::from_value(example).unwrap();
+    assert_eq!(back.channel.provider(), "gateway");
+    assert_eq!(back.channel.token(), "7a4e2c1f9b8d06e35a1c4f2e8b7d9a0c3e5f1b2d4a6c8e0f1a3b5c7d9e1f2a4b");
+}
+
+#[test]
+fn a_private_push_server_names_its_gateway_and_its_seal() {
+    let info: Info = serde_json::from_str(&golden("info_private.json")).unwrap();
+    assert!(info.serves("net.veydan.mobile", "gateway"));
+    assert!(!info.serves("net.veydan.mobile", "fcm"));
+    let gateway = info.gateway.unwrap();
+    assert_eq!(gateway.url, "https://eu-1-vpush.veydan.net");
+    assert_eq!(gateway.sender, "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27");
+    assert!(info.tickets.is_none());
+}
+
+#[test]
+fn a_gateway_says_it_issues_tickets() {
+    let info: Info = serde_json::from_str(&golden("info_gateway.json")).unwrap();
+    assert!(info.serves("net.veydan.mobile", "fcm"));
+    assert_eq!(info.tickets, Some(TicketsInfo { days: 30, per_device: 8 }));
+    assert!(info.gateway.is_none());
+}
+
+#[test]
+fn the_bodies_of_the_tickets_are_the_servers_examples() {
+    let ask = serde_json::to_value(TicketAsk { device_id: "phone-0001".into() }).unwrap();
+    assert_eq!(ask, serde_json::from_str::<Value>(&golden("ticket_ask.json")).unwrap());
+
+    let issued: TicketIssued = serde_json::from_str(&golden("ticket_issued.json")).unwrap();
+    assert_eq!(issued.ticket.len(), 64);
+    assert_eq!(issued.expires_at, 1792592000);
+
+    let list: TicketList = serde_json::from_str(&golden("tickets.json")).unwrap();
+    assert_eq!(list.tickets.len(), 2);
+    assert_eq!(list.tickets[0].prefix(), "7a4e2c1f");
+    assert_eq!(list.tickets[0].last_wake_at, Some(1790003600));
+    assert_eq!(list.tickets[1].last_wake_at, None);
+    assert_eq!(list.tickets[1].device_id, "phone-0001");
+
+    let wake: Wake = serde_json::from_str(&golden("wake.json")).unwrap();
+    let sealed: Value = serde_json::from_str(&golden("push_sealed.json")).unwrap();
+    assert_eq!(wake.blob, sealed["blob"].as_str().unwrap());
+    assert_eq!(wake.sender, sealed["sender"].as_str().unwrap());
+    assert_eq!(sealed["type"], "sealed");
+}
+
+#[test]
+fn a_ticket_unknown_is_read_as_a_refusal() {
+    let body: ErrorBody = serde_json::from_str(&golden("error_ticket_unknown.json")).unwrap();
+    assert_eq!(body.error.code, "ticket_unknown");
+    assert_eq!(body.request_id, "5f3a9c1e");
+}
+
+#[tokio::test]
+async fn tickets_are_asked_listed_and_taken_back_signed() {
+    let (server, client) = server().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/tickets"))
+        .respond_with(ResponseTemplate::new(201).set_body_raw(golden("ticket_issued.json"), "application/json"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/tickets"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(golden("tickets.json"), "application/json"))
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/v1/tickets/7a4e2c1f"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+
+    let keys = Keys::generate();
+    let issued = client.ticket_issue(&keys, "phone-0001").await.unwrap();
+    assert_eq!(issued.expires_at, 1792592000);
+    assert_eq!(client.tickets(&keys).await.unwrap().tickets.len(), 2);
+    client.ticket_delete(&keys, "7a4e2c1f").await.unwrap();
+    assert!(client.ticket_delete(&keys, "7a4e/../x").await.is_err(), "nothing but hex goes in the path");
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 3);
+    for r in &requests {
+        assert!(r.headers.get("authorization").is_some(), "{} {} unsigned", r.method, r.url);
+    }
+    let asked: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(asked, serde_json::from_str::<Value>(&golden("ticket_ask.json")).unwrap());
+}
+
+#[tokio::test]
+async fn a_gateway_that_does_not_know_the_device_says_so() {
+    let (server, client) = server().await;
+    Mock::given(method("POST"))
+        .respond_with(refusal(409, "no_device", json!({})))
+        .mount(&server)
+        .await;
+    let e = client.ticket_issue(&Keys::generate(), "phone-0001").await.unwrap_err();
+    assert_eq!(e.code(), Some("no_device"));
 }

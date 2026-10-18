@@ -34,6 +34,8 @@ pub const MAX_NAME_CHARS: usize = 100;
 pub const MAX_RELAYS: usize = 3;
 /// A relay's address.
 const MAX_RELAY_BYTES: usize = 256;
+/// The card of a server, as a link (`messenger_links::MAX_LINK_LEN`).
+const MAX_SERVER_BYTES: usize = 2048;
 
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
@@ -63,6 +65,12 @@ pub struct ContactCard {
     /// When the card was made, unix seconds.
     #[serde(default)]
     pub at: i64,
+    /// The card of a server of mine (`veydan://server/…`), in my own card
+    /// only: the receiver may add the server and open a private chat with
+    /// me there (internal/messenger-wire.md, §9.4). Its fields are read by
+    /// whoever shows it (the parser of links); here only its shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
 }
 
 /// A received card as the UI shows it.
@@ -85,6 +93,9 @@ pub struct CardView {
     /// The person is in my contacts.
     pub is_contact: bool,
     pub blocked: bool,
+    /// The card of the server the person may be talked to on, privately
+    /// (`veydan://server/…`): `messenger_server_preview` says what it is.
+    pub server: Option<String>,
 }
 
 impl ContactCard {
@@ -118,20 +129,44 @@ impl ContactCard {
             phone,
             avatar: avatar.and_then(|bytes| messenger_avatar::card_thumb(bytes).ok()).map(|jpeg| B64.encode(jpeg)),
             at: at.max(0),
+            server: None,
         };
-        if card.json_len() > MAX_CARD_BYTES {
-            card.avatar = None;
-        }
-        if card.json_len() > MAX_CARD_BYTES {
-            return Err(invalid("card_too_large"));
-        }
+        card.fit()?;
         Ok(card)
     }
 
-    /// The same card without the phone: what may be forwarded, and what is
-    /// kept of a card about somebody other than its sender.
+    /// The same card with the card of a server of mine (`veydan://server/…`,
+    /// made by the parser of links), or without one. Refused as
+    /// `card_invalid` when it has not the shape of one; the picture goes
+    /// when the card would be larger than `MAX_CARD_BYTES`.
+    pub fn with_server(mut self, server: Option<&str>) -> Result<ContactCard> {
+        self.server = match server {
+            Some(s) => Some(clean_server(s).ok_or_else(|| invalid("card_invalid"))?),
+            None => None,
+        };
+        self.fit()?;
+        Ok(self)
+    }
+
+    /// Within `MAX_CARD_BYTES`: without the picture when it must, refused as
+    /// `card_too_large` when even that is not enough.
+    fn fit(&mut self) -> Result<()> {
+        if self.json_len() > MAX_CARD_BYTES {
+            self.avatar = None;
+        }
+        if self.json_len() > MAX_CARD_BYTES {
+            return Err(invalid("card_too_large"));
+        }
+        Ok(())
+    }
+
+    /// The same card without the phone and the server: what may be
+    /// forwarded, and what is kept of a card about somebody other than its
+    /// sender (a server is given by its own people, and only to whom they
+    /// choose: its card carries its app key).
     pub fn without_phone(mut self) -> Self {
         self.phone = None;
+        self.server = None;
         self
     }
 
@@ -173,6 +208,7 @@ impl CardView {
             is_me,
             is_contact,
             blocked,
+            server: card.server.clone(),
         }
     }
 }
@@ -203,6 +239,7 @@ pub fn validate(raw: &Value) -> Result<ContactCard> {
         phone: text("phone").and_then(|p| normalize_phone(p).ok()),
         avatar: text("avatar").and_then(clean_avatar),
         at: obj.get("at").and_then(Value::as_i64).filter(|at| *at >= 0).unwrap_or(0),
+        server: text("server").and_then(clean_server),
     })
 }
 
@@ -275,6 +312,16 @@ fn clean_website(s: &str) -> Option<String> {
     }
     let url = Url::parse(s).ok()?;
     (url.scheme() == "https" && url.host_str().is_some_and(|h| !h.is_empty()) && url.username().is_empty() && url.password().is_none())
+        .then(|| s.to_string())
+}
+
+/// The card of a server in the shape of one: `veydan://server/…`, at most
+/// `MAX_SERVER_BYTES`, without spaces or controls. What it says is read by
+/// the parser of links where it is shown (`messenger-dm`), which drops a
+/// card it does not take.
+fn clean_server(s: &str) -> Option<String> {
+    let s = s.trim();
+    (s.starts_with("veydan://server/") && s.len() <= MAX_SERVER_BYTES && !s.chars().any(|c| c.is_whitespace() || c.is_control()))
         .then(|| s.to_string())
 }
 
@@ -440,6 +487,25 @@ mod tests {
         assert_eq!(name_of(&json!({"display_name": 5, "name": ["x"]})), "");
         assert_eq!(name_of(&json!("x")), "");
         assert_eq!(name_of(&json!({"name": "x".repeat(500)})).len(), MAX_NAME_CHARS);
+    }
+
+    #[test]
+    fn my_card_may_carry_a_server() {
+        let pk = hex_key();
+        let server = "veydan://server/e06676e9354ae2e2?u=wss%3A%2F%2Frelay.s1.example&k=key&p=off&n=S1";
+        let card = ContactCard::from_profile(&profile(&pk), &[], None, None, 7).unwrap().with_server(Some(server)).unwrap();
+        assert_eq!(card.server.as_deref(), Some(server));
+        let back = validate(&card.to_json()).unwrap();
+        assert_eq!(back.server.as_deref(), Some(server));
+        assert_eq!(CardView::new(&back, false, false, false).server.as_deref(), Some(server));
+        assert_eq!(back.clone().without_phone().server, None, "not forwarded, not kept of another person's card");
+        assert_eq!(card.clone().with_server(None).unwrap().server, None);
+        for bad in ["https://relay.s1.example", "veydan://server/x y", "veydan://contact/x"] {
+            assert!(card.clone().with_server(Some(bad)).is_err(), "{bad}");
+            assert_eq!(validate(&json!({"pubkey": pk, "server": bad})).unwrap().server, None, "{bad}");
+        }
+        assert_eq!(validate(&json!({"pubkey": pk, "server": format!("veydan://server/{}", "a".repeat(3000))})).unwrap().server, None);
+        assert!(serde_json::to_string(&ContactCard { server: None, ..card }).unwrap().find("server").is_none(), "absent, not null");
     }
 
     #[test]

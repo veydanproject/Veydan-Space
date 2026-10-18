@@ -247,8 +247,8 @@ async fn a_phone_changed_without_a_session_is_told_at_the_next() {
 async fn my_phone_never_goes_to_a_public_group() {
     let (_a, alice, _) = started().await;
     alice.own_private_set(Some("+1 555 000 1111"), true).await.unwrap();
-    let public = alice.group_create(messenger_groups::GroupKind::Public, "Open", "", true).await.unwrap();
-    let private = alice.group_create(messenger_groups::GroupKind::Private, "Closed", "", true).await.unwrap();
+    let public = alice.group_create(messenger_groups::GroupKind::Public, "Open", "", true, None).await.unwrap();
+    let private = alice.group_create(messenger_groups::GroupKind::Private, "Closed", "", true, None).await.unwrap();
 
     assert_eq!(code(alice.card_send(&format!("group:{}", public.id), None, true).await), "phone_public_group");
     let without = alice.card_send(&format!("group:{}", public.id), None, false).await.unwrap();
@@ -258,6 +258,42 @@ async fn my_phone_never_goes_to_a_public_group() {
     // Without a phone to give, ticking the box changes nothing.
     alice.own_private_set(None, true).await.unwrap();
     assert_eq!(alice.card_send(&format!("group:{}", public.id), None, true).await.unwrap().card.unwrap().phone, None);
+    alice.shutdown().await;
+}
+
+/// The card of my private server carries its app key, the only thing that
+/// lets anybody in: it goes to a person, never into a group — a public one
+/// anyone with its link reads, a private one is many people still. Nothing
+/// is queued for the refused card; to a person it goes.
+#[tokio::test]
+async fn the_card_of_my_server_never_goes_into_a_group() {
+    let (_a, alice, _) = started().await;
+    let (_b, _bob, b_keys) = started().await;
+    let s1 = alice
+        .server_put_private(&crate::private::PrivateServerInput {
+            relay_url: "wss://relay.s1.example".into(),
+            key: Some("app-key".into()),
+            media_url: None,
+            call_node: None,
+            name: Some("S1".into()),
+            push_mode: None,
+        })
+        .await
+        .unwrap();
+    let public = alice.group_create(messenger_groups::GroupKind::Public, "Open", "", true, None).await.unwrap();
+    let private = alice.group_create(messenger_groups::GroupKind::Private, "Closed", "", true, None).await.unwrap();
+    let queued = || async { messenger_store::outbox::due(alice.store(), i64::MAX / 4, 0).await.unwrap().len() };
+    let before = queued().await;
+    for group in [&public, &private] {
+        let chat = format!("group:{}", group.id);
+        assert_eq!(code(alice.card_send_with_server(&chat, None, false, Some(&s1)).await), "card_server_group");
+        assert_eq!(code(alice.card_send_with_server(&format!("dm:{chat}"), None, false, Some(&s1)).await), "card_server_group");
+        // Without the server, my card goes as before.
+        assert!(alice.card_send_with_server(&chat, None, false, None).await.unwrap().card.unwrap().server.is_none());
+    }
+    assert_eq!(queued().await, before + 2, "the two cards without a server, nothing of the refused ones");
+    let to_bob = alice.card_send_with_server(&hex(&b_keys), None, false, Some(&s1)).await.unwrap();
+    assert!(to_bob.card.unwrap().server.is_some());
     alice.shutdown().await;
 }
 

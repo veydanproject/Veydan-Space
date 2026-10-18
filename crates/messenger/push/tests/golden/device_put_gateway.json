@@ -1,0 +1,14 @@
+{
+  "app_id": "net.veydan.mobile",
+  "channel": {
+    "provider": "gateway",
+    "ticket": "7a4e2c1f9b8d06e35a1c4f2e8b7d9a0c3e5f1b2d4a6c8e0f1a3b5c7d9e1f2a4b",
+    "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+  },
+  "app_version": "4.1.0",
+  "prefs": { "dm": true, "groups": true },
+  "relays": [
+    { "url": "wss://relay.my-server.example", "dm": true, "groups": true }
+  ],
+  "groups": []
+}

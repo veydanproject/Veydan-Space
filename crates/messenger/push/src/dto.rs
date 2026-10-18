@@ -18,18 +18,32 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "provider", rename_all = "snake_case")]
 pub enum Channel {
     Fcm { token: String },
+    /// Through the gateway, at a private push server (`spec/protocol.md`,
+    /// "The gateway"): the ticket the gateway issued for the token of this
+    /// device, and the push key of the device every push is sealed to.
+    Gateway {
+        /// 64 hex characters.
+        ticket: String,
+        /// The push key of the device: x-only secp256k1, 64 hex
+        /// characters, made for pushes alone.
+        pubkey: String,
+    },
 }
 
 impl Channel {
     pub fn provider(&self) -> &'static str {
         match self {
             Self::Fcm { .. } => "fcm",
+            Self::Gateway { .. } => "gateway",
         }
     }
 
+    /// What the push service knows the device by: the token of FCM, the
+    /// ticket of a gateway.
     pub fn token(&self) -> &str {
         match self {
             Self::Fcm { token } => token,
+            Self::Gateway { ticket, .. } => ticket,
         }
     }
 }
@@ -148,6 +162,88 @@ pub struct Info {
     pub apps: Vec<AppInfo>,
     #[serde(default)]
     pub relays: Option<RelayPolicy>,
+    /// A private push server: the gateway it wakes devices through, and
+    /// the key it seals pushes with. Absent on every other server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway: Option<GatewayInfo>,
+    /// A gateway: it issues tickets. Absent on a server that does not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tickets: Option<TicketsInfo>,
+}
+
+/// `gateway` of `/v1/info`, on a private push server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GatewayInfo {
+    /// The gateway, where the device takes its tickets.
+    pub url: String,
+    /// The public half of the key this server seals pushes with, 64 hex
+    /// characters: `sender` of every sealed push of this server.
+    pub sender: String,
+}
+
+/// `tickets` of `/v1/info`, on a gateway.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TicketsInfo {
+    /// How long a ticket lives.
+    pub days: u32,
+    /// Live tickets a device holds at most; the oldest goes when one more
+    /// is asked for.
+    pub per_device: u32,
+}
+
+/// Body of `POST /v1/tickets`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TicketAsk {
+    /// A device the signer registered at the gateway with its token.
+    pub device_id: String,
+}
+
+/// Answer of `POST /v1/tickets`: the ticket, said this once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TicketIssued {
+    /// 64 hex characters.
+    pub ticket: String,
+    /// Unix seconds.
+    pub expires_at: u64,
+}
+
+/// Answer of `GET /v1/tickets`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TicketList {
+    #[serde(default)]
+    pub tickets: Vec<TicketView>,
+}
+
+/// One live ticket of the signer, as the gateway shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TicketView {
+    /// The first 8 hex of the ticket, and `…`.
+    pub ticket: String,
+    pub device_id: String,
+    pub issued_at: u64,
+    pub expires_at: u64,
+    /// `null` when never woken.
+    #[serde(default)]
+    pub last_wake_at: Option<u64>,
+}
+
+impl TicketView {
+    /// The hex the gateway shows of the ticket, without the `…`.
+    pub fn prefix(&self) -> &str {
+        self.ticket.trim_end_matches('…')
+    }
+}
+
+/// Body of `POST /v1/gateway/wake`, from a private push server: the client
+/// never sends it, and reads it in its tests only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Wake {
+    pub ticket: String,
+    pub blob: String,
+    pub sender: String,
+    /// High priority at the push service: the push of a call only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub urgent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

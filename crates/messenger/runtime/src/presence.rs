@@ -669,6 +669,7 @@ mod tests {
         rt.contacts().remove(&pk_of(&bob)).await.unwrap();
         let row = RelationRow {
             peer_pubkey: bob.public_key().to_hex(),
+            server_id: String::new(),
             my_contact: "approved".into(),
             blocked: false,
             peer_signal: "approved".into(),
@@ -800,7 +801,7 @@ mod tests {
         relay.run().await.unwrap();
         let url = messenger_core::RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
         let pool = RelayPool::new(None);
-        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         for _ in 0..50 {
             if pool.status().await.relays.iter().all(|r| r.state == RelayState::Connected) {
                 break;

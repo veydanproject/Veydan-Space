@@ -20,6 +20,8 @@ const api = vi.hoisted(() => {
     inviteRevoke: vi.fn(async (_id: string) => {}),
     inspect: vi.fn(async (_links: string[]) => [] as unknown[]),
     action: vi.fn(async (_peer: string, _action: string, _extra?: unknown) => ({})),
+    openPrivate: vi.fn(async (peer: string, server: string, _invite?: string | null) => ({ id: `dm:${peer}@${server}` })),
+    acceptServer: vi.fn(async (_s: { id: string }) => null as string | null),
   };
 });
 vi.mock('../api', () => ({
@@ -27,6 +29,7 @@ vi.mock('../api', () => ({
     moderation: { inviteList: api.inviteList, inviteStatus: api.inviteStatus, inviteCreate: api.inviteCreate, inviteRevoke: api.inviteRevoke },
     links: { inspect: api.inspect },
     dm: { action: api.action },
+    servers: { openPrivate: api.openPrivate },
   },
   messengerError: (e: unknown) => (e instanceof Error ? e.message : String(e)),
 }));
@@ -34,6 +37,7 @@ vi.mock('../api', () => ({
 const chats = vi.hoisted(() => ({ loadChats: vi.fn(async () => {}) }));
 vi.mock('../chats/chatStore.svelte', () => ({ chatStore: chats }));
 vi.mock('../store.svelte', () => ({ messengerStore: { refreshContacts: vi.fn(async () => {}) } }));
+vi.mock('../servers/serverAccept.svelte', () => ({ acceptServer: api.acceptServer }));
 
 const { inviteStore } = await import('./inviteStore.svelte');
 
@@ -140,14 +144,29 @@ describe('the way in by a link', () => {
     expect(api.inspect).toHaveBeenCalledWith(['veydan://contact/npub1x?i=q7Vd0xKp3LmN8sRt2WyZaA']);
     expect(api.action).toHaveBeenCalledWith(PEER, 'request', { invite: 'q7Vd0xKp3LmN8sRt2WyZaA' });
     expect(chats.loadChats).toHaveBeenCalled();
-    expect(out).toEqual({ ok: true, pubkey: PEER, name: 'Gleb', invited: true });
+    expect(out).toEqual({ ok: true, pubkey: PEER, name: 'Gleb', invited: true, address: PEER });
   });
 
   it('without a secret sends nothing: the chat opens as with any key', async () => {
     api.inspect.mockResolvedValueOnce([contact()]);
     const out = await inviteStore.join('veydan://contact/npub1x');
     expect(api.action).not.toHaveBeenCalled();
-    expect(out).toEqual({ ok: true, pubkey: PEER, name: 'Gleb', invited: false });
+    expect(out).toEqual({ ok: true, pubkey: PEER, name: 'Gleb', invited: false, address: PEER });
+  });
+
+  it('with the card of a server adds it after asking, then opens the private chat there', async () => {
+    const server = { id: 'e06676e9354ae2e2', link: 'veydan://server/e06676e9354ae2e2?u=wss%3A%2F%2Frelay.s1.example', known: false };
+    api.inspect.mockResolvedValueOnce([contact({ server, invite: 'q7Vd0xKp3LmN8sRt2WyZaA' })]);
+    api.acceptServer.mockResolvedValueOnce(null);
+    expect(await inviteStore.join('veydan://contact/npub1x?srv=x')).toEqual({ ok: false, reason: 'declined' });
+    expect(api.openPrivate).not.toHaveBeenCalled();
+
+    api.inspect.mockResolvedValueOnce([contact({ server, invite: 'q7Vd0xKp3LmN8sRt2WyZaA' })]);
+    api.acceptServer.mockResolvedValueOnce(server.id);
+    const out = await inviteStore.join('veydan://contact/npub1x?srv=x');
+    expect(api.openPrivate).toHaveBeenCalledWith(PEER, server.id, 'q7Vd0xKp3LmN8sRt2WyZaA');
+    expect(api.action).not.toHaveBeenCalled();
+    expect(out).toEqual({ ok: true, pubkey: PEER, name: 'Gleb', invited: true, address: `${PEER}@${server.id}` });
   });
 
   it('sends nothing to my own link, to someone I blocked, or for what is not a person', async () => {

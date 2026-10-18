@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! The link of a person: `veydan://contact/<npub>?n=<name>&r=<relay>,<relay>&i=<invite>`.
+//! The link of a person: `veydan://contact/<npub>?n=<name>&r=<relay>,<relay>&i=<invite>&srv=<server card>`.
 //!
 //! The key is the person. The name is only what the sender called them,
 //! shown until their own profile is known; the relays say where to look.
@@ -9,9 +9,15 @@
 //! link write to them without a request: 16 bytes as base64url without
 //! padding, 22 characters, and nothing else is one (a code is told by
 //! mouth, never written into a link).
+//!
+//! The server card (`srv`) says the person is reached on a server
+//! (`server::ServerLink`, as base64url): whoever opens the link adds that
+//! server, after asking, and talks to them there, in the private chat of
+//! that server.
 
 use crate::error::LinkError;
 use crate::kind::LinkType;
+use crate::server::ServerLink;
 use crate::uri::{Uri, UriBuilder};
 use messenger_core::{PubKey, RelayUrl};
 use nostr::nips::nip19::{FromBech32, ToBech32};
@@ -30,6 +36,9 @@ pub struct ContactLink {
     pub relays: Vec<RelayUrl>,
     /// The secret of an invitation, when the link carries one.
     pub invite: Option<String>,
+    /// The card of the server the person is reached on, when the link
+    /// carries one: the chat is the private one there, not the home one.
+    pub srv: Option<ServerLink>,
 }
 
 /// Whether `s` is the secret of a link invitation as the grammar writes
@@ -41,7 +50,7 @@ pub fn is_invite_secret(s: &str) -> bool {
 /// The link of a person put together from its parts: what the facade of
 /// invitations writes.
 pub fn contact_link(pubkey: &PubKey, name: &str, relays: &[RelayUrl], invite: Option<&str>) -> Result<String, LinkError> {
-    ContactLink { pubkey: pubkey.clone(), name: name.into(), relays: relays.to_vec(), invite: invite.map(String::from) }.encode()
+    ContactLink { pubkey: pubkey.clone(), name: name.into(), relays: relays.to_vec(), invite: invite.map(String::from), srv: None }.encode()
 }
 
 /// `npub1…` → key. Nothing else is accepted: a secret key never parses.
@@ -75,6 +84,9 @@ impl ContactLink {
             }
             b = b.param("i", i);
         }
+        if let Some(srv) = &self.srv {
+            b = b.param("srv", &srv.srv_param());
+        }
         Ok(b.build())
     }
 
@@ -98,13 +110,18 @@ impl ContactLink {
         if invite.as_deref().is_some_and(|i| !is_invite_secret(i)) {
             return Err(LinkError::Param);
         }
-        Ok(Self { pubkey, name, relays, invite })
+        let srv = match uri.raw("srv") {
+            Some(raw) => Some(ServerLink::from_srv(raw)?),
+            None => None,
+        };
+        Ok(Self { pubkey, name, relays, invite, srv })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
 
     const HEX: &str = "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d";
     /// NIP-19 test vector for `HEX`.
@@ -121,6 +138,7 @@ mod tests {
             name: "Алиса М.".into(),
             relays: vec![relay("wss://node-1.veydan.net"), relay("wss://r.example:7777")],
             invite: None,
+            srv: None,
         };
         let text = link.encode().unwrap();
         assert_eq!(
@@ -133,7 +151,7 @@ mod tests {
 
     #[test]
     fn the_key_alone_is_enough() {
-        let bare = ContactLink { pubkey: PubKey::parse(HEX).unwrap(), name: " \u{7} ".into(), relays: vec![], invite: None };
+        let bare = ContactLink { pubkey: PubKey::parse(HEX).unwrap(), name: " \u{7} ".into(), relays: vec![], invite: None, srv: None };
         let text = bare.encode().unwrap();
         assert_eq!(text, format!("veydan://contact/{NPUB}"));
         let back = ContactLink::parse(&text).unwrap();
@@ -148,6 +166,7 @@ mod tests {
             name: "x".repeat(300),
             relays: (1..=5).map(|i| relay(&format!("wss://r{i}.example"))).collect(),
             invite: None,
+            srv: None,
         };
         let back = ContactLink::parse(&many.encode().unwrap()).unwrap();
         assert_eq!(back.name.chars().count(), MAX_NAME_CHARS);
@@ -178,6 +197,30 @@ mod tests {
         ] {
             assert_eq!(ContactLink::parse(&text), Err(why), "{text}");
         }
+    }
+
+    /// What `veydan-server card --contact <npub>` of the kit prints: the
+    /// person, and the card of the server as `srv`, base64url without
+    /// padding.
+    #[test]
+    fn a_person_on_a_server_of_their_own() {
+        let card = crate::server::ServerLink::parse(&format!(
+            "veydan://server/{}?u=wss%3A%2F%2Frelay.s1.example&k=app-key&m=https%3A%2F%2Fmedia.s1.example&p=off&n=S1",
+            crate::server_id("wss://relay.s1.example")
+        ))
+        .unwrap();
+        let kit = format!(
+            "veydan://contact/{NPUB}?srv={}",
+            base64::engine::general_purpose::STANDARD.encode(card.encode()).replace('+', "-").replace('/', "_").replace('=', "")
+        );
+        let link = ContactLink::parse(&kit).unwrap();
+        assert_eq!(link.pubkey.as_hex(), HEX);
+        assert_eq!(link.srv.as_ref(), Some(&card));
+        assert_eq!(link.encode().unwrap(), kit, "written back as the kit writes it");
+
+        let mine = ContactLink { name: "Bob".into(), relays: vec![relay("wss://relay.s1.example")], ..link.clone() };
+        assert_eq!(ContactLink::parse(&mine.encode().unwrap()).unwrap(), mine);
+        assert_eq!(ContactLink::parse(&format!("veydan://contact/{NPUB}?srv=AAAA")), Err(LinkError::Param), "a card that is none");
     }
 
     /// The vector of the invitation: 16 bytes, base64url, no padding.

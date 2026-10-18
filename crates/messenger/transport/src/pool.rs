@@ -6,16 +6,24 @@
 //! The pool owns the relay connections, forwards every event it sees as a
 //! `RawEvent`, and executes `Outbound` requests. It does not interpret
 //! events. Silent mode drops all connections and refuses every send.
+//!
+//! Every relay belongs to a server (`RelayConfig::server_id`, none for the
+//! home set), and every request goes by its scope (internal/messenger-wire.md,
+//! «Серверы»): `Scope::Own` reaches the relays of the home set,
+//! `Scope::Server` exactly the relays of that server. A group's scope is
+//! resolved to its server's by the runtime before it gets here; one that
+//! was not means the home set, as every scope did before servers. So a
+//! private server hears only what names it.
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use messenger_core::traits::{RelayState, RelayStatus, RelayStatusSnapshot};
 use messenger_core::{
-    Ack, EventId, EventSource, MessengerError, Outbound, PubKey, RawEvent, RelayUrl, Result, Timestamp,
+    Ack, EventId, EventSource, MessengerError, Outbound, PubKey, RawEvent, RelayUrl, Result, Scope, Timestamp,
     Transport,
 };
 use nostr_sdk::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -29,6 +37,39 @@ pub struct RelayConfig {
     pub write: bool,
     /// Static gate key sent as `?key=` on the connect URL. Never logged.
     pub api_key: Option<String>,
+    /// The server the relay belongs to; `None` is the home set.
+    pub server_id: Option<String>,
+}
+
+/// The server a scope names: `None` for the home set. A group or channel
+/// scope that reaches the pool unresolved goes to the home set.
+fn server_of(scope: &Scope) -> Option<&str> {
+    match scope {
+        Scope::Server { id } => Some(id.as_str()),
+        Scope::Own | Scope::Group { .. } | Scope::Channel { .. } => None,
+    }
+}
+
+/// What a request that found no relay of its scope says.
+fn none_connected(scope: &Scope) -> MessengerError {
+    match server_of(scope) {
+        None => MessengerError::Transport("no relay connected".into()),
+        Some(_) => MessengerError::Transport("no relay of this server connected".into()),
+    }
+}
+
+/// One relay of the pool as a scope sees it.
+struct Member {
+    /// How the pool addresses it: the connect url, with its key.
+    address: nostr_sdk::prelude::RelayUrl,
+    relay: Relay,
+    write: bool,
+}
+
+impl Member {
+    fn connected(&self) -> bool {
+        self.relay.status() == nostr_sdk::relay::RelayStatus::Connected
+    }
 }
 
 impl RelayConfig {
@@ -46,7 +87,8 @@ pub struct RelayPool {
     silent: AtomicBool,
     tx: mpsc::Sender<RawEvent>,
     rx: Mutex<Option<mpsc::Receiver<RawEvent>>>,
-    /// Configured relays; nostr-sdk keeps the live set.
+    /// Configured relays, each with its server; nostr-sdk keeps the live
+    /// set. What a scope reaches is read from here (`members`).
     configured: Mutex<Vec<RelayConfig>>,
     /// The websockets open now, whichever way they went.
     sockets: Arc<crate::ws::Sockets>,
@@ -85,13 +127,21 @@ impl RelayPool {
         pool
     }
 
+    /// Every event a relay sends, each copy of each relay, goes to the
+    /// stream: `nostr-sdk` tells an event once per client
+    /// (`ClientNotification::Event`, its tracker of ids), so a copy that
+    /// comes by a second relay, or again after the ingress forgot it, would
+    /// never reach the ingress — the copy of a group's own server after
+    /// one by a wrong relay was dropped, the history of a private server
+    /// put in again. The ingress dedups (`msg_events_raw`).
     fn spawn_forwarder(&self) {
         let mut stream = self.client.notifications();
         let tx = self.tx.clone();
         tokio::spawn(async move {
             while let Some(n) = stream.next().await {
                 match n {
-                    ClientNotification::Event { relay_url, event, .. } => {
+                    ClientNotification::Message { relay_url, message } => {
+                        let RelayMessage::Event { event, .. } = *message else { continue };
                         let Some(raw) = to_raw(&event, EventSource::Relay { url: to_core_url(&relay_url) }) else {
                             continue;
                         };
@@ -134,6 +184,34 @@ impl RelayPool {
 
     pub fn configured(&self) -> Vec<RelayConfig> {
         self.configured.lock().unwrap().clone()
+    }
+
+    /// The relays of the pool that `scope` reaches, connected or not: those
+    /// configured for its server, by the address the pool knows them under.
+    /// A relay the pool holds for a moment only (a peer's inbox relay,
+    /// `publish_to_inbox`) belongs to no scope.
+    async fn members(&self, scope: &Scope) -> Vec<Member> {
+        let server = server_of(scope);
+        let wanted: HashMap<String, bool> = self
+            .configured()
+            .into_iter()
+            .filter(|c| c.server_id.as_deref() == server)
+            .map(|c| (c.url.as_str().to_string(), c.write))
+            .collect();
+        self.client
+            .relays()
+            .await
+            .into_iter()
+            .filter_map(|(address, relay)| {
+                let write = *wanted.get(to_core_url(&address).as_str())?;
+                Some(Member { address, relay, write })
+            })
+            .collect()
+    }
+
+    /// How many relays of `scope` are connected right now.
+    pub async fn connected_in(&self, scope: &Scope) -> usize {
+        self.members(scope).await.iter().filter(|m| m.connected()).count()
     }
 
     pub async fn connect(&self) {
@@ -221,11 +299,12 @@ const EPHEMERAL_CONNECT_TIMEOUT: Duration = Duration::from_secs(6);
 const MAX_EPHEMERAL_RELAYS: usize = 3;
 
 impl RelayPool {
-    /// History catch-up. Per relay: Negentropy against `local`; when the
-    /// relay does not speak NIP-77 (or the attempt fails), a plain REQ with
-    /// the same filter. Everything found is pushed onto the event stream
-    /// with `EventSource::Sync`. Returns how many events were forwarded.
-    async fn reconcile(&self, filter: Filter, local: Vec<messenger_core::SyncItem>) -> Result<usize> {
+    /// History catch-up. Per connected relay of `scope`: Negentropy against
+    /// `local`; when the relay does not speak NIP-77 (or the attempt
+    /// fails), a plain REQ with the same filter. Everything found is pushed
+    /// onto the event stream with `EventSource::Sync`. Returns how many
+    /// events were forwarded.
+    async fn reconcile(&self, scope: &Scope, filter: Filter, local: Vec<messenger_core::SyncItem>) -> Result<usize> {
         let items: Vec<(nostr_sdk::prelude::EventId, nostr_sdk::prelude::Timestamp)> = local
             .iter()
             .filter_map(|i| {
@@ -241,7 +320,7 @@ impl RelayPool {
             .initial_timeout(NEGENTROPY_PROBE_TIMEOUT);
         let mut forwarded = 0usize;
         let mut any_relay = false;
-        for (url, relay) in self.client.relays().await {
+        for Member { address: url, relay, .. } in self.members(scope).await {
             if relay.status() != nostr_sdk::relay::RelayStatus::Connected {
                 continue;
             }
@@ -274,35 +353,30 @@ impl RelayPool {
             }
         }
         if !any_relay {
-            return Err(MessengerError::Transport("no relay connected".into()));
+            return Err(none_connected(scope));
         }
         Ok(forwarded)
     }
 
-    /// Connect urls of the relays that are connected and accept writes.
-    async fn connected_write_targets(&self) -> Result<Vec<String>> {
-        let configured = self.configured();
+    /// Connect urls of the relays of `scope` that are connected and accept
+    /// writes.
+    async fn connected_write_targets(&self, scope: &Scope) -> Result<Vec<String>> {
         let targets: Vec<String> = self
-            .client
-            .relays()
+            .members(scope)
             .await
-            .iter()
-            .filter(|(_, relay)| relay.status() == nostr_sdk::relay::RelayStatus::Connected)
-            .filter(|(url, _)| {
-                let core = to_core_url(url);
-                configured.iter().find(|c| c.url == core).map(|c| c.write).unwrap_or(true)
-            })
-            .map(|(url, _)| url.to_string())
+            .into_iter()
+            .filter(|m| m.connected() && m.write)
+            .map(|m| m.address.to_string())
             .collect();
         if targets.is_empty() {
-            return Err(MessengerError::Transport("no relay connected".into()));
+            return Err(none_connected(scope));
         }
         Ok(targets)
     }
 
     /// Deliver to a peer: their inbox relays when we know them (relays of
     /// ours are used directly, foreign ones through a short-lived
-    /// connection), otherwise every write relay of ours.
+    /// connection), otherwise every write relay of the home set.
     async fn publish_to_inbox(&self, ev: &Event, hints: &[RelayUrl]) -> Result<Ack> {
         // Pool relays by their core url: how to address them, and whether
         // they are connected right now.
@@ -337,7 +411,7 @@ impl RelayPool {
             }
         }
         if targets.is_empty() {
-            targets = self.connected_write_targets().await.unwrap_or_default();
+            targets = self.connected_write_targets(&Scope::Own).await.unwrap_or_default();
         }
         if targets.is_empty() {
             for url in &ephemeral {
@@ -367,19 +441,27 @@ impl RelayPool {
             .count()
     }
 
-    /// One REQ to the connected relays, answered until each says EOSE or
+    /// One REQ to the relays of `scope`, answered until each says EOSE or
     /// `patience` runs out: the events found, each checked, as JSON. For a
     /// lookup that wants its answer here and not on the event stream (the
     /// code of a device link, messenger-wire.md §3).
-    pub async fn fetch(&self, filter: &messenger_core::outbound::Filter, patience: Duration) -> Result<Vec<serde_json::Value>> {
+    pub async fn fetch(
+        &self,
+        filter: &messenger_core::outbound::Filter,
+        scope: &Scope,
+        patience: Duration,
+    ) -> Result<Vec<serde_json::Value>> {
         self.guard_send()?;
         let f = Self::parse_filter(filter)?;
-        if self.connected().await == 0 {
-            return Err(MessengerError::Transport("no relay connected".into()));
+        let members = self.members(scope).await;
+        if !members.iter().any(Member::connected) {
+            return Err(none_connected(scope));
         }
+        let targets: Vec<(nostr_sdk::prelude::RelayUrl, Vec<Filter>)> =
+            members.into_iter().map(|m| (m.address, vec![f.clone()])).collect();
         let events = self
             .client
-            .fetch_events(f)
+            .fetch_events(ReqTarget::manual(targets))
             .timeout(patience)
             .await
             .map_err(|e| MessengerError::Transport(e.to_string()))?;
@@ -437,27 +519,13 @@ impl Transport for RelayPool {
             self.guard_send()?;
         }
         match out {
-            Outbound::PublishOwn { event } | Outbound::PublishScoped { event, .. } => {
-                let ev = Self::parse_event(&event.json)?;
-                let targets = self.connected_write_targets().await?;
-                // Not into the client's store: an event found there is not
-                // told again, so our own copy coming back on our
-                // subscription would never reach ingress and be fetched
-                // again by every new session.
-                let res = self
-                    .client
-                    .send_event(&ev)
-                    .to(targets)
-                    .save_into_database(false)
-                    .await
-                    .map_err(|e| MessengerError::Transport(e.to_string()))?;
-                Ok(ack_from(&res))
-            }
+            Outbound::PublishOwn { event } => self.publish(&Scope::Own, &event).await,
+            Outbound::PublishScoped { scope, event } => self.publish(&scope, &event).await,
             Outbound::PublishToInbox { event, hint_relays, .. } => {
                 let ev = Self::parse_event(&event.json)?;
                 self.publish_to_inbox(&ev, &hint_relays).await
             }
-            Outbound::Subscribe { id, filter, .. } => {
+            Outbound::Subscribe { id, filter, scope } => {
                 let f = Self::parse_filter(&filter)?;
                 let id = SubscriptionId::new(id.0);
                 // A subscription is sent again to change its filter (a group
@@ -466,9 +534,16 @@ impl Transport for RelayPool {
                 // relay: without closing the old one first, nothing changes
                 // until the app restarts.
                 let _ = self.client.unsubscribe(&id).await;
+                // Every relay of the scope, connected or not, as a REQ to
+                // every relay of the pool went before servers.
+                let targets: Vec<(nostr_sdk::prelude::RelayUrl, Vec<Filter>)> =
+                    self.members(&scope).await.into_iter().map(|m| (m.address, vec![f.clone()])).collect();
+                if targets.is_empty() {
+                    return Err(none_connected(&scope));
+                }
                 let out = self
                     .client
-                    .subscribe(f)
+                    .subscribe(ReqTarget::manual(targets))
                     .with_id(id)
                     .await
                     .map_err(|e| MessengerError::Transport(e.to_string()))?;
@@ -480,9 +555,9 @@ impl Transport for RelayPool {
                 let _ = self.client.unsubscribe(&SubscriptionId::new(id.0)).await;
                 Ok(Ack { accepted_by: vec![], rejected_by: vec![] })
             }
-            Outbound::Sync { filter, local, .. } => {
+            Outbound::Sync { scope, filter, local } => {
                 let f = Self::parse_filter(&filter)?;
-                self.reconcile(f, local).await?;
+                self.reconcile(&scope, f, local).await?;
                 Ok(Ack { accepted_by: vec![], rejected_by: vec![] })
             }
         }
@@ -503,11 +578,30 @@ impl Transport for RelayPool {
     }
 }
 
+impl RelayPool {
+    /// To the connected write relays of `scope`, and to no other.
+    async fn publish(&self, scope: &Scope, event: &messenger_core::outbound::WireEvent) -> Result<Ack> {
+        let ev = Self::parse_event(&event.json)?;
+        let targets = self.connected_write_targets(scope).await?;
+        // Not into the client's store: an event found there is not told
+        // again, so our own copy coming back on our subscription would never
+        // reach ingress and be fetched again by every new session.
+        let res = self
+            .client
+            .send_event(&ev)
+            .to(targets)
+            .save_into_database(false)
+            .await
+            .map_err(|e| MessengerError::Transport(e.to_string()))?;
+        Ok(ack_from(&res))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use messenger_core::outbound::{Filter as CoreFilter, WireEvent};
-    use messenger_core::{Scope, SubId};
+    use messenger_core::SubId;
     use nostr_sdk::local_relay::LocalRelay;
     use std::time::Duration;
 
@@ -530,14 +624,14 @@ mod tests {
         let alice = Keys::generate();
         let sender = RelayPool::new(Some(alice.clone()));
         sender
-            .set_relays(vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None }])
+            .set_relays(vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None, server_id: None }])
             .await
             .unwrap();
 
         let receiver = RelayPool::new(None);
         let mut inbox = receiver.events();
         receiver
-            .set_relays(vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None }])
+            .set_relays(vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None, server_id: None }])
             .await
             .unwrap();
 
@@ -578,7 +672,7 @@ mod tests {
         let alice = Keys::generate();
         let pool = RelayPool::new(Some(alice.clone()));
         let mut inbox = pool.events();
-        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         for _ in 0..50 {
             if pool.status().await.relays.iter().all(|r| r.state == RelayState::Connected) {
                 break;
@@ -601,7 +695,7 @@ mod tests {
     #[tokio::test]
     async fn subscribing_again_under_the_same_id_replaces_the_filter() {
         let (_relay, url) = local_relay().await;
-        let config = || vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None }];
+        let config = || vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None, server_id: None }];
 
         let alice = Keys::generate();
         let bob = Keys::generate();
@@ -647,7 +741,7 @@ mod tests {
         let (_relay, url) = local_relay().await;
         let keys = Keys::generate();
         let pool = RelayPool::new(Some(keys.clone()));
-        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         pool.set_silent(true).await;
         let err = pool.send(Outbound::PublishOwn { event: signed_note(&keys, "x") }).await.unwrap_err();
         assert!(matches!(err, MessengerError::Transport(m) if m.contains("silent")));
@@ -656,14 +750,175 @@ mod tests {
         pool.shutdown().await;
     }
 
+    fn home(url: &RelayUrl) -> RelayConfig {
+        RelayConfig { url: url.clone(), read: true, write: true, api_key: None, server_id: None }
+    }
+
+    fn of_server(url: &RelayUrl, id: &str) -> RelayConfig {
+        RelayConfig { server_id: Some(id.into()), ..home(url) }
+    }
+
+    fn server(id: &str) -> Scope {
+        Scope::Server { id: id.into() }
+    }
+
+    /// A pool on `relays`, connected to all of them.
+    async fn connected_pool(keys: Option<Keys>, relays: Vec<RelayConfig>) -> RelayPool {
+        let pool = RelayPool::new(keys);
+        pool.set_relays(relays).await.unwrap();
+        assert!(wait_connected(&pool, 5).await);
+        pool
+    }
+
+    /// What one relay holds of `author`'s notes, read by a pool of its own.
+    async fn notes_on(url: &RelayUrl, author: &Keys) -> Vec<String> {
+        let reader = connected_pool(None, vec![home(url)]).await;
+        let filter = CoreFilter(serde_json::json!({ "kinds": [1], "authors": [author.public_key().to_hex()] }));
+        let found = reader.fetch(&filter, &Scope::Own, Duration::from_secs(3)).await.unwrap();
+        reader.shutdown().await;
+        let mut texts: Vec<String> = found.iter().filter_map(|j| j["content"].as_str().map(String::from)).collect();
+        texts.sort();
+        texts
+    }
+
+    /// The home set and a private server in one pool: what is scoped to the
+    /// server lands on its relay only, what goes to the home set never
+    /// reaches it, and a server the pool has no relay of refuses.
+    #[tokio::test]
+    async fn a_publish_reaches_the_relays_of_its_scope_and_no_other() {
+        let (_a, home_url) = local_relay().await;
+        let (_b, private_url) = local_relay().await;
+        let alice = Keys::generate();
+        let pool = connected_pool(Some(alice.clone()), vec![home(&home_url), of_server(&private_url, "b")]).await;
+
+        let ack = pool.send(Outbound::PublishScoped { scope: server("b"), event: signed_note(&alice, "to b") }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![private_url.clone()], "{ack:?}");
+        let ack = pool.send(Outbound::PublishOwn { event: signed_note(&alice, "home own") }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![home_url.clone()], "{ack:?}");
+        let ack = pool.send(Outbound::PublishScoped { scope: Scope::Own, event: signed_note(&alice, "home scoped") }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![home_url.clone()], "{ack:?}");
+        // A group the runtime did not resolve goes where it went before servers.
+        let group = Scope::Group { id: "g".repeat(64) };
+        let ack = pool.send(Outbound::PublishScoped { scope: group, event: signed_note(&alice, "home group") }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![home_url.clone()], "{ack:?}");
+        let err = pool.send(Outbound::PublishScoped { scope: server("c"), event: signed_note(&alice, "to c") }).await.unwrap_err();
+        assert!(matches!(err, MessengerError::Transport(_)), "{err:?}");
+
+        assert_eq!(notes_on(&private_url, &alice).await, vec!["to b".to_string()]);
+        assert_eq!(notes_on(&home_url, &alice).await, vec!["home group", "home own", "home scoped"]);
+        assert_eq!(pool.connected_in(&Scope::Own).await, 1);
+        assert_eq!(pool.connected_in(&server("b")).await, 1);
+        assert_eq!(pool.connected_in(&server("c")).await, 0);
+        pool.shutdown().await;
+    }
+
+    /// A subscription scoped to a server hears that server's relay alone,
+    /// one of the home set the home relays alone; a fetch and a sync the same.
+    #[tokio::test]
+    async fn a_subscription_hears_the_relays_of_its_scope_only() {
+        let (_a, home_url) = local_relay().await;
+        let (_b, private_url) = local_relay().await;
+        let alice = Keys::generate();
+        let to_home = connected_pool(Some(alice.clone()), vec![home(&home_url)]).await;
+        let to_private = connected_pool(Some(alice.clone()), vec![home(&private_url)]).await;
+        let receiver = RelayPool::new(None);
+        let mut inbox = receiver.events();
+        receiver.set_relays(vec![home(&home_url), of_server(&private_url, "b")]).await.unwrap();
+        assert!(wait_connected(&receiver, 5).await);
+
+        let by_alice = || CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()] }));
+        receiver.send(Outbound::Subscribe { id: SubId("only-b".into()), filter: by_alice(), scope: server("b") }).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(to_home.send(Outbound::PublishOwn { event: signed_note(&alice, "on home") }).await.unwrap().is_delivered());
+        assert!(to_private.send(Outbound::PublishOwn { event: signed_note(&alice, "on b") }).await.unwrap().is_delivered());
+        let got = tokio::time::timeout(Duration::from_secs(5), inbox.recv()).await.expect("b's note arrives").unwrap();
+        assert_eq!(got.json["content"], "on b");
+        assert_eq!(got.source, EventSource::Relay { url: private_url.clone() });
+        assert!(tokio::time::timeout(Duration::from_millis(700), inbox.recv()).await.is_err(), "nothing of the home relay");
+
+        // The home scope under its own id: the home relay's note, not b's.
+        receiver.send(Outbound::Unsubscribe { id: SubId("only-b".into()) }).await.unwrap();
+        receiver.send(Outbound::Subscribe { id: SubId("home".into()), filter: by_alice(), scope: Scope::Own }).await.unwrap();
+        let got = tokio::time::timeout(Duration::from_secs(5), inbox.recv()).await.expect("the home note arrives").unwrap();
+        assert_eq!(got.json["content"], "on home");
+        assert!(tokio::time::timeout(Duration::from_millis(700), inbox.recv()).await.is_err(), "nothing of b");
+
+        let fetched = receiver.fetch(&by_alice(), &server("b"), Duration::from_secs(3)).await.unwrap();
+        assert_eq!(fetched.iter().map(|j| j["content"].as_str().unwrap()).collect::<Vec<_>>(), vec!["on b"]);
+        assert!(receiver.fetch(&by_alice(), &server("c"), Duration::from_secs(1)).await.is_err());
+
+        // A sync, by a pool that has seen nothing yet.
+        let fresh = RelayPool::new(None);
+        let mut synced = fresh.events();
+        fresh.set_relays(vec![home(&home_url), of_server(&private_url, "b")]).await.unwrap();
+        assert!(wait_connected(&fresh, 5).await);
+        fresh.send(Outbound::Sync { scope: server("b"), filter: by_alice(), local: vec![] }).await.unwrap();
+        // What the reconciliation fetched comes as the relay sent it (and
+        // as found by the sync, when the relay speaks NIP-77): all of it b's.
+        let mut seen = Vec::new();
+        while let Ok(Some(got)) = tokio::time::timeout(Duration::from_millis(1500), synced.recv()).await {
+            seen.push((got.json["content"].as_str().unwrap_or_default().to_string(), got.source));
+        }
+        assert!(!seen.is_empty(), "the sync brings b's note");
+        let from_b = |s: &EventSource| matches!(s, EventSource::Relay { url } | EventSource::Sync { url } if *url == private_url);
+        assert!(seen.iter().all(|(text, s)| text == "on b" && from_b(s)), "nothing of the home relay: {seen:?}");
+
+        for pool in [to_home, to_private, receiver, fresh] {
+            pool.shutdown().await;
+        }
+    }
+
+    /// Each relay's copy of an event reaches the stream, and a copy sent
+    /// again (a second subscription) too: `nostr-sdk` tells an event once
+    /// per client, and the ingress, which dedups, must still see the copy
+    /// of the right relay after one by a wrong one, and a history it forgot.
+    #[tokio::test]
+    async fn every_copy_of_every_relay_reaches_the_stream() {
+        let (_a, url_a) = local_relay().await;
+        let (_b, url_b) = local_relay().await;
+        let alice = Keys::generate();
+        let writer = connected_pool(Some(alice.clone()), vec![home(&url_a), home(&url_b)]).await;
+        let note = signed_note(&alice, "on both");
+        let ack = writer.send(Outbound::PublishOwn { event: note.clone() }).await.unwrap();
+        assert_eq!(ack.accepted_by.len(), 2, "{ack:?}");
+
+        let receiver = RelayPool::new(None);
+        let mut inbox = receiver.events();
+        receiver.set_relays(vec![home(&url_a), of_server(&url_b, "b")]).await.unwrap();
+        assert!(wait_connected(&receiver, 5).await);
+        let by_alice = || CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()] }));
+        async fn copies(inbox: &mut mpsc::Receiver<RawEvent>) -> Vec<(String, EventSource)> {
+            let mut got = Vec::new();
+            while let Ok(Some(raw)) = tokio::time::timeout(Duration::from_millis(1500), inbox.recv()).await {
+                got.push((raw.id.as_hex().to_string(), raw.source));
+            }
+            got
+        }
+        receiver.send(Outbound::Subscribe { id: SubId("a".into()), filter: by_alice(), scope: Scope::Own }).await.unwrap();
+        let first = copies(&mut inbox).await;
+        assert_eq!(first, vec![(note.id.as_hex().to_string(), EventSource::Relay { url: url_a.clone() })]);
+        // The same event by the second relay: told again, by that relay.
+        receiver.send(Outbound::Subscribe { id: SubId("b".into()), filter: by_alice(), scope: server("b") }).await.unwrap();
+        let second = copies(&mut inbox).await;
+        assert_eq!(second, vec![(note.id.as_hex().to_string(), EventSource::Relay { url: url_b.clone() })]);
+        // And asked again of the first one, again.
+        receiver.send(Outbound::Unsubscribe { id: SubId("a".into()) }).await.unwrap();
+        receiver.send(Outbound::Subscribe { id: SubId("a2".into()), filter: by_alice(), scope: Scope::Own }).await.unwrap();
+        let third = copies(&mut inbox).await;
+        assert_eq!(third, vec![(note.id.as_hex().to_string(), EventSource::Relay { url: url_a.clone() })]);
+        for pool in [writer, receiver] {
+            pool.shutdown().await;
+        }
+    }
+
     #[tokio::test]
     async fn set_relays_replaces_the_set() {
         let (_r1, u1) = local_relay().await;
         let (_r2, u2) = local_relay().await;
         let pool = RelayPool::new(None);
-        pool.set_relays(vec![RelayConfig { url: u1.clone(), read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url: u1.clone(), read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         assert_eq!(pool.status().await.relays.len(), 1);
-        pool.set_relays(vec![RelayConfig { url: u2.clone(), read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url: u2.clone(), read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         let st = pool.status().await;
         assert_eq!(st.relays.len(), 1);
         assert_eq!(st.relays[0].url, u2);
@@ -684,6 +939,7 @@ mod tests {
             read: true,
             write: true,
             api_key: Some(key),
+            server_id: None,
         }])
         .await
         .unwrap();
@@ -752,7 +1008,7 @@ mod tests {
         let (_relay, relay_url) = local_relay().await;
         let (url, swallow) = black_hole(&relay_url).await;
         let pool = RelayPool::new(None);
-        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         assert!(wait_connected(&pool, 5).await);
 
         assert_eq!(pool.revive(Duration::from_secs(2)).await, 0, "a live connection is left alone");
@@ -772,7 +1028,7 @@ mod tests {
     async fn reopen_connects_again() {
         let (_relay, url) = local_relay().await;
         let pool = RelayPool::new(None);
-        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None }]).await.unwrap();
+        pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         assert!(wait_connected(&pool, 5).await);
         for _ in 0..3 {
             pool.reopen();
@@ -785,9 +1041,9 @@ mod tests {
     #[test]
     fn connect_url_carries_key_and_core_url_strips_it() {
         let url = RelayUrl::parse("wss://gated.example").unwrap();
-        let plain = RelayConfig { url: url.clone(), read: true, write: true, api_key: None };
+        let plain = RelayConfig { url: url.clone(), read: true, write: true, api_key: None, server_id: None };
         assert_eq!(plain.connect_url(), "wss://gated.example");
-        let gated = RelayConfig { url, read: true, write: true, api_key: Some("abc123".into()) };
+        let gated = RelayConfig { url, read: true, write: true, api_key: Some("abc123".into()), server_id: None };
         assert_eq!(gated.connect_url(), "wss://gated.example/?key=abc123");
         let parsed = nostr::types::url::RelayUrl::parse(&gated.connect_url()).unwrap();
         assert_eq!(to_core_url(&parsed).as_str(), "wss://gated.example");

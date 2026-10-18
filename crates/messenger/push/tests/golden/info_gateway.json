@@ -1,0 +1,10 @@
+{
+  "version": "0.5.0",
+  "apps": [ { "id": "net.veydan.mobile", "providers": ["fcm"] } ],
+  "relays": { "policy": "allow_list",
+              "allowed": ["wss://eu-1-relay-1.veydan.net", "wss://us-1-relay-1.veydan.net"] },
+  "limits": { "devices_per_pubkey": 10, "relays_per_device": 16,
+              "groups_per_device": 500, "registration_days": 30,
+              "test_per_hour": 3, "max_body_bytes": 65536 },
+  "tickets": { "days": 30, "per_device": 8 }
+}

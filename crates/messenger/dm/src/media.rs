@@ -7,9 +7,10 @@
 //! row; once the blob is stored the placeholder is replaced by the real
 //! message.
 
+use crate::peer::DmPeer;
 use crate::service::{DmService, Prepared};
 use crate::view::MessageView;
-use messenger_core::{Envelope, MessengerError, PubKey, Result, TextFormat};
+use messenger_core::{Envelope, MessengerError, Result, TextFormat};
 use messenger_store::chats;
 use messenger_store::messages::{self as repo, NewMessage};
 use nostr::key::Keys;
@@ -42,14 +43,15 @@ impl DmService {
     pub async fn media_placeholder(
         &self,
         keys: &Keys,
-        peer: &PubKey,
+        peer: impl Into<DmPeer>,
         media_json: serde_json::Value,
         caption: Option<&str>,
         caption_format: TextFormat,
     ) -> Result<MessageView> {
+        let peer = peer.into();
         let me = keys.public_key().to_hex();
-        let chat = chats::ensure_dm(&self.store, peer.as_hex()).await?;
-        self.gate_outbound(&chat.id, peer, &me, false).await?;
+        let chat = chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
+        self.gate_outbound(&chat.id, &peer, &me, false).await?;
         let id = placeholder_id();
         let created_at = {
             let now = self.clock.now().secs();
@@ -101,11 +103,7 @@ impl DmService {
             .await?
             .ok_or_else(|| MessengerError::Invalid("the upload was removed".into()))?;
         let chat = chats::get(&self.store, &row.chat_id).await?.ok_or_else(|| MessengerError::Storage("chat missing".into()))?;
-        let peer = chat
-            .peer_pubkey
-            .as_deref()
-            .and_then(PubKey::parse)
-            .ok_or_else(|| MessengerError::Storage("chat has no peer".into()))?;
+        let peer = DmPeer::of_row(&chat).ok_or_else(|| MessengerError::Storage("chat has no peer".into()))?;
         repo::delete(&self.store, placeholder).await?;
         let name = media_json.get("name").and_then(|v| v.as_str()).unwrap_or("file").to_string();
         let result = self

@@ -42,7 +42,7 @@ pub async fn event(store: &Store, relay: &str, event_id: &str) -> Result<Option<
         .into_iter()
         .find(|r| RelayUrl::parse(&r.url).as_ref() == Some(&url))
         .and_then(|r| r.auth_secret);
-    let config = RelayConfig { url, read: true, write: false, api_key };
+    let config = RelayConfig { url, read: true, write: false, api_key, server_id: None };
     let id = EventId::from_hex(event_id).map_err(|_| MessengerError::Invalid("event id".into()))?;
 
     messenger_transport::ensure_crypto_provider();

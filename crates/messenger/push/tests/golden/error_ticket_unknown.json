@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "ticket_unknown",
+    "message": "no such ticket: expired, deleted, or never issued"
+  },
+  "request_id": "5f3a9c1e"
+}

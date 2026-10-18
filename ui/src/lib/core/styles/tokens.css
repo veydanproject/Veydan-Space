@@ -26,7 +26,7 @@
    * font; its order picks the glyphs of the UI's language for the ideographs
    * the three share (:lang below). */
   --font-cjk:  'Veydan SC', 'Veydan JP', 'Veydan KR';
-  --font-ui:   'IBM Plex Sans Variable', var(--font-cjk), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-ui:   'Manrope Variable', var(--font-cjk), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'Fira Code', 'Consolas', var(--font-cjk), monospace;
 
   /* ── Spacing scale — 4px grid ── */
@@ -60,7 +60,7 @@
   --fw-medium: 500;
   --fw-semibold: 600;
   --fw-bold: 700;
-  --fw-extrabold: 700; /* IBM Plex Sans stops at 700: the heaviest it has */
+  --fw-extrabold: 800;
 
   --lh-tight: 1.2;
   --lh-base:  1.5;

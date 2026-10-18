@@ -18,6 +18,7 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import type { CallMedia, MessengerChat } from '../api';
+  import { chatAddress } from '../chats/address';
   import { messengerStore } from '../store.svelte';
   import { openSettings } from '../pages/settingsTab.svelte';
   import { onPhone } from '../shared/phone';
@@ -60,8 +61,10 @@
   export function callBlocked(): string { return reason || (callStore.busy ? $t('msg_call_err_busy') : ''); }
 
   async function call(media: CallMedia) {
-    if (!chat.peer_pubkey) return;
-    const { view, refusal: why } = await callStore.dial(chat.peer_pubkey, media);
+    // A private chat's call goes on its server (the node of S1), not home.
+    const to = chatAddress(chat);
+    if (!to) return;
+    const { view, refusal: why } = await callStore.dial(to, media);
     if (view || !why) return;
     refusal = callErrorText(why, tr);
     if (timer) clearTimeout(timer);

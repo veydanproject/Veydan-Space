@@ -1,0 +1,10 @@
+{
+  "version": "0.5.0",
+  "apps": [ { "id": "net.veydan.mobile", "providers": ["gateway"] } ],
+  "relays": { "policy": "allow_list", "allowed": ["wss://relay.my-server.example"] },
+  "limits": { "devices_per_pubkey": 10, "relays_per_device": 16,
+              "groups_per_device": 500, "registration_days": 30,
+              "test_per_hour": 3, "max_body_bytes": 65536 },
+  "gateway": { "url": "https://eu-1-vpush.veydan.net",
+               "sender": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27" }
+}

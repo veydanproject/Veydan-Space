@@ -12,7 +12,10 @@
   import { chatStore } from '../chats/chatStore.svelte';
   import { linkStore } from '../content/linkStore.svelte';
   import { tokenize } from '../content/tokenize';
-  import { type MessengerGroup } from '../api';
+  import { type MessengerGroup, type ServerPreview } from '../api';
+  import { acceptServer, serverName } from '../servers/serverAccept.svelte';
+  import { nameOfServer, serverStore } from '../servers/serverStore.svelte';
+  import { messengerStore } from '../store.svelte';
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as "msg_you", params);
 
@@ -30,6 +33,8 @@
   let name = $state('');
   let about = $state('');
   let history = $state(true);
+  /** Where the group lives: a private server of mine, or `null` for the home set. */
+  let server = $state<string | null>(null);
   let url = $state('');
   let note = $state('');
   let busy = $state(false);
@@ -38,14 +43,15 @@
   let wasOpen = false;
   $effect(() => {
     if (open && !wasOpen) {
-      error = ''; name = ''; about = ''; note = ''; kind = 'private'; history = true;
+      error = ''; name = ''; about = ''; note = ''; kind = 'private'; history = true; server = null;
+      void serverStore.load();
       url = link; tab = link ? 'join' : 'create';
     }
     wasOpen = open;
   });
 
   // What the text is, is for the runtime to say: a link is never taken apart here.
-  let parsed = $state<{ kind: 'public' | 'private'; name: string; link: string } | null>(null);
+  let parsed = $state<{ kind: 'public' | 'private'; name: string; link: string; server: ServerPreview | null; serverKnown: boolean } | null>(null);
   $effect(() => {
     const text = url.trim();
     parsed = null;
@@ -54,7 +60,9 @@
     if (!only) return;
     let stale = false;
     linkStore.resolve(only.link)
-      .then((v) => { if (!stale && v.kind === 'group') parsed = { kind: v.group_kind, name: v.name, link: v.link }; })
+      .then((v) => {
+        if (!stale && v.kind === 'group') parsed = { kind: v.group_kind, name: v.name, link: v.link, server: v.server ?? null, serverKnown: v.server_known ?? true };
+      })
       .catch(() => {});
     return () => { stale = true; };
   });
@@ -72,15 +80,26 @@
 
   async function create() {
     error = ''; busy = true;
-    try { await finish(await groupStore.create(kind, name.trim(), about.trim(), kind === 'public' || history)); }
+    try { await finish(await groupStore.create(kind, name.trim(), about.trim(), kind === 'public' || history, server)); }
     catch (e) { error = explain(e); }
     finally { busy = false; }
   }
 
+  /** The choice of where the group lives, shown only with a private server of mine. */
+  const servers = $derived(serverStore.list ?? []);
+  const homeLabel = $derived(messengerStore.manifest?.mode === 'own' ? $t('msg_srv_mode') : $t('msg_srv_veydan_title'));
+  const chosen = $derived(servers.find((s) => s.id === server) ?? null);
+
   async function join() {
     if (!parsed) return;
+    const p = parsed;
     error = ''; busy = true;
-    try { await finish(await groupStore.openLink(parsed.link, note.trim())); linkStore.refresh(); }
+    try {
+      // A group on a server of its own: the server first, after asking; «Отмена» adds and sends nothing.
+      if (p.server && !p.serverKnown && !(await acceptServer(p.server))) return;
+      await finish(await groupStore.openLink(p.link, note.trim()));
+      linkStore.refresh();
+    }
     catch (e) { error = explain(e); }
     finally { busy = false; }
   }
@@ -105,6 +124,20 @@
       <input class="field" type="text" bind:value={name} maxlength="64" placeholder={$t('msg_group_name')} disabled={busy}
         onkeydown={(e) => { if (e.key === 'Enter' && name.trim()) create(); }} />
       <textarea class="field" rows="2" bind:value={about} maxlength="500" placeholder={$t('msg_group_about')} disabled={busy}></textarea>
+      {#if servers.length}
+        <div class="where">
+          <span class="where-label">{$t('msg_group_where')}</span>
+          <div class="choices" role="radiogroup" aria-label={$t('msg_group_where')}>
+            <button type="button" class="choice" class:on={server === null} role="radio" aria-checked={server === null} disabled={busy}
+              onclick={() => (server = null)}>{homeLabel}</button>
+            {#each servers as s (s.id)}
+              <button type="button" class="choice" class:on={server === s.id} role="radio" aria-checked={server === s.id} disabled={busy}
+                onclick={() => (server = s.id)}><Icon name="server-2" size={12} /><span class="choice-text">{nameOfServer(s)}</span></button>
+            {/each}
+          </div>
+          <span class="option-hint">{chosen ? $t('msg_group_where_private', { name: nameOfServer(chosen) }) : $t('msg_group_where_home')}</span>
+        </div>
+      {/if}
       {#if kind === 'private'}
         <div class="option">
           <div class="option-info">
@@ -126,6 +159,13 @@
           <Icon name={parsed.kind === 'public' ? 'world' : 'lock-square-rounded'} size={14} />
           <span><b>{parsed.name || $t('msg_group_unnamed')}</b> · {$t(`msg_group_kind_${parsed.kind}` as 'msg_group_kind_public')}</span>
         </div>
+        {#if parsed.server}
+          <p class="hint">
+            {$t('msg_srv_card_group_on', { name: serverName(parsed.server, tr) })} · {$t(parsed.server.is_veydan ? 'msg_srv_is_veydan' : 'msg_srv_not_veydan')}
+          </p>
+        {:else if !parsed.serverKnown}
+          <p class="hint bad">{$t('msg_srv_group_unknown')}</p>
+        {/if}
         <p class="hint">{$t(parsed.kind === 'public' ? 'msg_group_join_hint_public' : 'msg_group_join_hint_private')}</p>
         {#if parsed.kind === 'private'}
           <input class="field" type="text" bind:value={note} maxlength="300" placeholder={$t('msg_group_join_note')} disabled={busy} />
@@ -171,6 +211,18 @@
   .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: 1.4; }
   .option-hint { font-size: var(--fs-xs); color: var(--text-3); }
   .found { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); overflow-wrap: anywhere; }
+  .where { display: flex; flex-direction: column; gap: 6px; }
+  .where-label { font-size: var(--fs-xs); color: var(--text-3); }
+  .choices { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
+  .choice {
+    display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0;
+    font: inherit; font-size: var(--fs-xs); color: var(--text-2); cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 4px 10px;
+  }
+  .choice-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .choice.on { background: var(--accent-tint); color: var(--accent-text-2); border-color: transparent; }
+  .choice:disabled { opacity: 0.5; cursor: default; }
+  @media (pointer: coarse) { .choice { padding: 8px 12px; font-size: var(--fs-sm); } }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
   .hint.bad { color: var(--danger-text); }
   @media (pointer: coarse) { .field { font-size: var(--fs-md); } }

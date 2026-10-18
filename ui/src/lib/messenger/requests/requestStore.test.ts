@@ -126,6 +126,16 @@ describe('answering a request', () => {
     expect(chats.loadChats).toHaveBeenCalled();
   });
 
+  it('answers a request of a private chat there, not at home', async () => {
+    const s1 = '0123456789abcdef';
+    const priv = req(1, { chat_id: `dm:${req(1).peer}@${s1}` });
+    api.requests.mockResolvedValue({ items: [priv, req(1)], total: 2 });
+    await requestStore.load();
+    await requestStore.act(priv.peer, 'block', priv.chat_id);
+    expect(api.requestAct).toHaveBeenCalledWith(`${priv.peer}@${s1}`, 'block');
+    expect(requestStore.items.map((r) => r.chat_id), 'the home request of the same person stays').toEqual([req(1).chat_id]);
+  });
+
   it('keeps it when the runtime refuses, and the refusal reaches the view', async () => {
     api.requestAct.mockRejectedValueOnce(new Error('dm_blocked'));
     await expect(requestStore.act(req(1).peer, 'block')).rejects.toThrow('dm_blocked');

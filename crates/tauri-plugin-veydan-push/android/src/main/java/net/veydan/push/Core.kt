@@ -65,6 +65,33 @@ internal object Core {
     }
   }
 
+  /**
+   * What a sealed push of a private server is, as JSON (`outcome`: `open`
+   * with the push inside as `data` | `check` | `no_keys` | `dropped`), or
+   * null when the library could not answer. The arguments are those of
+   * [describe].
+   */
+  fun unseal(context: Context, bundle: ByteArray, data: Map<String, String>): JSONObject? {
+    if (!load(context)) return null
+    val dataDir = context.dataDir.resolve("data").resolve("messenger").absolutePath
+    val push = JSONObject(data as Map<*, *>).toString()
+    val answer = try {
+      unseal(dataDir, bundle, push)
+    } catch (e: Throwable) {
+      Log.w(PushState.TAG, "the core did not open the sealed push: ${e.javaClass.simpleName}")
+      null
+    } ?: return null
+    return try {
+      JSONObject(answer)
+    } catch (e: Exception) {
+      Log.w(PushState.TAG, "the core's answer is not JSON")
+      null
+    }
+  }
+
   @JvmStatic
   private external fun describe(dataDir: String, bundle: ByteArray, push: String): String?
+
+  @JvmStatic
+  private external fun unseal(dataDir: String, bundle: ByteArray, push: String): String?
 }

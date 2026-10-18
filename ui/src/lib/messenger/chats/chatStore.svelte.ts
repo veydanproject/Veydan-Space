@@ -16,6 +16,7 @@ import {
   type TextFormat,
 } from '../api';
 import { usageStore } from '../shared/emoji/usageStore.svelte';
+import { chatAddress } from './address';
 import { chatKind } from './sections';
 
 const PAGE = 50;
@@ -324,9 +325,9 @@ class ChatStore {
     if (atTail) this.tailTick++;
   }
 
-  /** Where a message for this chat goes: the peer, or the group. */
+  /** Where a message for this chat goes: the peer (with its server, of a private chat), or the group. */
   private target(chat: MessengerChat | null): string {
-    const to = chat?.peer_pubkey ?? (chat?.kind === "group" ? chat.id : null);
+    const to = chatAddress(chat);
     if (!to) throw new Error("no chat");
     return to;
   }
@@ -354,11 +355,12 @@ class ChatStore {
 
   /**
    * A contact card into `chat`: mine when `pubkey` is `null` (with my phone
-   * when `includePhone`), else that person's public profile.
+   * when `includePhone`), else that person's public profile. `server` (a
+   * private server of mine) puts its card on my card.
    * Errors: `phone_public_group`, `card_too_large`, a relationship code.
    */
-  async sendCard(chat: MessengerChat, pubkey: string | null, includePhone: boolean) {
-    const m = await messengerApi.cards.send(chat.id, pubkey, includePhone);
+  async sendCard(chat: MessengerChat, pubkey: string | null, includePhone: boolean, server: string | null = null) {
+    const m = await messengerApi.cards.send(chat.id, pubkey, includePhone, server);
     if (this.activeId === chat.id) this.upsert(m);
     this.scheduleChatsRefresh();
     return m;
@@ -428,8 +430,10 @@ class ChatStore {
   /** Relationship action on the peer of a chat. */
   async act(chatId: string, action: DmAction) {
     const chat = this.chats.find((c) => c.id === chatId);
-    if (!chat?.peer_pubkey) throw new Error('no chat');
-    await messengerApi.dm.action(chat.peer_pubkey, action);
+    // A private chat's relation is its own: the peer with the chat's server.
+    const peer = chat?.kind === 'dm' ? chatAddress(chat) : null;
+    if (!peer) throw new Error('no chat');
+    await messengerApi.dm.action(peer, action);
     await this.loadChats();
     if (this.activeId === chatId) await this.reloadWindow();
     refreshContacts();

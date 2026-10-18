@@ -36,6 +36,7 @@ import { presenceStore } from "./presence/presenceStore.svelte";
 import { privacyStore } from "./privacy/privacyStore.svelte";
 import { requestStore } from "./requests/requestStore.svelte";
 import { inviteStore } from "./invites/inviteStore.svelte";
+import { serverStore } from "./servers/serverStore.svelte";
 import { pushSeen } from "./push/bridge";
 import { callStore } from "./calls/callStore.svelte";
 import { groupCallStore } from "./calls/groupCallStore.svelte";
@@ -133,6 +134,8 @@ class MessengerStore {
           // The row of requests above the chats shows their count.
           requestStore.load().catch(() => {});
           groupStore.load().catch(() => {});
+          // My private servers: the label of a chat on one names it.
+          serverStore.load().catch(() => {});
           // Whether a bridge is offered shows above the chats, not only in settings.
           netStore.load().catch(() => {});
           // Popular emoji come from every device of mine: reactions and the picker start from them.
@@ -174,6 +177,7 @@ class MessengerStore {
         callStore.reset();
         groupCallStore.reset();
         callLog.reset();
+        serverStore.reset();
       }
       this.loaded = true;
     } finally {
@@ -253,6 +257,7 @@ class MessengerStore {
         privacyStore.handleEvent(e.payload);
         requestStore.handleEvent(e.payload);
         inviteStore.handleEvent(e.payload);
+        serverStore.handleEvent(e.payload);
         avatarStore.handleEvent(e.payload);
         callStore.handleEvent(e.payload);
         groupCallStore.handleEvent(e.payload);

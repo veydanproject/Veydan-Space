@@ -20,6 +20,7 @@
 //! What I owe the peers is taken here too (`take_due_delivered`,
 //! `take_due_read`); building the wraps and sending them is the runtime's job.
 
+use crate::peer::DmPeer;
 use crate::relationship::{screen_mode, PeerSignal, ScreenMode};
 use crate::service::{updated, DmService};
 use crate::own::UI_EVENT_CHAT_RECEIPT;
@@ -27,7 +28,7 @@ use messenger_core::envelope::{T_PRESENCE_KEY, T_REACTION, T_RECEIPT_DELIVERED, 
 use messenger_core::traits::UiEvent;
 use messenger_core::{Context, DmInbound, Effect, Envelope, EventId, PubKey, Result};
 use messenger_store::messages as repo;
-use messenger_store::{chats, presence, receipts, settings};
+use messenger_store::{presence, receipts, settings};
 use nostr::key::{Keys, PublicKey};
 use sha2::{Digest, Sha256};
 
@@ -67,7 +68,7 @@ impl DmService {
     /// both chose to talk (`notes_allowed`). Only such a peer is told my
     /// presence key, and only its key is watched and shown.
     pub async fn presence_allowed(&self, peer: &PubKey) -> Result<bool> {
-        Ok(self.contacts.is_contact(peer).await? && self.notes_allowed(peer).await?)
+        Ok(self.contacts.is_contact(peer).await? && self.notes_allowed(&DmPeer::from(peer)).await?)
     }
 
     /// Whether `peer` may call me and I may call `peer`: we both chose to
@@ -75,22 +76,23 @@ impl DmService {
     /// for notes. A call from anybody else is dropped without a word: a
     /// ring, like a receipt, tells that a device is alive, and the call
     /// would show the peer my address.
-    pub async fn calls_allowed(&self, peer: &PubKey) -> Result<bool> {
-        self.notes_allowed(peer).await
+    pub async fn calls_allowed(&self, peer: impl Into<DmPeer>) -> Result<bool> {
+        self.notes_allowed(&peer.into()).await
     }
 
     /// Whether I send `peer` notes. Blocked either way, or banned by the
     /// network: never. With the relationship gate off every chat counts as
     /// `full_chat`.
-    pub(crate) async fn notes_allowed(&self, peer: &PubKey) -> Result<bool> {
-        if self.is_banned(peer).await? {
+    pub(crate) async fn notes_allowed(&self, peer: impl Into<DmPeer>) -> Result<bool> {
+        let peer = &peer.into();
+        if self.is_banned(&peer.key).await? {
             return Ok(false);
         }
         // The pinned bot has its chat and nothing else, whatever the row of
         // the relationship says: a device where a build without the pin
         // took the bot for a stranger may have accepted it. No receipt, no
         // reaction, no presence, no call for whoever holds its key.
-        if self.is_bot(peer) {
+        if self.is_bot(&peer.key) {
             return Ok(false);
         }
         let r = self.load_relation(peer).await?;
@@ -102,9 +104,9 @@ impl DmService {
 
     /// Whether one of us blocked the other, or the network bans `peer`:
     /// then what `peer` notes is dropped.
-    async fn blocked_either_way(&self, peer: &PubKey) -> Result<bool> {
+    async fn blocked_either_way(&self, peer: &DmPeer) -> Result<bool> {
         let r = self.load_relation(peer).await?;
-        Ok(r.blocked || r.peer_signal == PeerSignal::Blocked || self.is_banned(peer).await?)
+        Ok(r.blocked || r.peer_signal == PeerSignal::Blocked || self.is_banned(&peer.key).await?)
     }
 
     /// Whether a service note of the module `cloud` goes to or comes from
@@ -120,7 +122,7 @@ impl DmService {
 
     /// A note from a peer, or my own copy of one I sent (the other `p` is
     /// the peer then).
-    pub(crate) async fn apply_peer_note(&self, msg: &DmInbound, ctx: &Context) -> Result<Vec<Effect>> {
+    pub(crate) async fn apply_peer_note(&self, msg: &DmInbound, ctx: &Context, server: Option<&str>) -> Result<Vec<Effect>> {
         let me = &ctx.my_pubkey;
         let from_me = &msg.sender == me;
         let peer = if from_me {
@@ -131,18 +133,21 @@ impl DmService {
         } else {
             msg.sender.clone()
         };
+        // The note is of the chat it came in: a receipt of a private chat
+        // marks the messages of that chat, by its relation.
+        let peer = DmPeer::on(peer, server);
         if self.blocked_either_way(&peer).await? {
             return Ok(vec![]);
         }
         let Ok(envelope) = Envelope::parse(&msg.content) else { return Ok(vec![]) };
-        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let chat_id = peer.chat_id();
         match envelope.t.as_str() {
             // A receipt speaks for the one who sent it; mine are never copied
             // to my devices, and one that were would be about me.
-            T_RECEIPT_DELIVERED if !from_me => self.delivered(&chat_id, &peer, &envelope, msg.created_at.secs()).await,
+            T_RECEIPT_DELIVERED if !from_me => self.delivered(&chat_id, &peer.key, &envelope, msg.created_at.secs()).await,
             T_RECEIPT_READ if !from_me => {
                 let Some(at) = envelope.fields.get("at").and_then(|v| v.as_i64()) else { return Ok(vec![]) };
-                self.peer_read(&chat_id, peer.as_hex(), at, msg.created_at.secs()).await
+                self.peer_read(&chat_id, peer.key.as_hex(), at, msg.created_at.secs()).await
             }
             // Whoever sent it reacted: the peer, or I on another device (my
             // copy). The use was counted where it was made.
@@ -156,16 +161,18 @@ impl DmService {
             }
             // A key speaks for the one who sent it; my devices learn my
             // epoch from `own.presence`, never from a copy.
-            T_PRESENCE_KEY if !from_me => self.presence_key(&peer, &envelope, msg.created_at.secs()).await,
+            T_PRESENCE_KEY if !from_me => self.presence_key(&peer.key, &envelope, msg.created_at.secs()).await,
             // A note of the module `cloud` (recovery.share, .ack, .ping, .pong,
             // .revoke): only from a contact we both chose to talk with, as a
             // stranger's share would tell them the device is alive; the module
             // hears it through the seam and shows nothing (messenger-wire.md §3).
-            t if t.starts_with(T_RECOVERY_PREFIX) && !from_me => {
-                if !self.recovery_notes_allowed(&peer).await? {
+            // The module is of the home set: such a note in a private chat
+            // is not heard.
+            t if t.starts_with(T_RECOVERY_PREFIX) && !from_me && !peer.is_private() => {
+                if !self.recovery_notes_allowed(&peer.key).await? {
                     return Ok(vec![]);
                 }
-                Ok(vec![cloud_note_event(t, &envelope.fields, &peer)])
+                Ok(vec![cloud_note_event(t, &envelope.fields, &peer.key)])
             }
             _ => Ok(vec![]),
         }
@@ -266,9 +273,9 @@ impl DmService {
         let taken = receipts::take_due_delivered(&self.store, now, now - RECEIPT_WINDOW_SECS).await?;
         let mut out = Vec::new();
         for (chat_id, ids) in &taken {
-            let Some(peer) = chat_id.strip_prefix("dm:").and_then(PubKey::parse) else { continue };
+            let Some(peer) = DmPeer::of_chat(chat_id) else { continue };
             match self.notes_allowed(&peer).await {
-                Ok(true) => out.push((chat_id.clone(), peer.as_hex().to_string(), ids.clone())),
+                Ok(true) => out.push((chat_id.clone(), peer.key.as_hex().to_string(), ids.clone())),
                 Ok(false) => {}
                 Err(e) => {
                     for (_, ids) in &taken {
@@ -300,9 +307,9 @@ impl DmService {
         }
         let mut out = Vec::new();
         for (chat_id, at) in &due {
-            if let Some(peer) = chat_id.strip_prefix("dm:") {
-                let allowed = match PubKey::parse(peer) {
-                    Some(pk) => self.notes_allowed(&pk).await,
+            if chat_id.starts_with("dm:") {
+                let allowed = match DmPeer::of_chat(chat_id) {
+                    Some(peer) => self.notes_allowed(&peer).await,
                     None => Ok(false),
                 };
                 match allowed {

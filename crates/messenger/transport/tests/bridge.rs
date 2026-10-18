@@ -53,7 +53,7 @@ async fn a_relay_of_the_project_is_reached_through_the_bridge() {
 
     // The key rides on the address, as with the project's gated relays.
     let url = RelayUrl::parse(&format!("ws://{RELAY_HOST}:{port}")).unwrap();
-    let config = || vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: Some("k".repeat(16)) }];
+    let config = || vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: Some("k".repeat(16)), server_id: None }];
 
     let alice = Keys::generate();
     let sender = RelayPool::new(Some(alice.clone()));

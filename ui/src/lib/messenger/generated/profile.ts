@@ -84,7 +84,12 @@ is_me: boolean,
 /**
  * The person is in my contacts.
  */
-is_contact: boolean, blocked: boolean, };
+is_contact: boolean, blocked: boolean, 
+/**
+ * The card of the server the person may be talked to on, privately
+ * (`veydan://server/…`): `messenger_server_preview` says what it is.
+ */
+server: string | null, };
 
 /** The part of a picked picture to keep, as fractions 0..1 of its preview. */
 export type CropRect = { x: number, y: number, w: number, h: number, };

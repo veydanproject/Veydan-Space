@@ -9,8 +9,8 @@ import { isTauriHost, messengerApi, PUSH_TAP_EVENT } from '../api';
 import { BASE, chatHref, shouldFollow } from '../mobile/routes';
 import { pushStore } from './pushStore.svelte';
 
-/** What came from outside the app is checked before it is used as a route. */
-const CHAT = /^(dm|group):[0-9a-f]{64}$/;
+/** What came from outside the app is checked before it is used as a route: a chat of two (a private one names its server, `@<16 hex>`) or a group. */
+const CHAT = /^(dm:[0-9a-f]{64}(@[0-9a-f]{16})?|group:[0-9a-f]{64})$/;
 
 /**
  * A tap is taken from the phone once. Until the app has gone where it

@@ -40,6 +40,9 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
+pub mod servers;
+pub use servers::{PRIVATE_PEERS_MAX, SERVERS_MAX, SERVERS_REMOVED_MAX, UI_EVENT_SERVERS_UPDATED};
+
 /// The layout of the plain text; a header or a page of another version is
 /// not read.
 pub const SNAPSHOT_VERSION: u32 = 1;
@@ -137,8 +140,13 @@ pub struct Applied {
     pub changed: Vec<PubKey>,
     /// The privacy settings of the header were newer than the ones here.
     pub settings_changed: bool,
-    /// A choice of a chat (no notifications, pinned, archived) was taken.
+    /// A choice of a chat (no notifications, pinned, archived) was taken,
+    /// or a chat went with a removed server.
     pub chats_changed: bool,
+    /// A private server was taken or removed here: the running session
+    /// listens to it, or stops (internal/messenger-wire.md, «Серверы на
+    /// всех устройствах»).
+    pub servers_changed: bool,
 }
 
 /// `[hex, my_contact, blocked, decided_at]`, compact: `my_contact` is one
@@ -194,6 +202,17 @@ struct Header {
     /// (`chats::tombstones`), the newest deletion first.
     #[serde(default)]
     deleted: Vec<(String, i64, i64)>,
+    /// My private servers (`servers::ServerEntry`); `None` from a build
+    /// that writes none, which is not the word "no servers".
+    #[serde(default)]
+    servers: Option<Vec<serde_json::Value>>,
+    /// My removed private servers, `[id, removed_at]`.
+    #[serde(default)]
+    servers_removed: Vec<serde_json::Value>,
+    /// My decisions in private chats (`servers::PrivateEntry`), apart from
+    /// `peers`, which an older build reads as the home chats.
+    #[serde(default)]
+    private_peers: Vec<serde_json::Value>,
     peers: Vec<Entry>,
 }
 
@@ -240,15 +259,25 @@ fn chat_entries(rows: &[PrefsRow], now: i64) -> Vec<ChatEntry> {
     on
 }
 
-/// `dm:<hex>` or `group:<hex>`, as this build names chats.
+/// `dm:<hex>`, `dm:<hex>@<server id>` (a private chat) or `group:<hex>`, as
+/// this build names chats. A private chat's choices and tombstone travel
+/// like a home one's; a device that does not have its server keeps them
+/// by the id until the chat comes.
 fn chat_id_ok(id: &str) -> bool {
-    let hex = id.strip_prefix("dm:").or_else(|| id.strip_prefix("group:"));
-    hex.is_some_and(|h| h.len() == 64 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+    let hex64 = |h: &str| h.len() == 64 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    if let Some(group) = id.strip_prefix("group:") {
+        return hex64(group);
+    }
+    match messenger_store::chats::parse_dm_chat_id(id) {
+        Some((peer, None)) => hex64(peer),
+        Some((peer, Some(server))) => hex64(peer) && messenger_store::servers::is_id(server),
+        None => false,
+    }
 }
 
 /// The plain text of the header is kept under this: NIP-44 v2 takes
-/// 65535 bytes, the peers of page 0 take up to 45 KB of it, and the
-/// invitations are cut from the end to fit (the ones that ended go first).
+/// 65535 bytes, its entries (`HEADER_ENTRIES`) take up to some 27 KB of
+/// it, and what is still over is cut by `fit_header`.
 const HEADER_MAX_BYTES: usize = 60_000;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -256,6 +285,11 @@ struct Page {
     v: u32,
     rev: u64,
     peers: Vec<Entry>,
+    /// The relations of private chats that did not fit the header
+    /// (`servers::PrivateEntry`); an older build reads the page without
+    /// them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    private_peers: Vec<serde_json::Value>,
 }
 
 fn crypto(e: impl std::fmt::Display) -> MessengerError {
@@ -275,6 +309,14 @@ async fn get_i64(store: &messenger_store::Store, key: &str) -> Result<i64> {
 /// quiet add undone). A device that reads the list treats a peer it does
 /// not name by what it has.
 fn entries(rows: &[RelationRow], me: &str) -> Vec<Entry> {
+    ordered(rows, me).into_iter().map(|(r, m)| Entry(r.peer_pubkey.clone(), letter(m).into(), u8::from(r.blocked), r.decided_at)).collect()
+}
+
+/// The rows that are decisions, in the order of a list: the blocks, the
+/// approved, the rest, each as `rows` come (newest first). The home list
+/// (`entries`) and the list of private chats (`servers::private_entries`)
+/// both.
+fn ordered<'a>(rows: &'a [RelationRow], me: &str) -> Vec<(&'a RelationRow, MyContact)> {
     let (mut blocks, mut approved, mut rest) = (Vec::new(), Vec::new(), Vec::new());
     for r in rows {
         if r.peer_pubkey == me {
@@ -284,13 +326,12 @@ fn entries(rows: &[RelationRow], me: &str) -> Vec<Entry> {
         if !r.blocked && m == MyContact::None && r.decided_at <= 0 {
             continue;
         }
-        let e = Entry(r.peer_pubkey.clone(), letter(m).into(), u8::from(r.blocked), r.decided_at);
         if r.blocked {
-            blocks.push(e);
+            blocks.push((r, m));
         } else if m == MyContact::Approved {
-            approved.push(e);
+            approved.push((r, m));
         } else {
-            rest.push(e);
+            rest.push((r, m));
         }
     }
     blocks.extend(approved);
@@ -298,16 +339,85 @@ fn entries(rows: &[RelationRow], me: &str) -> Vec<Entry> {
     blocks
 }
 
-/// The entries cut into pages; one page at least, `RELATIONS_MAX_PAGES` at
-/// most, and whether every entry found a place.
-fn paginate(entries: Vec<Entry>) -> (Vec<Vec<Entry>>, bool) {
-    let mut pages: Vec<Vec<Entry>> = entries.chunks(RELATIONS_PEERS_PER_PAGE).map(<[Entry]>::to_vec).collect();
-    if pages.is_empty() {
-        pages.push(Vec::new());
+/// The entries the header carries at most, of `peers` and `private_peers`
+/// together: the rest of its room is the chats', the deletions', the
+/// servers' and the invitations'. 250 entries of either list take up to
+/// some 27 KB of the 60.
+const HEADER_ENTRIES: usize = 250;
+
+/// One page of entries: of the home list and of the list of private
+/// chats.
+type PageEntries = (Vec<Entry>, Vec<serde_json::Value>);
+
+/// The entries cut into pages: the home ones first, then the ones of
+/// private chats, `HEADER_ENTRIES` on the header and
+/// `RELATIONS_PEERS_PER_PAGE` on every page after it; one page at least,
+/// `RELATIONS_MAX_PAGES` at most. Whether every home entry found a place
+/// (the list of private chats never says the list is whole).
+fn paginate(home: Vec<Entry>, private: Vec<serde_json::Value>) -> (Vec<PageEntries>, bool) {
+    let home_count = home.len();
+    let mut pages: Vec<PageEntries> = vec![(Vec::new(), Vec::new())];
+    let room = |page: usize| if page == 0 { HEADER_ENTRIES } else { RELATIONS_PEERS_PER_PAGE };
+    let mut placed_home = 0;
+    let add = |pages: &mut Vec<PageEntries>| -> Option<usize> {
+        let last = pages.len() - 1;
+        if pages[last].0.len() + pages[last].1.len() < room(last) {
+            return Some(last);
+        }
+        if pages.len() == RELATIONS_MAX_PAGES {
+            return None;
+        }
+        pages.push((Vec::new(), Vec::new()));
+        Some(pages.len() - 1)
+    };
+    for e in home {
+        let Some(n) = add(&mut pages) else { break };
+        pages[n].0.push(e);
+        placed_home += 1;
     }
-    let complete = pages.len() <= RELATIONS_MAX_PAGES;
-    pages.truncate(RELATIONS_MAX_PAGES);
-    (pages, complete)
+    for e in private {
+        let Some(n) = add(&mut pages) else { break };
+        pages[n].1.push(e);
+    }
+    (pages, placed_home == home_count)
+}
+
+/// The header cut to `HEADER_MAX_BYTES`, when it is over: whole entries
+/// from the end of the invitations (the ones that ended are last), then
+/// of the servers, then of the relations of private chats; only after
+/// them the removals of servers, the deletions and the choices of chats —
+/// a deletion or a choice left out stays undone on my other devices,
+/// where a server left out is only not brought. What was cut is logged.
+fn fit_header(header: &mut Header) -> Result<String> {
+    let mut plain = serde_json::to_string(&*header)?;
+    let mut cut = [0usize; 6];
+    while plain.len() > HEADER_MAX_BYTES {
+        let which = if header.invites.pop().is_some() {
+            0
+        } else if header.servers.as_mut().and_then(Vec::pop).is_some() {
+            1
+        } else if header.private_peers.pop().is_some() {
+            2
+        } else if header.servers_removed.pop().is_some() {
+            3
+        } else if header.deleted.pop().is_some() {
+            4
+        } else if header.chats.pop().is_some() {
+            5
+        } else {
+            break;
+        };
+        cut[which] += 1;
+        plain = serde_json::to_string(&*header)?;
+    }
+    if cut.iter().any(|n| *n > 0) {
+        let [invites, servers, private, removed, deleted, chats] = cut;
+        eprintln!(
+            "messenger relations: the header was over {HEADER_MAX_BYTES} bytes; cut {invites} invitations, {servers} servers, \
+             {private} relations of private chats, {removed} removals of servers, {deleted} deletions, {chats} choices of chats"
+        );
+    }
+    Ok(plain)
 }
 
 impl DmService {
@@ -377,15 +487,17 @@ impl DmService {
         let created_at = now.max(get_i64(&self.store, KEY_SEEN_CREATED_AT).await?.saturating_add(1));
         let me = keys.public_key();
         let rows = dm_relations::decided_rows(&self.store).await?;
-        let (pages, complete) = paginate(entries(&rows, &me.to_hex()));
+        let private = servers::private_entries(&dm_relations::decided_private_rows(&self.store).await?, &me.to_hex());
+        let (pages, complete) = paginate(entries(&rows, &me.to_hex()), private);
         let s = self.dm_settings().await?;
         let settings_at = get_i64(&self.store, KEY_PRIVACY_DECIDED_AT).await?;
         let invites = self.invites_for_snapshot(now).await?;
         let chats = chat_entries(&chats::prefs(&self.store).await?, now);
         let deleted = chats::tombstones(&self.store).await?;
+        let (my_servers, servers_removed) = servers::entries(&self.store).await?;
         let mut events = Vec::with_capacity(pages.len());
         let count = pages.len();
-        for (n, peers) in pages.into_iter().enumerate() {
+        for (n, (peers, private_peers)) in pages.into_iter().enumerate() {
             let plain = if n == 0 {
                 let mut header = Header {
                     v: SNAPSHOT_VERSION,
@@ -399,17 +511,14 @@ impl DmService {
                     invites: invites.clone(),
                     chats: chats.clone(),
                     deleted: deleted.clone(),
+                    servers: Some(my_servers.clone()),
+                    servers_removed: servers_removed.clone(),
+                    private_peers,
                     peers,
                 };
-                let mut plain = serde_json::to_string(&header)?;
-                while plain.len() > HEADER_MAX_BYTES
-                    && (header.invites.pop().is_some() || header.deleted.pop().is_some() || header.chats.pop().is_some())
-                {
-                    plain = serde_json::to_string(&header)?;
-                }
-                plain
+                fit_header(&mut header)?
             } else {
-                serde_json::to_string(&Page { v: SNAPSHOT_VERSION, rev, peers })?
+                serde_json::to_string(&Page { v: SNAPSHOT_VERSION, rev, peers, private_peers })?
             };
             let content = nip44::encrypt(keys.secret_key(), &me, plain, nip44::Version::V2).map_err(crypto)?;
             let event = EventBuilder::new(Kind::from(KIND_RELATIONS), content)
@@ -485,14 +594,36 @@ impl DmService {
             if peer.as_hex() == me.to_hex() {
                 continue;
             }
-            if let Some(fx) = self.apply_decision_copy(&peer, my_contact, *blocked != 0, *decided_at).await? {
+            if let Some(fx) = self.apply_decision_copy(&crate::peer::DmPeer::home(peer.clone()), my_contact, *blocked != 0, *decided_at).await? {
                 changed.push(peer);
                 effects.extend(fx);
             }
         }
         let mut settings_changed = false;
         let mut chats_changed = false;
+        let mut servers_changed = false;
         if let Some(h) = header {
+            // My private servers, before the relations of their chats: a
+            // removal newer than the server here takes it and its chats, a
+            // server this device lacks comes (absence is no word).
+            let s = self.apply_server_entries(h).await?;
+            servers_changed = s.changed;
+            chats_changed |= s.chats_gone;
+            if s.owed {
+                // An older build published over my servers: say them again.
+                self.mark_relations_owed().await?;
+            }
+            // The relations of private chats: of the header, then of the
+            // pages of its revision.
+            let private: Vec<serde_json::Value> = h
+                .private_peers
+                .iter()
+                .chain(pages.iter().filter(|(_, g)| g.rev == rev).flat_map(|(_, g)| g.private_peers.iter()))
+                .cloned()
+                .collect();
+            let (private_changed, fx) = self.apply_private_entries(&me.to_hex(), &private).await?;
+            changed.extend(private_changed);
+            effects.extend(fx);
             // By union and the later revocation: nothing here is undone by
             // a list that lacks an invitation (absence is no word).
             self.apply_invite_entries(&h.invites).await?;
@@ -528,7 +659,7 @@ impl DmService {
         if rev > get_i64(&self.store, KEY_REV).await?.max(0) as u64 {
             settings::set(&self.store, KEY_REV, &rev.to_string()).await?;
         }
-        Ok((Applied { rev: Some(rev), complete, changed, settings_changed, chats_changed }, effects))
+        Ok((Applied { rev: Some(rev), complete, changed, settings_changed, chats_changed, servers_changed }, effects))
     }
 }
 
@@ -694,7 +825,7 @@ mod tests {
         // A page alone names its revision and applies.
         let d = device(&keys).await;
         let (applied, _) = d.apply_relations_snapshot(&keys, &pieces(&rev1[1..], &me)).await.unwrap();
-        assert_eq!((applied.rev, applied.complete, applied.changed.len()), (Some(1), false, 100));
+        assert_eq!((applied.rev, applied.complete, applied.changed.len()), (Some(1), false, 600 - HEADER_ENTRIES));
     }
 
     #[tokio::test]
@@ -793,9 +924,9 @@ mod tests {
         let keys = Keys::generate();
         let me = keys.public_key();
         let (a, b) = (device(&keys).await, device(&keys).await);
-        let (here, later) = (chats::dm_chat_id(peer(1).as_hex()), chats::dm_chat_id(peer(2).as_hex()));
+        let (here, later) = (chats::dm_chat_id(peer(1).as_hex(), None), chats::dm_chat_id(peer(2).as_hex(), None));
         let group = format!("group:{}", "ab".repeat(32));
-        chats::ensure_dm(b.store(), peer(1).as_hex()).await.unwrap();
+        chats::ensure_dm(b.store(), peer(1).as_hex(), None).await.unwrap();
         a.set_muted(&here, true).await.unwrap();
         a.set_muted(&later, true).await.unwrap();
         a.set_pinned(&group, true).await.unwrap();
@@ -806,7 +937,7 @@ mod tests {
         assert!(applied.chats_changed && effects.is_empty());
         assert!(chats::get(b.store(), &here).await.unwrap().unwrap().muted);
         assert!(chats::is_muted(b.store(), &later).await.unwrap(), "before the chat is here");
-        assert!(chats::ensure_dm(b.store(), peer(2).as_hex()).await.unwrap().muted, "and when it comes");
+        assert!(chats::ensure_dm(b.store(), peer(2).as_hex(), None).await.unwrap().muted, "and when it comes");
         assert!(!b.relations_owed().await.unwrap(), "a copy is no decision");
         // The same list again changes nothing.
         let (applied, _) = b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
@@ -823,9 +954,51 @@ mod tests {
 
         // What is not a chat of this build is passed over.
         assert!(chat_id_ok(&here) && chat_id_ok(&group));
-        for bad in ["dm:", "dm:AB", "group:../x", &format!("chan:{}", "ab".repeat(32))] {
+        assert!(chat_id_ok(&format!("{here}@0123456789abcdef")), "a private chat");
+        for bad in [
+            "dm:",
+            "dm:AB",
+            "group:../x",
+            &format!("chan:{}", "ab".repeat(32)),
+            &format!("{here}@"),
+            &format!("{here}@S1"),
+            &format!("{here}@0123456789abcdef0"),
+            &format!("{group}@0123456789abcdef"),
+        ] {
             assert!(!chat_id_ok(bad), "{bad}");
         }
+    }
+
+    /// A private chat's choices and its deletion travel as a home chat's,
+    /// and the deletion takes that chat alone, not the home chat with the
+    /// same person.
+    #[tokio::test]
+    async fn a_private_chat_is_chosen_and_deleted_on_every_device() {
+        let keys = Keys::generate();
+        let me = keys.public_key();
+        let (a, b) = (device(&keys).await, device(&keys).await);
+        let server = "0123456789abcdef";
+        let (home, private) = (chats::dm_chat_id(peer(1).as_hex(), None), chats::dm_chat_id(peer(1).as_hex(), Some(server)));
+        for d in [&a, &b] {
+            chats::ensure_dm(d.store(), peer(1).as_hex(), None).await.unwrap();
+            chats::ensure_dm(d.store(), peer(1).as_hex(), Some(server)).await.unwrap();
+            for chat in [&home, &private] {
+                chats::touch(d.store(), chat, 100, Some("hi"), false).await.unwrap();
+            }
+        }
+        a.set_pinned(&private, true).await.unwrap();
+        let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+        b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        assert!(chats::get(b.store(), &private).await.unwrap().unwrap().pinned);
+        assert!(!chats::get(b.store(), &home).await.unwrap().unwrap().pinned);
+
+        a.delete_chat_by_me(&private).await.unwrap();
+        let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+        let (applied, _) = b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        assert!(applied.chats_changed);
+        assert!(chats::get(b.store(), &private).await.unwrap().is_none(), "the private chat goes");
+        assert!(chats::get(b.store(), &home).await.unwrap().is_some(), "the home one stays");
+        assert!(chats::tombstone(b.store(), &private).await.unwrap().0 > 0);
     }
 
     #[test]
@@ -900,9 +1073,9 @@ mod tests {
         assert!(b.invite_get(&pulled.row.id).await.unwrap().unwrap().revoked());
         assert!(b.invite_get(&spent.row.id).await.unwrap().unwrap().used_up());
 
-        // Page 0 full of peers, fifty that admit (the sign among them) and
-        // fifty that ended: the header keeps every one that admits and cuts
-        // the ended from the end.
+        // A full page of peers, fifty that admit (the sign among them) and
+        // fifty that ended: the header keeps every one that admits, the
+        // ended behind them.
         for n in 1..=RELATIONS_PEERS_PER_PAGE {
             decided(&a, &peer(n), MyContact::Approved, false, 1_700_000_000 + n as i64).await;
         }
@@ -916,11 +1089,89 @@ mod tests {
         }
         let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
         let h = header(&events);
-        assert_eq!(h.peers.len(), RELATIONS_PEERS_PER_PAGE);
+        assert_eq!(h.peers.len(), HEADER_ENTRIES, "the rest on page 1");
         let ids: Vec<&str> = h.invites.iter().map(|e| e[0].as_str().unwrap()).collect();
         assert!(open.iter().all(|id| ids.contains(&id.as_str())), "every one that admits travels: {} of {}", ids.len(), open.len());
+        // The header's entries are capped (`HEADER_ENTRIES`): with its
+        // page 0 full, every invitation has room now. The ended ones come
+        // last, the first cut when it is over (`fit_header`).
         let ended = ids.len() - open.len();
-        assert!(ended < SNAPSHOT_INVITES, "the ended were cut to fit: {ended} travel");
+        assert_eq!(ended, SNAPSHOT_INVITES, "the ended travel too: {ended}");
+        assert!(ids[..open.len()].iter().all(|id| open.iter().any(|o| o == id)), "the ones that admit first");
         assert_eq!(h.invites.iter().find(|e| e[0].as_str() == Some(sign.row.id.as_str())).unwrap()[5].as_array().unwrap().len(), SNAPSHOT_USES_PER_INVITE);
+    }
+
+    fn home(n: usize) -> Vec<Entry> {
+        (0..n).map(|i| Entry(format!("{i:064x}"), "a".into(), 0, 1_700_000_000)).collect()
+    }
+
+    fn private(n: usize) -> Vec<serde_json::Value> {
+        (0..n).map(|i| serde_json::json!([format!("{i:064x}"), "0123456789abcdef", "a", 0, 1_700_000_000])).collect()
+    }
+
+    /// The header carries `HEADER_ENTRIES` of both lists, every page after
+    /// it `RELATIONS_PEERS_PER_PAGE`: home first, then the private chats.
+    /// The list is whole when every home entry found a place.
+    #[test]
+    fn the_relations_of_private_chats_go_on_the_pages_after_the_home_ones() {
+        let (pages, complete) = paginate(home(600), private(300));
+        let sizes: Vec<(usize, usize)> = pages.iter().map(|(h, p)| (h.len(), p.len())).collect();
+        assert_eq!(sizes, [(250, 0), (350, 150), (0, 150)]);
+        assert!(complete);
+        let (pages, complete) = paginate(Vec::new(), Vec::new());
+        assert_eq!((pages.len(), complete), (1, true), "one header, empty");
+        let (pages, complete) = paginate(home(10), private(5));
+        assert_eq!((pages.len(), pages[0].0.len(), pages[0].1.len(), complete), (1, 10, 5, true));
+        // More than the pages hold: the private ones go first, and only a
+        // home entry left out says the list is not whole.
+        let room = HEADER_ENTRIES + (RELATIONS_MAX_PAGES - 1) * RELATIONS_PEERS_PER_PAGE;
+        let (pages, complete) = paginate(home(room - 10), private(300));
+        assert_eq!((pages.len(), complete), (RELATIONS_MAX_PAGES, true));
+        assert_eq!(pages.iter().map(|(_, p)| p.len()).sum::<usize>(), 10);
+        let (_, complete) = paginate(home(room + 1), Vec::new());
+        assert!(!complete);
+    }
+
+    /// Over the bytes of a header, the invitations go first, then the
+    /// servers, then the relations of private chats; the removals of
+    /// servers, the deletions and the choices of chats only after them.
+    #[test]
+    fn a_header_over_its_bytes_is_cut_in_its_order() {
+        let header = |chats: usize, private_peers: usize| Header {
+            v: SNAPSHOT_VERSION,
+            rev: 1,
+            at: 1,
+            pages: 1,
+            complete: true,
+            dm_from: "everyone".into(),
+            keep_days: 30,
+            settings_at: 0,
+            invites: (0..20).map(|i| serde_json::json!([format!("{i:064x}"), "x".repeat(200)])).collect(),
+            chats: (0..chats).map(|i| ChatEntry(format!("dm:{i:064x}"), 1_700_000_000, 0, 0)).collect(),
+            deleted: (0..100).map(|i| (format!("dm:{:064x}", i + 50_000), 1_700_000_000, 1_700_000_000)).collect(),
+            servers: Some((0..32).map(|i| serde_json::json!({ "id": format!("{i:016x}"), "relay_url": "x".repeat(300) })).collect()),
+            servers_removed: (0..64).map(|i| serde_json::json!([format!("{i:016x}"), 1_700_000_000])).collect(),
+            private_peers: private(private_peers),
+            peers: home(HEADER_ENTRIES),
+        };
+        // Fits: nothing is cut.
+        let mut h = header(10, 0);
+        fit_header(&mut h).unwrap();
+        assert_eq!((h.invites.len(), h.servers.as_ref().unwrap().len(), h.chats.len()), (20, 32, 10));
+        // Over by the choices of chats: the invitations, the servers and
+        // the private relations go, the choices, the deletions and the
+        // removals stay whole.
+        let mut h = header(250, 100);
+        let plain = fit_header(&mut h).unwrap();
+        assert!(plain.len() <= HEADER_MAX_BYTES, "{}", plain.len());
+        assert_eq!((h.chats.len(), h.deleted.len(), h.servers_removed.len()), (250, 100, 64));
+        assert!(h.invites.is_empty(), "the invitations first");
+        assert!(h.servers.as_ref().unwrap().len() < 32, "then the servers");
+        assert_eq!(h.peers.len(), HEADER_ENTRIES, "the peers are never cut");
+        // A header nothing can be cut of any more is left as it is.
+        let mut h = header(5000, 0);
+        let plain = fit_header(&mut h).unwrap();
+        assert!(h.invites.is_empty() && h.servers.as_ref().unwrap().is_empty() && h.deleted.is_empty());
+        assert!(plain.len() <= HEADER_MAX_BYTES, "the choices of chats last: {} left", h.chats.len());
     }
 }

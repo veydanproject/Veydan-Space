@@ -86,12 +86,12 @@ use crate::engine::{
 };
 use crate::feed::Feed;
 use crate::node_client::NodeClient;
-use crate::servers::{ServerSets, KEY_RELAY_POLICY};
+use crate::servers::{CallNode, NodeClass, ServerSets, KEY_RELAY_POLICY};
 use crate::signal::{self, new_call_id, Signal, INVITE_EXPIRATION_SECS, INVITE_TTL_SECS, NOTE_EXPIRATION_SECS};
 use messenger_core::traits::UiEvent;
-use messenger_core::{Clock, Context, DmInbound, Effect, Envelope, MessengerError, Outbound, PubKey, Result};
+use messenger_core::{Clock, Context, DmInbound, Effect, Envelope, MessengerError, PubKey, Result};
 use messenger_dm::wrap::{wrap_expiring, wrap_note_as, Wake};
-use messenger_dm::DmService;
+use messenger_dm::{DmPeer, DmService};
 use messenger_store::{calls as repo, settings, Store};
 use nostr::key::Keys;
 use serde::{Deserialize, Serialize};
@@ -538,15 +538,18 @@ impl CallService {
         session.push_video_frame(frame)
     }
 
-    /// Call `peer`. Refused while a call is under way, and for anybody we
-    /// are not in a mutual chat with.
-    pub async fn start(&self, peer: &PubKey, media: Media) -> Result<CallView> {
+    /// Call `peer`: the home chat for a `&PubKey`, a private chat for a
+    /// `DmPeer` on its server. Refused while a call is under way, and for
+    /// anybody we are not in a mutual chat with (in that chat).
+    pub async fn start(&self, peer: impl Into<DmPeer>, media: Media) -> Result<CallView> {
+        let chat = peer.into();
+        let peer = &chat.key;
         let inner = &self.inner;
         let keys = inner.signer()?;
         if peer.as_hex() == keys.public_key().to_hex() {
             return Err(MessengerError::Invalid("that is your own key".into()));
         }
-        if !inner.dm.calls_allowed(peer).await? {
+        if !inner.dm.calls_allowed(&chat).await? {
             return Err(MessengerError::Invalid("calls go to contacts only".into()));
         }
         let policy = self.policy().await?;
@@ -558,16 +561,16 @@ impl CallService {
             }
             let gen = st.next_gen();
             let call_id = new_call_id();
-            let view = CallView::new(call_id.clone(), peer.as_hex().to_string(), Direction::Out, media, Phase::Outgoing, now);
+            let view = CallView::in_chat(call_id.clone(), peer.as_hex().to_string(), chat.server(), Direction::Out, media, Phase::Outgoing, now);
             st.current = Some(Current::new(view.clone(), gen, policy));
-            let effects = inner.feed.begin(&call_id, peer.as_hex(), Direction::Out, media, now).await?;
+            let effects = inner.feed.begin_in(&call_id, peer.as_hex(), chat.server(), Direction::Out, media, now).await?;
             inner.emit(effects);
             inner.emit(vec![state_event(&view)]);
             inner.schedule(RING_TIMEOUT, Timer::Ring, gen);
             gen
         };
         // The nodes are asked without the lock: a signal may come meanwhile.
-        let picked = inner.pick(policy, now).await;
+        let picked = inner.pick(policy, now, chat.server()).await;
         let mut st = inner.state.lock().await;
         let Some(cur) = st.current.as_mut().filter(|c| c.gen == gen) else {
             return Err(MessengerError::Invalid("the call ended".into()));
@@ -614,7 +617,7 @@ impl CallService {
     pub async fn accept(&self, call_id: &str) -> Result<CallView> {
         let inner = &self.inner;
         inner.signer()?;
-        let (gen, policy, media) = {
+        let (gen, policy, media, server) = {
             let mut st = inner.state.lock().await;
             let now = inner.clock.now().secs();
             let Some(cur) = st.current_of(call_id).filter(|c| c.view.phase == Phase::Incoming) else {
@@ -625,9 +628,9 @@ impl CallService {
             let (gen, policy, media, view) = (cur.gen, cur.policy, cur.view.media, cur.view.clone());
             inner.feed.answered(call_id, now).await?;
             inner.emit(vec![state_event(&view)]);
-            (gen, policy, media)
+            (gen, policy, media, view.server_id)
         };
-        let picked = inner.pick(policy, inner.clock.now().secs()).await;
+        let picked = inner.pick(policy, inner.clock.now().secs(), server.as_deref()).await;
         let mut st = inner.state.lock().await;
         let Some(cur) = st.current.as_mut().filter(|c| c.gen == gen) else {
             return Err(MessengerError::Invalid("the call ended".into()));
@@ -757,6 +760,10 @@ impl CallService {
         } else {
             msg.sender.clone()
         };
+        // The chat the signal is of, as for a message: a call of a private
+        // chat is carried and answered there alone.
+        let Some(server) = inner.dm.server_of_inbound(msg).await? else { return Ok(()) };
+        let peer = DmPeer::on(peer, server.as_deref());
         let Some(sig) = Signal::parse(envelope) else { return Ok(()) };
         let rumor = msg.rumor_id.as_hex().to_string();
         let followup = {
@@ -865,8 +872,17 @@ impl Inner {
         }
     }
 
-    async fn pick(&self, policy: RelayPolicy, now: i64) -> Result<crate::node_client::Picked> {
-        let nodes = self.servers.call_nodes().await.unwrap_or_default();
+    /// The nodes of a call of the chat on `server` (`None`: the home chat).
+    /// A private chat is carried by its server's own node (the card's `c=`,
+    /// class own, with the server's app key) and by no other: never a node
+    /// of the project nor a volunteer's, who would see who talks to whom.
+    /// A server without a node gives none: the media goes direct, without
+    /// TURN, and a relay-only policy refuses the call.
+    async fn pick(&self, policy: RelayPolicy, now: i64, server: Option<&str>) -> Result<crate::node_client::Picked> {
+        let nodes = match server {
+            None => self.servers.call_nodes().await.unwrap_or_default(),
+            Some(id) => private_nodes(&self.store, id).await?,
+        };
         self.nodes.pick(&nodes, policy, now).await
     }
 
@@ -981,11 +997,14 @@ impl Inner {
     /// is quiet. Errors are logged as effects of nothing: a call cannot
     /// do more than try.
     async fn send(&self, st: &mut State, signal: &Signal, self_copy: bool) -> Option<String> {
-        let peer = PubKey::parse(&st.current.as_ref()?.view.peer)?;
+        let view = &st.current.as_ref()?.view;
+        let peer = DmPeer::on(PubKey::parse(&view.peer)?, view.server_id.as_deref());
         self.send_to(st, &peer, signal, self_copy).await
     }
 
-    async fn send_to(&self, st: &mut State, peer: &PubKey, signal: &Signal, self_copy: bool) -> Option<String> {
+    /// Both copies go by the way of the chat (`DmPeer::to_peer`): the
+    /// signals of a call of a private chat, my own copy too, to its server.
+    async fn send_to(&self, st: &mut State, peer: &DmPeer, signal: &Signal, self_copy: bool) -> Option<String> {
         let keys = self.signer().ok()?;
         let now = self.clock.now().secs();
         let content = signal.to_envelope().encode();
@@ -1003,12 +1022,15 @@ impl Inner {
             Ok(w) => w,
             Err(_) => return None,
         };
-        let hint_relays = self.dm.hints(peer).await.unwrap_or_default();
         let rumor = w.rumor_id.as_hex().to_string();
+        let to_peer = match self.dm.route_to_peer(peer, w.to_peer.clone()).await {
+            Ok(out) => out,
+            Err(_) => peer.to_peer(w.to_peer, vec![]),
+        };
         State::remember(&mut st.sent, rumor.clone(), SENT_KEPT);
-        let mut effects = vec![Effect::Send(Outbound::PublishToInbox { recipient: peer.clone(), event: w.to_peer, hint_relays })];
+        let mut effects = vec![Effect::Send(to_peer)];
         if let Some(event) = w.to_self {
-            effects.push(Effect::Send(Outbound::PublishOwn { event }));
+            effects.push(Effect::Send(peer.to_self(event)));
         }
         self.emit(effects);
         Some(rumor)
@@ -1401,9 +1423,13 @@ impl Inner {
     }
 
     /// A signal of the peer.
-    async fn on_signal(self: &Arc<Self>, st: &mut State, peer: &PubKey, sig: Signal, rumor: &str, at: i64) -> Result<Followup> {
+    async fn on_signal(self: &Arc<Self>, st: &mut State, peer: &DmPeer, sig: Signal, rumor: &str, at: i64) -> Result<Followup> {
         let now = self.clock.now().secs();
-        let peer_hex = peer.as_hex().to_string();
+        let peer_hex = peer.key.as_hex().to_string();
+        let server = peer.server();
+        // The call of the same chat: the same person in another chat is
+        // another party.
+        let same_chat = |v: &CallView| v.peer == peer_hex && v.server_id.as_deref() == server;
         match sig {
             Signal::Invite { call_id, media, sdp, ice, restart: false, live_restart } => {
                 if st.recent.contains(&call_id) || st.current_of(&call_id).is_some() {
@@ -1415,7 +1441,7 @@ impl Inner {
                 // a word back, which would stop them ringing. Unless I am
                 // calling the same peer: that is my own call coming back
                 // (both called at once), settled below as any glare.
-                let glare = st.current.as_ref().is_some_and(|c| c.view.peer == peer_hex && c.view.direction == Direction::Out);
+                let glare = st.current.as_ref().is_some_and(|c| same_chat(&c.view) && c.view.direction == Direction::Out);
                 if !glare && !self.incoming_enabled().await? {
                     State::remember(&mut st.recent, call_id, RECENT_KEPT);
                     return Ok(Followup::None);
@@ -1426,13 +1452,13 @@ impl Inner {
                 if st.early_of(&call_id).is_some_and(Early::settled) {
                     // Over, or taken on another device of mine, before I saw
                     // it: on record as that, and nothing rings.
-                    let (effects, _) = self.begin_record(st, &call_id, &peer_hex, Direction::In, media, at).await?;
+                    let (effects, _) = self.begin_record(st, &call_id, &peer_hex, server, Direction::In, media, at).await?;
                     self.emit(effects);
                     return Ok(Followup::None);
                 }
                 if now - at > INVITE_TTL_SECS {
                     // A missed call, on record and in the chat; nothing rings.
-                    let mut effects = self.feed.begin(&call_id, &peer_hex, Direction::In, media, at).await?;
+                    let mut effects = self.feed.begin_in(&call_id, &peer_hex, server, Direction::In, media, at).await?;
                     if let Some(view) = self.view_of(&call_id).await? {
                         effects.extend(self.feed.finish(&view, Outcome::Missed, at).await?);
                     }
@@ -1442,7 +1468,7 @@ impl Inner {
                 let mut accept_now = false;
                 if let Some(cur) = st.current.as_ref() {
                     // I am calling the same peer: both called at once.
-                    if cur.view.peer == peer_hex && cur.view.direction == Direction::Out {
+                    if same_chat(&cur.view) && cur.view.direction == Direction::Out {
                         if call_id < cur.view.call_id && cur.view.phase == Phase::Outgoing {
                             // Both called at once: the smaller id wins, and it
                             // is theirs. Mine never was: everybody who heard of
@@ -1473,7 +1499,7 @@ impl Inner {
                         }
                     } else {
                         self.send_to(st, peer, &Signal::Busy { call_id: call_id.clone() }, true).await;
-                        let mut effects = self.feed.begin(&call_id, &peer_hex, Direction::In, media, at).await?;
+                        let mut effects = self.feed.begin_in(&call_id, &peer_hex, server, Direction::In, media, at).await?;
                         if let Some(view) = self.view_of(&call_id).await? {
                             effects.extend(self.feed.finish(&view, Outcome::Busy, now).await?);
                         }
@@ -1482,7 +1508,7 @@ impl Inner {
                     }
                 }
                 let gen = st.next_gen();
-                let mut view = CallView::new(call_id.clone(), peer_hex.clone(), Direction::In, media, Phase::Incoming, at);
+                let mut view = CallView::in_chat(call_id.clone(), peer_hex.clone(), server, Direction::In, media, Phase::Incoming, at);
                 // The peer's word of its video that overtook the invitation.
                 if let Some((on, screen)) = st.take_early(&call_id).and_then(|e| e.video) {
                     view.video_remote = on;
@@ -1494,7 +1520,7 @@ impl Inner {
                 cur.remote_ice = ice;
                 cur.peer_live_restart = live_restart;
                 st.current = Some(cur);
-                let mut effects = self.feed.begin(&call_id, &peer_hex, Direction::In, media, at).await?;
+                let mut effects = self.feed.begin_in(&call_id, &peer_hex, server, Direction::In, media, at).await?;
                 effects.push(Effect::Emit(UiEvent { name: UI_EVENT_CALL_INCOMING.into(), payload: serde_json::json!({ "call": view }) }));
                 self.emit(effects);
                 // The rest of the 45 s the invitation is good for.
@@ -1711,11 +1737,11 @@ impl Inner {
     }
 
     /// A copy of a signal another device of mine sent.
-    async fn on_copy(self: &Arc<Self>, st: &mut State, peer: &PubKey, sig: Signal, at: i64) -> Result<()> {
+    async fn on_copy(self: &Arc<Self>, st: &mut State, peer: &DmPeer, sig: Signal, at: i64) -> Result<()> {
         match sig {
             Signal::Invite { call_id, media, restart: false, .. } => {
                 // My other device called: the call is in my history too.
-                let (effects, _) = self.begin_record(st, &call_id, peer.as_hex(), Direction::Out, media, at).await?;
+                let (effects, _) = self.begin_record(st, &call_id, peer.key.as_hex(), peer.server(), Direction::Out, media, at).await?;
                 self.emit(effects);
             }
             Signal::Invite { .. } | Signal::Ice { .. } | Signal::Restart { .. } | Signal::Video { .. } => {}
@@ -1767,16 +1793,18 @@ impl Inner {
     /// The record of a call begins, and what came of the call before its
     /// invitation did is written into it at once. Returns the effects
     /// and that early word, if there was one.
+    #[allow(clippy::too_many_arguments)]
     async fn begin_record(
         &self,
         st: &mut State,
         call_id: &str,
         peer: &str,
+        server: Option<&str>,
         direction: Direction,
         media: Media,
         at: i64,
     ) -> Result<(Vec<Effect>, Option<Early>)> {
-        let mut effects = self.feed.begin(call_id, peer, direction, media, at).await?;
+        let mut effects = self.feed.begin_in(call_id, peer, server, direction, media, at).await?;
         let early = st.take_early(call_id);
         if let Some(early) = &early {
             if let Some(when) = early.answered_at {
@@ -1880,13 +1908,28 @@ impl Inner {
         let Some(row) = self.feed.get(call_id).await? else { return Ok(None) };
         let direction = if row.direction == repo::DIR_OUT { Direction::Out } else { Direction::In };
         let media = Media::parse(&row.media).unwrap_or(Media::Audio);
-        let mut view = CallView::new(row.call_id.clone(), row.peer.clone(), direction, media, Phase::Ended, row.started_at);
+        let server = messenger_store::chats::parse_dm_chat_id(&row.chat_id).and_then(|(_, s)| s);
+        let mut view = CallView::in_chat(row.call_id.clone(), row.peer.clone(), server, direction, media, Phase::Ended, row.started_at);
         view.chat_id = row.chat_id.clone();
         view.answered_at = row.answered_at;
         view.video_remote = false;
         view.video_remote_screen = false;
         Ok(Some(view))
     }
+}
+
+/// The call node of the private server `id`, as the candidates of a call
+/// of its chat: none when the server has none (or is not a private one of
+/// mine), or when its reference does not read.
+pub async fn private_nodes(store: &Store, id: &str) -> Result<Vec<CallNode>> {
+    let Some(server) = messenger_store::servers::get(store, id).await?.filter(|s| s.is_private()) else { return Ok(vec![]) };
+    Ok(server
+        .call_node
+        .as_deref()
+        .and_then(|r| r.trim().parse::<crate::servers::NodeRef>().ok())
+        .map(|node| CallNode::with_key(node, NodeClass::Own, server.relay_key.clone()))
+        .into_iter()
+        .collect())
 }
 
 /// What the record says of an end told with `reason`.
@@ -1900,4 +1943,45 @@ fn outcome_of(reason: &str, answered: bool) -> Outcome {
 
 fn error_event(e: &MessengerError) -> Effect {
     Effect::Emit(UiEvent { name: "error".into(), payload: serde_json::json!({ "scope": "calls", "error": e }) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use messenger_store::servers::{self, ServerRow};
+
+    fn server(url: &str, kind: &str, node: Option<String>) -> ServerRow {
+        ServerRow {
+            id: String::new(),
+            kind: kind.into(),
+            name: None,
+            relay_url: url.into(),
+            relay_key: Some("app-key".into()),
+            media_url: None,
+            call_node: node,
+            push_mode: servers::PUSH_OFF.into(),
+            source: None,
+            added_at: 0,
+        }
+    }
+
+    /// A call of a private chat has the server's own node as its one
+    /// candidate, as mine, with the server's key; a server without one,
+    /// a home server and a server I do not have give none.
+    #[tokio::test]
+    async fn a_private_call_takes_its_servers_node_or_none() {
+        let store = Store::open_in_memory().await.unwrap();
+        let node = format!("203.0.113.1:8443#{}", "ab".repeat(32));
+        let with = servers::put(&store, &server("wss://a.example", servers::KIND_PRIVATE, Some(node.clone()))).await.unwrap();
+        let without = servers::put(&store, &server("wss://b.example", servers::KIND_PRIVATE, None)).await.unwrap();
+        let home = servers::put(&store, &server("wss://c.example", servers::KIND_HOME, Some(node.clone()))).await.unwrap();
+        let nodes = private_nodes(&store, &with).await.unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].node.to_string(), node);
+        assert_eq!(nodes[0].class, NodeClass::Own);
+        assert_eq!(nodes[0].access_key.as_deref(), Some("app-key"));
+        assert!(private_nodes(&store, &without).await.unwrap().is_empty());
+        assert!(private_nodes(&store, &home).await.unwrap().is_empty());
+        assert!(private_nodes(&store, "0123456789abcdef").await.unwrap().is_empty());
+    }
 }

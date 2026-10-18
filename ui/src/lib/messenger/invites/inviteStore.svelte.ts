@@ -12,6 +12,7 @@
 import { messengerApi, messengerError, type InvitePreset, type InviteView, type MessengerUiEvent } from '../api';
 import type { InternalLinkText } from '../content/types';
 import { chatStore } from '../chats/chatStore.svelte';
+import { acceptServer } from '../servers/serverAccept.svelte';
 import { invitedContact, pausedUntil } from './invites';
 
 /** Uses come in bursts (a history read on start): one read for each burst. */
@@ -24,8 +25,10 @@ function refreshContacts() {
 
 /** What came of a scanned or pasted link of a person. */
 export type JoinOutcome =
-  | { ok: true; pubkey: string; name: string; invited: boolean }
-  | { ok: false; reason: 'not_contact' | 'is_me' | 'blocked' };
+  /** `address`: whom the chat is with, `<hex>` at home or `<hex>@<server id>` in the private chat of the link's server. */
+  | { ok: true; pubkey: string; name: string; invited: boolean; address: string }
+  /** `declined`: the link names a server and «Добавить сервер?» was answered no; nothing was added or sent. */
+  | { ok: false; reason: 'not_contact' | 'is_me' | 'blocked' | 'declined' };
 
 class InviteStore {
   /** Mine, as the runtime lists them; `null` until read. */
@@ -91,8 +94,17 @@ class InviteStore {
     if (!c) return { ok: false, reason: 'not_contact' };
     if (c.isMe) return { ok: false, reason: 'is_me' };
     if (c.blocked) return { ok: false, reason: 'blocked' };
+    // A person on a server of their own: the server first, after asking,
+    // then the private chat there, approved and told (the secret with it).
+    if (c.server) {
+      const id = await acceptServer(c.server);
+      if (!id) return { ok: false, reason: 'declined' };
+      const chat = await messengerApi.servers.openPrivate(c.pubkey, id, c.invite);
+      await chatStore.loadChats();
+      return { ok: true, pubkey: c.pubkey, name: c.name, invited: !!c.invite, address: chat.id.replace(/^dm:/, '') };
+    }
     if (c.invite) await this.request(c.pubkey, c.invite);
-    return { ok: true, pubkey: c.pubkey, name: c.name, invited: !!c.invite };
+    return { ok: true, pubkey: c.pubkey, name: c.name, invited: !!c.invite, address: c.pubkey };
   };
 
   /** A request with the secret of an invitation, and with a code the first message that goes with it. */

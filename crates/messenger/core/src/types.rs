@@ -149,6 +149,17 @@ pub enum EventSource {
     Sync { url: RelayUrl },
 }
 
+impl EventSource {
+    /// The relay the event came by, live or as history; `None` when it
+    /// names none.
+    pub fn relay_url(&self) -> Option<&RelayUrl> {
+        match self {
+            EventSource::Relay { url } | EventSource::Sync { url } => Some(url),
+            EventSource::Server { .. } => None,
+        }
+    }
+}
+
 /// A signed Nostr event as received from the wire, before any validation.
 ///
 /// Stage 0 keeps the event as JSON; stage 2 replaces `json` with the

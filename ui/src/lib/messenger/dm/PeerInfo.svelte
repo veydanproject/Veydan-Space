@@ -15,7 +15,9 @@
   import MessageContent from '../content/MessageContent.svelte';
   import BioView from '../contacts/BioView.svelte';
   import SocialLinks from '../contacts/SocialLinks.svelte';
-  import { linkActions } from '../content/actions';
+  import { linkActions, openChat } from '../content/actions';
+  import PeerChats from '../servers/PeerChats.svelte';
+  import ServerLabel from '../servers/ServerLabel.svelte';
   import type { ExternalUrl } from '../content/types';
   import { messengerStore } from '../store.svelte';
   import SharedMedia from '../content/shared/SharedMedia.svelte';
@@ -57,6 +59,7 @@
       <section class="card-top">
         <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={64} {online} />
         <div class="name">{chat.title}</div>
+        {#if chat.server_id}<ServerLabel server={chat.server_id} size="md" />{/if}
         {#if presenceText}<div class="sub" class:online>{presenceText}</div>{/if}
         {#if name && name !== chat.title}<div class="sub">{name}</div>{/if}
         {#if profile?.nip05}
@@ -98,6 +101,10 @@
       {/if}
 
       {#if chat.peer_npub}<CopyField label={$t('msg_peer_key')} value={chat.peer_npub} mono />{/if}
+
+      {#if chat.peer_pubkey && !chat.bot}
+        <PeerChats pubkey={chat.peer_pubkey} current={chat.id} onopen={(id) => void openChat(id).catch(() => {})} />
+      {/if}
 
       <SharedMedia chatId={chat.id} onopen={(s) => (section = s)} />
 

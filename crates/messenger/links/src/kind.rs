@@ -16,6 +16,9 @@ pub enum LinkType {
     /// A request of recovery through the trusted people, written `recover`
     /// (internal/cloud-recovery.md §8.5).
     Recover,
+    /// The card of a server, to add it as a private one (`server`,
+    /// internal/messenger-wire.md «Ссылка»).
+    Server,
     Unknown(String),
 }
 
@@ -29,6 +32,7 @@ impl LinkType {
             "vlink" => Self::Bridge,
             "call-node" => Self::CallNode,
             "recover" => Self::Recover,
+            "server" => Self::Server,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -40,6 +44,7 @@ impl LinkType {
             Self::Bridge => "vlink",
             Self::CallNode => "call-node",
             Self::Recover => "recover",
+            Self::Server => "server",
             Self::Unknown(w) => w,
         }
     }

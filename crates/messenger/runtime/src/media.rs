@@ -16,7 +16,7 @@
 use crate::{MessengerRuntime, REGION_FALLBACK};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use messenger_core::traits::UiEvent;
-use messenger_core::{MessengerError, PubKey, Result, TextFormat};
+use messenger_core::{MessengerError, Result, TextFormat};
 use messenger_dm::{DmService, MessageView};
 use messenger_ingress::Outbox;
 pub use messenger_media::descriptor::MAX_SEND_BYTES;
@@ -951,13 +951,20 @@ impl MessengerRuntime {
     ) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         let group = to.strip_prefix("group:").map(String::from);
+        // A person in the home chat or a private one (`<key>@<server>`).
         let peer = match &group {
             Some(_) => None,
-            None => Some(messenger_contacts::book::parse_key(to)?),
+            None => Some(self.peer_addr(to).await?),
         };
         // Refuse early: no server, no upload; a file that cannot be sent
-        // never shows as a message.
-        self.media.upload_backend(&keys).await?;
+        // never shows as a message. A private chat's file, and one of a
+        // group of a private server, goes to its server's blob server, or
+        // nowhere.
+        let server = match &group {
+            Some(g) => crate::scopes::server_of_group(&self.store, g).await?,
+            None => peer.as_ref().and_then(|p| p.server()).map(String::from),
+        };
+        self.media.upload_backend_on(&keys, server.as_deref()).await?;
         let meta = tokio::fs::metadata(path).await.map_err(|_| MessengerError::Io("err.file_not_found".into()))?;
         sendable(&meta)?;
         let name = messenger_media::descriptor::safe_name(
@@ -1096,7 +1103,7 @@ impl MessengerRuntime {
                 return Ok(None);
             }
             // Nothing is fetched on behalf of someone I block.
-            if let Some(peer) = m.chat_id.strip_prefix("dm:").and_then(PubKey::parse) {
+            if let Some(peer) = messenger_dm::DmPeer::of_chat(&m.chat_id) {
                 if self.dm.is_blocked(&peer).await? {
                     return Ok(None);
                 }
@@ -1482,6 +1489,7 @@ pub fn passive(mime: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use messenger_core::PubKey;
     use messenger_core::MessengerConfig;
     use messenger_store::media as transfers;
     use messenger_store::messages::{self, NewMessage};
@@ -1497,7 +1505,7 @@ mod tests {
 
     /// The placeholder of an upload, as the chat shows it while it runs.
     async fn placeholder(rt: &MessengerRuntime, n: i64) -> String {
-        let chat = messenger_store::chats::ensure_dm(&rt.store, &"b".repeat(64)).await.unwrap();
+        let chat = messenger_store::chats::ensure_dm(&rt.store, &"b".repeat(64), None).await.unwrap();
         let id = format!("local:test-{n}");
         let m = NewMessage {
             id: id.clone(),
@@ -1645,7 +1653,7 @@ mod tests {
         tokio::fs::create_dir_all(fetched.parent().unwrap()).await.unwrap();
         tokio::fs::write(&fetched, b"cat").await.unwrap();
 
-        let chat = messenger_store::chats::ensure_dm(&rt.store, &"b".repeat(64)).await.unwrap();
+        let chat = messenger_store::chats::ensure_dm(&rt.store, &"b".repeat(64), None).await.unwrap();
         let row = |id: &str, direction: &str, path: &Path| NewMessage {
             id: id.into(),
             chat_id: chat.id.clone(),
@@ -2073,7 +2081,7 @@ mod tests {
         // Two files the peer sent: the user started the download of one,
         // the automatic path that of the other; the closing of the app
         // paused both.
-        let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex()).await.unwrap().id;
+        let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex(), None).await.unwrap().id;
         let mut down = Vec::new();
         for (n, manual) in [(0, true), (1, false)] {
             let theirs = dir.path().join(format!("theirs-{n}.bin"));
@@ -2153,7 +2161,7 @@ mod tests {
         rt.identity().create("pw").await.unwrap();
         let keys = rt.identity().load_keys().await.unwrap();
         let peer = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
-        let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex()).await.unwrap().id;
+        let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex(), None).await.unwrap().id;
         let (manifest, _) = rt.relays.current_manifest().await.unwrap();
         let project = manifest.media.first().expect("the manifest names a media server").url.clone();
 
@@ -2221,7 +2229,7 @@ mod tests {
         rt.identity().create("pw").await.unwrap();
         let keys = rt.identity().load_keys().await.unwrap();
         let peer = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
-        let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex()).await.unwrap().id;
+        let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex(), None).await.unwrap().id;
         let (manifest, _) = rt.relays.current_manifest().await.unwrap();
         let project = manifest.media.first().expect("the manifest names a media server").url.clone();
         let received = async |n: u8| {

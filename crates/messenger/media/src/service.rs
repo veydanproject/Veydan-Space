@@ -294,6 +294,18 @@ fn secret_ref(id: &str) -> String {
     format!("media.{id}.secret")
 }
 
+/// The private server of the chat a transfer is of: a private direct chat
+/// (`dm:<peer>@<server>`) names it, a group (`group:<id>`) lives on the
+/// server of its relay (`servers::of_group`); the home chats, the groups of
+/// the home set and a transfer of no chat are the home set's.
+async fn server_of_chat(store: &Store, chat_id: Option<&str>) -> Result<Option<String>> {
+    let Some(chat_id) = chat_id else { return Ok(None) };
+    if let Some(group) = chat_id.strip_prefix("group:") {
+        return messenger_store::servers::of_group(store, group).await;
+    }
+    Ok(messenger_store::chats::parse_dm_chat_id(chat_id).and_then(|(_, server)| server).map(String::from))
+}
+
 /// Where a server's blobs are read, from its row alone (no credentials).
 fn public_base_of(r: &ServerRow) -> String {
     match r.kind.as_str() {
@@ -527,13 +539,15 @@ impl MediaService {
     async fn view(&self, r: ServerRow) -> MediaServerView {
         let has_secret = self.secrets.get(&secret_ref(&r.id)).await.ok().flatten().is_some();
         let public_base = public_base_of(&r);
+        // A blossom row's key is a server's app key: never shown.
+        let access_key = if r.kind == repo::KIND_S3 { r.access_key.clone() } else { None };
         MediaServerView {
             id: r.id,
             kind: r.kind,
             url: r.url,
             bucket: r.bucket,
             region: r.region,
-            access_key: r.access_key,
+            access_key,
             has_secret,
             priority: r.priority,
             enabled: r.enabled,
@@ -601,6 +615,7 @@ impl MediaService {
                 source: nonempty(input.source).unwrap_or_else(|| "user".into()),
                 created_at: 0,
                 updated_at: 0,
+                server_id: None,
             },
         )
         .await?;
@@ -624,7 +639,8 @@ impl MediaService {
     async fn build(&self, r: &ServerRow, keys: &Keys) -> Result<Arc<dyn BlobBackend>> {
         match r.kind.as_str() {
             repo::KIND_S3 => self.build_s3(r).await,
-            _ => Ok(Arc::new(BlossomBackend::new(&r.url, keys.clone())?)),
+            // A blossom server of a private server takes that server's app key.
+            _ => Ok(Arc::new(BlossomBackend::new(&r.url, keys.clone())?.with_app_key(r.access_key.clone()))),
         }
     }
 
@@ -644,14 +660,23 @@ impl MediaService {
         })?))
     }
 
-    /// The server uploads go to: the first enabled one that can be used
-    /// (S3 sorts first by default priority).
+    /// The server uploads go to: the first enabled one of the home set that
+    /// can be used (S3 sorts first by default priority). A private server's
+    /// blob server is never chosen here: nothing goes to it unless it is
+    /// named.
     pub async fn upload_backend(&self, keys: &Keys) -> Result<Arc<dyn BlobBackend>> {
+        self.upload_backend_on(keys, None).await
+    }
+
+    /// The server the files of a chat on `server` go to (`None`: the home
+    /// set, as `upload_backend`): a private chat's to its server's blob
+    /// server, with the server's app key, and never to one of the home set.
+    pub async fn upload_backend_on(&self, keys: &Keys, server: Option<&str>) -> Result<Arc<dyn BlobBackend>> {
         if let Some(b) = &self.fixed_backend {
             return Ok(b.clone());
         }
         let mut last = MessengerError::Invalid("err.media_no_server".into());
-        for r in repo::servers(&self.store).await?.into_iter().filter(|r| r.enabled) {
+        for r in repo::servers_of(&self.store, server).await?.into_iter().filter(|r| r.enabled) {
             match self.build(&r, keys).await {
                 Ok(b) => return Ok(b),
                 Err(e) => last = e,
@@ -677,24 +702,32 @@ impl MediaService {
         }
     }
 
-    /// Public bases of our enabled servers: mirrors to try on download.
-    async fn own_bases(&self) -> Vec<String> {
-        match self.servers().await {
-            Ok(list) => list.into_iter().filter(|s| s.enabled).map(|s| s.public_base).collect(),
+    /// Public bases of our enabled servers of `server` (`None`: the home
+    /// set): mirrors to try on download. A private chat's file is asked of
+    /// its server's alone, so the home set never hears of it.
+    async fn own_bases(&self, server: Option<&str>) -> Vec<String> {
+        match repo::servers_of(&self.store, server).await {
+            Ok(list) => list.iter().filter(|s| s.enabled).map(public_base_of).collect(),
             Err(_) => vec![],
         }
     }
 
     // ─── Public blobs ───────────────────────────────────────────────────────
 
-    /// Enabled servers that can be written to, in priority order. One that
-    /// cannot be built (an S3 server without its credentials) is left out.
+    /// Enabled servers of the home set that can be written to, in priority
+    /// order. One that cannot be built (an S3 server without its
+    /// credentials) is left out.
     async fn usable_servers(&self, keys: &Keys) -> Result<Vec<(String, Arc<dyn BlobBackend>)>> {
+        self.usable_servers_of(keys, None).await
+    }
+
+    /// The same of `server` (`None`: the home set).
+    async fn usable_servers_of(&self, keys: &Keys, server: Option<&str>) -> Result<Vec<(String, Arc<dyn BlobBackend>)>> {
         if let Some(b) = &self.fixed_backend {
             return Ok(vec![(FIXED_SERVER_ID.to_string(), b.clone())]);
         }
         let mut out = Vec::new();
-        for r in repo::servers(&self.store).await?.into_iter().filter(|r| r.enabled) {
+        for r in repo::servers_of(&self.store, server).await?.into_iter().filter(|r| r.enabled) {
             if let Ok(b) = self.build(&r, keys).await {
                 out.push((r.id, b));
             }
@@ -721,6 +754,19 @@ impl MediaService {
     /// `err.media_no_server` when none can be used (none enabled, or none
     /// with its credentials), else the error of the last one tried.
     pub async fn upload_public(&self, keys: &Keys, bytes: Vec<u8>, content_type: &str, copies: usize) -> Result<Vec<PublicBlob>> {
+        self.upload_public_of(keys, None, bytes, content_type, copies).await
+    }
+
+    /// The same on the blob servers of `server` (`None`: the home set): my
+    /// avatar as a private server's peers see it, on that server alone.
+    pub async fn upload_public_of(
+        &self,
+        keys: &Keys,
+        server: Option<&str>,
+        bytes: Vec<u8>,
+        content_type: &str,
+        copies: usize,
+    ) -> Result<Vec<PublicBlob>> {
         if bytes.is_empty() {
             return Err(MessengerError::Invalid("the file is empty".into()));
         }
@@ -731,7 +777,7 @@ impl MediaService {
             return Err(MessengerError::Invalid("bad content type".into()));
         }
         let sha = crate::crypto::sha256_hex(&bytes);
-        let servers = self.usable_servers(keys).await?;
+        let servers = self.usable_servers_of(keys, server).await?;
         if servers.is_empty() {
             return Err(MessengerError::Invalid("err.media_no_server".into()));
         }
@@ -790,14 +836,14 @@ impl MediaService {
         Ok(servers.into_iter().map(|(id, b)| (id, b.public_base())).collect())
     }
 
-    /// `(server id, public base)` of every enabled server, whether it can
+    /// `(server id, public base)` of every enabled server of the home set, whether it can
     /// be written to now or not: an S3 server whose secret cannot be read
     /// at the moment (a keyring still locked) is still one I use.
     pub async fn enabled_server_bases(&self) -> Result<Vec<(String, String)>> {
         if let Some(b) = &self.fixed_backend {
             return Ok(vec![(FIXED_SERVER_ID.to_string(), b.public_base())]);
         }
-        Ok(repo::servers(&self.store).await?.into_iter().filter(|r| r.enabled).map(|r| (r.id.clone(), public_base_of(&r))).collect())
+        Ok(repo::home_servers(&self.store).await?.into_iter().filter(|r| r.enabled).map(|r| (r.id.clone(), public_base_of(&r))).collect())
     }
 
     // ─── Transfers ──────────────────────────────────────────────────────────
@@ -1045,15 +1091,15 @@ impl MediaService {
     /// Where an upload goes: back to the server of its earlier attempt
     /// while that one is enabled and can be written to, else the first
     /// usable one.
-    async fn upload_target(&self, keys: &Keys, earlier: Option<&str>) -> Result<Arc<dyn BlobBackend>> {
+    async fn upload_target(&self, keys: &Keys, earlier: Option<&str>, server: Option<&str>) -> Result<Arc<dyn BlobBackend>> {
         if let Some(base) = earlier {
-            if let Ok(list) = self.usable_servers(keys).await {
+            if let Ok(list) = self.usable_servers_of(keys, server).await {
                 if let Some((_, b)) = list.into_iter().find(|(_, b)| b.public_base() == base) {
                     return Ok(b);
                 }
             }
         }
-        self.upload_backend(keys).await
+        self.upload_backend_on(keys, server).await
     }
 
     /// The server whose public base is `base`, enabled or not, when it can
@@ -1158,7 +1204,7 @@ impl MediaService {
         if let Some(k) = keys {
             return self.upload_backend(k).await.ok().map(|b| b.public_base());
         }
-        for r in repo::servers(&self.store).await.ok()?.into_iter().filter(|r| r.enabled) {
+        for r in repo::home_servers(&self.store).await.ok()?.into_iter().filter(|r| r.enabled) {
             if r.kind == repo::KIND_S3 && self.build_s3(&r).await.is_ok() {
                 return Some(public_base_of(&r));
             }
@@ -1368,7 +1414,11 @@ impl MediaService {
             };
             let state = repo::transfer(&self.store, id).await?.map(|r| r.state_json).unwrap_or_default();
             let resume: Option<UploadState> = serde_json::from_str(&state).ok().filter(|s: &UploadState| !s.key.is_empty());
-            let backend = match self.upload_target(keys, resume.as_ref().and_then(|s| s.server_base.as_deref())).await {
+            let server = match server_of_chat(&self.store, row.chat_id.as_deref()).await {
+                Ok(s) => s,
+                Err(e) => return Ok(Ending::Failed(e)),
+            };
+            let backend = match self.upload_target(keys, resume.as_ref().and_then(|s| s.server_base.as_deref()), server.as_deref()).await {
                 Ok(b) => b,
                 Err(e) => return Ok(Ending::Failed(e)),
             };
@@ -1533,8 +1583,9 @@ impl MediaService {
         }
         let meter = self.meter(sink, &row);
         meter.live().start(d.chunks.len() as u32, d.chunk_size);
+        let server = server_of_chat(&self.store, row.chat_id.as_deref()).await?;
         let ending = tokio::select! {
-            ending = self.download_runs(&id, d, manual, &run.control, &meter) => ending.unwrap_or_else(Ending::Failed),
+            ending = self.download_runs(&id, d, manual, &run.control, &meter, server.as_deref()) => ending.unwrap_or_else(Ending::Failed),
             never = self.beside(&id, &run.control) => match never {},
         };
         #[cfg(test)]
@@ -1589,6 +1640,9 @@ impl MediaService {
         }
     }
 
+    /// `server`: the private server of the chat of the file (`None`: the
+    /// home set), whose blob servers are the mirrors tried.
+    #[allow(clippy::too_many_arguments)]
     async fn download_runs(
         &self,
         id: &str,
@@ -1596,9 +1650,10 @@ impl MediaService {
         manual: bool,
         control: &Control,
         meter: &ProgressMeter<'_>,
+        server: Option<&str>,
     ) -> Result<Ending<PathBuf>> {
         meter.status(repo::ST_QUEUED, None);
-        let mirrors = self.own_bases().await;
+        let mirrors = self.own_bases(server).await;
         let (chunks_total, chunk_size) = (d.chunks.len() as u32, d.chunk_size);
         let folder = download::tmp_name(d);
         let mut retries = 0u32;
@@ -3181,6 +3236,125 @@ mod tests {
     /// A resume that lands on another server: the chunks the first one kept
     /// are removed from it.
     #[tokio::test]
+    async fn a_file_of_a_private_chat_goes_to_its_servers_blob_server_alone() {
+        let (mut svc, dir) = plain_service().await;
+        svc.chunk_size = Some(CHUNK as u64);
+        let keys = Keys::generate();
+        let (home, private) = (MockServer::start().await, MockServer::start().await);
+        for s in [&home, &private] {
+            Mock::given(method("PUT")).and(path("/upload")).respond_with(ResponseTemplate::new(200)).mount(s).await;
+        }
+        // The home set's first by priority; the private one with its app key.
+        blossom(&svc, "home", &home.uri(), 1).await;
+        repo::upsert_server(
+            &svc.store,
+            &ServerRow {
+                id: "server-0123456789abcdef".into(),
+                kind: repo::KIND_BLOSSOM.into(),
+                url: private.uri(),
+                bucket: None,
+                region: None,
+                access_key: Some("app-key".into()),
+                priority: 10,
+                enabled: true,
+                source: "server".into(),
+                created_at: 0,
+                updated_at: 0,
+                server_id: Some("0123456789abcdef".into()),
+            },
+        )
+        .await
+        .unwrap();
+        let p = dir.path().join("private.bin");
+        tokio::fs::write(&p, content(3 * CHUNK)).await.unwrap();
+        let chat = format!("dm:{}@0123456789abcdef", "ab".repeat(32));
+        let t = svc.queue_upload(&p, &chat, "ph").await.unwrap();
+        let d = svc.run_upload(&t.id, &keys, None, &Sink::default()).await.unwrap().unwrap();
+        assert_eq!(d.servers, vec![private.uri()], "the descriptor names the server's blob server");
+        assert_eq!(calls(&private, "PUT").await, 3);
+        assert_eq!(calls(&home, "PUT").await, 0, "nothing of a private chat goes to the home set");
+        let puts = private.received_requests().await.unwrap();
+        assert!(puts.iter().all(|r| r.url.query().is_some_and(|q| q.contains("key=app-key"))), "with the server's app key");
+
+        // A file of a home chat with the same person goes home, as before.
+        let t = svc.queue_upload(&p, &format!("dm:{}", "ab".repeat(32)), "ph2").await.unwrap();
+        let d = svc.run_upload(&t.id, &keys, None, &Sink::default()).await.unwrap().unwrap();
+        assert_eq!(d.servers, vec![home.uri()]);
+        assert_eq!(calls(&private, "PUT").await, 3);
+        assert_eq!(server_of_chat(&svc.store, Some(&chat)).await.unwrap().as_deref(), Some("0123456789abcdef"));
+        assert_eq!(server_of_chat(&svc.store, Some("group:g")).await.unwrap(), None, "a group this device does not know");
+
+        // A group lives on the server of its relay: a file of a group of a
+        // private server goes to that server's blob server, one of a group
+        // of the home set goes home.
+        use messenger_store::{groups, servers};
+        let s1 = servers::put(
+            &svc.store,
+            &servers::ServerRow {
+                id: String::new(),
+                kind: servers::KIND_PRIVATE.into(),
+                name: None,
+                relay_url: "wss://s1.example".into(),
+                relay_key: Some("s1-key".into()),
+                media_url: Some(private.uri()),
+                call_node: None,
+                push_mode: servers::PUSH_OFF.into(),
+                source: None,
+                added_at: 0,
+            },
+        )
+        .await
+        .unwrap();
+        repo::upsert_server(
+            &svc.store,
+            &ServerRow {
+                id: format!("server-{s1}"),
+                kind: repo::KIND_BLOSSOM.into(),
+                url: format!("{}/s1", private.uri()),
+                bucket: None,
+                region: None,
+                access_key: Some("s1-key".into()),
+                priority: 10,
+                enabled: true,
+                source: "server".into(),
+                created_at: 0,
+                updated_at: 0,
+                server_id: Some(s1.clone()),
+            },
+        )
+        .await
+        .unwrap();
+        Mock::given(method("PUT")).and(path("/s1/upload")).respond_with(ResponseTemplate::new(200)).mount(&private).await;
+        for (id, relay) in [("g1", "wss://S1.example/"), ("g2", "wss://home.example")] {
+            let row = groups::GroupRow {
+                id: id.into(),
+                kind: "private".into(),
+                name: "Team".into(),
+                about: String::new(),
+                picture: String::new(),
+                relay_url: relay.into(),
+                owner: "o".into(),
+                membership: "joined".into(),
+                my_role: None,
+                members: 1,
+                link_epoch: 0,
+                created_at: 0,
+                updated_at: 0,
+                needs_update: false,
+            };
+            groups::upsert(&svc.store, &row).await.unwrap();
+        }
+        assert_eq!(server_of_chat(&svc.store, Some("group:g1")).await.unwrap(), Some(s1.clone()));
+        let t = svc.queue_upload(&p, "group:g1", "ph3").await.unwrap();
+        let d = svc.run_upload(&t.id, &keys, None, &Sink::default()).await.unwrap().unwrap();
+        assert_eq!(d.servers, vec![format!("{}/s1", private.uri())], "the blob server of the group's server");
+        assert_eq!(calls(&home, "PUT").await, 3, "nothing of the group at home");
+        let t = svc.queue_upload(&p, "group:g2", "ph4").await.unwrap();
+        let d = svc.run_upload(&t.id, &keys, None, &Sink::default()).await.unwrap().unwrap();
+        assert_eq!(d.servers, vec![home.uri()], "a group of the home set, home");
+    }
+
+    #[tokio::test]
     async fn a_resume_on_another_server_removes_what_the_first_one_kept() {
         let (mut svc, dir) = plain_service().await;
         svc.chunk_size = Some(CHUNK as u64);
@@ -3327,6 +3501,33 @@ mod tests {
 
         svc.set_server_enabled(&v.id, false).await.unwrap();
         assert_eq!(svc.upload_backend(&keys).await.unwrap().public_base(), "https://blossom.example");
+
+        // The blob server of a private server, first by priority, is never
+        // where an upload of the home set goes, and its app key is not shown.
+        repo::upsert_server(
+            &svc.store,
+            &ServerRow {
+                id: "private".into(),
+                kind: repo::KIND_BLOSSOM.into(),
+                url: "https://media.mine.example".into(),
+                bucket: None,
+                region: None,
+                access_key: Some("app-key".into()),
+                priority: 1,
+                enabled: true,
+                source: "server".into(),
+                created_at: 0,
+                updated_at: 0,
+                server_id: Some("0123456789abcdef".into()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(svc.upload_backend(&keys).await.unwrap().public_base(), "https://blossom.example");
+        assert_eq!(svc.enabled_server_bases().await.unwrap().iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(), vec![b.id.as_str()]);
+        let shown = svc.servers().await.unwrap();
+        assert_eq!(shown.iter().find(|s| s.id == "private").unwrap().access_key, None);
+        svc.remove_server("private").await.unwrap();
         svc.remove_server(&v.id).await.unwrap();
         assert!(secrets.0.lock().unwrap().is_empty(), "the secret goes with the server");
         svc.remove_server(&b.id).await.unwrap();
@@ -3436,6 +3637,7 @@ mod tests {
             source: "user".into(),
             created_at: 0,
             updated_at: 0,
+            server_id: None,
         };
         repo::upsert_server(&svc.store, &row).await.unwrap();
     }
@@ -4512,6 +4714,7 @@ mod tests {
             source: "user".into(),
             created_at: 0,
             updated_at: 0,
+            server_id: None,
         };
         repo::upsert_server(&svc.store, &server).await.unwrap();
         let path = dir.path().join("left.bin");

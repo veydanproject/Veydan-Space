@@ -9,7 +9,7 @@ use messenger_core::MessengerError;
 use nostr::key::Keys;
 use serde::de::DeserializeOwned;
 
-use crate::dto::{DeviceAnswer, DevicePut, ErrorBody, Info, TestAnswer};
+use crate::dto::{DeviceAnswer, DevicePut, ErrorBody, Info, TestAnswer, TicketAsk, TicketIssued, TicketList};
 use crate::nip98;
 
 /// What went wrong with a request.
@@ -51,6 +51,16 @@ impl std::fmt::Display for PushError {
 }
 
 impl std::error::Error for PushError {}
+
+impl PushError {
+    /// The server's word for a refusal; `None` for every other failure.
+    pub fn code(&self) -> Option<&str> {
+        match self {
+            Self::Refused { code, .. } => Some(code),
+            _ => None,
+        }
+    }
+}
 
 impl From<PushError> for MessengerError {
     fn from(e: PushError) -> Self {
@@ -232,6 +242,33 @@ impl VpushClient {
         let url = format!("{}/test", self.device_url(device_id));
         let (_, text) = self.ask(Some(keys), reqwest::Method::POST, url, Vec::new()).await?;
         Self::read(&text)
+    }
+
+    /// A ticket of a gateway for the token `device_id` was registered with
+    /// here (`409 no_device` before that). Said once: keep it.
+    pub async fn ticket_issue(&self, keys: &Keys, device_id: &str) -> PushResult<TicketIssued> {
+        let body = serde_json::to_vec(&TicketAsk { device_id: device_id.to_string() })
+            .map_err(|e| PushError::Unreadable(e.to_string()))?;
+        let url = format!("{}/v1/tickets", self.base);
+        let (_, text) = self.ask(Some(keys), reqwest::Method::POST, url, body).await?;
+        Self::read(&text)
+    }
+
+    /// The live tickets of the signer, each by its first 8 hex.
+    pub async fn tickets(&self, keys: &Keys) -> PushResult<TicketList> {
+        let url = format!("{}/v1/tickets", self.base);
+        let (_, text) = self.ask(Some(keys), reqwest::Method::GET, url, Vec::new()).await?;
+        Self::read(&text)
+    }
+
+    /// Takes a ticket back: the whole of it, or its first 8 hex when no
+    /// other ticket of the signer begins so.
+    pub async fn ticket_delete(&self, keys: &Keys, ticket: &str) -> PushResult<()> {
+        if ticket.is_empty() || !ticket.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(PushError::Address("a ticket is hex".into()));
+        }
+        let url = format!("{}/v1/tickets/{ticket}", self.base);
+        self.ask(Some(keys), reqwest::Method::DELETE, url, Vec::new()).await.map(|_| ())
     }
 }
 

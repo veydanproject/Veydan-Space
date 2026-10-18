@@ -4,15 +4,17 @@
 //! The push handler's way into the messenger, without the app.
 //!
 //! A push starts the app's process with no window, so no Tauri and no
-//! runtime; the handler loads this library and calls the one function
-//! below. It must count on nothing of the app's: not its state, not its
-//! async runtime, not its crypto provider. It opens what it needs itself
-//! and closes it before it returns.
+//! runtime; the handler loads this library and calls the functions below:
+//! `unseal` for a push of a private server that came sealed through the
+//! gateway, `describe` for every push about a message. They must count on
+//! nothing of the app's: not its state, not its async runtime, not its
+//! crypto provider. They open what they need themselves and close it
+//! before they return.
 
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
-use messenger_notify::{describe_as, KeyBundle, PushData};
+use messenger_notify::{describe_as, unseal_as, KeyBundle, PushData};
 use std::path::PathBuf;
 use std::time::Duration;
 use zeroize::Zeroize;
@@ -42,6 +44,60 @@ pub extern "system" fn Java_net_veydan_push_Core_describe<'l>(
         Ok(s) => s.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
+}
+
+/// `net.veydan.push.Core.unseal(dataDir, bundle, push)`: what a sealed push
+/// of a private server is (`messenger_notify::Unsealed` as JSON: `open`
+/// with the `data` map inside, `check`, `no_keys`, `dropped` with a
+/// `reason`), or an object with `outcome = "error"`. Nothing panics out.
+#[no_mangle]
+pub extern "system" fn Java_net_veydan_push_Core_unseal<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    data_dir: JString<'l>,
+    bundle: JByteArray<'l>,
+    push: JString<'l>,
+) -> jstring {
+    let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let data_dir: String = env.get_string(&data_dir).map(Into::into).unwrap_or_default();
+        let mut bundle = env.convert_byte_array(&bundle).unwrap_or_default();
+        let push: String = env.get_string(&push).map(Into::into).unwrap_or_default();
+        let out = unseal(PathBuf::from(data_dir), &bundle, &push);
+        bundle.zeroize();
+        out
+    }))
+    .unwrap_or_else(|_| error("panic"));
+    match env.new_string(answer) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+fn unseal(data_dir: PathBuf, bundle: &[u8], push: &str) -> String {
+    let bundle = match bundle {
+        [] => None,
+        bytes => match KeyBundle::from_json(bytes) {
+            Ok(b) => Some(b),
+            Err(e) => return error(e),
+        },
+    };
+    let data: std::collections::BTreeMap<String, String> = match serde_json::from_str(push) {
+        Ok(d) => d,
+        Err(e) => return error(format!("push: {e}")),
+    };
+    let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+        Ok(rt) => rt,
+        Err(e) => return error(format!("runtime: {e}")),
+    };
+    let config = super::config_at(data_dir);
+    let out = rt.block_on(async {
+        match unseal_as(&config, bundle.as_ref(), &data).await {
+            Ok(unsealed) => serde_json::to_string(&unsealed).unwrap_or_else(error),
+            Err(e) => error(e),
+        }
+    });
+    rt.shutdown_timeout(Duration::from_secs(1));
+    out
 }
 
 fn error(message: impl std::fmt::Display) -> String {

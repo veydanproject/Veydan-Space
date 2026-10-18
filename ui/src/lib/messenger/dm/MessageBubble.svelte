@@ -184,7 +184,7 @@
   }
   .author { font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
   .tomb { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
-  .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-size: var(--fs-3xs); font-weight: var(--fw-normal); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: 1; }
+  .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-family: var(--font-mono); font-size: var(--fs-3xs); color: var(--text-2); line-height: 1; }
   .line.out .meta { color: var(--bubble-out-meta); }
   .status { display: inline-flex; }
   .pending {

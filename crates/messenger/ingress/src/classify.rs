@@ -4,7 +4,7 @@
 //! Wire event → `Inbound`. Pure with respect to storage; the only input
 //! besides the event is the optional signer needed to open gift wraps.
 
-use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR};
+use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, TAG_SERVER};
 use messenger_core::inbound::Envelope as WireEnvelope;
 /// Re-exported: ingress filters and skips beats by these, the presence
 /// crate builds them; both take them from core.
@@ -67,6 +67,7 @@ pub fn classify(raw: &RawEvent, keys: Option<&Keys>) -> Inbound {
                     Some((s.get(1)?.clone(), s.get(2).cloned()))
                 })
                 .collect(),
+            via: raw.source.relay_url().cloned(),
         }),
         KIND_DM_RELAYS => Inbound::Meta(MetaInbound::DmRelays {
             author: pk(&event.pubkey),
@@ -77,6 +78,7 @@ pub fn classify(raw: &RawEvent, keys: Option<&Keys>) -> Inbound {
                 .filter(|t| t.kind() == "relay")
                 .filter_map(|t| t.as_slice().get(1).cloned())
                 .collect(),
+            via: raw.source.relay_url().cloned(),
         }),
         KIND_PRESENCE => classify_presence(&event),
         KIND_RELATIONS => classify_relations(&event, keys),
@@ -143,6 +145,9 @@ fn classify_gift_wrap(event: &Event, envelope: WireEnvelope, keys: Option<&Keys>
         .filter_map(|t| t.as_slice().get(1))
         .filter_map(|s| EventId::parse(s))
         .next();
+    // The private chat the sender files it under, if any: the DM service
+    // takes it only for a server this device has.
+    let srv = rumor.tags.iter().filter(|t| t.kind() == TAG_SERVER).filter_map(|t| t.as_slice().get(1)).next().cloned();
     Inbound::Dm(DmInbound {
         envelope,
         rumor_id,
@@ -152,6 +157,7 @@ fn classify_gift_wrap(event: &Event, envelope: WireEnvelope, keys: Option<&Keys>
         content: rumor.content,
         reply_to,
         rumor_kind: rumor.kind.as_u16(),
+        srv,
     })
 }
 

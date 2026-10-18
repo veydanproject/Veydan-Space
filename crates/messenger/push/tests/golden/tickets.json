@@ -1,0 +1,8 @@
+{
+  "tickets": [
+    { "ticket": "7a4e2c1f…", "device_id": "phone-0001",
+      "issued_at": 1790000000, "expires_at": 1792592000, "last_wake_at": 1790003600 },
+    { "ticket": "c03b9e51…", "device_id": "phone-0001",
+      "issued_at": 1789990000, "expires_at": 1792582000, "last_wake_at": null }
+  ]
+}

@@ -23,14 +23,17 @@
   import BioView from './BioView.svelte';
   import SocialLinks from './SocialLinks.svelte';
   import Avatar from './Avatar.svelte';
+  import PeerChats from '../servers/PeerChats.svelte';
 
   interface Props {
     contact: MessengerContact;
     onchat: (pubkey: string) => void;
+    /** Shows one chat with them: the home one or a private one («Частный · S1»). */
+    onopenchat?: (chatId: string) => void;
     /** The contact was removed: nothing is left to show. */
     onremoved?: () => void;
   }
-  let { contact, onchat, onremoved }: Props = $props();
+  let { contact, onchat, onopenchat, onremoved }: Props = $props();
 
   const name = $derived(contactLabel(contact));
   const chat = $derived(chatStore.chats.find((c) => c.id === `dm:${contact.pubkey}`) ?? null);
@@ -114,6 +117,8 @@
       <span class="disc"><Icon name="send" size={18} /></span>{$t('msg_contacts_share_short')}
     </button>
   </div>
+
+  <PeerChats pubkey={contact.pubkey} onopen={(id) => (onopenchat ? onopenchat(id) : onchat(contact.pubkey))} />
 
   {#if contact.profile?.bio?.length || contact.profile?.about || contact.profile?.socials?.length}
     <section class="block">

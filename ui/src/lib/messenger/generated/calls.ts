@@ -64,7 +64,11 @@ export type CallView = { call_id: string,
 /**
  * The peer, hex.
  */
-peer: string, chat_id: string, direction: CallDirection, media: CallMedia, phase: CallPhase, 
+peer: string, chat_id: string, 
+/**
+ * The private server of the chat of the call; absent for the home chat.
+ */
+server_id?: string, direction: CallDirection, media: CallMedia, phase: CallPhase, 
 /**
  * How the media goes, once ICE settled.
  */

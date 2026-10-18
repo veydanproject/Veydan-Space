@@ -11,6 +11,7 @@ use crate::relationship::{
     InboundDecision, InboundKind, MyContact, OutboundPermission, OwnSignal, PeerSignal, Relationship, ScreenMode, Signal,
     SystemLine, FLOOR_SKEW_SECS,
 };
+use crate::peer::DmPeer;
 use crate::snapshot::Known;
 use crate::service::{DmService, UI_EVENT_DM_MESSAGE};
 use crate::wrap::{wrap_as, Wake};
@@ -45,6 +46,10 @@ pub fn contacts_updated(peer: Option<&PubKey>) -> UiEvent {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RelationView {
     pub peer_pubkey: String,
+    /// The private server of the chat this relation is of; absent for the
+    /// home chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
     pub mode: String,
     pub my_contact: String,
     pub blocked: bool,
@@ -90,9 +95,13 @@ pub(crate) enum InboundGate {
 pub const HELD_PER_CHAT: i64 = 16;
 
 impl DmService {
-    /// What stands between me and `peer`, as the store has it.
-    pub async fn load_relation(&self, peer: &PubKey) -> Result<Relationship> {
-        Ok(match dm_relations::get(&self.store, peer.as_hex()).await? {
+    /// What stands between me and `peer` in one chat (a `&PubKey` is the
+    /// home chat), as the store has it. The relation of a private chat is
+    /// its own: a block at home does not shut it, nor its block the home
+    /// chat.
+    pub async fn load_relation(&self, peer: impl Into<DmPeer>) -> Result<Relationship> {
+        let peer = peer.into();
+        Ok(match dm_relations::get(&self.store, peer.key.as_hex(), peer.server()).await? {
             Some(r) => Relationship {
                 my_contact: MyContact::parse(&r.my_contact).unwrap_or(MyContact::None),
                 blocked: r.blocked,
@@ -129,11 +138,13 @@ impl DmService {
         InboundKind::PlainText { chars: text.chars().count(), has_link }
     }
 
-    pub(crate) async fn save_relation(&self, peer: &PubKey, r: &Relationship) -> Result<()> {
+    pub(crate) async fn save_relation(&self, peer: impl Into<DmPeer>, r: &Relationship) -> Result<()> {
+        let peer = &peer.into();
         dm_relations::put(
             &self.store,
             &RelationRow {
-                peer_pubkey: peer.as_hex().to_string(),
+                peer_pubkey: peer.key.as_hex().to_string(),
+                server_id: dm_relations::server_key(peer.server()).to_string(),
                 my_contact: r.my_contact.as_str().into(),
                 blocked: r.blocked,
                 peer_signal: r.peer_signal.as_str().into(),
@@ -169,8 +180,8 @@ impl DmService {
 
     /// Screen mode and whether the composer may be used. A banned key reads
     /// as blocked, with nothing to send, before any setting is looked at.
-    pub(crate) async fn mode_of(&self, chat_id: &str, peer: &PubKey) -> Result<(ScreenMode, bool)> {
-        if self.is_banned(peer).await? {
+    pub(crate) async fn mode_of(&self, chat_id: &str, peer: &DmPeer) -> Result<(ScreenMode, bool)> {
+        if self.is_banned(&peer.key).await? {
             return Ok((ScreenMode::Blocked, false));
         }
         if !self.gate_enabled() {
@@ -179,7 +190,7 @@ impl DmService {
         let r = self.load_relation(peer).await?;
         // The pinned bot is approved beforehand (`with_bot`): a full chat
         // unless I blocked it.
-        if self.is_bot(peer) && !r.blocked {
+        if self.is_bot_chat(peer) && !r.blocked {
             return Ok((ScreenMode::FullChat, true));
         }
         let sent = repo::count_visible_outgoing(&self.store, chat_id).await?;
@@ -187,24 +198,32 @@ impl DmService {
         Ok((screen_mode(&r), can))
     }
 
-    pub async fn relation(&self, peer: &PubKey) -> Result<RelationView> {
-        let chat_id = chats::dm_chat_id(peer.as_hex());
-        let r = self.load_relation(peer).await?;
-        let (mode, can_send) = self.mode_of(&chat_id, peer).await?;
+    pub async fn relation(&self, peer: impl Into<DmPeer>) -> Result<RelationView> {
+        let peer = peer.into();
+        let chat_id = peer.chat_id();
+        let r = self.load_relation(&peer).await?;
+        let (mode, can_send) = self.mode_of(&chat_id, &peer).await?;
         Ok(RelationView {
-            peer_pubkey: peer.as_hex().to_string(),
+            peer_pubkey: peer.key.as_hex().to_string(),
+            server_id: peer.server.clone(),
             mode: mode.as_str().into(),
             my_contact: r.my_contact.as_str().into(),
             blocked: r.blocked,
             peer_signal: r.peer_signal.as_str().into(),
             was_ever_mutual: r.was_ever_mutual,
             can_send,
-            banned: self.is_banned(peer).await?,
+            banned: self.is_banned(&peer.key).await?,
         })
     }
 
-    pub async fn is_blocked(&self, peer: &PubKey) -> Result<bool> {
+    pub async fn is_blocked(&self, peer: impl Into<DmPeer>) -> Result<bool> {
         Ok(self.load_relation(peer).await?.blocked)
+    }
+
+    /// Whether `peer` is the pinned bot in its home chat. The bot lives on
+    /// the home set: its key in a private chat is anybody's, a stranger.
+    pub(crate) fn is_bot_chat(&self, peer: &DmPeer) -> bool {
+        !peer.is_private() && self.is_bot(&peer.key)
     }
 
     /// My block of `peer` changed hands (here, or on another device of
@@ -226,20 +245,24 @@ impl DmService {
     /// The address book is kept on each device apart, and presence and the
     /// profile follow it. What another device of mine decided about `peer`
     /// is put into this one's book, as `dm_act` does for a decision taken
-    /// here. Returns whether the book changed.
-    async fn mirror_book(&self, peer: &PubKey, before: &Relationship, after: &Relationship) -> Result<bool> {
+    /// here. Returns whether the book changed. The book is of the home
+    /// set: what is decided in a private chat leaves it as it is.
+    async fn mirror_book(&self, peer: &DmPeer, before: &Relationship, after: &Relationship) -> Result<bool> {
+        if peer.is_private() {
+            return Ok(false);
+        }
         let Some(me) = self.my_key().await?.as_deref().and_then(PubKey::parse) else { return Ok(false) };
-        if &me == peer {
+        if me == peer.key {
             return Ok(false);
         }
         let approved = after.my_contact == MyContact::Approved && !after.blocked;
-        if approved && before.my_contact != MyContact::Approved && !self.contacts.is_contact(peer).await? {
-            self.contacts.add(&me, peer.as_hex(), None).await?;
+        if approved && before.my_contact != MyContact::Approved && !self.contacts.is_contact(&peer.key).await? {
+            self.contacts.add(&me, peer.key.as_hex(), None).await?;
             return Ok(true);
         }
         let removed = before.my_contact == MyContact::Approved && after.my_contact == MyContact::None;
-        if removed && self.contacts.is_contact(peer).await? {
-            self.contacts.remove(peer).await?;
+        if removed && self.contacts.is_contact(&peer.key).await? {
+            self.contacts.remove(&peer.key).await?;
             return Ok(true);
         }
         Ok(false)
@@ -275,13 +298,13 @@ impl DmService {
         Ok(added)
     }
 
-    pub async fn relationship_event(&self, chat_id: &str, peer: &PubKey) -> Result<UiEvent> {
+    pub async fn relationship_event(&self, chat_id: &str, peer: &DmPeer) -> Result<UiEvent> {
         let (mode, can_send) = self.mode_of(chat_id, peer).await?;
         Ok(UiEvent {
             name: UI_EVENT_DM_RELATIONSHIP.into(),
             payload: serde_json::json!({
-                "chat_id": chat_id, "peer": peer.as_hex(), "mode": mode.as_str(), "can_send": can_send,
-                "banned": self.is_banned(peer).await?,
+                "chat_id": chat_id, "peer": peer.key.as_hex(), "mode": mode.as_str(), "can_send": can_send,
+                "banned": self.is_banned(&peer.key).await?,
             }),
         })
     }
@@ -294,7 +317,7 @@ impl DmService {
     async fn system_line(
         &self,
         chat_id: &str,
-        peer: &PubKey,
+        peer: &DmPeer,
         line: SystemLine,
         at: i64,
         of_message: bool,
@@ -302,7 +325,7 @@ impl DmService {
         if !of_message && at <= chats::cleared_at(&self.store, chat_id).await? {
             return Ok(None);
         }
-        let id = format!("sys:{}:{}:{}", line.as_str(), at, peer.short());
+        let id = system_line_id(line, at, peer);
         let inserted = repo::insert(
             &self.store,
             &NewMessage {
@@ -327,7 +350,7 @@ impl DmService {
         if !inserted {
             return Ok(None);
         }
-        chats::ensure_dm(&self.store, peer.as_hex()).await?;
+        chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
         let Some(view) = self.message(&id).await? else { return Ok(None) };
         Ok(Some(UiEvent {
             name: UI_EVENT_DM_MESSAGE.into(),
@@ -343,7 +366,7 @@ impl DmService {
     /// would lose to it there (`merge_decision`) and the devices would part.
     /// `invite` rides on an accept: the secret of an invitation of the
     /// peer, by which I come in without a request.
-    async fn control(&self, keys: &Keys, chat_id: &str, peer: &PubKey, signal: Signal, invite: Option<&str>) -> Result<(i64, Vec<Outbound>)> {
+    async fn control(&self, keys: &Keys, chat_id: &str, peer: &DmPeer, signal: Signal, invite: Option<&str>) -> Result<(i64, Vec<Outbound>)> {
         let content = match invite.filter(|_| signal == Signal::Accept) {
             Some(secret) => Envelope::control_with_invite(signal.as_str(), secret),
             None => Envelope::control(signal.as_str()),
@@ -374,29 +397,36 @@ impl DmService {
             },
         )
         .await?;
-        let mut out = vec![Outbound::PublishToInbox {
-            recipient: peer.clone(),
-            event: w.to_peer,
-            hint_relays: self.hints(peer).await?,
-        }];
+        let mut out = vec![self.route_to_peer(peer, w.to_peer).await?];
         if let Some(event) = w.to_self {
-            out.push(Outbound::PublishOwn { event });
+            out.push(peer.to_self(event));
         }
         Ok((at, out))
     }
 
     /// One of my actions: state, signals, system line, events.
-    pub async fn act(&self, keys: &Keys, peer: &PubKey, action: Action) -> Result<ActionResult> {
-        self.act_with(keys, peer, action, false, None).await
+    pub async fn act(&self, keys: &Keys, peer: impl Into<DmPeer>, action: Action) -> Result<ActionResult> {
+        self.act_with(keys, &peer.into(), action, false, None).await
     }
 
     /// A request by an invitation of the peer without a text (a link
     /// pasted, a QR scanned): the accept goes at once, the secret on it,
     /// and the peer's device lets me in by it. With a text, the request
     /// goes with the text (`prepare_request_text`).
-    pub async fn request_by_invite(&self, keys: &Keys, peer: &PubKey, invite: &str) -> Result<ActionResult> {
+    pub async fn request_by_invite(&self, keys: &Keys, peer: impl Into<DmPeer>, invite: &str) -> Result<ActionResult> {
         check_invite_secret(invite)?;
-        self.act_with(keys, peer, Action::Request, true, Some(invite)).await
+        self.act_with(keys, &peer.into(), Action::Request, true, Some(invite)).await
+    }
+
+    /// A request the peer is told of at once, without a text and without a
+    /// secret: my accept goes now, as with a first text. What opening the
+    /// private chat of a server card sends (the runtime's
+    /// `contact_open_private`): a device of the peer that approved me in
+    /// that chat answers it (confirm-back) and the chat is open on both
+    /// sides; one that did not drops it unheard, and my first text there
+    /// is a request, as any.
+    pub async fn request_told(&self, keys: &Keys, peer: impl Into<DmPeer>) -> Result<ActionResult> {
+        self.act_with(keys, &peer.into(), Action::Request, true, None).await
     }
 
     /// An episode ended (I removed or unblocked a stranger, or the peer sent
@@ -421,19 +451,19 @@ impl DmService {
     pub(crate) async fn act_with(
         &self,
         keys: &Keys,
-        peer: &PubKey,
+        peer: &DmPeer,
         action: Action,
         with_message: bool,
         invite: Option<&str>,
     ) -> Result<ActionResult> {
-        if peer.as_hex() == keys.public_key().to_hex() {
+        if peer.key.as_hex() == keys.public_key().to_hex() {
             return Err(MessengerError::Invalid("that is your own key".into()));
         }
         // A banned key is let in by nothing of mine either: no request, no
         // accept (by an invitation of theirs neither), no unblock. My block,
         // my removal and my no stay mine to give: they hold after the ban
         // is lifted.
-        if self.is_banned(peer).await? {
+        if self.is_banned(&peer.key).await? {
             match action {
                 Action::Unblock => return Err(MessengerError::Invalid("cannot unblock a banned key".into())),
                 Action::Request | Action::Accept => return Err(MessengerError::Invalid("peer_banned".into())),
@@ -443,9 +473,9 @@ impl DmService {
         // Removing someone does not make a chat: one deleted here stays
         // deleted, and a system line makes it when there is something to
         // show. The other actions open the chat, as adding a contact did.
-        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let chat_id = peer.chat_id();
         if action != Action::Remove {
-            chats::ensure_dm(&self.store, peer.as_hex()).await?;
+            chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
         }
         let current = self.load_relation(peer).await?;
         if action == Action::Accept && current.peer_signal != PeerSignal::Approved {
@@ -484,15 +514,15 @@ impl DmService {
             self.mark_relations_owed().await?;
         }
         let mut events = Vec::new();
-        if next.blocked != current.blocked {
-            events.extend(self.group_chats_follow_block(peer).await?);
+        if next.blocked != current.blocked && !peer.is_private() {
+            events.extend(self.group_chats_follow_block(&peer.key).await?);
         }
         if next.blocked {
             self.purge_held(&chat_id).await?;
             // A stranger I block is not a chat any more: what they wrote
             // goes with the tombstone, the key stays in the blocked list.
             // A contact I block keeps the chat, with its banner.
-            if current.my_contact != MyContact::Approved && !self.is_bot(peer) {
+            if current.my_contact != MyContact::Approved && !self.is_bot_chat(peer) {
                 self.delete_chat(&chat_id).await?;
             }
         } else if next.my_contact == MyContact::Approved {
@@ -520,7 +550,7 @@ impl DmService {
             events.push(self.relationship_event(&chat_id, peer).await?);
         }
         if Self::request_changed(&current, &next) {
-            events.push(self.request_event(peer).await?);
+            events.push(self.request_event(&peer.key).await?);
             events.extend(self.cap_requests(self.clock.now().secs()).await?.into_iter().filter_map(|e| match e {
                 Effect::Emit(ev) => Some(ev),
                 _ => None,
@@ -538,13 +568,21 @@ impl DmService {
     /// rumor time is the sender's: "older than when I was last online"
     /// says nothing of the message, so it is no way around the gate. A
     /// block drops it either way (`inbound_decision`).
-    pub(crate) async fn enforced(&self, peer: &PubKey, historical: bool) -> Result<bool> {
+    pub(crate) async fn enforced(&self, peer: &DmPeer, historical: bool) -> Result<bool> {
         if !historical || self.unread_floor.load(Ordering::SeqCst) >= 0 {
             return Ok(true);
         }
+        // The relations of private chats travel in a list of their own
+        // (`private_peers`), which a full header cuts and which has no word
+        // on completeness: a fresh device takes the history of
+        // a private chat as it was, as every history before snapshots; a
+        // block the list brought still stands (`hears_hidden`, the gate).
+        if peer.is_private() {
+            return Ok(false);
+        }
         Ok(match self.relations_known() {
             Known::Complete => true,
-            Known::Partial => dm_relations::get(&self.store, peer.as_hex()).await?.is_some(),
+            Known::Partial => dm_relations::get(&self.store, peer.key.as_hex(), peer.server()).await?.is_some(),
             Known::No => false,
         })
     }
@@ -560,12 +598,12 @@ impl DmService {
     /// decision here stands.
     pub(crate) async fn apply_decision_copy(
         &self,
-        peer: &PubKey,
+        peer: &DmPeer,
         my_contact: MyContact,
         blocked: bool,
         decided_at: i64,
     ) -> Result<Option<Vec<Effect>>> {
-        let chat_id = chats::dm_chat_id(peer.as_hex());
+        let chat_id = peer.chat_id();
         let current = self.load_relation(peer).await?;
         let incoming = Relationship { my_contact, blocked, decided_at, ..current };
         let mut next = merge_decision(&current, &incoming);
@@ -579,7 +617,7 @@ impl DmService {
         let mut effects = Vec::new();
         if next.blocked {
             self.purge_held(&chat_id).await?;
-            if current.my_contact != MyContact::Approved && !self.is_bot(peer) {
+            if current.my_contact != MyContact::Approved && !self.is_bot_chat(peer) {
                 self.delete_chat(&chat_id).await?;
             }
         } else if next.my_contact == MyContact::Approved {
@@ -589,13 +627,13 @@ impl DmService {
         }
         effects.push(Effect::Emit(self.relationship_event(&chat_id, peer).await?));
         if self.mirror_book(peer, &current, &next).await? {
-            effects.push(Effect::Emit(contacts_updated(Some(peer))));
+            effects.push(Effect::Emit(contacts_updated(Some(&peer.key))));
         }
         if next.request_floor > current.request_floor {
             effects.extend(self.regate(&chat_id, peer, false).await?);
         }
         if Self::request_changed(&current, &next) {
-            effects.push(Effect::Emit(self.request_event(peer).await?));
+            effects.push(Effect::Emit(self.request_event(&peer.key).await?));
             effects.extend(self.cap_requests(self.clock.now().secs()).await?);
         }
         Ok(Some(effects))
@@ -611,8 +649,8 @@ impl DmService {
     /// a delete is my contact's alone: anybody else got one text in, and
     /// changing it is not among what the gate lets them say (`enforced` is
     /// off for the history a fresh database restores, as for their texts).
-    pub(crate) async fn hears_hidden(&self, chat_id: &str, peer: &PubKey, content_type: &str, enforced: bool) -> Result<bool> {
-        if self.is_banned(peer).await? {
+    pub(crate) async fn hears_hidden(&self, chat_id: &str, peer: &DmPeer, content_type: &str, enforced: bool) -> Result<bool> {
+        if self.is_banned(&peer.key).await? {
             return Ok(false);
         }
         if !self.gate_enabled() {
@@ -620,13 +658,13 @@ impl DmService {
         }
         let r = self.load_relation(peer).await?;
         if content_type == repo::CT_CONTROL {
-            if dm_relations::get(&self.store, peer.as_hex()).await?.is_none() && chats::get(&self.store, chat_id).await?.is_none() {
+            if dm_relations::get(&self.store, peer.key.as_hex(), peer.server()).await?.is_none() && chats::get(&self.store, chat_id).await?.is_none() {
                 return Ok(false);
             }
             return Ok(self.dm_from().await? != DmFrom::Contacts || r.my_contact == MyContact::Approved);
         }
         // The pinned bot is approved by the build; my block alone shuts it.
-        if self.is_bot(peer) {
+        if self.is_bot_chat(peer) {
             return Ok(!r.blocked);
         }
         Ok(!r.blocked && (!enforced || r.my_contact == MyContact::Approved))
@@ -637,7 +675,7 @@ impl DmService {
     /// have let in as their one text, so the row of a request never holds
     /// what the gate keeps out. The bot's cards are not edited at all
     /// (`editable_type`), so its key needs no word here.
-    pub(crate) async fn edit_allowed(&self, peer: &PubKey, text: &str, format: TextFormat) -> Result<bool> {
+    pub(crate) async fn edit_allowed(&self, peer: &DmPeer, text: &str, format: TextFormat) -> Result<bool> {
         if !self.gate_enabled() || self.load_relation(peer).await?.my_contact == MyContact::Approved {
             return Ok(true);
         }
@@ -649,17 +687,17 @@ impl DmService {
     /// Before storing my regular message. Errors carry the stable reason
     /// code (`dm_waiting_approval`, …) as the message; `peer_banned` for a
     /// key the network bans, whatever the gate's switch says.
-    pub(crate) async fn gate_outbound(&self, chat_id: &str, peer: &PubKey, me: &str, is_text: bool) -> Result<OutboundGate> {
-        if peer.as_hex() != me && self.is_banned(peer).await? {
+    pub(crate) async fn gate_outbound(&self, chat_id: &str, peer: &DmPeer, me: &str, is_text: bool) -> Result<OutboundGate> {
+        if peer.key.as_hex() != me && self.is_banned(&peer.key).await? {
             return Err(MessengerError::Invalid("peer_banned".into()));
         }
-        if !self.gate_enabled() || peer.as_hex() == me {
+        if !self.gate_enabled() || peer.key.as_hex() == me {
             return Ok(OutboundGate { request: false });
         }
         let r = self.load_relation(peer).await?;
         // To the pinned bot a message is a message, never a request: no
         // accept follows it and the bot does not join the address book.
-        if self.is_bot(peer) && !r.blocked {
+        if self.is_bot_chat(peer) && !r.blocked {
             return Ok(OutboundGate { request: false });
         }
         let sent = repo::count_visible_outgoing(&self.store, chat_id).await?;
@@ -676,14 +714,14 @@ impl DmService {
     pub(crate) async fn gate_inbound(
         &self,
         chat_id: &str,
-        peer: &PubKey,
+        peer: &DmPeer,
         at: i64,
         historical: bool,
         kind: InboundKind,
     ) -> Result<InboundGate> {
         // A banned key: nothing is stored, held or shown, and no request
         // comes of it, whatever the gate's switch says.
-        if self.is_banned(peer).await? {
+        if self.is_banned(&peer.key).await? {
             return Ok(InboundGate::Drop);
         }
         if !self.gate_enabled() {
@@ -692,7 +730,7 @@ impl DmService {
         // The pinned bot needs no approval and asks for none: no request,
         // no one-message limit, no signal implied, nothing saved about it.
         // My block is the one thing that stops it.
-        if self.is_bot(peer) {
+        if self.is_bot_chat(peer) {
             let blocked = self.load_relation(peer).await?.blocked;
             return Ok(if blocked { InboundGate::Drop } else { InboundGate::Pass { effects: vec![], regate: false } });
         }
@@ -711,9 +749,9 @@ impl DmService {
         // The peer ended an episode before any message of it was stored
         // here: the first one stored now says where it ended.
         let mut regate = false;
-        let pending = dm_relations::end_pending(&self.store, peer.as_hex()).await?;
+        let pending = dm_relations::end_pending(&self.store, peer.key.as_hex(), peer.server()).await?;
         if pending > 0 {
-            dm_relations::set_end_pending(&self.store, peer.as_hex(), 0).await?;
+            dm_relations::set_end_pending(&self.store, peer.key.as_hex(), peer.server(), 0).await?;
             let floor = floor_after_pending_end(r.request_floor, pending, at, self.clock.now().secs());
             if floor > r.request_floor {
                 r.request_floor = floor;
@@ -730,7 +768,7 @@ impl DmService {
     /// The will it implies is the peer's newest word, as a signal's is: a
     /// signal that comes later dated before this message does not undo it.
     /// Its time counts no further than my clock plus the skew, as a signal's.
-    async fn implied_by_message(&self, chat_id: &str, peer: &PubKey, r: Relationship, at: i64) -> Result<Vec<Effect>> {
+    async fn implied_by_message(&self, chat_id: &str, peer: &DmPeer, r: Relationship, at: i64) -> Result<Vec<Effect>> {
         let mut effects = Vec::new();
         if at < r.last_signal_at {
             return Ok(effects);
@@ -757,8 +795,8 @@ impl DmService {
     /// is shown, with all that a request coming now gets. One row at most:
     /// it is the one message, the rest stay held. `live` = the raise came
     /// with the running session (a notification may follow).
-    pub(crate) async fn regate(&self, chat_id: &str, peer: &PubKey, live: bool) -> Result<Vec<Effect>> {
-        if !self.gate_enabled() || self.is_banned(peer).await? {
+    pub(crate) async fn regate(&self, chat_id: &str, peer: &DmPeer, live: bool) -> Result<Vec<Effect>> {
+        if !self.gate_enabled() || self.is_banned(&peer.key).await? {
             return Ok(vec![]);
         }
         let r = self.load_relation(peer).await?;
@@ -768,7 +806,7 @@ impl DmService {
         let dm_from = self.dm_from().await?;
         for id in dm_held::after(&self.store, chat_id, r.request_floor).await? {
             let Some(row) = repo::get(&self.store, &id).await? else { continue };
-            if row.sender_pubkey != peer.as_hex() || !row.is_hidden {
+            if row.sender_pubkey != peer.key.as_hex() || !row.is_hidden {
                 continue;
             }
             // Judged again as it would be coming now: what was held passed
@@ -792,14 +830,14 @@ impl DmService {
     /// held). Nothing of it is a request any more. Of a banned key nothing
     /// is shown, whoever approved it (an older build of another device of
     /// mine may): what waited stays held, as evidence, until the ban lifts.
-    async fn release_held(&self, chat_id: &str, peer: &PubKey, live: bool) -> Result<Vec<Effect>> {
-        if self.is_banned(peer).await? {
+    async fn release_held(&self, chat_id: &str, peer: &DmPeer, live: bool) -> Result<Vec<Effect>> {
+        if self.is_banned(&peer.key).await? {
             return Ok(vec![]);
         }
         let mut effects = Vec::new();
         for id in dm_held::after(&self.store, chat_id, 0).await? {
             let Some(row) = repo::get(&self.store, &id).await? else { continue };
-            if row.sender_pubkey != peer.as_hex() || !row.is_hidden || !dm_held::release(&self.store, &id).await? {
+            if row.sender_pubkey != peer.key.as_hex() || !row.is_hidden || !dm_held::release(&self.store, &id).await? {
                 continue;
             }
             effects.extend(self.land_row(row, live).await?);
@@ -818,14 +856,14 @@ impl DmService {
     /// shown message, not past `at`; when none of theirs is shown above the
     /// floor (the messages of that episode have not come yet), the end
     /// waits for the first one (`floor_after_pending_end`).
-    async fn peer_ended_episode(&self, chat_id: &str, peer: &PubKey, r: &mut Relationship, at: i64) -> Result<()> {
+    async fn peer_ended_episode(&self, chat_id: &str, peer: &DmPeer, r: &mut Relationship, at: i64) -> Result<()> {
         if repo::count_visible_incoming_since(&self.store, chat_id, r.request_floor).await? > 0 {
             return self.end_episode(chat_id, r, Some(at)).await;
         }
         // `set_end_pending` makes the row when there is none; the caller's
         // save keeps the column.
-        if at > dm_relations::end_pending(&self.store, peer.as_hex()).await? {
-            dm_relations::set_end_pending(&self.store, peer.as_hex(), at).await?;
+        if at > dm_relations::end_pending(&self.store, peer.key.as_hex(), peer.server()).await? {
+            dm_relations::set_end_pending(&self.store, peer.key.as_hex(), peer.server(), at).await?;
         }
         Ok(())
     }
@@ -837,7 +875,7 @@ impl DmService {
     pub(crate) async fn on_control(
         &self,
         chat_id: &str,
-        peer: &PubKey,
+        peer: &DmPeer,
         from_me: bool,
         action: Option<&str>,
         at: i64,
@@ -867,13 +905,13 @@ impl DmService {
                 self.mark_relations_owed().await?;
             }
             let mut effects = vec![Effect::Emit(self.relationship_event(chat_id, peer).await?)];
-            if next.blocked != current.blocked {
-                effects.extend(self.group_chats_follow_block(peer).await?.into_iter().map(Effect::Emit));
+            if next.blocked != current.blocked && !peer.is_private() {
+                effects.extend(self.group_chats_follow_block(&peer.key).await?.into_iter().map(Effect::Emit));
             }
             if next.blocked {
                 self.purge_held(chat_id).await?;
                 // Blocked elsewhere: a stranger's chat goes here too.
-                if current.my_contact != MyContact::Approved && !self.is_bot(peer) {
+                if current.my_contact != MyContact::Approved && !self.is_bot_chat(peer) {
                     self.delete_chat(chat_id).await?;
                 }
             } else if next.my_contact == MyContact::Approved {
@@ -882,7 +920,7 @@ impl DmService {
                 effects.extend(self.release_held(chat_id, peer, false).await?);
             }
             if self.mirror_book(peer, &current, &next).await? {
-                effects.push(Effect::Emit(contacts_updated(Some(peer))));
+                effects.push(Effect::Emit(contacts_updated(Some(&peer.key))));
             }
             if next.request_floor > current.request_floor {
                 effects.extend(self.regate(chat_id, peer, !historical).await?);
@@ -890,7 +928,7 @@ impl DmService {
             // A request that comes back by a signal (my unblock elsewhere)
             // counts toward the size of the queue as one that lands does.
             if Self::request_changed(&current, &next) {
-                effects.push(Effect::Emit(self.request_event(peer).await?));
+                effects.push(Effect::Emit(self.request_event(&peer.key).await?));
                 effects.extend(self.cap_requests(self.clock.now().secs()).await?);
             }
             return Ok(effects);
@@ -939,7 +977,7 @@ impl DmService {
         // A fresh accept after my no is a request again: the queue is kept
         // to its size as when one lands.
         if Self::request_changed(&current, &next) {
-            effects.push(Effect::Emit(self.request_event(peer).await?));
+            effects.push(Effect::Emit(self.request_event(&peer.key).await?));
             effects.extend(self.cap_requests(self.clock.now().secs()).await?);
         }
         Ok(effects)
@@ -956,10 +994,10 @@ impl DmService {
     /// recorded, the rest stands. Without the keys of a session (locked)
     /// the decision is taken and the answer waits for their accept to
     /// come again, as a confirm-back does.
-    async fn admit_by_invite(&self, chat_id: &str, peer: &PubKey, at: i64, historical: bool) -> Result<Vec<Effect>> {
+    async fn admit_by_invite(&self, chat_id: &str, peer: &DmPeer, at: i64, historical: bool) -> Result<Vec<Effect>> {
         let current = self.load_relation(peer).await?;
         let now = self.clock.now().secs();
-        chats::ensure_dm(&self.store, peer.as_hex()).await?;
+        chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
         let outcome = apply_peer_signal(&current, Signal::Accept, at, !historical, now);
         let mut next = outcome.next;
         // Their accept is the newest word of theirs whatever its date: an
@@ -1012,13 +1050,23 @@ impl DmService {
         }
         effects.extend(self.release_held(chat_id, peer, false).await?);
         if self.mirror_book(peer, &current, &next).await? {
-            effects.push(Effect::Emit(contacts_updated(Some(peer))));
+            effects.push(Effect::Emit(contacts_updated(Some(&peer.key))));
         }
         effects.push(Effect::Emit(self.relationship_event(chat_id, peer).await?));
         if Self::request_changed(&current, &next) {
-            effects.push(Effect::Emit(self.request_event(peer).await?));
+            effects.push(Effect::Emit(self.request_event(&peer.key).await?));
         }
         Ok(effects)
+    }
+}
+
+/// The id of a system line: of its kind, time and chat. A private chat's
+/// line names its server too, or the home chat and the private one with
+/// the same person would share one row for a line of the same second.
+fn system_line_id(line: SystemLine, at: i64, peer: &DmPeer) -> String {
+    match peer.server() {
+        None => format!("sys:{}:{}:{}", line.as_str(), at, peer.key.short()),
+        Some(server) => format!("sys:{}:{}:{}@{server}", line.as_str(), at, peer.key.short()),
     }
 }
 

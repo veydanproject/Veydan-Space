@@ -110,14 +110,16 @@ pub const REVIEW_RELEASED: &str = "released";
 /// is shown it, with the word that it was), and in a group not of someone
 /// I block in direct messages (the one effect of a block in groups; the
 /// unblock shows them again) nor of a key the network bans (`banned`:
-/// all they wrote, while the manifest names them). `m` is the alias of
-/// `msg_messages` in the query.
-pub const SHOWN: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = m.sender_pubkey)))";
+/// all they wrote, while the manifest names them). The block is that of the
+/// home chat (`server_id = ''`) in a group of any server: a private chat
+/// on a server has a relation of its own, for that chat alone. `m` is the
+/// alias of `msg_messages` in the query.
+pub const SHOWN: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.server_id = '' AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = m.sender_pubkey)))";
 
 /// What a member sees of a group: `SHOWN`, and nothing that still waits
 /// for a moderator unless it is mine. A moderator sees the waiting rows
 /// too (`list` with `moderator`).
-pub const SHOWN_TO_MEMBER: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = m.sender_pubkey))) AND (m.review <> 'pending' OR m.direction = 'out')";
+pub const SHOWN_TO_MEMBER: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.review = 'rejected' AND m.direction = 'out')) AND NOT (m.chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = m.sender_pubkey AND r.server_id = '' AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = m.sender_pubkey))) AND (m.review <> 'pending' OR m.direction = 'out')";
 
 /// Insert; `false` when a row with this id already exists (a duplicate copy).
 pub async fn insert(store: &Store, m: &NewMessage) -> Result<bool> {
@@ -485,7 +487,7 @@ pub async fn last_shown(store: &Store, chat_id: &str) -> Result<Option<MessageRo
     sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLS} FROM msg_messages
          WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system'
-           AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))
+           AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.server_id = '' AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))
          ORDER BY created_at DESC LIMIT 1"
     )))
     .bind(chat_id)
@@ -925,6 +927,7 @@ mod tests {
         insert(&s, &text("d", "dm:u", DIR_IN, 30)).await.unwrap();
         let mut r = RelationRow {
             peer_pubkey: "u".into(),
+            server_id: String::new(),
             my_contact: "none".into(),
             blocked: true,
             peer_signal: "none".into(),

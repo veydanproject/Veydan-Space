@@ -10,13 +10,13 @@
 //! messenger-cli [--data-dir DIR] whoami
 //! messenger-cli [--data-dir DIR] relays
 //! messenger-cli [--data-dir DIR] relay-add <wss-url> [--key API_KEY]
-//! messenger-cli [--data-dir DIR] send <npub|hex> <text…>
+//! messenger-cli [--data-dir DIR] send <npub|hex>[@<server id>] <text…>   (a peer@server: the private chat on that server)
 //! messenger-cli [--data-dir DIR] tail
 //! messenger-cli [--data-dir DIR] notify-tail
 //! messenger-cli [--data-dir DIR] sync [SECONDS]
 //! messenger-cli [--data-dir DIR] chats
-//! messenger-cli [--data-dir DIR] history <npub|hex>
-//! messenger-cli [--data-dir DIR] read <npub|hex> [SECONDS]
+//! messenger-cli [--data-dir DIR] history <npub|hex>[@<server id>]
+//! messenger-cli [--data-dir DIR] read <npub|hex>[@<server id>] [SECONDS]
 //! messenger-cli [--data-dir DIR] privacy [on|off|presence-on|presence-off]
 //! messenger-cli [--data-dir DIR] presence [SECONDS] | presence-on | presence-rotate
 //! messenger-cli [--data-dir DIR] edit <message-id> <text…>
@@ -24,13 +24,15 @@
 //! messenger-cli [--data-dir DIR] react <message-id> <emoji>
 //! messenger-cli [--data-dir DIR] emoji-top [N]
 //! messenger-cli [--data-dir DIR] phone [<number>|none [--share]] | contact-phone <npub|hex>
-//! messenger-cli [--data-dir DIR] card-send <npub|hex|group:ID> [me|<npub|hex>] [--phone]
+//! messenger-cli [--data-dir DIR] card-send <npub|hex|group:ID> [me|<npub|hex>] [--phone] [--server <id>]   (--server: my card carries the card of that private server of mine)
 //! messenger-cli [--data-dir DIR] cards <npub|hex|group:ID> [SECONDS] | card-accept <message-id>
 //! messenger-cli [--data-dir DIR] relation <npub|hex>
 //! messenger-cli [--data-dir DIR] request|accept|decline|block|unblock|remove <npub|hex>
-//! messenger-cli [--data-dir DIR] requests [--before N] [--limit N]                 (the queue of requests of strangers, newest first)
-//! messenger-cli [--data-dir DIR] request-accept|request-decline|request-block <npub|hex>
+//! messenger-cli [--data-dir DIR] requests [--before N] [--limit N]                 (the queue of requests of strangers, newest first; a private chat's as <hex>@<server id>)
+//! messenger-cli [--data-dir DIR] request-accept|request-decline|request-block <npub|hex>[@<server id>]   (the address the queue prints: a private chat's request is answered in that chat)
 //! messenger-cli [--data-dir DIR] dm-settings [--from anyone|contacts] [--keep-days N]   (whom I take messages from; 0 days = forever)
+//! messenger-cli [--data-dir DIR] group-create public|private <name…> [--no-history] [--server <server id>]   (--server: the group lives on that private server alone)
+//! messenger-cli [--data-dir DIR] groups | group-join <link> [note…]   (groups: the server of a group of a private server; a link whose relay is no server of mine: server_unknown, the relay printed; so is group-accept of an invitation to such a group, which waits)
 //! messenger-cli [--data-dir DIR] group-queue <group:ID> [--author <npub|hex>] [--text T] [--each] [--before N] [--limit N] | group-log <group:ID> [--before N] [--limit N]
 //! messenger-cli [--data-dir DIR] group-hide <group:ID> <id>… | group-unhide <group:ID> <id>… | group-hide-author <group:ID> <npub|hex> [--from N] [--to N]
 //! messenger-cli [--data-dir DIR] group-mod-approve <group:ID> <id> <version> | group-mod-reject <group:ID> <id> | group-spam <group:ID> <npub|hex> [<id>]
@@ -42,14 +44,23 @@
 //!    `group-approve`, `group-reject`, `group-mute`, `group-unmute` are the older commands of membership, hence the `-mod-` names)
 //! messenger-cli [--data-dir DIR] invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <npub|hex>] [--label L] | invite-list | invite-revoke <id>   (the same)
 //! messenger-cli [--data-dir DIR] push-on <token> [--server URL]
-//! messenger-cli [--data-dir DIR] push-status | push-test | push-off
-//! messenger-cli [--data-dir DIR] servers [veydan|own|refresh]
+//! messenger-cli [--data-dir DIR] push-status | push-test | push-off   (push-status: the home server, then each private server's push)
+//! messenger-cli [--data-dir DIR] push-tickets | push-ticket-rm <8 hex>   (the tickets of the gateways, by their first 8 hex)
+//! messenger-cli [--data-dir DIR] push-unseal <data.json>   (what a sealed push is, opened as the phone's handler opens it)
+//! messenger-cli [--data-dir DIR] servers [veydan|own|refresh]   (with nothing: the mode, the manifest and the private servers)
+//! messenger-cli [--data-dir DIR] server-add <wss-url> [--key K] [--media URL] [--node address:port#id] [--name N] [--push veydan|off] [--push-url URL]   (a private server by hand)
+//! messenger-cli [--data-dir DIR] server-add <veydan://server/…|a link with srv=>   (the server of a card: what it is printed, then added; one of the home set is left as it is)
+//! messenger-cli [--data-dir DIR] link <uri>   (what a link leads to, as the app's card shows it: JSON)
+//! messenger-cli [--data-dir DIR] link-open <uri> [note…]   (a link opened as the app does after «Добавить»: its server added, then the private chat with the person or the group)
+//! messenger-cli [--data-dir DIR] contact-link [<npub|hex>] [--server <id>]   (a person's link, mine by default; --server: of the private chat on that private server of mine, with its card)
+//! messenger-cli [--data-dir DIR] open-private <npub|hex> <server id> [--invite SECRET]   (the private chat with a person on a private server of mine, approved and told)
+//! messenger-cli [--data-dir DIR] server-rm <id>   (a private server removed here and on my other devices, with its chats)
 //! messenger-cli [--data-dir DIR] net [off|on|auto|check|add <address:port#id>|remove <id>]
 //! messenger-cli [--data-dir DIR] nodes [refresh] [--probe]          (the call nodes: class, source, used, state, round trip, load)
 //! messenger-cli [--data-dir DIR] node-add <veydan://call-node/…|address:port#id> [--key K]   (an invitation is exchanged at the node)
 //! messenger-cli [--data-dir DIR] node-rm <id>
 //! messenger-cli [--data-dir DIR] trust [any|project_and_own|own_only]  (which nodes calls may use)
-//! messenger-cli [--data-dir DIR] call <npub|hex> [--video] [--relay-only] [--node <address:port#id>[,…]] [--audio-in tone[:HZ]|<file.wav>] [--audio-out <file.wav>] [--secs N]
+//! messenger-cli [--data-dir DIR] call <npub|hex>[@<server id>] [--video] [--relay-only] [--node <address:port#id>[,…]] [--audio-in tone[:HZ]|<file.wav>] [--audio-out <file.wav>] [--secs N]
 //!   (--video: a video call; this side sends a moving test pattern of 640×360 at 30 fps whenever its video is on, and
 //!    prints the size and the rate of what the far end sends; `video on`, `video off` and `camera` on stdin as well)
 //! messenger-cli [--data-dir DIR] call-answer [--wait N] [the flags of call]   (one incoming call: answered, held until it ends)
@@ -95,7 +106,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--text T] [--each] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-picture <group:id> <file|none> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] [--server <id>] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--text T] [--each] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-picture <group:id> <file|none> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | push-tickets | push-ticket-rm <8 hex> | push-unseal <data.json> | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | server-add <wss-url|card> [--key K] [--media URL] [--node REF] [--name N] [--push veydan|off] [--push-url URL] | link <uri> | link-open <uri> [note…] | contact-link [<key>] [--server <id>] | open-private <key> <server id> [--invite SECRET] | server-rm <id> | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -172,9 +183,130 @@ async fn main() {
                 println!("mode      {:?}", info.mode);
                 println!("manifest  #{:?} from {}", info.serial, info.origin);
                 println!("checked   {:?}", info.checked_at);
+                // The private servers, by the id a peer address names
+                // (`<peer>@<id>`); never their keys.
+                for s in rt.servers_private().await.unwrap_or_else(die) {
+                    println!(
+                        "private   {}  {}  media={} node={} key={}  {}",
+                        s.id,
+                        s.relay_url,
+                        s.media_url.as_deref().unwrap_or("-"),
+                        s.call_node.as_deref().unwrap_or("-"),
+                        if s.relay_key.is_some() { "yes" } else { "no" },
+                        s.name.unwrap_or_default()
+                    );
+                }
             }
             _ => usage(),
         },
+        "server-add" if args.first().is_some_and(|a| a.starts_with("veydan://")) => {
+            // The server of a card (alone, or the srv= of a link of a
+            // person or a group): what the dialog of the app shows, then
+            // what «Добавить» does.
+            let preview = rt.server_preview(&args[0]).await.unwrap_or_else(die);
+            print_server(&preview);
+            let id = rt.server_accept(&args[0]).await.unwrap_or_else(die);
+            println!("server {id} (a peer on it: <npub|hex>@{id})");
+        }
+        "server-add" => {
+            // A private server by hand, as a server card puts it in: its
+            // relay, app key, blob server, call node, name and push.
+            if args.is_empty() {
+                usage();
+            }
+            let relay_url = args.remove(0);
+            let input = messenger_runtime::private::PrivateServerInput {
+                relay_url,
+                key: api_key,
+                media_url: take_flag(&mut args, "--media"),
+                call_node: take_flag(&mut args, "--node"),
+                name: take_flag(&mut args, "--name"),
+                push_mode: take_flag(&mut args, "--push"),
+            };
+            // Its push server, which wakes the phone through the gateway.
+            let push = take_flag(&mut args, "--push-url");
+            let id = rt.server_put_private(&input).await.unwrap_or_else(die);
+            if push.is_some() {
+                rt.server_set_push(&id, push).await.unwrap_or_else(die);
+            }
+            println!("private server {id} (a peer on it: <npub|hex>@{id})");
+        }
+        "link" => {
+            // What a link leads to, as the card of the app shows it.
+            let [link] = args.as_slice() else { usage() };
+            let view = rt.link_inspect(link).await.unwrap_or_else(die);
+            println!("{}", serde_json::to_string_pretty(&view).unwrap());
+        }
+        "link-open" => {
+            // A link opened as the app opens it after the dialog said
+            // «Добавить»: the server its card names first, then the private
+            // chat with the person, or the group.
+            if args.is_empty() {
+                usage();
+            }
+            wait_connect(&rt).await;
+            let link = args.remove(0);
+            match rt.link_inspect(&link).await.unwrap_or_else(die) {
+                messenger_runtime::LinkView::Server(preview) => {
+                    print_server(&preview);
+                    let id = rt.server_accept(&link).await.unwrap_or_else(die);
+                    println!("server {id}");
+                }
+                messenger_runtime::LinkView::Contact { pubkey, server: Some(preview), invite, .. } => {
+                    print_server(&preview);
+                    let id = rt.server_accept(&link).await.unwrap_or_else(die);
+                    let chat = rt.contact_open_private(&pubkey, &id, invite.as_deref()).await.unwrap_or_else(die);
+                    flush(&rt).await;
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    flush(&rt).await;
+                    let relation = rt.dm_relation(&format!("{pubkey}@{id}")).await.unwrap_or_else(die);
+                    println!("chat {}  mode={}", chat.id, relation.mode);
+                }
+                messenger_runtime::LinkView::Group { server, .. } => {
+                    if let Some(preview) = &server {
+                        print_server(preview);
+                        rt.server_accept(&link).await.unwrap_or_else(die);
+                    }
+                    let g = rt.group_open_link(&link, &args.join(" ")).await.unwrap_or_else(die);
+                    flush(&rt).await;
+                    tokio::time::sleep(Duration::from_secs(8)).await;
+                    flush(&rt).await;
+                    let g = rt.group_get(&g.id).await.unwrap_or_else(die);
+                    println!("{} {} members={} server={}", g.id, g.membership, g.members.len(), g.server_id.as_deref().unwrap_or("home"));
+                }
+                other => {
+                    eprintln!("error: no server and nothing to open here: {}", serde_json::to_string(&other).unwrap());
+                    std::process::exit(1)
+                }
+            }
+        }
+        "contact-link" => {
+            // A person's link, mine by default; with --server, the link of
+            // the private chat on that private server of mine.
+            let server = take_flag(&mut args, "--server");
+            let who = match args.first() {
+                Some(k) => messenger_runtime::parse_key(k).unwrap_or_else(die),
+                None => rt.session_pubkey().await.unwrap_or_else(|| die(messenger_core::MessengerError::Invalid("locked".into()))),
+            };
+            println!("{}", rt.contact_link_on(&who, None, server.as_deref()).await.unwrap_or_else(die));
+        }
+        "open-private" => {
+            // The private chat with a person on a private server of mine,
+            // approved on my side and told at once.
+            let invite = take_flag(&mut args, "--invite");
+            let [peer, server] = args.as_slice() else { usage() };
+            wait_connect(&rt).await;
+            let chat = rt.contact_open_private(peer, server, invite.as_deref()).await.unwrap_or_else(die);
+            flush(&rt).await;
+            println!("chat {}", chat.id);
+        }
+        "server-rm" => {
+            // A private server removed here and on my other devices, with
+            // its chats.
+            let [id] = args.as_slice() else { usage() };
+            rt.server_remove_private(id).await.unwrap_or_else(die);
+            println!("private server {id} removed, with its chats (my other devices follow)");
+        }
         "net" => match args.first().map(String::as_str) {
             None => print_net(&rt.net_status().await.unwrap_or_else(die)),
             Some(mode @ ("off" | "on" | "auto")) => {
@@ -502,15 +634,16 @@ async fn main() {
             println!("{}  phone {}", p.pubkey, p.phone.unwrap_or_else(|| "-".into()));
         }
         "card-send" => {
-            // `card-send <peer|group:ID> [me|<npub|hex>] [--phone]`
+            // `card-send <peer|group:ID> [me|<npub|hex>] [--phone] [--server <id>]`
             let phone = take_switch(&mut args, "--phone");
+            let server = take_flag(&mut args, "--server");
             if args.is_empty() {
                 usage();
             }
             let to = chat_target(&rt, &args[0]).await;
             let whose = args.get(1).filter(|w| *w != "me").cloned();
             settle(&rt, 3).await;
-            let m = rt.card_send(&to, whose.as_deref(), phone).await.unwrap_or_else(die);
+            let m = rt.card_send_with_server(&to, whose.as_deref(), phone, server.as_deref()).await.unwrap_or_else(die);
             flush(&rt).await;
             println!("queued #{}  {}", &m.id[..8], m.card.as_ref().map(card_line).unwrap_or_default());
         }
@@ -614,7 +747,8 @@ async fn main() {
                 println!("(nobody is asking)");
             }
             for r in &page.items {
-                println!("{}  {}  {}  held={}  \"{}\"", r.at, r.peer, r.name, r.held, r.text);
+                let addr = r.server_id.as_ref().map(|s| format!("{}@{s}", r.peer)).unwrap_or_else(|| r.peer.clone());
+                println!("{}  {}  {}  held={}  \"{}\"", r.at, addr, r.name, r.held, r.text);
             }
             println!("total={}{}", page.total, page.next_before.map(|b| format!(" next --before {b}")).unwrap_or_default());
         }
@@ -1256,7 +1390,7 @@ async fn main() {
         "groups" => {
             for g in rt.group_list().await.unwrap_or_else(die) {
                 println!(
-                    "{}  {:<7} {:<10} role={:<9} members={} undecrypted={} post={} mode={} premod={} queue={}  {}",
+                    "{}  {:<7} {:<10} role={:<9} members={} undecrypted={} post={} mode={} premod={} queue={} server={}  {}",
                     &g.id[..12],
                     g.kind,
                     g.membership,
@@ -1267,6 +1401,8 @@ async fn main() {
                     g.post_mode,
                     g.premod,
                     g.queue,
+                    // The private server the group lives on; `home` for the home set.
+                    g.server_id.as_deref().unwrap_or("home"),
                     g.name
                 );
             }
@@ -1303,10 +1439,15 @@ async fn main() {
                 _ => usage(),
             };
             let history = !take_switch(&mut args, "--no-history");
+            // The private server the group lives on (`server-add` prints its id).
+            let server = take_flag(&mut args, "--server");
             wait_connect(&rt).await;
-            let g = rt.group_create(kind, &args.join(" "), "", history).await.unwrap_or_else(die);
+            let g = rt.group_create(kind, &args.join(" "), "", history, server.as_deref()).await.unwrap_or_else(die);
             flush(&rt).await;
-            println!("{}", g.id);
+            match &g.server_id {
+                Some(id) => println!("{} server={id}", g.id),
+                None => println!("{}", g.id),
+            }
         }
         "group-invite" => {
             if args.len() < 2 {
@@ -1322,7 +1463,8 @@ async fn main() {
             settle(&rt, 4).await;
             for d in ["in", "out"] {
                 for i in rt.group_invites(d).await.unwrap_or_else(die) {
-                    println!("{} {} {} group={} peer={} | {}", d, i.invite_id, i.status, &i.group_id[..12], &i.peer[..12], i.name);
+                    let unknown = if i.server_known { String::new() } else { format!(" [{} is no server of mine]", i.relay) };
+                    println!("{} {} {} group={} peer={} | {}{unknown}", d, i.invite_id, i.status, &i.group_id[..12], &i.peer[..12], i.name);
                 }
             }
         }
@@ -1336,7 +1478,16 @@ async fn main() {
                 eprintln!("error: no such invitation");
                 std::process::exit(1)
             };
-            rt.group_answer_invite(&inv.invite_id, cmd == "group-accept").await.unwrap_or_else(die);
+            match rt.group_answer_invite(&inv.invite_id, cmd == "group-accept").await {
+                Ok(_) => {}
+                // The group lives on a server this device does not have: the
+                // invitation waits; its relay, so that a tester can add it.
+                Err(messenger_core::MessengerError::Invalid(code)) if code == "server_unknown" => {
+                    eprintln!("error: server_unknown: the group lives on {}, no server of mine (server-add {} first; the invitation waits)", inv.relay, inv.relay);
+                    std::process::exit(1)
+                }
+                Err(e) => die(e),
+            }
             flush(&rt).await;
             // The welcome comes back as soon as the inviter is online.
             let secs: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(3);
@@ -1348,7 +1499,17 @@ async fn main() {
                 usage();
             }
             wait_connect(&rt).await;
-            let g = rt.group_open_link(&args[0], &args[1..].join(" ")).await.unwrap_or_else(die);
+            let g = match rt.group_open_link(&args[0], &args[1..].join(" ")).await {
+                Ok(g) => g,
+                // The group lives on a server this device does not have: its
+                // relay, so that a tester can `server-add` it first.
+                Err(messenger_core::MessengerError::Invalid(code)) if code == "server_unknown" => {
+                    let relay = messenger_groups::GroupLink::parse(&args[0]).map(|l| l.relay.as_str().to_string()).unwrap_or_default();
+                    eprintln!("error: server_unknown: the group lives on {relay}, no server of mine (link-open <link> when it carries the card of its server, or server-add {relay} first)");
+                    std::process::exit(1)
+                }
+                Err(e) => die(e),
+            };
             flush(&rt).await;
             tokio::time::sleep(Duration::from_secs(8)).await;
             flush(&rt).await;
@@ -1530,6 +1691,51 @@ async fn main() {
                 Some((node, key)) => println!("call node {node}{}", if key.is_some() { " (with a key)" } else { "" }),
                 None => println!("call node none"),
             }
+        }
+        // The tickets the gateways issued for this device's token, for the
+        // push servers of private servers (internal/messenger-wire.md,
+        // «Push через шлюз»).
+        "push-tickets" => {
+            let tickets = rt.push_tickets_list().await.unwrap_or_else(die);
+            if tickets.is_empty() {
+                println!("no tickets");
+            }
+            for t in tickets {
+                println!(
+                    "ticket   {}  {}  device={} issued={} expires={} last_wake={}  {}",
+                    t.ticket,
+                    t.gateway,
+                    t.device_id,
+                    t.issued_at,
+                    t.expires_at,
+                    t.last_wake_at.map(|w| w.to_string()).unwrap_or_else(|| "never".into()),
+                    t.server_id.map(|s| format!("server {s}")).unwrap_or_else(|| "(no server of this device)".into())
+                );
+            }
+        }
+        "push-ticket-rm" => {
+            let [prefix] = args.as_slice() else { usage() };
+            let n = rt.push_ticket_revoke(prefix).await.unwrap_or_else(die);
+            println!("taken back at {n} gateway(s); a server of mine that held it gets a new one at the next round");
+        }
+        "push-unseal" => {
+            // A sealed push (its FCM data map as JSON), opened with the
+            // bundle the phone's handler would hold, from this data directory.
+            let [file] = args.as_slice() else { usage() };
+            let text = std::fs::read_to_string(file).unwrap_or_else(|e| {
+                eprintln!("error: {file}: {e}");
+                std::process::exit(1)
+            });
+            let data: std::collections::BTreeMap<String, String> = serde_json::from_str(&text).unwrap_or_else(|e| {
+                eprintln!("error: {file}: {e}");
+                std::process::exit(1)
+            });
+            let bundle = rt.notify_bundle().await.unwrap_or_else(die);
+            rt.shutdown().await;
+            let config = MessengerConfig::new(data_dir.clone());
+            let out = messenger_notify::unseal_as(&config, bundle.as_ref(), &data).await.unwrap_or_else(die);
+            println!("{}", serde_json::to_string_pretty(&out).unwrap());
+            return;
         }
         _ => usage(),
     }
@@ -1856,6 +2062,26 @@ fn print_push(s: &messenger_runtime::push::PushStatus) {
             r.detail.as_deref().map(|d| format!("  ({d})")).unwrap_or_default()
         );
     }
+    // The push servers of my private servers, through the gateway.
+    for t in &s.targets {
+        println!(
+            "private  {}  {:<10} {}  via {}{}",
+            t.server_id,
+            t.state,
+            t.server,
+            t.gateway.as_deref().unwrap_or("-"),
+            t.name.as_deref().map(|n| format!("  ({n})")).unwrap_or_default()
+        );
+        if let Some(at) = t.ticket_expires_at {
+            println!("         ticket expires {at}");
+        }
+        if let Some(e) = &t.error {
+            println!("         error {e}");
+        }
+        for r in &t.relays {
+            println!("         relay {:<12} {}", format!("{:?}", r.status).to_lowercase(), r.url);
+        }
+    }
 }
 
 fn take_switch(args: &mut Vec<String>, name: &str) -> bool {
@@ -1943,7 +2169,7 @@ async fn chat_target(rt: &MessengerRuntime, name: &str) -> String {
 /// One line of a card: whose, its name, what it carries.
 fn card_line(c: &messenger_runtime::CardView) -> String {
     format!(
-        "card {}  \"{}\"  phone {}  avatar {}  socials {}{}{}",
+        "card {}  \"{}\"  phone {}  avatar {}  socials {}{}{}{}",
         c.npub,
         c.label,
         c.phone.as_deref().unwrap_or("-"),
@@ -1951,7 +2177,24 @@ fn card_line(c: &messenger_runtime::CardView) -> String {
         c.socials.len(),
         if c.is_me { "  (me)" } else { "" },
         if c.is_contact { "  (contact)" } else { "" },
+        c.server.as_deref().map(|s| format!("  server {s}")).unwrap_or_default(),
     )
+}
+
+/// What the dialog «Добавить сервер?» of the app says of a server, before
+/// it is added.
+fn print_server(s: &messenger_runtime::ServerPreview) {
+    println!(
+        "server {}  \"{}\"  {}  relay {}  media {}  calls {}  push {}{}",
+        s.id,
+        s.name,
+        if s.is_veydan { "Veydan" } else { "not Veydan" },
+        s.relay,
+        s.media.as_deref().unwrap_or("-"),
+        s.call_node.as_deref().unwrap_or("-"),
+        s.push,
+        if s.known { "  (mine already)" } else { "" },
+    );
 }
 
 /// What a message shows: its text, its card, or its type.

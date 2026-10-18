@@ -12,9 +12,9 @@
 //! signer or the relay pool changes.
 
 use async_trait::async_trait;
-use messenger_core::traits::{RelayState, SystemClock, UiEvent};
+use messenger_core::traits::{SystemClock, UiEvent};
 use messenger_core::Clock;
-use messenger_core::{Ack, Context, Outbound, PubKey, Result, Scope, SyncItem, Timestamp, Transport};
+use messenger_core::{Ack, Context, Outbound, PubKey, Result, SyncItem, Timestamp, Transport};
 use messenger_dm::DmService;
 use messenger_groups::GroupService;
 use messenger_ingress::{filters, Dispatcher, EffectSink, IngressLoop, Outbox};
@@ -88,6 +88,7 @@ impl Session {
     #[allow(clippy::too_many_arguments)]
     pub async fn start(
         store: Store,
+        relays: Arc<crate::RelayService>,
         pool: Arc<RelayPool>,
         keys: Keys,
         outbox: Outbox,
@@ -138,7 +139,7 @@ impl Session {
         let ring = owed.clone();
         dm.set_relations_hook(Some(Arc::new(move || ring.notify_one())));
         let relations = tokio::spawn(crate::relations::publish_loop(dm.clone(), outbox.clone(), keys.clone(), owed));
-        let inbox = tokio::spawn(crate::relations::open_inbox(store, pool, keys.clone(), dm, outbox, me, started_at, ui));
+        let inbox = tokio::spawn(crate::relations::open_inbox(store, relays, pool, keys.clone(), dm, outbox, me, started_at, ui));
         Ok(Self { keys, started_at, ingress, pump, inbox, relations, receipts, presence, avatars, meta, requests })
     }
 
@@ -174,6 +175,8 @@ impl Drop for Session {
 /// Retry what is due, then turn publish results into message statuses.
 async fn pump_loop(store: Store, pool: Arc<RelayPool>, outbox: Outbox, dm: DmService, ui: broadcast::Sender<UiEvent>) {
     let mut last_seen_at = 0i64;
+    // A group's request goes to the server of the group.
+    let routed = crate::scopes::Routed { store: store.clone(), pool };
     loop {
         // Whichever comes first: something was queued, or it is time to
         // retry what failed earlier.
@@ -186,7 +189,7 @@ async fn pump_loop(store: Store, pool: Arc<RelayPool>, outbox: Outbox, dm: DmSer
             last_seen_at = now;
             let _ = settings::set(&store, KEY_LAST_SEEN, &now.to_string()).await;
         }
-        if let Err(e) = outbox.pump(pool.as_ref()).await {
+        if let Err(e) = outbox.pump(&routed).await {
             eprintln!("messenger outbox: pump failed: {e}");
         }
         match dm.sync_statuses().await {
@@ -200,21 +203,50 @@ async fn pump_loop(store: Store, pool: Arc<RelayPool>, outbox: Outbox, dm: DmSer
     }
 }
 
-/// One history reconciliation per session: everything addressed to us
-/// since the last completed catch-up (minus the gift-wrap time jitter), or
-/// from the beginning on a fresh database. After the list of my relations
-/// was read (`crate::relations::open_inbox`), so the history meets it.
+/// The local side of the DM history reconciliation with `server` (`None`:
+/// the home set): the gift wraps since `since` that came from it, and no
+/// others, so a server learns of the ids and times of its own wraps alone
+/// (internal/messenger-wire.md, «Серверы»). A private server's are those
+/// that came by its relay; the home set's are all the rest but those of a
+/// relay of a private server — wraps of the home relays, and those a push
+/// left (the relay the push named, else none of a server: of the home set,
+/// as a push is). A wrap of the same id that came by both sides is listed
+/// on the side of the copy kept, the first that came; the other side then
+/// sends it once more, and the ingress drops it as seen.
+pub(crate) async fn dm_local_set(store: &Store, server: Option<&str>, since: i64) -> Vec<SyncItem> {
+    let private: std::collections::HashSet<String> = crate::scopes::private_servers(store).await.into_iter().collect();
+    events_raw::items_since_with_relay(store, 1059, since)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, _, relay)| {
+            let of = relay.as_deref().map(messenger_store::servers::id_of);
+            match server {
+                Some(id) => of.as_deref() == Some(id),
+                None => !of.is_some_and(|of| private.contains(&of)),
+            }
+        })
+        .map(|(id, at, _)| SyncItem { id, created_at: Timestamp(at) })
+        .collect()
+}
+
+/// One history reconciliation per session and server (`None`: the home
+/// set): everything addressed to us there since the last completed
+/// catch-up of that server (minus the gift-wrap time jitter), or from the
+/// beginning on a fresh database. After the list of my relations was read
+/// (`crate::relations::open_inbox`), so the history meets it.
 pub(crate) async fn history_catch_up(
     store: Store,
     pool: Arc<RelayPool>,
     me: PubKey,
     started_at: Timestamp,
     ui: broadcast::Sender<UiEvent>,
+    server: Option<String>,
 ) {
+    let scope = crate::scopes::of_server(server.as_deref());
     let deadline = tokio::time::Instant::now() + HISTORY_WAIT_FOR_RELAY;
     loop {
-        let connected = pool.status().await.relays.iter().any(|r| r.state == RelayState::Connected);
-        if connected && !pool.is_silent() {
+        if pool.connected_in(&scope).await > 0 && !pool.is_silent() {
             break;
         }
         if tokio::time::Instant::now() >= deadline {
@@ -222,20 +254,14 @@ pub(crate) async fn history_catch_up(
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    let cursor = cursors::get(&store, filters::CURSOR_DM_INBOX, cursors::ANY_RELAY).await.ok().flatten();
+    let cursor_key = cursors::of_server(server.as_deref());
+    let cursor = cursors::get(&store, filters::CURSOR_DM_INBOX, cursor_key).await.ok().flatten();
     let since = cursor.map(|c| c - filters::DM_LIVE_MARGIN_SECS).unwrap_or(0).max(0);
-    let local = events_raw::items_since(&store, 1059, since)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(id, at)| SyncItem { id, created_at: Timestamp(at) })
-        .collect();
-    let result = pool
-        .send(Outbound::Sync { scope: Scope::Own, filter: filters::dm_history(&me, Timestamp(since)), local })
-        .await;
+    let local = dm_local_set(&store, server.as_deref(), since).await;
+    let result = pool.send(Outbound::Sync { scope, filter: filters::dm_history(&me, Timestamp(since)), local }).await;
     match result {
         Ok(_) => {
-            let _ = cursors::advance(&store, filters::CURSOR_DM_INBOX, cursors::ANY_RELAY, started_at.secs()).await;
+            let _ = cursors::advance(&store, filters::CURSOR_DM_INBOX, cursor_key, started_at.secs()).await;
             let _ = ui.send(UiEvent { name: UI_EVENT_HISTORY_SYNCED.into(), payload: serde_json::json!({ "since": since }) });
         }
         Err(e) => {
@@ -244,5 +270,83 @@ pub(crate) async fn history_catch_up(
                 payload: serde_json::json!({ "family": "history", "error": e.to_string() }),
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use messenger_core::{EventId, EventSource, RawEvent, RelayUrl};
+    use messenger_store::servers;
+
+    async fn wrap_by(store: &Store, n: u64, at: i64, source: EventSource) -> String {
+        let id = format!("{n:064x}");
+        let raw = RawEvent {
+            id: EventId::parse(&id).unwrap(),
+            kind: 1059,
+            pubkey: PubKey::parse(&"b".repeat(64)).unwrap(),
+            created_at: Timestamp(at),
+            json: serde_json::json!({ "id": id }),
+            source,
+        };
+        assert!(events_raw::insert_if_new(store, &raw).await.unwrap());
+        id
+    }
+
+    fn by(url: &str) -> EventSource {
+        EventSource::Relay { url: RelayUrl::parse(url).unwrap() }
+    }
+
+    fn synced(url: &str) -> EventSource {
+        EventSource::Sync { url: RelayUrl::parse(url).unwrap() }
+    }
+
+    fn ids(items: &[SyncItem]) -> Vec<String> {
+        let mut v: Vec<String> = items.iter().map(|i| i.id.as_hex().to_string()).collect();
+        v.sort();
+        v
+    }
+
+    /// The DM history with a server is reconciled against its own wraps
+    /// alone: S1 never hears of the ids of the wraps of the home relays or
+    /// of S2, nor the home set of those of S1 and S2; a push's wrap and one
+    /// of a relay that is no server's go with the home set.
+    #[tokio::test]
+    async fn the_local_set_of_a_server_holds_its_own_wraps_alone() {
+        let store = Store::open_in_memory().await.unwrap();
+        let (home, s1, s2) = ("wss://home.example", "wss://s1.example", "wss://s2.example");
+        let row = |url: &str, kind: &str| servers::ServerRow {
+            id: String::new(),
+            kind: kind.into(),
+            name: None,
+            relay_url: url.into(),
+            relay_key: None,
+            media_url: None,
+            call_node: None,
+            push_mode: servers::PUSH_OFF.into(),
+            source: None,
+            added_at: 0,
+        };
+        servers::put(&store, &row(home, servers::KIND_HOME)).await.unwrap();
+        let id1 = servers::put_private(&store, &row(s1, servers::KIND_PRIVATE)).await.unwrap();
+        let id2 = servers::put_private(&store, &row(s2, servers::KIND_PRIVATE)).await.unwrap();
+
+        let at_home = wrap_by(&store, 1, 1_000, by(home)).await;
+        let history_home = wrap_by(&store, 2, 1_001, synced(home)).await;
+        let of_s1 = wrap_by(&store, 3, 1_002, by("wss://S1.example/")).await;
+        let history_s1 = wrap_by(&store, 4, 1_003, synced(s1)).await;
+        let of_s2 = wrap_by(&store, 5, 1_004, by(s2)).await;
+        let pushed = wrap_by(&store, 6, 1_005, synced("wss://push.invalid")).await;
+        let elsewhere = wrap_by(&store, 7, 1_006, by("wss://nobody.example")).await;
+        let old_home = wrap_by(&store, 8, 10, by(home)).await;
+
+        let mut want_s1 = vec![of_s1, history_s1];
+        want_s1.sort();
+        assert_eq!(ids(&dm_local_set(&store, Some(&id1), 500).await), want_s1, "S1 hears of its own wraps");
+        assert_eq!(ids(&dm_local_set(&store, Some(&id2), 500).await), vec![of_s2]);
+        let mut want_home = vec![at_home, history_home, pushed, elsewhere];
+        want_home.sort();
+        assert_eq!(ids(&dm_local_set(&store, None, 500).await), want_home, "the home set, nothing of S1 or S2");
+        assert!(ids(&dm_local_set(&store, None, 0).await).contains(&old_home), "since the cursor");
     }
 }

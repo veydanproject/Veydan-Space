@@ -122,6 +122,7 @@ messenger_chat_shared_counts messenger all
 messenger_clipboard_paste messenger all
 messenger_chats_list messenger all
 messenger_contact_link messenger all
+messenger_contact_open_private messenger all
 messenger_contact_private_get messenger all
 messenger_contacts_add messenger all
 messenger_contacts_list messenger all
@@ -246,12 +247,18 @@ messenger_push_set_server messenger all
 messenger_push_status messenger all
 messenger_push_take_tap messenger all
 messenger_push_test messenger all
+messenger_push_ticket_revoke messenger all
+messenger_push_tickets messenger all
 messenger_relays_add messenger all
 messenger_relays_list messenger all
 messenger_relays_remove messenger all
 messenger_relays_set_enabled messenger all
 messenger_relays_set_silent messenger all
 messenger_report_send messenger all
+messenger_server_accept messenger all
+messenger_server_preview messenger all
+messenger_server_remove messenger all
+messenger_servers_private messenger all
 messenger_servers_use_own messenger all
 messenger_servers_use_veydan messenger all
 messenger_set_enabled messenger all

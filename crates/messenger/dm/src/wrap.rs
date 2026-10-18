@@ -10,9 +10,10 @@
 //! [`crate::pushtags`]. The copy for ourselves never is.
 
 use crate::pushtags;
-use messenger_core::envelope::KIND_PEER_NOTE_RUMOR;
+use crate::peer::DmPeer;
+use messenger_core::envelope::{KIND_PEER_NOTE_RUMOR, TAG_SERVER};
 use messenger_core::outbound::WireEvent;
-use messenger_core::{EventId, MessengerError, PubKey, Result};
+use messenger_core::{EventId, MessengerError, Result};
 use nostr::key::Keys;
 use nostr::nips::nip59::GiftWrapBuilder;
 use nostr::prelude::*;
@@ -67,27 +68,33 @@ fn crypto(e: impl std::fmt::Display) -> MessengerError {
 }
 
 /// A message to `peer`. The same as [`wrap_as`] with [`Wake::Peer`].
-pub fn wrap(keys: &Keys, peer: &PubKey, content: &str, created_at: i64, reply_to: Option<&str>) -> Result<Wrapped> {
+///
+/// `peer` is the chat as well as the person (a `&PubKey` is the home
+/// chat): the rumor of a private chat carries `["srv", <server id>]`
+/// inside the seal ([`TAG_SERVER`]), so the receiver files it under that
+/// chat whichever relay it comes by. Every wrap of a direct chat is built
+/// here, so no rumor of a private chat leaves without it.
+pub fn wrap(keys: &Keys, peer: impl Into<DmPeer>, content: &str, created_at: i64, reply_to: Option<&str>) -> Result<Wrapped> {
     wrap_as(keys, peer, content, created_at, reply_to, Wake::Peer)
 }
 
 pub fn wrap_as(
     keys: &Keys,
-    peer: &PubKey,
+    peer: impl Into<DmPeer>,
     content: &str,
     created_at: i64,
     reply_to: Option<&str>,
     wake: Wake,
 ) -> Result<Wrapped> {
-    wrap_kind(keys, peer, Kind::PrivateDirectMessage.as_u16(), content, created_at, reply_to, wake, Some(Wake::Nobody), None)
+    wrap_kind(keys, &peer.into(), Kind::PrivateDirectMessage.as_u16(), content, created_at, reply_to, wake, Some(Wake::Nobody), None)
 }
 
 /// A message to `peer` that wakes the peer as a call ([`Wake::Call`]) and
 /// is forgotten by the relays at `expiration` (NIP-40, on the outside of
 /// both wraps): the invitation to a call, which rings a phone now or not
 /// at all. With a self-copy, so my other devices know I called.
-pub fn wrap_expiring(keys: &Keys, peer: &PubKey, content: &str, created_at: i64, expiration: i64) -> Result<Wrapped> {
-    wrap_kind(keys, peer, Kind::PrivateDirectMessage.as_u16(), content, created_at, None, Wake::Call, Some(Wake::Nobody), Some(expiration))
+pub fn wrap_expiring(keys: &Keys, peer: impl Into<DmPeer>, content: &str, created_at: i64, expiration: i64) -> Result<Wrapped> {
+    wrap_kind(keys, &peer.into(), Kind::PrivateDirectMessage.as_u16(), content, created_at, None, Wake::Call, Some(Wake::Nobody), Some(expiration))
 }
 
 /// A note to `peer` that is not a message (a receipt, a reaction, a key): a
@@ -97,7 +104,7 @@ pub fn wrap_expiring(keys: &Keys, peer: &PubKey, content: &str, created_at: i64,
 /// on the outside of both wraps (NIP-40), to forget the note then.
 pub fn wrap_note(
     keys: &Keys,
-    peer: &PubKey,
+    peer: impl Into<DmPeer>,
     content: &str,
     created_at: i64,
     self_copy: bool,
@@ -117,7 +124,7 @@ pub fn wrap_note(
 /// as [`Wake::Nobody`].
 pub fn wrap_note_as(
     keys: &Keys,
-    peer: &PubKey,
+    peer: impl Into<DmPeer>,
     content: &str,
     created_at: i64,
     expiration: Option<i64>,
@@ -125,7 +132,12 @@ pub fn wrap_note_as(
     self_copy: Option<Wake>,
 ) -> Result<Wrapped> {
     let as_note = |wake: Wake| if wake == Wake::Peer { Wake::Nobody } else { wake };
-    wrap_kind(keys, peer, KIND_PEER_NOTE_RUMOR, content, created_at, None, as_note(peer_wake), self_copy.map(as_note), expiration)
+    wrap_kind(keys, &peer.into(), KIND_PEER_NOTE_RUMOR, content, created_at, None, as_note(peer_wake), self_copy.map(as_note), expiration)
+}
+
+/// `["srv", <id>]` for a rumor of the private chat on `server`.
+fn server_tag(server: Option<&str>) -> Result<Option<Tag>> {
+    server.map(|id| Tag::parse([TAG_SERVER, id]).map_err(crypto)).transpose()
 }
 
 /// `self_copy`: whether my other devices get a copy, and with what word
@@ -135,7 +147,7 @@ pub fn wrap_note_as(
 #[allow(clippy::too_many_arguments)]
 fn wrap_kind(
     keys: &Keys,
-    peer: &PubKey,
+    peer: &DmPeer,
     kind: u16,
     content: &str,
     created_at: i64,
@@ -144,13 +156,16 @@ fn wrap_kind(
     self_copy: Option<Wake>,
     expiration: Option<i64>,
 ) -> Result<Wrapped> {
-    let receiver = PublicKey::from_hex(peer.as_hex()).map_err(crypto)?;
+    let receiver = PublicKey::from_hex(peer.key.as_hex()).map_err(crypto)?;
     let me = keys.public_key();
     let mut builder = EventBuilder::new(Kind::from(kind), content)
         .tag(Tag::public_key(receiver))
         .custom_created_at(nostr::types::Timestamp::from_secs(created_at.max(0) as u64));
     if let Some(id) = reply_to {
         builder = builder.tag(Tag::parse(["e", id]).map_err(crypto)?);
+    }
+    if let Some(tag) = server_tag(peer.server())? {
+        builder = builder.tag(tag);
     }
     let mut rumor = builder.finalize_unsigned(me);
     rumor.ensure_id();
@@ -184,14 +199,25 @@ fn wrap_kind(
 /// A note for my other devices: a rumor of `KIND_OWN_RUMOR`, sealed and
 /// wrapped to my own key, never worth a push.
 pub fn wrap_own(keys: &Keys, content: &str, created_at: i64) -> Result<WireEvent> {
+    wrap_own_on(keys, content, created_at, None)
+}
+
+/// A note for my other devices about something of `server` (a private
+/// chat read or a message of it removed for me): the rumor carries the
+/// server's tag as every rumor of a private chat does, and the caller
+/// sends it to that server alone (`peer::to_my_devices`).
+pub fn wrap_own_on(keys: &Keys, content: &str, created_at: i64, server: Option<&str>) -> Result<WireEvent> {
     let me = keys.public_key();
-    let rumor = EventBuilder::new(Kind::from(messenger_core::envelope::KIND_OWN_RUMOR), content)
+    let mut builder = EventBuilder::new(Kind::from(messenger_core::envelope::KIND_OWN_RUMOR), content)
         .tag(Tag::public_key(me))
-        .custom_created_at(nostr::types::Timestamp::from_secs(created_at.max(0) as u64))
-        .finalize_unsigned(me);
-    let gift = GiftWrapBuilder::new(me, rumor).extra_tags([pushtags::silent_tag()?]);
+        .custom_created_at(nostr::types::Timestamp::from_secs(created_at.max(0) as u64));
+    if let Some(tag) = server_tag(server)? {
+        builder = builder.tag(tag);
+    }
+    let gift = GiftWrapBuilder::new(me, builder.finalize_unsigned(me)).extra_tags([pushtags::silent_tag()?]);
     wire(gift.finalize(keys).map_err(crypto)?)
 }
+
 
 fn wire(event: Event) -> Result<WireEvent> {
     Ok(WireEvent {
@@ -203,7 +229,38 @@ fn wire(event: Event) -> Result<WireEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use messenger_core::PubKey;
     use nostr::nips::nip59::UnwrappedGift;
+
+    /// The `srv` tags of the rumor inside a wrap, as `keys` open it.
+    fn servers_inside(keys: &Keys, w: &WireEvent) -> Vec<String> {
+        let event: Event = serde_json::from_value(w.json.clone()).unwrap();
+        let u = UnwrappedGift::from_gift_wrap(keys, &event).unwrap();
+        u.rumor.tags.iter().filter(|t| t.kind() == TAG_SERVER).filter_map(|t| t.as_slice().get(1).cloned()).collect()
+    }
+
+    /// A rumor of a private chat names its server inside the seal, on
+    /// both copies and on every kind of wrap; one of the home chat names
+    /// none; and the outside of the wrap says nothing of it.
+    #[test]
+    fn a_rumor_of_a_private_chat_names_its_server_inside() {
+        let (alice, bob) = (Keys::generate(), Keys::generate());
+        let private = DmPeer::on(pk(&bob), Some("0123456789abcdef"));
+        let wraps = [
+            wrap(&alice, &private, "hi", 1, None).unwrap(),
+            wrap_expiring(&alice, &private, "ring", 1, 61).unwrap(),
+            wrap_note(&alice, &private, "note", 1, true, None).unwrap(),
+        ];
+        for w in &wraps {
+            assert_eq!(servers_inside(&bob, &w.to_peer), vec!["0123456789abcdef".to_string()]);
+            assert_eq!(servers_inside(&alice, w.to_self.as_ref().unwrap()), vec!["0123456789abcdef".to_string()]);
+            assert!(!w.to_peer.json.to_string().contains("0123456789abcdef"), "not on the outside");
+        }
+        assert!(servers_inside(&bob, &wrap(&alice, pk(&bob), "hi", 1, None).unwrap().to_peer).is_empty());
+        let own = wrap_own_on(&alice, "{}", 1, Some("0123456789abcdef")).unwrap();
+        assert_eq!(servers_inside(&alice, &own), vec!["0123456789abcdef".to_string()]);
+        assert!(servers_inside(&alice, &wrap_own(&alice, "{}", 1).unwrap()).is_empty());
+    }
 
     fn pk(k: &Keys) -> PubKey {
         PubKey::parse(&k.public_key().to_hex()).unwrap()
@@ -213,7 +270,7 @@ mod tests {
     fn both_copies_carry_the_same_rumor() {
         let alice = Keys::generate();
         let bob = Keys::generate();
-        let w = wrap(&alice, &pk(&bob), "hi", 1_700_000_000, Some(&"ab".repeat(32))).unwrap();
+        let w = wrap(&alice, pk(&bob), "hi", 1_700_000_000, Some(&"ab".repeat(32))).unwrap();
         let peer_ev: Event = serde_json::from_value(w.to_peer.json.clone()).unwrap();
         let self_ev: Event = serde_json::from_value(w.to_self.as_ref().unwrap().json.clone()).unwrap();
         assert_ne!(peer_ev.id, self_ev.id, "two different wraps");
@@ -235,7 +292,7 @@ mod tests {
     #[test]
     fn note_to_self_has_one_copy() {
         let me = Keys::generate();
-        let w = wrap(&me, &pk(&me), "memo", 1, None).unwrap();
+        let w = wrap(&me, pk(&me), "memo", 1, None).unwrap();
         assert!(w.to_self.is_none());
         assert!(silent(&w.to_peer), "one's own note wakes nobody");
     }
@@ -256,7 +313,7 @@ mod tests {
     #[test]
     fn a_message_wakes_the_peer_and_never_the_author() {
         let (alice, bob) = (Keys::generate(), Keys::generate());
-        let w = wrap(&alice, &pk(&bob), "hi", 1_700_000_000, None).unwrap();
+        let w = wrap(&alice, pk(&bob), "hi", 1_700_000_000, None).unwrap();
         assert!(!silent(&w.to_peer));
         assert!(silent(w.to_self.as_ref().unwrap()));
         assert_eq!(recipient(&w.to_peer), bob.public_key().to_hex());
@@ -266,7 +323,7 @@ mod tests {
     #[test]
     fn a_signal_wakes_nobody_and_is_opened_like_a_message() {
         let (alice, bob) = (Keys::generate(), Keys::generate());
-        let w = wrap_as(&alice, &pk(&bob), "signal", 1_700_000_000, None, Wake::Nobody).unwrap();
+        let w = wrap_as(&alice, pk(&bob), "signal", 1_700_000_000, None, Wake::Nobody).unwrap();
         assert!(silent(&w.to_peer));
         assert!(silent(w.to_self.as_ref().unwrap()));
 
@@ -287,7 +344,7 @@ mod tests {
     #[test]
     fn a_note_wakes_nobody_and_has_no_copy_unless_asked() {
         let (alice, bob) = (Keys::generate(), Keys::generate());
-        let w = wrap_note(&alice, &pk(&bob), r#"{"v":1,"t":"receipt.read","at":1}"#, 1_700_000_000, false, None).unwrap();
+        let w = wrap_note(&alice, pk(&bob), r#"{"v":1,"t":"receipt.read","at":1}"#, 1_700_000_000, false, None).unwrap();
         assert!(silent(&w.to_peer));
         assert!(w.to_self.is_none(), "not asked for");
         assert_eq!(recipient(&w.to_peer), bob.public_key().to_hex());
@@ -300,7 +357,7 @@ mod tests {
         assert!(!opened.rumor.tags.iter().any(|t| t.kind() == "e"), "a note replies to nothing");
 
         // A note to myself is one copy, whatever was asked.
-        let mine = wrap_note(&alice, &pk(&alice), "x", 1, true, None).unwrap();
+        let mine = wrap_note(&alice, pk(&alice), "x", 1, true, None).unwrap();
         assert!(mine.to_self.is_none());
         assert!(silent(&mine.to_peer));
     }
@@ -308,7 +365,7 @@ mod tests {
     #[test]
     fn a_note_expires_outside_only_and_both_copies_are_one_rumor() {
         let (alice, bob) = (Keys::generate(), Keys::generate());
-        let w = wrap_note(&alice, &pk(&bob), "note", 1_700_000_000, true, Some(1_700_604_800)).unwrap();
+        let w = wrap_note(&alice, pk(&bob), "note", 1_700_000_000, true, Some(1_700_604_800)).unwrap();
         let copy = w.to_self.as_ref().expect("asked for");
         assert!(silent(&w.to_peer));
         assert!(silent(copy));
@@ -331,7 +388,7 @@ mod tests {
     #[test]
     fn an_invitation_wakes_the_peer_and_expires_outside() {
         let (alice, bob) = (Keys::generate(), Keys::generate());
-        let w = wrap_expiring(&alice, &pk(&bob), r#"{"v":1,"t":"call.invite"}"#, 1_700_000_000, 1_700_000_060).unwrap();
+        let w = wrap_expiring(&alice, pk(&bob), r#"{"v":1,"t":"call.invite"}"#, 1_700_000_000, 1_700_000_060).unwrap();
         let copy = w.to_self.as_ref().expect("my devices learn I called");
         assert!(!silent(&w.to_peer), "a ring");
         assert!(silent(copy));
@@ -350,7 +407,7 @@ mod tests {
     #[test]
     fn an_invitation_is_marked_as_a_call_on_the_peers_copy_only() {
         let (alice, bob) = (Keys::generate(), Keys::generate());
-        let w = wrap_expiring(&alice, &pk(&bob), r#"{"v":1,"t":"call.invite"}"#, 1_700_000_000, 1_700_000_060).unwrap();
+        let w = wrap_expiring(&alice, pk(&bob), r#"{"v":1,"t":"call.invite"}"#, 1_700_000_000, 1_700_000_060).unwrap();
         assert_eq!(tag_value(&w.to_peer, CALL_TAG).as_deref(), Some("1"));
         assert!(!silent(&w.to_peer));
         let copy = w.to_self.as_ref().unwrap();
@@ -360,12 +417,12 @@ mod tests {
         let opened = UnwrappedGift::from_gift_wrap(&bob, &serde_json::from_value(w.to_peer.json.clone()).unwrap()).unwrap();
         assert!(!opened.rumor.tags.iter().any(|t| t.kind() == CALL_TAG));
 
-        let message = wrap(&alice, &pk(&bob), "hi", 1_700_000_000, None).unwrap();
+        let message = wrap(&alice, pk(&bob), "hi", 1_700_000_000, None).unwrap();
         assert_eq!(tag_value(&message.to_peer, CALL_TAG), None);
-        let note = wrap_note(&alice, &pk(&bob), "x", 1_700_000_000, false, None).unwrap();
+        let note = wrap_note(&alice, pk(&bob), "x", 1_700_000_000, false, None).unwrap();
         assert_eq!(tag_value(&note.to_peer, CALL_TAG), None);
         // A call to myself is my own copy: quiet, and no call.
-        let mine = wrap_expiring(&alice, &pk(&alice), "x", 1, 60).unwrap();
+        let mine = wrap_expiring(&alice, pk(&alice), "x", 1, 60).unwrap();
         assert!(silent(&mine.to_peer));
         assert_eq!(tag_value(&mine.to_peer, CALL_TAG), None);
     }
@@ -379,7 +436,7 @@ mod tests {
     #[test]
     fn the_end_of_a_ringing_is_marked_on_the_copy_that_needs_it() {
         let (alice, bob) = (Keys::generate(), Keys::generate());
-        let answer = wrap_note_as(&alice, &pk(&bob), r#"{"v":1,"t":"call.answer"}"#, 1_700_000_000, Some(1_700_000_300), Wake::Nobody, Some(Wake::CallEnd)).unwrap();
+        let answer = wrap_note_as(&alice, pk(&bob), r#"{"v":1,"t":"call.answer"}"#, 1_700_000_000, Some(1_700_000_300), Wake::Nobody, Some(Wake::CallEnd)).unwrap();
         assert!(silent(&answer.to_peer), "the caller's app is up");
         assert_eq!(tag_value(&answer.to_peer, CALL_TAG), None);
         let copy = answer.to_self.as_ref().expect("my other devices ring");
@@ -391,17 +448,17 @@ mod tests {
         assert_eq!(opened.rumor.kind.as_u16(), KIND_PEER_NOTE_RUMOR);
         assert!(!opened.rumor.tags.iter().any(|t| t.kind() == CALL_TAG), "the mark is on the outside");
 
-        let end = wrap_note_as(&alice, &pk(&bob), r#"{"v":1,"t":"call.end"}"#, 1_700_000_000, None, Wake::CallEnd, Some(Wake::Nobody)).unwrap();
+        let end = wrap_note_as(&alice, pk(&bob), r#"{"v":1,"t":"call.end"}"#, 1_700_000_000, None, Wake::CallEnd, Some(Wake::Nobody)).unwrap();
         assert_eq!(tag_value(&end.to_peer, CALL_TAG).as_deref(), Some(CALL_END));
         assert!(!silent(&end.to_peer));
         assert!(silent(end.to_self.as_ref().unwrap()));
         assert_ne!(CALL_END, CALL_RING, "an end is not a ring");
 
-        let ice = wrap_note_as(&alice, &pk(&bob), "x", 1_700_000_000, None, Wake::Peer, None).unwrap();
+        let ice = wrap_note_as(&alice, pk(&bob), "x", 1_700_000_000, None, Wake::Peer, None).unwrap();
         assert!(silent(&ice.to_peer), "a note is never a message");
         assert!(ice.to_self.is_none());
 
-        let mine = wrap_note_as(&alice, &pk(&alice), "x", 1, None, Wake::CallEnd, Some(Wake::CallEnd)).unwrap();
+        let mine = wrap_note_as(&alice, pk(&alice), "x", 1, None, Wake::CallEnd, Some(Wake::CallEnd)).unwrap();
         assert!(silent(&mine.to_peer));
         assert_eq!(tag_value(&mine.to_peer, CALL_TAG), None);
         assert!(mine.to_self.is_none());
@@ -410,7 +467,7 @@ mod tests {
     #[test]
     fn a_message_neither_expires_nor_is_a_note() {
         let (alice, bob) = (Keys::generate(), Keys::generate());
-        let w = wrap(&alice, &pk(&bob), "hi", 1_700_000_000, None).unwrap();
+        let w = wrap(&alice, pk(&bob), "hi", 1_700_000_000, None).unwrap();
         assert_eq!(tag_value(&w.to_peer, "expiration"), None);
         assert_eq!(tag_value(w.to_self.as_ref().unwrap(), "expiration"), None);
         let opened = UnwrappedGift::from_gift_wrap(&bob, &serde_json::from_value(w.to_peer.json.clone()).unwrap()).unwrap();

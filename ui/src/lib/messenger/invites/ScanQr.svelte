@@ -63,12 +63,14 @@
       return;
     }
     if (!out.ok) {
-      scanError = $t(JOIN_ERRORS[out.reason]);
+      // «Добавить сервер?» answered no: nothing to say.
+      if (out.reason !== 'declined') scanError = $t(JOIN_ERRORS[out.reason]);
       return;
     }
     const peer = out.pubkey;
     try {
-      const chat = await chatStore.openPeer(peer);
+      // The home chat, or the private one on the server of the link.
+      const chat = await chatStore.openPeer(out.address);
       // A plain link of a person carries no secret: nothing went, their chat simply opens.
       if (!out.invited) {
         onchat?.(chat.id);

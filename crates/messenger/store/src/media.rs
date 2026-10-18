@@ -32,17 +32,23 @@ pub struct ServerRow {
     pub url: String,
     pub bucket: Option<String>,
     pub region: Option<String>,
+    /// S3: the access key id. Blossom: the app key of the server the blob
+    /// server belongs to, sent as `?key=` on an upload (migration 039);
+    /// none for a blob server that wants none.
     pub access_key: Option<String>,
     pub priority: i64,
     pub enabled: bool,
     pub source: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// The server (`msg_servers.id`) this blob server belongs to; `None` is
+    /// the home set, the only one uploads go to unless told otherwise.
+    pub server_id: Option<String>,
 }
 
 pub async fn servers(store: &Store) -> Result<Vec<ServerRow>> {
     sqlx::query_as::<_, ServerRow>(
-        "SELECT id, kind, url, bucket, region, access_key, priority, enabled, source, created_at, updated_at
+        "SELECT id, kind, url, bucket, region, access_key, priority, enabled, source, created_at, updated_at, server_id
          FROM msg_media_servers ORDER BY priority ASC, created_at ASC",
     )
     .fetch_all(store.pool())
@@ -50,19 +56,34 @@ pub async fn servers(store: &Store) -> Result<Vec<ServerRow>> {
     .map_err(storage)
 }
 
+/// The blob servers of the home set, in priority order: where what is not
+/// meant for a private server goes.
+pub async fn home_servers(store: &Store) -> Result<Vec<ServerRow>> {
+    servers_of(store, None).await
+}
+
+/// The blob servers of `server` (`None`: the home set), in priority order:
+/// a private chat's files go to its server's, and to no other.
+pub async fn servers_of(store: &Store, server: Option<&str>) -> Result<Vec<ServerRow>> {
+    Ok(servers(store).await?.into_iter().filter(|s| s.server_id.as_deref() == server).collect())
+}
+
 pub async fn server(store: &Store, id: &str) -> Result<Option<ServerRow>> {
     Ok(servers(store).await?.into_iter().find(|s| s.id == id))
 }
 
-/// Insert or update by id. `enabled` of an existing row is kept.
+/// Insert or update by id. `enabled` of an existing row is kept, and so are
+/// its access key and its server when the update names none: a row edited
+/// from the list of blob servers stays the private server's it was.
 pub async fn upsert_server(store: &Store, r: &ServerRow) -> Result<()> {
     let now = crate::now();
     sqlx::query(
-        "INSERT INTO msg_media_servers (id, kind, url, bucket, region, access_key, priority, enabled, source, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO msg_media_servers (id, kind, url, bucket, region, access_key, priority, enabled, source, created_at, updated_at, server_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, url = excluded.url, bucket = excluded.bucket,
            region = excluded.region, access_key = COALESCE(excluded.access_key, msg_media_servers.access_key),
-           priority = excluded.priority, source = excluded.source, updated_at = excluded.updated_at",
+           priority = excluded.priority, source = excluded.source, updated_at = excluded.updated_at,
+           server_id = COALESCE(excluded.server_id, msg_media_servers.server_id)",
     )
     .bind(&r.id)
     .bind(&r.kind)
@@ -75,6 +96,7 @@ pub async fn upsert_server(store: &Store, r: &ServerRow) -> Result<()> {
     .bind(&r.source)
     .bind(now)
     .bind(now)
+    .bind(&r.server_id)
     .execute(store.pool())
     .await
     .map_err(storage)?;
@@ -394,8 +416,29 @@ mod tests {
             source: "user".into(),
             created_at: 0,
             updated_at: 0,
+            server_id: None,
         };
         upsert_server(&s, &srv).await.unwrap();
+        // A blossom server of a private server, with that server's app key.
+        let private = ServerRow {
+            id: "p".into(),
+            kind: KIND_BLOSSOM.into(),
+            url: "https://media.mine.example".into(),
+            bucket: None,
+            region: None,
+            access_key: Some("app-key".into()),
+            priority: 50,
+            enabled: true,
+            source: "server".into(),
+            created_at: 0,
+            updated_at: 0,
+            server_id: Some("0123456789abcdef".into()),
+        };
+        upsert_server(&s, &private).await.unwrap();
+        let got = server(&s, "p").await.unwrap().unwrap();
+        assert_eq!((got.access_key.as_deref(), got.server_id.as_deref()), (Some("app-key"), Some("0123456789abcdef")));
+        assert_eq!(home_servers(&s).await.unwrap().iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["a"], "a private server's is not home");
+        delete_server(&s, "p").await.unwrap();
         set_server_enabled(&s, "a", false).await.unwrap();
         srv.url = "https://new.example".into();
         srv.access_key = None;

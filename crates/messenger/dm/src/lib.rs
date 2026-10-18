@@ -32,6 +32,8 @@ pub mod handler;
 pub mod invites;
 pub mod media;
 pub mod notes;
+/// Who a direct chat is with, and on which server it lives.
+pub mod peer;
 pub mod own;
 pub mod reactions;
 pub mod relations;
@@ -62,5 +64,6 @@ pub use relationship::{Action, DmFrom, InboundKind, MAX_REQUEST_CHARS};
 pub use requests::{DmSettings, RequestView, DEFAULT_KEEP_DAYS, KEY_DM_FROM, KEY_KEEP_DAYS, MAX_REQUESTS, UI_EVENT_DM_REQUEST};
 pub use snapshot::{Applied as RelationsApplied, Known as RelationsKnown, Piece as RelationsPiece};
 pub use service::{DmService, Prepared};
+pub use peer::{to_my_devices, DmPeer};
 pub use cards::StoredCard;
 pub use view::{CardView, ChatView, MessageView, ReactionView};

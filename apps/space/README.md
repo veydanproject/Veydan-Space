@@ -163,7 +163,8 @@ workspace or a profile. The same vault is in [Veydan Pass](https://github.com/ve
 
 End-to-end encrypted chat on the Nostr protocol, built in: direct messages,
 groups, photos, files and voice messages. No phone number — your identity is
-a key only you hold. Also available on its own as
+a key only you hold. Add the server of your team and talk with its people in
+private chats and groups that live on that server alone. Also available on its own as
 [Veydan Chat](https://github.com/veydanproject/Veydan-Chat).
 
 ### Sync, lock and the rest

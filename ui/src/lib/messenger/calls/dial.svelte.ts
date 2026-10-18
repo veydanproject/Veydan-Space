@@ -12,6 +12,7 @@ import { get } from 'svelte/store';
 import { t } from '$lib/core/i18n';
 import { toast } from '$lib/core/ui/toast.svelte';
 import type { CallMedia, MessengerChat } from '../api';
+import { chatAddress } from '../chats/address';
 import { messengerStore } from '../store.svelte';
 import { callStore } from './callStore.svelte';
 import { groupCallStore } from './groupCallStore.svelte';
@@ -24,16 +25,23 @@ export interface DialTarget {
   chatId: string;
   /** The peer's key (hex) between two, the group's id for a group. */
   peer: string;
+  /**
+   * What the call is started with between two: the peer, with the server
+   * of a private chat (`<hex>@<server>`), so the call goes on that server.
+   */
+  address: string;
   name: string;
   picture: string | null;
 }
 
 export function targetOf(chat: MessengerChat): DialTarget {
   const group = chat.kind === 'group';
+  const peer = group ? chat.id.slice('group:'.length) : (chat.peer_pubkey ?? '');
   return {
     kind: group ? 'group' : 'dm',
     chatId: chat.id,
-    peer: group ? chat.id.slice('group:'.length) : (chat.peer_pubkey ?? ''),
+    peer,
+    address: group ? peer : (chatAddress(chat) ?? ''),
     name: chat.title,
     picture: chat.picture ?? null,
   };
@@ -80,7 +88,7 @@ class Dialer {
       else if (refusal) toast.error(callErrorText(refusal, tr));
       return;
     }
-    const { view, refusal } = await callStore.dial(target.peer, media);
+    const { view, refusal } = await callStore.dial(target.address, media);
     if (!view && refusal) toast.error(callErrorText(refusal, tr));
   }
 }

@@ -23,26 +23,50 @@ pub struct ChatRow {
     pub muted: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    /// The private server a private chat lives on; `None` for the home set.
+    pub server_id: Option<String>,
 }
 
-const COLS: &str = "id, kind, peer_pubkey, unread, last_message_at, last_preview, pinned, archived, muted, created_at, updated_at";
+const COLS: &str = "id, kind, peer_pubkey, unread, last_message_at, last_preview, pinned, archived, muted, created_at, updated_at, server_id";
 
-pub fn dm_chat_id(peer_pubkey: &str) -> String {
-    format!("dm:{peer_pubkey}")
+/// The id of the direct chat with `peer_pubkey`: `dm:<peer>` on the home
+/// set, `dm:<peer>@<server>` for the private chat on `server`. A server
+/// id is hex (`servers::id_of`), so the `@` is never part of a key.
+pub fn dm_chat_id(peer_pubkey: &str, server: Option<&str>) -> String {
+    match server {
+        Some(id) => format!("dm:{peer_pubkey}@{id}"),
+        None => format!("dm:{peer_pubkey}"),
+    }
 }
 
-/// Create the DM chat with `peer` if missing; returns the row either way.
-pub async fn ensure_dm(store: &Store, peer_pubkey: &str) -> Result<ChatRow> {
-    let id = dm_chat_id(peer_pubkey);
+/// The peer and the private server of a direct chat id (`dm_chat_id`
+/// read back); `None` when the id is no direct chat. The one place a peer
+/// is read out of a chat id, so a private chat is never taken for the
+/// home chat with the same person.
+pub fn parse_dm_chat_id(id: &str) -> Option<(&str, Option<&str>)> {
+    let rest = id.strip_prefix("dm:")?;
+    match rest.split_once('@') {
+        Some((peer, server)) if !peer.is_empty() && !server.is_empty() => Some((peer, Some(server))),
+        Some(_) => None,
+        None if !rest.is_empty() => Some((rest, None)),
+        None => None,
+    }
+}
+
+/// Create the DM chat with `peer` (on `server` for a private chat) if
+/// missing; returns the row either way.
+pub async fn ensure_dm(store: &Store, peer_pubkey: &str, server: Option<&str>) -> Result<ChatRow> {
+    let id = dm_chat_id(peer_pubkey, server);
     let now = crate::now();
     let made = sqlx::query(
-        "INSERT OR IGNORE INTO msg_chats (id, kind, peer_pubkey, unread, last_message_at, last_preview, pinned, archived, muted, created_at, updated_at)
-         VALUES (?, 'dm', ?, 0, NULL, NULL, 0, 0, 0, ?, ?)",
+        "INSERT OR IGNORE INTO msg_chats (id, kind, peer_pubkey, unread, last_message_at, last_preview, pinned, archived, muted, created_at, updated_at, server_id)
+         VALUES (?, 'dm', ?, 0, NULL, NULL, 0, 0, 0, ?, ?, ?)",
     )
     .bind(&id)
     .bind(peer_pubkey)
     .bind(now)
     .bind(now)
+    .bind(server)
     .execute(store.pool())
     .await
     .map_err(storage)?;
@@ -115,12 +139,12 @@ pub async fn recompute_last(store: &Store, id: &str) -> Result<()> {
     sqlx::query(
         "UPDATE msg_chats SET
            last_message_at = (SELECT MAX(created_at) FROM msg_messages
-                               WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))),
+                               WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.server_id = '' AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))),
            last_preview = (SELECT CASE WHEN content_type = 'media' THEN '📎 ' || COALESCE(plain, text, json_extract(media_json, '$.name'), '')
                                        WHEN content_type = 'contact' THEN '👤 ' || COALESCE(json_extract(media_json, '$.display_name'),
                                                                                          json_extract(media_json, '$.name'), '')
                                        ELSE COALESCE(plain, text) END FROM msg_messages
-                           WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))
+                           WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system' AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.server_id = '' AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))
                            ORDER BY created_at DESC LIMIT 1),
            updated_at = ?
          WHERE id = ?",
@@ -183,7 +207,7 @@ pub async fn read_up_to(store: &Store, id: &str, at: i64) -> Result<bool> {
 /// what was read: incoming, shown, not waiting for a moderator, and in a
 /// group not of someone I block in direct messages nor of a banned key.
 const COUNTED: &str = "direction = 'in' AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system'
-    AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))";
+    AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.server_id = '' AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))";
 
 /// A block in direct messages took effect, or was lifted: the group
 /// chats the peer wrote in show their line of the list without them
@@ -604,7 +628,7 @@ pub async fn delete_copy(store: &Store, id: &str, cleared_at: i64, peer_upto: i6
 pub async fn total_unread(store: &Store) -> Result<i64> {
     sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!(
         "SELECT COALESCE(SUM(c.unread), 0) FROM msg_chats c
-         LEFT JOIN msg_dm_relations r ON r.peer_pubkey = c.peer_pubkey
+         LEFT JOIN msg_dm_relations r ON r.peer_pubkey = c.peer_pubkey AND r.server_id = COALESCE(c.server_id, '')
          WHERE c.archived = 0 AND c.muted = 0 AND NOT (c.kind = 'dm' AND r.peer_pubkey IS NOT NULL AND {})
            AND NOT (c.kind = 'dm' AND EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = c.peer_pubkey))",
         crate::dm_relations::REQUEST_SQL
@@ -621,10 +645,10 @@ mod tests {
     #[tokio::test]
     async fn chat_lifecycle() {
         let s = Store::open_in_memory().await.unwrap();
-        let a = ensure_dm(&s, "aa").await.unwrap();
+        let a = ensure_dm(&s, "aa", None).await.unwrap();
         assert_eq!(a.id, "dm:aa");
-        assert_eq!(ensure_dm(&s, "aa").await.unwrap(), a, "idempotent");
-        ensure_dm(&s, "bb").await.unwrap();
+        assert_eq!(ensure_dm(&s, "aa", None).await.unwrap(), a, "idempotent");
+        ensure_dm(&s, "bb", None).await.unwrap();
 
         let t0 = crate::now() + 100;
         touch(&s, "dm:aa", t0, Some("hello"), true).await.unwrap();
@@ -663,7 +687,7 @@ mod tests {
     #[tokio::test]
     async fn the_choices_of_a_chat_go_by_their_own_time() {
         let s = Store::open_in_memory().await.unwrap();
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         set_muted(&s, "dm:aa", true, 1_000).await.unwrap();
         let p = |s: Store| async move { prefs(&s).await.unwrap().into_iter().find(|r| r.chat_id == "dm:aa").unwrap() };
         assert_eq!(p(s.clone()).await.get(Pref::Muted), (true, 1_000));
@@ -684,7 +708,7 @@ mod tests {
         // A chat this device does not have yet: muted already, and made so.
         assert!(merge_pref(&s, "dm:bb", Pref::Muted, true, 500).await.unwrap());
         assert!(is_muted(&s, "dm:bb").await.unwrap());
-        assert!(ensure_dm(&s, "bb").await.unwrap().muted);
+        assert!(ensure_dm(&s, "bb", None).await.unwrap().muted);
         assert!(!merge_pref(&s, "dm:bb", Pref::Muted, true, 0).await.unwrap(), "no time, no choice");
 
         // An archive: history older than it leaves the chat there, a newer
@@ -729,7 +753,7 @@ mod tests {
     #[tokio::test]
     async fn the_list_shows_the_newest_message_still_there() {
         let s = Store::open_in_memory().await.unwrap();
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         incoming(&s, "m1", 100, "one").await;
         incoming(&s, "m2", 200, "two").await;
         crate::messages::mark_deleted(&s, "m2", 300).await.unwrap();
@@ -744,7 +768,7 @@ mod tests {
     #[tokio::test]
     async fn a_contact_card_shows_in_the_list_by_its_name() {
         let s = Store::open_in_memory().await.unwrap();
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         incoming(&s, "m1", 100, "one").await;
         let card = |id: &str, at: i64, json: &str| crate::messages::NewMessage {
             id: id.into(),
@@ -778,7 +802,7 @@ mod tests {
     async fn a_deleted_chat_leaves_a_tombstone_that_never_goes_back() {
         let s = Store::open_in_memory().await.unwrap();
         assert_eq!(cleared_at(&s, "dm:aa").await.unwrap(), 0, "never deleted");
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         incoming(&s, "m1", 100, "one").await;
         row(&s, "m2", 600, "mine, ahead of the clock", "out").await;
         incoming(&s, "m3", 650, "theirs, further ahead").await;
@@ -794,7 +818,7 @@ mod tests {
         delete(&s, "dm:aa", 700).await.unwrap();
         assert_eq!(cleared_at(&s, "dm:aa").await.unwrap(), 700, "a later one raises it");
 
-        ensure_dm(&s, "bb").await.unwrap();
+        ensure_dm(&s, "bb", None).await.unwrap();
         delete(&s, "dm:bb", 500).await.unwrap();
         assert_eq!(cleared_at(&s, "dm:bb").await.unwrap(), 500, "an empty chat: the clock");
         assert_eq!(cleared_at(&s, "dm:cc").await.unwrap(), 0);
@@ -807,7 +831,7 @@ mod tests {
     #[tokio::test]
     async fn a_deletion_from_my_other_device_takes_what_the_chat_held_then() {
         let s = Store::open_in_memory().await.unwrap();
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         incoming(&s, "m1", 100, "before").await;
         row(&s, "m2", 200, "mine, before", "out").await;
         incoming(&s, "m3", 400, "after").await;
@@ -828,13 +852,13 @@ mod tests {
     async fn a_future_dated_row_moves_the_tombstone_only_so_far() {
         let s = Store::open_in_memory().await.unwrap();
         let now = 1_000_000;
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         incoming(&s, "theirs", now + 1_000_000, "from a clock far ahead").await;
         delete(&s, "dm:aa", now).await.unwrap();
         assert_eq!(cleared_at(&s, "dm:aa").await.unwrap(), now, "the peer's rows never move it");
         assert!(was_deleted(&s, "theirs").await.unwrap(), "that row stays gone by its id");
 
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         row(&s, "mine", now + 1_000_000, "pushed ahead by such a row", "out").await;
         delete(&s, "dm:aa", now).await.unwrap();
         let cleared = cleared_at(&s, "dm:aa").await.unwrap();
@@ -864,11 +888,12 @@ mod tests {
     #[tokio::test]
     async fn an_unread_request_is_not_counted_as_waiting() {
         let s = Store::open_in_memory().await.unwrap();
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         incoming(&s, "m1", 100, "may I?").await;
         assert_eq!(total_unread(&s).await.unwrap(), 1, "a chat without a relation row counts");
         let mut r = crate::dm_relations::RelationRow {
             peer_pubkey: "aa".into(),
+            server_id: String::new(),
             my_contact: "none".into(),
             blocked: false,
             peer_signal: "approved".into(),
@@ -892,7 +917,7 @@ mod tests {
     async fn read_on_any_device_holds_whatever_comes_first() {
         let s = Store::open_in_memory().await.unwrap();
         assert!(!read_up_to(&s, "dm:aa", 150).await.unwrap(), "no chat yet: kept, nothing to lower");
-        ensure_dm(&s, "aa").await.unwrap();
+        ensure_dm(&s, "aa", None).await.unwrap();
         incoming(&s, "m1", 100, "one").await;
         incoming(&s, "m2", 200, "two").await;
         assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().unread, 1, "the earlier one was read elsewhere");
@@ -943,6 +968,7 @@ mod tests {
         assert_eq!((chat.unread, chat.last_preview.as_deref()), (3, Some("u30")));
         let mut r = RelationRow {
             peer_pubkey: "u".into(),
+            server_id: String::new(),
             my_contact: "none".into(),
             blocked: true,
             peer_signal: "none".into(),

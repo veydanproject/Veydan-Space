@@ -63,7 +63,8 @@
     const pk = r.requester;
     const contact = messengerStore.contacts.find((c) => c.pubkey === pk) ?? null;
     const p = nameStore.profile(pk);
-    const chat = chatStore.chats.find((c) => c.kind === 'dm' && c.peer_pubkey === pk);
+    // Any chat with them counts, the home one or a private one on a server.
+    const talkedIn = chatStore.chats.some((c) => c.kind === 'dm' && c.peer_pubkey === pk && !!(c.last_message_at || c.last_preview));
     const label = nameStore.label(pk);
     return {
       // Nothing known of them: their npub reads better than a cut of the hex.
@@ -72,7 +73,7 @@
       nip05: p?.nip05?.trim() || null,
       nip05Verified: !!p?.nip05_verified,
       contact: !!contact,
-      talked: !!contact && !!(chat?.last_message_at || chat?.last_preview),
+      talked: !!contact && talkedIn,
       common: commonGroups(Object.values(groupStore.groups), group.id, pk),
       about: firstLine(p?.about),
       missing: nameStore.missing(pk),

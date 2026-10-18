@@ -43,6 +43,7 @@ async fn local_blossom(store: &Store, id: &str, url: String, priority: i64) {
         source: "user".into(),
         created_at: 0,
         updated_at: 0,
+        server_id: None,
     };
     messenger_store::media::upsert_server(store, &row).await.unwrap();
 }
@@ -871,11 +872,12 @@ async fn the_picture_of_a_stranger_is_not_fetched() {
     ] {
         let peer = k.public_key().to_hex();
         if let Some(my_contact) = my_contact {
-            chats::ensure_dm(&r.store, &peer).await.unwrap();
+            chats::ensure_dm(&r.store, &peer, None).await.unwrap();
             dm_relations::put(
                 &r.store,
                 &dm_relations::RelationRow {
                     peer_pubkey: peer.clone(),
+                    server_id: String::new(),
                     my_contact: my_contact.into(),
                     blocked: blocked_by_me,
                     peer_signal: "approved".into(),
@@ -911,7 +913,7 @@ async fn the_picture_of_a_stranger_is_not_fetched() {
     assert_eq!(r.net.calls().len(), 1);
 
     // Accepted: the picture is fetched like anybody's.
-    let mut row = dm_relations::get(&r.store, &asking.public_key().to_hex()).await.unwrap().unwrap();
+    let mut row = dm_relations::get(&r.store, &asking.public_key().to_hex(), None).await.unwrap().unwrap();
     row.my_contact = "approved".into();
     dm_relations::put(&r.store, &row).await.unwrap();
     assert_eq!(r.av.cached(&url_of(&asking), None, true).await.unwrap(), None);
@@ -1531,7 +1533,7 @@ async fn group_picture_set(rt: &MessengerRuntime, group: &str, rgb: [u8; 3]) -> 
 #[tokio::test]
 async fn a_manager_sets_replaces_and_removes_the_picture_of_a_group() {
     let (dir, rt, backend, _clock, _net) = group_rig().await;
-    let g = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true).await.unwrap();
+    let g = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true, None).await.unwrap();
     assert_eq!(g.picture, "");
 
     let queued = rt.outbox.pending().await.unwrap();
@@ -1579,8 +1581,8 @@ async fn a_manager_sets_replaces_and_removes_the_picture_of_a_group() {
 #[tokio::test]
 async fn the_same_picture_in_two_groups_stays_while_one_names_it() {
     let (_dir, rt, backend, _clock, _net) = group_rig().await;
-    let a = rt.group_create(messenger_groups::GroupKind::Private, "A", "", true).await.unwrap();
-    let b = rt.group_create(messenger_groups::GroupKind::Public, "B", "", true).await.unwrap();
+    let a = rt.group_create(messenger_groups::GroupKind::Private, "A", "", true, None).await.unwrap();
+    let b = rt.group_create(messenger_groups::GroupKind::Public, "B", "", true, None).await.unwrap();
     let pa = group_picture_set(&rt, &a.id, [9, 9, 9]).await.picture;
     let pb = group_picture_set(&rt, &b.id, [9, 9, 9]).await.picture;
     assert_eq!(pa, pb, "one blob");
@@ -1594,7 +1596,7 @@ async fn the_same_picture_in_two_groups_stays_while_one_names_it() {
 #[tokio::test]
 async fn the_keeper_puts_a_group_picture_back_and_follows_the_log() {
     let (dir, rt, backend, clock, net) = group_rig().await;
-    let g = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true).await.unwrap();
+    let g = rt.group_create(messenger_groups::GroupKind::Private, "Team", "", true, None).await.unwrap();
     let url = group_picture_set(&rt, &g.id, [7, 70, 7]).await.picture;
     let sha = hash_of(&url).unwrap();
     assert_eq!(rt.avatars.keep_groups(&rt.session_keys().await.unwrap()).await.unwrap(), vec![], "nothing due");

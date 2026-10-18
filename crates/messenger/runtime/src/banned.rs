@@ -41,15 +41,22 @@ impl MessengerRuntime {
         }
         let mut events = Vec::new();
         let mut contact_banned = false;
+        // A ban is of the person: every direct chat with them reads as
+        // blocked, the private ones too.
+        let mut servers: Vec<Option<String>> = vec![None];
+        servers.extend(crate::scopes::private_servers(&self.store).await.into_iter().map(Some));
         for hex in &changed {
             let Some(peer) = PubKey::parse(hex) else { continue };
             for chat_id in chats::group_chats_follow_block(&self.store, hex).await? {
                 events.push(UiEvent { name: UI_EVENT_DM_UPDATED.into(), payload: serde_json::json!({ "chat_id": chat_id }) });
             }
-            let chat_id = chats::dm_chat_id(hex);
-            if chats::get(&self.store, &chat_id).await?.is_some() {
-                events.push(self.dm.relationship_event(&chat_id, &peer).await?);
-                events.push(UiEvent { name: UI_EVENT_DM_UPDATED.into(), payload: serde_json::json!({ "chat_id": chat_id }) });
+            for server in &servers {
+                let chat = messenger_dm::DmPeer::on(peer.clone(), server.as_deref());
+                let chat_id = chat.chat_id();
+                if chats::get(&self.store, &chat_id).await?.is_some() {
+                    events.push(self.dm.relationship_event(&chat_id, &chat).await?);
+                    events.push(UiEvent { name: UI_EVENT_DM_UPDATED.into(), payload: serde_json::json!({ "chat_id": chat_id }) });
+                }
             }
             if self.contacts.is_contact(&peer).await? && self.dm.is_banned(&peer).await? {
                 contact_banned = true;
@@ -117,7 +124,7 @@ mod tests {
         crate::servers::use_veydan_offline(&rt).await;
         rt.identity().create("pw").await.unwrap();
         assert!(rt.refresh_signer().await.unwrap());
-        let g = rt.group_create(messenger_groups::GroupKind::Private, "Den", "", true).await.unwrap();
+        let g = rt.group_create(messenger_groups::GroupKind::Private, "Den", "", true, None).await.unwrap();
         rt.group_send_text(&g.id, "before", None).await.unwrap();
         let chat = || async { rt.chat(&g.chat_id).await.unwrap().expect("the chat of the group") };
         assert!(!chat().await.banned && chat().await.can_send);

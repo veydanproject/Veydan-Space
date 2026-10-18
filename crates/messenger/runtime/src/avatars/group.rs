@@ -418,7 +418,10 @@ impl MessengerRuntime {
         let _one = av.group_lock.lock().await;
         let old = group_avatar::get(&av.store, group_id).await?;
         write_whole(&av.group_path(&sha), &jpeg).await?;
-        let blobs = match av.media.upload_public(&keys, jpeg, JPEG, OWN_COPIES).await {
+        // A group of a private server shows a picture of that server's
+        // blob server, never one of the home set (its members may have none).
+        let server = crate::scopes::server_of_group(&self.store, group_id).await?;
+        let blobs = match av.media.upload_public_of(&keys, server.as_deref(), jpeg, JPEG, OWN_COPIES).await {
             Ok(b) => b,
             Err(e) => {
                 av.let_go(&keys, &sha, Vec::new()).await?;

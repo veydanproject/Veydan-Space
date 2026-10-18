@@ -8,6 +8,7 @@
 //! chat, with the key shut (`MyContact::Expired`) until I add it myself.
 //! The settings of whom I take messages from live here too.
 
+use crate::peer::DmPeer;
 use crate::relations::UI_EVENT_DM_RELATIONSHIP;
 use crate::relationship::{decided_now, screen_mode, DmFrom, MyContact, ScreenMode};
 use crate::service::DmService;
@@ -40,8 +41,14 @@ pub const MAX_REQUESTS: i64 = 200;
 /// One chat of the queue, as the app shows it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct RequestView {
-    /// `dm:<hex>`
+    /// `dm:<hex>`, or `dm:<hex>@<server id>` for a request in a private
+    /// chat: the address an answer to it takes
+    /// (`messenger_moderation_request_act`), so it lands in that chat.
     pub chat_id: String,
+    /// The private server of the request's chat; absent for the home chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub server_id: Option<String>,
     /// Hex pubkey of the stranger.
     pub peer: String,
     /// What the app calls them: a profile name, else a short npub.
@@ -115,8 +122,9 @@ impl DmService {
         let rows = dm_relations::request_rows(&self.store, before, i64::from(limit.clamp(1, 500))).await?;
         let mut out = Vec::with_capacity(rows.len());
         for (chat_id, peer_hex, cursor) in rows {
-            let Some(peer) = PubKey::parse(&peer_hex) else { continue };
-            let floor = self.load_relation(&peer).await?.request_floor;
+            let Some(chat) = DmPeer::of_chat(&chat_id) else { continue };
+            let peer = chat.key.clone();
+            let floor = self.load_relation(&chat).await?.request_floor;
             let (text, at) = match repo::first_visible_incoming_since(&self.store, &chat_id, floor).await? {
                 Some(m) if m.deleted_at.is_none() => (m.text.unwrap_or_default(), m.created_at),
                 Some(m) => (String::new(), m.created_at),
@@ -124,6 +132,7 @@ impl DmService {
             };
             out.push(RequestView {
                 chat_id: chat_id.clone(),
+                server_id: chat.server().map(String::from),
                 peer: peer_hex,
                 name: self.display_name(&peer).await?,
                 text,
@@ -188,7 +197,8 @@ impl DmService {
     /// the key is shut until I add it myself. The peer is told nothing: an
     /// expiry is not an answer. Decided here, now.
     async fn expire_request(&self, chat_id: &str, peer_hex: &str, now: i64) -> Result<Vec<Effect>> {
-        let Some(peer) = PubKey::parse(peer_hex) else { return Ok(vec![]) };
+        // The request of the chat, the private one by its own relation.
+        let Some(peer) = DmPeer::of_chat(chat_id).filter(|p| p.key.as_hex() == peer_hex) else { return Ok(vec![]) };
         let current = self.load_relation(&peer).await?;
         if screen_mode(&current) != ScreenMode::RequestReceived {
             return Ok(vec![]);
@@ -204,10 +214,10 @@ impl DmService {
             Effect::Emit(UiEvent {
                 name: UI_EVENT_DM_RELATIONSHIP.into(),
                 payload: serde_json::json!({
-                    "chat_id": chat_id, "peer": peer.as_hex(), "mode": mode.as_str(), "can_send": can_send,
+                    "chat_id": chat_id, "peer": peer.key.as_hex(), "mode": mode.as_str(), "can_send": can_send,
                 }),
             }),
-            Effect::Emit(self.request_event(&peer).await?),
+            Effect::Emit(self.request_event(&peer.key).await?),
         ])
     }
 }
@@ -236,6 +246,7 @@ mod tests {
                             &s,
                             &RelationRow {
                                 peer_pubkey: peer.clone(),
+                                server_id: String::new(),
                                 my_contact: m.as_str().into(),
                                 blocked,
                                 peer_signal: p.as_str().into(),
@@ -250,7 +261,7 @@ mod tests {
                         )
                         .await
                         .unwrap();
-                        chats::ensure_dm(&s, &peer).await.unwrap();
+                        chats::ensure_dm(&s, &peer, None).await.unwrap();
                         let r = Relationship { my_contact: m, blocked, peer_signal: p, was_ever_mutual: mutual, ..Default::default() };
                         if screen_mode(&r) == ScreenMode::RequestReceived {
                             want.push(peer);

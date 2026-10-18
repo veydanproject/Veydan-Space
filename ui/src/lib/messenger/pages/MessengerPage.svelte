@@ -29,6 +29,7 @@
   import { SETTINGS_TABS, SETTINGS_ICONS, settingsUi } from './settingsTab.svelte';
   import ConfirmHost from '../shared/ConfirmHost.svelte';
   import ReportHost from '../shared/ReportHost.svelte';
+  import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
   import RequestsList from '../requests/RequestsList.svelte';
   import RequestView from '../requests/RequestView.svelte';
   import { requestStore, requestsUi } from '../requests/requestStore.svelte';
@@ -278,7 +279,8 @@
           {#if contact}
             <div class="pane-scroll">
               <button class="back-narrow btn btn-ghost btn-sm" onclick={() => (contactKey = null)}><Icon name="arrow-left" size={12} />{$t('msg_back')}</button>
-              <ContactDetails {contact} onchat={(pubkey) => { show('chat'); chatStore.openPeer(pubkey).catch(() => {}); }} onremoved={() => (contactKey = null)} />
+              <ContactDetails {contact} onchat={(pubkey) => { show('chat'); chatStore.openPeer(pubkey).catch(() => {}); }}
+                onopenchat={(chatId) => { show('chat'); chatStore.open(chatId).catch(() => {}); }} onremoved={() => (contactKey = null)} />
             </div>
           {:else}
             <div class="welcome">
@@ -340,6 +342,7 @@
   <Dialer />
   <ConfirmHost />
   <ReportHost />
+  <ServerAcceptDialog />
 {/if}
 
 <style>

@@ -410,6 +410,9 @@ pub struct BlossomBackend {
     base: String,
     keys: Keys,
     http: reqwest::Client,
+    /// The app key of a private server, sent as `?key=` on an upload: its
+    /// gate lets in only those who have the server's card. Never logged.
+    app_key: Option<String>,
 }
 
 impl BlossomBackend {
@@ -418,7 +421,21 @@ impl BlossomBackend {
         if !(base.starts_with("https://") || base.starts_with("http://")) {
             return Err(MessengerError::Invalid("blossom url must be http(s)".into()));
         }
-        Ok(Self { base, keys, http: http_client()? })
+        Ok(Self { base, keys, http: http_client()?, app_key: None })
+    }
+
+    /// Uploads carry `key` (an empty one is none).
+    pub fn with_app_key(mut self, key: Option<String>) -> Self {
+        self.app_key = key.filter(|k| !k.trim().is_empty());
+        self
+    }
+
+    /// Where an upload goes: `/upload`, with the app key when there is one.
+    fn upload_url(&self) -> String {
+        match &self.app_key {
+            Some(k) => format!("{}/upload?key={}", self.base, k),
+            None => format!("{}/upload", self.base),
+        }
     }
 
     /// `Authorization: Nostr <base64(event)>`. The event is dated slightly
@@ -454,7 +471,7 @@ impl BlossomBackend {
 
     async fn put_payload(&self, body: Payload, content_type: &str) -> BackendResult<()> {
         check_content_type(content_type)?;
-        let url = format!("{}/upload", self.base);
+        let url = self.upload_url();
         let auth = self.auth_header("upload", &body.sha256)?;
         let resp = messenger_http::following_route(&host_of(&url), || {
             let req = self
@@ -467,7 +484,8 @@ impl BlossomBackend {
         })
         .await
         .map_err(route_changed)?
-        .map_err(from_reqwest)?;
+        // The url carries the app key: the error is told without it.
+        .map_err(|e| from_reqwest(e.without_url()))?;
         if resp.status().is_success() {
             Ok(())
         } else {
@@ -1017,6 +1035,38 @@ mod tests {
         assert_eq!(ev.pubkey, keys.public_key());
         assert_eq!(tag(&ev, "t").as_deref(), Some("upload"));
         assert_eq!(tag(&ev, "x"), Some(sha));
+        assert_eq!(r.url.query(), None, "a home server's upload carries no key");
+    }
+
+    /// The blob server of a private server lets in only who has the
+    /// server's card: the upload carries its app key, the existence check
+    /// (a read like anyone's) does not, and an error does not tell it.
+    #[tokio::test]
+    async fn blossom_upload_to_a_private_server_carries_its_app_key() {
+        use wiremock::matchers::query_param;
+        let server = MockServer::start().await;
+        let body = b"a blob".to_vec();
+        let sha = crate::crypto::sha256_hex(&body);
+        Mock::given(method("PUT"))
+            .and(path("/upload"))
+            .and(query_param("key", "app-key-1"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        Mock::given(method("HEAD")).respond_with(ResponseTemplate::new(404)).mount(&server).await;
+        let b = BlossomBackend::new(&server.uri(), Keys::generate()).unwrap().with_app_key(Some("app-key-1".into()));
+        assert!(!b.exists(&sha).await.unwrap());
+        b.put_typed(&sha, body, "application/octet-stream").await.unwrap();
+        let seen = server.received_requests().await.unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].url.query(), None, "the check is a read like anyone's");
+        assert_eq!(seen[1].url.query(), Some("key=app-key-1"));
+        assert_eq!(BlossomBackend::new(&server.uri(), Keys::generate()).unwrap().with_app_key(Some(" ".into())).upload_url(), format!("{}/upload", server.uri()), "an empty key is none");
+
+        // Nobody listens: the error says so without the key.
+        let gone = BlossomBackend::new("http://127.0.0.1:9", Keys::generate()).unwrap().with_app_key(Some("app-key-1".into()));
+        let e = gone.put_typed(&sha, b"x".to_vec(), "application/octet-stream").await.unwrap_err();
+        assert!(!e.message.contains("app-key-1"), "{}", e.message);
     }
 
     #[tokio::test]

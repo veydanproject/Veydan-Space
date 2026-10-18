@@ -130,6 +130,11 @@ pub struct CallView {
     /// The peer, hex.
     pub peer: String,
     pub chat_id: String,
+    /// The private server of the chat the call is of (internal/messenger-wire.md,
+    /// «Частный чат»): its signals go there alone, and only that server's
+    /// call node carries it. Absent for the home chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
     pub direction: Direction,
     pub media: Media,
     pub phase: Phase,
@@ -181,8 +186,22 @@ pub struct CallView {
 impl CallView {
     /// A call just begun: nothing settled yet beyond what is given.
     pub fn new(call_id: String, peer: String, direction: Direction, media: Media, phase: Phase, started_at: i64) -> Self {
+        Self::in_chat(call_id, peer, None, direction, media, phase, started_at)
+    }
+
+    /// A call of the chat with `peer` on `server` (`None`: the home chat).
+    pub fn in_chat(
+        call_id: String,
+        peer: String,
+        server: Option<&str>,
+        direction: Direction,
+        media: Media,
+        phase: Phase,
+        started_at: i64,
+    ) -> Self {
         Self {
-            chat_id: messenger_store::chats::dm_chat_id(&peer),
+            chat_id: messenger_store::chats::dm_chat_id(&peer, server),
+            server_id: server.map(String::from),
             call_id,
             peer,
             direction,

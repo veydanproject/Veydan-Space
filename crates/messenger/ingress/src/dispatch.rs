@@ -217,6 +217,7 @@ mod tests {
             content: content.into(),
             reply_to: None,
             rumor_kind: 14,
+            srv: None,
         }
     }
 

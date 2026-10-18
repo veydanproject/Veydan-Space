@@ -268,8 +268,8 @@ mod tests {
     #[tokio::test]
     async fn a_read_here_is_owed_to_the_peer_and_one_from_elsewhere_is_not() {
         let s = Store::open_in_memory().await.unwrap();
-        chats::ensure_dm(&s, "aa").await.unwrap();
-        chats::ensure_dm(&s, "bb").await.unwrap();
+        chats::ensure_dm(&s, "aa", None).await.unwrap();
+        chats::ensure_dm(&s, "bb", None).await.unwrap();
         message(&s, "a1", "dm:aa", "in", 100).await;
         message(&s, "b1", "dm:bb", "in", 100).await;
 
@@ -295,7 +295,7 @@ mod tests {
     #[tokio::test]
     async fn what_could_not_be_queued_is_owed_again() {
         let s = Store::open_in_memory().await.unwrap();
-        chats::ensure_dm(&s, "aa").await.unwrap();
+        chats::ensure_dm(&s, "aa", None).await.unwrap();
         message(&s, "a1", "dm:aa", "in", 100).await;
         message(&s, "a2", "dm:aa", "in", 200).await;
         let due = take_due_delivered(&s, 1_000, 50).await.unwrap();

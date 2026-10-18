@@ -108,6 +108,14 @@ pub const T_OWN_CARD: &str = "own.card";
 /// Every type of a note between my devices starts so.
 pub const T_OWN_PREFIX: &str = "own.";
 
+/// `["srv", "<server id>"]` on a rumor: it belongs to the private chat on
+/// that server (internal/messenger-wire.md, «Частный чат»). Inside the
+/// seal, so only the two ends read it; the receiver files the rumor under
+/// `dm:<peer>@<server id>`, and a rumor naming a server the receiver does
+/// not have is dropped. A rumor without it is of the home chat, unless it
+/// came from a private server's relay.
+pub const TAG_SERVER: &str = "srv";
+
 /// Kind of the rumor that carries a note from a peer that is not a message:
 /// a receipt, a reaction, a key. A client that knows only kind 14 drops it
 /// without a word. See internal/messenger-wire.md §3.

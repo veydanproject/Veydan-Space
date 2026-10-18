@@ -21,6 +21,16 @@ pub trait GroupAccess: Send + Sync {
     /// its access key, when there is one.
     async fn pinned_node(&self, group_id: &str) -> Result<Option<CallNode>>;
 
+    /// The nodes a room of the group may be on besides the pinned one,
+    /// when the group lives on a private server (internal/messenger-wire.md,
+    /// «Группы на сервере»): that server's own node (class own, with the
+    /// server's key), or none, never a node of the project's or a
+    /// volunteer's. `None` for a group of the home set, whose rooms take
+    /// the sets of servers as before.
+    async fn server_nodes(&self, _group_id: &str) -> Result<Option<Vec<CallNode>>> {
+        Ok(None)
+    }
+
     /// A quiet note of mine to the group, sealed with the group key as a
     /// message is: what to publish.
     async fn seal_note(&self, group_id: &str, envelope: &Envelope) -> Result<Outbound>;

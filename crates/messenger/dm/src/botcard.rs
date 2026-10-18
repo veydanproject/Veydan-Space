@@ -291,6 +291,7 @@ mod tests {
             content: json.into(),
             reply_to: None,
             rumor_kind: 14,
+            srv: None,
         };
         let Effect::Emit(event) = card_event(&msg, &Envelope::parse(json).unwrap()) else { panic!("an event") };
         assert_eq!(event.name, UI_EVENT_BOT_CARD);

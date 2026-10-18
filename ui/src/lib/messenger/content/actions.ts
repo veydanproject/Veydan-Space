@@ -6,7 +6,8 @@
 
 import { get } from 'svelte/store';
 import { t } from '$lib/core/i18n';
-import { messengerApi, messengerError, type LinkView } from '../api';
+import { messengerApi, messengerError, type CardView, type LinkView, type ServerPreview } from '../api';
+import { acceptServer } from '../servers/serverAccept.svelte';
 import { copied as copiedToast, toast } from '$lib/core/ui/toast.svelte';
 import { chatStore } from '../chats/chatStore.svelte';
 import { groupStore } from '../groups/groupStore.svelte';
@@ -49,8 +50,15 @@ export const linkActions = {
     }
   },
 
-  /** Come into a public group, or ask a private one. Returns what I am to the group now. */
+  /**
+   * Come into a public group, or ask a private one. A group on a server of
+   * its own (the link carries its card) is joined there, after «Добавить
+   * сервер?» said yes; `null` when it said no. Returns what I am to the group now.
+   */
   async joinGroup(view: GroupView, note = '') {
+    if (view.server && !view.server_known) {
+      if (!(await acceptServer(view.server))) return null;
+    }
     const g = await groupStore.openLink(view.link, note.trim());
     linkStore.refresh();
     if (g.membership === 'joined' || g.membership === 'joining') await openChat(g.chat_id);
@@ -61,8 +69,23 @@ export const linkActions = {
   openGroup: (view: GroupView) => openChat(`group:${view.group_id}`),
 
   async write(view: ContactView) {
+    if (view.server) {
+      await linkActions.writePrivate(view);
+      return;
+    }
     const chat = await chatStore.openPeer(view.pubkey);
     await show(chat.id);
+  },
+
+  /**
+   * The private chat with a person on the server their link names: the
+   * server is added after «Добавить сервер?» said yes, then the chat opens
+   * there, approved on my side and told at once (with the link's invitation).
+   * `false` when the question was answered no.
+   */
+  async writePrivate(view: ContactView): Promise<boolean> {
+    if (!view.server) return false;
+    return openPrivateOn(view.server, view.pubkey, view.invite);
   },
 
   async addContact(view: ContactView) {
@@ -89,4 +112,26 @@ export const cardActions = {
     const chat = await chatStore.openPeer(pubkey);
     await show(chat.id);
   },
+
+  /**
+   * The private chat the card offers, on the server of its sender: what the
+   * server is is asked of the runtime, «Добавить сервер?» asks, then the chat
+   * opens there and the sender's side, which approved me by sending the card,
+   * opens too. `false` when the question was answered no.
+   */
+  async openPrivate(card: CardView): Promise<boolean> {
+    if (!card.server) return false;
+    const server = await messengerApi.servers.preview(card.server);
+    return openPrivateOn(server, card.pubkey, null);
+  },
 };
+
+/** The server mine (asked first), then the private chat with `pubkey` there, shown. */
+async function openPrivateOn(server: ServerPreview, pubkey: string, invite: string | null): Promise<boolean> {
+  const id = await acceptServer(server);
+  if (!id) return false;
+  const chat = await messengerApi.servers.openPrivate(pubkey, id, invite);
+  linkStore.refresh();
+  await openChat(chat.id);
+  return true;
+}

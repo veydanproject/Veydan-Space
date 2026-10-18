@@ -8,6 +8,7 @@
   import Avatar from '../../contacts/Avatar.svelte';
   import { dmErrorCode, messengerError, type LinkView } from '../../api';
   import { linkActions } from '../actions';
+  import ServerCard from './ServerCard.svelte';
 
   interface Props { view: Extract<LinkView, { kind: 'contact' }> }
   let { view }: Props = $props();
@@ -29,6 +30,10 @@
   }
 </script>
 
+{#if view.server}
+  <!-- A person on a server of their own: the private chat there. -->
+  <ServerCard {view} />
+{:else}
 <div class="box">
   <div class="top">
     <Avatar url={view.picture} label={name} seed={view.pubkey} size={44} />
@@ -60,6 +65,7 @@
     </div>
   {/if}
 </div>
+{/if}
 
 <style>
   .box { display: flex; flex-direction: column; gap: var(--sp-2); }

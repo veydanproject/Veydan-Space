@@ -6,7 +6,7 @@
 
 import type {
   BotCard, CardView, ChatMode, Color, LogEntry, MessageStatus, MessengerChat, MessengerContact, MessengerGroup, MessengerGroupInvite, MessengerGroupMember, MessengerIdentity,
-  MessengerMessage, MessengerProfile, MessengerTransfer, SocialLink, SocialView, Span, Style, InviteView,
+  MessengerMessage, MessengerProfile, MessengerTransfer, SocialLink, SocialView, Span, Style, InviteView, PrivateServerView,
 } from './api';
 
 const ME = 'ab'.repeat(32);
@@ -168,12 +168,12 @@ export function demoPicture(seed: string, w = 256, h = w): string | null {
 }
 
 /** A card as the runtime shows it, from a profile of the demo. */
-export function demoCard(p: MessengerProfile, phone: string | null, flags: { is_me?: boolean; is_contact?: boolean; blocked?: boolean } = {}): CardView {
+export function demoCard(p: MessengerProfile, phone: string | null, flags: { is_me?: boolean; is_contact?: boolean; blocked?: boolean; server?: string | null } = {}): CardView {
   return {
     pubkey: p.pubkey, npub: p.npub, label: p.display_name?.trim() || p.name?.trim() || `${p.npub.slice(0, 12)}…`,
     name: p.name, display_name: p.display_name, bio: p.bio, website: p.website, socials: p.socials, phone,
     avatar: p.picture ? demoPicture(p.picture, 160) : null,
-    is_me: flags.is_me ?? false, is_contact: flags.is_contact ?? false, blocked: flags.blocked ?? false,
+    is_me: flags.is_me ?? false, is_contact: flags.is_contact ?? false, blocked: flags.blocked ?? false, server: flags.server ?? null,
   };
 }
 
@@ -198,6 +198,8 @@ export interface DemoData {
   modLog: Record<string, LogEntry[]>;
   /** My invitations to a chat with me: a link sent somewhere, and a code said to one person. */
   dmInvites: InviteView[];
+  /** My private servers (the runtime keeps their keys; the page never sees them). */
+  privateServers: PrivateServerView[];
 }
 
 export function demoEnabled(): boolean {
@@ -553,7 +555,47 @@ export function buildDemo(): DemoData {
     down('logs.tar.gz', 'application/gzip', 'file', 60 * MB, { status: 'failed', done_bytes: 20 * MB, chunks_done: 5, failure_reason: 'err.not_found' }),
   );
 
-  const unread: Record<string, number> = { [b]: 2, [v]: 1, [nk]: 1, [sq]: 2 };
+  // A private server of mine, «Demo Corp»: Boris's company runs it. A
+  // private chat with him lives there beside the home one, a group of the
+  // company too, and an empty private chat with Alice (opened by the card
+  // she sent) says that nothing was written yet.
+  const corp: PrivateServerView = {
+    id: 'dc0e5a17b2c94f60', name: 'Demo Corp', relay: 'wss://relay.demo-corp.example', media: 'https://media.demo-corp.example',
+    call_node: 'call.demo-corp.example:3478#n1', push: 'veydan', added_at: now - day * 3, chats: 0, groups: 0,
+  };
+  // A second one with nothing but a relay, whose push names a gateway the
+  // network does not know: the settings show both states.
+  const lab: PrivateServerView = {
+    id: '5eb7a1c0d3e24f98', name: 'Лаборатория', relay: 'wss://lab.example.org', media: null,
+    call_node: null, push: 'veydan', added_at: now - day, chats: 0, groups: 0,
+  };
+  const bc = `dm:${boris}@${corp.id}`;
+  const ac = `dm:${alice}@${corp.id}`;
+  for (const [id, pk, name] of [[bc, boris, 'Борис'], [ac, alice, 'Алиса Морозова']] as const) {
+    const home = chats.find((c) => c.id === `dm:${pk}`)!;
+    chats.push({ ...home, id, server_id: corp.id, title: name, is_muted: false, pinned: false, unread: 0, last_message_at: null, last_preview: null, mode: 'full_chat', can_send: true });
+    messages[id] = [];
+  }
+  messages[bc].push(
+    msg(bc, boris, now - day * 2, 'Здесь про проект заказчика — только на нашем сервере.'),
+    msg(bc, ME, now - day * 2 + 120, 'Понял, договор пришлю сюда.'),
+    msg(bc, boris, now - 1800, 'Созвон в 15:00, узел звонков наш.'),
+  );
+  const corpGroup: MessengerGroup = {
+    ...square, id: gid('dc'), chat_id: `group:${gid('dc')}`, kind: 'private', name: 'Demo Corp: проекты', about: 'Рабочая группа компании на её сервере.',
+    relay: corp.relay, owner: boris, my_role: 'member', members: [member(boris, 'owner', now - day * 3), member(ME, 'member', now - day * 2), member(alice, 'member', now - day * 2)],
+    undecrypted: 0, needs_update: false, link: null,
+    key: { id: 'dc0e5a17b2c94f60dc0e5a17b2c94f60', version: 1, cipher: 'AES-256-GCM', source: 'random', link_epoch: 0, since: now - day * 3, by: boris, reason: 'create', held: true, status: 'good' },
+  };
+  groups.push(corpGroup);
+  chats.push({ id: corpGroup.chat_id, kind: 'group', server_id: corp.id, peer_pubkey: null, peer_npub: null, title: corpGroup.name, picture: null, is_contact: false, is_muted: false, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'group', can_send: true });
+  messages[corpGroup.chat_id] = [
+    sys(corpGroup.chat_id, now - day * 2, 'group_joined', ME),
+    msg(corpGroup.chat_id, boris, now - day + 300, 'Макеты для заказчика лежат здесь, наружу не выносим.'),
+    msg(corpGroup.chat_id, alice, now - 5400, 'Обновила второй экран.'),
+  ];
+
+  const unread: Record<string, number> = { [b]: 2, [v]: 1, [nk]: 1, [sq]: 2, [bc]: 1 };
   for (const c of chats) {
     const list = messages[c.id].filter((x) => x.content_type !== 'system');
     const last = list[list.length - 1];
@@ -569,7 +611,7 @@ export function buildDemo(): DemoData {
   });
   return {
     identity: { npub: ownProfile.npub, pubkey: ME, created_at: now - day * 30 },
-    ownProfile, contacts, chats, messages, groups, invites, transfers, strangers,
+    ownProfile, contacts, chats, messages, groups, invites, transfers, strangers, privateServers: [corp, lab],
     dmInvites: [
       {
         id: 'c1'.repeat(32), kind: 'link', secret: 'ZGVtby1pbnZpdGUtMDAwMQ', label: 'Telegram',

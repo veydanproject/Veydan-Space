@@ -17,7 +17,14 @@
 //! Nothing is said to the server before the user agreed (`push.enabled`),
 //! and nothing while the silent mode is on.
 //!
+//! A private server with a push server of its own is told the same way,
+//! through the gateway of the Veydan network ([`gateway`]).
+//!
 //! [`push_reconcile`]: MessengerRuntime::push_reconcile
+
+pub mod gateway;
+
+pub use gateway::{PushTarget, PushTicket, UI_EVENT_PUSH_KEY};
 
 use crate::{MessengerRuntime, REGION_FALLBACK};
 use messenger_core::traits::SystemClock;
@@ -107,6 +114,11 @@ pub struct PushStatus {
     pub error: Option<String>,
     /// What the server said about each relay.
     pub relays: Vec<RelayAnswer>,
+    /// The push servers of my private servers, told through the gateway
+    /// (internal/messenger-wire.md, «Push через шлюз»), one per server
+    /// whose push is on.
+    #[serde(default)]
+    pub targets: Vec<PushTarget>,
 }
 
 fn now() -> u64 {
@@ -178,12 +190,15 @@ impl MessengerRuntime {
     async fn push_wanted(&self, keys: &Keys, channel: &PushChannel) -> Result<DevicePut> {
         let relays = self
             .relays
-            .list()
+            .enabled_of(None)
             .await?
             .into_iter()
             // The relays messages are read from: the same set the user's
-            // relay list (kind 10050) names to the world.
-            .filter(|r| r.enabled && r.read)
+            // relay list (kind 10050) of the home set names to the world.
+            // The push of the project watches the home set alone: a private
+            // server's relay is never named to it (internal/messenger-wire.md,
+            // «Частный чат»).
+            .filter(|r| r.read)
             .map(|r| RelayWatch { url: r.url, dm: true, groups: true })
             .collect();
 
@@ -192,9 +207,13 @@ impl MessengerRuntime {
         // A group is named with the keys of its marks, by which the server
         // tells its events from those of strangers. One this device holds
         // no key of yet is left out: the server could tell nothing about
-        // its events, and this device could open none of them.
+        // its events, and this device could open none of them. A group of
+        // a private server is not named: it lives on that server alone, the
+        // push of the project never sees its events, and its name would
+        // tell the project who is in it (its push comes with the gateway of
+        // the server, internal/messenger-wire.md, «Группы на сервере»).
         let mut groups = Vec::new();
-        for group in self.groups().list(&me).await?.into_iter().filter(|g| g.membership == "joined") {
+        for group in self.groups().list(&me).await?.into_iter().filter(|g| g.membership == "joined" && g.server_id.is_none()) {
             let keys = self.groups().push_keys(&group.id).await?;
             if !keys.is_empty() {
                 groups.push(GroupWatch { id: group.id, keys });
@@ -249,22 +268,44 @@ impl MessengerRuntime {
     /// A failure to reach the server is not an error of this call: it is
     /// kept, and shown in the status.
     pub async fn push_reconcile(&self, force: bool) -> Result<PushStatus> {
-        if !settings::get_bool(&self.store, KEY_ENABLED, false).await?
-            || self.relays.is_silent().await?
-        {
+        let silent = self.relays.is_silent().await?;
+        // Tickets a gateway could not take back yet: asked again whether
+        // pushes are on or not, and whether their server is still mine.
+        if !silent {
+            if let Ok(keys) = self.session_keys().await {
+                if let Err(e) = self.push_take_back_retry(&keys, force).await {
+                    eprintln!("messenger push: the tickets to take back: {e}");
+                }
+            }
+        }
+        if !settings::get_bool(&self.store, KEY_ENABLED, false).await? || silent {
             return self.push_status().await;
         }
-        let (Ok(keys), Some(channel), (Some(server), _)) = (
+        let (Ok(keys), Some(channel), (server, _)) = (
             self.session_keys().await,
             self.push_channel().await?,
             self.push_server().await?,
         ) else {
             return self.push_status().await;
         };
+        if let Some(server) = &server {
+            self.push_reconcile_home(force, &keys, &channel, server).await?;
+        }
+        // The private servers after the home one: their tickets come from
+        // the push server of the network, which must know the device first.
+        if let Err(e) = self.push_reconcile_private(force, &keys, &channel, server.as_deref()).await {
+            eprintln!("messenger push: the push servers of my private servers: {e}");
+        }
+        self.push_status().await
+    }
 
+    /// The home push server, as before the gateway: told when what is
+    /// wanted changed, or a week after the last time.
+    async fn push_reconcile_home(&self, force: bool, keys: &Keys, channel: &PushChannel, server: &str) -> Result<()> {
+        let (keys, server) = (keys.clone(), server.to_string());
         let pubkey = keys.public_key().to_hex();
         let device_id = self.push_device_id(&pubkey).await?;
-        let wanted = self.push_wanted(&keys, &channel).await?;
+        let wanted = self.push_wanted(&keys, channel).await?;
         let fingerprint = Self::push_fingerprint(&server, &pubkey, &device_id, &wanted);
         let told = self.push_told().await?;
 
@@ -273,7 +314,7 @@ impl MessengerRuntime {
                 t.fingerprint == fingerprint && now().saturating_sub(t.at) < RENEW_AFTER
             });
             if fresh {
-                return self.push_status().await;
+                return Ok(());
             }
             let last_try: u64 = self
                 .push_setting(KEY_LAST_TRY)
@@ -281,15 +322,17 @@ impl MessengerRuntime {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
             if now().saturating_sub(last_try) < RETRY_AFTER {
-                return self.push_status().await;
+                return Ok(());
             }
         }
 
         // What was registered elsewhere, or as somebody else, is taken back
-        // first: the old server must not go on watching.
+        // first: the old server must not go on watching. The tickets it
+        // issued for the device go with it.
         if let Some(old) = &told {
             if old.server != server || old.pubkey != pubkey {
                 self.push_forget(old, &keys).await;
+                self.push_tickets_void(&old.server).await?;
             }
         }
 
@@ -309,7 +352,7 @@ impl MessengerRuntime {
             }
             Err(e) => self.push_note_failure(&e.to_string()).await?,
         }
-        self.push_status().await
+        Ok(())
     }
 
     /// Tells a server to forget the device. It can be told only by the key
@@ -334,7 +377,11 @@ impl MessengerRuntime {
     /// and by the host before an identity is deleted: afterwards there is no
     /// key to sign the request with.
     pub async fn push_unregister(&self) -> Result<()> {
-        if let (Some(told), Ok(keys)) = (self.push_told().await?, self.session_keys().await) {
+        let keys = self.session_keys().await.ok();
+        // The private servers first: the tickets they wake by die with the
+        // device at the gateway.
+        self.push_unregister_private(keys.as_ref()).await?;
+        if let (Some(told), Some(keys)) = (self.push_told().await?, keys) {
             self.push_forget(&told, &keys).await;
         }
         settings::delete(&self.store, KEY_TOLD).await?;
@@ -395,6 +442,7 @@ impl MessengerRuntime {
             expires_at: current.as_ref().map(|t| t.answer.expires_at),
             error: if enabled { error } else { None },
             relays: current.map(|t| t.answer.relays).unwrap_or_default(),
+            targets: if enabled { self.push_private_status().await? } else { Vec::new() },
         })
     }
 
@@ -660,7 +708,7 @@ mod tests {
         use messenger_groups::{GroupKind, OpBody};
 
         let s = registered().await;
-        let group = s.rt.group_create(GroupKind::Private, "Team", "", true).await.unwrap();
+        let group = s.rt.group_create(GroupKind::Private, "Team", "", true, None).await.unwrap();
         s.rt.push_reconcile(false).await.unwrap();
         let puts = asked(&s.server, "PUT").await;
         assert_eq!(puts.len(), 2, "a group joined is a reason to tell the server");
