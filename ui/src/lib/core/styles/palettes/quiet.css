@@ -31,6 +31,7 @@
   --toggle-off:  #3f4147;  /* toggle track in "off" state */
   --border:      #2a2c32;
   --border-2:    #383a40;  /* hover border */
+  --divider:     rgba(255, 255, 255, 0.06);  /* hairline between the rows of a list (kit --vd-divider) */
   --text:        #eef1f7;
   --text-2:      #c3c5cc;
   --text-3:      #979aa0;  /* dimmest: placeholders, table header labels */
@@ -82,16 +83,18 @@
   --bio-pink:   #f472b6;
   --bio-gray:   #a1a1aa;
 
-  /* A chip coloured from data (`.tinted`, base.css): the tint under it, its
+  /* A chip in the user's colour (`.tinted`, base.css): the tint under it, its
      pressed tint, its border, and the share of the colour in its text (the
-     rest is --text). The ink share is a step under the largest one that keeps
-     WCAG AA 4.5:1 for any colour on any surface of the theme;
-     chip-contrast.test.ts computes it, change these only with that test.
-     --chip-fade: the opacity of a × or a secondary text inside the chip
-     (the ink, faded), 3:1 or more. */
-  --chip-tint:        14%;
+     rest is --text). Tint and border are the kit's (16 %, 45 %); its text
+     share (45 %) would leave a custom colour near the surface under 4.5:1,
+     so the ink share is the largest one that keeps WCAG AA 4.5:1 for any
+     colour on any surface of the theme (the kit's presets get 7.5:1 or more
+     on a pane); chip-contrast.test.ts computes it, change these only with
+     that test. --chip-fade: the opacity of a × or a secondary text inside
+     the chip (the ink, faded), 3:1 or more. */
+  --chip-tint:        16%;
   --chip-tint-strong: 22%;
-  --chip-edge:        50%;
+  --chip-edge:        45%;
   --chip-ink:         30%;
   --chip-fade:        0.75;
 
@@ -152,6 +155,7 @@
   --toggle-off:  #8a8a96;
   --border:      #d9dbe1;
   --border-2:    #c8cad0;  /* hover border */
+  --divider:     rgba(26, 29, 38, 0.08);  /* hairline between the rows of a list (kit --vd-divider) */
   --text:        #162033;  /* 16.8:1 */
   --text-2:      #4a5468;  /* 5.5:1 */
   --text-3:      #6c7588;  /* dimmest: placeholders, table header labels */
@@ -203,11 +207,12 @@
   --bio-pink:   #be185d;
   --bio-gray:   #52525b;
 
-  /* A chip coloured from data (`.tinted`): as in the dark block. The ink
-     share is lower here: a pale colour on white needs more of the text. */
+  /* A chip in the user's colour (`.tinted`): as in the dark block. The ink
+     share is lower here: a pale colour on white needs more of the text (the
+     kit's presets keep 5.3:1 or more on every surface). */
   --chip-tint:        16%;
   --chip-tint-strong: 26%;
-  --chip-edge:        55%;
+  --chip-edge:        45%;
   --chip-ink:         32%;
   --chip-fade:        0.8;
 

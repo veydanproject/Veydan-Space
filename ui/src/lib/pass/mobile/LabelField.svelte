@@ -72,6 +72,7 @@
         {#each labels as label (label)}
           {@const color = directory.summary('note_tag', label)?.color}
           <span class="m-chip small tinted" style:--chip={color}>
+            <ChipMark kind="tag" />
             {label}
             <button type="button" class="x" onclick={() => remove(label)} aria-label={$t('pass_remove')}><Icon name="x" size={14} /></button>
           </span>

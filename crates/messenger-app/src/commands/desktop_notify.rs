@@ -1235,7 +1235,6 @@ mod tests {
             sender_key: String::new(),
             picture: None,
             body,
-            muted: false,
             hide_on_lockscreen: false,
             count: 1,
         })
@@ -1308,7 +1307,7 @@ mod tests {
 
     #[test]
     fn plain_and_quiet() {
-        let p = Outcome::Plain(Plain { kind: ChatKind::Dm, chat: None, title: None, muted: false, count: 1 });
+        let p = Outcome::Plain(Plain { kind: ChatKind::Dm, chat: None, title: None, count: 1 });
         let w = word(p, &words()).unwrap();
         assert_eq!((w.key.as_str(), w.title.as_str(), w.line), (NO_CHAT, "Veydan Space", None));
         assert_eq!(word(Outcome::Quiet { reason: Reason::Own }, &words()), None);
@@ -1331,7 +1330,7 @@ mod tests {
         assert_eq!(info.name, "Veydan Chat");
         assert_eq!(info.desktop_entry, "veydanchat");
         assert_eq!(info.icon, "veydanchat-icon");
-        let plain = Outcome::Plain(Plain { kind: ChatKind::Dm, chat: None, title: None, muted: false, count: 1 });
+        let plain = Outcome::Plain(Plain { kind: ChatKind::Dm, chat: None, title: None, count: 1 });
         assert_eq!(word(plain, &Words::named(CHAT.name)).unwrap().title, "Veydan Chat");
         assert_eq!(Words::default().app, "", "no product is named by default");
     }
@@ -1432,13 +1431,12 @@ mod tests {
             sender_key: call.peer.clone(),
             picture: Some("https://x/a.png".into()),
             body: None,
-            muted: false,
             hide_on_lockscreen: false,
             count: 1,
         });
         assert_eq!(caller(shown, &w), ("Alice".to_string(), Some("https://x/a.png".to_string())));
         // A PIN on the app: only the app's name, and no face.
-        let plain = Outcome::Plain(Plain { kind: ChatKind::Dm, chat: Some(call.chat_id.clone()), title: None, muted: false, count: 1 });
+        let plain = Outcome::Plain(Plain { kind: ChatKind::Dm, chat: Some(call.chat_id.clone()), title: None, count: 1 });
         assert_eq!(caller(plain, &w), ("Veydan Space".to_string(), None));
 
         let t = call_toast(&call, "Alice".into(), Some("/c/a".into()), false, &w);

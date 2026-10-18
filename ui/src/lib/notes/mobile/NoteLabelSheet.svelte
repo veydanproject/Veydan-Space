@@ -42,8 +42,8 @@
   }: Props = $props();
 
   const TAG_COLORS = [
-    '#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6',
-    '#f5c451', '#34d399', '#f26d6d', '#f97316',
+    // The kit's presets (N.colors); the colour is the user's, never the kind.
+    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
   ];
 
   let query = $state('');

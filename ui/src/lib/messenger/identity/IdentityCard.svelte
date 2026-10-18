@@ -42,12 +42,12 @@
 </script>
 
 <div class="card identity">
-  <div class="card-title"><Icon name="user" size={16} /> {$t('msg_id_title')}</div>
+  <div class="card-title"><Icon name="key" size={16} /> {$t('msg_id_title')}</div>
   <CopyField label={$t('msg_id_npub')} value={identity.npub} />
   <div class="meta">{$t('msg_id_created', { date: stamp(identity.created_at) })}</div>
 
   {#if locked}
-    <div class="locked-note"><Icon name="lock" size={14} /><span>{$t('msg_id_locked')}</span></div>
+    <div class="locked-note"><Icon name="lock-square-rounded" size={14} /><span>{$t('msg_id_locked')}</span></div>
   {/if}
 
   <div class="actions">

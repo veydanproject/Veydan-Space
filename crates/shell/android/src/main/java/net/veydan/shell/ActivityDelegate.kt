@@ -3,6 +3,7 @@
 
 package net.veydan.shell
 
+import android.content.ClipboardManager
 import android.graphics.Color
 import android.graphics.Rect
 import android.net.Uri
@@ -18,6 +19,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import org.json.JSONArray
 
 /**
  * What the MainActivity of every product does (internal/platform-spec.md 13.4):
@@ -33,6 +38,9 @@ class ActivityDelegate(private val activity: ComponentActivity) {
   private var insetsScriptHandler: ScriptHandler? = null
   private var webView: WebView? = null
 
+  /** Whether the page takes pictures a keyboard inserts (the composer of a chat is focused): set through the bridge. */
+  @Volatile private var takesPictures: Boolean = false
+
   /** Before `super.onCreate`: light icons and scrims until the page reports its theme. */
   fun onCreate() {
     activity.enableEdgeToEdge(
@@ -44,6 +52,7 @@ class ActivityDelegate(private val activity: ComponentActivity) {
   fun onWebViewCreate(webView: WebView) {
     this.webView = webView
     webView.addJavascriptInterface(ChromeBridge(), "VeydanChrome")
+    receivePictures(webView)
 
     ViewCompat.setOnApplyWindowInsetsListener(webView) { v, windowInsets ->
       lastBars = windowInsets.getInsets(
@@ -54,6 +63,60 @@ class ActivityDelegate(private val activity: ComponentActivity) {
       windowInsets
     }
     ViewCompat.requestApplyInsets(webView)
+  }
+
+  /**
+   * Pictures a keyboard inserts (Gboard's clipboard, stickers, GIFs) or a
+   * paste hands over: while the page takes them (`setTakesPictures`), their
+   * `content://` URIs go to the page as the event `veydan-received-content`
+   * and the rest of the payload (text) goes on as before; otherwise the
+   * WebView handles all of it itself (the notes take pasted pictures their
+   * own way). The URIs stay readable: the keyboard's grant lasts until it is
+   * released, which nothing here does.
+   */
+  private fun receivePictures(webView: WebView) {
+    ViewCompat.setOnReceiveContentListener(webView, arrayOf("image/*")) { view, payload ->
+      // A keyboard's commit comes on the thread of the input connection, not the UI's: the
+      // WebView is read and told only on the UI thread. `takesPictures` was set by its own page.
+      if (!takesPictures) return@setOnReceiveContentListener payload
+      val split = payload.partition { it.uri != null }
+      val taken = split.first ?: return@setOnReceiveContentListener split.second
+      val uris = JSONArray()
+      val clip = taken.clip
+      for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let { uris.put(it.toString()) }
+      val web = view as WebView
+      if (uris.length() > 0) {
+        web.post {
+          if (ownPage(web)) {
+            web.evaluateJavascript("window.dispatchEvent(new CustomEvent('veydan-received-content',{detail:$uris}))", null)
+          }
+        }
+      }
+      split.second
+    }
+  }
+
+  /** The URI of the picture on the clipboard, if it holds one. Reading the clip itself makes Android 12+ say so in a toast: only on the user's tap. */
+  private fun clipboardPicture(): Uri? {
+    val cm = activity.getSystemService(ClipboardManager::class.java) ?: return null
+    if (cm.primaryClipDescription?.hasMimeType("image/*") != true) return null
+    val clip = cm.primaryClip ?: return null
+    for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let { return it }
+    return null
+  }
+
+  /** `block` on the UI thread (the WebView is read only there), for a bridge call that answers; `fallback` after half a second. */
+  private fun <T> onUi(fallback: T, block: (WebView) -> T): T {
+    val out = AtomicReference(fallback)
+    val done = CountDownLatch(1)
+    activity.runOnUiThread {
+      try {
+        webView?.let { out.set(block(it)) }
+      } finally {
+        done.countDown()
+      }
+    }
+    return if (done.await(500, TimeUnit.MILLISECONDS)) out.get() else fallback
   }
 
   private fun injectInsets(webView: WebView, bars: Insets, imeBottom: Int) {
@@ -101,6 +164,23 @@ class ActivityDelegate(private val activity: ComponentActivity) {
   }
 
   inner class ChromeBridge {
+    /** Whether the clipboard holds a picture: only its description is read, which Android does not announce. */
+    @JavascriptInterface
+    fun clipboardHasImage(): Boolean = onUi(false) { view ->
+      ownPage(view) &&
+        activity.getSystemService(ClipboardManager::class.java)?.primaryClipDescription?.hasMimeType("image/*") == true
+    }
+
+    /** The `content://` URI of the picture on the clipboard, read when the user asks for it; null without one. */
+    @JavascriptInterface
+    fun clipboardImage(): String? = onUi(null) { view -> if (ownPage(view)) clipboardPicture()?.toString() else null }
+
+    /** Whether pictures a keyboard inserts go to the page (`veydan-received-content`): the composer of a chat, while it is focused. */
+    @JavascriptInterface
+    fun setTakesPictures(takes: Boolean) {
+      takesPictures = takes && onUi(false) { view -> ownPage(view) }
+    }
+
     @JavascriptInterface
     fun setLightBars(light: Boolean) {
       activity.runOnUiThread {

@@ -782,6 +782,10 @@ pub struct CallView {
     /// invitation; the screen shows a placeholder until frames come.
     #[serde(default)]
     pub video_remote: bool,
+    /// What the peer sends is its screen, by its word; never while its
+    /// video is off. The screen shows it whole and says so.
+    #[serde(default)]
+    pub video_remote_screen: bool,
     /// The size of the frames each way, once some came; absent while that
     /// video is off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1297,6 +1301,7 @@ impl From<CoreView> for CallView {
             video_screen: v.video_screen,
             camera: v.camera,
             video_remote: v.video_remote,
+            video_remote_screen: v.video_remote_screen,
             video_local_size: v.video_local_size.map(|s| VideoSize {
                 width: s.width,
                 height: s.height,
@@ -1763,6 +1768,7 @@ mod tests {
             video_screen: true,
             camera: Some("/dev/video1".into()),
             video_remote: true,
+            video_remote_screen: true,
             video_local_size: Some(messenger_calls::VideoSize {
                 width: 1280,
                 height: 720,

@@ -140,7 +140,7 @@
         class:active={activeMode === 'generate'}
         onclick={() => { activeMode = 'generate'; error = ''; }}
       >
-        <Icon name="zap" size={13} /> {$t('ssh_key_form_generate')}
+        <Icon name="plus" size={13} /> {$t('ssh_key_form_generate')}
       </button>
     </div>
 

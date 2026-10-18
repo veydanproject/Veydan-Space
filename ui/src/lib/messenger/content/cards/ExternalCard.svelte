@@ -41,7 +41,7 @@
   {/if}
 
   <div class="top">
-    <span class="ico" class:risky><Icon name={risky ? 'alert-triangle' : info.secure ? 'globe' : 'lock-open'} size={16} /></span>
+    <span class="ico" class:risky><Icon name={risky ? 'alert-triangle' : info.secure ? 'world' : 'lock-open'} size={16} /></span>
     <div class="about">
       <span class="host">{preview && preview.host !== info.host ? preview.host : info.host}</span>
       {#if info.path}<span class="path">{info.path}</span>{/if}

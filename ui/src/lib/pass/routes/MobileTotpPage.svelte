@@ -14,7 +14,8 @@
   import { directory } from '$lib/core/directory';
   import { userLabels } from '$lib/pass/totp-tags';
   import { t } from '$lib/core/mobile/i18n';
-  import { NAV_COLORS } from '$lib/core/mobile/nav-colors';
+  import { AVATAR_COLORS } from '$lib/core/mobile/nav-colors';
+  import ChipMark from '$lib/core/ui/ChipMark.svelte';
   import { longpress } from '$lib/core/mobile/longpress';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
@@ -61,7 +62,7 @@
   function avatarColor(s: string): string {
     let h = 0;
     for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return NAV_COLORS[h % NAV_COLORS.length];
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
   }
 
   function label(entry: TotpEntry): string {
@@ -87,23 +88,24 @@
     }
   }
 
-  function entryChips(entry: TotpEntry): { key: string; label: string; ws: boolean; color?: string }[] {
-    const chips: { key: string; label: string; ws: boolean; color?: string }[] = [];
+  /** A profile: neutral, told by its mark; a workspace and a label in the user's colour where they have one. */
+  function entryChips(entry: TotpEntry): { key: string; label: string; kind: string; color?: string }[] {
+    const chips: { key: string; label: string; kind: string; color?: string }[] = [];
     for (const tag of entry.tags) {
       if (tag.startsWith('profile:')) {
         const id = tag.slice('profile:'.length);
         // Without the owner of the kind, the name the labels keep (10.3).
         const label = profileNames.get(id) ?? directory.linkName('profile', id);
-        if (label) chips.push({ key: tag, label, ws: false });
+        if (label) chips.push({ key: tag, label, kind: 'profile' });
       } else if (tag.startsWith('workspace:')) {
         const id = tag.slice('workspace:'.length);
         const label = workspaceNames.get(id) ?? directory.linkName('workspace', id);
-        // In its color where it has one (the owner's, or its label's without Space); green otherwise.
-        if (label) chips.push({ key: tag, label, ws: true, color: directory.color('workspace', id) });
+        // In its colour where it has one (the owner's, or its label's without Space); neutral otherwise.
+        if (label) chips.push({ key: tag, label, kind: 'workspace', color: directory.color('workspace', id) });
       }
     }
     for (const label of userLabels(entry.tags)) {
-      chips.push({ key: label, label, ws: false, color: tagColors.get(label) });
+      chips.push({ key: label, label, kind: 'tag', color: tagColors.get(label) });
     }
     return chips;
   }
@@ -187,7 +189,7 @@
       <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
     </div>
   {:else}
-    <div class="m-cards">
+    <div class="m-cards divided">
       {#each filtered as entry (entry.id)}
         {@const code = codes.get(entry.id)}
         <button class="m-card item" onclick={() => copy(entry)} {@attach longpress(() => (menu = entry))}>
@@ -198,7 +200,7 @@
             {#if entryChips(entry).length}
               <span class="tagline">
                 {#each entryChips(entry) as chip (chip.key)}
-                  <span class="m-chip small tinted" style:--chip={chip.color || (chip.ws ? 'var(--success)' : undefined)}>{chip.label}</span>
+                  <span class="m-chip small tinted" style:--chip={chip.color || undefined}><ChipMark kind={chip.kind} />{chip.label}</span>
                 {/each}
               </span>
             {/if}
@@ -267,7 +269,7 @@
   .ring circle { fill: none; stroke-width: 3; }
   .track { stroke: var(--border); }
   .progress { transition: stroke-dashoffset 0.9s linear; }
-  .m-cards { gap: 2px; padding-bottom: var(--sp-6); }
+  .m-cards { gap: 2px; --rows-gap: 2px; padding-bottom: var(--sp-6); }
   .danger { color: var(--danger-text); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
 </style>

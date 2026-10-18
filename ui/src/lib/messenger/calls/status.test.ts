@@ -13,7 +13,7 @@ const tr = (key: string) => key;
 function view(over: Partial<CallView> = {}): CallView {
   return {
     call_id: 'c1', peer: 'ab'.repeat(32), chat_id: 'dm:x', direction: 'out', media: 'audio', phase: 'outgoing',
-    muted: false, started_at: 1000, nodes: [], video_local: false, video_screen: false, video_remote: false, ...over,
+    muted: false, started_at: 1000, nodes: [], video_local: false, video_screen: false, video_remote: false, video_remote_screen: false, ...over,
   };
 }
 

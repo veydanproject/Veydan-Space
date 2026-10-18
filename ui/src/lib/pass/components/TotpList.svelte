@@ -128,7 +128,7 @@
   </div>
 {:else}
   <!-- A container: a row lays itself out by the width of its list (a 300px pane or a 440px drawer). -->
-  <div class="list">
+  <div class="list divided">
     {#each entries as entry (entry.id)}
       {@const code = codes.get(entry.id)}
       {@const pname = showProfileBadge ? profileName(entry.tags) : null}
@@ -212,6 +212,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    --rows-gap: 2px;
     container-type: inline-size;
   }
 

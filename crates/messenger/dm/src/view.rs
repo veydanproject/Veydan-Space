@@ -26,6 +26,13 @@ pub struct ChatView {
     pub unread: i64,
     pub last_message_at: Option<i64>,
     pub last_preview: Option<String>,
+    /// What the newest message is, in facts (`messenger_core::Body`): the UI
+    /// words it in the user's language as a push does ("📷 Photo", "🎤 Voice
+    /// message (0:12)"), where `last_preview` names a file. Absent when it
+    /// cannot be said (a card of the bot, a message the line no longer
+    /// speaks of).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_body: Option<messenger_core::Body>,
     pub pinned: bool,
     pub archived: bool,
     /// Relationship screen mode (stage 5b); `full_chat` while the gate is off.

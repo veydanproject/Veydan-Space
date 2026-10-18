@@ -166,6 +166,10 @@ pub struct CallView {
     /// invitation of a video call until it says otherwise.
     #[serde(default)]
     pub video_remote: bool,
+    /// What the peer sends is its screen, by its word (`call.video
+    /// {screen}`); never while its video is off.
+    #[serde(default)]
+    pub video_remote_screen: bool,
     /// The size of the frames each way, once some came; `None` while the
     /// video is off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -197,6 +201,7 @@ impl CallView {
             // The invitation says what the caller sends from the start;
             // the called side's camera goes on as it takes a video call.
             video_remote: media == Media::Video,
+            video_remote_screen: false,
             video_local_size: None,
             video_remote_size: None,
         }

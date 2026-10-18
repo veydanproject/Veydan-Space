@@ -36,7 +36,7 @@ const { endSound } = await import('./sounds');
 function view(over: Partial<CallView> = {}): CallView {
   return {
     call_id: 'c1', peer: 'ab'.repeat(32), chat_id: `dm:${'ab'.repeat(32)}`, direction: 'in', media: 'audio', phase: 'incoming',
-    muted: false, started_at: 1000, nodes: [], video_local: false, video_screen: false, video_remote: false, ...over,
+    muted: false, started_at: 1000, nodes: [], video_local: false, video_screen: false, video_remote: false, video_remote_screen: false, ...over,
   };
 }
 

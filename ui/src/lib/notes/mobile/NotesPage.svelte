@@ -24,6 +24,7 @@
   import { loadSort, saveSort, sortNotes, SORT_KEYS, type NoteSort } from '$lib/notes/sort';
   import { entitySummaryFor } from '$lib/notes/mobile/api';
   import NotesTable from '$lib/notes/components/NotesTable.svelte';
+  import { noteScope, scopeColor, type ScopeSources } from '$lib/notes/list-scope';
 
   let notes = $state<NoteListItem[]>([]);
 
@@ -54,6 +55,29 @@
     try { localStorage.setItem(VIEW_KEY, m); } catch {}
   }
   let nav = $state<NoteNav | null>(null);
+
+  // The scope line of a row names what the list of a computer names (list-scope.ts).
+  const named = (list: { id: string; name: string; color: string }[] | undefined, id: string) => list?.find((x) => x.id === id);
+  const sources = $derived<ScopeSources>({
+    folderName: (id) => named(nav?.folders, id)?.name ?? id,
+    folderColor: (id) => named(nav?.folders, id)?.color || undefined,
+    workspaceName: (id) => named(nav?.all_workspaces, id)?.name ?? id,
+    workspaceColor: (id) => named(nav?.all_workspaces, id)?.color || undefined,
+    profileName: (id) => named(nav?.all_profiles, id)?.name ?? id,
+  });
+  function rowScope(n: NoteListItem): { scope?: { label: string; color?: string }; hide: { folder?: string; binding?: string } } {
+    const s = noteScope(n.raw, sources);
+    const color = scopeColor(s, sources);
+    switch (s.kind) {
+      case 'folder': {
+        const name = sources.folderName!(s.id);
+        return { scope: { label: s.more ? `${name} +${s.more}` : name, color }, hide: { folder: s.id } };
+      }
+      case 'workspace': return { scope: { label: sources.workspaceName!(s.id), color }, hide: { binding: s.binding } };
+      case 'profile': return { scope: { label: sources.profileName!(s.id), color }, hide: { binding: s.binding } };
+      default: return { hide: {} };
+    }
+  }
   let search = $state('');
   let searchOpen = $state(false);
   let menuOpen = $state(false);
@@ -344,7 +368,7 @@
 
   {#if notes.length === 0}
     <div class="m-empty">
-      <Icon name={filter.kind === 'trash' ? 'trash-2' : 'file-text'} size={40} />
+      <Icon name={filter.kind === 'trash' ? 'trash-2' : 'notes'} size={40} />
       <p>{emptyText()}</p>
     </div>
   {:else if notes.length && viewMode === 'table' && !selecting}
@@ -362,10 +386,13 @@
       />
     </div>
   {:else if notes.length}
-    <div class="m-cards">
+    <div class="rows divided">
       {#each shown as n (n.id)}
+        {@const where = rowScope(n)}
         <NoteRow
           note={n}
+          scope={where.scope}
+          hide={where.hide}
           mode={rowMode}
           {selecting}
           selected={selected.has(n.id)}
@@ -422,7 +449,7 @@
   <div class="m-list">
     {#each SORT_KEYS as key (key)}
       <button type="button" class="m-row" onclick={() => setSort({ ...sort, key })}>
-        <Icon name={key === 'title' ? 'type' : 'clock'} size={20} />
+        <Icon name={key === 'title' ? 'type' : 'sort-descending'} size={20} />
         <span class="m-row-label">{$t(SORT_LABEL[key])}</span>
         {#if sort.key === key}<Icon name="check" size={18} />{/if}
       </button>
@@ -499,7 +526,7 @@
     font-size: var(--fs-body);
     font-weight: 600;
   }
-  .m-cards { padding-bottom: var(--sp-6); }
+  .rows { display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); padding-bottom: var(--sp-6); }
   .danger-text { color: var(--danger-text); }
   .bulk {
     position: fixed;

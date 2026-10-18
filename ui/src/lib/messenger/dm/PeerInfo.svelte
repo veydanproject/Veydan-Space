@@ -61,7 +61,7 @@
         {#if name && name !== chat.title}<div class="sub">{name}</div>{/if}
         {#if profile?.nip05}
           <div class="sub nip05" class:ok={profile.nip05_verified}>
-            <Icon name={profile.nip05_verified ? 'check-circle' : 'globe'} size={12} />{profile.nip05}
+            <Icon name={profile.nip05_verified ? 'rosette-discount-check' : 'world'} size={12} />{profile.nip05}
           </div>
         {/if}
         {#if !profile?.bio?.length && profile?.about}<div class="about"><MessageContent text={profile.about} cards={false} /></div>{/if}
@@ -85,7 +85,7 @@
         <section class="field">
           <span class="label">{$t('msg_peer_website')}</span>
           <button type="button" class="site" title={website} onclick={() => void linkActions.follow(website as ExternalUrl)}>
-            <Icon name="globe" size={14} /><span class="site-text">{website.replace(/^https?:\/\//i, '').replace(/\/$/, '')}</span><Icon name="external-link" size={12} />
+            <Icon name="world" size={14} /><span class="site-text">{website.replace(/^https?:\/\//i, '').replace(/\/$/, '')}</span><Icon name="external-link" size={12} />
           </button>
         </section>
       {/if}

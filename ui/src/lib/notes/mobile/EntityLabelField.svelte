@@ -76,11 +76,11 @@
     return boundNames.get(tag) ?? parsed.value;
   }
 
-  /** A workspace's chip is in its color, as in the rows of the notes; green without one. */
+  /** A workspace's chip is in the colour the user gave it, as in the rows of the notes; any other is neutral (its mark tells the kind). */
   function bindingColor(tag: string): string | undefined {
     const parsed = parseBinding(tag);
     if (parsed?.kind !== 'workspace') return undefined;
-    return hexColor(workspaces.find((item) => item.id === parsed.value)?.color) ?? 'var(--success)';
+    return hexColor(workspaces.find((item) => item.id === parsed.value)?.color) ?? undefined;
   }
 
   function tagColor(name: string): string | undefined {

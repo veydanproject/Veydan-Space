@@ -48,7 +48,7 @@
     "totp_field_digits": "Cifre",
     "totp_field_period": "Periodo",
     "totp_qr_hint": "Carica uno screenshot che contiene un codice QR",
-    "totp_qr_select": "Seleziona immagine…",
+    "totp_qr_select": "Seleziona immagine",
     "totp_qr_detected": "QR rilevato — controlla i campi qui sotto",
     "totp_qr_not_found": "Nessun codice QR trovato nell’immagine",
     "totp_qr_secret_masked": "Segreto:",

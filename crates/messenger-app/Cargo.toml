@@ -67,6 +67,10 @@ sha2 = "0.11"
 # The window icon of the product as a file, for systems that take the
 # source's icon from one (Windows).
 png = "0.18"
+# The clipboard of a computer: a picture (a screenshot) or files copied in a
+# file manager, pasted into a chat where the webview hands over nothing
+# (WebKitGTK, WKWebView).
+arboard = { version = "3.6", default-features = false, features = ["image-data", "wayland-data-control"] }
 
 # ── Android: push, the push handler's way in without the app, calls ──────────
 [target.'cfg(target_os = "android")'.dependencies]

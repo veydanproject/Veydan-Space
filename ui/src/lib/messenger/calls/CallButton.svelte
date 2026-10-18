@@ -11,7 +11,9 @@
   A press asks first "Start a voice call?" / "Start a video call?" unless
   that was turned off (CallConfirm, the setting kept on this device). A
   hold of either button (a finger or the mouse), or a right click, opens
-  the settings of calls.
+  the settings of calls. On a phone (`videoInMenu`) the header keeps
+  «Call» alone: «Video call» is the first entry of the chat's menu
+  (start, canCall, callBlocked).
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
@@ -26,7 +28,7 @@
   import { hold } from './hold';
   import { callErrorText } from './words';
 
-  let { chat }: { chat: MessengerChat } = $props();
+  let { chat, videoInMenu = false }: { chat: MessengerChat; videoInMenu?: boolean } = $props();
 
   const tr = (key: string, params?: Record<string, string>) => $t(key as 'msg_title', params);
 
@@ -51,6 +53,12 @@
     else void call(media);
   }
 
+  export function start(media: CallMedia) { press(media); }
+  /** A call can be made from this chat at all (the entry is there). */
+  export function canCall(): boolean { return callable; }
+  /** Why a call cannot start now; empty when it can. */
+  export function callBlocked(): string { return reason || (callStore.busy ? $t('msg_call_err_busy') : ''); }
+
   async function call(media: CallMedia) {
     if (!chat.peer_pubkey) return;
     const { view, refusal: why } = await callStore.dial(chat.peer_pubkey, media);
@@ -74,10 +82,12 @@
 
 {#if callable}
   <span class="wrap">
-    <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('video')} use:hold={toSettings}
-      title={reason || $t('msg_call_video_start')} aria-label={$t('msg_call_video_start')}>
-      <CallIcon name="video" size={17} />
-    </button>
+    {#if !videoInMenu}
+      <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('video')} use:hold={toSettings}
+        title={reason || $t('msg_call_video_start')} aria-label={$t('msg_call_video_start')}>
+        <CallIcon name="video" size={17} />
+      </button>
+    {/if}
     <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('audio')} use:hold={toSettings}
       title={reason || $t('msg_call_start')} aria-label={$t('msg_call_start')}>
       <CallIcon name="phone" size={16} />

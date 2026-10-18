@@ -194,6 +194,8 @@ pub fn module() -> Module {
                 commands::messenger_media_server_check,
                 commands::messenger_dm_send_file,
                 commands::messenger_media_import,
+                commands::messenger_media_import_bytes,
+                commands::messenger_clipboard_paste,
                 commands::messenger_media_download,
                 commands::messenger_media_foreign_server,
                 commands::messenger_media_transfer,

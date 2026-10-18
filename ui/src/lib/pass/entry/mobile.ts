@@ -19,7 +19,7 @@ export const module: ModuleDef = {
     totp: { inline: TotpRowInline },
   }),
   nav: [
-    { id: 'passwords', title: 'app_passwords', icon: 'lock', href: '/passwords' },
+    { id: 'passwords', title: 'app_passwords', icon: 'lock-password', href: '/passwords' },
     { id: 'totp', title: 'app_totp', icon: 'shield', href: '/totp' },
     { id: 'tools', title: 'app_tools', icon: 'dices', href: '/tools' },
   ],

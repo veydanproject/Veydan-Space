@@ -71,7 +71,7 @@
 
 <div class="card own">
   <div class="title-row">
-    <div class="card-title"><Icon name="user" size={16} /> {$t('msg_own_title')}</div>
+    <div class="card-title"><Icon name="key" size={16} /> {$t('msg_own_title')}</div>
     {#if !editing}
       <span class="title-actions">
         <MyQrButton disabled={!canAct} />
@@ -89,7 +89,7 @@
         <div class="name" class:unnamed={!label}>{label || $t('msg_own_unnamed')}</div>
         {#if handle}<div class="meta">@{handle}</div>{/if}
         {#if p?.nip05}
-          <div class="meta nip05" class:ok={p.nip05_verified}><Icon name={p.nip05_verified ? 'check-circle' : 'globe'} size={12} />{p.nip05}</div>
+          <div class="meta nip05" class:ok={p.nip05_verified}><Icon name={p.nip05_verified ? 'rosette-discount-check' : 'world'} size={12} />{p.nip05}</div>
         {/if}
       </div>
     </div>
@@ -101,7 +101,7 @@
       <ul class="facts">
         {#if website}
           <li>
-            <span class="fact-icon"><Icon name="globe" size={14} /></span>
+            <span class="fact-icon"><Icon name="world" size={14} /></span>
             <button type="button" class="link" onclick={openSite} title={website}>{shortSite(website)}</button>
           </li>
         {/if}
@@ -116,7 +116,7 @@
             <span class="fact-icon"><Icon name="phone" size={14} /></span>
             <div class="phone-text">
               <button type="button" class="link plain" onclick={copyPhone} title={$t('msg_copy')}>{copied ? $t('msg_card_copied') : own.phone}</button>
-              <span class="private-note"><Icon name="lock" size={11} />{$t('msg_profile_phone_view_hint')}</span>
+              <span class="private-note"><Icon name="lock-square-rounded" size={11} />{$t('msg_profile_phone_view_hint')}</span>
             </div>
           </li>
         {/if}

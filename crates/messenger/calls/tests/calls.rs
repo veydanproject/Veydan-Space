@@ -1732,7 +1732,9 @@ async fn video_goes_on_and_off_in_the_middle_of_a_call() {
     let v = bob.calls.set_video(VideoInput::Screen { id: Some("screen:1".into()) }).await.unwrap();
     assert!(v.video_local && v.video_screen);
     w.settle().await;
-    assert!(alice.last_state().unwrap().video_remote);
+    let s = alice.last_state().unwrap();
+    assert!(s.video_remote && s.video_remote_screen, "told it is a screen: {s:?}");
+    assert_eq!(signals_of(bob, alice, "call.video"), vec![serde_json::json!({ "call_id": view.call_id, "on": true, "screen": true })]);
     let r = w.session(1).record();
     assert_eq!(r.video, vec![VideoInput::Screen { id: Some("screen:1".into()) }]);
     assert_eq!(r.video_settings.map(|s| (s.width, s.height, s.max_kbps)), Some((1280, 720, Some(1800))));
@@ -1741,13 +1743,25 @@ async fn video_goes_on_and_off_in_the_middle_of_a_call() {
     let v = bob.calls.switch_camera(Some("back".into())).await.unwrap();
     assert!(v.video_screen && v.camera.as_deref() == Some("back"));
     assert_eq!(w.session(1).record().video.len(), 1);
+    // From the screen to the camera: still on, but the peer hears that
+    // what goes is a camera now; and back to the screen.
+    bob.calls.set_video(VideoInput::Camera { id: None }).await.unwrap();
+    w.settle().await;
+    let s = alice.last_state().unwrap();
+    assert!(s.video_remote && !s.video_remote_screen, "{s:?}");
+    assert_eq!(signals_of(bob, alice, "call.video").last(), Some(&serde_json::json!({ "call_id": view.call_id, "on": true })));
+    bob.calls.set_video(VideoInput::Screen { id: None }).await.unwrap();
+    w.settle().await;
+    assert!(alice.last_state().unwrap().video_remote_screen);
+    assert_eq!(signals_of(bob, alice, "call.video").len(), 3);
 
     // A camera that will not open: an error, and the video is off at both.
     w.engine.set_camera_fails(true);
     assert!(bob.calls.set_video(VideoInput::Camera { id: None }).await.is_err());
     w.settle().await;
     assert!(!bob.last_state().unwrap().video_local);
-    assert!(!alice.last_state().unwrap().video_remote);
+    let s = alice.last_state().unwrap();
+    assert!(!s.video_remote && !s.video_remote_screen, "{s:?}");
 
     // The frames of the call under way, for the screen; none without one.
     assert!(alice.calls.video_frames(VideoTrack::Remote).await.is_some());

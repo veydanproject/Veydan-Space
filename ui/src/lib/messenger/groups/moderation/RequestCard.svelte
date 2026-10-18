@@ -74,7 +74,7 @@
       <span class="name" title={facts.name}>{facts.name}</span>
       {#if facts.nip05}
         <span class="nip05" class:ok={facts.nip05Verified} title={facts.nip05Verified ? $t('msg_greq_nip05_ok') : $t('msg_greq_nip05_unchecked')}>
-          <Icon name={facts.nip05Verified ? 'check-circle' : 'globe'} size={12} /><span class="nip05-text">{facts.nip05}</span>
+          <Icon name={facts.nip05Verified ? 'rosette-discount-check' : 'world'} size={12} /><span class="nip05-text">{facts.nip05}</span>
         </span>
       {/if}
       <button type="button" class="npub mono" title={$t('msg_greq_copy_key')} aria-label={$t('msg_greq_copy_key')} onclick={copyKey}>
@@ -100,7 +100,7 @@
       <span class="fact ok"><Icon name="book-user" size={12} />{$t('msg_greq_contact')}</span>
       {#if facts.talked}<span class="fact"><Icon name="message-circle" size={12} />{$t('msg_greq_talked')}</span>{/if}
     {:else}
-      <span class="fact"><Icon name="user" size={12} />{$t('msg_greq_stranger')}</span>
+      <span class="fact"><Icon name="user-question" size={12} />{$t('msg_greq_stranger')}</span>
     {/if}
     {#if facts.common > 0}<span class="fact"><Icon name="users" size={12} />{$t('msg_greq_common', { n: String(facts.common) })}</span>{/if}
     {#if facts.missing}<span class="fact warn"><Icon name="info" size={12} />{$t('msg_greq_no_profile')}</span>{/if}

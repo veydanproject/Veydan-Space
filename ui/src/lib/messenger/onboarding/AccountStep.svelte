@@ -154,7 +154,7 @@
     </label>
     <div class="ob-rows servers">
       <button type="button" class="ob-row" onclick={() => (serversOpen = !serversOpen)} aria-expanded={serversOpen}>
-        <Icon name="globe" size={18} />
+        <Icon name="server-2" size={18} />
         <span class="ob-row-b"><span>{$t('msg_onb_step_servers')}</span></span>
         <span class="ob-row-v">{servers === 'veydan' ? $t('msg_ob_servers_veydan') : $t('msg_ob_servers_own')}</span>
         <span class="chev"><Icon name={serversOpen ? 'chevron-down' : 'chevron-right'} size={16} /></span>
@@ -205,7 +205,7 @@
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </button>
       <button type="button" class="ob-row" disabled={locked} onclick={() => (phase = 'key')}>
-        <Icon name="upload" size={18} />
+        <Icon name="file-import" size={18} />
         <span class="ob-row-b"><span>{$t('msg_ob_have_key')}</span><span class="ob-row-s">{$t('msg_ob_have_key_hint')}</span></span>
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </button>

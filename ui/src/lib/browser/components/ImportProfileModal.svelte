@@ -164,7 +164,7 @@
               <span class="file-name">{selectedFile.name}</span>
               <span class="file-meta">{(selectedFile.size / 1024).toFixed(1)} KB</span>
             {:else}
-              <Icon name="upload" size={20} />
+              <Icon name="file-import" size={20} />
               <span>{$t('import_drop_hint')}</span>
               <span class="file-meta">{$t('import_drop_type')}</span>
             {/if}

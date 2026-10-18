@@ -174,7 +174,7 @@ mod tests {
         let reader = Store::open_read_only(&cfg).await.unwrap();
         assert_eq!(reader.schema_version().await.unwrap(), Store::latest_migration());
         assert!(chats::get(&reader, "dm:aa").await.unwrap().is_some());
-        assert!(chats::set_pinned(&reader, "dm:aa", true).await.is_err(), "read-only");
+        assert!(chats::set_pinned(&reader, "dm:aa", true, 1).await.is_err(), "read-only");
 
         // Written after the reader opened: still seen (WAL, no snapshot held).
         chats::ensure_dm(&app, "bb").await.unwrap();

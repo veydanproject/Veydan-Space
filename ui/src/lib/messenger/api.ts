@@ -11,6 +11,7 @@ export type { SharedCounts, SharedSection } from './generated/shared';
 export type { BotCard } from './generated/bot';
 import type { BotCard } from './generated/bot';
 import type { MdBlock } from './generated/markdown';
+import type { NoticeBody } from './push/wording';
 export type { BridgeView, NetCheck, NetMode, NetStatus, Verdict } from './generated/net';
 import type { NetCheck, NetMode, NetStatus } from './generated/net';
 export type {
@@ -160,6 +161,11 @@ export interface MessengerChat {
   unread: number;
   last_message_at: number | null;
   last_preview: string | null;
+  /**
+   * What the newest message is, in facts (`messenger_core::Body`): the list words it as a push
+   * does ("📷 Photo", "🎤 Voice message (0:12)"), where `last_preview` names a file. Absent: use `last_preview`.
+   */
+  last_body?: NoticeBody | null;
   pinned: boolean;
   archived: boolean;
   mode: ChatMode;
@@ -514,6 +520,8 @@ export type MessengerTransferProgress = Progress;
 
 /** The largest file that is sent; the runtime refuses more with `err.file_too_large`. */
 export const MAX_SEND_BYTES = 1024 ** 3;
+/** The largest file pasted as bytes (`importBytes`); the runtime refuses more with `err.file_too_large`. */
+export const MAX_PASTE_BYTES = 64 * 1024 ** 2;
 
 /** A kept transfer as its last event would have told it. */
 export function transferProgress(v: MessengerTransfer): MessengerTransferProgress {
@@ -988,7 +996,7 @@ function mockCardSend(chat: string, pubkey: string | null, includePhone: boolean
     failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null, card,
   };
   mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
-  mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `👤 ${card.label}` } : x));
+  mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `👤 ${card.label}`, last_body: null } : x));
   return m;
 }
 
@@ -1061,18 +1069,26 @@ const mockModLog: Record<string, LogEntry[]> = demo?.modLog ?? {};
 const mockNow = () => Math.floor(Date.now() / 1000);
 const mockPending = (g: MessengerGroup) => (mockMessages[g.chat_id] ?? []).filter((m) => m.review === 'pending');
 
-/** The queue of a demo group as the runtime pages it: one row per author (their oldest waiting message), newest rows first. */
+/** The names a demo author is searched by: my nickname, their profile's names and NIP-05. */
+function mockNamesOf(pubkey: string): string[] {
+  const c = mockContacts.find((x) => x.pubkey === pubkey);
+  const p = c?.profile ?? demo?.strangers.find((x) => x.pubkey === pubkey) ?? null;
+  return [c?.nickname, p?.name, p?.display_name, p?.nip05].filter((v): v is string => !!v);
+}
+
+/** The queue of a demo group as the runtime pages it: one row per author (their oldest waiting message), or per message with `each`, newest rows first. */
 function mockQueue(g: MessengerGroup, filter: QueueFilter, before: number | null, limit: number): QueuePage {
   const text = filter.text?.trim().toLowerCase();
   const waiting = mockPending(g)
     .filter((m) => !filter.author || m.sender_pubkey === filter.author)
     .filter((m) => filter.since === undefined || m.created_at >= filter.since)
     .filter((m) => filter.until === undefined || m.created_at < filter.until)
-    .filter((m) => !text || (m.text ?? '').toLowerCase().includes(text))
+    .filter((m) => !text || (m.text ?? '').toLowerCase().includes(text) || m.sender_pubkey.includes(text)
+      || mockNamesOf(m.sender_pubkey).some((n) => n.toLowerCase().includes(text)))
     .sort((x, y) => x.created_at - y.created_at);
   const rows: QueueItem[] = [];
   for (const m of waiting) {
-    const row = rows.find((r) => r.author === m.sender_pubkey);
+    const row = filter.each ? undefined : rows.find((r) => r.author === m.sender_pubkey);
     if (row) { row.more_from_author++; continue; }
     rows.push({ message_id: m.id, group_id: g.id, author: m.sender_pubkey, text: m.text ?? '', at: m.created_at, version: m.version ?? m.id, more_from_author: 0 });
   }
@@ -1399,7 +1415,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const target = a?.replyTo ? mockFind(String(a.replyTo)) : undefined;
     const m: MessengerMessage = { id: `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`, chat_id: c.id, direction: 'out', status: 'sent', content_type: 'text', text: String(a?.text), fmt: a?.fmt === 'md' ? 'md' : null, sender_pubkey: 'ab'.repeat(32), reply_to: target ? { id: target.id, sender_pubkey: target.sender_pubkey, text: target.text, deleted: target.deleted, content_type: target.content_type, media: target.content_type === 'media' && !target.deleted && target.media ? { kind: target.media.kind, name: target.media.name, duration_ms: target.media.duration_ms } : null } : null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
-    mockChats = mockChats.map((x) => x.id === c.id ? { ...x, last_message_at: now, last_preview: m.text } : x);
+    mockChats = mockChats.map((x) => x.id === c.id ? { ...x, last_message_at: now, last_preview: m.text, last_body: null } : x);
     return m;
   },
   messenger_dm_react: (a) => mockReact(String(a?.messageId), String(a?.emoji)),
@@ -1429,7 +1445,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const transferId = `demo-send-${id.slice(6)}`;
     const m: MessengerMessage = { id, chat_id: c.id, direction: 'out', status: 'uploading', content_type: 'media', text: (a?.caption as string) ?? null, sender_pubkey: 'ab'.repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: { name, mime, size, kind, local_path: String(a?.path), transfer_id: transferId, ...(a?.batch ? { batch: String(a.batch) } : {}) } };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
-    mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `📎 ${name}` } : x));
+    mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `📎 ${name}`, last_body: { t: "media", kind, name, caption: (a?.caption as string) || undefined } } : x));
     // The upload plays: a picture is compressed first unless it goes as it is.
     const chunk = kind === 'image' ? 512 * 1024 : MOCK_CHUNK;
     if (kind === 'image' && !a?.original) mockCompress.add(transferId);
@@ -1450,6 +1466,13 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const image = kind === 'image';
     return { path, name, kind, size: image ? 3_400_000 : 24 * 1024 * 1024, preview: image ? demoPicture(name, 160) : null } satisfies MessengerPicked;
   },
+  // A pasted picture: shown as it came, named as the runtime names it.
+  messenger_media_import_bytes: (a) => {
+    const name = String(a?.name ?? '').replace(/\.[^.]*$/, '') || 'image';
+    const b64 = String(a?.dataBase64 ?? '');
+    return { path: `outgoing/paste/${name}.png`, name: `${name}.png`, kind: 'image', mime: 'image/png', size: Math.floor((b64.length * 3) / 4), preview: `data:image/png;base64,${b64}` } satisfies MessengerPicked;
+  },
+  messenger_clipboard_paste: () => [],
   messenger_media_grant_access: () => undefined,
   messenger_dm_send_recording: (a) => {
     const c = mockChat(String(a?.to));
@@ -1457,6 +1480,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const now = Math.floor(Date.now() / 1000);
     const m: MessengerMessage = { id: `local:${Date.now().toString(16)}`, chat_id: c.id, direction: "out", status: "sent", content_type: "media", text: null, sender_pubkey: "ab".repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: { name: `${r.kind}.webm`, mime: r.mime, size: Math.round((r.data_base64.length * 3) / 4), kind: r.kind, duration_ms: r.duration_ms, waveform: r.waveform ?? undefined, local_path: "/dev/mock", mock_data: `data:${r.mime.split(";")[0]};base64,${r.data_base64}` } };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
+    mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `📎 ${r.kind}`, last_body: { t: 'media', kind: r.kind, name: r.kind, duration_ms: r.duration_ms } } : x));
     return m;
   },
   // Fetched only when asked: the demo's other files stay where they are.
@@ -2354,6 +2378,14 @@ export const messengerApi = {
      * A file over `MAX_SEND_BYTES` is refused with `err.file_too_large`.
      */
     importPicked: (path: string) => invoke<MessengerPicked>('messenger_media_import', { path }),
+    /**
+     * A file pasted into a chat that the webview handed over as bytes, picked like `importPicked`.
+     * Up to `MAX_PASTE_BYTES` (`err.file_too_large`); a picture is named by what its bytes are.
+     */
+    importBytes: async (blob: Blob, name?: string) =>
+      invoke<MessengerPicked>('messenger_media_import_bytes', { name: name ?? null, dataBase64: await blobToBase64(blob) }),
+    /** What a computer's clipboard holds when the webview handed over nothing: picked paths (copied files, or its picture as a PNG). */
+    pasteClipboard: () => invoke<string[]>('messenger_clipboard_paste'),
     /** `batch`: the same for files picked together. `original`: a picture goes as it is, not compressed. */
     /** `poster`: a frame of a video, the other side's preview before it fetches the file. */
     /** `captionFmt`: `md` when the caption is written in Markdown. */

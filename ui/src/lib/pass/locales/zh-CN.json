@@ -48,7 +48,7 @@
     "totp_field_digits": "位数",
     "totp_field_period": "周期",
     "totp_qr_hint": "上传包含二维码的截图",
-    "totp_qr_select": "选择图片…",
+    "totp_qr_select": "选择图片",
     "totp_qr_detected": "已识别二维码，请检查下方字段",
     "totp_qr_not_found": "图片中未找到二维码",
     "totp_qr_secret_masked": "密钥：",

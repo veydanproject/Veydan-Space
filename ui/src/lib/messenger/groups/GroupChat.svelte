@@ -230,7 +230,7 @@
 {#snippet subtitle()}
   {#if group}
     <span class="sub-line">
-      <Icon name={group.kind === 'public' ? 'globe' : 'lock'} size={11} />
+      <Icon name={group.kind === 'public' ? 'world' : 'lock-square-rounded'} size={11} />
       {$t(group.kind === 'public' ? 'msg_group_kind_public' : 'msg_group_kind_private')} ·
       {$t(membersKey(group.members.length), { n: String(group.members.length) })}
     </span>
@@ -273,9 +273,9 @@
   <div class="closed">
     <span>
       {#if banned}
-        <Icon name="lock" size={13} />{$t('msg_group_removed_short')}
+        <Icon name="lock-square-rounded" size={13} />{$t('msg_group_removed_short')}
       {:else}
-      <Icon name={membership === 'joining' || membership === 'requested' || (closedText && membership === 'joined') ? 'clock' : 'lock'} size={13} />
+      <Icon name={membership === 'joining' || membership === 'requested' || (closedText && membership === 'joined') ? 'clock' : 'lock-square-rounded'} size={13} />
       {#if mutedText && membership === 'joined'}{mutedText}
       {:else if closedText && membership === 'joined'}{closedText}
       {:else}{$t(`msg_group_state_${membership}` as 'msg_group_state_left')}{/if}

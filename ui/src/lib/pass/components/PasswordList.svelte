@@ -13,6 +13,7 @@
   import { directory } from '$lib/core/directory';
   import { totpStore } from '$lib/pass/store/totp.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import ChipMark from '$lib/core/ui/ChipMark.svelte';
   import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
   import type { PasswordEntry } from '$lib/pass/types';
@@ -113,7 +114,7 @@
 </script>
 
 {#if error}<p class="err">{error}</p>{/if}
-<div class="list">
+<div class="list divided">
   {#each entries as entry (entry.id)}
     {@const profiles = profilesOf(entry.tags)}
     {@const labels = [...userLabels(entry.tags), ...notesOf(entry.tags)]}
@@ -126,16 +127,17 @@
           <div class="entry-sub">{entry.username || entry.url}</div>
         {/if}
         {#if profiles.length || labels.length}
-          {@const chips = [...profiles.map((name) => ({ name, profile: true })), ...labels.map((name) => ({ name, profile: false }))]}
+          {@const chips = [
+            ...profiles.map((name) => ({ name, kind: 'profile', color: undefined as string | undefined })),
+            ...userLabels(entry.tags).map((name) => ({ name, kind: 'tag', color: labelColor(name) })),
+            ...notesOf(entry.tags).map((name) => ({ name, kind: 'note', color: undefined })),
+          ]}
           {@const rest = chips.slice(MAX_CHIPS)}
-          <!-- Whole chips that wrap, never one cut in the middle; past two, a counter. -->
+          <!-- Whole chips that wrap, never one cut in the middle; past two, a counter. A profile and a note
+               are neutral, a label in the user's colour: the mark tells the kind, never the colour. -->
           <div class="entry-labels">
             {#each chips.slice(0, MAX_CHIPS) as chip, i (i)}
-              {#if chip.profile}
-                <span class="profile-badge">{chip.name}</span>
-              {:else}
-                <span class="label-badge tinted" style:--chip={labelColor(chip.name)}>{chip.name}</span>
-              {/if}
+              <span class="label-badge tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} /><span class="label-text">{chip.name}</span></span>
             {/each}
             {#if rest.length}
               <span class="label-badge tinted" title={rest.map((c) => c.name).join(', ')}>+{rest.length}</span>
@@ -156,7 +158,7 @@
             title={$t('ctx_action_copy_username')}
             onclick={() => copyUsername(entry)}
           >
-            <Icon name={copied === `${entry.id}:user` ? 'check' : 'user'} size={13} />
+            <Icon name={copied === `${entry.id}:user` ? 'check' : 'id'} size={13} />
           </button>
         {/if}
         <button
@@ -166,7 +168,7 @@
           title={appLock.locked ? $t('lock_title') : $t('ctx_action_copy_password')}
           onclick={() => copyPassword(entry)}
         >
-          <Icon name={copied === `${entry.id}:pass` ? 'check' : appLock.locked ? 'lock' : 'copy'} size={13} />
+          <Icon name={copied === `${entry.id}:pass` ? 'check' : appLock.locked ? 'lock-square-rounded' : 'copy'} size={13} />
         </button>
         {#if onedit && !appLock.locked}
           <button type="button" class="icon-btn" title={$t('pw_btn_edit')} onclick={() => onedit(entry)}>
@@ -181,7 +183,7 @@
 <VaultUnlock bind:open={unlockOpen} onunlocked={() => { if (pending) void copyPassword(pending); }} />
 
 <style>
-  .list { display: flex; flex-direction: column; gap: 2px; }
+  .list { display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .entry {
     display: flex;
     align-items: center;
@@ -229,9 +231,10 @@
     min-width: 0;
   }
   .label-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
     border-width: 1px;
     border-style: solid;
     border-radius: var(--radius-sm);
@@ -239,17 +242,7 @@
     padding: 0.05rem 0.35rem;
     white-space: nowrap;
   }
-  .profile-badge {
-    flex-shrink: 0;
-    background: var(--accent-tint);
-    border: 1px solid var(--accent-tint-border);
-    color: var(--accent-text-2);
-    border-radius: var(--radius-sm);
-    font-size: var(--fs-2xs);
-    padding: 0.1rem 0.4rem;
-    font-weight: var(--fw-medium);
-    white-space: nowrap;
-  }
+  .label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .entry-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
   .totp-more { font-size: var(--fs-2xs); color: var(--text-2); flex-shrink: 0; }
   .icon-btn.success { color: var(--success-text); }

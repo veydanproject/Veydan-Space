@@ -48,7 +48,7 @@
     "totp_field_digits": "Basamak sayısı",
     "totp_field_period": "Süre",
     "totp_qr_hint": "QR kodu içeren bir ekran görüntüsü seçin",
-    "totp_qr_select": "Görüntü seç…",
+    "totp_qr_select": "Görüntü seç",
     "totp_qr_detected": "QR algılandı — aşağıdaki alanları kontrol edin",
     "totp_qr_not_found": "Görüntüde QR kodu bulunamadı",
     "totp_qr_secret_masked": "Gizli anahtar:",

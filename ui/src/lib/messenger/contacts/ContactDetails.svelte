@@ -150,7 +150,7 @@
       <Icon name="refresh-cw" size={13} />{$t('msg_contacts_refresh')}
     </button>
     {#if contact.profile?.nip05}
-      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={verify}><Icon name="check-circle" size={13} />{$t('msg_contacts_verify_nip05')}</button>
+      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={verify}><Icon name="rosette-discount-check" size={13} />{$t('msg_contacts_verify_nip05')}</button>
     {/if}
     <span class="spacer"></span>
     <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={remove}><Icon name="trash-2" size={13} />{$t('msg_contacts_remove')}</button>

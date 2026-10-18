@@ -16,6 +16,7 @@
   import { chatMatches, contactHaystacks } from '../shared/search';
   import { messengerStore } from '../store.svelte';
   import { botCardLineKey } from '../content/botCard';
+  import { bodyLine } from '../push/wording';
   import { botCards } from '../seams/cards.svelte';
   import type { MessengerChat } from '../api';
   import { goto } from '$app/navigation';
@@ -66,6 +67,8 @@
   function preview(c: MessengerChat): string {
     // A group the network closed has nothing new to show; the row says so.
     if (c.kind === 'group' && c.banned) return $t('msg_group_removed_short');
+    // A photo is a photo, a voice message a voice message (as a push says), not the name of a file.
+    if (c.last_body) return bodyLine(c.last_body, $t);
     if (c.last_preview != null) return c.last_preview;
     const card = chatStore.tailCard(c);
     return card ? $t(botCardLineKey(card, botCards.host)) : $t('msg_chat_no_messages');
@@ -141,7 +144,7 @@
   {#if requests > 0}
     <!-- No unread badge: a request must not call anyone back to the app. -->
     <button class="chat requests" onclick={openRequests}>
-      <span class="req-icon"><Icon name="shield" size={20} /></span>
+      <span class="req-icon"><Icon name="user-question" size={20} /></span>
       <span class="body">
         <span class="top"><span class="title">{$t('msg_req_row', { n: String(requests) })}</span></span>
         <span class="bottom"><span class="preview">{$t('msg_req_row_hint')}</span></span>
@@ -156,7 +159,7 @@
       {#if !q}<span>{kind === 'group' ? $t('msg_groups_empty_hint') : $t('msg_chats_empty_hint')}</span>{/if}
     </div>
   {:else}
-    <ul class="list">
+    <ul class="list divided">
       {#each visible as c (c.id)}{@render row(c)}{/each}
     </ul>
     {#if archived.length}
@@ -166,7 +169,7 @@
         <Icon name={showArchived ? 'chevron-up' : 'chevron-down'} size={13} />
       </button>
       {#if showArchived}
-        <ul class="list">
+        <ul class="list divided">
           {#each archived as c (c.id)}{@render row(c)}{/each}
         </ul>
       {/if}
@@ -178,7 +181,7 @@
 
 <style>
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .chat {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; text-align: left;
     min-height: 64px; padding: var(--sp-2) var(--sp-3); border: none; border-radius: var(--radius-lg);

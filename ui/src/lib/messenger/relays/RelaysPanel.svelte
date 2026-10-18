@@ -82,7 +82,7 @@
 </script>
 
 <div class="card relays">
-  <div class="card-title"><Icon name="globe" size={16} /> {$t('msg_relays_title')}</div>
+  <div class="card-title"><Icon name="server-2" size={16} /> {$t('msg_relays_title')}</div>
   <p class="muted">{$t('msg_relays_text')}</p>
 
   {#if messengerStore.manifest}

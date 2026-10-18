@@ -11,7 +11,7 @@
 //     | 'video' (a video call rings) | 'video-active' | 'video-outgoing'
 // plays it a moment after the page loads, and `window.veydanDemoCall(kind)`
 // plays it at once (also `'end'`, `'peer-video'` that turns Alice's camera
-// off or on, `'peer-pause'` that holds her frames back for 15 seconds while
+// off or on, `'peer-screen'` that shares her screen or stops it, `'peer-pause'` that holds her frames back for 15 seconds while
 // her camera stays on, `'peer-blink'` for 2 seconds, as a change of the
 // way's bandwidth does, and `'reconnect'` that loses the line for a few
 // seconds). With
@@ -144,7 +144,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
     return {
       ...view,
       video_local_size: view.video_local ? mine : undefined,
-      video_remote_size: view.video_remote && view.phase === 'active' ? { width: 640, height: 360 } : undefined,
+      video_remote_size: view.video_remote && view.phase === 'active' ? (view.video_remote_screen ? { width: 1280, height: 800 } : { width: 640, height: 360 }) : undefined,
     };
   }
 
@@ -152,7 +152,10 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   function frame(track: VideoTrack, seq: number): ArrayBuffer | null {
     const c = call;
     if (!c || c.phase === 'incoming') return null;
-    if (track === 'remote') return c.video_remote && c.phase === 'active' && Date.now() >= peerPausedUntil ? testPattern(640, 360, seq, 2.2) : null;
+    if (track === 'remote') {
+      if (!c.video_remote || c.phase !== 'active' || Date.now() < peerPausedUntil) return null;
+      return c.video_remote_screen ? testPattern(1280, 800, seq, 0.6) : testPattern(640, 360, seq, 2.2);
+    }
     if (!c.video_local) return null;
     if (c.video_screen) return testPattern(960, 540, seq, 0.6);
     const back = c.camera === 'back' || c.camera === CAMERAS[1].id;
@@ -279,7 +282,7 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
       call_id: hexId(), peer: chat.peer_pubkey ?? peer, chat_id: chat.id, direction, media, phase: direction === 'in' ? 'incoming' : 'outgoing',
       muted: false, started_at: nowSecs(), nodes: [NODE.split('#')[1]],
       // A video call: the caller's camera is on from the start, the peer's once it answers.
-      video_local: media === 'video' && direction === 'out', video_screen: false, video_remote: media === 'video' && direction === 'in',
+      video_local: media === 'video' && direction === 'out', video_screen: false, video_remote: media === 'video' && direction === 'in', video_remote_screen: false,
       limits: { turn_lifetime_secs: 600, turn_kbps_per_allocation: 2000, credentials_ttl_secs: 600 },
     };
   }
@@ -287,7 +290,8 @@ export function demoCallMocks(host: DemoCallHost): Record<string, (args?: Record
   /** A call from Alice: ringing, or already answered (on "another screen", as the phone's Answer does). */
   function play(kind: string) {
     if (kind === 'end') { finish(call?.answered_at ? 'ended' : 'missed'); return; }
-    if (kind === 'peer-video') { if (call) put({ ...call, video_remote: !call.video_remote }); return; }
+    if (kind === 'peer-video') { if (call) put({ ...call, video_remote: !call.video_remote, video_remote_screen: false }); return; }
+    if (kind === 'peer-screen') { if (call) put({ ...call, video_remote: !call.video_remote_screen, video_remote_screen: !call.video_remote_screen }); return; }
     if (kind === 'peer-pause' || kind === 'peer-blink') { peerPausedUntil = Date.now() + (kind === 'peer-pause' ? 15_000 : 2000); return; }
     if (kind === 'reconnect') {
       const c = call;

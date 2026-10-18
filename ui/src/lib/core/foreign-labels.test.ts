@@ -30,7 +30,6 @@ const kind = (k: string, entities: { id: string; name: string; color?: string }[
   kind: k,
   icon: 'lock',
   label: 'ctx_kind_password',
-  color: '',
   fallback,
   ensureLoaded: async () => {},
   list: () => entities.map((e) => ({ ...e, subtitle: '', status: null, color: e.color ?? '' })),
@@ -74,7 +73,7 @@ afterEach(() => {
 describe('a reference to a kind without an owner in the product', () => {
   it('is shown by its kind and short id until the label answers, then by its name', async () => {
     const before = directory.foreign('profile', '0a1b2c3d-pr-1');
-    expect(before).toMatchObject({ kind: 'profile', icon: 'globe', kindLabel: 'ctx_kind_profile', name: null });
+    expect(before).toMatchObject({ kind: 'profile', icon: 'user-circle', kindLabel: 'ctx_kind_profile', name: null });
     expect(foreignName(before!, tr)).toBe('Profile 0a1b2c3d');
     expect(directory.linkName('profile', '0a1b2c3d-pr-1')).toBeUndefined();
 

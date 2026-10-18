@@ -196,7 +196,7 @@
   {#if errors.avatar}<div class="error-msg" role="alert">{errors.avatar}</div>{/if}
 
   <div class="footer">
-    <p class="hint public"><Icon name="globe" size={12} />{$t('msg_profile_public_hint')}</p>
+    <p class="hint public"><Icon name="world" size={12} />{$t('msg_profile_public_hint')}</p>
     <!-- The design kit's action bar: it stays at the foot of the pane while the form scrolls under it. -->
     <div class="actions" class:dirty role="region" aria-label={$t('msg_own_publish')}>
       {#if dirty}<p class="unsaved" role="status"><span class="dot" aria-hidden="true"></span>{$t('msg_profile_unsaved')}</p>{/if}

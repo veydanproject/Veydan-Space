@@ -55,7 +55,7 @@
 <style>
   .row {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 64px;
-    padding: var(--sp-3) var(--sp-5); border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+    padding: var(--sp-3) var(--sp-5); border: 0; border-bottom: 1px solid var(--divider); border-radius: 0;
     background: none; color: var(--text); font: inherit; text-align: left; text-decoration: none;
   }
   .row:last-child { border-bottom: 0; }

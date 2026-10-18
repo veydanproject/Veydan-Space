@@ -87,7 +87,7 @@ export function registerNotesCommands(): void {
     templateNotes(notesStore.list, notesStore.folders).map((tpl): Command => ({
       id: `notes.fromTemplate.${tpl.id}`,
       title: tr()('cmd_notes_from_template', { name: tpl.title }),
-      icon: 'file-text',
+      icon: 'notes',
       group: tr()('cmd_group_notes'),
       run: async () => {
         await toNotes();
@@ -107,7 +107,7 @@ export function registerNotesCommands(): void {
         id: `notes.open.${n.id}`,
         title: tr()('cmd_notes_open', { title: n.title || tr()('notes_untitled') }),
         keywords: n.tags.map((x) => x.name).join(' '),
-        icon: 'file-text',
+        icon: 'notes',
         group: tr()('cmd_group_notes'),
         run: async () => {
           await toNotes();

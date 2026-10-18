@@ -231,7 +231,7 @@
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
     <button type="button" class="m-row set-row" onclick={() => (picker = 'lang')}>
-        <span class="set-tile"><Icon name="globe" size={20} /></span>
+        <span class="set-tile"><Icon name="language" size={20} /></span>
         <span class="set-text">
           <span class="m-row-label">{$t('settings_language')}</span>
           <span class="m-row-value">{localeLabel}</span>
@@ -366,7 +366,7 @@
     </a>
     {#if hasDemo}
       <button type="button" class="m-row set-row" onclick={() => (picker = 'demoLang')}>
-        <span class="set-tile"><Icon name="globe" size={20} /></span>
+        <span class="set-tile"><Icon name="language" size={20} /></span>
         <span class="set-text">
           <span class="m-row-label">{$t('settings_demo_locale')}</span>
           <span class="m-row-value">{demoLocaleLabel}</span>

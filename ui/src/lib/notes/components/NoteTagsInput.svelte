@@ -15,7 +15,8 @@
   interface ContextChip {
     kind: string;
     label: string;
-    color: string;
+    /** The user's colour (a folder, a workspace); none for an entity or a domain: neutral, told by its mark. */
+    color?: string;
     onremove?: () => void;
   }
 
@@ -34,8 +35,8 @@
   let { selectedTags, allTags, onchange, contextChips = [], folders = [], activeFolderIds = [], onaddFolder, activeBindings = [], onaddBinding }: Props = $props();
 
   const TAG_COLORS = [
-    '#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6',
-    '#f5c451', '#34d399', '#f26d6d', '#f97316',
+    // The kit's presets (N.colors); the colour is the user's, never the kind.
+    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
   ];
 
   let open = $state(false);
@@ -66,12 +67,12 @@
     const q = inputValue.trim();
     const kinds = (q ? entityKinds().map((d) => d.kind) : ['totp', 'password']) as EntityKind[];
     const max = q ? 3 : 6;
-    const out: { binding: string; kindLabel: TranslationKey; entity: EntitySummary }[] = [];
+    const out: { binding: string; kind: EntityKind; kindLabel: TranslationKey; entity: EntitySummary }[] = [];
     for (const kind of kinds) {
       for (const entity of searchEntities(kind, q, max)) {
         const b = binding(kind, entity.id);
         const def = entityKind(kind);
-        if (def && !activeBindings.includes(b)) out.push({ binding: b, kindLabel: def.label, entity });
+        if (def && !activeBindings.includes(b)) out.push({ binding: b, kind, kindLabel: def.label, entity });
       }
     }
     return out;
@@ -194,7 +195,7 @@
             {/each}
             {#each entitySuggestions as s (s.binding)}
               <button class="sug-item" onmousedown={(e) => { e.preventDefault(); onaddBinding?.(s.binding); close(); }}>
-                <span class="sug-dot" style="background:{s.entity.color}"></span>
+                {#if s.entity.color}<span class="sug-dot" style="background:{s.entity.color}"></span>{:else}<ChipMark kind={s.kind} />{/if}
                 {s.entity.name}
                 <span class="sug-folder-label">{$t(s.kindLabel)}</span>
               </button>

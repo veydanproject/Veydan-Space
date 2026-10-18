@@ -24,6 +24,7 @@
 //! Everything in this crate is pure: no network, no storage, no clock.
 
 mod decode;
+mod clip;
 mod error;
 mod square;
 
@@ -33,6 +34,7 @@ mod tests;
 use base64::Engine;
 use sha2::{Digest, Sha256};
 
+pub use clip::{picture_ext, png_of_rgba, MAX_CLIP_PIXELS};
 pub use decode::{decode, still_photo, upright_size, Decoded};
 pub use error::AvatarError;
 pub use square::{card_thumb, crop_square, photo_jpeg, preview_jpeg, square_thumb, CropRect};

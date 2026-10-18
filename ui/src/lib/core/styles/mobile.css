@@ -388,7 +388,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   gap: var(--sp-3);
   min-height: 52px;
   padding: var(--sp-2) var(--sp-4);
-  border-bottom: 1px solid var(--m-card-border);
+  border-bottom: 1px solid var(--divider);
   color: var(--text);
   text-decoration: none;
   background: none;
@@ -555,12 +555,14 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-chip.active { background: var(--accent); color: #fff; }
 .m-chip.small { min-height: 20px; padding: 0 8px; font-size: var(--fs-2xs); }
 .m-chip.neutral { background: var(--m-seg); color: var(--text-2); }
-/* A chip coloured from data is `.m-chip.tinted` with `style:--chip`: its
-   colours are the one rule of base.css (`.tinted`), as on the desktop. A
-   workspace with no colour of its own passes `var(--success)`. An `.m-chip`
+/* A chip in the user's colour is `.m-chip.tinted` with `style:--chip`: its
+   colours are the one rule of base.css (`.tinted`), as on the desktop. One
+   with no `--chip` (an entity: a profile, a proxy, a domain…, or a tag with
+   no colour) is the neutral chip, its kind told by its mark. An `.m-chip`
    has no border, so its tint is mixed over the neutral chip (--m-seg)
    instead of the page: a colour close to the surface still reads as a
    chip, as `.m-chip.neutral` does (chip-contrast.test.ts covers --m-seg). */
+.m-chip.tinted:not([style*='--chip']) { background: var(--m-seg); color: var(--text-2); }
 @supports (color: color-mix(in srgb, red 50%, blue)) {
   .m-chip.tinted[style*='--chip'] {
     background: color-mix(in srgb, var(--chip) var(--chip-tint), var(--m-seg));

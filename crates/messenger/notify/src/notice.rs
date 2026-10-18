@@ -38,7 +38,6 @@ pub struct Notice {
     pub picture: Option<String>,
     /// None when the settings say the text stays in the app.
     pub body: Option<Body>,
-    pub muted: bool,
     pub hide_on_lockscreen: bool,
     pub count: u32,
 }
@@ -50,7 +49,6 @@ pub struct Plain {
     pub chat: Option<String>,
     /// The group's name, when the push named a group this phone knows.
     pub title: Option<String>,
-    pub muted: bool,
     pub count: u32,
 }
 
@@ -74,6 +72,10 @@ pub enum Reason {
     /// A stranger's first message: the app keeps it in its queue of
     /// requests, which is told by its count and not by a notification.
     Request,
+    /// The chat is muted, here or on another device of mine: nothing of
+    /// it is told, as the running app tells nothing of it. A call still
+    /// rings.
+    Muted,
     /// The event is not what the push said, or not valid.
     Invalid,
     /// An invitation to a call older than its life (45 s from its making):

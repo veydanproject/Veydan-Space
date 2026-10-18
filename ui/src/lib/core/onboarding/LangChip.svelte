@@ -30,7 +30,7 @@
 
 {#if isMobile}
   <button type="button" class="chip" onclick={() => (open = true)} aria-label={$t('settings_section_language')}>
-    <Icon name="globe" size={15} />
+    <Icon name="language" size={15} />
     <span>{current}</span>
     <Icon name="chevron-down" size={13} />
   </button>
@@ -44,7 +44,7 @@
   />
 {:else}
   <label class="desk">
-    <span class="label"><Icon name="globe" size={14} />{$t('settings_section_language')}</span>
+    <span class="label"><Icon name="language" size={14} />{$t('settings_section_language')}</span>
     <CustomSelect options={LANGUAGES.map((l) => ({ value: l.code, label: l.native }))} value={$locale} onchange={choose} />
   </label>
 {/if}

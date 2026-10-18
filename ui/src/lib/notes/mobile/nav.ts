@@ -19,7 +19,7 @@ export function newNoteHref(url: URL): string {
 
 export function notesNav(newHref = '/notes/new'): NavItem[] {
   return [
-    { id: 'notes', title: 'app_notes', icon: 'file-text', href: '/notes' },
+    { id: 'notes', title: 'app_notes', icon: 'notes', href: '/notes' },
     { id: 'new', title: 'nav_new', icon: 'file-plus', href: newHref },
     { id: 'tags', title: 'notes_tags', icon: 'tag', href: '/notes/tags' },
     { id: 'more', title: 'nav_more', icon: 'more-horizontal', onclick: () => { notesMobileUi.moreOpen = true; } },

@@ -10,10 +10,10 @@
   import { facetKeys, facetValue, facetsOf } from '$lib/notes/facets';
   import { SORT_KEYS, type NoteSort, type SortKey } from '$lib/notes/sort';
 
+  /** An entity a note is bound to: the kind's icon, neutral (a colour is the user's, never a kind). */
   export interface ContextEntity {
     name: string;
     icon: string;
-    color: string;
   }
 
   interface Props {
@@ -177,7 +177,7 @@
     <td>
       <div class="chips">
         {#each context(n) as c, i (i)}
-          <span class="entity" style="color:{c.color}" title={c.name}><Icon name={c.icon} size={12} /></span>
+          <span class="entity" title={c.name}><Icon name={c.icon} size={12} /></span>
         {/each}
       </div>
     </td>
@@ -274,7 +274,7 @@
     color: var(--text-3); font-weight: 600;
   }
   .th.on { color: var(--text); }
-  td { padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  td { padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--divider); vertical-align: middle; }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: var(--surface-2); }
   tbody tr.active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -288,7 +288,7 @@
     display: inline-block; padding: 0.1rem 0.45rem; border-width: 1px; border-style: solid; border-radius: var(--radius-pill);
     font-size: var(--fs-2xs); white-space: nowrap;
   }
-  .entity { display: inline-flex; align-items: center; }
+  .entity { display: inline-flex; align-items: center; color: var(--text-2); }
   .empty { padding: var(--sp-4); text-align: center; color: var(--text-3); font-size: var(--fs-sm); }
   .cols-th { width: 1.6rem; text-align: right; }
   .cols { position: relative; display: inline-block; }

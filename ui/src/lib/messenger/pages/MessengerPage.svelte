@@ -302,7 +302,7 @@
           <RequestView {request} onback={() => (requestStore.selected = null)} onaccepted={accepted} ondone={() => (requestStore.selected = null)} />
         {:else if requestsUi.shown}
           <div class="welcome">
-            <div class="welcome-icon"><Icon name="shield" size={34} /></div>
+            <div class="welcome-icon"><Icon name="user-question" size={34} /></div>
             <span>{$t('msg_req_pick')}</span>
           </div>
         {:else if chatStore.active?.kind === "group"}

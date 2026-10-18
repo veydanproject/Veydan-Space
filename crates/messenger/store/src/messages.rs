@@ -5,6 +5,8 @@
 //! the rumor id, so the peer's copy, our self-copy and a second device's
 //! copy of the same message all collapse into one row.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::{storage, Store};
 use messenger_core::envelope::{self, TextFormat};
 use messenger_core::Result;
@@ -348,50 +350,29 @@ pub struct QueueFilter {
     pub author: Option<String>,
     pub since: Option<i64>,
     pub until: Option<i64>,
-    /// A part of the text, case-insensitively.
+    /// What a moderator searches for, case-insensitively in any script: a
+    /// part of the text, or of the author's name (my nickname for them,
+    /// the names and the NIP-05 of their profile), or of their key in hex.
     pub text: Option<String>,
+    /// Every row its own line: the messages of one author, not the authors.
+    pub each: bool,
 }
 
 /// One line of the queue: the oldest waiting row of an author and how
-/// many more of theirs wait behind it.
+/// many more of theirs wait behind it (none when every row is a line).
 #[derive(Clone, Debug)]
 pub struct QueueLine {
     pub row: MessageRow,
     pub more_from_author: i64,
 }
 
-fn filter_sql(f: &QueueFilter, alias: &str) -> String {
-    let mut sql = String::new();
-    if f.author.is_some() {
-        sql.push_str(&format!(" AND {alias}.sender_pubkey = ?"));
-    }
-    if f.since.is_some() {
-        sql.push_str(&format!(" AND {alias}.created_at >= ?"));
-    }
-    if f.until.is_some() {
-        sql.push_str(&format!(" AND {alias}.created_at <= ?"));
-    }
-    if f.text.is_some() {
-        sql.push_str(&format!(" AND {alias}.text LIKE ? ESCAPE '\\'"));
-    }
-    sql
-}
-
-fn bind_filter<'q, O>(mut q: sqlx::query::QueryAs<'q, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments>, f: &'q QueueFilter) -> sqlx::query::QueryAs<'q, sqlx::Sqlite, O, sqlx::sqlite::SqliteArguments> {
-    if let Some(a) = &f.author {
-        q = q.bind(a);
-    }
-    if let Some(s) = f.since {
-        q = q.bind(s);
-    }
-    if let Some(u) = f.until {
-        q = q.bind(u);
-    }
-    if let Some(t) = &f.text {
-        let escaped = t.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-        q = q.bind(format!("%{escaped}%"));
-    }
-    q
+/// A waiting row as the queue sorts and searches it.
+#[derive(sqlx::FromRow)]
+struct Waiting {
+    id: String,
+    sender_pubkey: String,
+    created_at: i64,
+    text: Option<String>,
 }
 
 /// The queue of a group as a moderator pages through it: one line per
@@ -401,58 +382,116 @@ fn bind_filter<'q, O>(mut q: sqlx::query::QueryAs<'q, sqlx::Sqlite, O, sqlx::sql
 /// dropped for it. A full page takes along every further line dated to
 /// the same second as its last one, so that the next page, strictly
 /// older, passes none of them by: the page is at least `limit` long, not
-/// at most.
+/// at most. The search is read in Rust, not by `LIKE`: SQLite folds the
+/// case of Latin letters only, and a name lives in other tables.
 pub async fn queue(store: &Store, chat_id: &str, filter: &QueueFilter, before: Option<i64>, limit: i64) -> Result<(Vec<QueueLine>, i64)> {
-    let m_filter = filter_sql(filter, "m");
-    let total_sql = format!("SELECT COUNT(*) FROM msg_messages m WHERE {PENDING}{m_filter}");
-    let total = bind_filter(sqlx::query_as::<_, (i64,)>(sqlx::AssertSqlSafe(total_sql)).bind(chat_id), filter)
-        .fetch_one(store.pool())
-        .await
-        .map_err(storage)?
-        .0;
-    let mut lines = queue_page(store, chat_id, filter, "m.created_at < ?", before.unwrap_or(i64::MAX), "", Some(limit)).await?;
-    if lines.len() as i64 >= limit {
-        if let Some(last) = lines.last() {
-            let (at, id) = (last.row.created_at, last.row.id.clone());
-            lines.extend(queue_page(store, chat_id, filter, "m.created_at = ? AND m.id < ?", at, &id, None).await?);
+    let mut sql = format!("SELECT m.id, m.sender_pubkey, m.created_at, COALESCE(m.plain, m.text) AS text FROM msg_messages m WHERE {PENDING}");
+    if filter.author.is_some() {
+        sql.push_str(" AND m.sender_pubkey = ?");
+    }
+    if filter.since.is_some() {
+        sql.push_str(" AND m.created_at >= ?");
+    }
+    if filter.until.is_some() {
+        sql.push_str(" AND m.created_at <= ?");
+    }
+    sql.push_str(" ORDER BY m.created_at ASC, m.id ASC");
+    let mut q = sqlx::query_as::<_, Waiting>(sqlx::AssertSqlSafe(sql)).bind(chat_id);
+    if let Some(a) = &filter.author {
+        q = q.bind(a);
+    }
+    if let Some(s) = filter.since {
+        q = q.bind(s);
+    }
+    if let Some(u) = filter.until {
+        q = q.bind(u);
+    }
+    let mut rows = q.fetch_all(store.pool()).await.map_err(storage)?;
+    if let Some(needle) = filter.text.as_deref().map(|t| t.trim().to_lowercase()).filter(|t| !t.is_empty()) {
+        let mut authors: Vec<&str> = rows.iter().map(|r| r.sender_pubkey.as_str()).collect();
+        authors.sort_unstable();
+        authors.dedup();
+        let named = authors_named(store, &authors, &needle).await?;
+        rows.retain(|r| named.contains(&r.sender_pubkey) || r.text.as_deref().is_some_and(|t| t.to_lowercase().contains(&needle)));
+    }
+    let total = rows.len() as i64;
+    // (the row of the line, how many more behind it): the first row of an
+    // author is their oldest, as the rows come oldest first.
+    let mut lines: Vec<(&Waiting, i64)> = Vec::new();
+    if filter.each {
+        lines.extend(rows.iter().map(|r| (r, 0)));
+    } else {
+        let mut at: HashMap<&str, usize> = HashMap::new();
+        for r in &rows {
+            match at.get(r.sender_pubkey.as_str()) {
+                Some(&i) => lines[i].1 += 1,
+                None => {
+                    at.insert(&r.sender_pubkey, lines.len());
+                    lines.push((r, 0));
+                }
+            }
         }
     }
-    Ok((lines, total))
-}
-
-/// One read of the lines of the queue under `bound` (a condition on `m`
-/// with one or two placeholders, bound to `at` and `id`; `id` is bound
-/// only when the condition names it), the newest first, `limit` of them
-/// or all.
-async fn queue_page(store: &Store, chat_id: &str, filter: &QueueFilter, bound: &str, at: i64, id: &str, limit: Option<i64>) -> Result<Vec<QueueLine>> {
-    let m_filter = filter_sql(filter, "m");
-    let x_filter = filter_sql(filter, "x");
-    let sql = format!(
-        "SELECT {COLS}, (SELECT COUNT(*) FROM msg_messages x WHERE x.chat_id = m.chat_id AND x.review = 'pending' AND x.is_hidden = 0 AND x.mod_state = '' AND x.deleted_at IS NULL AND x.sender_pubkey = m.sender_pubkey{x_filter}) - 1 AS more
-         FROM msg_messages m
-         WHERE {PENDING}{m_filter} AND {bound}
-           AND m.id = (SELECT x.id FROM msg_messages x WHERE x.chat_id = m.chat_id AND x.review = 'pending' AND x.is_hidden = 0 AND x.mod_state = '' AND x.deleted_at IS NULL AND x.sender_pubkey = m.sender_pubkey{x_filter}
-                       ORDER BY x.created_at ASC, x.id ASC LIMIT 1)
-         ORDER BY m.created_at DESC, m.id DESC LIMIT ?"
-    );
-    // The filter is bound three times, in the order the placeholders
-    // stand: the count behind the line, the line itself, the choice of
-    // the oldest.
-    let q = bind_filter(sqlx::query_as::<_, QueueRow>(sqlx::AssertSqlSafe(sql)), filter).bind(chat_id);
-    let mut q = bind_filter(q, filter).bind(at);
-    if bound.contains("m.id") {
-        q = q.bind(id);
+    lines.sort_by(|(x, _), (y, _)| (y.created_at, &y.id).cmp(&(x.created_at, &x.id)));
+    let before = before.unwrap_or(i64::MAX);
+    let mut page: Vec<(&Waiting, i64)> = Vec::new();
+    for l in lines.into_iter().filter(|(r, _)| r.created_at < before) {
+        if page.len() as i64 >= limit && page.last().is_some_and(|(last, _)| last.created_at != l.0.created_at) {
+            break;
+        }
+        page.push(l);
     }
-    let q = bind_filter(q, filter).bind(limit.unwrap_or(-1));
-    let lines = q.fetch_all(store.pool()).await.map_err(storage)?;
-    Ok(lines.into_iter().map(|r| QueueLine { row: r.row, more_from_author: r.more }).collect())
+    let mut out = Vec::with_capacity(page.len());
+    for (w, more) in page {
+        if let Some(row) = get(store, &w.id).await? {
+            out.push(QueueLine { row, more_from_author: more });
+        }
+    }
+    Ok((out, total))
 }
 
-#[derive(sqlx::FromRow)]
-struct QueueRow {
-    #[sqlx(flatten)]
-    row: MessageRow,
-    more: i64,
+/// Which of `authors` the search names: by a part of my nickname for
+/// them, of their profile's names or NIP-05, or of their key in hex.
+async fn authors_named(store: &Store, authors: &[&str], needle: &str) -> Result<HashSet<String>> {
+    let mut named = HashSet::new();
+    let hex = needle.len() >= 4 && needle.bytes().all(|b| b.is_ascii_hexdigit());
+    for chunk in authors.chunks(400) {
+        let marks = vec!["?"; chunk.len()].join(", ");
+        let sql = format!(
+            "SELECT p.pubkey, p.name, p.display_name, p.nip05 FROM msg_profiles p WHERE p.pubkey IN ({marks})
+             UNION ALL SELECT c.pubkey, c.nickname, NULL, NULL FROM msg_private_contacts c WHERE c.deleted_at IS NULL AND c.pubkey IN ({marks})"
+        );
+        let mut q = sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<String>)>(sqlx::AssertSqlSafe(sql));
+        for a in chunk.iter().chain(chunk.iter()) {
+            q = q.bind(*a);
+        }
+        for (pubkey, a, b, c) in q.fetch_all(store.pool()).await.map_err(storage)? {
+            if [a, b, c].into_iter().flatten().any(|v| v.to_lowercase().contains(needle)) {
+                named.insert(pubkey);
+            }
+        }
+        if hex {
+            named.extend(chunk.iter().filter(|a| a.contains(needle)).map(|a| a.to_string()));
+        }
+    }
+    Ok(named)
+}
+
+/// The newest message the list of chats speaks of: the row
+/// `chats::recompute_last` takes its line from (shown, not taken back, not
+/// a system line, not waiting for a moderator, in a group not of a key
+/// blocked or banned).
+pub async fn last_shown(store: &Store, chat_id: &str) -> Result<Option<MessageRow>> {
+    sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLS} FROM msg_messages
+         WHERE chat_id = ? AND is_hidden = 0 AND mod_state = '' AND review <> 'pending' AND deleted_at IS NULL AND content_type != 'system'
+           AND NOT (chat_id LIKE 'group:%' AND (EXISTS (SELECT 1 FROM msg_dm_relations r WHERE r.peer_pubkey = msg_messages.sender_pubkey AND r.blocked = 1) OR EXISTS (SELECT 1 FROM msg_banned_keys b WHERE b.pubkey = msg_messages.sender_pubkey)))
+         ORDER BY created_at DESC LIMIT 1"
+    )))
+    .bind(chat_id)
+    .fetch_optional(store.pool())
+    .await
+    .map_err(storage)
 }
 
 /// Newest application time in the chat; new outgoing rumors must be later.
@@ -513,6 +552,22 @@ pub async fn count_visible(store: &Store, chat_id: &str) -> Result<i64> {
         .fetch_one(store.pool())
         .await
         .map_err(storage)
+}
+
+/// Every text of a message or a transfer that holds `needle` (`outgoing`):
+/// the paths of files the app keeps, read at once by the sweep of
+/// `outgoing/` rather than a scan for each of its folders.
+pub async fn paths_mentioning(store: &Store, needle: &str) -> Result<Vec<String>> {
+    let like = format!("%{needle}%");
+    sqlx::query_scalar::<_, String>(
+        "SELECT media_json FROM msg_messages WHERE media_json LIKE ?1
+         UNION ALL SELECT local_path FROM msg_transfers WHERE local_path LIKE ?1
+         UNION ALL SELECT state_json FROM msg_transfers WHERE state_json LIKE ?1",
+    )
+    .bind(like)
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
 }
 
 /// Every row of a chat, hidden ones included: what a key left behind in
@@ -827,6 +882,16 @@ mod tests {
         assert_eq!((total, lines.len(), lines[0].row.id.as_str()), (1, 1, "e"), "case does not matter; `%` and `_` are no wildcards");
         let wild = QueueFilter { text: Some("%".into()), ..Default::default() };
         assert_eq!(queue(&s, "group:g", &wild, None, 10).await.unwrap().1, 0);
+        set_text(&s, "c", "Привет, Мир", TextFormat::Plain, 31).await.unwrap();
+        let cyrillic = QueueFilter { text: Some("мир".into()), ..Default::default() };
+        assert_eq!(queue(&s, "group:g", &cyrillic, None, 10).await.unwrap().0[0].row.id, "c", "the case of any script, not of Latin alone");
+        sqlx::query("INSERT INTO msg_profiles (pubkey, display_name, fetched_at) VALUES ('v', 'Вера', 1)").execute(s.pool()).await.unwrap();
+        let by_name = QueueFilter { text: Some("вер".into()), ..Default::default() };
+        let (lines, total) = queue(&s, "group:g", &by_name, None, 10).await.unwrap();
+        assert_eq!((total, lines.len(), lines[0].row.id.as_str(), lines[0].more_from_author), (2, 1, "c", 1), "an author by their name: everything of theirs");
+        let each = QueueFilter { author: Some("v".into()), each: true, ..Default::default() };
+        let (lines, total) = queue(&s, "group:g", &each, None, 10).await.unwrap();
+        assert_eq!((total, lines.iter().map(|l| (l.row.id.as_str(), l.more_from_author)).collect::<Vec<_>>()), (2, vec![("e", 0), ("c", 0)]), "every row its own line");
         let of_v = QueueFilter { author: Some("v".into()), since: Some(31), until: Some(60), ..Default::default() };
         let (lines, total) = queue(&s, "group:g", &of_v, None, 10).await.unwrap();
         assert_eq!((total, lines[0].row.id.as_str(), lines[0].more_from_author), (1, "e", 0), "the count behind a line is under the filter too");

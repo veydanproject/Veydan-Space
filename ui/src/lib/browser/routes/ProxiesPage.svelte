@@ -138,7 +138,7 @@
       <p class="page-sub">{$t('proxies_sub', { count: String(proxiesStore.list.length) })}</p>
     </div>
     <button class="btn btn-ghost spacer" onclick={() => (importOpen = true)}>
-      <Icon name="upload" size={15} />{$t('proxies_import_btn')}
+      <Icon name="file-import" size={15} />{$t('proxies_import_btn')}
     </button>
     <button class="btn btn-primary" onclick={() => (panelProxy = null)}>
       <Icon name="plus" size={15} />{$t('proxies_add')}
@@ -194,7 +194,7 @@
     <div class="table-wrap"><Skeleton rows={5} height={48} avatar="none" trailing /></div>
   {:else if proxiesStore.list.length === 0}
     <div class="empty-state">
-      <div class="empty-icon"><Icon name="network" size={40} strokeWidth={1.5} /></div>
+      <div class="empty-icon"><Icon name="globe" size={40} strokeWidth={1.5} /></div>
       <p>{$t('proxies_empty')}</p>
       <button class="btn btn-primary" onclick={() => (panelProxy = null)}>
         <Icon name="plus" size={14} />{$t('proxies_empty_add')}
@@ -345,7 +345,7 @@
     white-space: nowrap;
   }
 
-  .proxy-table td { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--surface-2); vertical-align: middle; }
+  .proxy-table td { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--divider); vertical-align: middle; }
   .proxy-row:last-child td { border-bottom: none; }
   .proxy-row:hover td { background: var(--surface-row-hover); }
   .proxy-row { cursor: pointer; }

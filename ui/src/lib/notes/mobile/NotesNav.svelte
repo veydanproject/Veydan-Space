@@ -197,13 +197,13 @@
       <nav class="body">
         <section>
           <button class="item" class:on={active('all')} onclick={() => pick('all')}>
-            <Icon name="file-text" size={18} />
+            <Icon name="notes" size={18} />
             <span class="name">{$t('notes_filter_all')}</span>
             <span class="n">{nav.counts.all}</span>
           </button>
           {#if nav.counts.global > 0 && (hasBrowser || nav.counts.global !== nav.counts.all)}
             <button class="item" class:on={active('global')} onclick={() => pick('global')}>
-              <Icon name="globe" size={18} />
+              <Icon name="world" size={18} />
               <span class="name">{$t('notes_filter_global')}</span>
               <span class="n">{nav.counts.global}</span>
             </button>
@@ -327,7 +327,7 @@
             {#if !collapsed.has('sites')}
             {#each nav.sites as s (s.id)}
               <button class="item" class:on={active('domain', s.id)} onclick={() => pick('domain', s.id)}>
-                <Icon name="globe" size={18} />
+                <Icon name="world" size={18} />
                 <span class="name">{s.name}</span>
                 <span class="n">{s.count}</span>
               </button>

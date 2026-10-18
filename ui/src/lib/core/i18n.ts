@@ -168,8 +168,6 @@ const translations = {
     settings_about_delete_account: 'Delete account',
     settings_about_abuse: 'Report abuse',
     settings_about_legal: 'Rules and privacy',
-    onboarding_principle: 'Free communication. Harm to children is forbidden.',
-    onboarding_principle_link: 'Our rules',
     settings_bug_report: 'Report a bug',
     settings_bug_hint: 'Fill in what happened, then send the text to this address.',
     settings_bug_copy: 'Copy',
@@ -711,8 +709,6 @@ const translations = {
     settings_about_delete_account: 'Удаление аккаунта',
     settings_about_abuse: 'Сообщить о нарушении',
     settings_about_legal: 'Правила и конфиденциальность',
-    onboarding_principle: 'Свободное общение. Вред детям запрещён.',
-    onboarding_principle_link: 'Наши правила',
     settings_bug_report: 'Сообщить об ошибке',
     settings_bug_hint: 'Опишите, что случилось, и отправьте текст на этот адрес.',
     settings_bug_copy: 'Скопировать',
@@ -1284,6 +1280,12 @@ export function countKey<K extends CountKey>(key: K, n: number, loc: Locale): K 
 export function taglineOf(code: Locale): string {
   const tagline = product.tagline as Record<string, string>;
   return tagline[code] ?? tagline.en;
+}
+
+/** The product's slogan on the first screen of the first start, or null where it has none (the tagline stands there then). */
+export function sloganOf(code: Locale): string | null {
+  const slogan = product.slogan as Record<string, string> | null;
+  return slogan ? (slogan[code] ?? slogan.en) : null;
 }
 
 /** The merged dictionary as `t()` reads it (the test compares it with the dictionary before the split). */

@@ -338,6 +338,15 @@ impl MessengerRuntime {
         if let Err(e) = rt.seed_call_nodes().await {
             eprintln!("messenger: call nodes from the manifest not applied: {e}");
         }
+        // In the background: the start waits for nothing it does not need.
+        tokio::spawn({
+            let (store, outgoing) = (rt.store.clone(), rt.config.data_dir().join("outgoing"));
+            async move {
+                if let Err(e) = media::sweep_outgoing(&store, &outgoing, std::time::SystemTime::now()).await {
+                    eprintln!("messenger: outgoing/ not swept: {e}");
+                }
+            }
+        });
         if let (Some(keys), true) = (signer, rt.servers_chosen().await?) {
             rt.start_session(keys).await?;
         }

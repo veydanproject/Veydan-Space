@@ -13,7 +13,7 @@
   import { portal } from '$lib/core/portal';
   import type { Attachment } from 'svelte/attachments';
   import { parseBinding, type EntityKind } from '$lib/core/bindings';
-  import { directory } from '$lib/core/directory';
+  import { directory, kindIcon } from '$lib/core/directory';
   import { entityKinds } from '$lib/notes/context';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
 
@@ -38,11 +38,11 @@
 
   const ICON: Record<EntityKind, string> = {
     workspace: 'layers',
-    profile: 'globe',
-    proxy: 'shield',
+    profile: 'user-circle',
+    proxy: 'globe',
     ssh: 'terminal',
-    totp: 'key',
-    password: 'lock',
+    totp: 'shield',
+    password: kindIcon('password'),
   };
   const KIND_LABEL: Record<EntityKind, MobileKey> = {
     workspace: 'notes_context_kind_workspace',
@@ -214,7 +214,7 @@
               {:else}
                 {#each related as n (n.id)}
                   <button type="button" class="m-row nested" onclick={() => onopen(n.id)}>
-                    <Icon name="file-text" size={16} />
+                    <Icon name="notes" size={16} />
                     <span class="m-row-label">{n.title || $t('notes_untitled')}</span>
                   </button>
                 {/each}
@@ -255,7 +255,7 @@
   .empty { margin: var(--sp-4); color: var(--text-3); text-align: center; }
   .hint { margin: 0 var(--sp-2) var(--sp-3); color: var(--text-3); font-size: var(--fs-xs); }
   .entity { display: flex; flex-direction: column; }
-  .entity + .entity { border-top: 1px solid var(--border); }
+  .entity + .entity { border-top: 1px solid var(--divider); }
   .entity.focus { background: var(--accent-bg); border-radius: var(--radius-md); }
   .entity.mention .m-row-label { color: var(--text-2); }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

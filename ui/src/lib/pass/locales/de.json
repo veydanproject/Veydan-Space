@@ -48,7 +48,7 @@
     "totp_field_digits": "Stellen",
     "totp_field_period": "Zeitraum",
     "totp_qr_hint": "Lade einen Screenshot mit einem QR-Code hoch",
-    "totp_qr_select": "Bild auswählen…",
+    "totp_qr_select": "Bild auswählen",
     "totp_qr_detected": "QR-Code erkannt — prüfe die Felder unten",
     "totp_qr_not_found": "Kein QR-Code im Bild gefunden",
     "totp_qr_secret_masked": "Geheimer Schlüssel:",

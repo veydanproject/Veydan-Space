@@ -352,8 +352,15 @@ impl Envelope {
         Self::new(T_CALL_RESTART).with("call_id", call_id)
     }
 
-    pub fn call_video(call_id: &str, on: bool) -> Self {
-        Self::new(T_CALL_VIDEO).with("call_id", call_id).with("on", on)
+    /// `screen`: what goes is a screen, not a camera; written only while
+    /// the video is on and is a screen (absent means a camera).
+    pub fn call_video(call_id: &str, on: bool, screen: bool) -> Self {
+        let e = Self::new(T_CALL_VIDEO).with("call_id", call_id).with("on", on);
+        if on && screen {
+            e.with("screen", true)
+        } else {
+            e
+        }
     }
 
     /// `node` is the reference of the call node (`address:port#id`); `key`
@@ -709,8 +716,17 @@ mod tests {
         assert_eq!(Envelope::call_busy(&id).encode(), format!(r#"{{"v":1,"t":"call.busy","call_id":"{id}"}}"#));
         assert_eq!(Envelope::call_restart(&id).encode(), format!(r#"{{"v":1,"t":"call.restart","call_id":"{id}"}}"#));
         assert!(Envelope::call_restart(&id).is_call());
-        assert_eq!(Envelope::call_video(&id, true).encode(), format!(r#"{{"v":1,"t":"call.video","call_id":"{id}","on":true}}"#));
-        assert_eq!(Envelope::parse(&Envelope::call_video(&id, false).encode()).unwrap().fields.get("on"), Some(&serde_json::json!(false)));
+        assert_eq!(Envelope::call_video(&id, true, false).encode(), format!(r#"{{"v":1,"t":"call.video","call_id":"{id}","on":true}}"#));
+        assert_eq!(
+            Envelope::call_video(&id, true, true).encode(),
+            format!(r#"{{"v":1,"t":"call.video","call_id":"{id}","on":true,"screen":true}}"#)
+        );
+        assert_eq!(
+            Envelope::call_video(&id, false, true).encode(),
+            format!(r#"{{"v":1,"t":"call.video","call_id":"{id}","on":false}}"#),
+            "no screen while off"
+        );
+        assert_eq!(Envelope::parse(&Envelope::call_video(&id, false, false).encode()).unwrap().fields.get("on"), Some(&serde_json::json!(false)));
         assert!(!Envelope::text("call.invite").is_call(), "text that names a type is text");
         assert!(Envelope::parse(&invite).unwrap().as_text().is_none(), "a call is not text");
     }

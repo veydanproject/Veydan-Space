@@ -31,7 +31,7 @@ export function accountLinks(settingsHref: string): () => Promise<AccountLink[]>
       {
         id: 'servers',
         title: 'msg_account_servers',
-        icon: 'globe',
+        icon: 'server-2',
         href: settingsHref,
         value: messengerStore.serversMode === 'own' ? 'msg_ob_servers_own' : 'msg_ob_servers_veydan',
       },

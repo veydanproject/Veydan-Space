@@ -201,20 +201,37 @@ impl DmService {
     }
 
     pub async fn set_pinned(&self, chat_id: &str, pinned: bool) -> Result<()> {
-        chats::set_pinned(&self.store, chat_id, pinned).await
+        self.set_chat_pref(chat_id, chats::Pref::Pinned, pinned).await
     }
 
     pub async fn set_archived(&self, chat_id: &str, archived: bool) -> Result<()> {
-        chats::set_archived(&self.store, chat_id, archived).await
+        self.set_chat_pref(chat_id, chats::Pref::Archived, archived).await
     }
 
-    /// For direct chats and groups alike: nothing from a muted chat makes a sound.
+    /// For direct chats and groups alike: nothing from a muted chat is
+    /// told, no sound and no notification.
     pub async fn set_muted(&self, chat_id: &str, muted: bool) -> Result<()> {
-        chats::set_muted(&self.store, chat_id, muted).await
+        self.set_chat_pref(chat_id, chats::Pref::Muted, muted).await
     }
 
+    /// A choice of a chat made here: my other devices take it from the
+    /// snapshot (`snapshot::Header::chats`).
+    async fn set_chat_pref(&self, chat_id: &str, pref: chats::Pref, on: bool) -> Result<()> {
+        chats::set_pref(&self.store, chat_id, pref, on, self.clock.now().secs()).await?;
+        self.mark_relations_owed().await
+    }
+
+    /// The chat goes, as what a decision does (a block, a request that ran
+    /// out): the decision itself reaches my other devices.
     pub async fn delete_chat(&self, chat_id: &str) -> Result<()> {
         chats::delete(&self.store, chat_id, self.clock.now().secs()).await
+    }
+
+    /// Deleted by me: gone from every device of mine, as the tombstone
+    /// travels in the snapshot (`snapshot::Header::deleted`).
+    pub async fn delete_chat_by_me(&self, chat_id: &str) -> Result<()> {
+        self.delete_chat(chat_id).await?;
+        self.mark_relations_owed().await
     }
 
     pub async fn total_unread(&self) -> Result<i64> {
@@ -240,6 +257,12 @@ impl DmService {
                 title = format!("{}…{}", &n[..12.min(n.len())], &n[n.len().saturating_sub(4)..]);
             }
         }
+        // The newest message, when it is the one the line speaks of (`chats::touch` and
+        // `recompute_last` keep the line; a message held back since may differ).
+        let last_body = match repo::last_shown(&self.store, &r.id).await? {
+            Some(row) if Some(row.created_at) == r.last_message_at => crate::body::body_of_row(&row),
+            _ => None,
+        };
         let (mode, can_send) = match &peer {
             Some(pk) => self.mode_of(&r.id, pk).await?,
             None => (crate::relationship::ScreenMode::FullChat, true),
@@ -255,6 +278,7 @@ impl DmService {
             is_muted: r.muted,
             unread: r.unread,
             last_message_at: r.last_message_at,
+            last_body,
             last_preview: r.last_preview,
             pinned: r.pinned,
             archived: r.archived,
@@ -837,16 +861,18 @@ impl DmService {
         };
         // A deleted chat stays deleted: what it held (re-synced history, a
         // re-wrapped copy) is not taken again, nor my copies written up to
-        // the deletion (from my other devices too). A message of the peer
-        // this device never had is new whatever its clock says, so theirs
-        // are dropped by id only. A signal still counts for the
+        // the deletion (from my other devices too), nor the peer's up to
+        // the newest of theirs it held (`peer_upto`: a new device of mine
+        // has no ids to go by). One of theirs dated after that is new,
+        // whatever their clock says. A signal still counts for the
         // relationship (one this device never saw); its line, dated
         // before, is not shown.
-        if content_type != repo::CT_CONTROL
-            && ((from_me && msg.created_at.secs() <= chats::cleared_at(&self.store, &chat_id).await?)
-                || chats::was_deleted(&self.store, &id).await?)
-        {
-            return Ok(vec![]);
+        if content_type != repo::CT_CONTROL {
+            let (cleared_at, peer_upto) = chats::tombstone(&self.store, &chat_id).await?;
+            let at = msg.created_at.secs();
+            if (from_me && at <= cleared_at) || (!from_me && at <= peer_upto) || chats::was_deleted(&self.store, &id).await? {
+                return Ok(vec![]);
+            }
         }
 
         // An accept with an invitation of mine is heard from any key, known
@@ -2894,6 +2920,33 @@ mod tests {
         assert_eq!(visible(&alice, &bob).await, vec!["are you there?"]);
     }
 
+    /// Deleted on the computer, the chat stays out of a phone set up
+    /// afterwards: the history it catches up on brings nothing of it, and
+    /// what Bob writes next is a new chat.
+    #[tokio::test]
+    async fn a_chat_deleted_on_one_device_stays_out_of_a_new_one() {
+        let (alice, bob, mine, reply) = talked().await;
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex());
+        alice.dm.delete_chat_by_me(&chat_id).await.unwrap();
+        assert!(alice.dm.relations_owed().await.unwrap(), "the deletion is published");
+
+        let phone = Party::with_keys(alice.keys.clone()).await;
+        let (_, events) = alice.dm.build_relations_snapshot(&alice.keys, 1_000_000).await.unwrap();
+        let me = alice.keys.public_key();
+        let pieces: Vec<_> = events.iter().filter_map(|e| crate::snapshot::Piece::of_json(&e.json, &me)).collect();
+        let (applied, _) = phone.dm.apply_relations_snapshot(&alice.keys, &pieces).await.unwrap();
+        assert!(applied.chats_changed);
+        for p in &mine {
+            assert!(phone.receive_from(&self_event(p), true).await.is_empty());
+        }
+        assert!(phone.receive_from(&peer_event(&reply), true).await.is_empty(), "the peer's history too");
+        assert!(phone.dm.chat(&chat_id).await.unwrap().is_none());
+
+        let new = bob.dm.prepare_text(&bob.keys, &alice.pk(), "five", None).await.unwrap();
+        phone.receive_from(&peer_event(&new), true).await;
+        assert_eq!(visible(&phone, &bob).await, vec!["five"]);
+    }
+
     #[tokio::test]
     async fn a_message_dated_far_ahead_does_not_push_the_deletion_into_the_future() {
         let (alice, bob, _, _) = talked().await;
@@ -3210,6 +3263,11 @@ mod tests {
         assert_eq!(ph.text.as_deref(), Some("look"));
         assert_eq!(ph.media.as_ref().unwrap()["name"], "cat.png");
         assert_eq!(alice.dm.open_chat(&bob.pk()).await.unwrap().last_preview.as_deref(), Some("📎 cat.png"));
+        // The list says what it is: a photo with its caption, not the name of its file.
+        assert_eq!(
+            alice.dm.open_chat(&bob.pk()).await.unwrap().last_body,
+            Some(messenger_core::Body::Media { kind: "image".into(), name: "cat.png".into(), caption: Some("look".into()), duration_ms: None, batch: None })
+        );
 
         let envelope = Envelope::new("media").with("name", "cat.png").with("caption", "look").with("key", "k");
         let mut local = media_fields("cat.png");

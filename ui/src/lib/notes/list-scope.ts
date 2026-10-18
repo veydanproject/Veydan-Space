@@ -3,17 +3,19 @@
 
 // The scope line of a note's row in the list: what it names (a folder, else
 // the workspace, else the profile, else nothing) and the colour it takes. The
-// Notes page and the workspace's Notes drawer share it; the workspace has the
-// colour it has in the sidebar, the chip and the context card.
+// Notes page and the workspace's Notes drawer share it; a folder and a
+// workspace have the colour the user gave them (the one of the sidebar and
+// the chip); a profile, or one with no colour, none: a colour is the user's,
+// never a kind's.
 
 import type { NoteListItem } from '$lib/notes/types';
 
 export interface ScopeSources {
   workspaceName?: (id: string) => string;
-  workspaceColor?: (id: string) => string;
+  workspaceColor?: (id: string) => string | undefined;
   profileName?: (id: string) => string;
   folderName?: (id: string) => string;
-  folderColor?: (id: string) => string;
+  folderColor?: (id: string) => string | undefined;
 }
 
 export type NoteScope =
@@ -33,12 +35,11 @@ export function noteScope(n: ScopeNote, s: ScopeSources): NoteScope {
   return { kind: 'global' };
 }
 
-/** The colour of the scope line: the folder's or the workspace's own, the accent for a profile. */
-export function scopeColor(scope: NoteScope, s: ScopeSources): string {
+/** The colour of the scope line: the folder's or the workspace's own; none (neutral) otherwise. */
+export function scopeColor(scope: NoteScope, s: ScopeSources): string | undefined {
   switch (scope.kind) {
-    case 'folder': return s.folderColor?.(scope.id) ?? 'var(--text-2)';
-    case 'workspace': return s.workspaceColor?.(scope.id) ?? 'var(--success)';
-    case 'profile': return 'var(--accent)';
-    default: return 'var(--text-2)';
+    case 'folder': return s.folderColor?.(scope.id) || undefined;
+    case 'workspace': return s.workspaceColor?.(scope.id) || undefined;
+    default: return undefined;
   }
 }

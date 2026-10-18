@@ -120,7 +120,7 @@
 
   <div class="btn-row">
     <button class="btn btn-ghost btn-sm" disabled={busy || info.state !== 'ready'} onclick={newIdentity}>
-      <Icon name="rotate-ccw" size={14} />
+      <Icon name="refresh-cw" size={14} />
       {$t('tor_btn_new_identity')}
     </button>
     <button class="btn btn-ghost btn-sm" disabled={busy || info.state === 'stopping'} onclick={stop}>

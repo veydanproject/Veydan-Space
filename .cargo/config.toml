@@ -20,3 +20,11 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# The Android WebView of every product (wry's generated `RustWebView`) tells a
+# keyboard that its fields take pictures, so Gboard's clipboard, stickers and
+# GIFs reach the chat (crates/shell/android, `KeyboardContent`). wry splices
+# this into the class when it writes its Kotlin files; any other build of wry
+# reads nothing of it.
+[env]
+WRY_RUSTWEBVIEW_CLASS_EXTENSION = "override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? = net.veydan.shell.KeyboardContent.connect(this, outAttrs, super.onCreateInputConnection(outAttrs))"

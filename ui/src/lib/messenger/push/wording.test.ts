@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { messengerTranslations } from '../i18n';
-import { albumLine, albumOf, bodyLine, duration, joinAlbum, replyLine, replyThumb, type NoticeBody } from './wording';
+import { albumLine, albumOf, bodyLine, duration, joinAlbum, mediaTitle, replyLine, replyThumb, transferKind, type NoticeBody } from './wording';
 
 const en = messengerTranslations.en as Record<string, string>;
 const t = (key: string, vars?: Record<string, string>) => {
@@ -78,6 +78,8 @@ describe('the line under a reply', () => {
     expect(replyLine({ text: null, media: { kind: 'image', name: 'cat.png' } }, null, t)).toBe('📷 Photo');
     expect(replyLine({ text: null, media: { kind: 'voice', name: 'v.webm', duration_ms: 12_400 } }, null, t)).toBe('🎤 Voice message (0:12)');
     expect(replyLine({ text: null, media: { kind: 'file', name: 'report.pdf' } }, null, t)).toBe('📎 report.pdf');
+    expect(replyLine({ text: 'look', media: { kind: 'image', name: 'cat.png' } }, null, t)).toBe('📷 look');
+    expect(replyLine({ text: 'notes', media: { kind: 'file', name: 'report.pdf' } }, null, t)).toBe('📎 report.pdf · notes');
   });
 
   it('never calls a photo without a caption deleted, and leaves the unknown empty', () => {
@@ -88,5 +90,25 @@ describe('the line under a reply', () => {
 
   it('an old runtime that sends no flag shows the text it has', () => {
     expect(replyLine({ text: 'hi', deleted: undefined }, null, t)).toBe('hi');
+  });
+});
+
+describe('the title of an attachment shown alone', () => {
+  it('names a picture, a video and a recording by what it is, a file by its name', () => {
+    expect(mediaTitle('image', '1792284149862.jpg', t)).toBe('Photo');
+    expect(mediaTitle('video', 'VID_1.mp4', t)).toBe('Video');
+    expect(mediaTitle('voice', 'voice.weba', t)).toBe('Voice message');
+    expect(mediaTitle('circle', 'circle.webm', t)).toBe('Video message');
+    expect(mediaTitle('file', 'report.pdf', t)).toBe('report.pdf');
+    expect(mediaTitle('audio', 'song.mp3', t)).toBe('song.mp3');
+    expect(mediaTitle('exe', '', t)).toBe('File');
+  });
+
+  it('tells the kind of a transfer by its name and type', () => {
+    expect(transferKind('voice.weba', 'audio/webm')).toBe('voice');
+    expect(transferKind('circle.mp4', 'video/mp4')).toBe('circle');
+    expect(transferKind('IMG_1.jpg', 'image/jpeg')).toBe('image');
+    expect(transferKind('clip.mov', 'video/quicktime')).toBe('video');
+    expect(transferKind('voice notes.txt', 'text/plain')).toBe('file');
   });
 });

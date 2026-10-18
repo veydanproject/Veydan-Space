@@ -11,5 +11,5 @@ const BRANDS = new Set([
 
 /** The icon of a platform; a plain globe for "other" and for any platform newer than this UI. */
 export function brandIcon(platform: string): string {
-  return BRANDS.has(platform) ? `brand-${platform}` : 'globe';
+  return BRANDS.has(platform) ? `brand-${platform}` : 'world';
 }

@@ -43,7 +43,7 @@
   {#if view.is_me}
     <div class="status"><Icon name="user" size={12} />{$t('msg_card_contact_me')}</div>
   {:else if view.blocked}
-    <div class="status closed"><Icon name="ban" size={12} />{$t('msg_card_contact_blocked')}</div>
+    <div class="status closed"><Icon name="user-cancel" size={12} />{$t('msg_card_contact_blocked')}</div>
   {:else}
     {#if error}<div class="error">{error}</div>{/if}
     <div class="row">

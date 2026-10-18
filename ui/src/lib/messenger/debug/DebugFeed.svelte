@@ -53,7 +53,7 @@
 </script>
 
 <div class="card feed">
-  <div class="card-title"><Icon name="zap" size={16} /> {$t('msg_debug_title')}</div>
+  <div class="card-title"><Icon name="bug" size={16} /> {$t('msg_debug_title')}</div>
   <p class="muted">{$t('msg_debug_text')}</p>
 
   <form class="send" onsubmit={(e) => { e.preventDefault(); send(); }}>

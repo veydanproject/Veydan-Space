@@ -48,7 +48,7 @@
     "totp_field_digits": "Jumlah digit",
     "totp_field_period": "Periode",
     "totp_qr_hint": "Unggah tangkapan layar yang berisi kode QR",
-    "totp_qr_select": "Pilih gambar…",
+    "totp_qr_select": "Pilih gambar",
     "totp_qr_detected": "QR terdeteksi — periksa kolom di bawah",
     "totp_qr_not_found": "Tidak ada kode QR di gambar",
     "totp_qr_secret_masked": "Rahasia:",

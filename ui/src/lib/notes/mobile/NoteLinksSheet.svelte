@@ -39,7 +39,7 @@
       <div class="m-list">
         {#each items as n (n.id)}
           <button type="button" class="m-row" onclick={() => onopen(n.id)}>
-            <Icon name="file-text" size={16} />
+            <Icon name="notes" size={16} />
             <span class="m-row-label">{n.title || $t('notes_untitled')}</span>
             <Icon name="chevron-right" size={16} />
           </button>

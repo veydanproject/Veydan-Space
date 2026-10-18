@@ -2,10 +2,13 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import Icon from '$lib/core/Icon.svelte';
+  import { kindIcon } from '$lib/core/directory';
+
   interface Props {
     kind: string;
     /**
-     * The translated name of the kind ("Profile"). The letter is hidden from
+     * The translated name of the kind ("Profile"). The icon is hidden from
      * a screen reader, so the caption is read before the chip's text instead.
      */
     caption?: string;
@@ -13,44 +16,38 @@
 
   let { kind, caption }: Props = $props();
 
-  const LETTER: Record<string, string> = {
-    folder: 'f',
-    workspace: 'w',
-    profile: 'p',
-    proxy: 'x',
-    ssh: '>',
-    totp: 'k',
-    password: 'l',
-    note: 'n',
-    domain: 's',
-    tag: 't',
+  /** The kind of a chip is told by its icon, never by a colour (design kit, kind-chip); the icons of the entity kinds. */
+  const ICON: Record<string, string> = {
+    folder: 'folder',
+    workspace: 'layers',
+    profile: 'user-circle',
+    proxy: 'globe',
+    ssh: 'terminal',
+    totp: 'shield',
+    password: kindIcon('password'),
+    note: 'notes',
+    domain: 'link',
+    tag: 'tag',
   };
 
-  const letter = $derived(LETTER[kind] ?? '');
+  const icon = $derived(ICON[kind] ?? '');
 </script>
 
-{#if letter}
-  <span class="mark" aria-hidden="true">{letter}</span>
+{#if icon}
+  <span class="mark" aria-hidden="true"><Icon name={icon} size={12} /></span>
 {/if}
 {#if caption}
   <span class="caption">{caption}: </span>
 {/if}
 
 <style>
-  /* Theme color, not the chip color. */
+  /* It takes the chip's text: the neutral one, or the ink of the user's
+     colour (kit kind-chip: the tile of a coloured chip inherits it). */
   .mark {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 13px;
-    height: 13px;
-    border-radius: 50%;
-    border: 1px solid var(--text);
-    color: var(--text);
-    background: transparent;
-    font-size: 8px;
-    font-weight: 700;
-    line-height: 1;
+    color: inherit;
     flex-shrink: 0;
   }
   /* Read out, not shown. */

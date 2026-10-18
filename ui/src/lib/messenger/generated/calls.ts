@@ -105,6 +105,11 @@ camera?: string,
  */
 video_remote: boolean, 
 /**
+ * What the peer sends is its screen, by its word; never while its
+ * video is off. The screen shows it whole and says so.
+ */
+video_remote_screen: boolean, 
+/**
  * The size of the frames each way, once some came; absent while that
  * video is off.
  */

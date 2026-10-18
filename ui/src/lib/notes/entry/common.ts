@@ -11,7 +11,7 @@ import { notesStore } from '$lib/notes/store/notes.svelte';
 export const common: Omit<ModuleDef, 'nav' | 'settings'> = {
   id: 'notes',
   title: 'nav_notes',
-  icon: 'file-text',
+  icon: 'notes',
   routes: ['/notes', '/search'],
   // Without the browser module the notes answer for workspaces and profiles from the labels they keep.
   entities: [...noteEntities, ...labelKinds],

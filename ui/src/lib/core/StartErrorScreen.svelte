@@ -14,7 +14,8 @@
   screen inside the window's frame (`framed`).
 -->
 <script lang="ts">
-  import '@fontsource-variable/manrope/index.css';
+  import '@fontsource-variable/ibm-plex-sans/wght.css';
+  import '@fontsource-variable/ibm-plex-sans/wght-italic.css';
   import '@fontsource-variable/jetbrains-mono/index.css';
   import '$lib/core/fonts/cjk.css';
   import '$lib/core/styles/tokens.css';

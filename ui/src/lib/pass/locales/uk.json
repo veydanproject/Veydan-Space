@@ -48,7 +48,7 @@
     "totp_field_digits": "Цифр у коді",
     "totp_field_period": "Період",
     "totp_qr_hint": "Додайте знімок екрана з QR-кодом",
-    "totp_qr_select": "Вибрати зображення…",
+    "totp_qr_select": "Вибрати зображення",
     "totp_qr_detected": "QR знайдено — перевірте поля нижче",
     "totp_qr_not_found": "На зображенні не знайдено QR-код",
     "totp_qr_secret_masked": "Секрет:",

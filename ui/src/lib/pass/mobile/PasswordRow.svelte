@@ -10,14 +10,18 @@
 <script lang="ts">
   import { t } from '$lib/core/mobile/i18n';
   import { longpress } from '$lib/core/mobile/longpress';
-  import { NAV_COLORS } from '$lib/core/mobile/nav-colors';
+  import { AVATAR_COLORS } from '$lib/core/mobile/nav-colors';
   import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
+  import ChipMark from '$lib/core/ui/ChipMark.svelte';
   import type { PasswordEntry } from '$lib/pass/types';
 
   interface Props {
     entry: PasswordEntry;
-    /** Labels and the names of linked entities, in the order the row shows them. */
-    chips: string[];
+    /**
+     * Labels and the names of linked entities, in the order the row shows them:
+     * a label in the user's colour, an entity neutral (no colour); the mark tells the kind.
+     */
+    chips: { label: string; kind: string; color?: string }[];
     /** The refresh window of the first TOTP code. */
     period?: number;
     onopen: () => void;
@@ -32,7 +36,7 @@
   function avatarColor(s: string): string {
     let h = 0;
     for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return NAV_COLORS[h % NAV_COLORS.length];
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
   }
 
   const sub = $derived(entry.username || entry.url || '');
@@ -48,7 +52,7 @@
       {#if chips.length}
         <span class="tagline">
           {#each chips.slice(0, MAX_CHIPS) as chip, i (i)}
-            <span class="m-chip small neutral">{chip}</span>
+            <span class="m-chip small tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} />{chip.label}</span>
           {/each}
           {#if chips.length > MAX_CHIPS}
             <span class="m-chip small neutral">{$t('pw_more_tags', { n: String(chips.length - MAX_CHIPS) })}</span>

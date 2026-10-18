@@ -29,7 +29,7 @@
     aria-label={protected_ ? $t('pw_lock_on_tip') : $t('pw_lock_off_tip')}
     onclick={() => goto(setupHref)}
   >
-    <Icon name={protected_ ? 'lock' : 'lock-open'} {size} />
+    <Icon name={protected_ ? 'lock-square-rounded' : 'lock-open'} {size} />
   </button>
 {/if}
 

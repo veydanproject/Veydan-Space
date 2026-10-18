@@ -118,7 +118,7 @@
       <div class="facts">
         {#if website}
           <button type="button" class="fact" onclick={openSite} title={website}>
-            <Icon name="globe" size={13} /><span class="value">{websiteText}</span><Icon name="external-link" size={11} />
+            <Icon name="world" size={13} /><span class="value">{websiteText}</span><Icon name="external-link" size={11} />
           </button>
         {/if}
         {#if card.phone}
@@ -134,7 +134,7 @@
     {#if card.is_me}
       <div class="status"><Icon name="user" size={12} />{$t('msg_card_this_is_you')}</div>
     {:else if card.blocked}
-      <div class="status closed"><Icon name="ban" size={12} />{$t('msg_card_blocked')}</div>
+      <div class="status closed"><Icon name="user-cancel" size={12} />{$t('msg_card_blocked')}</div>
     {:else}
       {#if error}<div class="error">{error}</div>{/if}
       <div class="row">

@@ -151,7 +151,7 @@
 
       <div class="form-row">
         <button class="btn btn-ghost btn-sm" onclick={() => fileInput?.click()} disabled={phase === 'importing'}>
-          <Icon name="upload" size={13} />
+          <Icon name="file-import" size={13} />
           {$t('proxy_import_load_file')}
         </button>
         <input
@@ -366,7 +366,7 @@
     align-items: center;
     gap: var(--sp-2);
     padding: 0.35rem var(--sp-3);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     min-width: 0;
   }
   .line-row:last-child { border-bottom: none; }

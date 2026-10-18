@@ -57,7 +57,7 @@
       ...(c.profile?.nip05
         ? [{
             label: $t('msg_contacts_verify_nip05') + (c.pubkey in nip05Result ? (nip05Result[c.pubkey] ? ' ✓' : ' ✗') : ''),
-            icon: 'check-circle',
+            icon: 'rosette-discount-check',
             onselect: () => void run(async () => { nip05Result = { ...nip05Result, [c.pubkey]: await messengerStore.verifyNip05(c.pubkey) }; }),
           }]
         : []),
@@ -93,7 +93,7 @@
   {#if messengerStore.contacts.length === 0}
     <div class="muted small empty">{$t('msg_contacts_empty')}</div>
   {:else}
-    <ul class="list">
+    <ul class="list divided">
       {#each messengerStore.contacts as c (c.pubkey)}
         <li class="row" class:open={openId === c.pubkey}>
           <button class="head" onclick={() => toggle(c)}>
@@ -190,7 +190,7 @@
   .title-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-xs); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); }
   .row { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
   .row.open { border-color: var(--accent-border); }
   .head {

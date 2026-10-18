@@ -440,7 +440,8 @@ impl GroupService {
             name: UI_EVENT_GROUP_INVITE.into(),
             payload: serde_json::json!({ "invite_id": body.invite_id, "group_id": body.group_id }),
         });
-        if !from_me && !historical && vouched {
+        // Nothing is told of a person whose chat is muted.
+        if !from_me && !historical && vouched && !chats::is_muted(&self.store, &chats::dm_chat_id(peer.as_hex())).await? {
             out.notify.push(Notice {
                 title: body.name.clone(),
                 body: Some(Body::Invite { group_name: body.name.clone() }),
@@ -660,7 +661,7 @@ impl GroupService {
             name: UI_EVENT_GROUP_REQUEST.into(),
             payload: serde_json::json!({ "group_id": body.group_id, "requester": sender.as_hex() }),
         });
-        if !historical {
+        if !historical && !chats::is_muted(&self.store, &repo::group_chat_id(&body.group_id)).await? {
             out.notify.push(Notice {
                 title: row.name.clone(),
                 body: Some(Body::JoinRequest { group_name: row.name }),
@@ -856,7 +857,7 @@ impl GroupService {
         let mut out = Outcome { resubscribe: true, events: vec![Self::updated(&group_id)], ..Default::default() };
         self.drain(keys, &group_id, ctx, &mut out).await?;
         self.settle(keys, &group_id, true, ctx, &mut out).await?;
-        if !from_me {
+        if !from_me && !chats::is_muted(&self.store, &repo::group_chat_id(&group_id)).await? {
             out.notify.push(Notice {
                 title: s.name.clone(),
                 body: Some(Body::Welcome { group_name: s.name.clone() }),

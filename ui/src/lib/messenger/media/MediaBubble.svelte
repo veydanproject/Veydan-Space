@@ -9,6 +9,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t, locale, localeTag } from '$lib/core/i18n';
+  import { mediaTitle } from '../push/wording';
   import Icon from '$lib/core/Icon.svelte';
   import { isTauriHost, mediaOf, messengerApi, type MessengerMessage, type MessengerTransferProgress, type TransferStatus as Status } from '../api';
   import { bytes, fileIcon, saveFilters } from '../shared/format';
@@ -229,7 +230,7 @@
 
 {#snippet status(look: 'compact' | 'full', overlay = false)}
   {#if media}
-    <TransferStatus p={shown} {look} {overlay} name={media.name} size={media.size} chunks={media.chunks} messageId={m.id} {busy}
+    <TransferStatus p={shown} {look} {overlay} name={mediaTitle(media.kind, media.name, $t)} size={media.size} chunks={media.chunks} messageId={m.id} {busy}
       ondownload={() => download(true)} />
   {/if}
 {/snippet}
@@ -260,7 +261,7 @@
       <video src="{src}#t=0.1" poster={thumbSrc ?? NO_POSTER} muted playsinline preload="metadata" onerror={previewBroken}></video>
     {:else}
       {#if thumbSrc}<img class="blur" src={thumbSrc} alt="" aria-hidden="true" />{/if}
-      <span class="placeholder-name">{media.name}</span>
+      <span class="placeholder-name">{mediaTitle(media.kind, media.name, $t)}</span>
     {/if}
 
     {#if phase === 'here' || !shown}
@@ -318,7 +319,7 @@
         {:else}<Icon name={fileIcon(media.name, media.mime)} size={18} />{/if}
       </span>
       <span class="info">
-        <span class="name" title={media.name}>{media.name}</span>
+        <span class="name" title={media.name}>{mediaTitle(media.kind, media.name, $t)}</span>
         {#if phase === 'here'}<span class="sub">{bytes(media.size, localeTag($locale))}</span>
         {:else}{@render status('full')}{@render foreignNote()}{/if}
       </span>

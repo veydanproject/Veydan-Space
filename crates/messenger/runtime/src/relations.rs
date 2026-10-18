@@ -95,8 +95,9 @@ fn told(applied: &Applied, start: bool) -> Vec<Effect> {
             "rev": applied.rev, "complete": applied.complete, "changed": applied.changed.len(), "start": start,
         }),
     })];
-    if !applied.changed.is_empty() {
-        // A stranger's chat may be gone, a contact may be new.
+    if !applied.changed.is_empty() || applied.chats_changed {
+        // A stranger's chat may be gone, a contact may be new, a chat
+        // muted, pinned or archived on another device of mine.
         out.push(Effect::Emit(UiEvent { name: messenger_dm::UI_EVENT_CHATS_UPDATED.into(), payload: serde_json::json!({}) }));
     }
     out

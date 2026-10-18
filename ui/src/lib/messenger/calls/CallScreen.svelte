@@ -72,7 +72,7 @@
 
     <header class="top">
       <button class="leave" onclick={onleave} aria-label={$t('msg_back')}><Icon name="chevron-down" size={26} /></button>
-      <span class="e2e"><Icon name="lock" size={12} />{$t('msg_call_e2e')}</span>
+      <span class="e2e"><Icon name="lock-check" size={12} />{$t('msg_call_e2e')}</span>
       <span class="spacer"></span>
     </header>
 

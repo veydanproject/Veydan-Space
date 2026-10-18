@@ -1,15 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// The text of a chip coloured from data (`.tinted`, base.css) is the colour
-// mixed towards --text by --chip-ink; its background is the colour at
-// --chip-tint over whatever surface it sits on. This test resolves those
-// mixes numerically, with the token values of the palette and mobile.css,
-// for every colour the pickers offer, the colour tokens a chip takes, the
-// extremes and a sweep of the whole RGB cube, on every surface of each
-// theme, and asserts WCAG AA (4.5:1). It also finds the largest ink share
-// that holds and checks the token is one step under it: lower would lose
-// the colour for nothing.
+// A chip in the colour the user picked (`.tinted`, base.css; kit kind-chip
+// `.vd-kind-chip--color`, 2026-10-17): its text is the colour mixed towards
+// --text by --chip-ink; its background is the colour at --chip-tint over
+// whatever surface it sits on, its border the colour at --chip-edge. This
+// test resolves those mixes numerically, with the token values of the
+// palette and mobile.css, for every colour the pickers offer, the colour
+// tokens a chip takes, the extremes and a sweep of the whole RGB cube (a
+// custom colour can be anything), on every surface of each theme, and
+// asserts WCAG AA (4.5:1). It also finds the largest ink share that holds
+// and checks the token is one step under it: lower would lose the colour
+// for nothing. The kit's own text share (45 %) holds only for its presets,
+// so it checks the kit's claim for those separately.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -116,10 +119,12 @@ function themePresets(): { accent: string[] } {
   return { accent: list(/ACCENT_PRESETS\s*=\s*\[([^\]]*)\]/) };
 }
 
+/** The kit's preset colours (`N.colors` of the prototypes, 2026-10-17). */
+const KIT_PRESETS = ['#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6'];
 const PALETTE = pickerPalettes();
 const PRESETS = themePresets();
 const EXTREMES = ['#000000', '#ffffff', '#fef08a', '#fffbeb', '#000080', '#1e1b4b', '#f472b6', '#808080', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff'];
-/** The colour tokens a chip takes in code (a profile's accent, a workspace with none, a domain's grey) and the category colours. */
+/** Colour tokens (once a profile's accent, a workspace's green, a domain's grey; now chips of entities are neutral) and the category colours: still swept. */
 const TOKEN_CHIPS = ['--accent', '--success', '--text-2', '--text-3', '--cat-purple', '--cat-blue', '--cat-teal', '--cat-pink', '--danger-text', '--warn-text'];
 /** The surfaces a chip can sit on. */
 const SURFACES = ['--bg', '--bg-2', '--pane', '--pane-strong', '--glass-bg', '--surface', '--surface-2', '--surface-3', '--surface-hover', '--surface-row-hover', '--surface-drawer', '--surface-drawer-footer', '--m-card', '--m-field', '--m-seg', '--m-tile', '--m-sheet'];
@@ -190,8 +195,8 @@ describe('a chip coloured from data reads in both themes (.tinted)', () => {
     expect(base).toContain('color: color-mix(in srgb, var(--chip) var(--chip-ink), var(--text));');
     expect(base).toContain('background: color-mix(in srgb, var(--chip) var(--chip-tint), transparent);');
     expect(base).toContain('background: color-mix(in srgb, var(--chip) var(--chip-tint-strong), transparent);');
-    // The edge never drops below the neutral chip's outline; the picked one is ringed in the ink.
-    expect(base).toContain('border-color: color-mix(in srgb, var(--chip) var(--chip-edge), var(--border-2));');
+    // The kit's border: the colour over transparent; the picked one is ringed in the ink.
+    expect(base).toContain('border-color: color-mix(in srgb, var(--chip) var(--chip-edge), transparent);');
     expect(base).toContain(".tinted.active[style*='--chip'] { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }");
   });
 
@@ -255,6 +260,40 @@ describe('a chip coloured from data reads in both themes (.tinted)', () => {
       const fg = color(resolve(theme, '--text-2')!)!;
       const bg = color(resolve(theme, '--surface-2')!)!;
       expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
+  it('takes the kit\'s tint and border in both themes', () => {
+    for (const theme of ['light', 'dark'] as Theme[]) {
+      expect(percent(theme, '--chip-tint'), theme).toBe(0.16);
+      expect(percent(theme, '--chip-edge'), theme).toBe(0.45);
+    }
+  });
+
+  it('offers the kit\'s six presets in the pickers', () => {
+    expect(NAV_COLORS).toEqual(KIT_PRESETS);
+  });
+
+  for (const theme of ['light', 'dark'] as Theme[]) {
+    it(`keeps the kit's contrast for its presets (${theme})`, () => {
+      // The kit: 5.3:1 or more in the light theme, 7.5:1 or more in the dark,
+      // on a pane. Here: light on every surface at either tint and as
+      // `.tinted-text`; dark on the page, a pane and a card at the plain tint
+      // (a lighter surface, as a hover, is still AA by the sweep above).
+      const ink = percent(theme, '--chip-ink');
+      const text = color(resolve(theme, '--text')!)!;
+      const page = color(resolve(theme, '--bg')!)!;
+      const under = theme === 'light' ? surfaces(theme) : ['--bg', '--pane', '--surface'].map((n) => color(resolve(theme, n)!, page)!);
+      const tints = theme === 'light' ? [0, percent(theme, '--chip-tint'), percent(theme, '--chip-tint-strong')] : [percent(theme, '--chip-tint')];
+      const floor = theme === 'light' ? 5.3 : 7.5;
+      for (const preset of KIT_PRESETS.map(hex)) {
+        const fg = mix(preset, text, ink);
+        for (const bg of under) {
+          for (const tint of tints) {
+            expect(contrast(fg, mix(preset, bg, tint)), `${theme}: ${preset} at ${tint} over ${bg}`).toBeGreaterThanOrEqual(floor);
+          }
+        }
+      }
     });
   }
 

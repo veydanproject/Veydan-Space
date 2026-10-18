@@ -19,7 +19,7 @@ import { NOTES_WINDOWS } from '$lib/notes/window';
 
 export const module: ModuleDef = {
   ...common,
-  nav: [{ id: 'notes', title: 'nav_notes', icon: 'file-text', href: '/notes' }],
+  nav: [{ id: 'notes', title: 'nav_notes', icon: 'notes', href: '/notes' }],
   settings: [
     { id: 'notes', title: 'settings_notes_section', group: 'settings_group_notes', order: 30, hint: 'settings_notes_folder_hint', icon: 'folder', component: NotesDirCard },
     { id: 'attachments', title: 'settings_att_section', group: 'settings_group_notes', order: 31, hint: 'settings_att_hint', icon: 'paperclip', component: NoteAttachmentPolicy },
@@ -30,11 +30,11 @@ export const module: ModuleDef = {
   // The three panes of the notes page use the whole content area.
   fullWidth: ['/notes'],
   // The notes in their own window; with client-side decorations the button sits in the title bar.
-  tools: [{ id: 'window', title: 'notes_btn_open_window', icon: 'file-text', place: 'title', onclick: () => void api.notes.openWindow(get(t)('nav_notes')) }],
+  tools: [{ id: 'window', title: 'notes_btn_open_window', icon: 'notes', place: 'title', onclick: () => void api.notes.openWindow(get(t)('nav_notes')) }],
   views: [
-    { id: 'notes', scope: 'profile', as: 'tab', title: 'panel_tab_notes', icon: 'file-text', order: 30, component: ProfileNotesTab },
-    { id: 'notes', scope: 'workspace', as: 'drawer', title: 'notes_label', icon: 'file-text', order: 30, component: WorkspaceNotesDrawer },
-    { id: 'notes', scope: 'proxy', as: 'inline', title: 'notes_label', icon: 'file-text', order: 10, component: ProxyNotes },
-    { id: 'notes', scope: 'ssh', as: 'inline', title: 'notes_label', icon: 'file-text', order: 10, component: SshNotes },
+    { id: 'notes', scope: 'profile', as: 'tab', title: 'panel_tab_notes', icon: 'notes', order: 30, component: ProfileNotesTab },
+    { id: 'notes', scope: 'workspace', as: 'drawer', title: 'notes_label', icon: 'notes', order: 30, component: WorkspaceNotesDrawer },
+    { id: 'notes', scope: 'proxy', as: 'inline', title: 'notes_label', icon: 'notes', order: 10, component: ProxyNotes },
+    { id: 'notes', scope: 'ssh', as: 'inline', title: 'notes_label', icon: 'notes', order: 10, component: SshNotes },
   ],
 };

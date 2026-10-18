@@ -102,7 +102,7 @@
       <input type="password" bind:value={password} placeholder={$t('notes_import_password')} autocomplete="off" />
       <div class="choices">
         <button class="btn btn-primary btn-sm" disabled={busy} onclick={() => importFrom(false)}>
-          <Icon name="file-text" size={13} /> {$t('notes_import_files')}
+          <Icon name="file-import" size={13} /> {$t('notes_import_files')}
         </button>
         <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => importFrom(true)}>
           <Icon name="folder-open" size={13} /> {$t('notes_import_dir')}

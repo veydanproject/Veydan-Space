@@ -220,13 +220,13 @@
       {#if isImage}
         <div class="zoom" class:zoomed>
           <button class="step" onclick={() => zoomStep(-1)} disabled={!zoomed} aria-label={$t('msg_media_zoom_out')} title={$t('msg_media_zoom_out')}>
-            <Icon name="minus" size={18} />
+            <Icon name="zoom-out" size={18} />
           </button>
           <button class="level" onclick={() => (levels = !levels)} aria-haspopup="menu" aria-expanded={levels} title={$t('msg_media_zoom')}>
             {percent(view.scale)}
           </button>
           <button class="step" onclick={() => zoomStep(1)} disabled={view.scale >= ZOOM_MAX} aria-label={$t('msg_media_zoom_in')} title={$t('msg_media_zoom_in')}>
-            <Icon name="plus" size={18} />
+            <Icon name="zoom-in" size={18} />
           </button>
           {#if levels}
             <div class="levels" role="menu">

@@ -15,6 +15,7 @@
   import { chatStore } from '../chats/chatStore.svelte';
   import { openChat } from '../content/actions';
   import { fileIcon } from '../shared/format';
+  import { mediaTitle, transferKind } from '../push/wording';
   import { mediaErrorText } from './errors';
   import { transferStore } from './transferStore.svelte';
   import TransferStatus from './TransferStatus.svelte';
@@ -100,12 +101,12 @@
             <span class="dir"><Icon name={p.direction === 'up' ? 'arrow-up' : 'arrow-down'} size={10} /></span>
           </span>
           <span class="who">
-            <span class="name">{p.file_name}</span>
+            <span class="name" title={p.file_name}>{mediaTitle(transferKind(p.file_name, p.mime), p.file_name, $t)}</span>
             {#if chatTitle(p.chat_id)}<span class="chat">{chatTitle(p.chat_id)}</span>{/if}
           </span>
           <Icon name="chevron-right" size={14} />
         </button>
-        <TransferStatus {p} look="full" name={p.file_name} size={p.total_bytes} messageId={p.message_id} {onask} />
+        <TransferStatus {p} look="full" name={mediaTitle(transferKind(p.file_name, p.mime), p.file_name, $t)} size={p.total_bytes} messageId={p.message_id} {onask} />
       </li>
     {/each}
   </ul>
@@ -157,7 +158,7 @@
   .foot { padding: var(--sp-2); border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .row { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-2) 2px; min-width: 0; }
-  .row + .row { border-top: 1px solid var(--border); }
+  .row + .row { border-top: 1px solid var(--divider); }
   .go {
     display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; border: none; background: none; padding: 2px;
     border-radius: var(--radius-sm); color: var(--text-3); cursor: pointer; font: inherit; text-align: left;

@@ -48,7 +48,7 @@
     "totp_field_digits": "Số chữ số",
     "totp_field_period": "Chu kỳ",
     "totp_qr_hint": "Tải lên ảnh chụp màn hình có mã QR",
-    "totp_qr_select": "Chọn ảnh…",
+    "totp_qr_select": "Chọn ảnh",
     "totp_qr_detected": "Đã nhận diện QR — hãy kiểm tra các trường bên dưới",
     "totp_qr_not_found": "Không tìm thấy mã QR trong ảnh",
     "totp_qr_secret_masked": "Khóa bí mật:",

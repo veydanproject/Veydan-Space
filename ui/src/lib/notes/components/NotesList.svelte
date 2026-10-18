@@ -4,10 +4,12 @@
 <script lang="ts">
   import type { NoteListItem } from '$lib/notes/types';
   import Icon from '$lib/core/Icon.svelte';
+  import ChipMark from '$lib/core/ui/ChipMark.svelte';
   import { t } from '$lib/core/i18n';
   import { isEntityKind, parseBinding } from '$lib/core/bindings';
   import { entitySummary } from '$lib/notes/context';
   import { noteScope, scopeColor as colorOfScope } from '$lib/notes/list-scope';
+  import { relativeTime } from '$lib/notes/relative-time';
 
   interface Props {
     notes: NoteListItem[];
@@ -18,10 +20,10 @@
     /** What an empty list says; "No notes yet." by default. */
     emptyText?: string;
     workspaceName?: (id: string) => string;
-    workspaceColor?: (id: string) => string;
+    workspaceColor?: (id: string) => string | undefined;
     profileName?: (id: string) => string;
     folderName?: (id: string) => string;
-    folderColor?: (id: string) => string;
+    folderColor?: (id: string) => string | undefined;
   }
 
   let { notes, activeId, onselect, oncreate, emptyText, workspaceName, workspaceColor, profileName, folderName, folderColor }: Props = $props();
@@ -50,14 +52,17 @@
     return {};
   }
 
+  /**
+   * Folders, entities, domain, tags. A folder and a tag take the user's colour;
+   * an entity and a domain none (neutral): the kind is told by the mark.
+   */
   function cardChips(n: NoteListItem) {
-    const chips: { label: string; color: string }[] = [];
+    const chips: { kind: string; label: string; color?: string }[] = [];
     const shown = scopeShown(n);
     for (const fid of n.folder_ids) {
       if (fid === shown.folder) continue;
       const label = folderName?.(fid) ?? fid;
-      const color = folderColor?.(fid) ?? 'var(--text-2)';
-      chips.push({ label, color });
+      chips.push({ kind: 'folder', label, color: folderColor?.(fid) || undefined });
     }
     for (const b of n.bindings) {
       if (b === shown.binding) continue;
@@ -65,31 +70,24 @@
       if (!parsed) continue;
       if (isEntityKind(parsed.kind)) {
         const entity = entitySummary(parsed.kind, parsed.value);
-        if (entity) chips.push({ label: entity.name, color: entity.color });
+        // A workspace keeps its own colour; any other entity is neutral.
+        if (entity) chips.push({ kind: parsed.kind, label: entity.name, color: entity.color || undefined });
       } else if (parsed.kind === 'domain') {
-        chips.push({ label: parsed.value, color: 'var(--text-2)' });
+        chips.push({ kind: 'domain', label: parsed.value });
       }
     }
-    for (const t of n.tags) chips.push({ label: t.name, color: t.color });
+    for (const t of n.tags) chips.push({ kind: 'tag', label: t.name, color: t.color || undefined });
     return chips;
   }
 
-  function scopeColor(n: NoteListItem): string {
+  function scopeColor(n: NoteListItem): string | undefined {
     return colorOfScope(noteScope(n, sources), sources);
   }
 
-  function relativeTime(iso: string): string {
-    const diff = Date.now() - new Date(iso).getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 1) return $t('notes_time_just_now');
-    if (m < 60) return $t('notes_time_m_ago', { m: String(m) });
-    const h = Math.floor(m / 60);
-    if (h < 24) return $t('notes_time_h_ago', { h: String(h) });
-    return $t('notes_time_d_ago', { d: String(Math.floor(h / 24)) });
-  }
+  const relative = (iso: string) => relativeTime(iso, $t);
 </script>
 
-<div class="notes-list">
+<div class="notes-list divided">
   {#if notes.length === 0}
     <div class="empty-state">
       <p>{emptyText ?? $t('notes_list_empty')}</p>
@@ -129,7 +127,7 @@
           <span class="scope-badge tinted-text" style:--chip={scopeColor(note)}>
             {scopeLabel(note)}
           </span>
-          <span class="note-time">{relativeTime(note.updated_at)}</span>
+          <span class="note-time">{relative(note.updated_at)}</span>
         </div>
 
         {#if note.snippet}
@@ -141,9 +139,7 @@
         {#if cardChips(note).length > 0}
           <div class="card-tags">
             {#each cardChips(note).slice(-3) as chip, i (i)}
-              <span class="tag-chip tinted" style:--chip={chip.color}>
-                {chip.label}
-              </span>
+              <span class="tag-chip tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} />{chip.label}</span>
             {/each}
             {#if cardChips(note).length > 3}
               <span class="tag-more">+{cardChips(note).length - 3}</span>
@@ -160,6 +156,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    --rows-gap: 10px;
   }
 
   .note-card {
@@ -244,6 +241,8 @@
     text-overflow: ellipsis;
     max-width: 140px;
   }
+  /* A profile or nothing: no colour of the user's, the neutral text. */
+  .scope-badge:not([style*='--chip']) { color: var(--text-2); }
 
   .note-time {
     font-size: var(--fs-2xs);
@@ -277,6 +276,9 @@
   }
 
   .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: var(--fs-xs);
     padding: 3px 9px;
     border-radius: var(--radius-sm);

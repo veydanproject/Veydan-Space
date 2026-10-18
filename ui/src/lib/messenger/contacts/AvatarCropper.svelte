@@ -170,7 +170,7 @@
 
   <div class="zoom">
     <button type="button" class="icon-btn" {disabled} onclick={() => zoomBy(1 / ZOOM_STEP)} title={$t('msg_profile_crop_zoom_out')} aria-label={$t('msg_profile_crop_zoom_out')}>
-      <Icon name="minus" size={16} />
+      <Icon name="zoom-out" size={16} />
     </button>
     <input
       type="range"
@@ -183,7 +183,7 @@
       aria-label={$t('msg_profile_crop_zoom')}
     />
     <button type="button" class="icon-btn" {disabled} onclick={() => zoomBy(ZOOM_STEP)} title={$t('msg_profile_crop_zoom_in')} aria-label={$t('msg_profile_crop_zoom_in')}>
-      <Icon name="plus" size={16} />
+      <Icon name="zoom-in" size={16} />
     </button>
     <button type="button" class="icon-btn" disabled={disabled || atStart} onclick={() => (crop = initialCrop())} title={$t('msg_profile_crop_reset')} aria-label={$t('msg_profile_crop_reset')}>
       <Icon name="rotate-ccw" size={15} />

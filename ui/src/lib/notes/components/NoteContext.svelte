@@ -113,7 +113,7 @@
       {@const def = directory.get(card.kind)}
       {@const entity = entitySummary(card.kind, card.id)}
       {#if def && !def.fallback}
-      <div class="card tinted" class:focus={focus === card.binding} class:mention={!card.bound} style:--chip={entity?.color ?? def.color}>
+      <div class="card tinted" class:focus={focus === card.binding} class:mention={!card.bound} style:--chip={entity?.color || undefined}>
         <div class="head">
           <span class="mark"><Icon name={def.icon} size={13} /></span>
           <span class="name" title={entity?.name ?? card.id}>{entity?.name ?? $t('ctx_missing')}</span>

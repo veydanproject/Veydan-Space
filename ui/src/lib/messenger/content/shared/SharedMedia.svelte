@@ -82,7 +82,7 @@
   /* Small places: the picture or its colour, no file names. */
   .cell :global(.placeholder-name), .cell :global(.size), .cell :global(.center) { display: none; }
   .rows { list-style: none; margin: 0; padding: 0; }
-  .rows li + li .row { border-top: 1px solid var(--border); }
+  .rows li + li .row { border-top: 1px solid var(--divider); }
   .row {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 46px; padding: 0 var(--sp-3); border-radius: 0;
     border: none; background: none; color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer;

@@ -240,8 +240,8 @@
     return directory.name('workspace', id, $t);
   }
 
-  function workspaceColor(id: string): string {
-    return directory.color('workspace', id) ?? 'var(--success)';
+  function workspaceColor(id: string): string | undefined {
+    return directory.color('workspace', id);
   }
 
   function profileName(id: string): string {
@@ -262,8 +262,8 @@
     return result;
   }
 
-  function folderColor(id: string): string {
-    return notesStore.folders.find((f) => f.id === id)?.color ?? 'var(--text-2)';
+  function folderColor(id: string): string | undefined {
+    return notesStore.folders.find((f) => f.id === id)?.color || undefined;
   }
 
   /** The heading of the list: what the sidebar selected, or the search. */
@@ -362,7 +362,7 @@
         <div class="list-actions">
           <!-- Looks like an input; the palette's own field takes focus once open -->
           <button class="palette-field" onclick={() => paletteStore.show()} title={$t('cmd_title')}>
-            <Icon name="zap" size={13} />
+            <Icon name="command" size={13} />
             <span class="palette-placeholder">{$t('cmd_placeholder')}</span>
             <kbd>Ctrl+P</kbd>
           </button>
@@ -392,7 +392,7 @@
             onclick={() => setViewMode(viewMode === 'list' ? 'table' : 'list')}
             title={viewMode === 'list' ? $t('notes_view_table') : $t('notes_view_list')}
           >
-            <Icon name={viewMode === 'list' ? 'table' : 'list'} size={14} />
+            <Icon name={viewMode === 'list' ? 'table' : 'layout-list'} size={14} />
           </button>
           {#if isTrash}
             <ListBulkActions {isTrash} notes={displayList} />

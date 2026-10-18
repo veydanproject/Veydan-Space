@@ -82,7 +82,16 @@ more_from_author: number, };
 export type QueuePage = { items: Array<QueueItem>, next_before?: number, total: number, };
 
 /** What of the queue of a group to show; a field left out means any. */
-export type QueueFilter = { author?: string, since?: number, until?: number, text?: string, };
+export type QueueFilter = { author?: string, since?: number, until?: number, 
+/**
+ * A part of the text or of the author's name, or their key (npub or hex).
+ */
+text?: string, 
+/**
+ * Every message its own line, not one line per author: what one author
+ * wrote, with `author`.
+ */
+each?: boolean, };
 
 /** One act of moderation in a group, as `messenger_moderation_group_mod` takes it; tagged by `t`. */
 export type ModAction = { "t": "hide", targets: Array<string>, } | { "t": "hide_author", author: string, from: number, to: number, } | { "t": "unhide", targets: Array<string>, } | { "t": "approve", target: string, version: string, } | { "t": "reject", target: string, } | { "t": "spam", author: string, target?: string, } | { "t": "mute", who: string, until?: number, } | { "t": "unmute", who: string, } | { "t": "trust", who: string, trusted: boolean, };

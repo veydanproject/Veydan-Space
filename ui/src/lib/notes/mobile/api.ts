@@ -14,6 +14,7 @@ import type { MediaKind } from '$lib/notes/media/types';
 import { capabilities } from '$lib/core/platform';
 import { formatError } from '$lib/core/utils';
 import { isEntityBinding, isEntityKind, parseBinding, type EntityKind } from '$lib/core/bindings';
+import { kindIcon } from '$lib/core/directory';
 import type {
   BindingSummary,
   ConflictView,
@@ -56,7 +57,8 @@ export interface NoteChip {
   kind: 'folder' | 'workspace' | 'profile' | 'domain' | 'tag' | string;
   id: string;
   label: string;
-  color: string;
+  /** The user's colour of a folder, workspace or tag; none for an entity or a domain (neutral, told by its mark). */
+  color?: string;
 }
 
 export interface NoteListItem {
@@ -132,23 +134,13 @@ export interface NoteLinks {
 
 // ── Shape adapters ───────────────────────────────────────────────────────────
 
-const PROFILE_COLOR = '#8b7bff';
-const DOMAIN_COLOR = '#888';
-const ENTITY_COLOR: Record<EntityKind, string> = {
-  workspace: '#34d399',
-  profile: PROFILE_COLOR,
-  proxy: '#f5c451',
-  ssh: '#2dd4bf',
-  totp: '#60a5fa',
-  password: '#a78bfa',
-};
 const ENTITY_ICON: Record<EntityKind, string> = {
   workspace: 'layers',
-  profile: 'globe',
-  proxy: 'shield',
+  profile: 'user-circle',
+  proxy: 'globe',
   ssh: 'terminal',
-  totp: 'key',
-  password: 'lock',
+  totp: 'shield',
+  password: kindIcon('password'),
 };
 
 /** Names of entities seen so far (`note_binding_summaries`); filled before items are shaped. */
@@ -169,18 +161,22 @@ export function bindingSummary(binding: string): BindingSummary | null {
   return summaryCache.get(binding) ?? null;
 }
 
-/** Entities bound to a shared list item, for the table's context column. */
-export function entitySummaryFor(item: SharedNoteListItem): { name: string; icon: string; color: string }[] {
-  const out: { name: string; icon: string; color: string }[] = [];
+/** Entities bound to a shared list item, for the table's context column: the kind's icon, neutral. */
+export function entitySummaryFor(item: SharedNoteListItem): { name: string; icon: string }[] {
+  const out: { name: string; icon: string }[] = [];
   for (const b of item.bindings ?? []) {
     const p = parseBinding(b);
     const s = summaryCache.get(b);
-    if (p && isEntityKind(p.kind) && s) out.push({ name: s.name, icon: ENTITY_ICON[p.kind], color: ENTITY_COLOR[p.kind] });
+    if (p && isEntityKind(p.kind) && s) out.push({ name: s.name, icon: ENTITY_ICON[p.kind] });
   }
   return out;
 }
 
-/** Chips in desktop order: folder, workspace, profile, other entities, domain, tag. */
+/**
+ * Chips in desktop order: folder, workspace, profile, other entities, domain, tag.
+ * A folder, a workspace and a tag carry the user's colour; an entity and a
+ * domain none: colour never tells the kind, the chip's mark does.
+ */
 function chipsFor(item: SharedNoteListItem, nav: NoteNav): NoteChip[] {
   const out: NoteChip[] = [];
   for (const fid of item.folder_ids ?? []) {
@@ -195,12 +191,12 @@ function chipsFor(item: SharedNoteListItem, nav: NoteNav): NoteChip[] {
       if (w) out.push({ kind: 'workspace', id: p.value, label: w.name, color: w.color });
     } else if (p.kind === 'profile') {
       const pr = nav.all_profiles.find((x) => x.id === p.value);
-      if (pr) out.push({ kind: 'profile', id: p.value, label: pr.name, color: PROFILE_COLOR });
+      if (pr) out.push({ kind: 'profile', id: p.value, label: pr.name });
     } else if (p.kind === 'domain') {
-      if (p.value) out.push({ kind: 'domain', id: p.value, label: p.value, color: DOMAIN_COLOR });
+      if (p.value) out.push({ kind: 'domain', id: p.value, label: p.value });
     } else if (isEntityKind(p.kind)) {
       const s = summaryCache.get(b);
-      if (s) out.push({ kind: p.kind, id: p.value, label: s.name, color: ENTITY_COLOR[p.kind] });
+      if (s) out.push({ kind: p.kind, id: p.value, label: s.name });
     }
   }
   for (const t of item.tags ?? []) out.push({ kind: 'tag', id: t.name, label: t.name, color: t.color });

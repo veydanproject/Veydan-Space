@@ -21,7 +21,7 @@
   import { passwordStore } from '$lib/pass/store/passwords.svelte';
   import { passwordErrorKey } from '$lib/core/password-error';
   import { hasErrorCode } from '$lib/core/utils';
-  import { NAV_COLORS } from '$lib/core/mobile/nav-colors';
+  import { AVATAR_COLORS } from '$lib/core/mobile/nav-colors';
   import type { PasswordEntry, TotpEntry } from '$lib/pass/types';
 
   const id = $derived(page.params.id ?? '');
@@ -295,7 +295,7 @@
   function avatarColor(s: string): string {
     let h = 0;
     for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return NAV_COLORS[h % NAV_COLORS.length];
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
   }
 
   /** Move a code to the front; the first one shows in the password list. */

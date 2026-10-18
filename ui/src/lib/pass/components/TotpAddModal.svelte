@@ -26,8 +26,8 @@
   }
 
   const TAG_COLORS = [
-    '#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6',
-    '#f5c451', '#34d399', '#f26d6d', '#f97316',
+    // The kit's presets (N.colors); the colour is the user's, never the kind.
+    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
   ];
 
   let { initialTags = [], entry = null, onclose, onadded }: Props = $props();
@@ -123,6 +123,12 @@
     // The entity's name; a kind without an owner here as 10.3 shows it (its label, else the kind and a short id).
     if (isEntityKind(parsed.kind)) return directory.name(parsed.kind, parsed.value, $t);
     return parsed.value;
+  }
+
+  /** A workspace in the colour the user gave it; a profile neutral (its mark tells the kind, never a colour). */
+  function bindingColor(tag: string): string | undefined {
+    const parsed = parseBinding(tag);
+    return parsed?.kind === 'workspace' ? directory.color('workspace', parsed.value) : undefined;
   }
 
   function labelColor(name: string): string | undefined {
@@ -285,7 +291,7 @@
     {#if !editing}
     <div class="tab-bar">
       <button class="tab" class:active={tab === 'manual'} onclick={() => { tab = 'manual'; qrPreview = null; qrUri = ''; qrError = ''; }}>
-        <Icon name="edit" size={13} /> {$t('totp_tab_manual')}
+        <Icon name="keyboard" size={13} /> {$t('totp_tab_manual')}
       </button>
       <button class="tab" class:active={tab === 'qr'} onclick={() => { tab = 'qr'; }}>
         <Icon name="scan" size={13} /> {$t('totp_tab_qr')}
@@ -395,13 +401,13 @@
         {#if lockedBindings.length > 0 || extraBindings.length > 0 || labelNames.length > 0}
           <div class="label-chips">
             {#each lockedBindings as tag (tag)}
-              <span class="context-chip" class:context-chip--profile={bindingKind(tag) === 'profile'} class:context-chip--workspace={bindingKind(tag) !== 'profile'}>
+              <span class="context-chip tinted" style:--chip={bindingColor(tag)}>
                 <ChipMark kind={bindingKind(tag)} />
                 {bindingLabel(tag)}
               </span>
             {/each}
             {#each extraBindings as tag (tag)}
-              <span class="context-chip" class:context-chip--profile={bindingKind(tag) === 'profile'} class:context-chip--workspace={bindingKind(tag) !== 'profile'}>
+              <span class="context-chip tinted" style:--chip={bindingColor(tag)}>
                 <ChipMark kind={bindingKind(tag)} />
                 {bindingLabel(tag)}
                 <button type="button" onclick={() => removeBinding(tag)} aria-label={$t('pass_remove')} title={$t('pass_remove')}>×</button>
@@ -504,19 +510,9 @@
     font-size: var(--fs-xs);
     padding: 0.2rem 0.6rem;
     border-radius: var(--radius-sm);
+    border-width: 1px;
+    border-style: solid;
     font-weight: var(--fw-medium);
-  }
-
-  .context-chip--profile {
-    background: var(--accent-bg);
-    color: var(--accent-text);
-    border: 1px solid var(--accent-border);
-  }
-
-  .context-chip--workspace {
-    background: var(--accent-tint);
-    color: var(--accent-text-2);
-    border: 1px solid var(--accent-tint-border);
   }
 
   /* Form: .form-group, its label and the fields are the global primitives (base.css), as in the password dialog. */
@@ -615,6 +611,7 @@
     border: none;
     cursor: pointer;
     color: inherit;
+    opacity: var(--chip-fade);
     padding: 0;
     font-size: var(--fs-base);
     line-height: 1;

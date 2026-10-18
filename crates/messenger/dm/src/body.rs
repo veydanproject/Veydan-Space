@@ -9,6 +9,7 @@ use crate::view::{md, preview};
 use messenger_core::envelope::{T_CONTACT, T_MEDIA, T_TEXT};
 use messenger_core::{Body, Envelope, LinkKind};
 use messenger_links::{ContactLink, LinkType, Uri};
+use messenger_store::messages::{self as repo, MessageRow};
 
 /// The kinds of media the app sends; any other is told as a file.
 const MEDIA_KINDS: [&str; 6] = ["image", "video", "audio", "file", "voice", "circle"];
@@ -33,6 +34,35 @@ fn words(envelope: &Envelope, text: Option<&str>) -> String {
     let text = text.unwrap_or_default();
     let plain = if envelope.format().is_markdown() { md::plain(text) } else { String::new() };
     if plain.is_empty() { text.to_string() } else { plain }
+}
+
+/// A stored message as a body, as `body_of` tells its envelope: what the
+/// list of chats says of its newest message (a photo is a photo, not the
+/// name of its file). A Markdown text or caption by its words. None for
+/// what is no message of a chat or has nothing to say (a card of the bot:
+/// the list words it itself).
+pub fn body_of_row(row: &MessageRow) -> Option<Body> {
+    let words = row.plain.as_deref().or(row.text.as_deref());
+    match row.content_type.as_str() {
+        repo::CT_TEXT => text(words.unwrap_or_default()),
+        repo::CT_MEDIA => {
+            let m: serde_json::Value = row.media_json.as_deref().and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default();
+            let field = |k: &str| m.get(k).and_then(|v| v.as_str());
+            let kind = field("kind").filter(|k| MEDIA_KINDS.contains(k)).unwrap_or("file");
+            Some(Body::Media {
+                kind: kind.to_string(),
+                name: preview(field("name").unwrap_or_default()),
+                caption: words.map(preview).filter(|c| !c.is_empty()),
+                duration_ms: m.get("duration_ms").and_then(|d| d.as_u64()).filter(|d| *d > 0),
+                batch: field("batch").filter(|b| !b.is_empty() && b.len() <= MAX_BATCH).map(String::from),
+            })
+        }
+        repo::CT_CONTACT => {
+            let card: serde_json::Value = row.media_json.as_deref().and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default();
+            Some(Body::Link { link: LinkKind::Contact, title: preview(&messenger_contacts::card::name_of(&card)) })
+        }
+        _ => None,
+    }
 }
 
 fn text(text: &str) -> Option<Body> {
@@ -124,6 +154,46 @@ mod tests {
         let long = "а".repeat(500);
         let Some(Body::Text { text }) = body_of(&Envelope::text(&long)) else { panic!() };
         assert_eq!(text.chars().count(), 120);
+    }
+
+    fn row(content_type: &str, text: Option<&str>, plain: Option<&str>, media: Option<serde_json::Value>) -> MessageRow {
+        MessageRow {
+            id: "m".into(),
+            chat_id: "dm:x".into(),
+            wire_id: None,
+            direction: "in".into(),
+            status: "received".into(),
+            content_type: content_type.into(),
+            text: text.map(String::from),
+            envelope_json: "{}".into(),
+            sender_pubkey: "ab".into(),
+            reply_to_id: None,
+            target_id: None,
+            created_at: 1,
+            received_at: 1,
+            edited_at: None,
+            deleted_at: None,
+            is_hidden: false,
+            outbox_local_id: None,
+            failure_reason: None,
+            media_json: media.map(|m| m.to_string()),
+            mod_state: String::new(),
+            review: "ok".into(),
+            fmt: String::new(),
+            plain: plain.map(String::from),
+        }
+    }
+
+    #[test]
+    fn a_stored_message_is_told_as_its_envelope_is() {
+        let voice = row("media", None, None, Some(serde_json::json!({ "kind": "voice", "name": "voice.weba", "duration_ms": 12_400 })));
+        assert_eq!(body_of_row(&voice), Some(Body::Media { kind: "voice".into(), name: "voice.weba".into(), caption: None, duration_ms: Some(12_400), batch: None }));
+        let odd = row("media", Some("hi"), None, Some(serde_json::json!({ "kind": "exe", "name": "a.exe", "batch": "b1" })));
+        assert_eq!(body_of_row(&odd), Some(Body::Media { kind: "file".into(), name: "a.exe".into(), caption: Some("hi".into()), duration_ms: None, batch: Some("b1".into()) }));
+        assert_eq!(body_of_row(&row("text", Some("**hi**"), Some("hi"), None)), Some(Body::Text { text: "hi".into() }), "Markdown by its words");
+        let card = row("contact", None, None, Some(serde_json::json!({ "display_name": "Анна", "pubkey": "ab" })));
+        assert_eq!(body_of_row(&card), Some(Body::Link { link: LinkKind::Contact, title: "Анна".into() }));
+        assert_eq!(body_of_row(&row("bot_card", None, None, None)), None);
     }
 
     #[test]

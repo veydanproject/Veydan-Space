@@ -266,8 +266,8 @@
     return directory.name('workspace', id, $t);
   }
 
-  function workspaceColor(id: string): string {
-    return directory.color('workspace', id) ?? 'var(--success)';
+  function workspaceColor(id: string): string | undefined {
+    return directory.color('workspace', id);
   }
 
   function profileName(id: string): string {
@@ -326,7 +326,7 @@
       <!-- Header -->
       <div class="panel-header">
         <div class="header-title">
-          <Icon name="file-text" size={16} />
+          <Icon name="notes" size={16} />
           <h3>{$t('notes_title')}</h3>
           <span class="badge badge-accent">{displayList.length}</span>
         </div>
@@ -413,7 +413,7 @@
               {workspaceColor}
               {profileName}
               folderName={(id) => notesStore.folders.find(f => f.id === id)?.name ?? id}
-              folderColor={(id) => notesStore.folders.find(f => f.id === id)?.color ?? 'var(--text-2)'}
+              folderColor={(id) => notesStore.folders.find(f => f.id === id)?.color || undefined}
             />
           </div>
         </div>

@@ -83,7 +83,7 @@
     {#if call}
       <div class="chips">
         {#if path}<span class="chip" class:moving><CallIcon name="server" size={11} />{path}</span>{/if}
-        <span class="chip quiet"><Icon name="lock" size={11} />{$t('msg_call_e2e')}</span>
+        <span class="chip quiet"><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
         {#if call.muted}<span class="chip warn"><CallIcon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
       </div>
     {/if}

@@ -234,7 +234,7 @@
 
         <div class="info-row">
           <span class="info-label">{$t('profile_field_locale')}</span>
-          <span class="info-value"><Icon name="globe" size={12} />{profile.locale}</span>
+          <span class="info-value"><Icon name="language" size={12} />{profile.locale}</span>
         </div>
 
         <div class="info-row">
@@ -311,7 +311,7 @@
         </button>
 
         <button class="btn btn-ghost" onclick={() => (exportModal = true)}>
-          <Icon name="upload" size={13} />{$t('panel_btn_export')}
+          <Icon name="file-export" size={13} />{$t('panel_btn_export')}
         </button>
 
         <input

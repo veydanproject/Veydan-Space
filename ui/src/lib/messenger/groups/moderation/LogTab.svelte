@@ -99,7 +99,7 @@
 <style>
   .empty { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
   .log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .entry { display: flex; flex-direction: column; gap: 2px; padding: 8px 4px; border-bottom: 1px solid var(--border); min-width: 0; }
+  .entry { display: flex; flex-direction: column; gap: 2px; padding: 8px 4px; border-bottom: 1px solid var(--divider); min-width: 0; }
   .line { font-size: var(--fs-sm); color: var(--text); overflow-wrap: anywhere; }
   /* Markup drops the blank between the two; the gap is the style's. */
   .target { color: var(--text-2); margin-left: 0.35em; }

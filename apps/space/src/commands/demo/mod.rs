@@ -17,11 +17,20 @@ use tauri::{Manager, Runtime};
 use veydan_core::Core;
 use veydan_shell::DemoPart;
 
-/// Workspaces, proxies and profiles with their folders.
+/// Workspaces, proxies and profiles with their folders. A phone seeds none:
+/// it has no workspaces of its own (`db::prepare` makes no `default` there)
+/// and no browsers, and the columns of the demo would point at a workspace
+/// that is not there — the seed failed, and the parts after it (notes) with
+/// it. What sync brought is still cleared.
 pub(crate) fn browser<R: Runtime>() -> DemoPart<R> {
     DemoPart {
         seed: |app, locale| {
-            Box::pin(async move { seed::seed_browser(&app.state::<Core>(), &locale).await })
+            Box::pin(async move {
+                if cfg!(mobile) {
+                    return Ok(());
+                }
+                seed::seed_browser(&app.state::<Core>(), &locale).await
+            })
         },
         clear: |app| {
             Box::pin(async move {

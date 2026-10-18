@@ -24,7 +24,7 @@
     <div class="dock-sessions">
       {#each runningProfiles as p (p.id)}
         <a href={getWorkspaceHref(p)} class="dock-item" title={p.name}>
-          <Icon name="globe" size={13} />
+          <Icon name="user-circle" size={13} />
           <span class="dock-name">{p.name}</span>
         </a>
       {/each}

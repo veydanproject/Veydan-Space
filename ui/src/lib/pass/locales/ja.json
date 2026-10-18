@@ -48,7 +48,7 @@
     "totp_field_digits": "桁数",
     "totp_field_period": "間隔",
     "totp_qr_hint": "QRコードを含むスクリーンショットをアップロードしてください",
-    "totp_qr_select": "画像を選択…",
+    "totp_qr_select": "画像を選択",
     "totp_qr_detected": "QRを検出しました — 下の項目を確認してください",
     "totp_qr_not_found": "画像にQRコードが見つかりません",
     "totp_qr_secret_masked": "シークレットキー：",

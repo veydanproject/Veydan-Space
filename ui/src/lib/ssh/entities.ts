@@ -19,7 +19,6 @@ export const sshEntities: EntityKindDef[] = [
     kind: 'ssh',
     icon: 'terminal',
     label: 'ctx_kind_ssh',
-    color: 'var(--text-2)',
     ensureLoaded: () => sshStore.ensureLoaded(),
     list: () =>
       sshStore.connections.map((c) => ({
@@ -27,7 +26,7 @@ export const sshEntities: EntityKindDef[] = [
         name: c.name,
         subtitle: `${c.username}@${c.host}${c.port !== 22 ? `:${c.port}` : ''}`,
         status: sshStore.activeSession(c.id) ? 'ok' : null,
-        color: 'var(--text-2)',
+        color: '',
       })),
     actions: [
       { id: 'connect', label: 'ctx_action_connect', icon: 'terminal', run: async (id) => { await sshStore.connect(id); } },

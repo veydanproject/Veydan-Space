@@ -164,7 +164,7 @@
         disabled: !filesStore.canCopy(index), onselect: () => run(() => filesStore.copyToOtherPanel(index)),
       });
       items.push({
-        label: $t('files_op_move'), icon: 'git-fork', shortcut: 'F6',
+        label: $t('files_op_move'), icon: 'file-arrow-right', shortcut: 'F6',
         disabled: !canMove(), onselect: () => run(() => filesStore.moveToOtherPanel(index)),
       });
       items.push({ type: 'separator' });
@@ -172,7 +172,7 @@
         label: $t('files_op_rename'), icon: 'pencil', shortcut: 'F2',
         disabled: many, onselect: () => askRename(entry),
       });
-      items.push({ label: $t('files_op_chmod'), icon: 'shield', onselect: () => askChmod(entry) });
+      items.push({ label: $t('files_op_chmod'), icon: 'file-text-shield', onselect: () => askChmod(entry) });
       items.push({
         label: $t('files_op_copy_path'), icon: 'copy', disabled: many,
         onselect: () => filesStore.clipboardPath(entry),
@@ -295,7 +295,7 @@
       disabled={panel.selected.length === 0}
       onclick={() => { const e = panel.entries.find((x) => x.path === panel.selected[0]); if (e) askChmod(e); }}
     >
-      <Icon name="shield" size={14} />
+      <Icon name="file-text-shield" size={14} />
     </button>
     <button
       class="icon-btn danger"
@@ -316,7 +316,7 @@
     <!-- Host key changed (TOFU mismatch) — offer to trust the new fingerprint -->
     <div class="error-msg hostkey-msg">
       <div class="hostkey-title">
-        <Icon name="shield" size={13} />
+        <Icon name="file-text-shield" size={13} />
         {$t('ssh_hostkey_changed_title')}
       </div>
       <code class="hostkey-fp">{mismatchFingerprint}</code>

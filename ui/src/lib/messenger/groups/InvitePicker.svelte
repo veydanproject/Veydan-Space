@@ -56,7 +56,7 @@
     <p class="hint">{$t('msg_group_invite_hint')}</p>
     {#if error}<div class="error-msg">{error}</div>{/if}
     {#if contacts.length}
-      <ul class="list">
+      <ul class="list divided">
         {#each contacts as c (c.pubkey)}
           <li class="row">
             <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={34} />
@@ -81,7 +81,7 @@
   }
   input:focus { outline: none; border-color: var(--accent-border); }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
-  .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row { display: flex; align-items: center; gap: var(--sp-3); padding: 6px 8px; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .done { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text, var(--success)); }

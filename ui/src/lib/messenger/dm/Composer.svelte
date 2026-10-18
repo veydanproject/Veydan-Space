@@ -5,9 +5,11 @@
   import { drafts, markdownDrafts } from '../shared/drafts.svelte';
   import { applyMark, markOfKey, type Mark } from './format';
   import { readingOf } from '../content/markdown';
+  import { classifyPaste, takePictures } from '../media/clipboard';
   import type { Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import EmojiPicker from '../shared/emoji/EmojiPicker.svelte';
   import { usageStore } from '../shared/emoji/usageStore.svelte';
   import { onKeyboard } from '../shared/keyboard';
@@ -43,10 +45,16 @@
     /** Picked files that wait above the field: being read in, or ready to go with the text as their caption. */
     attached?: "loading" | "ready" | null;
     attachments?: Snippet;
+    /** Files pasted into the field (a screenshot, a copied file); absent: a paste is text only. */
+    onpastefiles?: (files: File[]) => void;
+    /** A paste that names something to attach the webview does not hand over: read the clipboard itself. */
+    onpasteclipboard?: () => void;
+    /** Whether an attachment may be added now: else a paste is text only, and a keyboard's pictures are not taken. */
+    canattach?: boolean;
   }
   let {
     disabled = false, placeholder, replyTo, editing, peerTitle, oncancel, onsend, tools, draftKey, oneditlast,
-    onrecording, canRecord = true, autofocus = true, attached = null, attachments,
+    onrecording, canRecord = true, autofocus = true, attached = null, attachments, onpastefiles, onpasteclipboard, canattach = true,
   }: Props = $props();
 
   let emojiOpen = $state(false);
@@ -105,7 +113,7 @@
     if (dock !== 'open') return;
     const outside = (e: PointerEvent) => {
       if (root?.contains(e.target as Node)) return;
-      if ((e.target as HTMLElement).closest?.('.m-sheet, .context-menu')) return;
+      if ((e.target as HTMLElement).closest?.('.m-sheet, .context-menu, .fmt-top')) return;
       closeDock();
       el?.blur();
     };
@@ -386,6 +394,19 @@
     return () => document.removeEventListener('selectionchange', readSel);
   });
 
+  // The composer is glass (`backdrop-filter`): a fixed layer inside it is laid out against it, not the screen.
+  function toBody(node: HTMLElement) {
+    document.body.appendChild(node);
+    return { destroy() { node.remove(); } };
+  }
+
+  /** The phone's format menu stands under the head of the chat: its bottom edge, read when the menu comes up. */
+  function barTop(): string {
+    const head = root?.closest('.window')?.querySelector('.head');
+    const bottom = head?.getBoundingClientRect().bottom;
+    return bottom ? `${Math.round(bottom + 8)}px` : 'calc(var(--sat, 0px) + 84px)';
+  }
+
   /** The buttons of the format menu, with their shortcuts on a computer (`markOfKey`). */
   const MARKS = [
     { mark: 'bold', icon: 'bold', label: 'msg_fmt_bold', key: 'B' },
@@ -451,6 +472,20 @@
     }
   }
 
+  /** A paste: text goes into the field as always; a picture or a file with no text is attached (media/clipboard.ts). */
+  function onpaste(e: ClipboardEvent) {
+    if (!onpastefiles || !canattach || editing || disabled) return;
+    const take = classifyPaste(e.clipboardData);
+    if (take.kind === 'files') { e.preventDefault(); onpastefiles(take.files); }
+    else if (take.kind === 'native') { e.preventDefault(); onpasteclipboard?.(); }
+  }
+
+  // The phone: pictures a keyboard inserts (Gboard) come while the field is focused.
+  function focused(on: boolean) {
+    if (touch && onpastefiles) takePictures(on && canattach && !editing);
+  }
+  $effect(() => () => focused(false));
+
   /** Buttons next to the field act without taking the focus from it. */
   const keepFocus = (e: Event) => e.preventDefault();
 
@@ -461,7 +496,56 @@
     else if (e.key === 'Escape' && (replyTo || editing)) { e.preventDefault(); oncancel(); }
     else if (e.key === "ArrowUp" && !text && !editing && oneditlast) { e.preventDefault(); oneditlast(); }
   }
+
+  // A computer: a right click on a selected part opens the format menu at
+  // the pointer, with Cut, Copy and Paste in place of the system's menu
+  // (the design kit's); with nothing selected the system's menu stays.
+  let fmtMenu = $state({ open: false, x: 0, y: 0 });
+  /** The selected part the menu was opened on: the menu takes the focus, the field gets it back. */
+  let menuAt: { a: number; b: number } | null = null;
+  function oncontextmenu(e: MouseEvent) {
+    if (!el || recording) return;
+    const a = el.selectionStart ?? 0;
+    const b = el.selectionEnd ?? 0;
+    if (a === b) return;
+    e.preventDefault();
+    menuAt = { a: Math.min(a, b), b: Math.max(a, b) };
+    fmtMenu = { open: true, x: e.clientX, y: e.clientY };
+  }
+  /** Back in the field with its selected part, then `run`: the browser's own editing, so Ctrl+Z undoes it. */
+  function onSelection(run: () => void) {
+    if (!el || !menuAt) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(menuAt.a, menuAt.b);
+    sel = menuAt;
+    run();
+  }
+  async function pasteText() {
+    let s = '';
+    try { s = await navigator.clipboard.readText(); } catch { /* the webview refused: Ctrl+V still works */ }
+    if (!s || !el) return;
+    onSelection(() => { if (!document.execCommand('insertText', false, s)) insert(s); });
+  }
+  const fmtItems = $derived<MenuEntry[]>([
+    ...MARKS.map((m) => ({
+      label: $t(m.label), icon: m.icon, shortcut: m.key ? `${MOD}+${m.key}` : undefined,
+      onselect: () => onSelection(() => format(m.mark)),
+    })),
+    { type: 'separator' },
+    { label: $t('msg_edit_cut'), shortcut: `${MOD}+X`, onselect: () => onSelection(() => document.execCommand('cut')) },
+    { label: $t('msg_copy'), icon: 'copy', shortcut: `${MOD}+C`, onselect: () => onSelection(() => document.execCommand('copy')) },
+    { label: $t('msg_edit_paste'), icon: 'clipboard-paste', shortcut: `${MOD}+V`, onselect: () => void pasteText() },
+  ]);
 </script>
+
+{#snippet mdChip()}
+  <span class="mdchip" title={$t('msg_fmt_md_on')}>
+    <Icon name="file-code" size={13} /><span>Markdown</span>
+    <button class="icon" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (md = false)} title={$t('msg_fmt_md_off')} aria-label={$t('msg_fmt_md_off')}>
+      <Icon name="x" size={12} />
+    </button>
+  </span>
+{/snippet}
 
 {#snippet formatBar()}
   <div class="fmt" role="toolbar" aria-label={$t('msg_fmt_menu')}>
@@ -493,17 +577,11 @@
     </div>
   {/if}
   {#if attachments}{@render attachments()}{/if}
-  {#if md || (sel && !touch && !recording)}
+  <!-- A computer: over the field. The phone has both at the top of the chat (below), so the field never moves. -->
+  {#if !touch && (md || (sel && !recording && !fmtMenu.open))}
     <div class="above">
-      {#if md}
-        <span class="mdchip" title={$t('msg_fmt_md_on')}>
-          <Icon name="file-code" size={13} /><span>Markdown</span>
-          <button class="icon" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (md = false)} title={$t('msg_fmt_md_off')} aria-label={$t('msg_fmt_md_off')}>
-            <Icon name="x" size={12} />
-          </button>
-        </span>
-      {/if}
-      {#if sel && !touch && !recording}{@render formatBar()}{/if}
+      {#if md}{@render mdChip()}{/if}
+      {#if sel && !recording && !fmtMenu.open}{@render formatBar()}{/if}
     </div>
   {/if}
   <div class="row">
@@ -522,7 +600,7 @@
           <textarea
             bind:this={el} bind:value={text} rows="1" {disabled}
             placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
-            oninput={() => { resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onpointerup={readSel} onblur={() => (sel = null)}
+            oninput={() => { resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onpointerup={readSel} {onpaste} onfocus={() => focused(true)} onblur={() => { sel = null; focused(false); }}
             onpointerdown={() => { if (dock === 'open') { el?.removeAttribute('inputmode'); dock = 'tokb'; } }}
           ></textarea>
           {#if tools}{@render tools()}{/if}
@@ -557,7 +635,7 @@
       <textarea
         bind:this={el} bind:value={text} rows="1" {disabled}
         placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
-        oninput={() => { resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onmouseup={readSel} onblur={() => (sel = null)}
+        oninput={() => { resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onmouseup={readSel} {onpaste} {oncontextmenu} onblur={() => (sel = null)}
       ></textarea>
       <button class="tool emoji" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
         onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} title={$t("msg_emoji_title")}>
@@ -582,8 +660,14 @@
     </button>
     {/if}
   </div>
-  <!-- The phone: under the field, above the keyboard, clear of the system's own menu over the selection. -->
-  {#if touch && sel && !held}{@render formatBar()}{/if}
+  <!-- The phone: the menu and the chip at the top of the chat, under its head, over the conversation: clear of the
+       system's own menu over the selection and of the keyboard, and the field does not move when they come or go. -->
+  {#if touch && !held && (sel || md)}
+    <div class="fmt-top" use:toBody style:top={barTop()}>
+      {#if sel}{@render formatBar()}{/if}
+      {#if md}{@render mdChip()}{/if}
+    </div>
+  {/if}
   {#if tooLong}<div class="warn">{$t('msg_composer_too_long')}</div>{/if}
   {#if recError}<div class="warn">{$t(`msg_rec_err_${recError}` as "msg_rec_err_denied")}</div>{/if}
   {#if touch && dock}
@@ -604,6 +688,11 @@
 
 {#if recording === "circle"}
   <CircleRecorder oncancel={() => (recording = null)} ondone={(c) => recorded("circle", c)} onerror={recordingFailed} />
+{/if}
+
+{#if !touch}
+  {#snippet fmtHead()}{$t('msg_fmt_menu')}{/snippet}
+  <ContextMenu bind:open={fmtMenu.open} x={fmtMenu.x} y={fmtMenu.y} items={fmtItems} header={fmtHead} onclose={() => (fmtMenu.open = false)} />
 {/if}
 
 <style>
@@ -712,6 +801,19 @@
     .field textarea:focus { outline: none; box-shadow: none; }
     .field textarea::placeholder { white-space: nowrap; }
     .field .tool { width: 40px; height: 38px; margin-left: 2px; }
+    /* Over the conversation, under its head; in the body of the page, so no glass of the composer holds it. */
+    .fmt-top {
+      position: fixed; left: 50%; z-index: 30; transform: translateX(-50%); max-width: calc(100vw - 2 * var(--sp-2));
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      animation: drop var(--dur-fast) var(--ease);
+    }
+    /* Over the conversation: glass like the head, so it reads over any bubble. */
+    .fmt-top .mdchip {
+      height: 30px; padding-left: 11px; border: 1px solid var(--pane-strong-border);
+      background: color-mix(in srgb, var(--accent-tint) 55%, var(--pane-strong)); box-shadow: var(--pane-highlight), var(--pane-shadow);
+      -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+    }
+    .fmt-top .mdchip .icon { padding: 6px; }
     .fmt { align-self: center; border-radius: var(--radius-bar); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
     .fb { height: 36px; min-width: 40px; }
     .fb:hover { color: var(--text-soft); background: none; }
@@ -729,6 +831,7 @@
     }
   }
   @keyframes halo { 50% { transform: scale(1.18); opacity: 0.1; } }
+  @keyframes drop { from { opacity: 0; margin-top: -6px; } }
   @keyframes swap { from { transform: rotate(-70deg) scale(0.4); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .glyph, .record.holding::after { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .glyph, .record.holding::after, .fmt-top { animation: none; } }
 </style>

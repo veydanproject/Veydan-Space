@@ -11,6 +11,8 @@ declare const __TAURI_PLATFORM__: string;
 declare const __VEYDAN_PRODUCT__: string;
 declare const __VEYDAN_PRODUCT_NAME__: string;
 declare const __VEYDAN_PRODUCT_TAGLINE__: { en: string; ru: string } & Record<string, string>;
+/** The slogan of the first start, where the product has one (products.json `slogan`). */
+declare const __VEYDAN_PRODUCT_SLOGAN__: ({ en: string; ru: string } & Record<string, string>) | null;
 /** https://github.com/<owner>/<repo> of the product (products.json `repo`). */
 declare const __VEYDAN_PRODUCT_REPO__: string;
 

@@ -147,7 +147,6 @@ async fn a_text_from_a_contact_names_them_and_says_what() {
     assert_eq!(n.sender, "Al");
     assert_eq!(n.sender_key, alice.public_key().to_hex());
     assert_eq!(n.body, Some(Body::Text { text: "hello there".into() }));
-    assert!(!n.muted);
     assert!(!n.hide_on_lockscreen);
     assert_eq!(n.count, 1);
 }
@@ -282,9 +281,13 @@ async fn blocked_muted_and_my_own_messages() {
     befriend(&phone, &alice, "Al").await;
     let chat = format!("dm:{}", alice.public_key().to_hex());
 
+    // A muted chat tells nothing, as the running app tells nothing of it;
+    // let speak again, it is told.
     phone.dm.set_muted(&chat, true).await.unwrap();
-    let n = shown(phone.describe(dm_push(&dm_from(&alice, &phone, &Envelope::text("psst"), 1_000_000))).await);
-    assert!(n.muted);
+    let psst = dm_from(&alice, &phone, &Envelope::text("psst"), 1_000_000);
+    assert_eq!(quiet(phone.describe(dm_push(&psst)).await), Reason::Muted);
+    phone.dm.set_muted(&chat, false).await.unwrap();
+    shown(phone.describe(dm_push(&psst)).await);
 
     phone.dm.act(&phone.keys, &pk(&alice), Action::Block).await.unwrap();
     assert_eq!(quiet(phone.describe(dm_push(&dm_from(&alice, &phone, &Envelope::text("?"), 1_000_001))).await), Reason::Blocked);
@@ -455,7 +458,7 @@ async fn a_group_message_names_the_group_and_the_author() {
     assert_eq!(n.body, Some(Body::Text { text: "всем привет".into() }));
 
     phone.dm.set_muted(&format!("group:{gid}"), true).await.unwrap();
-    assert!(shown(phone.describe(group_push(&gid, &event)).await).muted);
+    assert_eq!(quiet(phone.describe(group_push(&gid, &event)).await), Reason::Muted);
 }
 
 /// A key the network bans (`msg_banned_keys`, kept by the app from the
@@ -573,13 +576,15 @@ async fn a_database_from_another_version_is_refused() {
 async fn without_keys_the_group_is_still_named() {
     let phone = Phone::new().await;
     let (gid, bob, key) = group_with_bob(&phone).await;
-    phone.dm.set_muted(&format!("group:{gid}"), true).await.unwrap();
     let event = group_message(&gid, &key, &bob, &Envelope::text("x"), 1_000_000);
     let outcome = describe(&phone.dir.path().join("messenger"), None, &group_push(&gid, &event)).await.unwrap();
     let p = plain(outcome);
     assert_eq!(p.title.as_deref(), Some("Пуш-тест"));
     assert_eq!(p.chat.as_deref(), Some(format!("group:{gid}").as_str()));
-    assert!(p.muted);
+    // Muted, the group tells nothing even without keys.
+    phone.dm.set_muted(&format!("group:{gid}"), true).await.unwrap();
+    let outcome = describe(&phone.dir.path().join("messenger"), None, &group_push(&gid, &event)).await.unwrap();
+    assert_eq!(quiet(outcome), Reason::Muted);
     let dm = describe(&phone.dir.path().join("messenger"), None, &push_with(&[("type", "dm"), ("event", "{}")])).await.unwrap();
     assert!(plain(dm).chat.is_none());
 }

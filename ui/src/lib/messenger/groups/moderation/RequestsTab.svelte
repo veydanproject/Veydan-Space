@@ -143,7 +143,7 @@
     if (facts[r.requester]?.contact) {
       list.push({ label: $t('msg_group_member_write'), icon: 'message-circle', onselect: () => { chatStore.openPeer(r.requester).catch(() => {}); } });
     }
-    list.push({ type: 'separator' }, { label: $t('msg_greq_ban'), icon: 'ban', danger: true, onselect: () => ban(r) });
+    list.push({ type: 'separator' }, { label: $t('msg_greq_ban'), icon: 'user-cancel', danger: true, onselect: () => ban(r) });
     return list;
   }
   const items = $derived(menu.r ? entries(menu.r) : []);
@@ -156,7 +156,7 @@
       <span>{$t('msg_greq_failed', { names: failedNames })}</span>
       {#if failedWhy}<span class="why">{failedWhy}</span>{/if}
       <button type="button" class="btn btn-ghost btn-sm retry" onclick={() => bulk && many(bulk.kind, bulk.failed.map((f) => f.requester), false)}>
-        <Icon name="rotate-ccw" size={13} />{$t('toast_retry')}
+        <Icon name="refresh-cw" size={13} />{$t('toast_retry')}
       </button>
     </div>
     <button type="button" class="icon-btn" title={$t('common_close')} aria-label={$t('common_close')} onclick={() => (bulk = null)}><Icon name="x" size={14} /></button>
@@ -226,7 +226,7 @@
       <button type="button" class="btn btn-primary btn-sm" onclick={() => many('approve', [...selected])}><Icon name="check" size={14} />{$t('msg_group_request_approve')}</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick={() => many('reject', [...selected])}>{$t('msg_group_request_reject')}</button>
       <!-- The ban is a mark with its name in the tooltip: three words do not fit a panel's width. -->
-      <button type="button" class="btn btn-ghost btn-sm danger ban" title={$t('msg_greq_ban_short')} aria-label={$t('msg_greq_ban_short')} onclick={() => many('ban', [...selected])}><Icon name="ban" size={15} /></button>
+      <button type="button" class="btn btn-ghost btn-sm danger ban" title={$t('msg_greq_ban_short')} aria-label={$t('msg_greq_ban_short')} onclick={() => many('ban', [...selected])}><Icon name="user-cancel" size={15} /></button>
     </div>
   </div>
 {/if}

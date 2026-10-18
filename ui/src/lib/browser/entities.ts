@@ -34,7 +34,6 @@ export const browserEntities: EntityKindDef[] = [
     kind: 'workspace',
     icon: 'layers',
     label: 'ctx_kind_workspace',
-    color: 'var(--success)',
     ensureLoaded: () => workspacesStore.ensureLoaded(),
     list: () =>
       workspacesStore.list.map((w) => ({
@@ -51,9 +50,8 @@ export const browserEntities: EntityKindDef[] = [
   },
   {
     kind: 'profile',
-    icon: 'globe',
+    icon: 'user-circle',
     label: 'ctx_kind_profile',
-    color: 'var(--accent)',
     ensureLoaded: () => profilesStore.ensureLoaded(),
     list: () =>
       profilesStore.list.map((p) => ({
@@ -61,7 +59,7 @@ export const browserEntities: EntityKindDef[] = [
         name: p.name,
         subtitle: p.browser_type,
         status: p.status === 'running' ? 'ok' : 'unknown',
-        color: 'var(--accent)',
+        color: '',
       })),
     actions: [
       {
@@ -81,9 +79,8 @@ export const browserEntities: EntityKindDef[] = [
   },
   {
     kind: 'proxy',
-    icon: 'shield',
+    icon: 'globe',
     label: 'ctx_kind_proxy',
-    color: 'var(--warn-text)',
     ensureLoaded: () => proxiesStore.ensureLoaded(),
     list: () =>
       proxiesStore.list.map((p) => ({
@@ -93,7 +90,7 @@ export const browserEntities: EntityKindDef[] = [
           ? torLabel(p.country, get(t))
           : [p.proxy_type.toUpperCase(), region(p.country, p.city)].filter(Boolean).join(' · '),
         status: p.status === 'active' ? 'ok' : p.status === 'failed' ? 'bad' : 'unknown',
-        color: 'var(--warn-text)',
+        color: '',
       })),
     actions: [
       {

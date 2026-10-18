@@ -38,7 +38,7 @@
         {#if own && own !== facts.name}<div class="sub">{own}</div>{/if}
         {#if facts.nip05}
           <div class="sub nip05" class:ok={facts.nip05Verified}>
-            <Icon name={facts.nip05Verified ? 'check-circle' : 'globe'} size={12} />{facts.nip05}
+            <Icon name={facts.nip05Verified ? 'rosette-discount-check' : 'world'} size={12} />{facts.nip05}
           </div>
         {/if}
         {#if facts.missing}<div class="sub">{$t('msg_greq_no_profile')}</div>{/if}

@@ -18,7 +18,8 @@ pub struct ChatRow {
     pub last_preview: Option<String>,
     pub pinned: bool,
     pub archived: bool,
-    /// No sound from this chat; what comes is still counted and shown.
+    /// No notifications from this chat; what comes is still counted and
+    /// shown in it, and stays out of the total.
     pub muted: bool,
     pub created_at: i64,
     pub updated_at: i64,
@@ -34,7 +35,7 @@ pub fn dm_chat_id(peer_pubkey: &str) -> String {
 pub async fn ensure_dm(store: &Store, peer_pubkey: &str) -> Result<ChatRow> {
     let id = dm_chat_id(peer_pubkey);
     let now = crate::now();
-    sqlx::query(
+    let made = sqlx::query(
         "INSERT OR IGNORE INTO msg_chats (id, kind, peer_pubkey, unread, last_message_at, last_preview, pinned, archived, muted, created_at, updated_at)
          VALUES (?, 'dm', ?, 0, NULL, NULL, 0, 0, 0, ?, ?)",
     )
@@ -45,6 +46,9 @@ pub async fn ensure_dm(store: &Store, peer_pubkey: &str) -> Result<ChatRow> {
     .execute(store.pool())
     .await
     .map_err(storage)?;
+    if made.rows_affected() > 0 {
+        take_prefs(store, &id).await?;
+    }
     get(store, &id).await?.ok_or_else(|| messenger_core::MessengerError::Storage("chat vanished".into()))
 }
 
@@ -71,7 +75,9 @@ pub async fn list(store: &Store, include_archived: bool) -> Result<Vec<ChatRow>>
 
 /// New activity: move `last_message_at` forward (never back), refresh the
 /// preview when this message is the newest, and bump unread if asked and
-/// the message is later than what was read on any of my devices.
+/// the message is later than what was read on any of my devices. A message
+/// later than the archiving takes the chat out of the archive; an older
+/// one (history a new device catches up on) leaves it there.
 pub async fn touch(store: &Store, id: &str, at: i64, preview: Option<&str>, bump_unread: bool) -> Result<()> {
     let now = crate::now();
     sqlx::query(
@@ -80,7 +86,8 @@ pub async fn touch(store: &Store, id: &str, at: i64, preview: Option<&str>, bump
            last_message_at = MAX(COALESCE(last_message_at, 0), ?),
            unread = unread + CASE WHEN ? AND ? > COALESCE((SELECT read_at FROM msg_own_read WHERE chat_id = ?), 0)
                                   THEN 1 ELSE 0 END,
-           archived = 0,
+           archived = CASE WHEN ? > COALESCE((SELECT archived_at FROM msg_chat_prefs WHERE chat_id = ? AND archived = 1), 0)
+                           THEN 0 ELSE archived END,
            updated_at = ?
          WHERE id = ?",
     )
@@ -88,6 +95,8 @@ pub async fn touch(store: &Store, id: &str, at: i64, preview: Option<&str>, bump
     .bind(preview)
     .bind(at)
     .bind(bump_unread)
+    .bind(at)
+    .bind(id)
     .bind(at)
     .bind(id)
     .bind(now)
@@ -235,63 +244,196 @@ pub async fn read_at(store: &Store, id: &str) -> Result<i64> {
         .unwrap_or(0))
 }
 
-pub async fn set_pinned(store: &Store, id: &str, pinned: bool) -> Result<()> {
-    sqlx::query("UPDATE msg_chats SET pinned = ?, updated_at = ? WHERE id = ?")
-        .bind(pinned)
+/// A choice of a chat that my devices share (`msg_chat_prefs`, the
+/// snapshot's `chats`): each is dated by itself, so two devices that
+/// chose different ones of a chat both keep theirs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Pref {
+    /// No notifications from the chat: no sound, nothing shown, and its
+    /// unread stays out of the total.
+    Muted,
+    Pinned,
+    Archived,
+}
+
+impl Pref {
+    pub const ALL: [Pref; 3] = [Pref::Muted, Pref::Pinned, Pref::Archived];
+
+    /// The column, in `msg_chats` and in `msg_chat_prefs` (with `_at`).
+    fn col(self) -> &'static str {
+        match self {
+            Pref::Muted => "muted",
+            Pref::Pinned => "pinned",
+            Pref::Archived => "archived",
+        }
+    }
+}
+
+/// What was chosen of one chat, and when (my clock; 0 = never).
+#[derive(Clone, Debug, Default, PartialEq, Eq, sqlx::FromRow)]
+pub struct PrefsRow {
+    pub chat_id: String,
+    pub muted: bool,
+    pub muted_at: i64,
+    pub pinned: bool,
+    pub pinned_at: i64,
+    pub archived: bool,
+    pub archived_at: i64,
+}
+
+impl PrefsRow {
+    /// The choice and its time.
+    pub fn get(&self, pref: Pref) -> (bool, i64) {
+        match pref {
+            Pref::Muted => (self.muted, self.muted_at),
+            Pref::Pinned => (self.pinned, self.pinned_at),
+            Pref::Archived => (self.archived, self.archived_at),
+        }
+    }
+}
+
+/// Chosen here at `at`: the chat shows it at once, and the choice is dated
+/// after the one it replaces, so it wins on my other devices even when
+/// this clock runs behind theirs.
+pub async fn set_pref(store: &Store, id: &str, pref: Pref, on: bool, at: i64) -> Result<()> {
+    let c = pref.col();
+    let mut tx = store.pool().begin().await.map_err(storage)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE msg_chats SET {c} = ?, updated_at = ? WHERE id = ?")))
+        .bind(on)
         .bind(crate::now())
         .bind(id)
-        .execute(store.pool())
+        .execute(&mut *tx)
         .await
         .map_err(storage)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "INSERT INTO msg_chat_prefs (chat_id, {c}, {c}_at) VALUES (?, ?, ?)
+         ON CONFLICT(chat_id) DO UPDATE SET {c} = excluded.{c}, {c}_at = MAX(excluded.{c}_at, msg_chat_prefs.{c}_at + 1)"
+    )))
+    .bind(id)
+    .bind(on)
+    .bind(at)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
+    tx.commit().await.map_err(storage)
+}
+
+pub async fn set_pinned(store: &Store, id: &str, pinned: bool, at: i64) -> Result<()> {
+    set_pref(store, id, Pref::Pinned, pinned, at).await
+}
+
+pub async fn set_archived(store: &Store, id: &str, archived: bool, at: i64) -> Result<()> {
+    set_pref(store, id, Pref::Archived, archived, at).await
+}
+
+pub async fn set_muted(store: &Store, id: &str, muted: bool, at: i64) -> Result<()> {
+    set_pref(store, id, Pref::Muted, muted, at).await
+}
+
+/// A choice of another device of mine (the snapshot): taken when it is
+/// newer than the one here, and of one second `on` wins. The chat shows
+/// it when this device has it (one made later takes it, `take_prefs`); a
+/// chat archived before its newest message stays out of the archive, as
+/// that message took it out on the device that archived it (`touch`).
+/// `true` when taken.
+pub async fn merge_pref(store: &Store, id: &str, pref: Pref, on: bool, at: i64) -> Result<bool> {
+    if at <= 0 {
+        return Ok(false);
+    }
+    let c = pref.col();
+    let mut tx = store.pool().begin().await.map_err(storage)?;
+    let r = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "INSERT INTO msg_chat_prefs (chat_id, {c}, {c}_at) VALUES (?, ?, ?)
+         ON CONFLICT(chat_id) DO UPDATE SET {c} = excluded.{c}, {c}_at = excluded.{c}_at
+         WHERE excluded.{c}_at > msg_chat_prefs.{c}_at
+            OR (excluded.{c}_at = msg_chat_prefs.{c}_at AND excluded.{c} > msg_chat_prefs.{c})"
+    )))
+    .bind(id)
+    .bind(on)
+    .bind(at)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
+    if r.rows_affected() == 0 {
+        return Ok(false);
+    }
+    let shown = if pref == Pref::Archived { "CASE WHEN ?1 AND COALESCE(last_message_at, 0) <= ?2 THEN 1 ELSE 0 END" } else { "?1" };
+    sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE msg_chats SET {c} = {shown}, updated_at = ?3 WHERE id = ?4")))
+        .bind(on)
+        .bind(at)
+        .bind(crate::now())
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?;
+    tx.commit().await.map_err(storage)?;
+    Ok(true)
+}
+
+/// A chat just made takes what my devices chose of it before it was here.
+pub async fn take_prefs(store: &Store, id: &str) -> Result<()> {
+    sqlx::query(
+        "UPDATE msg_chats SET
+           muted = (SELECT muted FROM msg_chat_prefs WHERE chat_id = ?1),
+           pinned = (SELECT pinned FROM msg_chat_prefs WHERE chat_id = ?1),
+           archived = (SELECT archived FROM msg_chat_prefs WHERE chat_id = ?1)
+         WHERE id = ?1 AND EXISTS (SELECT 1 FROM msg_chat_prefs WHERE chat_id = ?1)",
+    )
+    .bind(id)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
     Ok(())
 }
 
-pub async fn set_archived(store: &Store, id: &str, archived: bool) -> Result<()> {
-    sqlx::query("UPDATE msg_chats SET archived = ?, updated_at = ? WHERE id = ?")
-        .bind(archived)
-        .bind(crate::now())
-        .bind(id)
-        .execute(store.pool())
-        .await
-        .map_err(storage)?;
-    Ok(())
+/// Every chat something was chosen of, the newest choice first.
+pub async fn prefs(store: &Store) -> Result<Vec<PrefsRow>> {
+    sqlx::query_as::<_, PrefsRow>(
+        "SELECT chat_id, muted, muted_at, pinned, pinned_at, archived, archived_at FROM msg_chat_prefs
+         WHERE muted_at > 0 OR pinned_at > 0 OR archived_at > 0
+         ORDER BY MAX(muted_at, pinned_at, archived_at) DESC, chat_id",
+    )
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
 }
 
-pub async fn set_muted(store: &Store, id: &str, muted: bool) -> Result<()> {
-    sqlx::query("UPDATE msg_chats SET muted = ?, updated_at = ? WHERE id = ?")
-        .bind(muted)
-        .bind(crate::now())
-        .bind(id)
-        .execute(store.pool())
-        .await
-        .map_err(storage)?;
-    Ok(())
-}
-
-/// A chat that does not exist yet is not muted.
+/// Whether nothing of the chat is to be told. A chat this device does not
+/// have yet is muted when one of my devices muted it.
 pub async fn is_muted(store: &Store, id: &str) -> Result<bool> {
-    Ok(get(store, id).await?.map(|c| c.muted).unwrap_or(false))
+    sqlx::query_scalar::<_, bool>(
+        "SELECT COALESCE((SELECT muted FROM msg_chats WHERE id = ?1), (SELECT muted FROM msg_chat_prefs WHERE chat_id = ?1), 0)",
+    )
+    .bind(id)
+    .fetch_one(store.pool())
+    .await
+    .map_err(storage)
 }
 
 /// How far ahead of the clock `cleared_at` may sit (seconds).
 pub const CLEARED_SKEW_SECS: i64 = 300;
 
-/// Remove the chat, every message in it and every reaction that came in it
-/// (local only). Relays keep the ciphertext, so a tombstone keeps it gone.
-/// My own copies are dropped by time (`cleared_at`): my rumors can run ahead
-/// of the clock (`next_created_at`), so it is never earlier than my newest
-/// message, and never more than `CLEARED_SKEW_SECS` past the clock, so one
-/// row dated in the future cannot hold back all that comes before it. The
-/// rows themselves are remembered by id (`was_deleted`): that is all that
-/// keeps the peer's messages out, so one of theirs this device never had
-/// still comes in, whatever their clock says.
+/// Remove the chat, every message in it and every reaction that came in it.
+/// Relays keep the ciphertext, so a tombstone keeps it gone, here and on my
+/// other devices (the snapshot's `deleted`, `delete_copy`). My own copies
+/// are dropped by time (`cleared_at`): my rumors can run ahead of the clock
+/// (`next_created_at`), so it is never earlier than my newest message, and
+/// never more than `CLEARED_SKEW_SECS` past the clock, so one row dated in
+/// the future cannot hold back all that comes before it. The peer's are
+/// dropped up to their newest message the chat held (`peer_upto`; one
+/// dated past my clock and the skew is left out), not up to my clock:
+/// theirs may run behind, and what they write after the deletion is new.
+/// The rows themselves are remembered by id too (`was_deleted`).
 pub async fn delete(store: &Store, id: &str, now: i64) -> Result<()> {
     let mut tx = store.pool().begin().await.map_err(storage)?;
     sqlx::query(
-        "INSERT INTO msg_chat_cleared (chat_id, cleared_at)
+        "INSERT INTO msg_chat_cleared (chat_id, cleared_at, peer_upto)
          VALUES (?1, MAX(?2, MIN(?2 + ?3, COALESCE(
-             (SELECT MAX(created_at) FROM msg_messages WHERE chat_id = ?1 AND direction = 'out'), 0))))
-         ON CONFLICT(chat_id) DO UPDATE SET cleared_at = MAX(msg_chat_cleared.cleared_at, excluded.cleared_at)",
+             (SELECT MAX(created_at) FROM msg_messages WHERE chat_id = ?1 AND direction = 'out'), 0))),
+             COALESCE(
+             (SELECT MAX(created_at) FROM msg_messages WHERE chat_id = ?1 AND direction = 'in' AND created_at <= ?2 + ?3), 0))
+         ON CONFLICT(chat_id) DO UPDATE SET cleared_at = MAX(msg_chat_cleared.cleared_at, excluded.cleared_at),
+                                            peer_upto = MAX(msg_chat_cleared.peer_upto, excluded.peer_upto)",
     )
     .bind(id)
     .bind(now)
@@ -337,12 +479,120 @@ pub async fn was_deleted(store: &Store, message_id: &str) -> Result<bool> {
 /// Up to when (rumor time, inclusive) the chat was deleted on this device;
 /// `0` when it never was.
 pub async fn cleared_at(store: &Store, id: &str) -> Result<i64> {
-    Ok(sqlx::query_scalar::<_, i64>("SELECT cleared_at FROM msg_chat_cleared WHERE chat_id = ?")
+    Ok(tombstone(store, id).await?.0)
+}
+
+/// `(cleared_at, peer_upto)` of the chat: up to when my rows and the
+/// peer's are gone (rumor times, inclusive); `(0, 0)` when it was never
+/// deleted.
+pub async fn tombstone(store: &Store, id: &str) -> Result<(i64, i64)> {
+    Ok(sqlx::query_as::<_, (i64, i64)>("SELECT cleared_at, peer_upto FROM msg_chat_cleared WHERE chat_id = ?")
         .bind(id)
         .fetch_optional(store.pool())
         .await
         .map_err(storage)?
-        .unwrap_or(0))
+        .unwrap_or((0, 0)))
+}
+
+/// Every direct chat deleted on this device or on another of mine, the
+/// newest deletion first: `(chat_id, cleared_at, peer_upto)`.
+pub async fn tombstones(store: &Store) -> Result<Vec<(String, i64, i64)>> {
+    sqlx::query_as::<_, (String, i64, i64)>(
+        "SELECT chat_id, cleared_at, peer_upto FROM msg_chat_cleared WHERE chat_id LIKE 'dm:%' ORDER BY cleared_at DESC, chat_id",
+    )
+    .fetch_all(store.pool())
+    .await
+    .map_err(storage)
+}
+
+/// A deletion of the chat on another device of mine (the snapshot): what
+/// it held up to then goes here too — my rows up to `cleared_at`, the
+/// peer's up to `peer_upto`, remembered by id as `delete` does — and what
+/// came after it stays; the chat goes when nothing stays. Times are taken
+/// only upward. `true` when the tombstone moved.
+pub async fn delete_copy(store: &Store, id: &str, cleared_at: i64, peer_upto: i64, now: i64) -> Result<bool> {
+    let (mine, theirs) = tombstone(store, id).await?;
+    let (cleared_at, peer_upto) = (cleared_at.max(mine), peer_upto.max(theirs));
+    if (cleared_at, peer_upto) == (mine, theirs) {
+        return Ok(false);
+    }
+    let mut tx = store.pool().begin().await.map_err(storage)?;
+    sqlx::query(
+        "INSERT INTO msg_chat_cleared (chat_id, cleared_at, peer_upto) VALUES (?1, ?2, ?3)
+         ON CONFLICT(chat_id) DO UPDATE SET cleared_at = excluded.cleared_at, peer_upto = excluded.peer_upto",
+    )
+    .bind(id)
+    .bind(cleared_at)
+    .bind(peer_upto)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
+    sqlx::query(
+        "DELETE FROM msg_messages WHERE id IN (SELECT message_id FROM msg_dm_held WHERE chat_id = ?1 AND created_at <= ?2) AND is_hidden = 1",
+    )
+    .bind(id)
+    .bind(peer_upto)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
+    sqlx::query("DELETE FROM msg_dm_held WHERE chat_id = ?1 AND created_at <= ?2")
+        .bind(id)
+        .bind(peer_upto)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?;
+    const GONE: &str = "chat_id = ?1 AND ((direction = 'out' AND created_at <= ?2) OR (direction = 'in' AND created_at <= ?3))";
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "INSERT OR IGNORE INTO msg_chat_deleted_ids (message_id, chat_id, deleted_at)
+         SELECT id, chat_id, ?4 FROM msg_messages WHERE {GONE}"
+    )))
+    .bind(id)
+    .bind(cleared_at)
+    .bind(peer_upto)
+    .bind(now)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DELETE FROM msg_reactions WHERE chat_id = ?1 AND message_id IN (SELECT id FROM msg_messages WHERE {GONE})"
+    )))
+    .bind(id)
+    .bind(cleared_at)
+    .bind(peer_upto)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM msg_messages WHERE {GONE}")))
+        .bind(id)
+        .bind(cleared_at)
+        .bind(peer_upto)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?;
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM msg_messages WHERE chat_id = ?")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(storage)?;
+    if left == 0 {
+        sqlx::query("DELETE FROM msg_reactions WHERE chat_id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
+        sqlx::query("DELETE FROM msg_chats WHERE id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
+    }
+    tx.commit().await.map_err(storage)?;
+    if left > 0 {
+        recompute_last(store, id).await?;
+        let counted = format!(
+            "(SELECT COUNT(*) FROM msg_messages WHERE chat_id = ?1 AND {COUNTED}
+               AND created_at > COALESCE((SELECT read_at FROM msg_own_read WHERE chat_id = ?1), 0))"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE msg_chats SET unread = {counted}, updated_at = ?2 WHERE id = ?1")))
+            .bind(id)
+            .bind(now)
+            .execute(store.pool())
+            .await
+            .map_err(storage)?;
+    }
+    Ok(true)
 }
 
 /// What the app counts as waiting: a muted or archived chat keeps its own
@@ -387,20 +637,20 @@ mod tests {
 
         let l = list(&s, false).await.unwrap();
         assert_eq!(l[0].id, "dm:aa", "recent activity first");
-        set_pinned(&s, "dm:bb", true).await.unwrap();
+        set_pinned(&s, "dm:bb", true, t0).await.unwrap();
         assert_eq!(list(&s, false).await.unwrap()[0].id, "dm:bb", "pinned wins");
 
         mark_read(&s, "dm:aa").await.unwrap();
         assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().unread, 0);
         assert!(!is_muted(&s, "dm:aa").await.unwrap());
         assert!(!is_muted(&s, "dm:nobody").await.unwrap(), "a chat that does not exist is not muted");
-        set_muted(&s, "dm:aa", true).await.unwrap();
+        set_muted(&s, "dm:aa", true, t0).await.unwrap();
         assert!(is_muted(&s, "dm:aa").await.unwrap());
         touch(&s, "dm:aa", t0 + 1, Some("still counted"), true).await.unwrap();
         assert_eq!(get(&s, "dm:aa").await.unwrap().unwrap().unread, 1, "muted chats still count unread");
         assert_eq!(total_unread(&s).await.unwrap(), 0, "but stay out of the total");
         mark_read(&s, "dm:aa").await.unwrap();
-        set_archived(&s, "dm:aa", true).await.unwrap();
+        set_archived(&s, "dm:aa", true, t0 + 50).await.unwrap();
         assert_eq!(list(&s, false).await.unwrap().len(), 1);
         assert_eq!(list(&s, true).await.unwrap().len(), 2);
         touch(&s, "dm:aa", t0 + 100, Some("back"), false).await.unwrap();
@@ -408,6 +658,46 @@ mod tests {
 
         delete(&s, "dm:aa", crate::now()).await.unwrap();
         assert!(get(&s, "dm:aa").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn the_choices_of_a_chat_go_by_their_own_time() {
+        let s = Store::open_in_memory().await.unwrap();
+        ensure_dm(&s, "aa").await.unwrap();
+        set_muted(&s, "dm:aa", true, 1_000).await.unwrap();
+        let p = |s: Store| async move { prefs(&s).await.unwrap().into_iter().find(|r| r.chat_id == "dm:aa").unwrap() };
+        assert_eq!(p(s.clone()).await.get(Pref::Muted), (true, 1_000));
+
+        // Older, or of the same second and off: the choice here stands.
+        assert!(!merge_pref(&s, "dm:aa", Pref::Muted, false, 999).await.unwrap());
+        assert!(!merge_pref(&s, "dm:aa", Pref::Muted, false, 1_000).await.unwrap());
+        assert!(is_muted(&s, "dm:aa").await.unwrap());
+        // Newer: taken, and one choice leaves the others as they were.
+        assert!(merge_pref(&s, "dm:aa", Pref::Pinned, true, 900).await.unwrap());
+        assert!(merge_pref(&s, "dm:aa", Pref::Muted, false, 1_001).await.unwrap());
+        let row = get(&s, "dm:aa").await.unwrap().unwrap();
+        assert!(!row.muted && row.pinned);
+        // A choice made here goes after the one it replaces, whatever the clock says.
+        set_muted(&s, "dm:aa", true, 10).await.unwrap();
+        assert_eq!(p(s.clone()).await.get(Pref::Muted), (true, 1_002));
+
+        // A chat this device does not have yet: muted already, and made so.
+        assert!(merge_pref(&s, "dm:bb", Pref::Muted, true, 500).await.unwrap());
+        assert!(is_muted(&s, "dm:bb").await.unwrap());
+        assert!(ensure_dm(&s, "bb").await.unwrap().muted);
+        assert!(!merge_pref(&s, "dm:bb", Pref::Muted, true, 0).await.unwrap(), "no time, no choice");
+
+        // An archive: history older than it leaves the chat there, a newer
+        // message takes it out; a copy of an archive the chat outlived is
+        // taken without hiding the chat.
+        assert!(merge_pref(&s, "dm:bb", Pref::Archived, true, 2_000).await.unwrap());
+        assert!(get(&s, "dm:bb").await.unwrap().unwrap().archived);
+        touch(&s, "dm:bb", 1_500, Some("old"), true).await.unwrap();
+        assert!(get(&s, "dm:bb").await.unwrap().unwrap().archived, "history stays archived");
+        touch(&s, "dm:bb", 2_500, Some("new"), true).await.unwrap();
+        assert!(!get(&s, "dm:bb").await.unwrap().unwrap().archived, "a new message brings it back");
+        assert!(merge_pref(&s, "dm:bb", Pref::Archived, true, 2_100).await.unwrap());
+        assert!(!get(&s, "dm:bb").await.unwrap().unwrap().archived, "archived before its newest message");
     }
 
     async fn incoming(s: &Store, id: &str, at: i64, text: &str) {
@@ -508,6 +798,30 @@ mod tests {
         delete(&s, "dm:bb", 500).await.unwrap();
         assert_eq!(cleared_at(&s, "dm:bb").await.unwrap(), 500, "an empty chat: the clock");
         assert_eq!(cleared_at(&s, "dm:cc").await.unwrap(), 0);
+        assert_eq!(tombstone(&s, "dm:aa").await.unwrap(), (700, 650), "the peer's newest it held, within the skew");
+        assert_eq!(tombstone(&s, "dm:bb").await.unwrap(), (500, 0), "none of theirs");
+    }
+
+    /// Deleted on my other device: what the chat held then goes, what came
+    /// after stays, and the chat goes only when nothing stays.
+    #[tokio::test]
+    async fn a_deletion_from_my_other_device_takes_what_the_chat_held_then() {
+        let s = Store::open_in_memory().await.unwrap();
+        ensure_dm(&s, "aa").await.unwrap();
+        incoming(&s, "m1", 100, "before").await;
+        row(&s, "m2", 200, "mine, before", "out").await;
+        incoming(&s, "m3", 400, "after").await;
+        assert!(delete_copy(&s, "dm:aa", 250, 150, 1_000).await.unwrap());
+        assert!(was_deleted(&s, "m1").await.unwrap() && was_deleted(&s, "m2").await.unwrap());
+        let c = get(&s, "dm:aa").await.unwrap().expect("a later message keeps the chat");
+        assert_eq!((c.last_preview.as_deref(), c.unread), (Some("after"), 1));
+        assert!(!delete_copy(&s, "dm:aa", 200, 100, 1_000).await.unwrap(), "an older one changes nothing");
+        assert!(delete_copy(&s, "dm:aa", 450, 400, 1_000).await.unwrap());
+        assert!(get(&s, "dm:aa").await.unwrap().is_none(), "nothing left: the chat goes");
+        assert_eq!(tombstone(&s, "dm:aa").await.unwrap(), (450, 400));
+        // A chat this device never had: the tombstone waits for its history.
+        assert!(delete_copy(&s, "dm:zz", 300, 280, 1_000).await.unwrap());
+        assert_eq!(tombstones(&s).await.unwrap(), vec![("dm:aa".into(), 450, 400), ("dm:zz".into(), 300, 280)]);
     }
 
     #[tokio::test]

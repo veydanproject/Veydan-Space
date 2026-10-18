@@ -52,9 +52,11 @@ export function contextKeys(bindings: string[], mentions: string[], noteId?: str
 /**
  * Entities behind a note's bindings, as the table's context column shows them;
  * a kind without an owner in this product by the backend's label (10.3).
+ * The kind's icon, neutral: the colour of an object is the user's and never
+ * tells its kind.
  */
-export function noteContextEntities(note: { bindings: string[] }): { name: string; icon: string; color: string }[] {
-  const out: { name: string; icon: string; color: string }[] = [];
+export function noteContextEntities(note: { bindings: string[] }): { name: string; icon: string }[] {
+  const out: { name: string; icon: string }[] = [];
   const tr = get(t);
   for (const b of note.bindings) {
     const p = parseBinding(b);
@@ -62,11 +64,11 @@ export function noteContextEntities(note: { bindings: string[] }): { name: strin
     const def = directory.get(p.kind);
     const e = def?.list().find((x) => x.id === p.value);
     if (def && e) {
-      out.push({ name: e.name, icon: def.icon, color: e.color });
+      out.push({ name: e.name, icon: def.icon });
       continue;
     }
     const foreign = directory.foreign(p.kind, p.value);
-    if (foreign) out.push({ name: foreignName(foreign, tr), icon: foreign.icon, color: foreign.color ?? 'var(--text-2)' });
+    if (foreign) out.push({ name: foreignName(foreign, tr), icon: foreign.icon });
   }
   return out;
 }

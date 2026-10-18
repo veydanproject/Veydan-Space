@@ -5,8 +5,9 @@
   import Icon from '$lib/core/Icon.svelte';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
   import type { NoteListItem } from '$lib/notes/mobile/api';
-  import { locale, t, type Key } from '$lib/core/mobile/i18n';
-  import { fmtListDate, noteColor, type RowAction, type RowMode } from '$lib/notes/mobile/notes-editor';
+  import { t, type Key } from '$lib/core/mobile/i18n';
+  import { type RowAction, type RowMode } from '$lib/notes/mobile/notes-editor';
+  import { relativeTime } from '$lib/notes/relative-time';
 
   interface Props {
     note: NoteListItem;
@@ -21,9 +22,15 @@
     onquick: (note: NoteListItem) => void;
     /** Buttons revealed by a swipe left. */
     onaction: (action: RowAction, note: NoteListItem) => void;
+    /** The scope line: the folder, workspace or profile the note is in, in its own colour; «Global» without it. */
+    scope?: { label: string; color?: string };
+    /** What the scope line names, so the chips do not repeat it. */
+    hide?: { folder?: string; binding?: string };
   }
 
-  let { note, mode = 'normal', selecting = false, selected = false, onopen, ontoggle, onlongpress, onquick, onaction }: Props = $props();
+  let { note, mode = 'normal', selecting = false, selected = false, onopen, ontoggle, onlongpress, onquick, onaction, scope, hide }: Props = $props();
+
+  const chips = $derived(note.chips.filter((c) => !(c.kind === 'folder' && c.id === hide?.folder) && `${c.kind}:${c.id}` !== hide?.binding));
 
   const REVEAL = 144;
   const TRIGGER = 60;
@@ -35,7 +42,6 @@
   let axis: 'x' | 'y' | null = null;
   let pressTimer: ReturnType<typeof setTimeout> | undefined;
   let suppressTap = false;
-  let tagDrag = false;
 
   type Btn = { action: RowAction; icon: string; label: Key; danger?: boolean };
   const buttons = $derived.by((): Btn[] => {
@@ -136,63 +142,69 @@
   }
 </script>
 
-<div class="swipe m-card" class:selected>
-  <div class="reveal" class:shown={dx < 0} style:width="{REVEAL}px">
-    {#each buttons as b (b.action)}
-      <button type="button" class="rbtn" class:danger={b.danger} onclick={() => act(b.action)}>
-        <Icon name={b.icon} size={18} />
-        <span>{$t(b.label)}</span>
-      </button>
-    {/each}
-  </div>
-  <button
-    type="button"
-    class="m-note"
-    class:dragging
-    style:transform="translateX({dx}px)"
-    style:--c={noteColor(note.chips)}
-    ontouchstart={onTouchStart}
-    ontouchmove={onTouchMove}
-    ontouchend={onTouchEnd}
-    ontouchcancel={onTouchEnd}
-    onclick={onTap}
-    oncontextmenu={(e) => e.preventDefault()}
-  >
-    {#if selecting}
-      <span class="check" class:on={selected}>{#if selected}<Icon name="check" size={14} />{/if}</span>
-    {/if}
-    <span class="m-doc" class:muted={mode === 'trash'}><Icon name="file-text" size={16} /></span>
-    <span class="body">
-      <span class="top">
-        <span class="title">{note.title || $t('notes_untitled')}</span>
-        <span class="date">
-          {#if note.pinned && mode === 'normal'}<Icon name="pin" size={12} />{/if}
-          {fmtListDate(note.updated_at, $locale)}
-        </span>
-      </span>
-      {#if note.preview}<span class="preview">{note.preview}</span>{/if}
-      {#if note.chips.length}
-        <!-- Horizontal strip: don't let the card swipe steal the drag. -->
-        <span
-          class="tags"
-          ontouchstart={(e) => { tagDrag = false; e.stopPropagation(); }}
-          ontouchmove={(e) => { tagDrag = true; e.stopPropagation(); }}
-          ontouchend={(e) => e.stopPropagation()}
-          onclick={(e) => { if (tagDrag) { e.stopPropagation(); e.preventDefault(); } }}
-        >
-          {#each note.chips as c (c.kind + c.id)}
-            <span class="m-chip small tinted" style:--chip={c.color}><ChipMark kind={c.kind} />{c.label}</span>
-          {/each}
-        </span>
+<div class="swipe" class:selected class:moved={dx !== 0 || dragging}>
+  <div class="clip">
+    <div class="reveal" class:shown={dx < 0} style:width="{REVEAL}px">
+      {#each buttons as b (b.action)}
+        <button type="button" class="rbtn" class:danger={b.danger} onclick={() => act(b.action)}>
+          <Icon name={b.icon} size={18} />
+          <span>{$t(b.label)}</span>
+        </button>
+      {/each}
+    </div>
+    <button
+      type="button"
+      class="m-note row"
+      class:dragging
+      style:transform="translateX({dx}px)"
+      ontouchstart={onTouchStart}
+      ontouchmove={onTouchMove}
+      ontouchend={onTouchEnd}
+      ontouchcancel={onTouchEnd}
+      onclick={onTap}
+      oncontextmenu={(e) => e.preventDefault()}
+    >
+      {#if selecting}
+        <span class="check" class:on={selected}>{#if selected}<Icon name="check" size={14} />{/if}</span>
       {/if}
-    </span>
-  </button>
+      <span class="body">
+        <span class="top">
+          <span class="title">
+            {#if note.pinned && mode === 'normal'}<Icon name="pin" size={14} />{/if}
+            <span class="title-text">{note.title || $t('notes_untitled')}</span>
+          </span>
+          <span class="meta">
+            {#if note.raw.has_draft}<span class="draft" title={$t('notes_unsaved_draft')}></span>{/if}
+            <span class="format">{note.raw.format}</span>
+          </span>
+        </span>
+        <span class="mid">
+          <span class="scope tinted-text" style:--chip={scope?.color}>{scope?.label ?? $t('notes_scope_global')}</span>
+          <span class="time">{relativeTime(note.updated_at, $t)}</span>
+        </span>
+        {#if note.preview}<span class="preview">{note.preview}</span>{/if}
+        {#if chips.length}
+          <span class="chips">
+            {#each chips.slice(-3) as c (c.kind + c.id)}
+              <span class="m-chip small tinted" style:--chip={c.color}><ChipMark kind={c.kind} />{c.label}</span>
+            {/each}
+            {#if chips.length > 3}<span class="more">+{chips.length - 3}</span>{/if}
+          </span>
+        {/if}
+      </span>
+    </button>
+  </div>
 </div>
 
 <style>
-  .swipe {
+  /* A row of the list, the design kit's (notes-list, touch): flat on the
+     page, a hairline between rows (`.divided` of the list), the accent
+     tint when chosen. A swipe needs the row opaque over its buttons. */
+  /* The swipe is clipped inside, so the hairline over the row (`.divided`) stays seen. */
+  .clip {
     position: relative;
     overflow: hidden;
+    border-radius: var(--radius-lg);
   }
   .reveal {
     position: absolute;
@@ -219,21 +231,43 @@
     font-weight: 600;
   }
   .rbtn.danger { background: var(--danger); }
-  .m-note {
-    background: var(--m-card);
-    border-radius: var(--m-radius);
-    transition: transform var(--dur-base) var(--ease);
+  .row {
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
+    background: transparent;
+    transition: transform var(--dur-base) var(--ease), background var(--dur-fast) var(--ease);
   }
-  .m-note.dragging { transition: none; }
-  .tags {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 6px;
+  .row:active { background: var(--surface-hover); }
+  .moved .row { background: var(--m-card); }
+  .selected .row { background: var(--accent-bg); border-color: var(--accent-border); outline: none; }
+  .row.dragging { transition: none; }
+  .row .body { gap: 4px; }
+  .row .title { display: flex; align-items: center; gap: var(--sp-1); font-weight: var(--fw-semibold); }
+  .row .title :global(svg) { flex: none; color: var(--text-2); }
+  .title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); }
+  .draft { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .format {
+    padding: 1px var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+    line-height: 16px;
+    color: var(--text-2);
+  }
+  .mid { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .scope {
     min-width: 0;
-    margin-top: 2px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    touch-action: pan-x pan-y;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    color: var(--text-2);
   }
-  .tags::-webkit-scrollbar { display: none; }
+  .time { flex: none; margin-left: auto; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; padding-top: 2px; }
+  .more { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-2); }
 </style>

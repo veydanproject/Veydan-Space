@@ -271,9 +271,10 @@ struct Current {
     /// Why the restart under way was made, for the screen when the way
     /// goes during it.
     restarting_for: Option<ReconnectReason>,
-    /// What the peer believes of my video: the invitation's word at first
-    /// (a video call has both cameras on), then every `call.video` sent.
-    told_video: bool,
+    /// What the peer believes of my video, on and a screen: the
+    /// invitation's word at first (a video call has both cameras on), then
+    /// every `call.video` sent.
+    told_video: (bool, bool),
 }
 
 /// What came of a call before its invitation did: the relays keep no
@@ -286,8 +287,8 @@ struct Early {
     /// The peer's last word of its video (`call.video`), when it came
     /// before the invitation: a caller whose camera failed says so right
     /// after an invitation that still says `video`, and the note may
-    /// overtake it.
-    video: Option<bool>,
+    /// overtake it. With it, whether that video is a screen.
+    video: Option<(bool, bool)>,
 }
 
 impl Early {
@@ -807,7 +808,7 @@ impl Current {
             loss: 0,
             offers: 0,
             restarting_for: None,
-            told_video: view.media == Media::Video,
+            told_video: (view.media == Media::Video, false),
             view,
         }
     }
@@ -930,12 +931,13 @@ impl Inner {
     async fn tell_video(&self, st: &mut State) {
         let Some(cur) = st.current.as_mut() else { return };
         let on = cur.view.video_local;
-        if cur.told_video == on || (cur.view.direction == Direction::Out && !cur.invite_sent) {
+        let screen = on && cur.view.video_screen;
+        if cur.told_video == (on, screen) || (cur.view.direction == Direction::Out && !cur.invite_sent) {
             return;
         }
-        cur.told_video = on;
+        cur.told_video = (on, screen);
         let id = cur.view.call_id.clone();
-        self.send(st, &Signal::Video { call_id: id, on }, false).await;
+        self.send(st, &Signal::Video { call_id: id, on, screen }, false).await;
     }
 
     fn schedule(self: &Arc<Self>, after: Duration, timer: Timer, gen: u64) {
@@ -1482,8 +1484,9 @@ impl Inner {
                 let gen = st.next_gen();
                 let mut view = CallView::new(call_id.clone(), peer_hex.clone(), Direction::In, media, Phase::Incoming, at);
                 // The peer's word of its video that overtook the invitation.
-                if let Some(on) = st.take_early(&call_id).and_then(|e| e.video) {
+                if let Some((on, screen)) = st.take_early(&call_id).and_then(|e| e.video) {
                     view.video_remote = on;
+                    view.video_remote_screen = screen;
                 }
                 let policy = settings::get(&self.store, KEY_RELAY_POLICY).await?.as_deref().and_then(RelayPolicy::parse).unwrap_or_default();
                 let mut cur = Current::new(view.clone(), gen, policy);
@@ -1571,12 +1574,14 @@ impl Inner {
                 }
                 Ok(Followup::None)
             }
-            Signal::Video { call_id, on } => {
-                // The peer's camera went on or off: the screen shows a
-                // placeholder or waits for frames. The size is the frames'.
+            Signal::Video { call_id, on, screen } => {
+                // The peer's video went on or off, or between its camera and
+                // its screen: the screen shows a placeholder or waits for
+                // frames, and says a screen is shown. The size is the frames'.
                 if let Some(cur) = st.current_of(&call_id) {
-                    if cur.view.video_remote != on {
+                    if cur.view.video_remote != on || cur.view.video_remote_screen != screen {
                         cur.view.video_remote = on;
+                        cur.view.video_remote_screen = screen;
                         if !on {
                             cur.view.video_remote_size = None;
                         }
@@ -1587,7 +1592,7 @@ impl Inner {
                     // Before its invitation (the relays keep no order): kept
                     // for the view the invitation makes. A word of a call
                     // long over makes an entry that goes with the oldest.
-                    st.early_mut(&call_id).video = Some(on);
+                    st.early_mut(&call_id).video = Some((on, screen));
                 }
                 Ok(Followup::None)
             }
@@ -1879,6 +1884,7 @@ impl Inner {
         view.chat_id = row.chat_id.clone();
         view.answered_at = row.answered_at;
         view.video_remote = false;
+        view.video_remote_screen = false;
         Ok(Some(view))
     }
 }

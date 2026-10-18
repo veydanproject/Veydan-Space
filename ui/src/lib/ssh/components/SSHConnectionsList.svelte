@@ -147,7 +147,7 @@
                 await sshStore.removeSession(session.session_id);
               }}
             >
-              <Icon name="square" size={13} />
+              <Icon name="plug-connected-x" size={13} />
             </button>
           {:else}
             <button class="icon-btn success" title={$t('ssh_btn_connect')} aria-label={$t('ssh_btn_connect')} onclick={() => onConnect(conn)}>

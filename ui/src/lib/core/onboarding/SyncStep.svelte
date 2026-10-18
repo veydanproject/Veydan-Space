@@ -133,7 +133,7 @@
         <span class="ob-radio" aria-hidden="true"></span>
       </button>
       <button type="button" class="ob-opt" class:on={pick === 'own'} role="radio" aria-checked={pick === 'own'} disabled={busy} onclick={() => (pick = 'own')}>
-        <span class="ob-opt-ic"><Icon name="network" size={20} /></span>
+        <span class="ob-opt-ic"><Icon name="server-2" size={20} /></span>
         <span class="ob-opt-b">
           <span class="ob-opt-t">{$t('ob_sync_own')}</span>
           <span class="ob-opt-s">{isMobile ? $t('ob_sync_own_kinds_phone') : $t('ob_sync_own_kinds')}</span>

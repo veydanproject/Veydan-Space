@@ -73,11 +73,11 @@
 
 {#if entry?.username}
   <button type="button" class="chev" class:ok={copied === 'user'} onclick={copyUsername} aria-label={$t('ctx_action_copy_username')}>
-    <Icon name={copied === 'user' ? 'check' : 'user'} size={18} />
+    <Icon name={copied === 'user' ? 'check' : 'id'} size={18} />
   </button>
 {/if}
 <button type="button" class="chev" class:ok={copied === 'pass'} onclick={copyPassword} aria-label={$t('ctx_action_copy_password')}>
-  <Icon name={copied === 'pass' ? 'check' : appLock.locked ? 'lock' : 'copy'} size={18} />
+  <Icon name={copied === 'pass' ? 'check' : appLock.locked ? 'lock-square-rounded' : 'copy'} size={18} />
 </button>
 <VaultUnlock bind:open={unlockOpen} onunlocked={() => { if (!pendingCopy) return; pendingCopy = false; void copyPassword(); }} />
 

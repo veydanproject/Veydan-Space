@@ -273,7 +273,7 @@
   .th-actions { width: 112px; text-align: right; }
 
   tbody tr {
-    border-bottom: 1px solid var(--surface-2);
+    border-bottom: 1px solid var(--divider);
     cursor: pointer; transition: background 0.12s;
   }
   tbody tr:last-child { border-bottom: none; }

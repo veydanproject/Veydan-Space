@@ -106,7 +106,7 @@
             onmouseenter={() => (index = i)}
             onclick={() => run(cmd)}
           >
-            <Icon name={cmd.icon ?? 'zap'} size={13} />
+            <Icon name={cmd.icon ?? 'command'} size={13} />
             <span class="title">{cmd.title}</span>
           </button>
         {/each}

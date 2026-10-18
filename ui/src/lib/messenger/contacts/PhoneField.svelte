@@ -23,7 +23,7 @@
 <div class="phone-field" class:invalid={!!error}>
   <div class="head">
     <label for="own-phone">{$t('msg_profile_phone')}</label>
-    <span class="private" title={$t('msg_profile_phone_hint')}><Icon name="lock" size={11} />{$t('msg_profile_phone_private')}</span>
+    <span class="private" title={$t('msg_profile_phone_hint')}><Icon name="lock-square-rounded" size={11} />{$t('msg_profile_phone_private')}</span>
   </div>
   <div class="input-row">
     <input id="own-phone" type="tel" inputmode="tel" autocomplete="tel" bind:value={phone} {disabled}

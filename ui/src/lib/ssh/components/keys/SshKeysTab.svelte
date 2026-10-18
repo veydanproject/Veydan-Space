@@ -158,7 +158,7 @@
       <Icon name="download" size={14} />{$t('ssh_keys_add')}
     </button>
     <button class="btn btn-primary" onclick={() => (formMode = 'generate')}>
-      <Icon name="zap" size={14} />{$t('ssh_keys_generate')}
+      <Icon name="plus" size={14} />{$t('ssh_keys_generate')}
     </button>
   </div>
 </div>
@@ -170,7 +170,7 @@
     <div class="empty-icon"><Icon name="key" size={40} strokeWidth={1.5} /></div>
     <p>{$t('ssh_keys_empty')}</p>
     <button class="btn btn-primary" onclick={() => (formMode = 'generate')}>
-      <Icon name="zap" size={14} />{$t('ssh_keys_generate')}
+      <Icon name="plus" size={14} />{$t('ssh_keys_generate')}
     </button>
   </div>
 {:else if filtered.length === 0}

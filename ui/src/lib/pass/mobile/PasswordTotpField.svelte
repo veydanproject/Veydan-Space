@@ -6,7 +6,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import { t } from '$lib/core/mobile/i18n';
-  import { NAV_COLORS } from '$lib/core/mobile/nav-colors';
+  import { AVATAR_COLORS } from '$lib/core/mobile/nav-colors';
   import type { TotpEntry } from '$lib/pass/types';
 
   interface Props {
@@ -47,7 +47,7 @@
   function colorOf(s: string): string {
     let h = 0;
     for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return NAV_COLORS[h % NAV_COLORS.length];
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
   }
 
   function add(id: string) {

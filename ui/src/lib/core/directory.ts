@@ -20,13 +20,16 @@ import { registry } from './registry';
 /** Icon and name of every kind a reference may point at, whether its owner is in the product or not. */
 const KINDS: Record<string, { icon: string; label: TranslationKey }> = {
   workspace: { icon: 'layers', label: 'ctx_kind_workspace' },
-  profile: { icon: 'globe', label: 'ctx_kind_profile' },
-  proxy: { icon: 'shield', label: 'ctx_kind_proxy' },
+  profile: { icon: 'user-circle', label: 'ctx_kind_profile' },
+  proxy: { icon: 'globe', label: 'ctx_kind_proxy' },
   ssh: { icon: 'terminal', label: 'ctx_kind_ssh' },
-  totp: { icon: 'key', label: 'ctx_kind_totp' },
-  password: { icon: 'lock', label: 'ctx_kind_password' },
-  note: { icon: 'file-text', label: 'ctx_kind_note' },
+  totp: { icon: 'shield', label: 'ctx_kind_totp' },
+  password: { icon: 'lock-password', label: 'ctx_kind_password' },
+  note: { icon: 'notes', label: 'ctx_kind_note' },
 };
+
+/** The icon of a kind a reference may point at; '' for a kind not in the list. */
+export const kindIcon = (kind: string): string => KINDS[kind]?.icon ?? '';
 
 /**
  * A reference `kind:id` whose kind has no owner in this product (10.3): it is

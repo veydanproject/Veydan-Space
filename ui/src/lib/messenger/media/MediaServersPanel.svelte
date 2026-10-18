@@ -79,7 +79,7 @@
 </script>
 
 <div class="card media-servers">
-  <div class="card-title"><Icon name="upload" size={16} /> {$t('msg_media_servers_title')}</div>
+  <div class="card-title"><Icon name="server-2" size={16} /> {$t('msg_media_servers_title')}</div>
   <p class="muted">{$t('msg_media_servers_text')}</p>
 
   {#if servers.length === 0}

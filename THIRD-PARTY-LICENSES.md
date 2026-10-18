@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 896
+- **Rust / Cargo crates:** 900
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 1052
+- **Total third-party components:** 1056
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -38,11 +38,11 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 | License | Count |
 |---|---:|
-| MIT OR Apache-2.0 | 319 |
-| MIT | 164 |
+| MIT OR Apache-2.0 | 320 |
+| MIT | 166 |
 | MIT OR Apache-2.0 (platform dep) | 115 |
 | Apache-2.0 OR MIT | 111 |
-| MIT (platform dep) | 28 |
+| MIT (platform dep) | 29 |
 | Unicode-3.0 | 18 |
 | Zlib OR Apache-2.0 OR MIT (platform dep) | 16 |
 | Apache-2.0 | 13 |
@@ -59,6 +59,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | CC0-1.0 OR MIT-0 OR Apache-2.0 | 3 |
 | Zlib | 3 |
 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 2 |
+| BSD-2-Clause OR Apache-2.0 OR MIT | 2 |
 | BSD-3-Clause OR Apache-2.0 | 2 |
 | BSD-3-Clause OR MIT OR Apache-2.0 (platform dep) | 2 |
 | BSL-1.0 (platform dep) | 2 |
@@ -76,8 +77,6 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | Apache-2.0 OR BSL-1.0 OR MIT | 1 |
 | Apache-2.0 OR GPL-2.0-only | 1 |
 | Apache-2.0 WITH LLVM-exception | 1 |
-| BSD-2-Clause OR Apache-2.0 OR MIT | 1 |
-| BSD-2-Clause OR Apache-2.0 OR MIT (platform dep) | 1 |
 | BSD-3-Clause AND MIT | 1 |
 | BSD-3-Clause OR MIT | 1 |
 | bzip2-1.0.6 | 1 |
@@ -104,7 +103,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (896)
+## Full acknowledgements — Rust crates (900)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -245,6 +244,7 @@ Thank you to the authors of the following Cargo crates:
 | crossbeam-channel | 0.5.15 | MIT OR Apache-2.0 |
 | crossbeam-queue | 0.3.12 | MIT OR Apache-2.0 |
 | crossbeam-utils | 0.8.21 | MIT OR Apache-2.0 |
+| crunchy | 0.2.4 | MIT * |
 | crypto-bigint | 0.7.5 | Apache-2.0 OR MIT |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 |
 | crypto-common | 0.2.2 | MIT OR Apache-2.0 |
@@ -324,6 +324,7 @@ Thank you to the authors of the following Cargo crates:
 | fallible-streaming-iterator | 0.1.9 | MIT OR Apache-2.0 |
 | faster-hex | 0.10.1 | MIT |
 | fastrand | 2.4.1 | Apache-2.0 OR MIT |
+| fax | 0.2.7 | MIT |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 |
 | ff | 0.14.0 | MIT OR Apache-2.0 |
 | fiat-crypto | 0.2.9 | MIT OR Apache-2.0 OR BSD-1-Clause * |
@@ -392,6 +393,7 @@ Thank you to the authors of the following Cargo crates:
 | gtk-sys | 0.18.2 | MIT |
 | gtk3-macros | 0.18.2 | MIT |
 | h2 | 0.4.15 | MIT |
+| half | 2.7.1 | MIT OR Apache-2.0 |
 | hash32 | 0.3.1 | MIT OR Apache-2.0 |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 |
 | hashbrown | 0.14.5 | MIT OR Apache-2.0 |
@@ -795,6 +797,7 @@ Thank you to the authors of the following Cargo crates:
 | thiserror | 2.0.18 | MIT OR Apache-2.0 |
 | thiserror-impl | 1.0.69 | MIT OR Apache-2.0 |
 | thiserror-impl | 2.0.18 | MIT OR Apache-2.0 |
+| tiff | 0.11.3 | MIT |
 | time | 0.3.53 | MIT OR Apache-2.0 |
 | time-core | 0.1.9 | MIT OR Apache-2.0 |
 | time-macros | 0.2.31 | MIT OR Apache-2.0 |
@@ -982,7 +985,7 @@ Thank you to the authors of the following Cargo crates:
 | zbus_macros | 5.18.0 | MIT |
 | zbus_names | 4.3.4 | MIT |
 | zerocopy | 0.8.52 | BSD-2-Clause OR Apache-2.0 OR MIT |
-| zerocopy-derive | 0.8.52 | BSD-2-Clause OR Apache-2.0 OR MIT * |
+| zerocopy-derive | 0.8.52 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | zerofrom | 0.1.8 | Unicode-3.0 |
 | zerofrom-derive | 0.1.7 | Unicode-3.0 |
 | zeroize | 1.9.0 | Apache-2.0 OR MIT |
@@ -1213,7 +1216,7 @@ The full notices are the `LICENSE.md` of each archive and
 
 Bundled with the UI, under the SIL Open Font License 1.1 (OFL-1.1):
 
-- **Manrope** — @fontsource-variable/manrope
+- **IBM Plex Sans** — @fontsource-variable/ibm-plex-sans
 - **JetBrains Mono** — @fontsource-variable/jetbrains-mono
 - **Noto Color Emoji** — @fontsource/noto-color-emoji
 - **Noto Sans SC, Noto Sans JP, Noto Sans KR** — github.com/google/fonts, cut down to the characters of the UI's Chinese, Japanese and Korean strings (`ui/src/lib/core/fonts`, made by `scripts/fonts-cjk.mjs`); also in the web clipper of Veydan Space

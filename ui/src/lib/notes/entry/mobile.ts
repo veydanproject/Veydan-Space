@@ -12,7 +12,7 @@ import AttachmentPolicyBlock from '$lib/notes/mobile/AttachmentPolicyBlock.svelt
 
 export const module: ModuleDef = {
   ...common,
-  nav: [{ id: 'notes', title: 'app_notes', icon: 'file-text', href: '/notes' }],
+  nav: [{ id: 'notes', title: 'app_notes', icon: 'notes', href: '/notes' }],
   // The attachment download policy is part of the sync settings form.
   settings: [{ id: 'attachments', title: 'settings_att_section', group: 'settings_data', order: 50, into: 'sync', component: AttachmentPolicyBlock }],
   overlays: [{ id: 'more', component: NotesMoreOverlay, place: 'window' }],

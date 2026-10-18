@@ -24,9 +24,9 @@
 
   const groups: TbItem[][] = [
     [
-      { action: 'h1', icon: 'heading', label: 'H1' },
-      { action: 'h2', icon: 'heading', label: 'H2' },
-      { action: 'h3', icon: 'heading', label: 'H3' },
+      { action: 'h1', icon: 'h-1', label: 'H1' },
+      { action: 'h2', icon: 'h-2', label: 'H2' },
+      { action: 'h3', icon: 'h-3', label: 'H3' },
     ],
     [
       { action: 'bold', icon: 'bold', label: 'note_tb_bold', key: 'Ctrl+B' },
@@ -43,7 +43,7 @@
     [
       { action: 'link', icon: 'link', label: 'note_tb_link', key: 'Ctrl+K' },
       { action: 'codeblock', icon: 'file-code', label: 'note_tb_codeblock' },
-      { action: 'hr', icon: 'minus', label: 'note_tb_hr' },
+      { action: 'hr', icon: 'separator-horizontal', label: 'note_tb_hr' },
     ],
   ];
 

@@ -35,14 +35,13 @@ function noteBindings(id: string): string[] | undefined {
 export const noteEntities: EntityKindDef[] = [
   {
     kind: 'note',
-    icon: 'file-text',
+    icon: 'notes',
     label: 'ctx_kind_note',
-    color: 'var(--accent)',
     ensureLoaded: loadAll,
     list: () =>
       notesStore.list
         .filter((n) => !n.deleted)
-        .map((n) => ({ id: n.id, name: n.title, subtitle: '', status: null, color: 'var(--accent)' })),
+        .map((n) => ({ id: n.id, name: n.title, subtitle: '', status: null, color: '' })),
     actions: [],
     // The phone opens a note on its own screen (and its conflict there); the
     // desktop selects it on the notes page, where the conflict shows itself.
@@ -64,7 +63,6 @@ export const noteEntities: EntityKindDef[] = [
     kind: 'note_tag',
     icon: 'tag',
     label: 'ctx_kind_note_tag',
-    color: 'var(--accent)',
     ensureLoaded: loadTags,
     list: () => notesStore.allTags.map((t) => ({ id: t.name, name: t.name, subtitle: '', status: null, color: t.color })),
     actions: [],
@@ -77,20 +75,18 @@ export const noteEntities: EntityKindDef[] = [
     kind: 'note_folder',
     icon: 'folder',
     label: 'ctx_kind_note_folder',
-    color: 'var(--accent)',
     ensureLoaded: loadAll,
     list: () => notesStore.folders.map((f) => ({ id: f.id, name: f.name, subtitle: '', status: null, color: f.color })),
     actions: [],
   },
   {
     kind: 'note_template',
-    icon: 'file-text',
+    icon: 'notes',
     label: 'ctx_kind_note_template',
-    color: 'var(--accent)',
     ensureLoaded: loadAll,
     list: () =>
       templateNotes(notesStore.list, notesStore.folders).map((n) => ({
-        id: n.id, name: n.title, subtitle: '', status: null, color: 'var(--accent)',
+        id: n.id, name: n.title, subtitle: '', status: null, color: '',
       })),
     actions: [],
   },

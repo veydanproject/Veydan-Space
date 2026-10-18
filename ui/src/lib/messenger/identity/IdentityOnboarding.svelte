@@ -74,7 +74,7 @@
 <div class="card onboarding">
   {#if locked}
     <div class="locked-note">
-      <Icon name="lock" size={14} />
+      <Icon name="lock-square-rounded" size={14} />
       <span>{$t('msg_id_locked')}</span>
     </div>
   {/if}
@@ -89,7 +89,7 @@
         <Icon name="key" size={14} />{$t('msg_id_create_btn')}
       </button>
       <button class="btn btn-ghost" disabled={locked} onclick={() => (mode = 'import')}>
-        <Icon name="upload" size={14} />{$t('msg_id_import_btn')}
+        <Icon name="file-import" size={14} />{$t('msg_id_import_btn')}
       </button>
     </div>
     <!-- The account from another device of mine, over the relays (module cloud, /cloud/link). -->

@@ -118,6 +118,23 @@
         "ja": "マルチアカウント運用のためのワークスペース。",
         "ko": "멀티 계정 운영을 위한 워크스페이스."
       },
+      "slogan": {
+        "en": "Every account, one space.",
+        "ru": "Все аккаунты — одно пространство.",
+        "uk": "Усі акаунти — один простір.",
+        "de": "Alle Konten, ein Raum.",
+        "es": "Todas las cuentas, un solo espacio.",
+        "fr": "Tous vos comptes, un seul espace.",
+        "it": "Tutti gli account, un unico spazio.",
+        "pl": "Wszystkie konta — jedna przestrzeń.",
+        "pt-BR": "Todas as contas, um só espaço.",
+        "tr": "Tüm hesaplar, tek bir alan.",
+        "id": "Semua akun, satu ruang.",
+        "vi": "Mọi tài khoản, một không gian.",
+        "zh-CN": "所有账号，一个空间。",
+        "ja": "すべてのアカウントを、ひとつの場所に。",
+        "ko": "모든 계정, 하나의 공간."
+      },
       "modules": [
         "browser",
         "ssh",

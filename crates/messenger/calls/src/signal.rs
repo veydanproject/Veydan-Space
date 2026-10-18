@@ -62,8 +62,10 @@ pub enum Signal {
     /// called side (that offer answers it). `None` from a client that
     /// does not count (5.1.2), always honoured.
     Restart { call_id: String, seen: Option<u32> },
-    /// My video (camera or screen) went on or off within the call.
-    Video { call_id: String, on: bool },
+    /// My video went on or off within the call, or went from the camera
+    /// to the screen or back. `screen`: what goes is my screen (never
+    /// while off; absent on the wire from a client of 5.1.x: a camera).
+    Video { call_id: String, on: bool, screen: bool },
 }
 
 impl Signal {
@@ -109,7 +111,10 @@ impl Signal {
                 call_id,
                 seen: e.fields.get("seen").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()),
             },
-            T_CALL_VIDEO => Signal::Video { call_id, on: e.fields.get("on").and_then(Value::as_bool)? },
+            T_CALL_VIDEO => {
+                let on = e.fields.get("on").and_then(Value::as_bool)?;
+                Signal::Video { call_id, on, screen: on && flag(e, "screen") }
+            }
             _ => return None,
         })
     }
@@ -130,7 +135,7 @@ impl Signal {
                 Some(n) => Envelope::call_restart(call_id).with("seen", *n),
                 None => Envelope::call_restart(call_id),
             },
-            Self::Video { call_id, on } => Envelope::call_video(call_id, *on),
+            Self::Video { call_id, on, screen } => Envelope::call_video(call_id, *on, *screen),
         }
     }
 }
@@ -220,8 +225,9 @@ mod tests {
             Signal::Restart { call_id: id.clone(), seen: None },
             Signal::Restart { call_id: id.clone(), seen: Some(2) },
             Signal::End { call_id: id.clone(), reason: reason::SUPERSEDED.into(), answer: None },
-            Signal::Video { call_id: id.clone(), on: true },
-            Signal::Video { call_id: id.clone(), on: false },
+            Signal::Video { call_id: id.clone(), on: true, screen: false },
+            Signal::Video { call_id: id.clone(), on: true, screen: true },
+            Signal::Video { call_id: id.clone(), on: false, screen: false },
         ];
         for s in all {
             let wire = s.to_envelope().encode();
@@ -251,6 +257,9 @@ mod tests {
         assert!(Signal::parse(&Envelope::new("call.wave").with("call_id", id.as_str())).is_none(), "a type of a newer client");
         assert!(Signal::parse(&Envelope::new("call.video").with("call_id", id.as_str())).is_none(), "video without on or off");
         assert!(Signal::parse(&Envelope::new("call.video").with("call_id", id.as_str()).with("on", "yes")).is_none());
+        // A screen is said only while the video is on: a stray word is not one.
+        let off = Envelope::new("call.video").with("call_id", id.as_str()).with("on", false).with("screen", true);
+        assert_eq!(Signal::parse(&off), Some(Signal::Video { call_id: id.clone(), on: false, screen: false }));
 
         // Candidates that are not candidates are left out; the rest stay.
         let e = Envelope::call_ice(&id, vec![serde_json::json!({ "candidate": "" }), serde_json::json!(7), serde_json::json!({ "candidate": "c" })]);

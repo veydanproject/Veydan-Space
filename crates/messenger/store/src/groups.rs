@@ -62,17 +62,21 @@ pub async fn upsert(store: &Store, g: &GroupRow) -> Result<()> {
     .execute(store.pool())
     .await
     .map_err(storage)?;
-    // The chat row of the group.
-    sqlx::query(
+    // The chat row of the group, with what my devices chose of it.
+    let chat = group_chat_id(&g.id);
+    let made = sqlx::query(
         "INSERT OR IGNORE INTO msg_chats (id, kind, peer_pubkey, unread, last_message_at, last_preview, pinned, archived, muted, created_at, updated_at)
          VALUES (?, 'group', NULL, 0, NULL, NULL, 0, 0, 0, ?, ?)",
     )
-    .bind(group_chat_id(&g.id))
+    .bind(&chat)
     .bind(now)
     .bind(now)
     .execute(store.pool())
     .await
     .map_err(storage)?;
+    if made.rows_affected() > 0 {
+        crate::chats::take_prefs(store, &chat).await?;
+    }
     Ok(())
 }
 

@@ -31,7 +31,7 @@ let stopListening: (() => void) | null = null;
 export const module: ModuleDef = {
   ...common,
   entities: withInline({ password: { inline: PasswordCardInline }, totp: { inline: TotpCardInline } }),
-  nav: [{ id: 'passwords', title: 'pw_title', icon: 'lock', href: '/passwords' }],
+  nav: [{ id: 'passwords', title: 'pw_title', icon: 'lock-password', href: '/passwords' }],
   // Its columns go 12 from the window's sides, like the columns of Notes.
   fullWidth: ['/passwords'],
   settings: [],
@@ -39,16 +39,16 @@ export const module: ModuleDef = {
   tray: () => ({ password_generator: get(t)('tray_password_generator') }),
   tools: [
     { id: 'totp', title: 'totp_title', icon: 'shield', quick: true, onclick: () => { passUi.totpOpen = !passUi.totpOpen; } },
-    { id: 'passwords', title: 'pw_title', icon: 'lock', quick: true, onclick: () => { passUi.passwordsOpen = !passUi.passwordsOpen; } },
+    { id: 'passwords', title: 'pw_title', icon: 'lock-password', quick: true, onclick: () => { passUi.passwordsOpen = !passUi.passwordsOpen; } },
     { id: 'generator', title: 'pwgen_title', icon: 'key', quick: true, onclick: () => { passUi.generatorOpen = !passUi.generatorOpen; } },
   ],
   // Quick access from the rest of Space; in Pass the window is the Pass page itself.
   overlays: [{ id: 'drawers', component: PassOverlays, place: 'window', quick: true }],
   views: [
     { id: 'totp', scope: 'profile', as: 'tab', title: 'totp_label', icon: 'shield', order: 10, count: (id) => totpStore.countForProfile(id), component: ProfileTotpTab },
-    { id: 'passwords', scope: 'profile', as: 'tab', title: 'pw_title', icon: 'lock', order: 20, count: (id) => passwordStore.countForProfile(id), component: ProfilePasswordsTab },
+    { id: 'passwords', scope: 'profile', as: 'tab', title: 'pw_title', icon: 'lock-password', order: 20, count: (id) => passwordStore.countForProfile(id), component: ProfilePasswordsTab },
     { id: 'totp', scope: 'workspace', as: 'drawer', title: 'totp_title', label: 'totp_label', icon: 'shield', order: 10, component: WorkspaceTotpDrawer },
-    { id: 'passwords', scope: 'workspace', as: 'drawer', title: 'pw_title', icon: 'lock', order: 20, component: WorkspacePasswordsDrawer },
+    { id: 'passwords', scope: 'workspace', as: 'drawer', title: 'pw_title', icon: 'lock-password', order: 20, component: WorkspacePasswordsDrawer },
   ],
   async start() {
     void totpStore.ensureLoaded();

@@ -4,8 +4,9 @@
 <!--
   The call under way on a computer: a capsule in the middle of the
   window's top bar, where it covers no chat, whatever page is open. The peer, the phase or the clock, the way
-  the sound goes and its round trip; the microphone, my camera (the video
-  itself is VideoWindow's), the chat, the end. After the end it says how
+  the sound goes and its round trip; the microphone, my camera and my
+  screen (the video itself is VideoWindow's, which opens once either
+  goes), the chat, the end. After the end it says how
   the call ended for a moment, then goes.
 
   It can be dragged aside when it covers something; the place is kept in
@@ -20,6 +21,7 @@
   import { callStore } from './callStore.svelte';
   import { clampPanelShift } from './panel';
   import { callPeer } from './peer';
+  import ScreenPicker from './ScreenPicker.svelte';
   import { liveText, statusText } from './status';
   import { callErrorText } from './words';
 
@@ -40,6 +42,7 @@
   const live = $derived(liveText(call, callStore.ended, tr));
   const talking = $derived(call?.phase === 'active');
   const cameraOn = $derived(!!call?.video_local && !call.video_screen);
+  const sharing = $derived(!!call?.video_screen);
   const rtt = $derived(talking ? callStore.stats?.rtt_ms : undefined);
   const error = $derived(callStore.error && call ? callErrorText(callStore.error, tr) : '');
 
@@ -55,7 +58,7 @@
   let drag: { x: number; y: number; dx: number; dy: number } | null = null;
 
   function down(e: PointerEvent) {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button, .menu')) return;
     drag = { x: e.clientX, y: e.clientY, dx, dy };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
@@ -133,6 +136,15 @@
           title={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')} aria-label={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')} aria-pressed={cameraOn}>
           <CallIcon name={cameraOn ? 'video' : 'video-off'} size={15} />
         </button>
+        <ScreenPicker {sharing} share={(id) => callStore.shareScreen(id)} stop={() => callStore.stopScreen()} below>
+          {#snippet button({ onclick, expanded })}
+            <button class="ctl" class:lit={sharing} disabled={callStore.busy} {onclick}
+              title={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')} aria-label={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')}
+              aria-pressed={sharing} aria-haspopup="menu" aria-expanded={expanded}>
+              <CallIcon name={sharing ? 'screen-share-off' : 'screen-share'} size={15} />
+            </button>
+          {/snippet}
+        </ScreenPicker>
         <button class="ctl" onclick={() => onchat(call.chat_id)} title={$t('msg_call_open_chat')} aria-label={$t('msg_call_open_chat')}>
           <Icon name="message-circle" size={15} />
         </button>

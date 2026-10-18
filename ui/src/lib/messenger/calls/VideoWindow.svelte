@@ -15,10 +15,10 @@
   import { untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import type { ScreenInfo } from '../api';
   import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
   import { callPeer } from './peer';
+  import ScreenPicker from './ScreenPicker.svelte';
   import { statusText } from './status';
   import VideoStage from './VideoStage.svelte';
   import { clampShift } from './video';
@@ -98,31 +98,9 @@
     big = !big;
     keep();
   }
-
-  // The choice of what to show, when there is more than one thing.
-  let picking = $state<ScreenInfo[] | null>(null);
-  let none = $state(false);
-
-  async function screen() {
-    if (sharing) { picking = null; await callStore.stopScreen(); return; }
-    if (picking) { picking = null; return; }
-    none = false;
-    const list = await callStore.loadScreens();
-    if (!list) return;
-    if (list.length > 1) picking = list;
-    else if (list.length === 1) await callStore.shareScreen(list[0].id);
-    else none = true;
-  }
-
-  async function pick(s: ScreenInfo) {
-    picking = null;
-    await callStore.shareScreen(s.id);
-  }
-
-  $effect(() => { if (!call) { picking = null; none = false; } });
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && picking) picking = null; }} onresize={fit} />
+<svelte:window onresize={fit} />
 
 {#if call && peer}
   <div
@@ -146,27 +124,15 @@
           <Icon name="switch-camera" size={17} />
         </button>
       {/if}
-      <span class="menu-wrap">
-        <button class="ctl" class:active={sharing} disabled={callStore.busy} onclick={screen}
-          title={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')} aria-label={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')}
-          aria-pressed={sharing} aria-haspopup="menu" aria-expanded={!!picking}>
-          <CallIcon name={sharing ? 'screen-share-off' : 'screen-share'} size={17} />
-        </button>
-        {#if picking}
-          <div class="menu" role="menu" aria-label={$t('msg_call_screen_pick')}>
-            <div class="menu-title">{$t('msg_call_screen_pick')}</div>
-            {#each picking as s (s.id)}
-              <button class="item" role="menuitem" onclick={() => pick(s)}>
-                <Icon name={s.window ? 'browser' : 'monitor'} size={14} />
-                <span class="item-title">{s.title}</span>
-                <span class="item-kind">{$t(s.window ? 'msg_call_screen_kind_window' : 'msg_call_screen_kind_screen')}</span>
-              </button>
-            {/each}
-          </div>
-        {:else if none}
-          <div class="menu note" role="status">{$t('msg_call_screen_none')}</div>
-        {/if}
-      </span>
+      <ScreenPicker {sharing} share={(id) => callStore.shareScreen(id)} stop={() => callStore.stopScreen()}>
+        {#snippet button({ onclick, expanded })}
+          <button class="ctl" class:active={sharing} disabled={callStore.busy} {onclick}
+            title={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')} aria-label={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')}
+            aria-pressed={sharing} aria-haspopup="menu" aria-expanded={expanded}>
+            <CallIcon name={sharing ? 'screen-share-off' : 'screen-share'} size={17} />
+          </button>
+        {/snippet}
+      </ScreenPicker>
       <button class="ctl" onclick={resize} title={$t(big ? 'msg_call_video_shrink' : 'msg_call_video_expand')} aria-label={$t(big ? 'msg_call_video_shrink' : 'msg_call_video_expand')}>
         <Icon name={big ? 'minimize-2' : 'maximize-2'} size={16} />
       </button>
@@ -217,22 +183,6 @@
   .ctl.end:hover:not(:disabled) { background: var(--danger); filter: brightness(1.1); }
   .ctl:disabled { opacity: 0.5; cursor: default; }
   .ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .menu-wrap { position: relative; display: inline-flex; }
-  .menu {
-    position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-    width: max-content; min-width: 220px; max-width: min(360px, 80vw); max-height: 260px; overflow-y: auto;
-    padding: 6px; border-radius: var(--radius); background: var(--surface); color: var(--text);
-    border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); cursor: default;
-  }
-  .menu.note { padding: 8px 12px; font-size: var(--fs-xs); color: var(--text-2); min-width: 0; }
-  .menu-title { padding: 4px 8px 6px; font-size: var(--fs-2xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.4px; }
-  .item {
-    width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: none; border-radius: var(--radius-sm);
-    background: none; color: inherit; font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left;
-  }
-  .item:hover, .item:focus-visible { background: var(--surface-2); outline: none; }
-  .item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item-kind { font-size: var(--fs-2xs); color: var(--text-3); }
   @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
   @media (prefers-reduced-motion: reduce) { .win { animation: none; } }
 </style>

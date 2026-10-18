@@ -10,7 +10,7 @@ import type { ModuleDef } from '$lib/core/module';
 export const common: Omit<ModuleDef, 'nav' | 'settings'> = {
   id: 'tor',
   title: 'settings_tor_title',
-  icon: 'shield',
+  icon: 'globe',
   routes: ['/tor'],
   service: true,
 };

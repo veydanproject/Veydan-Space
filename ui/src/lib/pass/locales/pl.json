@@ -48,7 +48,7 @@
     "totp_field_digits": "Liczba cyfr",
     "totp_field_period": "Okres",
     "totp_qr_hint": "Prześlij zrzut ekranu z kodem QR",
-    "totp_qr_select": "Wybierz obraz…",
+    "totp_qr_select": "Wybierz obraz",
     "totp_qr_detected": "Wykryto kod QR — sprawdź pola poniżej",
     "totp_qr_not_found": "Nie znaleziono kodu QR na obrazie",
     "totp_qr_secret_masked": "Sekret:",

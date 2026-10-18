@@ -42,6 +42,13 @@ pub const MAX_INLINE_BYTES: u64 = 24 * 1024 * 1024;
 
 /// Largest recording accepted from the UI in one call.
 pub const MAX_RECORDING_BYTES: u64 = 64 * 1024 * 1024;
+/// The most bytes a file pasted into a chat may have: it crosses the IPC
+/// whole (as base64 on a phone). A larger file is attached by its path.
+pub const MAX_PASTE_BYTES: u64 = 64 * 1024 * 1024;
+/// The most pixels a picture of a computer's clipboard may have.
+pub use messenger_avatar::MAX_CLIP_PIXELS;
+/// How long a folder of `outgoing/` that nothing names is kept (`sweep_outgoing`).
+const OUTGOING_KEEP: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
 
 /// A photo is sent with its longer side at most this, unless the user
 /// asks for the original; as the earlier app did.
@@ -155,6 +162,20 @@ fn updated_event(chat_id: &str, message_id: &str) -> UiEvent {
     }
 }
 
+/// The name a pasted file is written under: a picture as `image.<what its
+/// bytes are>` (or its own name with that extension), anything else by its
+/// own name made safe, `file` when it has none.
+fn pasted_name(name: Option<&str>, bytes: &[u8]) -> String {
+    let safe = name.map(messenger_media::descriptor::safe_name).filter(|n| !n.is_empty() && n != "file");
+    match messenger_avatar::picture_ext(bytes) {
+        Some(ext) => {
+            let stem = safe.as_deref().map(|n| n.rsplit_once('.').map_or(n, |(stem, _)| stem)).filter(|s| !s.is_empty());
+            format!("{}.{ext}", stem.unwrap_or("image"))
+        }
+        None => safe.unwrap_or_else(|| "file".into()),
+    }
+}
+
 /// Can the file be sent: a file, not empty, within `MAX_SEND_BYTES` (what
 /// others send may be larger; see `messenger_media::descriptor`).
 fn sendable(meta: &std::fs::Metadata) -> Result<()> {
@@ -168,6 +189,39 @@ fn sendable(meta: &std::fs::Metadata) -> Result<()> {
         return Ok(());
     };
     Err(MessengerError::Invalid(refused.into()))
+}
+
+/// Folders of `outgoing/` that nothing names any more and that are older
+/// than `OUTGOING_KEEP` at `now`: files picked or pasted into a chat and
+/// never sent. What a message or a transfer names stays (a sent file is its
+/// own copy, an upload may resume): the texts that name `outgoing` are read
+/// once, not once a folder. Returns how many went.
+pub async fn sweep_outgoing(store: &messenger_store::Store, outgoing: &Path, now: std::time::SystemTime) -> Result<usize> {
+    let Ok(mut dirs) = tokio::fs::read_dir(outgoing).await else { return Ok(0) };
+    let mut old = Vec::new();
+    while let Some(entry) = dirs.next_entry().await? {
+        let meta = entry.metadata().await?;
+        let aged = meta.modified().ok().and_then(|m| now.duration_since(m).ok()).is_some_and(|age| age > OUTGOING_KEEP);
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if meta.is_dir() && aged && !name.is_empty() {
+            old.push((name, entry.path()));
+        }
+    }
+    if old.is_empty() {
+        return Ok(0);
+    }
+    let named = messenger_store::messages::paths_mentioning(store, "outgoing").await?;
+    let mut gone = 0;
+    for (name, path) in old {
+        // A name that turns up by chance in other text only keeps a folder that could have gone.
+        if named.iter().any(|t| t.contains(&name)) {
+            continue;
+        }
+        if tokio::fs::remove_dir_all(&path).await.is_ok() {
+            gone += 1;
+        }
+    }
+    Ok(gone)
 }
 
 /// The upright size of the picture at `path`, from its first bytes;
@@ -804,6 +858,44 @@ impl MessengerRuntime {
         self.send_attachment(to, path, caption, caption_format, None, batch, original, poster).await
     }
 
+    /// Bytes the user pasted into a chat (a file the webview handed over,
+    /// a screenshot) written to `outgoing/` as a file the composer picks:
+    /// the host lets a file there through as picked. A picture is named by
+    /// what its bytes are, whatever name came with it (the app tells a
+    /// type by the name); anything else keeps its name, made safe.
+    pub async fn import_pasted(&self, name: Option<&str>, bytes: &[u8]) -> Result<PathBuf> {
+        if bytes.is_empty() {
+            return Err(MessengerError::Invalid("err.file_empty".into()));
+        }
+        if bytes.len() as u64 > MAX_PASTE_BYTES {
+            return Err(MessengerError::Invalid("err.file_too_large".into()));
+        }
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let dir = self.outgoing().join(format!("{stamp:x}"));
+        tokio::fs::create_dir_all(&dir).await?;
+        let path = dir.join(pasted_name(name, bytes));
+        if let Err(e) = tokio::fs::write(&path, bytes).await {
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+            return Err(e.into());
+        }
+        Ok(path)
+    }
+
+    /// `sweep_outgoing` of this runtime's folder and store.
+    pub async fn sweep_outgoing(&self, now: std::time::SystemTime) -> Result<usize> {
+        sweep_outgoing(&self.store, &self.outgoing(), now).await
+    }
+
+    /// The picture of a computer's clipboard (rows of RGBA pixels) as a
+    /// PNG in `outgoing/`, like `import_pasted`.
+    pub async fn import_clipboard_picture(&self, width: u32, height: u32, rgba: Vec<u8>) -> Result<PathBuf> {
+        let png = tokio::task::spawn_blocking(move || messenger_avatar::png_of_rgba(width, height, &rgba))
+            .await
+            .map_err(|e| MessengerError::Io(e.to_string()))?
+            .map_err(|e| MessengerError::Invalid(if e == messenger_avatar::AvatarError::TooLarge { "err.file_too_large" } else { "err.file_empty" }.into()))?;
+        self.import_pasted(None, &png).await
+    }
+
     /// Send something recorded in the app (voice message, video circle).
     /// The bytes are written to the messenger folder and sent from there.
     pub async fn dm_send_recording(&self, to: &str, rec: Recording, caption: Option<&str>) -> Result<MessageView> {
@@ -1433,6 +1525,67 @@ mod tests {
         let t = rt.media.queue_upload(path, "dm:x", placeholder).await.unwrap();
         transfers::set_status(&rt.store, &t.id, status, None).await.unwrap();
         t.id
+    }
+
+    #[test]
+    fn a_pasted_file_is_named_by_what_it_is() {
+        let png = messenger_avatar::png_of_rgba(1, 1, &[0, 0, 0, 255]).unwrap();
+        assert_eq!(pasted_name(None, &png), "image.png");
+        assert_eq!(pasted_name(Some("Screenshot 1.bmp"), &png), "Screenshot 1.png", "the bytes say what it is");
+        assert_eq!(pasted_name(Some("../../evil.exe"), &png), "_.._evil.png");
+        assert_eq!(pasted_name(Some("report.pdf"), b"%PDF-1.7"), "report.pdf");
+        assert_eq!(pasted_name(None, b"%PDF-1.7"), "file");
+        assert_eq!(pasted_name(Some(""), b"plain"), "file");
+    }
+
+    #[tokio::test]
+    async fn pasted_bytes_land_in_outgoing_and_are_picked_from_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        let png = messenger_avatar::png_of_rgba(2, 2, &[200; 16]).unwrap();
+
+        let path = rt.import_pasted(Some("clip"), &png).await.unwrap();
+        assert!(path.starts_with(cfg.data_dir().join("outgoing")), "{path:?}");
+        let picked = rt.picked(&path).await.unwrap();
+        assert_eq!((picked.name.as_str(), picked.kind.as_str(), picked.mime.as_str()), ("clip.png", "image", "image/png"));
+        assert!(picked.preview.is_some(), "a picture shows in the composer");
+
+        let shot = rt.import_clipboard_picture(3, 1, vec![9; 12]).await.unwrap();
+        assert_eq!(shot.file_name().unwrap(), "image.png");
+        assert_eq!(std::fs::read(&shot).unwrap()[..4], [0x89, b'P', b'N', b'G']);
+
+        let refused = |r: Result<PathBuf>| match r {
+            Err(MessengerError::Invalid(code)) => code,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(refused(rt.import_pasted(None, b"").await), "err.file_empty");
+        assert_eq!(refused(rt.import_pasted(None, &vec![0; MAX_PASTE_BYTES as usize + 1]).await), "err.file_too_large");
+        assert_eq!(refused(rt.import_clipboard_picture(20_000, 20_000, vec![]).await), "err.file_too_large");
+    }
+
+    #[tokio::test]
+    async fn outgoing_keeps_what_is_named_and_what_is_fresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        let png = messenger_avatar::png_of_rgba(1, 1, &[1, 2, 3, 255]).unwrap();
+        let forgotten = rt.import_pasted(None, &png).await.unwrap();
+        let sent = rt.import_pasted(Some("kept.png"), &png).await.unwrap();
+        // A message names the second one, as a sent file's row does.
+        let folder = sent.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned();
+        sqlx::query("INSERT INTO msg_transfers (id, direction, local_path, file_name, mime, size, status, created_at, updated_at) VALUES ('t', 'up', ?, 'kept.png', 'image/png', 1, 'done', 0, 0)")
+            .bind(sent.to_string_lossy().into_owned())
+            .execute(rt.store().pool())
+            .await
+            .unwrap();
+        assert!(folder.len() > 4);
+
+        assert_eq!(rt.sweep_outgoing(std::time::SystemTime::now()).await.unwrap(), 0, "a fresh folder stays");
+        let later = std::time::SystemTime::now() + OUTGOING_KEEP + std::time::Duration::from_secs(60);
+        assert_eq!(rt.sweep_outgoing(later).await.unwrap(), 1);
+        assert!(!forgotten.exists(), "never sent, nothing names it: gone");
+        assert!(sent.exists(), "named by a transfer: kept");
     }
 
     /// The message of an upload went out and the app ended before its row

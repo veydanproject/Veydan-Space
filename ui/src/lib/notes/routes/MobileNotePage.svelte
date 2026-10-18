@@ -217,7 +217,6 @@
 
   const folderChip = $derived(chips.find((c) => c.kind === 'folder'));
   const isNew = $derived(id === 'new');
-  const PROFILE_COLOR = '#8b7bff';
 
   /** Folder or workspace/profile the list was showing when New was tapped. */
   const createContext = $derived.by(() => {
@@ -265,7 +264,7 @@
     if (binding.startsWith('profile:')) {
       const profileId = binding.slice('profile:'.length);
       const p = profiles.find((x) => x.id === profileId);
-      return p ? { kind: 'profile', id: profileId, label: p.name, color: PROFILE_COLOR } : null;
+      return p ? { kind: 'profile', id: profileId, label: p.name } : null;
     }
     return null;
   }
@@ -1106,9 +1105,10 @@
         {#if c.kind === 'folder'}
           {@render removable('folder', c.label, c.color, () => removeFolder(c.id))}
         {:else if c.kind === 'proxy' || c.kind === 'ssh' || c.kind === 'totp' || c.kind === 'password'}
-          <button type="button" class="m-chip tinted" style:--chip={c.color} onclick={() => openContext(`${c.kind}:${c.id}`)}><ChipMark kind={c.kind} />{c.label}</button>
+          <!-- An entity: neutral, its kind told by the mark. -->
+          <button type="button" class="m-chip tinted" onclick={() => openContext(`${c.kind}:${c.id}`)}><ChipMark kind={c.kind} />{c.label}</button>
         {:else}
-          <span class="m-chip tinted" style:--chip={c.color || (c.kind === 'workspace' ? 'var(--success)' : undefined)}><ChipMark kind={c.kind} />{c.label}</span>
+          <span class="m-chip tinted" style:--chip={c.color || undefined}><ChipMark kind={c.kind} />{c.label}</span>
         {/if}
       {/each}
       {#each tags as name (name)}

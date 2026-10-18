@@ -50,18 +50,23 @@
     }
   }
 
-  /** The names of the entities an entry links to; a link nothing here can name is left out of the row. */
-  function linkedNames(entry: PasswordEntry): string[] {
+  /** The entities an entry links to, neutral; a link nothing here can name is left out of the row. */
+  function linkedChips(entry: PasswordEntry): { label: string; kind: string }[] {
     return entry.tags.flatMap((tag) => {
       const parsed = parseBinding(tag);
       if (!parsed || (parsed.kind !== 'profile' && parsed.kind !== 'note')) return [];
       // The owner's name, or the label of an entity of Space where its module is absent (10.3).
       const name = directory.linkName(parsed.kind, parsed.value);
-      return name ? [name] : [];
+      return name ? [{ label: name, kind: parsed.kind }] : [];
     });
   }
 
-  const chipsOf = (entry: PasswordEntry) => [...userLabels(entry.tags), ...linkedNames(entry)];
+  /** A row's chips: its labels in the colour the user gave them, then the linked entities. */
+  const chipItemsOf = (entry: PasswordEntry) => [
+    ...userLabels(entry.tags).map((label) => ({ label, kind: 'tag', color: directory.summary('note_tag', label)?.color || undefined })),
+    ...linkedChips(entry),
+  ];
+  const chipsOf = (entry: PasswordEntry) => chipItemsOf(entry).map((c) => c.label);
 
   const filtered = $derived.by(() => {
     const q = search.trim().toLowerCase();
@@ -134,6 +139,8 @@
     void appLock.listen();
     void totpStore.ensureLoaded();
     void directory.get('profile')?.ensureLoaded();
+    // The colours of the labels (only the tags, not the whole notes store).
+    void directory.get('note_tag')?.ensureLoaded();
     void load();
     const unlisten = onSyncChanged(['password', 'password_vault'], () => void load());
     return () => {
@@ -165,7 +172,7 @@
       <Skeleton height={56} avatar="square" />
     {:else if entries.length === 0}
       <div class="m-empty">
-        <Icon name="lock" size={40} />
+        <Icon name="lock-password" size={40} />
         <p>{$t('pw_empty')}</p>
         {#if canAdd}
           <a class="m-btn-grad cta" href="/passwords/add"><Icon name="plus" size={18} />{$t('cmd_passwords_create')}</a>
@@ -178,11 +185,11 @@
         <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
       </div>
     {:else}
-      <div class="m-cards list">
+      <div class="m-cards list divided">
         {#each filtered as entry (entry.id)}
           <PasswordRow
             {entry}
-            chips={chipsOf(entry)}
+            chips={chipItemsOf(entry)}
             period={period(entry)}
             onopen={() => goto(`/passwords/${entry.id}`)}
             onmenu={() => (menu = entry)}
@@ -199,11 +206,11 @@
     <div class="m-list">
       {#if entry.username}
         <button type="button" class="m-row" onclick={() => copyUsername(entry)}>
-          <Icon name="user" size={20} /><span class="m-row-label">{$t('ctx_action_copy_username')}</span>
+          <Icon name="id" size={20} /><span class="m-row-label">{$t('ctx_action_copy_username')}</span>
         </button>
       {/if}
       <button type="button" class="m-row" onclick={() => copyPassword(entry)}>
-        <Icon name={appLock.locked ? 'lock' : 'copy'} size={20} /><span class="m-row-label">{$t('ctx_action_copy_password')}</span>
+        <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={20} /><span class="m-row-label">{$t('ctx_action_copy_password')}</span>
       </button>
       {#if canAdd}
         <button type="button" class="m-row" onclick={() => { menu = null; void goto(`/passwords/${entry.id}?edit`); }}>
@@ -228,7 +235,7 @@
 
 <style>
   .title-with-badge { display: flex; align-items: center; gap: 2px; }
-  .list { gap: 2px; padding-bottom: var(--sp-6); }
+  .list { gap: 2px; --rows-gap: 2px; padding-bottom: var(--sp-6); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
   .danger { color: var(--danger-text); }
 </style>

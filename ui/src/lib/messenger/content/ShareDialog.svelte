@@ -136,7 +136,7 @@
     <input type="text" class="search" bind:value={query} placeholder={$t('msg_share_search')} spellcheck="false" />
     {#if error}<div class="error-msg">{error}</div>{/if}
     {#if chats.length}
-      <ul class="list">
+      <ul class="list divided">
         {#each chats as c (c.id)}
           {@const done = sent.includes(c.id)}
           {@const blocked = phoneBlocked(c)}
@@ -149,7 +149,7 @@
                 {#if blocked}<span class="why">{$t('msg_profile_send_card_public_group')}</span>{/if}
               </span>
               {#if c.kind === 'group'}<span class="dim"><Icon name="users" size={12} /></span>{/if}
-              <span class="state" class:done><Icon name={done ? 'check' : blocked ? 'lock' : 'send'} size={13} />{done ? $t('msg_share_sent') : ''}</span>
+              <span class="state" class:done><Icon name={done ? 'check' : blocked ? 'lock-square-rounded' : 'send'} size={13} />{done ? $t('msg_share_sent') : ''}</span>
             </button>
           </li>
         {/each}
@@ -180,7 +180,7 @@
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .num { font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
   .phone-hint { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
-  .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 6px 8px; text-align: left;
     border: none; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; cursor: pointer;

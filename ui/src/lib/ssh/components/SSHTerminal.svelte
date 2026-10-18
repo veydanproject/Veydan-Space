@@ -286,7 +286,7 @@
       {#if mismatchFingerprint}
         <!-- Host key changed (TOFU mismatch) — offer to trust the new fingerprint -->
         <div class="disconnected-banner hostkey-banner">
-          <Icon name="shield" size={13} />
+          <Icon name="alert-triangle" size={13} />
           <span class="hostkey-text">
             {$t('ssh_hostkey_changed_title')}
             <code class="hostkey-fp">{mismatchFingerprint}</code>

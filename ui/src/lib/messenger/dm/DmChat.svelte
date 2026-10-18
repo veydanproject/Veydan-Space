@@ -3,8 +3,8 @@
 
 <!--
   A conversation of two: the chat window and, when asked for, the panel
-  about the person beside it (a tap on the face or the name in the header,
-  or its entry in the menu of the chat).
+  about the person beside it (a tap on the face or the name in the header;
+  the menu of the chat has no entry for it, the owner's word 2026-10-18).
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
@@ -13,6 +13,7 @@
   import PeerInfo from './PeerInfo.svelte';
   import CallButton from '../calls/CallButton.svelte';
   import WithInfo from '../shared/WithInfo.svelte';
+  import { onPhone } from '../shared/phone';
   import type { MessengerChat } from '../api';
 
   interface Props {
@@ -29,11 +30,24 @@
     if (chat.id !== last) { last = chat.id; info = false; }
   });
 
-  const lead = $derived<MenuEntry[]>([{ label: $t('msg_peer_info'), icon: 'user', onselect: () => (info = true) }]);
+  /** On a phone the header keeps «Call» alone: «Video call» is the first entry of the chat's menu. */
+  const phone = onPhone();
+  let callButton = $state<ReturnType<typeof CallButton>>();
+
+  const lead = $derived.by((): MenuEntry[] => {
+    const list: MenuEntry[] = [];
+    if (phone && callButton?.canCall()) {
+      list.push(
+        { label: $t('msg_call_video_start'), icon: 'video', disabled: !!callButton.callBlocked(), onselect: () => callButton?.start('video') },
+        { type: 'separator' },
+      );
+    }
+    return list;
+  });
 </script>
 
 {#snippet actions()}
-  <CallButton {chat} />
+  <CallButton bind:this={callButton} {chat} videoInMenu={phone} />
 {/snippet}
 
 {#snippet window()}

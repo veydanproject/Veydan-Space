@@ -537,8 +537,9 @@ function imports(dir) {
     };
     // import .. from, import type .. from, export .. from, over any number of lines
     take(/\b(?:import|export)\b[^;'"`()=]*?\bfrom\s*['"]([^'"\n]+)['"]/g);
-    // import of a file for what it does, @import of a style
-    take(/\bimport\s*['"]([^'"\n]+)['"]/g);
+    // import of a file for what it does, @import of a style (not the end of a
+    // word like the icon name "file-import")
+    take(/(?<![-\w.$])import\s*['"]([^'"\n]+)['"]/g);
     // import() of a literal; a template with `${…}`, or a literal that more is
     // joined to (`import('$lib/' + name)`), is a computed path
     let m;

@@ -19,7 +19,7 @@
   import { passUi, type PassSection as Section } from '$lib/pass/store/ui.svelte';
 
   const SECTIONS: { id: Section; title: TranslationKey; icon: string; count?: () => number }[] = [
-    { id: 'passwords', title: 'pw_title', icon: 'lock', count: () => passwordStore.list.length },
+    { id: 'passwords', title: 'pw_title', icon: 'lock-password', count: () => passwordStore.list.length },
     { id: 'totp', title: 'totp_title', icon: 'shield', count: () => totpStore.list.length },
     { id: 'generator', title: 'pwgen_title', icon: 'key' },
   ];

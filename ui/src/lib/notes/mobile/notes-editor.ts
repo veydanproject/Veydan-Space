@@ -44,9 +44,3 @@ export function fmtSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-/** Card colour: folder first, then workspace, else the accent. */
-export function noteColor(chips: { kind: string; color: string }[]): string {
-  const c = chips.find((x) => x.kind === 'folder') ?? chips.find((x) => x.kind === 'workspace');
-  return c?.color || 'var(--accent)';
-}

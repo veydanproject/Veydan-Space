@@ -24,7 +24,6 @@ const kind = (k: string, entities: { id: string; name: string }[], fallback?: bo
   kind: k,
   icon: 'layers',
   label: 'ctx_kind_workspace',
-  color: '',
   fallback,
   ensureLoaded: async () => {},
   list: () => entities.map((e) => ({ ...e, subtitle: '', status: null, color: '' })),

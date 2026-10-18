@@ -1,11 +1,13 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- The tags of a password or TOTP entry as a row of small chips, named and coloured through the catalog. -->
+<!-- The tags of a password or TOTP entry as a row of small chips, named through the catalog: a label and a
+     workspace in the colour the user gave them, any other reference neutral; the mark tells the kind. -->
 <script lang="ts">
   import { directory, foreignName } from '$lib/core/directory';
   import { parseBinding } from '$lib/core/bindings';
   import { t } from '$lib/core/i18n';
+  import ChipMark from '$lib/core/ui/ChipMark.svelte';
 
   let { tags }: { tags: string[] } = $props();
 
@@ -14,8 +16,6 @@
     if (!parsed) return directory.summary('note_tag', tag)?.color;
     // The owner's color, or the color of a workspace's label where Space is absent (10.3).
     if (parsed.kind === 'workspace') return directory.color('workspace', parsed.value);
-    if (parsed.kind === 'profile') return 'var(--accent)';
-    if (parsed.kind === 'note') return 'var(--text-2)';
     return undefined;
   }
 
@@ -43,7 +43,7 @@
   <span class="pw-tags">
     {#each tags as tag (tag)}
       {@const color = chipColor(tag)}
-      <span class="pw-tag tinted" title={chipKind(tag)} style:--chip={color}>{chipLabel(tag)}</span>
+      <span class="pw-tag tinted" title={chipKind(tag)} style:--chip={color}><ChipMark kind={parseBinding(tag)?.kind ?? 'tag'} />{chipLabel(tag)}</span>
     {/each}
   </span>
 {/if}
@@ -60,6 +60,9 @@
   }
   .pw-tags::-webkit-scrollbar { display: none; }
   .pw-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     flex-shrink: 0;
     border-width: 1px;
     border-style: solid;

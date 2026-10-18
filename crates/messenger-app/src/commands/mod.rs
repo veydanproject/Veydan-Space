@@ -1065,7 +1065,8 @@ pub async fn messenger_chat_set_archived(
     Ok(())
 }
 
-/// Direct chats and groups alike: a muted chat is still counted and shown, only quietly.
+/// Direct chats and groups alike: a muted chat tells nothing (no sound, no
+/// notification) and stays out of the total; my other devices follow.
 #[tauri::command]
 pub async fn messenger_chat_set_muted(
     chat_id: String,
@@ -1434,13 +1435,106 @@ pub async fn messenger_media_import(
     if !copied && !was_picked(&app, &local, rt.config().data_dir()) {
         return Err(AppError::Other(NOT_PICKED.into()));
     }
-    let picked = rt.picked(&local).await.map_err(map_err)?;
+    picked_view(&app, &rt, &local).await
+}
+
+/// A file in the composer as `messenger_media_import` gives it.
+async fn picked_view(app: &tauri::AppHandle, rt: &MessengerRuntime, local: &Path) -> CmdResult<Picked> {
+    let picked = rt.picked(local).await.map_err(map_err)?;
     // The webview reads a picked video by itself, for a frame of it.
     let url = match picked.kind.as_str() {
-        "video" if messenger_runtime::passive(&picked.mime) => app.state::<MediaServer>().url(&local, &picked.mime).await,
+        "video" if messenger_runtime::passive(&picked.mime) => app.state::<MediaServer>().url(local, &picked.mime).await,
         _ => None,
     };
     Ok(Picked { picked, url })
+}
+
+/// A file pasted into a chat that the webview handed over as bytes (a
+/// screenshot, a picture copied in a browser): written to `outgoing/` and
+/// picked from there, as `messenger_media_import` gives a picked file.
+/// Base64: a phone's IPC has no raw bodies. Up to `MAX_PASTE_BYTES`
+/// (`err.file_too_large`); a larger file is attached by its path.
+#[tauri::command]
+pub async fn messenger_media_import_bytes(
+    name: Option<String>,
+    data_base64: String,
+    app: tauri::AppHandle,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<Picked> {
+    // Four characters of base64 carry three bytes: refused before decoding.
+    if data_base64.len() as u64 > messenger_runtime::media::MAX_PASTE_BYTES / 3 * 4 + 4 {
+        return Err(AppError::Other("err.file_too_large".into()));
+    }
+    let bytes = B64.decode(data_base64.as_bytes()).map_err(|_| AppError::Other("the pasted file is not base64".into()))?;
+    let rt = messenger.runtime_unlocked().await?;
+    let local = rt.import_pasted(name.as_deref(), &bytes).await.map_err(map_err)?;
+    picked_view(&app, &rt, &local).await
+}
+
+/// What a computer's clipboard holds for a chat when the webview handed
+/// over nothing (WebKitGTK and WKWebView give no files on a paste): the
+/// files copied in a file manager, each copied into `outgoing/`; else its picture
+/// written as a PNG to `outgoing/`; else nothing. A phone answers nothing:
+/// its clipboard is read by the page through the shell's bridge.
+#[tauri::command]
+pub async fn messenger_clipboard_paste(messenger: tauri::State<'_, MessengerState>) -> CmdResult<Vec<String>> {
+    #[cfg(desktop)]
+    {
+        enum Held {
+            Files(Vec<std::path::PathBuf>),
+            Picture(u32, u32, Vec<u8>),
+            TooLarge,
+            Nothing,
+        }
+        let rt = messenger.runtime_unlocked().await?;
+        let held = tokio::task::spawn_blocking(|| {
+            let mut cb = arboard::Clipboard::new().map_err(AppError::io)?;
+            if let Ok(files) = cb.get().file_list() {
+                // uri-list entries are CRLF-terminated; arboard leaves the '\r' on the path
+                let files: Vec<_> = files
+                    .into_iter()
+                    .map(|p| std::path::PathBuf::from(p.to_string_lossy().trim()))
+                    .filter(|p| p.is_file())
+                    .collect();
+                if !files.is_empty() {
+                    return Ok(Held::Files(files));
+                }
+            }
+            Ok::<_, AppError>(match cb.get_image() {
+                // Measured before the rows are copied once more.
+                Ok(img) if (img.width as u64) * (img.height as u64) > messenger_runtime::media::MAX_CLIP_PIXELS => Held::TooLarge,
+                Ok(img) => Held::Picture(img.width as u32, img.height as u32, img.bytes.into_owned()),
+                Err(_) => Held::Nothing,
+            })
+        })
+        .await
+        .map_err(AppError::io)??;
+        let data_dir = rt.config().data_dir().to_path_buf();
+        let paths = match held {
+            // Copied into `outgoing/` as a phone's `content://` is: the scope of fs, which
+            // a page may write within too, never takes what the clipboard names.
+            Held::Files(files) => {
+                let mut copies = Vec::with_capacity(files.len());
+                for path in files {
+                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
+                    let len = std::fs::metadata(&path).ok().map(|m| m.len());
+                    let open: veydan_shell::Opener = std::sync::Arc::new(move || std::fs::File::open(&path));
+                    let source = veydan_shell::FileSource { name, len, open };
+                    copies.push(copy_picked(source, &data_dir, messenger_runtime::media::MAX_SEND_BYTES).await?);
+                }
+                copies
+            }
+            Held::Picture(w, h, rgba) => vec![rt.import_clipboard_picture(w, h, rgba).await.map_err(map_err)?],
+            Held::TooLarge => return Err(AppError::Other("err.file_too_large".into())),
+            Held::Nothing => vec![],
+        };
+        Ok(paths.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
+    }
+    #[cfg(mobile)]
+    {
+        let _ = messenger;
+        Ok(vec![])
+    }
 }
 
 /// A picked file as a local path. Desktop pickers give paths. Android gives

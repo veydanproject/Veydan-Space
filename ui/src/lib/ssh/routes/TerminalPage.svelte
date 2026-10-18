@@ -271,7 +271,7 @@
                       title={$t('terminal_btn_disconnect')}
                       onclick={(e) => { e.stopPropagation(); handleDisconnect(conn); }}
                     >
-                      <Icon name="square" size={13} />
+                      <Icon name="plug-connected-x" size={13} />
                     </button>
                   {:else}
                     <button

@@ -20,8 +20,8 @@
   },
   "license": "LicenseRef-PolyForm-Perimeter-1.0.1",
   "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
-    "@fontsource-variable/manrope": "^5.2.8",
     "@fontsource/noto-color-emoji": "^5.3.2",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-barcode-scanner": "^2.4.6",

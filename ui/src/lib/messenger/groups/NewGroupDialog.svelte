@@ -97,7 +97,7 @@
       <div class="kinds">
         {#each ['private', 'public'] as const as k}
           <button class="kind" class:active={kind === k} onclick={() => (kind = k)} disabled={busy}>
-            <span class="kind-title"><Icon name={k === 'public' ? 'globe' : 'lock'} size={14} />{$t(`msg_group_kind_${k}` as 'msg_group_kind_public')}</span>
+            <span class="kind-title"><Icon name={k === 'public' ? 'world' : 'lock-square-rounded'} size={14} />{$t(`msg_group_kind_${k}` as 'msg_group_kind_public')}</span>
             <span class="kind-text">{$t(`msg_group_kind_${k}_text` as 'msg_group_kind_public_text')}</span>
           </button>
         {/each}
@@ -123,7 +123,7 @@
       <textarea class="field mono" rows="3" bind:value={url} placeholder="veydan://group/…" spellcheck="false" disabled={busy}></textarea>
       {#if parsed}
         <div class="found">
-          <Icon name={parsed.kind === 'public' ? 'globe' : 'lock'} size={14} />
+          <Icon name={parsed.kind === 'public' ? 'world' : 'lock-square-rounded'} size={14} />
           <span><b>{parsed.name || $t('msg_group_unnamed')}</b> · {$t(`msg_group_kind_${parsed.kind}` as 'msg_group_kind_public')}</span>
         </div>
         <p class="hint">{$t(parsed.kind === 'public' ? 'msg_group_join_hint_public' : 'msg_group_join_hint_private')}</p>

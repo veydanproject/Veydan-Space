@@ -99,8 +99,8 @@
       }),
   );
   const CORE_ICONS: Record<string, string> = {
-    modules: 'layout-grid', language: 'globe', theme: 'sun', devtools: 'code', hotkeys: 'keyboard',
-    tray: 'monitor', lock: 'lock', sync: 'refresh-cw', updates: 'download', about: 'info',
+    modules: 'layout-grid', language: 'language', theme: 'sun', devtools: 'code', hotkeys: 'keyboard',
+    tray: 'arrows-minimize', lock: 'lock', sync: 'refresh-cw', updates: 'download', about: 'info',
   };
   function coreLabel(id: string): string {
     switch (id) {
@@ -903,7 +903,7 @@
   .settings-main :global(.dev-tools-row + .dev-tools-row) {
     margin-top: var(--sp-4);
     padding-top: var(--sp-4);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
   }
 
   .settings-main :global(.dev-tools-info) {

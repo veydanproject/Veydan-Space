@@ -74,7 +74,7 @@ const relUi = (/** @type {string} */ p) => posix(path.relative(UI, p));
 /**
  * @typedef {{ id: string, ui: string, routes: string[], entries: Record<string, string>, platforms: string[], requires: string[] }} ModuleEntry
  * @typedef {{
- *   name: string, title: string, tagline: { en: string, ru: string } & Record<string, string>, repo: string, platform: 'desktop' | 'android',
+ *   name: string, title: string, tagline: { en: string, ru: string } & Record<string, string>, slogan: ({ en: string, ru: string } & Record<string, string>) | null, repo: string, platform: 'desktop' | 'android',
  *   present: ModuleEntry[], absent: ModuleEntry[], brand: Record<string, string>,
  *   outDir: string, pages: string, cacheDir: string, port: number, hmrPort: number, typesFile: string,
  * }} Product
@@ -180,6 +180,20 @@ export function productFromEnv(env = process.env, manifest = readManifest()) {
       throw new Error(`product ${name}: "tagline.${lang}" in ${rel(MANIFEST)} is not a language of the UI with a text (13.5)`);
     }
   }
+  // The line under the name on the first screen of the first start (13.5): a
+  // slogan where the product has one, the tagline and its line otherwise;
+  // when it is there, English and Russian always, as the tagline.
+  const slogan = target.slogan ?? null;
+  if (slogan) {
+    for (const lang of LOCALES) {
+      if (typeof slogan[lang] !== 'string' || !slogan[lang]) throw new Error(`product ${name}: no "slogan.${lang}" in ${rel(MANIFEST)} (13.5)`);
+    }
+    for (const [lang, text] of Object.entries(slogan)) {
+      if (!codes.includes(lang) || typeof text !== 'string' || !text) {
+        throw new Error(`product ${name}: "slogan.${lang}" in ${rel(MANIFEST)} is not a language of the UI with a text (13.5)`);
+      }
+    }
+  }
   // The product's own repository (products.json `repo`): its releases, its
   // licence files, the page the About card and the updater banner open.
   if (typeof target.repo !== 'string' || !/^[\w.-]+\/[\w.-]+$/.test(target.repo)) {
@@ -189,6 +203,7 @@ export function productFromEnv(env = process.env, manifest = readManifest()) {
     name,
     title,
     tagline,
+    slogan,
     repo: `https://github.com/${target.repo}`,
     platform,
     present: all.filter(inBuild),
@@ -240,7 +255,8 @@ function brandOf(name, icons) {
 
 /**
  * What the UI knows of its product (src/lib/core/product.ts, 13.5): its id,
- * the name the user reads, the tagline of About and its repository. The plugin defines them
+ * the name the user reads, the tagline of About, the slogan of the first
+ * start and its repository. The plugin defines them
  * for every build, dev server and test run, so they are never missing:
  * productFromEnv() refuses a product without them.
  * @param {Product} product
@@ -250,6 +266,7 @@ export function productDefines(product) {
     __VEYDAN_PRODUCT__: JSON.stringify(product.name),
     __VEYDAN_PRODUCT_NAME__: JSON.stringify(product.title),
     __VEYDAN_PRODUCT_TAGLINE__: JSON.stringify(product.tagline),
+    __VEYDAN_PRODUCT_SLOGAN__: JSON.stringify(product.slogan),
     __VEYDAN_PRODUCT_REPO__: JSON.stringify(product.repo),
   };
 }

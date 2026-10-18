@@ -30,6 +30,7 @@ use crate::service::DmService;
 use messenger_core::outbound::WireEvent;
 use messenger_core::relations::{relations_d, relations_page, KIND_RELATIONS, RELATIONS_MAX_PAGES, RELATIONS_PEERS_PER_PAGE};
 use messenger_core::{Effect, EventId, MessengerError, PubKey, Result};
+use messenger_store::chats::{self, Pref, PrefsRow};
 use messenger_store::dm_relations::{self, RelationRow};
 use messenger_store::settings;
 use nostr::nips::nip44;
@@ -136,6 +137,8 @@ pub struct Applied {
     pub changed: Vec<PubKey>,
     /// The privacy settings of the header were newer than the ones here.
     pub settings_changed: bool,
+    /// A choice of a chat (no notifications, pinned, archived) was taken.
+    pub chats_changed: bool,
 }
 
 /// `[hex, my_contact, blocked, decided_at]`, compact: `my_contact` is one
@@ -183,7 +186,64 @@ struct Header {
     /// by entry, so one this build cannot read costs nothing else.
     #[serde(default)]
     invites: Vec<serde_json::Value>,
+    /// The choices of my chats (`chat_entries`): an older build leaves
+    /// them out, and absence is no word.
+    #[serde(default)]
+    chats: Vec<ChatEntry>,
+    /// My deleted direct chats, `[chat_id, cleared_at, peer_upto]`
+    /// (`chats::tombstones`), the newest deletion first.
+    #[serde(default)]
+    deleted: Vec<(String, i64, i64)>,
     peers: Vec<Entry>,
+}
+
+/// `[chat_id, muted, pinned, archived]`: each choice by the time it was
+/// made (my clock), positive when on, negative when off, 0 when never.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct ChatEntry(String, i64, i64, i64);
+
+impl ChatEntry {
+    fn of(&self, pref: Pref) -> i64 {
+        match pref {
+            Pref::Muted => self.1,
+            Pref::Pinned => self.2,
+            Pref::Archived => self.3,
+        }
+    }
+}
+
+/// A choice that is off is carried this long after it was made: my other
+/// devices hear of it by then, and the list does not grow with every chat
+/// ever muted and let speak again.
+const CHAT_OFF_KEPT_SECS: i64 = 30 * 86_400;
+
+/// The entries of my chats: every one with a choice on first, then the
+/// ones with a choice lately turned off, each newest first (`rows` come
+/// so). What does not fit the header is cut from the end.
+fn chat_entries(rows: &[PrefsRow], now: i64) -> Vec<ChatEntry> {
+    let (mut on, mut off) = (Vec::new(), Vec::new());
+    for r in rows {
+        let signed = |pref| match r.get(pref) {
+            (_, at) if at <= 0 => 0,
+            (true, at) => at,
+            (false, at) if now - at <= CHAT_OFF_KEPT_SECS => -at,
+            _ => 0,
+        };
+        let e = ChatEntry(r.chat_id.clone(), signed(Pref::Muted), signed(Pref::Pinned), signed(Pref::Archived));
+        if Pref::ALL.iter().any(|&p| e.of(p) > 0) {
+            on.push(e);
+        } else if Pref::ALL.iter().any(|&p| e.of(p) != 0) {
+            off.push(e);
+        }
+    }
+    on.extend(off);
+    on
+}
+
+/// `dm:<hex>` or `group:<hex>`, as this build names chats.
+fn chat_id_ok(id: &str) -> bool {
+    let hex = id.strip_prefix("dm:").or_else(|| id.strip_prefix("group:"));
+    hex.is_some_and(|h| h.len() == 64 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
 }
 
 /// The plain text of the header is kept under this: NIP-44 v2 takes
@@ -321,6 +381,8 @@ impl DmService {
         let s = self.dm_settings().await?;
         let settings_at = get_i64(&self.store, KEY_PRIVACY_DECIDED_AT).await?;
         let invites = self.invites_for_snapshot(now).await?;
+        let chats = chat_entries(&chats::prefs(&self.store).await?, now);
+        let deleted = chats::tombstones(&self.store).await?;
         let mut events = Vec::with_capacity(pages.len());
         let count = pages.len();
         for (n, peers) in pages.into_iter().enumerate() {
@@ -335,10 +397,14 @@ impl DmService {
                     keep_days: s.keep_days,
                     settings_at,
                     invites: invites.clone(),
+                    chats: chats.clone(),
+                    deleted: deleted.clone(),
                     peers,
                 };
                 let mut plain = serde_json::to_string(&header)?;
-                while plain.len() > HEADER_MAX_BYTES && header.invites.pop().is_some() {
+                while plain.len() > HEADER_MAX_BYTES
+                    && (header.invites.pop().is_some() || header.deleted.pop().is_some() || header.chats.pop().is_some())
+                {
                     plain = serde_json::to_string(&header)?;
                 }
                 plain
@@ -425,10 +491,31 @@ impl DmService {
             }
         }
         let mut settings_changed = false;
+        let mut chats_changed = false;
         if let Some(h) = header {
             // By union and the later revocation: nothing here is undone by
             // a list that lacks an invitation (absence is no word).
             self.apply_invite_entries(&h.invites).await?;
+            // Choice by choice, the newer wins; a chat left out keeps
+            // what it has.
+            for e in &h.chats {
+                if !chat_id_ok(&e.0) {
+                    continue;
+                }
+                for pref in Pref::ALL {
+                    let t = e.of(pref);
+                    if t != 0 && chats::merge_pref(&self.store, &e.0, pref, t > 0, t.saturating_abs()).await? {
+                        chats_changed = true;
+                    }
+                }
+            }
+            // A chat deleted there goes here, up to what it held then.
+            let now = self.clock.now().secs();
+            for (id, cleared_at, peer_upto) in &h.deleted {
+                if id.starts_with("dm:") && chat_id_ok(id) && chats::delete_copy(&self.store, id, *cleared_at, *peer_upto, now).await? {
+                    chats_changed = true;
+                }
+            }
             if h.settings_at > get_i64(&self.store, KEY_PRIVACY_DECIDED_AT).await? {
                 if let Some(from) = DmFrom::parse(&h.dm_from) {
                     settings::set(&self.store, KEY_DM_FROM, from.as_str()).await?;
@@ -441,7 +528,7 @@ impl DmService {
         if rev > get_i64(&self.store, KEY_REV).await?.max(0) as u64 {
             settings::set(&self.store, KEY_REV, &rev.to_string()).await?;
         }
-        Ok((Applied { rev: Some(rev), complete, changed, settings_changed }, effects))
+        Ok((Applied { rev: Some(rev), complete, changed, settings_changed, chats_changed }, effects))
     }
 }
 
@@ -696,6 +783,65 @@ mod tests {
 
     fn pieces_of(events: &[WireEvent], me: &PublicKey) -> Vec<Piece> {
         events.iter().filter_map(|e| Piece::of_json(&e.json, me)).collect()
+    }
+
+    /// Muted on the computer, muted on the phone: a chat the phone has,
+    /// and one it does not have yet, which is made muted. Each choice goes
+    /// by its own time, and one turned off travels too.
+    #[tokio::test]
+    async fn the_choices_of_my_chats_reach_my_other_device() {
+        let keys = Keys::generate();
+        let me = keys.public_key();
+        let (a, b) = (device(&keys).await, device(&keys).await);
+        let (here, later) = (chats::dm_chat_id(peer(1).as_hex()), chats::dm_chat_id(peer(2).as_hex()));
+        let group = format!("group:{}", "ab".repeat(32));
+        chats::ensure_dm(b.store(), peer(1).as_hex()).await.unwrap();
+        a.set_muted(&here, true).await.unwrap();
+        a.set_muted(&later, true).await.unwrap();
+        a.set_pinned(&group, true).await.unwrap();
+        assert!(a.relations_owed().await.unwrap(), "a choice is published");
+
+        let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+        let (applied, effects) = b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        assert!(applied.chats_changed && effects.is_empty());
+        assert!(chats::get(b.store(), &here).await.unwrap().unwrap().muted);
+        assert!(chats::is_muted(b.store(), &later).await.unwrap(), "before the chat is here");
+        assert!(chats::ensure_dm(b.store(), peer(2).as_hex()).await.unwrap().muted, "and when it comes");
+        assert!(!b.relations_owed().await.unwrap(), "a copy is no decision");
+        // The same list again changes nothing.
+        let (applied, _) = b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        assert!(!applied.chats_changed);
+
+        // Let speak again on the phone, in the same second: a choice made
+        // here goes after the one it replaces, and the computer follows.
+        b.set_muted(&here, false).await.unwrap();
+        let (_, events) = b.build_relations_snapshot(&keys, now()).await.unwrap();
+        let (applied, _) = a.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        assert!(applied.chats_changed);
+        assert!(!chats::is_muted(a.store(), &here).await.unwrap());
+        assert!(chats::is_muted(a.store(), &later).await.unwrap(), "the other choices stand");
+
+        // What is not a chat of this build is passed over.
+        assert!(chat_id_ok(&here) && chat_id_ok(&group));
+        for bad in ["dm:", "dm:AB", "group:../x", &format!("chan:{}", "ab".repeat(32))] {
+            assert!(!chat_id_ok(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_choice_turned_off_long_ago_is_left_out() {
+        let now = 100 * 86_400;
+        let row = |id: &str, muted: bool, muted_at: i64, pinned_at: i64| PrefsRow {
+            chat_id: id.into(),
+            muted,
+            muted_at,
+            pinned: true,
+            pinned_at,
+            ..Default::default()
+        };
+        let rows = [row("off-new", false, now - 10, 0), row("on", true, now - 20, 0), row("off-old", false, now - CHAT_OFF_KEPT_SECS - 1, 0), row("pin", false, 0, 5)];
+        let ids: Vec<_> = chat_entries(&rows, now).into_iter().map(|e| (e.0, e.1, e.2)).collect();
+        assert_eq!(ids, vec![("on".into(), now - 20, 0), ("pin".into(), 0, 5), ("off-new".into(), -(now - 10), 0)], "on first, then off");
     }
 
     #[tokio::test]

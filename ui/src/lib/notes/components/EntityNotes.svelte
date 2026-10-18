@@ -53,7 +53,7 @@
 
 <section class="entity-notes">
   <div class="head">
-    <span class="label"><Icon name="file-text" size={12} /> {$t('ctx_entity_notes')} <span class="count">{notes.length}</span></span>
+    <span class="label"><Icon name="notes" size={12} /> {$t('ctx_entity_notes')} <span class="count">{notes.length}</span></span>
     <button type="button" class="btn btn-ghost btn-sm" onclick={() => open(null)}>
       <Icon name="external-link" size={12} /> {$t('panel_notes_open')}
     </button>

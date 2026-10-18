@@ -84,9 +84,9 @@
       <Avatar url={null} label={name} seed={request.peer} size={64} />
       <div class="name">{name}</div>
       {#if nip05}
-        <div class="sub"><Icon name="globe" size={12} /><span class="nip05">{nip05}</span> · {$t('msg_req_nip05_unverified')}</div>
+        <div class="sub"><Icon name="world" size={12} /><span class="nip05">{nip05}</span> · {$t('msg_req_nip05_unverified')}</div>
       {/if}
-      <span class="tag"><Icon name="user" size={12} />{$t('msg_req_not_contact')}</span>
+      <span class="tag"><Icon name="user-question" size={12} />{$t('msg_req_not_contact')}</span>
     </section>
 
     <CopyField label={$t('msg_peer_key')} value={key} mono />
@@ -105,7 +105,7 @@
     <div class="actions">
       <button class="btn btn-primary" disabled={busy} onclick={() => act('accept')}><Icon name="check" size={14} />{$t('msg_rel_cta_accept')}</button>
       <button class="btn btn-ghost" disabled={busy} onclick={() => act('decline')}>{$t('msg_rel_cta_decline')}</button>
-      <button class="btn btn-ghost danger" disabled={busy} onclick={() => act('block')}><Icon name="ban" size={14} />{$t('msg_rel_cta_block')}</button>
+      <button class="btn btn-ghost danger" disabled={busy} onclick={() => act('block')}><Icon name="user-cancel" size={14} />{$t('msg_rel_cta_block')}</button>
       <button class="btn btn-ghost danger" disabled={busy} onclick={report}><Icon name="alert-triangle" size={14} />{$t('msg_report')}</button>
     </div>
   </div>

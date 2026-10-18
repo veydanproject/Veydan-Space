@@ -10,10 +10,8 @@
 import type { Component } from 'svelte';
 import { copied, secretCopied } from '$lib/core/ui/toast.svelte';
 import { api } from '$lib/pass/api';
-import { directory } from '$lib/core/directory';
 import type { EntityKindDef } from '$lib/core/module';
 import { parseBinding } from '$lib/core/bindings';
-import { userLabels } from '$lib/core/entity-tags';
 import { copySecret } from '$lib/pass/clipboard';
 import { totpStore } from '$lib/pass/store/totp.svelte';
 import { passwordStore } from '$lib/pass/store/passwords.svelte';
@@ -40,21 +38,6 @@ async function copyPassword(id: string): Promise<void> {
   await copySecret(revealed.value, { fallback: copyText });
 }
 
-/** Workspace color, then a free label, then the accent. Shared by chips and context cards. */
-export function tagsColor(tags: string[]): string {
-  for (const tag of tags) {
-    const parsed = parseBinding(tag);
-    if (parsed?.kind !== 'workspace') continue;
-    const color = directory.color('workspace', parsed.value);
-    if (color) return color;
-  }
-  for (const name of userLabels(tags)) {
-    const color = directory.summary('note_tag', name)?.color;
-    if (color) return color;
-  }
-  return 'var(--accent)';
-}
-
 export function totpName(id: string): string {
   const entry = totpStore.list.find((e) => e.id === id);
   if (!entry) return '';
@@ -67,9 +50,8 @@ const tagged = (list: { id: string; tags: string[] }[], key: string) => list.fil
 export const passEntities: EntityKindDef[] = [
   {
     kind: 'totp',
-    icon: 'key',
+    icon: 'shield',
     label: 'ctx_kind_totp',
-    color: 'var(--text-2)',
     ensureLoaded: () => totpStore.ensureLoaded(),
     list: () =>
       totpStore.list.map((e) => ({
@@ -77,7 +59,7 @@ export const passEntities: EntityKindDef[] = [
         name: e.issuer ? `${e.issuer} · ${e.name}` : e.name,
         subtitle: '',
         status: null,
-        color: tagsColor(e.tags),
+        color: '',
       })),
     // Used by the command palette; the context card shows the live code chip instead
     actions: [
@@ -100,9 +82,8 @@ export const passEntities: EntityKindDef[] = [
   },
   {
     kind: 'password',
-    icon: 'lock',
+    icon: 'lock-password',
     label: 'ctx_kind_password',
-    color: 'var(--text-2)',
     ensureLoaded: () => passwordStore.ensureLoaded(),
     list: () =>
       passwordStore.list.map((e) => ({
@@ -110,7 +91,7 @@ export const passEntities: EntityKindDef[] = [
         name: e.title,
         subtitle: e.username ?? e.url ?? '',
         status: null,
-        color: tagsColor(e.tags),
+        color: '',
       })),
     actions: [
       {

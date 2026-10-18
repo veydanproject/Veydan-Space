@@ -51,12 +51,12 @@
       <p class="note">{$t('loading')}</p>
     {:else if requestStore.items.length === 0 && !error}
       <div class="empty">
-        <Icon name="shield" size={28} />
+        <Icon name="user-question" size={28} />
         <p>{$t('msg_req_empty')}</p>
         <span>{$t('msg_req_empty_hint')}</span>
       </div>
     {:else}
-      <ul class="list">
+      <ul class="list divided">
         {#each requestStore.items as r (r.peer)}
           <li>
             <button class="req" class:active={requestStore.selected === r.peer} onclick={() => onopen(r)}>
@@ -89,7 +89,7 @@
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-1); display: flex; flex-direction: column; }
   .intro { margin: var(--sp-2) var(--sp-3) var(--sp-3); font-size: var(--fs-xs); line-height: 1.5; color: var(--text-3); }
   .note { margin: 0; padding: var(--sp-6) var(--sp-4); text-align: center; font-size: var(--fs-sm); color: var(--text-2); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .req {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; text-align: left;
     padding: var(--sp-2) var(--sp-3); border: none; border-radius: var(--radius-md);

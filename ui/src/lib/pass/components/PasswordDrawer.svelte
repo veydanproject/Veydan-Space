@@ -173,7 +173,7 @@
         <p>{$t('pass_nothing_found')}</p>
         <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
       {:else}
-        <span class="empty-icon"><Icon name="lock" size={22} /></span>
+        <span class="empty-icon"><Icon name="lock-password" size={22} /></span>
         <p>{$t('pw_empty')}</p>
         {#if canWrite}
           <button type="button" class="btn btn-ghost btn-sm" onclick={() => (creating = true)}>

@@ -27,12 +27,12 @@
   let menu = $state<{ x: number; y: number } | null>(null);
   const items = $derived<MenuEntry[]>([
     { label: $t('notes_btn_open_folder'), icon: 'folder-open', onselect: () => void api.notes.openFolder() },
-    { label: $t('notes_btn_import'), icon: 'upload', onselect: onimport },
+    { label: $t('notes_btn_import'), icon: 'file-import', onselect: onimport },
     { label: $t('notes_btn_export'), icon: 'download', onselect: onexport },
     ...(windowItem
       ? [
           { type: 'separator' } as const,
-          { label: $t('notes_btn_open_window'), icon: 'file-text', onselect: () => void api.notes.openWindow($t('nav_notes')) },
+          { label: $t('notes_btn_open_window'), icon: 'notes', onselect: () => void api.notes.openWindow($t('nav_notes')) },
         ]
       : []),
   ]);

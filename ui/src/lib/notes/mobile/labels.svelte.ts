@@ -42,7 +42,6 @@ export const labelKinds: EntityKindDef[] = [
     kind: 'workspace',
     icon: 'layers',
     label: 'ctx_kind_workspace',
-    color: 'var(--success)',
     fallback: true,
     ensureLoaded: () => navLabels.ensureLoaded(),
     list: () => navLabels.workspaces.map((w) => summary(w, w.color)),
@@ -50,12 +49,11 @@ export const labelKinds: EntityKindDef[] = [
   },
   {
     kind: 'profile',
-    icon: 'globe',
+    icon: 'world',
     label: 'ctx_kind_profile',
-    color: 'var(--accent)',
     fallback: true,
     ensureLoaded: () => navLabels.ensureLoaded(),
-    list: () => navLabels.profiles.map((p) => summary(p, 'var(--accent)', p.parent_id ? `workspace:${p.parent_id}` : undefined)),
+    list: () => navLabels.profiles.map((p) => summary(p, '', p.parent_id ? `workspace:${p.parent_id}` : undefined)),
     actions: [],
   },
 ];

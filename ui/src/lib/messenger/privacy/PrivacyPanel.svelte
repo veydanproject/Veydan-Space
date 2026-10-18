@@ -65,7 +65,7 @@
 </div>
 
 <div class="card privacy">
-  <div class="card-title"><Icon name="shield" size={16} /> {$t('msg_privacy_dm_title')}</div>
+  <div class="card-title"><Icon name="shield-lock" size={16} /> {$t('msg_privacy_dm_title')}</div>
 
   {#if !dm}
     <p class="muted">{privacyStore.dmError || $t('loading')}</p>
@@ -99,7 +99,7 @@
 </div>
 
 <div class="card privacy">
-  <div class="card-title"><Icon name="ban" size={16} /> {$t('msg_privacy_blocked')}</div>
+  <div class="card-title"><Icon name="user-cancel" size={16} /> {$t('msg_privacy_blocked')}</div>
 
   {#if !privacyStore.blocked}
     <p class="muted">{privacyStore.dmError || $t('loading')}</p>

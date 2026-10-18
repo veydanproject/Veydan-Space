@@ -49,6 +49,29 @@ function named(kind: string): boolean {
   return kind === 'file' || kind === 'audio';
 }
 
+/**
+ * What an attachment is called where one is shown alone (a bubble before
+ * its file is here, the list of transfers): a picture, a video, a
+ * recording by what it is, a file and a song by its name.
+ */
+export function mediaTitle(kind: string, name: string, t: Tr): string {
+  const k = EMOJI[kind] ? kind : 'file';
+  return named(k) ? name || t(WORD[k]) : t(WORD[k]);
+}
+
+/**
+ * The kind of a transfer, which names only its file: the app's own
+ * recordings are `voice.*` and `circle.*`, a picture or a video by its
+ * type; anything else is a file.
+ */
+export function transferKind(name: string, mime: string): string {
+  if (/^voice\.[a-z0-9]+$/i.test(name)) return 'voice';
+  if (/^circle\.[a-z0-9]+$/i.test(name)) return 'circle';
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  return 'file';
+}
+
 /** One line of one message. `null`: nothing may be said of it. */
 export function bodyLine(body: NoticeBody | null, t: Tr): string {
   if (!body) return t('msg_notice_new');
@@ -140,19 +163,21 @@ export function replyThumb(quote: QuoteOf): string | null {
  */
 export function replyLine(quote: QuoteOf, cardLabel: string | null, t: Tr): string {
   if (quote.deleted) return t('msg_message_deleted');
-  if (quote.text) return quote.text;
-  if (cardLabel) return `👤 ${cardLabel}`;
   const m = quote.media;
+  // A photo with a caption is a photo first: "📷 caption".
   if (m && typeof m.kind === 'string') {
     return bodyLine(
       {
         t: 'media',
         kind: m.kind,
         name: typeof m.name === 'string' ? m.name : '',
+        caption: quote.text || undefined,
         duration_ms: typeof m.duration_ms === 'number' ? m.duration_ms : undefined,
       },
       t,
     );
   }
+  if (quote.text) return quote.text;
+  if (cardLabel) return `👤 ${cardLabel}`;
   return '';
 }

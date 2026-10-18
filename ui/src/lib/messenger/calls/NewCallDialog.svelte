@@ -60,11 +60,11 @@
     {#if block}<p class="hint">{block}</p>{/if}
     {#if people.length}
       <div class="label">{$t('msg_contacts_title')}</div>
-      <ul class="list">{#each people as c (c.id)}{@render row(c)}{/each}</ul>
+      <ul class="list divided">{#each people as c (c.id)}{@render row(c)}{/each}</ul>
     {/if}
     {#if groups.length}
       <div class="label">{$t('msg_nav_groups')}</div>
-      <ul class="list">{#each groups as c (c.id)}{@render row(c)}{/each}</ul>
+      <ul class="list divided">{#each groups as c (c.id)}{@render row(c)}{/each}</ul>
     {/if}
     {#if !people.length && !groups.length}
       <p class="hint">{q ? $t('msg_chats_nothing_found') : $t('msg_calls_new_empty')}</p>
@@ -81,7 +81,7 @@
   .search:focus-within { border-color: var(--accent-border); }
   .search input { flex: 1; min-width: 0; border: none; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-base); color: var(--text); padding: 7px 0; }
   .label { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: 4px 4px 4px 8px; border-radius: var(--radius-sm); }
   .row:hover { background: var(--surface-row-hover); }
   .name { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

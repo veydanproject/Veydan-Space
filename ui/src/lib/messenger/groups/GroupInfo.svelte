@@ -285,7 +285,7 @@
     if (canTrust(group, m) && checksMessages(group)) {
       list.push(m.trusted
         ? { label: $t('msg_mod_member_untrust'), icon: 'shield', onselect: () => moderate({ t: 'trust', who: m.pubkey, trusted: false }) }
-        : { label: $t('msg_mod_member_trust'), icon: 'check-circle', onselect: () => moderate({ t: 'trust', who: m.pubkey, trusted: true }) });
+        : { label: $t('msg_mod_member_trust'), icon: 'shield-check', onselect: () => moderate({ t: 'trust', who: m.pubkey, trusted: true }) });
     }
     if (isOwner(group) && !m.is_me) {
       list.push({ label: $t('msg_group_member_transfer'), icon: 'key', onselect: () => sure($t('msg_group_transfer_confirm', { name: who }), $t('msg_group_member_transfer'), { op: 'transfer_ownership', to: m.pubkey }) });
@@ -294,8 +294,8 @@
       list.push({ type: 'separator' });
       list.push({ label: $t('msg_group_member_remove'), icon: 'x', danger: true,
         onselect: () => demoting(m, null, () => sure($t('msg_group_remove_confirm', { name: who }), $t('msg_group_member_remove'), { op: 'remove', who: m.pubkey })) });
-      if (hasModeration(group)) list.push({ label: $t('msg_mod_ban'), icon: 'ban', danger: true, onselect: () => { dialogError = ''; ban = { open: true, m, hide: true }; } });
-      else list.push({ label: $t('msg_group_member_ban'), icon: 'ban', danger: true, onselect: () => sure($t('msg_group_ban_confirm', { name: who }), $t('msg_group_member_ban'), { op: 'ban', who: m.pubkey }) });
+      if (hasModeration(group)) list.push({ label: $t('msg_mod_ban'), icon: 'user-cancel', danger: true, onselect: () => { dialogError = ''; ban = { open: true, m, hide: true }; } });
+      else list.push({ label: $t('msg_group_member_ban'), icon: 'user-cancel', danger: true, onselect: () => sure($t('msg_group_ban_confirm', { name: who }), $t('msg_group_member_ban'), { op: 'ban', who: m.pubkey }) });
     }
     return list;
   }
@@ -365,7 +365,7 @@
         <Avatar url={group.picture || null} label={group.name} seed={group.id} size={64} />
         <div class="name">{group.name}</div>
         <div class="kind">
-          <Icon name={group.kind === 'public' ? 'globe' : 'lock'} size={12} />
+          <Icon name={group.kind === 'public' ? 'world' : 'lock-square-rounded'} size={12} />
           {$t(group.kind === 'public' ? 'msg_group_kind_public' : 'msg_group_kind_private')} ·
           {$t(membersKey(group.members.length), { n: String(group.members.length) })}
         </div>
@@ -428,7 +428,7 @@
         <span class="label">{$t('msg_group_members')} · {group.members.length}</span>
         {#if manager}<button class="btn btn-ghost btn-sm" onclick={() => (inviting = true)}><Icon name="user-plus" size={13} />{$t('msg_group_invite')}</button>{/if}
       </div>
-      <ul class="list">
+      <ul class="list divided">
         {#each group.members as m (m.pubkey)}
           <li>
             <button class="person as-button" class:still={!entriesFor(m).length} oncontextmenu={(e) => openMenu(e, m)} onclick={(e) => openMenu(e, m)}
@@ -438,7 +438,7 @@
                 <span class="who-name">{nameStore.label(m.pubkey)}{#if m.is_me} <span class="me">({$t('msg_you')})</span>{/if}</span>
                 <code>{shortKey(m.pubkey)}</code>
               </span>
-              {#if m.trusted && checksMessages(group)}<span class="dim" title={$t('msg_mod_member_trusted')}><Icon name="check-circle" size={13} /></span>{/if}
+              {#if m.trusted && checksMessages(group)}<span class="dim" title={$t('msg_mod_member_trusted')}><Icon name="shield-check" size={13} /></span>{/if}
               {#if mutedNow(m)}
                 <span class="dim" title={m.muted_until ? $t('msg_mod_member_muted_until', { time: untilText(m.muted_until) }) : $t('msg_group_member_muted')}><Icon name="bell-off" size={13} /></span>
               {/if}
@@ -452,7 +452,7 @@
     {#if manager && group.banned.length}
       <section class="block">
         <div class="label">{$t('msg_group_banned')} · {group.banned.length}</div>
-        <ul class="list">
+        <ul class="list divided">
           {#each group.banned as b (b)}
             <li class="person">
               <Avatar url={nameStore.picture(b)} label={nameStore.label(b)} seed={b} size={34} />
@@ -512,7 +512,7 @@
   .block.out { align-items: flex-start; }
   .label { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); }
   .label-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .person { display: flex; align-items: center; gap: var(--sp-3); padding: 6px 8px; border-radius: var(--radius-sm); min-width: 0; }
   .as-button { width: 100%; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
   .as-button:hover { background: var(--surface-row-hover); }

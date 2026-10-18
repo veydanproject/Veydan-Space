@@ -32,7 +32,8 @@
   import { onPhone } from '../shared/phone';
   import { nameStore } from '../groups/names.svelte';
   import { presenceStore } from '../presence/presenceStore.svelte';
-  import { dmErrorCode, MAX_SEND_BYTES, mediaErrorCode, messengerApi, type DmAction, type MessengerChat, type MessengerMessage } from '../api';
+  import { dmErrorCode, isTauriHost, MAX_PASTE_BYTES, MAX_SEND_BYTES, mediaErrorCode, messengerApi, type DmAction, type MessengerChat, type MessengerMessage } from '../api';
+  import { classifyPaste, clipboardPicture, RECEIVED_CONTENT } from '../media/clipboard';
   import { mediaErrorText, tooLargeName } from '../media/errors';
   import { bytes } from '../shared/format';
   import TransfersChip from './TransfersChip.svelte';
@@ -260,10 +261,10 @@
     // A banned key cannot be unblocked, so the menu has no way back for it.
     else if (chat.mode === "blocked") { if (!chat.banned) list.push({ label: $t("msg_rel_cta_unblock"), icon: "lock-open", onselect: () => act("unblock") }); }
     else {
-      if (chat.is_contact) list.push({ label: $t("msg_rel_cta_remove"), icon: "user", onselect: () => act("remove") });
+      if (chat.is_contact) list.push({ label: $t("msg_rel_cta_remove"), icon: "user-minus", onselect: () => act("remove") });
       // The bot of Veydan Cloud is approved by the build and is nobody's contact.
       else if (chat.mode !== "request_received" && !chat.bot) list.push({ label: $t("msg_rel_cta_add"), icon: "user-plus", onselect: () => act("request") });
-      list.push({ label: $t("msg_rel_cta_block"), icon: "ban", danger: true, onselect: () => act("block") });
+      list.push({ label: $t("msg_rel_cta_block"), icon: "user-cancel", danger: true, onselect: () => act("block") });
     }
     // A person can be reported even after being blocked; the bot of Veydan Cloud is ours.
     if (chat.kind === "dm" && chat.peer_pubkey && !chat.bot) {
@@ -346,15 +347,98 @@
     try { return decodeURIComponent(last); } catch { return last; }
   }
 
-  async function attach(paths: string[]) {
+  /** Picked paths: the picker, a drop, the clipboard of a computer, a phone's `content://`. */
+  function attach(paths: string[]) {
+    return attachEach(paths, pathName, (p) => messengerApi.media.importPicked(p));
+  }
+
+  /** Files the webview handed over on a paste, as bytes; one too large for that goes by its path when the computer's clipboard names it. */
+  async function attachFiles(files: File[]) {
+    if (files.some((f) => f.size > MAX_PASTE_BYTES)) return attachClipboard();
+    return attachEach(files, (f) => f.name || 'image', (f) => messengerApi.media.importBytes(f, f.name || undefined));
+  }
+
+  /** What the clipboard holds when the webview handed over nothing: a computer's copied files or picture, a phone's picture. */
+  async function attachClipboard() {
+    if (!canAttachNow) return;
+    try {
+      // A computer's clipboard is read by the runtime; a phone's (the runtime answers nothing there) through the shell.
+      let paths = await messengerApi.media.pasteClipboard();
+      if (!paths.length) paths = [clipboardPicture()].filter((u): u is string => !!u);
+      if (paths.length) await attach(paths);
+      else toast.info($t('msg_paste_empty'));
+    } catch (e) {
+      error = explain(e);
+    }
+  }
+
+  // A paste with the focus nowhere in particular (Ctrl+V over the chat): as into the field. The field's own
+  // paste takes what is to be attached first; another field, an editor or a dialog keeps its paste.
+  $effect(() => {
+    const onpaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented || !canAttachNow) return;
+      const at = document.activeElement as HTMLElement | null;
+      if (at?.closest('input, textarea, [contenteditable=""], [contenteditable="true"], [role="dialog"]')) return;
+      const take = classifyPaste(e.clipboardData);
+      if (take.kind === 'files') { e.preventDefault(); void attachFiles(take.files); }
+      else if (take.kind === 'native') { e.preventDefault(); void attachClipboard(); }
+    };
+    // The phone: pictures a keyboard inserted into the field (Gboard), as `content://` URIs from the shell.
+    const received = (e: Event) => {
+      const uris = (e as CustomEvent<unknown>).detail;
+      if (Array.isArray(uris)) void attach(uris.filter((u): u is string => typeof u === 'string' && u.startsWith('content://')));
+    };
+    window.addEventListener('paste', onpaste);
+    window.addEventListener(RECEIVED_CONTENT, received);
+    return () => {
+      window.removeEventListener('paste', onpaste);
+      window.removeEventListener(RECEIVED_CONTENT, received);
+    };
+  });
+
+  // Files dropped on the chat from the computer's file manager: Tauri gives their paths and lets them in as picked.
+  // Only on the chat itself: a drop on a dialog over it (the avatar's) is that dialog's.
+  // A computer with a mouse: a touch screen has nothing to drop.
+  const canDrop = isTauriHost && !(typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
+  let dropOver = $state(false);
+  let windowEl = $state<HTMLElement | null>(null);
+  function onChat(x: number, y: number): boolean {
+    const s = navigator.userAgent.includes('Linux') ? 1 : window.devicePixelRatio || 1;
+    const hit = document.elementFromPoint(x / s, y / s);
+    return !!hit && !!windowEl?.contains(hit);
+  }
+  $effect(() => {
+    if (!canDrop) return;
+    let un: (() => void) | null = null;
+    let disposed = false;
+    void import('@tauri-apps/api/webview').then(({ getCurrentWebview }) =>
+      getCurrentWebview().onDragDropEvent((event) => {
+        const ev = event.payload;
+        if (ev.type === 'leave') { dropOver = false; return; }
+        if (ev.type === 'enter' || ev.type === 'over') { dropOver = untrack(() => canAttachNow) && onChat(ev.position.x, ev.position.y); return; }
+        if (ev.type === 'drop') {
+          const over = onChat(ev.position.x, ev.position.y);
+          dropOver = false;
+          if (over && ev.paths.length) void attach(ev.paths);
+        }
+      }),
+    ).then((u) => { if (disposed) u(); else un = u; }).catch(() => {});
+    return () => { disposed = true; un?.(); };
+  });
+
+  /** Attachments may be added now: as the attach button (no session, a mode without files, an edit). */
+  const canAttachNow = $derived(sessionActive && canAttach && !editing);
+
+  async function attachEach<T>(items: T[], nameOf: (item: T) => string, load: (item: T) => Promise<MessengerPicked>) {
+    if (!canAttachNow) return;
     error = "";
     const refused: string[] = [];
     const other: string[] = [];
-    for (const p of paths) {
+    for (const p of items) {
       const key = ++pickSeq;
       picked = [...picked, { key, file: null }];
       try {
-        const file = await messengerApi.media.importPicked(p);
+        const file = await load(p);
         // The runtime refuses a file over the limit; one that told no size then is caught here.
         if (file.size > MAX_SEND_BYTES) throw new Error(`err.file_too_large: ${file.name}`);
         picked = picked.map((x) => (x.key === key ? { key, file } : x));
@@ -365,7 +449,7 @@
       } catch (e) {
         picked = picked.filter((x) => x.key !== key);
         // A `content://` path names nothing a person reads: the refusal carries the file's name.
-        if (mediaErrorCode(e) === 'err.file_too_large') refused.push($t('msg_xfer_too_big', { name: tooLargeName(e) ?? pathName(p) }));
+        if (mediaErrorCode(e) === 'err.file_too_large') refused.push($t('msg_xfer_too_big', { name: tooLargeName(e) ?? nameOf(p) }));
         else other.push(explain(e));
       }
     }
@@ -543,7 +627,7 @@
 {/snippet}
 
 {#snippet composerTools()}
-  <AttachButton disabled={!sessionActive || !canAttach || !!editing} onfiles={attach} />
+  <AttachButton disabled={!sessionActive || !canAttach || !!editing} onfiles={attach} onclipboard={attachClipboard} />
 {/snippet}
 
 {#snippet tray()}
@@ -567,7 +651,8 @@
   {/if}
 {/snippet}
 
-<section class="window" style:--bottom-h={phone ? `${bottomH}px` : undefined}>
+<section class="window" bind:this={windowEl} style:--bottom-h={phone ? `${bottomH}px` : undefined}>
+  {#if dropOver}<div class="drop" aria-hidden="true"><Icon name="paperclip" size={22} /><span>{$t("msg_drop_here")}</span></div>{/if}
   <header class="head" class:phone>
     {#if onback}
       {#if phone}<button class="icon back" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
@@ -619,7 +704,7 @@
       <div class="placeholder">{$t('loading')}</div>
     {:else if chatStore.messages.length === 0}
       <div class="placeholder">
-        <Icon name="lock" size={22} />
+        <Icon name="lock-check" size={22} />
         <p>{$t('msg_chat_empty')}</p>
         <span>{$t('msg_chat_empty_hint')}</span>
       </div>
@@ -641,11 +726,12 @@
 
   {#if chat.can_send}
     <Composer {replyTo} {editing} peerTitle={chat.title} disabled={!sessionActive} draftKey={chat.id} autofocus={!phone} oneditlast={editLast} onrecording={record} canRecord={canAttach}
-      oncancel={() => { replyTo = null; editing = null; }} onsend={send} tools={composerTools} {attached} attachments={picked.length ? tray : undefined} />
+      oncancel={() => { replyTo = null; editing = null; }} onsend={send} tools={composerTools} {attached} attachments={picked.length ? tray : undefined}
+      onpastefiles={attachFiles} onpasteclipboard={attachClipboard} canattach={canAttachNow} />
   {:else if footer}
     {@render footer()}
   {:else}
-    <div class="no-composer"><Icon name="lock" size={13} />{$t("msg_chat_cannot_send")}</div>
+    <div class="no-composer"><Icon name="lock-square-rounded" size={13} />{$t("msg_chat_cannot_send")}</div>
   {/if}
   </div>
 </section>
@@ -657,6 +743,15 @@
 
 <style>
   .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: transparent; }
+  /* Files over the chat: the whole of it takes them. */
+  .drop {
+    position: absolute; inset: var(--sp-2); z-index: 40; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2);
+    border: 2px dashed var(--accent-border); border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--accent-tint) 70%, transparent); color: var(--accent-text-2);
+    font-size: var(--fs-md); font-weight: var(--fw-semibold);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
   .head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; }
   /* The phone: the bar colour of the shell, the strip under the status bar included; its back is the chevron of every phone screen. */
   .head.phone {

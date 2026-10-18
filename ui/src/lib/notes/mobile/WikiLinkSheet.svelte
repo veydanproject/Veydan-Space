@@ -7,6 +7,7 @@
   import { onKeyboard } from '$lib/core/mobile/keyboard';
   import { t } from '$lib/core/mobile/i18n';
   import { ENTITY_KINDS, isEntityKind, type EntityKind } from '$lib/core/bindings';
+  import { kindIcon } from '$lib/core/directory';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
 
   interface Props {
@@ -23,11 +24,11 @@
 
   const ICON: Record<EntityKind, string> = {
     workspace: 'layers',
-    profile: 'globe',
-    proxy: 'shield',
+    profile: 'user-circle',
+    proxy: 'globe',
     ssh: 'terminal',
-    totp: 'key',
-    password: 'lock',
+    totp: 'shield',
+    password: kindIcon('password'),
   };
 
   let query = $state('');
@@ -125,7 +126,7 @@
     {:else}
       {#each matches as n (n.id)}
         <button type="button" class="m-row" onclick={() => onpick(n.title)}>
-          <Icon name="file-text" size={20} />
+          <Icon name="notes" size={20} />
           <span class="m-row-label">{n.title}</span>
         </button>
       {/each}

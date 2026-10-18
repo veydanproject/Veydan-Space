@@ -12,7 +12,7 @@ import { totpStore } from '$lib/pass/store/totp.svelte';
 export const common: Omit<ModuleDef, 'nav' | 'settings'> = {
   id: 'pass',
   title: 'pw_title',
-  icon: 'lock',
+  icon: 'lock-password',
   routes: ['/passwords', '/totp', '/tools'],
   entities: passEntities,
   demo: true,

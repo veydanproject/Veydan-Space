@@ -10,7 +10,8 @@
   the last picture stays; missing for `VIDEO_LOST_MS`, it is dimmed and
   the large place says "No signal". My camera is mirrored, as people expect to see
   themselves; a phone's back camera (it shows the world) and my screen are
-  not.
+  not. The peer's screen is shown whole, never cropped, and says whose it
+  is (the peer said it is a screen: `video_remote_screen`).
 
   It fills the box it is put in: the desk's video window, the phone's call
   screen. Both subscriptions live as long as the stage, whatever is on.
@@ -75,6 +76,8 @@
   const info = $derived(mainLive && !mainLost && mainInfo ? $t('msg_call_video_info', { size: `${mainInfo.width}×${mainInfo.height}`, fps: String(mainInfo.fps) }) : '');
   /** The way, once the call talks: while it (re)connects the way is not known yet. */
   const via = $derived(route && call.phase === 'active' ? (call.via ?? null) : null);
+  /** The peer's screen fills the large place: said over it. */
+  const peerScreen = $derived(main === 'remote' && mainLive && !mainLost && call.video_remote_screen);
 </script>
 
 <div class="stage" class:phone>
@@ -91,7 +94,7 @@
 
   <!-- The two tiles move between the places; their canvases stay where they are drawn. -->
   <div class="tile-place" class:big={main === 'remote'} class:small={main !== 'remote'} class:hidden={main !== 'remote' && !small}>
-    <VideoTile track="remote" callId={call.call_id} on={remoteOn} fit={main === 'remote' ? 'auto' : 'cover'} bind:live={remoteLive} bind:lost={remoteLost} bind:info={remoteInfo} />
+    <VideoTile track="remote" callId={call.call_id} on={remoteOn} fit={main === 'remote' ? (call.video_remote_screen ? 'contain' : 'auto') : 'cover'} bind:live={remoteLive} bind:lost={remoteLost} bind:info={remoteInfo} />
   </div>
   <div class="tile-place" class:big={main === 'local'} class:small={main !== 'local'} class:hidden={main !== 'local' && !small}>
     <VideoTile track="local" callId={call.call_id} on={localOn} mirror={mirrorsLocal(call)} fit={main === 'local' ? 'auto' : 'cover'} bind:live={localLive} bind:lost={localLost} bind:info={localInfo} />
@@ -107,11 +110,13 @@
         {/if}
       {/if}
       {#if call.video_screen && main === 'remote'}<span class="pip-tag"><CallIcon name="screen-share" size={11} /><span class="pip-tag-text">{$t('msg_call_sharing')}</span></span>{/if}
+      {#if call.video_remote_screen && main === 'local' && smallLive}<span class="pip-tag"><CallIcon name="screen-share" size={11} /><span class="pip-tag-text">{$t('msg_call_screen_kind_screen')}</span></span>{/if}
     </button>
   {/if}
 
-  {#if via || (info && !phone)}
+  {#if via || (info && !phone) || (peerScreen && !phone)}
     <div class="badges">
+      {#if peerScreen && !phone}<span class="badge screen"><CallIcon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
       {#if via}
         <span class="badge" class:relay={via === 'relay'} title={$t(via === 'relay' ? 'msg_call_via_relay_hint' : 'msg_call_via_direct_hint')}>
           <CallIcon name={via} size={11} />{$t(via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
@@ -121,6 +126,7 @@
       {#if info && !phone}<span class="badge quiet">{info}</span>{/if}
     </div>
   {/if}
+  {#if peerScreen && phone}<span class="info screen-note"><CallIcon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
   {#if info && phone}<span class="info">{info}</span>{/if}
 </div>
 
@@ -180,5 +186,8 @@
   .badge.quiet { color: rgba(255, 255, 255, 0.8); }
   .rtt { margin-left: 2px; padding-left: 6px; border-left: 1px solid rgba(255, 255, 255, 0.3); opacity: 0.85; }
   .info { position: absolute; z-index: 2; bottom: calc(var(--sab, 0px) + 150px); left: 50%; transform: translateX(-50%); pointer-events: none; }
+  /* Above the size of the frames on a phone. */
+  .info.screen-note { bottom: calc(var(--sab, 0px) + 178px); max-width: calc(100% - 32px); }
+  .badge.screen { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   @media (prefers-reduced-motion: reduce) { .tile-place { transition: none; } }
 </style>

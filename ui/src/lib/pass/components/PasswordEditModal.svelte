@@ -157,9 +157,8 @@
   function chipColor(tag: string): string | undefined {
     const parsed = parseBinding(tag);
     if (!parsed) return directory.summary('note_tag', tag)?.color;
-    // The owner's color, or the color of a workspace's label where Space is absent (10.3).
+    // A label and a workspace in the user's colour (the owner's, or its label's where Space is absent, 10.3); any other neutral.
     if (parsed.kind === 'workspace') return directory.color('workspace', parsed.value);
-    if (parsed.kind === 'profile') return 'var(--accent)';
     return undefined;
   }
 

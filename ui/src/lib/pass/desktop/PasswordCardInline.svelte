@@ -99,7 +99,7 @@
         disabled={busy}
         onclick={() => run('copy-username')}
       >
-        <Icon name={copied === 'copy-username' ? 'check' : 'user'} size={13} />
+        <Icon name={copied === 'copy-username' ? 'check' : 'id'} size={13} />
       </button>
     {/if}
     <button
@@ -111,7 +111,7 @@
       disabled={busy}
       onclick={() => run('copy-password')}
     >
-      <Icon name={copied === 'copy-password' ? 'check' : appLock.locked ? 'lock' : 'copy'} size={13} />
+      <Icon name={copied === 'copy-password' ? 'check' : appLock.locked ? 'lock-square-rounded' : 'copy'} size={13} />
     </button>
   </div>
 </div>

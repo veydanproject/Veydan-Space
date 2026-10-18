@@ -56,7 +56,7 @@
     <div class="about">
       <span class="name">{name}</span>
       <span class="sub">
-        <Icon name={open ? 'globe' : 'lock'} size={11} />
+        <Icon name={open ? 'world' : 'lock-square-rounded'} size={11} />
         {$t(open ? 'msg_card_group_public' : 'msg_card_group_private')}{#if view.members !== null} · {$t(membersKey(view.members), { n: String(view.members) })}{/if}
       </span>
     </div>
@@ -64,7 +64,7 @@
 
   {#if stage === 'wait' || stage === 'closed'}
     <div class="status" class:closed={stage === 'closed'}>
-      <Icon name={stage === 'wait' ? 'clock' : 'lock'} size={12} />
+      <Icon name={stage === 'wait' ? 'clock' : 'lock-square-rounded'} size={12} />
       {$t(`msg_group_state_${view.membership}` as 'msg_group_state_requested')}
     </div>
   {/if}

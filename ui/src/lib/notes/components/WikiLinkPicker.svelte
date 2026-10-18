@@ -66,7 +66,7 @@
         return as - bs || b.updated_at.localeCompare(a.updated_at);
       })
       .slice(0, MAX)
-      .map((n) => ({ key: n.id, target: n.title, label: null, icon: 'file-text', text: n.title }));
+      .map((n) => ({ key: n.id, target: n.title, label: null, icon: 'notes', text: n.title }));
     if (q && !out.some((r) => r.text.toLowerCase() === q)) {
       out.push({ key: 'create', target: query.trim(), label: null, icon: 'plus', text: $t('note_link_create', { title: query.trim() }), create: true });
     }

@@ -68,7 +68,7 @@
   let editColName = $state('');
   let editColColor = $state('');
 
-  const PALETTE = ['#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6', '#f5c451', '#34d399', '#f26d6d', '#f97316'];
+  const PALETTE = ['#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6'];
 
   // Lookup over ALL proxies, not the workspace-filtered `proxies` prop: a
   // profile may reference a proxy tagged to another workspace, and it must

@@ -8,7 +8,7 @@
   import { api, formatError, type NoteSearchResult, type NoteTag } from '$lib/notes/mobile/api';
   import { locale, t } from '$lib/core/mobile/i18n';
   import NotesBurger from '$lib/notes/mobile/NotesBurger.svelte';
-  import { fmtListDate, noteColor } from '$lib/notes/mobile/notes-editor';
+  import { fmtListDate } from '$lib/notes/mobile/notes-editor';
 
   type Scope = 'all' | 'notes' | 'tags';
 
@@ -115,10 +115,9 @@
           <button type="button" class="more" onclick={() => (showAll = true)}>{$t('search_show_all')}</button>
         {/if}
       </div>
-      <div class="m-cards">
+      <div class="hits divided">
         {#each shownNotes as n (n.id)}
-          <a class="m-card m-note compact" href="/notes/{n.id}" style:--c={noteColor(n.chips)}>
-            <span class="m-doc"><Icon name="file-text" size={16} /></span>
+          <a class="m-note compact" href="/notes/{n.id}">
             <span class="body">
               <span class="top">
                 <span class="title">{@render hl(n.title || $t('notes_untitled'))}</span>
@@ -146,10 +145,9 @@
 
     {#if scope !== 'tags' && textHits.length}
       <div class="sec"><h3>{$t('search_text_matches')}</h3></div>
-      <div class="m-cards">
+      <div class="hits divided">
         {#each textHits as m (m.id)}
-          <a class="m-card m-note compact" href="/notes/{m.id}" style:--c={noteColor(m.chips)}>
-            <span class="m-doc"><Icon name="file-text" size={16} /></span>
+          <a class="m-note compact" href="/notes/{m.id}">
             <span class="body">
               <span class="top">
                 <span class="title">{m.title || $t('notes_untitled')}</span>
@@ -181,5 +179,8 @@
     font-weight: 600;
     padding: 0;
   }
-  .compact { padding: 10px 12px; }
+  /* Rows of the list, flat on the page with a hairline between them (design kit, notes-list). */
+  .hits { display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); }
+  .compact { padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); }
+  .compact:active { background: var(--surface-hover); }
 </style>

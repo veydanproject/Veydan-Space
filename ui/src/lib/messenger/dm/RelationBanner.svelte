@@ -50,8 +50,8 @@
         { action: 'remove', label: 'msg_rel_cta_remove', kind: 'ghost' },
       ],
     },
-    blocked: { tone: 'warn', icon: 'ban', ctas: [{ action: 'unblock', label: 'msg_rel_cta_unblock', kind: 'primary' }] },
-    blocked_by_peer: { tone: 'warn', icon: 'ban', ctas: [] },
+    blocked: { tone: 'warn', icon: 'user-cancel', ctas: [{ action: 'unblock', label: 'msg_rel_cta_unblock', kind: 'primary' }] },
+    blocked_by_peer: { tone: 'warn', icon: 'user-cancel', ctas: [] },
   };
 
   // A key the network banned cannot be unblocked, so the banner offers nothing.

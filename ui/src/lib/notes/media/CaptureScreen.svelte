@@ -183,7 +183,7 @@
 
   <div class="bottom">
     {#if phase === 'review'}
-      <button type="button" class="btn ghost" onclick={retake}><Icon name="rotate-ccw" size={18} />{t('retake')}</button>
+      <button type="button" class="btn ghost" onclick={retake}><Icon name="refresh-cw" size={18} />{t('retake')}</button>
       <button type="button" class="btn primary" onclick={use}><Icon name="check" size={18} />{t('use')}</button>
     {:else if phase === 'error'}
       <button type="button" class="btn ghost" onclick={cancel}>{t('close')}</button>

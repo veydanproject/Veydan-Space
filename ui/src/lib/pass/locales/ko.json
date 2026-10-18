@@ -48,7 +48,7 @@
     "totp_field_digits": "자릿수",
     "totp_field_period": "주기",
     "totp_qr_hint": "QR 코드가 포함된 스크린샷을 업로드하세요",
-    "totp_qr_select": "이미지 선택…",
+    "totp_qr_select": "이미지 선택",
     "totp_qr_detected": "QR을 찾았습니다 — 아래 항목을 확인하세요",
     "totp_qr_not_found": "이미지에서 QR 코드를 찾을 수 없습니다",
     "totp_qr_secret_masked": "비밀 키:",

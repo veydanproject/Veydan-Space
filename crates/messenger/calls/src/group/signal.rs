@@ -318,7 +318,7 @@ mod tests {
         assert!(GroupSignal::parse(&Envelope::call_epoch(&id, 1, &B64.encode([1u8; 32]), None)).is_none(), "epoch 1 is the start's");
         assert!(GroupSignal::parse(&Envelope::call_join(&id, 1).with("participant", -1)).is_none());
         assert!(GroupSignal::parse(&Envelope::call_join("short", 1)).is_none());
-        assert!(GroupSignal::parse(&Envelope::call_video(&id, true)).is_none(), "a word of a call between two");
+        assert!(GroupSignal::parse(&Envelope::call_video(&id, true, false)).is_none(), "a word of a call between two");
         assert_eq!(
             GroupSignal::parse(&Envelope::call_end(&id, "Hacked", None)).unwrap(),
             GroupSignal::End { call_id: id.clone(), reason: "ended".into(), room_id: None }

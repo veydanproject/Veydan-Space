@@ -374,7 +374,7 @@
             title={$t('ws_view_table')}
             aria-label={$t('ws_view_table')}
           >
-            <Icon name="list" size={15} />
+            <Icon name="table" size={15} />
           </button>
         </div>
     </div>
@@ -671,7 +671,7 @@
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); white-space: nowrap;
   }
   .proxy-table td { padding: var(--sp-3) var(--sp-4); vertical-align: middle; }
-  .proxy-row { border-bottom: 1px solid var(--surface-2); cursor: pointer; transition: background 0.12s; }
+  .proxy-row { border-bottom: 1px solid var(--divider); cursor: pointer; transition: background 0.12s; }
   .proxy-row:last-child { border-bottom: none; }
   .proxy-row:hover { background: var(--surface-row-hover); }
 

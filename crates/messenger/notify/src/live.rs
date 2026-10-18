@@ -39,7 +39,6 @@ pub fn live(notice: &messenger_core::Notice, face: Face, settings: &Settings, lo
             kind,
             chat: notice.chat_id.clone(),
             title: (kind == ChatKind::Group).then(|| notice.title.clone()),
-            muted: false,
             count: 1,
         });
     }
@@ -54,7 +53,6 @@ pub fn live(notice: &messenger_core::Notice, face: Face, settings: &Settings, lo
         sender_key: notice.sender.clone().unwrap_or_default(),
         picture: https(face.picture),
         body: notice.body.clone().filter(|_| settings.content == Content::SenderText),
-        muted: false,
         hide_on_lockscreen: settings.lockscreen_hidden,
         count: 1,
     })

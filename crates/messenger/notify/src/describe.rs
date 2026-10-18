@@ -36,8 +36,8 @@ use std::sync::Arc;
 /// Says what the push is about. `data_dir` is the messenger's data
 /// directory, the one with `messenger.db` in it.
 /// Without keys (the app has a lock, or the settings want nothing said)
-/// only what the database knows of the chat is told: the group's name,
-/// whether it is muted. A push the server marked as a call is the
+/// only what the database knows of the chat is told: the group's name;
+/// of a muted group nothing. A push the server marked as a call is the
 /// exception: without keys it says nothing at all ([`Reason::NoKeys`]),
 /// since "something came" is no call, and a call rings now or never.
 pub async fn describe(data_dir: &Path, bundle: Option<&KeyBundle>, push: &PushData) -> Result<Outcome> {
@@ -56,7 +56,7 @@ pub async fn describe_as(config: &MessengerConfig, bundle: Option<&KeyBundle>, p
             Err(e) => Err(e),
         },
         None if push.call => Ok(Outcome::Quiet { reason: Reason::NoKeys }),
-        None => plain(&store, push).await.map(Outcome::Plain),
+        None => plain(&store, push).await.map(told_plain),
     };
     store.close().await;
     out
@@ -90,7 +90,11 @@ impl Describe {
                 return Ok(Outcome::Quiet { reason: Reason::Blocked });
             }
         }
-        let mut plain = plain(&self.store, push).await?;
+        let (mut plain, muted) = plain(&self.store, push).await?;
+        // A muted group tells nothing, opened or not; a call still rings.
+        if muted && !push.call {
+            return Ok(Outcome::Quiet { reason: Reason::Muted });
+        }
         if settings.content == Content::None || bundle.calls_only {
             // Nothing of a message is said, so no message is opened. A
             // call is the one thing that is: a ring is not a word of the
@@ -129,7 +133,11 @@ impl Describe {
                 Some(key) => self.group_notice(&g.group_id, &key, &g.ciphertext, &settings, push.count).await?,
                 // A key this device does not have yet: the app will, when it runs.
                 None => {
-                    plain.chat = Some(groups::group_chat_id(&g.group_id));
+                    let chat = groups::group_chat_id(&g.group_id);
+                    if chats::is_muted(&self.store, &chat).await? {
+                        return Ok(Outcome::Quiet { reason: Reason::Muted });
+                    }
+                    plain.chat = Some(chat);
                     Outcome::Plain(plain)
                 }
             },
@@ -358,12 +366,14 @@ impl Describe {
             _ => (body_of(&envelope), Some(chat_id.clone())),
         };
 
-        let (title, picture, muted) = match self.dm.chat(&chat_id).await? {
-            Some(view) => (view.title, view.picture, view.is_muted),
-            None => {
-                let (name, picture) = self.contacts.face_of(&peer).await?;
-                (name, picture, false)
-            }
+        // A muted chat tells nothing: the chat of the message, the group a
+        // request or a welcome is of, the person an invitation comes from.
+        if chats::is_muted(&self.store, chat.as_deref().unwrap_or(&chat_id)).await? {
+            return Ok(Outcome::Quiet { reason: Reason::Muted });
+        }
+        let (title, picture) = match self.dm.chat(&chat_id).await? {
+            Some(view) => (view.title, view.picture),
+            None => self.contacts.face_of(&peer).await?,
         };
         Ok(Outcome::Show(Notice {
             kind,
@@ -373,7 +383,6 @@ impl Describe {
             sender_key: peer.as_hex().to_string(),
             picture: https(picture),
             body: body.filter(|_| settings.content == Content::SenderText),
-            muted,
             hide_on_lockscreen: settings.lockscreen_hidden,
             count,
         }))
@@ -469,16 +478,18 @@ impl Describe {
             _ => return Ok(Outcome::Quiet { reason: Reason::NotAMessage }),
         };
         let chat = groups::group_chat_id(group_id);
+        if chats::is_muted(&self.store, &chat).await? {
+            return Ok(Outcome::Quiet { reason: Reason::Muted });
+        }
         let (sender, picture) = self.contacts.face_of(&message.author).await?;
         Ok(Outcome::Show(Notice {
             kind: ChatKind::Group,
-            chat: Some(chat.clone()),
+            chat: Some(chat),
             title: group.name,
             sender,
             sender_key: message.author.as_hex().to_string(),
             picture: https(picture),
             body: body.filter(|_| settings.content == Content::SenderText),
-            muted: chats::is_muted(&self.store, &chat).await?,
             hide_on_lockscreen: settings.lockscreen_hidden,
             count,
         }))
@@ -539,8 +550,10 @@ fn raw_event(json: serde_json::Value, relay: Option<&str>) -> Result<RawEvent> {
     Ok(RawEvent { id, kind, pubkey, created_at: Timestamp(created_at), json, source: EventSource::Relay { url } })
 }
 
-/// What can be said before the event is opened, or when it cannot be.
-async fn plain(store: &Store, push: &PushData) -> Result<Plain> {
+/// What can be said before the event is opened, or when it cannot be, and
+/// whether the group the push names is muted. Of a direct chat nothing is
+/// known before the event is opened: who wrote is inside it.
+async fn plain(store: &Store, push: &PushData) -> Result<(Plain, bool)> {
     let (kind, chat, title, muted) = match (push.kind, &push.group_id) {
         (PushKind::Group, Some(id)) => {
             let chat = groups::group_chat_id(id);
@@ -550,7 +563,16 @@ async fn plain(store: &Store, push: &PushData) -> Result<Plain> {
         }
         _ => (ChatKind::Dm, None, None, false),
     };
-    Ok(Plain { kind, chat, title, muted, count: push.count })
+    Ok((Plain { kind, chat, title, count: push.count }, muted))
+}
+
+/// "Something came", unless it came in a muted group.
+fn told_plain((plain, muted): (Plain, bool)) -> Outcome {
+    if muted {
+        Outcome::Quiet { reason: Reason::Muted }
+    } else {
+        Outcome::Plain(plain)
+    }
 }
 
 /// Pictures come from profiles anyone can write: only https addresses are

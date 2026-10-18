@@ -193,7 +193,7 @@
   <div class="side">
     <div class="buttons">
       <button type="button" class="btn btn-ghost btn-sm" disabled={disabled || busy} onclick={pick}>
-        <Icon name="upload" size={13} />{picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')}
+        <Icon name="camera" size={13} />{picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')}
       </button>
       {#if picture}
         <button type="button" class="btn btn-ghost btn-sm danger" disabled={disabled || busy} onclick={remove}>

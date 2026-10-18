@@ -280,14 +280,17 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .chip:hover { border-color: var(--border-2); color: var(--text); }
 .chip.active { background: var(--accent-tint); color: var(--accent-text); border-color: var(--accent-tint-border); }
 
-/* ── Tinted ── (a chip, badge or label coloured from data: a workspace's
-   colour, a label's, a kanban column's). One rule for all of them: the
-   element has the class and sets the colour with `style:--chip={colour}`.
-   The colour is the tint under it (--chip-tint) and its border
-   (--chip-edge, mixed towards --border-2: a colour close to the surface
-   keeps the neutral chip's outline); its text is the colour mixed towards
-   --text (--chip-ink), so a pale colour on the light theme and a dark one
-   on the dark theme still read (WCAG AA, chip-contrast.test.ts).
+/* ── Tinted ── (a chip, badge or label in a colour the user picked: a
+   workspace's, a folder's, a tag's, a kanban column's). The colour is the
+   user's, so it never tells what kind of object a chip is: the kind is its
+   mark (ChipMark), and a chip of an entity (a profile, a proxy, a password,
+   a domain…) sets no `--chip` and stays neutral (kit kind-chip,
+   2026-10-17). One rule for all of them: the element has the class and
+   sets the colour with `style:--chip={colour}`. The whole chip takes it, as
+   the kit's `.vd-kind-chip--color` does: the tint under it (--chip-tint),
+   its border (--chip-edge, over transparent), its text the colour mixed
+   towards --text (--chip-ink), so a pale colour on the light theme and a
+   dark one on the dark theme still read (WCAG AA, chip-contrast.test.ts).
    `.active` (a picked one): the stronger tint (--chip-tint-strong), the
    border and a ring in the ink (currentColor) — the raw colour can vanish
    on the surface, the ink cannot; the selector outranks the colour-mix
@@ -306,7 +309,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 @supports (color: color-mix(in srgb, red 50%, blue)) {
   .tinted[style*='--chip'] {
     background: color-mix(in srgb, var(--chip) var(--chip-tint), transparent);
-    border-color: color-mix(in srgb, var(--chip) var(--chip-edge), var(--border-2));
+    border-color: color-mix(in srgb, var(--chip) var(--chip-edge), transparent);
     color: color-mix(in srgb, var(--chip) var(--chip-ink), var(--text));
   }
   .tinted.active[style*='--chip'] {
@@ -315,6 +318,26 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .tinted-text[style*='--chip'] {
     color: color-mix(in srgb, var(--chip) var(--chip-ink), var(--text));
   }
+}
+
+/* ── Rows of a list ── a hairline between the rows (--divider), so that
+   neighbours do not run together. `.divided` on the list, each child a row;
+   the list tells its gap in --rows-gap and the line sits in its middle,
+   12px in from each side. The line hides on a hovered or chosen row and on
+   the row after it: chosen = .active, .selected, aria-current or
+   aria-selected on the row or on an element right inside it. */
+.divided > * { position: relative; }
+.divided > * + *::before {
+  content: ''; position: absolute; left: var(--sp-3); right: var(--sp-3); height: 1px;
+  top: calc(var(--rows-gap, 0px) / -2 - 0.5px);
+  background: var(--divider); pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.divided > :is(:hover, .active, .selected, [aria-current]:not([aria-current='false']), [aria-selected='true'],
+  :has(> :is(.active, .selected, [aria-current]:not([aria-current='false']), [aria-selected='true'])))::before,
+.divided > :is(:hover, .active, .selected, [aria-current]:not([aria-current='false']), [aria-selected='true'],
+  :has(> :is(.active, .selected, [aria-current]:not([aria-current='false']), [aria-selected='true']))) + *::before {
+  opacity: 0;
 }
 
 /* ── Filter bar ── (единый паттерн панелей фильтров: поиск + select-ы + счётчик.

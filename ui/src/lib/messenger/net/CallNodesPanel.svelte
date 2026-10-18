@@ -196,7 +196,7 @@
   .seg { align-self: flex-start; max-width: 100%; }
   .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: 7px 0; border-bottom: 1px solid var(--divider); }
   .row:last-child { border-bottom: none; }
   .row.unused .node { opacity: 0.55; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }

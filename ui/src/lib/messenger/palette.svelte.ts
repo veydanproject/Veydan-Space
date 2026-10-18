@@ -42,7 +42,7 @@ export function messengerPalette(): PaletteCommand[] {
     // request chat is not a chat yet, and the ordinary window would show
     // the stranger's text as a message of a chat.
     ...(requestStore.count > 0
-      ? [{ id: 'messenger.requests', title: tr('msg_req_row', { n: String(requestStore.count) }), keywords: 'requests strangers', icon: 'shield', group, run: async () => { await goto(BASE); requestsUi.open(); } }]
+      ? [{ id: 'messenger.requests', title: tr('msg_req_row', { n: String(requestStore.count) }), keywords: 'requests strangers', icon: 'user-question', group, run: async () => { await goto(BASE); requestsUi.open(); } }]
       : []),
     ...chatStore.chats
       .filter((c) => !c.archived && c.mode !== 'request_received')

@@ -120,9 +120,15 @@ pub struct QueueFilter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "number")]
     pub until: Option<i64>,
+    /// A part of the text or of the author's name, or their key (npub or hex).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub text: Option<String>,
+    /// Every message its own line, not one line per author: what one author
+    /// wrote, with `author`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub each: Option<bool>,
 }
 
 /// One act of moderation in a group. On the wire it is tagged by `t`, as
@@ -372,7 +378,7 @@ impl MessengerRuntime {
     }
 
     /// What waits for a moderator in a group: one line per author (their
-    /// oldest), newest first; `before` is the `next_before` of the page
+    /// oldest), or per message with `each`, newest first; `before` is the `next_before` of the page
     /// shown last. For moderators and above (`group_not_permitted`).
     pub async fn group_queue(&self, group: &str, filter: QueueFilter, before: Option<i64>, limit: u32) -> Result<QueuePage> {
         let me = self.session_pubkey().await.ok_or(MessengerError::NotLoggedIn)?;
@@ -381,7 +387,9 @@ impl MessengerRuntime {
             Some(a) => Some(parse_key(a)?.as_hex().to_string()),
             None => None,
         };
-        let f = messenger_store::messages::QueueFilter { author, since: filter.since, until: filter.until, text: filter.text.clone() };
+        // A whole key searched for is its author, in hex as the rows hold it.
+        let text = filter.text.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(|t| parse_key(t).map(|k| k.as_hex().to_string()).unwrap_or_else(|_| t.to_string()));
+        let f = messenger_store::messages::QueueFilter { author, since: filter.since, until: filter.until, text, each: filter.each.unwrap_or(false) };
         let (lines, total) = self.groups().queue(group, &me, &f, before, limit as i64).await?;
         let next_before = lines.last().filter(|_| lines.len() >= limit as usize).map(|l| l.row.created_at);
         let items = lines

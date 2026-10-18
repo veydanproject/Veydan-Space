@@ -116,11 +116,11 @@
   <p class="muted">{$t('msg_srv_text')}</p>
   <div class="options">
     <button class="option" onclick={chooseVeydan}>
-      <span class="option-title"><Icon name="globe" size={16} />{$t('msg_srv_veydan_title')}</span>
+      <span class="option-title"><Icon name="server-2" size={16} />{$t('msg_srv_veydan_title')}</span>
       <span class="muted">{$t('msg_srv_veydan_text')}</span>
     </button>
     <button class="option" onclick={chooseOwn}>
-      <span class="option-title"><Icon name="network" size={16} />{$t('msg_srv_own_title')}</span>
+      <span class="option-title"><Icon name="server-2" size={16} />{$t('msg_srv_own_title')}</span>
       <span class="muted">{$t('msg_srv_own_text')}</span>
     </button>
   </div>

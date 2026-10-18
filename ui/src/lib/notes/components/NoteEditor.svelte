@@ -585,7 +585,7 @@
 
   const contextChips = $derived.by(() => {
     if (!note) return [];
-    const chips: { kind: string; label: string; color: string; onremove?: () => void }[] = [];
+    const chips: { kind: string; label: string; color?: string; onremove?: () => void }[] = [];
 
     const folderIds = notesStore.list.find(n => n.id === note.id)?.folder_ids ?? [];
     for (const fid of folderIds) {
@@ -609,9 +609,10 @@
         : () => notesStore.removeNoteBinding(note!.id, b);
       if (isEntityKind(parsed.kind)) {
         const entity = entitySummary(parsed.kind, parsed.value);
-        if (entity) chips.push({ kind: parsed.kind, label: entity.name, color: entity.color, onremove });
+        // A workspace keeps the user's colour; another entity and a domain are neutral, told by the mark.
+        if (entity) chips.push({ kind: parsed.kind, label: entity.name, color: entity.color || undefined, onremove });
       } else if (parsed.kind === 'domain') {
-        chips.push({ kind: 'domain', label: parsed.value, color: 'var(--text-2)', onremove });
+        chips.push({ kind: 'domain', label: parsed.value, onremove });
       }
     }
 
@@ -709,7 +710,7 @@
 
 {#if !note}
   <div class="empty-state editor-empty">
-    <Icon name="file-text" size={28} />
+    <Icon name="notes" size={28} />
     <p>{$t('note_empty_hint')}</p>
   </div>
 {:else}

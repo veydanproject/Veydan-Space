@@ -6,10 +6,10 @@ import { noteScope, scopeColor, type ScopeSources } from './list-scope';
 
 const all: ScopeSources = {
   workspaceName: (id) => `ws ${id}`,
-  workspaceColor: (id) => (id === 'w1' ? '#f472b6' : 'var(--success)'),
+  workspaceColor: (id) => (id === 'w1' ? '#f472b6' : undefined),
   profileName: (id) => `p ${id}`,
   folderName: (id) => `f ${id}`,
-  folderColor: (id) => (id === 'f1' ? '#60a5fa' : 'var(--text-2)'),
+  folderColor: (id) => (id === 'f1' ? '#60a5fa' : undefined),
 };
 
 describe('list-scope', () => {
@@ -30,15 +30,16 @@ describe('list-scope', () => {
     expect(scopeColor(scope, all)).toBe('#f472b6');
   });
 
-  it('falls back to the green of a workspace without a colour', () => {
+  it('leaves a workspace without a colour neutral (a colour is the user\'s, never the kind\'s)', () => {
     const scope = noteScope({ folder_ids: [], bindings: ['workspace:w2'] }, all);
-    expect(scopeColor(scope, all)).toBe('var(--success)');
-    expect(scopeColor(scope, { workspaceName: all.workspaceName })).toBe('var(--success)');
+    expect(scopeColor(scope, all)).toBeUndefined();
+    expect(scopeColor(scope, { workspaceName: all.workspaceName })).toBeUndefined();
   });
 
-  it('keeps the folder, profile and global colours', () => {
+  it('gives a folder its colour, a profile and the global scope none', () => {
     expect(scopeColor(noteScope({ folder_ids: ['f1'], bindings: [] }, all), all)).toBe('#60a5fa');
-    expect(scopeColor(noteScope({ folder_ids: [], bindings: ['profile:p1'] }, all), all)).toBe('var(--accent)');
-    expect(scopeColor(noteScope({ folder_ids: [], bindings: [] }, all), all)).toBe('var(--text-2)');
+    expect(scopeColor(noteScope({ folder_ids: ['f2'], bindings: [] }, all), all)).toBeUndefined();
+    expect(scopeColor(noteScope({ folder_ids: [], bindings: ['profile:p1'] }, all), all)).toBeUndefined();
+    expect(scopeColor(noteScope({ folder_ids: [], bindings: [] }, all), all)).toBeUndefined();
   });
 });

@@ -13,8 +13,8 @@
   import { findTag } from '$lib/notes/tag-name';
 
   const TAG_COLORS = [
-    '#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6',
-    '#f5c451', '#34d399', '#f26d6d', '#f97316',
+    // The kit's presets (N.colors); the colour is the user's, never the kind.
+    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
   ];
 
   interface Props {
@@ -593,14 +593,14 @@
   <!-- Global filters -->
   <div class="filter-section global-section">
     <button class={filterClass('all')} onclick={() => onfilter({ type: 'all' })}>
-      <span class="global-icon-slot"><Icon name="file-text" size={13} /></span>
+      <span class="global-icon-slot"><Icon name="notes" size={13} /></span>
       {$t('notes_filter_all')}
       <span class="count">{countAll}</span>
     </button>
     <!-- Global (bound to no workspace or profile) says nothing in a product without workspaces where every note is global -->
     {#if directory.owned('workspace') || workspaceTree.length > 0 || countGlobal !== countAll || activeFilter.type === 'global'}
       <button class={filterClass('global')} onclick={() => onfilter({ type: 'global' })}>
-        <span class="global-icon-slot"><Icon name="globe" size={13} /></span>
+        <span class="global-icon-slot"><Icon name="world" size={13} /></span>
         {$t('notes_filter_global')}
         <span class="count">{countGlobal}</span>
       </button>
@@ -739,7 +739,7 @@
       {#if !collapsed.has('sites')}
         {#each siteList as site (site.domain)}
           <button class={filterClass('domain', site.domain)} onclick={() => onfilter({ type: 'domain', id: site.domain })}>
-            <span class="global-icon-slot"><Icon name="globe" size={12} /></span>
+            <span class="global-icon-slot"><Icon name="world" size={12} /></span>
             <span class="item-name">{site.domain}</span>
             <span class="count">{site.noteCount}</span>
           </button>

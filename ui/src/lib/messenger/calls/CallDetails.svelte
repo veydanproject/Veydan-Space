@@ -100,7 +100,7 @@
     </div>
 
     <h3 class="sub">{$t('msg_calls_history')}</h3>
-    <ul class="calls">
+    <ul class="calls divided">
       {#each calls as e (e.call_id)}
         {@const w = words(e)}
         <li class="call-row" class:missed={isLogMissed(e)}>
@@ -133,7 +133,7 @@
   @media (hover: hover) { .act:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); } }
   .act:disabled { opacity: 0.45; cursor: default; }
   .sub { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
-  .calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .call-row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-2); }
   .glyph { display: inline-flex; color: var(--text-3); flex-shrink: 0; }
   .text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }

@@ -188,7 +188,7 @@
   {:else}
     {#each sections as s (s.day)}
       <h3 class="day">{heading(s.at)}</h3>
-      <ul class="list">
+      <ul class="list divided">
         {#each s.rows as r (r.key)}{@render row(r)}{/each}
       </ul>
     {/each}
@@ -207,7 +207,7 @@
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
   .day { margin: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: none; }
   .day:first-child { margin-top: var(--sp-1); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row { display: flex; align-items: center; border-radius: var(--radius-lg); transition: background var(--dur-fast) var(--ease); }
   .row:hover { background: var(--surface-hover); }
   .row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }

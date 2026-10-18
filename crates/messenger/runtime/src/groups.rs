@@ -673,7 +673,7 @@ impl MessengerRuntime {
         self.cancel_transfers_of_chat(chat_id).await;
         match chat_id.strip_prefix("group:") {
             Some(group) => self.group_forget(group).await,
-            None => self.dm.delete_chat(chat_id).await,
+            None => self.dm.delete_chat_by_me(chat_id).await,
         }
     }
 }

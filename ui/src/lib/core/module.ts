@@ -206,6 +206,11 @@ export interface EntitySummary {
   /** Short second line, e.g. `SOCKS5 · Singapore`. */
   subtitle: string;
   status: EntityStatus | null;
+  /**
+   * The colour the user gave it (a workspace's, a tag's, a folder's); '' for
+   * an entity the user does not colour (a profile, a proxy, a password…):
+   * its chip is neutral and its kind is told by the icon, never a colour.
+   */
   color: string;
   /** Key `kind:id` of the entity this one belongs to (a profile's workspace). */
   parent?: string;
@@ -228,7 +233,6 @@ export interface EntityKindDef {
   icon: string;
   /** Name of the kind (a key of the desktop dictionary: the kinds are shown there). */
   label: TranslationKey;
-  color: string;
   ensureLoaded: () => Promise<void>;
   list: () => EntitySummary[];
   actions: EntityAction[];

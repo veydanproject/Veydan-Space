@@ -183,7 +183,7 @@
     autosave: 'clock',
     restore: 'rotate-ccw',
     merge: 'git-merge',
-    import: 'upload',
+    import: 'file-import',
     sync: 'refresh-cw',
     conflict: 'alert-triangle',
   };
