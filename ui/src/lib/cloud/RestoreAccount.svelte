@@ -3,8 +3,10 @@
 
 <!--
   «Восстановить аккаунт» → «У меня есть 12 слов» (cloud-recovery.md §7, §11):
-  the words, a new PIN or password of the lock, the six steps with their
-  progress, then the messenger. A storage of the user's own that is not
+  the words; the copy read before anything is written says whether the
+  account has a lock, and only then its PIN or password is asked — the one
+  the person remembers, or a new one; the six steps with their progress,
+  then the messenger. A storage of the user's own that is not
   within reach is said, with the way to restore without it. Opened from the
   first screen of the messenger (/cloud/restore).
 -->
@@ -16,13 +18,13 @@
   import StateView from '$lib/cloud/StateView.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import { appLock } from '$lib/core/lock/store.svelte';
-  import LockSecretFields from '$lib/core/lock/LockSecretFields.svelte';
-  import { lockSecretIssue } from '$lib/core/lock/secret';
   import { looksLikeWords } from '$lib/core/lock/words';
-  import type { LockKind } from '$lib/core/types';
+  import RestoreSecret from '$lib/cloud/RestoreSecret.svelte';
+  import { emptySecretState, restoreSecretOf } from '$lib/cloud/restoreSecret';
   import {
     asCloudError,
     cloudApi,
+    NO_SECRET,
     RESTORE_EVENT,
     VAULT_UNREACHABLE,
     type CloudError,
@@ -31,10 +33,9 @@
   } from '$lib/cloud/api';
 
   let words = $state('');
-  let kind = $state<LockKind>('pin');
-  let password = $state('');
-  let confirm = $state('');
-  let hint = $state('');
+  /** The account has a lock: its secret is asked (after the look at the copy). */
+  let needsSecret = $state(false);
+  let secret = $state(emptySecretState());
   let busy = $state(false);
   let phase = $state<CloudRestorePhase | null>(null);
   let error = $state('');
@@ -44,7 +45,8 @@
 
   const wordsOk = $derived(looksLikeWords(words));
   const wordCount = $derived(words.trim().split(/\s+/).filter(Boolean).length);
-  const secretOk = $derived(lockSecretIssue(kind, password, confirm) === null);
+  const typed = $derived(restoreSecretOf(secret));
+  const ready = $derived(wordsOk && (!needsSecret || typed !== null));
 
   onMount(() => {
     let stop: (() => void) | null = null;
@@ -71,6 +73,10 @@
         return tr('cloud_restore_not_clean');
       case VAULT_UNREACHABLE:
         return e.message ? `${tr('cloud_vault_unreachable')} (${e.message})` : tr('cloud_vault_unreachable');
+      case 'wrong_password':
+        return tr('cloud_restore_wrong_old');
+      case 'lock_secret_needed':
+        return tr('cloud_restore_lock_needed');
       default:
         return e.message ? `${e.code}: ${e.message}` : e.code;
     }
@@ -78,36 +84,70 @@
 
   const phaseKey = (p: CloudRestorePhase) => `cloud_restore_phase_${p}` as const;
 
-  async function restore(withoutVault = false) {
-    busy = true;
+  /**
+   * «Далее» / «Восстановить»: the words alone first — the copy is read and
+   * says whether the account has a lock; without one the restore goes on
+   * at once, with one its secret is asked. Then the restore.
+   */
+  async function next(withoutVault = false) {
     error = '';
     vaultAway = false;
+    if (!needsSecret) {
+      busy = true;
+      phase = 'reading';
+      try {
+        needsSecret = (await cloudApi.restorePeek(words.trim())).lock;
+      } catch (e) {
+        fail(e);
+        return;
+      } finally {
+        busy = false;
+      }
+      phase = null;
+      if (needsSecret) return;
+    }
+    await restore(withoutVault);
+  }
+
+  async function restore(withoutVault: boolean) {
+    const given = needsSecret ? typed : NO_SECRET;
+    if (!given) return;
+    busy = true;
     phase = 'reading';
     try {
-      restored = await cloudApi.restoreWithWords(
-        words.trim(),
-        { password: password.trim(), kind, hint: hint.trim() || null },
-        withoutVault,
-      );
+      restored = await cloudApi.restoreWithWords(words.trim(), given, withoutVault);
       words = '';
-      password = '';
-      confirm = '';
+      secret = emptySecretState();
       await appLock.refresh();
     } catch (e) {
-      const refusal = asCloudError(e);
-      vaultAway = refusal.code === VAULT_UNREACHABLE;
-      error = refusalText(refusal, (key) => $t(key));
-      phase = null;
+      fail(e);
     } finally {
       busy = false;
     }
+  }
+
+  function fail(e: unknown) {
+    const refusal = asCloudError(e);
+    vaultAway = refusal.code === VAULT_UNREACHABLE;
+    // The copy fell behind a change of the lock: the secret is asked now.
+    if (refusal.code === 'lock_secret_needed') needsSecret = true;
+    error = refusalText(refusal, (key) => $t(key));
+    phase = null;
+  }
+
+  /** Back to the words: what was typed of the secret goes. */
+  function back() {
+    needsSecret = false;
+    secret = emptySecretState();
+    error = '';
+    vaultAway = false;
   }
 </script>
 
 {#if restored}
   <StateView tone="ok" title={$t('cloud_restore_done')}>
     <p>
-      {#if restored.lock === 'kept'}{$t('cloud_restore_lock_kept')}{:else if restored.lock === 'reinstalled'}{$t('cloud_restore_lock_reinstalled')}{:else}{$t('cloud_restore_lock_none')}{/if}
+      {#if restored.lock === 'kept'}{$t('cloud_restore_lock_kept')}{:else if restored.lock === 'opened'}{$t('cloud_restore_lock_opened')}{:else if restored.lock === 'reinstalled'}{$t('cloud_restore_lock_reinstalled')}{:else}{$t('cloud_restore_lock_none')}{/if}
     </p>
     {#snippet actions()}
       {#if restored && !restored.vault_joined}<p>{$t('cloud_link_done_vault')}</p>{/if}
@@ -127,23 +167,25 @@
       <label for="cloud-restore-words">{$t('cloud_restore_words_label')}</label>
       <span class="count" class:ok={wordsOk}>{$t('cloud_restore_words_count', { n: String(wordCount) })}</span>
     </div>
-    <textarea id="cloud-restore-words" class="mono" rows="3" bind:value={words} spellcheck="false" autocapitalize="off" autocomplete="off" disabled={busy}></textarea>
+    <textarea id="cloud-restore-words" class="mono" rows="3" bind:value={words} spellcheck="false" autocapitalize="off" autocomplete="off" disabled={busy || needsSecret}></textarea>
   </div>
-  <div class="block">
-    <h2>{$t('cloud_restore_new_secret')}</h2>
-    <p class="text">{$t('cloud_restore_new_secret_hint')}</p>
-  </div>
-  <LockSecretFields bind:kind bind:password bind:confirm bind:hint disabled={busy} />
+  {#if needsSecret}
+    <RestoreSecret bind:state={secret} disabled={busy} />
+  {/if}
   {#if busy && phase}
     <p class="wait"><span class="spinner" aria-hidden="true"></span>{$t(phaseKey(phase))}</p>
   {/if}
   {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
   <Actions>
-    <a class="btn btn-ghost" href="/messenger">{$t('cloud_restore_back')}</a>
-    {#if vaultAway}
-      <button class="btn btn-ghost" type="button" disabled={busy || !wordsOk || !secretOk} onclick={() => restore(true)}>{$t('cloud_vault_skip')}</button>
+    {#if needsSecret}
+      <button class="btn btn-ghost" type="button" disabled={busy} onclick={back}>{$t('cloud_restore_back')}</button>
+    {:else}
+      <a class="btn btn-ghost" href="/messenger">{$t('cloud_restore_back')}</a>
     {/if}
-    <button class="btn btn-primary" type="button" disabled={busy || !wordsOk || !secretOk} onclick={() => restore()}>{$t('cloud_restore_go')}</button>
+    {#if vaultAway}
+      <button class="btn btn-ghost" type="button" disabled={busy || !ready} onclick={() => next(true)}>{$t('cloud_vault_skip')}</button>
+    {/if}
+    <button class="btn btn-primary" type="button" disabled={busy || !ready} onclick={() => next()}>{needsSecret ? $t('cloud_restore_go') : $t('cloud_restore_next')}</button>
   </Actions>
 {/if}
 

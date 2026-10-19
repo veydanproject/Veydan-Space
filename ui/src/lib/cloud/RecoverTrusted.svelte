@@ -6,8 +6,9 @@
   §8.5, §11): the key of the account, «готовим запрос…», then «Запрос
   отправлен» with the code to say by voice, the timer of 30 minutes,
   «Подтвердили: 1 из 3 — npub1…abc», «Поделиться ссылкой», «Отменить»;
-  at k confirmations the new PIN or password of the lock and the restore
-  of §7; then the 12 words once more.
+  at k confirmations the copy is read (nothing written) and, for an account
+  with a lock, its PIN or password is asked — remembered or new — then the
+  restore of §7; then the 12 words once more.
 -->
 <script lang="ts">
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
@@ -16,11 +17,10 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
-  import LockSecretFields from '$lib/core/lock/LockSecretFields.svelte';
-  import { lockSecretIssue } from '$lib/core/lock/secret';
   import RecoveryKeyCard from '$lib/core/lock/RecoveryKeyCard.svelte';
-  import type { LockKind } from '$lib/core/types';
-  import { VAULT_UNREACHABLE } from '$lib/cloud/api';
+  import { NO_SECRET, VAULT_UNREACHABLE } from '$lib/cloud/api';
+  import RestoreSecret from '$lib/cloud/RestoreSecret.svelte';
+  import { emptySecretState, restoreSecretOf } from '$lib/cloud/restoreSecret';
   import Actions from '$lib/cloud/Actions.svelte';
   import Countdown from '$lib/cloud/Countdown.svelte';
   import Notice from '$lib/cloud/Notice.svelte';
@@ -29,10 +29,7 @@
 
   const store = new RecoverStore();
   let npub = $state('');
-  let kind = $state<LockKind>('pin');
-  let password = $state('');
-  let confirm = $state('');
-  let hint = $state('');
+  let secret = $state(emptySecretState());
   let copied = $state(false);
   let wordsDone = $state(false);
   let now = $state(Math.floor(Date.now() / 1000));
@@ -46,10 +43,25 @@
       const detail = store.error?.message;
       return detail ? `${$t('cloud_vault_unreachable')} (${detail})` : $t('cloud_vault_unreachable');
     }
+    if (store.error?.code === 'wrong_password') return $t('cloud_restore_wrong_old');
+    if (store.error?.code === 'lock_secret_needed') return $t('cloud_restore_lock_needed');
     const key = socialErrorKey(store.error);
     return key ? $t(key) : (store.error?.message ?? '');
   });
-  const secretOk = $derived(lockSecretIssue(kind, password, confirm) === null);
+  const typed = $derived(restoreSecretOf(secret));
+  /** The key is together: whether the account has a lock (`null` while the copy is read). */
+  let needsSecret = $state<boolean | null>(null);
+  const ready = $derived(needsSecret === false || (needsSecret === true && typed !== null));
+  let peeking = false;
+  $effect(() => {
+    if (view.phase !== 'collected' || needsSecret !== null || peeking) return;
+    peeking = true;
+    void store.peek().then((lock) => {
+      peeking = false;
+      // A copy that could not be read: the secret is asked, as the safe way.
+      needsSecret = lock ?? true;
+    });
+  });
 
   onMount(() => {
     let ticks = 0;
@@ -76,10 +88,13 @@
   }
 
   async function finish(withoutVault = false) {
-    if (await store.finish({ password: password.trim(), kind, hint: hint.trim() || null }, withoutVault)) {
-      password = '';
-      confirm = '';
+    const given = needsSecret ? typed : NO_SECRET;
+    if (!given) return;
+    if (await store.finish(given, withoutVault)) {
+      secret = emptySecretState();
       await appLock.refresh();
+    } else if (store.error?.code === 'lock_secret_needed') {
+      needsSecret = true;
     }
   }
 </script>
@@ -99,17 +114,17 @@
   {/if}
 {:else if view.phase === 'collected'}
   <Notice tone="ok">{$t('cloud_recover_collected')}</Notice>
-  <div class="block">
-    <h2>{$t('cloud_restore_new_secret')}</h2>
-    <p class="text">{$t('cloud_restore_new_secret_hint')}</p>
-  </div>
-  <LockSecretFields bind:kind bind:password bind:confirm bind:hint disabled={store.busy} />
+  {#if needsSecret === null}
+    <p class="wait"><span class="spinner" aria-hidden="true"></span>{$t('cloud_restore_phase_reading')}</p>
+  {:else if needsSecret}
+    <RestoreSecret bind:state={secret} disabled={store.busy} />
+  {/if}
   {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
   <Actions>
     {#if vaultAway}
-      <button class="btn btn-ghost" type="button" disabled={store.busy || !secretOk} onclick={() => finish(true)}>{$t('cloud_vault_skip')}</button>
+      <button class="btn btn-ghost" type="button" disabled={store.busy || !ready} onclick={() => finish(true)}>{$t('cloud_vault_skip')}</button>
     {/if}
-    <button class="btn btn-primary" type="button" disabled={store.busy || !secretOk} onclick={() => finish()}>{$t('cloud_recover_finish')}</button>
+    <button class="btn btn-primary" type="button" disabled={store.busy || !ready} onclick={() => finish()}>{$t('cloud_recover_finish')}</button>
   </Actions>
 {:else if view.phase === 'expired'}
   <StateView tone="info" title={$t('cloud_recover_expired_title')}>

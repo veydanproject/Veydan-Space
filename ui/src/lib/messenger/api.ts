@@ -7,7 +7,7 @@
 
 // Types the runtime writes for itself (`make msg-types`); never by hand.
 export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView, PrivateServerView, ServerPreview } from './generated/links';
-export type { SharedCounts, SharedSection } from './generated/shared';
+export type { DmHistoryPage, SharedCounts, SharedSection } from './generated/shared';
 export type { BotCard } from './generated/bot';
 import type { BotCard } from './generated/bot';
 import type { MdBlock } from './generated/markdown';
@@ -897,7 +897,7 @@ import {
 } from './devDemo';
 import type { ExternalUrl, InternalLinkText } from './content/types';
 import type { GroupMembership, LinkPreview, LinkView, PrivateServerView, ServerPreview } from './generated/links';
-import type { SharedCounts, SharedSection } from './generated/shared';
+import type { DmHistoryPage, SharedCounts, SharedSection } from './generated/shared';
 import { inSection } from './content/shared/sections';
 import { parseAddress } from './chats/address';
 import { demoCallMocks } from './calls/demo';
@@ -2109,6 +2109,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_moderation_group_inherit: (a) => (mockModLog[String(a?.group)] ?? []).filter((e) => e.by === a?.from && (e.action === 'hide' || e.action === 'approve')).length,
   // The relays of the demo know nothing older than what the demo shows.
   messenger_group_history: () => 0,
+  messenger_dm_history: (): DmHistoryPage => ({ older: 0, end: true }),
   messenger_desktop_notify_get: () => mockDesktopNotify,
   messenger_desktop_notify_set: (a) => { mockDesktopNotify = { ...mockDesktopNotify, enabled: Boolean(a?.enabled), sound: Boolean(a?.sound) }; return mockDesktopNotify; },
   messenger_desktop_notify_test: () => undefined,
@@ -2314,6 +2315,12 @@ export const messengerApi = {
     open: (peer: string) => invoke<MessengerChat>('messenger_chat_open', { peer }),
     messages: (chatId: string, before?: number, limit = 50) =>
       invoke<MessengerMessage[]>('messenger_chat_messages', { chatId, before: before ?? null, limit }),
+    /**
+     * «Load earlier» in a direct chat: older pages of its server's inbox from the relays, until the chat has messages
+     * older than `before` (its oldest shown; now, for none) or the server has nothing older (`end`). Read the messages
+     * before `before` again when `older > 0`.
+     */
+    history: (chatId: string, before: number) => invoke<DmHistoryPage>('messenger_dm_history', { chat: chatId, before }),
     /** How many messages each section of what the chat has shared holds. */
     sharedCounts: (chatId: string) => invoke<SharedCounts>('messenger_chat_shared_counts', { chatId }),
     /** One page of a section, newest first, strictly older than `before`. */

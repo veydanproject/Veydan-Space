@@ -569,6 +569,50 @@ pub async fn remove_by_me(store: &Store, id: &str, now: i64) -> Result<Option<Re
     Ok(removed)
 }
 
+/// The groups here of a private server removed and not put in again
+/// (`removed_at`, no row of it): a welcome read while its server went
+/// writes its group after `remove_private` took the groups, for
+/// `forget_group_of_removed` under the lock of each.
+pub async fn groups_of_removed(store: &Store) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    for (id, _) in removed(store).await? {
+        if get(store, &id).await?.is_none() {
+            out.extend(groups_on(store.pool(), &id).await?);
+        }
+    }
+    Ok(out)
+}
+
+/// Group `group_id` forgotten as `remove_private` forgets the groups of
+/// its server, when that server is still removed. Whether it was.
+pub async fn forget_group_of_removed(store: &Store, group_id: &str) -> Result<bool> {
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
+    let relay: Option<String> = sqlx::query_scalar("SELECT relay_url FROM msg_groups WHERE id = ?")
+        .bind(group_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage)?;
+    let Some(id) = relay.filter(|r| !r.trim().is_empty()).map(|r| id_of(&r)) else {
+        return Ok(false);
+    };
+    let removed: Option<String> = sqlx::query_scalar("SELECT value FROM msg_settings WHERE key = ?")
+        .bind(removed_key(&id))
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage)?;
+    let here: Option<i64> = sqlx::query_scalar("SELECT 1 FROM msg_servers WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage)?;
+    if here.is_some() || removed.and_then(|v| v.parse::<i64>().ok()).unwrap_or(0) <= 0 {
+        return Ok(false);
+    }
+    forget_group(&mut tx, group_id).await?;
+    tx.commit().await.map_err(storage)?;
+    Ok(true)
+}
+
 /// What went with a private server (`remove_private`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Removed {
@@ -1287,11 +1331,23 @@ mod tests {
         assert!(group_heard_on(&s, &home_g, Some("wss://home.example")).await.unwrap());
         // A relay that never was a server of mine is still the home set's.
         assert_eq!(private_of_relay(&s, "wss://never.example").await.unwrap(), None);
+        // The sweep takes it, and only it.
+        crate::groups::add_key(&s, &g1, "k3").await.unwrap();
+        assert_eq!(groups_of_removed(&s).await.unwrap(), vec![g1.clone()]);
+        assert!(!forget_group_of_removed(&s, &home_g).await.unwrap());
+        assert!(forget_group_of_removed(&s, &g1).await.unwrap());
+        assert!(crate::groups::get(&s, &g1).await.unwrap().is_none());
+        assert!(crate::groups::secrets_owed(&s).await.unwrap().contains(&(g1.clone(), "k3".to_string())));
+        assert!(groups_of_removed(&s).await.unwrap().is_empty());
+        assert!(crate::groups::get(&s, &home_g).await.unwrap().is_some());
+        crate::groups::upsert(&s, &group_row(&g1, "wss://mine.example", "joined")).await.unwrap();
 
         // Put in again: the server is mine, and so is the group's relay.
         put_private(&s, &row("wss://mine.example", KIND_PRIVATE)).await.unwrap();
         assert_eq!(of_group(&s, &g1).await.unwrap(), Some(id.clone()));
         assert!(!group_closed(&s, &g1).await.unwrap());
+        assert!(groups_of_removed(&s).await.unwrap().is_empty());
+        assert!(!forget_group_of_removed(&s, &g1).await.unwrap(), "a group of a server put in again stays");
     }
 
     #[tokio::test]

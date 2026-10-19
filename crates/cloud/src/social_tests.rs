@@ -462,6 +462,7 @@ async fn a_clean_device_asks_two_people_confirm_and_the_key_is_put_together() {
                 password: "4821".into(),
                 kind: Some("pin".into()),
                 hint: None,
+                old: false,
             },
             Vault::Join,
             &recorder,
@@ -535,7 +536,7 @@ async fn a_wrong_code_a_cancel_and_a_lost_share_are_refused_by_the_trustee() {
     stage.world.clock.store(view.expires_at.expect("end") + 1, Ordering::SeqCst);
     assert_eq!(requester.poll().phase, RequestPhase::Expired);
     let e = requester
-        .finish(NewSecret { password: "4821".into(), kind: None, hint: None }, Vault::Join, &Recorder(Mutex::new(Vec::new())))
+        .finish(NewSecret { password: "4821".into(), kind: None, hint: None, old: false }, Vault::Join, &Recorder(Mutex::new(Vec::new())))
         .await
         .err()
         .map(|e| e.code);
@@ -588,7 +589,7 @@ async fn a_revoked_generation_is_dropped_and_a_stale_answer_is_ignored() {
     until("the key is together from generation 1", || requester.poll().phase == RequestPhase::Collected).await;
     let recorder = Recorder(Mutex::new(Vec::new()));
     let recovered = requester
-        .finish(NewSecret { password: "4821".into(), kind: None, hint: None }, Vault::Join, &recorder)
+        .finish(NewSecret { password: "4821".into(), kind: None, hint: None, old: false }, Vault::Join, &recorder)
         .await
         .expect("restored");
     assert_eq!(RecoveryKey::from_words(&recovered.words).expect("rk"), stage.rk);

@@ -120,7 +120,7 @@ impl Session {
         let meta = tokio::spawn(meta.follow_loop(me.clone(), ui.subscribe()));
         let ingress = IngressLoop::spawn(pool.events(), store.clone(), Some(keys.clone()), dispatcher, ctx, sink);
 
-        let receipts = tokio::spawn(crate::receipts::receipt_loop(dm.clone(), groups, outbox.clone(), keys.clone()));
+        let receipts = tokio::spawn(crate::receipts::receipt_loop(dm.clone(), groups.clone(), outbox.clone(), keys.clone()));
         let presence = tokio::spawn(crate::presence::presence_loop(presence, pool.clone(), keys.clone()));
         let requests = tokio::spawn(crate::moderation::sweep_loop(
             dm.clone(),
@@ -139,7 +139,7 @@ impl Session {
         let ring = owed.clone();
         dm.set_relations_hook(Some(Arc::new(move || ring.notify_one())));
         let relations = tokio::spawn(crate::relations::publish_loop(dm.clone(), outbox.clone(), keys.clone(), owed));
-        let inbox = tokio::spawn(crate::relations::open_inbox(store, relays, pool, keys.clone(), dm, outbox, me, started_at, ui));
+        let inbox = tokio::spawn(crate::relations::open_inbox(store, relays, pool, keys.clone(), dm, groups, outbox, me, started_at, ui));
         Ok(Self { keys, started_at, ingress, pump, inbox, relations, receipts, presence, avatars, meta, requests })
     }
 

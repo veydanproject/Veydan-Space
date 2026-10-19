@@ -1093,6 +1093,8 @@
     "msg_mod_you_muted_until": "모더레이터가 {time}까지 이 그룹에서 작성을 금지했습니다.",
     "msg_mod_needs_update": "이 그룹은 최신 버전의 기능을 사용합니다. 모두 보려면 앱을 업데이트하세요.",
     "msg_mod_load_earlier": "이전 메시지 불러오기",
+    "msg_history_loading": "서버에서 이전 메시지를 불러오는 중",
+    "msg_history_start": "대화의 시작",
     "msg_err_not_implemented": "이 버전에서는 아직 사용할 수 없습니다.",
     "msg_err_group_closed": "지금 이 그룹에서는 관리자만 작성할 수 있습니다.",
     "msg_err_group_muted_until": "모더레이터가 잠시 이 그룹에서 작성을 금지했습니다.",

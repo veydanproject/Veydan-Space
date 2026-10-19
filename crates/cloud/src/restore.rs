@@ -145,6 +145,9 @@ pub enum Phase {
 pub enum LockOutcome {
     /// The row of the vault opened with the words and took the new password.
     Kept,
+    /// The person remembered the secret of the lock: the row of the vault
+    /// opened with it, and it stays the secret.
+    Opened,
     /// The row of the vault was another one (a `reset` after the escrow was
     /// written): the lock was set up anew with the new password, its second
     /// wrap under the same words; the boxes of this device were empty.
@@ -192,13 +195,41 @@ pub struct Restored {
     pub escrow_refreshed: Option<bool>,
 }
 
-/// The new secret of the lock a restore sets (step 5).
+/// The secret of the lock a restore takes (step 5): a new one, or the one
+/// the lock has (`old`). Empty for an account without a lock.
 #[derive(Debug, Clone)]
 pub struct NewSecret {
     pub password: String,
     /// `pin` | `password`; `None` is `password`.
     pub kind: Option<String>,
     pub hint: Option<String>,
+    /// The person remembers the secret of the lock and typed it: the row
+    /// of the vault is opened with it, not rewrapped. Without the vault
+    /// (no row to open it against) it is set up as the secret.
+    pub old: bool,
+}
+
+/// What the escrow says before anything is written: whether the account
+/// has a lock, so that the screen asks its secret only then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Peeked {
+    pub lock: bool,
+}
+
+/// Step 1 alone: the words checked, the device found clean, the escrow
+/// read and opened in memory — nothing written. Whether the account has a
+/// lock: the escrow carries its key exactly while one is set (§4, written
+/// again at every change of the lock).
+pub async fn peek(env: &dyn RestoreEnv, store: &dyn EscrowStore, typed_words: &str) -> Result<Peeked, CloudError> {
+    let rk = RecoveryKey::from_words(typed_words).map_err(|e| CloudError::new(words::BAD_WORDS, e.to_string()))?;
+    let auth = rk.escrow_auth().map_err(|e| CloudError::new(code::CRYPTO, e.to_string()))?;
+    let start = start_of(env, &auth.escrow_address()).await?;
+    let bytes = store.get(&auth).await?;
+    let escrow = escrow::open(&rk, bytes).await?;
+    // A try that stopped at step 5 left the row of the vault: its lock
+    // counts, whatever an escrow fallen behind says.
+    let resumed = resume_of(&start, &escrow.sync.vault_id)?;
+    Ok(Peeked { lock: escrow.lock.is_some() || (resumed && env.lock().enabled().await) })
 }
 
 /// What a restore needs of the device: the lock, the data file, the vault
@@ -279,6 +310,48 @@ pub async fn ensure_clean(env: &dyn RestoreEnv) -> Result<(), CloudError> {
     Ok(())
 }
 
+/// A restore under way on this device (`app_settings`, never synced): the
+/// address of the escrow of its words, set before its first write and
+/// cleared at its end. A try that stopped at step 5 left the device bound
+/// with no identity, and the next try with the same words carries on.
+pub const RESTORE_PENDING: &str = "cloud.restore_pending";
+
+/// Where a device stands for a restore: clean, or bound to a vault by a
+/// restore of these words that stopped at step 5 (a wrong secret of the
+/// lock, or none where the account has a lock), carried on from there when
+/// the vault is the one the escrow names (`resume_of`). Anything else is
+/// [`ensure_clean`]'s, before any request.
+enum Start {
+    Clean,
+    Bound(String),
+}
+
+async fn start_of(env: &dyn RestoreEnv, address: &str) -> Result<Start, CloudError> {
+    if !env.has_identity().await? {
+        let pending = veydan_core::settings::get(env.db(), RESTORE_PENDING).await;
+        if let (Some(binding), Some(pending)) = (config::load_binding(env.db()).await, pending) {
+            if pending == address {
+                return Ok(Start::Bound(binding.vault_id));
+            }
+        }
+    }
+    ensure_clean(env).await.map(|_| Start::Clean)
+}
+
+/// Whether the restore carries on from step 5: the device is bound to the
+/// very vault of the escrow (steps 2 to 4 were done by a try before); a
+/// device bound to another vault is not clean.
+fn resume_of(start: &Start, escrow_vault: &str) -> Result<bool, CloudError> {
+    match start {
+        Start::Clean => Ok(false),
+        Start::Bound(vault_id) if vault_id == escrow_vault => Ok(true),
+        Start::Bound(_) => Err(CloudError::new(
+            words::NOT_CLEAN,
+            "this device is bound to a sync vault; a restore needs a clean install",
+        )),
+    }
+}
+
 /// Step 4 as `sync_join_vault` does it, with the vault already open: the
 /// row of the vault takes the place of the local one (or the local one
 /// stands, see `join::adopt_vault_key`), the device is bound, the state of
@@ -337,6 +410,20 @@ async fn settle_lock(
         lock.open_default().await.map_err(lock_error)?;
         return Ok(LockOutcome::NoLock);
     }
+    if secret.password.is_empty() {
+        // The escrow said no lock and the row of the vault has one: the
+        // escrow fell behind a change of the lock (it is written again at
+        // every change, so this is rare). The screen asks and tries again.
+        return Err(lock_secret_needed());
+    }
+    if secret.old {
+        // The secret the person remembers: the row opens with it and keeps
+        // it; a wrong one is said, nothing is set in its place.
+        if lock.is_locked().await && !lock.unlock(&secret.password).await.map_err(lock_error)? {
+            return Err(CloudError::new(code::WRONG_PASSWORD, "the secret is not the lock's"));
+        }
+        return Ok(LockOutcome::Opened);
+    }
     match lock
         .recover_keep(
             rk_words,
@@ -383,6 +470,10 @@ async fn settle_lock(
         }
         Err(e) => Err(lock_error(e)),
     }
+}
+
+fn lock_secret_needed() -> CloudError {
+    CloudError::new(words::LOCK_SECRET_NEEDED, "the account has a lock: its secret or a new one is needed")
 }
 
 /// Step 5 without the vault ([`Vault::Skip`]): no key row came, so the
@@ -475,19 +566,30 @@ pub async fn restore(
     progress(Phase::Reading);
     let rk = RecoveryKey::from_words(typed_words)
         .map_err(|e| CloudError::new(words::BAD_WORDS, e.to_string()))?;
-    ensure_clean(env).await?;
     let rk_words = rk.words();
     let auth = rk
         .escrow_auth()
         .map_err(|e| CloudError::new(code::CRYPTO, e.to_string()))?;
+    let start = start_of(env, &auth.escrow_address()).await?;
     let bytes = store.get(&auth).await?;
     let sealed_sha256 = escrow::sha256_hex(&bytes);
 
     progress(Phase::Opening);
     // Step 1: every field in memory, wiped when this function returns.
     let escrow = escrow::open(&rk, bytes).await?;
+    // An account with a lock needs its secret, or a new one: said before
+    // anything is written, so the device stays clean for the next try.
+    if escrow.lock.is_some() && secret.password.is_empty() {
+        return Err(lock_secret_needed());
+    }
+    let resumed = resume_of(&start, &escrow.sync.vault_id)?;
 
     let lock = match vault {
+        // Steps 2 to 4 were done by the try that stopped at step 5.
+        Vault::Join | Vault::Skip if resumed => {
+            progress(Phase::Lock);
+            settle_lock(env.lock(), &rk, &rk_words, escrow.lock.as_ref(), &secret).await?
+        }
         Vault::Join => {
             progress(Phase::Vault);
             // Step 2 and 3.
@@ -497,6 +599,8 @@ pub async fn restore(
 
             progress(Phase::KeyRow);
             // Step 4.
+            // The first write: a try that stops after it carries on (`start_of`).
+            veydan_core::settings::set(env.db(), RESTORE_PENDING, &auth.escrow_address()).await.map_err(app_error)?;
             env.adopt_vault_key(&engine, &escrow.sync).await?;
 
             progress(Phase::Lock);
@@ -512,6 +616,7 @@ pub async fn restore(
     progress(Phase::Identity);
     // Step 6.
     env.import_identity(&escrow.nsec).await?;
+    veydan_core::settings::delete(env.db(), RESTORE_PENDING).await.map_err(app_error)?;
 
     escrow::save_rk(boxed, &rk, escrow.generation).await?;
     escrow::save_state(
@@ -529,7 +634,7 @@ pub async fn restore(
     Ok(Restored {
         npub: nip98::hex(&escrow.npub),
         lock,
-        vault_joined: vault == Vault::Join,
+        vault_joined: resumed || vault == Vault::Join,
         k: escrow.recovery.k,
         n: escrow.recovery.n,
         generation: escrow.generation,

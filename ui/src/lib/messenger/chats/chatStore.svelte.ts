@@ -243,19 +243,22 @@ class ChatStore {
 
   /**
    * The page before the first message shown; how many it added. `force`
-   * reads it even when the last page said there is no more: a group has
-   * just been asked for its older history (`groups.history`).
+   * reads it even when the last page said there is no more, and in a chat
+   * that shows nothing yet (then the newest page): the relays have just
+   * been asked for its older history (`groups.history`, `chats.history`).
    */
   async loadOlder(force = false): Promise<number> {
     const id = this.activeId;
-    if (!id || (!this.hasMore && !force) || this.loadingOlder || this.messages.length === 0) return 0;
+    if (!id || (!this.hasMore && !force) || this.loadingOlder || (this.messages.length === 0 && !force)) return 0;
     this.loadingOlder = true;
     try {
-      const page = await messengerApi.chats.messages(id, this.messages[0].created_at, PAGE);
+      const page = await messengerApi.chats.messages(id, this.messages[0]?.created_at, PAGE);
       if (this.activeId !== id) return 0;
+      // What the events brought meanwhile (the messages the relays sent
+      // come as events too) is in the window already, in its place.
       const known = new Set(this.messages.map((m) => m.id));
       const fresh = page.filter((m) => !known.has(m.id));
-      this.messages = [...fresh, ...this.messages];
+      this.messages = fresh.length ? [...fresh, ...this.messages].sort(byTime) : this.messages;
       this.hasMore = page.length === PAGE;
       return fresh.length;
     } finally {

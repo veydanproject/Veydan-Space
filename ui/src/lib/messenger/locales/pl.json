@@ -1093,6 +1093,8 @@
     "msg_mod_you_muted_until": "Moderator zabronił Ci pisać w tej grupie do {time}.",
     "msg_mod_needs_update": "Grupa używa funkcji nowszej wersji. Zaktualizuj aplikację, aby widzieć wszystko.",
     "msg_mod_load_earlier": "Wczytaj wcześniejsze",
+    "msg_history_loading": "Wczytywanie wcześniejszych wiadomości z serwera",
+    "msg_history_start": "Początek rozmowy",
     "msg_err_not_implemented": "W tej wersji to jeszcze niedostępne.",
     "msg_err_group_closed": "Teraz w tej grupie piszą tylko administratorzy.",
     "msg_err_group_muted_until": "Moderator tymczasowo zabronił Ci pisać w tej grupie.",

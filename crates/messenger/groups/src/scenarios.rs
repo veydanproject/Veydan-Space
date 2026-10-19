@@ -3418,3 +3418,63 @@ async fn a_group_joined_by_link_comes_to_my_other_device() {
         assert!(w.notes.is_empty(), "{relay:?}: {:?}", w.notes);
     }
 }
+
+/// The owner signed in on a new phone: its history reached back only so
+/// far, and the groups he was in did not come. Every group I am in names
+/// a welcome to myself now — made at its creation, or sent once for one
+/// I was brought into — which my list carries by its id: a new device that
+/// fetches those wraps by id, and nothing else of the past, is in every
+/// group, and sends nothing anew for them.
+#[tokio::test]
+async fn a_new_device_gets_my_groups_by_the_welcomes_to_myself() {
+    use messenger_store::groups::self_welcome;
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let mine = w.create(alice, GroupKind::Private, "Mine", true).await;
+    let theirs = w.create(bob, GroupKind::Private, "Theirs", true).await;
+    w.say(bob, &theirs, "before alice").await;
+    w.bring(bob, &theirs, alice).await;
+    let store = w.devices[alice].dm.store().clone();
+    let first = self_welcome(&store, &mine).await.unwrap().expect("made at the creation");
+    assert!(self_welcome(&store, &theirs).await.unwrap().is_none(), "brought in by bob: none of mine yet");
+    let d = &w.devices[alice];
+    let owed = d.svc.welcomes_owed(&d.keys).await.unwrap();
+    assert_eq!(owed.len(), 1, "one for the group bob brought me into");
+    w.run(alice, Outcome { publish: owed, ..Default::default() }).await;
+    let second = self_welcome(&store, &theirs).await.unwrap().expect("sent");
+    let d = &w.devices[alice];
+    assert!(d.svc.welcomes_owed(&d.keys).await.unwrap().is_empty(), "once");
+
+    // A new device of alice's: of the past, only the two wraps by their ids.
+    let keys = w.devices[alice].keys.clone();
+    let phone = w.device(keys).await;
+    for id in [&first, &second] {
+        let wire = w
+            .sent
+            .iter()
+            .find_map(|(_, o)| match o {
+                Outbound::PublishToInbox { event, .. } | Outbound::PublishScoped { event, .. } | Outbound::PublishOwn { event }
+                    if event.id.as_hex() == id.as_str() =>
+                {
+                    Some(Wire::Dm(event.clone()))
+                }
+                _ => None,
+            })
+            .expect("the wrap was sent");
+        let o = w.deliver(phone, &wire, true).await;
+        w.run(phone, o).await;
+    }
+    w.catch_up(phone).await;
+    for g in [&mine, &theirs] {
+        let v = w.devices[phone].group(g).await.expect("the new device has the group");
+        assert_eq!(v.membership, "joined", "{g}");
+    }
+    assert_eq!(w.devices[phone].texts(&theirs).await, vec!["before alice"]);
+    let phone_store = w.devices[phone].dm.store().clone();
+    assert_eq!(self_welcome(&phone_store, &mine).await.unwrap(), Some(first), "its own welcome names it");
+    assert_eq!(self_welcome(&phone_store, &theirs).await.unwrap(), Some(second));
+    let d = &w.devices[phone];
+    assert!(d.svc.welcomes_owed(&d.keys).await.unwrap().is_empty(), "nothing anew");
+    assert!(w.notes.is_empty(), "{:?}", w.notes);
+}

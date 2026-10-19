@@ -211,8 +211,8 @@ export const RESTORE_EVENT = 'cloud://restore';
 export interface CloudRestored {
   /** The owner, 64 hex. */
   npub: string;
-  /** `kept`: the lock of the account took the new password; `reinstalled`: set up anew; `no_lock`. */
-  lock: 'kept' | 'reinstalled' | 'no_lock';
+  /** `kept`: the lock of the account took the new password; `opened`: it opened with the one the person remembered, which stays; `reinstalled`: set up anew; `no_lock`. */
+  lock: 'kept' | 'opened' | 'reinstalled' | 'no_lock';
   /** Whether the vault of sync was joined; false when the person went on without a storage out of reach. */
   vault_joined: boolean;
   k: number;
@@ -222,11 +222,21 @@ export interface CloudRestored {
   escrow_refreshed: boolean | null;
 }
 
-/** The new secret of the lock a restore sets. */
+/** The secret of the lock a restore takes: a new one, the one the lock has (`old`), or none (empty) for an account without a lock. */
 export interface CloudRestoreSecret {
   password: string;
   kind: 'pin' | 'password';
   hint: string | null;
+  old: boolean;
+}
+
+/** No secret: an account without a lock. */
+export const NO_SECRET: CloudRestoreSecret = { password: '', kind: 'pin', hint: null, old: false };
+
+/** What the escrow says before anything is written (`cloud_restore_peek`, `cloud_recover_peek`). */
+export interface CloudPeeked {
+  /** The account has an app lock: its secret, or a new one, is asked. */
+  lock: boolean;
 }
 
 export const cloudApi = {
@@ -242,6 +252,8 @@ export const cloudApi = {
    * A clean install and the 12 words: the account restored in the order of §7.
    * `withoutVault` is the answer to `vault_unreachable`: the identity and the lock alone.
    */
+  /** Before anything is written: the words checked, the device clean, the copy read — whether the account has a lock. */
+  restorePeek: (words: string) => call<CloudPeeked>('cloud_restore_peek', { words }),
   restoreWithWords: (words: string, secret: CloudRestoreSecret, withoutVault = false) =>
     call<CloudRestored>('cloud_restore_with_words', { words, ...secret, withoutVault }),
   /** Starts the activation of the free plan; answers at once with where it is. */
@@ -290,6 +302,7 @@ mockCommand('cloud_recovery_status', {
 } satisfies CloudRecoveryKeyStatus);
 mockCommand('cloud_recovery_key_show_once', refuse);
 mockCommand('cloud_recovery_key_reissue', refuse);
+mockCommand('cloud_restore_peek', refuse);
 mockCommand('cloud_restore_with_words', refuse);
 
 // ── Social Recovery (cloud-recovery.md §8, stage C5) ─────────────────────
@@ -414,6 +427,8 @@ export const socialApi = {
   helpClose: () => call<void>('cloud_help_close'),
   recoverStart: (npub: string) => call<CloudRequestView>('cloud_recover_start', { npub }),
   recoverPoll: () => call<CloudRequestView>('cloud_recover_poll'),
+  /** The key is together: whether the account has a lock, before anything is written. */
+  recoverPeek: () => call<CloudPeeked>('cloud_recover_peek'),
   recoverFinish: (secret: CloudRestoreSecret, withoutVault = false) =>
     call<CloudRecovered>('cloud_recover_finish', { ...secret, withoutVault }),
   recoverCancel: () => call<void>('cloud_recover_cancel'),
@@ -437,6 +452,7 @@ mockCommand('cloud_help_confirm', refuse);
 mockCommand('cloud_help_close', undefined);
 mockCommand('cloud_recover_start', refuse);
 mockCommand('cloud_recover_poll', IDLE_REQUEST);
+mockCommand('cloud_recover_peek', refuse);
 mockCommand('cloud_recover_finish', refuse);
 mockCommand('cloud_recover_cancel', undefined);
 mockCommand('cloud_recovery_alerts', []);

@@ -567,3 +567,41 @@ async fn a_full_list_keeps_the_choices_and_the_deletions_in_the_header() {
     let pinned = chats::prefs(b.store()).await.unwrap().into_iter().filter(|r| r.get(Pref::Pinned).0).count();
     assert_eq!(pinned, 120, "every choice taken");
 }
+
+/// The peer's will in a private chat travels with its entry: counted
+/// after the home entries of the same piece, taken on a device that has
+/// the server, and the home chat of the same person keeps its own.
+#[tokio::test]
+async fn the_will_of_a_private_chat_reaches_my_other_device() {
+    use crate::relationship::{screen_mode, PeerSignal, ScreenMode};
+    let keys = Keys::generate();
+    let me = keys.public_key();
+    let (a, b) = (device(&keys).await, device(&keys).await);
+    let id = servers::put_private(a.store(), &server("wss://s1.example")).await.unwrap();
+    let mutual = |m| Relationship {
+        my_contact: m,
+        decided_at: 1_700_000_000,
+        peer_signal: PeerSignal::Approved,
+        last_signal_at: 1_700_000_100,
+        was_ever_mutual: true,
+        ..Relationship::default()
+    };
+    let private = DmPeer::on(peer(1), Some(&id));
+    a.save_relation(private.clone(), &mutual(MyContact::Approved)).await.unwrap();
+    decided(&a, &DmPeer::home(peer(1)), MyContact::Approved, false, 1_700_000_000).await;
+    a.save_relation(DmPeer::home(peer(2)), &mutual(MyContact::Approved)).await.unwrap();
+
+    let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+    let h: Header = serde_json::from_str(&plain_header(&keys, &events)).unwrap();
+    assert_eq!(h.peers.len(), 2);
+    assert!(h.wills.contains(&serde_json::json!([2, "a", 1_700_000_100, 1])), "the private entry after the home ones: {:?}", h.wills);
+
+    b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+    assert_eq!(screen_mode(&b.load_relation(private).await.unwrap()), ScreenMode::FullChat);
+    assert_eq!(screen_mode(&b.load_relation(DmPeer::home(peer(2))).await.unwrap()), ScreenMode::FullChat);
+    assert_eq!(
+        screen_mode(&b.load_relation(DmPeer::home(peer(1))).await.unwrap()),
+        ScreenMode::RequestSent,
+        "the home chat has a will of its own"
+    );
+}

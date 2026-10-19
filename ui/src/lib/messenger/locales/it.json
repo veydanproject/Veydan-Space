@@ -1093,6 +1093,8 @@
     "msg_mod_you_muted_until": "Un moderatore ti ha vietato di scrivere qui fino alle {time}.",
     "msg_mod_needs_update": "Il gruppo usa funzioni di una versione più recente. Aggiorna l'app per vedere tutto.",
     "msg_mod_load_earlier": "Carica precedenti",
+    "msg_history_loading": "Caricamento dei messaggi precedenti dal server",
+    "msg_history_start": "Inizio della conversazione",
     "msg_err_not_implemented": "Non è ancora disponibile in questa versione.",
     "msg_err_group_closed": "Ora in questo gruppo scrivono solo gli amministratori.",
     "msg_err_group_muted_until": "Un moderatore ti ha vietato di scrivere qui per un po'.",

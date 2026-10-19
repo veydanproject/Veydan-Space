@@ -1093,6 +1093,8 @@
     "msg_mod_you_muted_until": "Bir moderatör bu grupta {time} saatine kadar yazmanızı yasakladı.",
     "msg_mod_needs_update": "Grup daha yeni bir sürümün özelliklerini kullanıyor. Her şeyi görmek için uygulamayı güncelleyin.",
     "msg_mod_load_earlier": "Öncekileri yükle",
+    "msg_history_loading": "Önceki mesajlar sunucudan yükleniyor",
+    "msg_history_start": "Sohbetin başlangıcı",
     "msg_err_not_implemented": "Bu, bu sürümde henüz yok.",
     "msg_err_group_closed": "Şu anda bu grupta yalnızca yöneticiler yazıyor.",
     "msg_err_group_muted_until": "Bir moderatör bu grupta bir süreliğine yazmanızı yasakladı.",

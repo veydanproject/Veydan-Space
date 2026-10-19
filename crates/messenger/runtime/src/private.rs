@@ -126,10 +126,19 @@ impl MessengerRuntime {
         }
         // And their calls: the end goes to the peer while the server is here.
         crate::calls::end_calls_of(self.calls(), self.group_calls(), &going.chats, &going.groups).await;
-        if servers::remove_by_me(self.store(), id, now)
-            .await?
-            .is_none()
-        {
+        // What arrives for its groups is done or waits: a welcome writes the
+        // row of a group and then its chat, and never around the removal.
+        let mut locks = Vec::new();
+        for group in &going.groups {
+            locks.push(self.groups().lock_of(group).await);
+        }
+        let mut guards = Vec::new();
+        for lock in &locks {
+            guards.push(lock.lock().await);
+        }
+        let removed = servers::remove_by_me(self.store(), id, now).await?;
+        drop(guards);
+        if removed.is_none() {
             return Err(MessengerError::Invalid(servers::ERR_SERVER_UNKNOWN.into()));
         }
         self.relays.reload().await?;

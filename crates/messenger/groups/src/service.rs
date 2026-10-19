@@ -1409,6 +1409,41 @@ impl GroupService {
         self.dm(keys, group_id, to, wire::dm_envelope(wire::T_WELCOME, &body)?, false, Wake::Peer).await
     }
 
+    /// The welcome to myself: how my other devices get the group, now and
+    /// later — a new device of mine reads the newest window of my inbox
+    /// only, so the snapshot of my relations names this welcome by its id
+    /// and the new device fetches it by that id. The snapshot owes it.
+    pub(crate) async fn welcome_myself(&self, keys: &Keys, group_id: &str) -> Result<Vec<Outbound>> {
+        let out = self.welcome(keys, group_id, &me_of(keys)).await?;
+        let id = out.iter().find_map(|o| match o {
+            Outbound::PublishToInbox { event, .. } | Outbound::PublishScoped { event, .. } | Outbound::PublishOwn { event } => Some(event.id.as_hex().to_string()),
+            _ => None,
+        });
+        if let Some(id) = id {
+            repo::set_self_welcome(&self.store, group_id, &id).await?;
+            self.dm.mark_relations_owed().await?;
+        }
+        Ok(out)
+    }
+
+    /// The groups I am in that no welcome to myself names yet (joined by
+    /// an invitation or a request, or before this build kept the id): one
+    /// welcome each, once. One that cannot be made (a group the network
+    /// closes, a journal too big for one message) is left out alone.
+    pub async fn welcomes_owed(&self, keys: &Keys) -> Result<Vec<Outbound>> {
+        let mut out = Vec::new();
+        for g in repo::list(&self.store).await? {
+            if g.membership != MEMBERSHIP_JOINED || repo::self_welcome(&self.store, &g.id).await?.is_some() {
+                continue;
+            }
+            match self.welcome_myself(keys, &g.id).await {
+                Ok(o) => out.extend(o),
+                Err(e) => eprintln!("messenger groups: no welcome to myself for {}: {e}", &g.id[..8.min(g.id.len())]),
+            }
+        }
+        Ok(out)
+    }
+
     // ─── What the user does ─────────────────────────────────────────────────
 
     pub async fn create(
@@ -1476,7 +1511,7 @@ impl GroupService {
 
         let mut outcome = Outcome { publish: vec![Self::scoped(&group_id, sealed)], resubscribe: true, ..Default::default() };
         // The welcome to myself is how my other devices get the group.
-        outcome.publish.extend(self.welcome(keys, &group_id, &me).await?);
+        outcome.publish.extend(self.welcome_myself(keys, &group_id).await?);
         if let Some(ev) = self.system_line(&group_id, &op).await? {
             outcome.events.push(ev);
         }
@@ -1711,7 +1746,7 @@ impl GroupService {
         // The link was opened here, not on my other devices: the welcome to
         // myself brings them the group, as it does at its creation (on the
         // group's server, `dm`).
-        outcome.publish.extend(self.welcome(keys, group_id, &me).await?);
+        outcome.publish.extend(self.welcome_myself(keys, group_id).await?);
         Ok(outcome)
     }
 
@@ -1802,6 +1837,18 @@ impl GroupService {
     /// group no longer here. A key the secret store does not let go of
     /// (locked) stays owed for the next time. Cheap when nothing went.
     pub async fn forget_gone(&self) -> Result<()> {
+        // A welcome read while the server went wrote its group back after
+        // the removal: under the group's lock it is done, and the group
+        // goes as the others did (a welcome after this one is held, its
+        // relay no server of mine). One that fails waits for the next time,
+        // and the keys below go all the same.
+        for group_id in servers::groups_of_removed(&self.store).await.unwrap_or_default() {
+            let lock = self.lock_of(&group_id).await;
+            let _guard = lock.lock().await;
+            if let Err(e) = servers::forget_group_of_removed(&self.store, &group_id).await {
+                eprintln!("messenger groups: a group of a removed server was not forgotten: {e}");
+            }
+        }
         let owed = repo::secrets_owed(&self.store).await?;
         let mut done = Vec::new();
         for (group_id, key_id) in owed {

@@ -195,6 +195,7 @@ pub fn module() -> Module {
                 commands::messenger_link_preview,
                 commands::messenger_group_forget,
                 commands::messenger_group_history,
+                commands::messenger_dm_history,
                 commands::messenger_media_servers,
                 commands::messenger_media_server_put,
                 commands::messenger_media_server_remove,

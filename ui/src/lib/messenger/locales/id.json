@@ -1093,6 +1093,8 @@
     "msg_mod_you_muted_until": "Moderator melarang Anda menulis di sini sampai {time}.",
     "msg_mod_needs_update": "Grup ini memakai fitur versi yang lebih baru. Perbarui aplikasi untuk melihat semuanya.",
     "msg_mod_load_earlier": "Muat sebelumnya",
+    "msg_history_loading": "Memuat pesan sebelumnya dari server",
+    "msg_history_start": "Awal percakapan",
     "msg_err_not_implemented": "Ini belum tersedia di versi ini.",
     "msg_err_group_closed": "Saat ini di grup ini hanya admin yang menulis.",
     "msg_err_group_muted_until": "Moderator melarang Anda menulis di sini untuk sementara.",

@@ -73,6 +73,9 @@ pub mod words {
     /// own S3, WebDAV or folder — does not answer, or is not on this device,
     /// or does not hold this vault (§7).
     pub const VAULT_UNREACHABLE: &str = "vault_unreachable";
+    /// The account has a lock and the restore came without a secret for it
+    /// (§7: asked only of an account with a lock, [`crate::restore::peek`]).
+    pub const LOCK_SECRET_NEEDED: &str = "lock_secret_needed";
 }
 
 /// The path of the escrow under the `public_url` of a host of `storage[]`.
@@ -107,6 +110,66 @@ pub trait EscrowStore: Send + Sync {
     fn head<'a>(&'a self, address: &'a str) -> SeamFuture<'a, Option<String>>;
     /// `DELETE`, signed by the identity: whether there was one to delete.
     fn delete<'a>(&'a self, address: &'a str) -> SeamFuture<'a, bool>;
+}
+
+/// The sealed escrow a restore read last, kept for a while: the look before
+/// the secret is asked (`restore::peek`), the restore after it and a try
+/// again after a wrong secret read it once — each `GET` tells the owner's
+/// devices that the escrow was read (§4), and one restore is one reading.
+/// Sealed under the words as it came; nothing open is kept.
+#[derive(Default)]
+pub struct ReadEscrows(std::sync::Mutex<Option<(String, Vec<u8>, std::time::Instant)>>);
+
+/// How long a read escrow is kept for the steps of one restore.
+const READ_KEPT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+impl ReadEscrows {
+    fn kept(&self, address: &str) -> Option<Vec<u8>> {
+        let guard = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().filter(|(a, _, at)| a == address && at.elapsed() < READ_KEPT).map(|(_, bytes, _)| bytes.clone())
+    }
+
+    fn keep(&self, address: &str, bytes: &[u8]) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some((address.to_string(), bytes.to_vec(), std::time::Instant::now()));
+    }
+
+    /// The restore is done: nothing is kept.
+    pub fn forget(&self) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
+/// An [`EscrowStore`] that reads an escrow once for the steps of a restore
+/// ([`ReadEscrows`]); the rest goes to `inner`.
+pub struct ReadOnce<'a> {
+    pub inner: &'a dyn EscrowStore,
+    pub read: &'a ReadEscrows,
+}
+
+impl EscrowStore for ReadOnce<'_> {
+    fn put<'a>(&'a self, address: &'a str, body: &'a [u8]) -> SeamFuture<'a, ()> {
+        self.inner.put(address, body)
+    }
+
+    fn get<'a>(&'a self, auth: &'a AuthKey) -> SeamFuture<'a, Vec<u8>> {
+        Box::pin(async move {
+            let address = auth.escrow_address();
+            if let Some(bytes) = self.read.kept(&address) {
+                return Ok(bytes);
+            }
+            let bytes = self.inner.get(auth).await?;
+            self.read.keep(&address, &bytes);
+            Ok(bytes)
+        })
+    }
+
+    fn head<'a>(&'a self, address: &'a str) -> SeamFuture<'a, Option<String>> {
+        self.inner.head(address)
+    }
+
+    fn delete<'a>(&'a self, address: &'a str) -> SeamFuture<'a, bool> {
+        self.inner.delete(address)
+    }
 }
 
 /// Who signs a request of the store.
@@ -861,6 +924,27 @@ mod tests {
     /// The store speaks to vstore as §8 of its contract says: `PUT`, `HEAD`
     /// and `DELETE` by the identity at the address of the key `auth`,
     /// `GET` by `auth` alone, and `404` is `not_found`.
+    /// The look before the secret, the restore and a try again read the
+    /// escrow once: each `GET` tells the owner's devices; a forgotten read
+    /// asks again, and a refusal is not kept.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_steps_of_a_restore_read_the_escrow_once() {
+        let (vstore, http) = store().await;
+        let rk = RecoveryKey::from_bytes(RK).expect("rk");
+        let auth = rk.escrow_auth().expect("auth");
+        let read = ReadEscrows::default();
+        let once = ReadOnce { inner: &http, read: &read };
+        let gets = || vstore.requests.lock().expect("requests").iter().filter(|(m, _)| m == "GET").count();
+        assert_eq!(once.get(&auth).await.err().map(|e| e.code).as_deref(), Some(words::NOT_FOUND));
+        http.put(&auth.escrow_address(), b"sealed").await.expect("put");
+        assert_eq!(once.get(&auth).await.expect("get"), b"sealed");
+        assert_eq!(once.get(&auth).await.expect("get"), b"sealed");
+        assert_eq!(gets(), 2, "the refusal and one read");
+        read.forget();
+        assert_eq!(once.get(&auth).await.expect("get"), b"sealed");
+        assert_eq!(gets(), 3);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn the_store_writes_by_the_identity_and_reads_by_the_words() {
         let (vstore, store) = store().await;

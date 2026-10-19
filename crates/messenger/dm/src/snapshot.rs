@@ -24,7 +24,7 @@
 //! device's rows, and how one is applied; the relays, the timing and the
 //! live subscription are the runtime's.
 
-use crate::relationship::{DmFrom, MyContact};
+use crate::relationship::{DmFrom, MyContact, PeerSignal};
 use crate::requests::{KEY_DM_FROM, KEY_KEEP_DAYS};
 use crate::service::DmService;
 use messenger_core::outbound::WireEvent;
@@ -36,7 +36,7 @@ use messenger_store::settings;
 use nostr::nips::nip44;
 use nostr::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -61,6 +61,10 @@ pub const KEY_OWED: &str = "relations.owed";
 /// When the privacy settings (`dm_from`, `keep_days`) were last set here,
 /// my clock: a snapshot's settings apply only when they are newer.
 pub const KEY_PRIVACY_DECIDED_AT: &str = "privacy.decided_at";
+/// Set once this device published the list with the wills of the peers
+/// (`Header::wills`): a device that held them before it learned to write
+/// them owes the list once (`DmService::owe_wills_once`).
+pub const KEY_WILLS_PUBLISHED: &str = "relations.wills_published";
 
 /// What this device knows of my list after the fetch at the start of a
 /// session: nothing (no snapshot on the relays, or none reached), the
@@ -147,6 +151,9 @@ pub struct Applied {
     /// listens to it, or stops (internal/messenger-wire.md, «Серверы на
     /// всех устройствах»).
     pub servers_changed: bool,
+    /// Groups of mine this device is not in: the runtime fetches their
+    /// welcomes to myself.
+    pub groups_wanted: Vec<GroupWanted>,
 }
 
 /// `[hex, my_contact, blocked, decided_at]`, compact: `my_contact` is one
@@ -172,6 +179,65 @@ fn contact_of(letter: &str) -> Option<MyContact> {
         "x" => MyContact::Expired,
         _ => return None,
     })
+}
+
+/// What the peer signalled last, one letter (`a` approved, `b` blocked,
+/// `l` left, `d` declined, `r` revoked, `n` none).
+fn will_letter(p: PeerSignal) -> &'static str {
+    match p {
+        PeerSignal::None => "n",
+        PeerSignal::Approved => "a",
+        PeerSignal::Blocked => "b",
+        PeerSignal::Left => "l",
+        PeerSignal::Declined => "d",
+        PeerSignal::Revoked => "r",
+    }
+}
+
+fn signal_of(letter: &str) -> Option<PeerSignal> {
+    Some(match letter {
+        "n" => PeerSignal::None,
+        "a" => PeerSignal::Approved,
+        "b" => PeerSignal::Blocked,
+        "l" => PeerSignal::Left,
+        "d" => PeerSignal::Declined,
+        "r" => PeerSignal::Revoked,
+        _ => return None,
+    })
+}
+
+/// `[index, peer_signal, last_signal_at, was_ever_mutual]`: the will of
+/// the peer of entry `index` of the same piece, counted over `peers` and
+/// then `private_peers`. Apart from the entries, whose arrays an older
+/// build reads at their length; only a peer with a will to tell has one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Will(usize, String, i64, u8);
+
+/// The peer's will by `(hex, server_id)`, of the rows that have one.
+type Wills = HashMap<(String, String), (PeerSignal, i64, bool)>;
+
+fn wills_of(rows: &[RelationRow], into: &mut Wills) {
+    for r in rows {
+        let p = PeerSignal::parse(&r.peer_signal).unwrap_or(PeerSignal::None);
+        if p != PeerSignal::None || r.was_ever_mutual {
+            into.insert((r.peer_pubkey.clone(), r.server_id.clone()), (p, r.last_signal_at, r.was_ever_mutual));
+        }
+    }
+}
+
+/// The wills of one piece's entries, by their index there.
+fn piece_wills(peers: &[Entry], private_peers: &[serde_json::Value], wills: &Wills) -> Vec<serde_json::Value> {
+    let home = peers.iter().map(|e| Some((e.0.clone(), String::new())));
+    let private = private_peers
+        .iter()
+        .map(|v| serde_json::from_value::<servers::PrivateEntry>(v.clone()).ok().map(|e| (e.0, e.1)));
+    home.chain(private)
+        .enumerate()
+        .filter_map(|(i, key)| {
+            let (p, at, mutual) = wills.get(&key?)?;
+            serde_json::to_value(Will(i, will_letter(*p).into(), *at, u8::from(*mutual))).ok()
+        })
+        .collect()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -213,8 +279,34 @@ struct Header {
     /// `peers`, which an older build reads as the home chats.
     #[serde(default)]
     private_peers: Vec<serde_json::Value>,
+    /// The wills of the peers of this header's entries (`Will`); an older
+    /// build skips them, and absence is no word.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    wills: Vec<serde_json::Value>,
+    /// The groups I am in, `[group_id, wrap_id, server_id]`: the gift wrap
+    /// of my newest welcome to myself, which a new device fetches by its
+    /// id (`GroupWanted`); `server_id` empty for the home set.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    groups: Vec<serde_json::Value>,
     peers: Vec<Entry>,
 }
+
+/// The groups the header names at most, the latest touched first.
+pub const GROUPS_MAX: usize = 200;
+
+/// A group of mine another device is in and this one is not: the welcome
+/// to myself that brings it, to be fetched by its id from my inbox (the
+/// home set) or from the group's private server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupWanted {
+    pub group_id: String,
+    pub wrap_id: EventId,
+    pub server: Option<String>,
+}
+
+/// `messenger_groups::service::MEMBERSHIP_JOINED`, which this crate does
+/// not see.
+const JOINED: &str = "joined";
 
 /// `[chat_id, muted, pinned, archived]`: each choice by the time it was
 /// made (my clock), positive when on, negative when off, 0 when never.
@@ -290,7 +382,15 @@ struct Page {
     /// them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     private_peers: Vec<serde_json::Value>,
+    /// The wills of the peers of this page's entries (`Will`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    wills: Vec<serde_json::Value>,
 }
+
+/// NIP-44 v2 takes 65535 bytes of plain text: a page over this sheds its
+/// wills from the end before it is sealed (a page of private relations
+/// comes near it).
+const PAGE_MAX_BYTES: usize = 64_000;
 
 fn crypto(e: impl std::fmt::Display) -> MessengerError {
     MessengerError::Crypto(e.to_string())
@@ -390,10 +490,14 @@ fn paginate(home: Vec<Entry>, private: Vec<serde_json::Value>) -> (Vec<PageEntri
 /// where a server left out is only not brought. What was cut is logged.
 fn fit_header(header: &mut Header) -> Result<String> {
     let mut plain = serde_json::to_string(&*header)?;
-    let mut cut = [0usize; 6];
+    let mut cut = [0usize; 8];
     while plain.len() > HEADER_MAX_BYTES {
         let which = if header.invites.pop().is_some() {
             0
+        } else if header.wills.pop().is_some() {
+            6
+        } else if header.groups.pop().is_some() {
+            7
         } else if header.servers.as_mut().and_then(Vec::pop).is_some() {
             1
         } else if header.private_peers.pop().is_some() {
@@ -411,10 +515,12 @@ fn fit_header(header: &mut Header) -> Result<String> {
         plain = serde_json::to_string(&*header)?;
     }
     if cut.iter().any(|n| *n > 0) {
-        let [invites, servers, private, removed, deleted, chats] = cut;
+        let [invites, servers, private, removed, deleted, chats, wills, groups] = cut;
         eprintln!(
-            "messenger relations: the header was over {HEADER_MAX_BYTES} bytes; cut {invites} invitations, {servers} servers, \
-             {private} relations of private chats, {removed} removals of servers, {deleted} deletions, {chats} choices of chats"
+            "messenger relations: the header was over {HEADER_MAX_BYTES} bytes; cut {invites} invitations, {wills} wills of peers, \
+             {groups} groups, \
+             {servers} servers, {private} relations of private chats, {removed} removals of servers, {deleted} deletions, \
+             {chats} choices of chats"
         );
     }
     Ok(plain)
@@ -487,7 +593,11 @@ impl DmService {
         let created_at = now.max(get_i64(&self.store, KEY_SEEN_CREATED_AT).await?.saturating_add(1));
         let me = keys.public_key();
         let rows = dm_relations::decided_rows(&self.store).await?;
-        let private = servers::private_entries(&dm_relations::decided_private_rows(&self.store).await?, &me.to_hex());
+        let private_rows = dm_relations::decided_private_rows(&self.store).await?;
+        let mut wills = Wills::new();
+        wills_of(&rows, &mut wills);
+        wills_of(&private_rows, &mut wills);
+        let private = servers::private_entries(&private_rows, &me.to_hex());
         let (pages, complete) = paginate(entries(&rows, &me.to_hex()), private);
         let s = self.dm_settings().await?;
         let settings_at = get_i64(&self.store, KEY_PRIVACY_DECIDED_AT).await?;
@@ -495,9 +605,11 @@ impl DmService {
         let chats = chat_entries(&chats::prefs(&self.store).await?, now);
         let deleted = chats::tombstones(&self.store).await?;
         let (my_servers, servers_removed) = servers::entries(&self.store).await?;
+        let groups = self.group_entries().await?;
         let mut events = Vec::with_capacity(pages.len());
         let count = pages.len();
         for (n, (peers, private_peers)) in pages.into_iter().enumerate() {
+            let piece_wills = piece_wills(&peers, &private_peers, &wills);
             let plain = if n == 0 {
                 let mut header = Header {
                     v: SNAPSHOT_VERSION,
@@ -514,11 +626,18 @@ impl DmService {
                     servers: Some(my_servers.clone()),
                     servers_removed: servers_removed.clone(),
                     private_peers,
+                    wills: piece_wills,
+                    groups: groups.clone(),
                     peers,
                 };
                 fit_header(&mut header)?
             } else {
-                serde_json::to_string(&Page { v: SNAPSHOT_VERSION, rev, peers, private_peers })?
+                let mut page = Page { v: SNAPSHOT_VERSION, rev, peers, private_peers, wills: piece_wills };
+                let mut plain = serde_json::to_string(&page)?;
+                while plain.len() > PAGE_MAX_BYTES && page.wills.pop().is_some() {
+                    plain = serde_json::to_string(&page)?;
+                }
+                plain
             };
             let content = nip44::encrypt(keys.secret_key(), &me, plain, nip44::Version::V2).map_err(crypto)?;
             let event = EventBuilder::new(Kind::from(KIND_RELATIONS), content)
@@ -531,9 +650,99 @@ impl DmService {
                 json: serde_json::to_value(&event)?,
             });
         }
-        settings::set(&self.store, KEY_REV, &rev.to_string()).await?;
+        settings::set(&self.store, KEY_WILLS_PUBLISHED, "1").await?;
         settings::set(&self.store, KEY_SEEN_CREATED_AT, &created_at.to_string()).await?;
+        settings::set(&self.store, KEY_REV, &rev.to_string()).await?;
         Ok((rev, events))
+    }
+
+    /// The wills of one piece, each read on its own: one this build cannot
+    /// read, of an entry that is not there, of my own key or of a private
+    /// server this device lacks is skipped alone.
+    async fn apply_wills(
+        &self,
+        me: &str,
+        peers: &[Entry],
+        private_peers: &[serde_json::Value],
+        wills: &[serde_json::Value],
+    ) -> Result<(Vec<PubKey>, Vec<Effect>)> {
+        let (mut changed, mut effects) = (Vec::new(), Vec::new());
+        if wills.is_empty() {
+            return Ok((changed, effects));
+        }
+        let mine: HashSet<String> = messenger_store::servers::private(&self.store).await?.into_iter().map(|s| s.id).collect();
+        for v in wills {
+            let Ok(Will(i, letter, at, mutual)) = serde_json::from_value::<Will>(v.clone()) else { continue };
+            let Some(signal) = signal_of(&letter) else { continue };
+            let (hex, server) = match peers.get(i) {
+                Some(e) => (e.0.clone(), None),
+                None => match private_peers.get(i - peers.len()).and_then(|v| serde_json::from_value::<servers::PrivateEntry>(v.clone()).ok()) {
+                    Some(e) if mine.contains(&e.1) => (e.0, Some(e.1)),
+                    _ => continue,
+                },
+            };
+            let Some(peer) = PubKey::parse(&hex).filter(|p| p.as_hex() != me) else { continue };
+            if let Some(fx) = self.apply_will_copy(&crate::peer::DmPeer::on(peer.clone(), server.as_deref()), signal, at, mutual != 0).await? {
+                changed.push(peer);
+                effects.extend(fx);
+            }
+        }
+        Ok((changed, effects))
+    }
+
+    /// The groups I am in whose welcome to myself this device knows, the
+    /// latest touched first, `GROUPS_MAX` at most.
+    async fn group_entries(&self) -> Result<Vec<serde_json::Value>> {
+        let mut out = Vec::new();
+        for g in messenger_store::groups::list(&self.store).await? {
+            if g.membership != JOINED {
+                continue;
+            }
+            let Some(wrap) = messenger_store::groups::self_welcome(&self.store, &g.id).await? else { continue };
+            let server = messenger_store::servers::of_group(&self.store, &g.id).await?.unwrap_or_default();
+            out.push(serde_json::json!([g.id, wrap, server]));
+            if out.len() == GROUPS_MAX {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    /// The groups of a header this device is not in, each read on its own:
+    /// one of a private server this device lacks is left out (its welcome
+    /// would be held anyway), as is one this build cannot read.
+    async fn groups_wanted(&self, entries: &[serde_json::Value]) -> Result<Vec<GroupWanted>> {
+        let mine: HashSet<String> = messenger_store::servers::private(&self.store).await?.into_iter().map(|s| s.id).collect();
+        let mut out = Vec::new();
+        for v in entries {
+            let Ok((group_id, wrap, server)) = serde_json::from_value::<(String, String, String)>(v.clone()) else { continue };
+            let Some(wrap_id) = EventId::parse(&wrap) else { continue };
+            if !chat_id_ok(&format!("group:{group_id}")) || (!server.is_empty() && !mine.contains(&server)) {
+                continue;
+            }
+            let here = messenger_store::groups::get(&self.store, &group_id).await?;
+            if here.is_some_and(|g| g.membership == JOINED) {
+                continue;
+            }
+            out.push(GroupWanted { group_id, wrap_id, server: Some(server).filter(|s| !s.is_empty()) });
+        }
+        Ok(out)
+    }
+
+    /// A device that held the wills of its peers before this build could
+    /// write them owes the list once, or a new device of mine still reads
+    /// them from the history alone.
+    pub async fn owe_wills_once(&self) -> Result<()> {
+        if settings::get(&self.store, KEY_WILLS_PUBLISHED).await?.is_some() {
+            return Ok(());
+        }
+        let mut wills = Wills::new();
+        wills_of(&dm_relations::decided_rows(&self.store).await?, &mut wills);
+        wills_of(&dm_relations::decided_private_rows(&self.store).await?, &mut wills);
+        if wills.is_empty() {
+            return Ok(());
+        }
+        self.mark_relations_owed().await
     }
 
     /// Pieces of the snapshot, from a fetch or the live subscription: the
@@ -602,6 +811,7 @@ impl DmService {
         let mut settings_changed = false;
         let mut chats_changed = false;
         let mut servers_changed = false;
+        let mut groups_wanted = Vec::new();
         if let Some(h) = header {
             // My private servers, before the relations of their chats: a
             // removal newer than the server here takes it and its chats, a
@@ -609,6 +819,15 @@ impl DmService {
             let s = self.apply_server_entries(h).await?;
             servers_changed = s.changed;
             chats_changed |= s.chats_gone;
+            // After the servers: a group of a server that just came is
+            // wanted too.
+            groups_wanted = self.groups_wanted(&h.groups).await?;
+            // A list that carries wills is of a build that writes them:
+            // what this device takes from it owes no publication once more
+            // (`owe_wills_once`); a will that changes here owes its own.
+            if !h.wills.is_empty() {
+                settings::set(&self.store, KEY_WILLS_PUBLISHED, "1").await?;
+            }
             if s.owed {
                 // An older build published over my servers: say them again.
                 self.mark_relations_owed().await?;
@@ -656,10 +875,26 @@ impl DmService {
                 }
             }
         }
+        // The wills of the peers, after my decisions and my servers: an
+        // accept older than my removal is read against it
+        // (`apply_will_copy`). A page that came alone brings its own.
+        let of_rev = header
+            .map(|h| (&h.peers, &h.private_peers, &h.wills))
+            .into_iter()
+            .chain(pages.iter().filter(|(_, g)| g.rev == rev).map(|(_, g)| (&g.peers, &g.private_peers, &g.wills)));
+        for (peers, private_peers, wills) in of_rev {
+            let (peers_changed, fx) = self.apply_wills(&me.to_hex(), peers, private_peers, wills).await?;
+            for p in peers_changed {
+                if !changed.contains(&p) {
+                    changed.push(p);
+                }
+            }
+            effects.extend(fx);
+        }
         if rev > get_i64(&self.store, KEY_REV).await?.max(0) as u64 {
             settings::set(&self.store, KEY_REV, &rev.to_string()).await?;
         }
-        Ok((Applied { rev: Some(rev), complete, changed, settings_changed, chats_changed, servers_changed }, effects))
+        Ok((Applied { rev: Some(rev), complete, changed, settings_changed, chats_changed, servers_changed, groups_wanted }, effects))
     }
 }
 
@@ -1101,6 +1336,174 @@ mod tests {
         assert_eq!(h.invites.iter().find(|e| e[0].as_str() == Some(sign.row.id.as_str())).unwrap()[5].as_array().unwrap().len(), SNAPSHOT_USES_PER_INVITE);
     }
 
+    /// A row of a decision of mine with the peer's will beside it.
+    async fn willed(dm: &DmService, p: &PubKey, m: MyContact, signal: PeerSignal, at: i64, mutual: bool) {
+        let r = Relationship {
+            my_contact: m,
+            decided_at: at - 100,
+            peer_signal: signal,
+            last_signal_at: at,
+            was_ever_mutual: mutual,
+            ..Relationship::default()
+        };
+        dm.save_relation(p, &r).await.unwrap();
+    }
+
+    /// The owner's case: a new device read my list (my approvals) but its
+    /// history did not reach back to the peers' accepts, so every older
+    /// contact read as "request sent". The peer's will travels beside my
+    /// decision now: the chat opens in full there, mutual, and nothing is
+    /// owed for a copy.
+    #[tokio::test]
+    async fn the_peers_will_reaches_my_new_device() {
+        use crate::relationship::{screen_mode, ScreenMode};
+        let keys = Keys::generate();
+        let me = keys.public_key();
+        let (a, b) = (device(&keys).await, device(&keys).await);
+        let (x, y, z, w) = (peer(1), peer(2), peer(3), peer(4));
+        willed(&a, &x, MyContact::Approved, PeerSignal::Approved, 1_700_000_000, true).await;
+        willed(&a, &y, MyContact::Approved, PeerSignal::Left, 1_700_000_100, true).await;
+        // No will to tell: no entry of it.
+        decided(&a, &z, MyContact::Approved, false, 1_700_000_200).await;
+        // A request of theirs I declined: my no cleared their accept.
+        willed(&a, &w, MyContact::Declined, PeerSignal::None, 1_700_000_300, false).await;
+
+        let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+        let ev: Event = serde_json::from_value(events[0].json.clone()).unwrap();
+        let h: Header = serde_json::from_str(&nip44::decrypt(keys.secret_key(), &me, &ev.content).unwrap()).unwrap();
+        assert_eq!(h.wills.len(), 2, "{:?}", h.wills);
+        let at = |hex: &str| h.peers.iter().position(|e| e.0 == hex).unwrap();
+        assert!(h.wills.contains(&serde_json::json!([at(x.as_hex()), "a", 1_700_000_000, 1])));
+        assert!(h.wills.contains(&serde_json::json!([at(y.as_hex()), "l", 1_700_000_100, 1])));
+
+        let (applied, _) = b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        let rx = b.load_relation(&x).await.unwrap();
+        assert_eq!(screen_mode(&rx), ScreenMode::FullChat);
+        assert!(rx.was_ever_mutual);
+        assert_eq!(rx.last_signal_at, 1_700_000_000);
+        assert_eq!(screen_mode(&b.load_relation(&y).await.unwrap()), ScreenMode::RemovedByPeer);
+        assert_eq!(screen_mode(&b.load_relation(&z).await.unwrap()), ScreenMode::RequestSent, "nothing known of them");
+        assert!(applied.changed.contains(&x) && applied.changed.contains(&y));
+        assert!(!b.relations_owed().await.unwrap(), "a copy is no decision");
+
+        // A page carries the wills of its own entries.
+        for n in 10..10 + HEADER_ENTRIES {
+            willed(&a, &peer(n), MyContact::Approved, PeerSignal::Approved, 1_600_000_000, true).await;
+        }
+        let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+        assert_eq!(events.len(), 2);
+        let c = device(&keys).await;
+        c.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        for n in [1, 10, 9 + HEADER_ENTRIES] {
+            assert_eq!(screen_mode(&c.load_relation(&peer(n)).await.unwrap()), ScreenMode::FullChat, "peer {n}");
+        }
+    }
+
+    /// The will of the peer is merged as their signal is: a newer word
+    /// here stands, and an accept older than my removal taken here is not
+    /// a request again (it was for the relation I ended).
+    #[tokio::test]
+    async fn an_older_will_does_not_undo_what_this_device_knows() {
+        use crate::relationship::{screen_mode, ScreenMode};
+        let keys = Keys::generate();
+        let me = keys.public_key();
+        let (a, b) = (device(&keys).await, device(&keys).await);
+        let (x, y) = (peer(1), peer(2));
+        willed(&a, &x, MyContact::Approved, PeerSignal::Approved, 1_700_000_000, true).await;
+        willed(&a, &y, MyContact::Approved, PeerSignal::Approved, 1_700_000_000, true).await;
+        // Here: x left later; y was removed by me after their accept.
+        willed(&b, &x, MyContact::Approved, PeerSignal::Left, 1_700_000_500, true).await;
+        let removed = Relationship { decided_at: 1_700_000_900, ..Relationship::default() };
+        b.save_relation(&y, &removed).await.unwrap();
+
+        let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+        b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        let rx = b.load_relation(&x).await.unwrap();
+        assert_eq!((rx.peer_signal, rx.last_signal_at), (PeerSignal::Left, 1_700_000_500));
+        let ry = b.load_relation(&y).await.unwrap();
+        assert_eq!(ry.my_contact, MyContact::None, "my newer removal stands");
+        assert_ne!(screen_mode(&ry), ScreenMode::RequestReceived, "their old accept is no request: {ry:?}");
+        assert!(ry.was_ever_mutual, "we were contacts once");
+    }
+
+    /// A device that held the wills before this build owes the list once;
+    /// the peer's will changing here owes it again; a device with nothing
+    /// to tell owes nothing.
+    #[tokio::test]
+    async fn the_wills_are_published_once_and_when_they_change() {
+        let keys = Keys::generate();
+        let a = device(&keys).await;
+        a.owe_wills_once().await.unwrap();
+        assert!(!a.relations_owed().await.unwrap(), "nothing to tell");
+        let x = peer(1);
+        willed(&a, &x, MyContact::Approved, PeerSignal::Approved, 1_700_000_000, true).await;
+        a.owe_wills_once().await.unwrap();
+        assert!(a.relations_owed().await.unwrap(), "held before this build");
+        a.relations_settled().await.unwrap();
+        a.build_relations_snapshot(&keys, now()).await.unwrap();
+        a.owe_wills_once().await.unwrap();
+        assert!(!a.relations_owed().await.unwrap(), "once");
+
+        // Their removal comes: the list owes their new will.
+        let chat = crate::peer::DmPeer::home(x.clone()).chat_id();
+        a.on_control(&chat, &crate::peer::DmPeer::home(x.clone()), false, Some("contact_removed"), now(), false, false).await.unwrap();
+        assert_eq!(a.load_relation(&x).await.unwrap().peer_signal, PeerSignal::Left);
+        assert!(a.relations_owed().await.unwrap(), "their will changed");
+    }
+
+    async fn group_row(dm: &DmService, n: usize, membership: &str) -> String {
+        let id = format!("{:064x}", 0xabc0 + n);
+        let row = messenger_store::groups::GroupRow {
+            id: id.clone(),
+            kind: "private".into(),
+            name: format!("G{n}"),
+            about: String::new(),
+            picture: String::new(),
+            relay_url: "wss://relay.example".into(),
+            owner: String::new(),
+            membership: membership.into(),
+            my_role: None,
+            members: 2,
+            link_epoch: 0,
+            created_at: 0,
+            updated_at: 0,
+            needs_update: false,
+        };
+        messenger_store::groups::upsert(dm.store(), &row).await.unwrap();
+        id
+    }
+
+    /// The groups I am in travel by the welcome to myself each names; the
+    /// device that reads the list wants the ones it is not in, and one it
+    /// left or never heard of a welcome for is no word.
+    #[tokio::test]
+    async fn my_groups_travel_by_their_welcomes() {
+        let keys = Keys::generate();
+        let me = keys.public_key();
+        let (a, b) = (device(&keys).await, device(&keys).await);
+        let wrap = |n: u64| format!("{n:064x}");
+        let (g1, g2, g3, g4) = (group_row(&a, 1, "joined").await, group_row(&a, 2, "joined").await, group_row(&a, 3, "left").await, group_row(&a, 4, "joined").await);
+        for (g, n) in [(&g1, 1), (&g2, 2), (&g3, 3)] {
+            messenger_store::groups::set_self_welcome(a.store(), g, &wrap(n)).await.unwrap();
+        }
+        let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+        let ev: Event = serde_json::from_value(events[0].json.clone()).unwrap();
+        let h: Header = serde_json::from_str(&nip44::decrypt(keys.secret_key(), &me, &ev.content).unwrap()).unwrap();
+        let named: HashSet<String> = h.groups.iter().map(|e| e[0].as_str().unwrap().to_string()).collect();
+        assert_eq!(named, HashSet::from([g1.clone(), g2.clone()]), "joined, with a welcome: {:?}", h.groups);
+        assert!(h.groups.contains(&serde_json::json!([g1, wrap(1), ""])));
+        let _ = (g3, g4);
+
+        // The other device is in g2 already.
+        group_row(&b, 2, "joined").await;
+        let (applied, _) = b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+        assert_eq!(
+            applied.groups_wanted,
+            vec![GroupWanted { group_id: g1.clone(), wrap_id: EventId::parse(&wrap(1)).unwrap(), server: None }]
+        );
+        assert!(!b.relations_owed().await.unwrap(), "a copy is no decision");
+    }
+
     fn home(n: usize) -> Vec<Entry> {
         (0..n).map(|i| Entry(format!("{i:064x}"), "a".into(), 0, 1_700_000_000)).collect()
     }
@@ -1152,6 +1555,8 @@ mod tests {
             servers: Some((0..32).map(|i| serde_json::json!({ "id": format!("{i:016x}"), "relay_url": "x".repeat(300) })).collect()),
             servers_removed: (0..64).map(|i| serde_json::json!([format!("{i:016x}"), 1_700_000_000])).collect(),
             private_peers: private(private_peers),
+            wills: Vec::new(),
+            groups: Vec::new(),
             peers: home(HEADER_ENTRIES),
         };
         // Fits: nothing is cut.

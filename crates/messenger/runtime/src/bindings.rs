@@ -25,6 +25,7 @@ use crate::moderation::{
 };
 use crate::net::{BridgeView, NetCheck, NetMode, NetStatus, Verdict};
 use crate::report::{ReportContext, ReportInput, ReportReason, ReportResult, ReportStatus, ReportSubReason, ReportTarget};
+use crate::dm_history::DmHistoryPage;
 use crate::shared::{SharedCounts, SharedSection};
 use messenger_avatar::CropRect;
 use messenger_media::{Progress, TransferStage, TransferView};
@@ -70,12 +71,14 @@ pub fn links_ts() -> String {
     out
 }
 
-/// What a chat has shared, as the panel about a chat reads it.
+/// What a chat has shared, as the panel about a chat reads it; and what
+/// «load earlier» of a direct chat found of its past.
 pub fn shared_ts() -> String {
     let cfg = Config::new();
     let mut out = String::from(HEADER);
     out += &export::<SharedSection>(&cfg, "A section of what a chat has shared: pictures and videos, files, links, voice and round videos.");
     out += &export::<SharedCounts>(&cfg, "How many messages each section holds. Links are counted by message.");
+    out += &export::<DmHistoryPage>(&cfg, "What «load earlier» of a direct chat came to: messages older than the one asked before are there to read (`older`), or the server has nothing older (`end`).");
     out
 }
 

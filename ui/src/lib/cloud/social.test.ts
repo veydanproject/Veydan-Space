@@ -186,7 +186,9 @@ describe('the request of a clean install', () => {
       restored: { npub: OWNER, lock: 'kept', k: 2, n: 3, generation: 1, escrow_refreshed: null },
       words: 'a b c d e f g h i j k l', closed: true,
     });
-    expect(await store.finish({ password: '4821', kind: 'pin', hint: null })).toBe(true);
+    mockCommand('cloud_recover_peek', { lock: true });
+    expect(await store.peek()).toBe(true);
+    expect(await store.finish({ password: '4821', kind: 'pin', hint: null, old: false })).toBe(true);
     expect(store.recovered?.words.split(' ')).toHaveLength(12);
     expect(store.view.phase).toBe('restored');
   });

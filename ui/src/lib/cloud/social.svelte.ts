@@ -319,6 +319,16 @@ export class RecoverStore {
     }
   }
 
+  /** The key is together: whether the account has a lock, before anything is written; `null` when the copy was not read. */
+  async peek(): Promise<boolean | null> {
+    try {
+      return (await socialApi.recoverPeek()).lock;
+    } catch (e) {
+      this.error = asCloudError(e);
+      return null;
+    }
+  }
+
   /**
    * The key is together: the restore with the new secret of the lock;
    * `withoutVault` after `vault_unreachable`, the identity and the lock alone.

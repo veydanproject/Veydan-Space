@@ -86,10 +86,25 @@ describe('the page before the first message shown', () => {
     expect(chatStore.messages[0].id).toBe('older');
   });
 
-  it('is nothing when the window is empty', async () => {
+  it('is nothing when the window is empty, unless forced: then the newest page, which the relays just brought', async () => {
     chatStore.messages = [];
-    expect(await chatStore.loadOlder(true)).toBe(0);
+    chatStore.hasMore = false;
+    expect(await chatStore.loadOlder()).toBe(0);
     expect(api.messages).not.toHaveBeenCalled();
+    expect(await chatStore.loadOlder(true)).toBe(50);
+    expect(api.messages).toHaveBeenCalledWith('group:g', undefined, 50);
+    expect(chatStore.messages.at(-1)?.id).toBe('m119');
+    expect(chatStore.hasMore).toBe(true);
+  });
+
+  it('keeps the order with what the events put in meanwhile', async () => {
+    await chatStore.loadOlder();
+    await chatStore.loadOlder();
+    // The relays sent an older message of the chat as an event, then the page is read.
+    chatStore.handleEvent({ name: 'dm.message', payload: { message: { id: 'early', chat_id: 'group:g', created_at: -5 } } } as never);
+    api.messages.mockImplementationOnce(async () => [{ id: 'earliest', chat_id: 'group:g', created_at: -9 }, { id: 'between', chat_id: 'group:g', created_at: -2 }] as never);
+    expect(await chatStore.loadOlder(true)).toBe(2);
+    expect(chatStore.messages.slice(0, 3).map((m) => m.id)).toEqual(['earliest', 'early', 'between']);
   });
 });
 

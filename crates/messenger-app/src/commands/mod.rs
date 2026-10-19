@@ -1348,6 +1348,20 @@ pub async fn messenger_group_history(
     messenger.runtime()?.group_history(&group, before, limit.unwrap_or(200)).await.map_err(map_err)
 }
 
+/// «Load earlier» in a direct chat (`dm:<hex>`, `dm:<hex>@<server id>`):
+/// older pages of the inbox of its server from the relays, until the chat
+/// has messages older than `before` (its oldest shown; now, for none) or
+/// the relays have nothing older (`end`). The UI then reads the messages
+/// before `before` again.
+#[tauri::command]
+pub async fn messenger_dm_history(
+    chat: String,
+    before: i64,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<messenger_runtime::DmHistoryPage> {
+    messenger.runtime()?.dm_history(&chat, before).await.map_err(map_err)
+}
+
 /// Hex keys of everyone I block.
 #[tauri::command]
 pub async fn messenger_dm_blocked(messenger: tauri::State<'_, MessengerState>) -> CmdResult<Vec<String>> {

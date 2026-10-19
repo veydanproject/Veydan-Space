@@ -60,8 +60,8 @@
 //! messenger-cli [--data-dir DIR] node-add <veydan://call-node/…|address:port#id> [--key K]   (an invitation is exchanged at the node)
 //! messenger-cli [--data-dir DIR] node-rm <id>
 //! messenger-cli [--data-dir DIR] trust [any|project_and_own|own_only]  (which nodes calls may use)
-//! messenger-cli [--data-dir DIR] call <npub|hex>[@<server id>] [--video] [--relay-only] [--node <address:port#id>[,…]] [--audio-in tone[:HZ]|<file.wav>] [--audio-out <file.wav>] [--secs N]
-//!   (--video: a video call; this side sends a moving test pattern of 640×360 at 30 fps whenever its video is on, and
+//! messenger-cli [--data-dir DIR] call <npub|hex>[@<server id>] [--video] [--relay-only] [--node <address:port#id>[,…]] [--audio-in tone[:HZ]|<file.wav>] [--audio-out <file.wav>] [--secs N] [--video-in <file.yuv> --video-size WxH]
+//!   (--video-in: a still picture, raw I420, sent in place of the test pattern; --video: a video call; this side sends a moving test pattern of 640×360 at 30 fps whenever its video is on, and
 //!    prints the size and the rate of what the far end sends; `video on`, `video off` and `camera` on stdin as well)
 //! messenger-cli [--data-dir DIR] call-answer [--wait N] [the flags of call]   (one incoming call: answered, held until it ends)
 //! messenger-cli [--data-dir DIR] call-wait [the flags of call]                (every incoming call, until Ctrl-C)
@@ -1251,12 +1251,21 @@ async fn main() {
         }
         "push-off" => print_push(&rt.push_set_enabled(false).await.unwrap_or_else(die)),
         "profile-set" => {
-            // `profile-set <name>`: publishes this identity's kind 0 (the
-            // picture is the avatar's own, set by the app).
+            // `profile-set <name> [--picture <file>]`: publishes this
+            // identity's kind 0; `--picture` first sets the avatar as the app
+            // does, the middle square of the file.
+            let picture = take_flag(&mut args, "--picture");
             if args.is_empty() {
                 usage();
             }
             wait_connect(&rt).await;
+            if let Some(path) = picture {
+                let p = rt.avatar_prepare(std::path::Path::new(&path)).await.unwrap_or_else(die);
+                let (w, h) = (f64::from(p.width), f64::from(p.height));
+                let side = w.min(h);
+                let rect = messenger_runtime::CropRect { x: (w - side) / 2.0 / w, y: (h - side) / 2.0 / h, w: side / w, h: side / h };
+                rt.avatar_set(&p.token, rect).await.unwrap_or_else(die);
+            }
             let input = messenger_runtime::ProfileInput {
                 name: Some(args[0].clone()),
                 ..Default::default()
@@ -2227,6 +2236,9 @@ struct CallPlan {
     secs: Option<u64>,
     /// `call-answer`: how long to wait for the call to come.
     wait: u64,
+    /// `--video-in <file.yuv> --video-size WxH`: one picture, raw I420,
+    /// sent in place of the test pattern (a still face for screenshots).
+    still: Option<Arc<VideoFrame>>,
 }
 
 enum AudioSource {
@@ -2250,7 +2262,21 @@ impl CallPlan {
         let out_path = take_flag(args, "--audio-out").map(PathBuf::from);
         let secs = take_flag(args, "--secs").map(|s| s.parse().unwrap_or_else(|_| usage()));
         let wait = take_flag(args, "--wait").map(|s| s.parse().unwrap_or_else(|_| usage())).unwrap_or(90);
-        Self { video, relay_only, nodes, source, out_path, secs, wait }
+        let still = take_flag(args, "--video-in").map(|path| {
+            let size = take_flag(args, "--video-size").unwrap_or_else(|| usage());
+            let (w, h) = size.split_once('x').unwrap_or_else(|| usage());
+            let (width, height): (u32, u32) = (w.parse().unwrap_or_else(|_| usage()), h.parse().unwrap_or_else(|_| usage()));
+            let data = std::fs::read(&path).unwrap_or_else(|e| {
+                eprintln!("error: {path}: {e}");
+                std::process::exit(1)
+            });
+            if data.len() != VideoFrame::len_for(width, height) {
+                eprintln!("error: {path}: {} bytes, not an I420 picture of {width}x{height}", data.len());
+                std::process::exit(1)
+            }
+            Arc::new(VideoFrame { width, height, rotation: 0, timestamp_us: 0, data })
+        });
+        Self { video, relay_only, nodes, source, out_path, secs, wait, still }
     }
 
     /// The policy and the nodes of the call, into the settings.
@@ -2372,7 +2398,7 @@ async fn in_call(
                 println!("{} audio: the engine took the sound of this side", stamp());
                 pump = Some(pump_audio(tap.input, &plan.source));
                 let VideoTap { source, wanted, remote } = tap.video;
-                video_tasks.push(pump_video(source, wanted));
+                video_tasks.push(pump_video(source, wanted, plan.still.clone()));
                 video_tasks.push(watch_video(remote, got_video.clone()));
                 let got = got.clone();
                 keep = Some(tokio::spawn(async move {
@@ -2507,10 +2533,11 @@ struct VideoGot {
     pattern: bool,
 }
 
-/// Pushes the test pattern of 640×360 into `source` at 30 frames a second
-/// while `wanted` says my video is on (the core turned it on: a video
-/// call, or `video on`), and nothing while it is off.
-fn pump_video(source: VideoSource, mut wanted: tokio::sync::watch::Receiver<bool>) -> tokio::task::JoinHandle<()> {
+/// Pushes the test pattern of 640×360 (or `still`, the picture of
+/// `--video-in`) into `source` at 30 frames a second while `wanted` says
+/// my video is on (the core turned it on: a video call, or `video on`),
+/// and nothing while it is off.
+fn pump_video(source: VideoSource, mut wanted: tokio::sync::watch::Receiver<bool>, still: Option<Arc<VideoFrame>>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let started = std::time::Instant::now();
         let mut seq = 0u32;
@@ -2528,7 +2555,10 @@ fn pump_video(source: VideoSource, mut wanted: tokio::sync::watch::Receiver<bool
             loop {
                 tokio::select! {
                     _ = tick.tick() => {
-                        let mut frame = test_pattern(640, 360, seq);
+                        let mut frame = match &still {
+                            Some(still) => (**still).clone(),
+                            None => test_pattern(640, 360, seq),
+                        };
                         frame.timestamp_us = started.elapsed().as_micros() as i64;
                         source.push(Arc::new(frame));
                         seq += 1;
@@ -3019,7 +3049,7 @@ async fn in_room(
                 println!("{} audio: the engine took the sound of this side", stamp());
                 pump = Some(pump_audio(tap.input, &plan.source));
                 let VideoTap { source, wanted, .. } = tap.video;
-                tasks.push(pump_video(source, wanted));
+                tasks.push(pump_video(source, wanted, plan.still.clone()));
                 room_audio = Some(tap.room_audio);
                 via = Some(tap.via);
             }

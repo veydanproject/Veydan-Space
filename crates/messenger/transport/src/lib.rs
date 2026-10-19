@@ -17,7 +17,7 @@ pub mod remote;
 pub mod ws;
 
 pub use manifest::{Manifest, ManifestMedia, ManifestPush, ManifestRelay, RelayChanges, EMBEDDED_MANIFEST_JSON};
-pub use pool::{RelayConfig, RelayPool};
+pub use pool::{RelayConfig, RelayPage, RelayPool};
 pub use ws::BridgedTransport;
 pub use remote::{HttpManifestFetcher, ManifestFetcher, MANIFEST_URLS, PROJECT_MANIFEST_PUBKEY};
 

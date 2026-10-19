@@ -130,7 +130,7 @@
   // Leaving a chat drops reply/edit state, and a picture it had open.
   let lastChat = '';
   $effect(() => {
-    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; earlierEmpty = 0; viewer.close(); }
+    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; earlierEmpty = 0; historyEnd = false; historyAsked = false; anchor = null; viewer.close(); }
   });
 
   // The list of transfers asked for a message of this chat: shown once the
@@ -157,7 +157,7 @@
   // What is shown grows after it is drawn (a card, a picture): the latest message stays in view.
   $effect(() => {
     if (!content) return;
-    const watch = new ResizeObserver(() => { if (atBottom) scrollToBottom(); });
+    const watch = new ResizeObserver(() => { if (anchor) keepView(); else if (atBottom) scrollToBottom(); });
     watch.observe(content);
     return () => watch.disconnect();
   });
@@ -181,6 +181,17 @@
 
   async function onscroll() {
     if (!scroller) return;
+    if (anchor) {
+      // A page of the past is on its way: the content grows above, the
+      // message in view stays; a scroll of the reader moves what is held.
+      if (scroller.scrollHeight !== anchor.height) keepView();
+      else anchor.fromBottom = scroller.scrollHeight - scroller.scrollTop;
+      return;
+    }
+    // Up, by the reader: the view put at the end of a chat a little
+    // longer than the screen asks the relays nothing.
+    const up = scroller.scrollTop < lastTop;
+    lastTop = scroller.scrollTop;
     // The distance grew because the content did, not because the user left.
     if (atBottom && scroller.scrollHeight !== seenHeight) { scrollToBottom(); return; }
     seenHeight = scroller.scrollHeight;
@@ -191,49 +202,144 @@
       await tick();
       // Keep the viewport on the same message after older ones are prepended.
       if (scroller) scroller.scrollTop += scroller.scrollHeight - before;
-    }
+    } else if (up && scroller.scrollTop < 120) pullEarlier();
   }
+  let lastTop = 0;
 
   /**
-   * A group does not read its whole history at the start: older messages
-   * are asked of the relays on demand, under the first one shown. Two asks
-   * in a row that bring nothing mean there is nothing earlier to have.
+   * Neither a group nor a direct chat reads its whole past at the start
+   * (a device that signed in again holds only the newest window of its
+   * inbox): when the pages on the device are over, older messages are
+   * asked of the relays — by the button, by scrolling to the top, or by
+   * pulling past it (the wheel, a finger) when everything fits on one
+   * screen. A group stops after two asks in a row that bring nothing; a
+   * direct chat when its server says it has nothing older (`end`). An
+   * empty direct chat (an old contact on a new device) asks once by
+   * itself.
    */
   let earlierEmpty = $state(0);
   let earlierBusy = $state(false);
-  const canLoadEarlier = $derived(isGroup && moreHistory && !chatStore.hasMore && !chatStore.loading && chatStore.messages.length > 0 && earlierEmpty < 2);
+  let historyEnd = $state(false);
+  /** This direct chat asked its server already, here: an ask that found nothing yet leaves the button to ask on. */
+  let historyAsked = $state(false);
+  const isDirect = $derived(chat.kind === 'dm' && chat.id.startsWith('dm:'));
+  const canLoadEarlier = $derived(
+    !chatStore.hasMore && !chatStore.loading && chatStore.activeId === chat.id && (
+      isGroup ? moreHistory && chatStore.messages.length > 0 && earlierEmpty < 2 : isDirect && sessionActive && !historyEnd
+    ),
+  );
+  /** A group offers its button; a direct chat asks by itself at the top, and offers it after an ask that found nothing yet. */
+  const showEarlier = $derived(canLoadEarlier && (isGroup || historyAsked));
+
+  /**
+   * What stays in view while a page is put above: the distance of the
+   * view from the end of the content (`fromBottom`) at the content's
+   * height `height`. The watcher of the content keeps it as the page and
+   * the messages the relays bring come in.
+   */
+  let anchor: { fromBottom: number; height: number } | null = null;
+
+  function holdView() {
+    if (scroller) anchor = { fromBottom: scroller.scrollHeight - scroller.scrollTop, height: scroller.scrollHeight };
+  }
+
+  function keepView() {
+    if (!anchor || !scroller || scroller.scrollHeight === anchor.height) return;
+    scroller.scrollTop = scroller.scrollHeight - anchor.fromBottom;
+    anchor.height = scroller.scrollHeight;
+    seenHeight = scroller.scrollHeight;
+  }
+
+  function pullEarlier() {
+    if (canLoadEarlier && !earlierBusy) loadEarlier();
+  }
 
   async function loadEarlier() {
     const first = chatStore.messages[0];
-    if (!first || earlierBusy) return;
+    if (earlierBusy || (isGroup && !first)) return;
     const id = chat.id;
     error = ''; earlierBusy = true;
+    const wasAtBottom = atBottom;
+    // The view is not at the bottom while the past comes, or a history
+    // that fit the screen would be pulled down to its end by the watcher
+    // of the content; and the message in view stays where it is.
+    atBottom = false;
+    holdView();
+    let added = 0;
     try {
-      const got = await messengerApi.groups.history(id.slice(6), first.created_at, 200);
+      // Before the oldest message shown; an empty chat, before now.
+      const before = first?.created_at ?? Math.floor(Date.now() / 1000);
+      let got: number;
+      if (isGroup) {
+        got = await messengerApi.groups.history(id.slice(6), before, 200);
+      } else {
+        if (chat.id === id) historyAsked = true;
+        const page = await messengerApi.chats.history(id, before);
+        if (chat.id === id) historyEnd = page.end;
+        got = page.older;
+      }
       if (chat.id !== id) return;
-      // Measured once the relays have answered (the tail may have grown
-      // meanwhile) and right before the page is put above; and the view
-      // is not at the bottom while it is, or a history that fit the screen
-      // would be pulled down to its end by the watcher of the content.
-      const height = scroller?.scrollHeight ?? 0;
-      const wasAtBottom = atBottom;
-      atBottom = false;
-      const added = await chatStore.loadOlder(true);
+      added = await chatStore.loadOlder(true);
       await tick();
-      // The same message stays in view: what came is above it.
-      if (added > 0 && scroller) {
-        scroller.scrollTop += scroller.scrollHeight - height;
-        // Still all on one screen: there is nothing to scroll to, and no button for it.
-        if (scroller.scrollHeight <= scroller.clientHeight) atBottom = wasAtBottom;
-      } else atBottom = wasAtBottom;
-      earlierEmpty = got === 0 && added === 0 ? earlierEmpty + 1 : 0;
+      keepView();
+      if (isGroup) earlierEmpty = got === 0 && added === 0 ? earlierEmpty + 1 : 0;
     } catch (e) {
+      if (chat.id !== id) return;
       error = explain(e);
       earlierEmpty++;
     } finally {
       earlierBusy = false;
+      anchor = null;
+      if (chat.id === id && scroller) {
+        seenHeight = scroller.scrollHeight;
+        // Still all on one screen: there is nothing to scroll to.
+        const fits = scroller.scrollHeight <= scroller.clientHeight;
+        atBottom = added === 0 || fits ? wasAtBottom : scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+      }
     }
   }
+
+  // An empty chat with a contact asks its server once by itself: a contact
+  // of long ago on a device that signed in again has nothing here yet. A
+  // chat just opened with somebody new asks only when pulled: the first
+  // ask of a server reads from the top and costs pages.
+  let askedEmpty = '';
+  $effect(() => {
+    if (!canLoadEarlier || isGroup || !chat.is_contact || chatStore.messages.length > 0 || askedEmpty === chat.id) return;
+    askedEmpty = chat.id;
+    untrack(() => loadEarlier());
+  });
+
+  /** Pulling past the top: the wheel up, or a finger down, with nothing above to scroll to. */
+  let touchFrom: number | null = null;
+  const PULL_PX = 56;
+  function onwheel(e: WheelEvent) {
+    if (e.deltaY < 0 && scroller && scroller.scrollTop <= 0) pullEarlier();
+  }
+  function ontouchstart(e: TouchEvent) {
+    touchFrom = scroller && scroller.scrollTop <= 0 ? e.touches[0]?.clientY ?? null : null;
+  }
+  function ontouchmove(e: TouchEvent) {
+    if (touchFrom === null || !scroller || scroller.scrollTop > 0) return;
+    if ((e.touches[0]?.clientY ?? touchFrom) - touchFrom > PULL_PX) {
+      touchFrom = null;
+      pullEarlier();
+    }
+  }
+  // Listened to without holding the scroll back (passive): the pull only watches.
+  $effect(() => {
+    const el = scroller;
+    if (!el) return;
+    const passive = { passive: true } as const;
+    el.addEventListener('wheel', onwheel, passive);
+    el.addEventListener('touchstart', ontouchstart, passive);
+    el.addEventListener('touchmove', ontouchmove, passive);
+    return () => {
+      el.removeEventListener('wheel', onwheel);
+      el.removeEventListener('touchstart', ontouchstart);
+      el.removeEventListener('touchmove', ontouchmove);
+    };
+  });
 
   /** Relationship refusals arrive as stable codes; everything else as text. */
   function explain(e: unknown): string {
@@ -702,13 +808,18 @@
 
   <div class="scroll" bind:this={scroller} {onscroll}>
     <div class="content" bind:this={content}>
-    {#if chatStore.loadingOlder}<div class="loading"><Icon name="loader" size={14} /></div>
-    {:else if canLoadEarlier}
+    {#if earlierBusy}
+      <!-- The past is being asked of the relays: it may take a few seconds. -->
+      <div class="loading" role="status"><Icon name="loader" size={14} />{$t('msg_history_loading')}</div>
+    {:else if chatStore.loadingOlder}<div class="loading"><Icon name="loader" size={14} /></div>
+    {:else if showEarlier}
       <div class="earlier">
-        <button class="btn btn-ghost btn-sm" disabled={earlierBusy} onclick={loadEarlier}>
-          <Icon name={earlierBusy ? 'loader' : 'arrow-up'} size={13} />{$t('msg_mod_load_earlier')}
+        <button class="btn btn-ghost btn-sm" onclick={loadEarlier}>
+          <Icon name="arrow-up" size={13} />{$t('msg_mod_load_earlier')}
         </button>
       </div>
+    {:else if historyEnd && !isGroup && !chatStore.hasMore && chatStore.messages.length > 0}
+      <div class="history-start">{$t('msg_history_start')}</div>
     {/if}
     {#if chatStore.loading && chatStore.messages.length === 0}
       <div class="placeholder">{$t('loading')}</div>
@@ -807,8 +918,10 @@
   .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); color: var(--text-3); text-align: center; padding: var(--sp-6); }
   .placeholder p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
   .placeholder span { font-size: var(--fs-xs); max-width: 320px; line-height: 1.5; }
-  .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
+  .loading { display: flex; justify-content: center; align-items: center; gap: var(--sp-2); color: var(--text-3); padding: var(--sp-2); font-size: var(--fs-xs); }
+  .loading :global(svg) { flex-shrink: 0; animation: spin 1.1s linear infinite; }
   .earlier { display: flex; justify-content: center; padding: var(--sp-2); }
+  .history-start { text-align: center; color: var(--text-3); font-size: var(--fs-xs); padding: var(--sp-2); }
   /* To the bottom (design kit M10): 40, radius 10, glass; with «N новых» when new ones came. */
   .to-bottom {
     position: absolute; right: var(--sp-5); bottom: max(96px, calc(var(--bottom-h, 0px) + var(--sp-4))); height: 40px; min-width: 40px; padding: 0 var(--sp-2);

@@ -32,6 +32,7 @@ cloud_link_start cloud all
 cloud_plans cloud all
 cloud_recover_cancel cloud all
 cloud_recover_finish cloud all
+cloud_recover_peek cloud all
 cloud_recover_poll cloud all
 cloud_recover_start cloud all
 cloud_recovery_alert_dismiss cloud all
@@ -41,6 +42,7 @@ cloud_recovery_key_reissue cloud all
 cloud_recovery_key_show_once cloud all
 cloud_recovery_status cloud all
 cloud_redeem cloud all
+cloud_restore_peek cloud all
 cloud_restore_with_words cloud all
 cloud_status cloud all
 cloud_trustees_check cloud all
@@ -164,6 +166,7 @@ messenger_group_create messenger all
 messenger_group_forget messenger all
 messenger_group_get messenger all
 messenger_group_history messenger all
+messenger_dm_history messenger all
 messenger_group_invite messenger all
 messenger_group_invites messenger all
 messenger_group_link_qr messenger all

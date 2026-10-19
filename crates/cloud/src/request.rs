@@ -460,6 +460,22 @@ impl Requester {
         }
     }
 
+    /// The words of the key once it is together (for the look into the
+    /// escrow before the secret of the lock is asked, `restore::peek`).
+    pub fn collected_words(&self) -> Result<Zeroizing<String>, CloudError> {
+        let current = guard(&self.sessions.current);
+        let s = current
+            .as_ref()
+            .ok_or_else(|| CloudError::new(words::REQUEST_STATE, "no request is under way on this device"))?;
+        if !matches!(s.phase, RequestPhase::Collected | RequestPhase::Restored) {
+            return Err(CloudError::new(words::NOT_COLLECTED, "fewer than k people answered"));
+        }
+        s.words
+            .as_ref()
+            .map(|w| Zeroizing::new(w.to_string()))
+            .ok_or_else(|| CloudError::new(words::NOT_COLLECTED, "the key is not together"))
+    }
+
     /// Step 9: the key is together — the restore of §7 with the new secret
     /// of the lock (without the vault when its storage is out of reach and
     /// the person said so), then `close` signed by T; the words once more.
@@ -577,9 +593,10 @@ impl Restorer for AppRestorer {
         Box::pin(async move {
             crate::recovery::cloud_restore_with_words(
                 words.to_string(),
-                secret.password,
+                Some(secret.password),
                 secret.kind,
                 secret.hint,
+                Some(secret.old),
                 Some(vault == Vault::Skip),
                 self.0.clone(),
             )
@@ -604,14 +621,23 @@ pub async fn cloud_recover_poll<R: Runtime>(app: AppHandle<R>) -> Result<Request
     Ok(requester_of(&app)?.poll())
 }
 
+/// The key is together: whether the account has a lock, read from the
+/// escrow before anything is written, so the secret is asked only then.
+#[tauri::command]
+pub async fn cloud_recover_peek(app: AppHandle) -> Result<crate::restore::Peeked, CloudError> {
+    let words = requester_of(&app)?.collected_words()?;
+    crate::recovery::cloud_restore_peek(words.to_string(), app).await
+}
+
 /// The key is together: the restore of §7 with the new secret of the
 /// lock, `close`, the words once more. `without_vault` is the person's
 /// answer to `vault_unreachable`.
 #[tauri::command]
 pub async fn cloud_recover_finish(
-    password: String,
+    password: Option<String>,
     kind: Option<String>,
     hint: Option<String>,
+    old: Option<bool>,
     without_vault: Option<bool>,
     app: AppHandle,
 ) -> Result<Recovered, CloudError> {
@@ -619,9 +645,10 @@ pub async fn cloud_recover_finish(
     requester
         .finish(
             NewSecret {
-                password,
+                password: password.unwrap_or_default().trim().to_string(),
                 kind,
                 hint,
+                old: old == Some(true),
             },
             Vault::of(without_vault),
             &AppRestorer(app.clone()),

@@ -1093,6 +1093,8 @@
     "msg_mod_you_muted_until": "モデレーターにより、{time} までこのグループに書き込めません。",
     "msg_mod_needs_update": "このグループは新しいバージョンの機能を使っています。すべて表示するにはアプリを更新してください。",
     "msg_mod_load_earlier": "以前のメッセージを読み込む",
+    "msg_history_loading": "サーバーから以前のメッセージを読み込んでいます",
+    "msg_history_start": "会話の始まり",
     "msg_err_not_implemented": "このバージョンではまだ利用できません。",
     "msg_err_group_closed": "現在このグループでは管理者だけが書き込めます。",
     "msg_err_group_muted_until": "モデレーターにより、しばらくこのグループに書き込めません。",

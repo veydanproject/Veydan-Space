@@ -625,6 +625,7 @@ fn secret() -> NewSecret {
         password: NEW_PIN.into(),
         kind: Some("pin".into()),
         hint: None,
+        old: false,
     }
 }
 
@@ -1128,5 +1129,117 @@ async fn a_linked_device_that_cannot_reach_the_storage_is_left_clean() {
     assert_eq!(e.code, escrow::words::VAULT_UNREACHABLE);
     assert!(b.key_row().await.is_none());
     assert!(veydan_sync_host::config::load_binding(&b.core.db).await.is_none());
+    b.core.db.close().await;
+}
+
+/// No secret, an old one, or a new one: the secret of the lock as the
+/// person gives it (§7, 2026-10-19).
+fn given(password: &str, old: bool) -> NewSecret {
+    NewSecret { password: password.into(), kind: Some("pin".into()), hint: None, old }
+}
+
+/// The look before the secret is asked says whether the account has a
+/// lock, and writes nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_look_says_whether_the_account_has_a_lock_and_writes_nothing() {
+    let (locked, locked_rk) = account_under_the_words_of_a().await;
+    let b = Device::new(locked.vault_dir.path()).await;
+    let peeked = restore::peek(&b, locked.store.as_ref(), &locked_rk.words()).await.expect("the look");
+    assert!(peeked.lock);
+    assert!(b.key_row().await.is_none());
+    assert!(b.identity.get().is_none());
+    assert!(veydan_sync_host::config::load_binding(&b.core.db).await.is_none());
+    b.core.db.close().await;
+
+    let (plain, plain_rk, _escrow) = account(false).await;
+    let c = Device::new(plain.vault_dir.path()).await;
+    assert!(!restore::peek(&c, plain.store.as_ref(), &plain_rk.words()).await.expect("the look").lock);
+    c.core.db.close().await;
+}
+
+/// An account without a lock is restored with no secret at all.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_account_without_a_lock_needs_no_secret() {
+    let (account, rk, _escrow) = account(false).await;
+    let b = Device::new(account.vault_dir.path()).await;
+    let restored = restore::restore(&b, account.store.as_ref(), &MemoryBox::default(), &rk.words(), given("", false), Vault::Join, &|_| {})
+        .await
+        .expect("the restore");
+    assert_eq!(restored.lock, LockOutcome::NoLock);
+    assert!(!b.lock().enabled().await);
+    assert_eq!(b.identity.load_keys().await.unwrap(), NSEC);
+    b.core.db.close().await;
+}
+
+/// An account with a lock and no secret given: said before anything is
+/// written, the device stays clean.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_account_with_a_lock_and_no_secret_is_told_before_anything_is_written() {
+    let (account, rk) = account_under_the_words_of_a().await;
+    let b = Device::new(account.vault_dir.path()).await;
+    let e = restore::restore(&b, account.store.as_ref(), &MemoryBox::default(), &rk.words(), given("", false), Vault::Join, &|_| {})
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(e.code, escrow::words::LOCK_SECRET_NEEDED);
+    assert!(b.key_row().await.is_none());
+    assert!(veydan_sync_host::config::load_binding(&b.core.db).await.is_none());
+    assert!(b.identity.get().is_none());
+    b.core.db.close().await;
+}
+
+/// The secret the person remembers opens the row of the vault and stays the
+/// secret; a wrong one is said, and the next try with the same words carries
+/// on from the lock (the device is bound already, not refused as unclean).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_secret_remembered_opens_the_lock_and_a_wrong_one_is_tried_again() {
+    let (account, rk) = account_under_the_words_of_a().await;
+    let b = Device::new(account.vault_dir.path()).await;
+    let boxed = MemoryBox::default();
+    let e = restore::restore(&b, account.store.as_ref(), &boxed, &rk.words(), given("not it", true), Vault::Join, &|_| {})
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(e.code, code::WRONG_PASSWORD);
+    assert!(b.identity.get().is_none(), "nothing of the identity before the lock is open");
+    assert!(veydan_sync_host::config::load_binding(&b.core.db).await.is_some());
+
+    // The look of the next try still sees the lock, and the device is not refused.
+    assert!(restore::peek(&b, account.store.as_ref(), &rk.words()).await.expect("the look").lock);
+    let restored = restore::restore(&b, account.store.as_ref(), &boxed, &rk.words(), given(FORGOTTEN, true), Vault::Join, &|_| {})
+        .await
+        .expect("the restore");
+    assert_eq!(restored.lock, LockOutcome::Opened);
+    assert!(restored.vault_joined);
+    assert_eq!(b.identity.load_keys().await.unwrap(), NSEC);
+    b.lock().lock();
+    assert!(b.lock().unlock(FORGOTTEN).await.unwrap(), "the old secret stays");
+    assert!(veydan_core::settings::get(&b.core.db, restore::RESTORE_PENDING).await.is_none(), "the restore is done");
+    // Done: a restore once more is refused, as on any device with an identity.
+    let e = restore::restore(&b, account.store.as_ref(), &boxed, &rk.words(), given(FORGOTTEN, true), Vault::Join, &|_| {})
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(e.code, code::IDENTITY_EXISTS);
+    b.core.db.close().await;
+}
+
+/// After a wrong old secret the person sets a new one instead.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn after_a_wrong_old_secret_a_new_one_is_set() {
+    let (account, rk) = account_under_the_words_of_a().await;
+    let b = Device::new(account.vault_dir.path()).await;
+    let boxed = MemoryBox::default();
+    restore::restore(&b, account.store.as_ref(), &boxed, &rk.words(), given("not it", true), Vault::Join, &|_| {})
+        .await
+        .err()
+        .unwrap();
+    let restored = restore::restore(&b, account.store.as_ref(), &boxed, &rk.words(), given(NEW_PIN, false), Vault::Join, &|_| {})
+        .await
+        .expect("the restore");
+    assert_eq!(restored.lock, LockOutcome::Kept);
+    b.lock().lock();
+    assert!(b.lock().unlock(NEW_PIN).await.unwrap());
+    assert_eq!(b.identity.load_keys().await.unwrap(), NSEC);
     b.core.db.close().await;
 }

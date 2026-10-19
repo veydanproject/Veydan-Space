@@ -1093,6 +1093,8 @@
     "msg_mod_you_muted_until": "协管员已禁止你在此发言，直到 {time}。",
     "msg_mod_needs_update": "该群组使用了新版本的功能。请更新应用以查看全部内容。",
     "msg_mod_load_earlier": "加载更早的消息",
+    "msg_history_loading": "正在从服务器加载更早的消息",
+    "msg_history_start": "对话的开始",
     "msg_err_not_implemented": "此版本暂不支持该功能。",
     "msg_err_group_closed": "目前此群组只有管理员可以发言。",
     "msg_err_group_muted_until": "协管员暂时禁止你在此发言。",

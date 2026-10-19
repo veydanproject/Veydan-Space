@@ -182,6 +182,19 @@ pub async fn list(store: &Store, chat_id: &str, before: Option<i64>, limit: i64,
     Ok(rows)
 }
 
+/// How many rows of a chat `list` would show (to whoever is not a
+/// moderator) strictly older than `before`: whether an older page exists.
+pub async fn count_before(store: &Store, chat_id: &str, before: i64) -> Result<i64> {
+    sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!(
+        "SELECT COUNT(*) FROM msg_messages m WHERE m.chat_id = ? AND {SHOWN_TO_MEMBER} AND m.created_at < ?"
+    )))
+    .bind(chat_id)
+    .bind(before)
+    .fetch_one(store.pool())
+    .await
+    .map_err(storage)
+}
+
 /// What a report attaches of a chat (`messenger_runtime::report`): the last
 /// `limit` messages written by one of the two `authors` that came over the
 /// wire (they have a `wire_id`) and are still there to see — not hidden,

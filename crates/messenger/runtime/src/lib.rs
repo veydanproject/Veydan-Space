@@ -18,6 +18,7 @@ pub mod notify;
 pub(crate) const REGION_FALLBACK: &str = "default";
 pub mod avatars;
 mod banned;
+pub mod dm_history;
 pub mod bindings;
 pub mod call_nodes;
 pub mod calls;
@@ -104,6 +105,7 @@ pub use relays::{ManifestCheck, ManifestInfo, RelayService, RelayView, ServersMo
 pub use servers::ManifestRemote;
 pub use messenger_transport::{Manifest, ManifestFetcher};
 pub use shared::{SharedCounts, SharedSection};
+pub use dm_history::DmHistoryPage;
 
 /// Facts for the host's status screen. Never contains secrets.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -180,6 +182,8 @@ pub struct MessengerRuntime {
     /// Reports to the moderators: the rate of this device, one round of
     /// retries at a time (`crate::report`).
     reports: report::Reports,
+    /// «Load earlier» in a direct chat: one ask per server at a time (`crate::dm_history`).
+    dm_history_state: dm_history::DmHistoryState,
 }
 
 impl MessengerRuntime {
@@ -338,6 +342,7 @@ impl MessengerRuntime {
             calls,
             group_calls,
             reports: report::Reports::default(),
+            dm_history_state: dm_history::DmHistoryState::default(),
         };
         // Before any session: what came while the app was off is judged by
         // the bans of the manifest in use, one an update of the app brought
@@ -1711,15 +1716,44 @@ mod tests {
 
     /// Until `rt` published revision `rev` of its list and the outbox is empty.
     async fn published(rt: &MessengerRuntime, rev: &str) {
+        // Three looks in a row: the revision is counted before its events
+        // are in the outbox, and one look can fall between the two.
+        let mut steady = 0;
         for _ in 0..100 {
             let at_rev = settings::get(rt.store(), messenger_dm::snapshot::KEY_REV).await.unwrap().as_deref() == Some(rev);
             let drained = messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap().is_empty();
             if at_rev && drained && !rt.dm().relations_owed().await.unwrap() {
-                return;
+                steady += 1;
+                if steady == 3 {
+                    return;
+                }
+            } else {
+                steady = 0;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         panic!("revision {rev} was not published");
+    }
+
+    /// Until `rt` published a revision of at least `min` and stands there
+    /// with the outbox empty: which one it is.
+    async fn published_at_least(rt: &MessengerRuntime, min: u64) -> u64 {
+        let (mut last, mut steady) = (0, 0);
+        for _ in 0..150 {
+            let rev: u64 = settings::get(rt.store(), messenger_dm::snapshot::KEY_REV).await.unwrap().and_then(|v| v.parse().ok()).unwrap_or(0);
+            let drained = messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap().is_empty();
+            if rev >= min && rev == last && drained && !rt.dm().relations_owed().await.unwrap() {
+                steady += 1;
+                if steady == 3 {
+                    return rev;
+                }
+            } else {
+                steady = 0;
+            }
+            last = rev;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("no revision of {min} or more was published");
     }
 
     async fn visible(rt: &MessengerRuntime, peer: &PubKey) -> usize {
@@ -1755,7 +1789,7 @@ mod tests {
         published(&rt1, "1").await;
         rt1.dm_act(spammer_pk.as_hex(), Action::Block).await.unwrap();
         rt1.dm_act(friend_pk.as_hex(), Action::Request).await.unwrap();
-        published(&rt1, "2").await;
+        let rev = published_at_least(&rt1, 2).await;
         rt1.shutdown().await;
 
         // A fresh device of the same key: the list comes before the history,
@@ -1763,7 +1797,7 @@ mod tests {
         // a full chat, without a copy of any signal (there was none).
         let (_dir2, rt2, mut ui2) = device_on(&relay, &nsec, None).await;
         let told = list_read(&mut ui2, 20).await;
-        assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (Some(2), Some(true)));
+        assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (Some(rev), Some(true)));
         assert_eq!(rt2.dm().relations_known(), messenger_dm::RelationsKnown::Complete);
         event_named(&mut ui2, session::UI_EVENT_HISTORY_SYNCED, 30).await;
         let spam = rt2.dm_relation(spammer_pk.as_hex()).await.unwrap();
@@ -1773,20 +1807,66 @@ mod tests {
         assert_eq!((fr.my_contact.as_str(), fr.mode.as_str()), ("approved", "full_chat"));
         assert_eq!(visible(&rt2, &friend_pk).await, 2, "a quietly added contact's history is a chat");
         assert!(rt2.contacts().is_contact(&friend_pk).await.unwrap(), "the book follows the list");
-        assert!(!rt2.dm().relations_owed().await.unwrap(), "nothing to publish: the relay's list is the newest");
+        // The first device took its first history unjudged (a fresh
+        // database), so its list had no word of the friend's will; this one
+        // read the friend's texts against the list and learned it: the list
+        // owes that, and this device tells it.
+        assert_eq!(fr.peer_signal, "approved");
+        let told_by_me = published_at_least(&rt2, rev + 1).await;
 
         // Live: the first device is back and adds somebody quietly; the
         // second sees it without a restart, by the snapshot alone.
         let (_dir1, rt1, _ui1) = device_on(&relay, &nsec, Some(dir1)).await;
         rt1.dm_act(quiet_pk.as_hex(), Action::Request).await.unwrap();
-        published(&rt1, "3").await;
-        let told = event_named(&mut ui2, relations::UI_EVENT_RELATIONS, 20).await;
-        assert_eq!((told.payload["rev"].as_u64(), told.payload["start"].as_bool(), told.payload["changed"].as_u64()), (Some(3), Some(false), Some(1)));
+        let live = published_at_least(&rt1, told_by_me + 1).await;
+        let told = loop {
+            let ev = event_named(&mut ui2, relations::UI_EVENT_RELATIONS, 20).await;
+            if ev.payload["rev"].as_u64() == Some(live) {
+                break ev;
+            }
+        };
+        assert_eq!((told.payload["rev"].as_u64(), told.payload["start"].as_bool(), told.payload["changed"].as_u64()), (Some(live), Some(false), Some(1)));
         let q = rt2.dm_relation(quiet_pk.as_hex()).await.unwrap();
         assert_eq!(q.my_contact, "approved");
         assert!(rt2.contacts().is_contact(&quiet_pk).await.unwrap());
         assert!(!rt2.dm().relations_owed().await.unwrap(), "a copy is no decision");
         rt1.shutdown().await;
+        rt2.shutdown().await;
+    }
+
+    /// A group made on one device is on a fresh device of the same key,
+    /// named by the welcome to myself it was made with: the list carries
+    /// that welcome's id, the fresh device sends no welcome anew.
+    #[tokio::test]
+    async fn a_fresh_device_is_in_my_groups_by_the_welcome_my_list_names() {
+        let relay = LocalRelay::builder().build();
+        relay.run().await.unwrap();
+        let keys = Keys::generate();
+        let nsec = keys.secret_key().to_bech32().unwrap();
+        let (_dir1, rt1, mut ui1) = device_on(&relay, &nsec, None).await;
+        list_read(&mut ui1, 20).await;
+        event_named(&mut ui1, session::UI_EVENT_HISTORY_SYNCED, 30).await;
+        let g = rt1.group_create(messenger_groups::GroupKind::Private, "Family", "", true, None).await.unwrap();
+        let wrap = messenger_store::groups::self_welcome(rt1.store(), &g.id).await.unwrap().expect("named at the creation");
+        for _ in 0..100 {
+            let drained = messenger_store::outbox::due(rt1.store(), i64::MAX / 4, 0).await.unwrap().is_empty();
+            if drained && !rt1.dm().relations_owed().await.unwrap() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        rt1.shutdown().await;
+
+        let (_dir2, rt2, mut ui2) = device_on(&relay, &nsec, None).await;
+        list_read(&mut ui2, 20).await;
+        for _ in 0..100 {
+            if rt2.group_list().await.unwrap().iter().any(|v| v.id == g.id && v.membership == "joined") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(rt2.group_list().await.unwrap().iter().any(|v| v.id == g.id && v.membership == "joined"), "the group came");
+        assert_eq!(messenger_store::groups::self_welcome(rt2.store(), &g.id).await.unwrap(), Some(wrap), "its own welcome names it");
         rt2.shutdown().await;
     }
 

@@ -899,6 +899,12 @@ impl GroupService {
             }
         }
         self.consume_consent(&group_id, me).await?;
+        // A welcome of my own is one my next new device can be pointed to
+        // (`welcome_myself`): none is sent anew for it.
+        if from_me && repo::self_welcome(&self.store, &group_id).await?.is_none() {
+            repo::set_self_welcome(&self.store, &group_id, wire_id).await?;
+            self.dm.mark_relations_owed().await?;
+        }
 
         // The row was rewritten above, so `settle` sees no change in it:
         // the screen has to hear of it here (a group I was banned in or

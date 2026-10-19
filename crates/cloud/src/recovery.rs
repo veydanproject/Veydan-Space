@@ -115,6 +115,11 @@ fn store_of<R: Runtime>(app: &AppHandle<R>) -> Result<HttpEscrowStore, CloudErro
     ))
 }
 
+/// The escrow a restore read, kept for its next steps (`escrow::ReadEscrows`).
+fn read_escrows<R: Runtime>(app: &AppHandle<R>) -> Arc<escrow::ReadEscrows> {
+    app.try_state::<Arc<escrow::ReadEscrows>>().map(|s| s.inner().clone()).unwrap_or_default()
+}
+
 /// The box `cloud` of the lock.
 fn box_of<R: Runtime>(app: &AppHandle<R>) -> Arc<dyn LockBox> {
     veydan_shell::seams::lock_box(app, BOX)
@@ -424,23 +429,43 @@ impl RestoreEnv for AppRestoreEnv {
     }
 }
 
+/// Scenario 3 (§7), before anything is written: the 12 words checked, the
+/// device found clean, the escrow read and opened — whether the account
+/// has a lock, so that the screen asks a secret of it only then.
+#[tauri::command]
+pub async fn cloud_restore_peek(words: String, app: AppHandle) -> Result<restore::Peeked, CloudError> {
+    let http = store_of(&app)?;
+    let read = read_escrows(&app);
+    let store = escrow::ReadOnce { inner: &http, read: &read };
+    let env = AppRestoreEnv { app: app.clone() };
+    let lane = take_lane(&app).await;
+    let peeked = restore::peek(&env, &store, &words).await;
+    drop(lane);
+    peeked
+}
+
 /// Scenario 3 (§7): the 12 words of a clean install, the escrow, the six
-/// steps in their order, a new secret of the lock. The progress goes to
+/// steps in their order, the secret of the lock — the one it has (`old`),
+/// a new one, or none for an account without a lock. The progress goes to
 /// the screen as [`EVENT_RESTORE`]. `without_vault` is the person's answer
 /// to `vault_unreachable`: the identity and the lock without the storage.
 /// Afterwards the escrow is written again when the lock was set up anew
 /// around a vault that was joined, so it carries the key in use; whether
 /// that worked goes back to the screen as `escrow_refreshed`.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn cloud_restore_with_words(
     words: String,
-    password: String,
+    password: Option<String>,
     kind: Option<String>,
     hint: Option<String>,
+    old: Option<bool>,
     without_vault: Option<bool>,
     app: AppHandle,
 ) -> Result<Restored, CloudError> {
-    let store = store_of(&app)?;
+    let http = store_of(&app)?;
+    let read = read_escrows(&app);
+    let store = escrow::ReadOnce { inner: &http, read: &read };
     let boxed = box_of(&app);
     let env = AppRestoreEnv { app: app.clone() };
     let progress = {
@@ -456,14 +481,16 @@ pub async fn cloud_restore_with_words(
         boxed.as_ref(),
         &words,
         NewSecret {
-            password,
+            password: password.unwrap_or_default().trim().to_string(),
             kind,
             hint,
+            old: old == Some(true),
         },
         Vault::of(without_vault),
         &progress,
     )
     .await?;
+    read.forget();
     drop(lane);
     // Without the vault there is no binding to write of: the escrow in
     // vstore stands as it was read, and names the vault still.

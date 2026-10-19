@@ -639,6 +639,58 @@ impl DmService {
         Ok(Some(effects))
     }
 
+    /// The will of the peer as another device of mine holds it (the
+    /// snapshot of my relations): what they signalled last and when, and
+    /// whether we were ever both approved. Otherwise a new device learns
+    /// it from the history alone, and the history it fetches is the newest
+    /// part: a contact whose accept and messages are older than that reads
+    /// as "request sent". Their newer word stands, as a signal's does
+    /// (`apply_peer_signal`); an accept older than my removal or my no
+    /// taken here was for the relation I ended and is no request again.
+    /// Nothing is sent and nothing is owed: a copy is no word of theirs.
+    /// `None` when the will here stands.
+    pub(crate) async fn apply_will_copy(&self, peer: &DmPeer, signal: PeerSignal, at: i64, mutual: bool) -> Result<Option<Vec<Effect>>> {
+        let chat_id = peer.chat_id();
+        let current = self.load_relation(peer).await?;
+        let at = at.min(self.clock.now().secs().saturating_add(FLOOR_SKEW_SECS));
+        let mut next = current;
+        next.was_ever_mutual |= mutual;
+        if at > current.last_signal_at {
+            next.last_signal_at = at;
+            let ended = signal == PeerSignal::Approved
+                && matches!(current.my_contact, MyContact::None | MyContact::Declined)
+                && current.decided_at > at;
+            if !ended {
+                next.peer_signal = signal;
+            }
+            if next.peer_signal == PeerSignal::Approved && next.my_contact == MyContact::Approved {
+                next.was_ever_mutual = true;
+            }
+        }
+        if next == current {
+            return Ok(None);
+        }
+        self.save_relation(peer, &next).await?;
+        let mut effects = vec![Effect::Emit(self.relationship_event(&chat_id, peer).await?)];
+        if Self::request_changed(&current, &next) {
+            effects.push(Effect::Emit(self.request_event(&peer.key).await?));
+            effects.extend(self.cap_requests(self.clock.now().secs()).await?);
+        }
+        Ok(Some(effects))
+    }
+
+    /// The peer's will changed here: my other devices hear the peer too,
+    /// but a new one has my list alone, so the list owes it when it names
+    /// the peer (a relation with a decision of mine, `crate::snapshot`).
+    async fn owe_will(&self, before: &Relationship, after: &Relationship) -> Result<()> {
+        let will = |r: &Relationship| (r.peer_signal, r.was_ever_mutual);
+        let named = after.blocked || after.my_contact != MyContact::None || after.decided_at > 0;
+        if named && will(before) != will(after) {
+            self.mark_relations_owed().await?;
+        }
+        Ok(())
+    }
+
     /// Whether a hidden envelope of the peer (a signal, an edit, a delete)
     /// is heard at all, decided before anything of it is stored: a key that
     /// is not let in leaves no row behind. A stranger's first word being a
@@ -782,6 +834,7 @@ impl DmService {
             next.was_ever_mutual = true;
         }
         self.save_relation(peer, &next).await?;
+        self.owe_will(&r, &next).await?;
         let line = if r.my_contact == MyContact::Approved { SystemLine::RequestAccepted } else { SystemLine::RequestReceived };
         if let Some(ev) = self.system_line(chat_id, peer, line, at - 1, true).await? {
             effects.push(Effect::Emit(ev));
@@ -949,6 +1002,7 @@ impl DmService {
         }
         if next != current {
             self.save_relation(peer, &next).await?;
+            self.owe_will(&current, &next).await?;
         }
         let raised = next.request_floor > current.request_floor;
         if !outcome.applied {
@@ -1019,6 +1073,7 @@ impl DmService {
             }
             if next != current {
                 self.save_relation(peer, &next).await?;
+                self.owe_will(&current, &next).await?;
             }
             if !current.was_ever_mutual {
                 if let Some(ev) = self.system_line(chat_id, peer, SystemLine::Invited, at, false).await? {

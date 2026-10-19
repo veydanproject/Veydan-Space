@@ -473,6 +473,78 @@ impl RelayPool {
     }
 }
 
+/// What one relay answered to a page of the past (`RelayPool::fetch_page`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelayPage {
+    pub relay: RelayUrl,
+    /// The ids of the events it sent, checked, each once.
+    pub ids: Vec<String>,
+    /// The oldest `created_at` among them; `None` when it sent nothing.
+    pub oldest: Option<i64>,
+}
+
+impl RelayPool {
+    /// One page of the past: a plain REQ with `filter` (its `until` and
+    /// `limit` are what make the page, so no Negentropy) to every connected
+    /// relay of `scope`, each answered until EOSE or `patience`. Every
+    /// event found goes onto the event stream as history
+    /// (`EventSource::Sync` with the relay it came by), exactly as the
+    /// catch-up's do, so the ingress takes it the same way. Per relay: what
+    /// it sent. A relay that did not answer in time with anything is left
+    /// out (a REQ cut by its timeout ends as quietly as one at EOSE, so an
+    /// empty answer counts only when it came before `patience` ran out);
+    /// none answering is an error, never an empty page.
+    pub async fn fetch_page(
+        &self,
+        filter: &messenger_core::outbound::Filter,
+        scope: &Scope,
+        patience: Duration,
+    ) -> Result<Vec<RelayPage>> {
+        self.guard_send()?;
+        let f = Self::parse_filter(filter)?;
+        let members: Vec<Member> = self.members(scope).await.into_iter().filter(Member::connected).collect();
+        if members.is_empty() {
+            return Err(none_connected(scope));
+        }
+        let asks = members.iter().map(|m| {
+            let f = f.clone();
+            async move {
+                let started = tokio::time::Instant::now();
+                let answer = m.relay.fetch_events(f).timeout(patience).await;
+                (to_core_url(&m.address), answer, started.elapsed() < patience)
+            }
+        });
+        let mut pages = Vec::new();
+        let mut forwarded: HashSet<String> = HashSet::new();
+        for (url, answer, in_time) in futures_util::future::join_all(asks).await {
+            let Ok(events) = answer else { continue };
+            if events.is_empty() && !in_time {
+                continue;
+            }
+            let source = EventSource::Sync { url: url.clone() };
+            let mut page = RelayPage { relay: url, ids: Vec::new(), oldest: None };
+            for ev in events.into_iter().filter(|ev| ev.verify().is_ok()) {
+                let id = ev.id.to_hex();
+                let at = ev.created_at.as_secs() as i64;
+                page.oldest = Some(page.oldest.map_or(at, |o| o.min(at)));
+                // The copy of a second relay adds nothing the ingress has
+                // not been given already.
+                if forwarded.insert(id.clone()) {
+                    if let Some(raw) = to_raw(&ev, source.clone()) {
+                        let _ = self.tx.send(raw).await;
+                    }
+                }
+                page.ids.push(id);
+            }
+            pages.push(page);
+        }
+        if pages.is_empty() {
+            return Err(MessengerError::Transport("no relay answered".into()));
+        }
+        Ok(pages)
+    }
+}
+
 /// Core relay identity is the base url: the `?key=` query used for gated
 /// relays is stripped so keys never travel into status, events or logs.
 fn to_core_url(u: &nostr::types::url::RelayUrl) -> RelayUrl {
@@ -907,6 +979,61 @@ mod tests {
         let third = copies(&mut inbox).await;
         assert_eq!(third, vec![(note.id.as_hex().to_string(), EventSource::Relay { url: url_a.clone() })]);
         for pool in [writer, receiver] {
+            pool.shutdown().await;
+        }
+    }
+
+    /// A page of the past: the newest `limit` at or before `until` of the
+    /// relays of the scope alone, told per relay with its oldest time, and
+    /// put on the stream as history of that relay.
+    #[tokio::test]
+    async fn a_page_of_the_past_comes_from_the_relays_of_its_scope() {
+        let (_a, home_url) = local_relay().await;
+        let (_b, private_url) = local_relay().await;
+        let alice = Keys::generate();
+        let note_at = |text: &str, at: u64| {
+            let ev = EventBuilder::new(Kind::from(1u16), text).custom_created_at(nostr::types::Timestamp::from_secs(at)).finalize(&alice).unwrap();
+            WireEvent { id: EventId::parse(&ev.id.to_hex()).unwrap(), json: serde_json::to_value(&ev).unwrap() }
+        };
+        let to_home = connected_pool(Some(alice.clone()), vec![home(&home_url)]).await;
+        let to_private = connected_pool(Some(alice.clone()), vec![home(&private_url)]).await;
+        to_home.send(Outbound::PublishOwn { event: note_at("home", 1_500) }).await.unwrap();
+        let mut on_b = Vec::new();
+        for at in [1_000u64, 1_100, 1_200, 1_300] {
+            let note = note_at(&format!("b {at}"), at);
+            on_b.push((at, note.id.as_hex().to_string()));
+            to_private.send(Outbound::PublishOwn { event: note }).await.unwrap();
+        }
+
+        let receiver = RelayPool::new(None);
+        let mut inbox = receiver.events();
+        receiver.set_relays(vec![home(&home_url), of_server(&private_url, "b")]).await.unwrap();
+        assert!(wait_connected(&receiver, 5).await);
+        let window = |until: i64| {
+            CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()], "until": until, "limit": 2 }))
+        };
+        let pages = receiver.fetch_page(&window(1_250), &server("b"), Duration::from_secs(3)).await.unwrap();
+        assert_eq!(pages.len(), 1, "{pages:?}");
+        assert_eq!(pages[0].relay, private_url);
+        assert_eq!(pages[0].oldest, Some(1_100), "the newest two at or before 1250");
+        let mut ids = pages[0].ids.clone();
+        ids.sort();
+        let mut want = vec![on_b[1].1.clone(), on_b[2].1.clone()];
+        want.sort();
+        assert_eq!(ids, want);
+        let mut synced = Vec::new();
+        while let Ok(Some(raw)) = tokio::time::timeout(Duration::from_millis(1000), inbox.recv()).await {
+            if raw.source == (EventSource::Sync { url: private_url.clone() }) {
+                synced.push(raw.id.as_hex().to_string());
+            }
+        }
+        synced.sort();
+        assert_eq!(synced, want, "on the stream as history of b");
+
+        let below = receiver.fetch_page(&window(999), &server("b"), Duration::from_secs(3)).await.unwrap();
+        assert_eq!((below[0].ids.len(), below[0].oldest), (0, None), "nothing older: an empty page, not an error");
+        assert!(receiver.fetch_page(&window(2_000), &server("c"), Duration::from_secs(1)).await.is_err());
+        for pool in [to_home, to_private, receiver] {
             pool.shutdown().await;
         }
     }

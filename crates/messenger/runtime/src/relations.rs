@@ -107,7 +107,31 @@ fn told(applied: &Applied, start: bool) -> Vec<Effect> {
         // page shows the list again, and the session listens to it.
         out.push(Effect::Emit(UiEvent { name: UI_EVENT_SERVERS_UPDATED.into(), payload: serde_json::json!({}) }));
     }
+    out.extend(welcomes_wanted(&applied.groups_wanted).into_iter().map(Effect::Send));
     out
+}
+
+/// My groups another device of mine is in and this one is not: their
+/// welcomes to myself, asked by id of my inbox (the home set) or of each
+/// group's server — the history of a new device reaches back only so far,
+/// and these may be older. What comes goes the way of any welcome of mine.
+fn welcomes_wanted(wanted: &[messenger_dm::snapshot::GroupWanted]) -> Vec<Outbound> {
+    let mut by_scope: Vec<(Option<&str>, Vec<String>)> = Vec::new();
+    for w in wanted {
+        let server = w.server.as_deref();
+        match by_scope.iter_mut().find(|(s, _)| *s == server) {
+            Some((_, ids)) => ids.push(w.wrap_id.as_hex().to_string()),
+            None => by_scope.push((server, vec![w.wrap_id.as_hex().to_string()])),
+        }
+    }
+    by_scope
+        .into_iter()
+        .map(|(server, ids)| Outbound::Sync {
+            scope: crate::scopes::of_server(server),
+            filter: messenger_core::outbound::Filter(serde_json::json!({ "kinds": [1059], "ids": ids })),
+            local: vec![],
+        })
+        .collect()
 }
 
 /// The task that opens the inbox of a session, in this order: the list,
@@ -127,6 +151,7 @@ pub(crate) async fn open_inbox(
     pool: Arc<RelayPool>,
     keys: Keys,
     dm: DmService,
+    groups: messenger_groups::GroupService,
     outbox: Outbox,
     me: PubKey,
     started_at: Timestamp,
@@ -167,6 +192,12 @@ pub(crate) async fn open_inbox(
     // the ones after it.
     for server in servers {
         history_catch_up(store.clone(), pool.clone(), me.clone(), started_at, ui.clone(), server).await;
+    }
+    // After the history, which may bring welcomes of my own: each group I
+    // am in gets one welcome to myself that my list can name, once.
+    match groups.welcomes_owed(&keys).await {
+        Ok(outs) => forward(&outbox, &ui, outs.into_iter().map(Effect::Send).collect()).await,
+        Err(e) => eprintln!("messenger groups: welcomes to myself: {e}"),
     }
     loop {
         match told.recv().await {
@@ -225,6 +256,9 @@ async fn read_list(
                 if let Err(e) = dm.mark_relations_owed().await {
                     eprintln!("messenger relations: {e}");
                 }
+            }
+            if let Err(e) = dm.owe_wills_once().await {
+                eprintln!("messenger relations: {e}");
             }
             return;
         }
@@ -342,4 +376,30 @@ pub(crate) async fn publish_once(dm: &DmService, outbox: &Outbox, keys: &Keys) -
         let _ = dm.mark_relations_owed().await;
     }
     published
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use messenger_dm::snapshot::GroupWanted;
+
+    /// One ask by ids per place the welcomes wait in: my inbox for the
+    /// groups of the home set, each private server for its own.
+    #[test]
+    fn the_welcomes_wanted_are_asked_by_id_where_they_wait() {
+        let wanted = |n: u64, server: Option<&str>| GroupWanted {
+            group_id: format!("{n:064x}"),
+            wrap_id: EventId::parse(&format!("{:064x}", n + 100)).unwrap(),
+            server: server.map(str::to_string),
+        };
+        let asks = welcomes_wanted(&[wanted(1, None), wanted(2, Some("0123456789abcdef")), wanted(3, None)]);
+        assert_eq!(asks.len(), 2);
+        let Outbound::Sync { scope, filter, local } = &asks[0] else { panic!("{:?}", asks[0]) };
+        assert_eq!(*scope, Scope::Own);
+        assert!(local.is_empty());
+        assert_eq!(filter.0, serde_json::json!({ "kinds": [1059], "ids": [format!("{:064x}", 101), format!("{:064x}", 103)] }));
+        let Outbound::Sync { scope, .. } = &asks[1] else { panic!() };
+        assert_eq!(*scope, Scope::Server { id: "0123456789abcdef".into() });
+        assert!(welcomes_wanted(&[]).is_empty());
+    }
 }

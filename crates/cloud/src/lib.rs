@@ -72,6 +72,7 @@ pub fn module() -> Module {
                 recovery::cloud_recovery_key_show_once,
                 recovery::cloud_recovery_key_reissue,
                 recovery::cloud_recovery_status,
+                recovery::cloud_restore_peek,
                 recovery::cloud_restore_with_words,
                 link::cloud_link_start,
                 link::cloud_link_poll,
@@ -89,6 +90,7 @@ pub fn module() -> Module {
                 trustee::cloud_help_close,
                 request::cloud_recover_start,
                 request::cloud_recover_poll,
+                request::cloud_recover_peek,
                 request::cloud_recover_finish,
                 request::cloud_recover_cancel,
                 cancel::cloud_recovery_alerts,
@@ -108,6 +110,7 @@ fn setup(app: &mut tauri::App) -> SetupResult {
     app.manage(activate::Activation::default());
     app.manage(Arc::new(link::Sessions::default()));
     app.manage(Arc::new(request::Sessions::default()));
+    app.manage(Arc::new(escrow::ReadEscrows::default()));
     app.manage(trustee::HelpState::default());
     account::start_daily(app.handle().clone());
     delete::listen_cards(app.handle().clone());
@@ -169,6 +172,7 @@ mod tests {
                 "cloud_recovery_key_show_once",
                 "cloud_recovery_key_reissue",
                 "cloud_recovery_status",
+                "cloud_restore_peek",
                 "cloud_restore_with_words",
                 "cloud_link_start",
                 "cloud_link_poll",
@@ -186,6 +190,7 @@ mod tests {
                 "cloud_help_close",
                 "cloud_recover_start",
                 "cloud_recover_poll",
+                "cloud_recover_peek",
                 "cloud_recover_finish",
                 "cloud_recover_cancel",
                 "cloud_recovery_alerts",

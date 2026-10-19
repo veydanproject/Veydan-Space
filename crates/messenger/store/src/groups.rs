@@ -96,6 +96,21 @@ pub async fn list(store: &Store) -> Result<Vec<GroupRow>> {
         .map_err(storage)
 }
 
+/// The id of the gift wrap of my newest welcome to myself of a group, in
+/// `msg_settings`: the snapshot of my relations names it, and a new device
+/// of mine fetches it by that id, however far back its history reaches.
+fn self_welcome_key(group_id: &str) -> String {
+    format!("groups.self_welcome.{group_id}")
+}
+
+pub async fn self_welcome(store: &Store, group_id: &str) -> Result<Option<String>> {
+    crate::settings::get(store, &self_welcome_key(group_id)).await
+}
+
+pub async fn set_self_welcome(store: &Store, group_id: &str, wrap_id: &str) -> Result<()> {
+    crate::settings::set(store, &self_welcome_key(group_id), wrap_id).await
+}
+
 /// Whether something of the group waits for a newer build of the app.
 pub async fn set_needs_update(store: &Store, id: &str, needs_update: bool) -> Result<()> {
     sqlx::query("UPDATE msg_groups SET needs_update = ? WHERE id = ?")

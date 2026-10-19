@@ -881,6 +881,20 @@ async fn a_link_with_the_card_of_its_server_leads_there() {
     bob.shutdown().await;
 }
 
+/// Both devices of one person are past the list a start publishes, and a
+/// second is gone since: a change made now is dated after both, and the
+/// relay keeps it. Two revisions made in the same second on two devices
+/// are one `d` the relay keeps once, and the device whose word was dropped
+/// does not publish it again (a fix of the snapshot owed, not of this test).
+async fn lists_settled(a: &MessengerRuntime, b: &MessengerRuntime) {
+    async fn past_start(rt: &MessengerRuntime) -> bool {
+        let rev = messenger_store::settings::get(rt.store(), messenger_dm::snapshot::KEY_REV).await.unwrap();
+        rev.is_some_and(|r| r != "0") && !rt.dm().relations_owed().await.unwrap()
+    }
+    until!("both lists past the start", past_start(a).await && past_start(b).await);
+    tokio::time::sleep(Duration::from_millis(1_100)).await;
+}
+
 /// The secrets of the keys of a group this device holds.
 async fn group_secrets(rt: &MessengerRuntime, group: &str, keys: &[String]) -> usize {
     let mut n = 0;
@@ -913,6 +927,7 @@ async fn a_removed_server_takes_its_groups_on_every_device() {
     let (_a1, alice1, _alice_pk) = plain_device(&home_url, None).await;
     let nsec = alice1.identity().load_keys().await.unwrap().secret_key().to_secret_hex();
     let (_a2, alice2, _) = plain_device(&home_url, Some(&nsec)).await;
+    lists_settled(&alice1, &alice2).await;
     let s1 = alice1
         .server_put_private(&PrivateServerInput { relay_url: private_url.clone(), name: Some("S1".into()), ..Default::default() })
         .await
@@ -949,7 +964,11 @@ async fn a_removed_server_takes_its_groups_on_every_device() {
     );
     until!("its keys too", group_secrets(&alice2, &g.id, &keys2).await == 0);
 
-    // A row of the group here all the same: closed, never home.
+    // A row of the group here all the same, written under its lock as a
+    // welcome read while the server went writes it: closed, never home,
+    // for as long as the lock is held; then the sweep takes it.
+    let lock = alice1.groups().lock_of(&g.id).await;
+    let guard = lock.lock().await;
     let row = messenger_store::groups::GroupRow {
         id: g.id.clone(),
         kind: "private".into(),
@@ -985,6 +1004,16 @@ async fn a_removed_server_takes_its_groups_on_every_device() {
         on_relay(&home_url, serde_json::json!({ "kinds": [9] })).await.is_empty(),
         "the home relay never held an event of the group"
     );
+    let sweep = tokio::spawn({
+        let groups = alice1.groups().clone();
+        async move { groups.forget_gone().await }
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(alice1.group_get(&g.id).await.is_ok(), "the sweep waits for the lock");
+    drop(guard);
+    sweep.await.unwrap().unwrap();
+    assert!(alice1.group_list().await.unwrap().is_empty());
+    assert!(alice1.chat(&chat).await.unwrap().is_none());
     alice1.shutdown().await;
     alice2.shutdown().await;
 }

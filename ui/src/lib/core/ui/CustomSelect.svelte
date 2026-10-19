@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { portal } from '$lib/core/portal';
 
   export interface SelectOption {
     label: string;
@@ -102,6 +103,7 @@
 {#if open}
   <div
     bind:this={dropdownEl}
+    use:portal
     class="dropdown"
     style={dropdownStyle}
     role="listbox"

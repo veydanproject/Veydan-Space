@@ -1093,6 +1093,8 @@
     "msg_mod_you_muted_until": "Một người kiểm duyệt đã cấm bạn viết ở đây đến {time}.",
     "msg_mod_needs_update": "Nhóm dùng tính năng của phiên bản mới hơn. Hãy cập nhật ứng dụng để xem mọi thứ.",
     "msg_mod_load_earlier": "Tải tin cũ hơn",
+    "msg_history_loading": "Đang tải tin nhắn cũ hơn từ máy chủ",
+    "msg_history_start": "Đầu cuộc trò chuyện",
     "msg_err_not_implemented": "Phiên bản này chưa hỗ trợ tính năng này.",
     "msg_err_group_closed": "Hiện trong nhóm này chỉ quản trị viên được viết.",
     "msg_err_group_muted_until": "Một người kiểm duyệt đã tạm cấm bạn viết ở đây.",
