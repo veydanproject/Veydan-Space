@@ -30,6 +30,8 @@
   import ConfirmHost from '../shared/ConfirmHost.svelte';
   import ReportHost from '../shared/ReportHost.svelte';
   import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
+  import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
+  import PrivateInviteDialog from '../servers/PrivateInviteDialog.svelte';
   import RequestsList from '../requests/RequestsList.svelte';
   import RequestView from '../requests/RequestView.svelte';
   import { requestStore, requestsUi } from '../requests/requestStore.svelte';
@@ -343,6 +345,8 @@
   <ConfirmHost />
   <ReportHost />
   <ServerAcceptDialog />
+  <ServerInfoDialog />
+  <PrivateInviteDialog />
 {/if}
 
 <style>

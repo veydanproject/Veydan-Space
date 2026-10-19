@@ -1812,6 +1812,13 @@ pub async fn messenger_contact_link(
     messenger.runtime()?.contact_link_on(&parse_pubkey(&pubkey)?, None, server.as_deref()).await.map_err(map_err)
 }
 
+/// My link of the private chat on private server `server` of mine, with
+/// its invitation, as a QR code (SVG).
+#[tauri::command]
+pub async fn messenger_private_link_qr(server: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<String> {
+    messenger.runtime_unlocked().await?.private_link_qr(&server).await.map_err(map_err)
+}
+
 /// Title, description and picture of an https page. Asks the page: call
 /// it when the user pressed the button, never when a message is shown.
 #[tauri::command]

@@ -24,6 +24,10 @@
   import { inviteStore } from './inviteStore.svelte';
   import { countdown, formatCode, isPermanentQr, QR_REFRESH_AHEAD_SECS, QR_TTL_SECS, reusableQr } from './invites';
   import ScanQr from './ScanQr.svelte';
+  import ServerBox from '../servers/ServerBox.svelte';
+  import ServerPicker from '../servers/ServerPicker.svelte';
+  import { serverStore } from '../servers/serverStore.svelte';
+  import { privateLink } from '../servers/privateInvite.svelte';
 
   interface Props {
     /** A scanned code let me in (or named a person): their chat is to be opened. */
@@ -64,6 +68,27 @@
     ...messengerStore.contacts.map((c) => ({ label: contactLabel(c), value: c.pubkey })),
   ]);
   const myKey = $derived(messengerStore.identity?.npub ?? '');
+
+  /**
+   * The code of a private chat on a server of mine instead of the home one:
+   * my link there with its invitation (5 people, 30 days), drawn once.
+   * Whoever reads it is asked to add the server, then let straight into
+   * the private chat (ScanQr → inviteStore.join).
+   */
+  let qrServer = $state<string | null>(null);
+  let serverQr = $state<string | null>(null);
+  const homeLabel = $derived(messengerStore.manifest?.mode === 'own' ? $t('msg_srv_mode') : $t('msg_srv_veydan_title'));
+  const qrServerView = $derived(serverStore.byId(qrServer));
+  $effect(() => {
+    const s = qrServer;
+    serverQr = null;
+    if (!s) return;
+    let live = true;
+    messengerApi.servers.privateLinkQr(s)
+      .then((svg) => { if (live) serverQr = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`; })
+      .catch((e) => { if (live) error = messengerError(e); });
+    return () => { live = false; };
+  });
 
   /** The QR to show: one still live of the kind chosen, else a new one. */
   async function draw() {
@@ -121,6 +146,12 @@
     error = '';
     linkNote = false;
     try {
+      if (qrServer) {
+        await navigator.clipboard.writeText(await privateLink(qrServer));
+        copiedToast();
+        linkNote = true;
+        return;
+      }
       const v = await inviteStore.create({ kind: 'link', label: '' });
       if (!v.link) throw new Error('no link');
       await navigator.clipboard.writeText(v.link);
@@ -177,14 +208,28 @@
 
   <p class="hint">{$t('msg_inv_my_qr_hint')}</p>
 
+  {#if serverStore.list?.length}
+    <div class="for">
+      <span class="muted small">{$t('msg_srv_qr_for')}</span>
+      <ServerPicker bind:value={qrServer} none={homeLabel} label={$t('msg_srv_qr_for')} />
+    </div>
+  {/if}
+
   <div class="qrbox" aria-busy={drawing}>
-    {#if qrSrc}
+    {#if qrServer}
+      {#if serverQr}<img class="qr" src={serverQr} alt={$t('msg_inv_qr_alt')} />
+      {:else}<div class="qr placeholder"><Icon name={error ? 'alert-triangle' : 'loader'} size={22} /></div>{/if}
+    {:else if qrSrc}
       <img class="qr" src={qrSrc} alt={$t('msg_inv_qr_alt')} />
     {:else}
       <div class="qr placeholder"><Icon name={error ? 'alert-triangle' : 'loader'} size={22} /></div>
     {/if}
   </div>
 
+  {#if qrServer}
+    <p class="muted center">{$t('msg_srv_qr_hint')}</p>
+    {#if qrServerView}<ServerBox server={{ ...qrServerView, is_veydan: false }} />{/if}
+  {:else}
   <div class="under">
     {#if permanent}
       <span class="muted">{$t('msg_inv_qr_permanent_hint')}</span>
@@ -204,6 +249,7 @@
     <button class="toggle" class:on={permanent} disabled={drawing || !!inviteStore.revoking} role="switch" aria-checked={permanent} aria-label={$t('msg_inv_qr_permanent')}
       onclick={() => void setPermanent(!permanent)}></button>
   </div>
+  {/if}
 
   {#if myKey}
     <div class="key">
@@ -214,13 +260,15 @@
 
   <div class="actions">
     <button class="btn btn-ghost btn-sm" onclick={copyLink}><Icon name={linkNote ? 'check' : 'link'} size={13} />{$t('msg_inv_copy_link')}</button>
+    {#if !qrServer}
     <button class="btn btn-ghost btn-sm" class:active={codeOpen} aria-expanded={codeOpen} onclick={() => (codeOpen = !codeOpen)}>
       <Icon name="key" size={13} />{$t('msg_inv_code_24h')}
     </button>
+    {/if}
   </div>
-  {#if linkNote}<p class="muted small" role="status">{$t('msg_inv_link_copied')}</p>{/if}
+  {#if linkNote}<p class="muted small" role="status">{$t(qrServer ? 'msg_srv_invite_copied' : 'msg_inv_link_copied')}</p>{/if}
 
-  {#if codeOpen}
+  {#if codeOpen && !qrServer}
     <div class="code-box">
       {#if code}
         <div class="code-row">
@@ -253,6 +301,8 @@
     display: flex; align-items: center; gap: 6px; padding: 8px var(--sp-3); border-radius: var(--radius-sm); font-size: var(--fs-xs);
     color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); line-height: 1.4;
   }
+  .for { display: flex; flex-direction: column; gap: 6px; }
+  .center { text-align: center; }
   .qrbox { display: flex; justify-content: center; }
   /* A code is read by a camera: always dark on light, whatever the theme. */
   .qr { width: min(260px, 100%); aspect-ratio: 1; height: auto; background: #fff; border-radius: var(--radius-md); padding: 8px; image-rendering: pixelated; }

@@ -22,11 +22,12 @@
   import { inviteStore } from '../invites/inviteStore.svelte';
   import { addressKind, invitedContact, normalizeCode, type InvitedContact } from '../invites/invites';
   import { goto } from '$app/navigation';
-  import { get } from 'svelte/store';
   import { contactsHref, qrHref } from '../mobile/routes';
-  import { acceptServer, serverName } from '../servers/serverAccept.svelte';
+  import { acceptServer } from '../servers/serverAccept.svelte';
+  import ServerBox from '../servers/ServerBox.svelte';
+  import { serverStore } from '../servers/serverStore.svelte';
+  import { privateInvite } from '../servers/privateInvite.svelte';
 
-  const tr = (k: string, params?: Record<string, string>) => get(t)(k as 'msg_you', params);
 
   interface Props {
     open: boolean;
@@ -165,6 +166,12 @@
         <li><button class="row" onclick={() => go(qrHref())}><span class="sc"><Icon name="qr-code" size={18} /></span><span class="name">{$t('msg_newchat_my_qr')}</span><Icon name="chevron-right" size={16} /></button></li>
       </ul>
     {/if}
+    {#if !q && serverStore.list?.length}
+      <!-- Someone I never talked to: my link of a private chat, to send by any way. -->
+      <ul class="list shortcuts">
+        <li><button class="row" onclick={() => { open = false; privateInvite.show(); }}><span class="sc"><Icon name="server-2" size={18} /></span><span class="name">{$t('msg_srv_invite_title')}</span><Icon name="chevron-right" size={16} /></button></li>
+      </ul>
+    {/if}
 
     {#if linkError}<div class="error-msg">{linkError}</div>{/if}
     {#if link}
@@ -173,9 +180,10 @@
         <span class="person-text">
           <span class="name">{link.name || `${link.pubkey.slice(0, 12)}…`}</span>
           {#if link.invite}<span class="note"><Icon name="check-circle" size={12} />{$t('msg_inv_link_has_invite')}</span>{/if}
-          {#if privateServer}<span class="server-note"><Icon name={privateServer.is_veydan ? 'shield-check' : 'server-2'} size={12} />{$t('msg_srv_card_private_chat', { name: serverName(privateServer, tr) })}</span>{/if}
+          {#if privateServer}<span class="server-note"><Icon name="message-circle" size={12} />{$t('msg_srv_card_private_chat')}</span>{/if}
         </span>
       </div>
+      {#if privateServer}<ServerBox server={privateServer} />{/if}
     {/if}
 
     {#if privateServer}

@@ -15,6 +15,8 @@
   import ConfirmHost from '../shared/ConfirmHost.svelte';
   import ReportHost from '../shared/ReportHost.svelte';
   import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
+  import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
+  import PrivateInviteDialog from '../servers/PrivateInviteDialog.svelte';
   import { markPhone } from '../shared/phone';
 
   interface Props {
@@ -58,6 +60,8 @@
 <ConfirmHost />
 <ReportHost />
 <ServerAcceptDialog />
+<ServerInfoDialog />
+<PrivateInviteDialog />
 
 <style>
   .msg-m { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; }

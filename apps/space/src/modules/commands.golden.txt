@@ -123,6 +123,7 @@ messenger_clipboard_paste messenger all
 messenger_chats_list messenger all
 messenger_contact_link messenger all
 messenger_contact_open_private messenger all
+messenger_private_link_qr messenger all
 messenger_contact_private_get messenger all
 messenger_contacts_add messenger all
 messenger_contacts_list messenger all

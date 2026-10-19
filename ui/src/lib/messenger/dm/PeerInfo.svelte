@@ -59,7 +59,7 @@
       <section class="card-top">
         <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={64} {online} />
         <div class="name">{chat.title}</div>
-        {#if chat.server_id}<ServerLabel server={chat.server_id} size="md" />{/if}
+        {#if chat.server_id}<ServerLabel server={chat.server_id} size="md" info />{/if}
         {#if presenceText}<div class="sub" class:online>{presenceText}</div>{/if}
         {#if name && name !== chat.title}<div class="sub">{name}</div>{/if}
         {#if profile?.nip05}

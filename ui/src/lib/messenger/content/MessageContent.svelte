@@ -79,7 +79,10 @@
     padding: 0 6px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--accent-text-2);
     font-weight: var(--fw-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .cards { display: flex; flex-direction: column; gap: 6px; width: min(320px, 100%); min-width: min(260px, 100%); }
+  /* 320px as its own size, so the bubble takes no more: a percentage of a
+     bubble that fits its content counts for nothing while the bubble is
+     measured, and a long line in a card would widen it past the card. */
+  .cards { display: flex; flex-direction: column; gap: 6px; width: 320px; max-width: 100%; }
   /* Touch: a long press opens the menu, so it must not start a selection. */
   @media (pointer: coarse) { .text { user-select: none; -webkit-user-select: none; } }
 </style>

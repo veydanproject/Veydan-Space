@@ -3369,3 +3369,52 @@ async fn a_group_on_a_server_i_have_not_waits_for_it() {
     let mine = w.devices[alice2].group(&g).await.expect("the held welcome made the group");
     assert_eq!((mine.membership.as_str(), mine.server_id.as_deref()), ("joined", Some(r2.as_str())));
 }
+
+/// A public group joined by its link on one device comes to my other
+/// devices by the welcome to myself, as one I make does: the link was
+/// opened on one device only. On a private server the welcome goes there
+/// (the owner's report of 2026-10-19: the group of S1 joined on the phone
+/// never came to the desktop, a message in it neither).
+#[tokio::test]
+async fn a_group_joined_by_link_comes_to_my_other_device() {
+    const S1: &str = "wss://s1.example";
+    let s1 = servers::id_of(S1);
+    for (relay, server) in [(None, None), (Some(S1), Some(s1.as_str()))] {
+        let mut w = World::new();
+        let alice = w.person().await;
+        let bob = w.person().await;
+        let bob2 = w.device(w.devices[bob].keys.clone()).await;
+        for d in [alice, bob, bob2] {
+            servers::put(&w.devices[d].svc.store, &server_row(S1, servers::KIND_PRIVATE)).await.unwrap();
+        }
+        w.by = relay.unwrap_or(RELAY).into();
+        w.tick();
+        let g = match relay {
+            None => w.create(alice, GroupKind::Public, "Town square", true).await,
+            Some(r) => {
+                let (view, o) = {
+                    let d = &w.devices[alice];
+                    d.svc.create(&d.keys, GroupKind::Public, "On S1", "", true, &RelayUrl::parse(r).unwrap()).await.unwrap()
+                };
+                w.run(alice, o).await;
+                view.id
+            }
+        };
+        w.say(alice, &g, "one").await;
+        let link = w.devices[alice].group(&g).await.unwrap().link.unwrap();
+        w.open_link(bob, &link).await;
+        w.catch_up(bob).await;
+        assert_eq!(w.devices[bob].group(&g).await.unwrap().membership, "joined");
+
+        let v = w.devices[bob2].group(&g).await.expect("my other device has the group I joined by link");
+        assert_eq!((v.membership.as_str(), v.server_id.as_deref()), ("joined", server), "{relay:?}");
+        assert_eq!(v.link.as_deref(), Some(link.as_str()), "the link comes with it");
+        w.catch_up(bob2).await;
+        w.say(bob, &g, "two").await;
+        w.say(bob2, &g, "three").await;
+        for d in [alice, bob, bob2] {
+            assert_eq!(w.devices[d].texts(&g).await, vec!["one", "two", "three"], "device {d}, {relay:?}");
+        }
+        assert!(w.notes.is_empty(), "{relay:?}: {:?}", w.notes);
+    }
+}

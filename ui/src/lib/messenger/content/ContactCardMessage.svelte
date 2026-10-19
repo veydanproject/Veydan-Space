@@ -14,9 +14,8 @@
   import BioView from '../contacts/BioView.svelte';
   import SocialLinks from '../contacts/SocialLinks.svelte';
   import { messengerStore } from '../store.svelte';
-  import { get } from 'svelte/store';
   import { dmErrorCode, messengerApi, messengerError, profileErrorCode, type MessengerMessage, type ServerPreview } from '../api';
-  import { serverFacts, serverName } from '../servers/serverAccept.svelte';
+  import ServerBox from '../servers/ServerBox.svelte';
   import { cardActions, linkActions } from './actions';
   import type { ExternalUrl } from './types';
 
@@ -87,7 +86,6 @@
     messengerApi.servers.preview(link).then((s) => { if (live) server = s; }).catch(() => {});
     return () => { live = false; };
   });
-  const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'msg_you', params);
 
   function copyPhone() {
     if (!card?.phone) return;
@@ -149,8 +147,8 @@
     {#if server}
       <!-- The sender's server: a private chat with them there. -->
       <div class="server">
-        <span class="offer"><Icon name={server.is_veydan ? 'shield-check' : 'server-2'} size={13} />{$t('msg_srv_card_private_chat', { name: serverName(server, tr) })}</span>
-        <span class="whose" class:veydan={server.is_veydan}>{$t(server.is_veydan ? 'msg_srv_is_veydan' : 'msg_srv_not_veydan')} · {serverFacts(server, tr).join(' · ')}</span>
+        <span class="offer"><Icon name="message-circle" size={13} />{$t('msg_srv_card_private_chat')}</span>
+        <ServerBox {server} />
         {#if m.direction === 'in' && !card.is_me && !card.blocked}
           <button class="btn btn-ghost btn-sm" disabled={busy} onclick={openPrivate}>
             <Icon name="message-circle" size={13} />{$t('msg_srv_card_open_private')}
@@ -218,10 +216,9 @@
   .value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
   .copy { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: var(--fs-2xs); color: var(--text-3); }
   .copy.done { color: var(--success-text, var(--success)); }
-  .server { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
+  .server { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
   .offer { display: inline-flex; align-items: center; gap: 5px; color: var(--text); font-weight: var(--fw-semibold); }
-  .whose { color: var(--warn-text); }
-  .whose.veydan { color: var(--success-text); }
+  .server .btn { align-self: flex-start; }
   .status { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); }
   .status.closed { color: var(--warn-text); }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

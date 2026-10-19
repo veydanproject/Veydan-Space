@@ -4,9 +4,11 @@
 <!--
   Every chat with one person (internal/messenger-wire.md, «Частный чат»):
   the home chat and each private one («Частный · S1»), each opening its
-  chat, and «Открыть частный чат на …» for each private server of mine
-  where there is no chat with them yet (approved on my side and told at
-  once, `messenger_contact_open_private`). Shown on the page of a contact
+  chat, and «Пригласить в частный чат на …» for each private server of
+  mine where there is no chat with them yet: it opens
+  PrivateInviteDialog, which sends them my card with the server (opening
+  the chat here alone would leave them, who may not have the server, deaf
+  to it). Shown on the page of a contact
   and in the panel about the person of a chat. Nothing is shown while I
   have no private server and only the home chat exists.
 -->
@@ -14,12 +16,12 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { toast } from '$lib/core/ui/toast.svelte';
-  import { messengerApi, messengerError, type MessengerChat } from '../api';
+  import type { MessengerChat } from '../api';
   import { chatStore } from '../chats/chatStore.svelte';
   import { listStamp } from '../shared/time';
   import ServerLabel from './ServerLabel.svelte';
   import { nameOfServer, serverStore } from './serverStore.svelte';
+  import { privateInvite } from './privateInvite.svelte';
 
   interface Props {
     pubkey: string;
@@ -36,21 +38,6 @@
   const privates = $derived(chatStore.chats.filter((c) => c.kind === 'dm' && c.id.startsWith(`dm:${pubkey}@`)));
   const missing = $derived((serverStore.list ?? []).filter((s) => !privates.some((c) => c.server_id === s.id || c.id.endsWith(`@${s.id}`))));
   const shown = $derived(privates.length > 0 || missing.length > 0);
-
-  let busy = $state<string | null>(null);
-
-  async function openOn(server: string) {
-    busy = server;
-    try {
-      const chat = await messengerApi.servers.openPrivate(pubkey, server);
-      await chatStore.loadChats();
-      onopen(chat.id);
-    } catch (e) {
-      toast.error(messengerError(e));
-    } finally {
-      busy = null;
-    }
-  }
 
   function line(c: MessengerChat): string {
     if (c.last_preview) return c.last_preview;
@@ -79,8 +66,8 @@
       {/each}
       {#each missing as s (s.id)}
         <li>
-          <button type="button" class="row open" disabled={busy !== null} onclick={() => openOn(s.id)}>
-            <Icon name={busy === s.id ? 'loader' : 'plus'} size={16} />
+          <button type="button" class="row open" onclick={() => privateInvite.show({ peer: pubkey, server: s.id })}>
+            <Icon name="user-plus" size={16} />
             <span class="what"><span class="open-text">{$t('msg_srv_peer_open', { name: nameOfServer(s) })}</span></span>
           </button>
         </li>

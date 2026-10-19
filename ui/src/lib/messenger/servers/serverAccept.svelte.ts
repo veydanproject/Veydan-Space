@@ -7,8 +7,8 @@
 // with a server, a link pasted into «Новый чат» or «Новая группа», a QR —
 // goes through `acceptServer`, which shows `ServerAcceptDialog` (mounted
 // once per page, beside ConfirmHost) and adds nothing unless the user says
-// «Добавить». What the dialog says is `serverSummary`: the server's name,
-// whether it is Veydan's, and what it brings.
+// «Добавить». What the dialog says is the server's name,
+// whether it is private or Veydan's, and its lines (`serverRows`).
 
 import { messengerApi, type ServerPreview } from '../api';
 
@@ -23,25 +23,6 @@ export function hostOf(url: string): string {
 export function serverName(s: ServerPreview, tr: Translate): string {
   if (s.is_veydan) return tr('msg_srv_veydan_name');
   return s.name.trim() || hostOf(s.relay);
-}
-
-/**
- * What a server brings, in the words of the dialog: its relay, its media,
- * its calls and its push, each on its own («без …» for what it has not).
- */
-export function serverFacts(s: ServerPreview, tr: Translate): string[] {
-  return [
-    tr('msg_srv_relay', { host: hostOf(s.relay) }),
-    s.media ? tr('msg_srv_media', { host: hostOf(s.media) }) : tr('msg_srv_media_none'),
-    s.call_node ? tr('msg_srv_calls', { addr: s.call_node.replace(/#.*$/, '') }) : tr('msg_srv_calls_none'),
-    tr(s.push === 'veydan' ? 'msg_srv_push_veydan' : 'msg_srv_push_off'),
-  ];
-}
-
-/** One line of the dialog: «S1 — не Veydan: реле …, медиа …, звонки …, без push» or «серверы Veydan: …». */
-export function serverSummary(s: ServerPreview, tr: Translate): string {
-  const whose = s.is_veydan ? tr('msg_srv_is_veydan') : tr('msg_srv_not_veydan');
-  return `${serverName(s, tr)} — ${whose}: ${serverFacts(s, tr).join(', ')}`;
 }
 
 interface Pending {
@@ -79,3 +60,55 @@ export async function acceptServer(s: ServerPreview): Promise<string | null> {
   if (!(await askServers([s]))) return null;
   return messengerApi.servers.accept(s.link);
 }
+
+/** What a server is made of, as a card, a link or the list of mine tells it. */
+export interface ServerParts {
+  name: string | null;
+  relay: string;
+  media: string | null;
+  call_node: string | null;
+  push: string;
+  is_veydan?: boolean;
+}
+
+/** One line of «what this server is»: what it carries, and where. */
+export interface ServerRow {
+  label: string;
+  value: string;
+  /** Not there: «нет», «напрямую». */
+  none?: boolean;
+}
+
+/**
+ * Every server a chat on it goes through, a line each: the messages (its
+ * relay), the files (its media), the calls (its node) and the
+ * notifications (the Veydan gateway, or none).
+ */
+export function serverRows(s: ServerParts, tr: Translate): ServerRow[] {
+  return [
+    { label: tr('msg_srv_row_messages'), value: hostOf(s.relay) },
+    s.media ? { label: tr('msg_srv_row_files'), value: hostOf(s.media) } : { label: tr('msg_srv_row_files'), value: tr('msg_srv_row_none'), none: true },
+    s.call_node
+      ? { label: tr('msg_srv_row_calls'), value: s.call_node.replace(/#.*$/, '') }
+      : { label: tr('msg_srv_row_calls'), value: tr('msg_srv_row_calls_direct'), none: true },
+    s.push === 'veydan'
+      ? { label: tr('msg_srv_row_push'), value: tr('msg_srv_row_push_veydan') }
+      : { label: tr('msg_srv_row_push'), value: tr('msg_srv_row_none'), none: true },
+  ];
+}
+
+class ServerInfoState {
+  /** The server «ⓘ» was pressed for; `null` when the window is shut. */
+  current = $state<ServerParts | null>(null);
+
+  show(s: ServerParts): void {
+    this.current = s;
+  }
+
+  close(): void {
+    this.current = null;
+  }
+}
+
+/** «Частный сервер» (ServerInfoDialog): who runs it, and what it is made of. */
+export const serverInfo = new ServerInfoState();

@@ -1408,7 +1408,8 @@ function mockServerOf(link: string): ServerPreview | null {
   return {
     link: link.trim(), id, name: p.get('n') ?? '', relay, media: p.get('m') || null, call_node: p.get('c') || null, push_url: p.get('pu') || null, push,
     known: mockPrivateServers.some((s) => s.id === id) || mockRelays.some((r) => r.url === relay),
-    is_veydan: /\.veydan\.net$/.test(relay.replace(/^wss?:\/\//, '').replace(/:\d+$/, '')),
+    // As the runtime: a relay of the signed list, not a name that looks like ours.
+    is_veydan: mockRelays.some((r) => r.source === 'manifest' && r.url === relay),
   };
 }
 
@@ -1844,6 +1845,10 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     mockDmInvites = mockDmInvites.map((v) => (v.id === a?.id ? { ...v, revoked: true } : v));
   },
   messenger_moderation_invite_status: (): InviteStatus => (mockInvitePausedUntil === null ? {} : { paused_until: mockInvitePausedUntil }),
+  messenger_private_link_qr: (a) => {
+    if (!mockPrivateServers.some((s) => s.id === a?.server)) throw new Error('server_unknown');
+    return devMocks.messenger_group_link_qr();
+  },
   messenger_contact_link_qr: (a) => {
     if (!mockDmInvites.some((v) => v.id === a?.id && v.kind !== 'code')) throw new Error('invite_unknown');
     return devMocks.messenger_group_link_qr();
@@ -2288,6 +2293,8 @@ export const messengerApi = {
     /** The private chat with a person on a private server of mine, approved and told at once. */
     openPrivate: (peer: string, serverId: string, invite?: string | null) =>
       invoke<MessengerChat>('messenger_contact_open_private', { peer, serverId, invite: invite ?? null }),
+    /** My link of the private chat on `server`, with its invitation, as a QR code (SVG text): «Мой QR» for that server. */
+    privateLinkQr: (server: string) => invoke<string>('messenger_private_link_qr', { server }),
   },
 
   /** The way to the project's servers: directly, or through a bridge. */

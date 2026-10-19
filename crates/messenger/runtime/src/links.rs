@@ -445,6 +445,16 @@ impl MessengerRuntime {
         Ok(ContactLink { pubkey: pubkey.clone(), name, relays, invite, srv }.encode()?)
     }
 
+    /// My link of the private chat on private server `server` of mine,
+    /// with its invitation (`contact_link_on`), as a QR code (SVG): «Мой
+    /// QR» for that server. Whoever reads it is asked to add the server
+    /// and is let straight into the private chat with me there.
+    pub async fn private_link_qr(&self, server: &str) -> Result<String> {
+        let me = self.session_pubkey().await.ok_or(MessengerError::NotLoggedIn)?;
+        let link = self.contact_link_on(&me, None, Some(server)).await?;
+        messenger_groups::qr::link_svg(&link)
+    }
+
     /// The secret of the invitation the link of my private chat on server
     /// `card` carries: one live invitation per server, made again only
     /// when the one before was taken back, used up, or has fewer than
@@ -670,6 +680,9 @@ mod tests {
         let at_home = ContactLink::parse(&rt.contact_link(&me).await.unwrap()).unwrap();
         assert!(at_home.srv.is_none() && !at_home.relays.iter().any(|r| r.as_str().contains("s1.example")), "the home link names no private server");
         assert!(matches!(rt.contact_link_on(&me, None, Some(&"f".repeat(16))).await, Err(MessengerError::Invalid(c)) if c == "server_unknown"));
+        // «Мой QR» of that server draws the same link; a server I have not, none.
+        assert!(rt.private_link_qr(&id).await.unwrap().contains("<svg"), "a QR of the private link");
+        assert!(rt.private_link_qr(&"f".repeat(16)).await.is_err());
 
         // A relay of the Veydan network: Veydan's, and of my home set here,
         // so accepting it adds nothing and changes nothing.

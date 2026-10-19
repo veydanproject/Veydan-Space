@@ -57,6 +57,7 @@ pub fn module() -> Module {
                 commands::messenger_server_preview,
                 commands::messenger_server_accept,
                 commands::messenger_contact_open_private,
+                commands::messenger_private_link_qr,
                 commands::messenger_servers_private,
                 commands::messenger_manifest_refresh,
                 commands::messenger_net_status,

@@ -22,7 +22,7 @@ vi.mock('../api', () => ({
   },
 }));
 
-const { acceptServer, askServers, serverAcceptState, serverFacts, serverName, serverSummary } = await import('./serverAccept.svelte');
+const { acceptServer, askServers, serverAcceptState, serverInfo, serverName, serverRows } = await import('./serverAccept.svelte');
 
 type Lang = keyof typeof messengerTranslations;
 const tr = (lang: Lang) => (key: string, params: Record<string, string> = {}) => {
@@ -49,18 +49,25 @@ const VEYDAN: ServerPreview = {
 };
 
 describe('what the dialog says of a server', () => {
-  it('names it, says it is not Veydan, and lists what it brings', () => {
-    expect(serverSummary(S1, tr('ru'))).toBe(
-      'S1 — не Veydan: реле relay.s1.example, медиа media.s1.example, звонки 203.0.113.7:8443, push через сеть Veydan',
-    );
-    expect(serverSummary(S1, tr('en'))).toBe(
-      'S1 — not Veydan: relay relay.s1.example, media media.s1.example, calls 203.0.113.7:8443, push through the Veydan network',
-    );
+  it('lists every server a chat on it goes through, a line each', () => {
+    expect(serverRows(S1, tr('ru')).map((r) => `${r.label}: ${r.value}`)).toEqual([
+      'Сообщения: relay.s1.example', 'Файлы: media.s1.example', 'Звонки: 203.0.113.7:8443', 'Уведомления: через Veydan',
+    ]);
+    expect(serverRows(S1, tr('en')).map((r) => r.label)).toEqual(['Messages', 'Files', 'Calls', 'Notifications']);
   });
 
-  it('says «серверы Veydan» for a relay of the Veydan network, and what it has not', () => {
-    expect(serverSummary(VEYDAN, tr('ru'))).toBe('Veydan — серверы Veydan: реле node-1.veydan.net, без медиа, без узла звонков, без push');
-    expect(serverFacts(VEYDAN, tr('en'))).toEqual(['relay node-1.veydan.net', 'no media', 'no call node', 'no push']);
+  it('says what a server has not, as not there', () => {
+    const rows = serverRows(VEYDAN, tr('ru'));
+    expect(rows.map((r) => [r.value, !!r.none])).toEqual([
+      ['node-1.veydan.net', false], ['нет', true], ['напрямую', true], ['нет', true],
+    ]);
+  });
+
+  it('opens «Частный сервер» for a server and shuts it', () => {
+    serverInfo.show(S1);
+    expect(serverInfo.current?.relay).toBe(S1.relay);
+    serverInfo.close();
+    expect(serverInfo.current).toBeNull();
   });
 
   it('names a server without a name by the host of its relay', () => {

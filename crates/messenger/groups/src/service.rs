@@ -1707,7 +1707,12 @@ impl GroupService {
             self.refresh_row(group_id, &me, Some(MEMBERSHIP_STALE)).await?;
             return Ok(Outcome { events: vec![Self::updated(group_id)], resubscribe: true, ..Default::default() });
         }
-        Ok(self.operate(keys, group_id, OpBody::Join).await?.1)
+        let mut outcome = self.operate(keys, group_id, OpBody::Join).await?.1;
+        // The link was opened here, not on my other devices: the welcome to
+        // myself brings them the group, as it does at its creation (on the
+        // group's server, `dm`).
+        outcome.publish.extend(self.welcome(keys, group_id, &me).await?);
+        Ok(outcome)
     }
 
     pub async fn approve_request(&self, keys: &Keys, group_id: &str, requester: &PubKey) -> Result<Outcome> {

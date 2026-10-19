@@ -21,7 +21,7 @@
   import { dmErrorCode, messengerError, profileErrorCode, type MessengerChat } from '../api';
   import { chatMatches, contactHaystacks } from '../shared/search';
   import { serverStore } from '../servers/serverStore.svelte';
-  import { hostOf } from '../servers/serverAccept.svelte';
+  import ServerPicker from '../servers/ServerPicker.svelte';
 
   interface Props {
     open: boolean;
@@ -31,8 +31,10 @@
     card?: { pubkey: string | null } | null;
     /** A chat the link makes no sense in (the group itself, the person whose card it is). */
     exclude?: string | null;
+    /** My card only: the private server chosen when the dialog opens («Пригласить в частный чат»). */
+    server?: string | null;
   }
-  let { open = $bindable(), link = '', card = null, exclude = null }: Props = $props();
+  let { open = $bindable(), link = '', card = null, exclude = null, server: startServer = null }: Props = $props();
 
   let query = $state('');
   let text = $state('');
@@ -42,7 +44,7 @@
   /** My card only: my phone goes with it. */
   let includePhone = $state(false);
   /** My card only: the private server of mine whose card goes with it, and whose private chat the person is asked into. */
-  let server = $state('');
+  let server = $state<string | null>(null);
 
   const mine = $derived(!!card && card.pubkey === null);
   const myPhone = $derived(messengerStore.ownPrivate?.phone ?? null);
@@ -54,7 +56,7 @@
   let phoneTouched = false;
   $effect(() => {
     if (open && !wasOpen) {
-      query = ''; error = ''; sent = []; includePhone = false; phoneTouched = false; server = '';
+      query = ''; error = ''; sent = []; includePhone = false; phoneTouched = false; server = startServer ?? null;
       const mySession = ++session;
       if (card) {
         text = '';
@@ -144,13 +146,10 @@
         {/if}
         {#if serverStore.list?.length}
           <!-- The card of a private server of mine rides on my card: the person may open a private chat with me there. -->
-          <label class="server">
+          <div class="server">
             <span>{$t('msg_srv_card_invite')}</span>
-            <select bind:value={server} disabled={busy}>
-              <option value="">{$t('msg_srv_card_invite_none')}</option>
-              {#each serverStore.list as s (s.id)}<option value={s.id}>{s.name?.trim() || hostOf(s.relay)}</option>{/each}
-            </select>
-          </label>
+            <ServerPicker bind:value={server} none={$t('msg_srv_card_invite_none')} disabled={busy} label={$t('msg_srv_card_invite')} />
+          </div>
         {/if}
       {/if}
     {:else if text}<div class="what"><MessageContent {text} /></div>{/if}
@@ -200,11 +199,7 @@
   .phone input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .num { font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
-  .server { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-sm); }
-  .server select {
-    font: inherit; color: var(--text); background: var(--surface-2); min-width: 0; max-width: 100%;
-    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 8px;
-  }
+  .server { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
   .phone-hint { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
   .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row {

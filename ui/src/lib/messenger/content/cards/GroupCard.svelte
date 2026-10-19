@@ -11,7 +11,7 @@
   import { groupError } from '../../groups/errors';
   import type { LinkView } from '../../api';
   import { linkActions } from '../actions';
-  import { serverFacts, serverName } from '../../servers/serverAccept.svelte';
+  import ServerBox from '../../servers/ServerBox.svelte';
 
   interface Props { view: Extract<LinkView, { kind: 'group' }> }
   let { view }: Props = $props();
@@ -58,20 +58,14 @@
       <span class="name">{name}</span>
       <span class="sub">
         <Icon name={open ? 'world' : 'lock-square-rounded'} size={11} />
-        {$t(open ? 'msg_card_group_public' : 'msg_card_group_private')}{#if view.members !== null} · {$t(membersKey(view.members), { n: String(view.members) })}{/if}
+        {$t(open ? 'msg_card_group_public' : 'msg_card_group_private')}{#if view.members !== null}{' · '}{$t(membersKey(view.members), { n: String(view.members) })}{/if}
       </span>
     </div>
   </div>
 
-  {#if view.server && stage === 'out'}
-    <!-- The group lives on a server of its own: «Вступить» asks before adding it. -->
-    <div class="server">
-      <span class="whose" class:veydan={view.server.is_veydan}>
-        <Icon name={view.server.is_veydan ? 'shield-check' : 'server-2'} size={12} />{$t('msg_srv_card_group_on', { name: serverName(view.server, tr) })}
-        · {$t(view.server.is_veydan ? 'msg_srv_is_veydan' : 'msg_srv_not_veydan')}
-      </span>
-      <span>{serverFacts(view.server, tr).join(' · ')}</span>
-    </div>
+  {#if view.server}
+    <!-- The server the group is on, before and after I am in it: «ⓘ» says what it is. -->
+    <ServerBox server={view.server} />
   {:else if !view.server_known && stage === 'out'}
     <div class="status closed"><Icon name="server-2" size={12} />{$t('msg_srv_group_unknown')}</div>
   {/if}
@@ -109,9 +103,6 @@
   .sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--text-3); }
   .status { display: flex; align-items: flex-start; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
   .status.closed { color: var(--warn-text); }
-  .server { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
-  .whose { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; color: var(--warn-text); }
-  .whose.veydan { color: var(--success-text); }
   .status :global(svg) { flex-shrink: 0; margin-top: 2px; }
   .note {
     width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);

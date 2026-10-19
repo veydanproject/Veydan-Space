@@ -39,6 +39,7 @@
   import TransfersChip from './TransfersChip.svelte';
   import ServerLabel from '../servers/ServerLabel.svelte';
   import { serverStore } from '../servers/serverStore.svelte';
+  import { privateInvite } from '../servers/privateInvite.svelte';
 
   interface Props {
     chat: MessengerChat;
@@ -267,6 +268,11 @@
       // The bot of Veydan Cloud is approved by the build and is nobody's contact.
       else if (chat.mode !== "request_received" && !chat.bot) list.push({ label: $t("msg_rel_cta_add"), icon: "user-plus", onselect: () => act("request") });
       list.push({ label: $t("msg_rel_cta_block"), icon: "user-cancel", danger: true, onselect: () => act("block") });
+    }
+    // The home chat with a person: a private chat on a server of mine is offered here.
+    if (chat.kind === "dm" && chat.peer_pubkey && !chat.server_id && !chat.bot && chat.mode !== "blocked" && serverStore.list?.length) {
+      const peer = chat.peer_pubkey;
+      list.push({ label: $t("msg_srv_invite_title"), icon: "server-2", onselect: () => privateInvite.show({ peer }) });
     }
     // A person can be reported even after being blocked; the bot of Veydan Cloud is ours.
     if (chat.kind === "dm" && chat.peer_pubkey && !chat.bot) {
@@ -663,8 +669,10 @@
     {#snippet identity()}
       <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={36} online={presence === 'online'} />
       <div class="who">
-        <div class="title"><span class="t-name">{chat.title}</span>{#if chat.server_id}<ServerLabel server={chat.server_id} />{/if}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
+        <div class="title"><span class="t-name">{chat.title}</span>{#if chat.server_id && !phone}<ServerLabel server={chat.server_id} info />{/if}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
         <div class="sub">
+          <!-- On a phone the name has the line to itself: the chip goes under it. -->
+          {#if chat.server_id && phone}<ServerLabel server={chat.server_id} info />{/if}
           {#if !sessionActive}{$t('msg_chat_locked')}
           {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
           {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
@@ -710,7 +718,7 @@
         <p>{$t('msg_chat_empty')}</p>
         {#if chat.server_id && !isGroup}
           <!-- A private chat (one my card with a server opened, too) has nothing yet: where it lives, and that it is empty. -->
-          <span>{$t('msg_srv_chat_empty_hint', { name: serverStore.nameOf(chat.server_id) || $t('msg_srv_label_bare') })}</span>
+          <span>{$t('msg_srv_chat_empty_hint', { name: serverStore.nameOf(chat.server_id) || chat.server_id })}</span>
         {:else}
           <span>{$t('msg_chat_empty_hint')}</span>
         {/if}
@@ -776,6 +784,8 @@
   .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .dim { color: var(--text-3); display: inline-flex; }
   .sub { font-size: var(--fs-2xs); color: var(--text-3); }
+  .sub :global(.srv-label) { margin-inline-end: 6px; vertical-align: 1px; }
+  .head.phone .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sub code { font-family: var(--font-mono); }
   .offline { color: var(--warn-text); }
   .sub .online { color: var(--accent-text); }

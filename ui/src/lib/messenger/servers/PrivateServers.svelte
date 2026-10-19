@@ -19,6 +19,7 @@
   import { messengerApi, messengerError, type PrivateServerView } from '../api';
   import { acceptServer, hostOf } from './serverAccept.svelte';
   import { nameOfServer, serverStore } from './serverStore.svelte';
+  import { privateInvite } from './privateInvite.svelte';
 
   let busy = $state(false);
   let error = $state('');
@@ -89,6 +90,9 @@
             </span>
             <span class="meta">{chatsText(s.chats ?? 0)} · {groupsText(s.groups ?? 0)}</span>
           </div>
+          <button class="btn btn-ghost btn-sm invite" onclick={() => privateInvite.show({ server: s.id })}>
+            <Icon name="user-plus" size={13} />{$t('msg_srv_invite_row')}
+          </button>
           <button class="icon-btn danger-soft" title={$t('msg_srv_remove')} aria-label={$t('msg_srv_remove')} disabled={busy} onclick={() => remove(s)}>
             <Icon name="trash-2" size={13} />
           </button>

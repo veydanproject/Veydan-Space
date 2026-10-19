@@ -13,7 +13,9 @@
   import { linkStore } from '../content/linkStore.svelte';
   import { tokenize } from '../content/tokenize';
   import { type MessengerGroup, type ServerPreview } from '../api';
-  import { acceptServer, serverName } from '../servers/serverAccept.svelte';
+  import { acceptServer } from '../servers/serverAccept.svelte';
+  import ServerBox from '../servers/ServerBox.svelte';
+  import ServerPicker from '../servers/ServerPicker.svelte';
   import { nameOfServer, serverStore } from '../servers/serverStore.svelte';
   import { messengerStore } from '../store.svelte';
 
@@ -127,14 +129,7 @@
       {#if servers.length}
         <div class="where">
           <span class="where-label">{$t('msg_group_where')}</span>
-          <div class="choices" role="radiogroup" aria-label={$t('msg_group_where')}>
-            <button type="button" class="choice" class:on={server === null} role="radio" aria-checked={server === null} disabled={busy}
-              onclick={() => (server = null)}>{homeLabel}</button>
-            {#each servers as s (s.id)}
-              <button type="button" class="choice" class:on={server === s.id} role="radio" aria-checked={server === s.id} disabled={busy}
-                onclick={() => (server = s.id)}><Icon name="server-2" size={12} /><span class="choice-text">{nameOfServer(s)}</span></button>
-            {/each}
-          </div>
+          <ServerPicker bind:value={server} none={homeLabel} disabled={busy} label={$t('msg_group_where')} />
           <span class="option-hint">{chosen ? $t('msg_group_where_private', { name: nameOfServer(chosen) }) : $t('msg_group_where_home')}</span>
         </div>
       {/if}
@@ -160,9 +155,7 @@
           <span><b>{parsed.name || $t('msg_group_unnamed')}</b> · {$t(`msg_group_kind_${parsed.kind}` as 'msg_group_kind_public')}</span>
         </div>
         {#if parsed.server}
-          <p class="hint">
-            {$t('msg_srv_card_group_on', { name: serverName(parsed.server, tr) })} · {$t(parsed.server.is_veydan ? 'msg_srv_is_veydan' : 'msg_srv_not_veydan')}
-          </p>
+          <ServerBox server={parsed.server} />
         {:else if !parsed.serverKnown}
           <p class="hint bad">{$t('msg_srv_group_unknown')}</p>
         {/if}
@@ -213,16 +206,6 @@
   .found { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); overflow-wrap: anywhere; }
   .where { display: flex; flex-direction: column; gap: 6px; }
   .where-label { font-size: var(--fs-xs); color: var(--text-3); }
-  .choices { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
-  .choice {
-    display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0;
-    font: inherit; font-size: var(--fs-xs); color: var(--text-2); cursor: pointer;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 4px 10px;
-  }
-  .choice-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .choice.on { background: var(--accent-tint); color: var(--accent-text-2); border-color: transparent; }
-  .choice:disabled { opacity: 0.5; cursor: default; }
-  @media (pointer: coarse) { .choice { padding: 8px 12px; font-size: var(--fs-sm); } }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
   .hint.bad { color: var(--danger-text); }
   @media (pointer: coarse) { .field { font-size: var(--fs-md); } }
