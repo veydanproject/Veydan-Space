@@ -45,6 +45,9 @@ export function albumKey(m: MessengerMessage): string | null {
 
 function units(messages: MessengerMessage[]): Unit[] {
   const out: Unit[] = [];
+  // Where the files of a batch gather: each takes the time its upload ended,
+  // so what came in between (a message of anyone) stands after the album, not in it.
+  const gathering = new Map<string, Unit>();
   for (const m of messages) {
     const prev = out[out.length - 1];
     const prevLast = prev?.messages[prev.messages.length - 1];
@@ -61,17 +64,21 @@ function units(messages: MessengerMessage[]): Unit[] {
       continue;
     }
     const key = albumKey(m);
-    if (key && prev && (prev.kind === 'bubble' || prev.kind === 'album') && prevLast && sameDay && prev.messages.length < MAX_ALBUM
-      && prevLast.sender_pubkey === m.sender_pubkey && albumKey(prevLast) === key) {
-      if (prev.kind !== 'album') prev.variant = mediaFamily(prevLast) ?? 'visual';
-      prev.kind = 'album';
-      if (mediaFamily(m) !== prev.variant) prev.variant = 'mixed';
-      prev.messages.push(m);
+    const into = key ? gathering.get(key) : undefined;
+    const intoLast = into?.messages[into.messages.length - 1];
+    if (into && intoLast && into.messages.length < MAX_ALBUM && intoLast.sender_pubkey === m.sender_pubkey
+      && dayKey(intoLast.created_at) === dayKey(m.created_at)) {
+      if (into.kind !== 'album') into.variant = mediaFamily(intoLast) ?? 'visual';
+      into.kind = 'album';
+      if (mediaFamily(m) !== into.variant) into.variant = 'mixed';
+      into.messages.push(m);
       continue;
     }
     // A picture alone is shown as a picture, not as a file in a bubble; a reply keeps its quote.
     const alone = mediaFamily(m) === 'visual' && !m.reply_to;
-    out.push({ kind: alone ? 'album' : 'bubble', variant: 'visual', messages: [m] });
+    const unit: Unit = { kind: alone ? 'album' : 'bubble', variant: 'visual', messages: [m] };
+    out.push(unit);
+    if (key) gathering.set(key, unit);
   }
   return out;
 }

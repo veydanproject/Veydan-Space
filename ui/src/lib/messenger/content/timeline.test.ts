@@ -98,6 +98,19 @@ describe('buildTimeline', () => {
     expect(shape(buildTimeline([quoted], { many: false })), 'a reply keeps its quote').toBe('d b<>');
   });
 
+  it('keeps an album whole when messages come in while its files upload', () => {
+    // Each file takes the time its upload ended: what came in between is shown after the album.
+    const list = [pic(ME, NOON, 'b1'), msg(ANN, NOON + 1), pic(ME, NOON + 2, 'b1'), msg(ME, NOON + 3), pic(ME, NOON + 4, 'b1')];
+    const items = buildTimeline(list, { many: true });
+    expect(shape(items)).toBe('d a3<> b<> b<>');
+    const album = items[1];
+    expect(album.type === 'album' && album.messages.map((m) => m.id)).toEqual([list[0], list[2], list[4]].map((m) => m.id));
+    expect(items.flatMap((i) => (i.type === 'bubble' ? [i.message.id] : []))).toEqual([list[1].id, list[3].id]);
+    const many = [...Array.from({ length: 12 }, (_, i) => pic(ANN, NOON + 2 * i, 'big')), msg(BOB, NOON + 1)];
+    many.sort((a, b) => a.created_at - b.created_at);
+    expect(buildTimeline(many, { many: false }).flatMap((i) => (i.type === 'album' ? [i.messages.length] : []))).toEqual([MAX_ALBUM, 2]);
+  });
+
   it('puts no more than ten into one album', () => {
     const list = Array.from({ length: 23 }, (_, i) => pic(ANN, NOON + i, 'big'));
     const sizes = buildTimeline(list, { many: false }).flatMap((i) => (i.type === 'album' ? [i.messages.length] : []));
@@ -109,7 +122,6 @@ describe('buildTimeline', () => {
     expect(shape(buildTimeline([pic(ANN, NOON, null), pic(ANN, NOON, null)], { many: false }))).toBe('d a1< a1>');
     expect(shape(buildTimeline([pic(ANN, NOON, 'b1'), pic(ANN, NOON, 'b2')], { many: false }))).toBe('d a1< a1>');
     expect(shape(buildTimeline([pic(ANN, NOON, 'b1'), pic(BOB, NOON, 'b1')], { many: false }))).toBe('d a1<> a1<>');
-    expect(shape(buildTimeline([pic(ANN, NOON, 'b1'), msg(ANN, NOON + 1), pic(ANN, NOON + 2, 'b1')], { many: false }))).toBe('d a1< b a1>');
     expect(shape(buildTimeline([pic(ANN, NOON, 'b1'), pic(ANN, NOON + DAY, 'b1')], { many: false }))).toBe('d a1<> d a1<>');
     expect(shape(buildTimeline([pic(ANN, NOON, 'b1')], { many: false })), 'one picture is a picture').toBe('d a1<>');
 
