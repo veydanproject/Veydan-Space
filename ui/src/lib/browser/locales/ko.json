@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "다른 기기에서 이 프로필을 실행 중입니다. 여기서 실행하면 쿠키와 세션이 둘로 갈라집니다.",
     "profile_sync_in_use_confirm": "이 프로필은 {device}에서 사용 중입니다. 그래도 실행할까요?",
     "profile_sync_launch_anyway": "그래도 실행",
+    "profile_launch_syncing": "파일 동기화 중…",
+    "profile_launch_syncing_hint": "파일 동기화가 끝나면 프로필이 바로 실행됩니다.",
     "profile_sync_diverged": "파일이 서로 다름",
     "profile_sync_take_remote": "원격 파일 사용",
     "profile_sync_push_mine": "내 파일 유지",

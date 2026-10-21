@@ -458,3 +458,64 @@ mockCommand('cloud_recover_cancel', undefined);
 mockCommand('cloud_recovery_alerts', []);
 mockCommand('cloud_recovery_cancel', refuse);
 mockCommand('cloud_recovery_alert_dismiss', undefined);
+
+// ── The web cabinet (cloud-api.md §16.4) ─────────────────────────────────
+
+/** A sign-in to the web cabinet as the screen of approval shows it (`cloud_web_login_inspect`). */
+export interface CloudWebLogin {
+  id: string;
+  /** `qr`: approved here; `code`: approved by its code on the site. */
+  method: 'qr' | 'code' | string;
+  state: 'pending' | 'approved' | 'denied' | 'expired' | 'used' | string;
+  /** Two capital letters (ISO 3166-1), or null when the site did not know. */
+  country: string | null;
+  /** `chrome`, `firefox`, `safari`, `edge`, `opera`, `other`. */
+  ua_family: string;
+  created_at: number;
+  expires_at: number;
+}
+
+/** The answer of approve, deny and confirm. */
+export interface CloudWebState {
+  state: string;
+  /** «Это не я» of a code: the code sign-in is frozen until then. */
+  frozen_until: number | null;
+}
+
+/** A live session of the web cabinet. */
+export interface CloudWebSession {
+  id: string;
+  method: 'qr' | 'code' | string;
+  created_at: number;
+  last_seen_at: number;
+  country: string | null;
+  ua_family: string;
+}
+
+/** The answer of `cloud_web_sessions`; `frozen_until` only when the server reports a freeze. */
+export interface CloudWebSessions {
+  sessions: CloudWebSession[];
+  frozen_until: number | null;
+}
+
+export const webApi = {
+  inspect: (id: string) => call<CloudWebLogin>('cloud_web_login_inspect', { id }),
+  approve: (id: string) => call<CloudWebState>('cloud_web_login_approve', { id }),
+  deny: (id: string) => call<CloudWebState>('cloud_web_login_deny', { id }),
+  /** The deletion the site asked for: the word DELETE and the secret of the lock, checked by the module as for a deletion here. */
+  confirm: (id: string, confirm: string, lockSecret: string | null) =>
+    call<CloudWebState>('cloud_web_confirm', { id, confirm, lockSecret }),
+  unfreeze: () => call<void>('cloud_web_unfreeze'),
+  sessions: () => call<CloudWebSessions>('cloud_web_sessions'),
+  /** One session by its id, or every one. */
+  revoke: (which: { id: string } | { all: true }) =>
+    call<{ revoked: number }>('cloud_web_sessions_revoke', 'id' in which ? { id: which.id } : { all: true }),
+};
+
+mockCommand('cloud_web_login_inspect', refuse);
+mockCommand('cloud_web_login_approve', refuse);
+mockCommand('cloud_web_login_deny', refuse);
+mockCommand('cloud_web_confirm', refuse);
+mockCommand('cloud_web_unfreeze', refuse);
+mockCommand('cloud_web_sessions', refuse);
+mockCommand('cloud_web_sessions_revoke', refuse);

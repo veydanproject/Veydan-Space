@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "없음",
     "msg_push_ticket_revoke": "취소",
     "msg_push_ticket_revoke_title": "티켓 {ticket}을(를) 취소할까요?",
-    "msg_push_ticket_revoke_text": "이 티켓을 가진 서버는 더 이상 이 휴대폰을 깨울 수 없습니다. 내 서버는 새 티켓을 저절로 받습니다."
+    "msg_push_ticket_revoke_text": "이 티켓을 가진 서버는 더 이상 이 휴대폰을 깨울 수 없습니다. 내 서버는 새 티켓을 저절로 받습니다.",
+    "msg_card_web_title": "Veydan Cloud 웹사이트 로그인 링크",
+    "msg_card_web_text": "웹사이트 로그인은 앱에서 QR 코드를 스캔해야만 승인됩니다. 다른 사람이 보낸 링크로는 절대 로그인하지 마세요.",
+    "msg_inv_web_link": "Veydan Cloud 웹사이트의 로그인 링크입니다.",
+    "msg_inv_web_open": "웹사이트 로그인 열기"
   },
   "mobile": {}
 }

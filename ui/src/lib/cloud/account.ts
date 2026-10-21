@@ -78,9 +78,13 @@ export function shownAccount(status: CloudStatus | null): ShownAccount | null {
   };
 }
 
-/** A pool of the account: the files and the text of the vault, the media of chats. */
+/**
+ * A pool of the account: the files and the text of the vault, the media of
+ * chats; `total` is the shared storage of a plan that sets one, all three
+ * together.
+ */
 export interface PoolView {
-  id: 'files' | 'text' | 'media';
+  id: 'total' | 'files' | 'text' | 'media';
   used: number;
   /** None: no limit (the media of chats go by their age). */
   limit: number | null;
@@ -94,15 +98,30 @@ function pool(id: PoolView['id'], used: number | undefined, limit: number | unde
   return { id, used: u, limit: l, percent: l ? Math.min(100, Math.round((u / l) * 100)) : null };
 }
 
-/** The pools by the keys of the contract (cloud-api.md 4.3); the breakdown by category is the vault's own page. */
+/**
+ * The pools by the keys of the contract (cloud-api.md 4.3); the breakdown
+ * by category is the vault's own page. A plan with a shared storage
+ * (`storage.total_bytes`) puts it first: files, text and media counted
+ * together against it, the pools of the categories after it.
+ */
 export function poolsOf(account: ShownAccount | null): PoolView[] {
   if (!account) return [];
   const { limits, usage } = account;
-  return [
-    pool('files', usage?.vault?.files_bytes, limits['vault.files_bytes']),
-    pool('text', usage?.vault?.text_bytes, limits['vault.text_bytes']),
-    pool('media', usage?.media?.storage_bytes, limits['media.storage_bytes']),
+  const files = usage?.vault?.files_bytes ?? 0;
+  const text = usage?.vault?.text_bytes ?? 0;
+  const media = usage?.media?.storage_bytes ?? 0;
+  const pools = [
+    pool('files', files, limits['vault.files_bytes']),
+    pool('text', text, limits['vault.text_bytes']),
+    pool('media', media, limits['media.storage_bytes']),
   ];
+  const total = limits['storage.total_bytes'];
+  return total && total > 0 ? [pool('total', files + text + media, total), ...pools] : pools;
+}
+
+/** The shared storage of the account, when its plan has one. */
+export function totalPool(pools: PoolView[]): PoolView | null {
+  return pools.find((p) => p.id === 'total' && p.limit !== null) ?? null;
 }
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];

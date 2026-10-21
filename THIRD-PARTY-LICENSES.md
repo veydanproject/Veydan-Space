@@ -681,7 +681,7 @@ Thank you to the authors of the following Cargo crates:
 | rustls-pki-types | 1.15.0 | MIT OR Apache-2.0 |
 | rustls-platform-verifier | 0.7.0 | MIT OR Apache-2.0 |
 | rustls-platform-verifier-android | 0.1.1 | MIT OR Apache-2.0 * |
-| rustls-webpki | 0.103.15 | ISC |
+| rustls-webpki | 0.103.16 | ISC |
 | rustversion | 1.0.22 | MIT OR Apache-2.0 |
 | ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 |
 | salsa20 | 0.10.2 | MIT OR Apache-2.0 |
@@ -898,7 +898,7 @@ Thank you to the authors of the following Cargo crates:
 | webkit2gtk-sys | 2.0.2 | MIT |
 | webpki-root-certs | 1.0.8 | CDLA-Permissive-2.0 * |
 | webpki-roots | 0.26.11 | CDLA-Permissive-2.0 |
-| webpki-roots | 1.0.9 | CDLA-Permissive-2.0 |
+| webpki-roots | 1.0.10 | CDLA-Permissive-2.0 |
 | webrtc-sys-build | 0.3.19 | Apache-2.0 |
 | webview2-com | 0.38.2 | MIT * |
 | webview2-com-macros | 0.8.1 | MIT * |

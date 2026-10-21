@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "hiç",
     "msg_push_ticket_revoke": "İptal et",
     "msg_push_ticket_revoke_title": "{ticket} bileti iptal edilsin mi?",
-    "msg_push_ticket_revoke_text": "Onu tutan sunucu bu telefonu artık uyandıramaz. Sizin sunucunuz kendiliğinden yeni bir bilet alır."
+    "msg_push_ticket_revoke_text": "Onu tutan sunucu bu telefonu artık uyandıramaz. Sizin sunucunuz kendiliğinden yeni bir bilet alır.",
+    "msg_card_web_title": "Veydan Cloud web sitesi giriş bağlantısı",
+    "msg_card_web_text": "Web sitesine giriş yalnızca uygulamada QR kodunu tarayarak onaylanır. Size gönderilen bir bağlantıyla asla giriş yapmayın.",
+    "msg_inv_web_link": "Bu, Veydan Cloud web sitesinin giriş bağlantısı.",
+    "msg_inv_web_open": "Web sitesi girişini aç"
   },
   "mobile": {}
 }

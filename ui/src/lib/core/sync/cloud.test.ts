@@ -67,6 +67,11 @@ describe('Veydan Cloud in the sync settings', () => {
     expect(fullestPool(null)).toBeNull();
     expect(fullestPool(usage([1900, 2000]))?.pool).toBe('files');
     expect(fullestPool(usage([1, 2000], [500, 512]))?.pool).toBe('text');
+    // The shared storage of the plan: the fullest, and the one a tie names.
+    const shared = usage([2000, 2000]);
+    shared.pools.push({ pool: 'total', used: 2001, limit: 2000, percent: 100, level: 100 });
+    expect(fullestPool(shared)?.pool).toBe('total');
+    expect(usageTone(fullestPool(shared)!.level)).toBe('full');
   });
 
   it('asks before the files of profiles go on the free plan only', () => {

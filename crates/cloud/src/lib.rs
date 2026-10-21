@@ -4,7 +4,8 @@
 //! The module Cloud: Veydan Cloud in the app (internal/vcloud-plan.md 2.2).
 //!
 //! The account, its plan, limits and usage, the storage of the vault and
-//! the recovery of an account, for every product that has the messenger
+//! the recovery of an account, the approval of sign-ins to the web
+//! cabinet (`weblogin`), for every product that has the messenger
 //! (`requires` in products.json): Space shows it as a tab, Chat from its
 //! settings. The module is on while the messenger is (`Switch::Follows`).
 //!
@@ -37,6 +38,7 @@ mod social_tests;
 mod status;
 pub mod sync;
 pub mod trustee;
+pub mod weblogin;
 
 pub use api::{CloudApi, HttpCloud, Unconfigured};
 pub use status::CloudStatus;
@@ -96,6 +98,13 @@ pub fn module() -> Module {
                 cancel::cloud_recovery_alerts,
                 cancel::cloud_recovery_cancel,
                 cancel::cloud_recovery_alert_dismiss,
+                weblogin::cloud_web_login_inspect,
+                weblogin::cloud_web_login_approve,
+                weblogin::cloud_web_login_deny,
+                weblogin::cloud_web_confirm,
+                weblogin::cloud_web_unfreeze,
+                weblogin::cloud_web_sessions,
+                weblogin::cloud_web_sessions_revoke,
             ],
         }
     }
@@ -196,6 +205,13 @@ mod tests {
                 "cloud_recovery_alerts",
                 "cloud_recovery_cancel",
                 "cloud_recovery_alert_dismiss",
+                "cloud_web_login_inspect",
+                "cloud_web_login_approve",
+                "cloud_web_login_deny",
+                "cloud_web_confirm",
+                "cloud_web_unfreeze",
+                "cloud_web_sessions",
+                "cloud_web_sessions_revoke",
             ]
         );
         // No tables, nothing synced; the box `cloud` is not a key user.

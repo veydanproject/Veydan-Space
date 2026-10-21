@@ -6,13 +6,14 @@
   (vcloud-plan.md 4.5, 4.6), from what matters most to what is rarely
   needed: who the account is, the plan in use and its room, the plans to
   choose from, how sync stands, the ways into the account (a device, the
-  recovery), what the owner of the key keeps (the profile, the servers),
+  recovery, the sign-ins to the web cabinet), what the owner of the key keeps (the profile, the servers),
   the deletion at the very end. A device without an account gets the way
   to make one, and sync.
   A product on its own servers, or with no servers chosen, gets one plain
   explanation instead. `?delete=1` opens the deletion, `?section=<id>`
   scrolls to a part of the page (`plans`, `recovery-key`, `delete`), `?key=1`
-  opens the key of activation (the card of the bot about a plan that ends).
+  opens the key of activation (the card of the bot about a plan that ends),
+  `?key=<key>` opens it with that key filled in (the card of a purchase).
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
@@ -21,7 +22,7 @@
   import { isMobile } from '$lib/core/platform';
   import { activating, cloudPage } from '$lib/cloud/status.svelte';
   import type { CloudPlanOffer } from '$lib/cloud/api';
-  import { dateOf, errorKeyOf, shownAccount, viewOf } from '$lib/cloud/account';
+  import { dateOf, errorKeyOf, normalizeKey, shownAccount, viewOf } from '$lib/cloud/account';
   import { distribution } from '$lib/core/store/distribution.svelte';
   import { planName } from '$lib/cloud/plans';
   import AccessList from '$lib/cloud/AccessList.svelte';
@@ -36,11 +37,14 @@
   import StateView from '$lib/cloud/StateView.svelte';
   import UsageCard from '$lib/cloud/UsageCard.svelte';
   import Welcome from '$lib/cloud/Welcome.svelte';
+  import WebSessions from '$lib/cloud/WebSessions.svelte';
 
   const query = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const startDelete = query.get('delete') === '1';
   const section = query.get('section');
-  const startKey = query.get('key') === '1';
+  const startKey = query.get('key') !== null;
+  /** A key the link carries, filled in the dialog; only one of the shape keys have. */
+  let givenKey = $state(normalizeKey(query.get('key') ?? '') ?? '');
 
   /** Who the account is; undefined until the owner of the key answered, null on a device without one. */
   let profile = $state<AccountProfile | null | undefined>(accountSource() ? undefined : null);
@@ -82,6 +86,8 @@
   );
 
   function openKey(plan: CloudPlanOffer | null = null) {
+    // The key of the link was for the dialog it opened, not for one opened by hand later.
+    givenKey = '';
     keyPlan = plan;
     keyOpen = true;
   }
@@ -172,6 +178,8 @@
 
   {#if !noAccount && (view === 'account' || view === 'no_account' || view === 'unreachable')}
     <AccessList hasAccount={account !== null} recovery={account?.recovery ?? null} />
+    <!-- A sign-in to the web cabinet is the identity's: with an account or without. -->
+    <WebSessions />
   {/if}
 
   {#if !noAccount}
@@ -186,7 +194,7 @@
   {/if}
 </div>
 
-<RedeemDialog bind:open={keyOpen} busy={cloudPage.busy} planName={keyPlan?.name ?? ''} result={keyResult} onRedeem={redeem} />
+<RedeemDialog bind:open={keyOpen} busy={cloudPage.busy} planName={keyPlan?.name ?? ''} result={keyResult} initialKey={keyPlan ? '' : givenKey} onRedeem={redeem} />
 
 <style>
   .cloud-body { display: flex; flex-direction: column; gap: var(--sp-3); }

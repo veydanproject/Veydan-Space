@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "nunca",
     "msg_push_ticket_revoke": "Revocar",
     "msg_push_ticket_revoke_title": "¿Revocar el ticket {ticket}?",
-    "msg_push_ticket_revoke_text": "El servidor que lo tiene ya no podrá despertar este teléfono. Un servidor tuyo recibe un ticket nuevo solo."
+    "msg_push_ticket_revoke_text": "El servidor que lo tiene ya no podrá despertar este teléfono. Un servidor tuyo recibe un ticket nuevo solo.",
+    "msg_card_web_title": "Enlace de inicio de sesión del sitio web de Veydan Cloud",
+    "msg_card_web_text": "El inicio de sesión en un sitio web solo se aprueba escaneando su código QR en la aplicación. Nunca inicies sesión con un enlace que alguien te haya enviado.",
+    "msg_inv_web_link": "Este es un enlace de inicio de sesión del sitio web de Veydan Cloud.",
+    "msg_inv_web_open": "Abrir el inicio de sesión en el sitio web"
   },
   "mobile": {}
 }

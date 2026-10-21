@@ -44,12 +44,16 @@ impl BackendError {
 
     /// A `413` of the media-auth in front of blossom that is the day's or
     /// the plan's quota, not the size of the file: its body is
-    /// `{"error":"plan_limit","limit":"media.upload_per_day"|"media.per_ip_per_day",…}`
-    /// (`spec/vstore.md` 10.2). A `plan_limit` of the file's size, and a
-    /// `413` of anything else, stay a file that is too large.
+    /// `{"error":"plan_limit","limit":"media.upload_per_day"|"media.per_ip_per_day",…}`,
+    /// or the room of the plan: `media.storage_bytes` (all the media of the
+    /// key) and `storage.total_bytes` (the shared storage of the vault and
+    /// the media together) (`spec/vstore.md` 10.2). A `plan_limit` of the
+    /// file's size, and a `413` of anything else, stay a file that is too
+    /// large.
     fn is_quota(&self) -> bool {
-        self.message.contains("\"plan_limit\"")
-            && (self.message.contains("media.upload_per_day") || self.message.contains("media.per_ip_per_day"))
+        const QUOTAS: [&str; 4] =
+            ["media.upload_per_day", "media.per_ip_per_day", "media.storage_bytes", "storage.total_bytes"];
+        self.message.contains("\"plan_limit\"") && QUOTAS.iter().any(|q| self.message.contains(q))
     }
 
     pub fn code(&self) -> &'static str {
@@ -800,6 +804,10 @@ mod tests {
         assert_eq!(plan("media.max_file_bytes").code(), "err.file_too_large");
         assert_eq!(plan("media.upload_per_day").code(), "err.media_quota");
         assert_eq!(plan("media.per_ip_per_day").code(), "err.media_quota");
+        // The room of the plan full is a quota, not a file too large.
+        assert_eq!(plan("media.storage_bytes").code(), "err.media_quota");
+        assert_eq!(plan("storage.total_bytes").code(), "err.media_quota");
+        assert!(!plan("storage.total_bytes").is_retryable());
         assert!(!plan("media.per_ip_per_day").is_retryable());
         assert_eq!(e(None).code(), "err.network");
         assert!(e(Some(408)).is_retryable());

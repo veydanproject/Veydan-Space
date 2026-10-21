@@ -233,6 +233,7 @@ fn classify_relations(event: &Event, keys: Option<&Keys>) -> Inbound {
     };
     Inbound::Meta(MetaInbound::Relations {
         author: pk(&event.pubkey),
+        id: EventId::parse(&event.id.to_hex()).expect("nostr event ids are 64 hex chars"),
         created_at: ts(event.created_at),
         page,
         content: event.content.clone(),

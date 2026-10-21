@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "jamais",
     "msg_push_ticket_revoke": "Révoquer",
     "msg_push_ticket_revoke_title": "Révoquer le ticket {ticket} ?",
-    "msg_push_ticket_revoke_text": "Le serveur qui le détient ne pourra plus réveiller ce téléphone. Un serveur à vous reçoit un nouveau ticket de lui-même."
+    "msg_push_ticket_revoke_text": "Le serveur qui le détient ne pourra plus réveiller ce téléphone. Un serveur à vous reçoit un nouveau ticket de lui-même.",
+    "msg_card_web_title": "Lien de connexion au site web de Veydan Cloud",
+    "msg_card_web_text": "La connexion à un site web ne s’approuve qu’en scannant son code QR dans l’application. Ne vous connectez jamais avec un lien que quelqu’un vous a envoyé.",
+    "msg_inv_web_link": "Ceci est un lien de connexion au site web de Veydan Cloud.",
+    "msg_inv_web_open": "Ouvrir la connexion au site web"
   },
   "mobile": {}
 }

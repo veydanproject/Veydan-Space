@@ -11,7 +11,7 @@ use crate::MessengerRuntime;
 use messenger_core::{MessengerError, PubKey, Result};
 use messenger_groups::{GroupKind, GroupLink};
 use messenger_links::contact::{npub_of, pubkey_of_npub};
-use messenger_links::{BridgeLink, CallNodeLink, ContactLink, LinkError, LinkType, RecoverLink, ServerLink, Uri};
+use messenger_links::{BridgeLink, CallNodeLink, ContactLink, LinkError, LinkType, RecoverLink, ServerLink, Uri, WebLink};
 use messenger_store::servers;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -232,6 +232,16 @@ pub enum LinkView {
         /// My name for the person, when they are a contact; empty otherwise.
         name: String,
     },
+    /// A sign-in to the web cabinet of Veydan Cloud (`veydan://web/<id>`,
+    /// cloud-api.md §16.2). Approved only from the app's own scanner or a
+    /// paste, where the module cloud shows the screen of approval; a card
+    /// of it in a chat approves nothing (a link sent by someone else is
+    /// how a sign-in is stolen).
+    Web {
+        link: String,
+        /// The pending sign-in, 16 hex.
+        id: String,
+    },
     /// A well-formed link of a type a newer client knows.
     Unknown { link_type: String },
     Invalid { code: String },
@@ -303,6 +313,10 @@ impl MessengerRuntime {
             },
             LinkType::Server => match ServerLink::from_uri(&uri) {
                 Ok(s) => Ok(LinkView::Server(self.server_preview_of(&s).await?)),
+                Err(e) => Ok(LinkView::invalid(e)),
+            },
+            LinkType::Web => match WebLink::from_uri(&uri) {
+                Ok(w) => Ok(LinkView::Web { link: w.encode(), id: w.id }),
                 Err(e) => Ok(LinkView::invalid(e)),
             },
             LinkType::Unknown(word) => Ok(LinkView::Unknown { link_type: word.clone() }),
@@ -580,6 +594,28 @@ mod tests {
         assert_eq!(json, serde_json::json!({ "kind": "unknown", "link_type": "channel" }));
 
         assert!(rt.links_inspect(&vec![group; MAX_LINKS + 1]).await.is_err());
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_to_the_web_cabinet_is_its_id_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = runtime(&dir).await;
+        let id = "0123456789abcdef";
+        let got = rt
+            .links_inspect(&[
+                format!(" veydan://web/{id} "),
+                format!("veydan://web/{id}?n=Pay%20at%20evil.example"),
+                "veydan://web/0123456789ABCDEF".into(),
+            ])
+            .await
+            .unwrap();
+        let want = LinkView::Web { link: format!("veydan://web/{id}"), id: id.into() };
+        assert_eq!(got[0], want);
+        assert_eq!(got[1], want, "a parameter is never shown");
+        assert_eq!(got[2], LinkView::Invalid { code: "link_bad_id".into() });
+        let json = serde_json::to_value(&got[0]).unwrap();
+        assert_eq!(json, serde_json::json!({ "kind": "web", "link": format!("veydan://web/{id}"), "id": id }));
         rt.shutdown().await;
     }
 

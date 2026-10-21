@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import QrScanner from '$lib/core/ui/QrScanner.svelte';
@@ -17,6 +18,7 @@
   import { chatStore } from '../chats/chatStore.svelte';
   import { onPhone } from '../shared/phone';
   import { inviteStore, type JoinOutcome } from './inviteStore.svelte';
+  import { webLoginHref } from './invites';
 
   interface Props {
     /** A scanned code let me in (or named a person): their chat is to be opened. */
@@ -63,6 +65,11 @@
       return;
     }
     if (!out.ok) {
+      // The QR code of the sign-in page of the web cabinet: approved on the screen of the cloud, after a question.
+      if (out.reason === 'web') {
+        void goto(webLoginHref(out.id));
+        return;
+      }
       // «Добавить сервер?» answered no: nothing to say.
       if (out.reason !== 'declined') scanError = $t(JOIN_ERRORS[out.reason]);
       return;

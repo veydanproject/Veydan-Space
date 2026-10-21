@@ -72,12 +72,12 @@ impl RelationsHandler {
 #[async_trait]
 impl Handler<MetaInbound> for RelationsHandler {
     async fn handle(&self, msg: MetaInbound, _ctx: &Context) -> Result<Vec<Effect>> {
-        let MetaInbound::Relations { page, created_at, content, .. } = msg else { return Ok(vec![]) };
+        let MetaInbound::Relations { id, page, created_at, content, .. } = msg else { return Ok(vec![]) };
         // Locked: nothing can be read now; the fetch of the next session
         // brings the newest list anyway.
         let Some(keys) = self.dm.session_keys() else { return Ok(vec![]) };
         let (applied, mut effects) =
-            self.dm.apply_relations_snapshot(&keys, &[Piece { page, created_at: created_at.secs(), content }]).await?;
+            self.dm.apply_relations_snapshot(&keys, &[Piece { id: Some(id), page, created_at: created_at.secs(), content }]).await?;
         if applied.rev.is_none() {
             return Ok(effects);
         }

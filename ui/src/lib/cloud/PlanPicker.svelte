@@ -87,6 +87,8 @@
 
   function featureText(f: PlanFeature): string {
     switch (f.id) {
+      case 'total':
+        return $t('cloud_plan_f_total', { size: formatBytes(f.value) });
       case 'files':
         return $t('cloud_plan_f_files', { size: formatBytes(f.value) });
       case 'chat_file':

@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Perangkat lain sedang menjalankan profil ini. Menjalankannya di sini akan memecah cookie dan sesinya.",
     "profile_sync_in_use_confirm": "Profil ini sedang digunakan di {device}. Tetap jalankan?",
     "profile_sync_launch_anyway": "Tetap jalankan",
+    "profile_launch_syncing": "Menyinkronkan file…",
+    "profile_launch_syncing_hint": "Profil akan berjalan begitu filenya selesai disinkronkan.",
     "profile_sync_diverged": "File berbeda",
     "profile_sync_take_remote": "Ambil file jarak jauh",
     "profile_sync_push_mine": "Pertahankan milik saya",

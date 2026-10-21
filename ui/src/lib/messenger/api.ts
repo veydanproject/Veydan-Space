@@ -1460,6 +1460,9 @@ function mockInspect(text: string): LinkView {
     const c = mockContacts.find((x) => x.pubkey === m[2]);
     return /^[0-9a-f]{64}$/.test(m[2]) && code ? { kind: 'recover', link, npub: m[2], code: code.toUpperCase(), name: c ? contactLabel(c) : '' } : { kind: 'invalid', code: 'link_bad_param' };
   }
+  if (m[1] === 'web') {
+    return /^[0-9a-f]{16}$/.test(m[2]) ? { kind: 'web', link: `veydan://web/${m[2]}`, id: m[2] } : { kind: 'invalid', code: 'link_bad_id' };
+  }
   if (m[1] === 'vlink') {
     const bridge = mockBridgeOf(link);
     return bridge ? { kind: 'vlink', link, id: bridge.id, addr: bridge.addr, added: mockNet.private.some((b) => b.id === bridge.id) } : { kind: 'invalid', code: 'link_bad_param' };

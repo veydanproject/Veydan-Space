@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Ein anderes Gerät führt dieses Profil aus. Ein Start hier würde seine Cookies und Sitzungen aufspalten.",
     "profile_sync_in_use_confirm": "Dieses Profil wird auf {device} verwendet. Trotzdem starten?",
     "profile_sync_launch_anyway": "Trotzdem starten",
+    "profile_launch_syncing": "Dateien werden synchronisiert…",
+    "profile_launch_syncing_hint": "Das Profil startet, sobald seine Dateien synchronisiert sind.",
     "profile_sync_diverged": "Dateien weichen ab",
     "profile_sync_take_remote": "Entfernte Dateien übernehmen",
     "profile_sync_push_mine": "Meine behalten",

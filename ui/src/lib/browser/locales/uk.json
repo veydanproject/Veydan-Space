@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Цей профіль запущено на іншому пристрої. Запуск тут розгалузить його cookies і сеанси.",
     "profile_sync_in_use_confirm": "Цей профіль використовується на {device}. Усе одно запустити?",
     "profile_sync_launch_anyway": "Усе одно запустити",
+    "profile_launch_syncing": "Синхронізація файлів…",
+    "profile_launch_syncing_hint": "Профіль запуститься, щойно його файли синхронізуються.",
     "profile_sync_diverged": "Файли розійшлися",
     "profile_sync_take_remote": "Узяти віддалені файли",
     "profile_sync_push_mine": "Залишити мої",

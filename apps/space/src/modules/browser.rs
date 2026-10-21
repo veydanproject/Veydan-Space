@@ -70,6 +70,7 @@ fn commands() -> Module {
             crate::commands::profiles::launch::profile_stop,
             crate::commands::profiles::launch::profile_is_running,
             crate::commands::profiles::launch::profiles_running_ids,
+            crate::commands::profiles::launch::profiles_launching,
             crate::commands::proxies::proxies_list,
             crate::commands::proxies::proxy_get,
             crate::commands::proxies::proxy_create,

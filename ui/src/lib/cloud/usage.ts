@@ -18,8 +18,19 @@ export interface CloudCategory {
   objects: number;
 }
 
+/**
+ * What the host itself wrote (`GET /vault/v1/usage`, spec/vstore.md §6), of
+ * which the page reads the media and the shared storage; an older host
+ * sends neither.
+ */
+export interface CloudHostUsage {
+  media?: { used: number; limit: number | null; known: boolean; reconciled_at: number | null } | null;
+  total?: { used: number; limit: number | null } | null;
+}
+
 /** The answer of `cloud_usage`. */
 export interface CloudUsage extends CloudUsageView {
+  usage?: CloudHostUsage;
   pools: CloudPoolView[];
   categories: CloudCategory[];
   /** False: notes' blobs and profiles' files are not told apart yet. */

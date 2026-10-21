@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 use crate::browser::launch::{self as browser_launch, Running};
-use crate::browser::{profile_launcher, BrowserState};
+use crate::browser::{profile_launcher, BrowserState, LaunchingPayload};
 use crate::error::{AppError, CmdResult};
 use crate::models::Profile;
 use std::sync::Arc;
@@ -22,8 +22,11 @@ pub async fn profile_launch(
     browser: tauri::State<'_, BrowserState>,
     app_handle: tauri::AppHandle,
 ) -> CmdResult<u32> {
-    launch_once(&browser.running, &id, || {
-        launch_reserved(&id, force, &core, &browser, &app_handle)
+    launch_once(&browser.running, &id, || async {
+        browser.launches.set(&app_handle, &id, Some(false));
+        let result = launch_reserved(&id, force, &core, &browser, &app_handle).await;
+        browser.launches.set(&app_handle, &id, None);
+        result
     })
     .await
 }
@@ -58,9 +61,12 @@ async fn launch_reserved(
 ) -> CmdResult<u32> {
     // The files of the profile are not collected or applied by sync from
     // here until the process is registered (or the launch failed); a cycle
-    // that holds them is waited for.
-    let files = browser.files.lock(id).await;
-    crate::sync::before_profile_launch(app_handle, id, force.unwrap_or(false)).await?;
+    // that holds them is waited for: a collect gives them up at once, an
+    // apply is let finish. The UI shows the launch waiting for sync.
+    let syncing = || browser.launches.set(app_handle, id, Some(true));
+    let files = browser.files.lock_for_launch(id, syncing).await;
+    crate::sync::before_profile_launch(app_handle, id, force.unwrap_or(false), syncing).await?;
+    browser.launches.set(app_handle, id, Some(false));
 
     let profile = sqlx::query_as::<_, Profile>("SELECT * FROM profiles WHERE id = ?")
         .bind(id)
@@ -146,6 +152,15 @@ pub async fn profiles_running_ids(
     browser: tauri::State<'_, BrowserState>,
 ) -> CmdResult<Vec<String>> {
     Ok(browser.running.running_ids().await)
+}
+
+/// The profiles being launched and those of them waiting for sync; the
+/// changes come as `profiles://launching-changed`.
+#[tauri::command]
+pub async fn profiles_launching(
+    browser: tauri::State<'_, BrowserState>,
+) -> CmdResult<LaunchingPayload> {
+    Ok(browser.launches.payload())
 }
 
 #[cfg(test)]

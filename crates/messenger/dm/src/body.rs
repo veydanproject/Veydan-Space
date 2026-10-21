@@ -148,9 +148,9 @@ fn link(text: &str) -> Option<Body> {
                 let text = if name.is_empty() { host } else { format!("{name} ({host})") };
                 Some(Body::Text { text: preview(&text) })
             }
-            // A bridge, a call node or a request of recovery has no name to
+            // A bridge, a call node, a request of recovery or a sign-in has no name to
             // show; the text of the link stands.
-            LinkType::Bridge | LinkType::CallNode | LinkType::Recover | LinkType::Unknown(_) => None,
+            LinkType::Bridge | LinkType::CallNode | LinkType::Recover | LinkType::Web | LinkType::Unknown(_) => None,
         };
     }
     let rest = text.strip_prefix("https://").or_else(|| text.strip_prefix("http://"))?;

@@ -28,7 +28,9 @@ export type JoinOutcome =
   /** `address`: whom the chat is with, `<hex>` at home or `<hex>@<server id>` in the private chat of the link's server. */
   | { ok: true; pubkey: string; name: string; invited: boolean; address: string }
   /** `declined`: the link names a server and «Добавить сервер?» was answered no; nothing was added or sent. */
-  | { ok: false; reason: 'not_contact' | 'is_me' | 'blocked' | 'declined' };
+  | { ok: false; reason: 'not_contact' | 'is_me' | 'blocked' | 'declined' }
+  /** The QR code of a sign-in to the web cabinet of Veydan Cloud: its screen of approval is the module cloud's. */
+  | { ok: false; reason: 'web'; id: string };
 
 class InviteStore {
   /** Mine, as the runtime lists them; `null` until read. */
@@ -90,6 +92,7 @@ class InviteStore {
    */
   join = async (text: string): Promise<JoinOutcome> => {
     const [view] = await messengerApi.links.inspect([text.trim() as InternalLinkText]);
+    if (view?.kind === 'web') return { ok: false, reason: 'web', id: view.id };
     const c = invitedContact(view);
     if (!c) return { ok: false, reason: 'not_contact' };
     if (c.isMe) return { ok: false, reason: 'is_me' };

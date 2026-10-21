@@ -83,6 +83,14 @@ struct Server {
     skew: i64,
     /// `METHOD path?query` of every request, in order.
     log: Vec<String>,
+    /// Sign-ins to the web cabinet by id: `{method, state, npub?, …}` (16.2).
+    web_logins: HashMap<String, Value>,
+    /// The code sign-in is frozen until then (16.2 `web_login_freezes`).
+    web_freeze: Option<u64>,
+    /// Live sessions of the cabinet of the identity, in order.
+    web_sessions: Vec<Value>,
+    /// Actions of the cabinet waiting for the app, by id: their state.
+    web_actions: HashMap<String, String>,
 }
 
 impl Server {
@@ -408,7 +416,8 @@ async fn answer(
                         return refuse(409, "generation_stale", json!({ "generation": known }));
                     }
                 }
-                let config = json!({ "k": k, "n": n, "generation": generation, "updated_at": now() });
+                let config =
+                    json!({ "k": k, "n": n, "generation": generation, "updated_at": now() });
                 s.config = Some(config.clone());
                 ok(200, config)
             }
@@ -471,7 +480,9 @@ async fn answer(
                 return refuse(400, "bad_request", json!({}));
             }
             match &s.open {
-                Some(open) if query == format!("npub={}", open["npub"].as_str().unwrap_or_default()) => {
+                Some(open)
+                    if query == format!("npub={}", open["npub"].as_str().unwrap_or_default()) =>
+                {
                     let mut shown = open.clone();
                     shown.as_object_mut().map(|o| o.remove("npub"));
                     ok(200, shown)
@@ -517,6 +528,110 @@ async fn answer(
             }
             ok(200, json!({ "state": "closed" }))
         }
+        // The web cabinet (16.4): what the app does with it.
+        ("GET", "/cloud/v1/web/login") => {
+            if headers.contains_key("authorization") {
+                return refuse(400, "bad_request", json!({}));
+            }
+            let id = query.strip_prefix("id=").unwrap_or_default();
+            match s.web_logins.get(id) {
+                Some(login) => {
+                    let mut shown = login.clone();
+                    shown.as_object_mut().map(|o| o.remove("npub"));
+                    ok(200, shown)
+                }
+                None => refuse(404, "not_found", json!({})),
+            }
+        }
+        ("POST", "/cloud/v1/web/approve") => {
+            let event = match signed(&s) {
+                Err(r) => return r,
+                Ok(event) => event,
+            };
+            let id = json_body["id"].as_str().unwrap_or_default().to_string();
+            let Some(login) = s.web_logins.get_mut(&id) else {
+                return refuse(404, "not_found", json!({}));
+            };
+            if login["method"] != "qr" {
+                return refuse(409, "method_mismatch", json!({}));
+            }
+            match login["state"].as_str() {
+                Some("pending") => {
+                    login["state"] = json!("approved");
+                    login["npub"] = json!(event.pubkey);
+                }
+                Some("approved") if login["npub"] == json!(event.pubkey) => {}
+                Some("expired") => return refuse(410, "login_expired", json!({})),
+                _ => return refuse(409, "login_closed", json!({})),
+            }
+            ok(200, json!({ "state": "approved" }))
+        }
+        ("POST", "/cloud/v1/web/deny") => {
+            let event = match signed(&s) {
+                Err(r) => return r,
+                Ok(event) => event,
+            };
+            let id = json_body["id"].as_str().unwrap_or_default().to_string();
+            let until = s.clock() + 30 * 86400;
+            let Some(login) = s.web_logins.get_mut(&id) else {
+                return refuse(404, "not_found", json!({}));
+            };
+            let code = login["method"] == "code";
+            if code && login["npub"] != json!(event.pubkey) {
+                return refuse(404, "not_found", json!({}));
+            }
+            login["state"] = json!("denied");
+            if code {
+                s.web_freeze = Some(until);
+                return ok(200, json!({ "state": "denied", "frozen_until": until }));
+            }
+            ok(200, json!({ "state": "denied" }))
+        }
+        ("POST", "/cloud/v1/web/confirm") => match signed(&s) {
+            Err(r) => r,
+            Ok(_) => {
+                let id = json_body["id"].as_str().unwrap_or_default().to_string();
+                match s.web_actions.get_mut(&id) {
+                    Some(state) if state == "pending" || state == "confirmed" => {
+                        *state = "confirmed".into();
+                        ok(200, json!({ "state": "confirmed" }))
+                    }
+                    Some(state) if state == "expired" => refuse(410, "action_expired", json!({})),
+                    _ => refuse(404, "not_found", json!({})),
+                }
+            }
+        },
+        ("POST", "/cloud/v1/web/unfreeze") => match signed(&s) {
+            Err(r) => r,
+            Ok(_) => {
+                s.web_freeze = None;
+                ok(200, json!({}))
+            }
+        },
+        ("GET", "/cloud/v1/web/sessions") => match signed(&s) {
+            Err(r) => r,
+            Ok(_) => {
+                let mut body = json!({ "sessions": s.web_sessions });
+                if let Some(until) = s.web_freeze {
+                    body["freeze"] = json!({ "until": until });
+                }
+                ok(200, body)
+            }
+        },
+        ("POST", "/cloud/v1/web/sessions/revoke") => match signed(&s) {
+            Err(r) => r,
+            Ok(_) => {
+                let before = s.web_sessions.len();
+                if json_body["all"] == json!(true) {
+                    s.web_sessions.clear();
+                } else if let Some(id) = json_body["id"].as_str() {
+                    s.web_sessions.retain(|w| w["id"] != id);
+                } else {
+                    return refuse(400, "bad_request", json!({}));
+                }
+                ok(200, json!({ "revoked": before - s.web_sessions.len() }))
+            }
+        },
         ("GET", "/vault/v1/usage") => match signed(&s) {
             Err(r) => r,
             Ok(_) => ok(
@@ -622,7 +737,11 @@ impl Fake {
     /// The state of the one request the fake knows: `open`, `cancelled`,
     /// `closed`, `expired`.
     pub fn request_state(&self) -> Option<String> {
-        self.with(|s| s.open.as_ref().and_then(|o| o["state"].as_str().map(str::to_string)))
+        self.with(|s| {
+            s.open
+                .as_ref()
+                .and_then(|o| o["state"].as_str().map(str::to_string))
+        })
     }
 
     /// The request expires now, as the task of the server does once a minute.
@@ -632,6 +751,49 @@ impl Fake {
                 open["state"] = json!("expired");
                 open["closed_at"] = json!(now());
             }
+        });
+    }
+
+    /// A sign-in to the web cabinet waits for approval: `qr` without an
+    /// npub, `code` for the identity (16.2).
+    pub fn add_web_login(&self, id: &str, method: &str) {
+        let npub = if method == "code" {
+            json!(npub())
+        } else {
+            Value::Null
+        };
+        self.with(|s| {
+            let at = s.clock();
+            s.web_logins.insert(
+                id.to_string(),
+                json!({ "id": id, "method": method, "state": "pending", "npub": npub, "country": "DE",
+                        "ua_family": "chrome", "created_at": at, "expires_at": at + 120 }),
+            );
+        });
+    }
+
+    /// Who approved the sign-in `id`, as the server keeps it.
+    pub fn web_login_npub(&self, id: &str) -> Option<String> {
+        self.with(|s| {
+            s.web_logins
+                .get(id)
+                .and_then(|l| l["npub"].as_str().map(str::to_string))
+        })
+    }
+
+    /// A live session of the cabinet for the identity.
+    pub fn add_web_session(&self, id: &str) {
+        self.with(|s| {
+            let at = s.clock();
+            s.web_sessions.push(json!({ "id": id, "method": "qr", "created_at": at, "last_seen_at": at,
+                                         "country": "DE", "ua_family": "firefox", "current": false }));
+        });
+    }
+
+    /// An action of the cabinet waits for the app's confirmation.
+    pub fn add_web_action(&self, id: &str) {
+        self.with(|s| {
+            s.web_actions.insert(id.to_string(), "pending".into());
         });
     }
 
@@ -799,7 +961,10 @@ impl MemoryBox {
 
     /// Everything kept goes, as a device that lost its data.
     pub fn clear(&self) {
-        self.values.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        self.values
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
     }
 
     fn open(&self) -> Result<(), CloudError> {

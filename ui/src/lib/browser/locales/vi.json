@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Một thiết bị khác đang chạy hồ sơ này. Khởi chạy ở đây sẽ làm cookie và phiên bị tách thành hai bản khác nhau.",
     "profile_sync_in_use_confirm": "Hồ sơ này đang được dùng trên {device}. Vẫn khởi chạy?",
     "profile_sync_launch_anyway": "Vẫn khởi chạy",
+    "profile_launch_syncing": "Đang đồng bộ tệp…",
+    "profile_launch_syncing_hint": "Hồ sơ sẽ khởi chạy ngay khi các tệp của nó được đồng bộ.",
     "profile_sync_diverged": "Tệp đã khác nhau",
     "profile_sync_take_remote": "Lấy tệp từ xa",
     "profile_sync_push_mine": "Giữ bản của tôi",

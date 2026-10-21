@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "nie",
     "msg_push_ticket_revoke": "Widerrufen",
     "msg_push_ticket_revoke_title": "Ticket {ticket} widerrufen?",
-    "msg_push_ticket_revoke_text": "Der Server, der es hält, kann dieses Telefon nicht mehr wecken. Ein Server von dir bekommt selbst ein neues Ticket."
+    "msg_push_ticket_revoke_text": "Der Server, der es hält, kann dieses Telefon nicht mehr wecken. Ein Server von dir bekommt selbst ein neues Ticket.",
+    "msg_card_web_title": "Anmeldelink der Veydan-Cloud-Website",
+    "msg_card_web_text": "Eine Anmeldung auf einer Website wird nur durch Scannen ihres QR-Codes in der App bestätigt. Melde dich nie über einen Link an, den dir jemand geschickt hat.",
+    "msg_inv_web_link": "Das ist ein Anmeldelink der Veydan-Cloud-Website.",
+    "msg_inv_web_open": "Website-Anmeldung öffnen"
   },
   "mobile": {}
 }

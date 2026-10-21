@@ -20,7 +20,7 @@ use super::state::{
     save_profile_files_state, ProfileFilesState,
 };
 use super::SyncManager;
-use crate::browser::BrowserState;
+use crate::browser::{BrowserState, LaunchWaits};
 use crate::commands::profiles::is_blacklisted;
 use crate::error::{AppError, CmdResult};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -328,8 +328,9 @@ pub struct LocalChanges {
     /// Profiles gone here whose tombstones are among `ops`: their state is
     /// deleted once the ops are out.
     pub gone: Vec<String>,
-    /// The locks of the profiles in `states`, held until they are saved.
-    pub held: Vec<tokio::sync::OwnedMutexGuard<()>>,
+    /// The locks of the profiles in `states` by profile id, held until
+    /// they are saved.
+    pub held: Vec<(String, tokio::sync::OwnedMutexGuard<()>)>,
 }
 
 /// Names uploaded in this cycle; skip a second PUT of the same content.
@@ -371,39 +372,86 @@ impl<'a> BlobIndex<'a> {
     /// than `RECHECK_AFTER` ago may have been taken by the GC of another
     /// device since (a walk of a large profile outlives its grace); one that
     /// is gone is uploaded again from its file. The inner `Err` says why it
-    /// cannot be: the file is gone or changed since.
+    /// cannot be: the file is gone or changed since. `None` when a launch
+    /// waits for a profile of `held`.
     async fn recheck(
         &self,
         files: &[ManifestFile],
         found: &[(PathBuf, Instant)],
-    ) -> CmdResult<Result<(), String>> {
+        held: &Held<'_>,
+    ) -> CmdResult<Option<Result<(), String>>> {
         for (f, (abs, at)) in files.iter().zip(found) {
             if at.elapsed() < RECHECK_AFTER {
                 continue;
             }
-            if self
-                .engine
-                .blob_exists(&f.blob)
-                .await
-                .map_err(AppError::other)?
-            {
+            let Some(exists) = held.unless_wanted(self.engine.blob_exists(&f.blob)).await else {
+                return Ok(None);
+            };
+            if exists.map_err(AppError::other)? {
                 large_files::touch(&f.blob);
                 continue;
             }
             let data = match std::fs::read(abs) {
                 Ok(data) => data,
-                Err(e) => return Ok(Err(format!("{}: {e}", f.path))),
+                Err(e) => return Ok(Some(Err(format!("{}: {e}", f.path)))),
             };
             if self.engine.blob_name(&data) != f.blob {
-                return Ok(Err(format!(
+                return Ok(Some(Err(format!(
                     "{}: changed while the snapshot was taken",
                     f.path
-                )));
+                ))));
             }
-            self.engine.put_blob(&data).await.map_err(AppError::other)?;
+            let Some(put) = held.unless_wanted(self.engine.put_blob(&data)).await else {
+                return Ok(None);
+            };
+            put.map_err(AppError::other)?;
             large_files::touch(&f.blob);
         }
-        Ok(Ok(()))
+        Ok(Some(Ok(())))
+    }
+}
+
+/// The profiles whose files a collect holds: the one it reads and those
+/// whose snapshots wait to go out. A launch that waits for one of them
+/// stops the reading, which may upload for minutes.
+struct Held<'a> {
+    waits: &'a LaunchWaits,
+    ids: Vec<String>,
+}
+
+impl Held<'_> {
+    fn wanted(&self) -> bool {
+        self.waits.waits_for_any(&self.ids)
+    }
+
+    /// `fut`, or `None` (and `fut` dropped) once a launch waits for one of
+    /// the profiles. A blob cut off on its way up is not in the vault: an
+    /// upload is whole or none.
+    async fn unless_wanted<T>(&self, fut: impl std::future::Future<Output = T>) -> Option<T> {
+        tokio::select! {
+            biased;
+            _ = self.waits.until_any(&self.ids) => None,
+            v = fut => Some(v),
+        }
+    }
+}
+
+/// Gives up the snapshots waiting to go out of the profiles a launch waits
+/// for: their locks go, their files stay changed (the state is not saved)
+/// and go out with a later cycle. Their blobs are left to the GC.
+fn give_up_wanted(out: &mut LocalChanges, waits: &LaunchWaits, app: Option<&AppHandle>) {
+    let wanted: Vec<String> = out
+        .held
+        .iter()
+        .filter(|(id, _)| waits.waits_for(id))
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in wanted {
+        out.ops
+            .retain(|op| !(op.entity_type == SNAPSHOT_ENTITY && op.entity_id == id));
+        out.states.retain(|st| st.profile_id != id);
+        out.held.retain(|(held, _)| *held != id);
+        trace_profile(app, &id, "a launch waits, snapshot later");
     }
 }
 
@@ -440,22 +488,27 @@ async fn heal_missing(db: &sqlx::SqlitePool) -> CmdResult<()> {
 /// Manifest of the directory; only files whose hash is new are read and uploaded.
 /// The inner `Err` says why the files cannot be read: a file gone since the
 /// walk is left out, any other error of a folder or a file gives no manifest.
+/// `None` when a launch waits for a profile of `held`.
 async fn build_manifest(
     cache: &HashCache,
     blobs: &mut BlobIndex<'_>,
     dir: &Path,
     prev: &Manifest,
     app: Option<&AppHandle>,
-) -> CmdResult<Result<Manifest, String>> {
+    held: &Held<'_>,
+) -> CmdResult<Option<Result<Manifest, String>>> {
     let known = prev.blob_by_hash();
     let entries = match scan(dir) {
         Ok(entries) => entries,
-        Err(e) => return Ok(Err(format!("{}: {e}", dir.display()))),
+        Err(e) => return Ok(Some(Err(format!("{}: {e}", dir.display())))),
     };
     let total = entries.len() as u32;
     let mut files = Vec::new();
     let mut found = Vec::new();
     for (i, (rel, abs)) in entries.into_iter().enumerate() {
+        if held.wanted() {
+            return Ok(None);
+        }
         let current = i as u32 + 1;
         progress(
             app,
@@ -471,20 +524,26 @@ async fn build_manifest(
         let (hash, size) = match read {
             Ok(found) => found,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Ok(Err(format!("{rel}: {e}"))),
+            Err(e) => return Ok(Some(Err(format!("{rel}: {e}")))),
         };
         // A name from the previous manifest is reused only while the blob is
         // still in the vault; GC may have dropped it since.
         let reusable = match known.get(hash.as_str()) {
-            Some(b) if blobs.exists(b).await? => Some((*b).to_string()),
-            _ => None,
+            Some(b) => match held.unless_wanted(blobs.exists(b)).await {
+                Some(exists) => exists?.then(|| (*b).to_string()),
+                None => return Ok(None),
+            },
+            None => None,
         };
         let blob = match reusable {
             Some(b) => b,
             None => match std::fs::read(&abs) {
-                Ok(data) => blobs.put(&data).await?,
+                Ok(data) => match held.unless_wanted(blobs.put(&data)).await {
+                    Some(put) => put?,
+                    None => return Ok(None),
+                },
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(e) => return Ok(Err(format!("{rel}: {e}"))),
+                Err(e) => return Ok(Some(Err(format!("{rel}: {e}")))),
             },
         };
         found.push((abs, Instant::now()));
@@ -495,10 +554,11 @@ async fn build_manifest(
             hash,
         });
     }
-    if let Err(reason) = blobs.recheck(&files, &found).await? {
-        return Ok(Err(reason));
+    match blobs.recheck(&files, &found, held).await? {
+        None => Ok(None),
+        Some(Err(reason)) => Ok(Some(Err(reason))),
+        Some(Ok(())) => Ok(Some(Ok(Manifest { files }))),
     }
-    Ok(Ok(Manifest { files }))
 }
 
 /// Lease ops only: a tiny payload, never waits on profile files.
@@ -587,13 +647,26 @@ pub async fn collect_local_changes(
         engine,
         uploaded: BTreeSet::new(),
     };
+    // A launch goes first: a profile it waits for is given up, read or
+    // waiting to go out, and sent by a later cycle.
+    let waits = browser.files.launch_waits();
 
     for (id, profile_path, last_launch_at) in rows {
         states.remove(&id);
         // Held until the snapshot is out and its state saved (or dropped
         // with `out` when the push fails): no launch, stop or apply of the
-        // profile comes between the files read and the state written.
-        let files = browser.files.lock(&id).await;
+        // profile comes between the files read and the state written. The
+        // wait for it (a launch of this profile may hold it for minutes)
+        // gives up the profiles held meanwhile that a launch waits for.
+        let files = loop {
+            give_up_wanted(&mut out, &waits, app);
+            let held: Vec<String> = out.held.iter().map(|(held, _)| held.clone()).collect();
+            tokio::select! {
+                biased;
+                files = browser.files.lock(&id) => break files,
+                _ = waits.until_any(&held), if !held.is_empty() => {}
+            }
+        };
         let mut st = load_profile_files_state(db, &id)
             .await?
             .unwrap_or_else(|| ProfileFilesState::new(&id));
@@ -624,17 +697,34 @@ pub async fn collect_local_changes(
 
         // Local bookkeeping only; empty before the first snapshot.
         let prev = Manifest::parse(&st.manifest_json).unwrap_or_default();
+        let held = Held {
+            waits: &waits,
+            ids: out
+                .held
+                .iter()
+                .map(|(held, _)| held.clone())
+                .chain([id.clone()])
+                .collect(),
+        };
         // Files that cannot be read, or none where the last snapshot had
         // some (the folder gone, a disk not mounted), send nothing: the
         // others would delete their copies. The profile stays dirty.
-        let manifest = match build_manifest(&sync.file_hashes, &mut blobs, &dir, &prev, app).await?
-        {
-            Ok(m) if m.files.is_empty() && !prev.files.is_empty() => Err(format!(
+        let built = build_manifest(&sync.file_hashes, &mut blobs, &dir, &prev, app, &held).await?;
+        let manifest = match built {
+            // A launch waits for this profile or one held: this one waits
+            // for a later cycle as it is, so does the other.
+            None => {
+                trace_profile(app, &id, "a launch waits, snapshot later");
+                drop(files);
+                give_up_wanted(&mut out, &waits, app);
+                continue;
+            }
+            Some(Ok(m)) if m.files.is_empty() && !prev.files.is_empty() => Err(format!(
                 "{} holds no files, the last snapshot {}",
                 dir.display(),
                 prev.files.len()
             )),
-            found => found,
+            Some(found) => found,
         };
         let manifest = match manifest {
             Ok(m) => m,
@@ -681,13 +771,14 @@ pub async fn collect_local_changes(
         st.dirty = false;
         st.pending_manifest.clear();
         out.states.push(st);
-        out.held.push(files);
+        out.held.push((id.clone(), files));
         trace_profile(
             app,
             &id,
             &format!("snapshot {files_n} files, {bytes} bytes"),
         );
     }
+    give_up_wanted(&mut out, &waits, app);
     // A profile deleted here, or by a tombstone of its row, whose snapshot
     // or lease of this device is in the vault: the snapshot gets a
     // tombstone (the garbage collection then takes its blobs, and a device
@@ -2234,5 +2325,76 @@ mod tests {
         close(a).await;
         close(b).await;
         let _ = std::fs::remove_dir_all(&vault);
+    }
+
+    /// A launch waits for the files of a profile: the collect gives them up
+    /// and sends the snapshot of the others; the profile stays changed and
+    /// goes out with the next cycle once the launch is gone.
+    #[tokio::test]
+    async fn a_collect_gives_up_a_profile_a_launch_waits_for() {
+        use crate::modules::sync_registry;
+        use crate::sync::registries_tests::{close, create_vault, cycle, device, write};
+
+        let vault = crate::db::test_dir();
+        let a = device(sync_registry(), &vault).await;
+        create_vault(&a).await;
+        for id in ["pr-1", "pr-2"] {
+            let files = add_profile(&a, id).await;
+            write(&files.join("prefs.js"), id.as_bytes());
+            ran_id(&a, id).await;
+        }
+
+        let launch = a.browser.files.launch_waiting("pr-1");
+        let warnings = cycle_warnings(&a).await;
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let wanted = files_state(&a, "pr-1").await;
+        assert!(wanted.dirty);
+        assert!(wanted.head_hlc.is_none());
+        let other = files_state(&a, "pr-2").await;
+        assert!(!other.dirty);
+        assert!(other.head_hlc.is_some());
+
+        drop(launch);
+        cycle(&a).await;
+        let sent = files_state(&a, "pr-1").await;
+        assert!(!sent.dirty);
+        assert!(sent.head_hlc.is_some());
+
+        close(a).await;
+        let _ = std::fs::remove_dir_all(&vault);
+    }
+
+    /// A snapshot read and waiting to go out leaves with its lock and its
+    /// state when a launch waits for the profile; the others stay.
+    #[tokio::test]
+    async fn a_snapshot_waiting_to_go_out_is_given_up_for_a_launch() {
+        let locks = crate::browser::ProfileLocks::default();
+        let waits = locks.launch_waits();
+        let mut out = LocalChanges::default();
+        for id in ["pr-1", "pr-2"] {
+            out.ops
+                .push(snapshot_op(id, hlc(), SnapshotPayload::default()));
+            out.states.push(ProfileFilesState::new(id));
+            out.held.push((id.to_string(), locks.lock(id).await));
+        }
+        out.ops.push(lease_op("pr-1", hlc(), None));
+
+        give_up_wanted(&mut out, &waits, None);
+        assert_eq!(out.ops.len(), 3);
+
+        let _launch = locks.launch_waiting("pr-1");
+        give_up_wanted(&mut out, &waits, None);
+        let ops: Vec<_> = out
+            .ops
+            .iter()
+            .map(|op| (op.entity_type.as_str(), op.entity_id.as_str()))
+            .collect();
+        assert_eq!(ops, [(SNAPSHOT_ENTITY, "pr-2"), (LEASE_ENTITY, "pr-1")]);
+        assert_eq!(out.states.len(), 1);
+        assert_eq!(out.states[0].profile_id, "pr-2");
+        assert_eq!(out.held.len(), 1);
+        let _free = locks
+            .lock_for_launch("pr-1", || panic!("pr-1 is held"))
+            .await;
     }
 }

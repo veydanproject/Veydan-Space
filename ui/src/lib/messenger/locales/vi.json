@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "chưa bao giờ",
     "msg_push_ticket_revoke": "Thu hồi",
     "msg_push_ticket_revoke_title": "Thu hồi vé {ticket}?",
-    "msg_push_ticket_revoke_text": "Máy chủ giữ vé sẽ không thể đánh thức điện thoại này nữa. Máy chủ của bạn sẽ tự nhận vé mới."
+    "msg_push_ticket_revoke_text": "Máy chủ giữ vé sẽ không thể đánh thức điện thoại này nữa. Máy chủ của bạn sẽ tự nhận vé mới.",
+    "msg_card_web_title": "Liên kết đăng nhập trang web Veydan Cloud",
+    "msg_card_web_text": "Đăng nhập vào trang web chỉ được chấp thuận bằng cách quét mã QR của nó trong ứng dụng. Không bao giờ đăng nhập bằng liên kết do người khác gửi cho bạn.",
+    "msg_inv_web_link": "Đây là liên kết đăng nhập của trang web Veydan Cloud.",
+    "msg_inv_web_open": "Mở đăng nhập trang web"
   },
   "mobile": {}
 }

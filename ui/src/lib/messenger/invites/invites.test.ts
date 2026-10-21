@@ -52,6 +52,7 @@ describe('the address of a new chat', () => {
   it('is a link of a person only by its scheme and kind, the rest is read by the runtime', () => {
     expect(addressKind('veydan://contact/npub1x?i=q7Vd0xKp3LmN8sRt2WyZaA')).toBe('link');
     expect(addressKind('  veydan://contact/npub1x  ')).toBe('link');
+    expect(addressKind('veydan://web/0123456789abcdef')).toBe('link');
     expect(addressKind('veydan://group/abc')).toBeNull();
     expect(addressKind('Vera')).toBeNull();
   });

@@ -5,7 +5,8 @@
   import { ask } from '$lib/core/ui/confirm.svelte';
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
   import { t, locale } from '$lib/core/i18n';
-  import { api, leaseHolder } from '$lib/browser/api';
+  import { api, launchUnderWay, leaseHolder } from '$lib/browser/api';
+  import { runningStore } from '$lib/browser/store/running.svelte';
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { formatDateTime } from '$lib/core/utils';
@@ -83,6 +84,8 @@
     loadingId = profile.id;
     try { await api.profiles.launch(profile.id); onRefresh(); }
     catch (err) {
+      // Launched from elsewhere already: the button shows it.
+      if (launchUnderWay(err)) return;
       // Leased by another device: let the user override.
       const holder = leaseHolder(err);
       if (holder !== null && (await ask({ title: $t('profile_sync_in_use_confirm', { device: holder }), variant: 'primary' }))) {
@@ -158,7 +161,9 @@
       <tbody>
         {#each filtered() as profile, i (profile.id)}
           {@const isRunning = runningProfiles.has(profile.id)}
-          {@const isLoading = loadingId === profile.id}
+          {@const launching = runningStore.launching.includes(profile.id)}
+          {@const syncing = runningStore.syncing.includes(profile.id)}
+          {@const isLoading = loadingId === profile.id || launching}
           {@const proxy = proxyMap.get(profile.proxy_id ?? '')}
           <tr class:running={isRunning} onclick={() => onSelect(profile)}>
 
@@ -227,7 +232,7 @@
                   <Icon name="square" size={12} />
                 </button>
               {:else}
-                <button class="act-btn act-launch" onclick={(e) => launch(e, profile)} disabled={isLoading} title={$t('panel_btn_launch')} aria-label={$t('panel_btn_launch')}>
+                <button class="act-btn act-launch" onclick={(e) => launch(e, profile)} disabled={isLoading} title={syncing ? $t('profile_launch_syncing_hint') : $t('panel_btn_launch')} aria-label={syncing ? $t('profile_launch_syncing') : $t('panel_btn_launch')}>
                   <Icon name="play" size={12} />
                 </button>
               {/if}

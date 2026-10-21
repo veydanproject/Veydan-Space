@@ -131,8 +131,9 @@ pub enum MetaInbound {
     /// One event of the snapshot of my relations (kind 30078 signed by my
     /// key, `d` of `crate::relations`): the header (`page` 0) or a page.
     /// `content` is as the relay has it, NIP-44 to myself; only the DM
-    /// service, with the keys, reads it.
-    Relations { author: PubKey, created_at: Timestamp, page: usize, content: String },
+    /// service, with the keys, reads it. `id` tells a revision of another
+    /// device from the echo of my own.
+    Relations { author: PubKey, id: EventId, created_at: Timestamp, page: usize, content: String },
 }
 
 #[cfg(test)]

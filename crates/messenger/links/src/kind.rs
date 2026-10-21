@@ -19,6 +19,9 @@ pub enum LinkType {
     /// The card of a server, to add it as a private one (`server`,
     /// internal/messenger-wire.md «Ссылка»).
     Server,
+    /// A sign-in to the web cabinet of Veydan Cloud (`web`,
+    /// services/cloud/spec/cloud-api.md §16.2).
+    Web,
     Unknown(String),
 }
 
@@ -33,6 +36,7 @@ impl LinkType {
             "call-node" => Self::CallNode,
             "recover" => Self::Recover,
             "server" => Self::Server,
+            "web" => Self::Web,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -45,6 +49,7 @@ impl LinkType {
             Self::CallNode => "call-node",
             Self::Recover => "recover",
             Self::Server => "server",
+            Self::Web => "web",
             Self::Unknown(w) => w,
         }
     }
@@ -67,6 +72,9 @@ mod tests {
     fn a_call_node_is_written_with_a_hyphen() {
         assert_eq!(LinkType::of("call-node"), LinkType::CallNode);
         assert_eq!(LinkType::CallNode.as_str(), "call-node");
-        assert_eq!(LinkType::of("callnode"), LinkType::Unknown("callnode".into()));
+        assert_eq!(
+            LinkType::of("callnode"),
+            LinkType::Unknown("callnode".into())
+        );
     }
 }

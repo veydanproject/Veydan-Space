@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "另一台设备正在运行此配置文件。在这里启动会使其 Cookie 和会话产生分叉。",
     "profile_sync_in_use_confirm": "此配置文件正在 {device} 上使用。仍要启动？",
     "profile_sync_launch_anyway": "仍要启动",
+    "profile_launch_syncing": "正在同步文件…",
+    "profile_launch_syncing_hint": "文件同步完成后，配置文件将立即启动。",
     "profile_sync_diverged": "文件不一致",
     "profile_sync_take_remote": "使用远程文件",
     "profile_sync_push_mine": "保留我的版本",

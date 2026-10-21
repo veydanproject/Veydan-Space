@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Otro dispositivo está ejecutando este perfil. Iniciarlo aquí dividiría sus cookies y sesiones.",
     "profile_sync_in_use_confirm": "Este perfil está en uso en {device}. ¿Iniciarlo de todos modos?",
     "profile_sync_launch_anyway": "Iniciar de todos modos",
+    "profile_launch_syncing": "Sincronizando archivos…",
+    "profile_launch_syncing_hint": "El perfil se iniciará en cuanto se sincronicen sus archivos.",
     "profile_sync_diverged": "Los archivos no coinciden",
     "profile_sync_take_remote": "Usar los remotos",
     "profile_sync_push_mine": "Conservar los míos",

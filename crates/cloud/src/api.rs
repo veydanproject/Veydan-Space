@@ -223,6 +223,38 @@ pub struct Usage {
     #[serde(default)]
     pub breakdown: Vec<UsageLine>,
     pub reconciled_at: Option<u64>,
+    /// The media of chats of the key as this host counts them (§6); an
+    /// older host does not send it.
+    #[serde(default)]
+    pub media: Option<UsageMedia>,
+    /// The shared storage of the plan, `storage.total_bytes`: text, files
+    /// and media together (§6, §9); an older host does not send it.
+    #[serde(default)]
+    pub total: Option<UsageTotal>,
+}
+
+/// `media` of `GET /vault/v1/usage`: the bytes of the key's media of chats.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsageMedia {
+    pub used: u64,
+    /// `media.storage_bytes` of the plan; none: no limit of its own.
+    #[serde(default)]
+    pub limit: Option<u64>,
+    /// False: the host has no index of media and counts only what went
+    /// through it.
+    #[serde(default)]
+    pub known: bool,
+    #[serde(default)]
+    pub reconciled_at: Option<u64>,
+}
+
+/// `total` of `GET /vault/v1/usage`: text + files + media.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsageTotal {
+    pub used: u64,
+    /// `storage.total_bytes` of the plan; none: no shared storage.
+    #[serde(default)]
+    pub limit: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,6 +270,73 @@ pub struct UsageLine {
     pub pool: String,
     pub bytes: u64,
     pub objects: u64,
+}
+
+/// `GET /cloud/v1/web/login?id=` (16.4): a sign-in to the web cabinet as
+/// the screen of approval shows it before anything is pressed; never the
+/// npub.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebLogin {
+    pub id: String,
+    /// `qr` or `code`.
+    pub method: String,
+    /// `pending`, `approved`, `denied`, `expired`, `used`.
+    pub state: String,
+    /// Two capital letters, or empty when the cabinet did not know.
+    #[serde(default)]
+    pub country: String,
+    #[serde(default)]
+    pub ua_family: String,
+    pub created_at: u64,
+    pub expires_at: u64,
+}
+
+/// The answer of `POST /cloud/v1/web/approve|deny|confirm` (16.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebState {
+    pub state: String,
+    /// `deny` of a sign-in by code: the code sign-in is frozen until then.
+    #[serde(default)]
+    pub frozen_until: Option<u64>,
+}
+
+/// One live session of the web cabinet (16.3 `sessions`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebSession {
+    pub id: String,
+    /// `qr` or `code`.
+    pub method: String,
+    pub created_at: u64,
+    pub last_seen_at: u64,
+    #[serde(default)]
+    pub country: String,
+    #[serde(default)]
+    pub ua_family: String,
+    /// The session that asks: always false for the app, which has none.
+    #[serde(default)]
+    pub current: bool,
+}
+
+/// The freeze of the code sign-in (16.2 `web_login_freezes`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebFreeze {
+    pub until: u64,
+}
+
+/// `GET /cloud/v1/web/sessions` (16.4). `freeze` only from a server that
+/// reports it (the contract names it in `me` of 16.3); without it the app
+/// offers no button to lift it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebSessions {
+    pub sessions: Vec<WebSession>,
+    #[serde(default)]
+    pub freeze: Option<WebFreeze>,
+}
+
+/// `POST /cloud/v1/web/sessions/revoke` (16.4): how many sessions ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebRevoked {
+    pub revoked: u64,
 }
 
 /// The client of Veydan Cloud (cloud-api.md §12). Requests of the identity
@@ -282,6 +381,21 @@ pub trait CloudApi: Send + Sync {
     fn storage<'a>(&'a self, prefix: &'a str) -> SeamFuture<'a, Arc<dyn Storage>>;
     /// `GET /vault/v1/usage` of the same host (spec/vstore.md §6).
     fn usage(&self) -> SeamFuture<'_, Usage>;
+    /// `GET /cloud/v1/web/login?id=`, not signed (16.4).
+    fn web_login<'a>(&'a self, id: &'a str) -> SeamFuture<'a, WebLogin>;
+    /// `POST /cloud/v1/web/approve` (16.4).
+    fn web_approve<'a>(&'a self, id: &'a str) -> SeamFuture<'a, WebState>;
+    /// `POST /cloud/v1/web/deny` (16.4).
+    fn web_deny<'a>(&'a self, id: &'a str) -> SeamFuture<'a, WebState>;
+    /// `POST /cloud/v1/web/confirm` (16.4).
+    fn web_confirm<'a>(&'a self, id: &'a str) -> SeamFuture<'a, WebState>;
+    /// `POST /cloud/v1/web/unfreeze` (16.4).
+    fn web_unfreeze(&self) -> SeamFuture<'_, ()>;
+    /// `GET /cloud/v1/web/sessions` (16.4).
+    fn web_sessions(&self) -> SeamFuture<'_, WebSessions>;
+    /// `POST /cloud/v1/web/sessions/revoke` (16.4): one session, or all
+    /// of them for `None`.
+    fn web_sessions_revoke<'a>(&'a self, id: Option<&'a str>) -> SeamFuture<'a, WebRevoked>;
 }
 
 /// The client of a product whose messenger offers no way to the hosts of
@@ -355,6 +469,27 @@ impl CloudApi for Unconfigured {
         no_host()
     }
     fn usage(&self) -> SeamFuture<'_, Usage> {
+        no_host()
+    }
+    fn web_login<'a>(&'a self, _id: &'a str) -> SeamFuture<'a, WebLogin> {
+        no_host()
+    }
+    fn web_approve<'a>(&'a self, _id: &'a str) -> SeamFuture<'a, WebState> {
+        no_host()
+    }
+    fn web_deny<'a>(&'a self, _id: &'a str) -> SeamFuture<'a, WebState> {
+        no_host()
+    }
+    fn web_confirm<'a>(&'a self, _id: &'a str) -> SeamFuture<'a, WebState> {
+        no_host()
+    }
+    fn web_unfreeze(&self) -> SeamFuture<'_, ()> {
+        no_host()
+    }
+    fn web_sessions(&self) -> SeamFuture<'_, WebSessions> {
+        no_host()
+    }
+    fn web_sessions_revoke<'a>(&'a self, _id: Option<&'a str>) -> SeamFuture<'a, WebRevoked> {
         no_host()
     }
 }
@@ -465,6 +600,24 @@ enum Auth<'a> {
 
 fn not_hex64(text: &str) -> bool {
     text.len() != 64 || !text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Whether `id` is an id of the web cabinet (a sign-in, an action, a
+/// session): 16 hex in lower case (16.2). It goes into a query, so nothing
+/// else is sent.
+pub fn is_web_id(id: &str) -> bool {
+    id.len() == 16 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn web_id(id: &str) -> Result<(), CloudError> {
+    if is_web_id(id) {
+        Ok(())
+    } else {
+        Err(CloudError::new(
+            code::BAD_REQUEST,
+            "the id is 16 hex in lower case",
+        ))
+    }
 }
 
 /// The server's clock in an answer of success (4.3 `server_time`).
@@ -922,6 +1075,91 @@ impl CloudApi for HttpCloud {
             )
         })
     }
+
+    fn web_login<'a>(&'a self, id: &'a str) -> SeamFuture<'a, WebLogin> {
+        Box::pin(async move {
+            web_id(id)?;
+            let path = format!("/cloud/v1/web/login?id={id}");
+            plain(self.ask("GET", &path, None, Auth::Anonymous).await)
+        })
+    }
+
+    fn web_approve<'a>(&'a self, id: &'a str) -> SeamFuture<'a, WebState> {
+        Box::pin(async move {
+            web_id(id)?;
+            let body = serde_json::json!({ "id": id });
+            plain(
+                self.ask("POST", "/cloud/v1/web/approve", Some(body), Auth::Identity)
+                    .await,
+            )
+        })
+    }
+
+    fn web_deny<'a>(&'a self, id: &'a str) -> SeamFuture<'a, WebState> {
+        Box::pin(async move {
+            web_id(id)?;
+            let body = serde_json::json!({ "id": id });
+            plain(
+                self.ask("POST", "/cloud/v1/web/deny", Some(body), Auth::Identity)
+                    .await,
+            )
+        })
+    }
+
+    fn web_confirm<'a>(&'a self, id: &'a str) -> SeamFuture<'a, WebState> {
+        Box::pin(async move {
+            web_id(id)?;
+            let body = serde_json::json!({ "id": id });
+            plain(
+                self.ask("POST", "/cloud/v1/web/confirm", Some(body), Auth::Identity)
+                    .await,
+            )
+        })
+    }
+
+    fn web_unfreeze(&self) -> SeamFuture<'_, ()> {
+        Box::pin(async move {
+            let done = self
+                .request(
+                    "POST",
+                    "/cloud/v1/web/unfreeze",
+                    Some(serde_json::json!({})),
+                    Auth::Identity,
+                )
+                .await;
+            plain(done).map(|_| ())
+        })
+    }
+
+    fn web_sessions(&self) -> SeamFuture<'_, WebSessions> {
+        Box::pin(async move {
+            plain(
+                self.ask("GET", "/cloud/v1/web/sessions", None, Auth::Identity)
+                    .await,
+            )
+        })
+    }
+
+    fn web_sessions_revoke<'a>(&'a self, id: Option<&'a str>) -> SeamFuture<'a, WebRevoked> {
+        Box::pin(async move {
+            let body = match id {
+                Some(id) => {
+                    web_id(id)?;
+                    serde_json::json!({ "id": id })
+                }
+                None => serde_json::json!({ "all": true }),
+            };
+            plain(
+                self.ask(
+                    "POST",
+                    "/cloud/v1/web/sessions/revoke",
+                    Some(body),
+                    Auth::Identity,
+                )
+                .await,
+            )
+        })
+    }
 }
 
 #[cfg(test)]
@@ -953,6 +1191,13 @@ mod tests {
             api.challenge(Purpose::Activate).await.err(),
             api.storage("notes/").await.err(),
             api.usage().await.err(),
+            api.web_login("0123456789abcdef").await.err(),
+            api.web_approve("0123456789abcdef").await.err(),
+            api.web_deny("0123456789abcdef").await.err(),
+            api.web_confirm("0123456789abcdef").await.err(),
+            api.web_unfreeze().await.err(),
+            api.web_sessions().await.err(),
+            api.web_sessions_revoke(None).await.err(),
         ];
         for e in codes {
             assert_eq!(e.map(|e| e.code).as_deref(), Some(code::NO_HOST));
@@ -986,7 +1231,14 @@ mod tests {
             "usage": null, "recovery": null, "last_seen_at": null, "server_time": null,
         });
         let account: Account = serde_json::from_value(json).expect("account");
-        assert_eq!(account.next, Some(NextPlan { plan: "pro".into(), since: 1793604345, until: Some(1796196345) }));
+        assert_eq!(
+            account.next,
+            Some(NextPlan {
+                plan: "pro".into(),
+                since: 1793604345,
+                until: Some(1796196345)
+            })
+        );
     }
 
     /// The example of 4.5 reads: a free plan without prices and a paid one
@@ -1078,6 +1330,26 @@ mod tests {
         .expect("usage");
         assert_eq!(usage.pools["text"].limit, 2);
         assert_eq!(usage.breakdown[0].pool, "files");
+        // An older host sends neither the media nor the total.
+        assert_eq!((usage.media, usage.total), (None, None));
+        let shared: Usage = serde_json::from_value(serde_json::json!({
+            "as_of": 1791901234u64, "host": "eu-1", "plan": "all10", "state": "paid", "until": null,
+            "table_serial": 1843, "max_object_bytes": 67108864,
+            "pools": { "text": { "used": 1, "limit": 10, "objects": 3 } },
+            "reconciled_at": null,
+            "media": { "used": 4, "limit": null, "known": true, "reconciled_at": 1791900000u64 },
+            "total": { "used": 5, "limit": 10 },
+        }))
+        .expect("usage with a total");
+        let media = shared.media.expect("media");
+        assert_eq!((media.used, media.limit, media.known), (4, None, true));
+        assert_eq!(
+            shared.total,
+            Some(UsageTotal {
+                used: 5,
+                limit: Some(10)
+            })
+        );
     }
 
     fn answer(status: u16, headers: &[(&str, &str)], body: &str) -> HttpResponse {

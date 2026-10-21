@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "belum pernah",
     "msg_push_ticket_revoke": "Cabut",
     "msg_push_ticket_revoke_title": "Cabut tiket {ticket}?",
-    "msg_push_ticket_revoke_text": "Server yang memegangnya tidak bisa lagi membangunkan ponsel ini. Server Anda akan mendapat tiket baru dengan sendirinya."
+    "msg_push_ticket_revoke_text": "Server yang memegangnya tidak bisa lagi membangunkan ponsel ini. Server Anda akan mendapat tiket baru dengan sendirinya.",
+    "msg_card_web_title": "Tautan masuk situs web Veydan Cloud",
+    "msg_card_web_text": "Masuk ke situs web hanya disetujui dengan memindai kode QR-nya di aplikasi. Jangan pernah masuk lewat tautan yang dikirim orang lain kepada Anda.",
+    "msg_inv_web_link": "Ini adalah tautan masuk situs web Veydan Cloud.",
+    "msg_inv_web_open": "Buka masuk situs web"
   },
   "mobile": {}
 }

@@ -33,6 +33,8 @@
       account.state
     ],
   );
+  /** A plan with a shared storage shows that room, for everything; the files' own number would be a second figure of it. */
+  const total = $derived(account.limits['storage.total_bytes']);
   const files = $derived(account.limits['vault.files_bytes']);
   const chatFile = $derived(account.limits['media.max_file_bytes']);
   const retention = $derived(account.limits['media.retention_days']);
@@ -61,9 +63,10 @@
     <p class="line">{$t('cloud_next_plan', { plan: nextName, date: dateOf(account.next.since, $locale) })}</p>
   {/if}
 
-  {#if files || chatFile || retention}
+  {#if total || files || chatFile || retention}
     <dl class="facts">
-      {#if files}<div><dd>{formatBytes(files)}</dd><dt>{$t('cloud_fact_files')}</dt></div>{/if}
+      {#if total}<div><dd>{formatBytes(total)}</dd><dt>{$t('cloud_fact_total')}</dt></div>
+      {:else if files}<div><dd>{formatBytes(files)}</dd><dt>{$t('cloud_fact_files')}</dt></div>{/if}
       {#if chatFile}<div><dd>{formatBytes(chatFile)}</dd><dt>{$t('cloud_fact_chat_file')}</dt></div>{/if}
       {#if retention}<div><dd>{$t('cloud_fact_days', { days: String(retention) })}</dd><dt>{$t('cloud_fact_retention')}</dt></div>{/if}
     </dl>

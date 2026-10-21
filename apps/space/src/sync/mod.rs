@@ -52,12 +52,13 @@ async fn profile_files_active(core: &Core) -> bool {
 /// apply a snapshot that waited, take the lease. Called by the launch with the
 /// lock of the profile's files held (`BrowserState::files`), so the snapshot
 /// that waited is never applied beside a cycle that applies or collects the
-/// same profile.
+/// same profile. `applying` runs before that snapshot is downloaded.
 #[cfg(desktop)]
 pub async fn before_profile_launch(
     app: &AppHandle,
     profile_id: &str,
     force: bool,
+    applying: impl FnOnce(),
 ) -> CmdResult<()> {
     let core = app.state::<Core>();
     let sync = app.state::<SyncManager>();
@@ -71,6 +72,7 @@ pub async fn before_profile_launch(
         if profile_files_active(&core).await
             && profile_files::has_pending(&core, profile_id).await?
         {
+            applying();
             let engine = open_engine(&core).await?;
             profile_files::apply_pending(&engine, &core, &sync, app, profile_id).await?;
         }

@@ -20,7 +20,7 @@
   import { chatStore } from './chatStore.svelte';
   import { contactHaystacks, matchesQuery } from '../shared/search';
   import { inviteStore } from '../invites/inviteStore.svelte';
-  import { addressKind, invitedContact, normalizeCode, type InvitedContact } from '../invites/invites';
+  import { addressKind, invitedContact, normalizeCode, webLoginHref, type InvitedContact } from '../invites/invites';
   import { goto } from '$app/navigation';
   import { contactsHref, qrHref } from '../mobile/routes';
   import { acceptServer } from '../servers/serverAccept.svelte';
@@ -52,6 +52,8 @@
   /** What the runtime read in a pasted link: the person, and the secret when it carries one. */
   let link = $state<InvitedContact | null>(null);
   let linkError = $state('');
+  /** A pasted link of a sign-in to the web cabinet: its id, offered to the screen of approval. */
+  let webId = $state<string | null>(null);
 
   const q = $derived(key.trim());
   const kind = $derived(addressKind(q));
@@ -72,13 +74,15 @@
   let asked = '';
   $effect(() => {
     const wanted = q;
-    if (kind !== 'link') { link = null; linkError = ''; asked = ''; return; }
+    if (kind !== 'link') { link = null; linkError = ''; webId = null; asked = ''; return; }
     if (wanted === asked) return;
     asked = wanted;
     link = null;
     linkError = '';
+    webId = null;
     messengerApi.links.inspect([wanted as InternalLinkText]).then(([view]) => {
       if (asked !== wanted) return;
+      if (view?.kind === 'web') { webId = view.id; return; }
       const c = invitedContact(view);
       if (!c) linkError = $t('msg_inv_err_not_contact');
       else if (c.isMe) linkError = $t('msg_inv_err_is_me');
@@ -88,7 +92,7 @@
   });
 
   function reset() {
-    key = ''; code = ''; text = ''; codeOpen = false; link = null; linkError = ''; asked = '';
+    key = ''; code = ''; text = ''; codeOpen = false; link = null; linkError = ''; webId = null; asked = '';
   }
 
   async function start(p: string) {
@@ -174,6 +178,12 @@
     {/if}
 
     {#if linkError}<div class="error-msg">{linkError}</div>{/if}
+    {#if webId}
+      {@const id = webId}
+      <!-- Pasted here by me: the screen of approval asks before anything is approved. -->
+      <p class="hint">{$t('msg_inv_web_link')}</p>
+      <button class="btn btn-primary" onclick={() => { reset(); go(webLoginHref(id)); }}><Icon name="world" size={13} />{$t('msg_inv_web_open')}</button>
+    {/if}
     {#if link}
       <div class="person">
         <Avatar url={null} label={link.name || '?'} seed={link.pubkey} size={34} />

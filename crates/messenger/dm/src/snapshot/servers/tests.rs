@@ -350,6 +350,7 @@ async fn the_build_before_servers_and_this_one_read_each_other() {
     assert!(h.servers.is_none() && h.servers_removed.is_empty() && h.private_peers.is_empty());
     let content = nip44::encrypt(keys.secret_key(), &me, old, nip44::Version::V2).unwrap();
     let piece = Piece {
+        id: None,
         page: 0,
         created_at: now(),
         content,
@@ -382,6 +383,7 @@ async fn the_build_before_servers_and_this_one_read_each_other() {
         .apply_relations_snapshot(
             &keys,
             &[Piece {
+                id: None,
                 page: 0,
                 created_at: now(),
                 content,
@@ -435,6 +437,7 @@ async fn entries_are_read_one_by_one_and_capped() {
         .apply_relations_snapshot(
             &keys,
             &[Piece {
+                id: None,
                 page: 0,
                 created_at: now(),
                 content,
@@ -604,4 +607,52 @@ async fn the_will_of_a_private_chat_reaches_my_other_device() {
         ScreenMode::RequestSent,
         "the home chat has a will of its own"
     );
+}
+
+/// Two devices that build a revision in the same second: the relay keeps
+/// one header under the `d` (the smaller id). The device whose header went
+/// owes the list, and its next revision carries the union; the other owes
+/// nothing, and the next revision marks nothing on it, so the two never
+/// take turns. The echo of my own header is no loss.
+#[tokio::test]
+async fn the_device_whose_revision_the_relay_dropped_publishes_the_union() {
+    let keys = Keys::generate();
+    let me = keys.public_key();
+    let (a, b) = (device(&keys).await, device(&keys).await);
+    let at = now();
+    let (rev_a, ev_a) = a.build_relations_snapshot(&keys, at).await.unwrap();
+    let id = servers::put_private(b.store(), &server("wss://s1.example"))
+        .await
+        .unwrap();
+    let (rev_b, ev_b) = b.build_relations_snapshot(&keys, at).await.unwrap();
+    assert_eq!(rev_a, rev_b, "one revision built twice");
+    for d in [&a, &b] {
+        d.relations_settled().await.unwrap();
+    }
+    a.apply_relations_snapshot(&keys, &pieces(&ev_a, &me))
+        .await
+        .unwrap();
+    assert!(!a.relations_owed().await.unwrap(), "my own echo");
+
+    let a_kept = ev_a[0].id.as_hex() < ev_b[0].id.as_hex();
+    a.apply_relations_snapshot(&keys, &pieces(&ev_b, &me))
+        .await
+        .unwrap();
+    b.apply_relations_snapshot(&keys, &pieces(&ev_a, &me))
+        .await
+        .unwrap();
+    assert_eq!(a.relations_owed().await.unwrap(), !a_kept);
+    assert_eq!(b.relations_owed().await.unwrap(), a_kept);
+
+    let (lost, kept) = if a_kept { (&b, &a) } else { (&a, &b) };
+    lost.relations_settled().await.unwrap();
+    let (rev, events) = lost.build_relations_snapshot(&keys, at).await.unwrap();
+    assert_eq!(rev, rev_a + 1);
+    let h: Header = serde_json::from_str(&plain_header(&keys, &events)).unwrap();
+    assert_eq!(h.servers.as_ref().map(Vec::len), Some(1), "the union");
+    kept.apply_relations_snapshot(&keys, &pieces(&events, &me))
+        .await
+        .unwrap();
+    assert!(!kept.relations_owed().await.unwrap(), "no turn back");
+    assert!(servers::get(kept.store(), &id).await.unwrap().is_some());
 }

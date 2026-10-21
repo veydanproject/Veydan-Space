@@ -13,6 +13,7 @@ import {
   poolsOf,
   SHARES_REVOCABLE,
   shownAccount,
+  totalPool,
   viewOf,
 } from '$lib/cloud/account';
 
@@ -77,6 +78,26 @@ describe('the pools of the account', () => {
     expect(pools[1].percent).toBe(0);
     expect(pools[2]).toEqual({ id: 'media', used: 7340032, limit: null, percent: null });
     expect(poolsOf(null)).toEqual([]);
+    expect(totalPool(pools)).toBeNull();
+  });
+
+  it('put the shared storage of the plan first, counting files, text and media together', () => {
+    const gib = 1024 ** 3;
+    const shared: CloudAccount = {
+      ...account,
+      limits: { 'storage.total_bytes': 10 * gib, 'vault.files_bytes': 10 * gib, 'vault.text_bytes': 10 * gib },
+      usage: { as_of: 1, vault: { files_bytes: 2 * gib, text_bytes: gib / 2 }, media: { upload_today_bytes: 0, storage_bytes: gib / 2 } },
+    };
+    const pools = poolsOf(shownAccount(status({ account: shared })));
+    expect(pools.map((p) => p.id)).toEqual(['total', 'files', 'text', 'media']);
+    expect(pools[0]).toEqual({ id: 'total', used: 3 * gib, limit: 10 * gib, percent: 30 });
+    expect(totalPool(pools)).toBe(pools[0]);
+    // Nothing of the vault or the media yet: the total is there, empty.
+    const fresh = poolsOf(shownAccount(status({ account: { ...shared, usage: null } })));
+    expect(fresh[0]).toEqual({ id: 'total', used: 0, limit: 10 * gib, percent: 0 });
+    // A total of 0 is no shared storage.
+    const none = poolsOf(shownAccount(status({ account: { ...shared, limits: { 'storage.total_bytes': 0 } } })));
+    expect(none.map((p) => p.id)).toEqual(['files', 'text', 'media']);
   });
 
   it('write bytes for a person', () => {

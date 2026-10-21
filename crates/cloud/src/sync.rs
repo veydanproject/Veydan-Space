@@ -271,7 +271,8 @@ pub fn start(app: AppHandle) -> BoxFuture<'static, Result<(), AppError>> {
 /// One pool of the plan and how full it is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PoolLevel {
-    /// `text` or `files` (spec/vstore.md §9).
+    /// `text` or `files` (spec/vstore.md §9); `media` and `total` when the
+    /// plan sets `media.storage_bytes` or `storage.total_bytes` (§6).
     pub pool: String,
     /// Bytes in the pool.
     pub used: u64,
@@ -357,20 +358,37 @@ fn category_of(line: &UsageLine) -> &'static str {
     }
 }
 
+fn pool_level(pool: &str, used: u64, limit: u64) -> PoolLevel {
+    PoolLevel {
+        pool: pool.to_owned(),
+        used,
+        limit,
+        percent: percent_of(used, limit),
+        level: level_of(used, limit),
+    }
+}
+
 /// The pools with their levels and the breakdown by category, the largest
 /// first.
 pub fn summarize(usage: &Usage) -> (Vec<PoolLevel>, u8, Vec<Category>) {
     let pools: Vec<PoolLevel> = usage
         .pools
         .iter()
-        .map(|(pool, p)| PoolLevel {
-            pool: pool.clone(),
-            used: p.used,
-            limit: p.limit,
-            percent: percent_of(p.used, p.limit),
-            level: level_of(p.used, p.limit),
-        })
+        .map(|(pool, p)| pool_level(pool, p.used, p.limit))
         .collect();
+    // The media of chats and the shared storage count as pools when the
+    // plan sets them (spec/vstore.md §6): a full total stops the vault too.
+    let mut pools = pools;
+    if let Some(media) = &usage.media {
+        if let Some(limit) = media.limit {
+            pools.push(pool_level("media", media.used, limit));
+        }
+    }
+    if let Some(total) = &usage.total {
+        if let Some(limit) = total.limit {
+            pools.push(pool_level("total", total.used, limit));
+        }
+    }
     let level = pools.iter().map(|p| p.level).max().unwrap_or(0);
     let mut categories: Vec<Category> = Vec::new();
     for line in &usage.breakdown {
@@ -746,6 +764,34 @@ mod tests {
             ]
         );
         assert_eq!(categories[1].objects, 103);
+        // A host that sends the media and the total: they are pools too.
+        let mut shared = u.clone();
+        shared.media = Some(crate::api::UsageMedia {
+            used: 500,
+            limit: None,
+            known: true,
+            reconciled_at: None,
+        });
+        shared.total = Some(crate::api::UsageTotal {
+            used: 1843200 + 1932735283 + 500,
+            limit: Some(2147483648),
+        });
+        let (pools, level, _) = summarize(&shared);
+        let names: Vec<_> = pools.iter().map(|p| p.pool.as_str()).collect();
+        assert_eq!(
+            names,
+            ["files", "text", "total"],
+            "media without a limit is no pool"
+        );
+        let total = pools.iter().find(|p| p.pool == "total").expect("total");
+        assert_eq!((total.percent, total.level), (90, WARN_PERCENT));
+        assert_eq!(level, WARN_PERCENT);
+        // Without a limit the total is not a pool either.
+        shared.total = Some(crate::api::UsageTotal {
+            used: 5,
+            limit: None,
+        });
+        assert_eq!(summarize(&shared).0.len(), 2);
     }
 
     #[test]
@@ -763,6 +809,25 @@ mod tests {
         assert_eq!(level, FULL_PERCENT);
         assert_eq!(
             pools.iter().find(|p| p.pool == "files").map(|p| p.percent),
+            Some(100)
+        );
+        // The pools of the vault quiet, the media or the total full: the level is theirs.
+        let mut quiet = usage((10, 100), (10, 100));
+        quiet.media = Some(crate::api::UsageMedia {
+            used: 95,
+            limit: Some(100),
+            known: true,
+            reconciled_at: None,
+        });
+        assert_eq!(summarize(&quiet).1, WARN_PERCENT);
+        quiet.total = Some(crate::api::UsageTotal {
+            used: 115,
+            limit: Some(100),
+        });
+        let (pools, level, _) = summarize(&quiet);
+        assert_eq!(level, FULL_PERCENT);
+        assert_eq!(
+            pools.iter().find(|p| p.pool == "total").map(|p| p.percent),
             Some(100)
         );
     }

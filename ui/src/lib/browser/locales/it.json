@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Questo profilo è in esecuzione su un altro dispositivo. Avviarlo qui sdoppierebbe i cookie e le sessioni.",
     "profile_sync_in_use_confirm": "Questo profilo è in uso su {device}. Avviarlo comunque?",
     "profile_sync_launch_anyway": "Avvia comunque",
+    "profile_launch_syncing": "Sincronizzazione dei file…",
+    "profile_launch_syncing_hint": "Il profilo si avvia appena i suoi file sono sincronizzati.",
     "profile_sync_diverged": "I file divergono",
     "profile_sync_take_remote": "Usa i file remoti",
     "profile_sync_push_mine": "Mantieni i miei",

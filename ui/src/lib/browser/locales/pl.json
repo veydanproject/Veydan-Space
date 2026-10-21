@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Ten profil działa na innym urządzeniu. Uruchomienie go tutaj spowoduje rozbieżność jego plików cookie i sesji.",
     "profile_sync_in_use_confirm": "Ten profil jest w użyciu na: {device}. Uruchomić mimo to?",
     "profile_sync_launch_anyway": "Uruchom mimo to",
+    "profile_launch_syncing": "Synchronizacja plików…",
+    "profile_launch_syncing_hint": "Profil uruchomi się, gdy tylko jego pliki zostaną zsynchronizowane.",
     "profile_sync_diverged": "Pliki są rozbieżne",
     "profile_sync_take_remote": "Użyj plików zdalnych",
     "profile_sync_push_mine": "Zachowaj moje",

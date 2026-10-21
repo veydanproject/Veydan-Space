@@ -167,25 +167,34 @@ export function bestSaving(plans: CloudPlanOffer[], currency: string | null, per
 
 /** A line of what a plan gives: which limit, its number, and whether it is more than the free plan's. */
 export interface PlanFeature {
-  id: 'files' | 'chat_file' | 'retention' | 'upload';
+  id: 'total' | 'files' | 'chat_file' | 'retention' | 'upload';
   value: number;
   more: boolean;
 }
 
 const FEATURE_KEYS: [PlanFeature['id'], string][] = [
+  ['total', 'storage.total_bytes'],
   ['files', 'vault.files_bytes'],
   ['chat_file', 'media.max_file_bytes'],
   ['retention', 'media.retention_days'],
   ['upload', 'media.upload_per_day'],
 ];
 
-/** What a plan gives by its limits, in the order a person reads them; a limit the plan does not carry is left out. */
+/**
+ * What a plan gives by its limits, in the order a person reads them; a
+ * limit the plan does not carry is left out. A plan with a shared storage
+ * says it alone: the room of the files beside it would be a second number
+ * of the same room. The shared storage is more than the free plan's when
+ * it is more than the free plan's own total, or its files where it has none.
+ */
 export function featuresOf(plan: CloudPlanOffer, free: CloudPlanOffer | null): PlanFeature[] {
+  const shared = (plan.limits['storage.total_bytes'] ?? 0) > 0;
   const out: PlanFeature[] = [];
   for (const [id, key] of FEATURE_KEYS) {
+    if (id === 'files' && shared) continue;
     const value = plan.limits[key];
     if (!value || value <= 0) continue;
-    const base = free?.limits[key] ?? 0;
+    const base = (id === 'total' ? (free?.limits[key] ?? free?.limits['vault.files_bytes']) : free?.limits[key]) ?? 0;
     out.push({ id, value, more: !plan.free && value > base });
   }
   return out;

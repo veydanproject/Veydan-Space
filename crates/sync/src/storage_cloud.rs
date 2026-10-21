@@ -744,6 +744,9 @@ mod tests {
         page: usize,
         /// The pool `files`; 0 is no limit.
         files_limit: u64,
+        /// The shared storage of the plan, every pool together
+        /// (`storage.total_bytes`); 0 is none.
+        total_limit: u64,
         /// The server's clock runs this far ahead of the device's.
         skew: i64,
         /// A gateway answers instead of vstore: `502` with no body.
@@ -945,6 +948,14 @@ mod tests {
                         return error(Code::PAYLOAD_TOO_LARGE, "quota", extra);
                     }
                 }
+                if v.total_limit > 0 {
+                    let used: u64 = v.objects.values().map(|o| o.len() as u64).sum();
+                    if used - old.unwrap_or(0) + body.len() as u64 > v.total_limit {
+                        let extra =
+                            json!({ "pool": "total", "used": used, "limit": v.total_limit });
+                        return error(Code::PAYLOAD_TOO_LARGE, "quota", extra);
+                    }
+                }
                 v.objects.insert(key, body.to_vec());
                 let status = if old.is_some() {
                     Code::OK
@@ -1105,6 +1116,31 @@ mod tests {
             e.to_string(),
             "quota: the pool files is full (8 of 10 bytes)"
         );
+    }
+
+    /// A full shared storage (`413 quota`, pool `total`) holds the text as
+    /// well: its word passes as the host wrote it.
+    #[tokio::test]
+    async fn a_full_total_is_quota_for_the_text_too() {
+        let (host, _shared) = serve(Vault {
+            total_limit: 12,
+            ..Default::default()
+        })
+        .await;
+        let s = storage(&[host]);
+        s.put("blobs/small", b"12345678").await.unwrap();
+        match s.put("devices/0a/log/00000001.bin", b"12345").await {
+            Err(SyncError::Quota { pool, used, limit }) => {
+                assert_eq!((pool.as_str(), used, limit), ("total", 8, 12));
+            }
+            other => panic!("not quota: {other:?}"),
+        }
+        assert!(matches!(
+            s.put("blobs/other", b"12345").await,
+            Err(SyncError::Quota { pool, .. }) if pool == "total"
+        ));
+        // What fits under the whole still goes.
+        s.put("devices/0a/log/00000001.bin", b"1234").await.unwrap();
     }
 
     #[tokio::test]

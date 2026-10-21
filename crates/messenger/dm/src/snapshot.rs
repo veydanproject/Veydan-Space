@@ -65,6 +65,11 @@ pub const KEY_PRIVACY_DECIDED_AT: &str = "privacy.decided_at";
 /// (`Header::wills`): a device that held them before it learned to write
 /// them owes the list once (`DmService::owe_wills_once`).
 pub const KEY_WILLS_PUBLISHED: &str = "relations.wills_published";
+/// The header this device published last, `<rev> <created_at> <id>`: a
+/// header of another device of no newer revision that the relay keeps over
+/// it (newer, or as new with the smaller id) took its `d`, and my revision
+/// is lost (`DmService::apply_relations_snapshot`).
+pub const KEY_PUBLISHED: &str = "relations.published";
 
 /// What this device knows of my list after the fetch at the start of a
 /// session: nothing (no snapshot on the relays, or none reached), the
@@ -111,9 +116,11 @@ impl Shared {
 }
 
 /// One event of the snapshot as a relay gave it, before it is read: the
-/// header (`page` 0) or a page.
+/// header (`page` 0) or a page. `id` is the id of the event, when known:
+/// without it a revision of another device is not told from my own.
 #[derive(Clone, Debug)]
 pub struct Piece {
+    pub id: Option<EventId>,
     pub page: usize,
     pub created_at: i64,
     pub content: String,
@@ -128,7 +135,28 @@ impl Piece {
             return None;
         }
         let page = relations_page(&e.tags.identifier()?)?;
-        Some(Piece { page, created_at: e.created_at.as_secs() as i64, content: e.content })
+        Some(Piece { id: EventId::parse(&e.id.to_hex()), page, created_at: e.created_at.as_secs() as i64, content: e.content })
+    }
+}
+
+/// The header this device published last (`KEY_PUBLISHED`).
+struct Published {
+    rev: u64,
+    created_at: i64,
+    id: EventId,
+}
+
+impl Published {
+    /// A header of another device of no newer revision than mine was built
+    /// without it (a build is one more than every revision it saw), and the
+    /// relay keeps it over mine when it is newer, or as new with the smaller
+    /// id (NIP-01): two devices that built in the same second, and only the
+    /// one whose header went is owed, so the two never take turns.
+    fn lost_to(&self, header: &Piece, rev: u64) -> bool {
+        let Some(id) = &header.id else { return false };
+        id != &self.id
+            && rev <= self.rev
+            && (header.created_at > self.created_at || (header.created_at == self.created_at && id.as_hex() < self.id.as_hex()))
     }
 }
 
@@ -576,6 +604,15 @@ impl DmService {
         Ok(self.relations.owed.load(Ordering::SeqCst) || settings::get(&self.store, KEY_OWED).await?.is_some())
     }
 
+    /// The header this device published last (`KEY_PUBLISHED`).
+    async fn published_header(&self) -> Result<Option<Published>> {
+        let Some(v) = settings::get(&self.store, KEY_PUBLISHED).await? else { return Ok(None) };
+        let mut it = v.split(' ');
+        let (Some(rev), Some(created_at), Some(id)) = (it.next(), it.next(), it.next()) else { return Ok(None) };
+        let (Ok(rev), Ok(created_at), Some(id)) = (rev.parse(), created_at.parse(), EventId::parse(id)) else { return Ok(None) };
+        Ok(Some(Published { rev, created_at, id }))
+    }
+
     /// The list is being published: a decision taken from here on marks
     /// again. Cleared before the build, so nothing taken during it is lost.
     pub async fn relations_settled(&self) -> Result<()> {
@@ -649,6 +686,9 @@ impl DmService {
                 id: EventId::parse(&event.id.to_hex()).ok_or_else(|| crypto("bad event id"))?,
                 json: serde_json::to_value(&event)?,
             });
+        }
+        if let Some(header) = events.first() {
+            settings::set(&self.store, KEY_PUBLISHED, &format!("{rev} {created_at} {}", header.id.as_hex())).await?;
         }
         settings::set(&self.store, KEY_WILLS_PUBLISHED, "1").await?;
         settings::set(&self.store, KEY_SEEN_CREATED_AT, &created_at.to_string()).await?;
@@ -756,18 +796,24 @@ impl DmService {
     /// from a revision the newer one outgrew comes alone through the live
     /// subscription, after the newer header was taken. The effects are
     /// what the decisions did here (a chat gone, a held text shown, the
-    /// book); a copy marks nothing as owed.
+    /// book); a copy marks nothing as owed, unless it took the place of the
+/// revision this device published (`Published::lost_to`).
     pub async fn apply_relations_snapshot(&self, keys: &Keys, pieces: &[Piece]) -> Result<(Applied, Vec<Effect>)> {
         let me = keys.public_key();
         let mut headers: Vec<(i64, Header)> = Vec::new();
         let mut pages: Vec<(usize, Page)> = Vec::new();
         let mut seen_at = 0i64;
+        let mut lost = false;
+        let published = self.published_header().await?;
         for p in pieces {
             seen_at = seen_at.max(p.created_at);
             let Ok(plain) = nip44::decrypt(keys.secret_key(), &me, &p.content) else { continue };
             if p.page == 0 {
                 match serde_json::from_str::<Header>(&plain) {
-                    Ok(h) if h.v == SNAPSHOT_VERSION => headers.push((p.created_at, h)),
+                    Ok(h) if h.v == SNAPSHOT_VERSION => {
+                        lost |= published.as_ref().is_some_and(|mine| mine.lost_to(p, h.rev));
+                        headers.push((p.created_at, h));
+                    }
                     _ => {}
                 }
             } else {
@@ -781,6 +827,12 @@ impl DmService {
         // next publication is dated after it.
         if seen_at > get_i64(&self.store, KEY_SEEN_CREATED_AT).await? {
             settings::set(&self.store, KEY_SEEN_CREATED_AT, &seen_at.to_string()).await?;
+        }
+        // Another device built a revision without mine, and the relay keeps
+        // it over mine: what I decided is on no relay. What it says is taken
+        // below as any copy, and the union goes out as the next revision.
+        if lost {
+            self.mark_relations_owed().await?;
         }
         let rev = headers.iter().map(|(_, h)| h.rev).chain(pages.iter().map(|(_, g)| g.rev)).max();
         let Some(rev) = rev else { return Ok((Applied::default(), vec![])) };

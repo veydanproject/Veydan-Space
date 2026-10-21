@@ -21,4 +21,49 @@ plan: string | null,
 /**
  * The limits of free, bytes.
  */
-files_bytes: number | null, text_bytes: number | null, } | { "t": "unknown" };
+files_bytes: number | null, text_bytes: number | null, } | { "t": "web.login", 
+/**
+ * The sign-in, 16 hex: what «Это не я» denies.
+ */
+id: string | null, 
+/**
+ * Exactly 6 digits, as text (leading zeros kept); without it the
+ * card shows no code.
+ */
+code: string | null, 
+/**
+ * Two capital letters (ISO 3166-1 alpha-2) of where the request came from.
+ */
+country: string | null, 
+/**
+ * The family of the browser: `chrome`, `firefox`, `safari`, `edge`, `opera`, `other`.
+ */
+ua_family: string | null, expires_at: number | null, } | { "t": "web.signed_in", 
+/**
+ * The session, 16 hex.
+ */
+session: string | null, country: string | null, ua_family: string | null, at: number | null, } | { "t": "web.confirm", 
+/**
+ * The action waiting, 16 hex.
+ */
+id: string | null, 
+/**
+ * `delete`: the deletion of the account.
+ */
+action: string | null, country: string | null, ua_family: string | null, expires_at: number | null, } | { "t": "order.paid", 
+/**
+ * The order, 16 hex.
+ */
+order_id: string | null, 
+/**
+ * The id of the plan.
+ */
+plan: string | null, period_days: number | null, until: number | null, 
+/**
+ * 3 to 5 capital letters (`USD`, `USDT`).
+ */
+currency: string | null, amount_minor: number | null, at: number | null, } | { "t": "order.key", order_id: string | null, 
+/**
+ * 5 groups of 4 Crockford characters joined by `-`.
+ */
+key: string | null, plan: string | null, period_days: number | null, currency: string | null, amount_minor: number | null, at: number | null, } | { "t": "unknown" };

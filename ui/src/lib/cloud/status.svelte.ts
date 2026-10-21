@@ -100,8 +100,10 @@ class CloudPageState {
    * The pools of the vault as its host counts them now (`cloud_usage`), laid
    * over the numbers the account carries: those come from the hourly report
    * of the storage hosts to vcloud and lag by up to an hour, so a vault
-   * just created showed «0 B» (E1). Only the vault; the media stay the
-   * account's. A host that does not answer leaves the account as it is.
+   * just created showed «0 B» (E1). The media stay the account's unless the
+   * host counts them from its index (`media.known`, spec/vstore.md §6). The
+   * shared storage is not laid over: `poolsOf` sums it again from these. A
+   * host that does not answer leaves the account as it is.
    */
   private async overlayLiveUsage(): Promise<void> {
     const account = this.status?.account;
@@ -116,11 +118,15 @@ class CloudPageState {
       this.categories = live.categories ?? [];
       const files = live.pools.find((p) => p.pool === 'files');
       const text = live.pools.find((p) => p.pool === 'text');
-      if (!files && !text) return;
+      const liveMedia = live.usage?.media?.known ? live.usage.media : null;
+      if (!files && !text && !liveMedia) return;
       const vault = account.usage?.vault ?? { files_bytes: 0, text_bytes: 0 };
+      const media = liveMedia
+        ? { upload_today_bytes: account.usage?.media?.upload_today_bytes ?? 0, storage_bytes: liveMedia.used }
+        : (account.usage?.media ?? null);
       const usage = {
         as_of: account.usage?.as_of ?? null,
-        media: account.usage?.media ?? null,
+        media,
         vault: { files_bytes: files?.used ?? vault.files_bytes, text_bytes: text?.used ?? vault.text_bytes },
       };
       this.status = { ...this.status!, account: { ...account, usage } };

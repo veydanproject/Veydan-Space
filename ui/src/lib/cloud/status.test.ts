@@ -69,6 +69,35 @@ describe('the store of the cloud page', () => {
     expect(cloudPage.error).toBeNull();
   });
 
+  it('lays the live numbers of the host over the account, the media only when the host knows them', async () => {
+    const pool = (name: string, used: number) => ({ pool: name, used, limit: 2147483648, percent: 0, level: 0 });
+    const live = (media: { used: number; limit: null; known: boolean; reconciled_at: null }) => ({
+      usage: { media, total: { used: 0, limit: null } },
+      pools: [pool('text', 20), pool('files', 4096)],
+      level: 0,
+      categories: [],
+      by_owner: false,
+      profile_files_estimate: 0,
+      on_cloud: true,
+    });
+    const withMedia = { ...withAccount, account: { ...account, usage: { ...account.usage!, media: { upload_today_bytes: 7, storage_bytes: 100 } } } };
+    mockCommand('cloud_status', withMedia);
+    try {
+      mockCommand('cloud_usage', live({ used: 900, limit: null, known: true, reconciled_at: null }));
+      await cloudPage.load();
+      expect(cloudPage.status?.account?.usage?.vault).toEqual({ files_bytes: 4096, text_bytes: 20 });
+      expect(cloudPage.status?.account?.usage?.media).toEqual({ upload_today_bytes: 7, storage_bytes: 900 });
+      // A host without an index of media counts only what went through it: the account's number stands.
+      mockCommand('cloud_usage', live({ used: 900, limit: null, known: false, reconciled_at: null }));
+      await cloudPage.load();
+      expect(cloudPage.status?.account?.usage?.media).toEqual({ upload_today_bytes: 7, storage_bytes: 100 });
+    } finally {
+      mockCommand('cloud_usage', () => {
+        throw { code: 'no_host', message: 'no host of Veydan Cloud is known on this device', request_id: null };
+      });
+    }
+  });
+
   it('keeps a failure as the error of the seams, to branch on its code', async () => {
     const refused = { code: 'not_activated', message: 'no account', request_id: '9c' };
     mockCommand('cloud_status', () => {

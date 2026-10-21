@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "从未",
     "msg_push_ticket_revoke": "撤销",
     "msg_push_ticket_revoke_title": "撤销票据 {ticket}？",
-    "msg_push_ticket_revoke_text": "持有它的服务器将无法再唤醒此手机。你自己的服务器会自动获得新票据。"
+    "msg_push_ticket_revoke_text": "持有它的服务器将无法再唤醒此手机。你自己的服务器会自动获得新票据。",
+    "msg_card_web_title": "Veydan Cloud 网站登录链接",
+    "msg_card_web_text": "网站登录只能通过在应用中扫描其二维码来批准。切勿使用别人发给你的链接登录。",
+    "msg_inv_web_link": "这是 Veydan Cloud 网站的登录链接。",
+    "msg_inv_web_open": "打开网站登录"
   },
   "mobile": {}
 }

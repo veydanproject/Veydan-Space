@@ -98,6 +98,77 @@ pub enum BotCard {
         #[ts(type = "number | null")]
         text_bytes: Option<u64>,
     },
+    /// A code to sign in to the web cabinet (cloud-api.md §16.5), sent only
+    /// in answer to a request on the site; «Это не я» denies it.
+    #[serde(rename = "web.login")]
+    WebLogin {
+        /// The sign-in, 16 hex: what «Это не я» denies.
+        id: Option<String>,
+        /// Exactly 6 digits, as text (leading zeros kept); without it the
+        /// card shows no code.
+        code: Option<String>,
+        /// Two capital letters (ISO 3166-1 alpha-2) of where the request came from.
+        country: Option<String>,
+        /// The family of the browser: `chrome`, `firefox`, `safari`, `edge`, `opera`, `other`.
+        ua_family: Option<String>,
+        #[ts(type = "number | null")]
+        expires_at: Option<u64>,
+    },
+    /// A browser signed in to the web cabinet; «Завершить сессию» ends it.
+    #[serde(rename = "web.signed_in")]
+    WebSignedIn {
+        /// The session, 16 hex.
+        session: Option<String>,
+        country: Option<String>,
+        ua_family: Option<String>,
+        #[ts(type = "number | null")]
+        at: Option<u64>,
+    },
+    /// The web cabinet asks the app to confirm a dangerous action.
+    #[serde(rename = "web.confirm")]
+    WebConfirm {
+        /// The action waiting, 16 hex.
+        id: Option<String>,
+        /// `delete`: the deletion of the account.
+        action: Option<String>,
+        country: Option<String>,
+        ua_family: Option<String>,
+        #[ts(type = "number | null")]
+        expires_at: Option<u64>,
+    },
+    /// A plan bought for oneself in the web cabinet was paid and applied.
+    #[serde(rename = "order.paid")]
+    OrderPaid {
+        /// The order, 16 hex.
+        order_id: Option<String>,
+        /// The id of the plan.
+        plan: Option<String>,
+        #[ts(type = "number | null")]
+        period_days: Option<u64>,
+        #[ts(type = "number | null")]
+        until: Option<u64>,
+        /// 3 to 5 capital letters (`USD`, `USDT`).
+        currency: Option<String>,
+        #[ts(type = "number | null")]
+        amount_minor: Option<u64>,
+        #[ts(type = "number | null")]
+        at: Option<u64>,
+    },
+    /// An activation key bought in the web cabinet: the card is the purchase.
+    #[serde(rename = "order.key")]
+    OrderKey {
+        order_id: Option<String>,
+        /// 5 groups of 4 Crockford characters joined by `-`.
+        key: Option<String>,
+        plan: Option<String>,
+        #[ts(type = "number | null")]
+        period_days: Option<u64>,
+        currency: Option<String>,
+        #[ts(type = "number | null")]
+        amount_minor: Option<u64>,
+        #[ts(type = "number | null")]
+        at: Option<u64>,
+    },
     /// A type this app does not know: «Сообщение Veydan Cloud», no text.
     /// The type itself is the bot's word and is not handed on.
     #[serde(rename = "unknown")]
@@ -115,9 +186,52 @@ fn is_word(s: &str) -> bool {
 /// app shows as it came, so it is held to its shape: a word is not enough,
 /// underscores make a sentence of it.
 fn is_receipt(s: &str) -> bool {
-    let crockford = |b: u8| matches!(b, b'0'..=b'9' | b'A'..=b'H' | b'J' | b'K' | b'M' | b'N' | b'P'..=b'T' | b'V'..=b'Z');
-    s.len() == 14 && s.split('-').count() == 3 && s.split('-').all(|group| group.len() == 4 && group.bytes().all(crockford))
+    s.len() == 14 && s.split('-').count() == 3 && s.split('-').all(|group| group.len() == 4 && group.bytes().all(is_crockford))
 }
+
+/// A character of Crockford base32 in upper case (no I, L, O, U).
+fn is_crockford(b: u8) -> bool {
+    matches!(b, b'0'..=b'9' | b'A'..=b'H' | b'J' | b'K' | b'M' | b'N' | b'P'..=b'T' | b'V'..=b'Z')
+}
+
+/// The code of a sign-in to the web cabinet: exactly 6 ASCII digits, kept
+/// as text so a leading zero stays (cloud-api.md §16.2). The card shows it
+/// large, so nothing else may pass for it.
+pub fn is_login_code(s: &str) -> bool {
+    s.len() == 6 && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// An activation key: 5 groups of 4 Crockford characters joined by `-`
+/// (`7K2M-ABCD-EFGH-JKMN-PQRS`). The purchase card shows it to be copied.
+pub fn is_activation_key(s: &str) -> bool {
+    s.len() == 24 && s.split('-').count() == 5 && s.split('-').all(|group| group.len() == 4 && group.bytes().all(is_crockford))
+}
+
+/// A country: two capital ASCII letters (ISO 3166-1 alpha-2).
+pub fn is_country(s: &str) -> bool {
+    s.len() == 2 && s.bytes().all(|b| b.is_ascii_uppercase())
+}
+
+/// The families of browsers the cabinet names (cloud-api.md §16.1).
+pub const UA_FAMILIES: [&str; 6] = ["chrome", "firefox", "safari", "edge", "opera", "other"];
+
+/// A family of a browser, one word of [`UA_FAMILIES`].
+pub fn is_ua_family(s: &str) -> bool {
+    UA_FAMILIES.contains(&s)
+}
+
+/// The id of a sign-in, a session, an action or an order: 16 hex in lower case.
+pub fn is_id16(s: &str) -> bool {
+    s.len() == 16 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// A currency of a price: 3 to 5 capital letters (`USD`, `USDT`), as vcloud keeps them.
+pub fn is_currency(s: &str) -> bool {
+    (3..=5).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_uppercase())
+}
+
+/// The actions the web cabinet asks the app to confirm.
+const WEB_ACTIONS: [&str; 1] = ["delete"];
 
 impl BotCard {
     /// The card of an envelope of the bot. Every type is a card; one that
@@ -126,6 +240,11 @@ impl BotCard {
         let word = |key: &str| envelope.str_field(key).filter(|s| is_word(s)).map(String::from);
         let receipt = |key: &str| envelope.str_field(key).filter(|s| is_receipt(s)).map(String::from);
         let number = |key: &str| envelope.fields.get(key).and_then(Value::as_u64).filter(|n| *n <= MAX_NUMBER);
+        // A value held to an exact shape: the card shows it, or acts on it.
+        let shaped = |key: &str, ok: fn(&str) -> bool| envelope.str_field(key).filter(|s| ok(s)).map(String::from);
+        let id = |key: &str| shaped(key, is_id16);
+        let country = || shaped("country", is_country);
+        let ua_family = || shaped("ua_family", is_ua_family);
         match envelope.t.as_str() {
             "recovery.requested" => Self::RecoveryRequested {
                 request_id: word("request_id"),
@@ -139,6 +258,39 @@ impl BotCard {
             "quota.90" => Self::Quota90 { pool: word("pool"), used: number("used"), limit: number("limit") },
             "account.dormant" => Self::AccountDormant { since: number("since"), delete_after: number("delete_after") },
             "account.downgraded" => Self::AccountDowngraded { plan: word("plan"), files_bytes: number("files_bytes"), text_bytes: number("text_bytes") },
+            "web.login" => Self::WebLogin {
+                id: id("id"),
+                code: shaped("code", is_login_code),
+                country: country(),
+                ua_family: ua_family(),
+                expires_at: number("expires_at"),
+            },
+            "web.signed_in" => Self::WebSignedIn { session: id("session"), country: country(), ua_family: ua_family(), at: number("at") },
+            "web.confirm" => Self::WebConfirm {
+                id: id("id"),
+                action: shaped("action", |a| WEB_ACTIONS.contains(&a)),
+                country: country(),
+                ua_family: ua_family(),
+                expires_at: number("expires_at"),
+            },
+            "order.paid" => Self::OrderPaid {
+                order_id: id("order_id"),
+                plan: word("plan"),
+                period_days: number("period_days"),
+                until: number("until"),
+                currency: shaped("currency", is_currency),
+                amount_minor: number("amount_minor"),
+                at: number("at"),
+            },
+            "order.key" => Self::OrderKey {
+                order_id: id("order_id"),
+                key: shaped("key", is_activation_key),
+                plan: word("plan"),
+                period_days: number("period_days"),
+                currency: shaped("currency", is_currency),
+                amount_minor: number("amount_minor"),
+                at: number("at"),
+            },
             _ => Self::Unknown,
         }
     }
@@ -320,6 +472,111 @@ mod tests {
         assert_eq!(event_fields(r#"{"v":1,"t":"account.deleted","receipt":"Enter_your_12_words"}"#), serde_json::json!({}));
         // A type this crate does not know has no fields at all.
         assert_eq!(event_fields(r#"{"v":1,"t":"plan.renewed","until":5,"text":"pay at evil.example"}"#), serde_json::json!({}));
+    }
+
+    #[test]
+    fn a_login_code_is_six_digits_as_text() {
+        for good in ["123456", "000000", "012345"] {
+            assert!(is_login_code(good), "{good}");
+        }
+        for bad in ["", "12345", "1234567", "12 456", "12345a", "١٢٣٤٥٦", "123456\u{200b}", "-12345", "+12345"] {
+            assert!(!is_login_code(bad), "{bad:?}");
+        }
+        // A number for a code is not a code: the leading zero would be lost.
+        let card = read(r#"{"v":1,"t":"web.login","id":"0123456789abcdef","code":12345,"expires_at":5}"#);
+        assert_eq!(card, BotCard::WebLogin { id: Some("0123456789abcdef".into()), code: None, country: None, ua_family: None, expires_at: Some(5) });
+    }
+
+    #[test]
+    fn an_activation_key_is_five_groups_of_crockford() {
+        for good in ["7K2M-ABCD-EFGH-JKMN-PQRS", "0000-0000-0000-0000-0000", "VWXY-Z123-4567-89AB-CDEF"] {
+            assert!(is_activation_key(good), "{good}");
+        }
+        for bad in [
+            "",
+            "7K2M-ABCD-EFGH-JKMN",
+            "7K2M-ABCD-EFGH-JKMN-PQRS-TVWX",
+            "7k2m-abcd-efgh-jkmn-pqrs",
+            "7K2M-ABCD-EFGH-JKMN-PQRI",
+            "7K2M-ABCD-EFGH-JKMN-PQRL",
+            "7K2M-ABCD-EFGH-JKMN-PQRO",
+            "7K2M-ABCD-EFGH-JKMN-PQRU",
+            "7K2MABCDEFGHJKMNPQRS",
+            "7K2M_ABCD_EFGH_JKMN_PQRS",
+            "7K2-MABCD-EFGH-JKMN-PQRS",
+            "Visit-evil-exam-ple.-com!",
+        ] {
+            assert!(!is_activation_key(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_country_a_browser_and_an_id_are_held_to_their_shape() {
+        assert!(is_country("DE") && is_country("RU"));
+        for bad in ["", "D", "de", "DEU", "D1", "ДЕ"] {
+            assert!(!is_country(bad), "{bad:?}");
+        }
+        for good in UA_FAMILIES {
+            assert!(is_ua_family(good), "{good}");
+        }
+        for bad in ["", "Chrome", "chromium", "Mozilla/5.0", "other "] {
+            assert!(!is_ua_family(bad), "{bad:?}");
+        }
+        assert!(is_id16("0123456789abcdef"));
+        for bad in ["", "0123456789ABCDEF", "0123456789abcde", "0123456789abcdef0", "0123456789abcdeg"] {
+            assert!(!is_id16(bad), "{bad:?}");
+        }
+        assert!(is_currency("USD") && is_currency("USDT"));
+        for bad in ["", "US", "usd", "USDTXX", "U$D"] {
+            assert!(!is_currency(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_cards_of_the_web_cabinet_keep_their_values() {
+        let id = "0123456789abcdef";
+        assert_eq!(
+            read(&format!(r#"{{"v":1,"t":"web.login","id":"{id}","code":"012345","country":"DE","ua_family":"chrome","expires_at":9,"text":"enter at evil.example"}}"#)),
+            BotCard::WebLogin { id: Some(id.into()), code: Some("012345".into()), country: Some("DE".into()), ua_family: Some("chrome".into()), expires_at: Some(9) }
+        );
+        // A sentence in any of them: nothing of it reaches the card.
+        assert_eq!(
+            read(r#"{"v":1,"t":"web.login","id":"enter_at_evil","code":"Enter at evil.example","country":"Germany","ua_family":"Mozilla/5.0"}"#),
+            BotCard::WebLogin { id: None, code: None, country: None, ua_family: None, expires_at: None }
+        );
+        assert_eq!(
+            read(&format!(r#"{{"v":1,"t":"web.signed_in","session":"{id}","country":"FR","ua_family":"firefox","at":3}}"#)),
+            BotCard::WebSignedIn { session: Some(id.into()), country: Some("FR".into()), ua_family: Some("firefox".into()), at: Some(3) }
+        );
+        assert_eq!(
+            read(&format!(r#"{{"v":1,"t":"web.confirm","id":"{id}","action":"delete","ua_family":"safari","expires_at":4}}"#)),
+            BotCard::WebConfirm { id: Some(id.into()), action: Some("delete".into()), country: None, ua_family: Some("safari".into()), expires_at: Some(4) }
+        );
+        // An action this app does not know is no action to confirm.
+        assert_eq!(
+            read(&format!(r#"{{"v":1,"t":"web.confirm","id":"{id}","action":"transfer"}}"#)),
+            BotCard::WebConfirm { id: Some(id.into()), action: None, country: None, ua_family: None, expires_at: None }
+        );
+        assert_eq!(
+            read(&format!(r#"{{"v":1,"t":"order.paid","order_id":"{id}","plan":"plus","period_days":30,"until":99,"currency":"USDT","amount_minor":400,"at":5}}"#)),
+            BotCard::OrderPaid {
+                order_id: Some(id.into()), plan: Some("plus".into()), period_days: Some(30), until: Some(99),
+                currency: Some("USDT".into()), amount_minor: Some(400), at: Some(5),
+            }
+        );
+        let card = read(&format!(r#"{{"v":1,"t":"order.key","order_id":"{id}","key":"7K2M-ABCD-EFGH-JKMN-PQRS","plan":"pro","period_days":365,"currency":"EUR","amount_minor":4990,"at":6}}"#));
+        assert_eq!(
+            card,
+            BotCard::OrderKey {
+                order_id: Some(id.into()), key: Some("7K2M-ABCD-EFGH-JKMN-PQRS".into()), plan: Some("pro".into()), period_days: Some(365),
+                currency: Some("EUR".into()), amount_minor: Some(4990), at: Some(6),
+            }
+        );
+        assert_eq!(BotCard::stored(&serde_json::to_string(&card).unwrap()), card);
+        assert_eq!(
+            read(r#"{"v":1,"t":"order.key","key":"Pay_at_evil_example","currency":"dollars","amount_minor":-1}"#),
+            BotCard::OrderKey { order_id: None, key: None, plan: None, period_days: None, currency: None, amount_minor: None, at: None }
+        );
     }
 
     #[test]

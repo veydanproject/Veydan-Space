@@ -55,6 +55,7 @@ export const api = {
     stop: (id: string) => call<void>('profile_stop', { id }),
     isRunning: (id: string) => call<boolean>('profile_is_running', { id }),
     runningIds: () => call<string[]>('profiles_running_ids'),
+    launching: () => call<LaunchingProfiles>('profiles_launching'),
     listByWorkspace: (workspaceId: string) =>
       call<Profile[]>('profiles_list_by_workspace', { workspaceId }),
     setTags: (id: string, tags: string[]) =>
@@ -149,6 +150,18 @@ export const api = {
     profilePushMine: (profileId: string) => call<SyncStatus>('sync_profile_files_push_mine', { profileId }),
   },
 };
+
+/** The profiles being launched, and those of them waiting for their files to sync. */
+export interface LaunchingProfiles {
+  launching: string[];
+  syncing: string[];
+}
+
+/** A `profile_launch` refused because another launch of the profile is under way. */
+export function launchUnderWay(err: unknown): boolean {
+  const msg = typeof err === 'string' ? err : (err as { message?: string })?.message ?? String(err);
+  return msg.includes('already being launched');
+}
 
 /** Device name from a `profile_launch` lease error, or null for other errors. */
 export function leaseHolder(err: unknown): string | null {

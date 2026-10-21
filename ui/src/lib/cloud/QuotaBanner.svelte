@@ -53,6 +53,7 @@
   const text = $derived.by(() => {
     if (!pool) return '';
     if (kind === 'warn') return $t('cloud_quota_warn', { percent: String(pool.percent), limit: formatBytes(pool.limit) });
+    if (pool.pool === 'total') return $t('cloud_quota_full_total');
     return pool.pool === 'text' ? $t('cloud_quota_full_text') : $t('cloud_quota_full_files');
   });
 

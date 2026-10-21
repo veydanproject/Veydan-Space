@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Un autre appareil exécute ce profil. Le lancer ici dédoublerait ses cookies et ses sessions.",
     "profile_sync_in_use_confirm": "Ce profil est utilisé sur {device}. Lancer quand même ?",
     "profile_sync_launch_anyway": "Lancer quand même",
+    "profile_launch_syncing": "Synchronisation des fichiers…",
+    "profile_launch_syncing_hint": "Le profil démarre dès que ses fichiers sont synchronisés.",
     "profile_sync_diverged": "Les fichiers divergent",
     "profile_sync_take_remote": "Prendre les fichiers distants",
     "profile_sync_push_mine": "Garder ma version",

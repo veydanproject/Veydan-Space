@@ -40,6 +40,10 @@ export interface CloudStatusView {
 
 /** One pool of `cloud_usage`. */
 export interface CloudPoolView {
+  /**
+   * `text`, `files`; `media` and `total` (the shared storage of the plan:
+   * text, files and media together) when the plan sets them.
+   */
   pool: string;
   used: number;
   limit: number;
@@ -101,10 +105,14 @@ export function cloudChoice(moduleOn: boolean, status: CloudStatusView | null): 
   return planOf(status) !== null ? 'option' : 'activate';
 }
 
-/** The fullest pool, the one the line and the banner speak of. */
+/**
+ * The fullest pool, the one the line and the banner speak of. The shared
+ * storage wins a tie: the files of a plan with one have the same limit
+ * (the server fills it so), and a full total stops more than the files.
+ */
 export function fullestPool(usage: CloudUsageView | null): CloudPoolView | null {
   if (!usage || usage.pools.length === 0) return null;
-  return usage.pools.reduce((a, b) => (b.percent > a.percent ? b : a));
+  return usage.pools.reduce((a, b) => (b.percent > a.percent || (b.percent === a.percent && b.pool === 'total') ? b : a));
 }
 
 /** How the settings show the room: nothing under 70 %, quietly to 90 %, a warning to 100 %, full. */

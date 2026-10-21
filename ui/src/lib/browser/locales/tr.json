@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "Bu profil başka bir cihazda çalışıyor. Burada da başlatırsanız çerezleri ve oturumları iki ayrı kopyaya bölünür.",
     "profile_sync_in_use_confirm": "Bu profil {device} cihazında kullanılıyor. Yine de başlatılsın mı?",
     "profile_sync_launch_anyway": "Yine de başlat",
+    "profile_launch_syncing": "Dosyalar eşitleniyor…",
+    "profile_launch_syncing_hint": "Profil, dosyaları eşitlenir eşitlenmez başlayacak.",
     "profile_sync_diverged": "Dosyalar farklılaştı",
     "profile_sync_take_remote": "Uzaktaki dosyaları al",
     "profile_sync_push_mine": "Benimkini koru",

@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "nunca",
     "msg_push_ticket_revoke": "Revogar",
     "msg_push_ticket_revoke_title": "Revogar o ticket {ticket}?",
-    "msg_push_ticket_revoke_text": "O servidor que o tem não poderá mais acordar este telefone. Um servidor seu recebe um novo ticket sozinho."
+    "msg_push_ticket_revoke_text": "O servidor que o tem não poderá mais acordar este telefone. Um servidor seu recebe um novo ticket sozinho.",
+    "msg_card_web_title": "Link de login no site do Veydan Cloud",
+    "msg_card_web_text": "O login no site só é aprovado escaneando o código QR dele no app. Nunca entre por um link que alguém enviou a você.",
+    "msg_inv_web_link": "Este é um link de login no site do Veydan Cloud.",
+    "msg_inv_web_open": "Abrir o login no site"
   },
   "mobile": {}
 }

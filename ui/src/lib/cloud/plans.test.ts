@@ -115,6 +115,17 @@ describe('the choice of a plan', () => {
     expect(featuresOf({ ...plus, limits: {} }, free)).toEqual([]);
   });
 
+  it('says the shared storage of a plan first and leaves out the room of the files beside it', () => {
+    const all = { ...plus, limits: { ...plus.limits, 'storage.total_bytes': 10 * GiB, 'vault.files_bytes': 10 * GiB } };
+    const of = featuresOf(all, free);
+    expect(of.map((f) => f.id)).toEqual(['total', 'chat_file', 'retention', 'upload']);
+    // Free has no total: 10 GiB is weighed against its 2 GiB of files.
+    expect(of[0]).toEqual({ id: 'total', value: 10 * GiB, more: true });
+    expect(featuresOf({ ...all, limits: { 'storage.total_bytes': GiB } }, free)[0].more).toBe(false);
+    // A total of 0 is none: the files stay.
+    expect(featuresOf({ ...all, limits: { ...all.limits, 'storage.total_bytes': 0 } }, free)[0].id).toBe('files');
+  });
+
   it('names a plan and points at the next paid one', () => {
     expect(planName(plans, 'plus')).toBe('Plus');
     expect(planName(null, 'max')).toBe('Max');

@@ -4,7 +4,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { t, locale, type TranslationKey } from '$lib/core/i18n';
-  import { api, leaseHolder } from '$lib/browser/api';
+  import { api, launchUnderWay, leaseHolder } from '$lib/browser/api';
+  import { runningStore } from '$lib/browser/store/running.svelte';
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
   import { proxyChip } from '$lib/browser/proxy-label';
@@ -57,6 +58,10 @@
 
   const relTime = (iso: string): string => fmtRelTime(iso, $locale);
   let actionLoading = $state(false);
+  /** A launch of the profile is under way, from here or anywhere else. */
+  const launching = $derived(runningStore.launching.includes(profile.id));
+  /** It waits for the files of the profile to sync. */
+  const syncing = $derived(runningStore.syncing.includes(profile.id));
   let deleteModal = $state(false);
   let exportModal = $state(false);
   let error = $state('');
@@ -107,7 +112,8 @@
     } catch (e) {
       const holder = leaseHolder(e);
       if (holder !== null) leaseBlockedBy = holder;
-      else error = explainError(e, $t);
+      // Another window, button or the tray launches it: the button shows that.
+      else if (!launchUnderWay(e)) error = explainError(e, $t);
     }
     finally { actionLoading = false; }
   }
@@ -285,14 +291,15 @@
       {#if leaseBlockedBy}
         <div class="error-msg lease-block">
           <span>{$t('profile_sync_in_use', { device: leaseBlockedBy })}</span>
-          <button class="btn btn-ghost btn-sm" disabled={actionLoading} onclick={() => launch(true)}>{$t('profile_sync_launch_anyway')}</button>
+          <button class="btn btn-ghost btn-sm" disabled={actionLoading || launching} onclick={() => launch(true)}>{$t('profile_sync_launch_anyway')}</button>
         </div>
       {/if}
 
       <div class="panel-actions">
         {#if !isRunning}
-          <button class="btn btn-success btn-main" disabled={actionLoading} onclick={() => launch()}>
-            <Icon name="play" size={16} />{actionLoading ? '…' : $t('panel_btn_launch')}
+          <button class="btn btn-success btn-main" disabled={actionLoading || launching} onclick={() => launch()}
+            title={syncing ? $t('profile_launch_syncing_hint') : undefined}>
+            <Icon name="play" size={16} />{syncing ? $t('profile_launch_syncing') : actionLoading || launching ? '…' : $t('panel_btn_launch')}
           </button>
         {:else}
           <button class="btn btn-danger btn-main" disabled={actionLoading} onclick={stop}>

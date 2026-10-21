@@ -137,7 +137,11 @@ code: string,
 /**
  * My name for the person, when they are a contact; empty otherwise.
  */
-name: string, } | { "kind": "unknown", link_type: string, } | { "kind": "invalid", code: string, };
+name: string, } | { "kind": "web", link: string, 
+/**
+ * The pending sign-in, 16 hex.
+ */
+id: string, } | { "kind": "unknown", link_type: string, } | { "kind": "invalid", code: string, };
 
 /** A private server of mine as the settings list it; never its app key. */
 export type PrivateServerView = { id: string, name: string | null, relay: string, media: string | null, call_node: string | null, 

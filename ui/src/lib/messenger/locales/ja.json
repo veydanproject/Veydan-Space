@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "なし",
     "msg_push_ticket_revoke": "取り消す",
     "msg_push_ticket_revoke_title": "チケット {ticket} を取り消しますか？",
-    "msg_push_ticket_revoke_text": "このチケットを持つサーバーは、もうこの端末を起こせません。自分のサーバーには新しいチケットが自動で届きます。"
+    "msg_push_ticket_revoke_text": "このチケットを持つサーバーは、もうこの端末を起こせません。自分のサーバーには新しいチケットが自動で届きます。",
+    "msg_card_web_title": "Veydan Cloud ウェブサイトのサインインリンク",
+    "msg_card_web_text": "ウェブサイトへのサインインは、アプリで QR コードをスキャンした場合にのみ承認されます。ほかの人から送られたリンクでは、決してサインインしないでください。",
+    "msg_inv_web_link": "これは Veydan Cloud ウェブサイトのサインインリンクです。",
+    "msg_inv_web_open": "ウェブサイトのサインインを開く"
   },
   "mobile": {}
 }

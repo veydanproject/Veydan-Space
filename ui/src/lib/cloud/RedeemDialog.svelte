@@ -1,7 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- «Ввести ключ активации» (vcloud-plan.md 4.3, cloud-api.md 4.2): 20 characters of Crockford base32, grouped as they are typed and read the way the server reads them, so a key dictated with O and I still goes. A dialog on a computer, a sheet on a phone. -->
+<!-- «Ввести ключ активации» (vcloud-plan.md 4.3, cloud-api.md 4.2): 20 characters of Crockford base32, grouped as they are typed and read the way the server reads them, so a key dictated with O and I still goes. A dialog on a computer, a sheet on a phone. A key bought in the web cabinet comes filled in (`initialKey`, the card «Покупка Veydan Cloud»); it is still applied by a press. -->
 <script lang="ts">
   import { t, locale } from '$lib/core/i18n';
   import Dialog from '$lib/core/ui/Dialog.svelte';
@@ -16,12 +16,15 @@
     planName = '',
     /** What the account became after the key: its plan, the day it is paid until, and the plan that waits for that day. */
     result = null,
+    initialKey = '',
     onRedeem,
   }: {
     open?: boolean;
     busy?: boolean;
     planName?: string;
     result?: { plan: string; until: number | null; next?: { plan: string; since: number } | null } | null;
+    /** A key to start with, as the card of a purchase carries it. */
+    initialKey?: string;
     onRedeem: (key: string) => Promise<CloudError | null>;
   } = $props();
 
@@ -35,7 +38,7 @@
   // A dialog opened again starts clean.
   $effect(() => {
     if (open) {
-      key = '';
+      key = formatKeyInput(initialKey);
       error = '';
       done = false;
     }

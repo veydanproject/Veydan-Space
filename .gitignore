@@ -24,6 +24,7 @@ ui/build/
 # The skill and the agent of the publishing (skills/, agents/) are the repository's; the rest is local
 .vscode/
 .idea/
+graphify-out/
 # zig leaves it in the working directory of a cross build
 .intentionally-empty-file.o
 

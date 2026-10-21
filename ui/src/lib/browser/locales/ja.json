@@ -237,6 +237,8 @@
     "profile_sync_in_use_hint": "このプロファイルは別のデバイスで実行中です。ここで起動すると、Cookieとセッションが分岐します。",
     "profile_sync_in_use_confirm": "このプロファイルは{device}で使用中です。それでも起動しますか？",
     "profile_sync_launch_anyway": "それでも起動",
+    "profile_launch_syncing": "ファイルを同期中…",
+    "profile_launch_syncing_hint": "ファイルの同期が終わるとすぐにプロファイルが起動します。",
     "profile_sync_diverged": "ファイルが一致しません",
     "profile_sync_take_remote": "リモートのファイルを使う",
     "profile_sync_push_mine": "自分のファイルを残す",

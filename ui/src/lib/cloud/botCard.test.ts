@@ -22,6 +22,7 @@ import {
   type PlanName,
 } from '$lib/cloud/botCard';
 import cardSource from '$lib/cloud/BotCard.svelte?raw';
+import copySource from '$lib/cloud/CopyValue.svelte?raw';
 
 const AT = 1_791_000_000;
 const REQUEST = '9c'.repeat(16);
@@ -129,8 +130,10 @@ describe('the words of a card', () => {
     expect(cardSource).not.toMatch(/<a[\s>]/);
     expect(cardSource).not.toContain('href');
     expect(cardSource).not.toContain('MessageContent');
-    // At most one button.
+    // At most one button of an action; a value to copy has its own (CopyValue), which is no link either.
     expect(cardSource.match(/<button/g)).toHaveLength(1);
+    expect(copySource).not.toContain('{@html');
+    expect(copySource).not.toContain('href');
   });
 });
 
@@ -151,6 +154,7 @@ describe('the button of a card', () => {
       recovery: '/cloud?section=recovery-key',
       key: '/cloud?key=1',
       usage: '/cloud?section=cloud-usage-title',
+      account: '/cloud',
     });
   });
 
@@ -207,6 +211,11 @@ describe('the line of a card in the list of chats', () => {
       [{ t: 'quota.90', pool: null, used: null, limit: null }, 'cloud_card_line_quota'],
       [{ t: 'account.dormant', since: null, delete_after: null }, 'cloud_card_line_dormant'],
       [{ t: 'account.downgraded', plan: null, files_bytes: null, text_bytes: null }, 'cloud_card_line_downgraded'],
+      [{ t: 'web.login', id: null, code: null, country: null, ua_family: null, expires_at: null }, 'cloud_card_line_web_login'],
+      [{ t: 'web.signed_in', session: null, country: null, ua_family: null, at: null }, 'cloud_card_line_web_signed_in'],
+      [{ t: 'web.confirm', id: null, action: null, country: null, ua_family: null, expires_at: null }, 'cloud_card_line_web_confirm'],
+      [{ t: 'order.paid', order_id: null, plan: null, period_days: null, until: null, currency: null, amount_minor: null, at: null }, 'cloud_card_line_order_paid'],
+      [{ t: 'order.key', order_id: null, key: null, plan: null, period_days: null, currency: null, amount_minor: null, at: null }, 'cloud_card_line_order_key'],
     ];
     for (const [card, key] of lines) {
       expect(cardLine(card), card.t).toBe(key);
@@ -219,5 +228,82 @@ describe('the line of a card in the list of chats', () => {
 
   it('is the messenger\'s neutral one for a type nobody knows', () => {
     expect(cardLine({ t: 'unknown' })).toBeNull();
+  });
+});
+
+const LOGIN = '0123456789abcdef';
+const KEY = '7K2M-ABCD-EFGH-JKMN-PQRS';
+
+const webLogin = (over: Partial<Extract<BotCard, { t: 'web.login' }>> = {}): KnownCard => ({
+  t: 'web.login', id: LOGIN, code: '012345', country: 'DE', ua_family: 'chrome', expires_at: AT + 300, ...over,
+});
+
+describe('the cards of the web cabinet', () => {
+  it('show the code of a sign-in large, where it came from, and «Это не я» until it expires', () => {
+    const view = cardView(webLogin(), ctx(), t);
+    expect(view.text).toBe('cloud_card_web_login');
+    expect(view.value).toEqual({ text: '012 345', copy: null });
+    expect(view.detail).toBe('cloud_web_origin {"country":"Germany","browser":"cloud_web_ua_chrome"}');
+    // The domain is the app's fixed words, never a value of the card.
+    expect(view.note).toBe('cloud_card_web_login_only_site');
+    expect(view.action).toEqual({ id: 'web_deny', label: 'cloud_web_not_me', loginId: LOGIN });
+    expect(view.until).toBe(AT + 300);
+    const over = cardView(webLogin(), ctx({ now: AT + 300 }), t);
+    expect([over.value, over.action, over.note]).toEqual([undefined, null, 'cloud_card_web_login_expired']);
+  });
+
+  it('draw no code that is not six digits, and say what a denial did', () => {
+    for (const code of ['12345', '1234567', 'Enter_at_evil', null]) {
+      expect(cardView(webLogin({ code }), ctx(), t).value, String(code)).toBeUndefined();
+    }
+    expect(cardView(webLogin({ ua_family: 'Mozilla', country: 'Germany' }), ctx(), t).detail).toBe('cloud_web_ua_other');
+    expect(cardView(webLogin({ id: 'evil' }), ctx(), t).action).toBeNull();
+    const denied = cardView(webLogin(), ctx({ web: { denied: { [LOGIN]: { state: 'denied', frozen_until: AT + 30 * 86_400 } }, ended: {} } }), t);
+    expect(denied.action).toBeNull();
+    expect(denied.value).toBeUndefined();
+    expect(denied.note).toBe(`cloud_web_denied_frozen ${JSON.stringify({ date: date(AT + 30 * 86_400) })}`);
+  });
+
+  it('end a session from the card of a sign-in, for a day', () => {
+    const card: KnownCard = { t: 'web.signed_in', session: LOGIN, country: null, ua_family: 'firefox', at: AT };
+    const view = cardView(card, ctx(), t);
+    expect(view.detail).toBe(`cloud_web_ua_firefox · ${date(AT)}`);
+    expect(view.action).toEqual({ id: 'web_end', label: 'cloud_web_end_session', session: LOGIN });
+    expect(cardView(card, ctx({ now: AT + 86_400 }), t).action).toBeNull();
+    const ended = cardView(card, ctx({ web: { denied: {}, ended: { [LOGIN]: true } } }), t);
+    expect([ended.action, ended.note]).toEqual([null, 'cloud_web_session_ended']);
+  });
+
+  it('lead a deletion to the screen of confirmation, and nothing else', () => {
+    const card: KnownCard = { t: 'web.confirm', id: LOGIN, action: 'delete', country: 'FR', ua_family: 'safari', expires_at: AT + 300 };
+    const view = cardView(card, ctx(), t);
+    expect(view.text).toBe('cloud_card_web_confirm_delete');
+    expect(view.action).toEqual({ id: 'web_confirm', label: 'cloud_web_confirm', to: `/cloud/web/confirm?id=${LOGIN}&action=delete&country=FR&ua=safari&until=${AT + 300}` });
+    expect(cardView({ ...card, action: null }, ctx(), t).action).toBeNull();
+    expect(cardView(card, ctx({ now: AT + 300 }), t).note).toBe('cloud_card_web_confirm_expired');
+  });
+
+  it('show a purchase: the plan, the period, the amount, the key to copy and to activate', () => {
+    const card: KnownCard = { t: 'order.key', order_id: LOGIN, key: KEY, plan: 'plus', period_days: 365, currency: 'USDT', amount_minor: 4990, at: AT };
+    const view = cardView(card, ctx({ plans: [plus] }), t);
+    expect(view.title).toBe('cloud_card_order_key_title');
+    expect(view.text).toBe('Plus · cloud_plan_period_year');
+    expect(view.detail).toBe('cloud_card_order_key_paid {"amount":"49.90 USDT"}');
+    expect(view.value).toEqual({ text: KEY, copy: KEY });
+    expect(view.action).toEqual({ id: 'activate', label: 'cloud_card_order_key_activate', to: `/cloud?key=${KEY}` });
+    // A key of another shape is neither shown nor activated.
+    const bad = cardView({ ...card, key: 'Pay_at_evil_example' }, ctx({ plans: [plus] }), t);
+    expect([bad.value, bad.action]).toEqual([null, null]);
+    expect(cardView({ ...card, plan: 'pro', period_days: null }, ctx({ plans: [plus] }), t).text).toBe('cloud_card_order_key');
+  });
+
+  it('say a payment came and open the account', () => {
+    const card: KnownCard = { t: 'order.paid', order_id: LOGIN, plan: 'plus', period_days: 30, until: AT + 30 * 86_400, currency: 'EUR', amount_minor: 399, at: AT };
+    const view = cardView(card, ctx({ plans: [plus] }), t);
+    expect(view.text).toBe(`cloud_card_order_paid_until ${JSON.stringify({ plan: 'Plus', date: date(AT + 30 * 86_400) })}`);
+    expect(view.detail).toBe('€3.99 · cloud_plan_period_month');
+    expect(view.action).toEqual({ id: 'account', label: 'cloud_account_open' });
+    expect(cardView({ ...card, plan: 'pro', currency: 'dollars' }, ctx(), t).text).toBe('cloud_card_order_paid');
+    expect(cardView({ ...card, plan: 'pro', currency: 'dollars', period_days: null }, ctx(), t).detail).toBeNull();
   });
 });

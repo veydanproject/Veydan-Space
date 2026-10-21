@@ -7,9 +7,13 @@
   sentence of the type, a value of the card under it where the table names
   one, and at most one button: «Это не я — отменить» (the command the
   banner calls), «Открыть восстановление», «Ввести ключ активации», «Что
-  занимает место» (the three lead to the page of the cloud). A request known to be over, or
-  out of time, offers no button. Every word is `botCard.ts`'s; nothing of
-  the card is drawn as text or as a link.
+  занимает место» (the three lead to the page of the cloud), and those of
+  the web cabinet: «Это не я» and «Завершить сессию» (commands), «Подтвердить»,
+  «Открыть аккаунт», «Активировать сейчас» (screens). A request known to be
+  over, or out of time, offers no button. A value of a shape held by
+  `botCard.ts` — a code of a sign-in, a key of a purchase — is shown large
+  (`CopyValue`, with its copy for a key). Every word is `botCard.ts`'s;
+  nothing of the card is drawn as markup or as a link.
 -->
 <script lang="ts" module>
   /** The account and the plans are asked once a run for a card that names a plan, where the page has not read them. */
@@ -27,6 +31,8 @@
   import { cardsOnScreen } from '$lib/cloud/onScreen.svelte';
   import { alertsStore } from '$lib/cloud/social.svelte';
   import { cloudPage } from '$lib/cloud/status.svelte';
+  import { webStore } from '$lib/cloud/web.svelte';
+  import CopyValue from '$lib/cloud/CopyValue.svelte';
 
   let { card, id, at }: BotCardProps = $props();
 
@@ -36,7 +42,7 @@
   onMount(() => cardsOnScreen.show(id, card.t === 'recovery.requested' ? card.request_id : null));
 
   $effect(() => {
-    if (card.t !== 'plan.expiring' || asked || cloudPage.status) return;
+    if ((card.t !== 'plan.expiring' && card.t !== 'order.paid' && card.t !== 'order.key') || asked || cloudPage.status) return;
     asked = true;
     void cloudPage.load();
   });
@@ -52,6 +58,7 @@
           // The names of the plans as the server gives them (the catalog the page of the cloud reads); none until it is read.
           plans: cloudPage.plans?.plans ?? null,
           account: shownAccount(cloudPage.status),
+          web: { denied: webStore.denied, ended: webStore.ended },
         }, $t),
   );
 
@@ -70,6 +77,18 @@
       void alertsStore.cancel(action.requestId);
       return;
     }
+    if (action.id === 'web_deny') {
+      void webStore.deny(action.loginId);
+      return;
+    }
+    if (action.id === 'web_end') {
+      void webStore.revoke({ id: action.session });
+      return;
+    }
+    if (action.id === 'web_confirm' || action.id === 'activate') {
+      void goto(action.to);
+      return;
+    }
     // The banner of the same card has said its part once its way is taken.
     if (action.id === 'recovery' && alertsStore.alerts.some((a) => a.id === id)) void alertsStore.dismiss(id);
     void goto(ACTION_ROUTES[action.id]);
@@ -80,13 +99,19 @@
   <div class="card {view.tone}">
     <div class="top">
       <span class="ico"><Icon name={view.icon} size={16} /></span>
-      <p class="text">{view.text}</p>
+      <div class="words">
+        {#if view.title}<p class="title">{view.title}</p>{/if}
+        <p class="text">{view.text}</p>
+        {#if view.detail}<p class="detail">{view.detail}</p>{/if}
+      </div>
     </div>
+    {#if view.value}<div class="value"><CopyValue text={view.value.text} copy={view.value.copy} large={!view.value.copy} /></div>{/if}
     {#if view.note}<p class="note">{view.note}</p>{/if}
     {#if view.action}
       {@const action = view.action}
+      {@const danger = action.id === 'cancel' || action.id === 'web_deny' || action.id === 'web_end'}
       <div class="row">
-        <button class="btn btn-sm {action.id === 'cancel' ? 'btn-danger' : 'btn-primary'}" type="button" disabled={action.id === 'cancel' && alertsStore.busy} onclick={() => run(action)}>
+        <button class="btn btn-sm {danger ? 'btn-danger' : 'btn-primary'}" type="button" disabled={(action.id === 'cancel' && alertsStore.busy) || ((action.id === 'web_deny' || action.id === 'web_end') && webStore.busy)} onclick={() => run(action)}>
           {action.label}
         </button>
       </div>
@@ -105,7 +130,11 @@
   .danger .ico { color: var(--danger-text); background: var(--danger-bg); }
   .warn .ico { color: var(--warn-text); background: var(--warn-bg); }
   .ok .ico { color: var(--success-text); background: var(--success-bg); }
+  .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .title { margin: 0; font-size: var(--fs-sm); font-weight: var(--fw-bold); line-height: 1.45; }
   .text { margin: 0; font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
+  .detail { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
+  .value { padding-left: calc(30px + var(--sp-2)); }
   .note { margin: 0; padding-left: calc(30px + var(--sp-2)); font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
   .row { display: flex; padding-left: calc(30px + var(--sp-2)); }
 </style>

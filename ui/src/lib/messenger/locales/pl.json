@@ -1557,7 +1557,11 @@
     "msg_push_ticket_never": "nigdy",
     "msg_push_ticket_revoke": "Odwołaj",
     "msg_push_ticket_revoke_title": "Odwołać bilet {ticket}?",
-    "msg_push_ticket_revoke_text": "Serwer, który go trzyma, nie będzie już mógł budzić tego telefonu. Twój serwer sam dostanie nowy bilet."
+    "msg_push_ticket_revoke_text": "Serwer, który go trzyma, nie będzie już mógł budzić tego telefonu. Twój serwer sam dostanie nowy bilet.",
+    "msg_card_web_title": "Link logowania do strony Veydan Cloud",
+    "msg_card_web_text": "Logowanie na stronie potwierdza się wyłącznie skanując jej kod QR w aplikacji. Nigdy nie loguj się przez link, który ktoś ci przysłał.",
+    "msg_inv_web_link": "To jest link logowania do strony Veydan Cloud.",
+    "msg_inv_web_open": "Otwórz logowanie na stronie"
   },
   "mobile": {}
 }

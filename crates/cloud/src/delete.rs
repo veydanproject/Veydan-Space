@@ -11,9 +11,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
-use veydan_shell::seams::{
-    self, BotCards, Card, CloudError, LockBox, LockConfirm, SeamFuture,
-};
+use veydan_shell::seams::{self, BotCards, Card, CloudError, LockBox, LockConfirm, SeamFuture};
 use zeroize::Zeroizing;
 
 use crate::account;
@@ -51,7 +49,7 @@ impl<R: Runtime> LockGate for AppLockGate<R> {
 }
 
 /// The gate offered as a seam (a test's), else the app's lock.
-fn lock_gate<R: Runtime>(app: &AppHandle<R>) -> Arc<dyn LockGate> {
+pub(crate) fn lock_gate<R: Runtime>(app: &AppHandle<R>) -> Arc<dyn LockGate> {
     veydan_shell::seam::<dyn LockGate, _, _>(app)
         .unwrap_or_else(|| Arc::new(AppLockGate(app.clone())))
 }
@@ -271,7 +269,11 @@ mod tests {
         let deleted = delete_account(&api, &boxed).await.expect("deleted");
         assert_eq!(deleted.receipt.len(), 14);
         assert_eq!(crate::account::read(&boxed).await, Ok(None));
-        assert_eq!(recovery_left(&boxed).await, Vec::<&str>::new(), "nothing of recovery is kept");
+        assert_eq!(
+            recovery_left(&boxed).await,
+            Vec::<&str>::new(),
+            "nothing of recovery is kept"
+        );
         assert_eq!(
             fake.last_path().as_deref(),
             Some("/cloud/v1/account?confirm=DELETE")
@@ -432,10 +434,18 @@ mod tests {
                 from_card: true,
             })
         );
-        assert_eq!(recovery_left(boxed.as_ref()).await.len(), RECOVERY_KEYS.len(), "another card keeps it");
+        assert_eq!(
+            recovery_left(boxed.as_ref()).await.len(),
+            RECOVERY_KEYS.len(),
+            "another card keeps it"
+        );
         assert!(take_card(app.handle(), &cards, &deleted).await);
         assert_eq!(crate::account::load(app.handle()).await, Ok(None));
-        assert_eq!(recovery_left(boxed.as_ref()).await, Vec::<&str>::new(), "nothing of recovery is kept");
+        assert_eq!(
+            recovery_left(boxed.as_ref()).await,
+            Vec::<&str>::new(),
+            "nothing of recovery is kept"
+        );
         assert_eq!(
             *cards.0.lock().expect("ids"),
             vec!["id-account.deleted".to_string()]

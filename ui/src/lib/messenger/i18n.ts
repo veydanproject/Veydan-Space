@@ -1601,6 +1601,10 @@ export const messengerTranslations = {
     msg_push_ticket_revoke: 'Revoke',
     msg_push_ticket_revoke_title: 'Revoke the ticket {ticket}?',
     msg_push_ticket_revoke_text: 'The server that holds it can no longer wake this phone. A server of yours gets a new ticket by itself.',
+    msg_card_web_title: 'Veydan Cloud website sign-in link',
+    msg_card_web_text: 'A website sign-in is approved only by scanning its QR code in the app. Never sign in with a link someone sent you.',
+    msg_inv_web_link: 'This is a sign-in link of the Veydan Cloud website.',
+    msg_inv_web_open: 'Open the website sign-in',
   },
   ru: {
     pw_reset_confirm_messenger: 'Ключ модуля «Чат» на этом устройстве тоже будет потерян. Вернуть его можно импортом зашифрованной резервной копии ключа (ncryptsec).',
@@ -3196,6 +3200,10 @@ export const messengerTranslations = {
     msg_push_ticket_revoke: 'Отозвать',
     msg_push_ticket_revoke_title: 'Отозвать талон {ticket}?',
     msg_push_ticket_revoke_text: 'Сервер, который его держит, больше не сможет будить этот телефон. Ваш сервер сам получит новый талон.',
+    msg_card_web_title: 'Ссылка входа на сайт Veydan Cloud',
+    msg_card_web_text: 'Вход на сайт подтверждают только сканером QR в приложении. Не входите по ссылке, которую вам прислали.',
+    msg_inv_web_link: 'Это ссылка входа на сайт Veydan Cloud.',
+    msg_inv_web_open: 'Открыть вход на сайт',
   },
 } as const;
 

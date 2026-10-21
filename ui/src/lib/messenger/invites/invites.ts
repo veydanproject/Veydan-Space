@@ -36,7 +36,8 @@ export function formatCode(code: string): string {
 export function addressKind(text: string): 'key' | 'link' | null {
   const q = text.trim();
   if (/^(?:nostr:)?(npub1[0-9a-z]{20,}|[0-9a-f]{64})$/i.test(q)) return 'key';
-  if (/^veydan:\/\/contact\//i.test(q)) return 'link';
+  // A person's link, or the link of a sign-in to the web cabinet (its screen of approval is offered).
+  if (/^veydan:\/\/(?:contact|web)\//i.test(q)) return 'link';
   return null;
 }
 
@@ -50,6 +51,16 @@ export interface InvitedContact {
   blocked: boolean;
   /** The card of the server the person is reached on (`srv=`): the chat is the private one there. */
   server: ServerPreview | null;
+}
+
+/**
+ * The screen of the module cloud where a sign-in to its web cabinet is
+ * approved (`veydan://web/<id>`, cloud-api.md §16.2): a scanned or pasted
+ * link leads there; a link in a message does not. A route, not an import:
+ * the messenger does not know the module.
+ */
+export function webLoginHref(id: string): string {
+  return `/cloud/web?id=${encodeURIComponent(id)}`;
 }
 
 /** The person and the secret of a link the runtime read; `null` for anything but a person's link. */
