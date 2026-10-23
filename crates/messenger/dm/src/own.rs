@@ -138,6 +138,9 @@ impl DmService {
         if envelope.t == T_OWN_CARD {
             return self.contact_private_elsewhere(envelope).await;
         }
+        if envelope.t == messenger_core::envelope::T_OWN_UI {
+            return self.ui_prefs_elsewhere(envelope).await;
+        }
         // A note of the module `cloud` to my devices (`recovery.cancel`): the
         // module hears it through the seam (messenger-wire.md §3).
         if envelope.t.starts_with(crate::notes::T_RECOVERY_PREFIX) {

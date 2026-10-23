@@ -30,6 +30,8 @@ internal object Notifier {
   private const val CHANNEL_DM = "dm"
   private const val CHANNEL_GROUPS = "groups"
   private const val CHANNEL_SERVICE = "service"
+  /** The keeper's service (`KeeperService`): quiet, never a sound. */
+  const val CHANNEL_KEEPER = "keeper"
 
   const val EXTRA_TYPE = "veydan_push_type"
   const val EXTRA_CHAT = "veydan_push_chat"
@@ -60,6 +62,7 @@ internal object Notifier {
         NotificationChannel(CHANNEL_DM, context.getString(R.string.veydan_push_channel_dm), NotificationManager.IMPORTANCE_HIGH),
         NotificationChannel(CHANNEL_GROUPS, context.getString(R.string.veydan_push_channel_groups), NotificationManager.IMPORTANCE_HIGH),
         NotificationChannel(CHANNEL_SERVICE, context.getString(R.string.veydan_push_channel_service), NotificationManager.IMPORTANCE_DEFAULT),
+        NotificationChannel(CHANNEL_KEEPER, context.getString(R.string.veydan_push_channel_keeper), NotificationManager.IMPORTANCE_LOW),
       )
     )
   }

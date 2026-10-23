@@ -50,7 +50,7 @@
   {/each}
   {#if onadd}
     <button class="chip add" onclick={(e) => onadd?.(e.currentTarget)} title={$t('msg_react_title')} aria-label={$t('msg_react_title')}>
-      <Icon name="smile-plus" size={16} />
+      <Icon name="smile-plus" size={18} />
     </button>
   {/if}
 </div>
@@ -58,18 +58,18 @@
 <style>
   .reactions { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip {
-    position: relative; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px;
-    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+    position: relative; display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--control-h-sm); padding: 0 var(--sp-3);
+    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
     color: var(--text-2); font: inherit; line-height: 1; cursor: pointer;
     transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
   }
   .chip:hover:not(:disabled) { background: var(--surface-hover); }
   .chip:disabled { cursor: default; }
   .chip.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
-  .emoji { font-size: 15px; }
-  .count { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; animation: roll 120ms var(--ease); }
+  .emoji { font-size: var(--fs-lg); line-height: 1; }
+  .count { font-size: var(--fs-base); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; animation: roll 120ms var(--ease); }
   .chip.pop .emoji { animation: pop 200ms cubic-bezier(0.2, 0.9, 0.3, 1.15); }
-  .chip.add { width: 34px; justify-content: center; padding: 0; border-style: dashed; background: none; color: var(--text-soft); }
+  .chip.add { width: var(--control-h-lg); justify-content: center; padding: 0; border-style: dashed; background: none; color: var(--text-soft); }
   @keyframes pop { 50% { transform: scale(1.2); } }
   @keyframes roll { from { transform: translateY(60%); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .count, .chip.pop .emoji { animation: none; } }

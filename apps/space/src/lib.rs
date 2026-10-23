@@ -13,6 +13,8 @@
 //! backups, the capture bridge and tor are `cfg(desktop)`; on a phone
 //! browser and ssh keep only their tables.
 
+#[cfg(test)]
+mod command_futures;
 #[cfg(desktop)]
 mod browser;
 #[cfg(desktop)]
@@ -54,8 +56,8 @@ const PRODUCT: veydan_shell::Product = veydan_shell::Product {
 /// sync starts once all are set up. `browser`, `ssh`, `notes` is the order
 /// of their pages in the tray; `pass` before `notes` puts the password
 /// generator above the quick note; `browser` before `messenger` stops the
-/// browsers before the messenger takes its notices back; `cloud` after
-/// `messenger`, whose seams it takes.
+/// browsers before the messenger takes its notices back; `communities` and
+/// `cloud` after `messenger`, whose seams they take.
 pub(crate) fn module_list() -> Vec<Module> {
     let mut list = vec![
         veydan_pass::module(),
@@ -70,6 +72,7 @@ pub(crate) fn module_list() -> Vec<Module> {
         veydan_tor::module(),
     ]);
     list.push(veydan_messenger_app::module());
+    list.push(veydan_communities::module());
     list.push(veydan_cloud::module());
     list
 }

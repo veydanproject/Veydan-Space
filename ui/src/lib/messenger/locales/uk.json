@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Згорнути",
     "msg_message_more": "Ще",
     "msg_composer_save": "Зберегти",
+    "msg_composer_expand": "Розширений редактор",
     "msg_text_copied": "Текст скопійовано",
     "msg_chat_archived_toast": "Чат перенесено в архів",
     "msg_action_failed": "Не вдалося",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Посилання входу на сайт Veydan Cloud",
     "msg_card_web_text": "Вхід на сайт підтверджують лише скануванням QR-коду в застосунку. Не входьте за посиланням, яке вам надіслали.",
     "msg_inv_web_link": "Це посилання входу на сайт Veydan Cloud.",
-    "msg_inv_web_open": "Відкрити вхід на сайт"
+    "msg_inv_web_open": "Відкрити вхід на сайт",
+    "msg_report_channel_title": "Скарга на канал «{name}»",
+    "msg_report_post_title": "Поскаржитися на допис",
+    "msg_report_comment_title": "Поскаржитися на коментар",
+    "msg_report_post_note": "Допис піде разом зі скаргою.",
+    "msg_report_comment_note": "Коментар піде разом зі скаргою.",
+    "msg_report_channel_note": "У скарзі буде названо канал і його власника.",
+    "msg_report_channel_person_note": "У скарзі буде названо людину і канал, де ви її зустріли.",
+    "msg_card_channel": "Канал",
+    "msg_card_channels_off": "Канали вимкнено в налаштуваннях",
+    "msg_card_channels_settings": "Налаштування"
   },
   "mobile": {}
 }

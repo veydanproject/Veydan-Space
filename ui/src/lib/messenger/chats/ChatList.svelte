@@ -27,14 +27,22 @@
   import { groupStore } from '../groups/groupStore.svelte';
   import { answersRequests } from '../groups/permissions';
   import ServerLabel from '../servers/ServerLabel.svelte';
+  import { chatSections, type SectionRow } from '../seams/sections.svelte';
 
   interface Props {
     query: string;
-    /** The section listed while nothing is typed: the chats between two or the groups. */
-    kind?: ChatSection;
+    /** The section listed while nothing is typed: the chats between two, the groups, or a section a module gives (seams/sections). */
+    kind?: ChatSection | string;
     onopen: (chat: MessengerChat) => void;
+    /** A row of a module's section opened, by its chat id. */
+    onopenrow?: (chatId: string) => void;
+    /** The row of a module's section open now. */
+    selected?: string | null;
   }
-  let { query, kind = 'dm', onopen }: Props = $props();
+  let { query, kind = 'dm', onopen, onopenrow, selected = null }: Props = $props();
+
+  /** The section a module gives, when `kind` names one: its rows instead of the messenger's chats. */
+  const host = $derived(kind === 'dm' || kind === 'group' ? null : chatSections.get(kind));
 
   const phone = onPhone();
 
@@ -49,7 +57,28 @@
 
   const q = $derived(query.trim());
   const haystacks = $derived(contactHaystacks(messengerStore.contacts));
-  const matches = (c: MessengerChat) => inSection(c, kind, q) && chatMatches(c, q, haystacks);
+  const matches = (c: MessengerChat) => !host && inSection(c, kind as ChatSection, q) && chatMatches(c, q, haystacks);
+  const rowMatches = (r: SectionRow) => !q || r.title.toLocaleLowerCase().includes(q.toLocaleLowerCase());
+  const byTime = (a: SectionRow, b: SectionRow) => Number(b.pinned) - Number(a.pinned) || (b.at ?? 0) - (a.at ?? 0);
+  const hostRows = $derived(host ? host.rows().filter(rowMatches).sort(byTime) : []);
+  const hostVisible = $derived(hostRows.filter((r) => !r.archived));
+  const hostArchived = $derived(hostRows.filter((r) => r.archived));
+  let rowMenu = $state<{ open: boolean; x: number; y: number; row: SectionRow | null }>({ open: false, x: 0, y: 0, row: null });
+
+  /** A choice the messenger keeps of a module's row, then the module reads its rows again. */
+  function rowAct(run: () => Promise<unknown>) {
+    act(async () => { await run(); host?.refresh(); });
+  }
+
+  const rowItems = $derived.by((): MenuEntry[] => {
+    const r = rowMenu.row;
+    if (!r) return [];
+    return [
+      { label: r.pinned ? $t('msg_chat_unpin') : $t('msg_chat_pin'), icon: 'pin', onselect: () => rowAct(() => chatStore.setPinned(r.chatId, !r.pinned)) },
+      { label: r.muted ? $t('msg_chat_unmute') : $t('msg_chat_mute'), icon: r.muted ? 'bell' : 'bell-off', onselect: () => rowAct(() => chatStore.setMuted(r.chatId, !r.muted)) },
+      { label: r.archived ? $t('msg_chat_unarchive') : $t('msg_chat_archive'), icon: r.archived ? 'archive-restore' : 'archive', onselect: () => rowAct(() => chatStore.setArchived(r.chatId, !r.archived)) },
+    ];
+  });
   // A request of a stranger is not a chat yet: it waits behind the row of
   // requests, out of the list and the archive, until it is accepted.
   const isRequest = (c: MessengerChat) => c.mode === 'request_received';
@@ -110,6 +139,30 @@
   });
 </script>
 
+{#snippet extRow(r: SectionRow)}
+  <li>
+    <button class="chat" class:active={selected === r.chatId} onclick={() => onopenrow?.(r.chatId)} oncontextmenu={(e) => { e.preventDefault(); rowMenu = { open: true, x: e.clientX, y: e.clientY, row: r }; }}
+      use:longpress={{ onpress: (p) => (rowMenu = { open: true, x: p.x, y: p.y, row: r }) }}>
+      <!-- A picture the module already has (a `data:` URL) is shown as it is; an address is fetched by the runtime. -->
+      <Avatar url={r.picture?.startsWith('data:') ? null : r.picture} src={r.picture?.startsWith('data:') ? r.picture : null} label={r.title} seed={r.seed} size={42} />
+      <span class="body">
+        <span class="top">
+          {#if host}<span class="dim"><Icon name={host.icon} size={12} /></span>{/if}
+          <span class="title">{r.title}</span>
+          {#if r.muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}
+          {#if r.pinned}<span class="dim"><Icon name="pin" size={12} /></span>{/if}
+          <span class="stamp">{listStamp(r.at)}</span>
+        </span>
+        <span class="bottom">
+          <span class="preview">{r.preview}</span>
+          {#if r.asks}<span class="badge asks"><Icon name="user-plus" size={11} />{r.asks > 99 ? '99+' : r.asks}</span>{/if}
+          {#if r.unread > 0}<span class="badge" class:muted={r.muted}>{r.unread > 99 ? '99+' : r.unread}</span>{/if}
+        </span>
+      </span>
+    </button>
+  </li>
+{/snippet}
+
 {#snippet row(c: MessengerChat)}
   <li>
     <button class="chat" class:active={chatStore.activeId === c.id} onclick={() => onopen(c)} oncontextmenu={(e) => openMenu(e, c)}
@@ -154,7 +207,36 @@
       <span class="dim"><Icon name="chevron-right" size={16} /></span>
     </button>
   {/if}
-  {#if visible.length === 0 && archived.length === 0}
+  {#if host}
+    {#if hostVisible.length === 0 && hostArchived.length === 0 && !q && host.loading?.()}
+      <div class="empty loading" role="status">
+        <span class="spinner" aria-hidden="true"></span>
+        {#if host.loadingTitle}<p>{$t(host.loadingTitle)}</p>{/if}
+      </div>
+    {:else if hostVisible.length === 0 && hostArchived.length === 0}
+      <div class="empty">
+        <Icon name={host.icon} size={28} />
+        <p>{q ? $t('msg_chats_nothing_found') : $t(host.emptyTitle)}</p>
+        {#if !q}<span>{$t(host.emptyHint)}</span>{/if}
+      </div>
+    {:else}
+      <ul class="list divided">
+        {#each hostVisible as r (r.chatId)}{@render extRow(r)}{/each}
+      </ul>
+      {#if hostArchived.length}
+        <button class="archived-toggle" onclick={() => (showArchived = !showArchived)}>
+          <Icon name="archive" size={13} />
+          {$t('msg_chats_archived', { n: String(hostArchived.length) })}
+          <Icon name={showArchived ? 'chevron-up' : 'chevron-down'} size={13} />
+        </button>
+        {#if showArchived}
+          <ul class="list divided">
+            {#each hostArchived as r (r.chatId)}{@render extRow(r)}{/each}
+          </ul>
+        {/if}
+      {/if}
+    {/if}
+  {:else if visible.length === 0 && archived.length === 0}
     <div class="empty">
       <Icon name={kind === 'group' ? 'users' : 'message-circle'} size={28} />
       <p>{q ? $t('msg_chats_nothing_found') : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}</p>
@@ -180,6 +262,7 @@
 </div>
 
 <ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={rowMenu.open} x={rowMenu.x} y={rowMenu.y} items={rowItems} onclose={() => (rowMenu.open = false)} />
 
 <style>
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
@@ -218,6 +301,7 @@
   }
   .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
   .empty span { font-size: var(--fs-xs); line-height: 1.5; }
+  .empty.loading .spinner { width: 20px; height: 20px; }
   .archived-toggle {
     display: flex; align-items: center; gap: 6px; width: 100%; margin-top: var(--sp-2);
     padding: var(--sp-2) var(--sp-3); border: none; background: none; cursor: pointer;

@@ -157,7 +157,6 @@
         <Icon name="upload" size={11} />{$t(countKey('msg_xfer_album', uploaded.n, $locale), { k: String(uploaded.k), n: String(uploaded.n) })}
       </div>
     {/if}
-    {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} onadd={actions?.react} /></div>{/if}
     {#each captions as m (m.id)}<div class="caption" data-part={m.id}><MessageContent text={m.text ?? ''} rich={m.rich} /></div>{/each}
     {#if !overlay}{@render meta(false)}{/if}
   </div>
@@ -169,6 +168,8 @@
       </div>
     {/if}
   </div>
+  <!-- Reactions hang under the bubble, on its side, as under a single message. -->
+  {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} onadd={actions?.react} /></div>{/if}
   {#each failed.filter((m) => out && !m.deleted && !m.id.startsWith('local:')) as m (m.id)}
     <button class="retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
       <Icon name="refresh-cw" size={12} />{$t('msg_message_retry')}
@@ -193,18 +194,19 @@
   .line.first { margin-top: var(--sp-2); }
   .line.highlighted { background: var(--accent-tint); }
   .bubble {
-    --r: 14px; --r-joined: 5px;
-    max-width: min(420px, 78%); background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+    --r: var(--radius-head); --r-joined: var(--radius-badge); --r-tail: var(--radius-xs);
+    max-width: min(420px, 78%); background: var(--bubble-in-bg); color: var(--text); border: 1px solid var(--bubble-in-border);
     border-radius: var(--r); display: flex; flex-direction: column; gap: 4px; overflow: hidden;
   }
   /* Every album is as wide as the mosaic it holds, pictures or files. */
   .bubble.visual, .bubble.files, .bubble.mixed { width: min(420px, 78%); padding: 3px; }
   /* A run of one author: the corners that touch the next bubble are small. */
   .line:not(.first) .bubble { border-top-left-radius: var(--r-joined); }
-  .line:not(.last) .bubble { border-bottom-left-radius: var(--r-joined); }
-  .line.out .bubble { background: var(--accent-tint); border-color: var(--accent-tint-border); border-top-left-radius: var(--r); border-bottom-left-radius: var(--r); }
+  /* The corner on the author's side at the bottom is always the small one: it points at the author. */
+  .line .bubble { border-bottom-left-radius: var(--r-tail); }
+  .line.out .bubble { background: var(--bubble-out-bg); border-color: var(--bubble-out-border); color: var(--bubble-out-text); border-top-left-radius: var(--r); border-bottom-left-radius: var(--r); }
   .line.out:not(.first) .bubble { border-top-right-radius: var(--r-joined); }
-  .line.out:not(.last) .bubble { border-bottom-right-radius: var(--r-joined); }
+  .line.out .bubble { border-bottom-right-radius: var(--r-tail); }
   .bubble.failed { border-color: var(--danger-border); }
   .author { font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 1.2; padding: 4px 8px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -219,8 +221,9 @@
 
   .caption { padding: 0 8px; }
   .uploaded { display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: var(--fs-2xs); color: var(--text-3); }
-  .reactions { padding: 2px 5px 0; }
-  .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-size: var(--fs-3xs); color: var(--text-3); line-height: 1; padding: 0 8px 5px; }
+  .reactions { margin-top: var(--sp-1); max-width: min(420px, 78%); }
+  .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: 1; padding: 0 8px 5px; white-space: nowrap; }
+  .line.out .meta:not(.on-picture) { color: var(--bubble-out-meta); }
   .meta.on-picture {
     position: absolute; right: 6px; bottom: 6px; padding: 3px 7px; border-radius: var(--radius-pill);
     background: rgba(0, 0, 0, 0.5); color: #fff; pointer-events: none;

@@ -396,6 +396,10 @@ pub trait CloudApi: Send + Sync {
     /// `POST /cloud/v1/web/sessions/revoke` (16.4): one session, or all
     /// of them for `None`.
     fn web_sessions_revoke<'a>(&'a self, id: Option<&'a str>) -> SeamFuture<'a, WebRevoked>;
+    /// `PUT /cloud/v1/delegates` (§17.2): a key of a channel's staff counted as mine.
+    fn delegate_put<'a>(&'a self, delegate: &'a veydan_shell::seams::DelegatePut) -> SeamFuture<'a, ()>;
+    /// `DELETE /cloud/v1/delegates?pubkey=` (§17.2): revoked, its files stay mine.
+    fn delegate_revoke<'a>(&'a self, pubkey: &'a str) -> SeamFuture<'a, ()>;
 }
 
 /// The client of a product whose messenger offers no way to the hosts of
@@ -490,6 +494,12 @@ impl CloudApi for Unconfigured {
         no_host()
     }
     fn web_sessions_revoke<'a>(&'a self, _id: Option<&'a str>) -> SeamFuture<'a, WebRevoked> {
+        no_host()
+    }
+    fn delegate_put<'a>(&'a self, _delegate: &'a veydan_shell::seams::DelegatePut) -> SeamFuture<'a, ()> {
+        no_host()
+    }
+    fn delegate_revoke<'a>(&'a self, _pubkey: &'a str) -> SeamFuture<'a, ()> {
         no_host()
     }
 }
@@ -1160,6 +1170,28 @@ impl CloudApi for HttpCloud {
             )
         })
     }
+
+    fn delegate_put<'a>(&'a self, delegate: &'a veydan_shell::seams::DelegatePut) -> SeamFuture<'a, ()> {
+        Box::pin(async move {
+            let body = serde_json::to_value(delegate)
+                .map_err(|e| CloudError::new(code::BAD_REQUEST, e.to_string()))?;
+            let done = self
+                .request("PUT", "/cloud/v1/delegates", Some(body), Auth::Identity)
+                .await;
+            plain(done).map(|_| ())
+        })
+    }
+
+    fn delegate_revoke<'a>(&'a self, pubkey: &'a str) -> SeamFuture<'a, ()> {
+        Box::pin(async move {
+            if pubkey.len() != 64 || !pubkey.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(CloudError::new(code::BAD_REQUEST, "pubkey: 64 hex"));
+            }
+            let path = format!("/cloud/v1/delegates?pubkey={}", pubkey.to_ascii_lowercase());
+            let done = self.request("DELETE", &path, None, Auth::Identity).await;
+            plain(done).map(|_| ())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1182,6 +1214,7 @@ mod tests {
             api.plans().await.err(),
             api.recovery_config_put(3, 5, 1).await.err(),
             api.recovery_config_delete().await.err(),
+            api.delegate_revoke(&"ab".repeat(32)).await.err(),
             api.recovery_request(&"ab".repeat(32), &t, pow())
                 .await
                 .err(),

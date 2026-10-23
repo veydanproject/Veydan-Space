@@ -15,6 +15,8 @@
     "nav_settings": "設定",
     "nav_back_to": "{name}に戻る",
     "common_close": "閉じる",
+    "common_pane_width": "パネルの幅",
+    "common_pane_resize_hint": "ドラッグで幅を変更 · ダブルクリックで元に戻す",
     "common_cancel": "キャンセル",
     "common_delete": "削除",
     "common_confirm": "OK",

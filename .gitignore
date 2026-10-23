@@ -24,6 +24,8 @@ ui/build/
 # The skill and the agent of the publishing (skills/, agents/) are the repository's; the rest is local
 .vscode/
 .idea/
+# The agent instructions of this machine: the root AGENTS.md is a local pointer to the rules of the repository
+/AGENTS.md
 graphify-out/
 # zig leaves it in the working directory of a cross build
 .intentionally-empty-file.o
@@ -54,3 +56,6 @@ messenger-cli-data/
 *.db-wal
 *.sqlite
 *.sqlite3
+
+# User manuals (docs/manual/): drafts until the owner publishes them
+docs/manual/

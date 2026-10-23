@@ -13,6 +13,7 @@ import { chatStore } from '../chats/chatStore.svelte';
 import { groupStore } from '../groups/groupStore.svelte';
 import { messengerStore } from '../store.svelte';
 import { linkStore } from './linkStore.svelte';
+import { chatSections } from '../seams/sections.svelte';
 import type { ExternalUrl } from './types';
 
 type GroupView = Extract<LinkView, { kind: 'group' }>;
@@ -27,10 +28,16 @@ export function onChatOpened(fn: (chatId: string) => void | Promise<void>): () =
   return () => { if (show === fn) show = before; };
 }
 
-/** Opens a chat and shows it, wherever the user was in the messenger. */
+/**
+ * Opens a chat and shows it, wherever the user was in the messenger. A row
+ * of a section a module gives (`channel:…`, seams/sections) is the module's
+ * to show: the messenger only goes to it.
+ */
 export async function openChat(chatId: string) {
-  await chatStore.loadChats();
-  await chatStore.open(chatId);
+  if (!chatSections.ofChat(chatId)) {
+    await chatStore.loadChats();
+    await chatStore.open(chatId);
+  }
   await show(chatId);
 }
 

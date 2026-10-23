@@ -809,50 +809,54 @@ pub async fn proxy_check(
     core: tauri::State<'_, Core>,
     tor: tauri::State<'_, veydan_tor::TorManager>,
 ) -> CmdResult<ProxyCheckResult> {
-    let proxy = sqlx::query_as::<_, Proxy>("SELECT * FROM proxies WHERE id = ?")
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let proxy = sqlx::query_as::<_, Proxy>("SELECT * FROM proxies WHERE id = ?")
+            .bind(&id)
+            .fetch_optional(&core.db)
+            .await
+            .map_err(AppError::db)?
+            .ok_or_else(|| AppError::not_found("Proxy not found"))?;
+
+        let result = check::check_proxy(&proxy, &tor)
+            .await
+            .map_err(AppError::proxy)?;
+
+        // For SSH proxies with a new fingerprint — do NOT save status yet,
+        // the frontend must prompt the user to confirm the fingerprint first.
+        if proxy.proxy_type == "ssh" && result.ssh_fingerprint_is_new == Some(true) {
+            return Ok(result);
+        }
+
+        let status = if result.ok { "active" } else { "error" };
+        // The country of a Tor row is the exits the user asked for, and empty
+        // means any: where this check happened to come out is not written there.
+        let (country, city) = if crate::proxy::tor::is_tor(&proxy) {
+            (None, None)
+        } else {
+            (result.country.clone(), result.city.clone())
+        };
+        sqlx::query(
+            "UPDATE proxies SET
+                status = ?,
+                last_ip = ?,
+                last_check_at = datetime('now'),
+                country = CASE WHEN (country IS NULL OR country = '') THEN ? ELSE country END,
+                city    = CASE WHEN (city IS NULL OR city = '')       THEN ? ELSE city    END
+            WHERE id = ?",
+        )
+        .bind(status)
+        .bind(&result.ip)
+        .bind(&country)
+        .bind(&city)
         .bind(&id)
-        .fetch_optional(&core.db)
+        .execute(&core.db)
         .await
-        .map_err(AppError::db)?
-        .ok_or_else(|| AppError::not_found("Proxy not found"))?;
+        .map_err(AppError::db)?;
 
-    let result = check::check_proxy(&proxy, &tor)
-        .await
-        .map_err(AppError::proxy)?;
-
-    // For SSH proxies with a new fingerprint — do NOT save status yet,
-    // the frontend must prompt the user to confirm the fingerprint first.
-    if proxy.proxy_type == "ssh" && result.ssh_fingerprint_is_new == Some(true) {
-        return Ok(result);
-    }
-
-    let status = if result.ok { "active" } else { "error" };
-    // The country of a Tor row is the exits the user asked for, and empty
-    // means any: where this check happened to come out is not written there.
-    let (country, city) = if crate::proxy::tor::is_tor(&proxy) {
-        (None, None)
-    } else {
-        (result.country.clone(), result.city.clone())
-    };
-    sqlx::query(
-        "UPDATE proxies SET
-            status = ?,
-            last_ip = ?,
-            last_check_at = datetime('now'),
-            country = CASE WHEN (country IS NULL OR country = '') THEN ? ELSE country END,
-            city    = CASE WHEN (city IS NULL OR city = '')       THEN ? ELSE city    END
-        WHERE id = ?",
-    )
-    .bind(status)
-    .bind(&result.ip)
-    .bind(&country)
-    .bind(&city)
-    .bind(&id)
-    .execute(&core.db)
+        Ok(result)
+    })
     .await
-    .map_err(AppError::db)?;
-
-    Ok(result)
 }
 
 /// Save a trusted SSH server fingerprint (TOFU: user confirmed the fingerprint in UI).

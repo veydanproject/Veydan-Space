@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Ocultar",
     "msg_message_more": "Mais",
     "msg_composer_save": "Salvar",
+    "msg_composer_expand": "Editor ampliado",
     "msg_text_copied": "Texto copiado",
     "msg_chat_archived_toast": "Conversa movida para o arquivo",
     "msg_action_failed": "Não foi possível",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Link de login no site do Veydan Cloud",
     "msg_card_web_text": "O login no site só é aprovado escaneando o código QR dele no app. Nunca entre por um link que alguém enviou a você.",
     "msg_inv_web_link": "Este é um link de login no site do Veydan Cloud.",
-    "msg_inv_web_open": "Abrir o login no site"
+    "msg_inv_web_open": "Abrir o login no site",
+    "msg_report_channel_title": "Denunciar o canal “{name}”",
+    "msg_report_post_title": "Denunciar uma publicação",
+    "msg_report_comment_title": "Denunciar um comentário",
+    "msg_report_post_note": "A publicação vai junto com a denúncia.",
+    "msg_report_comment_note": "O comentário vai junto com a denúncia.",
+    "msg_report_channel_note": "A denúncia informa o canal e o proprietário dele.",
+    "msg_report_channel_person_note": "A denúncia informa a pessoa e o canal em que você a encontrou.",
+    "msg_card_channel": "Canal",
+    "msg_card_channels_off": "Os canais estão desativados nas configurações",
+    "msg_card_channels_settings": "Configurações"
   },
   "mobile": {}
 }

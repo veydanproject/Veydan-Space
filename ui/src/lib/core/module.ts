@@ -394,6 +394,11 @@ export interface ModuleDef {
    */
   bar?: (url: URL) => NavItem[] | null | undefined;
   /**
+   * Mobile: true for a path whose bar (`bar`) has no apps button in the
+   * middle because the screen's own header carries it (core/ui/HubButton).
+   */
+  hubInHeader?: (url: URL) => boolean;
+  /**
    * Mobile: asked once at start, before the default screen opens. True when
    * the module took the user somewhere (the chat of a tapped notification).
    */

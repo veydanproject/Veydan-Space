@@ -28,6 +28,27 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Scrollbars ── (design: variant S2 "overlay" of 2026-10-19)
+   Only the thumb: thin, no arrows, no track, shown while the pointer is over the scrolling area.
+   Only where there is a mouse: a phone keeps its own overlay scrollbars.
+   An element with `scrollbar-width` or `scrollbar-color` keeps the system's bar (Chromium ignores
+   these rules there), so a component that wants its own bar styles it with the pseudo-elements. */
+@media (hover: hover) and (pointer: fine) {
+  *::-webkit-scrollbar { width: 12px; height: 12px; }
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+  *::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    background-clip: padding-box;
+    border: 4px solid transparent;
+    border-radius: 999px;
+  }
+  *:hover::-webkit-scrollbar-thumb { background-color: var(--scroll-thumb); }
+  *::-webkit-scrollbar-thumb:hover { background-color: var(--scroll-thumb-hover); border-width: 3px; }
+  *::-webkit-scrollbar-thumb:active { background-color: var(--scroll-thumb-active); border-width: 3px; }
+}
+
 /* Entry animations shared by screens and drawers (design: vfade / vslide) */
 @keyframes vfade {
   from { opacity: 0; transform: translateY(6px); }

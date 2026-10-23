@@ -464,10 +464,14 @@ pub async fn profile_import_json(
     workspace_id: Option<String>,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<Profile> {
-    let export: ProfileExport =
-        serde_json::from_str(&json).map_err(|e| AppError::other(format!("Invalid JSON: {e}")))?;
-    validate_export(&export)?;
-    create_profile_from_export(export, workspace_id, &core).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let export: ProfileExport =
+            serde_json::from_str(&json).map_err(|e| AppError::other(format!("Invalid JSON: {e}")))?;
+        validate_export(&export)?;
+        create_profile_from_export(export, workspace_id, &core).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -476,18 +480,22 @@ pub async fn profile_import_zip(
     workspace_id: Option<String>,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<Profile> {
-    let tmp_dir = core
-        .app_data_dir
-        .join("import_tmp")
-        .join(uuid::Uuid::new_v4().to_string());
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let tmp_dir = core
+            .app_data_dir
+            .join("import_tmp")
+            .join(uuid::Uuid::new_v4().to_string());
 
-    std::fs::create_dir_all(&tmp_dir).map_err(AppError::io)?;
+        std::fs::create_dir_all(&tmp_dir).map_err(AppError::io)?;
 
-    let result = import_zip_inner(&file_path, workspace_id, &core, &tmp_dir).await;
+        let result = import_zip_inner(&file_path, workspace_id, &core, &tmp_dir).await;
 
-    std::fs::remove_dir_all(&tmp_dir).ok();
+        std::fs::remove_dir_all(&tmp_dir).ok();
 
-    result
+        result
+    })
+    .await
 }
 
 async fn import_zip_inner(
@@ -567,31 +575,35 @@ pub async fn profile_import_zip_data(
     workspace_id: Option<String>,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<Profile> {
-    let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data_b64.trim())
-        .map_err(|e| AppError::other(format!("Invalid base64: {e}")))?;
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data_b64.trim())
+            .map_err(|e| AppError::other(format!("Invalid base64: {e}")))?;
 
-    let tmp_dir = core
-        .app_data_dir
-        .join("import_tmp")
-        .join(uuid::Uuid::new_v4().to_string());
-    std::fs::create_dir_all(&tmp_dir).map_err(AppError::io)?;
+        let tmp_dir = core
+            .app_data_dir
+            .join("import_tmp")
+            .join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&tmp_dir).map_err(AppError::io)?;
 
-    let extracted_dir = tmp_dir.join("extracted");
-    let tmp_zip = tmp_dir.join("upload.zip");
-    std::fs::write(&tmp_zip, &bytes).map_err(AppError::io)?;
+        let extracted_dir = tmp_dir.join("extracted");
+        let tmp_zip = tmp_dir.join("upload.zip");
+        std::fs::write(&tmp_zip, &bytes).map_err(AppError::io)?;
 
-    let result = import_zip_inner(
-        tmp_zip
-            .to_str()
-            .ok_or_else(|| AppError::other("Invalid tmp path"))?,
-        workspace_id,
-        &core,
-        &extracted_dir,
-    )
-    .await;
+        let result = import_zip_inner(
+            tmp_zip
+                .to_str()
+                .ok_or_else(|| AppError::other("Invalid tmp path"))?,
+            workspace_id,
+            &core,
+            &extracted_dir,
+        )
+        .await;
 
-    std::fs::remove_dir_all(&tmp_dir).ok();
-    result
+        std::fs::remove_dir_all(&tmp_dir).ok();
+        result
+    })
+    .await
 }
 
 /// Export profile JSON directly to a file path chosen via dialog on the frontend.

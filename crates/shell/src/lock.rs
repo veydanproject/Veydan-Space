@@ -154,11 +154,15 @@ pub async fn lock_set(
     hint: Option<String>,
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<LockSetResult> {
-    let recovery_key = lock.set(password, current, kind, hint).await?;
-    Ok(LockSetResult {
-        status: lock.status().await,
-        recovery_key,
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let recovery_key = lock.set(password, current, kind, hint).await?;
+        Ok(LockSetResult {
+            status: lock.status().await,
+            recovery_key,
+        })
     })
+    .await
 }
 
 /// Replace the recovery key. The old one stops working.
@@ -167,7 +171,11 @@ pub async fn lock_recovery_regenerate(
     current: String,
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<String> {
-    Ok(lock.recovery_regenerate(&current).await?)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        Ok(lock.recovery_regenerate(&current).await?)
+    })
+    .await
 }
 
 /// Step 1 of recovery: confirm the code opens the vault, nothing changes.
@@ -186,11 +194,15 @@ pub async fn lock_recover(
     hint: Option<String>,
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<LockSetResult> {
-    let recovery_key = lock.recover(&code, password, kind, hint).await?;
-    Ok(LockSetResult {
-        status: lock.status().await,
-        recovery_key: Some(recovery_key),
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let recovery_key = lock.recover(&code, password, kind, hint).await?;
+        Ok(LockSetResult {
+            status: lock.status().await,
+            recovery_key: Some(recovery_key),
+        })
     })
+    .await
 }
 
 /// Step 2 of recovery for a lock whose second wrap is the Recovery Key of
@@ -204,8 +216,12 @@ pub async fn lock_recover_keep(
     hint: Option<String>,
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<LockStatus> {
-    lock.recover_keep(&words, password, kind, hint).await?;
-    Ok(lock.status().await)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        lock.recover_keep(&words, password, kind, hint).await?;
+        Ok(lock.status().await)
+    })
+    .await
 }
 
 /// Only behind an open lock: `0` turns the auto-lock off, on every device
@@ -228,8 +244,12 @@ pub async fn lock_timeout_set(
 
 #[tauri::command]
 pub async fn lock_unlock(password: String, lock: tauri::State<'_, Lock>) -> CmdResult<LockStatus> {
-    lock.unlock(&password).await?;
-    Ok(lock.status().await)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        lock.unlock(&password).await?;
+        Ok(lock.status().await)
+    })
+    .await
 }
 
 #[tauri::command]

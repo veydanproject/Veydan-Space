@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "收起",
     "msg_message_more": "更多",
     "msg_composer_save": "保存",
+    "msg_composer_expand": "扩展编辑器",
     "msg_text_copied": "文本已复制",
     "msg_chat_archived_toast": "聊天已移至归档",
     "msg_action_failed": "操作失败",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Veydan Cloud 网站登录链接",
     "msg_card_web_text": "网站登录只能通过在应用中扫描其二维码来批准。切勿使用别人发给你的链接登录。",
     "msg_inv_web_link": "这是 Veydan Cloud 网站的登录链接。",
-    "msg_inv_web_open": "打开网站登录"
+    "msg_inv_web_open": "打开网站登录",
+    "msg_report_channel_title": "举报频道“{name}”",
+    "msg_report_post_title": "举报帖子",
+    "msg_report_comment_title": "举报评论",
+    "msg_report_post_note": "帖子会随举报一并提交。",
+    "msg_report_comment_note": "评论会随举报一并提交。",
+    "msg_report_channel_note": "举报会写明该频道及其所有者。",
+    "msg_report_channel_person_note": "举报会写明此人，以及你遇到他的频道。",
+    "msg_card_channel": "频道",
+    "msg_card_channels_off": "设置中已关闭频道",
+    "msg_card_channels_settings": "设置"
   },
   "mobile": {}
 }

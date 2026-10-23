@@ -80,6 +80,12 @@
     shown === 'sent' ? 'check' : shown === 'delivered' || shown === 'read' ? 'check-check' : shown === 'failed' ? 'alert-triangle' : shown === 'uploading' ? 'upload' : 'clock',
   );
   const statusTitle = $derived($t(`msg_status_${shown}` as 'msg_status_sent'));
+  // The time sits on the last line of the text, as in other messengers, when
+  // text ends the bubble: no card instead of it.
+  const metaInline = $derived(
+    !!m.text && !m.deleted && m.content_type !== 'contact' && !m.bot_card
+      && (m.content_type !== 'media' || !!media),
+  );
 </script>
 
 <div class="line" class:out class:first class:last class:highlighted class:selected class:fresh data-mid={m.id} use:swipeReply={{ onreply: m.deleted ? undefined : onreply }}>
@@ -108,16 +114,16 @@
       <BotCardMessage card={m.bot_card} id={m.id} at={m.created_at} />
     {:else if m.content_type === 'media' && media}
       {@render media(m)}
-      {#if m.text}<MessageContent text={m.text} rich={m.rich} />{/if}
+      {#if m.text}<div class="body"><MessageContent text={m.text} rich={m.rich} />{#if metaInline}{@render meta()}{/if}</div>{/if}
     {:else if m.text}
-      <MessageContent text={m.text} rich={m.rich} />
+      <div class="body"><MessageContent text={m.text} rich={m.rich} />{#if metaInline}{@render meta()}{/if}</div>
     {:else}
       <span class="tomb">{$t('msg_message_unsupported', { type: m.content_type })}</span>
     {/if}
 
-    {#if !m.deleted && m.reactions?.length}<Reactions message={m} onerror={onreacterror} onadd={actions?.react} />{/if}
 
-    <span class="meta">
+    {#snippet meta()}
+    <span class="meta" class:inline={metaInline}>
       <!-- Waiting for a moderator: only its author and the moderators have it at all. -->
       {#if m.review === 'pending' && !m.deleted}<span class="pending"><Icon name="clock" size={9} />{$t('msg_mod_pending')}</span>{/if}
       <!-- Turned down by a moderator: its author alone is shown it, and told so. -->
@@ -125,9 +131,11 @@
       {#if m.edited_at && !m.deleted}<span>{$t('msg_message_edited')}</span>{/if}
       <span>{clock(m.created_at)}</span>
       {#if out && !m.deleted}
-        <span class="status {shown}" title={statusTitle}>{#key statusIcon}<Icon name={statusIcon} size={12} />{/key}</span>
+        <span class="status {shown}" title={statusTitle}>{#key statusIcon}<Icon name={statusIcon} size={14} />{/key}</span>
       {/if}
     </span>
+    {/snippet}
+    {#if !metaInline}{@render meta()}{/if}
   </div>
     {#if actions && !m.deleted}
       <div class="acts">
@@ -137,6 +145,8 @@
       </div>
     {/if}
   </div>
+  <!-- Reactions hang under the bubble, on its side. -->
+  {#if !m.deleted && m.reactions?.length}<div class="reacts"><Reactions message={m} onerror={onreacterror} onadd={actions?.react} /></div>{/if}
   {#if m.status === 'failed' && out && !m.deleted && !m.id.startsWith('local:')}
     <button class="retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
       <Icon name="refresh-cw" size={12} />{$t('msg_message_retry')}
@@ -166,15 +176,16 @@
   .bubble {
     position: relative; max-width: min(620px, 78%); padding: 9px 14px 7px;
     background: var(--bubble-in-bg); color: var(--text); border: 1px solid var(--bubble-in-border);
-    --r: 18px; --r-joined: 6px;
+    --r: var(--radius-head); --r-joined: var(--radius-badge); --r-tail: var(--radius-xs);
     border-radius: var(--r); display: flex; flex-direction: column; gap: 3px; min-width: 64px;
   }
   /* A run of one author: the corners that touch the next bubble are small. */
   .line:not(.first) .bubble { border-top-left-radius: var(--r-joined); }
-  .line:not(.last) .bubble { border-bottom-left-radius: var(--r-joined); }
+  /* The corner on the author's side at the bottom is always the small one: it points at the author. */
+  .line .bubble { border-bottom-left-radius: var(--r-tail); }
   .line.out .bubble { background: var(--bubble-out-bg); border-color: var(--bubble-out-border); color: var(--bubble-out-text); border-top-left-radius: var(--r); border-bottom-left-radius: var(--r); }
   .line.out:not(.first) .bubble { border-top-right-radius: var(--r-joined); }
-  .line.out:not(.last) .bubble { border-bottom-right-radius: var(--r-joined); }
+  .line.out .bubble { border-bottom-right-radius: var(--r-tail); }
   .bubble.failed { border-color: var(--danger-border); }
   .line .bubble.bare, .line.out .bubble.bare { background: none; border-color: transparent; padding: 0; }
   /* Touch: a long press opens the menu, so it must not start a selection. */
@@ -184,7 +195,16 @@
   }
   .author { font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
   .tomb { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
-  .meta { display: inline-flex; align-items: center; gap: 5px; align-self: flex-end; font-family: var(--font-mono); font-size: var(--fs-3xs); color: var(--text-2); line-height: 1; }
+  .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: 1; white-space: nowrap; }
+  /* On the last line of the text: a float after the words takes the room left
+     on that line, or drops to a line of its own at the right when there is none. */
+  .reacts { margin-top: var(--sp-1); max-width: min(620px, 78%); }
+  .body { display: block; }
+  .body::after { content: ''; display: block; clear: both; }
+  .meta.inline {
+    float: right; margin-left: var(--sp-3); box-sizing: border-box;
+    height: calc(var(--fs-body) * var(--lh-body)); align-items: flex-end; padding-bottom: var(--sp-1);
+  }
   .line.out .meta { color: var(--bubble-out-meta); }
   .status { display: inline-flex; }
   .pending {

@@ -112,11 +112,11 @@ pub const KEY_INCOMING_ENABLED: &str = "call.incoming_enabled";
 /// down by itself when the way is narrower.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VideoQuality {
-    /// 640×360 at 30 frames a second, up to 800 kbit/s.
+    /// 640×360 at 30 frames a second, up to 1200 kbit/s.
     #[default]
     #[serde(rename = "360p")]
     Sd,
-    /// 1280×720 at 30 frames a second, up to 1800 kbit/s.
+    /// 1280×720 at 30 frames a second, up to 2500 kbit/s.
     #[serde(rename = "720p")]
     Hd,
 }
@@ -140,11 +140,26 @@ impl VideoQuality {
     /// Width, height, the largest bitrate in kbit/s.
     pub fn profile(self) -> (u32, u32, u32) {
         match self {
-            Self::Sd => (640, 360, 800),
-            Self::Hd => (1280, 720, 1800),
+            Self::Sd => (640, 360, 1200),
+            Self::Hd => (1280, 720, 2500),
+        }
+    }
+
+    /// The profile of `input`: a screen is read at its own size up to
+    /// [`SCREEN_PROFILE`] whatever the camera's size is set to, because
+    /// text at 640×360 cannot be read; a camera takes the setting.
+    pub fn profile_for(self, input: &VideoInput) -> (u32, u32, u32) {
+        match input {
+            VideoInput::Screen { .. } => SCREEN_PROFILE,
+            _ => self.profile(),
         }
     }
 }
+
+/// What a shared screen is sent at: width, height, the largest bitrate
+/// in kbit/s (the frame rate is the capturer's own, low: a screen changes
+/// little).
+pub const SCREEN_PROFILE: (u32, u32, u32) = (1920, 1080, 2500);
 
 /// Frames a second asked of a camera.
 pub const VIDEO_FPS: u32 = 30;
@@ -467,9 +482,21 @@ impl CallService {
         self.inner.video_quality().await
     }
 
-    /// For the next time my video goes on; what is on keeps its size.
+    /// Kept for the next time my video goes on, and applied at once to
+    /// my camera when it is on in a call (a screen has a size of its own,
+    /// [`SCREEN_PROFILE`]).
     pub async fn set_video_quality(&self, quality: VideoQuality) -> Result<()> {
-        settings::set(&self.inner.store, KEY_VIDEO_QUALITY, quality.as_str()).await
+        let inner = &self.inner;
+        settings::set(&inner.store, KEY_VIDEO_QUALITY, quality.as_str()).await?;
+        let mut st = inner.state.lock().await;
+        let camera = match st.current.as_ref() {
+            Some(cur) if cur.view.video_local && !cur.view.video_screen && cur.session.is_some() => Some(cur.view.camera.clone()),
+            _ => None,
+        };
+        if let Some(id) = camera {
+            inner.turn_video(&mut st, VideoInput::Camera { id }, quality).await?;
+        }
+        Ok(())
     }
 
     /// The cameras the engine can open (none on a phone: its plugin holds
@@ -835,8 +862,7 @@ impl Current {
 
     /// The most my video may spend here: the size's own, and no more
     /// than the node allows on a relayed way (`limits` of its welcome).
-    fn video_cap(&self, quality: VideoQuality) -> Option<u32> {
-        let (_, _, kbps) = quality.profile();
+    fn video_cap(&self, kbps: u32) -> Option<u32> {
         let relayed = self.view.via == Some(PairKind::Relay);
         match self.view.limits.as_ref().map(|l| l.turn_kbps_per_allocation) {
             Some(node) if relayed && node > 0 => Some(kbps.min(node)),
@@ -903,8 +929,8 @@ impl Inner {
         let Some(session) = cur.session.as_ref() else {
             return Err(MessengerError::Invalid("the call has no media yet".into()));
         };
-        let (width, height, _) = quality.profile();
-        let settings = VideoSettings { width, height, fps: VIDEO_FPS, max_kbps: cur.video_cap(quality) };
+        let (width, height, kbps) = quality.profile_for(&input);
+        let settings = VideoSettings { width, height, fps: VIDEO_FPS, max_kbps: cur.video_cap(kbps) };
         let outcome = session.set_video(input.clone(), settings).await;
         match (&outcome, &input) {
             (Ok(()), VideoInput::Off) | (Err(_), _) => {
@@ -1361,7 +1387,8 @@ impl Inner {
                 // keeps within it from here on.
                 if cur.view.video_local {
                     let quality = self.video_quality().await.unwrap_or_default();
-                    let cap = cur.video_cap(quality);
+                    let (_, _, kbps) = if cur.view.video_screen { SCREEN_PROFILE } else { quality.profile() };
+                    let cap = cur.video_cap(kbps);
                     if let Some(session) = cur.session.as_ref() {
                         let _ = session.set_video_bitrate(cap).await;
                     }

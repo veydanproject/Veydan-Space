@@ -45,14 +45,18 @@ pub async fn messenger_report_send(
     input: ReportInput,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<ReportResult> {
-    let rt = messenger.runtime_unlocked().await?;
-    let sender = ProjectReports::new(Arc::new(ProjectHttp::new(messenger.app.clone())));
-    let result = rt.report_send(input, &sender).await.map_err(map_err)?;
-    if result.blocked {
-        // A stranger blocked is a chat the list no longer has.
-        super::unread_changed();
-    }
-    Ok(result)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let rt = messenger.runtime_unlocked().await?;
+        let sender = ProjectReports::new(Arc::new(ProjectHttp::new(messenger.app.clone())));
+        let result = rt.report_send(input, &sender).await.map_err(map_err)?;
+        if result.blocked {
+            // A stranger blocked is a chat the list no longer has.
+            super::unread_changed();
+        }
+        Ok(result)
+    })
+    .await
 }
 
 /// The task that tries the waiting reports again while the messenger runs.

@@ -74,8 +74,8 @@ internal data class Push(
     private val TYPE = Regex("^[a-z_]{1,32}$")
     private val HEX64 = Regex("^[0-9a-f]{64}$")
     private val TRACE = Regex("^[0-9A-Za-z_-]{1,64}$")
-    /** As `CHAT` of ui/src/lib/messenger/push/bridge.ts: a private chat names its server, `@<16 hex>`. */
-    private val CHAT = Regex("^(dm:[0-9a-f]{64}(@[0-9a-f]{16})?|group:[0-9a-f]{64})$")
+    /** As `CHAT` of ui/src/lib/messenger/push/bridge.ts: a private chat names its server, `@<16 hex>`; a channel's tap opens its feed. */
+    private val CHAT = Regex("^(dm:[0-9a-f]{64}(@[0-9a-f]{16})?|group:[0-9a-f]{64}|channel:[0-9a-f]{64})$")
 
     fun from(data: Map<String, String>): Push? {
       val type = data["type"]?.takeIf { TYPE.matches(it) } ?: return null

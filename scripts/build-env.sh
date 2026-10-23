@@ -134,6 +134,29 @@ if [ ! -f "$debugutils" ]; then
   fi
   rm -rf "$tmp"
 fi
+# The decoders of H.264, H.265 and AAC — what a phone records, so nearly
+# every video of a chat or a channel — are in gst-libav. The prefix's
+# GStreamer reads its plugins from the prefix only (a relocatable build), so
+# without this one such a video shows WebKit's "cannot play" sign, and the
+# frame of a video picked on this computer cannot be taken (2026-10-23). The
+# host's copy is taken when it has one (its libavcodec is installed beside
+# it); otherwise the package is extracted, and the plugin loads only if the
+# host has libavcodec.
+libav="$LIBDIR/gstreamer-1.0/libgstlibav.so"
+if [ ! -f "$libav" ]; then
+  echo ">> WebKit media: adding the H.264/AAC decoders (gst-libav) ..."
+  mkdir -p "$(dirname "$libav")"
+  if [ -f /usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstlibav.so ]; then
+    cp -f /usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstlibav.so "$libav"
+  else
+    tmp=$(mktemp -d)
+    if ( cd "$tmp" && apt-get download gstreamer1.0-libav && dpkg-deb -x ./*.deb "$tmp/root" ); then
+      found=$(find "$tmp/root" -name 'libgstlibav.so' -print -quit)
+      if [ -n "$found" ]; then cp -f "$found" "$libav"; fi
+    fi
+    rm -rf "$tmp"
+  fi
+fi
 # A failed first scan blacklists pulsesink forever, and WebKit then plays
 # through OSS, which is silent under WSLg. Drop that registry so the next
 # launch retries PulseAudio.

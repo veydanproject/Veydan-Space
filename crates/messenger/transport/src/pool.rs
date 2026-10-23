@@ -14,6 +14,13 @@
 //! resolved to its server's by the runtime before it gets here; one that
 //! was not means the home set, as every scope did before servers. So a
 //! private server hears only what names it.
+//!
+//! A channel of a community (`Scope::Channel`) is on the relays its journal
+//! names, which the module of the channels knows and the messenger does
+//! not: that module registers [`ChannelRoutes`], and a channel's scope is
+//! then the relays of the pool among them, of any server; the events of its
+//! subscriptions (ids `channel:…`) and of its catch-up go to the module, not
+//! to the stream the ingress reads.
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -25,9 +32,71 @@ use messenger_core::{
 use nostr_sdk::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::sync::mpsc;
+
+/// The prefix of the subscription ids of the channels of a community.
+pub const CHANNEL_SUB_PREFIX: &str = "channel:";
+
+/// The relays of a channel by its id.
+pub type ChannelRelays = Arc<dyn Fn(&str) -> Vec<RelayUrl> + Send + Sync>;
+
+/// Where the requests and the events of the channels go
+/// (internal/communities-stage1.md §6).
+#[derive(Clone)]
+pub struct ChannelRoutes {
+    /// The relays of a channel, as its journal names them: the relays of
+    /// the pool among them are its scope. None reaches no relay.
+    pub relays: ChannelRelays,
+    /// The events of the subscriptions `channel:…` and of the catch-up and
+    /// the pages of a channel's scope. Unbounded: the pool's one loop of
+    /// notifications carries the messenger's events too, and the module's
+    /// catch-up waits for the pool while the module drains this queue, so
+    /// a bounded queue that filled would stall both for good.
+    pub events: mpsc::UnboundedSender<RawEvent>,
+}
+
+/// One for the process: the host makes the pool anew whenever its signer
+/// changes, and the module of the channels, another module of the app,
+/// cannot see that. A process holds one messenger.
+static CHANNEL_ROUTES: RwLock<Option<ChannelRoutes>> = RwLock::new(None);
+
+/// Puts the routes of the channels in place, or takes them away (`None`:
+/// a channel's scope is the home set again, its events go to the stream).
+pub fn route_channels(routes: Option<ChannelRoutes>) {
+    *CHANNEL_ROUTES.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = routes;
+}
+
+fn channel_routes() -> Option<ChannelRoutes> {
+    CHANNEL_ROUTES.read().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+}
+
+/// Where the events of a subscription go: the channels' own, when routed.
+fn channel_sink_of_sub(sub_id: &str) -> Option<mpsc::UnboundedSender<RawEvent>> {
+    if sub_id.starts_with(CHANNEL_SUB_PREFIX) {
+        channel_routes().map(|r| r.events)
+    } else {
+        None
+    }
+}
+
+/// Where what a request brings goes: the ingress's stream, or the
+/// channels' own queue, which never makes the pool wait.
+enum Sink {
+    Stream(mpsc::Sender<RawEvent>),
+    Channels(mpsc::UnboundedSender<RawEvent>),
+}
+
+impl Sink {
+    /// Whether it was taken.
+    async fn send(&self, raw: RawEvent) -> bool {
+        match self {
+            Sink::Stream(tx) => tx.send(raw).await.is_ok(),
+            Sink::Channels(tx) => tx.send(raw).is_ok(),
+        }
+    }
+}
 
 /// One relay to keep in the pool.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,10 +210,17 @@ impl RelayPool {
             while let Some(n) = stream.next().await {
                 match n {
                     ClientNotification::Message { relay_url, message } => {
-                        let RelayMessage::Event { event, .. } = *message else { continue };
+                        let RelayMessage::Event { event, subscription_id } = *message else { continue };
                         let Some(raw) = to_raw(&event, EventSource::Relay { url: to_core_url(&relay_url) }) else {
                             continue;
                         };
+                        if let Some(channels) = channel_sink_of_sub(subscription_id.as_str()) {
+                            // A module that stopped listening loses its own
+                            // events; the messenger's go on. Never awaited:
+                            // this loop is the messenger's too.
+                            let _ = channels.send(raw);
+                            continue;
+                        }
                         if tx.send(raw).await.is_err() {
                             break;
                         }
@@ -191,13 +267,24 @@ impl RelayPool {
     /// A relay the pool holds for a moment only (a peer's inbox relay,
     /// `publish_to_inbox`) belongs to no scope.
     async fn members(&self, scope: &Scope) -> Vec<Member> {
-        let server = server_of(scope);
-        let wanted: HashMap<String, bool> = self
-            .configured()
-            .into_iter()
-            .filter(|c| c.server_id.as_deref() == server)
-            .map(|c| (c.url.as_str().to_string(), c.write))
-            .collect();
+        let wanted: HashMap<String, bool> = match (scope, channel_routes()) {
+            (Scope::Channel { id }, Some(routes)) => {
+                let of_channel: HashSet<String> = (routes.relays)(id).iter().map(|u| u.as_str().to_string()).collect();
+                self.configured()
+                    .into_iter()
+                    .filter(|c| of_channel.contains(c.url.as_str()))
+                    .map(|c| (c.url.as_str().to_string(), c.write))
+                    .collect()
+            }
+            _ => {
+                let server = server_of(scope);
+                self.configured()
+                    .into_iter()
+                    .filter(|c| c.server_id.as_deref() == server)
+                    .map(|c| (c.url.as_str().to_string(), c.write))
+                    .collect()
+            }
+        };
         self.client
             .relays()
             .await
@@ -207,6 +294,15 @@ impl RelayPool {
                 Some(Member { address, relay, write })
             })
             .collect()
+    }
+
+    /// Where what a request of `scope` brings goes: the channels' own
+    /// events for a channel's scope when they are routed, else the stream.
+    fn sink_of(&self, scope: &Scope) -> Sink {
+        match (scope, channel_routes()) {
+            (Scope::Channel { .. }, Some(routes)) => Sink::Channels(routes.events),
+            _ => Sink::Stream(self.tx.clone()),
+        }
     }
 
     /// How many relays of `scope` are connected right now.
@@ -320,12 +416,28 @@ impl RelayPool {
             .initial_timeout(NEGENTROPY_PROBE_TIMEOUT);
         let mut forwarded = 0usize;
         let mut any_relay = false;
+        let sink = self.sink_of(scope);
+        // Negentropy names what is missing and leaves the events to the
+        // stream of the client, which the ingress reads: a channel's are
+        // fetched instead, so they reach the channel's own stream.
+        let routed = matches!(scope, Scope::Channel { .. }) && channel_routes().is_some();
         for Member { address: url, relay, .. } in self.members(scope).await {
             if relay.status() != nostr_sdk::relay::RelayStatus::Connected {
                 continue;
             }
             any_relay = true;
             let source = EventSource::Sync { url: to_core_url(&url) };
+            if routed {
+                let Ok(events) = relay.fetch_events(filter.clone()).timeout(HISTORY_FETCH_TIMEOUT).await else { continue };
+                for ev in events.into_iter().filter(|ev| !known.contains(&ev.id.to_hex())) {
+                    if let Some(raw) = to_raw(&ev, source.clone()) {
+                        if sink.send(raw).await {
+                            forwarded += 1;
+                        }
+                    }
+                }
+                continue;
+            }
             let events: Vec<Event> = match relay.sync(filter.clone()).items(items.clone()).opts(opts.clone()).await {
                 Ok(summary) => {
                     let mut found = Vec::with_capacity(summary.received.len());
@@ -346,7 +458,7 @@ impl RelayPool {
                     continue;
                 }
                 if let Some(raw) = to_raw(&ev, source.clone()) {
-                    if self.tx.send(raw).await.is_ok() {
+                    if sink.send(raw).await {
                         forwarded += 1;
                     }
                 }
@@ -516,6 +628,7 @@ impl RelayPool {
         });
         let mut pages = Vec::new();
         let mut forwarded: HashSet<String> = HashSet::new();
+        let sink = self.sink_of(scope);
         for (url, answer, in_time) in futures_util::future::join_all(asks).await {
             let Ok(events) = answer else { continue };
             if events.is_empty() && !in_time {
@@ -531,7 +644,7 @@ impl RelayPool {
                 // not been given already.
                 if forwarded.insert(id.clone()) {
                     if let Some(raw) = to_raw(&ev, source.clone()) {
-                        let _ = self.tx.send(raw).await;
+                        let _ = sink.send(raw).await;
                     }
                 }
                 page.ids.push(id);
@@ -938,6 +1051,73 @@ mod tests {
         for pool in [to_home, to_private, receiver, fresh] {
             pool.shutdown().await;
         }
+    }
+
+    /// A channel's scope is the relays its routes name, of whichever
+    /// server, and what its subscriptions and its catch-up bring goes to
+    /// the routes' stream, not to the ingress's; without routes it is the
+    /// home set again. The routes are the process's: no other test names
+    /// a channel.
+    #[tokio::test]
+    async fn a_channel_reaches_the_relays_of_its_routes_and_is_heard_on_their_stream() {
+        let (_a, home_url) = local_relay().await;
+        let (_b, channel_url) = local_relay().await;
+        let alice = Keys::generate();
+        let pool = connected_pool(Some(alice.clone()), vec![home(&home_url), of_server(&channel_url, "b")]).await;
+        let mut ingress = pool.events();
+        let (tx, mut channels) = mpsc::unbounded_channel();
+        let cid = "c".repeat(64);
+        let (of_cid, url) = (cid.clone(), channel_url.clone());
+        let relays = move |id: &str| if id == of_cid { vec![url.clone()] } else { Vec::new() };
+        route_channels(Some(ChannelRoutes { relays: Arc::new(relays), events: tx }));
+        let channel = Scope::Channel { id: cid.clone() };
+
+        let ack = pool.send(Outbound::PublishScoped { scope: channel.clone(), event: signed_note(&alice, "in the channel") }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![channel_url.clone()], "{ack:?}");
+        let unknown = Scope::Channel { id: "d".repeat(64) };
+        let err = pool.send(Outbound::PublishScoped { scope: unknown, event: signed_note(&alice, "nowhere") }).await.unwrap_err();
+        assert!(matches!(err, MessengerError::Transport(_)), "{err:?}");
+
+        let by_alice = || CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()] }));
+        let sub = SubId(format!("{CHANNEL_SUB_PREFIX}{cid}:feed"));
+        pool.send(Outbound::Subscribe { id: sub, filter: by_alice(), scope: channel.clone() }).await.unwrap();
+        let got = tokio::time::timeout(Duration::from_secs(5), channels.recv()).await.expect("the channel hears it").unwrap();
+        assert_eq!(got.json["content"], "in the channel");
+        assert_eq!(got.source, EventSource::Relay { url: channel_url.clone() });
+        assert!(tokio::time::timeout(Duration::from_millis(700), ingress.recv()).await.is_err(), "nothing of the channel reaches the ingress");
+
+        // A catch-up, by a pool that has seen nothing yet: the routes are
+        // the process's, and every pool follows them.
+        let fresh = connected_pool(None, vec![home(&home_url), of_server(&channel_url, "b")]).await;
+        fresh.send(Outbound::Sync { scope: channel.clone(), filter: by_alice(), local: vec![] }).await.unwrap();
+        fresh.shutdown().await;
+        let mut synced = false;
+        while let Ok(Some(got)) = tokio::time::timeout(Duration::from_millis(1500), channels.recv()).await {
+            assert_eq!(got.json["content"], "in the channel");
+            synced |= got.source == (EventSource::Sync { url: channel_url.clone() });
+        }
+        assert!(synced, "the catch-up of the channel comes to its stream");
+
+        // A backlog nobody reads yet: the live subscription and a catch-up
+        // hand it over without waiting for the module (ревью модуля п. 1).
+        const BACKLOG: usize = 120;
+        for i in 0..BACKLOG {
+            pool.send(Outbound::PublishScoped { scope: channel.clone(), event: signed_note(&alice, &format!("backlog {i}")) }).await.unwrap();
+        }
+        let fresh = connected_pool(None, vec![home(&home_url), of_server(&channel_url, "b")]).await;
+        let caught = tokio::time::timeout(Duration::from_secs(10), fresh.send(Outbound::Sync { scope: channel.clone(), filter: by_alice(), local: vec![] })).await;
+        assert!(matches!(caught, Ok(Ok(_))), "the catch-up does not wait for the module: {caught:?}");
+        fresh.shutdown().await;
+        let mut held = 0;
+        while let Ok(Some(_)) = tokio::time::timeout(Duration::from_millis(1500), channels.recv()).await {
+            held += 1;
+        }
+        assert!(held > BACKLOG, "the live copies and the catch-up are all held: {held}");
+
+        route_channels(None);
+        let ack = pool.send(Outbound::PublishScoped { scope: channel, event: signed_note(&alice, "home again") }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![home_url.clone()], "{ack:?}");
+        pool.shutdown().await;
     }
 
     /// Each relay's copy of an event reaches the stream, and a copy sent

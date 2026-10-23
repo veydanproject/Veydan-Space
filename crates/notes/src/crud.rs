@@ -224,34 +224,38 @@ pub async fn note_create(
     core: tauri::State<'_, Core>,
     notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<Note> {
-    // The format becomes the extension of the file: a note extension only.
-    let format = input.format.unwrap_or_else(|| "md".to_string());
-    if !is_note_ext(&format) {
-        return Err(AppError::other(format!("unknown note format {format:?}")));
-    }
-    let now = Utc::now().to_rfc3339();
-    let bindings = input.bindings.unwrap_or_default();
-    let mut content = input.content.unwrap_or_default();
-    if let Some(template_id) = input.template_id.filter(|t| !t.is_empty()) {
-        let vars = TemplateVars::from_bindings(&input.title, &bindings, &core.directory).await;
-        let rendered = render_template(&template_id, &vars, &core).await?;
-        content = if content.is_empty() {
-            rendered
-        } else {
-            format!("{rendered}\n{content}")
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        // The format becomes the extension of the file: a note extension only.
+        let format = input.format.unwrap_or_else(|| "md".to_string());
+        if !is_note_ext(&format) {
+            return Err(AppError::other(format!("unknown note format {format:?}")));
+        }
+        let now = Utc::now().to_rfc3339();
+        let bindings = input.bindings.unwrap_or_default();
+        let mut content = input.content.unwrap_or_default();
+        if let Some(template_id) = input.template_id.filter(|t| !t.is_empty()) {
+            let vars = TemplateVars::from_bindings(&input.title, &bindings, &core.directory).await;
+            let rendered = render_template(&template_id, &vars, &core).await?;
+            content = if content.is_empty() {
+                rendered
+            } else {
+                format!("{rendered}\n{content}")
+            };
+        }
+        let new = NewNote {
+            id: Uuid::new_v4().to_string(),
+            title: input.title,
+            format,
+            bindings,
+            tags: input.tag_names.unwrap_or_default(),
+            content,
+            created_at: now.clone(),
+            updated_at: now,
         };
-    }
-    let new = NewNote {
-        id: Uuid::new_v4().to_string(),
-        title: input.title,
-        format,
-        bindings,
-        tags: input.tag_names.unwrap_or_default(),
-        content,
-        created_at: now.clone(),
-        updated_at: now,
-    };
-    insert_note(new, &core, &notes).await
+        insert_note(new, &core, &notes).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -261,7 +265,11 @@ pub async fn note_update(
     core: tauri::State<'_, Core>,
     notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<Note> {
-    update_note(&id, input, &core, &notes).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        update_note(&id, input, &core, &notes).await
+    })
+    .await
 }
 
 /// Apply title/pinned/content changes: snapshot, rewrite file, reindex.
@@ -757,8 +765,12 @@ pub async fn note_sync(
     core: tauri::State<'_, Core>,
     notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<()> {
-    let custom_dir = notes.custom_dir.read().ok().and_then(|g| g.clone());
-    sync_notes_index(&core, custom_dir.as_ref()).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let custom_dir = notes.custom_dir.read().ok().and_then(|g| g.clone());
+        sync_notes_index(&core, custom_dir.as_ref()).await
+    })
+    .await
 }
 
 #[tauri::command]

@@ -348,8 +348,9 @@ pub fn short_reason(e: &MessengerError) -> String {
     .to_string()
 }
 
-/// A failure that may pass by itself: worth an automatic retry.
-fn retryable(e: &MessengerError) -> bool {
+/// A failure that may pass by itself: worth another attempt of the whole transfer: the network, a timeout,
+/// the server, its rate limit.
+pub fn retryable(e: &MessengerError) -> bool {
     matches!(short_reason(e).as_str(), "err.network" | "err.timeout" | "err.server" | "err.rate_limited")
 }
 

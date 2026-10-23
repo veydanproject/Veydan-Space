@@ -14,6 +14,9 @@ publish.workspace = true
 messenger-core.workspace = true
 messenger-store.workspace = true
 messenger-http.workspace = true
+# A file made ready before its upload (src/prepare.rs): a photo made
+# smaller, its size, the preview the message carries.
+messenger-avatar.workspace = true
 nostr.workspace = true
 serde.workspace = true
 serde_json.workspace = true

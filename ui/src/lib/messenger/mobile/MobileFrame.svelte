@@ -11,6 +11,7 @@
   import '../shared/emoji/font.css';
   import { onKeyboard } from '../shared/keyboard';
   import { t } from '$lib/core/i18n';
+  import HubButton from '$lib/core/ui/HubButton.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import ConfirmHost from '../shared/ConfirmHost.svelte';
   import ReportHost from '../shared/ReportHost.svelte';
@@ -29,9 +30,11 @@
     scroll?: boolean;
     /** Hide the bar (the chat brings its own header). */
     bare?: boolean;
+    /** The product's apps button left of the title (a tab of the bar without it). */
+    hubButton?: boolean;
     children: Snippet;
   }
-  let { title = '', onback, lead, actions, scroll = true, bare = false, children }: Props = $props();
+  let { title = '', onback, lead, actions, scroll = true, bare = false, hubButton = false, children }: Props = $props();
 
   // What the content mounts is laid out for a phone (shared/phone.ts).
   markPhone();
@@ -47,7 +50,8 @@
       {#if onback}
         <button class="ibtn" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
       {/if}
-      <h1 class:inset={!onback}>{title}</h1>
+      {#if hubButton && !onback}<HubButton />{/if}
+      <h1 class:inset={!onback && !hubButton}>{title}</h1>
       {#if lead}{@render lead()}{/if}
       <span class="spacer"></span>
       {#if actions}{@render actions()}{/if}

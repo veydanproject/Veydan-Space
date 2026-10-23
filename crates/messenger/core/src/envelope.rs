@@ -105,6 +105,11 @@ pub const T_OWN_PROFILE: &str = "own.profile";
 /// phone a contact sent me in its own card, or `null` when it was taken
 /// back. The later `at` wins per contact.
 pub const T_OWN_CARD: &str = "own.card";
+/// `{"t":"own.ui","w":{"<key>":<px>,…},"at":<secs>}` — how wide I made the
+/// panes of the app on a computer: the whole map, a key of `[a-z0-9._-]`
+/// (1–40) to a width of 200…2000 px. The later `at` wins; sent on a change
+/// and again every few days, so a new device learns it.
+pub const T_OWN_UI: &str = "own.ui";
 /// Every type of a note between my devices starts so.
 pub const T_OWN_PREFIX: &str = "own.";
 
@@ -316,6 +321,12 @@ impl Envelope {
 
     pub fn own_card(pubkey: &str, phone: Option<&str>, at: i64) -> Self {
         Self::new(T_OWN_CARD).with("pubkey", pubkey).with("phone", phone.map_or(Value::Null, Value::from)).with("at", at)
+    }
+
+    /// `widths` is pane key → px; a key named twice keeps its last entry.
+    pub fn own_ui(widths: &[(String, u32)], at: i64) -> Self {
+        let map: Map<String, Value> = widths.iter().map(|(key, px)| (key.clone(), Value::from(*px))).collect();
+        Self::new(T_OWN_UI).with("w", map).with("at", at)
     }
 
     /// `ice` is the list of candidates as the calls crate spells them
@@ -659,6 +670,18 @@ mod tests {
         assert_eq!(e.fields.get("card"), Some(&card));
         assert!(!e.t.starts_with(T_OWN_PREFIX));
         assert!(e.as_text().is_none(), "a card is not text");
+    }
+
+    #[test]
+    fn own_ui_golden_vector() {
+        let wire = r#"{"v":1,"t":"own.ui","at":1759700000,"w":{"channels.side":420,"chats.side":360}}"#;
+        let widths = [("chats.side".to_string(), 360), ("channels.side".to_string(), 420)];
+        assert_eq!(Envelope::own_ui(&widths, 1_759_700_000).encode(), wire);
+        let e = Envelope::parse(wire).unwrap();
+        assert_eq!(e, Envelope::own_ui(&widths, 1_759_700_000));
+        assert_eq!(e.t, T_OWN_UI);
+        assert!(e.t.starts_with(T_OWN_PREFIX));
+        assert_eq!(Envelope::own_ui(&[], 5).encode(), r#"{"v":1,"t":"own.ui","at":5,"w":{}}"#);
     }
 
     #[test]

@@ -219,7 +219,11 @@ pub async fn cloud_recovery_key_show_once<R: Runtime>(
     anyway: Option<bool>,
     app: AppHandle<R>,
 ) -> Result<RecoveryKeyIssued, CloudError> {
-    issue(&app, current, true, anyway.unwrap_or(false)).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        issue(&app, current, true, anyway.unwrap_or(false)).await
+    })
+    .await
 }
 
 /// A new Recovery Key in place of the one in force, all or nothing (§3).
@@ -229,7 +233,11 @@ pub async fn cloud_recovery_key_reissue<R: Runtime>(
     anyway: Option<bool>,
     app: AppHandle<R>,
 ) -> Result<RecoveryKeyIssued, CloudError> {
-    issue(&app, current, false, anyway.unwrap_or(false)).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        issue(&app, current, false, anyway.unwrap_or(false)).await
+    })
+    .await
 }
 
 /// What this device knows of the Recovery Key of the cloud.
@@ -463,47 +471,51 @@ pub async fn cloud_restore_with_words(
     without_vault: Option<bool>,
     app: AppHandle,
 ) -> Result<Restored, CloudError> {
-    let http = store_of(&app)?;
-    let read = read_escrows(&app);
-    let store = escrow::ReadOnce { inner: &http, read: &read };
-    let boxed = box_of(&app);
-    let env = AppRestoreEnv { app: app.clone() };
-    let progress = {
-        let app = app.clone();
-        move |phase: Phase| {
-            let _ = app.emit(EVENT_RESTORE, RestoreProgress { phase });
-        }
-    };
-    let lane = take_lane(&app).await;
-    let mut restored = restore::restore(
-        &env,
-        &store,
-        boxed.as_ref(),
-        &words,
-        NewSecret {
-            password: password.unwrap_or_default().trim().to_string(),
-            kind,
-            hint,
-            old: old == Some(true),
-        },
-        Vault::of(without_vault),
-        &progress,
-    )
-    .await?;
-    read.forget();
-    drop(lane);
-    // Without the vault there is no binding to write of: the escrow in
-    // vstore stands as it was read, and names the vault still.
-    if restored.lock == restore::LockOutcome::Reinstalled && restored.vault_joined {
-        restored.escrow_refreshed = Some(match refresh_escrow(&app).await {
-            Ok(_) => true,
-            Err(e) => {
-                eprintln!("cloud: the escrow was not written after the restore: {e}");
-                false
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let http = store_of(&app)?;
+        let read = read_escrows(&app);
+        let store = escrow::ReadOnce { inner: &http, read: &read };
+        let boxed = box_of(&app);
+        let env = AppRestoreEnv { app: app.clone() };
+        let progress = {
+            let app = app.clone();
+            move |phase: Phase| {
+                let _ = app.emit(EVENT_RESTORE, RestoreProgress { phase });
             }
-        });
-    }
-    Ok(restored)
+        };
+        let lane = take_lane(&app).await;
+        let mut restored = restore::restore(
+            &env,
+            &store,
+            boxed.as_ref(),
+            &words,
+            NewSecret {
+                password: password.unwrap_or_default().trim().to_string(),
+                kind,
+                hint,
+                old: old == Some(true),
+            },
+            Vault::of(without_vault),
+            &progress,
+        )
+        .await?;
+        read.forget();
+        drop(lane);
+        // Without the vault there is no binding to write of: the escrow in
+        // vstore stands as it was read, and names the vault still.
+        if restored.lock == restore::LockOutcome::Reinstalled && restored.vault_joined {
+            restored.escrow_refreshed = Some(match refresh_escrow(&app).await {
+                Ok(_) => true,
+                Err(e) => {
+                    eprintln!("cloud: the escrow was not written after the restore: {e}");
+                    false
+                }
+            });
+        }
+        Ok(restored)
+    })
+    .await
 }
 
 /// Runs `work` with the sources of the escrow of this device: the lock,

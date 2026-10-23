@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Nascondi",
     "msg_message_more": "Altro",
     "msg_composer_save": "Salva",
+    "msg_composer_expand": "Editor esteso",
     "msg_text_copied": "Testo copiato",
     "msg_chat_archived_toast": "Chat spostata nell’archivio",
     "msg_action_failed": "Non è stato possibile",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Link di accesso al sito web di Veydan Cloud",
     "msg_card_web_text": "L’accesso a un sito web si approva solo scansionando il suo codice QR nell’app. Non accedere mai con un link che qualcuno ti ha inviato.",
     "msg_inv_web_link": "Questo è un link di accesso al sito web di Veydan Cloud.",
-    "msg_inv_web_open": "Apri l’accesso al sito web"
+    "msg_inv_web_open": "Apri l’accesso al sito web",
+    "msg_report_channel_title": "Segnala il canale “{name}”",
+    "msg_report_post_title": "Segnala un post",
+    "msg_report_comment_title": "Segnala un commento",
+    "msg_report_post_note": "Il post verrà inviato insieme alla segnalazione.",
+    "msg_report_comment_note": "Il commento verrà inviato insieme alla segnalazione.",
+    "msg_report_channel_note": "La segnalazione indica il canale e il suo proprietario.",
+    "msg_report_channel_person_note": "La segnalazione indica la persona e il canale in cui l’hai incontrata.",
+    "msg_card_channel": "Canale",
+    "msg_card_channels_off": "I canali sono disattivati nelle impostazioni",
+    "msg_card_channels_settings": "Impostazioni"
   },
   "mobile": {}
 }

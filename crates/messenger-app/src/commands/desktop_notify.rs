@@ -1022,10 +1022,12 @@ fn clicked(app: &tauri::AppHandle, key: String) {
 }
 
 /// The chat a click on the notification `key` opens: the chat's own key,
-/// or the group's behind the notification of a call on in it.
+/// or the group's behind the notification of a call on in it. A channel's
+/// (`channel:<id>`) goes to the page as the group's does; the page hands it
+/// to the section that owns it (the module Communities, seams/sections).
 fn chat_of_key(key: &str) -> Option<&str> {
     let chat = key.strip_prefix(GROUP_CALL_KEY).unwrap_or(key);
-    (chat.starts_with("dm:") || chat.starts_with("group:")).then_some(chat)
+    (chat.starts_with("dm:") || chat.starts_with("group:") || chat.starts_with("channel:")).then_some(chat)
 }
 
 /// A button on a call's notification, which is gone by then: Answer takes
@@ -1414,6 +1416,7 @@ mod tests {
         assert_eq!(chat_of_key(&t.key), Some(format!("group:{}", "g".repeat(64))).as_deref());
         assert_eq!(chat_of_key("group:g"), Some("group:g"));
         assert_eq!(chat_of_key("dm:d"), Some("dm:d"));
+        assert_eq!(chat_of_key("channel:c"), Some("channel:c"));
         assert_eq!(chat_of_key("call:c1"), None);
         assert_eq!(chat_of_key("dm"), None);
     }

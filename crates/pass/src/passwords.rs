@@ -200,61 +200,65 @@ pub async fn password_create(
     core: tauri::State<'_, Core>,
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<PasswordPublic> {
-    let title = req.title.trim().to_string();
-    if title.is_empty() {
-        return Err(AppError::other("Title is required"));
-    }
-    if req.password.is_empty() {
-        return Err(AppError::other("Password cannot be empty"));
-    }
-    let totp_ids = clean_ids(req.totp_ids.unwrap_or_default());
-    totp_all_exist(&core, &totp_ids).await?;
-    let (key, vault_id) = lock.ensure_key().await?;
-    let id = Uuid::new_v4().to_string();
-    let password_enc = encrypt_secret(&key, &id, "password", &req.password)?;
-    let note_enc = match blank(req.note) {
-        Some(note) => Some(encrypt_secret(&key, &id, "note", &note)?),
-        None => None,
-    };
-    let tags = serde_json::to_string(&req.tags.unwrap_or_default())?;
-    let totp_json = serde_json::to_string(&totp_ids)?;
-    let now = Utc::now().to_rfc3339();
-    let username = blank(req.username);
-    let url = check_url(req.url)?;
-    let mut tx = core.db.begin().await.map_err(AppError::db)?;
-    sqlx::query(
-        "INSERT INTO passwords (
-            id, title, username, url, password_enc, note_enc, totp_ids, tags, vault_id, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(&title)
-    .bind(&username)
-    .bind(&url)
-    .bind(&password_enc)
-    .bind(&note_enc)
-    .bind(&totp_json)
-    .bind(&tags)
-    .bind(&vault_id)
-    .bind(&now)
-    .bind(&now)
-    .execute(&mut *tx)
-    .await
-    .map_err(AppError::db)?;
-    directory::relabel(&core, &mut tx, KIND_PASSWORD, &id).await?;
-    tx.commit().await.map_err(AppError::db)?;
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let title = req.title.trim().to_string();
+        if title.is_empty() {
+            return Err(AppError::other("Title is required"));
+        }
+        if req.password.is_empty() {
+            return Err(AppError::other("Password cannot be empty"));
+        }
+        let totp_ids = clean_ids(req.totp_ids.unwrap_or_default());
+        totp_all_exist(&core, &totp_ids).await?;
+        let (key, vault_id) = lock.ensure_key().await?;
+        let id = Uuid::new_v4().to_string();
+        let password_enc = encrypt_secret(&key, &id, "password", &req.password)?;
+        let note_enc = match blank(req.note) {
+            Some(note) => Some(encrypt_secret(&key, &id, "note", &note)?),
+            None => None,
+        };
+        let tags = serde_json::to_string(&req.tags.unwrap_or_default())?;
+        let totp_json = serde_json::to_string(&totp_ids)?;
+        let now = Utc::now().to_rfc3339();
+        let username = blank(req.username);
+        let url = check_url(req.url)?;
+        let mut tx = core.db.begin().await.map_err(AppError::db)?;
+        sqlx::query(
+            "INSERT INTO passwords (
+                id, title, username, url, password_enc, note_enc, totp_ids, tags, vault_id, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(&title)
+        .bind(&username)
+        .bind(&url)
+        .bind(&password_enc)
+        .bind(&note_enc)
+        .bind(&totp_json)
+        .bind(&tags)
+        .bind(&vault_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::db)?;
+        directory::relabel(&core, &mut tx, KIND_PASSWORD, &id).await?;
+        tx.commit().await.map_err(AppError::db)?;
 
-    Ok(PasswordPublic {
-        id,
-        title,
-        username,
-        url,
-        has_note: note_enc.is_some(),
-        totp_ids,
-        tags: parse_list(&tags),
-        created_at: now.clone(),
-        updated_at: now,
+        Ok(PasswordPublic {
+            id,
+            title,
+            username,
+            url,
+            has_note: note_enc.is_some(),
+            totp_ids,
+            tags: parse_list(&tags),
+            created_at: now.clone(),
+            updated_at: now,
+        })
     })
+    .await
 }
 
 #[tauri::command]
@@ -464,7 +468,11 @@ pub async fn password_vault_reset(
     app: tauri::AppHandle,
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<()> {
-    reset_vault(&password, app, &lock).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        reset_vault(&password, app, &lock).await
+    })
+    .await
 }
 
 async fn reset_vault<R: tauri::Runtime>(

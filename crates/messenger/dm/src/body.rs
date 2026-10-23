@@ -150,7 +150,7 @@ fn link(text: &str) -> Option<Body> {
             }
             // A bridge, a call node, a request of recovery or a sign-in has no name to
             // show; the text of the link stands.
-            LinkType::Bridge | LinkType::CallNode | LinkType::Recover | LinkType::Web | LinkType::Unknown(_) => None,
+            LinkType::Bridge | LinkType::CallNode | LinkType::Recover | LinkType::Web | LinkType::Channel | LinkType::Unknown(_) => None,
         };
     }
     let rest = text.strip_prefix("https://").or_else(|| text.strip_prefix("http://"))?;

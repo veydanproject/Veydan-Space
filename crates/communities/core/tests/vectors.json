@@ -1,0 +1,30 @@
+{
+  "about": "Test vectors of internal/communities-wire.md §1, computed by independent tools (sha256sum, openssl kdf HKDF); tests/vectors.rs checks the crate against them.",
+  "community_id": "00000000000000000000000000000000000000000000000000000000000000aa",
+  "scope": {
+    "scope_id": "everyone",
+    "label": "veydan.community.scope.v1",
+    "bytes": "3bc7184d4641533fe4e78cd48638e9c59073837c4c2bd09df20fa720680e8681"
+  },
+  "channel_key": {
+    "epoch": 7,
+    "epoch_key": "1111111111111111111111111111111111111111111111111111111111111111",
+    "channel_id": "feed",
+    "key": "d6871593dad646d85c324a05743d640a310f3fbab06b9ae60dedb656c2c79008",
+    "key_id": "02d449a31fbb267c8f352e9968a79e3e"
+  },
+  "op": {
+    "canonical": "{\"v\":1,\"community_id\":\"00000000000000000000000000000000000000000000000000000000000000aa\",\"author\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"parents\":[\"11\",\"22\"],\"created_at\":1760000000,\"op\":\"ban\",\"who\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"reason\":\"spam\"}",
+    "id": "f0be3cdfaddf2596615dceb0c03c3648c58395153ebd9104606c7ff2d6a867ab"
+  },
+  "join_mac": {
+    "secret": "0707070707070707070707070707070707070707070707070707070707070707",
+    "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "link_epoch": 3,
+    "mac": "9bef180acd74caeb0418efa932610da03124596844dae068d5eba15e80a30033"
+  },
+  "merkle": {
+    "leaves": ["sha256(0x01)", "sha256(0x02)", "sha256(0x03)"],
+    "root": "9faa2a58b06fa09e3df6f260fcd26040b798fd90bfb33a759f85ef29e95ae648"
+  }
+}

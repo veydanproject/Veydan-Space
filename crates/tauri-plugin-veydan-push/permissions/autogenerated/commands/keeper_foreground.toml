@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-keeper-foreground"
+description = "Enables the keeper_foreground command without any pre-configured scope."
+commands.allow = ["keeper_foreground"]
+
+[[permission]]
+identifier = "deny-keeper-foreground"
+description = "Denies the keeper_foreground command without any pre-configured scope."
+commands.deny = ["keeper_foreground"]

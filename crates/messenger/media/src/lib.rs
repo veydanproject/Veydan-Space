@@ -14,18 +14,22 @@
 //! - `sigv4`: AWS Signature V4, enough for S3-compatible object storage.
 //! - `backend`: `BlobBackend` with S3 (the default) and Blossom.
 //! - `upload` / `download`: several chunks at once, with resume.
+//! - `prepare`: a photo made smaller, its size, the preview the message
+//!   carries, the frame of a video.
 //! - `control`: pause, cancel and "retry now" of a running transfer.
 //! - `progress`: stages, counts, speed and the events the host sees.
 //! - `runs`: a run as another process with the same data folder sees it.
 //! - `service`: configured servers, the transfer table, scheduling.
 //!
-//! Shared by DMs now and by groups later; nothing here knows about chats.
+//! Shared by chats, groups and the channels of communities; nothing here
+//! knows about chats.
 
 pub mod backend;
 pub mod control;
 pub mod crypto;
 pub mod descriptor;
 pub mod download;
+pub mod prepare;
 pub mod progress;
 pub mod runs;
 pub mod service;

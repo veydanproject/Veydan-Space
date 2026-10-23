@@ -372,9 +372,13 @@ pub async fn messenger_push_set_server(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<PushView> {
-    let rt = messenger.runtime()?;
-    let status = rt.push_set_server(url).await.map_err(map_err)?;
-    Ok(PushView { device: device(&app).await?, status })
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let rt = messenger.runtime()?;
+        let status = rt.push_set_server(url).await.map_err(map_err)?;
+        Ok(PushView { device: device(&app).await?, status })
+    })
+    .await
 }
 
 #[tauri::command]
@@ -384,9 +388,13 @@ pub async fn messenger_push_set_prefs(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<PushView> {
-    let rt = messenger.runtime()?;
-    let status = rt.push_set_prefs(dm, groups).await.map_err(map_err)?;
-    Ok(PushView { device: device(&app).await?, status })
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let rt = messenger.runtime()?;
+        let status = rt.push_set_prefs(dm, groups).await.map_err(map_err)?;
+        Ok(PushView { device: device(&app).await?, status })
+    })
+    .await
 }
 
 /// Tells the push server again, now.
@@ -395,9 +403,13 @@ pub async fn messenger_push_refresh(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<PushView> {
-    let rt = messenger.runtime()?;
-    let status = rt.push_reconcile(true).await.map_err(map_err)?;
-    Ok(PushView { device: device(&app).await?, status })
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let rt = messenger.runtime()?;
+        let status = rt.push_reconcile(true).await.map_err(map_err)?;
+        Ok(PushView { device: device(&app).await?, status })
+    })
+    .await
 }
 
 /// What the push service answered to a test push: `delivered`, `dead_token`,

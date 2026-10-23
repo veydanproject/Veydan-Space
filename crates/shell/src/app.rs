@@ -272,6 +272,9 @@ fn failed(path: &Path, error: &dyn std::fmt::Display) -> StartError {
 /// when the modules register for sync what the plan of the product does not
 /// hold.
 pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
+    // The lines of the modules reach logcat on a phone.
+    #[cfg(target_os = "android")]
+    crate::logcat::redirect();
     let mut context = context;
     #[cfg(desktop)]
     let workdir = match crate::workdir::init(&context.config().identifier) {

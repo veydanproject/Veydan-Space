@@ -46,6 +46,9 @@ veydan-lock = { path = "../lock" }
 # The messenger: a workspace of its own, free of Tauri (internal/messenger-spec.md).
 messenger-core = { path = "../messenger/core" }
 messenger-runtime = { path = "../messenger/runtime" }
+# The choices of chats (pin, mute, archive) another module reads back for its
+# rows of the list of chats (src/net_lend.rs).
+messenger-store = { path = "../messenger/store" }
 messenger-notify = { path = "../messenger/notify" }
 # The seam Http of the module cloud (src/cloud_seams.rs): the messenger's HTTPS
 # client and its way through a bridge, to the hosts of the project.

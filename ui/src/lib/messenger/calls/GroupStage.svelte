@@ -87,7 +87,7 @@
   }
   .cell { min-width: 0; min-height: 0; }
   .main { flex: 1; min-height: 0; }
-  .strip { display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0; scrollbar-width: thin; }
+  .strip { display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0; }
   .thumb { flex: 0 0 auto; width: clamp(112px, 18%, 180px); aspect-ratio: 16 / 10; }
   .phone .thumb { width: 92px; aspect-ratio: 3 / 4; }
 </style>

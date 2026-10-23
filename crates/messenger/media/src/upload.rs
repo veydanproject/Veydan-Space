@@ -524,6 +524,20 @@ pub async fn upload(
     Ok(UploadOutcome::Done(Box::new(descriptor)))
 }
 
+/// Does `backend` still hold every chunk of `d`, a file stored before?
+/// Then the same file goes again as a message of those chunks, not as a
+/// second upload. Asked a few at a time; a lookup that fails counts as a
+/// chunk that is not there.
+pub async fn all_stored(backend: &dyn BlobBackend, d: &MediaDescriptor) -> bool {
+    for some in d.chunks.chunks(crate::control::WORKERS) {
+        let asks: Vec<_> = some.iter().map(|c| backend.exists(&c.sha256)).collect();
+        if !futures_util::future::join_all(asks).await.into_iter().all(|there| matches!(there, Ok(true))) {
+            return false;
+        }
+    }
+    true
+}
+
 /// Check what an earlier attempt stored, then store the rest. Returns the
 /// hex SHA-256 of the plaintext; `state` ends complete.
 async fn store_chunks(

@@ -223,6 +223,50 @@ pub async fn cloud_plans<R: Runtime>(app: AppHandle<R>) -> Result<Plans, CloudEr
     crate::client(&app).plans().await
 }
 
+/// The plan kept on this device, lent to the modules that store for the
+/// user (`veydan_shell::seams::CloudPlan`): the channels of communities
+/// keep their files on the free public media without an account.
+pub struct KeptPlan<R: Runtime>(pub AppHandle<R>);
+
+impl<R: Runtime> veydan_shell::seams::CloudPlan for KeptPlan<R> {
+    fn media_retention_days(&self) -> veydan_shell::seams::SeamFuture<'_, Option<u64>> {
+        Box::pin(async move {
+            let kept = load_mine(&self.0).await?;
+            Ok(kept.and_then(|k| match (k.state, k.limits.get(RETENTION_LIMIT).copied()) {
+                (AccountState::Suspended, _) => None,
+                (_, Some(days)) => Some(days),
+                (AccountState::Paid | AccountState::Grace, None) => Some(0),
+                (AccountState::Free, None) => None,
+            }))
+        })
+    }
+}
+
+/// The delegates of the account kept on this device, lent to the keepers
+/// of the channels of communities (`veydan_shell::seams::CloudDelegates`,
+/// cloud-api.md §17): the staff of the owner's channels upload into his plan.
+pub struct KeptDelegates<R: Runtime>(pub AppHandle<R>);
+
+impl<R: Runtime> veydan_shell::seams::CloudDelegates for KeptDelegates<R> {
+    fn account(&self) -> veydan_shell::seams::SeamFuture<'_, Option<String>> {
+        Box::pin(async move {
+            let kept = load_mine(&self.0).await?;
+            Ok(kept.filter(|k| k.state != AccountState::Suspended).map(|k| k.npub))
+        })
+    }
+
+    fn put<'a>(&'a self, delegate: &'a veydan_shell::seams::DelegatePut) -> veydan_shell::seams::SeamFuture<'a, ()> {
+        Box::pin(async move { crate::client(&self.0).delegate_put(delegate).await })
+    }
+
+    fn revoke<'a>(&'a self, pubkey: &'a str) -> veydan_shell::seams::SeamFuture<'a, ()> {
+        Box::pin(async move { crate::client(&self.0).delegate_revoke(pubkey).await })
+    }
+}
+
+/// The limit of a plan that says how long its media keeps a file, days.
+pub const RETENTION_LIMIT: &str = "media.retention_days";
+
 #[cfg(test)]
 mod tests {
     use super::*;

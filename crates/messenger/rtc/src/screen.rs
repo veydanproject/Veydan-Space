@@ -9,7 +9,7 @@
 //! The capturer gives frames of 4 bytes a pixel (B, G, R, A in memory,
 //! libyuv's "ARGB") at the screen's own size, which are turned into
 //! I420, scaled down to fit the size the source was made for (the
-//! profile: 640×360 or 1280×720) and pushed. The encoder would scale a
+//! screen profile: 1920×1080) and pushed. The encoder would scale a
 //! bigger frame down by itself, but the frame also fans out to the
 //! small picture of oneself and through the IPC to the page, where a
 //! 4K screen would be 12 MB a frame. A screen changes little, so the

@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Ocultar",
     "msg_message_more": "Más",
     "msg_composer_save": "Guardar",
+    "msg_composer_expand": "Editor ampliado",
     "msg_text_copied": "Texto copiado",
     "msg_chat_archived_toast": "Chat movido al archivo",
     "msg_action_failed": "No se pudo hacer",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Enlace de inicio de sesión del sitio web de Veydan Cloud",
     "msg_card_web_text": "El inicio de sesión en un sitio web solo se aprueba escaneando su código QR en la aplicación. Nunca inicies sesión con un enlace que alguien te haya enviado.",
     "msg_inv_web_link": "Este es un enlace de inicio de sesión del sitio web de Veydan Cloud.",
-    "msg_inv_web_open": "Abrir el inicio de sesión en el sitio web"
+    "msg_inv_web_open": "Abrir el inicio de sesión en el sitio web",
+    "msg_report_channel_title": "Denunciar el canal «{name}»",
+    "msg_report_post_title": "Denunciar una publicación",
+    "msg_report_comment_title": "Denunciar un comentario",
+    "msg_report_post_note": "La publicación se enviará con la denuncia.",
+    "msg_report_comment_note": "El comentario se enviará con la denuncia.",
+    "msg_report_channel_note": "La denuncia indica el canal y su propietario.",
+    "msg_report_channel_person_note": "La denuncia indica a la persona y el canal donde la conociste.",
+    "msg_card_channel": "Canal",
+    "msg_card_channels_off": "Los canales están desactivados en los ajustes",
+    "msg_card_channels_settings": "Ajustes"
   },
   "mobile": {}
 }

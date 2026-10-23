@@ -17,6 +17,8 @@ const COMMANDS: &[&str] = &[
     "clear_keys",
     "register_listener",
     "remove_listener",
+    "keeper_foreground",
+    "keeper_periodic",
 ];
 
 fn main() {

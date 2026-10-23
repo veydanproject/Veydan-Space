@@ -15,6 +15,8 @@
     "nav_settings": "Setelan",
     "nav_back_to": "Kembali ke {name}",
     "common_close": "Tutup",
+    "common_pane_width": "Lebar panel",
+    "common_pane_resize_hint": "Seret untuk mengubah lebar · klik dua kali untuk mengatur ulang",
     "common_cancel": "Batal",
     "common_delete": "Hapus",
     "common_confirm": "OK",

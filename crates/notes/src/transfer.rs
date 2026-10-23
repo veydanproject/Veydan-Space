@@ -417,32 +417,36 @@ pub async fn note_import(
     core: tauri::State<'_, Core>,
     notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<Vec<String>> {
-    let password = password.filter(|p| !p.is_empty());
-    let unpack_root = notes_dir(&core.app_data_dir).join(format!(".import-{}", Uuid::new_v4()));
-    let mut files: Vec<(PathBuf, PathBuf)> = Vec::new();
-    for p in &paths {
-        let path = Path::new(p);
-        if path.is_file() && is_archive(path) {
-            let dir = unpack_root.join(files.len().to_string());
-            std::fs::create_dir_all(&dir).map_err(AppError::io)?;
-            let pw = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.eq_ignore_ascii_case("age"))
-                .unwrap_or(false);
-            if let Err(e) = unpack_zip(path, if pw { password.as_deref() } else { None }, &dir) {
-                let _ = std::fs::remove_dir_all(&unpack_root);
-                return Err(e);
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let password = password.filter(|p| !p.is_empty());
+        let unpack_root = notes_dir(&core.app_data_dir).join(format!(".import-{}", Uuid::new_v4()));
+        let mut files: Vec<(PathBuf, PathBuf)> = Vec::new();
+        for p in &paths {
+            let path = Path::new(p);
+            if path.is_file() && is_archive(path) {
+                let dir = unpack_root.join(files.len().to_string());
+                std::fs::create_dir_all(&dir).map_err(AppError::io)?;
+                let pw = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.eq_ignore_ascii_case("age"))
+                    .unwrap_or(false);
+                if let Err(e) = unpack_zip(path, if pw { password.as_deref() } else { None }, &dir) {
+                    let _ = std::fs::remove_dir_all(&unpack_root);
+                    return Err(e);
+                }
+                collect_note_files(&dir, &mut files);
+            } else {
+                collect_note_files(path, &mut files);
             }
-            collect_note_files(&dir, &mut files);
-        } else {
-            collect_note_files(path, &mut files);
         }
-    }
 
-    let result = import_files(files, bindings, &core, &notes).await;
-    let _ = std::fs::remove_dir_all(&unpack_root);
-    result
+        let result = import_files(files, bindings, &core, &notes).await;
+        let _ = std::fs::remove_dir_all(&unpack_root);
+        result
+    })
+    .await
 }
 
 async fn import_files(

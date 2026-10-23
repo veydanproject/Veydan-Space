@@ -15,6 +15,8 @@
     "nav_settings": "설정",
     "nav_back_to": "뒤로: {name}",
     "common_close": "닫기",
+    "common_pane_width": "패널 너비",
+    "common_pane_resize_hint": "드래그하여 너비 변경 · 두 번 클릭하면 초기화",
     "common_cancel": "취소",
     "common_delete": "삭제",
     "common_confirm": "확인",

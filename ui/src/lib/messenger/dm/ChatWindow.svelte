@@ -935,7 +935,7 @@
   @keyframes to-bottom-in { from { opacity: 0; transform: scale(0.9); } }
   @media (prefers-reduced-motion: reduce) { .to-bottom { animation: none; } }
   /* Picked files above the field: pictures as they look, the rest by name. */
-  .tray { display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; scrollbar-width: thin; }
+  .tray { display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; }
   .pick {
     position: relative; flex-shrink: 0; width: 64px; height: 64px; border-radius: var(--radius-md); overflow: hidden;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px;

@@ -11,7 +11,7 @@ use crate::MessengerRuntime;
 use messenger_core::{MessengerError, PubKey, Result};
 use messenger_groups::{GroupKind, GroupLink};
 use messenger_links::contact::{npub_of, pubkey_of_npub};
-use messenger_links::{BridgeLink, CallNodeLink, ContactLink, LinkError, LinkType, RecoverLink, ServerLink, Uri, WebLink};
+use messenger_links::{BridgeLink, CallNodeLink, ChannelLink, ContactLink, LinkError, LinkType, RecoverLink, ServerLink, Uri, WebLink};
 use messenger_store::servers;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -242,6 +242,22 @@ pub enum LinkView {
         /// The pending sign-in, 16 hex.
         id: String,
     },
+    /// A channel of a community (`veydan://channel/…`): the messenger reads
+    /// the link alone; its card, the way in and the channel itself are the
+    /// module Communities' (`channel_preview_link`, `channel_open_link`),
+    /// reached through the section it gives the list of chats.
+    Channel {
+        /// The link as this device writes it; the module opens this one.
+        link: String,
+        community_id: String,
+        relay: String,
+        /// Hex pubkey of the owner the link names (`o`).
+        owner: String,
+        /// The link carries the secret of the channel: it lets in at once.
+        has_secret: bool,
+        /// The link names an invitation (`i`).
+        invited: bool,
+    },
     /// A well-formed link of a type a newer client knows.
     Unknown { link_type: String },
     Invalid { code: String },
@@ -317,6 +333,18 @@ impl MessengerRuntime {
             },
             LinkType::Web => match WebLink::from_uri(&uri) {
                 Ok(w) => Ok(LinkView::Web { link: w.encode(), id: w.id }),
+                Err(e) => Ok(LinkView::invalid(e)),
+            },
+            // A channel is the business of the communities module: here only the grammar is read.
+            LinkType::Channel => match ChannelLink::from_uri(&uri) {
+                Ok(c) => Ok(LinkView::Channel {
+                    link: c.encode().map_err(|e| MessengerError::Invalid(e.code().into()))?,
+                    community_id: c.community_id,
+                    relay: c.relay.as_str().to_string(),
+                    owner: c.owner.as_hex().to_string(),
+                    has_secret: c.secret.is_some(),
+                    invited: c.invite.is_some(),
+                }),
                 Err(e) => Ok(LinkView::invalid(e)),
             },
             LinkType::Unknown(word) => Ok(LinkView::Unknown { link_type: word.clone() }),
@@ -549,7 +577,7 @@ mod tests {
             rt.contact_link(&bob).await.unwrap(),
             format!("nostr:{}", npub_of(&stranger).unwrap()),
             npub_of(&me).unwrap(),
-            "veydan://channel/42".to_string(),
+            format!("veydan://channel/{}?r=wss%3A%2F%2Fr.example&o={}&i={}", "c".repeat(64), "a".repeat(64), "1".repeat(32)),
             "https://example.com".to_string(),
             group.replace("t=private", "t=public"),
             format!("veydan://contact/{}", bob.as_hex()),
@@ -585,13 +613,23 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(matches!(&got[4], LinkView::Contact { is_me: true, .. }));
-        assert_eq!(got[5], LinkView::Unknown { link_type: "channel".into() });
+        match &got[5] {
+            LinkView::Channel { community_id, relay, owner, has_secret, invited, link } => {
+                assert_eq!((community_id.as_str(), owner.as_str()), ("c".repeat(64).as_str(), "a".repeat(64).as_str()));
+                assert_eq!(relay, "wss://r.example");
+                assert!(!*has_secret && *invited, "an invitation, no secret");
+                assert_eq!(ChannelLink::parse(link).map(|l| l.community_id), Ok("c".repeat(64)), "written so the module reads it");
+            }
+            other => panic!("{other:?}"),
+        }
         assert_eq!(got[6], LinkView::Invalid { code: "link_bad_scheme".into() });
         assert_eq!(got[7], LinkView::Invalid { code: "link_bad_param".into() }, "public without a secret");
         assert_eq!(got[8], LinkView::Invalid { code: "link_bad_id".into() });
 
         let json = serde_json::to_value(&got[5]).unwrap();
-        assert_eq!(json, serde_json::json!({ "kind": "unknown", "link_type": "channel" }));
+        assert_eq!((json["kind"].as_str(), json["has_secret"].as_bool()), (Some("channel"), Some(false)));
+        let broken = rt.links_inspect(&["veydan://channel/42".to_string()]).await.unwrap();
+        assert_eq!(broken[0], LinkView::Invalid { code: "link_bad_id".into() }, "a channel's link is read, not passed on");
 
         assert!(rt.links_inspect(&vec![group; MAX_LINKS + 1]).await.is_err());
         rt.shutdown().await;

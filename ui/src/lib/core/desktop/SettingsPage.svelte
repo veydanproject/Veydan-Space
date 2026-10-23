@@ -765,7 +765,9 @@
     box-shadow: var(--pane-highlight), var(--pane-shadow);
     overflow: hidden;
   }
-  .settings-side { padding: var(--sp-5) var(--sp-3) var(--sp-3); gap: var(--sp-4); overflow-y: auto; scrollbar-width: thin; }
+  .settings-side { padding: var(--sp-5) var(--sp-3) var(--sp-3); gap: var(--sp-4); }
+  /* The title stays in place, as the pane's does: only the list of the sections scrolls. */
+  .settings-side :global(.settings-nav) { flex: 1; min-height: 0; overflow-y: auto; }
   .side-title { padding: 0 var(--sp-2); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.4; }
   .pane-head {
     display: flex;

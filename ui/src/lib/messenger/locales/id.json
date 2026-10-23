@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Sembunyikan",
     "msg_message_more": "Lainnya",
     "msg_composer_save": "Simpan",
+    "msg_composer_expand": "Editor lengkap",
     "msg_text_copied": "Teks disalin",
     "msg_chat_archived_toast": "Obrolan dipindahkan ke arsip",
     "msg_action_failed": "Tidak berhasil",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Tautan masuk situs web Veydan Cloud",
     "msg_card_web_text": "Masuk ke situs web hanya disetujui dengan memindai kode QR-nya di aplikasi. Jangan pernah masuk lewat tautan yang dikirim orang lain kepada Anda.",
     "msg_inv_web_link": "Ini adalah tautan masuk situs web Veydan Cloud.",
-    "msg_inv_web_open": "Buka masuk situs web"
+    "msg_inv_web_open": "Buka masuk situs web",
+    "msg_report_channel_title": "Laporkan kanal “{name}”",
+    "msg_report_post_title": "Laporkan kiriman",
+    "msg_report_comment_title": "Laporkan komentar",
+    "msg_report_post_note": "Kiriman ikut terkirim bersama laporan.",
+    "msg_report_comment_note": "Komentar ikut terkirim bersama laporan.",
+    "msg_report_channel_note": "Laporan menyebutkan kanal dan pemiliknya.",
+    "msg_report_channel_person_note": "Laporan menyebutkan orang itu dan kanal tempat Anda bertemu dengannya.",
+    "msg_card_channel": "Kanal",
+    "msg_card_channels_off": "Kanal dimatikan di pengaturan",
+    "msg_card_channels_settings": "Pengaturan"
   },
   "mobile": {}
 }

@@ -115,10 +115,12 @@ class Registry {
 
   /**
    * The product's only module, services aside (Pass, Notes, Chat): `/` opens
-   * it on both platforms (platform-spec 11.7). Undefined in Space.
+   * it on both platforms (platform-spec 11.7). Undefined in Space. A module
+   * that lives inside another (it requires it and has no screen of its own,
+   * as the channels in the messenger) is part of that one and not counted.
    */
   get only(): ModuleDef | undefined {
-    const own = this.defs.filter((m) => !m.service);
+    const own = this.defs.filter((m) => !m.service && !(m.requires?.length && m.routes.length === 0));
     return own.length === 1 ? own[0] : undefined;
   }
 
@@ -238,6 +240,11 @@ class Registry {
       if (items !== undefined) return items;
     }
     return undefined;
+  }
+
+  /** Mobile: whether the screen's header, not its bar, carries the apps button. */
+  hubInHeader(url: URL): boolean {
+    return this.active.some((m) => m.hubInHeader?.(url) === true);
   }
 
   /**

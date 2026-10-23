@@ -30,4 +30,7 @@
     <string name="veydan_push_invite">Sizi %s grubuna davet ediyor</string>
     <string name="veydan_push_join_request">%s grubuna katılmak istiyor</string>
     <string name="veydan_push_welcome">%s grubundasınız</string>
+    <string name="veydan_push_channel_keeper">Kanal bekçisi</string>
+    <string name="veydan_push_keeper_title">Kanal bekçisi çalışıyor</string>
+    <string name="veydan_push_keeper_body">Yeni okurları kanallarınıza alıyor.</string>
 </resources>

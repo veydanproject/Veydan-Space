@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "communities-core"
+description = "Channels and communities of Veydan: membership, roles and moderation, keeper over keydist, sealed content. Copied from the groups engine (crates/messenger/groups, store, runtime) at 1f2ef31d, then changed for channels (internal/communities-stage1.md)"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../../LICENSE"
+publish = false
+
+[dependencies]
+keydist = { path = "../../keydist" }
+# The network of Veydan, by path into the messenger's own workspace
+# (internal/communities-spec.md §14): relays, blobs, identity, rich text.
+messenger-core = { path = "../../messenger/core" }
+messenger-links = { path = "../../messenger/links" }
+messenger-richtext = { path = "../../messenger/richtext" }
+# The blob hosts of a channel (wire §9): Blossom uploads signed by the
+# user at work (who pays) and plain public reads, the backends of the
+# messenger.
+messenger-media = { path = "../../messenger/media" }
+# The cover of a channel made as the picture of a group is: a square
+# JPEG of its center, from pixels alone.
+messenger-avatar = { path = "../../messenger/avatar" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+hex = "0.4"
+nostr = { version = "0.45", default-features = false, features = ["std", "nip06", "nip44", "nip49", "nip59", "os-rng"] }
+async-trait = "0.1"
+aes-gcm = "0.11"
+base64 = "0.22"
+# `rt`: a page of the past asks the relays off the command that answers it.
+# `time`: the wait before the next attempt of a file (src/media.rs).
+tokio = { version = "1", default-features = false, features = ["sync", "fs", "io-util", "rt", "time"] }
+# A file goes up and comes down through the messenger's engine
+# (messenger-media `upload`, `download`): its chunks are `Bytes`, the
+# copies of one chunk on the hosts go at once (src/transfer.rs).
+bytes = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+getrandom = "0.3"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+# The own database of the module (communities.db), opened and migrated the
+# way the messenger opens messenger.db (crates/messenger/store).
+sqlx = { version = "0.9", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros"] }
+# The clock of a posting schedule, as in the groups engine.
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"] }
+# What the keeper did and refused, for the log of the app.
+tracing = "0.1"
+
+# The trial on the test servers (sub-stage 1.6): a relay client as the
+# messenger's pool holds it (the same version and features as
+# crates/messenger/transport, which this crate may not depend on), a
+# runtime with its clock and stdin. Nothing of the library.
+nostr-sdk = { version = "0.45", default-features = false, features = ["ring", "rustls-tls-webpki-roots"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+zeroize = { version = "1", optional = true }
+
+[features]
+tools = ["dep:nostr-sdk", "dep:rustls", "dep:zeroize", "tokio/rt-multi-thread", "tokio/macros", "tokio/time", "tokio/io-std"]
+
+[[bin]]
+name = "communities-cli"
+path = "src/bin/cli/main.rs"
+required-features = ["tools"]
+
+# The keeper and a member at a million readers over the fakes of the
+# tests (stage 4, the offline half).
+[[bin]]
+name = "communities-bench"
+path = "src/bin/bench/main.rs"
+required-features = ["tools"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always", "tzdb-concatenated"] }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+zeroize = "1"

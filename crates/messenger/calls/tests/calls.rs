@@ -1693,7 +1693,7 @@ async fn video_goes_on_and_off_in_the_middle_of_a_call() {
     w.settle().await;
     let r = w.session(0).record();
     assert_eq!(r.video, vec![VideoInput::Camera { id: None }]);
-    assert_eq!(r.video_settings, Some(VideoSettings { width: 640, height: 360, fps: VIDEO_FPS, max_kbps: Some(800) }));
+    assert_eq!(r.video_settings, Some(VideoSettings { width: 640, height: 360, fps: VIDEO_FPS, max_kbps: Some(1200) }));
     assert_eq!((r.offers, r.restarts), (1, 0), "nothing renegotiated");
     let s = bob.last_state().unwrap();
     assert!(s.video_remote && s.video_remote_size.is_none(), "told by call.video, no frames yet: {s:?}");
@@ -1724,7 +1724,7 @@ async fn video_goes_on_and_off_in_the_middle_of_a_call() {
     // The cap follows the node once the way is relayed.
     w.session(0).inject(SessionEvent::SelectedPair(PairKind::Relay));
     w.settle().await;
-    assert_eq!(w.session(0).record().video_bitrate.last(), Some(&Some(800)), "no node limits: the size's own cap");
+    assert_eq!(w.session(0).record().video_bitrate.last(), Some(&Some(1200)), "no node limits: the size's own cap");
 
     // Off: the peer is told, the sizes go.
     let v = alice.calls.set_video(VideoInput::Off).await.unwrap();
@@ -1747,7 +1747,7 @@ async fn video_goes_on_and_off_in_the_middle_of_a_call() {
     assert_eq!(signals_of(bob, alice, "call.video"), vec![serde_json::json!({ "call_id": view.call_id, "on": true, "screen": true })]);
     let r = w.session(1).record();
     assert_eq!(r.video, vec![VideoInput::Screen { id: Some("screen:1".into()) }]);
-    assert_eq!(r.video_settings.map(|s| (s.width, s.height, s.max_kbps)), Some((1280, 720, Some(1800))));
+    assert_eq!(r.video_settings.map(|s| (s.width, s.height, s.max_kbps)), Some((1920, 1080, Some(2500))));
     // A switch of the camera while the screen goes keeps the screen and
     // remembers the camera.
     let v = bob.calls.switch_camera(Some("back".into())).await.unwrap();

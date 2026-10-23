@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-keeper-periodic"
+description = "Enables the keeper_periodic command without any pre-configured scope."
+commands.allow = ["keeper_periodic"]
+
+[[permission]]
+identifier = "deny-keeper-periodic"
+description = "Denies the keeper_periodic command without any pre-configured scope."
+commands.deny = ["keeper_periodic"]

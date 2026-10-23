@@ -73,6 +73,7 @@ pub(crate) fn backup_parts<R: tauri::Runtime>() -> Vec<(&'static str, veydan_she
         ("browser", browser::backup()),
         ("notes", veydan_notes::backup()),
         ("messenger", veydan_messenger_app::backup()),
+        ("communities", veydan_communities::backup()),
     ]
 }
 
@@ -565,7 +566,8 @@ mod tests {
 
     /// The driver of backups takes the parts from `Module::backup` through
     /// the shell; its tests from `backup_parts`. Both name the same modules,
-    /// and since stage 10 a backup holds the messenger's folder.
+    /// and since stage 10 a backup holds the messenger's folder, since
+    /// communities 1.4 that of the channels.
     #[cfg(desktop)]
     #[test]
     fn the_parts_of_a_backup_are_those_of_the_modules() {
@@ -579,7 +581,7 @@ mod tests {
             .map(|(id, _)| id)
             .collect();
         assert_eq!(with_backup, parts);
-        assert_eq!(parts, ["browser", "notes", "messenger"]);
+        assert_eq!(parts, ["browser", "notes", "messenger", "communities"]);
     }
 
     /// The shell fills the directory from `Module::directory`; the tests of

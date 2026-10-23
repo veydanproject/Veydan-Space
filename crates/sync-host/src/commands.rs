@@ -89,13 +89,17 @@ pub async fn sync_join_vault(
     core: tauri::State<'_, Core>,
     sync: tauri::State<'_, SyncManager>,
 ) -> CmdResult<SyncStatus> {
-    let host = Host::App(&app);
-    let passphrase = config::vault_passphrase(&core.db, passphrase).await?;
-    if join::join_held(&host, &core, &sync, &passphrase, CHANGE_STORAGE_WAIT).await? {
-        join::key_row_changed(&host).await;
-    }
-    start_first_cycle(&app);
-    status(&core, &sync).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let host = Host::App(&app);
+        let passphrase = config::vault_passphrase(&core.db, passphrase).await?;
+        if join::join_held(&host, &core, &sync, &passphrase, CHANGE_STORAGE_WAIT).await? {
+            join::key_row_changed(&host).await;
+        }
+        start_first_cycle(&app);
+        status(&core, &sync).await
+    })
+    .await
 }
 
 /// A joined device is pointed at another storage (`join::change_storage`):
@@ -110,12 +114,16 @@ pub async fn sync_change_storage(
     core: tauri::State<'_, Core>,
     sync: tauri::State<'_, SyncManager>,
 ) -> CmdResult<String> {
-    let _slot = sync.pause(CHANGE_STORAGE_WAIT).await.ok_or_else(|| {
-        AppError::other("a sync is running: wait until it ends, then change the storage")
-    })?;
-    let found = join::change_storage(&core.db, sync.registry(), cfg).await?;
-    let _ = app.emit(EVENT_STATUS, ());
-    Ok(found.to_string())
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let _slot = sync.pause(CHANGE_STORAGE_WAIT).await.ok_or_else(|| {
+            AppError::other("a sync is running: wait until it ends, then change the storage")
+        })?;
+        let found = join::change_storage(&core.db, sync.registry(), cfg).await?;
+        let _ = app.emit(EVENT_STATUS, ());
+        Ok(found.to_string())
+    })
+    .await
 }
 
 /// After a binding was saved: tell the UI, start a cycle without blocking the caller.
@@ -216,8 +224,12 @@ pub async fn sync_run_now(
     core: tauri::State<'_, Core>,
     sync: tauri::State<'_, SyncManager>,
 ) -> CmdResult<SyncStatus> {
-    run_cycle(&app, "manual").await?;
-    status(&core, &sync).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        run_cycle(&app, "manual").await?;
+        status(&core, &sync).await
+    })
+    .await
 }
 
 /// Start a cycle in the background (app resumed, screen opened). No-op when one

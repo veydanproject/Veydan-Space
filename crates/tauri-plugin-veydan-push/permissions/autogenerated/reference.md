@@ -144,6 +144,58 @@ Denies the get_token command without any pre-configured scope.
 <tr>
 <td>
 
+`veydan-push:allow-keeper-foreground`
+
+</td>
+<td>
+
+Enables the keeper_foreground command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-push:deny-keeper-foreground`
+
+</td>
+<td>
+
+Denies the keeper_foreground command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-push:allow-keeper-periodic`
+
+</td>
+<td>
+
+Enables the keeper_periodic command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-push:deny-keeper-periodic`
+
+</td>
+<td>
+
+Denies the keeper_periodic command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `veydan-push:allow-permission-state`
 
 </td>

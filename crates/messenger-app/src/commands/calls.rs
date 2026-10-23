@@ -249,8 +249,12 @@ pub async fn messenger_call_start(
     media: CallMedia,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<CallView> {
-    permissions_for_call(&app, media).await?;
-    messenger.runtime()?.call_start(&peer, media).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        permissions_for_call(&app, media).await?;
+        messenger.runtime()?.call_start(&peer, media).await.map_err(map_err)
+    })
+    .await
 }
 
 /// A phone asks for the microphone (and the camera of a video call)
@@ -631,8 +635,12 @@ pub async fn messenger_group_call_start(
     media: CallMedia,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupCallView> {
-    permissions_for_call(&app, media).await?;
-    messenger.runtime()?.group_call_start(&group_id, media).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        permissions_for_call(&app, media).await?;
+        messenger.runtime()?.group_call_start(&group_id, media).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Join the call that is on in the group `group_id` (the banner's
@@ -643,12 +651,16 @@ pub async fn messenger_group_call_join(
     group_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupCallView> {
-    let rt = messenger.runtime()?;
-    // A phone asks for the microphone (and the camera of a video call)
-    // first; a call the group does not have fails on its own below.
-    let media = rt.group_call_state(Some(&group_id)).await.announced.map(|a| a.media).unwrap_or(CallMedia::Audio);
-    permissions_for_call(&app, media).await?;
-    rt.group_call_join(&group_id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let rt = messenger.runtime()?;
+        // A phone asks for the microphone (and the camera of a video call)
+        // first; a call the group does not have fails on its own below.
+        let media = rt.group_call_state(Some(&group_id)).await.announced.map(|a| a.media).unwrap_or(CallMedia::Audio);
+        permissions_for_call(&app, media).await?;
+        rt.group_call_join(&group_id).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Leave the room; the last one out ends the call for the group.

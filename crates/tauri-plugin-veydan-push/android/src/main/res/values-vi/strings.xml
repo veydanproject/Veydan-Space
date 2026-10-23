@@ -30,4 +30,7 @@
     <string name="veydan_push_invite">Mời bạn vào nhóm %s</string>
     <string name="veydan_push_join_request">Xin tham gia %s</string>
     <string name="veydan_push_welcome">Bạn đã ở trong nhóm %s</string>
+    <string name="veydan_push_channel_keeper">Người giữ khóa kênh</string>
+    <string name="veydan_push_keeper_title">Người giữ khóa kênh đang hoạt động</string>
+    <string name="veydan_push_keeper_body">Đang cho người đọc mới vào các kênh của bạn.</string>
 </resources>

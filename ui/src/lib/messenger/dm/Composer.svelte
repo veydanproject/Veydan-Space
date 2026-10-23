@@ -51,10 +51,19 @@
     onpasteclipboard?: () => void;
     /** Whether an attachment may be added now: else a paste is text only, and a keyboard's pictures are not taken. */
     canattach?: boolean;
+    /**
+     * The words go as Markdown unless the user says otherwise (a channel's
+     * posts and comments): the field starts in Markdown, a small «MD» beside
+     * it on a computer (the chip on a phone) turns it to plain and back.
+     */
+    markdown?: boolean;
+    /** The ⤢ button: the words typed (and whether they are Markdown) go to a bigger editor; the field is emptied. */
+    onexpand?: (text: string, md: boolean) => void;
   }
   let {
     disabled = false, placeholder, replyTo, editing, peerTitle, oncancel, onsend, tools, draftKey, oneditlast,
     onrecording, canRecord = true, autofocus = true, attached = null, attachments, onpastefiles, onpasteclipboard, canattach = true,
+    markdown = false, onexpand,
   }: Props = $props();
 
   let emojiOpen = $state(false);
@@ -344,7 +353,9 @@
   // Markdown message), shown as a chip over the field, taken off by its ×.
   // The field holds the marks as they are typed; an empty field is plain.
   let md = $state(false);
-  $effect(() => { if (!text) md = false; });
+  $effect(() => { if (!text) md = markdown; });
+  /** The chip of Markdown: shown once it was asked for; where Markdown is the rule it is not news (a computer has «MD» beside the field, the format menu has its switch). */
+  const chip = $derived(md && !markdown);
 
   // Entering edit mode loads the message text; leaving it clears the field.
   let lastEditing: string | null = null;
@@ -353,7 +364,7 @@
     if (id === lastEditing) return;
     lastEditing = id;
     text = editing?.text ?? '';
-    md = editing?.fmt === 'md';
+    md = editing ? editing.fmt === 'md' : markdown;
     queueMicrotask(() => { resize(); el?.focus(); });
   });
   $effect(() => { if (replyTo) el?.focus(); });
@@ -369,7 +380,7 @@
     }
     lastKey = key;
     text = key ? (drafts.get(key) ?? "") : "";
-    md = !!key && !!text && markdownDrafts.has(key);
+    md = !!key && !!text ? markdownDrafts.has(key) : markdown;
     sel = null;
     queueMicrotask(() => { resize(); if (autofocus) el?.focus(); });
   });
@@ -442,6 +453,26 @@
   }
 
   export function focus() { el?.focus(); }
+
+  /** Words put back into the field (the bigger editor closed without sending them), in Markdown or not. */
+  export function restore(value: string, asMarkdown: boolean) {
+    text = value;
+    md = value ? asMarkdown : markdown;
+    sel = null;
+    queueMicrotask(() => { resize(); if (!touch) el?.focus(); });
+  }
+
+  /** ⤢: the words go to the bigger editor, the field is emptied. */
+  function expand() {
+    const value = text;
+    const asMarkdown = md;
+    text = '';
+    sel = null;
+    emojiOpen = false;
+    closeDock();
+    queueMicrotask(resize);
+    onexpand?.(value, asMarkdown);
+  }
 
   export function insert(s: string) {
     if (!el) { text += s; return; }
@@ -547,6 +578,13 @@
   </span>
 {/snippet}
 
+{#snippet expandButton()}
+  <button class="tool expand" tabindex="-1" {disabled} onpointerdown={keepFocus} onmousedown={keepFocus} onclick={expand}
+    title={$t('msg_composer_expand')} aria-label={$t('msg_composer_expand')}>
+    <Icon name="maximize-2" size={18} />
+  </button>
+{/snippet}
+
 {#snippet formatBar()}
   <div class="fmt" role="toolbar" aria-label={$t('msg_fmt_menu')}>
     {#each MARKS as m (m.mark)}
@@ -578,9 +616,9 @@
   {/if}
   {#if attachments}{@render attachments()}{/if}
   <!-- A computer: over the field. The phone has both at the top of the chat (below), so the field never moves. -->
-  {#if !touch && (md || (sel && !recording && !fmtMenu.open))}
+  {#if !touch && (chip || (sel && !recording && !fmtMenu.open))}
     <div class="above">
-      {#if md}{@render mdChip()}{/if}
+      {#if chip}{@render mdChip()}{/if}
       {#if sel && !recording && !fmtMenu.open}{@render formatBar()}{/if}
     </div>
   {/if}
@@ -604,6 +642,7 @@
             onpointerdown={() => { if (dock === 'open') { el?.removeAttribute('inputmode'); dock = 'tokb'; } }}
           ></textarea>
           {#if tools}{@render tools()}{/if}
+          {#if onexpand}{@render expandButton()}{/if}
         </div>
       {#if canRecordNow}
         {@const sends = !!held && (heldLocked || heldPhase === "preview")}
@@ -642,6 +681,11 @@
         <Icon name="smile" size={18} />
       </button>
     </div>
+    {#if markdown}
+      <button class="tool mdtag" class:on={md} tabindex="-1" aria-pressed={md} {disabled} onpointerdown={keepFocus} onmousedown={keepFocus}
+        onclick={() => (md = !md)} title={$t(md ? 'msg_fmt_md_off' : 'msg_fmt_md_on')}>MD</button>
+    {/if}
+    {#if onexpand}{@render expandButton()}{/if}
     {#if canRecordNow}
       {#if circleOk}
         <button class="tool" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => startRecording("circle")} title={$t("msg_rec_circle")}>
@@ -662,10 +706,10 @@
   </div>
   <!-- The phone: the menu and the chip at the top of the chat, under its head, over the conversation: clear of the
        system's own menu over the selection and of the keyboard, and the field does not move when they come or go. -->
-  {#if touch && !held && (sel || md)}
+  {#if touch && !held && (sel || chip)}
     <div class="fmt-top" use:toBody style:top={barTop()}>
       {#if sel}{@render formatBar()}{/if}
-      {#if md}{@render mdChip()}{/if}
+      {#if chip}{@render mdChip()}{/if}
     </div>
   {/if}
   {#if tooLong}<div class="warn">{$t('msg_composer_too_long')}</div>{/if}
@@ -707,6 +751,9 @@
   .dfield textarea { flex: 1; min-width: 0; }
   .dfield :global(.picker) { left: auto; right: 0; bottom: calc(100% + 14px); }
   .tool.voice { border: 1px solid var(--border-2); }
+  /* «MD» beside the field where Markdown is the rule: lit while the words are Markdown. */
+  .tool.mdtag { width: auto; min-width: 34px; height: 24px; margin-bottom: 8px; padding: 0 7px; border-radius: var(--radius-pill); font: inherit; font-size: var(--fs-2xs); font-weight: var(--fw-bold); letter-spacing: 0.04em; color: var(--text-3); border: 1px solid var(--border-2); }
+  .tool.mdtag.on { color: var(--accent-text-2); background: var(--accent-tint); border-color: transparent; }
   .context { display: flex; align-items: center; gap: var(--sp-2); padding: 4px 8px; border-left: 2px solid var(--accent); background: var(--surface-2); border-radius: var(--radius-xs); color: var(--accent-text-2); }
   .ctx-thumb { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; border-radius: var(--radius-xs); background: var(--surface-3); }
   .ctx-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
@@ -834,4 +881,17 @@
   @keyframes drop { from { opacity: 0; margin-top: -6px; } }
   @keyframes swap { from { transform: rotate(-70deg) scale(0.4); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .glyph, .record.holding::after, .fmt-top { animation: none; } }
+  /*
+   * A computer, a narrow pane (the page of a post beside a channel's feed): with its buttons in one row (attach,
+   * Markdown, the bigger editor, circle, voice, send) the field would be left a few letters wide. It takes the
+   * whole first line, the buttons go under it, send at the right.
+   */
+  @media not (pointer: coarse) {
+    .composer { container-type: inline-size; }
+    @container (max-width: 440px) {
+      .row { flex-wrap: wrap; row-gap: 2px; }
+      .dfield { flex: 1 1 100%; order: -1; }
+      .row > .send { margin-left: auto; }
+    }
+  }
 </style>

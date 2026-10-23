@@ -54,6 +54,15 @@ describe('the report each entry builds', () => {
     expect(api.send).toHaveBeenCalledWith(expect.objectContaining({ context: { t: 'request' }, attach: false, message_id: null, block: true }));
   });
 
+  it('a post of a channel: the channel and the post named, nothing of a chat attached or blocked', async () => {
+    const context = { t: 'channel' as const, community_id: 'c'.repeat(64), post_id: 'd'.repeat(64) };
+    reportStore.open({ accused: 'dd', name: 'Dee', context, messageId: 'm3', canBlock: true });
+    reportStore.reason = 'spam';
+    reportStore.block = true;
+    await reportStore.send();
+    expect(api.send).toHaveBeenCalledWith(expect.objectContaining({ accused: 'dd', context, attach: false, message_id: null, block: false }));
+  });
+
   it('a harm to a child carries its kind, and only then; the comment is trimmed', async () => {
     reportStore.open({ accused: 'aa', name: 'Ann', context: { t: 'dm' }, canBlock: true });
     reportStore.reason = 'child_harm';

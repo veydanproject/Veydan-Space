@@ -55,7 +55,7 @@
   {#if s?.runtime}<MeButton />{/if}
 {/snippet}
 
-<MobileFrame title={$t('msg_nav_calls')} {lead} {actions} scroll={false}>
+<MobileFrame hubButton title={$t('msg_nav_calls')} {lead} {actions} scroll={false}>
   <div class="calls">
     <CallHistory onselect={(r) => (details = r.head.chat_id)} onchat={write} onnew={() => (newCall = true)} />
   </div>

@@ -141,7 +141,23 @@ name: string, } | { "kind": "web", link: string,
 /**
  * The pending sign-in, 16 hex.
  */
-id: string, } | { "kind": "unknown", link_type: string, } | { "kind": "invalid", code: string, };
+id: string, } | { "kind": "channel", 
+/**
+ * The link as this device writes it; the module opens this one.
+ */
+link: string, community_id: string, relay: string, 
+/**
+ * Hex pubkey of the owner the link names (`o`).
+ */
+owner: string, 
+/**
+ * The link carries the secret of the channel: it lets in at once.
+ */
+has_secret: boolean, 
+/**
+ * The link names an invitation (`i`).
+ */
+invited: boolean, } | { "kind": "unknown", link_type: string, } | { "kind": "invalid", code: string, };
 
 /** A private server of mine as the settings list it; never its app key. */
 export type PrivateServerView = { id: string, name: string | null, relay: string, media: string | null, call_node: string | null, 

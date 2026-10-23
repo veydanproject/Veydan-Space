@@ -30,6 +30,9 @@ export const CARDS: { [K in LinkKind]: CardOf<K> } = {
   web: WebCard,
   unknown: UnknownCard,
   invalid: UnknownCard,
+  // Drawn by LinkCard itself, which reaches the module owning channels
+  // through the sections seam; this row is never used.
+  channel: UnknownCard as unknown as CardOf<'channel'>,
 };
 
 /** What the text of a message shows in place of a link inside. */
@@ -43,6 +46,7 @@ export const ICONS: Record<LinkKind, string> = {
   web: 'world',
   unknown: 'info',
   invalid: 'alert-triangle',
+  channel: 'speakerphone',
 };
 
 /** The card of a view, to be given that view. */

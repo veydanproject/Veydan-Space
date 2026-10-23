@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Zwiń",
     "msg_message_more": "Więcej",
     "msg_composer_save": "Zapisz",
+    "msg_composer_expand": "Rozszerzony edytor",
     "msg_text_copied": "Skopiowano tekst",
     "msg_chat_archived_toast": "Czat przeniesiono do archiwum",
     "msg_action_failed": "Nie udało się",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Link logowania do strony Veydan Cloud",
     "msg_card_web_text": "Logowanie na stronie potwierdza się wyłącznie skanując jej kod QR w aplikacji. Nigdy nie loguj się przez link, który ktoś ci przysłał.",
     "msg_inv_web_link": "To jest link logowania do strony Veydan Cloud.",
-    "msg_inv_web_open": "Otwórz logowanie na stronie"
+    "msg_inv_web_open": "Otwórz logowanie na stronie",
+    "msg_report_channel_title": "Zgłoszenie kanału „{name}”",
+    "msg_report_post_title": "Zgłoś post",
+    "msg_report_comment_title": "Zgłoś komentarz",
+    "msg_report_post_note": "Post zostanie wysłany razem ze zgłoszeniem.",
+    "msg_report_comment_note": "Komentarz zostanie wysłany razem ze zgłoszeniem.",
+    "msg_report_channel_note": "Zgłoszenie wskazuje kanał i jego właściciela.",
+    "msg_report_channel_person_note": "Zgłoszenie wskazuje osobę i kanał, w którym ją spotkałeś.",
+    "msg_card_channel": "Kanał",
+    "msg_card_channels_off": "Kanały są wyłączone w ustawieniach",
+    "msg_card_channels_settings": "Ustawienia"
   },
   "mobile": {}
 }

@@ -171,17 +171,21 @@ pub async fn demo_seed(
     app: AppHandle,
     sync: tauri::State<'_, SyncManager>,
 ) -> CmdResult<()> {
-    demo_in_build(DEMO_BUILD)?;
-    confirm(&app, secret.as_deref()).await?;
-    let guard = sync.pause(SYNC_WAIT).await;
-    if guard.is_none() {
-        return Err(AppError::other("sync is running, try again"));
-    }
-    let parts = app.state::<Shell>().demo_parts();
-    let result = seed(&app, &parts, &locale).await;
-    drop(guard);
-    veydan_sync_host::trigger_cycle(&app, "demo_seed");
-    result
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        demo_in_build(DEMO_BUILD)?;
+        confirm(&app, secret.as_deref()).await?;
+        let guard = sync.pause(SYNC_WAIT).await;
+        if guard.is_none() {
+            return Err(AppError::other("sync is running, try again"));
+        }
+        let parts = app.state::<Shell>().demo_parts();
+        let result = seed(&app, &parts, &locale).await;
+        drop(guard);
+        veydan_sync_host::trigger_cycle(&app, "demo_seed");
+        result
+    })
+    .await
 }
 
 #[cfg(test)]

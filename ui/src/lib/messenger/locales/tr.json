@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Gizle",
     "msg_message_more": "Daha fazla",
     "msg_composer_save": "Kaydet",
+    "msg_composer_expand": "Gelişmiş düzenleyici",
     "msg_text_copied": "Metin kopyalandı",
     "msg_chat_archived_toast": "Sohbet arşive taşındı",
     "msg_action_failed": "Yapılamadı",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Veydan Cloud web sitesi giriş bağlantısı",
     "msg_card_web_text": "Web sitesine giriş yalnızca uygulamada QR kodunu tarayarak onaylanır. Size gönderilen bir bağlantıyla asla giriş yapmayın.",
     "msg_inv_web_link": "Bu, Veydan Cloud web sitesinin giriş bağlantısı.",
-    "msg_inv_web_open": "Web sitesi girişini aç"
+    "msg_inv_web_open": "Web sitesi girişini aç",
+    "msg_report_channel_title": "“{name}” kanalını bildir",
+    "msg_report_post_title": "Gönderiyi bildir",
+    "msg_report_comment_title": "Yorumu bildir",
+    "msg_report_post_note": "Gönderi, bildirimle birlikte gider.",
+    "msg_report_comment_note": "Yorum, bildirimle birlikte gider.",
+    "msg_report_channel_note": "Bildirimde kanal ve sahibi belirtilir.",
+    "msg_report_channel_person_note": "Bildirimde kişi ve onunla karşılaştığınız kanal belirtilir.",
+    "msg_card_channel": "Kanal",
+    "msg_card_channels_off": "Kanallar ayarlarda kapalı",
+    "msg_card_channels_settings": "Ayarlar"
   },
   "mobile": {}
 }

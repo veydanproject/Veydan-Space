@@ -17,8 +17,14 @@ export const REPORT_SUBS: ReportSubReason[] = ['sexual', 'grooming', 'violence_i
 export const REPORT_COMMENT_MAX = 2000;
 
 export interface ReportTarget {
-  /** Whom the report is on; a person when absent. A group has no accused key here: the runtime picks its owner. */
-  target?: 'person' | 'group';
+  /**
+   * Whom the report is on; a person when absent. A group has no accused key
+   * here: the runtime picks its owner. A channel's accused is its owner, and
+   * the context names the channel.
+   */
+  target?: 'person' | 'group' | 'channel';
+  /** Of a report opened on a message of a channel: what the message is, for the title. */
+  item?: 'post' | 'comment';
   /** The hex key of the person reported; empty for a group. */
   accused: string;
   /** What the person is called here, for «Block {name}». */
@@ -67,6 +73,9 @@ class ReportStore {
     if (!target || !this.reason) return null;
     const comment = this.comment.trim().slice(0, REPORT_COMMENT_MAX);
     const group = target.target === 'group';
+    // A channel's post is named by the context; nothing of a chat is attached or blocked.
+    const channel = target.context.t === 'channel';
+    const attach = this.attach && !channel;
     return {
       ...(group ? { target: 'group' as const } : {}),
       accused: group ? '' : target.accused,
@@ -75,9 +84,9 @@ class ReportStore {
       // Only a harm to a child has kinds; one chosen before the reason changed must not travel.
       sub_reason: this.reason === 'child_harm' ? this.sub : null,
       comment: comment || null,
-      attach: this.attach,
-      message_id: this.attach ? target.messageId ?? null : null,
-      block: !group && target.canBlock && this.block,
+      attach,
+      message_id: attach ? target.messageId ?? null : null,
+      block: !group && !channel && target.canBlock && this.block,
     };
   }
 

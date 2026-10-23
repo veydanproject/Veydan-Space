@@ -32,6 +32,7 @@ import { sharedStore } from "./content/shared/sharedStore.svelte";
 import { netStore } from "./net/netStore.svelte";
 import { callNodesStore } from "./net/callNodesStore.svelte";
 import { usageStore } from "./shared/emoji/usageStore.svelte";
+import { uiPrefs } from "./shared/uiPrefs.svelte";
 import { presenceStore } from "./presence/presenceStore.svelte";
 import { privacyStore } from "./privacy/privacyStore.svelte";
 import { requestStore } from "./requests/requestStore.svelte";
@@ -140,6 +141,8 @@ class MessengerStore {
           netStore.load().catch(() => {});
           // Popular emoji come from every device of mine: reactions and the picker start from them.
           usageStore.load().catch(() => {});
+          // How wide I made the panes, the same on every computer of mine.
+          uiPrefs.load().catch(() => {});
           // Who of my contacts is online; the clock of "last seen" starts with it.
           presenceStore.load().catch(() => {});
           presenceStore.start();
@@ -172,6 +175,7 @@ class MessengerStore {
         netStore.reset();
         callNodesStore.reset();
         usageStore.reset();
+        uiPrefs.reset();
         presenceStore.reset();
         transferStore.reset();
         callStore.reset();
@@ -215,6 +219,7 @@ class MessengerStore {
     netStore.reset();
     callNodesStore.reset();
     usageStore.reset();
+    uiPrefs.reset();
     presenceStore.reset();
     transferStore.reset();
     callStore.reset();
@@ -253,6 +258,7 @@ class MessengerStore {
         sharedStore.handleEvent(e.payload);
         netStore.handleEvent(e.payload);
         usageStore.handleEvent(e.payload);
+        uiPrefs.handleEvent(e.payload);
         presenceStore.handleEvent(e.payload);
         privacyStore.handleEvent(e.payload);
         requestStore.handleEvent(e.payload);

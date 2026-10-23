@@ -11,9 +11,28 @@
   import { REPORT_COMMENT_MAX, REPORT_REASONS, REPORT_SUBS, reportStore as s } from './report.svelte';
 
   let open = $derived(s.target !== null);
+
+  /** What the report is on, in the title: a person, a group, a channel, or a message of a channel. */
+  const title = $derived.by(() => {
+    const tg = s.target;
+    if (!tg) return '';
+    if (tg.target === 'group') return $t('msg_report_group_title', { name: tg.name });
+    if (tg.target === 'channel') return $t('msg_report_channel_title', { name: tg.name });
+    if (tg.context.t === 'channel' && tg.context.post_id) return tg.item === 'comment' ? $t('msg_report_comment_title') : $t('msg_report_post_title');
+    return $t('msg_report_title');
+  });
+
+  /** Nothing of a chat goes with a report from a channel: the note says what does. */
+  const channelNote = $derived.by(() => {
+    const tg = s.target;
+    if (!tg || tg.context.t !== 'channel') return null;
+    if (tg.target === 'channel') return $t('msg_report_channel_note');
+    if (!tg.context.post_id) return $t('msg_report_channel_person_note');
+    return tg.item === 'comment' ? $t('msg_report_comment_note') : $t('msg_report_post_note');
+  });
 </script>
 
-<Dialog {open} title={s.target?.target === 'group' ? $t('msg_report_group_title', { name: s.target.name }) : $t('msg_report_title')} width="min(440px, calc(100vw - 24px))" onclose={() => s.close()}>
+<Dialog {open} {title} width="min(440px, calc(100vw - 24px))" onclose={() => s.close()}>
   {#if s.target}
     <div class="body">
       <div class="list" role="radiogroup" aria-label={$t('msg_report_title')}>
@@ -41,10 +60,13 @@
         <span class="count">{s.comment.length} / {REPORT_COMMENT_MAX}</span>
       </label>
 
-      <label class="check">
-        <input type="checkbox" bind:checked={s.attach} disabled={s.busy} />
-        <span>{$t(s.target.target === 'group' ? 'msg_report_group_attach' : 'msg_report_attach')}</span>
-      </label>
+      <!-- A channel's post is named by the report itself: there are no chat messages to attach. -->
+      {#if s.target.context.t !== 'channel'}
+        <label class="check">
+          <input type="checkbox" bind:checked={s.attach} disabled={s.busy} />
+          <span>{$t(s.target.target === 'group' ? 'msg_report_group_attach' : 'msg_report_attach')}</span>
+        </label>
+      {/if}
       {#if s.target.canBlock}
         <label class="check">
           <input type="checkbox" bind:checked={s.block} disabled={s.busy} />
@@ -53,7 +75,7 @@
       {/if}
 
       {#if s.target.target === 'group'}<p class="note">{$t('msg_report_group_note')}</p>{/if}
-      <p class="note">{$t('msg_report_note')}</p>
+      <p class="note">{channelNote ?? $t('msg_report_note')}</p>
     </div>
   {/if}
   {#snippet footer()}

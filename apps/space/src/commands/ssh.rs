@@ -1017,72 +1017,76 @@ pub async fn ssh_connection_update(
     id: String,
     input: SshConnectionUpdateInput,
 ) -> CmdResult<SshConnection> {
-    let now = Utc::now().to_rfc3339();
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let now = Utc::now().to_rfc3339();
 
-    let mut tx = core.db.begin().await.map_err(AppError::db)?;
-    sqlx::query(
-        "UPDATE ssh_connections SET
-            name                = COALESCE(?, name),
-            host                = COALESCE(?, host),
-            port                = COALESCE(?, port),
-            username            = COALESCE(?, username),
-            auth_type           = COALESCE(?, auth_type),
-            password            = CASE WHEN ? IS NULL THEN password       WHEN ? = '' THEN NULL ELSE ? END,
-            private_key         = CASE WHEN ? IS NULL THEN private_key    WHEN ? = '' THEN NULL ELSE ? END,
-            key_passphrase      = CASE WHEN ? IS NULL THEN key_passphrase WHEN ? = '' THEN NULL ELSE ? END,
-            ssh_key_id          = CASE WHEN ? IS NULL THEN ssh_key_id     WHEN ? = '' THEN NULL ELSE ? END,
-            requires_2fa        = COALESCE(?, requires_2fa),
-            totp_entry_id       = CASE WHEN ? IS NULL THEN totp_entry_id  WHEN ? = '' THEN NULL ELSE ? END,
-            proxy_id            = CASE WHEN ? IS NULL THEN proxy_id       WHEN ? = '' THEN NULL ELSE ? END,
-            connect_timeout_sec = COALESCE(?, connect_timeout_sec),
-            keepalive_sec       = COALESCE(?, keepalive_sec),
-            terminal_theme      = CASE WHEN ? IS NULL THEN terminal_theme WHEN ? = '' THEN NULL ELSE ? END,
-            default_cols        = COALESCE(?, default_cols),
-            default_rows        = COALESCE(?, default_rows),
-            updated_at          = ?
-         WHERE id = ?",
-    )
-    .bind(&input.name)
-    .bind(&input.host)
-    .bind(input.port)
-    .bind(&input.username)
-    .bind(&input.auth_type)
-    .bind(&input.password).bind(&input.password).bind(&input.password)
-    .bind(&input.private_key).bind(&input.private_key).bind(&input.private_key)
-    .bind(&input.key_passphrase).bind(&input.key_passphrase).bind(&input.key_passphrase)
-    .bind(&input.ssh_key_id).bind(&input.ssh_key_id).bind(&input.ssh_key_id)
-    .bind(input.requires_2fa.map(|v| v as i64))
-    .bind(&input.totp_entry_id).bind(&input.totp_entry_id).bind(&input.totp_entry_id)
-    .bind(&input.proxy_id).bind(&input.proxy_id).bind(&input.proxy_id)
-    .bind(input.connect_timeout_sec)
-    .bind(input.keepalive_sec)
-    .bind(&input.terminal_theme).bind(&input.terminal_theme).bind(&input.terminal_theme)
-    .bind(input.default_cols)
-    .bind(input.default_rows)
-    .bind(&now)
-    .bind(&id)
-    .execute(&mut *tx)
+        let mut tx = core.db.begin().await.map_err(AppError::db)?;
+        sqlx::query(
+            "UPDATE ssh_connections SET
+                name                = COALESCE(?, name),
+                host                = COALESCE(?, host),
+                port                = COALESCE(?, port),
+                username            = COALESCE(?, username),
+                auth_type           = COALESCE(?, auth_type),
+                password            = CASE WHEN ? IS NULL THEN password       WHEN ? = '' THEN NULL ELSE ? END,
+                private_key         = CASE WHEN ? IS NULL THEN private_key    WHEN ? = '' THEN NULL ELSE ? END,
+                key_passphrase      = CASE WHEN ? IS NULL THEN key_passphrase WHEN ? = '' THEN NULL ELSE ? END,
+                ssh_key_id          = CASE WHEN ? IS NULL THEN ssh_key_id     WHEN ? = '' THEN NULL ELSE ? END,
+                requires_2fa        = COALESCE(?, requires_2fa),
+                totp_entry_id       = CASE WHEN ? IS NULL THEN totp_entry_id  WHEN ? = '' THEN NULL ELSE ? END,
+                proxy_id            = CASE WHEN ? IS NULL THEN proxy_id       WHEN ? = '' THEN NULL ELSE ? END,
+                connect_timeout_sec = COALESCE(?, connect_timeout_sec),
+                keepalive_sec       = COALESCE(?, keepalive_sec),
+                terminal_theme      = CASE WHEN ? IS NULL THEN terminal_theme WHEN ? = '' THEN NULL ELSE ? END,
+                default_cols        = COALESCE(?, default_cols),
+                default_rows        = COALESCE(?, default_rows),
+                updated_at          = ?
+             WHERE id = ?",
+        )
+        .bind(&input.name)
+        .bind(&input.host)
+        .bind(input.port)
+        .bind(&input.username)
+        .bind(&input.auth_type)
+        .bind(&input.password).bind(&input.password).bind(&input.password)
+        .bind(&input.private_key).bind(&input.private_key).bind(&input.private_key)
+        .bind(&input.key_passphrase).bind(&input.key_passphrase).bind(&input.key_passphrase)
+        .bind(&input.ssh_key_id).bind(&input.ssh_key_id).bind(&input.ssh_key_id)
+        .bind(input.requires_2fa.map(|v| v as i64))
+        .bind(&input.totp_entry_id).bind(&input.totp_entry_id).bind(&input.totp_entry_id)
+        .bind(&input.proxy_id).bind(&input.proxy_id).bind(&input.proxy_id)
+        .bind(input.connect_timeout_sec)
+        .bind(input.keepalive_sec)
+        .bind(&input.terminal_theme).bind(&input.terminal_theme).bind(&input.terminal_theme)
+        .bind(input.default_cols)
+        .bind(input.default_rows)
+        .bind(&now)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::db)?;
+        directory::relabel(&core.directory, &mut tx, &directory::SSH, &id).await?;
+        tx.commit().await.map_err(AppError::db)?;
+
+        if let Some(ref wids) = input.workspace_ids {
+            sync_workspace_links(&core.db, &id, wids)
+                .await
+                .map_err(AppError::other)?;
+        }
+        if let Some(ref pids) = input.profile_ids {
+            sync_profile_links(&core.db, &id, pids)
+                .await
+                .map_err(AppError::other)?;
+        }
+
+        // What the cached SFTP session holds (host, user, key, proxy) may be what
+        // was just changed: the next call connects anew.
+        crate::commands::sftp::forget_session(&app, &ssh, &id).await;
+
+        ssh_connection_get(core, id).await
+    })
     .await
-    .map_err(AppError::db)?;
-    directory::relabel(&core.directory, &mut tx, &directory::SSH, &id).await?;
-    tx.commit().await.map_err(AppError::db)?;
-
-    if let Some(ref wids) = input.workspace_ids {
-        sync_workspace_links(&core.db, &id, wids)
-            .await
-            .map_err(AppError::other)?;
-    }
-    if let Some(ref pids) = input.profile_ids {
-        sync_profile_links(&core.db, &id, pids)
-            .await
-            .map_err(AppError::other)?;
-    }
-
-    // What the cached SFTP session holds (host, user, key, proxy) may be what
-    // was just changed: the next call connects anew.
-    crate::commands::sftp::forget_session(&app, &ssh, &id).await;
-
-    ssh_connection_get(core, id).await
 }
 
 #[tauri::command]

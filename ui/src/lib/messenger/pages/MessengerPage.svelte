@@ -45,10 +45,24 @@
   import Dialer from '../calls/Dialer.svelte';
   import CallIcon from '../calls/CallIcon.svelte';
   import { callLog } from '../calls/callLog.svelte';
+  import { chatSections } from '../seams/sections.svelte';
 
-  /** The sections of the column: the chats between two (`chat`), the groups, the journal of calls, the contacts, the settings. */
-  type View = 'chat' | 'groups' | 'calls' | 'contacts' | 'settings';
+  /**
+   * The sections of the column: the chats between two (`chat`), the groups,
+   * the journal of calls, the contacts, the settings, or the id of a section
+   * a module gives (seams/sections: the channels).
+   */
+  type View = 'chat' | 'groups' | 'calls' | 'contacts' | 'settings' | (string & {});
   let view = $state<View>('chat');
+  /** The section a module gives, when one is shown, and the row of it open. */
+  const host = $derived(chatSections.get(view));
+  let sectionChat = $state<string | null>(null);
+  /** The dialog of a new row of a module's section, open, by section. */
+  let creating = $state<Record<string, boolean>>({});
+  // The module was switched off under its section: back to the chats.
+  $effect(() => {
+    if (!host && !['chat', 'groups', 'calls', 'contacts', 'settings'].includes(view)) untrack(() => { view = 'chat'; sectionChat = null; });
+  });
   let query = $state('');
   let newChat = $state(false);
   let newGroup = $state(false);
@@ -84,10 +98,16 @@
   // A link from outside the module asks for a pane (`?view=settings`: the page «Account»).
   onMount(() => {
     const asked = new URLSearchParams(window.location.search).get('view');
-    if (asked === 'settings' || asked === 'contacts' || asked === 'groups' || asked === 'calls') view = asked;
+    if (asked === 'settings' || asked === 'contacts' || asked === 'groups' || asked === 'calls' || (asked && chatSections.get(asked))) view = asked;
+    const open = new URLSearchParams(window.location.search).get('open');
+    if (open && chatSections.get(view)) sectionChat = open;
   });
   // A chat opened from elsewhere (a link, a notification) is shown here, in its section.
-  onMount(() => onChatOpened((id) => { view = sectionOf(id); }));
+  // A row of a module's section (a notice of a channel) opens in that section.
+  onMount(() => onChatOpened((id) => {
+    const host = chatSections.ofChat(id);
+    if (host) { view = host.id; sectionChat = id; } else view = sectionOf(id);
+  }));
 
   const s = $derived(messengerStore.status);
   const connected = $derived(s?.runtime?.relays_connected ?? 0);
@@ -148,6 +168,7 @@
     const open = chatStore.activeId;
     if (open && !((v === 'chat' || v === 'groups') && sectionOf(open) === v)) chatStore.close();
     if (v !== 'chat') requestsUi.close();
+    if (!chatSections.get(v)) sectionChat = null;
   }
 </script>
 
@@ -181,6 +202,12 @@
           <Icon name="users" size={22} />
           {@render badge(chatStore.unreadOf('group'))}
         </button>
+        {#each chatSections.hosts as h (h.id)}
+          <button class="sec" class:active={view === h.id} aria-current={view === h.id ? 'page' : undefined} onclick={() => show(h.id)} title={$t(h.title)}>
+            <Icon name={h.icon} size={22} />
+            {@render badge(h.unread())}
+          </button>
+        {/each}
         <button class="sec" class:active={view === 'calls'} aria-current={view === 'calls' ? 'page' : undefined} onclick={() => show('calls')} title={$t('msg_nav_calls')}>
           <Icon name="phone" size={22} />
           {#if callLog.missed > 0}<span class="sec-badge missed">{callLog.missed > 99 ? '99+' : callLog.missed}</span>{/if}
@@ -235,6 +262,21 @@
         </div>
         <CallHistory selected={callChat ? callRow : null} onselect={(r) => { callChat = r.head.chat_id; callRow = r.key; }} onchat={writeTo} onnew={() => (newCall = true)} />
       </aside>
+      {:else if host}
+      <aside class="rail" class:hidden-narrow={!!sectionChat}>
+        <div class="rail-head">
+          <span class="rail-title">{$t(host.title)}</span>
+          <span class="spacer"></span>
+          <button class="icon accent" onclick={() => (creating[host.id] = true)} title={$t(host.newTitle)}><Icon name={host.newIcon} size={16} /></button>
+        </div>
+        <div class="search">
+          <Icon name="search" size={14} />
+          <input type="text" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" />
+          {#if query}<button class="icon sm" onclick={() => (query = '')}><Icon name="x" size={12} /></button>{/if}
+        </div>
+        {#if host.above}{@const Above = host.above}<Above />{/if}
+        <ChatList {query} kind={host.id} selected={sectionChat} onopen={openChat} onopenrow={(id) => (sectionChat = id)} />
+      </aside>
       {:else}
       <aside class="rail" class:hidden-narrow={!listView || !!chatStore.active || !!request}>
         <div class="rail-head">
@@ -260,8 +302,22 @@
       </aside>
       {/if}
 
-      <main class="pane" class:hidden-narrow={(listView && !chatStore.active && !request) || (view === 'calls' && !callChat)}>
-        {#if view === 'calls'}
+      <main class="pane" class:hidden-narrow={(listView && !chatStore.active && !request) || (view === 'calls' && !callChat) || (!!host && !sectionChat)}>
+        {#if host}
+          {#if sectionChat}
+            {@const View = host.view}
+            <View chatId={sectionChat} onback={() => (sectionChat = null)} onopen={(id) => (sectionChat = id)} />
+          {:else}
+            <div class="welcome">
+              <div class="welcome-icon"><Icon name={host.icon} size={32} /></div>
+              <p>{$t(host.welcomeTitle)}</p>
+              <span>{$t(host.welcomeText)}</span>
+              <div class="welcome-actions">
+                <button class="btn btn-primary" onclick={() => (creating[host.id] = true)}><Icon name={host.newIcon} size={14} />{$t(host.newTitle)}</button>
+              </div>
+            </div>
+          {/if}
+        {:else if view === 'calls'}
           {#if callChat}
             <div class="pane-scroll">
               <button class="back-narrow btn btn-ghost btn-sm" onclick={() => (callChat = null)}><Icon name="arrow-left" size={12} />{$t('msg_back')}</button>
@@ -338,6 +394,10 @@
   <NewChatDialog bind:open={newChat} onopened={() => (view = 'chat')} />
   <NewGroupDialog bind:open={newGroup} onopened={() => (view = 'groups')} />
   <NewCallDialog bind:open={newCall} />
+  {#each chatSections.hosts as h (h.id)}
+    {@const Create = h.create}
+    <Create bind:open={creating[h.id]} onopened={(id) => { view = h.id; sectionChat = id; }} />
+  {/each}
   <Dialog bind:open={addingContact} title={$t('msg_contacts_new')} width="min(440px, calc(100vw - 24px))">
     <ContactAddForm stacked onadded={() => (addingContact = false)} />
   </Dialog>

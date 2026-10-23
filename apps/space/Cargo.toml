@@ -1,6 +1,6 @@
 [package]
 name = "veydanspace"
-version = "5.1.23"
+version = "5.2.0"
 description = "Workspace for multi-accounting: browser profiles, proxies, SSH, notes, passwords and chat"
 authors = ["Veydan Project"]
 edition = "2021"
@@ -52,6 +52,8 @@ veydan-pass = { path = "../../crates/pass" }
 veydan-notes = { path = "../../crates/notes" }
 # The module Messenger: the adapter of the messenger crates (internal/messenger-spec.md).
 veydan-messenger-app = { path = "../../crates/messenger-app" }
+# The module Communities: the channels, with a switch of their own (internal/communities-stage1.md).
+veydan-communities = { path = "../../crates/communities" }
 # The service Tor: the tor daemon of the Tor Expert Bundle and its installation (desktop).
 veydan-tor = { path = "../../crates/tor" }
 # The module Cloud: Veydan Cloud, on with the messenger (internal/vcloud-plan.md 2.2).

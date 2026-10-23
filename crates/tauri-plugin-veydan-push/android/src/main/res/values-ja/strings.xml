@@ -30,4 +30,7 @@
     <string name="veydan_push_invite">グループ「%s」に招待しています</string>
     <string name="veydan_push_join_request">「%s」への参加をリクエストしています</string>
     <string name="veydan_push_welcome">グループ「%s」に参加しました</string>
+    <string name="veydan_push_channel_keeper">チャンネルのキーパー</string>
+    <string name="veydan_push_keeper_title">チャンネルのキーパーが動作中</string>
+    <string name="veydan_push_keeper_body">新しい読者をあなたのチャンネルに受け入れています。</string>
 </resources>

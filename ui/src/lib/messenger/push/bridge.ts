@@ -6,11 +6,16 @@
 
 import { goto } from '$app/navigation';
 import { isTauriHost, messengerApi, PUSH_TAP_EVENT } from '../api';
-import { BASE, chatHref, shouldFollow } from '../mobile/routes';
+import { BASE, openHref, shouldFollow } from '../mobile/routes';
 import { pushStore } from './pushStore.svelte';
 
-/** What came from outside the app is checked before it is used as a route: a chat of two (a private one names its server, `@<16 hex>`) or a group. */
-const CHAT = /^(dm:[0-9a-f]{64}(@[0-9a-f]{16})?|group:[0-9a-f]{64})$/;
+/**
+ * What came from outside the app is checked before it is used as a route:
+ * a chat of two (a private one names its server, `@<16 hex>`), a group, or
+ * a channel of the module Communities (a row of its section, whose screen
+ * is the module's feed).
+ */
+const CHAT = /^(dm:[0-9a-f]{64}(@[0-9a-f]{16})?|group:[0-9a-f]{64}|channel:[0-9a-f]{64})$/;
 
 /**
  * A tap is taken from the phone once. Until the app has gone where it
@@ -37,7 +42,8 @@ async function takeRoute(): Promise<string | null> {
   if (!tap) return kept();
   // No chat: the phone could not tell whose message it was; the list of
   // chats shows which one has something new.
-  const route = tap.chat && CHAT.test(tap.chat) ? chatHref(tap.chat) : BASE;
+  // A tap may come before the module gives its section: a channel goes by its prefix.
+  const route = tap.chat && CHAT.test(tap.chat) ? openHref(tap.chat, tap.chat.startsWith('channel:')) : BASE;
   keep(route);
   return route;
 }

@@ -442,6 +442,41 @@ impl BlossomBackend {
         }
     }
 
+    /// Where the delete of a blob goes: the gate of a private server
+    /// (`MEDIA_UPLOAD_KEY=required`) wants the key there too.
+    fn delete_url(&self, sha256: &str) -> String {
+        match &self.app_key {
+            Some(k) => format!("{}/{}?key={}", self.base, sha256, k),
+            None => format!("{}/{}", self.base, sha256),
+        }
+    }
+
+    /// `GET <base>/.well-known/veydan-media`, where a server of the
+    /// Veydan-Server kit says what a writer needs (communities-wire §9.1):
+    /// the status and up to 4 KB of the answer.
+    pub async fn gate_info(&self) -> BackendResult<(u16, Vec<u8>)> {
+        let url = format!("{}/.well-known/veydan-media", self.base);
+        let resp = messenger_http::following_route(&host_of(&url), || self.http.get(&url).send())
+            .await
+            .map_err(route_changed)?
+            .map_err(from_reqwest)?;
+        let status = resp.status().as_u16();
+        let body = resp.bytes().await.map_err(from_reqwest)?;
+        Ok((status, body.iter().take(4096).copied().collect()))
+    }
+
+    /// Revokes the upload keys of `pubkey` under `label` on this server,
+    /// with its app key (communities-wire §9.1): the status it answered.
+    pub async fn revoke_upload_keys(&self, app_key: &str, label: &str, pubkey: &str) -> BackendResult<u16> {
+        let url = format!("{}/.well-known/veydan-media/revoke?label={label}&pubkey={pubkey}", self.base);
+        let resp = messenger_http::following_route(&host_of(&url), || self.http.post(&url).header("x-api-key", app_key).send())
+            .await
+            .map_err(route_changed)?
+            // The request carries the app key: the error is told without it.
+            .map_err(|e| from_reqwest(e.without_url()))?;
+        Ok(resp.status().as_u16())
+    }
+
     /// `Authorization: Nostr <base64(event)>`. The event is dated slightly
     /// in the past so a server with a slow clock accepts it.
     ///
@@ -550,13 +585,14 @@ impl BlobBackend for BlossomBackend {
 
     /// BUD-02: `DELETE <base>/<sha256>`, authorised for that blob only.
     async fn delete(&self, sha256: &str) -> BackendResult<()> {
-        let url = format!("{}/{}", self.base, sha256);
+        let url = self.delete_url(sha256);
         let auth = self.auth_header("delete", sha256)?;
         let resp =
             messenger_http::following_route(&host_of(&url), || self.http.delete(&url).header("authorization", &auth).send())
                 .await
                 .map_err(route_changed)?
-                .map_err(from_reqwest)?;
+                // The url may carry the app key: the error is told without it.
+                .map_err(|e| from_reqwest(e.without_url()))?;
         deleted(resp).await
     }
 }
@@ -1075,6 +1111,38 @@ mod tests {
         let gone = BlossomBackend::new("http://127.0.0.1:9", Keys::generate()).unwrap().with_app_key(Some("app-key-1".into()));
         let e = gone.put_typed(&sha, b"x".to_vec(), "application/octet-stream").await.unwrap_err();
         assert!(!e.message.contains("app-key-1"), "{}", e.message);
+        let e = gone.delete(&sha).await.unwrap_err();
+        assert!(!e.message.contains("app-key-1"), "{}", e.message);
+    }
+
+    /// The delete of a blob on a private server carries its key too: the
+    /// gate of the kit guards `DELETE /<sha256>` as it guards an upload
+    /// (communities-wire §9.1). Its revocation and its gate are asked of the
+    /// paths of the kit, the key in a header.
+    #[tokio::test]
+    async fn blossom_delete_and_the_paths_of_the_kit_carry_the_key() {
+        use wiremock::matchers::{header, query_param};
+        let server = MockServer::start().await;
+        let sha = "a".repeat(64);
+        Mock::given(method("DELETE")).and(path(format!("/{sha}"))).and(query_param("key", "app-key-1")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path("/.well-known/veydan-media"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"v":1,"upload":"key","scoped":1}"#))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/.well-known/veydan-media/revoke"))
+            .and(query_param("label", "ab"))
+            .and(header("x-api-key", "app-key-1"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let b = BlossomBackend::new(&server.uri(), Keys::generate()).unwrap().with_app_key(Some("app-key-1".into()));
+        b.delete(&sha).await.unwrap();
+        let (status, body) = b.gate_info().await.unwrap();
+        assert_eq!((status, body.as_slice()), (200, br#"{"v":1,"upload":"key","scoped":1}"#.as_slice()));
+        assert_eq!(b.revoke_upload_keys("app-key-1", "ab", &"b".repeat(64)).await.unwrap(), 200);
+        assert_eq!(b.revoke_upload_keys("wrong", "ab", &"b".repeat(64)).await.unwrap(), 404, "no mock for another key");
     }
 
     #[tokio::test]

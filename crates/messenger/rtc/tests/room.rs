@@ -726,7 +726,7 @@ async fn the_size_hook_and_the_core_set_the_layers_at_once_and_none_is_refused()
     let ceiling = |rid: &str| match rid {
         "q" => 150,
         "h" => 500,
-        _ => 1500,
+        _ => 2500,
     };
     assert!(
         encodings.iter().all(|e| e.max_kbps == Some(498.min(ceiling(&e.rid)))),

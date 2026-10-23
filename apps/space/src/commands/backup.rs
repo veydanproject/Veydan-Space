@@ -1030,104 +1030,108 @@ pub async fn backup_restore(
     accept_older: Option<bool>,
     app: AppHandle,
 ) -> CmdResult<()> {
-    if app.state::<veydan_lock::Lock>().is_locked().await {
-        return Err(AppError::VaultLocked);
-    }
-    let core = app.state::<Core>();
-    let shell = app.state::<Shell>();
-    let data_dir = core.app_data_dir.clone();
-    let config = load_config(&core.db).await;
-    let path = listed_archive(config.dir.as_deref(), &path)?;
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        if app.state::<veydan_lock::Lock>().is_locked().await {
+            return Err(AppError::VaultLocked);
+        }
+        let core = app.state::<Core>();
+        let shell = app.state::<Shell>();
+        let data_dir = core.app_data_dir.clone();
+        let config = load_config(&core.db).await;
+        let path = listed_archive(config.dir.as_deref(), &path)?;
 
-    // Empty input means "use the configured backup password".
-    let password = match password.filter(|p| !p.is_empty()) {
-        Some(p) => p,
-        None => config
-            .password
-            .ok_or_else(|| AppError::other("No backup password configured"))?,
-    };
+        // Empty input means "use the configured backup password".
+        let password = match password.filter(|p| !p.is_empty()) {
+            Some(p) => p,
+            None => config
+                .password
+                .ok_or_else(|| AppError::other("No backup password configured"))?,
+        };
 
-    let staging = data_dir
-        .join(RESTORE_STAGING)
-        .join(uuid::Uuid::new_v4().to_string());
+        let staging = data_dir
+            .join(RESTORE_STAGING)
+            .join(uuid::Uuid::new_v4().to_string());
 
-    // Decrypt + decompress + unpack into staging (blocking work).
-    emit_restore_progress(&app, "decrypting", 0);
-    let staging2 = staging.clone();
-    let app2 = app.clone();
-    let unpack_res = tauri::async_runtime::spawn_blocking(move || {
-        extract_archive(Some(&app2), &path, &password, &staging2)
-    })
-    .await
-    .map_err(AppError::other)?;
+        // Decrypt + decompress + unpack into staging (blocking work).
+        emit_restore_progress(&app, "decrypting", 0);
+        let staging2 = staging.clone();
+        let app2 = app.clone();
+        let unpack_res = tauri::async_runtime::spawn_blocking(move || {
+            extract_archive(Some(&app2), &path, &password, &staging2)
+        })
+        .await
+        .map_err(AppError::other)?;
 
-    if let Err(e) = unpack_res {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err(AppError::other(e));
-    }
-
-    let manifest = match read_manifest(&staging).await {
-        Ok(m) => m,
-        Err(e) => {
+        if let Err(e) = unpack_res {
             let _ = std::fs::remove_dir_all(&staging);
             return Err(AppError::other(e));
         }
-    };
-    let newest = settings::get(&core.db, LAST_CREATED_KEY).await;
-    if accept_older != Some(true) && older_than_the_data(&manifest.created_at, newest.as_deref()) {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err(AppError::Other(format!(
-            "{OLDER_ERROR}{}|{}",
-            manifest.created_at,
-            newest.unwrap_or_default()
-        )));
-    }
-    let place = placement(&data_dir, &shell.backup_paths(), &manifest.parts());
-    let custom_target = place
-        .target_of(veydan_notes::BACKUP_CUSTOM_DIR)
-        .map(Path::to_path_buf);
 
-    // The source machine's data dir may differ from ours: rewrite stored
-    // absolute paths so profiles/notes resolve after the swap.
-    emit_restore_progress(&app, "remapping", 95);
-    if let Err(e) = remap_paths(&staging, &data_dir, custom_target.as_deref()) {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err(AppError::other(e));
-    }
-    // The dialog of the restore told a joined device it leaves its vault.
-    let registry = app.state::<veydan_sync_host::SyncManager>();
-    if let Err(e) = leave_vault(&staging, registry.registry()).await {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err(AppError::other(e));
-    }
-
-    // Every handle on the live data goes before it is renamed: Windows
-    // refuses to rename files and folders still open by SQLite, a running
-    // browser, the notes directory watcher or the messenger's database.
-    // The pool is closed at this point, so we restart even on failure —
-    // swap_in has already rolled the live data back.
-    emit_restore_progress(&app, "swapping", 98);
-    let running = TheApp {
-        shell: &shell,
-        core: &core,
-    };
-    let (data_dir2, staging2) = (data_dir.clone(), staging.clone());
-    let swap_res =
-        release_and_swap(&running, move || swap_in(&data_dir2, &staging2, &place)).await;
-    // The settings tell it after the restart.
-    match swap_res {
-        Ok(kept) => write_outcome(&data_dir, "restored", None, kept),
-        Err(e) => {
-            eprintln!("backup restore: swap failed, keeping current data: {e}");
-            write_outcome(&data_dir, "failed", Some(e), Vec::new());
+        let manifest = match read_manifest(&staging).await {
+            Ok(m) => m,
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(AppError::other(e));
+            }
+        };
+        let newest = settings::get(&core.db, LAST_CREATED_KEY).await;
+        if accept_older != Some(true) && older_than_the_data(&manifest.created_at, newest.as_deref()) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(AppError::Other(format!(
+                "{OLDER_ERROR}{}|{}",
+                manifest.created_at,
+                newest.unwrap_or_default()
+            )));
         }
-    }
-    let _ = std::fs::remove_dir_all(&staging);
-    emit_restore_progress(&app, "restarting", 100);
+        let place = placement(&data_dir, &shell.backup_paths(), &manifest.parts());
+        let custom_target = place
+            .target_of(veydan_notes::BACKUP_CUSTOM_DIR)
+            .map(Path::to_path_buf);
 
-    // Relaunch so the app rebinds to the restored data.
-    // `restart()` diverges (-> !), so this is the function's tail expression.
-    app.restart()
+        // The source machine's data dir may differ from ours: rewrite stored
+        // absolute paths so profiles/notes resolve after the swap.
+        emit_restore_progress(&app, "remapping", 95);
+        if let Err(e) = remap_paths(&staging, &data_dir, custom_target.as_deref()) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(AppError::other(e));
+        }
+        // The dialog of the restore told a joined device it leaves its vault.
+        let registry = app.state::<veydan_sync_host::SyncManager>();
+        if let Err(e) = leave_vault(&staging, registry.registry()).await {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(AppError::other(e));
+        }
+
+        // Every handle on the live data goes before it is renamed: Windows
+        // refuses to rename files and folders still open by SQLite, a running
+        // browser, the notes directory watcher or the messenger's database.
+        // The pool is closed at this point, so we restart even on failure —
+        // swap_in has already rolled the live data back.
+        emit_restore_progress(&app, "swapping", 98);
+        let running = TheApp {
+            shell: &shell,
+            core: &core,
+        };
+        let (data_dir2, staging2) = (data_dir.clone(), staging.clone());
+        let swap_res =
+            release_and_swap(&running, move || swap_in(&data_dir2, &staging2, &place)).await;
+        // The settings tell it after the restart.
+        match swap_res {
+            Ok(kept) => write_outcome(&data_dir, "restored", None, kept),
+            Err(e) => {
+                eprintln!("backup restore: swap failed, keeping current data: {e}");
+                write_outcome(&data_dir, "failed", Some(e), Vec::new());
+            }
+        }
+        let _ = std::fs::remove_dir_all(&staging);
+        emit_restore_progress(&app, "restarting", 100);
+
+        // Relaunch so the app rebinds to the restored data.
+        // `restart()` diverges (-> !), so this is the function's tail expression.
+        app.restart()
+    })
+    .await
 }
 
 /// The manifest of an unpacked archive, if this version restores it: of
@@ -2598,7 +2602,8 @@ mod tests {
 
     /// A backup of a data directory with notes, a password, a profile and a
     /// messenger identity — its key in the lock's box `messenger`, its
-    /// database and media in `messenger/` — and the user's folder of notes,
+    /// database and media in `messenger/` — the channels' database in
+    /// `communities/`, and the user's folder of notes,
     /// restored over the same directory after everything changed, gives back
     /// every file byte for byte and every row.
     #[tokio::test]
@@ -2613,6 +2618,8 @@ mod tests {
         std::fs::create_dir_all(data.join("messenger/media")).unwrap();
         std::fs::write(data.join("messenger/messenger.db"), b"SQLite format 3\0rows").unwrap();
         std::fs::write(data.join("messenger/media/m1.bin"), [7u8; 300]).unwrap();
+        std::fs::create_dir_all(data.join("communities")).unwrap();
+        std::fs::write(data.join("communities/communities.db"), b"SQLite format 3\0channels").unwrap();
         put(&custom.join("c1.md"), "# Custom");
         let n1 = data.join("notes/documents/n1.md").to_string_lossy().into_owned();
         sqlx::query(
@@ -2639,7 +2646,7 @@ mod tests {
 
         let parts = space_parts(&custom);
         let names: Vec<&str> = parts.iter().map(|p| p.name).collect();
-        assert_eq!(names, ["profiles", "notes", "notes_custom", "messenger"]);
+        assert_eq!(names, ["profiles", "notes", "notes_custom", "messenger", "communities"]);
         let mut before = tree(&data);
         before.retain(|name, _| !name.starts_with(DB_FILE));
         before.remove("profiles/p1/firefox-profile/startupCache");

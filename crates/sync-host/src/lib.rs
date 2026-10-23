@@ -17,6 +17,8 @@
 //! lock and the shared settings — are registered here. Nothing runs unless
 //! `sync_enabled` is "1" and a vault was joined.
 
+#[cfg(test)]
+mod command_futures;
 pub mod commands;
 pub mod config;
 mod cycle;

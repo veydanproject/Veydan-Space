@@ -11,8 +11,11 @@
 //! data directory. The shell switches it on and off (`Module::start`,
 //! `Module::stop`): off, the runtime is shut down and holds no connection.
 //! What it offers other modules goes through the seams of the shell
-//! (`cloud_seams`: signing, service notes and the cards of the vcloud bot).
+//! (`cloud_seams`: signing, service notes and the cards of the vcloud bot;
+//! `net_lend`: its relays and the identity at work, for the channels).
 
+#[cfg(test)]
+mod command_futures;
 pub mod cloud_seams;
 /// The messenger's side of the linking of devices (the seam `DeviceLink`).
 pub mod cloud_link;
@@ -20,6 +23,8 @@ pub mod cloud_link;
 pub mod cloud_notes;
 mod commands;
 mod media_server;
+/// The messenger's relays and identity lent to the module `communities`.
+mod net_lend;
 
 pub use commands::MessengerState;
 
@@ -233,6 +238,8 @@ pub fn module() -> Module {
                 commands::messenger_avatar_cached,
                 commands::messenger_own_private_get,
                 commands::messenger_own_private_set,
+                commands::messenger_ui_prefs_get,
+                commands::messenger_ui_prefs_set,
                 commands::messenger_contact_private_get,
                 commands::messenger_card_send,
                 commands::messenger_card_accept,
@@ -267,10 +274,16 @@ fn setup(app: &mut tauri::App) -> SetupResult {
         commands::OLD_ENABLED_KEY,
     ))?;
     app.manage(MessengerState::new(app.handle().clone(), &core.app_data_dir));
-    app.manage(media_server::MediaServer::default());
+    let media_server = media_server::MediaServer::default();
+    app.manage(media_server.clone());
+    // The same server for the files of the channels (media_server.rs).
+    let urls: std::sync::Arc<dyn veydan_shell::seams::MediaUrls> = std::sync::Arc::new(media_server);
+    veydan_shell::seams::provide(app.handle(), urls);
     // Signing, service notes and the cards of the vcloud bot, for the module
     // cloud (cloud_seams.rs).
     cloud_seams::offer(app.handle());
+    // The relays and the identity at work, for the channels (net_lend.rs).
+    net_lend::offer(app.handle());
     Ok(())
 }
 

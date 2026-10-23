@@ -24,6 +24,7 @@ const ALLOWED = [
   // Demo content of the plain-browser dev server.
   /^lib\/messenger\/devDemo\.ts$/,
   /^lib\/messenger\/api\.ts$/,
+  /^lib\/communities\/api\.ts$/,
 ];
 
 function files(dir: string): string[] {

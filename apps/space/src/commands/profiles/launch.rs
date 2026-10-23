@@ -22,11 +22,15 @@ pub async fn profile_launch(
     browser: tauri::State<'_, BrowserState>,
     app_handle: tauri::AppHandle,
 ) -> CmdResult<u32> {
-    launch_once(&browser.running, &id, || async {
-        browser.launches.set(&app_handle, &id, Some(false));
-        let result = launch_reserved(&id, force, &core, &browser, &app_handle).await;
-        browser.launches.set(&app_handle, &id, None);
-        result
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        launch_once(&browser.running, &id, || async {
+            browser.launches.set(&app_handle, &id, Some(false));
+            let result = launch_reserved(&id, force, &core, &browser, &app_handle).await;
+            browser.launches.set(&app_handle, &id, None);
+            result
+        })
+        .await
     })
     .await
 }

@@ -82,6 +82,16 @@ pub enum ReportContext {
     Group { group_id: String },
     /// A request: a stranger wrote first.
     Request,
+    /// A channel of a community (the module Communities): its id, and the
+    /// post or comment the report was opened on, when it was. Nothing of a
+    /// chat goes with it: its messages are not attached, the chat of the
+    /// two is not blocked, and `message_id` is not one of a chat.
+    Channel {
+        community_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        post_id: Option<String>,
+    },
 }
 
 /// What a report is about.
@@ -304,7 +314,7 @@ impl MessengerRuntime {
             Delivery::Refused { error } => return Err(MessengerError::Invalid(error)),
             Delivery::NoWay { why } => return Err(MessengerError::Invalid(why)),
         };
-        let blocked = input.block && !matches!(input.context, ReportContext::Group { .. });
+        let blocked = input.block && !matches!(input.context, ReportContext::Group { .. } | ReportContext::Channel { .. });
         // The block of the chat reported: a private chat's is that chat's
         // alone, as from its banner, and nothing of it goes home.
         if blocked {
@@ -325,8 +335,11 @@ impl MessengerRuntime {
         let target = input.target.unwrap_or_default();
         let group_id = match &input.context {
             ReportContext::Group { group_id } => Some(group_id.as_str()),
-            ReportContext::Dm | ReportContext::Request => None,
+            ReportContext::Dm | ReportContext::Request | ReportContext::Channel { .. } => None,
         };
+        // A channel's posts are not messages of a chat here: nothing of a
+        // chat is looked up, attached or blocked for it.
+        let channel = matches!(input.context, ReportContext::Channel { .. });
         // The group of the context, as this device holds it: its row, and
         // for a report on it, its owner and admins by its journal.
         let group = match group_id {
@@ -353,7 +366,11 @@ impl MessengerRuntime {
                 (owner.as_hex().to_string(), admins, None)
             }
         };
-        if accused == me {
+        // Its owner may report a channel of their own (its content, no post
+        // named; Google Play, 2026-10-22): `messenger_evidence::verify`
+        // lets that one through; anything else on oneself is refused.
+        let own_channel = matches!(input.context, ReportContext::Channel { post_id: None, .. });
+        if accused == me && !own_channel {
             return Err(invalid("report_self"));
         }
         // The name this device shows, cut to what a report carries: it
@@ -372,7 +389,7 @@ impl MessengerRuntime {
         };
         // The message the report was opened on is one of this chat, or the
         // report is malformed, attached messages or not.
-        let start = match input.message_id.as_deref() {
+        let start = match input.message_id.as_deref().filter(|_| !channel) {
             None => None,
             Some(id) => {
                 let row = msgs::get(self.store(), id)
@@ -409,11 +426,18 @@ impl MessengerRuntime {
             ReportContext::Group { group_id } => Context::Group {
                 group_id: group_id.clone(),
             },
+            ReportContext::Channel {
+                community_id,
+                post_id,
+            } => Context::Channel {
+                community_id: community_id.clone(),
+                post_id: post_id.clone(),
+            },
         };
         // Counted before the work, so that a loop is stopped before it
         // reads the chats.
         self.reports.admit(Instant::now())?;
-        let messages = if input.attach {
+        let messages = if input.attach && !channel {
             // On a group, the conduct is the group's: any member's words.
             let authors = match target {
                 ReportTarget::Person => Some((accused.as_str(), me.as_str())),
@@ -1353,6 +1377,40 @@ mod tests {
         .unwrap();
         assert!(fake.last().messages.is_empty());
         assert_eq!(fake.last().message_id.as_deref(), Some(c2.as_str()));
+        rt.shutdown().await;
+    }
+
+    /// A report from a channel names the channel and its post, and takes
+    /// nothing of a chat: no messages, no block, no message of a chat.
+    #[tokio::test]
+    async fn a_report_from_a_channel_carries_the_channel_and_its_post() {
+        let (_dir, rt, me) = started(false).await;
+        let bob = Keys::generate();
+        let fake = Fake::default();
+        let (community_id, post_id) = ("c".repeat(64), "d".repeat(64));
+        let context = ReportContext::Channel { community_id: community_id.clone(), post_id: Some(post_id.clone()) };
+        let r = rt
+            .report_send(ReportInput { block: true, message_id: Some(post_id.clone()), ..input(&bob, context) }, &fake)
+            .await
+            .unwrap();
+        assert_eq!(r, ReportResult { status: ReportStatus::Sent, attached: 0, proved: 0, blocked: false });
+        let sent = fake.last();
+        assert_eq!(sent.context, Context::Channel { community_id: community_id.clone(), post_id: Some(post_id) });
+        assert_eq!((sent.message_id, sent.accused), (None, bob.public_key().to_hex()));
+        assert!(!rt.dm().relation(&pk_of(&bob)).await.unwrap().blocked);
+        // A channel that is no id of a channel: the check of the report refuses it.
+        let bad = ReportContext::Channel { community_id: "x".into(), post_id: None };
+        let r = rt.report_send(input(&bob, bad), &fake).await;
+        assert!(matches!(r, Err(MessengerError::Invalid(ref w)) if w == "report_channel_id"), "{r:?}");
+        // Its owner reports a channel of their own (Google Play, 2026-10-22);
+        // on a post of their own, never.
+        let own = ReportContext::Channel { community_id: community_id.clone(), post_id: None };
+        let r = rt.report_send(ReportInput { accused: me.public_key().to_hex(), ..input(&bob, own) }, &fake).await.unwrap();
+        assert_eq!(r.status, ReportStatus::Sent);
+        assert_eq!(fake.last().accused, me.public_key().to_hex());
+        let mine = ReportContext::Channel { community_id: community_id.clone(), post_id: Some("d".repeat(64)) };
+        let r = rt.report_send(ReportInput { accused: me.public_key().to_hex(), ..input(&bob, mine) }, &fake).await;
+        assert!(matches!(r, Err(MessengerError::Invalid(ref w)) if w == "report_self"), "{r:?}");
         rt.shutdown().await;
     }
 

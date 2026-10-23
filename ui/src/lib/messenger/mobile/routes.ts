@@ -10,10 +10,19 @@ export const BASE = '/messenger';
 export const groupsHref = () => `${BASE}/groups`;
 export const callsHref = () => `${BASE}/calls`;
 
+/** A section of the list a module gives (seams/sections: the channels), a tab of the bar. */
+export const sectionHref = (id: string) => `${BASE}/section?id=${encodeURIComponent(id)}`;
+
+/** A row of such a section, the whole screen. */
+export const sectionItemHref = (chatId: string) => `${BASE}/item?id=${encodeURIComponent(chatId)}`;
+
 /** The contacts: QR codes, adding, the list (reached from «Новый чат»). */
 export const contactsHref = () => `${BASE}/contacts`;
 
 export const chatHref = (chatId: string) => `${BASE}/chat?id=${encodeURIComponent(chatId)}`;
+
+/** Where a chat opened from elsewhere is shown: a row of a module's section (`owned`, seams/sections) on its own screen. */
+export const openHref = (chatId: string, owned: boolean) => (owned ? sectionItemHref(chatId) : chatHref(chatId));
 
 /** The call under way, the whole screen. */
 export const callHref = () => `${BASE}/call`;

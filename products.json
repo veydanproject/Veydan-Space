@@ -61,6 +61,16 @@
         "crates/tauri-plugin-veydan-push"
       ]
     },
+    "communities": {
+      "ui": "ui/src/lib/communities",
+      "routes": [],
+      "crates": [
+        "crates/communities"
+      ],
+      "requires": [
+        "messenger"
+      ]
+    },
     "cloud": {
       "ui": "ui/src/lib/cloud",
       "routes": [
@@ -141,6 +151,7 @@
         "notes",
         "pass",
         "messenger",
+        "communities",
         "backup",
         "tor",
         "cloud"

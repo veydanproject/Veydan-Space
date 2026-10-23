@@ -155,7 +155,12 @@ pub fn verify(report: &Report, now: i64) -> Verified {
     let Some(accused) = canonical_key(&report.accused) else {
         return refused("accused_key");
     };
-    if reporter == accused {
+    // A channel is reported on what it publishes, by anyone who sees it,
+    // its owner too (Google Play, 2026-10-22): the accused of a report on
+    // the channel itself (no post named) is its owner, who may be the
+    // reporter. Anything else on oneself is refused.
+    let own_channel = matches!(report.context, Context::Channel { post_id: None, .. });
+    if reporter == accused && !own_channel {
         return refused("self_report");
     }
     if report.messages.len() > MAX_MESSAGES {
@@ -187,6 +192,11 @@ pub fn verify(report: &Report, now: i64) -> Verified {
             return refused("group_id");
         }
     }
+    if let Context::Channel { community_id, post_id } = &report.context {
+        if !is_event_id(community_id) || post_id.as_deref().is_some_and(|p| !is_event_id(p)) {
+            return refused("channel_id");
+        }
+    }
     // A report on a group is made in it.
     if report.target == Target::Group && !matches!(report.context, Context::Group { .. }) {
         return refused("target_context");
@@ -206,12 +216,7 @@ pub fn verify(report: &Report, now: i64) -> Verified {
     {
         return refused("group_admins");
     }
-    if report.message_id.as_deref().is_some_and(|id| {
-        id.len() != 64
-            || !id
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    }) {
+    if report.message_id.as_deref().is_some_and(|id| !is_event_id(id)) {
         return refused("message_id");
     }
     if now
@@ -259,6 +264,14 @@ impl Parties {
             None
         }
     }
+}
+
+/// An id of an event (or of a channel), 64 lowercase hex.
+fn is_event_id(id: &str) -> bool {
+    id.len() == 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// A key in the one spelling a report may use, so that two spellings of

@@ -30,4 +30,7 @@
     <string name="veydan_push_invite">Ti invita nel gruppo %s</string>
     <string name="veydan_push_join_request">Chiede di unirsi a %s</string>
     <string name="veydan_push_welcome">Fai parte del gruppo %s</string>
+    <string name="veydan_push_channel_keeper">Custode del canale</string>
+    <string name="veydan_push_keeper_title">Il custode del canale è al lavoro</string>
+    <string name="veydan_push_keeper_body">Fa entrare i nuovi lettori nei tuoi canali.</string>
 </resources>

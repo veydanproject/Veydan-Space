@@ -48,6 +48,8 @@ pub mod session;
 pub mod shared;
 /// The linking of devices on the relays of the project: keys that are not the session's.
 pub mod tempkey;
+/// How wide I made the panes of the app, the same on every computer of mine.
+pub mod ui_prefs;
 /// The service notes of the module `cloud` to a contact (messenger-wire.md §3).
 pub mod cloudnotes;
 
@@ -69,7 +71,7 @@ use tokio::sync::{broadcast, Mutex};
 
 pub use messenger_dm::{
     Action as DmAction, ChatView, MessageView, ReactionView, RelationView, UI_EVENT_CHAT_READ, UI_EVENT_CHAT_RECEIPT,
-    UI_EVENT_CONTACT_PRIVATE_UPDATED, UI_EVENT_EMOJI_UPDATED, UI_EVENT_OWN_PRIVATE_UPDATED,
+    UI_EVENT_CONTACT_PRIVATE_UPDATED, UI_EVENT_EMOJI_UPDATED, UI_EVENT_OWN_PRIVATE_UPDATED, UI_EVENT_UI_PREFS_UPDATED,
 };
 pub use media::{passive, PickedView, Poster, Recording};
 pub use avatars::{AvatarPreview, UI_EVENT_AVATAR_READY};
@@ -999,6 +1001,7 @@ impl MessengerRuntime {
             if let Err(e) = reactions::send_emoji_snapshot(&self.dm, &self.outbox, keys, SystemClock.now().secs(), true).await {
                 eprintln!("messenger emoji: {e}");
             }
+            self.send_ui_prefs_closing(keys).await;
         }
         // The pump of the session goes before the call is ended: the end
         // is sent below by one pump of our own, not by one stopped halfway.

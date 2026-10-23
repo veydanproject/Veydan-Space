@@ -30,4 +30,7 @@
     <string name="veydan_push_invite">%s 그룹에 초대했습니다</string>
     <string name="veydan_push_join_request">%s 그룹에 가입을 요청했습니다</string>
     <string name="veydan_push_welcome">%s 그룹에 참여했습니다</string>
+    <string name="veydan_push_channel_keeper">채널 키퍼</string>
+    <string name="veydan_push_keeper_title">채널 키퍼가 작동 중</string>
+    <string name="veydan_push_keeper_body">새 독자를 내 채널에 받아들이는 중입니다.</string>
 </resources>

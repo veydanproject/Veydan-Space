@@ -17,7 +17,8 @@
   import BridgeOffer from "../net/BridgeOffer.svelte";
   import Onboarding from '../onboarding/Onboarding.svelte';
   import MobileFrame from './MobileFrame.svelte';
-  import { chatHref } from './routes';
+  import { chatHref, sectionItemHref } from './routes';
+  import { chatSections } from '../seams/sections.svelte';
   import PushOffer from '../push/PushOffer.svelte';
   import { pushSeen, startPushBridge } from '../push/bridge';
   import type { MessengerChat } from '../api';
@@ -25,8 +26,12 @@
   import type { ChatSection } from '../chats/sections';
   import MeButton from './MeButton.svelte';
 
-  /** The tab: the chats between two, or the groups (the same list, of the groups only while nothing is typed). */
-  let { kind = 'dm' }: { kind?: ChatSection } = $props();
+  /** The tab: the chats between two, the groups (the same list, of the groups only while nothing is typed), or a section a module gives. */
+  let { kind = 'dm' }: { kind?: ChatSection | string } = $props();
+
+  /** The section a module gives, when the tab is one (seams/sections: the channels). */
+  const host = $derived(kind === 'dm' || kind === 'group' ? null : chatSections.get(kind));
+  let creating = $state(false);
 
   markPhone();
 
@@ -60,7 +65,7 @@
   {#if !needsIdentity && s?.runtime}<MeButton />{/if}
 {/snippet}
 
-<MobileFrame title={kind === 'group' ? $t('msg_nav_groups') : $t('msg_nav_chats')} {lead} {actions} scroll={needsIdentity || !s?.runtime}>
+<MobileFrame hubButton title={host ? $t(host.title) : kind === 'group' ? $t('msg_nav_groups') : $t('msg_nav_chats')} {lead} {actions} scroll={needsIdentity || !s?.runtime}>
   {#if !s}
     <Skeleton height={64} size={44} trailing />
   {:else if !s.compiled}
@@ -81,14 +86,18 @@
       <input type="search" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" enterkeyhint="search" />
       {#if query}<button class="clear" onclick={() => (query = '')} aria-label={$t('msg_back')}><Icon name="x" size={14} /></button>{/if}
     </div>
-    {#if kind === 'dm'}
+    {#if host}
+      {#if host.above}{@const Above = host.above}<Above />{/if}
+    {:else if kind === 'dm'}
       <BridgeOffer />
       <PushOffer />
     {:else}
       <InvitesBar />
     {/if}
-    <ChatList {query} {kind} onopen={open} />
-    {#if kind === 'group'}
+    <ChatList {query} {kind} onopen={open} onopenrow={(id) => goto(sectionItemHref(id))} />
+    {#if host}
+      <button class="fab" onclick={() => (creating = true)} aria-label={$t(host.newTitle)}><Icon name={host.newIcon} size={22} /></button>
+    {:else if kind === 'group'}
       <button class="fab" onclick={() => (newGroup = true)} aria-label={$t('msg_groups_new')}><Icon name="users-plus" size={22} /></button>
     {:else}
       <button class="fab" onclick={() => (newChat = true)} aria-label={$t('msg_newchat_title')}><Icon name="message-circle-plus" size={22} /></button>
@@ -98,6 +107,7 @@
 
 <NewChatDialog bind:open={newChat} shortcuts onopened={() => { if (chatStore.activeId) goto(chatHref(chatStore.activeId)); }} />
 <NewGroupDialog bind:open={newGroup} onopened={(id) => goto(chatHref(id))} />
+{#if host}{@const Create = host.create}<Create bind:open={creating} onopened={(id) => goto(sectionItemHref(id))} />{/if}
 
 <style>
   .net { width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; background: var(--text-3); flex-shrink: 0; }

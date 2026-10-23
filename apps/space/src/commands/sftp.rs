@@ -389,8 +389,12 @@ pub async fn sftp_connect(
     ssh: State<'_, SshState>,
     connection_id: String,
 ) -> CmdResult<SftpSessionInfo> {
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    Ok(SftpSessionInfo::from_state(&sess))
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        Ok(SftpSessionInfo::from_state(&sess))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -449,8 +453,12 @@ pub async fn sftp_home(
     ssh: State<'_, SshState>,
     connection_id: String,
 ) -> CmdResult<String> {
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    Ok(sess.home.clone())
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        Ok(sess.home.clone())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -461,14 +469,18 @@ pub async fn sftp_list(
     connection_id: String,
     path: String,
 ) -> CmdResult<Vec<FileEntry>> {
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    match list_dir(&sess, &path).await {
-        Ok(entries) => Ok(entries),
-        Err(e) => {
-            evict_if_dead(&app, &ssh, &sess).await;
-            Err(AppError::other(e))
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        match list_dir(&sess, &path).await {
+            Ok(entries) => Ok(entries),
+            Err(e) => {
+                evict_if_dead(&app, &ssh, &sess).await;
+                Err(AppError::other(e))
+            }
         }
-    }
+    })
+    .await
 }
 
 // ── Mutating operations ────────────────────────────────────────────────────────
@@ -498,9 +510,13 @@ pub async fn sftp_mkdir(
     connection_id: String,
     path: String,
 ) -> CmdResult<()> {
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    let r = sess.sftp.create_dir(&path).await.map_err(Into::into);
-    guard(&app, &ssh, &sess, r).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        let r = sess.sftp.create_dir(&path).await.map_err(Into::into);
+        guard(&app, &ssh, &sess, r).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -511,25 +527,29 @@ pub async fn sftp_create_file(
     connection_id: String,
     path: String,
 ) -> CmdResult<()> {
-    use russh_sftp::protocol::OpenFlags;
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    let r: anyhow::Result<()> = async {
-        if sess.sftp.try_exists(&path).await.unwrap_or(false) {
-            anyhow::bail!("Target already exists: {path}");
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        use russh_sftp::protocol::OpenFlags;
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        let r: anyhow::Result<()> = async {
+            if sess.sftp.try_exists(&path).await.unwrap_or(false) {
+                anyhow::bail!("Target already exists: {path}");
+            }
+            // EXCL rejects an existing file; CREATE|WRITE makes an empty one
+            let f = sess
+                .sftp
+                .open_with_flags(
+                    &path,
+                    OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::EXCLUDE,
+                )
+                .await?;
+            f.sync_all().await.ok();
+            Ok(())
         }
-        // EXCL rejects an existing file; CREATE|WRITE makes an empty one
-        let f = sess
-            .sftp
-            .open_with_flags(
-                &path,
-                OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::EXCLUDE,
-            )
-            .await?;
-        f.sync_all().await.ok();
-        Ok(())
-    }
-    .await;
-    guard(&app, &ssh, &sess, r).await
+        .await;
+        guard(&app, &ssh, &sess, r).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -541,16 +561,20 @@ pub async fn sftp_rename(
     from: String,
     to: String,
 ) -> CmdResult<()> {
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    let r: anyhow::Result<()> = async {
-        if sess.sftp.try_exists(&to).await.unwrap_or(false) {
-            anyhow::bail!("Target already exists: {to}");
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        let r: anyhow::Result<()> = async {
+            if sess.sftp.try_exists(&to).await.unwrap_or(false) {
+                anyhow::bail!("Target already exists: {to}");
+            }
+            sess.sftp.rename(&from, &to).await?;
+            Ok(())
         }
-        sess.sftp.rename(&from, &to).await?;
-        Ok(())
-    }
-    .await;
-    guard(&app, &ssh, &sess, r).await
+        .await;
+        guard(&app, &ssh, &sess, r).await
+    })
+    .await
 }
 
 /// Recursively delete a remote path. Directories are emptied depth-first,
@@ -582,9 +606,13 @@ pub async fn sftp_delete(
     connection_id: String,
     path: String,
 ) -> CmdResult<()> {
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    let r = remove_recursive(&sess, &path).await;
-    guard(&app, &ssh, &sess, r).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        let r = remove_recursive(&sess, &path).await;
+        guard(&app, &ssh, &sess, r).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -596,23 +624,27 @@ pub async fn sftp_chmod(
     path: String,
     mode: u32,
 ) -> CmdResult<()> {
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    let attrs = russh_sftp::protocol::FileAttributes {
-        size: None,
-        uid: None,
-        user: None,
-        gid: None,
-        group: None,
-        permissions: Some(mode & 0o7777),
-        atime: None,
-        mtime: None,
-    };
-    let r = sess
-        .sftp
-        .set_metadata(&path, attrs)
-        .await
-        .map_err(Into::into);
-    guard(&app, &ssh, &sess, r).await
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        let attrs = russh_sftp::protocol::FileAttributes {
+            size: None,
+            uid: None,
+            user: None,
+            gid: None,
+            group: None,
+            permissions: Some(mode & 0o7777),
+            atime: None,
+            mtime: None,
+        };
+        let r = sess
+            .sftp
+            .set_metadata(&path, attrs)
+            .await
+            .map_err(Into::into);
+        guard(&app, &ssh, &sess, r).await
+    })
+    .await
 }
 
 /// Stat a single remote path; `None` if it doesn't exist. Used for
@@ -625,40 +657,44 @@ pub async fn sftp_stat(
     connection_id: String,
     path: String,
 ) -> CmdResult<Option<FileEntry>> {
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-    match sess.sftp.metadata(&path).await {
-        Ok(md) => {
-            let mode = md.permissions.unwrap_or(0);
-            let name = path
-                .trim_end_matches('/')
-                .rsplit('/')
-                .next()
-                .unwrap_or(&path)
-                .to_string();
-            Ok(Some(FileEntry {
-                name,
-                path: path.clone(),
-                is_dir: md.is_dir(),
-                is_symlink: md.is_symlink(),
-                size: md.size.unwrap_or(0),
-                mtime: md.mtime.map(|s| s as i64 * 1000),
-                mode,
-                permissions: format_permissions(mode),
-                octal: format_octal(mode),
-                owner: md.user.clone().or_else(|| md.uid.map(|u| u.to_string())),
-                group: md.group.clone().or_else(|| md.gid.map(|g| g.to_string())),
-            }))
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
+        match sess.sftp.metadata(&path).await {
+            Ok(md) => {
+                let mode = md.permissions.unwrap_or(0);
+                let name = path
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&path)
+                    .to_string();
+                Ok(Some(FileEntry {
+                    name,
+                    path: path.clone(),
+                    is_dir: md.is_dir(),
+                    is_symlink: md.is_symlink(),
+                    size: md.size.unwrap_or(0),
+                    mtime: md.mtime.map(|s| s as i64 * 1000),
+                    mode,
+                    permissions: format_permissions(mode),
+                    octal: format_octal(mode),
+                    owner: md.user.clone().or_else(|| md.uid.map(|u| u.to_string())),
+                    group: md.group.clone().or_else(|| md.gid.map(|g| g.to_string())),
+                }))
+            }
+            Err(russh_sftp::client::error::Error::Status(status))
+                if status.status_code == russh_sftp::protocol::StatusCode::NoSuchFile =>
+            {
+                Ok(None)
+            }
+            Err(e) => {
+                evict_if_dead(&app, &ssh, &sess).await;
+                Err(AppError::other(e))
+            }
         }
-        Err(russh_sftp::client::error::Error::Status(status))
-            if status.status_code == russh_sftp::protocol::StatusCode::NoSuchFile =>
-        {
-            Ok(None)
-        }
-        Err(e) => {
-            evict_if_dead(&app, &ssh, &sess).await;
-            Err(AppError::other(e))
-        }
-    }
+    })
+    .await
 }
 
 #[tauri::command]

@@ -86,6 +86,11 @@ struct TapAnswer {
     tap: Option<Tap>,
 }
 
+#[derive(Debug, Deserialize)]
+struct RunningAnswer {
+    running: bool,
+}
+
 /// What the Kotlin side reports without being asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
@@ -93,6 +98,9 @@ pub enum Event {
     Token,
     /// A notification was tapped while the app was running.
     Tap,
+    /// The keeper of a channel is to take a turn: a push marked `channel`
+    /// came, or the periodic wake ran (`Keeper.kt`): `{ "why": "push" | "periodic" }`.
+    KeeperWake,
 }
 
 impl Event {
@@ -100,6 +108,7 @@ impl Event {
         match self {
             Self::Token => "token",
             Self::Tap => "tap",
+            Self::KeeperWake => "keeper_wake",
         }
     }
 }
@@ -182,6 +191,22 @@ impl<R: Runtime> VeydanPush<R> {
     /// Takes the keys away from the push handler.
     pub async fn clear_keys(&self) -> Result<()> {
         self.call::<serde_json::Value>("clearKeys", ()).await.map(|_| ())
+    }
+
+    /// Starts (`on`) or stops the foreground service of the keeper of the
+    /// channels, with its notification «Хранитель канала работает».
+    /// Answers whether it runs: the system refuses a start from the
+    /// background outside a push and a few other cases.
+    pub async fn keeper_foreground(&self, on: bool) -> Result<bool> {
+        Ok(self.call::<RunningAnswer>("keeperForeground", serde_json::json!({ "on": on })).await?.running)
+    }
+
+    /// Registers (`on`) or cancels the keeper's periodic wake: every 15
+    /// minutes, the least the system allows, as [`Event::KeeperWake`].
+    pub async fn keeper_periodic(&self, on: bool) -> Result<()> {
+        self.call::<serde_json::Value>("keeperPeriodic", serde_json::json!({ "on": on }))
+            .await
+            .map(|_| ())
     }
 
     /// Calls `handler` on every `event`, for as long as the app runs.

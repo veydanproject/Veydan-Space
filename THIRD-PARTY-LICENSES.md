@@ -254,7 +254,7 @@ Thank you to the authors of the following Cargo crates:
 | ctor | 0.8.0 | Apache-2.0 OR MIT |
 | ctor-proc-macro | 0.0.7 | Apache-2.0 OR MIT |
 | ctr | 0.10.1 | MIT OR Apache-2.0 |
-| ctutils | 0.4.2 | Apache-2.0 OR MIT |
+| ctutils | 0.4.5 | Apache-2.0 OR MIT |
 | curve25519-dalek | 4.1.3 | BSD-3-Clause |
 | curve25519-dalek | 5.0.0-rc.1 | BSD-3-Clause |
 | curve25519-dalek-derive | 0.1.1 | MIT OR Apache-2.0 |

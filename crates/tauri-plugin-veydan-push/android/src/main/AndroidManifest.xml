@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
     <!-- Asked for at run time on Android 13 and later. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The keeper of the channels with the app off the screen (Keeper.kt):
+         its foreground service hands keys out over the network. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application>
         <service
@@ -12,6 +16,17 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- The keeper's service while joins stream in, and its periodic
+             wake every 15 minutes (KeeperService.kt, KeeperJob.kt). -->
+        <service
+            android:name="net.veydan.push.KeeperService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name="net.veydan.push.KeeperJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Taps on notifications are caught from the start of the process:
              after the process died, the tap reaches the window before any

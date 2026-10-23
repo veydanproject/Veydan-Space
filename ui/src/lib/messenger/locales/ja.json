@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "閉じる",
     "msg_message_more": "その他",
     "msg_composer_save": "保存",
+    "msg_composer_expand": "拡張エディター",
     "msg_text_copied": "テキストをコピーしました",
     "msg_chat_archived_toast": "チャットをアーカイブに移動しました",
     "msg_action_failed": "実行できませんでした",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Veydan Cloud ウェブサイトのサインインリンク",
     "msg_card_web_text": "ウェブサイトへのサインインは、アプリで QR コードをスキャンした場合にのみ承認されます。ほかの人から送られたリンクでは、決してサインインしないでください。",
     "msg_inv_web_link": "これは Veydan Cloud ウェブサイトのサインインリンクです。",
-    "msg_inv_web_open": "ウェブサイトのサインインを開く"
+    "msg_inv_web_open": "ウェブサイトのサインインを開く",
+    "msg_report_channel_title": "チャンネル「{name}」を通報",
+    "msg_report_post_title": "投稿を通報",
+    "msg_report_comment_title": "コメントを通報",
+    "msg_report_post_note": "投稿は通報と一緒に送られます。",
+    "msg_report_comment_note": "コメントは通報と一緒に送られます。",
+    "msg_report_channel_note": "通報にはチャンネル名とオーナーが記載されます。",
+    "msg_report_channel_person_note": "通報には、その人と、あなたがその人に会ったチャンネルが記載されます。",
+    "msg_card_channel": "チャンネル",
+    "msg_card_channels_off": "チャンネルは設定でオフになっています",
+    "msg_card_channels_settings": "設定"
   },
   "mobile": {}
 }

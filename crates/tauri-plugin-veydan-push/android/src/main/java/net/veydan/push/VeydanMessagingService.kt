@@ -71,6 +71,11 @@ class VeydanMessagingService : FirebaseMessagingService() {
   }
 
   private fun handle(push: Push): String {
+    // A note to the keeper of a channel (the mark `channel` outside):
+    // shown to nobody, the keeper takes a turn (`Keeper`).
+    if (Keeper.isWake(push)) {
+      return "keeper: ${Keeper.wake("push")}"
+    }
     if (push.silent) {
       // Service pushes without a word to the user; their handling comes
       // with the features that need them.

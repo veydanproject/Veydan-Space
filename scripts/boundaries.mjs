@@ -499,8 +499,10 @@ function tables(kind, dir, others) {
   for (const lit of lits) {
     const sql = statement.test(lit.text);
     // The names a WITH clause gives its own tables.
-    const named = new Set([...lit.text.matchAll(/(?:\bWITH\s+(?:RECURSIVE\s+)?|,\s*)(\w+)\s*(?:\([\w\s,]*\)\s*)?AS\s*\(/gi)].map((m) => m[1]));
-    for (const m of lit.text.matchAll(keyword)) {
+    // SQL comments (`-- …`) are prose: a table name in one is not a table.
+    const text = lit.text.replace(/--[^\n]*/g, '');
+    const named = new Set([...text.matchAll(/(?:\bWITH\s+(?:RECURSIVE\s+)?|,\s*)(\w+)\s*(?:\([\w\s,]*\)\s*)?AS\s*\(/gi)].map((m) => m[1]));
+    for (const m of text.matchAll(keyword)) {
       const [, word, name, call] = m;
       if (!sql && word !== word.toUpperCase()) continue;
       if (name === '{') { interpolated.add(lit.file); continue; }

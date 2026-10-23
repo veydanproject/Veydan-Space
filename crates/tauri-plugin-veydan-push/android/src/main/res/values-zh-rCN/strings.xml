@@ -30,4 +30,7 @@
     <string name="veydan_push_invite">邀请你加入群组“%s”</string>
     <string name="veydan_push_join_request">申请加入“%s”</string>
     <string name="veydan_push_welcome">你已加入群组“%s”</string>
+    <string name="veydan_push_channel_keeper">频道守钥人</string>
+    <string name="veydan_push_keeper_title">频道守钥人正在运行</string>
+    <string name="veydan_push_keeper_body">正在让新读者进入你的频道。</string>
 </resources>

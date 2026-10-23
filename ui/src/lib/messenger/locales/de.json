@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Ausblenden",
     "msg_message_more": "Mehr",
     "msg_composer_save": "Speichern",
+    "msg_composer_expand": "Erweiterter Editor",
     "msg_text_copied": "Text kopiert",
     "msg_chat_archived_toast": "Chat ins Archiv verschoben",
     "msg_action_failed": "Das hat nicht geklappt",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Anmeldelink der Veydan-Cloud-Website",
     "msg_card_web_text": "Eine Anmeldung auf einer Website wird nur durch Scannen ihres QR-Codes in der App bestätigt. Melde dich nie über einen Link an, den dir jemand geschickt hat.",
     "msg_inv_web_link": "Das ist ein Anmeldelink der Veydan-Cloud-Website.",
-    "msg_inv_web_open": "Website-Anmeldung öffnen"
+    "msg_inv_web_open": "Website-Anmeldung öffnen",
+    "msg_report_channel_title": "Kanal „{name}“ melden",
+    "msg_report_post_title": "Beitrag melden",
+    "msg_report_comment_title": "Kommentar melden",
+    "msg_report_post_note": "Der Beitrag wird mit der Meldung gesendet.",
+    "msg_report_comment_note": "Der Kommentar wird mit der Meldung gesendet.",
+    "msg_report_channel_note": "Die Meldung nennt den Kanal und seinen Eigentümer.",
+    "msg_report_channel_person_note": "Die Meldung nennt die Person und den Kanal, in dem du ihr begegnet bist.",
+    "msg_card_channel": "Kanal",
+    "msg_card_channels_off": "Kanäle sind in den Einstellungen ausgeschaltet",
+    "msg_card_channels_settings": "Einstellungen"
   },
   "mobile": {}
 }

@@ -89,6 +89,14 @@ describe('the registry', () => {
     expect(registry.only).toBeUndefined();
   });
 
+  it('counts a module that lives inside another as part of it (the channels in Chat)', () => {
+    const channels: ModuleDef = { ...notes, id: 'communities', routes: [], nav: [], requires: ['messenger'] };
+    use(chat, channels);
+    expect(registry.only?.id).toBe(chat.id);
+    use(browser, chat, channels);
+    expect(registry.only).toBeUndefined();
+  });
+
   it('never opens a service at `/`, and a module at its first screen of its own', () => {
     use(backup, notes);
     expect(registry.defaultModule()?.id).toBe('notes');

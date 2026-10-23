@@ -31,7 +31,8 @@ pub(crate) const RECEIPT_FLUSH: Duration = Duration::from_secs(RECEIPT_FLUSH_SEC
 /// What was taken and could not be queued is owed again, so the next tick
 /// tries it; one that fails does not hold up the others. The map of the
 /// emoji I use rides the same tick to my other devices when it is due
-/// (`crate::reactions`), so does my phone once a week (`crate::cards`),
+/// (`crate::reactions`), so does my phone once a week (`crate::cards`)
+/// and the widths of the panes when they changed (`crate::ui_prefs`),
 /// and once a day the reactions to messages that never came are swept.
 pub(crate) async fn flush(dm: &DmService, groups: &GroupService, outbox: &Outbox, keys: &Keys) -> Result<()> {
     let now = SystemClock.now().secs();
@@ -49,6 +50,10 @@ pub(crate) async fn flush(dm: &DmService, groups: &GroupService, outbox: &Outbox
     match crate::cards::send_own_profile_if_due(dm, outbox, keys, now).await {
         Ok(sent) => queued |= sent,
         Err(e) => eprintln!("messenger own profile: {e}"),
+    }
+    match crate::ui_prefs::send_ui_prefs_if_due(dm, outbox, keys, now).await {
+        Ok(sent) => queued |= sent,
+        Err(e) => eprintln!("messenger ui prefs: {e}"),
     }
     for (chat_id, _, ids) in dm.take_due_delivered(now).await? {
         // A receipt is of the chat the messages came in: a private chat's

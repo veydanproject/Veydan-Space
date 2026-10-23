@@ -39,10 +39,14 @@ pub async fn messenger_moderation_request_act(
     action: RequestAction,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
-    messenger.runtime_unlocked().await?.request_act(&peer, action).await.map_err(map_err)?;
-    // An accepted request is a chat with something unread in it.
-    super::unread_changed();
-    Ok(())
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.request_act(&peer, action).await.map_err(map_err)?;
+        // An accepted request is a chat with something unread in it.
+        super::unread_changed();
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -90,7 +94,11 @@ pub async fn messenger_moderation_group_mod(
     action: ModAction,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
-    messenger.runtime_unlocked().await?.group_mod(&group, action).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.group_mod(&group, action).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -117,7 +125,11 @@ pub async fn messenger_moderation_group_settings_set(
     settings: GroupModSettings,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
-    messenger.runtime_unlocked().await?.group_mod_settings_set(&group, settings).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.group_mod_settings_set(&group, settings).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Say again, as me, what another moderator (`from`, hex or npub)
@@ -129,7 +141,11 @@ pub async fn messenger_moderation_group_inherit(
     from: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<u32> {
-    messenger.runtime_unlocked().await?.group_inherit(&group, &from).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.group_inherit(&group, &from).await.map_err(map_err)
+    })
+    .await
 }
 
 // ─── Invitations ────────────────────────────────────────────────────────────
@@ -141,12 +157,20 @@ pub async fn messenger_moderation_invite_create(
     preset: InvitePreset,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<InviteView> {
-    messenger.runtime_unlocked().await?.invite_create(preset).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.invite_create(preset).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn messenger_moderation_invite_list(messenger: tauri::State<'_, MessengerState>) -> CmdResult<Vec<InviteView>> {
-    messenger.runtime_unlocked().await?.invite_list().await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.invite_list().await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -165,7 +189,11 @@ pub async fn messenger_moderation_invite_status(messenger: tauri::State<'_, Mess
 /// has no link (`invite_no_link`).
 #[tauri::command]
 pub async fn messenger_contact_link_qr(id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<String> {
-    messenger.runtime_unlocked().await?.invite_qr(&id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.invite_qr(&id).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Whom I block, with their npub and the name the app calls them by.

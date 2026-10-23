@@ -252,6 +252,41 @@ fn a_report_survives_the_wire() {
     assert_eq!(v.messages[2], Outcome::Unverified("no_proof".into()));
 }
 
+#[test]
+fn a_report_from_a_channel_names_it_and_its_post() {
+    let (alice, bob) = (Keys::generate(), Keys::generate());
+    let (dm, _) = alice_to_bob(&alice, &bob, "hello");
+    let channel = |post: Option<&str>| Context::Channel {
+        community_id: "c".repeat(64),
+        post_id: post.map(str::to_string),
+    };
+    let r = report(&bob, &alice, channel(Some(&"d".repeat(64))), vec![dm]);
+    let json = serde_json::to_string(&r).unwrap();
+    let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(wire["context"]["t"], "channel");
+    assert_eq!(wire["context"]["post_id"], "d".repeat(64));
+    let back: Report = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, r);
+    let v = verify(&back, now());
+    assert!(v.accepted());
+    assert_eq!(v.proved().count(), 1, "a DM counts in a channel too");
+    // Without a post: a report on a person met in the channel.
+    let on_person = report(&bob, &alice, channel(None), vec![]);
+    assert!(serde_json::to_value(&on_person).unwrap()["context"].get("post_id").is_none());
+    assert!(verify(&on_person, now()).accepted());
+    let refused = |c: Context| verify(&report(&bob, &alice, c, vec![]), now()).refused;
+    let bad = Context::Channel {
+        community_id: "C".repeat(64),
+        post_id: None,
+    };
+    assert_eq!(refused(bad).as_deref(), Some("channel_id"));
+    let bad_post = Context::Channel {
+        community_id: "c".repeat(64),
+        post_id: Some("x".into()),
+    };
+    assert_eq!(refused(bad_post).as_deref(), Some("channel_id"));
+}
+
 // ─── Forgeries ──────────────────────────────────────────────────────────────
 
 /// (a) One byte of the ciphertext changed: the signature no longer covers it.
@@ -591,6 +626,16 @@ fn reporter_is_the_accused() {
     let (proof, _) = alice_to_bob(&alice, &bob, "hi");
     assert_eq!(
         verify(&report(&bob, &bob, Context::Dm, vec![proof.clone()]), now())
+            .refused
+            .as_deref(),
+        Some("self_report")
+    );
+    // Its owner reports a channel of their own (its content, no post
+    // named; Google Play, 2026-10-22); on a post of theirs, refused.
+    let channel = |post_id: Option<String>| Context::Channel { community_id: "c".repeat(64), post_id };
+    assert_eq!(verify(&report(&bob, &bob, channel(None), vec![]), now()).refused, None);
+    assert_eq!(
+        verify(&report(&bob, &bob, channel(Some("d".repeat(64))), vec![]), now())
             .refused
             .as_deref(),
         Some("self_report")

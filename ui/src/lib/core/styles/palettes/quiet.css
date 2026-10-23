@@ -32,6 +32,9 @@
   --border:      #2a2c32;
   --border-2:    #383a40;  /* hover border */
   --divider:     rgba(255, 255, 255, 0.06);  /* hairline between the rows of a list (kit --vd-divider) */
+  --scroll-thumb:        rgba(255, 255, 255, 0.26);  /* scrollbar thumb while the pointer is over its area */
+  --scroll-thumb-hover:  rgba(255, 255, 255, 0.45);  /* ... and over the thumb itself */
+  --scroll-thumb-active: #7066c6;                    /* ... and while it is dragged */
   --text:        #eef1f7;
   --text-2:      #c3c5cc;
   --text-3:      #979aa0;  /* dimmest: placeholders, table header labels */
@@ -82,6 +85,22 @@
   --bio-purple: #a78bfa;
   --bio-pink:   #f472b6;
   --bio-gray:   #a1a1aa;
+
+  /* The ten colours of a channel's section (communities/levels/look.ts,
+     its index on the wire is its place here): the fill of its tile's icon,
+     its stripe and its tint, and the glyph drawn on that fill (-on), 3:1 or
+     more against it. Text in a section's colour is mixed towards --text as
+     a tinted chip's is (.tinted, base.css). */
+  --sec-violet: #7066c6;  --sec-violet-on: #ffffff;
+  --sec-blue:   #4c8bf5;  --sec-blue-on:   #ffffff;
+  --sec-cyan:   #3bb0d6;  --sec-cyan-on:   #0e1f28;
+  --sec-teal:   #2fb5a3;  --sec-teal-on:   #0b2320;
+  --sec-green:  #4caf6a;  --sec-green-on:  #0d2414;
+  --sec-amber:  #e0a43a;  --sec-amber-on:  #2a1d05;
+  --sec-orange: #e8743b;  --sec-orange-on: #2b1306;
+  --sec-red:    #e0525e;  --sec-red-on:    #ffffff;
+  --sec-pink:   #d661a8;  --sec-pink-on:   #ffffff;
+  --sec-slate:  #7b8496;  --sec-slate-on:  #ffffff;
 
   /* A chip in the user's colour (`.tinted`, base.css): the tint under it, its
      pressed tint, its border, and the share of the colour in its text (the
@@ -156,6 +175,9 @@
   --border:      #d9dbe1;
   --border-2:    #c8cad0;  /* hover border */
   --divider:     rgba(26, 29, 38, 0.08);  /* hairline between the rows of a list (kit --vd-divider) */
+  --scroll-thumb:        rgba(22, 32, 51, 0.3);   /* scrollbar thumb while the pointer is over its area */
+  --scroll-thumb-hover:  rgba(22, 32, 51, 0.5);   /* ... and over the thumb itself */
+  --scroll-thumb-active: #5f50d8;                 /* ... and while it is dragged */
   --text:        #162033;  /* 16.8:1 */
   --text-2:      #4a5468;  /* 5.5:1 */
   --text-3:      #6c7588;  /* dimmest: placeholders, table header labels */
@@ -206,6 +228,19 @@
   --bio-purple: #7e22ce;
   --bio-pink:   #be185d;
   --bio-gray:   #52525b;
+
+  /* The colours of a section: as in the dark block, a step deeper so that
+     a stripe and a border hold on white. */
+  --sec-violet: #6a5fc2;  --sec-violet-on: #ffffff;
+  --sec-blue:   #3b7be6;  --sec-blue-on:   #ffffff;
+  --sec-cyan:   #2a9cc2;  --sec-cyan-on:   #0e1f28;
+  --sec-teal:   #1f9d8c;  --sec-teal-on:   #ffffff;
+  --sec-green:  #3a9a57;  --sec-green-on:  #ffffff;
+  --sec-amber:  #d4952a;  --sec-amber-on:  #2a1d05;
+  --sec-orange: #e06a2e;  --sec-orange-on: #2b1306;
+  --sec-red:    #d8434f;  --sec-red-on:    #ffffff;
+  --sec-pink:   #c94f97;  --sec-pink-on:   #ffffff;
+  --sec-slate:  #6b7486;  --sec-slate-on:  #ffffff;
 
   /* A chip in the user's colour (`.tinted`): as in the dark block. The ink
      share is lower here: a pale colour on white needs more of the text (the

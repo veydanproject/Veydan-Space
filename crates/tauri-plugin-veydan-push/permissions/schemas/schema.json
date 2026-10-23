@@ -355,6 +355,30 @@
           "markdownDescription": "Denies the get_token command without any pre-configured scope."
         },
         {
+          "description": "Enables the keeper_foreground command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-keeper-foreground",
+          "markdownDescription": "Enables the keeper_foreground command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the keeper_foreground command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-keeper-foreground",
+          "markdownDescription": "Denies the keeper_foreground command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the keeper_periodic command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-keeper-periodic",
+          "markdownDescription": "Enables the keeper_periodic command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the keeper_periodic command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-keeper-periodic",
+          "markdownDescription": "Denies the keeper_periodic command without any pre-configured scope."
+        },
+        {
           "description": "Enables the permission_state command without any pre-configured scope.",
           "type": "string",
           "const": "allow-permission-state",

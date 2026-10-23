@@ -22,6 +22,9 @@ pub enum LinkType {
     /// A sign-in to the web cabinet of Veydan Cloud (`web`,
     /// services/cloud/spec/cloud-api.md §16.2).
     Web,
+    /// The card of a channel of a community, written `channel`
+    /// (internal/communities-wire.md §10): parsed here, nothing more.
+    Channel,
     Unknown(String),
 }
 
@@ -37,6 +40,7 @@ impl LinkType {
             "recover" => Self::Recover,
             "server" => Self::Server,
             "web" => Self::Web,
+            "channel" => Self::Channel,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -50,6 +54,7 @@ impl LinkType {
             Self::Recover => "recover",
             Self::Server => "server",
             Self::Web => "web",
+            Self::Channel => "channel",
             Self::Unknown(w) => w,
         }
     }

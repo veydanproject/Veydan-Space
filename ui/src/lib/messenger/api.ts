@@ -968,6 +968,11 @@ const emptyProfile = (pubkey: string): MessengerProfile => ({
 const mockAvatars = new Map<string, string | null>();
 let mockAvatarPick: { token: string; preview: string } | null = null;
 let mockOwnPrivate: OwnPrivateView = { phone: demo ? '+79991234567' : null, share_phone: true };
+// The widths of the panes in the browser preview: `?side=420` starts the channel column at 420 px.
+const mockUiPrefs: Record<string, number> = (() => {
+  const px = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('side')) : 0;
+  return px ? { 'channels.side': px, 'chats.side': px } : ({} as Record<string, number>);
+})();
 const mockContactPhones: Record<string, string> = demo ? { ['1a'.repeat(32)]: '+380671234567' } : {};
 
 /** Pictures of the demo and the user's own are "cached"; of other URLs about two in three, the rest never come. */
@@ -1467,6 +1472,14 @@ function mockInspect(text: string): LinkView {
     const bridge = mockBridgeOf(link);
     return bridge ? { kind: 'vlink', link, id: bridge.id, addr: bridge.addr, added: mockNet.private.some((b) => b.id === bridge.id) } : { kind: 'invalid', code: 'link_bad_param' };
   }
+  if (m[1] === 'channel') {
+    const p = new URLSearchParams(m[3] ?? '');
+    const relay = p.get('r') ?? '';
+    const owner = p.get('o') ?? '';
+    if (!/^[0-9a-f]{64}$/.test(m[2])) return { kind: 'invalid', code: 'link_bad_id' };
+    if (!relay || !/^[0-9a-f]{64}$/.test(owner)) return { kind: 'invalid', code: 'link_bad_param' };
+    return { kind: 'channel', link, community_id: m[2], relay, owner, has_secret: p.has('s'), invited: p.has('i') };
+  }
   if (m[1] !== 'group') return m[1] === 'contact' ? { kind: 'invalid', code: 'link_bad_id' } : { kind: 'unknown', link_type: m[1] };
   const p = new URLSearchParams(m[3] ?? '');
   const t = p.get('t');
@@ -1573,6 +1586,13 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_dm_react: (a) => mockReact(String(a?.messageId), String(a?.emoji)),
   messenger_emoji_used: () => undefined,
   messenger_emoji_top: (a) => MOCK_EMOJI_TOP.slice(0, Number(a?.n ?? 24)),
+  messenger_ui_prefs_get: () => ({ ...mockUiPrefs }),
+  messenger_ui_prefs_set: (a) => {
+    const key = String(a?.key);
+    if (a?.px == null) delete mockUiPrefs[key];
+    else mockUiPrefs[key] = Number(a.px);
+    return { ...mockUiPrefs };
+  },
   messenger_dm_edit: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.text = String(a?.text); m.fmt = a?.fmt === 'md' ? 'md' : null; m.rich = null; m.edited_at = Math.floor(Date.now() / 1000); } return m; },
   messenger_dm_delete: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.deleted = true; m.text = null; } },
   messenger_dm_retry: () => undefined,
@@ -2167,7 +2187,12 @@ export function messengerErrorCode(e: unknown): string | null {
 /** Why a person is reported; `child_harm` takes one of the kinds below it. */
 export type ReportReason = 'child_harm' | 'spam' | 'harassment' | 'illegal' | 'other';
 export type ReportSubReason = 'sexual' | 'grooming' | 'violence_illegal' | 'suicide_selfharm' | 'sect_recruitment';
-export type ReportContext = { t: 'dm' } | { t: 'group'; group_id: string } | { t: 'request' };
+export type ReportContext =
+  | { t: 'dm' }
+  | { t: 'group'; group_id: string }
+  | { t: 'request' }
+  /** A channel of the module Communities, and the post the report was opened on. */
+  | { t: 'channel'; community_id: string; post_id?: string };
 
 /** A report of a person to Veydan's moderators (`messenger_report_send`). */
 export interface ReportInput {
@@ -2416,6 +2441,17 @@ export const messengerApi = {
     used: (emoji: string) => invoke<void>('messenger_emoji_used', { emoji }),
     /** Most used first. */
     top: (n: number) => invoke<string[]>('messenger_emoji_top', { n }),
+  },
+
+  /**
+   * How wide I made the panes of the app (key → px), the same on every
+   * computer of mine: `ui_prefs.updated {w}` follows a change made on
+   * another. Use `uiPrefs` (shared/uiPrefs.svelte.ts), not this.
+   */
+  uiPrefs: {
+    get: () => invoke<Record<string, number>>('messenger_ui_prefs_get'),
+    /** `null` forgets the width: the pane takes its default. Error: `ui_pref_invalid`. */
+    set: (key: string, px: number | null) => invoke<Record<string, number>>('messenger_ui_prefs_set', { key, px }),
   },
 
   /**

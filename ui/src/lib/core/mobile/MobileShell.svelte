@@ -14,6 +14,7 @@
   import { syncAndroidChrome, theme } from '$lib/core/theme';
   import { navActive, navItems } from '$lib/core/mobile/nav';
   import BottomNav from '$lib/core/mobile/BottomNav.svelte';
+  import { hub } from '$lib/core/mobile/hub.svelte';
   import HubSheet from '$lib/core/mobile/HubSheet.svelte';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
@@ -35,10 +36,12 @@
     reset();
   }
 
-  let hubOpen = $state(false);
   // The hub chooses between the product's apps: a product of one module has
   // none to choose between, and its bar is the module's screens (11.7).
-  const withHub = registry.only === undefined;
+  hub.available = registry.only === undefined;
+  const withHub = hub.available;
+  // A screen whose header carries the apps button has no centre button in its bar.
+  const hubInBar = $derived(withHub && !registry.hubInHeader(page.url));
 
   // The bar for this screen: a module's own or the root one (platform-spec 11.7).
   const items = $derived(navItems(page.url));
@@ -101,7 +104,7 @@
       </svelte:boundary>
     </div>
     {#if items}
-      <BottomNav {items} activeId={active} hub={withHub} hubActive={hubOpen} onhub={() => (hubOpen = true)} />
+      <BottomNav {items} activeId={active} hub={hubInBar} hubActive={hub.isOpen} onhub={() => hub.open()} />
     {/if}
   </AppLockGate>
 </div>
@@ -111,7 +114,7 @@
     <overlay.component />
   {/each}
   {#if withHub}
-    <HubSheet open={hubOpen} onclose={() => (hubOpen = false)} />
+    <HubSheet open={hub.isOpen} onclose={() => hub.close()} />
   {/if}
   <!-- A new data file: the first start (section 12). -->
   <Wizard />

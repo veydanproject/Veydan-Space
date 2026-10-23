@@ -166,53 +166,57 @@ pub async fn notes_set_dir(
     core: tauri::State<'_, Core>,
     notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<NotesDirInfo> {
-    let new_custom: Option<PathBuf> = path.as_deref().and_then(|p| {
-        let trimmed = p.trim();
-        if trimmed.is_empty() {
-            None
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let new_custom: Option<PathBuf> = path.as_deref().and_then(|p| {
+            let trimmed = p.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(trimmed))
+            }
+        });
+
+        if let Some(ref p) = new_custom {
+            std::fs::create_dir_all(p).map_err(AppError::io)?;
+        }
+
+        // Persist to DB
+        let stored = new_custom.as_ref().map(|p| p.to_string_lossy());
+        settings::set_opt(&core.db, "notes_custom_dir", stored.as_deref()).await?;
+
+        // Update in-memory state
+        if let Ok(mut lock) = notes.custom_dir.write() {
+            *lock = new_custom.clone();
+        }
+
+        // Re-point the file watcher and index whatever already lives in the new dir.
+        if let Some(ref custom) = new_custom {
+            allow_asset_dir(&app, custom);
+        }
+        // A module that is switched off has no watcher, and gets none here; one
+        // that is on gets one also when its last watcher could not be made.
+        if app
+            .state::<veydan_shell::Shell>()
+            .module_enabled(crate::MODULE_ID)
+        {
+            if let Ok(mut slot) = notes.watcher.lock() {
+                *slot = start_notes_watcher(app, core.app_data_dir.clone(), new_custom.clone());
+            }
+        }
+        sync_notes_index(&core, new_custom.as_ref()).await?;
+
+        let (current, is_custom) = if let Some(ref p) = new_custom {
+            (p.to_string_lossy().to_string(), true)
         } else {
-            Some(PathBuf::from(trimmed))
-        }
-    });
-
-    if let Some(ref p) = new_custom {
-        std::fs::create_dir_all(p).map_err(AppError::io)?;
-    }
-
-    // Persist to DB
-    let stored = new_custom.as_ref().map(|p| p.to_string_lossy());
-    settings::set_opt(&core.db, "notes_custom_dir", stored.as_deref()).await?;
-
-    // Update in-memory state
-    if let Ok(mut lock) = notes.custom_dir.write() {
-        *lock = new_custom.clone();
-    }
-
-    // Re-point the file watcher and index whatever already lives in the new dir.
-    if let Some(ref custom) = new_custom {
-        allow_asset_dir(&app, custom);
-    }
-    // A module that is switched off has no watcher, and gets none here; one
-    // that is on gets one also when its last watcher could not be made.
-    if app
-        .state::<veydan_shell::Shell>()
-        .module_enabled(crate::MODULE_ID)
-    {
-        if let Ok(mut slot) = notes.watcher.lock() {
-            *slot = start_notes_watcher(app, core.app_data_dir.clone(), new_custom.clone());
-        }
-    }
-    sync_notes_index(&core, new_custom.as_ref()).await?;
-
-    let (current, is_custom) = if let Some(ref p) = new_custom {
-        (p.to_string_lossy().to_string(), true)
-    } else {
-        (
-            documents_dir(&core.app_data_dir)
-                .to_string_lossy()
-                .to_string(),
-            false,
-        )
-    };
-    Ok(NotesDirInfo { current, is_custom })
+            (
+                documents_dir(&core.app_data_dir)
+                    .to_string_lossy()
+                    .to_string(),
+                false,
+            )
+        };
+        Ok(NotesDirInfo { current, is_custom })
+    })
+    .await
 }

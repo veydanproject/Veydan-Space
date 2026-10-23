@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import { BASE, callHref, callsHref, chatHref, contactsHref, groupsHref, shouldFollow } from './routes';
+import { BASE, callHref, callsHref, chatHref, contactsHref, groupsHref, openHref, sectionItemHref, shouldFollow } from './routes';
 
 const at = (url: string) => {
   const u = new URL(url, 'http://app');
@@ -11,6 +11,14 @@ const at = (url: string) => {
 
 const A = `dm:${'a'.repeat(64)}`;
 const B = `group:${'b'.repeat(64)}`;
+
+describe('openHref', () => {
+  it('sends a row of a module section to its own screen, any other chat to the chat', () => {
+    const C = `channel:${'c'.repeat(64)}`;
+    expect(openHref(C, true)).toBe(sectionItemHref(C));
+    expect(openHref(A, false)).toBe(chatHref(A));
+  });
+});
 
 describe('shouldFollow', () => {
   it('does not go again to the chat on the screen', () => {

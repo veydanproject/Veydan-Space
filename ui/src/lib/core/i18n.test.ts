@@ -16,6 +16,7 @@ import { countKey, dictionary, locale, t } from './i18n';
 import { mobileDictionary, t as mobileT } from './mobile/i18n';
 import stage7 from './testdata/i18n-platform-stage-7.json';
 import { product as built } from './product';
+import { translations as moduleTranslations } from 'virtual:veydan-modules/i18n';
 
 type Dict = Record<string, string>;
 
@@ -102,6 +103,18 @@ const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
   desktop: {
     en: {
       settings_camoufox_title: 'Camoufox',
+      common_pane_width: 'Panel width',
+      common_pane_resize_hint: 'Drag to change the width · double-click to reset',
+      msg_card_channel: 'Channel',
+      msg_card_channels_off: 'Channels are off in the settings',
+      msg_card_channels_settings: 'Settings',
+      msg_report_channel_note: 'The report names the channel and its owner.',
+      msg_report_channel_person_note: 'The report names the person and the channel you met them in.',
+      msg_report_channel_title: 'Report the channel "{name}"',
+      msg_report_comment_note: 'The comment goes with the report.',
+      msg_report_comment_title: 'Report a comment',
+      msg_report_post_note: 'The post goes with the report.',
+      msg_report_post_title: 'Report a post',
       settings_tor_title: 'Tor',
       settings_tor_hint: 'The Tor daemon for browser profiles and SSH.',
       tor_btn_settings: 'Tor settings',
@@ -616,6 +629,7 @@ const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
       msg_fmt_code: 'Code',
       msg_fmt_quote: 'Quote',
       msg_fmt_md_on: 'Send as Markdown',
+      msg_composer_expand: 'Extended editor',
       msg_fmt_md_off: 'Send as plain text',
       msg_edit_cut: 'Cut',
       msg_edit_paste: 'Paste',
@@ -2024,6 +2038,18 @@ msg_media_err_timeout: 'The storage did not answer in time.',
     },
     ru: {
       settings_camoufox_title: 'Camoufox',
+      common_pane_width: 'Ширина панели',
+      common_pane_resize_hint: 'Потяните, чтобы изменить ширину · двойной щелчок — сброс',
+      msg_card_channel: 'Канал',
+      msg_card_channels_off: 'Каналы выключены в настройках',
+      msg_card_channels_settings: 'Настройки',
+      msg_report_channel_note: 'Жалоба называет канал и его владельца.',
+      msg_report_channel_person_note: 'Жалоба называет человека и канал, где вы его встретили.',
+      msg_report_channel_title: 'Жалоба на канал «{name}»',
+      msg_report_comment_note: 'Комментарий уйдёт вместе с жалобой.',
+      msg_report_comment_title: 'Пожаловаться на комментарий',
+      msg_report_post_note: 'Пост уйдёт вместе с жалобой.',
+      msg_report_post_title: 'Пожаловаться на пост',
       settings_tor_title: 'Tor',
       settings_tor_hint: 'Демон Tor для профилей браузера и SSH.',
       tor_btn_settings: 'Настройки Tor',
@@ -2534,6 +2560,7 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_fmt_code: 'Код',
       msg_fmt_quote: 'Цитата',
       msg_fmt_md_on: 'Отправить как Markdown',
+      msg_composer_expand: 'Расширенный редактор',
       msg_fmt_md_off: 'Отправить простым текстом',
       msg_edit_cut: 'Вырезать',
       msg_edit_paste: 'Вставить',
@@ -4184,10 +4211,18 @@ function compare(now: Dict, before: Dict, added: Dict, removed: string[]) {
   for (const k of TEMPLATED) if (k in now) expect(now[k], k).toContain('{app}');
 }
 
+/**
+ * The channels (module communities, stage 1.5 of internal/communities-stage1.md):
+ * their words, `chan_*`, are the module's own dictionary, pinned where it lives
+ * (communities/i18n.ts, scripts/i18n.mjs check); here they are taken as the build has them.
+ */
+const channels = (lang: 'en' | 'ru'): Dict =>
+  Object.fromEntries(Object.entries(moduleTranslations[lang] as Dict).filter(([k]) => k.startsWith('chan_')));
+
 describe(`the dictionaries of ${product} after the split`, () => {
   for (const lang of ['en', 'ru'] as const) {
     it(`equal the stage-7 dictionary in ${lang}`, () => {
-      compare(dictionary[lang] as Dict, stage7[lang] as Dict, ADDED.desktop[lang], REMOVED.desktop);
+      compare(dictionary[lang] as Dict, stage7[lang] as Dict, { ...ADDED.desktop[lang], ...channels(lang) }, REMOVED.desktop);
     });
 
     it(`equal the stage-7 phone layer in ${lang}`, () => {

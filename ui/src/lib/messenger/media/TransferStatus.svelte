@@ -36,8 +36,13 @@
     busy?: boolean;
     /** Called before a question is asked about the transfer: a sheet it lies in steps aside for it. */
     onask?: () => void;
+    /**
+     * Does a pause, a resume, a retry or a cancel of a transfer that is not the messenger's own
+     * (the channels of communities, through the seams); without it the messenger's runtime is asked.
+     */
+    act?: (a: TransferAction) => Promise<unknown>;
   }
-  let { p, look, overlay = false, name, size, chunks, messageId = null, ondownload, busy = false, onask }: Props = $props();
+  let { p, look, overlay = false, name, size, chunks, messageId = null, ondownload, busy = false, onask, act }: Props = $props();
 
   /** An upload with more than this sent asks before it is cancelled: its message goes too. */
   const ASK_ABOVE = 20 * 1024 * 1024;
@@ -104,13 +109,18 @@
       }
       const id = p?.transfer_id;
       if (!id) return;
+      if (a === 'cancel' && p?.direction === 'up' && p.done_bytes > ASK_ABOVE) {
+        const text = $t('msg_xfer_cancel_confirm', { name, size: bytes(p.done_bytes, localeTag($locale)) });
+        onask?.();
+        if (!(await confirmStore.ask(text, $t('msg_xfer_cancel_upload'), true))) return;
+      }
+      if (act) {
+        if (p?.direction === 'down' && a !== 'pause' && a !== 'cancel') background(act(a));
+        else await act(a);
+        return;
+      }
       if (a === 'pause') await messengerApi.media.pause(id);
       else if (a === 'cancel') {
-        if (p?.direction === 'up' && p.done_bytes > ASK_ABOVE) {
-          const text = $t('msg_xfer_cancel_confirm', { name, size: bytes(p.done_bytes, localeTag($locale)) });
-          onask?.();
-          if (!(await confirmStore.ask(text, $t('msg_xfer_cancel_upload'), true))) return;
-        }
         await messengerApi.media.cancel(id);
         transferStore.cancelled(id);
       } else if (p?.direction === 'down') background(messengerApi.media.resume(id));

@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-communities"
+description = "The module Communities: the channels of a community in a product — their commands, the loop that listens to their relays and runs the keepers kept on the device, their seams"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[build-dependencies]
+veydan-build-cfg = { path = "../build-cfg" }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+# The local time before a line of the terminal (src/log.rs).
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+async-trait = "0.1.89"
+# The secrets of the channels leave the lock's box in memory that is wiped.
+zeroize = "1"
+# The identity at work, lent by the messenger as its secret (seams); the
+# keeper's wake is a gift wrap made here (src/wake.rs).
+nostr = { version = "0.45", default-features = false, features = ["std", "nip59"] }
+# The TypeScript types of the views (src/bindings.rs), as the messenger's.
+ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
+# Errors, the data directory.
+veydan-core = { path = "../core" }
+# The module contract, the seams of the messenger, picked files, the unread count.
+veydan-shell = { path = "../shell" }
+# The box `communities` the secrets of the channels are kept in.
+veydan-lock = { path = "../lock" }
+# The engine of the channels (crates/communities/core, free of Tauri).
+communities-core = { path = "core" }
+# The network of Veydan: its types, the grammar of links, and the routes of
+# the channels in the messenger's pool (internal/communities-stage1.md §3.1).
+messenger-core = { path = "../messenger/core" }
+messenger-links = { path = "../messenger/links" }
+messenger-transport = { path = "../messenger/transport" }
+
+# ── Android: the keeper with the app off the screen (src/background.rs) ─────
+[target.'cfg(target_os = "android")'.dependencies]
+# The push plugin's keeper: its wake, its foreground service, its periodic
+# wake. The plugin is the messenger's, set up before this module.
+tauri-plugin-veydan-push = { path = "../tauri-plugin-veydan-push" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

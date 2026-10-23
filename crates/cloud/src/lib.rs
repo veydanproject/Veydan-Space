@@ -18,6 +18,8 @@
 //! `Http` and `Signer` of the messenger; a product without them gets
 //! [`Unconfigured`].
 
+#[cfg(test)]
+mod command_futures;
 pub mod account;
 pub mod activate;
 pub mod api;
@@ -127,6 +129,12 @@ fn setup(app: &mut tauri::App) -> SetupResult {
     // The vault of this device for a link: what A sends, how B enters.
     let vault: Arc<dyn link::VaultEntry> = Arc::new(recovery::AppVault::new(app.handle().clone()));
     veydan_shell::seams::provide(app.handle(), vault);
+    // The plan kept here, for the modules that store for the user.
+    let plan: Arc<dyn veydan_shell::seams::CloudPlan> = Arc::new(account::KeptPlan(app.handle().clone()));
+    veydan_shell::seams::provide(app.handle(), plan);
+    // The delegates of the account, for the keepers of the channels (§17).
+    let delegates: Arc<dyn veydan_shell::seams::CloudDelegates> = Arc::new(account::KeptDelegates(app.handle().clone()));
+    veydan_shell::seams::provide(app.handle(), delegates);
     recovery::start_daily(app.handle().clone());
     social::listen(app.handle().clone());
     social::start_daily(app.handle().clone());

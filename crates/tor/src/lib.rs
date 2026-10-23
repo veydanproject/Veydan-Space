@@ -13,6 +13,8 @@
 //! (`manager`), which other crates use through [`TorManager::acquire`].
 //! The module keeps no tables and knows no other module.
 
+#[cfg(all(test, desktop))]
+mod command_futures;
 #[cfg(desktop)]
 pub mod checksum;
 #[cfg(desktop)]

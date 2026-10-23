@@ -11,7 +11,8 @@
 //!   (inbox relay lists from `Inbound::Meta`).
 //! - `own`: notes between my devices (read chats, messages removed for me,
 //!   the emoji I use most, the epoch of my presence key, my phone and the
-//!   phones my contacts sent me).
+//!   phones my contacts sent me; the widths of the panes in
+//!   `ui_prefs`).
 //! - `notes`: notes between me and a peer (delivery and read receipts,
 //!   reactions, presence keys).
 //! - `reactions`: reactions on messages, the limits, and making one.
@@ -47,10 +48,13 @@ pub mod snapshot;
 pub mod view;
 pub mod pushtags;
 pub mod wrap;
+/// How wide I made the panes of the app, the same on every computer of mine.
+pub mod ui_prefs;
 /// Notes to a key that is not a contact (the linking of devices).
 pub mod keynotes;
 
 pub use notes::{presence_proof, presence_proof_ok, KEY_READ_RECEIPTS, RECEIPT_WINDOW_SECS, UI_EVENT_PRESENCE_KEYS_CHANGED};
+pub use ui_prefs::{UiPrefs, UI_EVENT_UI_PREFS_UPDATED};
 pub use own::{
     PresenceState, KEY_PRESENCE, KEY_PRESENCE_DEVICES_TOLD, KEY_PRESENCE_EPOCH, KEY_PRESENCE_SINCE, UI_EVENT_CHAT_READ, UI_EVENT_CHAT_RECEIPT,
     UI_EVENT_CONTACT_PRIVATE_UPDATED, UI_EVENT_EMOJI_UPDATED, UI_EVENT_OWN_PRIVATE_UPDATED, UI_EVENT_PRESENCE_EPOCH_CHANGED,

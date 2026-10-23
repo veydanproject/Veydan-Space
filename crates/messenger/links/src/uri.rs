@@ -196,9 +196,9 @@ mod tests {
 
     #[test]
     fn a_type_of_tomorrow_is_still_a_link() {
-        let u = Uri::parse("veydan://channel/42?x=1").unwrap();
-        assert_eq!(u.link_type(), &LinkType::Unknown("channel".into()));
-        assert_eq!(u.link_type().as_str(), "channel");
+        let u = Uri::parse("veydan://tomorrow/42?x=1").unwrap();
+        assert_eq!(u.link_type(), &LinkType::Unknown("tomorrow".into()));
+        assert_eq!(u.link_type().as_str(), "tomorrow");
     }
 
     #[test]

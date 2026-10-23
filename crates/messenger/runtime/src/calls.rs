@@ -1514,7 +1514,8 @@ impl MessengerRuntime {
             .collect()
     }
 
-    /// For the next time my video goes on; what is on keeps its size.
+    /// Kept for the next time my video goes on, and applied at once to
+    /// my camera when it is on in a call between two.
     pub async fn call_set_video_quality(&self, quality: VideoQuality) -> Result<CallState> {
         self.calls.service.set_video_quality(quality.into()).await?;
         self.call_state().await

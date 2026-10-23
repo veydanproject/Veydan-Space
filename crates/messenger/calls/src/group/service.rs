@@ -1219,7 +1219,7 @@ impl GroupCallService {
         let Some(session) = room.session.as_ref() else {
             return Err(MessengerError::Invalid("the call has no media yet".into()));
         };
-        let (width, height, kbps) = quality.profile();
+        let (width, height, kbps) = quality.profile_for(&input);
         let cap = match room.view.kbps_per_participant {
             0 => kbps,
             node => kbps.min(node),
@@ -1846,7 +1846,7 @@ impl Inner {
     /// with my first word of identity, when my channel opens.
     async fn carry_media(&self, st: &mut State, me_hex: &str, input: VideoInput) {
         let quality = settings::get(&self.store, KEY_VIDEO_QUALITY).await.ok().flatten().as_deref().and_then(VideoQuality::parse).unwrap_or_default();
-        let (width, height, kbps) = quality.profile();
+        let (width, height, kbps) = quality.profile_for(&input);
         let Some(room) = st.room.as_mut() else { return };
         let Some(s) = room.session.as_ref() else { return };
         let mut effects = vec![];

@@ -160,7 +160,7 @@ name: string,
 banned: boolean, };
 
 /** Where the conduct reported happened; tagged by `t`. In a group, on a person, only the messages of the person reported and of the reporter are attached; on the group, those of any member. */
-export type ReportContext = { "t": "dm" } | { "t": "group", group_id: string, } | { "t": "request" };
+export type ReportContext = { "t": "dm" } | { "t": "group", group_id: string, } | { "t": "request" } | { "t": "channel", community_id: string, post_id?: string, };
 
 /** What a report is about. */
 export type ReportReason = "child_harm" | "spam" | "harassment" | "illegal" | "other";

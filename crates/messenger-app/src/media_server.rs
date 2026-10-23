@@ -50,6 +50,14 @@ fn token() -> Option<String> {
     Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// Lent to the channels of communities (veydan-shell `MediaUrls`): their
+/// files play and seek as a chat's do.
+impl veydan_shell::seams::MediaUrls for MediaServer {
+    fn url<'a>(&'a self, path: &'a Path, mime: &'a str) -> veydan_shell::seams::SeamFuture<'a, Option<String>> {
+        Box::pin(async move { Ok(MediaServer::url(self, path, mime).await) })
+    }
+}
+
 impl MediaServer {
     /// The address the webview reads `path` at, served as `mime`; the
     /// server starts with the first one. `None` when it cannot listen.

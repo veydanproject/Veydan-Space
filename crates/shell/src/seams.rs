@@ -11,7 +11,10 @@
 //! The messenger offers [`Signer`], [`PeerNotes`] and [`BotCards`]; the
 //! module `cloud` takes them, and offers its own client of Veydan Cloud
 //! (`CloudApi` of `veydan-cloud`) the same way. Every method is async and
-//! fails with one error, [`CloudError`].
+//! fails with one error, [`CloudError`]. The messenger also lends its
+//! network to the module `communities` ([`NetworkSession`]), tells it
+//! what the user chose of its chats ([`ChatPrefs`]) and serves its files
+//! to the webview ([`MediaUrls`]).
 
 use std::fmt;
 use std::sync::Arc;
@@ -381,6 +384,118 @@ pub struct ApprovedContact {
 pub trait Contacts: Send + Sync {
     /// The contacts we both chose to talk with, by name.
     fn approved(&self) -> SeamFuture<'_, Vec<ApprovedContact>>;
+}
+
+/// How long the free public media of the messenger keeps a file, days: a
+/// chat file of an account without Veydan Cloud (internal/communities-wire.md
+/// §9, the owner's rule of 2026-10-23).
+pub const FREE_MEDIA_RETENTION_DAYS: u64 = 14;
+
+/// What the account of the identity at work has of Veydan Cloud, as the
+/// module `cloud` keeps it on this device, for a module that stores for the
+/// user: the channels of communities keep their files on the free public
+/// media of the messenger unless the account has more.
+pub trait CloudPlan: Send + Sync {
+    /// How long the account's media keeps a file, days: `None` without an
+    /// account of Veydan Cloud for this identity (the free public media,
+    /// [`FREE_MEDIA_RETENTION_DAYS`]); `Some(0)` for no limit.
+    fn media_retention_days(&self) -> SeamFuture<'_, Option<u64>>;
+}
+
+/// The identity at work of the messenger, for a module that speaks its
+/// network as the same person: the channels of communities, signed by the
+/// same npub (internal/communities-spec.md §15). That module signs what it
+/// writes itself, journals and sealed content alike, so the secret is lent
+/// while a session runs, in a buffer that is wiped. Its requests go by the
+/// messenger's relays, a seam keyed by `messenger_core::Transport`, a shape
+/// both sides know and the shell does not.
+pub trait NetworkSession: Send + Sync {
+    /// The session now; `None` while there is none: no identity, the lock
+    /// closed, the messenger off or its servers not chosen yet.
+    fn session(&self) -> SeamFuture<'_, Option<SessionKey>>;
+}
+
+/// The secret of the identity at work and the generation of the
+/// messenger's connections: a number that changes whenever they are made
+/// anew, after which what the borrower subscribed to is gone and is asked
+/// for again. Debug names the generation only.
+pub struct SessionKey {
+    pub secret: Zeroizing<[u8; 32]>,
+    pub generation: u64,
+}
+
+impl fmt::Debug for SessionKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SessionKey").field("generation", &self.generation).finish_non_exhaustive()
+    }
+}
+
+/// What the user chose of a chat, as the messenger keeps it and carries it
+/// to the user's other devices. A module whose rows join the list of chats
+/// (a channel: `channel:<id>`) has them chosen by the messenger's commands
+/// (`messenger_chat_set_pinned`, `…_muted`, `…_archived`) and reads them
+/// back here: the list of chats is the messenger's, the rows are not.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatPref {
+    pub chat_id: String,
+    pub pinned: bool,
+    pub muted: bool,
+    pub archived: bool,
+}
+
+/// The messenger's server of files on the loopback (messenger-app
+/// `MediaServer`) for another module's pages, as a chat uses it: a video
+/// or a sound plays and seeks from its file however large it is, and the
+/// composer takes a frame of a video it sends (the channels of
+/// communities).
+pub trait MediaUrls: Send + Sync {
+    /// Where the webview reads the file at `path`, served as `mime`;
+    /// `None` when the server cannot run.
+    fn url<'a>(&'a self, path: &'a std::path::Path, mime: &'a str) -> SeamFuture<'a, Option<String>>;
+}
+
+/// The app keys of the private servers of the messenger's user (the `k` of
+/// a server's card, kept with its media server), by the base address of
+/// that media server: a write of the channels of communities to a server of
+/// the kit carries it (internal/communities-wire.md §9.1).
+pub trait MediaKeys: Send + Sync {
+    /// `(base address, app key)` of every media server that has one.
+    fn app_keys(&self) -> SeamFuture<'_, Vec<(String, Zeroizing<String>)>>;
+}
+
+/// One key of a channel's staff the owner's Veydan Cloud is asked to count
+/// as his (`PUT /cloud/v1/delegates`, services/cloud/spec/cloud-api.md §17).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DelegatePut {
+    /// 64 hex.
+    pub pubkey: String,
+    pub label: String,
+    pub expires_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub per_day: Option<u64>,
+    /// The event of kind 27236 the key signed (§17.1).
+    pub proof: serde_json::Value,
+}
+
+/// The delegates of the account of the user at work in Veydan Cloud, for
+/// the keepers of the channels of communities (internal/communities-wire.md
+/// §9.2): the staff of the owner's channels upload into his plan.
+pub trait CloudDelegates: Send + Sync {
+    /// The npub (64 hex) of the account kept on this device for the identity
+    /// at work, when there is one that is not suspended.
+    fn account(&self) -> SeamFuture<'_, Option<String>>;
+    /// `PUT /cloud/v1/delegates`.
+    fn put<'a>(&'a self, delegate: &'a DelegatePut) -> SeamFuture<'a, ()>;
+    /// `DELETE /cloud/v1/delegates?pubkey=`.
+    fn revoke<'a>(&'a self, pubkey: &'a str) -> SeamFuture<'a, ()>;
+}
+
+/// The choices the messenger keeps of chats, for another module's rows of
+/// its list (internal/communities-stage1.md §6.2).
+pub trait ChatPrefs: Send + Sync {
+    /// The choices made of chats whose id starts with `prefix`; a chat no
+    /// choice was made of is not among them.
+    fn prefs<'a>(&'a self, prefix: &'a str) -> SeamFuture<'a, Vec<ChatPref>>;
 }
 
 /// How long a code of a link, its key T and the wrap with the nsec live

@@ -15,6 +15,8 @@
     "nav_settings": "Einstellungen",
     "nav_back_to": "Zurück zu {name}",
     "common_close": "Schließen",
+    "common_pane_width": "Breite des Bereichs",
+    "common_pane_resize_hint": "Ziehen, um die Breite zu ändern · Doppelklick setzt zurück",
     "common_cancel": "Abbrechen",
     "common_delete": "Löschen",
     "common_confirm": "OK",

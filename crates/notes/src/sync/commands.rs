@@ -41,23 +41,27 @@ pub async fn sync_conflict_resolve(
     sync: tauri::State<'_, SyncManager>,
     notes: tauri::State<'_, NotesState>,
 ) -> CmdResult<SyncStatus> {
-    notes::resolve_conflict(&core, &notes, &note_id, &token, content).await?;
-    let _ = app.emit(EVENT_STATUS, ());
-    if !sync.is_running() {
-        // The resolution is stored; a cycle that fails after it is the status's to
-        // tell, not a failure of the resolve.
-        if let Err(e) = run_cycle(&app, "conflict").await {
-            trace_skip(
-                &app,
-                "conflict",
-                "cycle",
-                &format!("failed after the resolve: {e}"),
-            );
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        notes::resolve_conflict(&core, &notes, &note_id, &token, content).await?;
+        let _ = app.emit(EVENT_STATUS, ());
+        if !sync.is_running() {
+            // The resolution is stored; a cycle that fails after it is the status's to
+            // tell, not a failure of the resolve.
+            if let Err(e) = run_cycle(&app, "conflict").await {
+                trace_skip(
+                    &app,
+                    "conflict",
+                    "cycle",
+                    &format!("failed after the resolve: {e}"),
+                );
+            }
+        } else {
+            trace_skip(&app, "conflict", "trigger", "already running");
         }
-    } else {
-        trace_skip(&app, "conflict", "trigger", "already running");
-    }
-    status(&core, &sync).await
+        status(&core, &sync).await
+    })
+    .await
 }
 
 /// Sync position of one note: `tracked` when the vault knows it, `pending` when

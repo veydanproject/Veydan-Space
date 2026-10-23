@@ -12,7 +12,8 @@
   import DmChat from '../dm/DmChat.svelte';
   import GroupChat from "../groups/GroupChat.svelte";
   import MobileFrame from './MobileFrame.svelte';
-  import { BASE, chatHref } from './routes';
+  import { BASE, openHref } from './routes';
+  import { chatSections } from '../seams/sections.svelte';
   import { shouldLoad } from './chatLoad';
   import { onChatOpened } from '../content/actions';
   import { pushSeen, startPushBridge } from '../push/bridge';
@@ -99,7 +100,7 @@
   });
 
   // A card opened another chat: a phone shows a chat on its own page.
-  onMount(() => onChatOpened((chatId) => { if (chatId !== id) goto(chatHref(chatId)); }));
+  onMount(() => onChatOpened((chatId) => { if (chatId !== id) goto(openHref(chatId, !!chatSections.ofChat(chatId))); }));
 
   onMount(() => {
     // Coming back from the background: catch up on what arrived meanwhile.

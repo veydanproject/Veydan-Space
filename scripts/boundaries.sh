@@ -179,10 +179,14 @@ is_package() { grep -q "^[^	]*	$1	-	" <<<"$root_deps"$'\n'"$messenger_deps"; }
 #    plugin   a Tauri plugin, the only kind whose package is named tauri-plugin-*
 #    product  the crate tauri-build and generate_context! run in
 #
-#    Only the adapter of the messenger reaches into crates/messenger. The
-#    product names the push and the call plugins itself: tauri-build finds
-#    the Android library of a plugin through the direct dependencies of the
-#    product.
+#    Only the adapter of the messenger reaches into crates/messenger, and
+#    the channels of communities, which speak its network: their engine
+#    (crates/communities/core) and their module (crates/communities) take
+#    its types, its grammar of links and the routes of its pool; the engine
+#    makes the cover of a channel as the messenger makes the picture of a
+#    group (crates/messenger/avatar). The product names the push and the
+#    call plugins itself: tauri-build finds the Android library of a plugin
+#    through the direct dependencies of the product.
 MATRIX='
 crates/build-cfg                 veydan-build-cfg          lib      no
 crates/lock                      veydan-lock               lib      no
@@ -190,20 +194,22 @@ crates/sync                      veydan-sync               lib      no
 crates/recovery                  veydan-recovery           lib      no
 crates/desktop-notify            desktop-notify            lib      no
 crates/keydist                   keydist                   lib      no
+crates/communities/core          communities-core          lib      no   crates/keydist crates/messenger/avatar crates/messenger/core crates/messenger/links crates/messenger/media crates/messenger/richtext
 crates/core                      veydan-core               lib      yes  crates/build-cfg crates/lock
 crates/sync-host                 veydan-sync-host          lib      yes  crates/build-cfg crates/core crates/lock crates/sync
 crates/shell                     veydan-shell              lib      yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host
 crates/pass                      veydan-pass               module   yes  crates/build-cfg crates/core crates/lock crates/sync-host crates/shell
 crates/notes                     veydan-notes              module   yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host crates/shell
-crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/messenger/http crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/messenger/http crates/messenger/store crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+crates/communities               veydan-communities        module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/communities/core crates/messenger/core crates/messenger/links crates/messenger/transport crates/tauri-plugin-veydan-push
 crates/tor                       veydan-tor                module   yes  crates/build-cfg crates/core crates/shell
 crates/cloud                     veydan-cloud              module   yes  crates/build-cfg crates/core crates/shell crates/sync crates/recovery crates/lock crates/sync-host
 crates/tauri-plugin-veydan-push  tauri-plugin-veydan-push  plugin   yes  crates/build-cfg
 crates/tauri-plugin-veydan-call  tauri-plugin-veydan-call  plugin   yes  crates/build-cfg crates/messenger/rtc
-apps/space                       veydanspace               product  yes  crates/build-cfg crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/tor crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+apps/space                       veydanspace               product  yes  crates/build-cfg crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/communities crates/tor crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
 apps/notes                       veydannotes               product  yes  crates/shell crates/notes
 apps/pass                        veydanpass                product  yes  crates/shell crates/pass
-apps/chat                        veydanchat                product  yes  crates/build-cfg crates/shell crates/messenger-app crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+apps/chat                        veydanchat                product  yes  crates/build-cfg crates/shell crates/messenger-app crates/communities crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
 '
 # A snapshot holds the rows of its product only.
 if [ -n "$snapshot" ]; then
@@ -363,6 +369,7 @@ owner() {
     note_*) echo notes ;;
     password_*|totp_*|pwgen_history_*) echo pass ;;
     messenger_*) echo messenger ;;
+    channel_*|channels_*) echo communities ;;
     fingerprint_presets) echo browser ;;
     workspace_*|profile_*|profiles_*|proxy_*|proxies_*|camoufox_*) echo browser ;;
     ssh_*|sftp_*|fs_*) echo ssh ;;
@@ -455,7 +462,7 @@ allowed() {
     ingress)   echo "messenger-core messenger-store messenger-identity" ;;
     contacts)  echo "messenger-core messenger-store messenger-http messenger-richtext messenger-avatar" ;;
     dm)        echo "messenger-core messenger-store messenger-contacts messenger-links messenger-richtext" ;;
-    media)     echo "messenger-core messenger-store messenger-http" ;;
+    media)     echo "messenger-core messenger-store messenger-http messenger-avatar" ;;
     groups)    echo "messenger-core messenger-store messenger-media messenger-dm messenger-links messenger-contacts messenger-richtext" ;;
     push)      echo "messenger-core messenger-http" ;;
     presence)  echo "messenger-core messenger-store" ;;

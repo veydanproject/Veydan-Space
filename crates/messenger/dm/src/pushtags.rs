@@ -36,6 +36,12 @@
 //! through a change of the key has told its server only the key before, so
 //! for a while after a change events carry a second mark, of the key that
 //! was replaced ([`GROUP_GRACE_SECS`]).
+//!
+//! **`channel`** marks a note to the keeper of a channel of a community
+//! (`channel.join` and the rest, internal/communities-stage1.md §6.2): the
+//! push server wakes the keeper's device without telling anything, so that
+//! its cycle lets the newcomer in; nobody is shown a notice for it. A
+//! relay learns from it that the wrap is a note of a channel.
 
 use hmac::{Hmac, KeyInit, Mac};
 use messenger_core::{MessengerError, Result};
@@ -49,6 +55,8 @@ pub const SILENT: &str = "silent";
 pub const AUTHOR: &str = "vp";
 /// `["gp", <mark>]`
 pub const GROUP: &str = "gp";
+/// `["channel", "1"]`
+pub const CHANNEL: &str = "channel";
 /// How long after a change of a group's key events also carry the mark of
 /// the key before.
 pub const GROUP_GRACE_SECS: i64 = 7 * 24 * 3600;
@@ -72,6 +80,11 @@ fn crypto(e: impl std::fmt::Display) -> MessengerError {
 
 pub fn silent_tag() -> Result<Tag> {
     Tag::parse([SILENT, "1"]).map_err(crypto)
+}
+
+/// The mark of a note to the keeper of a channel: a silent wake-up.
+pub fn channel_tag() -> Result<Tag> {
+    Tag::parse([CHANNEL, "1"]).map_err(crypto)
 }
 
 /// The key of the marks, made from the user's key. It cannot be turned back
@@ -210,5 +223,6 @@ mod tests {
         let expected = author_mark(&author_key(&me), &event.public_key().to_hex()).unwrap();
         assert_eq!(tag.as_slice(), [AUTHOR.to_string(), expected]);
         assert_eq!(silent_tag().unwrap().as_slice(), ["silent".to_string(), "1".to_string()]);
+        assert_eq!(channel_tag().unwrap().as_slice(), ["channel".to_string(), "1".to_string()]);
     }
 }

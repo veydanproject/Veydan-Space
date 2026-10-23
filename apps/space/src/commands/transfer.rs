@@ -901,76 +901,80 @@ pub async fn sftp_transfer_start(
     connection_id: String,
     items: Vec<TransferItemInput>,
 ) -> CmdResult<String> {
-    let kind = match kind.as_str() {
-        "download" => TransferKind::Download,
-        "upload" => TransferKind::Upload,
-        other => return Err(AppError::other(format!("Unknown transfer kind: {other}"))),
-    };
-    if items.is_empty() {
-        return Err(AppError::other("Nothing to transfer"));
-    }
-
-    let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
-
-    let transfer_id = Uuid::new_v4().to_string();
-    let token = CancellationToken::new();
-    // Checked and taken under one lock: two transfers never share a part.
-    let guard = {
-        let mut active = ssh
-            .sftp
-            .active
-            .lock()
-            .map_err(|e| AppError::other(e.to_string()))?;
-        if let Some(dst) = items.iter().map(|i| &i.dst_path).find(|dst| {
-            active
-                .values()
-                .any(|a| a.clashes(kind, &connection_id, dst))
-        }) {
-            return Err(AppError::other(format!(
-                "Another transfer is already writing to {dst}"
-            )));
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let kind = match kind.as_str() {
+            "download" => TransferKind::Download,
+            "upload" => TransferKind::Upload,
+            other => return Err(AppError::other(format!("Unknown transfer kind: {other}"))),
+        };
+        if items.is_empty() {
+            return Err(AppError::other("Nothing to transfer"));
         }
-        active.insert(
-            transfer_id.clone(),
-            ActiveTransfer {
-                kind,
-                conn_id: connection_id.clone(),
-                dsts: items.iter().map(|i| i.dst_path.clone()).collect(),
-            },
-        );
-        ssh.sftp
-            .transfers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(transfer_id.clone(), token.clone());
-        ActiveGuard {
-            state: ssh.sftp.clone(),
-            id: transfer_id.clone(),
-        }
-    };
 
-    let data_dir = core.app_data_dir.clone();
-    let id = transfer_id.clone();
-    tokio::spawn(async move {
-        let result =
-            run_transfer(app.clone(), sess, kind, items, id.clone(), data_dir, token).await;
-        // Released before the event: the UI may start the next one at once.
-        drop(guard);
-        let _ = app.emit(
-            "sftp://transfer-done",
-            TransferDonePayload {
-                transfer_id: id,
-                kind,
-                error: result.error,
-                cancelled: result.cancelled,
-                files_done: result.files_done,
-                files_skipped: result.files_skipped,
-                complete_items: result.complete_items,
-            },
-        );
-    });
+        let sess = get_or_connect(&app, &core, &ssh, &connection_id).await?;
 
-    Ok(transfer_id)
+        let transfer_id = Uuid::new_v4().to_string();
+        let token = CancellationToken::new();
+        // Checked and taken under one lock: two transfers never share a part.
+        let guard = {
+            let mut active = ssh
+                .sftp
+                .active
+                .lock()
+                .map_err(|e| AppError::other(e.to_string()))?;
+            if let Some(dst) = items.iter().map(|i| &i.dst_path).find(|dst| {
+                active
+                    .values()
+                    .any(|a| a.clashes(kind, &connection_id, dst))
+            }) {
+                return Err(AppError::other(format!(
+                    "Another transfer is already writing to {dst}"
+                )));
+            }
+            active.insert(
+                transfer_id.clone(),
+                ActiveTransfer {
+                    kind,
+                    conn_id: connection_id.clone(),
+                    dsts: items.iter().map(|i| i.dst_path.clone()).collect(),
+                },
+            );
+            ssh.sftp
+                .transfers
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(transfer_id.clone(), token.clone());
+            ActiveGuard {
+                state: ssh.sftp.clone(),
+                id: transfer_id.clone(),
+            }
+        };
+
+        let data_dir = core.app_data_dir.clone();
+        let id = transfer_id.clone();
+        tokio::spawn(async move {
+            let result =
+                run_transfer(app.clone(), sess, kind, items, id.clone(), data_dir, token).await;
+            // Released before the event: the UI may start the next one at once.
+            drop(guard);
+            let _ = app.emit(
+                "sftp://transfer-done",
+                TransferDonePayload {
+                    transfer_id: id,
+                    kind,
+                    error: result.error,
+                    cancelled: result.cancelled,
+                    files_done: result.files_done,
+                    files_skipped: result.files_skipped,
+                    complete_items: result.complete_items,
+                },
+            );
+        });
+
+        Ok(transfer_id)
+    })
+    .await
 }
 
 #[tauri::command]

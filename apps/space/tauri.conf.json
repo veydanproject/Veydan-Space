@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Veydan Space",
-  "version": "5.1.23",
+  "version": "5.2.0",
   "identifier": "net.veydan.space",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -68,14 +68,16 @@
         "files": {
           "/usr/share/doc/veydan-space/copyright": "../../LICENSE"
         },
-        "depends": ["libayatana-appindicator3-1"]
+        "depends": ["libayatana-appindicator3-1"],
+        "recommends": ["gstreamer1.0-libav"]
       },
       "rpm": {
         "desktopTemplate": "linux/veydanspace.desktop",
         "files": {
           "/usr/share/licenses/veydan-space/LICENSE": "../../LICENSE"
         },
-        "depends": ["libappindicator-gtk3"]
+        "depends": ["libappindicator-gtk3"],
+        "recommends": ["gstreamer1-libav"]
       },
       "appimage": {
         "files": {

@@ -15,6 +15,8 @@
     "nav_settings": "Impostazioni",
     "nav_back_to": "Torna a {name}",
     "common_close": "Chiudi",
+    "common_pane_width": "Larghezza del pannello",
+    "common_pane_resize_hint": "Trascina per cambiare la larghezza · doppio clic per ripristinare",
     "common_cancel": "Annulla",
     "common_delete": "Elimina",
     "common_confirm": "OK",

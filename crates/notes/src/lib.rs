@@ -37,6 +37,8 @@
 //! - `directory` — the kind `note` in the entity directory
 //! - `demo`     — the part of notes in the demo data
 
+#[cfg(test)]
+mod command_futures;
 mod attachments;
 mod binding;
 #[cfg(desktop)]

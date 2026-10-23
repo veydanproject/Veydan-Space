@@ -11,6 +11,8 @@
 //! what others need of its entries — names, public fields, the current code
 //! of a TOTP — they ask the entity directory for.
 
+#[cfg(test)]
+mod command_futures;
 mod demo;
 mod directory;
 mod password;

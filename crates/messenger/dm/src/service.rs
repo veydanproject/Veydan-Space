@@ -5190,4 +5190,6 @@ mod tests {
 
     /// Private chats (internal/messenger-wire.md, «Частный чат»).
     mod private;
+    /// The widths of the panes between my devices (`own.ui`).
+    mod ui_prefs;
 }

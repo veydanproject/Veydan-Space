@@ -107,6 +107,17 @@ pub enum Context {
     Group { group_id: String },
     /// A request: a stranger wrote first and was not taken in.
     Request,
+    /// A channel of a community (crates/communities): `community_id` is its
+    /// id (64 lowercase hex), `post_id` the post or comment the report was
+    /// opened on, when it was. The messages of a channel carry no proof a
+    /// report can attach (they are sealed under the channel's keys): the
+    /// moderator reads the post on the channel's relays. A DM attached
+    /// still counts, as in any context.
+    Channel {
+        community_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        post_id: Option<String>,
+    },
 }
 
 /// One attached message: its proof, or why there is none.

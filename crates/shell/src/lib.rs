@@ -13,11 +13,15 @@
 //! offer each other services through it (`seams`).
 //! It knows no module by name.
 
+#[cfg(test)]
+mod command_futures;
 mod app;
 mod commands;
 pub mod demo;
 mod distribution;
 mod lock;
+#[cfg(target_os = "android")]
+mod logcat;
 mod module;
 mod navigation;
 mod plan;

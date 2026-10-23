@@ -244,7 +244,7 @@ impl VideoLayer {
 /// lowest first: libwebrtc wants its simulcast streams in ascending
 /// order, and keeps the first alone when the answer takes no simulcast.
 const SIMULCAST_LAYERS: [(&str, u32, VideoLayer); 3] =
-    [("q", 150, VideoLayer::Low), ("h", 500, VideoLayer::Medium), ("f", 1500, VideoLayer::High)];
+    [("q", 150, VideoLayer::Low), ("h", 500, VideoLayer::Medium), ("f", 2500, VideoLayer::High)];
 
 /// The layer of a RID, if it is one of ours.
 fn layer_of_rid(rid: &str) -> Option<(u32, VideoLayer)> {

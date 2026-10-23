@@ -782,6 +782,7 @@
     "msg_emoji_collapse": "Masquer",
     "msg_message_more": "Plus",
     "msg_composer_save": "Enregistrer",
+    "msg_composer_expand": "Éditeur avancé",
     "msg_text_copied": "Texte copié",
     "msg_chat_archived_toast": "Discussion déplacée dans les archives",
     "msg_action_failed": "Impossible d’effectuer l’action",
@@ -1561,7 +1562,17 @@
     "msg_card_web_title": "Lien de connexion au site web de Veydan Cloud",
     "msg_card_web_text": "La connexion à un site web ne s’approuve qu’en scannant son code QR dans l’application. Ne vous connectez jamais avec un lien que quelqu’un vous a envoyé.",
     "msg_inv_web_link": "Ceci est un lien de connexion au site web de Veydan Cloud.",
-    "msg_inv_web_open": "Ouvrir la connexion au site web"
+    "msg_inv_web_open": "Ouvrir la connexion au site web",
+    "msg_report_channel_title": "Signaler le canal « {name} »",
+    "msg_report_post_title": "Signaler une publication",
+    "msg_report_comment_title": "Signaler un commentaire",
+    "msg_report_post_note": "La publication sera envoyée avec le signalement.",
+    "msg_report_comment_note": "Le commentaire sera envoyé avec le signalement.",
+    "msg_report_channel_note": "Le signalement indique le canal et son propriétaire.",
+    "msg_report_channel_person_note": "Le signalement indique la personne et le canal où vous l'avez rencontrée.",
+    "msg_card_channel": "Canal",
+    "msg_card_channels_off": "Les canaux sont désactivés dans les paramètres",
+    "msg_card_channels_settings": "Paramètres"
   },
   "mobile": {}
 }

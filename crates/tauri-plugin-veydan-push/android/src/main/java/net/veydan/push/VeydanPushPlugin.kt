@@ -40,6 +40,11 @@ class CancelArgs {
 }
 
 @InvokeArg
+class KeeperArgs {
+  var on: Boolean = false
+}
+
+@InvokeArg
 class KeysArgs {
   /** Base64 of the bundle. */
   var bundle: String? = null
@@ -69,6 +74,11 @@ class VeydanPushPlugin(private val activity: Activity) : Plugin(activity) {
 
   internal fun tokenChanged(token: String) {
     trigger("token", JSObject().put("token", token))
+  }
+
+  /** The keeper of the channels is to take a turn (`Keeper`). */
+  internal fun keeperWake(why: String) {
+    trigger(Keeper.EVENT, JSObject().put("why", why))
   }
 
   /** Why the phone cannot receive pushes, or null when it can. */
@@ -227,5 +237,28 @@ class VeydanPushPlugin(private val activity: Activity) : Plugin(activity) {
   fun clearKeys(invoke: Invoke) {
     Keys.clear(activity)
     invoke.resolve()
+  }
+
+  /** Starts or stops the keeper's foreground service; answers whether it runs. */
+  @Command
+  fun keeperForeground(invoke: Invoke) {
+    val on = invoke.parseArgs(KeeperArgs::class.java).on
+    val running = if (on) KeeperService.start(activity) else {
+      KeeperService.stop()
+      false
+    }
+    invoke.resolve(JSObject().put("running", running))
+  }
+
+  /** Registers or cancels the keeper's periodic wake. */
+  @Command
+  fun keeperPeriodic(invoke: Invoke) {
+    val on = invoke.parseArgs(KeeperArgs::class.java).on
+    try {
+      KeeperJob.schedule(activity, on)
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject("the periodic wake was not ${if (on) "set" else "cancelled"}: ${e.javaClass.simpleName}")
+    }
   }
 }

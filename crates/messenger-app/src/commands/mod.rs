@@ -624,18 +624,22 @@ pub async fn messenger_status(
     shell: tauri::State<'_, Shell>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessengerStatus> {
-    let enabled = shell.module_enabled(MODULE_ID);
-    let runtime = match messenger.slot.current() {
-        Some(rt) => {
-            // The vault may have been unlocked since start-up; pick up the signer.
-            if let Err(e) = rt.refresh_signer().await {
-                eprintln!("messenger: refresh_signer: {e}");
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let enabled = shell.module_enabled(MODULE_ID);
+        let runtime = match messenger.slot.current() {
+            Some(rt) => {
+                // The vault may have been unlocked since start-up; pick up the signer.
+                if let Err(e) = rt.refresh_signer().await {
+                    eprintln!("messenger: refresh_signer: {e}");
+                }
+                Some(rt.status().await.map_err(map_err)?)
             }
-            Some(rt.status().await.map_err(map_err)?)
-        }
-        None => None,
-    };
-    Ok(MessengerStatus { compiled: true, enabled, runtime, error: messenger.slot.error() })
+            None => None,
+        };
+        Ok(MessengerStatus { compiled: true, enabled, runtime, error: messenger.slot.error() })
+    })
+    .await
 }
 
 /// The module's switch, as the Modules section of the settings turns it: on
@@ -669,11 +673,15 @@ pub async fn messenger_identity_create(
     password: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<CreatedIdentity> {
-    backup_password(&password)?;
-    let rt = messenger.runtime()?;
-    let created = rt.identity().create(&password).await.map_err(map_err)?;
-    rt.refresh_signer().await.map_err(map_err)?;
-    Ok(created)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        backup_password(&password)?;
+        let rt = messenger.runtime()?;
+        let created = rt.identity().create(&password).await.map_err(map_err)?;
+        rt.refresh_signer().await.map_err(map_err)?;
+        Ok(created)
+    })
+    .await
 }
 
 /// `kind` is `nsec` (also accepts hex), `ncryptsec` (needs `password`) or
@@ -685,18 +693,22 @@ pub async fn messenger_identity_import(
     password: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Identity> {
-    let rt = messenger.runtime()?;
-    let svc = rt.identity();
-    let pw = password.unwrap_or_default();
-    let res = match kind.as_str() {
-        "nsec" => svc.import_nsec(&secret).await,
-        "ncryptsec" => svc.import_ncryptsec(&secret, &pw).await,
-        "mnemonic" => svc.import_mnemonic(&secret, &pw).await,
-        other => Err(MessengerError::Invalid(format!("unknown import kind: {other}"))),
-    };
-    let identity = res.map_err(map_err)?;
-    rt.refresh_signer().await.map_err(map_err)?;
-    Ok(identity)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let rt = messenger.runtime()?;
+        let svc = rt.identity();
+        let pw = password.unwrap_or_default();
+        let res = match kind.as_str() {
+            "nsec" => svc.import_nsec(&secret).await,
+            "ncryptsec" => svc.import_ncryptsec(&secret, &pw).await,
+            "mnemonic" => svc.import_mnemonic(&secret, &pw).await,
+            other => Err(MessengerError::Invalid(format!("unknown import kind: {other}"))),
+        };
+        let identity = res.map_err(map_err)?;
+        rt.refresh_signer().await.map_err(map_err)?;
+        Ok(identity)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -710,8 +722,12 @@ pub async fn messenger_identity_export(
 
 #[tauri::command]
 pub async fn messenger_identity_delete(messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    let rt = messenger.runtime()?;
-    drop_identity(&rt).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let rt = messenger.runtime()?;
+        drop_identity(&rt).await.map_err(map_err)
+    })
+    .await
 }
 
 // ─── Relays / manifest ──────────────────────────────────────────────────────
@@ -886,6 +902,27 @@ pub async fn messenger_own_private_set(
     messenger.runtime()?.own_private_set(phone.as_deref(), share_phone).await.map_err(map_err)
 }
 
+/// How wide I made the panes of the app: key → px, the same on every
+/// computer of mine; `ui_prefs.updated {w}` follows a change from another.
+#[tauri::command]
+pub async fn messenger_ui_prefs_get(
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<std::collections::BTreeMap<String, u32>> {
+    messenger.runtime()?.ui_prefs_get().await.map_err(map_err)
+}
+
+/// Keep `px` as the width of the pane `key` (`[a-z0-9._-]`, 1–40; 200…2000);
+/// `null` forgets it. My other devices hear of it within a few seconds.
+/// Returns the whole map. Error: `ui_pref_invalid`.
+#[tauri::command]
+pub async fn messenger_ui_prefs_set(
+    key: String,
+    px: Option<u32>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<std::collections::BTreeMap<String, u32>> {
+    messenger.runtime()?.ui_prefs_set(&key, px).await.map_err(map_err)
+}
+
 /// The phone a contact sent me in its own card.
 #[tauri::command]
 pub async fn messenger_contact_private_get(
@@ -908,12 +945,16 @@ pub async fn messenger_card_send(
     server: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger
-        .runtime_unlocked()
-        .await?
-        .card_send_with_server(&chat, pubkey.as_deref(), include_phone, server.as_deref())
-        .await
-        .map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger
+            .runtime_unlocked()
+            .await?
+            .card_send_with_server(&chat, pubkey.as_deref(), include_phone, server.as_deref())
+            .await
+            .map_err(map_err)
+    })
+    .await
 }
 
 /// "Add contact" on a received card. Errors: `card_unknown`, `card_is_me`.
@@ -922,7 +963,11 @@ pub async fn messenger_card_accept(
     message_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime_unlocked().await?.card_accept(&message_id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.card_accept(&message_id).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -942,7 +987,11 @@ pub async fn messenger_contacts_add(
     nickname: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<ContactView> {
-    messenger.runtime()?.contact_add(&key, nickname.as_deref()).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.contact_add(&key, nickname.as_deref()).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -957,7 +1006,11 @@ pub async fn messenger_contacts_update(
 
 #[tauri::command]
 pub async fn messenger_contacts_remove(pubkey: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.contact_remove(&parse_pubkey(&pubkey)?).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.contact_remove(&parse_pubkey(&pubkey)?).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1089,9 +1142,13 @@ pub async fn messenger_chat_set_muted(
 /// Removes the chat and its messages from this device only.
 #[tauri::command]
 pub async fn messenger_chat_delete(chat_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.chat_delete(&chat_id).await.map_err(map_err)?;
-    unread_changed();
-    Ok(())
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.chat_delete(&chat_id).await.map_err(map_err)?;
+        unread_changed();
+        Ok(())
+    })
+    .await
 }
 
 /// Send a text DM to an npub/hex key; returns the stored message. `fmt`:
@@ -1104,8 +1161,12 @@ pub async fn messenger_dm_send_text(
     fmt: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    let format = TextFormat::from_name(fmt.as_deref());
-    messenger.runtime_unlocked().await?.dm_send_text_as(&to, &text, format, reply_to.as_deref()).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let format = TextFormat::from_name(fmt.as_deref());
+        messenger.runtime_unlocked().await?.dm_send_text_as(&to, &text, format, reply_to.as_deref()).await.map_err(map_err)
+    })
+    .await
 }
 
 /// `fmt` as for a new text: an edit says how its text is written.
@@ -1116,8 +1177,12 @@ pub async fn messenger_dm_edit(
     fmt: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    let format = TextFormat::from_name(fmt.as_deref());
-    messenger.runtime_unlocked().await?.dm_edit_as(&message_id, &text, format).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let format = TextFormat::from_name(fmt.as_deref());
+        messenger.runtime_unlocked().await?.dm_edit_as(&message_id, &text, format).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Put an emoji on a message, or take mine back. Refusals reach the UI as
@@ -1128,7 +1193,11 @@ pub async fn messenger_dm_react(
     emoji: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    messenger.runtime_unlocked().await?.dm_react(&message_id, &emoji).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.dm_react(&message_id, &emoji).await.map_err(map_err)
+    })
+    .await
 }
 
 /// An emoji was picked in the composer: it counts among the ones I use most.
@@ -1149,7 +1218,11 @@ pub async fn messenger_dm_delete(
     for_everyone: bool,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
-    messenger.runtime_unlocked().await?.dm_delete(&message_id, for_everyone).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.dm_delete(&message_id, for_everyone).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1179,19 +1252,23 @@ pub async fn messenger_dm_action(
     text: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<RelationView> {
-    if action == "request" && (invite.is_some() || text.is_some()) {
-        return messenger.runtime()?.dm_request(&peer, invite.as_deref(), text.as_deref()).await.map_err(map_err);
-    }
-    let action = match action.as_str() {
-        "request" => DmAction::Request,
-        "accept" => DmAction::Accept,
-        "decline" => DmAction::Decline,
-        "block" => DmAction::Block,
-        "unblock" => DmAction::Unblock,
-        "remove" => DmAction::Remove,
-        other => return Err(AppError::Other(format!("unknown action: {other}"))),
-    };
-    messenger.runtime()?.dm_act(&peer, action).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        if action == "request" && (invite.is_some() || text.is_some()) {
+            return messenger.runtime()?.dm_request(&peer, invite.as_deref(), text.as_deref()).await.map_err(map_err);
+        }
+        let action = match action.as_str() {
+            "request" => DmAction::Request,
+            "accept" => DmAction::Accept,
+            "decline" => DmAction::Decline,
+            "block" => DmAction::Block,
+            "unblock" => DmAction::Unblock,
+            "remove" => DmAction::Remove,
+            other => return Err(AppError::Other(format!("unknown action: {other}"))),
+        };
+        messenger.runtime()?.dm_act(&peer, action).await.map_err(map_err)
+    })
+    .await
 }
 
 // ─── Groups ─────────────────────────────────────────────────────────────────
@@ -1220,16 +1297,20 @@ pub async fn messenger_group_create(
     server: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupView> {
-    let kind = match kind.as_str() {
-        "public" => GroupKind::Public,
-        "private" => GroupKind::Private,
-        other => return Err(AppError::Other(format!("unknown group kind: {other}"))),
-    };
-    messenger
-        .runtime()?
-        .group_create(kind, &name, about.as_deref().unwrap_or(""), history_for_new.unwrap_or(true), server.as_deref())
-        .await
-        .map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let kind = match kind.as_str() {
+            "public" => GroupKind::Public,
+            "private" => GroupKind::Private,
+            other => return Err(AppError::Other(format!("unknown group kind: {other}"))),
+        };
+        messenger
+            .runtime()?
+            .group_create(kind, &name, about.as_deref().unwrap_or(""), history_for_new.unwrap_or(true), server.as_deref())
+            .await
+            .map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1266,7 +1347,11 @@ pub async fn messenger_group_open_link(
     note: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupView> {
-    messenger.runtime()?.group_open_link(&link, note.as_deref().unwrap_or("")).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.group_open_link(&link, note.as_deref().unwrap_or("")).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1276,7 +1361,11 @@ pub async fn messenger_group_answer_request(
     approve: bool,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupView> {
-    messenger.runtime()?.group_answer_request(&group_id, &requester, approve).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.group_answer_request(&group_id, &requester, approve).await.map_err(map_err)
+    })
+    .await
 }
 
 /// `action` is an operation as the log writes it: `{"op":"remove","who":…}`,
@@ -1288,8 +1377,12 @@ pub async fn messenger_group_act(
     action: serde_json::Value,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupView> {
-    let body: GroupOp = serde_json::from_value(action).map_err(|e| AppError::Other(format!("group action: {e}")))?;
-    messenger.runtime()?.group_act(&group_id, body).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let body: GroupOp = serde_json::from_value(action).map_err(|e| AppError::Other(format!("group action: {e}")))?;
+        messenger.runtime()?.group_act(&group_id, body).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Make the part `rect` of the prepared picture (`messenger_avatar_prepare`)
@@ -1301,7 +1394,11 @@ pub async fn messenger_group_avatar_set(
     rect: messenger_runtime::CropRect,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupView> {
-    messenger.runtime()?.group_avatar_set(&group_id, &token, rect).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.group_avatar_set(&group_id, &token, rect).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1309,7 +1406,11 @@ pub async fn messenger_group_avatar_remove(
     group_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupView> {
-    messenger.runtime()?.group_avatar_remove(&group_id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.group_avatar_remove(&group_id).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1317,7 +1418,11 @@ pub async fn messenger_group_rotate_link(
     group_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<GroupView> {
-    messenger.runtime()?.group_rotate_link(&group_id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.group_rotate_link(&group_id).await.map_err(map_err)
+    })
+    .await
 }
 
 /// The link of the group as a QR code (SVG).
@@ -1345,7 +1450,11 @@ pub async fn messenger_group_history(
     limit: Option<u32>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<u32> {
-    messenger.runtime()?.group_history(&group, before, limit.unwrap_or(200)).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.group_history(&group, before, limit.unwrap_or(200)).await.map_err(map_err)
+    })
+    .await
 }
 
 /// «Load earlier» in a direct chat (`dm:<hex>`, `dm:<hex>@<server id>`):
@@ -1423,22 +1532,26 @@ pub async fn messenger_dm_send_file(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    let rt = messenger.runtime_unlocked().await?;
-    let local = import_picked(&app, &path, rt.config().data_dir()).await?;
-    if !path.starts_with("content://") && !was_picked(&app, &local, rt.config().data_dir()) {
-        return Err(AppError::Other(NOT_PICKED.into()));
-    }
-    rt.dm_send_file_with(
-        &to,
-        &local,
-        caption.as_deref(),
-        TextFormat::from_name(caption_fmt.as_deref()),
-        batch.as_deref(),
-        original.unwrap_or(false),
-        poster,
-    )
-        .await
-        .map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let rt = messenger.runtime_unlocked().await?;
+        let local = import_picked(&app, &path, rt.config().data_dir()).await?;
+        if !path.starts_with("content://") && !was_picked(&app, &local, rt.config().data_dir()) {
+            return Err(AppError::Other(NOT_PICKED.into()));
+        }
+        rt.dm_send_file_with(
+            &to,
+            &local,
+            caption.as_deref(),
+            TextFormat::from_name(caption_fmt.as_deref()),
+            batch.as_deref(),
+            original.unwrap_or(false),
+            poster,
+        )
+            .await
+            .map_err(map_err)
+    })
+    .await
 }
 
 /// A picked file as the composer holds it until it is sent: a local path
@@ -1657,8 +1770,12 @@ pub async fn messenger_media_download(
     manual: bool,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<String>> {
-    let p = messenger.runtime_unlocked().await?.media_download(&message_id, manual).await.map_err(map_err)?;
-    Ok(p.map(|p| p.to_string_lossy().into_owned()))
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let p = messenger.runtime_unlocked().await?.media_download(&message_id, manual).await.map_err(map_err)?;
+        Ok(p.map(|p| p.to_string_lossy().into_owned()))
+    })
+    .await
 }
 
 /// The attachment is on a server neither of the project nor of the user,
@@ -1698,12 +1815,20 @@ pub async fn messenger_media_pause(transfer_id: String, messenger: tauri::State<
 
 #[tauri::command]
 pub async fn messenger_media_resume(transfer_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.media_resume(&transfer_id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.media_resume(&transfer_id).await.map_err(map_err)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn messenger_media_cancel(transfer_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.media_cancel(&transfer_id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.media_cancel(&transfer_id).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Save the attachment where the save dialog said: a `content://` document
@@ -1717,31 +1842,35 @@ pub async fn messenger_media_save_as(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
-    use tauri_plugin_fs::FsExt;
-    let rt = messenger.runtime_unlocked().await?;
-    if dest.starts_with("content://") {
-        // Android: the destination is a document the system opens for us.
-        let src = rt
-            .media_local_path(&message_id)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        use tauri_plugin_fs::FsExt;
+        let rt = messenger.runtime_unlocked().await?;
+        if dest.starts_with("content://") {
+            // Android: the destination is a document the system opens for us.
+            let src = rt
+                .media_local_path(&message_id)
+                .await
+                .map_err(map_err)?
+                .ok_or_else(|| AppError::Other("err.not_downloaded".into()))?;
+            return tokio::task::spawn_blocking(move || -> CmdResult<()> {
+                use tauri_plugin_fs::{FilePath, FsExt, OpenOptions};
+                let url = tauri::Url::parse(&dest).map_err(AppError::other)?;
+                let mut opts = OpenOptions::new();
+                opts.write(true).truncate(true);
+                let mut out = app.fs().open(FilePath::Url(url), opts).map_err(AppError::io)?;
+                std::io::copy(&mut std::fs::File::open(&src).map_err(AppError::io)?, &mut out).map_err(AppError::io)?;
+                Ok(())
+            })
             .await
-            .map_err(map_err)?
-            .ok_or_else(|| AppError::Other("err.not_downloaded".into()))?;
-        return tokio::task::spawn_blocking(move || -> CmdResult<()> {
-            use tauri_plugin_fs::{FilePath, FsExt, OpenOptions};
-            let url = tauri::Url::parse(&dest).map_err(AppError::other)?;
-            let mut opts = OpenOptions::new();
-            opts.write(true).truncate(true);
-            let mut out = app.fs().open(FilePath::Url(url), opts).map_err(AppError::io)?;
-            std::io::copy(&mut std::fs::File::open(&src).map_err(AppError::io)?, &mut out).map_err(AppError::io)?;
-            Ok(())
-        })
-        .await
-        .map_err(AppError::io)?;
-    }
-    if !app.try_fs_scope().is_some_and(|s| s.is_allowed(Path::new(&dest))) {
-        return Err(AppError::Other("the place to save was not picked".into()));
-    }
-    rt.media_save_as(&message_id, Path::new(&dest)).await.map_err(map_err)
+            .map_err(AppError::io)?;
+        }
+        if !app.try_fs_scope().is_some_and(|s| s.is_allowed(Path::new(&dest))) {
+            return Err(AppError::Other("the place to save was not picked".into()));
+        }
+        rt.media_save_as(&message_id, Path::new(&dest)).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Inline preview (`data:` url) for images, audio and video that are on
@@ -1751,7 +1880,11 @@ pub async fn messenger_media_data_url(
     message_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<String>> {
-    messenger.runtime_unlocked().await?.media_data_url(&message_id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.media_data_url(&message_id).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Local path of the attachment if present (to open or reveal it).
@@ -1760,8 +1893,12 @@ pub async fn messenger_media_local_path(
     message_id: String,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<String>> {
-    let p = messenger.runtime_unlocked().await?.media_local_path(&message_id).await.map_err(map_err)?;
-    Ok(p.map(|p| p.to_string_lossy().into_owned()))
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let p = messenger.runtime_unlocked().await?.media_local_path(&message_id).await.map_err(map_err)?;
+        Ok(p.map(|p| p.to_string_lossy().into_owned()))
+    })
+    .await
 }
 
 /// A picked file as `messenger_media_import` gives it: a video also with
@@ -1784,8 +1921,12 @@ pub async fn messenger_media_url(
     server: tauri::State<'_, MediaServer>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<String>> {
-    let Some((path, mime)) = messenger.runtime_unlocked().await?.media_playable(&message_id).await.map_err(map_err)? else { return Ok(None) };
-    Ok(server.url(&path, &mime).await)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let Some((path, mime)) = messenger.runtime_unlocked().await?.media_playable(&message_id).await.map_err(map_err)? else { return Ok(None) };
+        Ok(server.url(&path, &mime).await)
+    })
+    .await
 }
 
 /// Open a link from a message in the system browser. http(s) only; the
@@ -1811,7 +1952,11 @@ pub async fn messenger_links_inspect(
     links: Vec<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Vec<LinkView>> {
-    messenger.runtime()?.links_inspect(&links).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.links_inspect(&links).await.map_err(map_err)
+    })
+    .await
 }
 
 /// The `veydan://contact/…` link of a person, to share. With `server` (a
@@ -1823,14 +1968,22 @@ pub async fn messenger_contact_link(
     server: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<String> {
-    messenger.runtime()?.contact_link_on(&parse_pubkey(&pubkey)?, None, server.as_deref()).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.contact_link_on(&parse_pubkey(&pubkey)?, None, server.as_deref()).await.map_err(map_err)
+    })
+    .await
 }
 
 /// My link of the private chat on private server `server` of mine, with
 /// its invitation, as a QR code (SVG).
 #[tauri::command]
 pub async fn messenger_private_link_qr(server: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<String> {
-    messenger.runtime_unlocked().await?.private_link_qr(&server).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.private_link_qr(&server).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Title, description and picture of an https page. Asks the page: call
@@ -1850,19 +2003,23 @@ pub async fn messenger_media_open(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
-    let path = messenger
-        .runtime_unlocked()
-        .await?
-        .media_local_path(&message_id)
-        .await
-        .map_err(map_err)?
-        .ok_or_else(|| AppError::Other("err.not_downloaded".into()))?;
-    // A received file is untrusted: only what its viewer shows is opened,
-    // anything else is shown in its folder, never launched.
-    if !opens_in_place(&path) {
-        return reveal(&app, &path);
-    }
-    open_external(&app, &path.to_string_lossy(), true)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let path = messenger
+            .runtime_unlocked()
+            .await?
+            .media_local_path(&message_id)
+            .await
+            .map_err(map_err)?
+            .ok_or_else(|| AppError::Other("err.not_downloaded".into()))?;
+        // A received file is untrusted: only what its viewer shows is opened,
+        // anything else is shown in its folder, never launched.
+        if !opens_in_place(&path) {
+            return reveal(&app, &path);
+        }
+        open_external(&app, &path.to_string_lossy(), true)
+    })
+    .await
 }
 
 /// File types the system opens in a viewer that runs nothing: pictures,
@@ -1934,18 +2091,22 @@ pub async fn messenger_dm_send_recording(
     recording: RecordingInput,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
-    let kind = MediaKind::parse(&recording.kind).ok_or_else(|| AppError::Other("unknown recording kind".into()))?;
-    let bytes = B64
-        .decode(recording.data_base64.as_bytes())
-        .map_err(|_| AppError::Other("recording is not base64".into()))?;
-    let rec = Recording {
-        kind,
-        mime: recording.mime,
-        duration_ms: recording.duration_ms,
-        waveform: recording.waveform,
-        bytes,
-    };
-    messenger.runtime_unlocked().await?.dm_send_recording(&to, rec, None).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let kind = MediaKind::parse(&recording.kind).ok_or_else(|| AppError::Other("unknown recording kind".into()))?;
+        let bytes = B64
+            .decode(recording.data_base64.as_bytes())
+            .map_err(|_| AppError::Other("recording is not base64".into()))?;
+        let rec = Recording {
+            kind,
+            mime: recording.mime,
+            duration_ms: recording.duration_ms,
+            waveform: recording.waveform,
+            bytes,
+        };
+        messenger.runtime_unlocked().await?.dm_send_recording(&to, rec, None).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Let the webview answer microphone and camera requests (WebKitGTK denies
@@ -1993,13 +2154,21 @@ pub async fn messenger_manifest_set_region(
 /// Use the project's servers: its signed manifest, or the built-in one.
 #[tauri::command]
 pub async fn messenger_servers_use_veydan(messenger: tauri::State<'_, MessengerState>) -> CmdResult<ManifestCheck> {
-    messenger.runtime()?.servers_use_veydan().await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.servers_use_veydan().await.map_err(map_err)
+    })
+    .await
 }
 
 /// Use only the user's own servers; nothing is asked of the project.
 #[tauri::command]
 pub async fn messenger_servers_use_own(messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.servers_use_own().await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.servers_use_own().await.map_err(map_err)
+    })
+    .await
 }
 
 /// Remove a private server (its id, the one `<npub|hex>@<id>` names) here
@@ -2007,7 +2176,11 @@ pub async fn messenger_servers_use_own(messenger: tauri::State<'_, MessengerStat
 /// that is no private server of this device.
 #[tauri::command]
 pub async fn messenger_server_remove(id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.server_remove_private(&id).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.server_remove_private(&id).await.map_err(map_err)
+    })
+    .await
 }
 
 /// What the server of a link is (a server card, or the link of a person or
@@ -2022,7 +2195,11 @@ pub async fn messenger_server_preview(link: String, messenger: tauri::State<'_, 
 /// and on every device of mine (one of the home set is left as it is). Its id.
 #[tauri::command]
 pub async fn messenger_server_accept(link: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<String> {
-    messenger.runtime()?.server_accept(&link).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.server_accept(&link).await.map_err(map_err)
+    })
+    .await
 }
 
 /// Open the private chat with `peer` on private server `server_id` of mine,
@@ -2035,12 +2212,16 @@ pub async fn messenger_contact_open_private(
     invite: Option<String>,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<ChatView> {
-    messenger
-        .runtime_unlocked()
-        .await?
-        .contact_open_private(&peer, &server_id, invite.as_deref())
-        .await
-        .map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger
+            .runtime_unlocked()
+            .await?
+            .contact_open_private(&peer, &server_id, invite.as_deref())
+            .await
+            .map_err(map_err)
+    })
+    .await
 }
 
 /// My private servers, without their keys.
@@ -2054,7 +2235,11 @@ pub async fn messenger_servers_private(messenger: tauri::State<'_, MessengerStat
 pub async fn messenger_manifest_refresh(
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Option<ManifestCheck>> {
-    messenger.runtime()?.manifest_refresh(true).await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime()?.manifest_refresh(true).await.map_err(map_err)
+    })
+    .await
 }
 
 // ─── The way to the servers: directly, or through a bridge ──────────────────
