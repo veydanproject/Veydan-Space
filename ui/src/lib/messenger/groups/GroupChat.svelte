@@ -31,6 +31,8 @@
   import GroupCallButton from '../calls/GroupCallButton.svelte';
   import GroupCallBanner from '../calls/GroupCallBanner.svelte';
   import { groupCallStore } from '../calls/groupCallStore.svelte';
+  import { typingStore } from '../typing/typingStore.svelte';
+  import TypingLine from '../typing/TypingLine.svelte';
 
   interface Props {
     chat: MessengerChat;
@@ -55,6 +57,8 @@
 
   const group = $derived(groupStore.byChat(chat.id));
   const groupId = $derived(chat.id.slice(6));
+  /** Who of the group writes now (a bot says it), by name: the line under the title says it while it lasts. */
+  const typers = $derived(typingStore.inGroup(groupId).filter((k) => !nameStore.isMe(k)).map((k) => nameStore.label(k)));
 
   // The panel belongs to the group it was opened for.
   let last = '';
@@ -228,7 +232,9 @@
 </script>
 
 {#snippet subtitle()}
-  {#if group}
+  {#if typers.length}
+    <TypingLine who={typers} />
+  {:else if group}
     <span class="sub-line">
       <Icon name={group.kind === 'public' ? 'world' : 'lock-square-rounded'} size={11} />
       {$t(group.kind === 'public' ? 'msg_group_kind_public' : 'msg_group_kind_private')} ·

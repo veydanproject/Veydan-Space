@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import Icon from '$lib/core/Icon.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import { registry } from '$lib/core/registry';
   import {
@@ -85,79 +86,96 @@
   });
 </script>
 
-<div class="card">
-  <div class="card-title">{$t('hotkey_section')}</div>
-  <p class="muted">{$t('hotkey_hint')}</p>
+<!-- The hint over the groups; each group its own card under a caption. A shortcut shows as key chips,
+     one per chord; the row being recorded is tinted, its error under the command's name. -->
+<div class="hotkeys">
+  <p class="muted hint">{$t('hotkey_hint')}</p>
 
   {#each groups as group (group.id)}
-    <div class="group">{$t(GROUP_LABEL[group.id])}</div>
-    {#each group.commands as id (id)}
-      <div class="row">
-        <span class="name">{$t(COMMAND_LABEL[id])}</span>
-        <span class="keys" class:unbound={recording !== id && !formatCommand(id, $keybindingOverrides)}>
-          {#if recording === id}
-            {$t('hotkey_record')}
-          {:else}
-            {keysOf(id)}
-          {/if}
-        </span>
-        <button type="button" class="btn btn-ghost btn-sm" onclick={() => start(id)}>
-          {$t('hotkey_change')}
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm"
-          disabled={!isOverridden(id, $keybindingOverrides)}
-          onclick={() => { resetCommand(id); if (recording === id) recording = null; rowError = null; }}
-        >
-          {$t('hotkey_reset')}
-        </button>
+    <section class="group" aria-labelledby="hotkey-group-{group.id}">
+      <div class="caption" id="hotkey-group-{group.id}">{$t(GROUP_LABEL[group.id])}</div>
+      <div class="card list">
+        {#each group.commands as id (id)}
+          {@const keys = formatCommand(id, $keybindingOverrides)}
+          <div class="row" class:recording={recording === id}>
+            <span class="words">
+              <span class="name">{$t(COMMAND_LABEL[id])}</span>
+              {#if rowError?.id === id}
+                <span class="row-error" role="alert"><Icon name="alert-triangle" size={16} />{rowError.text}</span>
+              {/if}
+            </span>
+            <span class="keys">
+              {#if recording === id}
+                <span class="record">{$t('hotkey_record')}</span>
+              {:else if keys}
+                {#each keys.split(', ') as chord}<kbd class="keycap">{chord}</kbd>{/each}
+              {:else}
+                <span class="unbound">{keysOf(id)}</span>
+              {/if}
+            </span>
+            <span class="actions">
+              <button type="button" class="btn btn-ghost btn-sm" onclick={() => start(id)}>
+                {$t('hotkey_change')}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                disabled={!isOverridden(id, $keybindingOverrides)}
+                onclick={() => { resetCommand(id); if (recording === id) recording = null; rowError = null; }}
+              >
+                {$t('hotkey_reset')}
+              </button>
+            </span>
+          </div>
+        {/each}
       </div>
-      {#if rowError?.id === id}
-        <div class="error-msg">{rowError.text}</div>
-      {/if}
-    {/each}
+    </section>
   {/each}
 </div>
 
 <style>
-  .card {
-    padding: var(--sp-6);
+  .hotkeys {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-3);
+    gap: var(--sp-4);
+    min-width: 0;
+    container-type: inline-size;
   }
-  .card-title {
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-bold);
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-  .muted { font-size: var(--fs-base); margin: 0; }
-  .group {
-    margin-top: var(--sp-2);
-    font-size: var(--fs-2xs);
-    font-weight: var(--fw-bold);
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
+  .hint { margin: 0; font-size: var(--fs-base); }
+  .group { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .caption { padding: 0 var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
+  .card.list { padding: var(--sp-1); display: flex; flex-direction: column; }
   .row {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: var(--sp-2);
-    min-height: 36px;
+    gap: var(--sp-3);
+    min-height: 56px;
+    padding: var(--sp-2) var(--sp-4);
   }
-  .name { flex: 1; font-size: var(--fs-sm); color: var(--text); }
-  .keys {
-    min-width: 9rem;
-    text-align: right;
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    color: var(--text-body);
+  /* A row lit while it records: square between lines, the first and the last row take the card's corners (its radius less its padding). */
+  .row:first-child { border-top-left-radius: calc(var(--radius-card) - var(--sp-1)); border-top-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .row:last-child { border-bottom-left-radius: calc(var(--radius-card) - var(--sp-1)); border-bottom-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  /* A straight line between rows: a shadow would follow the rounded corners. */
+  .row + .row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
+  .row.recording { background: var(--accent-bg); }
+  .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+  .name { font-size: var(--fs-body); font-weight: var(--fw-medium); color: var(--text); }
+  .keys { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
+  .unbound { font-size: var(--fs-sm); color: var(--text-faint); }
+  .record {
+    display: inline-flex; align-items: center; height: 26px; padding: 0 var(--sp-3);
+    border: 1px dashed var(--accent-border); border-radius: var(--radius-xs);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text);
   }
-  .keys.unbound { color: var(--text-faint); }
-  .btn-sm { padding: 0.35rem var(--sp-3); font-size: var(--fs-sm); }
-  .error-msg { font-size: var(--fs-sm); color: var(--danger-text); margin-top: -0.25rem; }
+  .actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
+  .row-error { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--danger-text); }
+  .row-error :global(svg) { flex-shrink: 0; }
+
+  /* A narrow window: the keys and the buttons go under the command's name. */
+  @container (max-width: 640px) {
+    .row { flex-wrap: wrap; }
+    .words { flex-basis: 100%; }
+    .keys { flex: 1; justify-content: flex-start; }
+  }
 </style>

@@ -21,8 +21,8 @@ export const module: ModuleDef = {
   ...common,
   nav: [{ id: 'notes', title: 'nav_notes', icon: 'notes', href: '/notes' }],
   settings: [
-    { id: 'notes', title: 'settings_notes_section', group: 'settings_group_notes', order: 30, hint: 'settings_notes_folder_hint', icon: 'folder', component: NotesDirCard },
-    { id: 'attachments', title: 'settings_att_section', group: 'settings_group_notes', order: 31, hint: 'settings_att_hint', icon: 'paperclip', component: NoteAttachmentPolicy },
+    { id: 'notes', title: 'settings_notes_section', group: 'settings_group_notes', order: 30, hint: 'settings_notes_folder_hint', icon: 'folder', component: NotesDirCard, bare: true },
+    { id: 'attachments', title: 'settings_att_section', group: 'settings_group_notes', order: 31, hint: 'settings_att_hint', icon: 'paperclip', component: NoteAttachmentPolicy, bare: true },
   ],
   commands: registerNotesCommands,
   tray: () => ({ section_notes: get(t)('nav_notes'), quick_capture: get(t)('tray_quick_capture') }),

@@ -32,6 +32,8 @@
   import { onPhone } from '../shared/phone';
   import { nameStore } from '../groups/names.svelte';
   import { presenceStore } from '../presence/presenceStore.svelte';
+  import { typingStore } from '../typing/typingStore.svelte';
+  import TypingLine from '../typing/TypingLine.svelte';
   import { dmErrorCode, isTauriHost, MAX_PASTE_BYTES, MAX_SEND_BYTES, mediaErrorCode, messengerApi, type DmAction, type MessengerChat, type MessengerMessage } from '../api';
   import { classifyPaste, clipboardPicture, RECEIVED_CONTENT } from '../media/clipboard';
   import { mediaErrorText, tooLargeName } from '../media/errors';
@@ -126,6 +128,10 @@
   // A DM's peer: online now, or when last seen; nothing for groups or when unknown.
   const presence = $derived(chat.kind === 'dm' ? presenceStore.status(chat.peer_pubkey) : null);
   const presenceText = $derived(chat.kind === 'dm' ? presenceStore.label(chat.peer_pubkey) : null);
+  // A DM's peer writing (a bot says it): «печатает…» stands in for the presence while it lasts.
+  const typing = $derived(chat.kind === 'dm' && typingStore.inChat(chat.id));
+  /** The «/» menu of the composer: the commands a bot on the other side of a direct chat lists in its profile. */
+  const botCommands = $derived(chat.kind === 'dm' && chat.peer_pubkey ? nameStore.profile(chat.peer_pubkey)?.commands ?? [] : []);
 
   // Leaving a chat drops reply/edit state, and a picture it had open.
   let lastChat = '';
@@ -783,6 +789,7 @@
           {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
           {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
           {:else if subtitle}{@render subtitle()}
+          {:else if typing}<TypingLine />
           {:else if presenceText}<span class:online={presence === 'online'}>{presenceText}</span>
           {:else}<code>{chat.peer_npub ? `${chat.peer_npub.slice(0, 14)}…${chat.peer_npub.slice(-6)}` : ''}</code>{/if}
         </div>
@@ -853,7 +860,7 @@
   {#if chat.can_send}
     <Composer {replyTo} {editing} peerTitle={chat.title} disabled={!sessionActive} draftKey={chat.id} autofocus={!phone} oneditlast={editLast} onrecording={record} canRecord={canAttach}
       oncancel={() => { replyTo = null; editing = null; }} onsend={send} tools={composerTools} {attached} attachments={picked.length ? tray : undefined}
-      onpastefiles={attachFiles} onpasteclipboard={attachClipboard} canattach={canAttachNow} />
+      onpastefiles={attachFiles} onpasteclipboard={attachClipboard} canattach={canAttachNow} commands={botCommands} />
   {:else if footer}
     {@render footer()}
   {:else}

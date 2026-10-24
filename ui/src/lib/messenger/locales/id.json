@@ -777,6 +777,7 @@
     "msg_voice_play": "Putar",
     "msg_emoji_title": "Emoji",
     "msg_emoji_keyboard": "Keyboard",
+    "msg_bot_commands": "Perintah bot",
     "msg_emoji_erase": "Hapus",
     "msg_emoji_expand": "Perluas",
     "msg_emoji_collapse": "Sembunyikan",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "Laporan menyebutkan orang itu dan kanal tempat Anda bertemu dengannya.",
     "msg_card_channel": "Kanal",
     "msg_card_channels_off": "Kanal dimatikan di pengaturan",
-    "msg_card_channels_settings": "Pengaturan"
+    "msg_card_channels_settings": "Pengaturan",
+    "msg_typing": "mengetik…",
+    "msg_typing_1": "{name} sedang mengetik…",
+    "msg_typing_2": "{a} dan {b} sedang mengetik…",
+    "msg_typing_more": "{a}, {b}, dan {n} lainnya sedang mengetik…",
+    "msg_typing_more_one": "{a}, {b}, dan {n} lainnya sedang mengetik…",
+    "msg_typing_more_few": "{a}, {b}, dan {n} lainnya sedang mengetik…"
   },
   "mobile": {}
 }

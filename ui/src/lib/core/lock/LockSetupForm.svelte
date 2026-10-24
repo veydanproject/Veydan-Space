@@ -113,55 +113,67 @@
 {#if recoveryCode}
   <RecoveryKeyCard code={recoveryCode} title={recoveryTitle} ondone={() => (recoveryCode = null)} />
 {:else}
+  <!-- Off: the warning, then one card of the new secret, the enable at its foot. On: a card of the current
+       secret and the new one (the disable on the left of its foot, the save on the right), then a card of
+       rows: the auto-lock and the recovery key, its kind in words. -->
   <div class="lock-settings" class:mobile={isMobile}>
     {#if !enabled}
-      <div class="warning">
-        <Icon name="alert-triangle" size={16} />
+      <div class="warning" role="note">
+        <Icon name="alert-triangle" size={18} />
         <span>{$t('settings_lock_warning')}</span>
       </div>
-    {:else}
-      <input
-        class="lock-field"
-        class:pin={appLock.status.kind === 'pin'}
-        type={appLock.status.kind === 'pin' ? 'text' : 'password'}
-        inputmode={currentAttrs.inputmode}
-        pattern={currentAttrs.pattern}
-        bind:value={current}
-        placeholder={$t('settings_lock_current')}
-        autocomplete="off"
-        autocapitalize="off"
-        spellcheck="false"
-        disabled={busy}
-      />
     {/if}
 
-    <LockSecretFields bind:kind bind:password bind:confirm bind:hint disabled={busy} />
-
-    <div class="row actions">
-      <button class="btn btn-primary btn-sm" disabled={busy || !canSave} onclick={save}>
-        {enabled ? $t('settings_lock_change') : $t('settings_lock_enable')}
-      </button>
+    <div class="card form">
       {#if enabled}
-        <button class="btn btn-ghost btn-sm" disabled={busy || !current} onclick={remove}>{$t('settings_lock_disable')}</button>
+        <input
+          class="lock-field"
+          class:pin={appLock.status.kind === 'pin'}
+          type={appLock.status.kind === 'pin' ? 'text' : 'password'}
+          inputmode={currentAttrs.inputmode}
+          pattern={currentAttrs.pattern}
+          bind:value={current}
+          placeholder={$t('settings_lock_current')}
+          aria-label={$t('settings_lock_current')}
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          disabled={busy}
+        />
+        <div class="sep"></div>
       {/if}
+
+      <LockSecretFields bind:kind bind:password bind:confirm bind:hint disabled={busy} />
+
+      {#if error}
+        <div class="fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>
+      {/if}
+
+      <div class="foot">
+        {#if enabled}
+          <button type="button" class="btn btn-ghost off" disabled={busy || !current} onclick={remove}>{$t('settings_lock_disable')}</button>
+        {/if}
+        <button type="button" class="btn btn-primary" disabled={busy || !canSave} onclick={save}>
+          {enabled ? $t('settings_lock_change') : $t('settings_lock_enable')}
+        </button>
+      </div>
     </div>
 
     {#if enabled}
-      <label class="row timeout">
-        <span>{$t('settings_lock_timeout')}</span>
-        <select class="lock-field" value={String(appLock.status.timeout_min)} onchange={setTimeoutMin} disabled={busy}>
-          {#each TIMEOUTS as m (m)}
-            <option value={String(m)}>{m === 0 ? $t('settings_lock_timeout_never') : $t('settings_lock_timeout_min', { n: String(m) })}</option>
-          {/each}
-        </select>
-      </label>
+      <div class="card rows">
+        <label class="row-item">
+          <span class="words"><span class="title">{$t('settings_lock_timeout')}</span></span>
+          <select class="lock-field timeout" value={String(appLock.status.timeout_min)} onchange={setTimeoutMin} disabled={busy}>
+            {#each TIMEOUTS as m (m)}
+              <option value={String(m)}>{m === 0 ? $t('settings_lock_timeout_never') : $t('settings_lock_timeout_min', { n: String(m) })}</option>
+            {/each}
+          </select>
+        </label>
 
-      <div class="recovery-row">
-        <div class="recovery-text">
-          <span class="label">
-            <Icon name="key" size={14} />
-            {$t('settings_lock_recovery')}:
-            <strong class:missing={!appLock.status.has_recovery}>
+        <div class="row-item recovery">
+          <span class="words">
+            <span class="title">{$t('settings_lock_recovery')}</span>
+            <strong class="kind" class:missing={!appLock.status.has_recovery}>
               {#if appLock.status.recovery_version === 2}
                 {$t('settings_lock_recovery_words')}
               {:else if appLock.status.recovery_version === 1}
@@ -170,42 +182,44 @@
                 {$t('settings_lock_recovery_none')}
               {/if}
             </strong>
+            <!-- The Recovery Key of 12 words is reissued only by the cloud (platform-spec 8.1): the escrow and the shares follow it. -->
+            <span class="sub">
+              {#if appLock.status.recovery_version === 2}
+                {$t('settings_lock_recovery_v2_hint')}
+              {:else if appLock.status.recovery_version === 1}
+                {$t('settings_lock_recovery_v1_hint')}
+              {:else}
+                {$t('settings_lock_recovery_new_hint')}
+              {/if}
+            </span>
           </span>
-          <!-- The Recovery Key of 12 words is reissued only by the cloud (platform-spec 8.1): the escrow and the shares follow it. -->
-          <span class="sub">
-            {#if appLock.status.recovery_version === 2}
-              {$t('settings_lock_recovery_v2_hint')}
-            {:else if appLock.status.recovery_version === 1}
-              {$t('settings_lock_recovery_v1_hint')}
-            {:else}
-              {$t('settings_lock_recovery_new_hint')}
-            {/if}
-          </span>
+          {#if appLock.status.recovery_version !== 2}
+            <button type="button" class="btn btn-ghost" disabled={busy || !current} onclick={regenerate}>
+              {$t('settings_lock_recovery_new')}
+            </button>
+          {/if}
         </div>
-        {#if appLock.status.recovery_version !== 2}
-          <button class="btn btn-ghost btn-sm" disabled={busy || !current} onclick={regenerate}>
-            {$t('settings_lock_recovery_new')}
-          </button>
-        {/if}
       </div>
 
       {#if appLock.status.vault === 'mismatch' && vaultReset}
-        <div class="mismatch">
-          <span class="sub">{$t('pw_mismatch')}</span>
-          <button class="reset" type="button" disabled={busy || !current} onclick={resetVault}>
-            {$t('pw_reset')}
-          </button>
+        <div class="fail mismatch" role="alert">
+          <Icon name="alert-triangle" size={18} />
+          <span class="mismatch-words">
+            <span>{$t('pw_mismatch')}</span>
+            <button class="reset" type="button" disabled={busy || !current} onclick={resetVault}>
+              {$t('pw_reset')}
+            </button>
+          </span>
         </div>
       {/if}
     {/if}
-
-    {#if error}<div class="error-msg">{error}</div>{/if}
   </div>
 {/if}
 
 <style>
-  .lock-settings { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+  .lock-settings { display: flex; flex-direction: column; gap: var(--sp-4); container-type: inline-size; }
+  .card.form { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+  .sep { height: 1px; background: var(--divider); margin: var(--sp-1) 0; }
   .lock-field {
     flex: 1;
     min-width: 0;
@@ -226,49 +240,53 @@
   select.lock-field { display: block; padding-right: 2rem; }
   .warning {
     display: flex;
-    gap: var(--sp-2);
+    gap: var(--sp-3);
     align-items: flex-start;
-    padding: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
     border-radius: var(--radius-md);
-    background: var(--warn-bg, var(--surface-2));
+    background: var(--warn-bg);
     color: var(--warn-text);
     font-size: var(--fs-sm);
-    line-height: 1.45;
+    line-height: 1.5;
   }
-  .warning :global(svg) { flex-shrink: 0; margin-top: 2px; }
-  .timeout span { font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
-  .timeout .lock-field { flex: 0 1 180px; }
-  .recovery-row {
-    display: flex;
-    gap: var(--sp-3);
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    padding-top: var(--sp-2);
-    border-top: 1px solid var(--border);
+  .warning :global(svg) { flex-shrink: 0; margin-top: 1px; }
+  .fail {
+    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: 1.5;
+    overflow-wrap: anywhere;
   }
-  .recovery-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text); }
-  .label strong.missing { color: var(--warn-text); }
-  .sub { font-size: var(--fs-xs); color: var(--text-2); }
-  .mismatch { display: flex; flex-direction: column; gap: var(--sp-1); align-items: flex-start; }
+  .fail :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }
+  .foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
+  .off { margin-right: auto; color: var(--danger-text); }
+  .card.rows { padding: var(--sp-1); display: flex; flex-direction: column; }
+  .row-item { position: relative; display: flex; align-items: center; gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-4); }
+  /* A straight line between rows: a shadow would follow the rounded corners. */
+  .row-item + .row-item::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
+  .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); }
+  .timeout { flex: 0 0 180px; }
+  .kind { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text); }
+  .kind.missing { color: var(--warn-text); }
+  .sub { font-size: var(--fs-sm); line-height: 1.4; color: var(--text-2); }
+  .mismatch-words { display: flex; flex-direction: column; gap: var(--sp-1); align-items: flex-start; }
   .reset {
     border: none;
     background: transparent;
     padding: 0;
     font: inherit;
-    font-size: var(--fs-xs);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
     color: var(--danger-text);
     text-decoration: underline;
     cursor: pointer;
   }
   .reset:disabled { opacity: 0.4; cursor: default; }
   .lock-field.pin { -webkit-text-security: disc; }
-  .mobile .lock-field { height: auto; min-height: 48px; font-size: var(--fs-md); }
-  .mobile .actions { flex-direction: column; align-items: stretch; }
-  .mobile .actions .btn { width: 100%; min-height: 44px; justify-content: center; }
-  .mobile .timeout { flex-direction: column; align-items: stretch; }
-  .mobile .timeout .lock-field { flex: 1 1 auto; width: 100%; }
-  .mobile .recovery-row { flex-direction: column; align-items: stretch; }
-  .mobile .recovery-row .btn { width: 100%; min-height: 44px; justify-content: center; }
+  .mobile .lock-field { height: auto; min-height: var(--sp-12); font-size: var(--fs-md); }
+  .mobile .foot { flex-direction: column-reverse; align-items: stretch; }
+  .mobile .foot .btn { width: 100%; min-height: var(--control-h-lg); justify-content: center; }
+  .mobile .off { margin-right: 0; }
+  .mobile .timeout { flex: 0 0 140px; }
+  .mobile .recovery { flex-direction: column; align-items: stretch; }
+  .mobile .recovery .btn { width: 100%; min-height: var(--control-h-lg); justify-content: center; }
 </style>

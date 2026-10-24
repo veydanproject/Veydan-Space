@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Sao lưu ngay",
     "settings_backup_running": "Đang sao lưu…",
     "settings_backup_done": "Đã tạo bản sao lưu thành công.",
+    "settings_backup_saved": "Đã lưu",
     "settings_backup_schedule": "Sao lưu theo lịch",
     "settings_backup_schedule_hint": "Tự động tạo bản sao lưu theo lịch.",
     "settings_backup_mode": "Chế độ",

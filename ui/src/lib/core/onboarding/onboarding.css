@@ -37,9 +37,9 @@
 /* ── A computer: a window, the steps at its left ── */
 .ob-win {
   display: grid;
-  grid-template-columns: 232px 1fr;
-  width: min(880px, 100%);
-  height: min(600px, 100%);
+  grid-template-columns: 248px 1fr;
+  width: min(1000px, 100%);
+  height: min(660px, 100%);
   background: var(--surface-drawer);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -58,20 +58,20 @@
 .ob-brand { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); font-weight: var(--fw-bold); font-size: var(--fs-md); }
 .ob-brand img { width: 32px; height: 32px; object-fit: contain; }
 .ob-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; }
-.ob-steps li { display: flex; align-items: center; gap: var(--sp-3); min-height: 36px; padding: 0 var(--sp-2); border-radius: var(--radius-sm); color: var(--text-3); font-weight: var(--fw-semibold); font-size: var(--fs-base); }
+.ob-steps li { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--control-h); padding: 0 var(--sp-2); border-radius: var(--radius-sm); color: var(--text-3); font-weight: var(--fw-semibold); font-size: var(--fs-base); }
 .ob-steps .num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; border: 1px solid var(--border-2); font-size: var(--fs-xs); }
 .ob-steps li.done { color: var(--text-2); }
 .ob-steps li.done .num { background: var(--accent-tint); border-color: transparent; color: var(--accent-text); }
 .ob-steps li.on { background: var(--accent-bg); color: var(--text); }
 .ob-steps li.on .num { background: var(--accent); border-color: var(--accent); color: #fff; }
 .ob-step { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.ob-win .ob-step { padding: var(--sp-8) var(--sp-8) var(--sp-6); }
-.ob-win .ob-backrow { min-height: 28px; margin: calc(var(--sp-4) * -1) 0 var(--sp-2) calc(var(--sp-2) * -1); }
+.ob-win .ob-step { padding: var(--sp-6) var(--sp-8) var(--sp-6); }
+.ob-win .ob-backrow { min-height: var(--control-h-lg); margin: calc(var(--sp-2) * -1) 0 var(--sp-2) calc(var(--sp-2) * -1); }
 
 /* ── A phone: the whole screen ── */
 .ob-top { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: var(--sp-2); min-height: 48px; padding: var(--sp-1) var(--sp-3) 0 var(--sp-1); flex-shrink: 0; }
 .ob-back { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--text); cursor: pointer; }
-.ob-back.text { width: auto; height: 28px; padding: 0 var(--sp-2); gap: 4px; border-radius: var(--radius-sm); color: var(--text-2); font: inherit; font-size: var(--fs-sm); }
+.ob-back.text { width: auto; height: var(--control-h-lg); padding: 0 var(--sp-2); gap: 4px; border-radius: var(--radius-sm); color: var(--text-2); font: inherit; font-size: var(--fs-sm); }
 .ob-back.text:hover { color: var(--text); }
 .ob-dots { display: flex; gap: 6px; justify-content: center; }
 .ob-dots i { width: 22px; height: 4px; border-radius: 2px; background: var(--border-2); }
@@ -91,6 +91,13 @@
 .ob-gives { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
 .ob-gives li { display: flex; align-items: flex-start; gap: var(--sp-3); font-size: var(--fs-body); line-height: 1.4; }
 .ob-gives svg { color: var(--accent-text); flex-shrink: 0; margin-top: 1px; }
+/* The window of a computer has the room: what the account gives, side by side as cards. */
+.ob-win .ob-gives { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-3); }
+.ob-win .ob-gives li {
+  flex-direction: column; gap: var(--sp-3); padding: var(--sp-4);
+  border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2);
+  font-size: var(--fs-base); font-weight: var(--fw-semibold);
+}
 
 .ob-opts { display: flex; flex-direction: column; gap: var(--sp-3); }
 .ob-opt { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 14px; border-radius: var(--m-radius, var(--radius-md)); border: 1.5px solid var(--m-card-border, var(--border)); background: var(--m-card, var(--surface-2)); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
@@ -99,7 +106,7 @@
 .ob-opt-ic { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex-shrink: 0; border-radius: var(--radius-field); background: var(--accent-tint); color: var(--accent-text); }
 .ob-opt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ob-opt-t { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: var(--fs-body); font-weight: var(--fw-bold); }
-.ob-opt-s { font-size: var(--fs-sm); line-height: 1.35; color: var(--text-2); }
+.ob-opt-s { font-size: var(--fs-base); line-height: 1.4; color: var(--text-2); }
 .ob-radio { width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--border-2); }
 .ob-opt.on .ob-radio { border: 6px solid var(--accent); }
 .ob-check { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: var(--radius-sm); border: 1.5px solid var(--border-2); color: #fff; }
@@ -110,7 +117,7 @@
 .ob-row:last-child { border-bottom: 0; }
 .ob-row > svg:first-child { color: var(--accent-text); flex-shrink: 0; }
 .ob-row-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.ob-row-s { font-size: var(--fs-sm); line-height: 1.35; color: var(--text-2); }
+.ob-row-s { font-size: var(--fs-base); line-height: 1.4; color: var(--text-2); }
 .ob-row-v { color: var(--text-2); font-size: var(--fs-base); white-space: nowrap; }
 .ob-row-v.ok { color: var(--success-text); }
 .ob-row .chev { color: var(--text-3); display: inline-flex; flex-shrink: 0; }
@@ -124,9 +131,18 @@
 .ob-error { margin: var(--sp-3) 0 0; color: var(--danger-text); font-size: var(--fs-base); line-height: 1.4; }
 
 .ob-foot { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; padding-top: var(--sp-5); flex-wrap: wrap; }
-.ob.m .ob-foot { flex-direction: column; align-items: stretch; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5) var(--sp-5); }
+/* A computer: the foot of the window under a line, the step's verb at the right, «Пропустить» at the left with its hint under it. */
+.ob-win .ob-foot {
+  flex-direction: row-reverse; justify-content: flex-start;
+  margin: var(--sp-4) calc(var(--sp-8) * -1) calc(var(--sp-6) * -1); padding: var(--sp-4) var(--sp-8) var(--sp-5);
+  border-top: 1px solid var(--divider);
+}
+.ob-win .ob-foot .ob-skip { margin-right: auto; margin-left: calc(var(--sp-3) * -1); }
+.ob-win .ob-foot .ob-foot-hint { order: 1; flex-basis: 100%; }
+/* A phone: the verb on top, the whole width, over a line at the bottom of the screen. */
+.ob.m .ob-foot { flex-direction: column; align-items: stretch; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5) var(--sp-5); border-top: 1px solid var(--divider); }
 .ob.m .ob-foot .btn { min-height: 48px; justify-content: center; font-size: var(--fs-body); }
-.ob-skip { border: 0; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); min-height: 36px; padding: 0 var(--sp-3); cursor: pointer; }
+.ob-skip { border: 0; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); min-height: var(--control-h-lg); padding: 0 var(--sp-3); cursor: pointer; }
 .ob-skip:hover { color: var(--text); }
 .ob-skip:disabled { opacity: 0.5; cursor: default; }
 .ob-foot-hint { margin: 0; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.35; }
@@ -135,3 +151,15 @@
 /* A module's own form inside a step (the key of the messenger) keeps its card without a second frame. */
 .ob-step .ob-embed { display: flex; flex-direction: column; gap: var(--sp-3); }
 .ob-step .ob-embed > .card { border: 0; background: none; box-shadow: none; padding: 0; max-width: none; }
+
+/* A module's own form on a phone ends as every step does: its buttons the whole width, 48 high, the verb on top. */
+.ob.m .ob-embed .actions { flex-direction: column-reverse; align-items: stretch; }
+.ob.m .ob-embed .actions .btn { width: 100%; min-height: var(--sp-12); justify-content: center; font-size: var(--fs-body); }
+.ob.m .ob-embed .confirm { min-height: var(--control-h-lg); font-size: var(--fs-base); }
+
+/* A tablet: the steps in a column of a readable width, not stretched from edge to edge. */
+@media (min-width: 640px) {
+  .ob.m .ob-step { width: 100%; max-width: 560px; margin: 0 auto; }
+  .ob.m .ob-top { padding: var(--sp-3) var(--sp-6) 0 var(--sp-4); }
+  .ob.m .ob-main { padding-top: var(--sp-6); }
+}

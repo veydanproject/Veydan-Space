@@ -3,8 +3,9 @@
 
 <!--
   The install block of Tor: state, download with progress, install from an
-  archive, update, removal and the install folder. Shown by the settings card
-  and by the Tor page; the phone has no Tor daemon of its own and never mounts it.
+  archive, update, removal and the install folder: the tab «Установка» of the
+  Tor section of the settings, which tells `onstatus` what it reads for its
+  head; the phone has no Tor daemon of its own and never mounts it.
 -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
@@ -15,6 +16,9 @@
   import { torErrorText } from '$lib/tor/settings';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { clampPercent, isCancelled, progressLine, versionLine } from '$lib/tor/format';
+  import TorNote from '$lib/tor/desktop/TorNote.svelte';
+
+  let { onstatus }: { onstatus?: (status: TorStatus | null) => void } = $props();
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -32,6 +36,7 @@
 
   async function refresh() {
     status = await api.tor.status().catch(() => null);
+    onstatus?.(status);
   }
 
   onMount(async () => {
@@ -162,111 +167,89 @@
   }
 </script>
 
-<div class="tor-install">
+<div class="card install">
   {#if status === null}
-    <p class="muted">{$t('tor_checking')}</p>
+    <div class="notes"><TorNote wait>{$t('tor_checking')}</TorNote></div>
   {:else}
-    <div class="status-row">
-      {#if status.installed}
-        <span class="badge badge-ok">{$t('tor_installed')}</span>
-        {#if status.source === 'manual'}
-          <span class="badge badge-warn">{$t('tor_installed_by_hand')}</span>
-        {/if}
-      {:else}
-        <span class="badge badge-warn">{$t('tor_not_installed')}</span>
+    <dl class="facts">
+      {#if status.installed && (status.version || status.tor_version)}
+        <div><dt>{$t('tor_version')}</dt><dd class="mono">{versionLine(status.version, status.tor_version)}</dd></div>
       {/if}
-    </div>
+      {#if status.installed && status.path}
+        <div><dt>{$t('tor_path')}</dt><dd class="mono path">{status.path}</dd></div>
+      {/if}
+      <div><dt>{$t('tor_dir_label')}</dt><dd class="mono path">{status.install_dir}</dd></div>
+    </dl>
 
-    {#if status.installed}
-      <div class="version-table">
-        {#if status.version || status.tor_version}
-          <div class="version-row">
-            <span class="version-label">{$t('tor_version')}</span>
-            <span class="version-value">{versionLine(status.version, status.tor_version)}</span>
+    {#if downloading && progress}
+      <div class="progress">
+        <div class="track">
+          <div class="bar" role="progressbar" aria-label={$t('settings_tor_title')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={clampPercent(progress.percent)}>
+            <div class="fill" style="width: {clampPercent(progress.percent)}%"></div>
           </div>
-        {/if}
-        {#if status.path}
-          <div class="version-row">
-            <span class="version-label">{$t('tor_path')}</span>
-            <span class="version-value path-value">{status.path}</span>
-          </div>
-        {/if}
+          <span class="label mono">{progressLine(progress)}</span>
+        </div>
+        <button class="btn btn-ghost" type="button" onclick={cancel}>{$t('common_cancel')}</button>
       </div>
-      {#if status.update_available}
-        <p class="warn-msg">{$t('tor_update_available', { version: status.pinned_version })}</p>
-      {/if}
-    {:else}
-      <p class="muted small">{$t('tor_download_hint')}</p>
     {/if}
 
-    <div class="btn-row">
+    <div class="notes">
+      {#if extracting}<TorNote wait>{$t('tor_extracting')}</TorNote>{/if}
+      {#if status.installed && status.update_available}
+        <TorNote tone="warn" icon="download">{$t('tor_update_available', { version: status.pinned_version })}</TorNote>
+      {/if}
       {#if !status.installed}
-        <button class="btn btn-primary btn-sm" disabled={busy} onclick={download}>
+        <TorNote icon="download">{$t('tor_download_hint')}</TorNote>
+      {/if}
+      {#if done}<TorNote tone="ok">{done}</TorNote>{/if}
+      {#if error}<TorNote tone="danger">{error}</TorNote>{/if}
+      <TorNote icon="folder">{$t('tor_dir_hint')}</TorNote>
+    </div>
+
+    <!-- The removal stands apart at the left; the way to install at the right, the primary one only when there is something to get. -->
+    <div class="actions">
+      {#if status.installed}
+        <button class="btn btn-ghost remove" type="button" disabled={busy} onclick={remove}>{$t('tor_btn_remove')}</button>
+      {/if}
+      <span class="spacer"></span>
+      {#if downloading && !progress}
+        <button class="btn btn-ghost" type="button" onclick={cancel}>{$t('common_cancel')}</button>
+      {/if}
+      <button class="btn btn-ghost" type="button" disabled={busy} onclick={installFromArchive}>
+        {installing ? $t('tor_btn_installing') : $t('tor_btn_archive')}
+      </button>
+      {#if !status.installed}
+        <button class="btn btn-primary" type="button" disabled={busy} onclick={download}>
           {downloading ? $t('tor_btn_downloading') : $t('tor_btn_download')}
         </button>
       {:else if status.update_available || downloading}
-        <button class="btn btn-primary btn-sm" disabled={busy} onclick={download}>
+        <button class="btn btn-primary" type="button" disabled={busy} onclick={download}>
           {downloading ? $t('tor_btn_updating') : $t('tor_btn_update')}
         </button>
       {/if}
-      {#if downloading}
-        <button class="btn btn-ghost btn-sm" onclick={cancel}>{$t('common_cancel')}</button>
-      {/if}
-      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={installFromArchive}>
-        {installing ? $t('tor_btn_installing') : $t('tor_btn_archive')}
-      </button>
-      {#if status.installed}
-        <button class="btn btn-ghost btn-sm" disabled={busy} onclick={remove}>{$t('tor_btn_remove')}</button>
-      {/if}
     </div>
-
-    {#if extracting}
-      <p class="muted small">{$t('tor_extracting')}</p>
-    {/if}
-
-    {#if downloading && progress}
-      <div class="progress-wrap">
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {clampPercent(progress.percent)}%"></div>
-        </div>
-        <span class="progress-label">{progressLine(progress)}</span>
-      </div>
-    {/if}
-
-    {#if done}
-      <p class="ok-msg">{done}</p>
-    {/if}
-    {#if error}
-      <div class="error-msg">{error}</div>
-    {/if}
-
-    <div class="version-table">
-      <div class="version-row">
-        <span class="version-label">{$t('tor_dir_label')}</span>
-        <span class="version-value path-value">{status.install_dir}</span>
-      </div>
-    </div>
-    <p class="muted small">{$t('tor_dir_hint')}</p>
   {/if}
 </div>
 
 <style>
-  /* The settings page styles these classes for its own cards only; the Tor page
-     shows the same block, so the block carries its own. */
-  .tor-install { display: flex; flex-direction: column; gap: var(--sp-4); }
-  .status-row, .btn-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-  .muted { font-size: var(--fs-base); }
-  .small { font-size: var(--fs-sm); }
-  .ok-msg { font-size: var(--fs-sm); color: var(--success-text); }
-  .warn-msg { font-size: var(--fs-sm); color: var(--warn-text); }
-  .error-msg { font-size: var(--fs-sm); color: var(--danger-text); }
-  .version-table { display: flex; flex-direction: column; gap: 0.35rem; }
-  .version-row { display: flex; align-items: baseline; gap: var(--sp-2); }
-  .version-label { font-size: var(--fs-sm); color: var(--text-faint); min-width: 120px; flex-shrink: 0; }
-  .version-value { font-size: var(--fs-sm); color: var(--text-body); font-family: var(--font-mono); }
-  .path-value { font-size: var(--fs-2xs); word-break: break-all; }
-  .progress-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
-  .progress-bar { height: 5px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
-  .progress-fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
-  .progress-label { font-size: var(--fs-2xs); color: var(--text-2); font-family: var(--font-mono); }
+  .install { padding: 0; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; }
+  .facts { margin: 0; }
+  .facts div { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-3) var(--sp-5); }
+  .facts div + div { border-top: 1px solid var(--divider); }
+  .facts dt { flex: 0 0 150px; font-size: var(--fs-base); color: var(--text-2); }
+  .facts dd { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-sm); color: var(--text); }
+  .path { overflow-wrap: anywhere; }
+  @container (max-width: 560px) {
+    .facts div { flex-direction: column; gap: 2px; }
+    .facts dt { flex: none; }
+  }
+  .progress { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--divider); }
+  .track { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .bar { height: 8px; border-radius: var(--radius-pill); background: var(--surface-2); overflow: hidden; }
+  .fill { height: 100%; border-radius: var(--radius-pill); background: var(--accent); transition: width var(--dur-base); }
+  .label { font-size: var(--fs-xs); color: var(--text-2); }
+  .notes { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-5) var(--sp-4); border-top: 1px solid var(--divider); }
+  .actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--divider); }
+  .spacer { flex: 1; }
+  .remove { color: var(--danger-text); }
 </style>

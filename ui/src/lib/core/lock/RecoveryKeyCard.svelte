@@ -136,7 +136,8 @@
     {/if}
     <!-- The phone stacks full-width buttons; the desktop keeps the compact row of its cards. -->
     <div class="actions">
-      <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" onclick={copy}>
+      <!-- The way to keep the key, not the step's end: the end («Готово», «Продолжить») is the one primary button. -->
+      <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" onclick={copy}>
         <Icon name={copied ? 'check' : 'copy'} size={16} />
         {copied ? $t('lock_recovery_copied') : $t('lock_recovery_copy')}
       </button>
@@ -175,7 +176,7 @@
   .mobile .actions,
   .mobile .finish { flex-direction: column; align-items: stretch; }
   .mobile .actions .btn,
-  .mobile .finish .btn { width: 100%; min-height: 44px; justify-content: center; }
+  .mobile .finish .btn { width: 100%; min-height: var(--sp-12); justify-content: center; }
   .head { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); }
   .head h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
   .intro { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
@@ -209,7 +210,7 @@
     color: var(--text);
     user-select: all;
   }
-  .mobile .words { grid-template-columns: repeat(2, 1fr); }
+  .mobile .words { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); font-size: var(--fs-body); }
   .words li { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
   .words .num { min-width: 1.6em; font-size: var(--fs-xs); font-weight: 400; color: var(--text-3); text-align: right; }
   .ack-text { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text); }

@@ -24,4 +24,6 @@
 <style>
   /* The first paragraph keeps a line's distance from the header. */
   .lead { margin-top: var(--sp-2); }
+  /* A tablet: one column of 560, as the sheets (mobile.css). */
+  @media (min-width: 640px) { .m-body { width: 100%; max-width: 560px; margin: 0 auto; } }
 </style>

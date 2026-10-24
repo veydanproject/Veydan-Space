@@ -24,7 +24,7 @@ use crate::peer::DmPeer;
 use crate::relationship::{screen_mode, PeerSignal, ScreenMode};
 use crate::service::{updated, DmService};
 use crate::own::UI_EVENT_CHAT_RECEIPT;
-use messenger_core::envelope::{T_PRESENCE_KEY, T_REACTION, T_RECEIPT_DELIVERED, T_RECEIPT_READ};
+use messenger_core::envelope::{T_PRESENCE_KEY, T_REACTION, T_RECEIPT_DELIVERED, T_RECEIPT_READ, T_TYPING};
 use messenger_core::traits::UiEvent;
 use messenger_core::{Context, DmInbound, Effect, Envelope, EventId, PubKey, Result};
 use messenger_store::messages as repo;
@@ -43,6 +43,11 @@ pub const KEY_READ_RECEIPTS: &str = "privacy.read_receipts";
 /// A contact told another presence key, or stopped sharing one:
 /// `{"peer": "<hex>"}`. What to watch changed.
 pub const UI_EVENT_PRESENCE_KEYS_CHANGED: &str = "presence.keys_changed";
+
+/// The peer of a direct chat is writing to me: `{"chat_id", "peer":
+/// "<hex>", "until": <secs>}` — shown as «печатает…» until `until`, said
+/// again by the sender every few seconds while it lasts.
+pub const UI_EVENT_DM_TYPING: &str = "dm.typing";
 
 /// A service note of the module `cloud` came (internal/messenger-wire.md §3,
 /// "Восстановление доступа"): `{"t", "fields", "from"}` — a `recovery.*`
@@ -162,6 +167,17 @@ impl DmService {
             // A key speaks for the one who sent it; my devices learn my
             // epoch from `own.presence`, never from a copy.
             T_PRESENCE_KEY if !from_me => self.presence_key(&peer.key, &envelope, msg.created_at.secs()).await,
+            // The peer is writing to me: a word for the screen alone,
+            // kept nowhere; it counts until its ttl from the time it was
+            // sent (the ephemeral wrap is dated now, never back).
+            T_TYPING if !from_me => Ok(vec![Effect::Emit(UiEvent {
+                name: UI_EVENT_DM_TYPING.into(),
+                payload: serde_json::json!({
+                    "chat_id": chat_id,
+                    "peer": peer.key.as_hex(),
+                    "until": msg.created_at.secs() + envelope.typing_ttl(),
+                }),
+            })]),
             // A note of the module `cloud` (recovery.share, .ack, .ping, .pong,
             // .revoke): only from a contact we both chose to talk with, as a
             // stranger's share would tell them the device is alive; the module

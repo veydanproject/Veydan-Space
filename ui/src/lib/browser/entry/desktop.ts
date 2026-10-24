@@ -20,9 +20,9 @@ export const module: ModuleDef = {
     { id: 'proxies', title: 'nav_proxies', icon: 'globe', href: '/proxies' },
   ],
   settings: [
-    { id: 'camoufox', title: 'settings_camoufox_title', group: 'settings_group_browser', order: 10, icon: 'browser', component: CamoufoxCard },
+    { id: 'camoufox', title: 'settings_camoufox_title', group: 'settings_group_browser', order: 10, icon: 'browser', component: CamoufoxCard, bare: true },
     // The web clipper writes into notes; its rules belong to Space's capture module, shown with the notes' cards.
-    { id: 'capture', title: 'settings_capture_section', group: 'settings_group_notes', order: 32, hint: 'settings_capture_hint', icon: 'notes', component: NoteCaptureRules },
+    { id: 'capture', title: 'settings_capture_section', group: 'settings_group_notes', order: 32, hint: 'settings_capture_hint', icon: 'notes', component: NoteCaptureRules, bare: true },
   ],
   home: HomePage,
   // The tray's running profiles, the launcher submenu and the sections it opens.

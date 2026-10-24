@@ -777,6 +777,7 @@
     "msg_voice_play": "Phát",
     "msg_emoji_title": "Emoji",
     "msg_emoji_keyboard": "Bàn phím",
+    "msg_bot_commands": "Lệnh của bot",
     "msg_emoji_erase": "Xóa",
     "msg_emoji_expand": "Mở rộng",
     "msg_emoji_collapse": "Ẩn",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "Báo cáo nêu tên người đó và kênh nơi bạn đã gặp họ.",
     "msg_card_channel": "Kênh",
     "msg_card_channels_off": "Kênh đang tắt trong cài đặt",
-    "msg_card_channels_settings": "Cài đặt"
+    "msg_card_channels_settings": "Cài đặt",
+    "msg_typing": "đang nhập…",
+    "msg_typing_1": "{name} đang nhập…",
+    "msg_typing_2": "{a} và {b} đang nhập…",
+    "msg_typing_more": "{a}, {b} và {n} người khác đang nhập…",
+    "msg_typing_more_one": "{a}, {b} và {n} người khác đang nhập…",
+    "msg_typing_more_few": "{a}, {b} và {n} người khác đang nhập…"
   },
   "mobile": {}
 }

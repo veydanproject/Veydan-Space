@@ -9,7 +9,11 @@
   import NavRow from '$lib/cloud/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
 
+  /** How many rows there are, for the page that shows them under a tab of their own. */
+  let { count = $bindable(0) }: { count?: number } = $props();
+
   let links = $state<AccountLink[]>([]);
+  $effect(() => { count = links.length; });
 
   onMount(async () => {
     try {

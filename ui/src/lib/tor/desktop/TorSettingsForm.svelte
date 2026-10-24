@@ -2,8 +2,9 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  The settings sections of the Tor page: bridges, the proxy for Tor itself,
-  network, nodes, launch, the port for other programs and the extra torrc.
+  The tab «Настройки Tor» of the Tor section: bridges, the proxy for Tor itself,
+  network, nodes, launch, the port for other programs and the extra torrc, a
+  card each, with Save on a bar that stays at the foot of the pane.
   One form with one Save button: a save restarts the idle instances at once,
   so it is not done at every keystroke, and some fields only make sense together.
 -->
@@ -17,6 +18,7 @@
     type FormField, type FormProblem, type TorForm,
   } from '$lib/tor/settings';
   import type { BridgeMode } from '$lib/tor/types';
+  import TorNote from '$lib/tor/desktop/TorNote.svelte';
 
   let stored = $state<import('$lib/tor/types').TorSettings | null>(null);
   let form = $state<TorForm | null>(null);
@@ -85,14 +87,14 @@
 </script>
 
 {#if loadFailed}
-  <div class="card"><div class="error-msg">{$t('tor_settings_load_failed')}</div></div>
+  <TorNote tone="danger">{$t('tor_settings_load_failed')}</TorNote>
 {:else if form}
   <form class="tor-settings" oninput={touched} onchange={touched} onsubmit={(e) => { e.preventDefault(); save(); }}>
-    <p class="muted small scope">{$t('tor_settings_scope')}</p>
+    <p class="scope">{$t('tor_settings_scope')}</p>
 
     <!-- Bridges -->
     <div class="card" id="bridges">
-      <div class="card-title">{$t('tor_section_bridges')}</div>
+      <h3 class="card-title">{$t('tor_section_bridges')}</h3>
       <p class="muted small">{$t('tor_bridges_hint')}</p>
       <div class="form-group">
         <label for="tor-bridge-mode">{$t('tor_bridges_mode')}</label>
@@ -115,22 +117,22 @@
               {/each}
             </select>
           {:else}
-            <p class="warn-msg">{$t('tor_bridges_no_builtin')}</p>
+            <TorNote tone="warn">{$t('tor_bridges_no_builtin')}</TorNote>
           {/if}
         </div>
       {:else if form.bridgeMode === 'custom'}
         <div class="form-group">
           <label for="tor-bridge-lines">{$t('tor_bridges_lines')}</label>
-          <textarea id="tor-bridge-lines" class="mono" rows="4" bind:value={form.bridgeLines} placeholder={'obfs4 192.0.2.1:443 FINGERPRINT cert=… iat-mode=0'} spellcheck="false"></textarea>
+          <textarea id="tor-bridge-lines" class="mono" rows="4" bind:value={form.bridgeLines} placeholder={'obfs4 192.0.2.1:443 FINGERPRINT cert=… iat-mode=0'} spellcheck="false" class:bad={!!problems.bridgeLines} aria-invalid={!!problems.bridgeLines}></textarea>
           <span class="muted small">{$t('tor_bridges_lines_hint')}</span>
-          {#if problems.bridgeLines}<span class="error-msg">{problemText('bridgeLines')}</span>{/if}
+          {#if problems.bridgeLines}<span class="field-error">{problemText('bridgeLines')}</span>{/if}
         </div>
       {/if}
     </div>
 
     <!-- Proxy for Tor itself -->
     <div class="card" id="upstream">
-      <div class="card-title">{$t('tor_section_upstream')}</div>
+      <h3 class="card-title">{$t('tor_section_upstream')}</h3>
       <p class="muted small">{$t('tor_upstream_hint')}</p>
       <div class="form-group">
         <label for="tor-upstream-kind">{$t('tor_upstream_kind')}</label>
@@ -144,13 +146,13 @@
         <div class="form-row">
           <div class="form-group">
             <label for="tor-upstream-host">{$t('tor_upstream_host')}</label>
-            <input id="tor-upstream-host" type="text" bind:value={form.upstreamHost} autocomplete="off" spellcheck="false" />
-            {#if problems.upstreamHost}<span class="error-msg">{problemText('upstreamHost')}</span>{/if}
+            <input id="tor-upstream-host" type="text" bind:value={form.upstreamHost} autocomplete="off" spellcheck="false" class:bad={!!problems.upstreamHost} aria-invalid={!!problems.upstreamHost} />
+            {#if problems.upstreamHost}<span class="field-error">{problemText('upstreamHost')}</span>{/if}
           </div>
           <div class="form-group">
             <label for="tor-upstream-port">{$t('tor_upstream_port')}</label>
-            <input id="tor-upstream-port" type="text" inputmode="numeric" bind:value={form.upstreamPort} autocomplete="off" />
-            {#if problems.upstreamPort}<span class="error-msg">{problemText('upstreamPort')}</span>{/if}
+            <input id="tor-upstream-port" type="text" inputmode="numeric" bind:value={form.upstreamPort} autocomplete="off" class:bad={!!problems.upstreamPort} aria-invalid={!!problems.upstreamPort} />
+            {#if problems.upstreamPort}<span class="field-error">{problemText('upstreamPort')}</span>{/if}
           </div>
         </div>
         <div class="form-row">
@@ -169,23 +171,23 @@
 
     <!-- Network -->
     <div class="card" id="network">
-      <div class="card-title">{$t('tor_section_network')}</div>
+      <h3 class="card-title">{$t('tor_section_network')}</h3>
       <div class="form-group">
         <label for="tor-ports">{$t('tor_ports_label')}</label>
-        <input id="tor-ports" type="text" bind:value={form.ports} placeholder="80, 443" autocomplete="off" spellcheck="false" />
+        <input id="tor-ports" type="text" bind:value={form.ports} placeholder="80, 443" autocomplete="off" spellcheck="false" class:bad={!!problems.ports} aria-invalid={!!problems.ports} />
         <span class="muted small">{$t('tor_ports_hint')}</span>
-        {#if problems.ports}<span class="error-msg">{problemText('ports')}</span>{/if}
+        {#if problems.ports}<span class="field-error">{problemText('ports')}</span>{/if}
       </div>
     </div>
 
     <!-- Nodes -->
     <div class="card" id="nodes">
-      <div class="card-title">{$t('tor_section_nodes')}</div>
+      <h3 class="card-title">{$t('tor_section_nodes')}</h3>
       <div class="form-group">
         <label for="tor-exclude">{$t('tor_exclude_label')}</label>
-        <input id="tor-exclude" type="text" bind:value={form.exclude} placeholder={$t('tor_countries_placeholder')} autocomplete="off" spellcheck="false" />
+        <input id="tor-exclude" type="text" bind:value={form.exclude} placeholder={$t('tor_countries_placeholder')} autocomplete="off" spellcheck="false" class:bad={!!problems.exclude} aria-invalid={!!problems.exclude} />
         <span class="muted small">{$t('tor_exclude_hint')}</span>
-        {#if problems.exclude}<span class="error-msg">{problemText('exclude')}</span>{/if}
+        {#if problems.exclude}<span class="field-error">{problemText('exclude')}</span>{/if}
       </div>
       <div class="toggle-row">
         <div class="toggle-info">
@@ -205,7 +207,7 @@
 
     <!-- Launch -->
     <div class="card" id="launch">
-      <div class="card-title">{$t('tor_section_launch')}</div>
+      <h3 class="card-title">{$t('tor_section_launch')}</h3>
       <div class="toggle-row">
         <div class="toggle-info">
           <span>{$t('tor_start_with_app')}</span>
@@ -222,15 +224,15 @@
       </div>
       <div class="form-group">
         <label for="tor-idle">{$t('tor_idle_label')}</label>
-        <input id="tor-idle" class="narrow" type="text" inputmode="numeric" bind:value={form.idleMinutes} autocomplete="off" />
+        <input id="tor-idle" class="narrow" type="text" inputmode="numeric" bind:value={form.idleMinutes} autocomplete="off" class:bad={!!problems.idleMinutes} aria-invalid={!!problems.idleMinutes} />
         <span class="muted small">{$t('tor_idle_hint')}</span>
-        {#if problems.idleMinutes}<span class="error-msg">{problemText('idleMinutes')}</span>{/if}
+        {#if problems.idleMinutes}<span class="field-error">{problemText('idleMinutes')}</span>{/if}
       </div>
     </div>
 
     <!-- Port for other programs -->
     <div class="card" id="external">
-      <div class="card-title">{$t('tor_section_external')}</div>
+      <h3 class="card-title">{$t('tor_section_external')}</h3>
       <div class="toggle-row">
         <div class="toggle-info">
           <span>{$t('tor_external_label')}</span>
@@ -250,51 +252,58 @@
           <label for="tor-external-port">{$t('tor_external_port')}</label>
           <div class="addr-row">
             <span class="mono">127.0.0.1:</span>
-            <input id="tor-external-port" class="narrow" type="text" inputmode="numeric" bind:value={form.externalPort} autocomplete="off" />
+            <input id="tor-external-port" class="narrow" type="text" inputmode="numeric" bind:value={form.externalPort} autocomplete="off" class:bad={!!problems.externalPort} aria-invalid={!!problems.externalPort} />
           </div>
-          {#if problems.externalPort}<span class="error-msg">{problemText('externalPort')}</span>{/if}
+          {#if problems.externalPort}<span class="field-error">{problemText('externalPort')}</span>{/if}
         </div>
       {/if}
     </div>
 
     <!-- Advanced -->
     <div class="card" id="advanced">
-      <div class="card-title">{$t('tor_section_advanced')}</div>
-      <p class="warn-msg">{$t('tor_torrc_warning')}</p>
+      <h3 class="card-title">{$t('tor_section_advanced')}</h3>
+      <TorNote tone="warn">{$t('tor_torrc_warning')}</TorNote>
       <div class="form-group">
         <label for="tor-torrc">{$t('tor_torrc_label')}</label>
         <textarea id="tor-torrc" class="mono" rows="4" bind:value={form.extraTorrc} placeholder="AvoidDiskWrites 1" spellcheck="false"></textarea>
       </div>
     </div>
 
+    {#if error}<TorNote tone="danger">{error}</TorNote>{/if}
+    <!-- The bar stays at the foot of the pane while the cards scroll: what the save did at the left, the buttons at the right. -->
     <div class="save-bar">
-      <button class="btn btn-primary btn-sm" type="submit" disabled={saving || !changed}>
+      <div class="said">
+        {#if saved}<TorNote tone="ok">{$t('tor_saved')}</TorNote>{/if}
+        {#if Object.keys(problems).length}<TorNote tone="danger">{$t('tor_fix_fields')}</TorNote>{/if}
+      </div>
+      <button class="btn btn-ghost" type="button" disabled={saving || !changed} onclick={reset}>{$t('tor_btn_revert')}</button>
+      <button class="btn btn-primary" type="submit" disabled={saving || !changed}>
         {saving ? $t('tor_btn_saving') : $t('tor_btn_save')}
       </button>
-      <button class="btn btn-ghost btn-sm" type="button" disabled={saving || !changed} onclick={reset}>{$t('tor_btn_revert')}</button>
-      {#if saved}<span class="ok-msg">{$t('tor_saved')}</span>{/if}
-      {#if Object.keys(problems).length}<span class="error-msg">{$t('tor_fix_fields')}</span>{/if}
     </div>
-    {#if error}<div class="error-msg">{error}</div>{/if}
   </form>
 {/if}
 
 <style>
-  .tor-settings { display: flex; flex-direction: column; gap: var(--sp-4); }
-  .card { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-6); }
-  .card-title {
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-dim);
-    text-transform: uppercase; letter-spacing: 1px;
-  }
-  .small { font-size: var(--fs-sm); }
-  .mono { font-family: var(--font-mono); }
-  .ok-msg { font-size: var(--fs-sm); color: var(--success-text); }
-  .warn-msg { font-size: var(--fs-sm); color: var(--warn-text); }
-  .error-msg { font-size: var(--fs-sm); color: var(--danger-text); }
+  .tor-settings { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .scope { margin: 0; font-size: var(--fs-base); color: var(--text-2); }
+  .card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); }
+  .card-title { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
+  .card > .muted { margin: calc(var(--sp-1) * -1) 0 0; font-size: var(--fs-base); line-height: 1.5; }
+  .small { font-size: var(--fs-sm); line-height: 1.45; }
+  .field-error { font-size: var(--fs-sm); color: var(--danger-text); }
+  .bad { border-color: var(--danger-border); }
   .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
-  .toggle-info { display: flex; flex-direction: column; gap: 0.2rem; font-size: var(--fs-sm); color: var(--text); }
+  .toggle-info { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-base); color: var(--text); }
+  .toggle-info .muted { font-size: var(--fs-sm); line-height: 1.45; }
   .narrow { max-width: 9rem; }
-  .addr-row { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
+  .addr-row { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); }
   textarea { resize: vertical; }
-  .save-bar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+  .save-bar {
+    position: sticky; bottom: 0; z-index: var(--z-sticky); display: flex; align-items: center; gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg);
+    background: var(--glass-bar); border: 1px solid var(--glass-border);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+  }
+  .said { flex: 1; min-width: 0; }
 </style>

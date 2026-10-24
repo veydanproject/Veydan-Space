@@ -11,6 +11,7 @@
     "settings_backup_run_now": "立即备份",
     "settings_backup_running": "正在备份…",
     "settings_backup_done": "备份创建成功。",
+    "settings_backup_saved": "已保存",
     "settings_backup_schedule": "定时备份",
     "settings_backup_schedule_hint": "按计划自动创建备份。",
     "settings_backup_mode": "模式",

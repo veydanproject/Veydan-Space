@@ -15,6 +15,7 @@
 use crate::keys::GroupKey;
 use crate::op::{KeyId, Op};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use messenger_core::envelope::KIND_GROUP_TYPING;
 use messenger_core::outbound::WireEvent;
 use messenger_core::{EventId, MessengerError, PubKey, Result};
 use messenger_dm::pushtags;
@@ -251,9 +252,25 @@ pub fn seal(
     author: &Keys,
     quiet: bool,
 ) -> Result<WireEvent> {
+    seal_kind(KIND_GROUP_EVENT, group_id, key, grace, payload, created_at, author, quiet)
+}
+
+/// The same under another kind: `KIND_GROUP_TYPING`, the ephemeral twin
+/// of a group event, which a relay hands on and never keeps.
+#[allow(clippy::too_many_arguments)]
+fn seal_kind(
+    kind: u16,
+    group_id: &str,
+    key: &GroupKey,
+    grace: Option<&GroupKey>,
+    payload: &Payload,
+    created_at: i64,
+    author: &Keys,
+    quiet: bool,
+) -> Result<WireEvent> {
     let sealed = key.seal(serde_json::to_string(payload)?.as_bytes())?;
     let once = Keys::generate();
-    let mut builder = EventBuilder::new(Kind::from(KIND_GROUP_EVENT), sealed)
+    let mut builder = EventBuilder::new(Kind::from(kind), sealed)
         .tag(Tag::parse(["h", group_id]).map_err(crypto)?)
         .tag(Tag::parse(["k", key.id().0.as_str()]).map_err(crypto)?)
         .tag(pushtags::author_tag(author, &once.public_key())?)
@@ -294,6 +311,15 @@ pub fn seal_note(
 fn seal_inner(group_id: &str, key: &GroupKey, grace: Option<&GroupKey>, signed: &Event, author: &Keys, quiet: bool) -> Result<WireEvent> {
     let payload = Payload { v: PAYLOAD_VERSION, t: "msg".into(), event: serde_json::to_value(signed)?, envelopes: vec![], keys: vec![] };
     seal(group_id, key, grace, &payload, signed.created_at.as_secs() as i64, author, quiet)
+}
+
+/// «I am writing» to the members: sealed as a quiet note, under the
+/// ephemeral kind `KIND_GROUP_TYPING`, so that no relay keeps it, no
+/// phone is woken, and a client that does not know it drops it after the
+/// author's signature was checked (2026-10-24).
+pub fn seal_typing(group_id: &str, key: &GroupKey, grace: Option<&GroupKey>, signed: &Event, author: &Keys) -> Result<WireEvent> {
+    let payload = Payload { v: PAYLOAD_VERSION, t: "msg".into(), event: serde_json::to_value(signed)?, envelopes: vec![], keys: vec![] };
+    seal_kind(KIND_GROUP_TYPING, group_id, key, grace, &payload, signed.created_at.as_secs() as i64, author, true)
 }
 
 /// Older keys for the holders of a newer one.

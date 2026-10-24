@@ -104,6 +104,12 @@ pub const PART_SNAPSHOTS: &str = "snapshots";
 pub const PART_FEED: &str = "feed";
 pub const PART_NOTES: &str = "notes";
 pub const PART_HEARTBEAT: &str = "heartbeat";
+/// «Typing» under the posts (`wire::KIND_TYPING`): live only, never
+/// paged, no cursor (`part_of` says nothing of it).
+pub const PART_TYPING: &str = "typing";
+/// How far back the live subscription of «typing» looks: a relay keeps
+/// none, the margin only covers the clocks.
+const TYPING_MARGIN_SECS: i64 = 60;
 
 /// The longest subscription id a relay takes (NIP-01; strfry's
 /// `MAX_SUBID_SIZE`): a longer one is answered `CLOSED` («bad req: invalid
@@ -321,6 +327,12 @@ impl ChannelService {
             let member = row.membership == MEMBERSHIP_JOINED || keeps;
             for (part, f) in filters(&row.id, member) {
                 out.push(Outbound::Subscribe { id: sub_id(&row.id, part), filter: with_since(f, Some(now - LIVE_MARGIN_SECS)), scope: scope(&row.id) });
+            }
+            // The «typing» of the members, live alone: not in `filters`,
+            // which the catch-up and the pages of the relays walk too.
+            if member {
+                let f = serde_json::json!({ "kinds": [wire::KIND_TYPING], "#h": [row.id.clone()] });
+                out.push(Outbound::Subscribe { id: sub_id(&row.id, PART_TYPING), filter: with_since(f, Some(now - TYPING_MARGIN_SECS)), scope: scope(&row.id) });
             }
             for (i, key) in inboxes.iter().enumerate() {
                 // The notes to a key once for the relays that bring them,

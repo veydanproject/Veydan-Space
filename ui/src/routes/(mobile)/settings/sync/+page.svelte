@@ -371,8 +371,11 @@
         {#if status.first_read_pending}
           <div class="m-row msg warn">{$t('settings_sync_first_read')}</div>
         {/if}
-        <button class="m-row" onclick={toggleEnabled} disabled={busy}>
-          <span class="m-row-label">{$t('settings_sync_enabled')}</span>
+        <button class="m-row switch" role="switch" aria-checked={cfg.enabled} onclick={toggleEnabled} disabled={busy}>
+          <span class="words">
+            <span class="m-row-label">{$t('settings_sync_enabled')}</span>
+            <span class="sub">{$t('settings_sync_enabled_hint')}</span>
+          </span>
           <span class="toggle" class:on={cfg.enabled}></span>
         </button>
       </div>
@@ -450,6 +453,7 @@
         <p class="m-hint">{$t('settings_sync_cloud_move_hint')}</p>
       {/if}
     {:else if cfg.backend === 'webdav'}
+      <div class="m-list group fields">
       <div class="m-field">
         <label for="dav-url">{$t('settings_sync_webdav_url')}</label>
         <input id="dav-url" type="url" bind:value={cfg.webdav.url} placeholder="https://cloud.example.com/remote.php/dav/files/user/veydan" autocomplete="off" autocapitalize="off" />
@@ -462,7 +466,9 @@
         <label for="dav-pass">{$t('settings_sync_webdav_password')}</label>
         <input id="dav-pass" type="password" bind:value={cfg.webdav.password} placeholder={cfg.webdav.has_password && cfg.webdav.password == null ? $t('secret_stored_placeholder') : ''} autocomplete="off" />
       </div>
+      </div>
     {:else}
+      <div class="m-list group fields">
       <div class="m-field">
         <label for="s3-endpoint">{$t('settings_sync_s3_endpoint')}</label>
         <input id="s3-endpoint" type="url" bind:value={cfg.s3.endpoint} placeholder="https://s3.example.com" autocomplete="off" autocapitalize="off" />
@@ -489,14 +495,16 @@
         <label for="s3-sk">{$t('settings_sync_s3_secret_key')}</label>
         <input id="s3-sk" type="password" bind:value={cfg.s3.secret_key} placeholder={cfg.s3.has_secret_key && cfg.s3.secret_key == null ? $t('secret_stored_placeholder') : ''} autocomplete="off" />
       </div>
+      </div>
       <div class="m-list group">
-        <button class="m-row" onclick={() => (cfg!.s3.path_style = !cfg!.s3.path_style)}>
+        <button class="m-row" role="switch" aria-checked={cfg.s3.path_style} onclick={() => (cfg!.s3.path_style = !cfg!.s3.path_style)}>
           <span class="m-row-label">{$t('settings_sync_s3_path_style')}</span>
           <span class="toggle" class:on={cfg.s3.path_style}></span>
         </button>
       </div>
     {/if}
 
+    <div class="m-list group fields">
     <div class="m-field">
       <label for="interval">{$t('settings_sync_interval')}</label>
       <select id="interval" bind:value={cfg.interval_sec}>
@@ -509,10 +517,12 @@
       <label for="device">{$t('settings_sync_device_name')}</label>
       <input id="device" bind:value={cfg.device_name} autocomplete="off" />
     </div>
+    </div>
 
     {#if syncsFiles}
     <div class="m-section">{$t('settings_sync_lf_section')}</div>
     <p class="m-hint">{$t('settings_sync_lf_hint')}</p>
+    <div class="m-list group fields">
     <div class="two">
       <div class="m-field">
         <label for="lf-chunk">{$t('settings_sync_lf_chunk')}</label>
@@ -527,8 +537,9 @@
           oninput={(e) => (cfg!.large_files.parallelism = clampNum((e.currentTarget as HTMLInputElement).value, LARGE_FILE_LIMITS.parallelism))} />
       </div>
     </div>
+    </div>
     <div class="m-list group">
-      <button class="m-row" onclick={() => (cfg!.large_files.resume = !cfg!.large_files.resume)}>
+      <button class="m-row" role="switch" aria-checked={cfg.large_files.resume} onclick={() => (cfg!.large_files.resume = !cfg!.large_files.resume)}>
         <span class="m-row-label">{$t('settings_sync_lf_resume')}</span>
         <span class="toggle" class:on={cfg.large_files.resume}></span>
       </button>
@@ -595,6 +606,16 @@
 
 <style>
   .group { margin-bottom: var(--sp-4); }
+  /* Fields in a card, as the rows of the lists. */
+  .fields { padding: var(--sp-3) var(--sp-4) var(--sp-1); }
+  .fields .m-field:last-child { margin-bottom: var(--sp-3); }
+  /* A switch with its words in its row. */
+  .switch { min-height: 64px; }
+  .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .words .m-row-label { white-space: normal; }
+  .sub { font-size: var(--fs-sm); line-height: 1.35; color: var(--text-2); }
+  /* A tablet: one column of 560, as the sheets (mobile.css). */
+  @media (min-width: 640px) { .m-body { width: 100%; max-width: 560px; margin: 0 auto; } }
   .device-card { flex-direction: column; align-items: stretch; gap: 2px; }
   .device-name { font-size: var(--fs-base); color: var(--text-1); }
   .device-own { font-size: var(--fs-xs); color: var(--text-3); }

@@ -355,6 +355,7 @@
     "settings_sync_now": "立即同步",
     "settings_sync_running": "正在同步…",
     "settings_sync_done": "同步完成。",
+    "settings_sync_saved": "已保存",
     "settings_sync_phase_collect": "正在收集更改",
     "settings_sync_phase_push": "正在上传",
     "settings_sync_phase_pull": "正在下载",

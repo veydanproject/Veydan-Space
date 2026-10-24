@@ -31,6 +31,7 @@ import {
 import { clearAsked, markAsked, type Asked } from './levels/request';
 import { feedStore, type OutboxEvent } from './feedStore.svelte';
 import type { TransferProgress } from '$lib/messenger/seams/shared';
+import { typingStore } from '$lib/messenger/seams/typing';
 
 /** The module or its channels are not open yet (the app is starting, no identity): `channel.ready` comes when they are. */
 export function notReady(e: unknown): boolean {
@@ -133,7 +134,7 @@ class ChannelStore {
       return;
     }
     if (list) this.list = list;
-    this.invites = (invites ?? []).filter((i) => i.status === 'sent');
+    this.invites = (invites ?? []).filter((i) => i.status === 'received');
     this.loaded = true;
   }
 
@@ -199,7 +200,7 @@ class ChannelStore {
   }
 
   async refreshInvites() {
-    this.invites = ((await channelsApi.invites('in')) ?? []).filter((i) => i.status === 'sent');
+    this.invites = ((await channelsApi.invites('in')) ?? []).filter((i) => i.status === 'received');
   }
 
   /** A burst of operations becomes one read. */
@@ -413,6 +414,10 @@ class ChannelStore {
           if (Object.values(this.uploads).some((u) => u.communityId === cid)) this.refreshUploads(cid).catch(() => {});
         }
         this.scheduleList();
+        break;
+      // Somebody writes a comment under a post: the messenger keeps who types, here as in its chats.
+      case 'channel.typing':
+        typingStore.handleEvent(ev);
         break;
       // The channels of the identity are open: the rows are read (the first time, or for another identity).
       case 'channel.ready':

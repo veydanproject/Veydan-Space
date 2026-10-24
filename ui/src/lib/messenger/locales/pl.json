@@ -777,6 +777,7 @@
     "msg_voice_play": "Odtwórz",
     "msg_emoji_title": "Emoji",
     "msg_emoji_keyboard": "Klawiatura",
+    "msg_bot_commands": "Polecenia bota",
     "msg_emoji_erase": "Usuń",
     "msg_emoji_expand": "Rozwiń",
     "msg_emoji_collapse": "Zwiń",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "Zgłoszenie wskazuje osobę i kanał, w którym ją spotkałeś.",
     "msg_card_channel": "Kanał",
     "msg_card_channels_off": "Kanały są wyłączone w ustawieniach",
-    "msg_card_channels_settings": "Ustawienia"
+    "msg_card_channels_settings": "Ustawienia",
+    "msg_typing": "pisze…",
+    "msg_typing_1": "{name} pisze…",
+    "msg_typing_2": "{a} i {b} piszą…",
+    "msg_typing_more": "{a}, {b} i {n} innych osób piszą…",
+    "msg_typing_more_one": "{a}, {b} i {n} inna osoba piszą…",
+    "msg_typing_more_few": "{a}, {b} i {n} inne osoby piszą…"
   },
   "mobile": {}
 }

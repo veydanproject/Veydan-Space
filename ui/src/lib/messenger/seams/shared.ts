@@ -25,6 +25,8 @@ export { default as ShareDialog } from '../content/ShareDialog.svelte';
 export { default as PanelHead } from '../shared/PanelHead.svelte';
 export { default as WithInfo } from '../shared/WithInfo.svelte';
 export { default as Composer } from '../dm/Composer.svelte';
+/** «печатает…» as a chat's header says it; who types is in seams/typing.ts. */
+export { default as TypingLine } from '../typing/TypingLine.svelte';
 export { default as AttachButton } from '../media/AttachButton.svelte';
 export { default as MediaViewer } from '../media/MediaViewer.svelte';
 /** Where the transfer of a file is and what can be done with it, as a chat shows it (`act`: the module's own actions). */
@@ -60,7 +62,7 @@ export { clock, dayLabel, listStamp, stamp } from '../shared/time';
 export { bytes } from '../shared/format';
 /** How the pictures of an album stand in rows, as a chat's album draws them. */
 export { mosaic, rowHeight } from '../content/mosaic';
-export { contactHaystacks, matchesQuery } from '../shared/search';
+export { contactHaystacks, fold, matchesQuery } from '../shared/search';
 export { nameStore, shortKey } from '../groups/names.svelte';
 export { default as ServerPicker } from '../servers/ServerPicker.svelte';
 export { nameOfServer, serverStore } from '../servers/serverStore.svelte';

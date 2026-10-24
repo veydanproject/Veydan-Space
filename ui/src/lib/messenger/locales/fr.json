@@ -777,6 +777,7 @@
     "msg_voice_play": "Lire",
     "msg_emoji_title": "Emoji",
     "msg_emoji_keyboard": "Clavier",
+    "msg_bot_commands": "Commandes du bot",
     "msg_emoji_erase": "Effacer",
     "msg_emoji_expand": "Agrandir",
     "msg_emoji_collapse": "Masquer",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "Le signalement indique la personne et le canal où vous l'avez rencontrée.",
     "msg_card_channel": "Canal",
     "msg_card_channels_off": "Les canaux sont désactivés dans les paramètres",
-    "msg_card_channels_settings": "Paramètres"
+    "msg_card_channels_settings": "Paramètres",
+    "msg_typing": "écrit…",
+    "msg_typing_1": "{name} écrit…",
+    "msg_typing_2": "{a} et {b} écrivent…",
+    "msg_typing_more": "{a}, {b} et {n} autres écrivent…",
+    "msg_typing_more_one": "{a}, {b} et {n} autre écrivent…",
+    "msg_typing_more_few": "{a}, {b} et {n} autres écrivent…"
   },
   "mobile": {}
 }

@@ -36,6 +36,9 @@ use sha2::{Digest, Sha256};
 
 /// Sealed content of a stream (§4).
 pub const KIND_CONTENT: u16 = 1390;
+/// «Typing» under a post: sealed like content, under an ephemeral kind
+/// the relays hand on and never keep (2026-10-24; a bot's word alone).
+pub const KIND_TYPING: u16 = 21390;
 /// The open journal (§3).
 pub const KIND_JOURNAL: u16 = 1391;
 /// An epoch of a scope, signed by the keeper (§5).
@@ -257,10 +260,16 @@ pub struct Outer {
 /// Seal a payload under the key of the stream in `epoch_key`'s epoch, into
 /// an event signed by a key used once and thrown away.
 pub fn seal_content(place: &Place, epoch_key: &EpochKey, target: Option<&str>, payload: &Payload, created_at: i64) -> Result<Event> {
+    seal_content_kind(place, epoch_key, target, payload, created_at, KIND_CONTENT)
+}
+
+/// The same under another kind: `KIND_TYPING`, the ephemeral twin of
+/// content.
+pub fn seal_content_kind(place: &Place, epoch_key: &EpochKey, target: Option<&str>, payload: &Payload, created_at: i64, kind: u16) -> Result<Event> {
     let scope = scope_ref(&place.community_id, &place.scope_id)?;
     let sealed = seal(&stream_key(epoch_key, &scope, &place.channel_id), payload)?;
     let once = Keys::generate();
-    let mut b = EventBuilder::new(Kind::from(KIND_CONTENT), sealed)
+    let mut b = EventBuilder::new(Kind::from(kind), sealed)
         .tag(Tag::parse(["h", place.community_id.as_str()]).map_err(crypto)?)
         .tag(Tag::parse(["s", place.scope_id.as_str()]).map_err(crypto)?)
         .tag(Tag::parse(["c", place.channel_id.as_str()]).map_err(crypto)?)
@@ -276,7 +285,9 @@ pub fn seal_content(place: &Place, epoch_key: &EpochKey, target: Option<&str>, p
 /// The open tags of a sealed event, the signature checked.
 pub fn outer(event: &Event) -> Result<Outer> {
     event.verify().map_err(|_| invalid("signature"))?;
-    if event.kind.as_u16() != KIND_CONTENT {
+    // Content, or its ephemeral twin (a «typing» under a post): the
+    // same open tags, the same seal.
+    if !matches!(event.kind.as_u16(), KIND_CONTENT | KIND_TYPING) {
         return Err(invalid("not content"));
     }
     let need = |name: &str| tag(event, name).ok_or_else(|| invalid(name));

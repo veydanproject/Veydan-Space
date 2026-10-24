@@ -40,7 +40,7 @@
   <span class="label">{label}</span>
   <div class="row">
     <code bind:this={el} class:mono>{value}</code>
-    <button class="icon-btn" title={$t('msg_copy')} onclick={copy}>
+    <button class="icon-btn" title={$t('msg_copy')} aria-label={$t('msg_copy')} onclick={copy}>
       <Icon name={copied ? 'check' : 'copy'} size={13} />
     </button>
   </div>
@@ -48,12 +48,13 @@
 
 <style>
   .copy-field { display: flex; flex-direction: column; gap: 6px; }
-  .label { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
-  .row { display: flex; align-items: center; gap: var(--sp-2); }
+  .label { color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
+  .row { display: flex; align-items: flex-start; gap: var(--sp-2); }
+  /* A key is long: it wraps inside its box instead of running out of it. */
   code {
-    flex: 1; min-width: 0; word-break: break-all;
-    font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body);
-    background: var(--surface-2); padding: 8px 10px; border-radius: var(--radius-sm);
+    flex: 1; min-width: 0; overflow-wrap: anywhere;
+    font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--text-body);
+    background: var(--surface-2); padding: var(--sp-3); border-radius: var(--radius);
     user-select: all;
   }
 </style>

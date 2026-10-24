@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Cadangkan sekarang",
     "settings_backup_running": "Mencadangkan…",
     "settings_backup_done": "Cadangan berhasil dibuat.",
+    "settings_backup_saved": "Tersimpan",
     "settings_backup_schedule": "Cadangan terjadwal",
     "settings_backup_schedule_hint": "Buat cadangan secara otomatis sesuai jadwal.",
     "settings_backup_mode": "Mode",

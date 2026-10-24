@@ -620,6 +620,21 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   white-space: nowrap;
 }
 
+/* ── Keycap ── (a shortcut in settings: one chip per chord) */
+.keycap {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
 /* ── Data table ── (Proxies / Terminal / Board tables: rounded card wrapper,
    caps header, row hover). Works for both <table> and grid-row markup. */
 .data-table {

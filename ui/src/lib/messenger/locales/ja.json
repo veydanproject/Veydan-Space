@@ -777,6 +777,7 @@
     "msg_voice_play": "再生",
     "msg_emoji_title": "絵文字",
     "msg_emoji_keyboard": "キーボード",
+    "msg_bot_commands": "ボットのコマンド",
     "msg_emoji_erase": "削除",
     "msg_emoji_expand": "展開",
     "msg_emoji_collapse": "閉じる",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "通報には、その人と、あなたがその人に会ったチャンネルが記載されます。",
     "msg_card_channel": "チャンネル",
     "msg_card_channels_off": "チャンネルは設定でオフになっています",
-    "msg_card_channels_settings": "設定"
+    "msg_card_channels_settings": "設定",
+    "msg_typing": "入力中…",
+    "msg_typing_1": "{name}が入力中…",
+    "msg_typing_2": "{a}と{b}が入力中…",
+    "msg_typing_more": "{a}、{b}ほか{n}人が入力中…",
+    "msg_typing_more_one": "{a}、{b}ほか{n}人が入力中…",
+    "msg_typing_more_few": "{a}、{b}ほか{n}人が入力中…"
   },
   "mobile": {}
 }

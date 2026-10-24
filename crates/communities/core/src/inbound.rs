@@ -24,13 +24,13 @@ use messenger_core::{Outbound, Scope};
 use crate::notes::{self, Opened, KIND_OWN};
 use crate::op::OpBody;
 use crate::service::{
-    short, ChannelService, Outcome, MEMBERSHIP_JOINED, MEMBERSHIP_JOINING, MEMBERSHIP_REJECTED, UI_EVENT_CHANNEL_INVITE, UI_EVENT_CHANNEL_MESSAGE,
+    short, ChannelService, Outcome, MEMBERSHIP_JOINED, MEMBERSHIP_JOINING, MEMBERSHIP_REJECTED, UI_EVENT_CHANNEL_INVITE, UI_EVENT_CHANNEL_MESSAGE, UI_EVENT_CHANNEL_TYPING,
     UI_EVENT_CHANNEL_REQUEST, UI_EVENT_CHANNEL_UPDATED,
 };
 use crate::state::{rules_at, Content, Reader, SCOPE_EVERYONE};
 use crate::wire::{self, Admit, Invite, InviteReply, Issue, Join, KeeperMaster, Leave, Missed, Rebundle, Rejected, Request};
 use crate::{link::LinkSecret, roles::Role};
-use messenger_core::envelope::{T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_TEXT};
+use messenger_core::envelope::{T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_TEXT, T_TYPING};
 use messenger_core::{Envelope, MessengerError, PubKey, Result};
 use nostr::key::Keys;
 use nostr::prelude::Event;
@@ -112,12 +112,43 @@ impl ChannelService {
             Some(wire::KIND_JOURNAL) => self.on_journal(keys, signed).await?,
             Some(wire::KIND_EPOCH) => self.on_epoch_event(keys, signed).await?,
             Some(wire::KIND_CONTENT) => self.on_content(keys, signed, live).await?,
+            Some(wire::KIND_TYPING) => self.on_typing(keys, signed).await?,
             Some(wire::KIND_CARD) => self.on_card(signed).await?,
             Some(wire::KIND_SNAPSHOT) => self.on_snapshot(keys, signed).await?,
             Some(wire::KIND_HEARTBEAT) => self.on_heartbeat(signed).await?,
             Some(notes::KIND_WRAP) => self.on_wrap_heard(keys, signed, live).await?.unwrap_or_default(),
             _ => Outcome::default(),
         };
+        Ok(out)
+    }
+
+    /// A «typing» under a post (`wire::KIND_TYPING`): opened like content,
+    /// under the key of its section; a word for the screen alone, kept
+    /// nowhere and never parked (one without its key here is nothing, as
+    /// is my own, a banned author's, or one under no post).
+    async fn on_typing(&self, keys: &Keys, signed: &serde_json::Value) -> Result<Outcome> {
+        let mut out = Outcome::default();
+        let Ok(event) = serde_json::from_value::<Event>(signed.clone()) else { return Ok(out) };
+        let Ok(outer) = wire::outer(&event) else { return Ok(out) };
+        let cid = outer.place.community_id.clone();
+        let (scope_id, channel_id) = (outer.place.scope_id.clone(), outer.place.channel_id.clone());
+        let Some(log) = self.log(&cid).await? else { return Ok(out) };
+        let Some(key) = self.member(keys).key_for(&cid, &scope_id, outer.epoch, &outer.key_id.0).await? else { return Ok(out) };
+        let scope = wire::scope_ref(&cid, &scope_id)?;
+        let Ok(payload) = wire::open(&wire::stream_key(&key, &scope, &channel_id), &event.content) else { return Ok(out) };
+        if payload.t != wire::T_MSG {
+            return Ok(out);
+        }
+        let Ok(m) = wire::verify_inner(&payload.event, &outer) else { return Ok(out) };
+        let Ok(env) = Envelope::parse(&m.content) else { return Ok(out) };
+        if env.t != T_TYPING || m.author == Self::me(keys)? || log.state().is_banned(&m.author) {
+            return Ok(out);
+        }
+        let Some(post_id) = m.links.thread.clone() else { return Ok(out) };
+        out.event(
+            UI_EVENT_CHANNEL_TYPING,
+            serde_json::json!({ "community_id": cid, "post_id": post_id, "author": m.author.as_hex(), "until": m.created_at + env.typing_ttl() }),
+        );
         Ok(out)
     }
 
@@ -711,9 +742,19 @@ impl ChannelService {
         let Some(log) = self.log(&cid).await? else { return Ok(out) };
         match wire::verify_card(signed, &log.state().owner) {
             Ok(card) => {
+                // The readers the card counts are for the one who looks
+                // from outside; a member holds the keeper's snapshot, which
+                // counts them, and a card heard again by a catch-up (an
+                // old one says 0) takes nothing away from it: the snapshot's
+                // count is written back instead, which puts right a row an
+                // old card wrote 0 into (живой запуск 2026-10-24:
+                // «читателей: 0» after a restart of the app).
+                let members = self.snapshot_members(&cid).await?.unwrap_or(card.members);
                 if let Some(mut row) = db::channels::get(&self.env.db, &cid).await? {
-                    row.members = i64::try_from(card.members).unwrap_or(i64::MAX);
-                    db::channels::upsert(&self.env.db, &row).await?;
+                    if row.members != i64::try_from(members).unwrap_or(i64::MAX) {
+                        row.members = i64::try_from(members).unwrap_or(i64::MAX);
+                        db::channels::upsert(&self.env.db, &row).await?;
+                    }
                 }
             }
             Err(e) => out.note(format!("card refused: {e}")),
@@ -908,6 +949,30 @@ impl ChannelService {
                 let state = log.state();
                 let moderator = state.role_of(&n.sender).is_some_and(Role::is_moderator) && !state.is_banned(&n.sender);
                 if admit.who != me || !moderator || admit.check(now).is_err() {
+                    return Ok(out);
+                }
+                // The same copy heard again (a subscription made anew brings
+                // two days of wraps back, a catch-up pages them) changes
+                // nothing while the join it led to waits for the keeper's
+                // issue, or once that join went out in this run: one join an
+                // admission, not one a replay (живой запуск 2026-10-24: an
+                // agent sent the keeper a join every five seconds and was
+                // issued no key each time). Not by my membership: a ticket of
+                // the moderator (§17) has me in before the keeper heard of me,
+                // and the join is what tells it. After a start, the catch-up
+                // hands one admission once more: one join, issued again.
+                let waits = db::channels::joining(&self.env.db)
+                    .await?
+                    .into_iter()
+                    .find(|j| j.community_id == cid)
+                    .and_then(|j| serde_json::from_str::<Join>(&j.join_json).ok())
+                    .is_some_and(|j| j.admit_id.as_deref() == Some(admit.admit_id.as_str()));
+                if waits {
+                    self.say(&format!("{} from {} for {}: heard again, my join waits for the keeper", env.t, n.sender.short(), short(&cid)));
+                    return Ok(out);
+                }
+                if !self.admits_joined.lock().map(|mut a| a.first(&admit.admit_id)).unwrap_or(true) {
+                    self.say(&format!("{} from {} for {}: heard again, joined by it already", env.t, n.sender.short(), short(&cid)));
                     return Ok(out);
                 }
                 let keeper = state.keeper().ok_or_else(|| MessengerError::Invalid("no keeper".into()))?.inbox().clone();

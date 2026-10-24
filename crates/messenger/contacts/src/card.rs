@@ -381,6 +381,8 @@ mod tests {
             nip05: None,
             lud16: None,
             nip05_verified: false,
+            bot: false,
+            commands: Vec::new(),
             event_created_at: 1,
             fetched_at: 1,
             bio: Vec::new(),

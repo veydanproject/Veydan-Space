@@ -807,6 +807,8 @@ export const messengerTranslations = {
     msg_voice_play: 'Play',
     msg_emoji_title: 'Emoji',
     msg_emoji_keyboard: 'Keyboard',
+    // The «/» menu of a chat with a bot: the commands its profile lists.
+    msg_bot_commands: 'Commands of the bot',
     msg_emoji_erase: 'Delete',
     msg_emoji_expand: 'Expand',
     msg_emoji_collapse: 'Hide',
@@ -1616,6 +1618,13 @@ export const messengerTranslations = {
     msg_card_channel: 'Channel',
     msg_card_channels_off: 'Channels are off in the settings',
     msg_card_channels_settings: 'Settings',
+    // A bot that writes (2026-10-24): the header of a chat and of a group, under the comments of a post.
+    msg_typing: 'typing…',
+    msg_typing_1: '{name} is typing…',
+    msg_typing_2: '{a} and {b} are typing…',
+    msg_typing_more: '{a}, {b} and {n} more are typing…',
+    msg_typing_more_one: '{a}, {b} and {n} more are typing…',
+    msg_typing_more_few: '{a}, {b} and {n} more are typing…',
   },
   ru: {
     pw_reset_confirm_messenger: 'Ключ модуля «Чат» на этом устройстве тоже будет потерян. Вернуть его можно импортом зашифрованной резервной копии ключа (ncryptsec).',
@@ -2417,6 +2426,7 @@ export const messengerTranslations = {
     msg_voice_play: 'Воспроизвести',
     msg_emoji_title: 'Эмодзи',
     msg_emoji_keyboard: 'Клавиатура',
+    msg_bot_commands: 'Команды бота',
     msg_emoji_erase: 'Стереть',
     msg_emoji_expand: 'Развернуть',
     msg_emoji_collapse: 'Свернуть',
@@ -3226,6 +3236,13 @@ export const messengerTranslations = {
     msg_card_channel: 'Канал',
     msg_card_channels_off: 'Каналы выключены в настройках',
     msg_card_channels_settings: 'Настройки',
+    // Бот пишет (2026-10-24): шапка чата и группы, под комментариями поста.
+    msg_typing: 'печатает…',
+    msg_typing_1: '{name} печатает…',
+    msg_typing_2: '{a} и {b} печатают…',
+    msg_typing_more: '{a}, {b} и ещё {n} печатают…',
+    msg_typing_more_one: '{a}, {b} и ещё {n} печатают…',
+    msg_typing_more_few: '{a}, {b} и ещё {n} печатают…',
   },
 } as const;
 

@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Esegui backup ora",
     "settings_backup_running": "Backup in corso…",
     "settings_backup_done": "Backup creato correttamente.",
+    "settings_backup_saved": "Salvato",
     "settings_backup_schedule": "Backup pianificati",
     "settings_backup_schedule_hint": "Crea automaticamente i backup secondo una pianificazione.",
     "settings_backup_mode": "Modalità",

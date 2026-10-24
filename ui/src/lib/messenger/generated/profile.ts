@@ -39,12 +39,33 @@ export type SocialPlatform = { id: string, name: string,
  */
 hint: string, };
 
+/** A command a bot says it answers: `/name` and a line about it, for the «/» menu of a chat with it. */
+export type BotCommand = { 
+/**
+ * Without the `/`: `ping` for `/ping`.
+ */
+name: string, 
+/**
+ * What it does, one line; may be empty.
+ */
+about: string, };
+
 /** A profile as the UI sees it. */
 export type ProfileView = { pubkey: string, npub: string, name: string | null, display_name: string | null, 
 /**
  * As other clients see it: the bio without its marks.
  */
-about: string | null, picture: string | null, banner: string | null, website: string | null, nip05: string | null, lud16: string | null, nip05_verified: boolean, event_created_at: number, fetched_at: number, 
+about: string | null, picture: string | null, banner: string | null, website: string | null, nip05: string | null, lud16: string | null, nip05_verified: boolean, 
+/**
+ * The key says it is a bot (kind 0 `bot: true`), so a client may mark
+ * it as one.
+ */
+bot: boolean, 
+/**
+ * The commands the key says it answers (kind 0 `veydan_commands`),
+ * checked: the «/» menu of a direct chat with a bot. Empty for a person.
+ */
+commands: Array<BotCommand>, event_created_at: number, fetched_at: number, 
 /**
  * The bio to show.
  */
@@ -65,7 +86,17 @@ about: string | null, website: string | null, nip05: string | null, lud16: strin
 /**
  * As typed: a platform and a handle, `@handle` or a profile address.
  */
-socials: Array<SocialLink>, };
+socials: Array<SocialLink>, 
+/**
+ * This key is a bot: written as `bot: true`, left out otherwise, so
+ * the kind 0 of a person says nothing of it.
+ */
+bot: boolean, 
+/**
+ * The commands a bot answers: written as `veydan_commands` once
+ * checked (what does not pass is dropped), left out when none is left.
+ */
+commands: Array<BotCommand>, };
 
 /** A contact card as the UI shows it. */
 export type CardView = { pubkey: string, npub: string, 

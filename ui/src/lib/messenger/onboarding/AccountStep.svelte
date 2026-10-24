@@ -144,14 +144,16 @@
   <div class="ob-main">
     <h1 class="ob-title">{$t('msg_ob_password_title')}</h1>
     <p class="ob-text">{$t('msg_ob_password_text')}</p>
-    <label class="field">
-      <span>{$t('msg_id_backup_password')}</span>
-      <input type="password" bind:value={password} autocomplete="new-password" disabled={busy} />
-    </label>
-    <label class="field">
-      <span>{$t('msg_id_backup_password_repeat')}</span>
-      <input type="password" bind:value={password2} autocomplete="new-password" disabled={busy} />
-    </label>
+    <div class="pw">
+      <label class="field">
+        <span>{$t('msg_id_backup_password')}</span>
+        <input type="password" bind:value={password} autocomplete="new-password" disabled={busy} />
+      </label>
+      <label class="field">
+        <span>{$t('msg_id_backup_password_repeat')}</span>
+        <input type="password" bind:value={password2} autocomplete="new-password" disabled={busy} />
+      </label>
+    </div>
     <div class="ob-rows servers">
       <button type="button" class="ob-row" onclick={() => (serversOpen = !serversOpen)} aria-expanded={serversOpen}>
         <Icon name="server-2" size={18} />
@@ -234,13 +236,17 @@
 {/if}
 
 <style>
-  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--sp-3); font-size: var(--fs-sm); }
-  .field span { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+  /* The password and its repeat side by side in the window of a computer, one under the other on a phone. */
+  .pw { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); margin-bottom: var(--sp-3); }
+  :global(.ob.m) .pw { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-base); }
+  .field span { color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
   .field input {
-    font: inherit; color: var(--text); min-height: 44px;
+    font: inherit; color: var(--text); min-height: var(--control-h-lg);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
     padding: 8px 10px;
   }
+  :global(.ob.m) .field input { min-height: var(--sp-12); font-size: var(--fs-md); }
   .field input:focus { outline: none; border-color: var(--accent-border); }
   .servers { margin-top: var(--sp-2); }
   .servers-choice { margin-top: var(--sp-3); }

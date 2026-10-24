@@ -246,9 +246,39 @@ async fn channel_with_team(w: &World) -> (Node, Node, Node, String) {
 /// A card of the channel signed by `by`, as the relay would hand it to `to`.
 async fn card_heard(by: &Node, to: &Node, cid: &str) -> Vec<String> {
     let state = by.svc.log(cid).await.ok().flatten().map(|l| l.state().clone()).unwrap_or_else(|| panic!("journal"));
-    let card = by.svc.card_of(&state, by.svc.now());
+    let card = by.svc.card_of(&state, by.svc.now(), 0);
     let signed = serde_json::to_value(crate::wire::sign_card(&by.keys, &card).unwrap_or_else(|e| panic!("{e}"))).unwrap_or_default();
     to.svc.on_event(&to.keys, &signed, true).await.map(|o| o.notes).unwrap_or_default()
+}
+
+/// The count of readers a member shows is the keeper's snapshot's; the
+/// owner's card heard again by a catch-up (an old one says 0) takes
+/// nothing away from it (живой запуск 2026-10-24: «читателей: 0» after a
+/// restart of the app).
+#[tokio::test]
+async fn a_card_heard_again_does_not_zero_the_readers_a_member_counts() {
+    let w = World::new();
+    let (o, m, r, cid) = channel_with_team(&w).await;
+    let all = [&o, &m, &r];
+    w.clock.advance(600);
+    tick(&o).await;
+    w.pump(&all).await;
+    let counted = db::channels::get(r.svc.db(), &cid).await.ok().flatten().map_or(0, |row| row.members);
+    assert!(counted >= 2, "the snapshot counted the readers: {counted}");
+    assert!(!card_heard(&o, &r, &cid).await.iter().any(|n| n.contains("card refused")));
+    assert_eq!(db::channels::get(r.svc.db(), &cid).await.ok().flatten().map_or(0, |row| row.members), counted, "the card takes nothing away");
+    // A row an old card wrote 0 into (the apps before this change) is put
+    // right by the next card heard, and by the next refresh of the row.
+    let mut row = db::channels::get(r.svc.db(), &cid).await.ok().flatten().unwrap_or_else(|| panic!("row"));
+    row.members = 0;
+    db::channels::upsert(r.svc.db(), &row).await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(!card_heard(&o, &r, &cid).await.iter().any(|n| n.contains("card refused")));
+    assert_eq!(db::channels::get(r.svc.db(), &cid).await.ok().flatten().map_or(0, |row| row.members), counted, "put right by the card");
+    row.members = 0;
+    db::channels::upsert(r.svc.db(), &row).await.unwrap_or_else(|e| panic!("{e}"));
+    o.svc.act(&o.keys, &cid, OpBody::SetRole { who: pk(&r), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    assert_eq!(db::channels::get(r.svc.db(), &cid).await.ok().flatten().map_or(0, |row| row.members), counted, "put right by the refresh of the row");
 }
 
 #[tokio::test]

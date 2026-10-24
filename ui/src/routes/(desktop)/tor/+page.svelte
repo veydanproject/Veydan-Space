@@ -1,8 +1,12 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
+<!-- Tor lives in its section of the settings now: the old address leads there. -->
 <script lang="ts">
-  import Page from '$lib/tor/desktop/TorPage.svelte';
-</script>
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
 
-<Page />
+  onMount(() => {
+    void goto('/settings#tor', { replaceState: true });
+  });
+</script>

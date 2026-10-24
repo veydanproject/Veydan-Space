@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Sauvegarder maintenant",
     "settings_backup_running": "Sauvegarde…",
     "settings_backup_done": "La sauvegarde a été créée.",
+    "settings_backup_saved": "Enregistré",
     "settings_backup_schedule": "Sauvegardes planifiées",
     "settings_backup_schedule_hint": "Créer automatiquement des sauvegardes selon un planning.",
     "settings_backup_mode": "Mode",

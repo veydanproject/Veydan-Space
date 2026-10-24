@@ -777,6 +777,7 @@
     "msg_voice_play": "播放",
     "msg_emoji_title": "表情符号",
     "msg_emoji_keyboard": "键盘",
+    "msg_bot_commands": "机器人命令",
     "msg_emoji_erase": "删除",
     "msg_emoji_expand": "展开",
     "msg_emoji_collapse": "收起",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "举报会写明此人，以及你遇到他的频道。",
     "msg_card_channel": "频道",
     "msg_card_channels_off": "设置中已关闭频道",
-    "msg_card_channels_settings": "设置"
+    "msg_card_channels_settings": "设置",
+    "msg_typing": "正在输入…",
+    "msg_typing_1": "{name} 正在输入…",
+    "msg_typing_2": "{a} 和 {b} 正在输入…",
+    "msg_typing_more": "{a}、{b} 和另外 {n} 人正在输入…",
+    "msg_typing_more_one": "{a}、{b} 和另外 {n} 人正在输入…",
+    "msg_typing_more_few": "{a}、{b} 和另外 {n} 人正在输入…"
   },
   "mobile": {}
 }

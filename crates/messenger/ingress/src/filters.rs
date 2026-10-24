@@ -17,10 +17,11 @@ pub const DM_LIVE_MARGIN_SECS: i64 = 2 * 24 * 3600 + 600;
 
 pub const SUB_DM_LIVE: &str = "dm-live";
 
-/// Live inbox: every gift wrap addressed to me since `since`.
+/// Live inbox: every gift wrap addressed to me since `since`, and the
+/// ephemeral wraps of a «typing» (kind 21059), which only come live.
 pub fn dm_inbox(me: &PubKey, since: Timestamp) -> Filter {
     Filter(serde_json::json!({
-        "kinds": [1059],
+        "kinds": [1059, 21059],
         "#p": [me.as_hex()],
         "since": since.secs(),
     }))
@@ -118,9 +119,10 @@ pub const CURSOR_GROUPS: &str = "groups";
 /// Group events carry their real time; the margin covers clock drift.
 pub const GROUP_LIVE_MARGIN_SECS: i64 = 600;
 
-/// Events of the groups I am in (kind 9, tag `h`).
+/// Events of the groups I am in (kind 9, tag `h`), and their ephemeral
+/// twins (a «typing», kind 20009), which only come live.
 pub fn group_events(group_ids: &[String], since: Option<Timestamp>) -> Filter {
-    let mut f = serde_json::json!({ "kinds": [9], "#h": group_ids });
+    let mut f = serde_json::json!({ "kinds": [9, 20009], "#h": group_ids });
     if let Some(s) = since {
         f["since"] = serde_json::json!(s.secs());
     }
@@ -165,7 +167,7 @@ mod tests {
     fn dm_filters_target_gift_wraps_for_me() {
         let me = PubKey::parse(&"ab".repeat(32)).unwrap();
         let f = dm_inbox(&me, Timestamp(100));
-        assert_eq!(f.0["kinds"], serde_json::json!([1059]));
+        assert_eq!(f.0["kinds"], serde_json::json!([1059, 21059]), "gift wraps, and the ephemeral wraps of a typing");
         assert_eq!(f.0["#p"][0], me.as_hex());
         assert_eq!(f.0["since"], 100);
         let w = dm_inbox_window(&me, Timestamp(1), Timestamp(2), 50);
@@ -194,7 +196,7 @@ mod tests {
     fn a_window_of_group_history_is_bounded_above() {
         let ids = vec!["a".repeat(64)];
         let live = group_events(&ids, Some(Timestamp(100)));
-        assert_eq!(live.0, serde_json::json!({ "kinds": [9], "#h": ids, "since": 100 }));
+        assert_eq!(live.0, serde_json::json!({ "kinds": [9, 20009], "#h": ids, "since": 100 }));
         let past = group_events_until(&ids, Timestamp(500), 200);
         assert_eq!(past.0, serde_json::json!({ "kinds": [9], "#h": ids, "until": 500, "limit": 200 }));
     }

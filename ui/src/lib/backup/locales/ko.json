@@ -11,6 +11,7 @@
     "settings_backup_run_now": "지금 백업",
     "settings_backup_running": "백업 중…",
     "settings_backup_done": "백업을 만들었습니다.",
+    "settings_backup_saved": "저장됨",
     "settings_backup_schedule": "예약 백업",
     "settings_backup_schedule_hint": "일정에 따라 백업을 자동으로 만듭니다.",
     "settings_backup_mode": "모드",

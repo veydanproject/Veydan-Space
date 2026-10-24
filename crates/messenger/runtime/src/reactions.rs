@@ -9,8 +9,8 @@
 
 use crate::MessengerRuntime;
 use messenger_core::traits::{SystemClock, UiEvent};
-use messenger_core::{Clock, Envelope, Outbound, Result};
-use messenger_dm::wrap::wrap_own;
+use messenger_core::{Clock, Envelope, Outbound, Result, Transport};
+use messenger_dm::wrap::{wrap_own, wrap_typing};
 use messenger_dm::{DmService, MessageView, UI_EVENT_DM_UPDATED};
 use messenger_ingress::Outbox;
 use nostr::key::Keys;
@@ -70,6 +70,26 @@ impl MessengerRuntime {
             Some(view) => Ok(view),
             None => fallback.ok_or_else(|| messenger_core::MessengerError::Storage("message vanished".into())),
         }
+    }
+
+    /// «I am writing to `to`» (a person by hex or npub, or `group:<id>`):
+    /// a bot's word (internal/messenger-wire.md §3 «Печатает…»), sent to
+    /// the relays at once and never through the outbox (one that waited
+    /// is nothing), as an ephemeral event the relays keep nowhere. The
+    /// caller says it again every `TYPING_REPEAT_SECS` while it writes.
+    pub async fn dm_typing(&self, to: &str) -> Result<()> {
+        let keys = self.session_keys().await?;
+        let out = if let Some(group_id) = to.strip_prefix("group:") {
+            let lock = self.groups().lock_of(group_id).await;
+            let _guard = lock.lock().await;
+            self.groups().prepare_typing(&keys, group_id).await?
+        } else {
+            let peer = self.peer_addr(to).await?;
+            let event = wrap_typing(&keys, &peer, SystemClock.now().secs())?;
+            self.dm.route_to_peer(&peer, event).await?
+        };
+        self.relays.pool().await.send(out).await?;
+        Ok(())
     }
 
     /// I picked `emoji` in the composer: it counts among the ones I use most.

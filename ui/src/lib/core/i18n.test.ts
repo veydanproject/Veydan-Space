@@ -98,6 +98,9 @@ type Dict = Record<string, string>;
  * else's code, the list in the privacy settings with its pause, the code
  * and the first message of a new chat, and the line of a person who came
  * in by one.
+ * Then «печатает…» of a bot: in the header of a chat and of a group, and
+ * under the comments of a post.
+ * Then the «/» menu of a chat with a bot: the name of its button and list.
  */
 const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
   desktop: {
@@ -115,6 +118,12 @@ const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
       msg_report_comment_title: 'Report a comment',
       msg_report_post_note: 'The post goes with the report.',
       msg_report_post_title: 'Report a post',
+      msg_typing: 'typing…',
+      msg_typing_1: '{name} is typing…',
+      msg_typing_2: '{a} and {b} are typing…',
+      msg_typing_more: '{a}, {b} and {n} more are typing…',
+      msg_typing_more_one: '{a}, {b} and {n} more are typing…',
+      msg_typing_more_few: '{a}, {b} and {n} more are typing…',
       settings_tor_title: 'Tor',
       settings_tor_hint: 'The Tor daemon for browser profiles and SSH.',
       tor_btn_settings: 'Tor settings',
@@ -2035,6 +2044,9 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       cloud_web_unfreeze: 'Lift the freeze',
       cloud_web_screen_title: 'Website sign-in',
       cloud_web_confirm_screen_title: 'Confirmation from the website',
+      settings_backup_saved: 'Saved',
+      settings_sync_saved: 'Saved',
+      msg_bot_commands: 'Commands of the bot',
     },
     ru: {
       settings_camoufox_title: 'Camoufox',
@@ -2050,6 +2062,12 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_report_comment_title: 'Пожаловаться на комментарий',
       msg_report_post_note: 'Пост уйдёт вместе с жалобой.',
       msg_report_post_title: 'Пожаловаться на пост',
+      msg_typing: 'печатает…',
+      msg_typing_1: '{name} печатает…',
+      msg_typing_2: '{a} и {b} печатают…',
+      msg_typing_more: '{a}, {b} и ещё {n} печатают…',
+      msg_typing_more_one: '{a}, {b} и ещё {n} печатают…',
+      msg_typing_more_few: '{a}, {b} и ещё {n} печатают…',
       settings_tor_title: 'Tor',
       settings_tor_hint: 'Демон Tor для профилей браузера и SSH.',
       tor_btn_settings: 'Настройки Tor',
@@ -3962,6 +3980,9 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       cloud_web_unfreeze: 'Снять заморозку',
       cloud_web_screen_title: 'Вход на сайт',
       cloud_web_confirm_screen_title: 'Подтверждение с сайта',
+      settings_backup_saved: 'Сохранено',
+      settings_sync_saved: 'Сохранено',
+      msg_bot_commands: 'Команды бота',
     },
   },
   mobile: {
@@ -4185,6 +4206,11 @@ const REWORDED = new Set([
   // Private servers, how to invite (2026-10-19): a link pasted into «Новый
   // чат» is one of the things it takes, a private chat's link among them.
   'msg_newchat_placeholder',
+  // The settings (2026-10-23): a status says itself in words, its badge or
+  // its plate carries the mark; Camoufox's had a ✓ or ✗ of its own, Tor's none.
+  'settings_camoufox_installed',
+  'settings_camoufox_not_installed',
+  'settings_camoufox_success',
 ]);
 const SPACE = { app: 'Veydan Space' };
 /** The string of stage 7 of a templated key, from the template. */

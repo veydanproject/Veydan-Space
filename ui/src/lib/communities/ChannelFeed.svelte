@@ -96,6 +96,8 @@
   const key = $derived(feedKey(cid, scope));
   const list = $derived(feedStore.list(key));
   const items = $derived(feedStore.shown(key));
+  /** The posts drawn: a removed one leaves the feed, no «Удалено» in its place (the owner, 2026-10-24); `items` keeps it for the thread open on it. */
+  const live = $derived(items.filter((x) => !x.deleted));
   const nextBefore = $derived(list?.next);
   /** The relays answered an empty page a moment ago: what they sent may still be on its way to the feed. */
   let settling = $state(false);
@@ -313,12 +315,12 @@
   const tiles = $derived(sectionTiles(lv.scopes, lv.levels));
   const sectioned = $derived(tiles.length > 0);
   /** What the section shown shows: the pages are asked of it, and what was read is sorted again here. */
-  const shownItems = $derived(inScope(items, scope));
+  const shownItems = $derived(inScope(live, scope));
   /** What the list shown says: still read, nothing in its section, nothing at all, or its posts. */
   const feedState = $derived<'loading' | 'scope_empty' | 'empty' | 'feed'>(
-    loading || (settling && items.length === 0) ? 'loading'
+    loading || (settling && live.length === 0) ? 'loading'
       : shownItems.length === 0 && scope !== null && !nextBefore ? 'scope_empty'
-      : items.length === 0 && where !== 'out' ? 'empty'
+      : live.length === 0 && where !== 'out' ? 'empty'
       : 'feed',
   );
   /** The feed as drawn: the posts of one album (files sent together) as one. */
@@ -597,7 +599,7 @@
 
   // ── The head, the strips, the foot ─────────────────────────────────────
 
-  const pinnedPost = $derived(detail?.pinned.length ? (items.find((x) => x.id === detail.pinned[0]) ?? null) : null);
+  const pinnedPost = $derived(detail?.pinned.length ? (live.find((x) => x.id === detail.pinned[0]) ?? null) : null);
 
   async function showPinned() {
     const id = detail?.pinned[0];
@@ -712,7 +714,8 @@
     const t0 = threadOf;
     if (!t0) return;
     const fresh = items.find((x) => x.id === t0.id);
-    if (fresh && fresh !== t0) untrack(() => (threadOf = fresh));
+    if (fresh?.deleted) untrack(() => { panel = null; threadOf = null; });
+    else if (fresh && fresh !== t0) untrack(() => (threadOf = fresh));
   });
 
   /** I post here: the channel lets me, and the section shown takes my posts. */

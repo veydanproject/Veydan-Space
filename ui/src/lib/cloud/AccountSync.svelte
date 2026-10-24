@@ -11,6 +11,9 @@
   import NavRow from '$lib/cloud/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
 
+  /** The anchor of the block (`?section=sync` of the page «Account»); none inside the settings, whose own section is #sync. */
+  let { anchor = 'sync' }: { anchor?: string } = $props();
+
   let status = $state<SyncStatus | null>(null);
   let cfg = $state<SyncConfig | null>(null);
 
@@ -46,7 +49,7 @@
   );
 </script>
 
-<RowList label={$t('settings_sync_section')} id="sync">
+<RowList label={$t('settings_sync_section')} id={anchor || undefined}>
   <NavRow icon={status?.joined ? 'refresh-cw' : 'cloud'} title={$t('settings_sync_backend')} sub={line} href={SYNC_HREF} tone={status && !status.joined ? 'warn' : undefined} />
   {#if devices}
     <NavRow icon="smartphone" title={$t('settings_sync_storage_devices')} sub={devices} />

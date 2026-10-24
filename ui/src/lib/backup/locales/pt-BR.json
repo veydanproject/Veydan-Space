@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Fazer backup agora",
     "settings_backup_running": "Fazendo backup…",
     "settings_backup_done": "Backup criado com sucesso.",
+    "settings_backup_saved": "Salvo",
     "settings_backup_schedule": "Backups agendados",
     "settings_backup_schedule_hint": "Criar backups automaticamente conforme um agendamento.",
     "settings_backup_mode": "Modo",

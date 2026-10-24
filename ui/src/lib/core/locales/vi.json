@@ -355,6 +355,7 @@
     "settings_sync_now": "Đồng bộ ngay",
     "settings_sync_running": "Đang đồng bộ…",
     "settings_sync_done": "Đồng bộ đã hoàn tất.",
+    "settings_sync_saved": "Đã lưu",
     "settings_sync_phase_collect": "Đang thu thập thay đổi",
     "settings_sync_phase_push": "Đang tải lên",
     "settings_sync_phase_pull": "Đang tải xuống",

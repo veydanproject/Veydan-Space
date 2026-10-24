@@ -29,7 +29,7 @@ use crate::dm_history::DmHistoryPage;
 use crate::shared::{SharedCounts, SharedSection};
 use messenger_avatar::CropRect;
 use messenger_media::{Progress, TransferStage, TransferView};
-use messenger_contacts::{CardView, ProfileInput, ProfileView, SocialLink, SocialPlatform, SocialView};
+use messenger_contacts::{BotCommand, CardView, ProfileInput, ProfileView, SocialLink, SocialPlatform, SocialView};
 use messenger_dm::BotCard;
 use messenger_preview::Preview;
 use messenger_richtext::md::{MdBlock, MdInline, MdItem, MdStyle};
@@ -105,6 +105,7 @@ pub fn profile_ts() -> String {
     out += &export::<SocialLink>(&cfg, "A link to a profile elsewhere as it is stored and sent: a platform id and a handle.");
     out += &export::<SocialView>(&cfg, "A checked link to a profile elsewhere, as the UI shows it; `url` may be empty.");
     out += &export::<SocialPlatform>(&cfg, "A platform the user can pick for a link.");
+    out += &export::<BotCommand>(&cfg, "A command a bot says it answers: `/name` and a line about it, for the «/» menu of a chat with it.");
     out += &export::<ProfileView>(&cfg, "A profile as the UI sees it.");
     out += &export::<ProfileInput>(&cfg, "What the user edits of their own profile; the avatar has commands of its own.");
     out += &export::<CardView>(&cfg, "A contact card as the UI shows it.");

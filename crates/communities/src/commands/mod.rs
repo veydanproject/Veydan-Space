@@ -299,7 +299,10 @@ pub async fn channel_invites(direction: String, state: tauri::State<'_, Communit
     let d = state.driver()?;
     let db = d.service.db();
     db::channels::expire_invites(db, now()).await.map_err(map_err)?;
-    let rows = db::channels::invites(db, &direction, &INVITE_STATUSES).await.map_err(map_err)?;
+    // An invitation that came waits as `received` (the groups say the same,
+    // messenger-groups `invites`); one I sent is `sent` until it is answered.
+    let statuses: &[&str] = if direction == "in" { &["received"] } else { &INVITE_STATUSES };
+    let rows = db::channels::invites(db, &direction, statuses).await.map_err(map_err)?;
     Ok(rows.into_iter().map(InviteView::from).collect())
 }
 

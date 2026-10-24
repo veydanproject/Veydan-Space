@@ -77,6 +77,8 @@ fn bare_profile(pk: &PubKey) -> ProfileView {
         nip05: None,
         lud16: None,
         nip05_verified: false,
+        bot: false,
+        commands: vec![],
         event_created_at: 0,
         fetched_at: 0,
         bio: vec![],

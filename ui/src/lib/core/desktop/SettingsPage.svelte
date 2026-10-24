@@ -335,6 +335,12 @@
 {#snippet moduleCards(blocks: Block[])}
   {#each blocks as block (block.group)}
     {#each block.sections as section (section.id)}
+      {#if section.bare}
+      <div class="bare" id={section.id}>
+        {#if section.hint}<p class="muted bare-hint">{$t(section.hint as TranslationKey)}</p>{/if}
+        <section.component />
+      </div>
+      {:else}
       <div class="card" id={section.id}>
         <div class="card-title">
           {$t(section.title as TranslationKey)}
@@ -343,6 +349,7 @@
         {#if section.hint}<p class="muted">{$t(section.hint as TranslationKey)}</p>{/if}
         <section.component />
       </div>
+      {/if}
     {/each}
   {/each}
 {/snippet}
@@ -370,47 +377,55 @@
 
   {#if withModules}
     <!-- Modules -->
-    <div class="card" id="modules">
-      <div class="card-title">{$t('modules_section')}</div>
-      <p class="muted">{$t('modules_hint')}</p>
+    <!-- The hint over the list; the list is its own card of rows, each row the module's switch. -->
+    <div class="bare" id="modules">
+      <p class="muted bare-hint">{$t('modules_hint')}</p>
       <ModulesSettings />
     </div>
   {/if}
 
   <!-- Language -->
-  <div class="card" id="language">
-    <div class="card-title">{$t('settings_section_language')}</div>
-    <p class="muted">{$t('settings_language_label')}</p>
-    <div class="lang-options">
+  <!-- The hint over the card; the languages are one choice (a radio group), the chosen one marked by a check. -->
+  <div class="bare" id="language">
+    <p class="muted bare-hint" id="language-label">{$t('settings_language_label')}</p>
+    <div class="card lang-options" role="radiogroup" aria-labelledby="language-label">
       {#each LANGUAGES as lang (lang.code)}
         <button
+          type="button"
           class="lang-btn"
           class:active={$locale === lang.code}
+          role="radio"
+          aria-checked={$locale === lang.code}
           lang={lang.tag}
           onclick={() => chooseLanguage(lang.code)}
         >
           <span class="lang-code">{lang.code}</span>
           <span class="lang-native">{lang.native}</span>
-          {#if $locale === lang.code}<span class="lang-check">✓</span>{/if}
+          {#if $locale === lang.code}<span class="lang-check"><Icon name="check" size={18} /></span>{/if}
         </button>
       {/each}
     </div>
   </div>
 
   <!-- Theme -->
-  <div class="card" id="theme">
+  <!-- The two themes are one choice (a radio group) of tiles, the chosen one checked; under a line the accent, its reset in the label's row. -->
+  <div class="card theme-card" id="theme">
     <div class="card-title">{$t('settings_section_theme')}</div>
-    <div class="theme-options">
-      <button class="theme-opt" class:active={$theme === 'dark'} onclick={() => theme.set('dark')}>
-        <span class="theme-icon"><Icon name="moon" size={15} /></span>
-        <span>{$t('settings_theme_dark')}</span>
-        {#if $theme === 'dark'}<span class="lang-check">✓</span>{/if}
-      </button>
-      <button class="theme-opt" class:active={$theme === 'light'} onclick={() => theme.set('light')}>
-        <span class="theme-icon"><Icon name="sun" size={15} /></span>
-        <span>{$t('settings_theme_light')}</span>
-        {#if $theme === 'light'}<span class="lang-check">✓</span>{/if}
-      </button>
+    <div class="theme-options" role="radiogroup" aria-label={$t('settings_section_theme')}>
+      {#each [{ id: 'dark', icon: 'moon', label: 'settings_theme_dark' }, { id: 'light', icon: 'sun', label: 'settings_theme_light' }] as const as o (o.id)}
+        <button
+          type="button"
+          class="theme-opt"
+          class:active={$theme === o.id}
+          role="radio"
+          aria-checked={$theme === o.id}
+          onclick={() => theme.set(o.id)}
+        >
+          <span class="theme-icon"><Icon name={o.icon} size={18} /></span>
+          <span class="theme-name">{$t(o.label)}</span>
+          {#if $theme === o.id}<span class="lang-check"><Icon name="check" size={18} /></span>{/if}
+        </button>
+      {/each}
     </div>
     <div class="theme-customize">
       <ColorField
@@ -418,34 +433,46 @@
         value={resolvedOverride($themeCustom, $theme, 'accent')}
         presets={ACCENT_PRESETS}
         onchange={(hex) => setThemeOverride('accent', hex)}
-      />
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm theme-reset"
-        disabled={!hasThemeOverrides($themeCustom, $theme)}
-        onclick={resetThemeOverrides}
       >
-        {$t('settings_theme_reset')}
-      </button>
+        {#snippet action()}
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            disabled={!hasThemeOverrides($themeCustom, $theme)}
+            onclick={resetThemeOverrides}
+          >
+            {$t('settings_theme_reset')}
+          </button>
+        {/snippet}
+      </ColorField>
     </div>
   </div>
 
   <!-- Developer Tools -->
-  <div class="card" id="devtools">
+  <!-- One row, the whole of it the inspector's switch; its hotkey as a key chip. -->
+  <div class="card switch-card" id="devtools">
     <div class="card-title">{$t('inspector_developer_tools')}</div>
-    <div class="dev-tools-row">
-      <div class="dev-tools-info">
-        <span>{$t('inspector_toggle')}</span>
-        <span class="muted">{$t('inspector_hotkey_hint', { keys: formatCommand('app.inspector', $keybindingOverrides) || $t('hotkey_unbound') })}</span>
-      </div>
-      <button
-        class="toggle"
-        class:on={inspectorApp.enabled}
-        onclick={() => inspectorApp.toggle()}
-        aria-pressed={inspectorApp.enabled}
-        aria-label={$t('inspector_toggle')}
-      ></button>
-    </div>
+    <button
+      type="button"
+      class="switch-row"
+      role="switch"
+      aria-checked={inspectorApp.enabled}
+      onclick={() => inspectorApp.toggle()}
+    >
+      <span class="switch-words">
+        <span class="switch-title">{$t('inspector_toggle')}</span>
+        <span class="switch-sub">
+          {#each $t('inspector_hotkey_hint').split('{keys}') as part, i}
+            {#if i > 0}
+              {@const keys = formatCommand('app.inspector', $keybindingOverrides)}
+              {#if keys}<kbd class="keycap">{keys}</kbd>{:else}{$t('hotkey_unbound')}{/if}
+            {/if}
+            {part}
+          {/each}
+        </span>
+      </span>
+      <span class="toggle" class:on={inspectorApp.enabled} aria-hidden="true"></span>
+    </button>
   </div>
 
   <div id="hotkeys">
@@ -453,50 +480,21 @@
   </div>
 
   <!-- System tray -->
-  <div class="card" id="tray">
+  <!-- Each row the whole of it a switch, as the developer tools' row. -->
+  <div class="card switch-card" id="tray">
     <div class="card-title">{$t('settings_tray_section')}</div>
-    <div class="dev-tools-row">
-      <div class="dev-tools-info">
-        <span>{$t('settings_tray_minimize')}</span>
-        <span class="muted">{$t('settings_tray_minimize_hint')}</span>
-      </div>
-      <button
-        class="toggle"
-        class:on={trayMinimize}
-        disabled={!isTauri}
-        onclick={() => { trayMinimize = !trayMinimize; saveTray(); }}
-        aria-pressed={trayMinimize}
-        aria-label={$t('settings_tray_minimize')}
-      ></button>
-    </div>
-    <div class="dev-tools-row">
-      <div class="dev-tools-info">
-        <span>{$t('settings_tray_close')}</span>
-        <span class="muted">{$t('settings_tray_close_hint')}</span>
-      </div>
-      <button
-        class="toggle"
-        class:on={trayClose}
-        disabled={!isTauri}
-        onclick={() => { trayClose = !trayClose; saveTray(); }}
-        aria-pressed={trayClose}
-        aria-label={$t('settings_tray_close')}
-      ></button>
-    </div>
-    <div class="dev-tools-row">
-      <div class="dev-tools-info">
-        <span>{$t('settings_tray_start_hidden')}</span>
-        <span class="muted">{$t('settings_tray_start_hidden_hint')}</span>
-      </div>
-      <button
-        class="toggle"
-        class:on={trayStartHidden}
-        disabled={!isTauri}
-        onclick={() => { trayStartHidden = !trayStartHidden; saveTray(); }}
-        aria-pressed={trayStartHidden}
-        aria-label={$t('settings_tray_start_hidden')}
-      ></button>
-    </div>
+    {#snippet trayRow(on: boolean, title: string, hint: string, flip: () => void)}
+      <button type="button" class="switch-row" role="switch" aria-checked={on} disabled={!isTauri} onclick={() => { flip(); saveTray(); }}>
+        <span class="switch-words">
+          <span class="switch-title">{title}</span>
+          <span class="switch-sub">{hint}</span>
+        </span>
+        <span class="toggle" class:on aria-hidden="true"></span>
+      </button>
+    {/snippet}
+    {@render trayRow(trayMinimize, $t('settings_tray_minimize'), $t('settings_tray_minimize_hint'), () => (trayMinimize = !trayMinimize))}
+    {@render trayRow(trayClose, $t('settings_tray_close'), $t('settings_tray_close_hint'), () => (trayClose = !trayClose))}
+    {@render trayRow(trayStartHidden, $t('settings_tray_start_hidden'), $t('settings_tray_start_hidden_hint'), () => (trayStartHidden = !trayStartHidden))}
   </div>
 
   {@render moduleCards([joining('settings_group_general', false), ...blocksBetween(20, 40)])}
@@ -504,9 +502,9 @@
   {@render moduleCards([joining('settings_group_security', true)])}
 
   <!-- App lock -->
-  <div class="card" id="lock">
-    <div class="card-title">{$t('settings_lock_section')} <span class="badge badge-warn">{$t('settings_sync_beta')}</span></div>
-    <p class="muted">{$t('settings_lock_hint')}</p>
+  <!-- The hint over the form; the form is its own cards. -->
+  <div class="bare" id="lock">
+    <p class="muted bare-hint">{$t('settings_lock_hint')}</p>
     <LockSetupForm />
   </div>
 
@@ -516,9 +514,9 @@
   {@render moduleCards([joining('settings_group_data', true)])}
 
   <!-- Sync (beta) -->
-  <div class="card" id="sync">
-    <div class="card-title">{$t('settings_sync_section')} <span class="badge badge-warn">{$t('settings_sync_beta')}</span></div>
-    <p class="muted">{$t('settings_sync_hint')}</p>
+  <!-- The hint over the blocks; the sync's form is its own cards. -->
+  <div class="bare" id="sync">
+    <p class="muted bare-hint">{$t('settings_sync_hint')}</p>
     <SyncSettings />
   </div>
 
@@ -527,143 +525,159 @@
   {@render moduleCards([joining('settings_group_about', true)])}
 
   <!-- App updates -->
-  <div class="card" id="updates">
+  <!-- One card: the version and what the last check said, the actions on the right; under a line, the work under way. -->
+  <div class="card update-card" id="updates">
     <div class="card-title">{$t('settings_update_section')}</div>
 
-    <div class="version-table">
-      <div class="version-row">
-        <span class="version-label">{$t('settings_about_version')}</span>
-        <span class="version-value">{appVersion ? `v${appVersion}` : '—'}</span>
-      </div>
-    </div>
-
-    <div class="btn-row">
-      {#if updaterStore.status === 'available' && updaterStore.supported}
-        <button class="btn btn-primary btn-sm" onclick={() => updaterStore.install()}>
-          {$t('settings_update_install')}
+    <div class="update-head">
+      <span class="update-words">
+        <span class="update-key">{$t('settings_about_version')}</span>
+        <span class="update-version mono">{appVersion ? `v${appVersion}` : '—'}</span>
+        {#if updaterStore.status === 'upToDate'}
+          <span class="update-line ok" role="status">{$t('settings_update_up_to_date')}</span>
+        {:else if updaterStore.status === 'available' || updaterStore.status === 'downloading' || updaterStore.status === 'installing'}
+          {#if updaterStore.status === 'available' || updaterStore.version}
+            <span class="update-line new" role="status">{$t('settings_update_available', { version: updaterStore.version })}</span>
+          {/if}
+        {/if}
+      </span>
+      <span class="update-acts">
+        <button
+          type="button"
+          class="btn btn-ghost"
+          disabled={updaterStore.status === 'checking' ||
+            updaterStore.status === 'downloading' ||
+            updaterStore.status === 'installing'}
+          onclick={() => updaterStore.check(false)}
+        >
+          {updaterStore.status === 'checking'
+            ? $t('settings_update_checking')
+            : $t('settings_update_check')}
         </button>
-      {/if}
-      <button
-        class="btn btn-ghost btn-sm"
-        disabled={updaterStore.status === 'checking' ||
-          updaterStore.status === 'downloading' ||
-          updaterStore.status === 'installing'}
-        onclick={() => updaterStore.check(false)}
-      >
-        {updaterStore.status === 'checking'
-          ? $t('settings_update_checking')
-          : $t('settings_update_check')}
-      </button>
+        {#if updaterStore.supported && (updaterStore.status === 'available' || updaterStore.status === 'downloading' || updaterStore.status === 'installing')}
+          <button type="button" class="btn btn-primary" disabled={updaterStore.status !== 'available'} onclick={() => updaterStore.install()}>
+            {$t('settings_update_install')}
+          </button>
+        {/if}
+      </span>
     </div>
 
-    {#if updaterStore.status === 'upToDate'}
-      <p class="ok-msg">{$t('settings_update_up_to_date')}</p>
-    {:else if updaterStore.status === 'available'}
-      <p class="warn-msg">{$t('settings_update_available', { version: updaterStore.version })}</p>
-      {#if !updaterStore.supported}
-        <p class="muted small">{$t('settings_update_unsupported')}</p>
-        <div class="btn-row">
-          <button class="btn btn-ghost btn-sm" onclick={() => openExternal(RELEASES_URL)}>
-            <Icon name="external-link" size={14} />
-            {$t('settings_update_open_releases')}
-          </button>
+    {#if updaterStore.status === 'available' && !updaterStore.supported}
+      <div class="update-work">
+        <div class="update-note">
+          <Icon name="info" size={18} />
+          <span class="update-note-words">
+            <span>{$t('settings_update_unsupported')}</span>
+            <button type="button" class="btn btn-ghost btn-sm" onclick={() => openExternal(RELEASES_URL)}>
+              <Icon name="external-link" size={18} />
+              {$t('settings_update_open_releases')}
+            </button>
+          </span>
         </div>
-      {/if}
+      </div>
     {:else if updaterStore.status === 'downloading'}
-      <div class="progress-wrap">
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {updaterStore.progress}%"></div>
+      <div class="update-work">
+        <div class="progress-wrap" role="status">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: {updaterStore.progress}%"></div>
+          </div>
+          <span class="progress-label">
+            {$t('settings_update_downloading')} · {updaterStore.progress}%
+          </span>
         </div>
-        <span class="progress-label">
-          {$t('settings_update_downloading')} · {updaterStore.progress}%
-        </span>
       </div>
     {:else if updaterStore.status === 'installing'}
-      <p class="muted small">{$t('settings_update_installing')}</p>
+      <div class="update-work"><p class="muted small" role="status">{$t('settings_update_installing')}</p></div>
     {:else if updaterStore.status === 'error'}
       <!-- The plugin's own text is in the console (store/updater.svelte.ts). -->
-      <div class="error-msg">{$t('settings_update_failed')}</div>
+      <div class="update-work">
+        <div class="update-fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{$t('settings_update_failed')}</span></div>
+      </div>
     {/if}
   </div>
 
   <!-- About -->
-  <div class="card" id="about">
-    <div class="card-title">{$t('settings_section_about')}</div>
-
-    <div class="about-head">
-      <span class="about-logo">
-        <img src="/logo.png" alt="" />
-      </span>
-      <div class="about-head-text">
-        <div class="about-app">{product.name}</div>
-        <div class="about-tagline">{taglineOf($locale)}</div>
+  <!-- The program's card (its name, version, licence and the licence's note); the rules as a card of rows
+       under a caption; the bug report and the project's links as another; the copyright under them. -->
+  <div class="bare" id="about">
+    <div class="card about-card">
+      <div class="about-head">
+        <span class="about-logo">
+          <img src="/logo.png" alt="" />
+        </span>
+        <div class="about-head-text">
+          <div class="about-app">{product.name}</div>
+          <div class="about-tagline">{taglineOf($locale)}</div>
+        </div>
       </div>
+
+      <div class="about-facts">
+        <div class="about-fact">
+          <span class="about-key">{$t('settings_about_version')}</span>
+          <span class="about-value mono">{appVersion ? `v${appVersion}` : '—'}</span>
+        </div>
+        <div class="about-fact">
+          <span class="about-key">{$t('settings_about_license')}</span>
+          <span class="about-value mono">PolyForm Perimeter 1.0.1</span>
+        </div>
+      </div>
+
+      <p class="about-note">{$t('settings_about_license_note')}</p>
     </div>
 
-    <div class="version-table">
-      <div class="version-row">
-        <span class="version-label">{$t('settings_about_version')}</span>
-        <span class="version-value">{appVersion ? `v${appVersion}` : '—'}</span>
+    <section class="about-group" aria-labelledby="about-legal">
+      <div class="about-caption" id="about-legal">{$t('settings_about_legal')}</div>
+      <div class="card about-list">
+        <button type="button" class="about-row" onclick={() => openLegal(LEGAL.privacy)}>
+          <span class="about-row-label">{$t('settings_about_privacy')}</span>
+          <Icon name="external-link" size={18} />
+        </button>
+        <button type="button" class="about-row" onclick={() => openLegal(LEGAL.terms)}>
+          <span class="about-row-label">{$t('settings_about_terms')}</span>
+          <Icon name="external-link" size={18} />
+        </button>
+        <button type="button" class="about-row" onclick={() => openLegal(LEGAL.childSafety)}>
+          <span class="about-row-label">{$t('settings_about_child_safety')}</span>
+          <Icon name="external-link" size={18} />
+        </button>
+        <button type="button" class="about-row" onclick={() => openLegal(LEGAL.deleteAccount)}>
+          <span class="about-row-label">{$t('settings_about_delete_account')}</span>
+          <Icon name="external-link" size={18} />
+        </button>
+        <button type="button" class="about-row" onclick={() => openLegal(ABUSE_MAIL)}>
+          <span class="about-row-label">{$t('settings_about_abuse')}</span>
+          <Icon name="external-link" size={18} />
+        </button>
       </div>
-      <div class="version-row">
-        <span class="version-label">{$t('settings_about_license')}</span>
-        <span class="version-value">PolyForm Perimeter 1.0.1</span>
-      </div>
-    </div>
+    </section>
 
-    <p class="about-note">{$t('settings_about_license_note')}</p>
-
-    <div class="about-legal-title">{$t('settings_about_legal')}</div>
-    <div class="about-links">
-      <button type="button" class="link-btn" onclick={() => openLegal(LEGAL.privacy)}>
-        <Icon name="external-link" size={14} />
-        <span>{$t('settings_about_privacy')}</span>
+    <div class="card about-list">
+      <button type="button" class="about-row" onclick={() => (bugOpen = true)}>
+        <span class="about-row-label">{$t('settings_bug_report')}</span>
+        <Icon name="chevron-right" size={18} />
       </button>
-      <button type="button" class="link-btn" onclick={() => openLegal(LEGAL.terms)}>
-        <Icon name="external-link" size={14} />
-        <span>{$t('settings_about_terms')}</span>
-      </button>
-      <button type="button" class="link-btn" onclick={() => openLegal(LEGAL.childSafety)}>
-        <Icon name="external-link" size={14} />
-        <span>{$t('settings_about_child_safety')}</span>
-      </button>
-      <button type="button" class="link-btn" onclick={() => openLegal(LEGAL.deleteAccount)}>
-        <Icon name="external-link" size={14} />
-        <span>{$t('settings_about_delete_account')}</span>
-      </button>
-      <button type="button" class="link-btn" onclick={() => openLegal(ABUSE_MAIL)}>
-        <Icon name="external-link" size={14} />
-        <span>{$t('settings_about_abuse')}</span>
-      </button>
-    </div>
-
-    <div class="about-links">
-      <button type="button" class="link-btn" onclick={() => (bugOpen = true)}>
-        <Icon name="info" size={14} />
-        <span>{$t('settings_bug_report')}</span>
-      </button>
-      <button type="button" class="link-btn" onclick={() => openExternal(LICENSE_URL)}>
-        <Icon name="external-link" size={14} />
-        <span>{$t('settings_about_link_license')}</span>
+      <button type="button" class="about-row" onclick={() => openExternal(LICENSE_URL)}>
+        <span class="about-row-label">{$t('settings_about_link_license')}</span>
+        <Icon name="external-link" size={18} />
       </button>
       {#if REPO_URL}
-        <button type="button" class="link-btn" onclick={() => openExternal(summaryUrl)}>
-          <Icon name="external-link" size={14} />
-          <span>{$t('settings_about_link_summary')}</span>
+        <button type="button" class="about-row" onclick={() => openExternal(summaryUrl)}>
+          <span class="about-row-label">{$t('settings_about_link_summary')}</span>
+          <Icon name="external-link" size={18} />
         </button>
-        <button type="button" class="link-btn" onclick={() => openExternal(thirdPartyUrl)}>
-          <Icon name="external-link" size={14} />
-          <span>{$t('settings_about_link_thirdparty')}</span>
+        <button type="button" class="about-row" onclick={() => openExternal(thirdPartyUrl)}>
+          <span class="about-row-label">{$t('settings_about_link_thirdparty')}</span>
+          <Icon name="external-link" size={18} />
         </button>
-        <button type="button" class="link-btn" onclick={() => openExternal(REPO_URL)}>
-          <Icon name="external-link" size={14} />
-          <span>{$t('settings_about_link_repo')}</span>
+        <button type="button" class="about-row" onclick={() => openExternal(REPO_URL)}>
+          <span class="about-row-label">{$t('settings_about_link_repo')}</span>
+          <Icon name="external-link" size={18} />
         </button>
       {/if}
       {#each aboutLinks as link (link.id)}
-        <button type="button" class="link-btn" onclick={() => openExternal(link.url)}>
-          <Icon name="external-link" size={14} />
-          <span>{$t(link.title as TranslationKey)}</span>
+        <button type="button" class="about-row" onclick={() => openExternal(link.url)}>
+          <span class="about-row-label">{$t(link.title as TranslationKey)}</span>
+          <Icon name="external-link" size={18} />
         </button>
       {/each}
     </div>
@@ -790,6 +804,9 @@
   .off { display: none !important; }
   /* The section's name is the pane's title: its card does not repeat it. */
   .settings-main > .card > .card-title:first-child { display: none; }
+  /* A section that draws its own cards (`bare`): the hint over them, no card around. */
+  .bare { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+  .bare-hint { margin: 0; font-size: var(--fs-base); }
 
   /* local deltas over global .card: bg, internal flex layout, gap, shadow */
   .card {
@@ -803,79 +820,82 @@
     text-transform: uppercase; letter-spacing: 1px;
   }
 
-  .settings-main :global(.status-row) { display: flex; align-items: center; gap: var(--sp-3); }
-
   /* badges use global .badge / .badge-ok / .badge-warn */
 
   /* .muted uses global color; keep font-size delta */
   .settings-main :global(.muted) { font-size: var(--fs-base); }
   .settings-main :global(.small) { font-size: var(--fs-sm); }
-  .link-btn {
-    align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
-    font-size: var(--fs-xs); color: var(--text-faint); text-decoration: underline;
-  }
-  .link-btn:hover { color: var(--text); }
   .settings-main :global(.ok-msg) { font-size: var(--fs-sm); color: var(--success-text); }
-  .settings-main :global(.warn-msg) { font-size: var(--fs-sm); color: var(--warn-text); }
-
-  .settings-main :global(.version-table) { display: flex; flex-direction: column; gap: 0.35rem; }
-  .settings-main :global(.version-row) { display: flex; align-items: baseline; gap: var(--sp-2); }
-  .settings-main :global(.version-label) { font-size: var(--fs-sm); color: var(--text-faint); min-width: 120px; flex-shrink: 0; }
-  .settings-main :global(.version-value) { font-size: var(--fs-sm); color: var(--text-body); font-family: var(--font-mono); }
-  .settings-main :global(.path-value) { font-size: var(--fs-2xs); word-break: break-all; }
-
   /* About section */
-  .about-head { display: flex; align-items: center; gap: 13px; }
+  .card.about-card { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); }
+  .about-head { display: flex; align-items: center; gap: var(--sp-3); }
   .about-head-text { display: flex; flex-direction: column; gap: 2px; }
   .about-logo {
     display: flex; align-items: center; justify-content: center;
-    width: 44px; height: 44px;
+    width: var(--sp-12); height: var(--sp-12);
     flex-shrink: 0;
   }
-  .about-logo img { width: 44px; height: 44px; object-fit: contain; }
+  .about-logo img { width: var(--sp-12); height: var(--sp-12); object-fit: contain; }
   .about-app { font-size: var(--fs-lg); font-weight: var(--fw-extrabold); letter-spacing: -0.3px; color: var(--text); }
   .about-tagline { font-size: var(--fs-sm); color: var(--text-3); }
+  /* The facts across the card, a line over and under them. */
+  .about-facts { margin: 0 calc(-1 * var(--sp-5)); padding: var(--sp-1) 0; border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); }
+  .about-fact { position: relative; display: flex; align-items: baseline; gap: var(--sp-4); min-height: var(--control-h); padding: var(--sp-2) var(--sp-5); }
+  .about-fact + .about-fact::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
+  .about-key { flex: 0 0 160px; font-size: var(--fs-sm); color: var(--text-dim); }
+  .about-value { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-body); }
   .about-note { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.5; margin: 0; }
-  .about-legal-title { font-size: var(--fs-xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
-  .about-links { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
-  .link-btn {
-    display: inline-flex; align-items: center; gap: 0.4rem;
-    background: none; border: none; padding: 0; cursor: pointer;
-    color: var(--accent-text-3); font-size: var(--fs-sm); font-weight: 500;
+  .about-group { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .about-caption { padding: 0 var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
+  /* Rows touch: the line between them is the only space (the page gives a .card a gap). */
+  .card.about-list { padding: var(--sp-1); display: flex; flex-direction: column; gap: 0; }
+  .about-row {
+    position: relative; display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-2) var(--sp-4);
+    border: 0; border-radius: 0; background: none; color: var(--text); font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer;
+    transition: background var(--dur-fast);
   }
-  .link-btn:hover { color: var(--accent-text); }
-  .link-btn:hover { text-decoration: underline; }
-  .about-copyright { font-size: var(--fs-xs); color: var(--text-3); }
+  /* The hover of a row: square between lines, the first and the last row take the card's corners (its radius less its padding). */
+  .about-row:first-child { border-top-left-radius: calc(var(--radius-card) - var(--sp-1)); border-top-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .about-row:last-child { border-bottom-left-radius: calc(var(--radius-card) - var(--sp-1)); border-bottom-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  /* A straight line between rows: a shadow would follow the rounded corners. */
+  .about-row + .about-row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
+  .about-row:hover { background: var(--surface-row-hover); }
+  .about-row :global(svg) { flex-shrink: 0; color: var(--text-dim); }
+  .about-row-label { flex: 1; min-width: 0; }
+  .about-copyright { font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
 
+  /* The developers' line: under a dashed line, centred, small. */
   .demo-foot {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem 0.45rem;
-    margin-top: var(--sp-2);
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-1) var(--sp-2);
+    margin-top: var(--sp-2); padding-top: var(--sp-3); border-top: 1px dashed var(--divider);
   }
   .demo-label, .demo-chip, .demo-link {
-    border: none; background: transparent; color: var(--text-faint);
-    font-size: var(--fs-2xs); line-height: 1.2; padding: 0.1rem 0.2rem;
+    border: none; background: transparent; color: var(--text-2);
+    font-size: var(--fs-sm); line-height: 1.2; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm);
     text-decoration: none;
   }
+  .demo-label { color: var(--text-dim); }
   .demo-chip, .demo-link { cursor: pointer; }
-  .demo-chip.active { color: var(--text-body); }
-  .demo-chip:hover, .demo-link:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
-  .demo-link.danger:hover:not(:disabled) { color: var(--danger-text); }
+  .demo-chip { border: 1px solid var(--border); border-radius: var(--radius-pill); }
+  .demo-chip.active { color: var(--accent-text); background: var(--accent-bg); border-color: var(--accent-border); }
+  .demo-chip:hover, .demo-link:hover:not(:disabled) { color: var(--text); background: var(--surface-row-hover); }
+  .demo-link.danger { color: var(--danger-text); }
   .demo-link:disabled { opacity: 0.45; cursor: default; }
 
   .settings-main :global(.btn-sm) { padding: 0.35rem var(--sp-3); font-size: var(--fs-sm); }
-  .settings-main :global(.btn-row) { display: flex; gap: var(--sp-2); align-items: center; }
 
   .settings-main :global(.progress-wrap) { display: flex; flex-direction: column; gap: 0.3rem; }
   .settings-main :global(.progress-bar) { height: 5px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
   .settings-main :global(.progress-fill) { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .settings-main :global(.progress-label) { font-size: var(--fs-2xs); color: var(--text-2); font-family: var(--font-mono); }
 
-  .lang-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.625rem; }
+  .lang-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); }
+  .card.lang-options { padding: var(--sp-3); }
 
   /* Segment buttons per design: 46px, radius 11, accent tint when active */
   .lang-btn {
     display: flex; align-items: center; gap: 9px;
-    height: var(--control-h-lg); padding: 0 20px; background: var(--surface-3);
+    min-height: var(--sp-12); padding: 0 var(--sp-4); background: var(--surface-3);
     border: 1px solid var(--border); border-radius: var(--radius-field);
     color: var(--text-body); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer;
     transition: all 0.15s; min-width: 130px;
@@ -892,56 +912,75 @@
   .lang-btn.active .lang-code { border-color: var(--accent-border); color: var(--accent-text); }
   .confirm-text { display: flex; flex-direction: column; gap: var(--sp-3); }
   .lang-native { flex: 1; text-align: left; }
-  .lang-check { color: var(--accent-text); font-weight: 700; }
+  .lang-check { display: inline-flex; color: var(--accent-text); font-weight: 700; }
 
-  .settings-main :global(.dev-tools-row) {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-4);
+  /* A row that is a switch, the whole width (developer tools), as the modules' rows. */
+  .card.switch-card { padding: var(--sp-1); display: flex; flex-direction: column; gap: 0; }
+  .switch-row {
+    position: relative; display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 60px; padding: var(--sp-2) var(--sp-4);
+    border: 0; border-radius: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur-fast);
   }
+  /* The hover of a row: square between lines, the first and the last row take the card's corners (its radius less its padding). */
+  .switch-row:first-of-type { border-top-left-radius: calc(var(--radius-card) - var(--sp-1)); border-top-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:last-of-type { border-bottom-left-radius: calc(var(--radius-card) - var(--sp-1)); border-bottom-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:hover:not(:disabled) { background: var(--surface-row-hover); }
+  .switch-row:disabled { cursor: default; opacity: 1; }
+  .switch-row:disabled .toggle { opacity: 0.45; }
+  /* A straight line between rows: a shadow would follow the rounded corners. */
+  .switch-row + .switch-row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
+  .switch-row .toggle { pointer-events: none; }
+  .switch-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+  .switch-title { font-size: var(--fs-body); font-weight: var(--fw-semibold); }
+  .switch-sub { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-2); }
 
-  /* Separate stacked toggle rows within one card (e.g. the tray section) */
-  .settings-main :global(.dev-tools-row + .dev-tools-row) {
-    margin-top: var(--sp-4);
-    padding-top: var(--sp-4);
-    border-top: 1px solid var(--divider);
+  .card.update-card { padding: var(--sp-1); gap: 0; }
+  .update-head { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; min-height: 72px; padding: var(--sp-3) var(--sp-4); }
+  .update-words { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+  .update-key { font-size: var(--fs-sm); color: var(--text-dim); }
+  .update-version { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text); }
+  .update-line { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+  .update-line.ok { color: var(--success-text); }
+  .update-line.new { color: var(--accent-text); }
+  .update-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .update-work { padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top: 1px solid var(--divider); }
+  .update-work .muted { margin: 0; }
+  .update-note, .update-fail {
+    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-md); font-size: var(--fs-sm); line-height: 1.5;
   }
+  .update-note { background: var(--surface-2); color: var(--text-2); }
+  .update-fail { background: var(--danger-bg); color: var(--text); }
+  .update-note :global(svg), .update-fail :global(svg) { flex-shrink: 0; margin-top: 1px; }
+  .update-fail :global(svg) { color: var(--danger-text); }
+  .update-note-words { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
 
-  .settings-main :global(.dev-tools-info) {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    font-size: var(--fs-sm);
-    color: var(--text);
-  }
-
-  .theme-options { display: flex; gap: 0.625rem; }
+  .card.theme-card { padding: var(--sp-3); }
+  .theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
 
   .theme-opt {
-    display: flex; align-items: center; gap: 9px;
-    height: var(--control-h-lg); padding: 0 20px; background: var(--surface-3);
+    display: flex; align-items: center; gap: var(--sp-3);
+    min-height: 56px; padding: 0 var(--sp-4); background: var(--surface-3);
     border: 1px solid var(--border); border-radius: var(--radius-field);
-    color: var(--text-body); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer;
-    transition: all 0.15s; min-width: 110px;
+    color: var(--text-body); font-size: var(--fs-md); font-weight: var(--fw-semibold); cursor: pointer;
+    transition: all 0.15s;
   }
   .theme-opt:hover:not(:disabled) { border-color: var(--border-2); color: var(--text); }
   .theme-opt.active { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
   .theme-opt:disabled { opacity: 0.4; cursor: not-allowed; }
-  .theme-icon { font-size: var(--fs-md); display: flex; }
+  /* The theme's icon on a tile of its own; the chosen one's is the accent's. */
+  .theme-icon {
+    flex: none; display: grid; place-items: center; width: var(--control-h-sm); height: var(--control-h-sm);
+    border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-2);
+  }
+  .theme-opt.active .theme-icon { background: transparent; color: var(--accent-text); }
+  .theme-name { flex: 1; text-align: left; }
   .theme-customize {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-4);
-    margin-top: var(--sp-4);
-    padding-top: var(--sp-4);
+    margin-top: var(--sp-3);
+    padding: var(--sp-3) var(--sp-2) 0;
     border-top: 1px solid var(--border);
   }
-  .theme-reset { align-self: flex-start; }
 
-  .settings-main :global(.dir-row) {
-    display: flex; align-items: center; gap: 0.4rem;
-  }
   .settings-main :global(.dir-input) {
     flex: 1; height: 44px; background: var(--surface-3); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 0 var(--sp-3);
@@ -949,7 +988,6 @@
     outline: none; text-overflow: ellipsis;
   }
   .settings-main :global(.dir-input:focus) { border-color: var(--accent-border); }
-  .settings-main :global(.btn-icon) { width: 44px; height: 44px; justify-content: center; padding: 0; }
   .settings-main :global(.error-msg) { font-size: var(--fs-sm); color: var(--danger-text); }
 
   /* Form fields of the cards */

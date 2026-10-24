@@ -77,6 +77,11 @@ export interface SettingsSection {
   /** Shown only while true. Default: always. */
   visible?: () => boolean;
   /**
+   * The component draws its own cards (a page of several, the account's):
+   * a computer shows it without the card around it; the pane's title names it.
+   */
+  bare?: boolean;
+  /**
    * Rendered inside the core's card of this id instead of as a card of its
    * own: `sync` — a module's part of the sync settings form (mobile), whose
    * component exports `save()` for the form's Save; `account` — the

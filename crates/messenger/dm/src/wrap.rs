@@ -11,11 +11,12 @@
 
 use crate::pushtags;
 use crate::peer::DmPeer;
-use messenger_core::envelope::{KIND_PEER_NOTE_RUMOR, TAG_SERVER};
+use messenger_core::envelope::{KIND_PEER_NOTE_RUMOR, KIND_TYPING_WRAP, TAG_SERVER, TYPING_TTL_SECS};
 use messenger_core::outbound::WireEvent;
-use messenger_core::{EventId, MessengerError, Result};
+use messenger_core::{Envelope, EventId, MessengerError, Result};
 use nostr::key::Keys;
-use nostr::nips::nip59::GiftWrapBuilder;
+use nostr::nips::nip44;
+use nostr::nips::nip59::{GiftWrapBuilder, GiftWrapSealBuilder};
 use nostr::prelude::*;
 
 pub struct Wrapped {
@@ -218,6 +219,39 @@ pub fn wrap_own_on(keys: &Keys, content: &str, created_at: i64, server: Option<&
     wire(gift.finalize(keys).map_err(crypto)?)
 }
 
+
+/// «I am writing to you»: the shape of a gift wrap (the rumor
+/// `KIND_PEER_NOTE_RUMOR` with the envelope `typing`, my seal, an outer
+/// event by a random key with `p` the receiver) under the ephemeral kind
+/// `KIND_TYPING_WRAP`, which a relay hands on and never keeps. Dated now,
+/// not back as a gift wrap is (a relay refuses an ephemeral event dated a
+/// minute away), quiet for the push server, expiring with its ttl. No copy
+/// to my devices: they are not the one written to. nostr's NIP-59 builder
+/// makes kind 1059 alone, hence the outer event by hand (2026-10-24).
+pub fn wrap_typing(keys: &Keys, peer: &DmPeer, created_at: i64) -> Result<WireEvent> {
+    let receiver = PublicKey::from_hex(peer.key.as_hex()).map_err(crypto)?;
+    let me = keys.public_key();
+    let at = nostr::types::Timestamp::from_secs(created_at.max(0) as u64);
+    let mut builder = EventBuilder::new(Kind::from(KIND_PEER_NOTE_RUMOR), Envelope::typing(TYPING_TTL_SECS).encode())
+        .tag(Tag::public_key(receiver))
+        .custom_created_at(at);
+    if let Some(tag) = server_tag(peer.server())? {
+        builder = builder.tag(tag);
+    }
+    let mut rumor = builder.finalize_unsigned(me);
+    rumor.ensure_id();
+    let seal = GiftWrapSealBuilder::new(rumor, receiver).finalize(keys).map_err(crypto)?;
+    let once = Keys::generate();
+    let content = nip44::encrypt(once.secret_key(), &receiver, seal.as_json(), nip44::Version::default()).map_err(crypto)?;
+    let outer = EventBuilder::new(Kind::from(KIND_TYPING_WRAP), content)
+        .tag(Tag::public_key(receiver))
+        .tag(pushtags::silent_tag()?)
+        .tag(Tag::expiration(nostr::types::Timestamp::from_secs((created_at + TYPING_TTL_SECS).max(0) as u64)))
+        .custom_created_at(at)
+        .finalize(&once)
+        .map_err(crypto)?;
+    wire(outer)
+}
 
 fn wire(event: Event) -> Result<WireEvent> {
     Ok(WireEvent {
@@ -472,5 +506,33 @@ mod tests {
         assert_eq!(tag_value(w.to_self.as_ref().unwrap(), "expiration"), None);
         let opened = UnwrappedGift::from_gift_wrap(&bob, &serde_json::from_value(w.to_peer.json.clone()).unwrap()).unwrap();
         assert_eq!(opened.rumor.kind, Kind::PrivateDirectMessage);
+    }
+
+    /// A «typing»: the ephemeral kind, dated now (not back), quiet,
+    /// expiring with its ttl, and the three layers of a gift wrap inside,
+    /// which the receiver's key alone opens.
+    #[test]
+    fn a_typing_is_an_ephemeral_wrap_dated_now_that_the_receiver_alone_opens() {
+        let (alice, bob, eve) = (Keys::generate(), Keys::generate(), Keys::generate());
+        let now = 1_700_000_000;
+        let w = wrap_typing(&alice, &DmPeer::home(pk(&bob)), now).unwrap();
+        let outer: Event = serde_json::from_value(w.json.clone()).unwrap();
+        assert_eq!(outer.kind.as_u16(), KIND_TYPING_WRAP);
+        assert_eq!(outer.created_at.as_secs() as i64, now, "dated now, never back");
+        assert_eq!(tag_value(&w, "expiration"), Some((now + TYPING_TTL_SECS).to_string()));
+        assert_eq!(tag_value(&w, "p"), Some(bob.public_key().to_hex()));
+        assert!(outer.tags.iter().any(|t| t.kind() == pushtags::SILENT), "quiet for the push server");
+        assert!(UnwrappedGift::from_gift_wrap(&bob, &outer).is_err(), "nostr's NIP-59 opens kind 1059 alone");
+        let open = |keys: &Keys| -> Result<UnsignedEvent> {
+            let seal = Event::from_json(keys.nip44_decrypt(&outer.pubkey, &outer.content).map_err(crypto)?).map_err(crypto)?;
+            assert_eq!(seal.kind, Kind::Seal);
+            seal.verify().map_err(crypto)?;
+            UnsignedEvent::from_json(keys.nip44_decrypt(&seal.pubkey, &seal.content).map_err(crypto)?).map_err(crypto)
+        };
+        let rumor = open(&bob).unwrap();
+        assert_eq!((rumor.kind.as_u16(), rumor.pubkey), (KIND_PEER_NOTE_RUMOR, alice.public_key()));
+        let env = Envelope::parse(&rumor.content).unwrap();
+        assert_eq!((env.t.as_str(), env.typing_ttl()), ("typing", TYPING_TTL_SECS));
+        assert!(open(&eve).is_err(), "eve cannot open it");
     }
 }

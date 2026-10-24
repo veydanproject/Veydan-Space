@@ -475,24 +475,24 @@ pub async fn ok_since(db: &Db, community_id: &str, since: i64) -> Result<Vec<Mes
 // ─── Reactions ──────────────────────────────────────────────────────────────
 
 /// Set or take back a reaction; `true` when that changed anything (one
-/// heard again does not).
+/// heard again does not). The later word wins, whatever order the copies
+/// come in (two relays, a catch-up newest first): a reaction taken back
+/// stays as a row with `kept` 0 and the date of the retraction, which a
+/// copy of the reaction dated no later does not put back; at the same
+/// second the retraction wins, since nothing is taken back before it was
+/// set (живой запуск 2026-10-24: a bot's 👀 set and taken back within a
+/// second stayed on the post, the second relay's copy of the setting came
+/// after the first relay's retraction).
 pub async fn set_reaction(db: &Db, community_id: &str, target_id: &str, author: &str, emoji: &str, set: bool, at: i64) -> Result<bool> {
-    let res = if set {
-        sqlx::query(
-            "INSERT INTO cm_reactions (community_id, target_id, author, emoji, at) VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(target_id, author, emoji) DO UPDATE SET at = excluded.at WHERE excluded.at > cm_reactions.at",
-        )
-        .bind(community_id)
-        .bind(target_id)
-        .bind(author)
-        .bind(emoji)
-        .bind(at)
-        .execute(db.pool())
-        .await
-        .map_err(storage)?
+    let sql = if set {
+        "INSERT INTO cm_reactions (community_id, target_id, author, emoji, at, kept) VALUES (?, ?, ?, ?, ?, 1)
+         ON CONFLICT(target_id, author, emoji) DO UPDATE SET at = excluded.at, kept = 1 WHERE excluded.at > cm_reactions.at"
     } else {
-        sqlx::query("DELETE FROM cm_reactions WHERE target_id = ? AND author = ? AND emoji = ?").bind(target_id).bind(author).bind(emoji).execute(db.pool()).await.map_err(storage)?
+        "INSERT INTO cm_reactions (community_id, target_id, author, emoji, at, kept) VALUES (?, ?, ?, ?, ?, 0)
+         ON CONFLICT(target_id, author, emoji) DO UPDATE SET at = excluded.at, kept = 0
+         WHERE excluded.at > cm_reactions.at OR (excluded.at = cm_reactions.at AND cm_reactions.kept = 1)"
     };
+    let res = sqlx::query(sql).bind(community_id).bind(target_id).bind(author).bind(emoji).bind(at).execute(db.pool()).await.map_err(storage)?;
     Ok(res.rows_affected() > 0)
 }
 
@@ -500,7 +500,7 @@ pub async fn set_reaction(db: &Db, community_id: &str, target_id: &str, author: 
 /// one of them, so that a page marks mine and a tap on it takes it back.
 pub async fn reactions(db: &Db, target_id: &str, me: &str) -> Result<Vec<(String, i64, bool)>> {
     let rows = sqlx::query_as::<_, (String, i64, i64)>(
-        "SELECT emoji, COUNT(*), MAX(author = ?) FROM cm_reactions WHERE target_id = ? GROUP BY emoji ORDER BY COUNT(*) DESC, emoji",
+        "SELECT emoji, COUNT(*), MAX(author = ?) FROM cm_reactions WHERE target_id = ? AND kept = 1 GROUP BY emoji ORDER BY COUNT(*) DESC, emoji",
     )
     .bind(me)
     .bind(target_id)
@@ -519,7 +519,7 @@ pub async fn reactions_of(db: &Db, target_ids: &[&str], me: &str) -> Result<std:
     }
     let ids = serde_json::to_string(target_ids).unwrap_or_else(|_| "[]".into());
     let rows = sqlx::query_as::<_, (String, String, i64, i64)>(
-        "SELECT target_id, emoji, COUNT(*), MAX(author = ?) FROM cm_reactions WHERE target_id IN (SELECT value FROM json_each(?))
+        "SELECT target_id, emoji, COUNT(*), MAX(author = ?) FROM cm_reactions WHERE target_id IN (SELECT value FROM json_each(?)) AND kept = 1
          GROUP BY target_id, emoji ORDER BY target_id, COUNT(*) DESC, emoji",
     )
     .bind(me)
@@ -960,6 +960,16 @@ mod tests {
         set_reaction(&db, "c1", "p1", "b", "🔥", false, 3).await.unwrap();
         assert_eq!(reactions(&db, "p1", "b").await.unwrap(), vec![("👍".to_string(), 2, true)]);
         assert_eq!(reactions(&db, "p1", "c").await.unwrap(), vec![("👍".to_string(), 2, false)]);
+        // The copies of a second relay, a catch-up: the later word wins,
+        // the retraction at the same second, whatever order they come in.
+        assert!(!set_reaction(&db, "c1", "p1", "b", "🔥", true, 2).await.unwrap(), "the copy of a reaction taken back puts nothing back");
+        assert!(set_reaction(&db, "c1", "p1", "b", "🔥", true, 4).await.unwrap(), "set again, later");
+        assert!(set_reaction(&db, "c1", "p1", "b", "🔥", false, 4).await.unwrap(), "taken back within the second");
+        assert!(!set_reaction(&db, "c1", "p1", "b", "🔥", false, 4).await.unwrap(), "the retraction heard again");
+        assert!(!set_reaction(&db, "c1", "p1", "b", "🔥", true, 4).await.unwrap(), "the copy of the setting after it");
+        assert!(set_reaction(&db, "c1", "p1", "d", "🔥", false, 5).await.unwrap(), "a retraction heard before its reaction");
+        assert!(!set_reaction(&db, "c1", "p1", "d", "🔥", true, 5).await.unwrap(), "the reaction after it: off");
+        assert_eq!(reactions(&db, "p1", "b").await.unwrap(), vec![("👍".to_string(), 2, true)]);
         // Of a page at once: each message as alone, one without any not named.
         set_reaction(&db, "c1", "p2", "a", "🔥", true, 4).await.unwrap();
         set_reaction(&db, "c1", "p2", "c", "🔥", true, 4).await.unwrap();

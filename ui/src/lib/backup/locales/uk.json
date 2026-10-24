@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Створити резервну копію",
     "settings_backup_running": "Створення резервної копії…",
     "settings_backup_done": "Резервну копію успішно створено.",
+    "settings_backup_saved": "Збережено",
     "settings_backup_schedule": "Резервне копіювання за розкладом",
     "settings_backup_schedule_hint": "Автоматично створювати резервні копії за розкладом.",
     "settings_backup_mode": "Режим",

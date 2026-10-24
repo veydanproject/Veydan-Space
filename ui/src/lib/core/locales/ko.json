@@ -355,6 +355,7 @@
     "settings_sync_now": "지금 동기화",
     "settings_sync_running": "동기화 중…",
     "settings_sync_done": "동기화를 마쳤습니다.",
+    "settings_sync_saved": "저장됨",
     "settings_sync_phase_collect": "변경 사항 수집 중",
     "settings_sync_phase_push": "업로드 중",
     "settings_sync_phase_pull": "다운로드 중",

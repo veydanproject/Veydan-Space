@@ -36,6 +36,10 @@ use tokio::sync::Mutex;
 
 pub const UI_EVENT_CHANNEL_UPDATED: &str = "channel.updated";
 pub const UI_EVENT_CHANNEL_MESSAGE: &str = "channel.message";
+/// Somebody is writing a comment under a post: `{"community_id",
+/// "post_id", "author": "<hex>", "until": <secs>}` — shown as «… печатает»
+/// under the comments until `until`, kept nowhere.
+pub const UI_EVENT_CHANNEL_TYPING: &str = "channel.typing";
 pub const UI_EVENT_CHANNEL_INVITE: &str = "channel.invite";
 pub const UI_EVENT_CHANNEL_REQUEST: &str = "channel.request";
 pub use crate::outbox::UI_EVENT_CHANNEL_OUTBOX;
@@ -202,7 +206,7 @@ pub struct KeeperStatus {
 ///   lead back to a lock, which is why `take_link` is lock-free).
 /// - `keepers`, `locks`, `logs`, `fetches` are tokio mutexes held only to
 ///   look something up. `statuses`, `troubles`, `uploading`,
-///   `rotate_asked`, `keeper_pks`, `transfers`, `foreign_wraps`,
+///   `rotate_asked`, `keeper_pks`, `transfers`, `foreign_wraps`, `admits_joined`,
 ///   `notes_caught`, `pages_asked`, `page_seen` are leaves: std mutexes, never held
 ///   across an await.
 /// - `flushing` (the outbox worker) is taken by nobody who holds a
@@ -275,6 +279,10 @@ pub struct ChannelService {
     /// every relay, and each was opened anew (two decryptions) on the
     /// one loop of the module, minutes of it while joins waited behind.
     pub(crate) foreign_wraps: Arc<std::sync::Mutex<ForeignWraps>>,
+    /// The admissions I sent the keeper a join by in this run, by
+    /// `admit_id`: the copy of one heard again (a subscription made anew,
+    /// a catch-up) sends no second join.
+    pub(crate) admits_joined: Arc<std::sync::Mutex<ForeignWraps>>,
     /// The notes to a key on a set of relays, when a round of this run
     /// last paged them (`catch_up_round`).
     pub(crate) notes_caught: Arc<std::sync::Mutex<NotesCaught>>,
@@ -358,6 +366,7 @@ impl ChannelService {
             uploading: Arc::default(),
             fetches: Arc::default(),
             foreign_wraps: Arc::default(),
+            admits_joined: Arc::default(),
             notes_caught: Arc::default(),
             flushing: Arc::default(),
             turn_asked: Arc::default(),
@@ -567,6 +576,13 @@ impl ChannelService {
         // An old issue or note of my own keys heard again (a catch-up of
         // two days of notes) does not undo a ban of the journal.
         let membership = if membership == MEMBERSHIP_JOINED && state.is_banned(me) { MEMBERSHIP_LEFT.to_string() } else { membership };
+        // The readers: the keeper's snapshot held here counts them; before
+        // the first, what a card said (a row a card of 0 wrote over is
+        // put right by the next refresh — живой запуск 2026-10-24).
+        let members = match self.snapshot_members(&state.community_id).await? {
+            Some(n) => i64::try_from(n).unwrap_or(i64::MAX),
+            None => old.as_ref().map_or(0, |o| o.members),
+        };
         let row = ChannelRow {
             id: state.community_id.clone(),
             name: state.name.clone(),
@@ -578,7 +594,7 @@ impl ChannelService {
             join_mode: word(&state.join),
             membership,
             my_role: state.role_of(me).map(|r| r.as_str().to_string()),
-            members: old.as_ref().map_or(0, |o| o.members),
+            members,
             link_epoch: i64::from(state.link_epoch),
             created_at: old.as_ref().map_or(self.now(), |o| o.created_at),
             updated_at: self.now(),
@@ -1283,7 +1299,7 @@ impl ChannelService {
         // until a relay takes them (`channel_forget` removes one that never
         // gets there).
         self.enqueue(&cid, db::outbox::LANE_CHANNEL, wire::KIND_JOURNAL, &signed, Some(&op.id().0)).await?;
-        self.enqueue(&cid, db::outbox::LANE_REPLACEABLE, wire::KIND_CARD, &wire::sign_card(keys, &self.card_of(log.state(), now))?, None).await?;
+        self.enqueue(&cid, db::outbox::LANE_REPLACEABLE, wire::KIND_CARD, &wire::sign_card(keys, &self.card_of(log.state(), now, 0))?, None).await?;
         secrets::put_link(self.env.secrets.as_ref(), &cid, 0, &LinkSecret::generate()?).await?;
         // The secret of the first link goes into the feed by my hand once
         // a key of the channel is here: the keeper's issue to me brings it.
@@ -1304,19 +1320,37 @@ impl ChannelService {
         Ok((cid, out))
     }
 
-    pub(crate) fn card_of(&self, state: &ChannelState, now: i64) -> Card {
+    /// The card of a channel as its owner publishes it; `members`: the
+    /// readers as the keeper's latest snapshot counted them
+    /// (`members_known`), what the one who looks from outside is told.
+    pub(crate) fn card_of(&self, state: &ChannelState, now: i64, members: u64) -> Card {
         Card {
             v: wire::CARD_VERSION,
             community_id: state.community_id.clone(),
             name: state.name.clone(),
             about: state.about.clone(),
             picture: state.picture.clone(),
-            members: 0,
+            members,
             join: state.join,
             code: String::new(),
             relays: state.relays.clone(),
             storage: state.storage.clone(),
             created_at: now,
+        }
+    }
+
+    /// The readers of a channel as the keeper's latest snapshot heard here
+    /// counted them (0 before the first): what the card says of them.
+    pub(crate) async fn members_known(&self, community_id: &str) -> Result<u64> {
+        Ok(db::channels::get(&self.env.db, community_id).await?.map_or(0, |r| u64::try_from(r.members).unwrap_or(0)))
+    }
+
+    /// The readers the keeper's latest snapshot held here counts; none
+    /// before the first snapshot (then the row keeps what a card said).
+    pub(crate) async fn snapshot_members(&self, community_id: &str) -> Result<Option<u64>> {
+        match db::snapshots::latest(&self.env.db, community_id).await? {
+            Some((_, json)) => Ok(crate::snapshot::content_of(&json).ok().map(|s| s.members)),
+            None => Ok(None),
         }
     }
 
@@ -1381,7 +1415,7 @@ impl ChannelService {
                 self.publish_owed_links(keys).await?;
             }
             OpBody::Settings { .. } if log.state().owner == me => {
-                let card = wire::sign_card(keys, &self.card_of(log.state(), now))?;
+                let card = wire::sign_card(keys, &self.card_of(log.state(), now, self.members_known(community_id).await?))?;
                 self.enqueue(community_id, db::outbox::LANE_REPLACEABLE, wire::KIND_CARD, &card, None).await?;
             }
             _ => {}
@@ -1588,6 +1622,27 @@ impl ChannelService {
     }
 
     /// A reaction to a post or a comment (`e` on the outside: wire §4).
+    /// «I am writing a comment under `post_id`»: sealed under the key of
+    /// the post's section like a comment, under the ephemeral kind
+    /// (`wire::KIND_TYPING`), sent to the relays at once, never through
+    /// the outbox (a «typing» that waited is nothing), and kept nowhere.
+    /// A bot's word (2026-10-24); the caller says it again every few
+    /// seconds while it writes.
+    pub async fn send_typing(&self, keys: &Keys, community_id: &str, post_id: &str) -> Result<()> {
+        let scope_id = self.scope_of_message(post_id).await?;
+        let key = self.member(keys).newest_key(community_id, &scope_id).await?.ok_or_else(|| invalid("no key of the section yet"))?;
+        let place = Place::feed_in(community_id, &scope_id);
+        let now = self.now();
+        let links = Links { thread: Some(post_id.to_string()), parent: None, target: None };
+        let inner = wire::sign_inner(keys, &place, &links, &Envelope::typing(messenger_core::envelope::TYPING_TTL_SECS).encode(), now)?;
+        let payload = Payload::event(wire::T_MSG, &inner)?;
+        let outer = wire::seal_content_kind(&place, &key, links.outer_target(), &payload, now, wire::KIND_TYPING)?;
+        let id = messenger_core::EventId::parse(&outer.id.to_hex()).ok_or_else(|| invalid("event id"))?;
+        let event = messenger_core::outbound::WireEvent { id, json: serde_json::to_value(&outer)? };
+        self.env.net.send(Outbound::PublishScoped { scope: Scope::Channel { id: community_id.to_string() }, event }).await?;
+        Ok(())
+    }
+
     pub async fn send_reaction(&self, keys: &Keys, community_id: &str, target: &str, emoji: &str, set: bool) -> Result<(String, Outcome)> {
         let state = self.state(community_id).await?;
         let scope_id = Self::scope_to_write(&state, &Self::me(keys)?, Some(&self.scope_of_message(target).await?))?;
@@ -1713,7 +1768,16 @@ impl ChannelService {
                 self.refresh_row(state, &me, Some(MEMBERSHIP_REQUESTED)).await?;
             }
             (None, JoinMode::Open) => return Err(invalid("a link without its secret opens the card only")),
-            (_, JoinMode::Invite) => return Err(invalid("this channel takes invitations only")),
+            // The link of a channel I am invited to is the invitation taken
+            // (a bot writes «here is the link» to the one it invited, and the
+            // link is what they open; 2026-10-24).
+            (_, JoinMode::Invite) => {
+                let invited = db::channels::invites(&self.env.db, "in", &["received"]).await?.into_iter().find(|i| i.community_id == link.community_id);
+                return match invited {
+                    Some(i) => self.answer_invite(&i.invite_id, true).await,
+                    None => Err(invalid("this channel takes invitations only")),
+                };
+            }
         }
         out.event(UI_EVENT_CHANNEL_UPDATED, serde_json::json!({ "community_id": link.community_id }));
         Ok(out)
@@ -1940,6 +2004,15 @@ impl ForeignWraps {
     #[cfg(test)]
     pub(crate) fn ids_len(&self) -> usize {
         self.ids.len()
+    }
+
+    /// Puts `id` in; whether it was not there before.
+    pub(crate) fn first(&mut self, id: &str) -> bool {
+        if self.ids.contains(id) {
+            return false;
+        }
+        self.insert(id);
+        true
     }
 
     pub(crate) fn insert(&mut self, id: &str) {

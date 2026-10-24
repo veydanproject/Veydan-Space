@@ -7,16 +7,19 @@
   needed: who the account is, the plan in use and its room, the plans to
   choose from, how sync stands, the ways into the account (a device, the
   recovery, the sign-ins to the web cabinet), what the owner of the key keeps (the profile, the servers),
-  the deletion at the very end. A device without an account gets the way
-  to make one, and sync.
+  the deletion at the very end, each part a tab of its own (the plan and its
+  room first). A device without an account gets the way to make one, and
+  sync, without tabs.
   A product on its own servers, or with no servers chosen, gets one plain
   explanation instead. `?delete=1` opens the deletion, `?section=<id>`
-  scrolls to a part of the page (`plans`, `recovery-key`, `delete`), `?key=1`
+  opens the tab of a part of the page and scrolls to it (`plans`,
+  `recovery-key`, `delete`, `sync`, `web-sign-ins`), `?key=1`
   opens the key of activation (the card of the bot about a plan that ends),
   `?key=<key>` opens it with that key filled in (the card of a purchase).
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import { accountSource, loadAccount, type AccountProfile } from '$lib/core/account';
   import { t, locale } from '$lib/core/i18n';
   import { isMobile } from '$lib/core/platform';
@@ -38,6 +41,9 @@
   import UsageCard from '$lib/cloud/UsageCard.svelte';
   import Welcome from '$lib/cloud/Welcome.svelte';
   import WebSessions from '$lib/cloud/WebSessions.svelte';
+
+  /** `refresh`: the page has no head of its own (the settings of a computer): the refresh stands beside the name. */
+  let { refresh = false }: { refresh?: boolean } = $props();
 
   const query = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const startDelete = query.get('delete') === '1';
@@ -92,6 +98,44 @@
     keyOpen = true;
   }
 
+  type Tab = 'plan' | 'sync' | 'access' | 'web' | 'own';
+  let ownLinks = $state(0);
+  /** The tab that holds a part a link names (`?section=`, `?delete=1`). */
+  const SECTION_TAB: Record<string, Tab> = { plans: 'plan', sync: 'sync', 'recovery-key': 'access', 'web-sign-ins': 'web', delete: 'own' };
+  /** The ways into the account and the sign-ins to the web cabinet: where a host of the project answers for the identity. */
+  const hasAccess = $derived(view === 'account' || view === 'no_account' || view === 'unreachable');
+  const tabs = $derived<{ id: Tab; label: string }[]>([
+    { id: 'plan', label: $t('cloud_plan_title') },
+    { id: 'sync', label: $t('settings_sync_section') },
+    ...(hasAccess ? [{ id: 'access' as Tab, label: $t('cloud_access_title') }, { id: 'web' as Tab, label: $t('cloud_web_title') }] : []),
+    // What the owner of the key keeps, and the deletion: a tab only when there is one of them.
+    ...(ownLinks > 0 || account ? [{ id: 'own' as Tab, label: $t('cloud_account_owner') }] : []),
+  ]);
+  let picked = $state<Tab>(startDelete ? 'own' : (section && SECTION_TAB[section]) || 'plan');
+  const tab = $derived(tabs.some((x) => x.id === picked) ? picked : 'plan');
+  let tabsEl = $state<HTMLElement | null>(null);
+  /** The row is scrolled to its end (or not scrollable): its right edge no longer fades. */
+  let tabsEnd = $state(false);
+  function tabsScrolled() {
+    if (tabsEl) tabsEnd = tabsEl.scrollLeft + tabsEl.clientWidth >= tabsEl.scrollWidth - 2;
+  }
+  $effect(() => { void tabs; void tick().then(tabsScrolled); });
+
+  // The row of tabs scrolls on a phone: the chosen one stays in view.
+  $effect(() => {
+    void tab;
+    tabsEl?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+
+  /** The arrows move along the tabs (the keyboard's way through a tablist). */
+  function tabKey(e: KeyboardEvent) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const i = tabs.findIndex((x) => x.id === tab);
+    picked = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length].id;
+    void tick().then(() => tabsEl?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
+  }
+
   function toPlans() {
     document.getElementById('plans')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
@@ -120,23 +164,22 @@
   {/if}
 
   {#if profile !== undefined && accountSource()}
-    <AccountHead {profile} />
+    <AccountHead {profile}>
+      {#snippet actions()}
+        {#if refresh && cloudPage.status?.account}
+          <button class="icon-btn" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.refresh()} aria-label={$t('cloud_refresh')} title={$t('cloud_refresh')}>
+            <span class="turn" class:spin={cloudPage.busy}><Icon name="refresh-cw" size={18} /></span>
+          </button>
+        {/if}
+      {/snippet}
+    </AccountHead>
   {/if}
 
   {#if noAccount}
-    <!-- Nothing of the cloud without an account: the head offers to make one. -->
-  {:else if view === 'loading'}
-    <div class="{card} pad loading"><span class="spinner" aria-hidden="true"></span></div>
-  {:else if view === 'own' || view === 'unchosen' || view === 'unavailable'}
-    <div class="{card} pad">
-      <StateView tone="info" icon="cloud" title={$t('cloud_off_title')}>
-        <p>{view === 'own' ? $t('cloud_own_servers') : view === 'unchosen' ? $t('cloud_unchosen') : $t('cloud_unavailable')}</p>
-        {#snippet actions()}
-          {#if view === 'unchosen'}<div class="center"><a class="btn btn-primary" href="/messenger">{$t('cloud_unchosen_go')}</a></div>{/if}
-        {/snippet}
-      </StateView>
-    </div>
+    <!-- Nothing of the cloud without an account: the head offers to make one; sync is the core's. -->
+    <AccountSync anchor={refresh ? '' : 'sync'} />
   {:else}
+    <!-- No answer from the cloud concerns the whole account: over the tabs, seen from each. -->
     {#if view === 'unreachable'}
       <Notice tone="warn" icon="wifi-off">
         {statusError ? words(statusError.code, statusError.message) : $t('cloud_unreachable')}
@@ -146,48 +189,86 @@
       </Notice>
     {/if}
 
-    {#if account}
-      <div class="{card} pad">
-        <PlanCard {account} name={planName(plans, account.plan)} nextName={account.next ? planName(plans, account.next.plan) : ''} hasPlans={canPick} onPlans={toPlans} onKey={() => openKey()} />
+    <div class="tabs" class:end={tabsEnd} role="tablist" aria-label={$t('cloud_account_title')} tabindex="-1" bind:this={tabsEl} onkeydown={tabKey} onscroll={tabsScrolled}>
+      {#each tabs as x (x.id)}
+        <button
+          type="button"
+          role="tab"
+          class="ctab"
+          id="cloud-tab-{x.id}"
+          aria-selected={tab === x.id}
+          aria-controls="cloud-panel-{x.id}"
+          tabindex={tab === x.id ? 0 : -1}
+          onclick={() => (picked = x.id)}
+        >{x.label}</button>
+      {/each}
+    </div>
+
+    <!-- Every panel stays mounted (its state and its links' ids kept); only the chosen one shows. -->
+    <div class="panel" role="tabpanel" id="cloud-panel-plan" aria-labelledby="cloud-tab-plan" hidden={tab !== 'plan'}>
+      {#if view === 'loading'}
+        <div class="{card} pad loading"><span class="spinner" aria-hidden="true"></span></div>
+      {:else if view === 'own' || view === 'unchosen' || view === 'unavailable'}
+        <div class="{card} pad">
+          <StateView tone="info" icon="cloud" title={$t('cloud_off_title')}>
+            <p>{view === 'own' ? $t('cloud_own_servers') : view === 'unchosen' ? $t('cloud_unchosen') : $t('cloud_unavailable')}</p>
+            {#snippet actions()}
+              {#if view === 'unchosen'}<div class="center"><a class="btn btn-primary" href="/messenger">{$t('cloud_unchosen_go')}</a></div>{/if}
+            {/snippet}
+          </StateView>
+        </div>
+      {:else}
+        {#if account}
+          <div class="pair">
+            <div class="{card} pad">
+              <PlanCard {account} name={planName(plans, account.plan)} nextName={account.next ? planName(plans, account.next.plan) : ''} hasPlans={canPick} onPlans={toPlans} onKey={() => openKey()} />
+            </div>
+            <div class="{card} pad">
+              <UsageCard {account} categories={cloudPage.categories} onMore={canPick ? toPlans : () => openKey()} />
+            </div>
+          </div>
+        {:else if view === 'no_account'}
+          <div class="{card} pad">
+            <Welcome activation={cloudPage.activation} freeFiles={plans.find((p) => p.free)?.limits['vault.files_bytes'] ?? null} onActivate={() => cloudPage.activate()} onKey={() => openKey()} />
+          </div>
+        {/if}
+
+        {#if canPick}
+          <PlanPicker
+            {viewOnly}
+            {plans}
+            current={account?.plan ?? null}
+            canActivate={view === 'no_account'}
+            activating={activating(cloudPage.activation)}
+            onActivate={() => cloudPage.activate()}
+            onKey={(plan) => openKey(plan)}
+          />
+        {/if}
+      {/if}
+    </div>
+
+    <div class="panel" role="tabpanel" id="cloud-panel-sync" aria-labelledby="cloud-tab-sync" hidden={tab !== 'sync'}>
+      <!-- Sync is the core's: every product has it, with a cloud account or without. -->
+      <AccountSync anchor={refresh ? '' : 'sync'} />
+    </div>
+
+    {#if hasAccess}
+      <div class="panel" role="tabpanel" id="cloud-panel-access" aria-labelledby="cloud-tab-access" hidden={tab !== 'access'}>
+        <AccessList hasAccount={account !== null} recovery={account?.recovery ?? null} />
       </div>
-      <div class="{card} pad">
-        <UsageCard {account} categories={cloudPage.categories} onMore={canPick ? toPlans : () => openKey()} />
-      </div>
-    {:else if view === 'no_account'}
-      <div class="{card} pad">
-        <Welcome activation={cloudPage.activation} freeFiles={plans.find((p) => p.free)?.limits['vault.files_bytes'] ?? null} onActivate={() => cloudPage.activate()} onKey={() => openKey()} />
+      <div class="panel" role="tabpanel" id="cloud-panel-web" aria-labelledby="cloud-tab-web" hidden={tab !== 'web'}>
+        <!-- A sign-in to the web cabinet is the identity's: with an account or without. -->
+        <WebSessions />
       </div>
     {/if}
 
-    {#if canPick}
-      <PlanPicker
-        {viewOnly}
-        {plans}
-        current={account?.plan ?? null}
-        canActivate={view === 'no_account'}
-        activating={activating(cloudPage.activation)}
-        onActivate={() => cloudPage.activate()}
-        onKey={(plan) => openKey(plan)}
-      />
-    {/if}
-
-  {/if}
-
-  <!-- Sync is the core's: every product has it, with a cloud account or without. -->
-  <AccountSync />
-
-  {#if !noAccount && (view === 'account' || view === 'no_account' || view === 'unreachable')}
-    <AccessList hasAccount={account !== null} recovery={account?.recovery ?? null} />
-    <!-- A sign-in to the web cabinet is the identity's: with an account or without. -->
-    <WebSessions />
-  {/if}
-
-  {#if !noAccount}
-    <AccountLinks />
-  {/if}
-
-  {#if !noAccount && account}
-    <DeleteAccount startOpen={startDelete} />
+    <div class="panel" role="tabpanel" id="cloud-panel-own" aria-labelledby="cloud-tab-own" hidden={tab !== 'own'}>
+      <AccountLinks bind:count={ownLinks} />
+      {#if account}
+        <!-- The way out stands apart, under what the account keeps. -->
+        <DeleteAccount startOpen={startDelete} />
+      {/if}
+    </div>
   {/if}
   {#if cloudPage.error}
     <div class="error-msg" role="alert">{words(cloudPage.error.code, cloudPage.error.message)}</div>
@@ -197,10 +278,43 @@
 <RedeemDialog bind:open={keyOpen} busy={cloudPage.busy} planName={keyPlan?.name ?? ''} result={keyResult} initialKey={keyPlan ? '' : givenKey} onRedeem={redeem} />
 
 <style>
-  .cloud-body { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .cloud-body { display: flex; flex-direction: column; gap: var(--sp-4); container-type: inline-size; }
+  .m.cloud-body { gap: var(--sp-3); }
   .pad { padding: var(--sp-6); }
   .m .pad { padding: var(--sp-4); }
   .loading { display: flex; justify-content: center; padding: var(--sp-8); }
   .line { display: block; }
   .center { display: flex; justify-content: center; }
+  .turn { display: inline-flex; }
+
+  /* The parts of the page, one at a time: a row of tabs under the name, the chosen one underlined. */
+  .tabs { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--divider); overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .ctab {
+    flex-shrink: 0; min-height: var(--control-h-lg); padding: 0 var(--sp-3); margin-bottom: -1px;
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); white-space: nowrap; cursor: pointer;
+    transition: color var(--dur-fast), border-color var(--dur-fast);
+  }
+  .ctab:hover { color: var(--text); }
+  /* The row scrolls and clips: the keyboard's ring drawn inside the tab. */
+  .ctab:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .ctab[aria-selected='true'] { color: var(--accent-text); border-bottom-color: var(--accent); }
+  /* A phone: one line that scrolls, its right edge fading so the row reads as going on. */
+  .m .tabs {
+    margin: 0 calc(-1 * var(--sp-4)); padding: 0 var(--sp-4); gap: 0;
+    -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent);
+  }
+  .m .ctab { min-height: var(--sp-12); padding: 0 var(--sp-4); font-size: var(--fs-body); }
+  .m .tabs.end { -webkit-mask-image: none; mask-image: none; }
+
+  .panel { display: flex; flex-direction: column; gap: var(--sp-4); }
+  .m .panel { gap: var(--sp-3); }
+  .panel[hidden] { display: none; }
+  /* The tab names its part: the label a group of rows carries above it is not repeated. */
+  .panel :global(.group > h2) { display: none; }
+  /* The plan and its room side by side where the page is wide enough. */
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+  .m .pair { gap: var(--sp-3); }
+  @container (min-width: 640px) { .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

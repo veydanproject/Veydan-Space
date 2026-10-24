@@ -185,7 +185,7 @@ impl ChannelService {
         db::transfers::set_status(&self.env.db, community_id, db::transfers::IN, db::transfers::ACCEPTED, now).await?;
         // The card is the owner's: mine from now on.
         let state = self.state(community_id).await?;
-        let card = self.card_of(&state, now);
+        let card = self.card_of(&state, now, self.members_known(community_id).await?);
         self.enqueue(community_id, db::outbox::LANE_REPLACEABLE, wire::KIND_CARD, &wire::sign_card(keys, &card)?, None).await?;
         if let Err(e) = self.member(keys).send_own_keys(&state, now).await {
             tracing::info!(community = %community_id, error = %e, "the root did not reach my other devices yet");

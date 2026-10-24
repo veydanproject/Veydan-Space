@@ -3478,3 +3478,31 @@ async fn a_new_device_gets_my_groups_by_the_welcomes_to_myself() {
     assert!(d.svc.welcomes_owed(&d.keys).await.unwrap().is_empty(), "nothing anew");
     assert!(w.notes.is_empty(), "{:?}", w.notes);
 }
+
+/// «Typing» in a group (2026-10-24): the ephemeral twin of a group event,
+/// quiet for the push server, a word for the screen of the members alone
+/// — no message, nothing kept, nothing of my own heard back.
+#[tokio::test]
+async fn a_typing_in_a_group_is_a_word_for_the_screen_alone() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Private, "Typers", true).await;
+    w.bring(alice, &g, bob).await;
+    let d = &w.devices[bob];
+    let out = d.svc.prepare_typing(&d.keys, &g).await.unwrap();
+    let Outbound::PublishScoped { event, .. } = &out else { panic!("{out:?}") };
+    assert_eq!(event.json["kind"], messenger_core::envelope::KIND_GROUP_TYPING);
+    let tags = event.json["tags"].as_array().unwrap();
+    assert!(tags.iter().any(|t| t[0] == pushtags::SILENT), "a typing wakes nobody");
+    let before = w.devices[alice].visible(&g).await.len();
+    let o = w.deliver(alice, &Wire::Group(event.clone()), false).await;
+    let typing: Vec<_> = o.events.iter().filter(|e| e.name == UI_EVENT_GROUP_TYPING).collect();
+    assert_eq!(typing.len(), 1, "{:?}", o.events);
+    assert_eq!(typing[0].payload["member"], w.pk(bob).as_hex());
+    assert_eq!(typing[0].payload["group_id"], g);
+    assert!(typing[0].payload["until"].as_i64().unwrap() > 0);
+    assert_eq!(w.devices[alice].visible(&g).await.len(), before, "a typing is no message");
+    let o = w.deliver(bob, &Wire::Group(event.clone()), false).await;
+    assert!(o.events.iter().all(|e| e.name != UI_EVENT_GROUP_TYPING), "my own says nothing");
+}

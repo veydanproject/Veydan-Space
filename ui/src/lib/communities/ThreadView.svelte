@@ -18,7 +18,8 @@
   import Icon from '$lib/core/Icon.svelte';
   import { copied, toast } from '$lib/core/ui/toast.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
-  import { AttachButton, Composer, confirmStore, myKey, onPhone, reportStore, writeTo } from '$lib/messenger/seams/shared';
+  import { AttachButton, Composer, confirmStore, myKey, onPhone, reportStore, TypingLine, writeTo } from '$lib/messenger/seams/shared';
+  import { typingStore } from '$lib/messenger/seams/typing';
   import UploadLine from './UploadLine.svelte';
   import { uploadsUnder } from './uploads';
   import FeedPost from './FeedPost.svelte';
@@ -32,7 +33,7 @@
   import { feedStore, isLocal, localId, threadKey } from './feedStore.svelte';
   import { isMine, QUICK } from './reactions';
   import { canAttach, canComment, canRecord } from './permissions';
-  import { threadOrder } from './thread';
+  import { arrived, shownOf, threadOrder, type Shown } from './thread';
   import PersonActions from './moderation/PersonActions.svelte';
 
   interface Props {
@@ -132,6 +133,29 @@
 
   const ordered = $derived(threadOrder(comments));
   const byId = $derived(new Map(comments.map((c) => [c.id, c])));
+
+  /** Who writes a comment here now (a bot says it), by name; never I. */
+  const typers = $derived(typingStore.underPost(post.id).filter((k) => k !== me).map((k) => nameStore.label(k)));
+  // A comment that came ends its author's «печатает…» at once, not when it
+  // runs out: `channel.message` names no author, the page read again does.
+  // What the first read of a thread brings came before, not now.
+  let shownKey = '';
+  let shown: Shown = shownOf([]);
+  $effect(() => {
+    const k = key;
+    const pid = post.id;
+    const items = comments;
+    const loaded = !!list?.loaded;
+    untrack(() => {
+      if (k === shownKey) for (const c of arrived(shown, items)) typingStore.clear({ post: pid }, c.author);
+      shownKey = loaded ? k : '';
+      shown = shownOf(items);
+    });
+  });
+  // The line takes room under the comments: the newest one is kept in sight.
+  $effect(() => {
+    if (typers.length) untrack(() => { if (stick) void scrollDown(); });
+  });
 
   async function run(fn: () => Promise<unknown>): Promise<boolean> {
     error = '';
@@ -325,6 +349,7 @@
     {#each uploads as u (u.id)}<UploadLine {u} />{/each}
     {#if error}<div class="error-msg">{error}</div>{/if}
   </div>
+  {#if typers.length}<div class="typing"><TypingLine who={typers} muted /></div>{/if}
   {#if can}
     {#if replyTo}
       <div class="replying">
@@ -369,6 +394,8 @@
   .earlier { align-self: center; }
   .empty { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
+  /* «печатает…» under the comments, above the field: a quiet line of the thread. */
+  .typing { display: flex; min-width: 0; padding: 2px var(--sp-4) var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); }
   .replying { display: flex; align-items: center; gap: 6px; padding: 6px var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--accent-text-2); background: var(--surface-2); }
   .r-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .x { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px; }

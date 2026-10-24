@@ -16,7 +16,7 @@ use crate::roles::Role;
 use crate::service::*;
 use crate::state::{self, Closed, GroupState};
 use crate::wire::{self, InnerMessage, Opened, SecretEnvelope};
-use messenger_core::envelope::{T_CONTACT, T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_RECEIPT_READ, T_TEXT};
+use messenger_core::envelope::{T_CONTACT, T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_RECEIPT_READ, T_TEXT, T_TYPING};
 use messenger_core::traits::{Body, Notice, UiEvent};
 use messenger_core::{Context, DmInbound, Envelope, EventSource, GroupInbound, MessengerError, PubKey, Result, TextFormat};
 use messenger_store::groups::{self as repo, GroupRow, PendingRow};
@@ -1405,6 +1405,17 @@ impl GroupService {
         // History is judged by its date.
         let at = if item.historical { m.created_at } else { m.created_at.max(head_time(&log)) };
         let rules = rules_at(&log, &m.author, at);
+        // A member is writing: a word for the screen alone, kept nowhere
+        // and never held (an outsider's is nothing; mine says nothing new).
+        if envelope.t == T_TYPING {
+            if rules.standing != Standing::Outsider && &m.author != me {
+                out.events.push(UiEvent {
+                    name: crate::service::UI_EVENT_GROUP_TYPING.into(),
+                    payload: serde_json::json!({ "group_id": group_id, "member": m.author.as_hex(), "until": m.created_at + envelope.typing_ttl() }),
+                });
+            }
+            return Ok(Verdict::Done);
+        }
         if rules.standing == Standing::Outsider {
             // A member by the date, not now: dropped, not held, for what
             // waits is tried again as history, by its date.

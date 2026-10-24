@@ -777,6 +777,7 @@
     "msg_voice_play": "Reproduzir",
     "msg_emoji_title": "Emoji",
     "msg_emoji_keyboard": "Teclado",
+    "msg_bot_commands": "Comandos do bot",
     "msg_emoji_erase": "Apagar",
     "msg_emoji_expand": "Expandir",
     "msg_emoji_collapse": "Ocultar",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "A denúncia informa a pessoa e o canal em que você a encontrou.",
     "msg_card_channel": "Canal",
     "msg_card_channels_off": "Os canais estão desativados nas configurações",
-    "msg_card_channels_settings": "Configurações"
+    "msg_card_channels_settings": "Configurações",
+    "msg_typing": "digitando…",
+    "msg_typing_1": "{name} está digitando…",
+    "msg_typing_2": "{a} e {b} estão digitando…",
+    "msg_typing_more": "{a}, {b} e mais {n} estão digitando…",
+    "msg_typing_more_one": "{a}, {b} e mais {n} estão digitando…",
+    "msg_typing_more_few": "{a}, {b} e mais {n} estão digitando…"
   },
   "mobile": {}
 }

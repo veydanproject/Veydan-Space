@@ -654,6 +654,10 @@ mark.m-highlight {
 /* In the dark a sheet is --surface, nearly the colour of a field: its fields,
    search boxes and tiles take a lighter fill, so they can be seen. */
 [data-theme='dark'] .m-sheet { --m-field: var(--surface-hover); }
+/* A tablet: the sheet is a column of a readable width in the middle, not a slab from edge to edge. */
+@media (min-width: 640px) {
+  .m-sheet { max-width: 560px; margin: 0 auto; }
+}
 .m-sheet .handle {
   width: 100%;
   height: auto;

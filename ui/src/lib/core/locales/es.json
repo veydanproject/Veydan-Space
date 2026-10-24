@@ -355,6 +355,7 @@
     "settings_sync_now": "Sincronizar ahora",
     "settings_sync_running": "Sincronizando…",
     "settings_sync_done": "Sincronización terminada.",
+    "settings_sync_saved": "Guardado",
     "settings_sync_phase_collect": "Recopilando cambios",
     "settings_sync_phase_push": "Subiendo",
     "settings_sync_phase_pull": "Descargando",

@@ -25,6 +25,7 @@ pub mod filters;
 pub mod outbox;
 pub mod push_inbox;
 pub mod r#loop;
+pub mod typing;
 
 pub use classify::classify;
 pub use dispatch::{Dispatcher, EffectSink, Fanout};

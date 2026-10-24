@@ -140,6 +140,27 @@ pub const T_REACTION: &str = "reaction";
 /// contact, with a signature by that key that it is mine as of `since`;
 /// `pubkey: null` (no proof) says I stopped sharing. The later `since` wins.
 pub const T_PRESENCE_KEY: &str = "presence.key";
+/// `{"t":"typing","ttl":6}` — the sender is writing to me, for `ttl`
+/// seconds from the event's time. A note of bots (a client of a person
+/// never sends one, 2026-10-24: the owner's word on the load); sent as an
+/// ephemeral event the relays hand on and never keep (`KIND_TYPING_WRAP`
+/// for a direct chat, 20009 for a group, 21390 under a post of a channel),
+/// so it is never pushed, never in a catch-up, never stored anywhere.
+pub const T_TYPING: &str = "typing";
+/// How long one `typing` counts, in seconds; the sender says it again
+/// every `TYPING_REPEAT_SECS` while it writes.
+pub const TYPING_TTL_SECS: i64 = 6;
+pub const TYPING_REPEAT_SECS: i64 = 4;
+/// The ephemeral wrap of a `typing` to a person: the shape of a gift wrap
+/// (a random outer key, `p` the receiver, a seal of the sender inside,
+/// the rumor `KIND_PEER_NOTE_RUMOR` within) under a kind the relays do
+/// not keep (NIP-01: 20000 ≤ kind < 30000). Its `created_at` is the real
+/// time (a relay refuses an ephemeral event dated more than a minute
+/// away), never dated back as a gift wrap is.
+pub const KIND_TYPING_WRAP: u16 = 21059;
+/// The ephemeral twin of a group event (kind 9): a `typing` sealed under
+/// the key of the group, with its `h`, never kept by a relay.
+pub const KIND_GROUP_TYPING: u16 = 20009;
 /// `{"t":"device.link","blob":"<base64>"}` — the nsec of the old device in
 /// its inner wrap, to the temporary key T of a new one: a note to a key
 /// that is not a contact (internal/messenger-wire.md §3, "Восстановление
@@ -286,6 +307,17 @@ impl Envelope {
 
     pub fn reaction(target: &str, emoji: &str, set: bool) -> Self {
         Self::new(T_REACTION).with("target", target).with("emoji", emoji).with("set", set)
+    }
+
+    /// I am writing to you, for `ttl` seconds from now.
+    pub fn typing(ttl: i64) -> Self {
+        Self::new(T_TYPING).with("ttl", ttl)
+    }
+
+    /// How long a `typing` counts: its `ttl`, within 1…30 s (a note of
+    /// another build says something sane or counts as the default).
+    pub fn typing_ttl(&self) -> i64 {
+        self.fields.get("ttl").and_then(Value::as_i64).unwrap_or(TYPING_TTL_SECS).clamp(1, 30)
     }
 
     /// `key` is `(pubkey, proof)`; `None` goes out as `pubkey: null`: I no

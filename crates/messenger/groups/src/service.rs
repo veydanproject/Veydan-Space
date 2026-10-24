@@ -33,6 +33,9 @@ use tokio::sync::Mutex;
 pub const UI_EVENT_GROUP_UPDATED: &str = "group.updated";
 pub const UI_EVENT_GROUP_INVITE: &str = "group.invite";
 pub const UI_EVENT_GROUP_REQUEST: &str = "group.request";
+/// A member is writing in the group: `{"group_id", "member": "<hex>",
+/// "until": <secs>}` — shown as «… печатает» until `until`.
+pub const UI_EVENT_GROUP_TYPING: &str = "group.typing";
 
 pub const MEMBERSHIP_JOINED: &str = "joined";
 /// A public link was opened; the log is being fetched.
@@ -2061,6 +2064,25 @@ impl GroupService {
         let signed = wire::sign_message(keys, group_id, &Envelope::receipt_read(at).encode(), self.now(), None)?;
         let grace = self.grace_key(group_id, s).await?;
         let sealed = wire::seal_note(group_id, &key, grace.as_ref(), &signed, keys)?;
+        Ok(Self::scoped(group_id, sealed))
+    }
+
+    /// Tell the members I am writing (a bot answering): signed by me like
+    /// a message, sealed under the ephemeral kind, kept nowhere, waking
+    /// nobody. Who may not speak says nothing.
+    pub async fn prepare_typing(&self, keys: &Keys, group_id: &str) -> Result<Outbound> {
+        self.refuse_banned(group_id).await?;
+        let me = me_of(keys);
+        let row = repo::get(&self.store, group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
+        let log = self.need_log(group_id).await?;
+        let s = log.state();
+        if row.membership != MEMBERSHIP_JOINED || s.member(&me).is_none() {
+            return Err(MessengerError::Invalid("group_not_member".into()));
+        }
+        let key = self.sealing_key(group_id, &log).await?;
+        let signed = wire::sign_message(keys, group_id, &Envelope::typing(messenger_core::envelope::TYPING_TTL_SECS).encode(), self.now(), None)?;
+        let grace = self.grace_key(group_id, s).await?;
+        let sealed = wire::seal_typing(group_id, &key, grace.as_ref(), &signed, keys)?;
         Ok(Self::scoped(group_id, sealed))
     }
 

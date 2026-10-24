@@ -42,3 +42,22 @@ export function threadOrder(comments: readonly FeedItemView[]): ThreadLine[] {
   for (const c of comments) if (!seen.has(c.id)) walk(c, 0);
   return out;
 }
+
+/** What a page of a thread showed: the ids of its comments and the date of the newest. */
+export interface Shown {
+  ids: Set<string>;
+  newest: number;
+}
+
+export function shownOf(comments: readonly FeedItemView[]): Shown {
+  return { ids: new Set(comments.map((c) => c.id)), newest: comments.reduce((n, c) => Math.max(n, c.created_at), 0) };
+}
+
+/**
+ * The comments that came since `before` was shown: not among its ids, and
+ * not older than its newest (those are a page of earlier ones). Mine still
+ * on their way (`local:`) were written here, they did not come.
+ */
+export function arrived(before: Shown, comments: readonly FeedItemView[]): FeedItemView[] {
+  return comments.filter((c) => !before.ids.has(c.id) && c.created_at >= before.newest && !c.id.startsWith('local:'));
+}

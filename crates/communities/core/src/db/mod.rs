@@ -126,7 +126,7 @@ mod tests {
         let path = dir.path().join("sub").join(FILE_NAME);
         let db = Db::open(&path).await.unwrap();
         assert_eq!(db.schema_version().await.unwrap(), Db::latest_migration());
-        assert_eq!(Db::latest_migration(), 32);
+        assert_eq!(Db::latest_migration(), 33);
         let tables: Vec<String> = sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'cm_%' ORDER BY name").fetch_all(db.pool()).await.unwrap();
         assert_eq!(
             tables,

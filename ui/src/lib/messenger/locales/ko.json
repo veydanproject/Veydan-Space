@@ -777,6 +777,7 @@
     "msg_voice_play": "재생",
     "msg_emoji_title": "이모지",
     "msg_emoji_keyboard": "키보드",
+    "msg_bot_commands": "봇 명령어",
     "msg_emoji_erase": "지우기",
     "msg_emoji_expand": "펼치기",
     "msg_emoji_collapse": "접기",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "신고에는 그 사람과 함께 만난 채널이 표시됩니다.",
     "msg_card_channel": "채널",
     "msg_card_channels_off": "설정에서 채널이 꺼져 있습니다",
-    "msg_card_channels_settings": "설정"
+    "msg_card_channels_settings": "설정",
+    "msg_typing": "입력 중…",
+    "msg_typing_1": "{name} 님이 입력 중…",
+    "msg_typing_2": "{a} 님과 {b} 님이 입력 중…",
+    "msg_typing_more": "{a} 님, {b} 님 외 {n}명이 입력 중…",
+    "msg_typing_more_one": "{a} 님, {b} 님 외 {n}명이 입력 중…",
+    "msg_typing_more_few": "{a} 님, {b} 님 외 {n}명이 입력 중…"
   },
   "mobile": {}
 }

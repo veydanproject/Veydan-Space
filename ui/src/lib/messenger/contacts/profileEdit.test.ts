@@ -169,7 +169,7 @@ describe('crop', () => {
 
 describe('form', () => {
   const base: MessengerProfileInput = {
-    name: 'alice', display_name: 'Alice', about: 'hi', website: null, nip05: null, lud16: null, socials: [{ p: 'github', h: 'alice' }],
+    name: 'alice', display_name: 'Alice', about: 'hi', website: null, nip05: null, lud16: null, socials: [{ p: 'github', h: 'alice' }], bot: false, commands: [],
   };
 
   it('sees no change in spaces at the ends or null for empty', () => {

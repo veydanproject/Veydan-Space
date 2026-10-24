@@ -15,7 +15,7 @@ use crate::transport::FeedPage;
 use crate::wire::{Links, Place, KIND_SNAPSHOT};
 use messenger_core::{Envelope, TextFormat};
 use crate::roles::Role;
-use crate::service::{NewChannel, MEMBERSHIP_JOINED, MEMBERSHIP_LEFT, MEMBERSHIP_REJECTED};
+use crate::service::{NewChannel, MEMBERSHIP_JOINED, MEMBERSHIP_LEFT, MEMBERSHIP_NONE, MEMBERSHIP_REJECTED};
 use crate::state::SCOPE_EVERYONE;
 use crate::testkit::{Node, World, H1, H2, H3};
 use crate::wire::{self, KIND_CONTENT, KIND_EPOCH};
@@ -319,6 +319,59 @@ async fn an_invitation_goes_to_an_admission_and_a_join() {
     w.pump(&all).await;
     assert_eq!(membership(&guest, &cid).await, MEMBERSHIP_JOINED);
     assert!(newest(&guest, &cid).await.is_some());
+}
+
+/// The link of an invite-only channel is nothing to a stranger, and the
+/// invitation taken to the one who holds it (a bot writes «here is the
+/// link» to the one it invited).
+#[tokio::test]
+async fn the_link_of_an_invite_channel_takes_the_invitation_held() {
+    let w = World::new();
+    let owner = w.node().await;
+    let guest = w.node().await;
+    let stranger = w.node().await;
+    let all = [&owner, &guest, &stranger];
+    let cid = create(&w, &owner, JoinMode::Invite, History::Open, &[H1, H2]).await;
+    w.pump(&all).await;
+    let link = owner.svc.share_link(&cid).await.unwrap_or_else(|e| panic!("link: {e}"));
+    stranger.svc.ask_journal(&cid).await.unwrap_or_else(|e| panic!("journal: {e}"));
+    w.pump(&all).await;
+    let refused = stranger.svc.open_link(&stranger.keys, &link, "").await.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(refused.contains("invitations only"), "a stranger: {refused}");
+    owner.svc.invite(&owner.keys, &cid, &pk(&guest)).await.unwrap_or_else(|e| panic!("invite: {e}"));
+    w.pump(&all).await;
+    guest.svc.open_link(&guest.keys, &link, "").await.unwrap_or_else(|e| panic!("the link with an invitation: {e}"));
+    w.pump(&all).await;
+    assert_eq!(membership(&guest, &cid).await, MEMBERSHIP_JOINED);
+    assert_eq!(membership(&stranger, &cid).await, MEMBERSHIP_NONE, "the stranger stays out");
+}
+
+/// A subscription made anew brings the wraps of two days back (a relay
+/// connected again, a catch-up): the copy of the admission comes once
+/// more to a guest who is in already, and no second join goes out (живой
+/// запуск 2026-10-24: a join every five seconds).
+#[tokio::test]
+async fn an_admission_heard_again_sends_no_second_join() {
+    let w = World::new();
+    let owner = w.node().await;
+    let guest = w.node().await;
+    let all = [&owner, &guest];
+    let cid = create(&w, &owner, JoinMode::Invite, History::Open, &[H1, H2]).await;
+    w.pump(&all).await;
+    let (invite_id, _) = owner.svc.invite(&owner.keys, &cid, &pk(&guest)).await.unwrap_or_else(|e| panic!("invite: {e}"));
+    w.pump(&all).await;
+    guest.svc.answer_invite(&invite_id, true).await.unwrap_or_else(|e| panic!("answer: {e}"));
+    w.pump(&all).await;
+    assert_eq!(membership(&guest, &cid).await, MEMBERSHIP_JOINED);
+    let sent = guest.net.wraps.load(Ordering::SeqCst);
+    let again: Vec<serde_json::Value> = w.relay.inbox.lock().unwrap_or_else(|p| p.into_inner()).get(guest.me.as_hex()).cloned().unwrap_or_default();
+    assert!(!again.is_empty(), "the admission and the issue came to the guest");
+    for wrap in &again {
+        guest.svc.on_wrap(&guest.keys, wrap).await.unwrap_or_else(|e| panic!("heard again: {e}"));
+    }
+    w.pump(&all).await;
+    assert_eq!(guest.net.wraps.load(Ordering::SeqCst), sent, "no join went out again");
+    assert_eq!(membership(&guest, &cid).await, MEMBERSHIP_JOINED);
 }
 
 #[tokio::test]
@@ -1170,6 +1223,36 @@ async fn a_page_marks_my_own_reactions() {
     a.svc.send_reaction(&a.keys, &cid, &post, "👍", false).await.unwrap_or_else(|e| panic!("unreact: {e}"));
     w.pump(&all).await;
     assert_eq!(seen(history(&a, &cid, 10, None).await), vec![("👍".to_string(), 1, false), ("🔥".to_string(), 1, false)]);
+}
+
+/// A reaction set and taken back within a second (a bot's 👀 after its
+/// answer), and the second relay's copy of the setting coming after the
+/// first relay's retraction: the post stays without it (живой запуск
+/// 2026-10-24).
+#[tokio::test]
+async fn a_reaction_taken_back_is_not_put_back_by_a_copy_heard_later() {
+    let w = World::new();
+    let owner = w.node().await;
+    let a = w.node().await;
+    let all = [&owner, &a];
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    join_by_link(&w, &owner, &a, &cid, &all).await;
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    let (post, _) = owner.svc.send_post(&owner.keys, &cid, "the post", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    let before = w.relay.of_kind(KIND_CONTENT).len();
+    a.svc.send_reaction(&a.keys, &cid, &post, "👀", true).await.unwrap_or_else(|e| panic!("react: {e}"));
+    w.pump(&all).await;
+    let seen = |page: FeedPage| page.items.into_iter().find(|i| i.id == post).map(|i| i.reactions).unwrap_or_default();
+    assert_eq!(seen(history(&owner, &cid, 10, None).await), vec![("👀".to_string(), 1, false)]);
+    let setting = w.relay.of_kind(KIND_CONTENT).get(before).cloned().unwrap_or_else(|| panic!("the reaction on the relay"));
+    a.svc.send_reaction(&a.keys, &cid, &post, "👀", false).await.unwrap_or_else(|e| panic!("unreact: {e}"));
+    w.pump(&all).await;
+    assert_eq!(seen(history(&owner, &cid, 10, None).await), vec![], "taken back");
+    owner.svc.on_event(&owner.keys, &setting, true).await.unwrap_or_else(|e| panic!("the copy heard again: {e}"));
+    assert_eq!(seen(history(&owner, &cid, 10, None).await), vec![], "the copy of the setting puts nothing back");
 }
 
 #[tokio::test]
@@ -4076,4 +4159,37 @@ async fn a_superseded_pending_epoch_cancels_its_upload() {
     tick(&owner).await;
     assert_eq!(w.relay.epochs(), vec![1, 3]);
     assert!(owner.errors().is_empty(), "{:?}", owner.errors());
+}
+
+/// «Typing» under a post (2026-10-24): the ephemeral twin of content,
+/// opened under the key of the section, sent to the relays at once (not
+/// through the outbox), a word for the screen alone — no message of it,
+/// nothing of my own heard back.
+#[tokio::test]
+async fn a_typing_under_a_post_is_a_word_for_the_screen_alone() {
+    let w = World::new();
+    let owner = w.node().await;
+    let a = w.node().await;
+    let all = [&owner, &a];
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    join_by_link(&w, &owner, &a, &cid, &all).await;
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    let (post, _) = owner.svc.send_post(&owner.keys, &cid, "the post", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    let before = w.relay.of_kind(wire::KIND_TYPING).len();
+    a.svc.send_typing(&a.keys, &cid, &post).await.unwrap_or_else(|e| panic!("typing: {e}"));
+    let typed = w.relay.of_kind(wire::KIND_TYPING);
+    assert_eq!(typed.len(), before + 1, "sent to the relays at once");
+    let ev = typed.last().cloned().unwrap_or_else(|| panic!("the typing on the relay"));
+    let out = owner.svc.on_event(&owner.keys, &ev, true).await.unwrap_or_else(|e| panic!("heard: {e}"));
+    let typing: Vec<_> = out.events.iter().filter(|e| e.name == crate::service::UI_EVENT_CHANNEL_TYPING).collect();
+    assert_eq!(typing.len(), 1, "{:?}", out.events);
+    assert_eq!(typing[0].payload["post_id"], post);
+    assert_eq!(typing[0].payload["author"], a.me.as_hex());
+    let out = a.svc.on_event(&a.keys, &ev, true).await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(out.events.iter().all(|e| e.name != crate::service::UI_EVENT_CHANNEL_TYPING), "my own says nothing");
+    w.pump(&all).await;
+    assert_eq!(history(&owner, &cid, 10, None).await.items.len(), 1, "no message of it");
 }

@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Hacer copia ahora",
     "settings_backup_running": "Creando copia de seguridad…",
     "settings_backup_done": "La copia de seguridad se creó correctamente.",
+    "settings_backup_saved": "Guardado",
     "settings_backup_schedule": "Copias de seguridad programadas",
     "settings_backup_schedule_hint": "Crear copias de seguridad automáticamente según una programación.",
     "settings_backup_mode": "Modo",

@@ -85,6 +85,8 @@ export function profileInputOf(p: MessengerProfile | null): MessengerProfileInpu
     name: p?.name ?? null, display_name: p?.display_name ?? null, about: p?.bio_source ?? p?.about ?? null,
     website: p?.website ?? null, nip05: p?.nip05 ?? null, lud16: p?.lud16 ?? null,
     socials: (p?.socials ?? []).map(socialLinkOf),
+    bot: p?.bot ?? false,
+    commands: p?.commands ?? [],
   };
 }
 
@@ -959,7 +961,7 @@ let mockContacts: MessengerContact[] = demo?.contacts ?? [];
 let mockOwnProfile: MessengerProfile | null = demo?.ownProfile ?? null;
 const emptyProfile = (pubkey: string): MessengerProfile => ({
   pubkey, npub: `npub1${pubkey.slice(0, 58)}`, name: null, display_name: null, about: null, picture: null, banner: null,
-  website: null, nip05: null, lud16: null, nip05_verified: false, event_created_at: 0, fetched_at: 0,
+  website: null, nip05: null, lud16: null, nip05_verified: false, event_created_at: 0, fetched_at: 0, bot: false, commands: [],
   bio: [], bio_source: null, socials: [],
 });
 
@@ -1880,8 +1882,8 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_dev_set_mode: (a) => {
     mockChats = mockChats.map((x) => (x.id === a?.chatId ? { ...x, mode: a?.mode as ChatMode, can_send: Boolean(a?.canSend) } : x));
   },
-  // Strangers of the demo have a profile of their own; contacts are read from the book.
-  messenger_profile_get: (a) => demo?.strangers.find((p) => p.pubkey === a?.pubkey) ?? null,
+  // Strangers and bots of the demo have a profile of their own; contacts are read from the book.
+  messenger_profile_get: (a) => [...(demo?.strangers ?? []), ...(demo?.bots ?? [])].find((p) => p.pubkey === a?.pubkey) ?? null,
   messenger_profile_request: () => undefined,
   messenger_profile_own_get: () => mockOwnProfile,
   messenger_profile_own_set: (a) => mockOwnSet((a?.input ?? {}) as MessengerProfileInput),

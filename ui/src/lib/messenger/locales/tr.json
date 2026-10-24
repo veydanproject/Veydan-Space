@@ -777,6 +777,7 @@
     "msg_voice_play": "Oynat",
     "msg_emoji_title": "Emoji",
     "msg_emoji_keyboard": "Klavye",
+    "msg_bot_commands": "Bot komutları",
     "msg_emoji_erase": "Sil",
     "msg_emoji_expand": "Genişlet",
     "msg_emoji_collapse": "Gizle",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "Bildirimde kişi ve onunla karşılaştığınız kanal belirtilir.",
     "msg_card_channel": "Kanal",
     "msg_card_channels_off": "Kanallar ayarlarda kapalı",
-    "msg_card_channels_settings": "Ayarlar"
+    "msg_card_channels_settings": "Ayarlar",
+    "msg_typing": "yazıyor…",
+    "msg_typing_1": "{name} yazıyor…",
+    "msg_typing_2": "{a} ve {b} yazıyor…",
+    "msg_typing_more": "{a}, {b} ve {n} kişi daha yazıyor…",
+    "msg_typing_more_one": "{a}, {b} ve {n} kişi daha yazıyor…",
+    "msg_typing_more_few": "{a}, {b} ve {n} kişi daha yazıyor…"
   },
   "mobile": {}
 }

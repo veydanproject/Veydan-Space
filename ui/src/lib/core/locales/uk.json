@@ -355,6 +355,7 @@
     "settings_sync_now": "Синхронізувати",
     "settings_sync_running": "Синхронізація…",
     "settings_sync_done": "Синхронізацію завершено.",
+    "settings_sync_saved": "Збережено",
     "settings_sync_phase_collect": "Збирання змін",
     "settings_sync_phase_push": "Вивантаження",
     "settings_sync_phase_pull": "Завантаження",

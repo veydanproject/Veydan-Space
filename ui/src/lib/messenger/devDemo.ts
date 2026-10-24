@@ -16,7 +16,7 @@ const npub = (pk: string, tag: string) => `npub1${tag}${pk}`.slice(0, 63);
 function profile(pk: string, name: string, about: string, nip05: string | null, extra: Partial<MessengerProfile> = {}): MessengerProfile {
   return {
     pubkey: pk, npub: npub(pk, name.toLowerCase().replace(/[^a-z]/g, '')), name: name.toLowerCase(), display_name: name, about: demoStrip(about) || null,
-    picture: null, banner: null, website: null, nip05, lud16: null, nip05_verified: !!nip05, event_created_at: 1, fetched_at: 1,
+    picture: null, banner: null, website: null, nip05, lud16: null, nip05_verified: !!nip05, event_created_at: 1, fetched_at: 1, bot: false, commands: [],
     bio: demoBioParse(about), bio_source: about || null, socials: [], ...extra,
   };
 }
@@ -192,6 +192,8 @@ export interface DemoData {
   transfers: MessengerTransfer[];
   /** Profiles of the people of the requests: not in the book, read like any stranger's. */
   strangers: MessengerProfile[];
+  /** Profiles of the bots one talks to: no contacts, their commands make the «/» menu. */
+  bots: MessengerProfile[];
   /** Messages held back behind a request, by chat. */
   held: Record<string, number>;
   /** What the moderators of the demo's groups did, newest first, by group id. */
@@ -334,6 +336,18 @@ export function buildDemo(): DemoData {
   const cloudBot = hex('c1');
   const cb = `dm:${cloudBot}`;
   chats.push({ id: cb, kind: 'dm', peer_pubkey: cloudBot, peer_npub: npub(cloudBot, 'vcloud'), title: 'VCLOUD', picture: null, is_contact: false, is_muted: false, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'full_chat', can_send: true, bot: true });
+  // Its profile lists commands: the «/» menu of the chat.
+  const bots = [
+    profile(cloudBot, 'VCLOUD', '', null, {
+      bot: true,
+      commands: [
+        { name: 'status', about: 'How the servers are doing' },
+        { name: 'plan', about: 'My plan and what is left of it' },
+        { name: 'servers', about: 'The servers of my installation' },
+        { name: 'help', about: 'The commands of the bot' },
+      ],
+    }),
+  ];
   const botCard = (at: number, bot_card: BotCard) => msg(cb, cloudBot, at, null, { content_type: 'bot_card', bot_card });
   messages[cb] = [
     msg(cb, cloudBot, now - day * 4, 'eu-1: the relay is fine again, 4 min down'),
@@ -611,7 +625,7 @@ export function buildDemo(): DemoData {
   });
   return {
     identity: { npub: ownProfile.npub, pubkey: ME, created_at: now - day * 30 },
-    ownProfile, contacts, chats, messages, groups, invites, transfers, strangers, privateServers: [corp, lab],
+    ownProfile, contacts, chats, messages, groups, invites, transfers, strangers, bots, privateServers: [corp, lab],
     dmInvites: [
       {
         id: 'c1'.repeat(32), kind: 'link', secret: 'ZGVtby1pbnZpdGUtMDAwMQ', label: 'Telegram',

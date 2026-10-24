@@ -48,6 +48,9 @@ export function svelteCssGuard() {
       if (!STYLE_ID.test(id)) return;
       const filename = filenameOf(id);
       if (!filename.endsWith(".svelte")) return;
+      // A page opened before a component was removed still asks for its
+      // styles on the next hot update: it gets none, not an error overlay.
+      if (!fs.existsSync(filename)) return { code: "", moduleType: "css" };
       this.addWatchFile(filename);
       return {
         code: await compiledCss(filename),

@@ -26,7 +26,7 @@
   import { ABUSE_MAIL, LEGAL, openLegal } from '$lib/core/legal';
   import { updateCheck } from '$lib/core/store/update-check.svelte';
 
-  const locales: { id: Locale; label: string }[] = LANGUAGES.map((l) => ({ id: l.code, label: l.native }));
+  const locales: { id: Locale; label: string; code: string; lang: string }[] = LANGUAGES.map((l) => ({ id: l.code, label: l.native, code: l.code, lang: l.tag }));
 
   const demoLocales: { id: 'en' | 'ru'; label: string }[] = [
     { id: 'en', label: 'English' },
@@ -62,8 +62,8 @@
   let bugOpen = $state(false);
 
   const themeOptions = $derived([
-    { id: 'light', label: $t('settings_theme_light'), icon: 'sun' },
     { id: 'dark', label: $t('settings_theme_dark'), icon: 'moon' },
+    { id: 'light', label: $t('settings_theme_light'), icon: 'sun' },
   ]);
   // Which screen opens at launch. Space: Home or one of the apps. A product
   // of one module has no Home: the choice is between the module's screens,
@@ -93,7 +93,7 @@
   );
   const updateLabel = $derived(
     updateCheck.status === 'checking' ? $t('update_checking')
-    : updateCheck.status === 'available' ? updateCheck.latest
+    : updateCheck.status === 'available' ? $t('update_available', { version: updateCheck.latest })
     : updateCheck.status === 'upToDate' ? $t('update_up_to_date')
     : '',
   );
@@ -198,7 +198,8 @@
     <div class="m-card update-card">
       <span class="update-title">{$t('update_available', { version: updateCheck.latest })}</span>
       <span class="m-sub">{$t('update_available_hint')}</span>
-      <button type="button" class="btn btn-primary btn-sm update-open" onclick={() => updateCheck.open()}>
+      <button type="button" class="btn btn-primary update-open" onclick={() => updateCheck.open()}>
+        <Icon name="download" size={18} />
         {$t('update_open')}
       </button>
     </div>
@@ -441,16 +442,17 @@
 />
 
 <style>
-  .ok { color: var(--success-text); font-weight: 600; }
+  .ok, .m-row-value.ok { color: var(--success-text); font-weight: 600; }
   .account { margin-top: var(--sp-3); }
-  .new { color: var(--accent-text); font-weight: 600; }
+  .new, .m-row-value.new { color: var(--accent-text); font-weight: 600; }
   .update-card {
     display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2);
     margin-top: var(--sp-3); padding: var(--sp-4);
     border-color: var(--accent-border);
   }
   .update-title { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
-  .update-open { margin-top: var(--sp-1); }
+  /* The download the whole width of the card, a full touch target. */
+  .update-open { margin-top: var(--sp-1); align-self: stretch; min-height: var(--sp-12); justify-content: center; }
   .update-err { margin-top: var(--sp-2); }
   .about-head { gap: var(--sp-3); }
   .about-logo { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }

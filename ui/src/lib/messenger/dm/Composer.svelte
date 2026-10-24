@@ -4,6 +4,7 @@
 <script lang="ts">
   import { drafts, markdownDrafts } from '../shared/drafts.svelte';
   import { applyMark, markOfKey, type Mark } from './format';
+  import { commandsFor, stepRow, typedCommand } from './bot-commands';
   import { readingOf } from '../content/markdown';
   import { classifyPaste, takePictures } from '../media/clipboard';
   import type { Snippet } from 'svelte';
@@ -20,6 +21,7 @@
   import { HOLD_MS, IDLE, step, type Gesture, type GestureEvent } from './record-gesture';
   import { captureSupported, type Captured } from '../media/capture';
   import { mediaOf, type MessengerMessage, type MessengerRecording, type TextFormat } from '../api';
+  import type { BotCommand } from '../generated/profile';
   import { replyLine, replyThumb } from '../push/wording';
 
   interface Props {
@@ -59,11 +61,18 @@
     markdown?: boolean;
     /** The ⤢ button: the words typed (and whether they are Markdown) go to a bigger editor; the field is emptied. */
     onexpand?: (text: string, md: boolean) => void;
+    /**
+     * The commands of the bot on the other side, as its profile lists them:
+     * a field that begins with `/` shows those its name begins with over the
+     * field, the «/» beside the smile shows them all; one picked goes at once
+     * as the message `/name`.
+     */
+    commands?: BotCommand[];
   }
   let {
     disabled = false, placeholder, replyTo, editing, peerTitle, oncancel, onsend, tools, draftKey, oneditlast,
     onrecording, canRecord = true, autofocus = true, attached = null, attachments, onpastefiles, onpasteclipboard, canattach = true,
-    markdown = false, onexpand,
+    markdown = false, onexpand, commands = [],
   }: Props = $props();
 
   let emojiOpen = $state(false);
@@ -349,6 +358,62 @@
   const canSend = $derived(!disabled && !tooLong && attached !== "loading" && (text.trim().length > 0 || attached === "ready"));
   const canRecordNow = $derived((!!held || (!text.trim() && !attached)) && !editing && !!onrecording && canRecord && !disabled && (voiceOk || circleOk));
 
+  // The «/» menu of a chat with a bot. Typed: the field is `/` and the
+  // beginning of a name, no space yet; the list holds the names that begin
+  // so. Asked for by the «/» button: all of them, whatever the field holds,
+  // until the next key. Esc (or a tap elsewhere) puts it away until the
+  // words change.
+  let cmdAll = $state(false);
+  let cmdAt = $state(0);
+  let cmdAway = $state<string | null>(null);
+  let cmdBox = $state<HTMLDivElement | null>(null);
+  const cmdList = $derived(commandsFor(commands, text, cmdAll));
+  const cmdShown = $derived(cmdList.length > 0 && !disabled && !editing && !attached && !recording && !held && !emojiOpen && cmdAway !== text);
+  // A new list starts at its first command.
+  $effect(() => { void cmdList; cmdAt = 0; });
+  $effect(() => {
+    if (!cmdShown) return;
+    const outside = (e: PointerEvent) => {
+      if (root?.contains(e.target as Node)) return;
+      cmdAway = text;
+      cmdAll = false;
+    };
+    document.addEventListener('pointerdown', outside, true);
+    return () => document.removeEventListener('pointerdown', outside, true);
+  });
+  function closeCommands() {
+    cmdAway = text;
+    cmdAll = false;
+  }
+  function toggleCommands() {
+    if (cmdShown) { closeCommands(); return; }
+    emojiOpen = false;
+    cmdAway = null;
+    cmdAll = true;
+  }
+  function moveCommand(by: number) {
+    cmdAt = stepRow(cmdAt, by, cmdList.length);
+    queueMicrotask(() => cmdBox?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }));
+  }
+  /** A command picked goes at once; the `/` and the letters typed for it go from the field, other words stay. */
+  async function pickCommand(c: BotCommand) {
+    const typed = typedCommand(text) !== null;
+    const before = text;
+    cmdAll = false;
+    cmdAway = null;
+    if (typed) {
+      text = '';
+      sel = null;
+      queueMicrotask(resize);
+    }
+    try {
+      await onsend(`/${c.name}`, null);
+    } catch {
+      if (typed && !text) text = before;
+      queueMicrotask(resize);
+    }
+  }
+
   // The words go as Markdown: set by the format menu (or by editing a
   // Markdown message), shown as a chip over the field, taken off by its ×.
   // The field holds the marks as they are typed; an empty field is plain.
@@ -379,6 +444,8 @@
       if (md) markdownDrafts.add(lastKey); else markdownDrafts.delete(lastKey);
     }
     lastKey = key;
+    cmdAll = false;
+    cmdAway = null;
     text = key ? (drafts.get(key) ?? "") : "";
     md = !!key && !!text ? markdownDrafts.has(key) : markdown;
     sel = null;
@@ -521,6 +588,13 @@
   const keepFocus = (e: Event) => e.preventDefault();
 
   function onkeydown(e: KeyboardEvent) {
+    if (cmdShown && !e.isComposing) {
+      // ↑/↓ move, Enter (a computer's) or Tab picks, Esc puts the menu away.
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); moveCommand(e.key === 'ArrowDown' ? 1 : -1); return; }
+      const c = cmdList[cmdAt];
+      if (c && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !touch))) { e.preventDefault(); void pickCommand(c); return; }
+      if (e.key === 'Escape') { e.preventDefault(); closeCommands(); return; }
+    }
     const mark = touch ? null : markOfKey(e);
     if (mark && el && el.selectionStart !== el.selectionEnd) { e.preventDefault(); format(mark); }
     else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !touch) { e.preventDefault(); submit(); }
@@ -578,6 +652,11 @@
   </span>
 {/snippet}
 
+{#snippet slashButton()}
+  <button class="tool slash" class:on={cmdShown} tabindex="-1" {disabled} aria-expanded={cmdShown}
+    onpointerdown={keepFocus} onmousedown={keepFocus} onclick={toggleCommands} title={$t('msg_bot_commands')} aria-label={$t('msg_bot_commands')}>/</button>
+{/snippet}
+
 {#snippet expandButton()}
   <button class="tool expand" tabindex="-1" {disabled} onpointerdown={keepFocus} onmousedown={keepFocus} onclick={expand}
     title={$t('msg_composer_expand')} aria-label={$t('msg_composer_expand')}>
@@ -615,6 +694,18 @@
     </div>
   {/if}
   {#if attachments}{@render attachments()}{/if}
+  {#if cmdShown}
+    <!-- The commands of the bot, over the composer: a tap or Enter sends one. -->
+    <div class="cmds" role="listbox" aria-label={$t('msg_bot_commands')} bind:this={cmdBox}>
+      {#each cmdList as c, i (c.name)}
+        <button class="cmd" class:on={i === cmdAt} role="option" aria-selected={i === cmdAt} tabindex="-1"
+          onpointerdown={keepFocus} onmousedown={keepFocus} onpointerenter={() => (cmdAt = i)} onclick={() => pickCommand(c)}>
+          <span class="cmd-name">/{c.name}</span>
+          {#if c.about}<span class="cmd-about">{c.about}</span>{/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
   <!-- A computer: over the field. The phone has both at the top of the chat (below), so the field never moves. -->
   {#if !touch && (chip || (sel && !recording && !fmtMenu.open))}
     <div class="above">
@@ -634,11 +725,12 @@
             onpointerdown={keepFocus} onmousedown={keepFocus} onclick={toggleEmoji} aria-label={dock === 'open' ? $t('msg_emoji_keyboard') : $t('msg_emoji_title')}>
             <Icon name={dock === 'open' ? 'keyboard' : 'smile'} size={21} />
           </button>
+          {#if commands.length}{@render slashButton()}{/if}
           <!-- A tap on the field while the panel is open brings the keyboard back. -->
           <textarea
             bind:this={el} bind:value={text} rows="1" {disabled}
             placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
-            oninput={() => { resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onpointerup={readSel} {onpaste} onfocus={() => focused(true)} onblur={() => { sel = null; focused(false); }}
+            oninput={() => { cmdAll = false; resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onpointerup={readSel} {onpaste} onfocus={() => focused(true)} onblur={() => { sel = null; focused(false); }}
             onpointerdown={() => { if (dock === 'open') { el?.removeAttribute('inputmode'); dock = 'tokb'; } }}
           ></textarea>
           {#if tools}{@render tools()}{/if}
@@ -674,8 +766,9 @@
       <textarea
         bind:this={el} bind:value={text} rows="1" {disabled}
         placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
-        oninput={() => { resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onmouseup={readSel} {onpaste} {oncontextmenu} onblur={() => (sel = null)}
+        oninput={() => { cmdAll = false; resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onmouseup={readSel} {onpaste} {oncontextmenu} onblur={() => (sel = null)}
       ></textarea>
+      {#if commands.length}{@render slashButton()}{/if}
       <button class="tool emoji" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
         onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} title={$t("msg_emoji_title")}>
         <Icon name="smile" size={18} />
@@ -751,6 +844,28 @@
   .dfield textarea { flex: 1; min-width: 0; }
   .dfield :global(.picker) { left: auto; right: 0; bottom: calc(100% + 14px); }
   .tool.voice { border: 1px solid var(--border-2); }
+  /* «/» beside the smile in a chat with a bot: the glyph itself, the weight of the icons beside it. */
+  .tool.slash { font: inherit; font-size: 19px; font-weight: var(--fw-semibold); line-height: 1; }
+  /* The commands of the bot: a menu over the composer, framed as the context menus. Opaque: inside the
+     composer no backdrop filter reaches the conversation (the glass of the composer is its backdrop root),
+     and the lines of a bubble would show through the words. */
+  .cmds {
+    position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: calc(100% + 6px); z-index: 20;
+    display: flex; flex-direction: column; gap: 1px; max-height: min(288px, 45vh); overflow-y: auto; padding: 4px;
+    background: var(--surface); border: 1px solid var(--glass-border); border-radius: var(--radius-md);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
+    animation: menu-in var(--dur-fast) var(--ease) both;
+  }
+  .cmd {
+    display: flex; align-items: baseline; gap: var(--sp-2); flex-shrink: 0; min-height: 36px; padding: var(--sp-1) var(--sp-3);
+    border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text);
+    font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer;
+  }
+  .cmd.on { background: var(--surface-hover); }
+  .cmd-name { flex-shrink: 0; font-weight: var(--fw-semibold); color: var(--accent-text-2); }
+  .cmd-about { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--fs-xs); }
+  @keyframes menu-in { from { opacity: 0; transform: translateY(4px); } }
+  @media (prefers-reduced-motion: reduce) { .cmds { animation: none; } }
   /* «MD» beside the field where Markdown is the rule: lit while the words are Markdown. */
   .tool.mdtag { width: auto; min-width: 34px; height: 24px; margin-bottom: 8px; padding: 0 7px; border-radius: var(--radius-pill); font: inherit; font-size: var(--fs-2xs); font-weight: var(--fw-bold); letter-spacing: 0.04em; color: var(--text-3); border: 1px solid var(--border-2); }
   .tool.mdtag.on { color: var(--accent-text-2); background: var(--accent-tint); border-color: transparent; }
@@ -848,6 +963,10 @@
     .field textarea:focus { outline: none; box-shadow: none; }
     .field textarea::placeholder { white-space: nowrap; }
     .field .tool { width: 40px; height: 38px; margin-left: 2px; }
+    .field .tool.slash { width: 32px; margin-left: 0; }
+    /* A finger's rows, the width of the bar. */
+    .cmds { left: var(--sp-2); right: var(--sp-2); }
+    .cmd { min-height: 44px; align-items: center; }
     /* Over the conversation, under its head; in the body of the page, so no glass of the composer holds it. */
     .fmt-top {
       position: fixed; left: 50%; z-index: 30; transform: translateX(-50%); max-width: calc(100vw - 2 * var(--sp-2));

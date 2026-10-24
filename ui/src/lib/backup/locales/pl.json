@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Utwórz kopię zapasową teraz",
     "settings_backup_running": "Tworzenie kopii zapasowej…",
     "settings_backup_done": "Utworzono kopię zapasową.",
+    "settings_backup_saved": "Zapisano",
     "settings_backup_schedule": "Kopie zapasowe według harmonogramu",
     "settings_backup_schedule_hint": "Automatycznie twórz kopie zapasowe według harmonogramu.",
     "settings_backup_mode": "Tryb",

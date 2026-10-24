@@ -11,6 +11,7 @@
     "settings_backup_run_now": "Şimdi yedekle",
     "settings_backup_running": "Yedekleniyor…",
     "settings_backup_done": "Yedek başarıyla oluşturuldu.",
+    "settings_backup_saved": "Kaydedildi",
     "settings_backup_schedule": "Zamanlanmış yedeklemeler",
     "settings_backup_schedule_hint": "Yedekleri bir zamanlamaya göre otomatik olarak oluşturur.",
     "settings_backup_mode": "Mod",

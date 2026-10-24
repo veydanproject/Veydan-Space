@@ -355,6 +355,7 @@
     "settings_sync_now": "今すぐ同期",
     "settings_sync_running": "同期中…",
     "settings_sync_done": "同期が完了しました。",
+    "settings_sync_saved": "保存しました",
     "settings_sync_phase_collect": "変更を収集中",
     "settings_sync_phase_push": "アップロード中",
     "settings_sync_phase_pull": "ダウンロード中",

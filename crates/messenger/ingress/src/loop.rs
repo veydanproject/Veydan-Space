@@ -5,6 +5,7 @@
 //! dispatches. One per session; dropping the handle stops it.
 
 use crate::classify::{classify, KIND_GIFT_WRAP, KIND_PRESENCE};
+use messenger_core::envelope::{KIND_GROUP_TYPING, KIND_TYPING_WRAP};
 use crate::dispatch::{Dispatcher, EffectSink};
 use messenger_core::{Context, Inbound, RawEvent};
 use messenger_store::{banned, events_raw, servers, Store};
@@ -17,8 +18,9 @@ use tokio::task::JoinHandle;
 /// Kinds that are not kept in `msg_events_raw`. A presence beat is
 /// replaceable and comes twice a minute per contact: kept, it would pile up
 /// forever, and a replay of one does no harm (its handler only moves
-/// forward).
-pub const TRANSIENT_KINDS: &[u16] = &[KIND_PRESENCE];
+/// forward). A «typing» is ephemeral: the relays keep none, and one
+/// heard twice shows the same word twice.
+pub const TRANSIENT_KINDS: &[u16] = &[KIND_PRESENCE, KIND_TYPING_WRAP, KIND_GROUP_TYPING];
 
 /// Whether an event of `kind` skips the dedup table.
 pub fn is_transient(kind: u16) -> bool {

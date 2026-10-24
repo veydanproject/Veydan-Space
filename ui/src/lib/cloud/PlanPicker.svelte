@@ -70,8 +70,9 @@
   /** The periods the chosen currency has prices for: a switch never leads to a row of cards without a price. */
   const periods = $derived(periodsOf(plans, currency));
   const period = $derived(pickedPeriod !== null && periods.includes(pickedPeriod) ? pickedPeriod : (periods[0] ?? null));
-  /** The card open on a phone: the one tapped, else the one pointed at, else the plan in use. */
+  /** The plan open: the one tapped, else the one pointed at, else the plan in use (beside the list, or in place on a narrow page). */
   const open = $derived(opened ?? recommended ?? current ?? plans[0]?.id ?? null);
+  const openPlan = $derived(plans.find((p) => p.id === open) ?? null);
 
   function periodLabel(days: number): string {
     if (days === MONTH_DAYS) return $t('cloud_plan_period_month');
@@ -101,149 +102,170 @@
   }
 </script>
 
+{#snippet top(plan: CloudPlanOffer)}
+  {@const price = shownPrice(plan, currency, period)}
+  {@const saved = price && price.period_days === period ? savingOf(plan, currency, period) : null}
+  <span class="name-row">
+    <span class="name">{plan.name}</span>
+    {#if plan.id === current}<span class="badge badge-ok">{$t('cloud_plan_current')}</span>
+    {:else if plan.id === recommended}<span class="badge badge-accent">{$t('cloud_plan_recommended')}</span>{/if}
+  </span>
+  {#if !viewOnly}
+  <span class="price-row">
+    {#if plan.free}
+      <span class="price">{$t('cloud_plan_free_price')}</span>
+    {:else if price && currency && countsByMonth(price.period_days)}
+      <!-- A year is shown as what it costs a month, rounded; a month's own price is never rounded. -->
+      <span class="price">{formatMoney(perMonth(price), currency, $locale, price.period_days !== MONTH_DAYS)}</span>
+      <span class="per">{$t('cloud_plan_per_month')}</span>
+    {:else if price && currency}
+      <span class="price">{formatMoney(price.amount_minor, currency, $locale)}</span>
+      <span class="per">/ {periodLabel(price.period_days)}</span>
+    {:else}
+      <span class="price none">{$t('cloud_plan_no_price')}</span>
+    {/if}
+  </span>
+  <span class="bill">
+    {#if plan.free}
+      {$t('cloud_plan_free_forever')}
+    {:else if price && currency && price.period_days > MONTH_DAYS && countsByMonth(price.period_days)}
+      {billed(price.amount_minor, price.period_days, currency)}{#if saved}<span class="save">−{saved}%</span>{/if}
+    {:else if price && price.period_days === MONTH_DAYS}
+      {$t('cloud_plan_billed_monthly')}
+    {:else}
+      &nbsp;
+    {/if}
+  </span>
+  {/if}
+{/snippet}
+
+{#snippet body(plan: CloudPlanOffer)}
+  {@const mine = plan.id === current}
+  <ul class="features">
+    {#each featuresOf(plan, free) as f (f.id)}
+      <li class:more={f.more}><Icon name="check" size={14} strokeWidth={2.5} /><span>{featureText(f)}</span></li>
+    {/each}
+    <li><Icon name="check" size={14} strokeWidth={2.5} /><span>{$t('cloud_plan_f_sync')}</span></li>
+    <li><Icon name="check" size={14} strokeWidth={2.5} /><span>{$t('cloud_plan_f_recovery')}</span></li>
+  </ul>
+
+  {#if !viewOnly}
+  <div class="cta">
+    {#if plan.free && canActivate}
+      <button class="btn btn-primary" type="button" disabled={activating} onclick={onActivate}>
+        {activating ? $t('cloud_activating') : $t('cloud_activate')}
+      </button>
+    {:else if plan.free}
+      <span class="quiet">{mine ? $t('cloud_plan_in_use') : $t('cloud_plan_free_after')}</span>
+    {:else if mine}
+      <button class="btn btn-ghost" type="button" onclick={() => onKey(plan)}>{$t('cloud_plan_extend')}</button>
+    {:else}
+      <!-- One plan is open at a time (beside the list, or in place): its choice is the panel's one action. The plan pointed at keeps its badge and its frame. -->
+      <button class="btn btn-primary" type="button" onclick={() => onKey(plan)}>
+        {$t('cloud_plan_choose', { plan: plan.name })}
+      </button>
+    {/if}
+  </div>
+  {/if}
+{/snippet}
+
 <section class="picker" class:m={isMobile} id="plans" aria-labelledby="cloud-plans-title">
   <div class="head">
     <h2 id="cloud-plans-title" class={isMobile ? 'm-label' : 'section-label'}>{$t('cloud_plans_title')}</h2>
-    {#if !viewOnly}
-    <div class="controls">
-      {#if periods.length > 1}
-        <div class="seg" role="radiogroup" aria-label={$t('cloud_plan_period')}>
-          {#each periods as days (days)}
-            {@const saved = bestSaving(plans, currency, days)}
-            <button class="seg-btn" class:active={period === days} type="button" role="radio" aria-checked={period === days} onclick={() => (pickedPeriod = days)}>
-              {periodLabel(days)}{#if saved}<span class="save">−{saved}%</span>{/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-      {#if currencies.length > 1}
-        <select class="currency" value={currency} onchange={(e) => (pickedCurrency = e.currentTarget.value)} aria-label={$t('cloud_plan_currency')}>
-          {#each currencies as code (code)}<option value={code}>{code}</option>{/each}
-        </select>
-      {/if}
-    </div>
+    {#if !viewOnly && currencies.length > 1}
+      <select class="currency" value={currency} onchange={(e) => (pickedCurrency = e.currentTarget.value)} aria-label={$t('cloud_plan_currency')}>
+        {#each currencies as code (code)}<option value={code}>{code}</option>{/each}
+      </select>
     {/if}
   </div>
+  {#if !viewOnly && periods.length > 1}
+    <div class="seg periods" role="radiogroup" aria-label={$t('cloud_plan_period')} style:--n={periods.length}>
+      {#each periods as days (days)}
+        {@const saved = bestSaving(plans, currency, days)}
+        <button class="seg-btn" class:active={period === days} type="button" role="radio" aria-checked={period === days} onclick={() => (pickedPeriod = days)}>
+          <span>{periodLabel(days)}</span>{#if saved}<span class="save">−{saved}%</span>{/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
 
-  <ul class="plans">
-    {#each plans as plan (plan.id)}
-      {@const mine = plan.id === current}
-      {@const pointed = plan.id === recommended}
-      {@const price = shownPrice(plan, currency, period)}
-      {@const saved = price && price.period_days === period ? savingOf(plan, currency, period) : null}
-      {@const shown = !isMobile || open === plan.id}
-      <li class="plan" class:mine class:pointed class:shown>
-        {#snippet top()}
-        <span class="name-row">
-          <span class="name">{plan.name}</span>
-          {#if mine}<span class="badge badge-ok">{$t('cloud_plan_current')}</span>
-          {:else if pointed}<span class="badge badge-accent">{$t('cloud_plan_recommended')}</span>{/if}
-        </span>
-        {#if !viewOnly}
-        <span class="price-row">
-          {#if plan.free}
-            <span class="price">{$t('cloud_plan_free_price')}</span>
-          {:else if price && currency && countsByMonth(price.period_days)}
-            <!-- A year is shown as what it costs a month, rounded; a month's own price is never rounded. -->
-            <span class="price">{formatMoney(perMonth(price), currency, $locale, price.period_days !== MONTH_DAYS)}</span>
-            <span class="per">{$t('cloud_plan_per_month')}</span>
-          {:else if price && currency}
-            <span class="price">{formatMoney(price.amount_minor, currency, $locale)}</span>
-            <span class="per">/ {periodLabel(price.period_days)}</span>
-          {:else}
-            <span class="price none">{$t('cloud_plan_no_price')}</span>
-          {/if}
-        </span>
-        <span class="bill">
-          {#if plan.free}
-            {$t('cloud_plan_free_forever')}
-          {:else if price && currency && price.period_days > MONTH_DAYS && countsByMonth(price.period_days)}
-            {billed(price.amount_minor, price.period_days, currency)}{#if saved}<span class="save">−{saved}%</span>{/if}
-          {:else if price && price.period_days === MONTH_DAYS}
-            {$t('cloud_plan_billed_monthly')}
-          {:else}
-            &nbsp;
-          {/if}
-        </span>
-        {/if}
-        {/snippet}
-        <!-- On a phone the head of a card opens it; on a computer every card is open. -->
-        {#if isMobile}
-          <button class="top" type="button" aria-expanded={shown} onclick={() => (opened = plan.id)}>{@render top()}</button>
-        {:else}
-          <div class="top">{@render top()}</div>
-        {/if}
-
-        {#if shown}
-          <ul class="features">
-            {#each featuresOf(plan, free) as f (f.id)}
-              <li class:more={f.more}><Icon name="check" size={14} strokeWidth={2.5} /><span>{featureText(f)}</span></li>
-            {/each}
-            <li><Icon name="check" size={14} strokeWidth={2.5} /><span>{$t('cloud_plan_f_sync')}</span></li>
-            <li><Icon name="check" size={14} strokeWidth={2.5} /><span>{$t('cloud_plan_f_recovery')}</span></li>
-          </ul>
-
-          {#if !viewOnly}
-          <div class="cta">
-            {#if plan.free && canActivate}
-              <button class="btn btn-primary" type="button" disabled={activating} onclick={onActivate}>
-                {activating ? $t('cloud_activating') : $t('cloud_activate')}
-              </button>
-            {:else if plan.free}
-              <span class="quiet">{mine ? $t('cloud_plan_in_use') : $t('cloud_plan_free_after')}</span>
-            {:else if mine}
-              <button class="btn btn-ghost" type="button" onclick={() => onKey(plan)}>{$t('cloud_plan_extend')}</button>
-            {:else}
-              <button class="btn" class:btn-primary={pointed} class:btn-ghost={!pointed} type="button" onclick={() => onKey(plan)}>
-                {$t('cloud_plan_choose', { plan: plan.name })}
-              </button>
-            {/if}
-          </div>
-          {/if}
-        {/if}
-      </li>
-    {/each}
-  </ul>
+  <!-- The plans as a list and the chosen one beside it where the page is wide; where it is narrow, the chosen one opens in place. -->
+  <div class="pmd">
+    <ul class="plans">
+      {#each plans as plan (plan.id)}
+        <li class="plan" class:mine={plan.id === current} class:pointed={plan.id === recommended} class:open={open === plan.id}>
+          <button class="top" type="button" aria-expanded={open === plan.id} onclick={() => (opened = plan.id)}>{@render top(plan)}</button>
+          {#if open === plan.id}<div class="inline">{@render body(plan)}</div>{/if}
+        </li>
+      {/each}
+    </ul>
+    {#if openPlan}
+      <div class="detail" class:pointed={openPlan.id === recommended} aria-live="polite">
+        <div class="detail-top">{@render top(openPlan)}</div>
+        {@render body(openPlan)}
+      </div>
+    {/if}
+  </div>
   <p class="note">{viewOnly ? $t('cloud_plan_site_note') : $t('cloud_plan_key_note')}</p>
 </section>
 
 <style>
-  .picker { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+  .picker { display: flex; flex-direction: column; gap: var(--sp-3); container-type: inline-size; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
   h2 { margin: 0; }
   .section-label { padding: var(--sp-3) var(--sp-1) var(--sp-1); }
-  .controls { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
-  .m .controls { margin: 0 0 var(--sp-2); width: 100%; }
-  .m .seg { flex: 1; }
-  .m .seg-btn { flex: 1; justify-content: center; }
-  .currency { width: auto; height: 44px; }
+  .currency { width: auto; height: var(--control-h); font-weight: var(--fw-semibold); }
+  .m .currency { height: var(--control-h-lg); }
   .save {
     margin-left: 6px; padding: 1px 6px; border-radius: var(--radius-pill);
     background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border);
     font-size: var(--fs-2xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
+  /* The periods: one row of equal parts; on a phone the saving goes under the name, so four fit. */
+  .periods { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
+  .periods .seg-btn { justify-content: center; white-space: nowrap; }
+  .m .periods .seg-btn { flex-direction: column; gap: 2px; min-height: var(--sp-12); }
+  .m .periods .save { margin-left: 0; }
 
-  .plans { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--sp-3); align-items: stretch; }
-  .m .plans { grid-template-columns: 1fr; gap: var(--sp-2); }
-  .plan {
-    display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-5);
-    border-radius: var(--radius-card); border: 1px solid var(--border); background: var(--surface);
-  }
-  .m .plan { padding: var(--sp-4); gap: var(--sp-3); }
-  /* The plan the page points at carries the accent; the plan in use, the quiet mark of a thing already had. */
+  .pmd { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
+  .plans { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .plan { border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface); overflow: hidden; }
+  .plan.open { border-color: var(--accent-border); }
+  /* The plan the page points at carries the accent, open or not. */
   .plan.pointed { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
-  .m .plan.shown:not(.pointed) { border-color: var(--border-2); }
+  .top {
+    display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; padding: var(--sp-4);
+    border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur-fast);
+  }
+  .top:hover { background: var(--surface-row-hover); }
+  /* The card clips what is outside it: the keyboard's ring drawn inside. */
+  .top:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .inline { display: flex; flex-direction: column; gap: var(--sp-3); padding: 0 var(--sp-4) var(--sp-4); }
+  .detail { display: none; }
+  /* Wide: the list keeps the heads, the chosen plan opens beside it. */
+  @container (min-width: 640px) {
+    .pmd { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .inline { display: none; }
+    .plan.open { background: var(--accent-bg); }
+    .detail {
+      display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-6);
+      border-radius: var(--radius-card); border: 1px solid var(--border); background: var(--surface);
+    }
+    .detail.pointed { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
+    .detail-top { display: flex; flex-direction: column; gap: var(--sp-1); }
+    .detail-top .price { font-size: var(--fs-2xl); }
+  }
 
-  .top { display: flex; flex-direction: column; gap: var(--sp-1); padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; width: 100%; }
   .name-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 26px; }
   .name { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .price-row { display: flex; align-items: baseline; gap: 6px; margin-top: var(--sp-1); }
-  .price { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); letter-spacing: -0.01em; line-height: 1.15; }
+  .price-row { display: flex; align-items: baseline; gap: 6px; }
+  .price { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); letter-spacing: -0.01em; line-height: 1.15; font-variant-numeric: tabular-nums; }
   .price.none { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-2); }
   .per { font-size: var(--fs-sm); color: var(--text-2); }
-  .bill { font-size: var(--fs-sm); color: var(--text-2); min-height: 1.4em; display: flex; align-items: center; flex-wrap: wrap; }
+  .bill { font-size: var(--fs-sm); color: var(--text-2); min-height: 1.4em; display: flex; align-items: center; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 
-  .features { list-style: none; margin: 0; padding: var(--sp-4) 0 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-2); flex: 1; }
+  .features { list-style: none; margin: 0; padding: var(--sp-4) 0 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-2); }
   .features li { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); line-height: 1.4; color: var(--text-body); }
   .features li :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--success-text); }
   .features li.more { color: var(--text); font-weight: var(--fw-semibold); }
@@ -251,7 +273,7 @@
 
   .cta { display: flex; }
   .cta .btn { flex: 1; justify-content: center; }
-  .m .cta .btn { min-height: 48px; font-size: var(--fs-body); }
+  .m .cta .btn { min-height: var(--sp-12); font-size: var(--fs-body); }
   .quiet { font-size: var(--fs-sm); color: var(--text-3); min-height: var(--control-h); display: flex; align-items: center; }
   .note { margin: var(--sp-1) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
 </style>

@@ -57,6 +57,16 @@ describe('the events of the channels', () => {
     expect(channelStore.revision.c).toBe(2);
   });
 
+  it('hand who writes a comment to the messenger, which keeps it', async () => {
+    const { typingStore } = await import('$lib/messenger/seams/typing');
+    typingStore.reset();
+    const author = 'e0'.repeat(32);
+    channelStore.handleEvent({ name: 'channel.typing', payload: { community_id: 'c', post_id: 'p1', author, until: Date.now() / 1000 + 6 } });
+    expect(typingStore.underPost('p1')).toEqual([author]);
+    expect(channelStore.revision.c).toBeUndefined();
+    typingStore.reset();
+  });
+
   it('keep the progress of a file on its way, and drop a failed one only when cancelled', () => {
     channelStore.handleEvent({ name: 'channel.media', payload: { community_id: 'c', id: 'u1', status: 'uploading', done: 10, total: 100 } });
     expect(channelStore.uploads.u1).toMatchObject({ communityId: 'c', done: 10, total: 100 });

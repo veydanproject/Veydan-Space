@@ -355,6 +355,7 @@
     "settings_sync_now": "Sinkronkan sekarang",
     "settings_sync_running": "Menyinkronkan…",
     "settings_sync_done": "Sinkronisasi selesai.",
+    "settings_sync_saved": "Tersimpan",
     "settings_sync_phase_collect": "Mengumpulkan perubahan",
     "settings_sync_phase_push": "Mengunggah",
     "settings_sync_phase_pull": "Mengunduh",

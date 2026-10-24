@@ -34,6 +34,7 @@ import { callNodesStore } from "./net/callNodesStore.svelte";
 import { usageStore } from "./shared/emoji/usageStore.svelte";
 import { uiPrefs } from "./shared/uiPrefs.svelte";
 import { presenceStore } from "./presence/presenceStore.svelte";
+import { typingStore } from "./typing/typingStore.svelte";
 import { privacyStore } from "./privacy/privacyStore.svelte";
 import { requestStore } from "./requests/requestStore.svelte";
 import { inviteStore } from "./invites/inviteStore.svelte";
@@ -177,6 +178,7 @@ class MessengerStore {
         usageStore.reset();
         uiPrefs.reset();
         presenceStore.reset();
+        typingStore.reset();
         transferStore.reset();
         callStore.reset();
         groupCallStore.reset();
@@ -221,6 +223,7 @@ class MessengerStore {
     usageStore.reset();
     uiPrefs.reset();
     presenceStore.reset();
+    typingStore.reset();
     transferStore.reset();
     callStore.reset();
     groupCallStore.reset();
@@ -260,6 +263,7 @@ class MessengerStore {
         usageStore.handleEvent(e.payload);
         uiPrefs.handleEvent(e.payload);
         presenceStore.handleEvent(e.payload);
+        typingStore.handleEvent(e.payload);
         privacyStore.handleEvent(e.payload);
         requestStore.handleEvent(e.payload);
         inviteStore.handleEvent(e.payload);
@@ -269,8 +273,9 @@ class MessengerStore {
         groupCallStore.handleEvent(e.payload);
         callLog.handleEvent(e.payload);
         this.handleProfileEvent(e.payload);
-        // Many a second while a file moves or a peer speaks: not for the feed.
+        // Many a second while a file moves or a peer speaks, again and again while a bot writes: not for the feed.
         if (e.payload.name === 'transfer.progress' || e.payload.name === 'call.level' || e.payload.name === 'group_call.level') return;
+        if (e.payload.name === 'dm.typing' || e.payload.name === 'group.typing') return;
         this.feed = [{ ...e.payload, at: Date.now() }, ...this.feed].slice(0, FEED_LIMIT);
         if (e.payload.name === 'dm.message' || e.payload.name === 'history.synced') this.scheduleStatusRefresh();
         if (e.payload.name === 'link') {

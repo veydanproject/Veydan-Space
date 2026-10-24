@@ -879,6 +879,15 @@ CREATE TABLE IF NOT EXISTS cm_cloud_keys (
 );
 "#;
 
+/// `033_reaction_tombstones`: a reaction taken back stays as a row with
+/// `kept` 0 and the date of the retraction, so that a copy of the reaction
+/// heard after it (the second relay's, a catch-up's) does not put it back:
+/// the later word wins, and at the same second the retraction (живой
+/// запуск 2026-10-24: the 👀 of a bot stayed on a post after its answer).
+pub(crate) const MIGRATION_033: &str = r#"
+ALTER TABLE cm_reactions ADD COLUMN kept INTEGER NOT NULL DEFAULT 1;
+"#;
+
 /// The migrations of the database, oldest first.
 pub(crate) fn migrations() -> Migrator {
     Migrator::with_migrations(vec![
@@ -914,5 +923,6 @@ pub(crate) fn migrations() -> Migrator {
         Migration::new(30, Cow::Borrowed("scope_look"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_030), false),
         Migration::new(31, Cow::Borrowed("upload_keys"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_031), false),
         Migration::new(32, Cow::Borrowed("cloud_keys"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_032), false),
+        Migration::new(33, Cow::Borrowed("reaction_tombstones"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_033), false),
     ])
 }

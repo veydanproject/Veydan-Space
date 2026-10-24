@@ -16,9 +16,11 @@
   import { confirmStore } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
+  import { isModerator } from '../permissions';
   import type { ChannelDetail } from '../api';
   import { BASE_LEVEL, EVERYONE, levelsOf } from './sections';
   import { LEVEL_NAME_MAX, RIGHTS, blankLevel, checkLevel, formOf, normalizeLevel, type LevelProblem } from './editor';
+  import LevelPeople from './LevelPeople.svelte';
   import type { LevelInput, LevelView } from './types';
 
   interface Props {
@@ -121,6 +123,8 @@
           <span class="right"><span>{$t(`chan_right_${r}` as 'chan_right_comment')}</span><span class="hint">{$t(`chan_right_${r}_hint` as 'chan_right_comment_hint')}</span></span></label>
       {/each}
     </fieldset>
+
+    {#if level && !base && isModerator(detail)}<LevelPeople {detail} {level} />{/if}
 
     {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
     {#if level && !base}

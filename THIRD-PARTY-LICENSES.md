@@ -245,7 +245,7 @@ Thank you to the authors of the following Cargo crates:
 | crossbeam-queue | 0.3.12 | MIT OR Apache-2.0 |
 | crossbeam-utils | 0.8.21 | MIT OR Apache-2.0 |
 | crunchy | 0.2.4 | MIT * |
-| crypto-bigint | 0.7.5 | Apache-2.0 OR MIT |
+| crypto-bigint | 0.7.6 | Apache-2.0 OR MIT |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 |
 | crypto-common | 0.2.2 | MIT OR Apache-2.0 |
 | crypto-primes | 0.7.2 | Apache-2.0 OR MIT |
@@ -804,7 +804,7 @@ Thank you to the authors of the following Cargo crates:
 | tinystr | 0.8.3 | Unicode-3.0 |
 | tinyvec | 1.11.0 | Zlib OR Apache-2.0 OR MIT |
 | tinyvec_macros | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
-| tokio | 1.52.3 | MIT |
+| tokio | 1.54.1 | MIT |
 | tokio-happy-eyeballs | 0.1.0 | MIT |
 | tokio-macros | 2.7.0 | MIT |
 | tokio-rustls | 0.26.4 | MIT OR Apache-2.0 |

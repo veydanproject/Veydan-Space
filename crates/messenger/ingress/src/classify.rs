@@ -4,7 +4,7 @@
 //! Wire event → `Inbound`. Pure with respect to storage; the only input
 //! besides the event is the optional signer needed to open gift wraps.
 
-use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, TAG_SERVER};
+use messenger_core::envelope::{KIND_GROUP_TYPING, KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, KIND_TYPING_WRAP, TAG_SERVER};
 use messenger_core::inbound::Envelope as WireEnvelope;
 /// Re-exported: ingress filters and skips beats by these, the presence
 /// crate builds them; both take them from core.
@@ -38,7 +38,9 @@ pub fn classify(raw: &RawEvent, keys: Option<&Keys>) -> Inbound {
 
     match raw.kind {
         KIND_GIFT_WRAP => classify_gift_wrap(&event, envelope, keys),
-        KIND_GROUP_MESSAGE => classify_group(&event, envelope),
+        KIND_TYPING_WRAP => classify_typing_wrap(&event, envelope, keys),
+        KIND_GROUP_MESSAGE => classify_group(&event, envelope, KIND_GROUP_MESSAGE),
+        KIND_GROUP_TYPING => classify_group(&event, envelope, KIND_GROUP_TYPING),
         KIND_PROFILE => Inbound::Meta(MetaInbound::Profile {
             author: pk(&event.pubkey),
             created_at: ts(event.created_at),
@@ -161,7 +163,50 @@ fn classify_gift_wrap(event: &Event, envelope: WireEnvelope, keys: Option<&Keys>
     })
 }
 
-fn classify_group(event: &Event, envelope: WireEnvelope) -> Inbound {
+/// The ephemeral wrap of a «typing» to me (`KIND_TYPING_WRAP`): opened by
+/// hand, then the checks of a gift wrap, and handed on as the peer note
+/// it carries (`KIND_PEER_NOTE_RUMOR`, envelope `typing`), so that the
+/// chat takes it where it takes every note of a peer.
+fn classify_typing_wrap(event: &Event, envelope: WireEnvelope, keys: Option<&Keys>) -> Inbound {
+    let Some(keys) = keys else {
+        return Inbound::ignored(KIND_TYPING_WRAP, "no signer to open a typing wrap");
+    };
+    let me = keys.public_key();
+    let addressed_to_me = event.tags.iter().filter(|t| t.kind() == "p").filter_map(|t| t.as_slice().get(1)).any(|p| p == &me.to_hex());
+    if !addressed_to_me {
+        return Inbound::ignored(KIND_TYPING_WRAP, "typing wrap not addressed to us");
+    }
+    let (sender, rumor) = match crate::typing::unwrap_typing(keys, event) {
+        Ok(opened) => opened,
+        Err(e) => return Inbound::ignored(KIND_TYPING_WRAP, format!("typing wrap does not open: {e}")),
+    };
+    if rumor.kind.as_u16() != KIND_PEER_NOTE_RUMOR {
+        return Inbound::ignored(KIND_TYPING_WRAP, format!("rumor kind {} is not a note", rumor.kind.as_u16()));
+    }
+    if rumor.verify_id().is_err() {
+        return Inbound::ignored(KIND_TYPING_WRAP, "rumor id is not the hash of the rumor");
+    }
+    let Some(rumor_id) = EventId::parse(&rumor.compute_id().to_hex()) else {
+        return Inbound::ignored(KIND_TYPING_WRAP, "rumor has no id");
+    };
+    let recipients: Vec<PubKey> = rumor.tags.iter().filter(|t| t.kind() == "p").filter_map(|t| t.as_slice().get(1)).filter_map(|s| PubKey::parse(s)).collect();
+    let srv = rumor.tags.iter().filter(|t| t.kind() == TAG_SERVER).filter_map(|t| t.as_slice().get(1)).next().cloned();
+    Inbound::Dm(DmInbound {
+        envelope,
+        rumor_id,
+        sender: pk(&sender),
+        recipients,
+        created_at: ts(rumor.created_at),
+        content: rumor.content,
+        reply_to: None,
+        rumor_kind: KIND_PEER_NOTE_RUMOR,
+        srv,
+    })
+}
+
+/// A group event (kind 9), or its ephemeral twin (`KIND_GROUP_TYPING`):
+/// the same shape, told apart by `kind`.
+fn classify_group(event: &Event, envelope: WireEnvelope, kind: u16) -> Inbound {
     let group_id = event
         .tags
         .iter()
@@ -170,7 +215,7 @@ fn classify_group(event: &Event, envelope: WireEnvelope) -> Inbound {
         .next()
         .cloned();
     let Some(group_id) = group_id else {
-        return Inbound::ignored(KIND_GROUP_MESSAGE, "group message without h tag");
+        return Inbound::ignored(kind, "group message without h tag");
     };
     let key_id = event
         .tags
@@ -191,7 +236,7 @@ fn classify_group(event: &Event, envelope: WireEnvelope) -> Inbound {
         group_id,
         sender: pk(&event.pubkey),
         created_at: ts(event.created_at),
-        kind: KIND_GROUP_MESSAGE,
+        kind,
         key_id,
         ciphertext: event.content.clone(),
         reply_to,
@@ -366,6 +411,38 @@ mod tests {
             matches!(classify(&raw_of(&rumor_of_kind(15, &stranger, &me)), Some(&me)), Inbound::Ignored { .. }),
             "any other kind is not a DM"
         );
+    }
+
+    /// The ephemeral wrap of a «typing» by `author` to `to`, as
+    /// `messenger_dm::wrap::wrap_typing` makes it (the dm crate is not a
+    /// dependency here: the same three layers by hand).
+    fn typing_wrap(author: &Keys, to: &Keys, rumor_kind: u16) -> Event {
+        let mut rumor = EventBuilder::new(Kind::from(rumor_kind), r#"{"v":1,"t":"typing","ttl":6}"#)
+            .tag(Tag::public_key(to.public_key()))
+            .finalize_unsigned(author.public_key());
+        rumor.ensure_id();
+        let seal = nostr::nips::nip59::GiftWrapSealBuilder::new(rumor, to.public_key()).finalize(author).unwrap();
+        let once = Keys::generate();
+        let content = nostr::nips::nip44::encrypt(once.secret_key(), &to.public_key(), seal.as_json(), nostr::nips::nip44::Version::default()).unwrap();
+        EventBuilder::new(Kind::from(KIND_TYPING_WRAP), content).tag(Tag::public_key(to.public_key())).finalize(&once).unwrap()
+    }
+
+    #[test]
+    fn a_typing_wrap_is_the_peer_note_it_carries_and_opens_for_its_receiver_only() {
+        let me = Keys::generate();
+        let bot = Keys::generate();
+        match classify(&raw_of(&typing_wrap(&bot, &me, KIND_PEER_NOTE_RUMOR)), Some(&me)) {
+            Inbound::Dm(dm) => {
+                assert_eq!(dm.rumor_kind, KIND_PEER_NOTE_RUMOR);
+                assert_eq!(dm.sender.as_hex(), bot.public_key().to_hex());
+                assert_eq!(dm.content, r#"{"v":1,"t":"typing","ttl":6}"#);
+            }
+            other => panic!("expected Dm, got {other:?}"),
+        }
+        let eve = Keys::generate();
+        assert!(matches!(classify(&raw_of(&typing_wrap(&bot, &me, KIND_PEER_NOTE_RUMOR)), Some(&eve)), Inbound::Ignored { .. }), "not addressed to eve");
+        assert!(matches!(classify(&raw_of(&typing_wrap(&bot, &me, KIND_DM_RUMOR)), Some(&me)), Inbound::Ignored { .. }), "a message under the ephemeral kind is nothing");
+        assert!(matches!(classify(&raw_of(&typing_wrap(&bot, &me, KIND_PEER_NOTE_RUMOR)), None), Inbound::Ignored { .. }), "no signer, no opening");
     }
 
     /// A message of `author` to `to` whose rumor is `rumor`, as its wrap.

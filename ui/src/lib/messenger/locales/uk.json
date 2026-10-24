@@ -777,6 +777,7 @@
     "msg_voice_play": "Відтворити",
     "msg_emoji_title": "Емодзі",
     "msg_emoji_keyboard": "Клавіатура",
+    "msg_bot_commands": "Команди бота",
     "msg_emoji_erase": "Стерти",
     "msg_emoji_expand": "Розгорнути",
     "msg_emoji_collapse": "Згорнути",
@@ -1572,7 +1573,13 @@
     "msg_report_channel_person_note": "У скарзі буде названо людину і канал, де ви її зустріли.",
     "msg_card_channel": "Канал",
     "msg_card_channels_off": "Канали вимкнено в налаштуваннях",
-    "msg_card_channels_settings": "Налаштування"
+    "msg_card_channels_settings": "Налаштування",
+    "msg_typing": "друкує…",
+    "msg_typing_1": "{name} друкує…",
+    "msg_typing_2": "{a} і {b} друкують…",
+    "msg_typing_more": "{a}, {b} і ще {n} друкують…",
+    "msg_typing_more_one": "{a}, {b} і ще {n} друкують…",
+    "msg_typing_more_few": "{a}, {b} і ще {n} друкують…"
   },
   "mobile": {}
 }

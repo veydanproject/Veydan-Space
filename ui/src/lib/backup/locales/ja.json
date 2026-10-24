@@ -11,6 +11,7 @@
     "settings_backup_run_now": "今すぐバックアップ",
     "settings_backup_running": "バックアップ中…",
     "settings_backup_done": "バックアップを作成しました。",
+    "settings_backup_saved": "保存しました",
     "settings_backup_schedule": "定期バックアップ",
     "settings_backup_schedule_hint": "スケジュールに従って自動的にバックアップを作成します。",
     "settings_backup_mode": "モード",

@@ -3,15 +3,18 @@
 
 //! Kind-0 profile cache and our own profile.
 //!
-//! A kind 0 is the standard NIP-01 JSON with two keys of ours:
-//! `veydan_about`, the bio with its marks (messenger-richtext), and
-//! `veydan_socials`, links elsewhere as `[{"p":"…","h":"…"}]`. `about` is
-//! the bio without the marks, so other clients show the same text.
+//! A kind 0 is the standard NIP-01 JSON with keys of ours:
+//! `veydan_about`, the bio with its marks (messenger-richtext),
+//! `veydan_socials`, links elsewhere as `[{"p":"…","h":"…"}]`, and, for a
+//! bot, `bot: true` and `veydan_commands`, the commands it answers as
+//! `[{"name":"ping","about":"…"}]`. `about` is the bio without the marks,
+//! so other clients show the same text.
 //!
 //! Reading: the bio is the marked one only when its text without the marks
 //! is the `about` beside it; a client that edited `about` and kept our key
 //! wins, and the bio is read from `about` as plain text. Links are kept
-//! only when they pass the checks of `social`. The content is untrusted:
+//! only when they pass the checks of `social`, commands those of
+//! `commands`. The content is untrusted:
 //! every key is optional, a key of the wrong type is as good as absent, and
 //! a content larger than `MAX_CONTENT_BYTES` is not read at all.
 //!
@@ -20,6 +23,7 @@
 //! other key, `banner` and the keys of other clients. `picture` is never
 //! typed by the user: it comes from the own avatar (`Picture`).
 
+use crate::commands::{self, BotCommand};
 use crate::social::{self, SocialLink, SocialView};
 use messenger_core::outbound::WireEvent;
 use messenger_core::{EventId, MessengerError, PubKey, Result, Timestamp};
@@ -40,8 +44,10 @@ pub const MAX_CONTENT_BYTES: usize = 64 * 1024;
 /// The keys our kind 0 writes; every other key is kept as it was.
 /// `displayName` is the old spelling of `display_name`, dropped so it does
 /// not show a stale name elsewhere.
-const MANAGED: [&str; 10] = [
+const MANAGED: [&str; 12] = [
     "name",
+    "bot",
+    "veydan_commands",
     "display_name",
     "displayName",
     "about",
@@ -68,6 +74,14 @@ pub struct ProfileView {
     pub nip05: Option<String>,
     pub lud16: Option<String>,
     pub nip05_verified: bool,
+    /// The key says it is a bot (kind 0 `bot: true`), so a client may mark
+    /// it as one.
+    #[serde(default)]
+    pub bot: bool,
+    /// The commands the key says it answers (kind 0 `veydan_commands`),
+    /// checked: the «/» menu of a direct chat with a bot. Empty for a person.
+    #[serde(default)]
+    pub commands: Vec<BotCommand>,
     #[ts(type = "number")]
     pub event_created_at: i64,
     #[ts(type = "number")]
@@ -121,6 +135,14 @@ pub struct ProfileInput {
     /// As typed: a platform and a handle, `@handle` or a profile address.
     #[serde(default)]
     pub socials: Vec<SocialLink>,
+    /// This key is a bot: written as `bot: true`, left out otherwise, so
+    /// the kind 0 of a person says nothing of it.
+    #[serde(default)]
+    pub bot: bool,
+    /// The commands a bot answers: written as `veydan_commands` once
+    /// checked (what does not pass is dropped), left out when none is left.
+    #[serde(default)]
+    pub commands: Vec<BotCommand>,
 }
 
 /// What our kind 0 says as `picture`.
@@ -328,6 +350,9 @@ fn own_content(base: &str, input: &ProfileInput, picture: Picture<'_>) -> Result
     for key in MANAGED {
         obj.remove(key);
     }
+    if input.bot {
+        obj.insert("bot".into(), Value::Bool(true));
+    }
     let mut put = |key: &str, value: Option<String>| {
         if let Some(v) = value {
             obj.insert(key.into(), Value::String(v));
@@ -362,6 +387,10 @@ fn own_content(base: &str, input: &ProfileInput, picture: Picture<'_>) -> Result
     let links = social::clean_list(&links);
     if !links.is_empty() {
         obj.insert("veydan_socials".into(), serde_json::to_value(&links)?);
+    }
+    let menu = commands::clean_list(&input.commands);
+    if !menu.is_empty() {
+        obj.insert("veydan_commands".into(), serde_json::to_value(&menu)?);
     }
     let content = serde_json::to_string(&Value::Object(obj))?;
     if content.len() > MAX_CONTENT_BYTES {
@@ -404,7 +433,13 @@ fn to_view(r: repo::ProfileRow) -> ProfileView {
         .map(|v| social::list_from_json(&v))
         .unwrap_or_default();
     let socials = links.iter().filter_map(social::view).collect();
+    // Read from the content as it came: no column of the cache holds them.
+    let raw = serde_json::from_str::<Value>(&r.raw_json).ok();
+    let bot = raw.as_ref().and_then(|v| v.get("bot")).and_then(Value::as_bool).unwrap_or(false);
+    let commands = raw.as_ref().and_then(|v| v.get("veydan_commands")).map(commands::list_from_json).unwrap_or_default();
     ProfileView {
+        bot,
+        commands,
         pubkey: r.pubkey,
         npub,
         name: r.name,
@@ -551,7 +586,7 @@ mod tests {
         let svc = ProfileService::new(store);
         let k = Keys::generate();
         // Written by another client, a minute "in the future".
-        let other = r#"{"name":"old","displayName":"Old","banner":"https://b.example/b.png","picture":"https://p.example/p.png","bot":false,"x_client":{"theme":"dark"},"lud16":"me@ln.example"}"#;
+        let other = r#"{"name":"old","displayName":"Old","banner":"https://b.example/b.png","picture":"https://p.example/p.png","bot":false,"veydan_commands":[{"name":"old","about":""}],"x_client":{"theme":"dark"},"lud16":"me@ln.example"}"#;
         let future = nostr::types::Timestamp::now().as_secs() as i64 + 60;
         svc.apply_event(&pk(&k), Timestamp(future), other).await.unwrap();
 
@@ -563,10 +598,10 @@ mod tests {
         assert!(c.get("displayName").is_none(), "the old spelling goes");
         assert_eq!(c["banner"], "https://b.example/b.png");
         assert_eq!(c["picture"], "https://p.example/p.png");
-        assert_eq!(c["bot"], false);
+        assert!(c.get("bot").is_none(), "`bot` is ours: a person's kind 0 says nothing of it");
         assert_eq!(c["x_client"]["theme"], "dark");
         assert!(c.get("lud16").is_none(), "a managed key left empty is removed");
-        for key in ["about", "veydan_about", "veydan_socials", "website", "nip05"] {
+        for key in ["about", "veydan_about", "veydan_socials", "veydan_commands", "website", "nip05"] {
             assert!(c.get(key).is_none(), "{key}");
         }
         let parsed: Event = serde_json::from_value(ev.json).unwrap();
@@ -574,6 +609,66 @@ mod tests {
         let v = svc.get(&pk(&k)).await.unwrap().unwrap();
         assert_eq!(v.banner.as_deref(), Some("https://b.example/b.png"));
         assert_eq!(v.name.as_deref(), Some("new"));
+        assert!(!v.bot);
+    }
+
+    #[tokio::test]
+    async fn a_bot_says_so_in_its_kind_0_and_the_view_reads_it() {
+        let store = Store::open_in_memory().await.unwrap();
+        let svc = ProfileService::new(store);
+        let k = Keys::generate();
+        let input = ProfileInput { name: Some("Ping".into()), bot: true, ..Default::default() };
+        let ev = svc.build_own(&k, &input, Picture::Keep).await.unwrap();
+        assert_eq!(content_of(&ev)["bot"], true);
+        assert!(svc.get(&pk(&k)).await.unwrap().unwrap().bot);
+        // A person again: the key goes, it is never written as `false`.
+        let ev = svc.build_own(&k, &ProfileInput { name: Some("Ping".into()), ..Default::default() }, Picture::Keep).await.unwrap();
+        assert!(content_of(&ev).get("bot").is_none());
+        assert!(!svc.get(&pk(&k)).await.unwrap().unwrap().bot);
+    }
+
+    fn cmd(name: &str, about: &str) -> BotCommand {
+        BotCommand { name: name.into(), about: about.into() }
+    }
+
+    #[tokio::test]
+    async fn a_bot_lists_its_commands_checked_and_the_view_reads_them() {
+        let store = Store::open_in_memory().await.unwrap();
+        let svc = ProfileService::new(store);
+        let k = Keys::generate();
+        let input = ProfileInput {
+            name: Some("Ping".into()),
+            bot: true,
+            commands: vec![cmd("/Ping", "Answers pong"), cmd("pi-ng", "dropped"), cmd("help", "The list of commands")],
+            ..Default::default()
+        };
+        let ev = svc.build_own(&k, &input, Picture::Keep).await.unwrap();
+        assert_eq!(
+            content_of(&ev)["veydan_commands"],
+            serde_json::json!([{ "name": "ping", "about": "Answers pong" }, { "name": "help", "about": "The list of commands" }])
+        );
+        let v = svc.get(&pk(&k)).await.unwrap().unwrap();
+        assert_eq!(v.commands, vec![cmd("ping", "Answers pong"), cmd("help", "The list of commands")]);
+        // The avatar changed alone: the commands stay.
+        svc.build_picture(&k, Picture::Set("https://x.example/a.png")).await.unwrap();
+        assert_eq!(svc.get(&pk(&k)).await.unwrap().unwrap().commands.len(), 2);
+        // None left: the key goes.
+        let none = ProfileInput { commands: vec![cmd("-", "x")], ..input.clone() };
+        let ev = svc.build_own(&k, &none, Picture::Keep).await.unwrap();
+        assert!(content_of(&ev).get("veydan_commands").is_none());
+        assert!(svc.get(&pk(&k)).await.unwrap().unwrap().commands.is_empty());
+    }
+
+    #[tokio::test]
+    async fn received_commands_of_the_wrong_type_are_absent() {
+        let store = Store::open_in_memory().await.unwrap();
+        let svc = ProfileService::new(store);
+        let k = Keys::generate();
+        svc.apply_event(&pk(&k), Timestamp(10), r#"{"name":"b","bot":true,"veydan_commands":"ping"}"#).await.unwrap();
+        assert!(svc.get(&pk(&k)).await.unwrap().unwrap().commands.is_empty());
+        let content = r#"{"bot":true,"veydan_commands":[{"name":"ping","about":"Answers pong"},{"name":"x y"},{"about":"none"},3,{"name":"Echo","about":["no"]}]}"#;
+        svc.apply_event(&pk(&k), Timestamp(11), content).await.unwrap();
+        assert_eq!(svc.get(&pk(&k)).await.unwrap().unwrap().commands, vec![cmd("ping", "Answers pong"), cmd("echo", "")]);
     }
 
     #[tokio::test]
@@ -764,8 +859,10 @@ mod tests {
         assert!(view.contains("bio: Array<Span>") && view.contains("socials: Array<SocialView>"), "{view}");
         assert!(view.contains("event_created_at: number"), "{view}");
         assert!(!view.contains("links"), "{view}");
+        assert!(view.contains("commands: Array<BotCommand>"), "{view}");
         let input = ProfileInput::decl(&cfg);
         assert!(input.contains("socials: Array<SocialLink>") && !input.contains("picture"), "{input}");
+        assert!(input.contains("commands: Array<BotCommand>"), "{input}");
     }
 
     #[test]
