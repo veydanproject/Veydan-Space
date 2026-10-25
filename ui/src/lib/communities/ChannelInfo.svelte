@@ -6,8 +6,9 @@
   Everything about a channel except its feed: its card and rules, the
   keeper that hands out its keys, the link, the team (owner, admins,
   moderators, authors) and those the journal mutes or trusts, the banned,
-  and the way out. Its moderation is a mode of the same panel. Readers are
-  not listed: the journal does not know them (the keeper does).
+  and the way out. Its moderation is a mode of the same panel. The readers
+  are listed to the team alone (ChannelReaders: the keeper's rows or its
+  snapshot, as the journal does not know them); a reader sees none.
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
@@ -19,6 +20,7 @@
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import { Avatar, MessageContent, PanelHead, confirmStore, isTauriHost, listStamp, longpress, myKey, onPhone, reportStore, serverStore, stamp, writeTo } from '$lib/messenger/seams/shared';
   import ChannelLink from './ChannelLink.svelte';
+  import ChannelReaders from './ChannelReaders.svelte';
   import InvitePicker from './InvitePicker.svelte';
   import { channelStore } from './channelStore.svelte';
   import { nameStore, shortKey } from './names.svelte';
@@ -509,8 +511,13 @@
           </li>
         {/each}
       </ul>
-      <p class="hint">{$t('chan_readers_hint')}</p>
+      {#if !isModerator(detail)}<p class="hint">{$t('chan_readers_hint')}</p>{/if}
     </section>
+
+    <!-- The readers, for the team only (the owner's decision, 2026-10-25): the menu of a row is the team's. -->
+    {#if joined(detail) && isModerator(detail)}
+      <ChannelReaders {detail} onmenu={openMenu} hasMenu={(s) => entriesFor(s).length > 0} />
+    {/if}
 
     {#if banned.length}
       <section class="block">

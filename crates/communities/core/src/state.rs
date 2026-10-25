@@ -1382,7 +1382,7 @@ pub(crate) mod tests {
             (op(&m, OpBody::SetTrusted { who: a.clone(), trusted: true }), Rejection::NotPermitted),
             // Roles: admin+, an admin is the owner's to make.
             (op(&m, OpBody::SetRole { who: u.clone(), role: Role::Author }), Rejection::NotPermitted),
-            (op(&a, OpBody::SetRole { who: u.clone(), role: Role::Admin }), Rejection::NotPermitted),
+            (op(&m, OpBody::SetRole { who: u.clone(), role: Role::Admin }), Rejection::NotPermitted),
             (op(&a, OpBody::SetRole { who: a.clone(), role: Role::Member }), Rejection::NotPermitted),
             (op(&o, OpBody::SetRole { who: a.clone(), role: Role::Owner }), Rejection::NotPermitted),
             (op(&o, OpBody::SetRole { who: w.clone(), role: Role::Author }), Rejection::NotPermitted),
@@ -1570,11 +1570,11 @@ pub(crate) mod tests {
         assert_eq!(s.levels[&BASE_LEVEL].scopes, [SCOPE_EVERYONE], "it gives everyone whatever it names");
         assert_eq!(s.can_comment_at(&u, Some(&READER), 300), Err(Closed::Level));
         assert_eq!(s.can_comment_at(&w, None, 300), Ok(()), "an author comments by role");
-        // scope_del: the owner alone, never everyone; the levels let it go.
+        // scope_del: owner and admins (2026-10-25), never everyone; the levels let it go.
         s.apply(&op(&a, level(3, vec![staff.clone()], false))).unwrap();
-        assert_eq!(s.apply(&op(&a, OpBody::ScopeDel { scope_id: staff.clone() })), Err(Rejection::NotPermitted));
+        assert_eq!(s.apply(&op(&m, OpBody::ScopeDel { scope_id: staff.clone() })), Err(Rejection::NotPermitted), "a moderator");
         assert_eq!(s.apply(&op(&o, OpBody::ScopeDel { scope_id: SCOPE_EVERYONE.into() })), Err(invalid("scope everyone")));
-        s.apply(&op(&o, OpBody::ScopeDel { scope_id: staff.clone() })).unwrap();
+        s.apply(&op(&a, OpBody::ScopeDel { scope_id: staff.clone() })).unwrap();
         assert!(s.levels[&3].scopes.is_empty());
         // At most 16 scopes, everyone among them.
         for i in 0..14u8 {
@@ -1584,20 +1584,22 @@ pub(crate) mod tests {
         assert_eq!(s.apply(&op(&a, add(&"ee".repeat(16), SchemeId::SdV1))), Err(invalid("scope limit")));
     }
 
-    /// `scope_set` and a hidden `scope_add` (2026-10-23): the owner's alone;
+    /// `scope_set` and a hidden `scope_add`: the owner's and the admins'
+    /// (2026-10-25; the owner's alone from 2026-10-23), not a moderator's;
     /// `everyone` is never hidden; `hidden` none leaves it as it is.
     #[test]
-    fn the_look_of_a_section_is_the_owners() {
-        let (o, a) = (pk("0"), pk("a"));
+    fn the_look_of_a_section_is_the_managers() {
+        let (o, a, m) = (pk("0"), pk("a"), pk("b"));
         let mut s = team();
         let (gold, secret) = ("ab".repeat(16), "cd".repeat(16));
         let add = |id: &str, hidden| OpBody::ScopeAdd { scope_id: id.to_string(), scheme: SchemeId::SdV1, history: History::Open, hidden };
         let set = |id: &str, hidden| OpBody::ScopeSet { scope_id: id.to_string(), hidden };
         s.apply(&op(&a, add(&gold, false))).unwrap();
-        assert_eq!(s.apply(&op(&a, add(&secret, true))), Err(Rejection::NotPermitted), "an admin makes sections, not hidden ones");
-        s.apply(&op(&o, add(&secret, true))).unwrap();
+        assert_eq!(s.apply(&op(&m, add(&secret, true))), Err(Rejection::NotPermitted), "a moderator makes no sections");
+        s.apply(&op(&a, add(&secret, true))).unwrap();
         assert!(s.scopes[&secret].hidden && !s.scopes[&gold].hidden);
-        assert_eq!(s.apply(&op(&a, set(&gold, None))), Err(Rejection::NotPermitted), "a rename is the owner's");
+        assert_eq!(s.apply(&op(&m, set(&gold, None))), Err(Rejection::NotPermitted), "a rename is a manager's");
+        s.apply(&op(&a, set(&gold, None))).unwrap();
         assert_eq!(s.apply(&op(&o, set(&"ef".repeat(16), None))), Err(invalid("unknown scope")));
         assert_eq!(s.apply(&op(&o, set(SCOPE_EVERYONE, Some(true)))), Err(invalid("scope everyone")));
         s.apply(&op(&o, set(SCOPE_EVERYONE, None))).unwrap();

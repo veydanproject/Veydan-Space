@@ -3,7 +3,7 @@
 
 <!--
   A section of a channel, new (`scope_add`, communities-wire §14.1) or the
-  owner's settings of one (`scope_set`, §14.7): its title, the line on its
+  settings of one (`scope_set`, §14.7; the owner's and the admins'): its title, the line on its
   tile, its mark (an icon of the set or a photo), its colour, and whether it
   is hidden — then its title and look are sealed in its own feed, and those
   it is closed to do not learn even its name. Beside them, how the tile and
@@ -19,7 +19,7 @@
   import { confirmStore, isTauriHost, onPhone } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
-  import { isOwner } from '../permissions';
+  import { canSetUpSections } from '../permissions';
   import type { ChannelDetail } from '../api';
   import SectionBadge from './SectionBadge.svelte';
   import { EVERYONE, levelsOf } from './sections';
@@ -40,7 +40,7 @@
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
   const cid = $derived(detail.channel.id);
   const scopes = $derived(ordered(levelsOf(detail).scopes));
-  const owner = $derived(isOwner(detail));
+  const manager = $derived(canSetUpSections(detail));
 
   /** The section the form is of (the order list switches it); `null`: new. */
   let target = $state<string | null>(null);
@@ -94,7 +94,7 @@
   });
   const PROBLEM: Record<ScopeProblem, string> = { title_empty: 'chan_scope_err_title', title_long: 'chan_scope_err_long', scope_limit: 'chan_err_scope_limit' };
 
-  /** What the owner changed of the section, as `channel_scope_set` takes it. */
+  /** What the owner or an admin changed of the section, as `channel_scope_set` takes it. */
   const change = $derived.by((): ScopeSetInput => {
     const s = was;
     if (!s) return {};
@@ -195,7 +195,7 @@
         <span class="p-stripe"></span>
       </div>
 
-      {#if !isNew && owner && scopes.length > 1}
+      {#if !isNew && manager && scopes.length > 1}
         <span class="label order-label">{$t('chan_scope_order')}</span>
         <ol class="order">
           {#each scopes as s, i (s.scope_id)}
@@ -261,7 +261,7 @@
         {/each}
       </div>
 
-      {#if owner && !everyone}
+      {#if manager && !everyone}
         <div class="hide-box" class:on={hidden}>
           <div class="hide-text">
             <span class="hide-title"><Icon name="eye-off" size={16} />{$t('chan_scope_hidden')}</span>

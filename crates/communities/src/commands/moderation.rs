@@ -11,7 +11,7 @@
 
 use super::{as_core, bad, invite_view, key};
 use crate::state::{map_err, CommunitiesState, Driver};
-use crate::views::{word, ChannelAction, ChannelDetail, InviteStatusView, InviteView, KeeperStatus, TicketsView, LogEntry, LogPage, ModAction, ModSettings, QueueItem, QueuePage, RequestView, ScheduleView};
+use crate::views::{word, ChannelAction, ChannelDetail, InviteStatusView, InviteView, KeeperStatus, TicketsView, LogEntry, LogPage, ModAction, ModSettings, QueueItem, QueuePage, ReaderView, ReadersPage, RequestView, ScheduleView};
 use communities_core::db;
 use communities_core::OpBody;
 use veydan_core::{AppError, CmdResult};
@@ -58,6 +58,41 @@ pub async fn channel_moderation_queue(
     }
     Ok(QueuePage { items, next_before, total: u32::try_from(total).unwrap_or(u32::MAX) })
 }
+
+/// A page of the readers of a channel, for its team only (the owner's
+/// decision, 2026-10-25; `ChannelService::readers`): newest first, `query`
+/// a start of the hex key. A shard of the snapshot not here is wanted of
+/// the hosts by a job started now, and the page says `partial` until it
+/// came: the page asks again.
+#[tauri::command]
+pub async fn channel_readers(
+    community_id: String,
+    query: Option<String>,
+    offset: Option<u32>,
+    limit: Option<u32>,
+    state: tauri::State<'_, CommunitiesState>,
+) -> CmdResult<ReadersPage> {
+    Box::pin(async move {
+        let _timed = crate::log::Timed::start("channel_readers");
+        let d = state.driver()?;
+        let keys = d.keys()?;
+        let limit = limit.unwrap_or(READERS_PAGE).clamp(1, communities_core::reader_list::MAX_PAGE as u32);
+        let page = d.service.readers(&keys, &community_id, query.as_deref(), offset.unwrap_or(0) as usize, limit as usize).await.map_err(map_err)?;
+        if page.partial {
+            // The shards it wanted, fetched off this command.
+            d.apply(communities_core::service::Outcome::default()).await;
+        }
+        Ok(ReadersPage {
+            readers: page.readers.into_iter().map(ReaderView::from).collect(),
+            total: u32::try_from(page.total).unwrap_or(u32::MAX),
+            partial: page.partial,
+        })
+    })
+    .await
+}
+
+/// Readers a page holds when the page names no number.
+const READERS_PAGE: u32 = 100;
 
 /// One act of moderation: hide, unhide, approve, reject, spam, mute,
 /// unmute, trust.

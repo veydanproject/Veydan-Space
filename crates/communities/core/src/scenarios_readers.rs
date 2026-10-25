@@ -301,3 +301,46 @@ async fn a_comment_whose_shard_is_not_here_waits_with_no_get_and_the_fetch_place
     assert_eq!(snapshots(&w).len(), made, "no new snapshot");
     assert!(a.errors().is_empty(), "{:?}", a.errors());
 }
+
+/// The team reads the list of the readers (the owner's decision,
+/// 2026-10-25): the keeper's device by its rows, an admin on another
+/// device by the shards of the snapshot, a shard not here fetched by a job
+/// the ask wants (the list says it is partial till then); the staff and I
+/// are not in it, and a reader may not read it.
+#[tokio::test]
+async fn the_team_lists_the_readers_by_the_keepers_rows_and_by_the_snapshot() {
+    let w = World::new();
+    let owner = w.node().await;
+    let (a, admin, b) = (w.node().await, w.node().await, w.node().await);
+    let all = [&owner, &a, &admin, &b];
+    let (cid, _) = channel_with_a_reader(&w, &owner, &a, &all).await;
+    join_by_link(&w, &owner, &admin, &cid, &all).await;
+    owner.svc.act(&owner.keys, &cid, OpBody::SetRole { who: admin.me.clone(), role: crate::roles::Role::Admin }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(5);
+    join_by_link(&w, &owner, &b, &cid, &all).await;
+    let keys = |p: &crate::reader_list::ReadersPage| p.readers.iter().map(|r| r.pubkey.clone()).collect::<Vec<_>>();
+    let want = vec![b.me.as_hex().to_string(), a.me.as_hex().to_string()];
+    // The keeper's device: at once, by its rows.
+    let page = owner.svc.readers(&owner.keys, &cid, None, 0, 100).await.unwrap_or_else(|e| panic!("readers: {e}"));
+    assert_eq!((keys(&page), page.total, page.partial), (want.clone(), 2, false));
+    // The admin's device: by the snapshot that names b.
+    w.clock.advance(crate::keeper::SETTLE_SECS);
+    w.pump(&all).await;
+    assert_eq!(snapshots(&w).last().map(|s| s.members), Some(4));
+    let before = gets(&w);
+    let first = admin.svc.readers(&admin.keys, &cid, None, 0, 100).await.unwrap_or_else(|e| panic!("readers: {e}"));
+    assert_eq!(gets(&w), before, "no round trip on the ask");
+    assert!(first.partial && first.readers.is_empty(), "the shard is not here yet: {first:?}");
+    assert!(admin.svc.fetches_wanted().iter().any(|k| k.contains(":fetch:shard:")), "{:?}", admin.svc.fetches_wanted());
+    admin.svc.run_fetches(&admin.keys).await;
+    let page = admin.svc.readers(&admin.keys, &cid, None, 0, 100).await.unwrap_or_else(|e| panic!("readers: {e}"));
+    assert_eq!((keys(&page), page.total, page.partial), (want, 2, false));
+    let one = admin.svc.readers(&admin.keys, &cid, Some(&a.me.as_hex()[..8]), 0, 100).await.unwrap_or_else(|e| panic!("readers: {e}"));
+    assert_eq!(keys(&one), [a.me.as_hex().to_string()]);
+    // A reader may not.
+    assert!(a.svc.readers(&a.keys, &cid, None, 0, 100).await.is_err());
+    for n in all {
+        assert!(n.errors().is_empty(), "{:?}", n.errors());
+    }
+}

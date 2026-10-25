@@ -38,6 +38,7 @@
 //! - `levels`: the scopes and the levels with their sealed names.
 //! - `moderate`: the acts of moderation, the queue, the log, requests and
 //!   invitations, as the page asks for them.
+//! - `reader_list`: the readers of a channel, for its team only.
 //!
 //! Everything but `db`, `keeper`, `blobs` and `secrets` is pure: no
 //! network, no clock. Signatures are checked where events enter (`wire`,
@@ -65,6 +66,7 @@ pub mod notes;
 pub mod op;
 pub mod outbox;
 pub mod qr;
+pub mod reader_list;
 pub mod roles;
 pub mod schedule;
 pub mod secrets;

@@ -72,6 +72,7 @@ channel_preview_link communities all
 channel_post communities all
 channel_react communities all
 channel_read communities all
+channel_readers communities all
 channel_rotate_link communities all
 channel_rotate_now communities all
 channel_scope_add communities all

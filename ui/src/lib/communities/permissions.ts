@@ -90,14 +90,15 @@ export const canRotateLink = (d: ChannelDetail | null | undefined): boolean => i
 export const canRotateKey = (d: ChannelDetail | null | undefined): boolean => isModerator(d);
 export const canInvite = (d: ChannelDetail | null | undefined): boolean => isModerator(d);
 
-/** Roles I may give this person: a manager, below their own; an admin is made by the owner alone. */
+/** Roles I may give this person: a manager, to someone below; below their own role, or admin — an admin makes admins too (the owner's word, 2026-10-25). */
 export function rolesFor(d: ChannelDetail, who: string, me: string | null): Role[] {
   if (!isManager(d) || !below(d, who, me)) return [];
   const now = staffOf(d, who).role;
-  return (['member', 'author', 'moderator', 'admin'] as Role[]).filter(
-    (r) => r !== now && rank(r) < mine(d) && (r !== 'admin' || isOwner(d)),
-  );
+  return (['member', 'author', 'moderator', 'admin'] as Role[]).filter((r) => r !== now && (rank(r) < mine(d) || r === 'admin'));
 }
+
+/** Setting a section up, hiding it, deleting it (`scope_set`, `scope_del`): the owner and the admins (2026-10-25). */
+export const canSetUpSections = (d: ChannelDetail | null | undefined): d is ChannelDetail => isManager(d);
 
 /** May I remove this post or comment: my own, or one of a role below mine as a moderator. */
 export const canDelete = (d: ChannelDetail | null | undefined, item: Pick<FeedItemView, 'author'>, me: string | null): boolean =>

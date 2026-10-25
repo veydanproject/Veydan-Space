@@ -50,7 +50,7 @@
   import { cover } from './cover';
   import { isMine, QUICK } from './reactions';
   import {
-    amMuted, answersRequests, canAttach, canComment, canPost, isManager, isModerator, isOwner, joined, keeperAwayAt, standing, staffOf, type Standing,
+    amMuted, answersRequests, canAttach, canComment, canPost, canSetUpSections, isModerator, isOwner, joined, keeperAwayAt, standing, staffOf, type Standing,
   } from './permissions';
   import type { ModerationTab } from './moderation/ModerationPanel.svelte';
   import PersonActions from './moderation/PersonActions.svelte';
@@ -89,7 +89,7 @@
   /** The tiles of the sections, open under the button of the head (a sheet on a phone). */
   let tilesOpen = $state(false);
   let sectionButton = $state<HTMLElement | null>(null);
-  /** The owner's settings of a section, from «Настроить» of the tiles. */
+  /** The settings of a section (the owner's and the admins'), from «Настроить» of the tiles. */
   let scopeDialog = $state<{ open: boolean; id: string | null }>({ open: false, id: null });
 
   /** The feed as read on this device (feedStore): a channel opened again shows it at once and reads its newest behind it. */
@@ -193,8 +193,8 @@
     return () => cancelAnimationFrame(frame);
   });
 
-  /** The posts of a list as drawn, of the section its key shows; the albums as one. */
-  const unitsOf = (k: string) => feedUnits(inScope(feedStore.shown(k), scopeOfKey(k)));
+  /** The posts of a list as drawn, of the section its key shows; the albums as one; a removed post is not drawn (as `live`). */
+  const unitsOf = (k: string) => feedUnits(inScope(feedStore.shown(k).filter((x) => !x.deleted), scopeOfKey(k)));
 
   // The counts of what waits for a moderator, for the pills of the head: once a channel, not at every news of it.
   const moderating = $derived(isModerator(detail));
@@ -363,15 +363,9 @@
     if (level) { locked = null; asking = { open: true, level: level.id }; } else locked = tile;
   }
 
-  /** «Настроить»: the owner sets up the section shown (from «Все», the first); an admin adds sections in the channel's info. */
-  async function setUpSections() {
-    if (isOwner(detail)) {
-      scopeDialog = { open: true, id: scope ?? ordered(lv.scopes)[0]?.scope_id ?? EVERYONE };
-      return;
-    }
-    openInfo();
-    await tick();
-    setTimeout(() => document.getElementById('chan-sections')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 150);
+  /** «Настроить» (the owner and the admins, 2026-10-25): the section shown is set up, from «Все» the first. */
+  function setUpSections() {
+    scopeDialog = { open: true, id: scope ?? ordered(lv.scopes)[0]?.scope_id ?? EVERYONE };
   }
 
   // A section gone (deleted, or my level taken) leaves its tile: back to all.
@@ -964,9 +958,9 @@
 {#if detail}<LevelRequestDialog bind:open={asking.open} {detail} preselect={asking.level} />{/if}
 {#if detail && sectioned}
   <SectionTiles bind:open={tilesOpen} {tiles} communityId={cid} current={scope} unread={row?.unread ?? 0} anchor={sectionButton}
-    onpick={pick} onlocked={onLocked} onsettings={isManager(detail) ? setUpSections : undefined} />
+    onpick={pick} onlocked={onLocked} onsettings={canSetUpSections(detail) ? setUpSections : undefined} />
 {/if}
-{#if detail && isOwner(detail)}<ScopeDialog bind:open={scopeDialog.open} {detail} scopeId={scopeDialog.id} />{/if}
+{#if detail && canSetUpSections(detail)}<ScopeDialog bind:open={scopeDialog.open} {detail} scopeId={scopeDialog.id} />{/if}
 <ContextMenu bind:open={headMenu.open} x={headMenu.x} y={headMenu.y} items={headEntries} onclose={() => (headMenu.open = false)} />
 
 <style>

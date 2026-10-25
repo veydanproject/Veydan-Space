@@ -13,7 +13,7 @@
 use crate::views::{
     ChannelAction, ChannelDetail, ChannelPreview, ChannelView, FeedCursorView, FeedItemView, FeedPageView, InviteStatusView, InviteView, KeeperStatus, LastPost, LevelInput, TicketsView,
     LevelRequestView, LevelRights, LevelView, LogEntry, LogPage, ModAction, ModSettings, NewChannelInput, NewScopeInput, OutboxView, ScopeSetInput, QueueItem, QueuePage, ReactionCount, RequestView,
-    ScheduleView, ScopeView, StaffView, StoragePlanView, TransferView, UploadView,
+    ReaderView, ReadersPage, ScheduleView, ScopeView, StaffView, StoragePlanView, TransferView, UploadView,
 };
 use ts_rs::{Config, TS};
 
@@ -75,6 +75,8 @@ pub fn moderation_ts() -> String {
     out += "\nimport type { ScheduleView } from './channels';\n";
     out += &export::<QueueItem>(&cfg, "A message waiting for a moderator: one line per author, or each of one author's when the queue is asked for theirs.");
     out += &export::<QueuePage>(&cfg, "A page of the queue, as `channel_moderation_queue` answers (`author`: that author's messages alone).");
+    out += &export::<ReaderView>(&cfg, "A reader of a channel as its team sees them (`channel_readers`); the journal does not list readers, the keeper's rows or its snapshot do.");
+    out += &export::<ReadersPage>(&cfg, "A page of the readers, as `channel_readers` answers: newest first, the staff, the banned and me left out; `partial`: shards of the snapshot still on their way.");
     out += &export::<ModAction>(&cfg, "One act of moderation, as `channel_moderation_mod` takes it; tagged by `t`.");
     out += &export::<LogEntry>(&cfg, "One line of the log of moderation.");
     out += &export::<LogPage>(&cfg, "A page of the log, as `channel_moderation_log` answers.");

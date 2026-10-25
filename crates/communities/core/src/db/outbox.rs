@@ -295,6 +295,20 @@ pub async fn retry_now(db: &Db, community_id: &str, now: i64) -> Result<u64> {
     Ok(res.rows_affected())
 }
 
+/// Every row still to go and waiting for a later try goes at `now` (a
+/// relay connected: what waited for one goes, its count of tries as it
+/// was); how many.
+pub async fn due_now(db: &Db, now: i64) -> Result<u64> {
+    let res = sqlx::query("UPDATE cm_outbox SET next_at = ? WHERE state = ? AND next_at > ?")
+        .bind(now)
+        .bind(STATE_QUEUED)
+        .bind(now)
+        .execute(db.pool())
+        .await
+        .map_err(storage)?;
+    Ok(res.rows_affected())
+}
+
 /// The notes queued before `before` are given up (a note lives a week,
 /// wire §7); how many.
 pub async fn drop_notes_before(db: &Db, before: i64) -> Result<u64> {
@@ -414,5 +428,23 @@ mod tests {
         enqueue_note(&db, CID, &note("r", "new", 0), 100).await.unwrap();
         assert_eq!(drop_notes_before(&db, 50).await.unwrap(), 1);
         assert_eq!(all(&db).await.unwrap().len(), 3);
+    }
+
+    /// A relay connected: what waits for a later try goes now, its tries
+    /// counted as they were; a row given up stays so (the user's retry).
+    #[tokio::test]
+    async fn a_relay_that_came_makes_the_waiting_rows_due() {
+        let db = Db::open_in_memory().await.unwrap();
+        let a = enqueue_event(&db, CID, LANE_CHANNEL, 1390, "a", Some("a"), "{}", 10).await.unwrap();
+        let b = enqueue_event(&db, CID, LANE_CHANNEL, 1390, "b", Some("b"), "{}", 10).await.unwrap();
+        let c = enqueue_event(&db, CID, LANE_CHANNEL, 1390, "c", Some("c"), "{}", 10).await.unwrap();
+        retry_later(&db, a, 2, 70, STATE_QUEUED, Some("transport error: no relay connected")).await.unwrap();
+        retry_later(&db, b, 6, 600, STATE_FAILED, Some("refused")).await.unwrap();
+        assert!(due(&db, 20).await.unwrap().iter().all(|r| r.seq == c));
+        assert_eq!(due_now(&db, 20).await.unwrap(), 1, "the waiting one, not the due one nor the failed one");
+        let rows = due(&db, 20).await.unwrap();
+        assert_eq!(rows.iter().map(|r| r.seq).collect::<Vec<_>>(), vec![a, c]);
+        assert_eq!(rows[0].attempts, 2);
+        assert_eq!(state_of(&db, CID, LANE_CHANNEL, "b").await.unwrap().as_deref(), Some(STATE_FAILED));
     }
 }

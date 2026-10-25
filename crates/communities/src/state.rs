@@ -991,6 +991,10 @@ impl Listener {
         } else {
             crate::log::clog!("connected to {}: the channels are listened to again", came.join(", "));
         }
+        // What waited for a relay goes now, not at its next try.
+        if let Err(e) = self.service.outbox_relays_came().await {
+            crate::log::clog!("the outbox was not woken: {e}");
+        }
         self.resubscribe_anew();
     }
 

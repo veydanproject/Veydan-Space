@@ -54,6 +54,16 @@ pub enum Standing {
     Unfetched(usize),
 }
 
+/// The readers known on this device (`Member::known_readers`): hex key
+/// and the time of their join at the keeper, in no order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct KnownReaders {
+    pub readers: Vec<(String, i64)>,
+    /// A shard of the newest snapshot was not here or did not open: some
+    /// readers are missing.
+    pub partial: bool,
+}
+
 /// Why a shard of a snapshot did not open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Miss {
@@ -219,6 +229,36 @@ impl Member {
             }
         }
         Ok(Some(out))
+    }
+
+    /// Every reader known here, for the list the team reads
+    /// (`ChannelService::readers`): the keeper's rows when it is kept on
+    /// this device (current), else the shards of the newest snapshot in
+    /// the cache. A shard not in the cache is left out and wanted of the
+    /// hosts by a job (`fetch::Want::Shard`, as a comment would want it:
+    /// no round trip here, the page asks again), and the list says it is
+    /// `partial`; so is one whose shard does not open here. Empty before
+    /// the first snapshot.
+    pub async fn known_readers(&self, log: &OpLog) -> Result<KnownReaders> {
+        let state = log.state();
+        let cid = &state.community_id;
+        if self.kept_here(state).await? {
+            let rows = kept::readers_since(&self.env.db, cid).await?;
+            return Ok(KnownReaders { readers: rows.into_iter().collect(), partial: false });
+        }
+        let Some(s) = self.latest_snapshot(cid).await? else { return Ok(KnownReaders::default()) };
+        let mut out = KnownReaders::default();
+        for index in 0..s.shards.len() {
+            match self.cached_shard(&s, index).await? {
+                Ok(entries) => out.readers.extend(entries.iter().map(|e| (hex::encode(e.pubkey), i64::from(e.since)))),
+                Err(Miss::Hosts) => {
+                    out.partial = true;
+                    self.env.fetches.want(cid, fetch::Want::Shard { at: s.at, index });
+                }
+                Err(Miss::Closed) => out.partial = true,
+            }
+        }
+        Ok(out)
     }
 
     async fn key_of_epoch(&self, community_id: &str, epoch: u32) -> Result<Option<EpochKey>> {

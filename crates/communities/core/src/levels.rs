@@ -182,8 +182,8 @@ impl ChannelService {
         self.scope_add_with(keys, community_id, title, ScopeLook::default(), scheme, history, false).await
     }
 
-    /// `scope_add` with the look of the section, and hidden (the owner
-    /// alone): one operation `scope_add` with `hidden`, its meta sealed into
+    /// `scope_add` with the look of the section, and hidden (owner and
+    /// admins, 2026-10-25): one operation `scope_add` with `hidden`, its meta sealed into
     /// the section's own feed once its first key is here (wire §14.1,
     /// 2026-10-23).
     #[allow(clippy::too_many_arguments)]
@@ -192,7 +192,7 @@ impl ChannelService {
         if state.scopes.len() >= MAX_SCOPES {
             return Err(invalid("scope limit"));
         }
-        if hidden && state.owner != Self::me(keys)? {
+        if hidden && !state.role_of(&Self::me(keys)?).is_some_and(|r| crate::roles::permits(r, crate::roles::Action::SetScope)) {
             return Err(invalid("not permitted"));
         }
         let mut raw = [0u8; 16];
@@ -202,8 +202,8 @@ impl ChannelService {
         Ok((scope_id, out))
     }
 
-    /// The title, the look or the hiding of a section changes (the owner
-    /// alone, wire §14.1 `scope_set`): what `change` leaves out stays as the
+    /// The title, the look or the hiding of a section changes (owner and
+    /// admins, 2026-10-25, wire §14.1 `scope_set`): what `change` leaves out stays as the
     /// meta in force says; the whole of it goes out as a fresh meta. A photo
     /// replaced or taken away is removed from the hosts.
     pub async fn scope_set(&self, keys: &Keys, community_id: &str, scope_id: &str, change: &ScopeChange) -> Result<Outcome> {
@@ -212,7 +212,7 @@ impl ChannelService {
         if !state.scopes.contains_key(scope_id) {
             return Err(invalid("unknown scope"));
         }
-        if state.owner != Self::me(keys)? {
+        if !state.role_of(&Self::me(keys)?).is_some_and(|r| crate::roles::permits(r, crate::roles::Action::SetScope)) {
             return Err(invalid("not permitted"));
         }
         if scope_id == SCOPE_EVERYONE && change.hidden == Some(true) {
@@ -230,7 +230,7 @@ impl ChannelService {
         Ok(out)
     }
 
-    /// The sections in this order (the owner): `order` of each becomes its
+    /// The sections in this order (owner and admins): `order` of each becomes its
     /// place in `ids`, by a `scope_set` of each whose order differs.
     pub async fn scopes_order(&self, keys: &Keys, community_id: &str, ids: &[String]) -> Result<Outcome> {
         let log = self.log(community_id).await?.ok_or_else(|| invalid("unknown channel"))?;
@@ -249,7 +249,7 @@ impl ChannelService {
         Ok(out)
     }
 
-    /// A section goes (the owner alone); `everyone` never.
+    /// A section goes (owner and admins, 2026-10-25); `everyone` never.
     pub async fn scope_del(&self, keys: &Keys, community_id: &str, scope_id: &str) -> Result<Outcome> {
         if scope_id == SCOPE_EVERYONE {
             return Err(invalid("scope everyone"));

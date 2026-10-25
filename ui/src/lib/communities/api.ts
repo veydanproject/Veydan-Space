@@ -26,7 +26,7 @@ import type {
   UploadView,
   ImportedFile,
 } from './generated/channels';
-import type { InviteStatusView, KeeperStatus, LogEntry, LogPage, ModAction, ModSettings, QueueItem, QueuePage, TicketsView } from './generated/moderation';
+import type { InviteStatusView, KeeperStatus, LogEntry, LogPage, ModAction, ModSettings, QueueItem, QueuePage, ReadersPage, TicketsView } from './generated/moderation';
 import type { MdBlock } from '$lib/messenger/seams/shared';
 import type { FeedItemViewLv, LevelInput, LevelRequestView, LevelView, NewScopeInput, ScopeSetInput, ScopeView, StaffViewLv } from './levels/types';
 
@@ -314,6 +314,9 @@ export const channelsApi = {
     requestAct: (communityId: string, requester: string, approve: boolean) =>
       call<void>('channel_moderation_request_act', { communityId, requester, approve }),
     requestsCount: (communityId: string) => call<number>('channel_moderation_requests_count', { communityId }),
+    /** The readers of the channel, for the team only: newest first, `query` a start of the hex key; `partial` while shards of the snapshot are on their way. */
+    readers: (communityId: string, offset = 0, limit = 100, query?: string) =>
+      call<ReadersPage>('channel_readers', { communityId, query: query ?? null, offset, limit }),
   },
 
   /** Levels and sections (communities-wire §14): the owner names the levels and gives them sections and rights. */
@@ -527,6 +530,16 @@ interface DemoChannel {
   transfer?: TransferView;
   /** Tickets I hold as a moderator (wire §17). */
   tickets?: number;
+  /** Who reads, as the keeper knows them (`channel_readers`); made when first asked. */
+  readers?: { pubkey: string; since: number }[];
+}
+
+/** The readers of a demo channel: two of the demo's people and up to 140 more, one every five hours back. */
+function demoReaders(c: DemoChannel): { pubkey: string; since: number }[] {
+  const out = [{ pubkey: VERA, since: T0 - 3 * H }, { pubkey: NIKITA, since: T0 - 2 * D }];
+  const more = Math.min(140, Math.max(0, c.view.members - out.length));
+  for (let i = 0; i < more; i++) out.push({ pubkey: hex(`d${i.toString(16).padStart(3, '0')}`), since: T0 - (i + 1) * 5 * H });
+  return out;
 }
 
 let seq = 0;
@@ -868,7 +881,7 @@ if (!isTauri) {
         }
         case 'ban': c.banned.push(act.who); c.staff = c.staff.filter((x) => x.pubkey !== act.who); break;
         case 'unban': c.banned = c.banned.filter((x) => x !== act.who); break;
-        case 'remove': c.staff = c.staff.filter((x) => x.pubkey !== act.who); break;
+        case 'remove': c.staff = c.staff.filter((x) => x.pubkey !== act.who); c.readers = c.readers?.filter((r) => r.pubkey !== act.who); break;
         case 'set_muted': {
           const s = c.staff.find((x) => x.pubkey === act.who);
           if (s) { s.muted = act.muted; s.muted_until = act.until; }
@@ -1096,6 +1109,22 @@ if (!isTauri) {
     channel_moderation_requests: (a) => ch(a).requests,
     channel_moderation_request_act: (a) => { const c = ch(a); c.requests = c.requests.filter((r) => r.requester !== a?.requester); updated(c); },
     channel_moderation_requests_count: (a) => ch(a).requests.length,
+    channel_readers: (a): ReadersPage => {
+      const c = ch(a);
+      if (!['moderator', 'admin', 'owner'].includes(roleOf(c) ?? '')) refuse('forbidden', 'not permitted');
+      c.readers ??= demoReaders(c);
+      const q = String(a?.query ?? '').trim().toLowerCase();
+      if (q && !/^[0-9a-f]{1,64}$/.test(q)) return { readers: [], total: 0, partial: false };
+      // The staff (authors and above), the banned and I are not in the list.
+      const team = new Set(c.staff.filter((s) => s.role !== 'member').map((s) => s.pubkey));
+      const all = c.readers
+        .filter((r) => r.pubkey !== ME && !team.has(r.pubkey) && !c.banned.includes(r.pubkey) && r.pubkey.startsWith(q))
+        .sort((x, y) => y.since - x.since || (x.pubkey < y.pubkey ? -1 : 1));
+      const offset = Number(a?.offset ?? 0);
+      const limit = Number(a?.limit ?? 100);
+      const levels = (who: string) => (c.staff.find((s) => s.pubkey === who)?.levels ?? []).filter((l) => l !== 0);
+      return { readers: all.slice(offset, offset + limit).map((r) => ({ ...r, levels: levels(r.pubkey) })), total: all.length, partial: false };
+    },
     channel_keeper_status: (a): KeeperStatus => {
       const c = ch(a);
       const owner = c.view.my_role === 'owner';

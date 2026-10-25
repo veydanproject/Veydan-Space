@@ -120,13 +120,18 @@ async fn the_owner_renames_a_section_and_gives_it_a_look() {
     assert_eq!([SCOPE_EVERYONE, news.as_str(), gold.as_str()].map(|s| seen.look(s).order), [Some(0), Some(1), Some(2)]);
     assert_eq!(seen.scope(&gold), "Gold", "a change of the order keeps the title");
     assert_eq!(seen.scope(SCOPE_EVERYONE), "", "everyone stays without a title of its own");
-    // Nobody but the owner: refused before anything goes out, and by the journal.
+    // Nobody but the owner and the admins (2026-10-25): a reader is refused before anything goes out, and by the journal.
     let ops = owner.svc.log(&cid).await.ok().flatten().map(|l| l.ordered().count()).unwrap_or(0);
-    assert!(err_text(admin.svc.scope_set(&admin.keys, &cid, &gold, &ScopeChange { title: Some("Mine".into()), ..ScopeChange::default() }).await).contains("not permitted"));
-    assert!(admin.svc.act(&admin.keys, &cid, OpBody::ScopeSet { scope_id: gold.clone(), hidden: None }).await.is_err(), "the journal refuses it");
-    assert!(err_text(admin.svc.scope_add_with(&admin.keys, &cid, "Secret", ScopeLook::default(), SchemeId::SdV1, History::Open, true).await.map(|_| ())).contains("not permitted"));
+    assert!(err_text(a.svc.scope_set(&a.keys, &cid, &gold, &ScopeChange { title: Some("Mine".into()), ..ScopeChange::default() }).await).contains("not permitted"));
+    assert!(a.svc.act(&a.keys, &cid, OpBody::ScopeSet { scope_id: gold.clone(), hidden: None }).await.is_err(), "the journal refuses it");
+    assert!(err_text(a.svc.scope_add_with(&a.keys, &cid, "Secret", ScopeLook::default(), SchemeId::SdV1, History::Open, true).await.map(|_| ())).contains("not permitted"));
     w.pump(&all).await;
     assert_eq!(owner.svc.log(&cid).await.ok().flatten().map(|l| l.ordered().count()).unwrap_or(0), ops, "nothing of theirs in the journal");
+    // An admin renames the section, and everyone reads the new title.
+    admin.svc.scope_set(&admin.keys, &cid, &gold, &ScopeChange { title: Some("Gold+".into()), ..ScopeChange::default() }).await.unwrap_or_else(|e| panic!("admin's scope_set: {e}"));
+    settle(&w, &owner, &all).await;
+    assert_eq!(names(&b, &cid).await.scope(&gold), "Gold+");
+    assert_eq!(names(&b, &cid).await.look(&gold).order, Some(2), "the look stays as it was");
     // A look out of its bounds is refused.
     let bad = ScopeChange { icon: Some("Star!".into()), ..ScopeChange::default() };
     assert!(err_text(owner.svc.scope_set(&owner.keys, &cid, &gold, &bad).await).contains("scope icon"));
@@ -170,20 +175,26 @@ async fn a_hidden_section_is_shown_to_its_members_only() {
     assert!(b.svc.log(&cid).await.ok().flatten().is_some_and(|l| l.state().scopes.get(&secret).is_some_and(|d| d.hidden)));
     assert!(!shown(&b, &cid, &secret).await, "not shown to who is outside");
     assert!(shown(&admin, &cid, &secret).await, "staff belong to every section");
-    // A section made in the open and hidden later: the new title goes inside only.
+    // A section made in the open and hidden later, by an admin (2026-10-25): the new title goes inside only.
     let (open, _) = owner.svc.scope_add(&owner.keys, &cid, "Lounge", SchemeId::SdV1, History::Open).await.unwrap_or_else(|e| panic!("scope_add: {e}"));
     settle(&w, &owner, &all).await;
     assert!(shown(&b, &cid, &open).await && names(&b, &cid).await.scope(&open) == "Lounge", "an open section is shown to all");
     let hide = ScopeChange { title: Some("Green room".into()), hidden: Some(true), ..ScopeChange::default() };
-    owner.svc.scope_set(&owner.keys, &cid, &open, &hide).await.unwrap_or_else(|e| panic!("scope_set: {e}"));
+    admin.svc.scope_set(&admin.keys, &cid, &open, &hide).await.unwrap_or_else(|e| panic!("scope_set: {e}"));
     settle(&w, &owner, &all).await;
     assert_eq!(names(&b, &cid).await.scope(&open), "Lounge", "the old title was seen, the new one is not");
     assert!(!shown(&b, &cid, &open).await);
-    assert_eq!(names(&admin, &cid).await.scope(&open), "Green room");
+    assert_eq!(names(&owner, &cid).await.scope(&open), "Green room", "the admin's meta is read inside");
     // Shown again: the next meta goes into everyone.
-    owner.svc.scope_set(&owner.keys, &cid, &open, &ScopeChange { title: Some("Hall".into()), hidden: Some(false), ..ScopeChange::default() }).await.unwrap_or_else(|e| panic!("scope_set: {e}"));
+    admin.svc.scope_set(&admin.keys, &cid, &open, &ScopeChange { title: Some("Hall".into()), hidden: Some(false), ..ScopeChange::default() }).await.unwrap_or_else(|e| panic!("scope_set: {e}"));
     settle(&w, &owner, &all).await;
     assert!(shown(&b, &cid, &open).await && names(&b, &cid).await.scope(&open) == "Hall");
+    // An admin deletes it; a reader may not.
+    assert!(b.svc.scope_del(&b.keys, &cid, &open).await.is_err(), "a reader");
+    admin.svc.scope_del(&admin.keys, &cid, &open).await.unwrap_or_else(|e| panic!("scope_del: {e}"));
+    settle(&w, &owner, &all).await;
+    assert!(!shown(&b, &cid, &open).await);
+    assert!(b.svc.log(&cid).await.ok().flatten().is_some_and(|l| !l.state().scopes.contains_key(&open)), "gone from the journal");
     for n in all {
         assert!(n.errors().is_empty(), "{:?}", n.errors());
     }
@@ -199,7 +210,8 @@ async fn the_photo_of_a_section_is_sealed_and_shown_to_who_reads_its_meta() {
     let (gold, _) = owner.svc.scope_add(&owner.keys, &cid, "Premium", SchemeId::SdV1, History::Open).await.unwrap_or_else(|e| panic!("scope_add: {e}"));
     settle(&w, &owner, &all).await;
     let png = messenger_avatar::png_of_rgba(40, 30, &[200u8; 40 * 30 * 4]).unwrap_or_else(|e| panic!("png: {e:?}"));
-    assert!(err_text(admin.svc.upload_scope_photo(&admin.keys, &cid, &png).await).contains("not permitted"));
+    assert!(err_text(a.svc.upload_scope_photo(&a.keys, &cid, &png).await).contains("not permitted"), "a reader");
+    admin.svc.upload_scope_photo(&admin.keys, &cid, &png).await.unwrap_or_else(|e| panic!("an admin's photo: {e}"));
     let up = owner.svc.upload_scope_photo(&owner.keys, &cid, &png).await.unwrap_or_else(|e| panic!("photo: {e}"));
     let stored = w.hosts.blobs.lock().unwrap_or_else(|e| e.into_inner()).get(H1).and_then(|b| b.get(&up.photo.sha256).cloned()).unwrap_or_else(|| panic!("on the host"));
     assert!(!stored.starts_with(&[0xff, 0xd8, 0xff]), "the hosts hold no JPEG");

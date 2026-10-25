@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChannelDetail, StaffView } from './api';
 import {
-  KEEPER_AWAY_SECS, canAttach, canComment, canRecord, canDelete, canEdit, canModerate, canPost, isManager, isModerator, keeperAwayAt, losesModeration, mutedNow, rolesFor, standing,
+  KEEPER_AWAY_SECS, canAttach, canComment, canRecord, canDelete, canEdit, canModerate, canPost, canSetUpSections, isManager, isModerator, keeperAwayAt, losesModeration, mutedNow, rolesFor, standing,
 } from './permissions';
 
 const ME = 'aa'.repeat(32);
@@ -87,16 +87,20 @@ describe('the moderation a role is offered', () => {
     expect(isModerator(channel('moderator'))).toBe(true);
     expect(isModerator(channel('author'))).toBe(false);
     expect(isManager(channel('admin'))).toBe(true);
+    expect(canSetUpSections(channel('admin'))).toBe(true);
+    expect(canSetUpSections(channel('moderator'))).toBe(false);
     expect(isManager(channel('moderator'))).toBe(false);
     expect(isModerator(channel('owner', {}, 'out'))).toBe(false);
   });
 
-  it('gives roles below one\'s own; an admin is made by the owner alone', () => {
+  it('gives roles below one\'s own, and admin: an admin makes admins too (2026-10-25)', () => {
     expect(rolesFor(channel('owner'), 'reader', ME)).toEqual(['author', 'moderator', 'admin']);
-    expect(rolesFor(channel('admin'), 'reader', ME)).toEqual(['author', 'moderator']);
-    expect(rolesFor(channel('admin'), 'author', ME)).toEqual(['member', 'moderator']);
+    expect(rolesFor(channel('admin'), 'reader', ME)).toEqual(['author', 'moderator', 'admin']);
+    expect(rolesFor(channel('admin'), 'author', ME)).toEqual(['member', 'moderator', 'admin']);
+    expect(rolesFor(channel('admin'), 'mod', ME)).toEqual(['member', 'author', 'admin']);
     expect(rolesFor(channel('moderator'), 'reader', ME)).toEqual([]);
     expect(rolesFor(channel('admin'), 'admin', ME)).toEqual([]);
+    expect(rolesFor(channel('admin'), 'owner', ME)).toEqual([]);
   });
 
   it('lets the author edit their words, and remove what is theirs or below', () => {

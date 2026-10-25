@@ -1293,8 +1293,8 @@ impl ChannelService {
 
     // ─── The photo of a section ─────────────────────────────────────────────
 
-    /// The photo of a section made from any picture the owner picked (wire
-    /// §14.1, 2026-10-23): a square JPEG as a cover is, sealed under a key
+    /// The photo of a section made from any picture the owner or an admin picked (wire
+    /// §14.1, 2026-10-23; owner and admins, 2026-10-25): a square JPEG as a cover is, sealed under a key
     /// of its own (`wire::seal_bytes`) and put on the hosts of the channel
     /// as the cover is; the key travels in the sealed meta alone, so the
     /// hosts hold a picture nobody else opens. Nothing of the channel is
@@ -1302,7 +1302,7 @@ impl ChannelService {
     /// channel's lock).
     pub async fn upload_scope_photo(&self, keys: &Keys, community_id: &str, bytes: &[u8]) -> Result<NewScopePhoto> {
         let state = self.state(community_id).await?;
-        if state.owner != Self::me(keys)? {
+        if !state.role_of(&Self::me(keys)?).is_some_and(|r| crate::roles::permits(r, crate::roles::Action::SetScope)) {
             return Err(invalid("not permitted"));
         }
         let jpeg = square_jpeg(bytes, "photo").await?;

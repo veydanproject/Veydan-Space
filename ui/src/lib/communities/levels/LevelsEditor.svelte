@@ -16,7 +16,7 @@
   import { confirmStore } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
-  import { isOwner } from '../permissions';
+  import { canSetUpSections } from '../permissions';
   import type { ChannelDetail } from '../api';
   import { BASE_LEVEL, EVERYONE, levelsOf } from './sections';
   import { MAX_LEVELS, MAX_SCOPES, RIGHTS, grantingCount, orderedLevels } from './editor';
@@ -120,13 +120,13 @@
     {#each scopes as s (s.scope_id)}
       {@const n = grantingCount(lv.levels, s.scope_id)}
       <li class="row">
-        <!-- The owner sets a section up (§14.7): its title, its look, hidden or not, its place. -->
-        {#if isOwner(detail)}
+        <!-- The owner or an admin sets a section up (§14.7): its title, its look, hidden or not, its place. -->
+        {#if canSetUpSections(detail)}
           <button type="button" class="row-main as-button" onclick={() => (scopeDialog = { open: true, id: s.scope_id })}>{@render scopeRow(s, n)}<Icon name="chevron-right" size={14} /></button>
         {:else}
           <span class="row-main">{@render scopeRow(s, n)}</span>
         {/if}
-        {#if s.scope_id !== EVERYONE && isOwner(detail)}
+        {#if s.scope_id !== EVERYONE && canSetUpSections(detail)}
           <button class="icon danger" disabled={busy} onclick={() => removeScope(s)} title={$t('chan_scope_delete')} aria-label={$t('chan_scope_delete')}><Icon name="trash-2" size={14} /></button>
         {/if}
       </li>

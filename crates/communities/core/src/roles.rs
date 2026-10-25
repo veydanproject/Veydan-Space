@@ -87,11 +87,12 @@ pub enum Action {
     SetLevels,
     /// Make a scope (`scope_add`).
     EditScopes,
-    /// Delete a scope (`scope_del`): the owner alone, as a disband of a
-    /// part of the channel.
+    /// Delete a scope (`scope_del`): owner and admins (the owner's word,
+    /// 2026-10-25; the owner alone before).
     DeleteScope,
     /// Rename a scope, change its look, hide it (`scope_set`, a hidden
-    /// `scope_add`): the owner alone (2026-10-23).
+    /// `scope_add`): owner and admins (2026-10-25; the owner alone from
+    /// 2026-10-23).
     SetScope,
     /// Say whose quota a member of the staff uploads into (`set_quota`,
     /// wire §9.2): the owner alone, whose plan pays (2026-10-23).
@@ -128,7 +129,8 @@ pub enum Action {
 /// May someone with `actor` role do `action`?
 ///
 /// Two rules behind the table, as in groups: one acts only on roles below
-/// one's own, and nobody grants a role equal to or above their own.
+/// one's own, and nobody grants a role equal to or above their own — but an
+/// admin, who makes admins (2026-10-25).
 pub fn permits(actor: Role, action: Action) -> bool {
     use Action as A;
     use Role as R;
@@ -139,11 +141,13 @@ pub fn permits(actor: Role, action: Action) -> bool {
             actor.is_moderator() && target < actor
         }
         A::SetLevels | A::Admit | A::Invite | A::Unban | A::Pin | A::RotateNow | A::RotateLink => actor.is_moderator(),
-        A::EditSettings | A::EditScopes | A::EditLevels => actor.is_manager(),
-        A::DeleteScope | A::SetScope | A::SetQuota => actor == R::Owner,
+        A::EditSettings | A::EditScopes | A::EditLevels | A::DeleteScope | A::SetScope => actor.is_manager(),
+        A::SetQuota => actor == R::Owner,
         A::SetRole { from, to } => {
-            // An admin is made by the owner alone.
-            actor.is_manager() && from < actor && to < actor && to != R::Owner && from != to && (to != R::Admin || actor == R::Owner)
+            // An admin makes admins too (the owner's word, 2026-10-25), the
+            // one grant of a role equal to one's own; a fellow admin stays
+            // out of reach, so only the owner takes the role back.
+            actor.is_manager() && from < actor && (to < actor || to == R::Admin) && to != R::Owner && from != to
         }
         A::SetAuthor(target) => actor.is_manager() && target < actor,
         A::Keeper | A::TransferOwnership | A::Disband => actor == R::Owner,
@@ -183,7 +187,12 @@ mod tests {
             ("make an author", Action::SetAuthor(U), [true, true, false, false, false]),
             ("appoint an author", Action::SetRole { from: U, to: W }, [true, true, false, false, false]),
             ("appoint a moderator", Action::SetRole { from: U, to: M }, [true, true, false, false, false]),
-            ("appoint an admin", Action::SetRole { from: U, to: A }, [true, false, false, false, false]),
+            ("appoint an admin", Action::SetRole { from: U, to: A }, [true, true, false, false, false]),
+            ("raise a moderator to admin", Action::SetRole { from: M, to: A }, [true, true, false, false, false]),
+            ("add a section", Action::EditScopes, [true, true, false, false, false]),
+            ("set a section up or hide it", Action::SetScope, [true, true, false, false, false]),
+            ("delete a section", Action::DeleteScope, [true, true, false, false, false]),
+            ("say whose quota", Action::SetQuota, [true, false, false, false, false]),
             ("delegate the keeper", Action::Keeper, [true, false, false, false, false]),
             ("transfer ownership", Action::TransferOwnership, [true, false, false, false, false]),
             ("disband", Action::Disband, [true, false, false, false, false]),
@@ -204,7 +213,7 @@ mod tests {
         assert!(!permits(A, Action::Ban(A)));
         assert!(!permits(A, Action::Mute(A)));
         assert!(!permits(A, Action::SetRole { from: A, to: U }), "demoting a fellow admin");
-        assert!(!permits(A, Action::SetRole { from: M, to: A }), "an admin is the owner's to make");
+        assert!(!permits(A, Action::SetRole { from: A, to: M }), "a fellow admin is the owner's to take down");
         assert!(permits(O, Action::Remove(A)));
         assert!(permits(O, Action::SetRole { from: A, to: U }));
         // A moderator moderates authors and members only.

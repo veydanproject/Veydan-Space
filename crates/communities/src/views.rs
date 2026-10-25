@@ -503,7 +503,7 @@ impl From<LevelRequestRow> for LevelRequestView {
 }
 
 /// What `channel_scope_add` takes: a new section, its look and whether it
-/// is hidden (the owner alone); its photo is set after
+/// is hidden (owner and admins); its photo is set after
 /// (`channel_scope_photo_set`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct NewScopeInput {
@@ -536,7 +536,7 @@ pub struct NewScopeInput {
     pub hidden: Option<bool>,
 }
 
-/// What `channel_scope_set` takes (the owner): what changes of a section;
+/// What `channel_scope_set` takes (owner and admins): what changes of a section;
 /// a field left out stays. `icon` or `note` empty and `color` -1 take
 /// that away, `no_photo` the photo; `hidden` hides or shows the section
 /// (never `everyone`).
@@ -939,6 +939,36 @@ impl QueueItem {
     pub(crate) fn of(line: QueueLine, text: Option<String>) -> Self {
         Self { message_id: line.id, author: line.author, text, at: line.created_at, version: line.version, more_from_author: line.more_from_author }
     }
+}
+
+/// A reader of a channel as its team sees them (`channel_readers`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ReaderView {
+    /// Hex pubkey.
+    pub pubkey: String,
+    /// When the keeper let them in.
+    #[ts(type = "number")]
+    pub since: i64,
+    /// The levels the journal gives (ids; the base level 0 is everybody's
+    /// and left out), as `StaffView::levels`.
+    pub levels: Vec<u8>,
+}
+
+impl From<communities_core::reader_list::ReaderLine> for ReaderView {
+    fn from(l: communities_core::reader_list::ReaderLine) -> Self {
+        Self { pubkey: l.pubkey, since: l.since, levels: level_ids(l.levels) }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ReadersPage {
+    pub readers: Vec<ReaderView>,
+    /// How many readers match the query, on every page.
+    pub total: u32,
+    /// Some shards of the snapshot are not on this device yet (asked of
+    /// the hosts): readers may be missing, and asked again soon the list
+    /// may hold them.
+    pub partial: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]

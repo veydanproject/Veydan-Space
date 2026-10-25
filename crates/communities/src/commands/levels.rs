@@ -42,7 +42,7 @@ pub async fn channel_scopes(community_id: String, state: tauri::State<'_, Commun
     .await
 }
 
-/// A new section (admin and above; hidden: the owner): its title and look
+/// A new section (admin and above, hidden too): its title and look
 /// sealed, its keys its own.
 #[tauri::command]
 pub async fn channel_scope_add(community_id: String, input: NewScopeInput, state: tauri::State<'_, CommunitiesState>) -> CmdResult<ChannelDetail> {
@@ -66,7 +66,7 @@ pub async fn channel_scope_add(community_id: String, input: NewScopeInput, state
     .await
 }
 
-/// The title, the look or the hiding of a section changes (the owner).
+/// The title, the look or the hiding of a section changes (owner and admins).
 #[tauri::command]
 pub async fn channel_scope_set(community_id: String, scope_id: String, input: ScopeSetInput, state: tauri::State<'_, CommunitiesState>) -> CmdResult<ChannelDetail> {
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
@@ -99,7 +99,7 @@ fn scope_change(input: &ScopeSetInput) -> CmdResult<ScopeChange> {
     })
 }
 
-/// The sections in this order (the owner): each one's place in `ids`.
+/// The sections in this order (owner and admins): each one's place in `ids`.
 #[tauri::command]
 pub async fn channel_scopes_order(community_id: String, ids: Vec<String>, state: tauri::State<'_, CommunitiesState>) -> CmdResult<ChannelDetail> {
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
@@ -114,7 +114,7 @@ pub async fn channel_scopes_order(community_id: String, ids: Vec<String>, state:
 }
 
 /// A picked picture (up to `MAX_COVER_INPUT_BYTES`) as the photo of a
-/// section (the owner): a square JPEG, sealed on the hosts off the
+/// section (owner and admins): a square JPEG, sealed on the hosts off the
 /// channel's lock, then named by the section's meta.
 #[tauri::command]
 pub async fn channel_scope_photo_set(
@@ -160,7 +160,7 @@ pub async fn channel_scope_photo(community_id: String, scope_id: String, state: 
     .await
 }
 
-/// A section goes (the owner); `everyone` never.
+/// A section goes (owner and admins); `everyone` never.
 #[tauri::command]
 pub async fn channel_scope_del(community_id: String, scope_id: String, state: tauri::State<'_, CommunitiesState>) -> CmdResult<ChannelDetail> {
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).

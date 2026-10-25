@@ -1385,6 +1385,7 @@ mod command_futures {
         v.push(("channel_level_request", r4::<String, u8, Option<String>, S, _>(levels::channel_level_request)));
         v.push(("channel_level_requests", r2::<String, S, _>(levels::channel_level_requests)));
         v.push(("channel_level_request_act", r6::<String, String, u8, bool, Option<String>, S, _>(levels::channel_level_request_act)));
+        v.push(("channel_readers", r5::<String, Option<String>, Option<u32>, Option<u32>, S, _>(moderation::channel_readers)));
         v.push(("channel_moderation_queue", r5::<String, Option<String>, Option<i64>, Option<u32>, S, _>(moderation::channel_moderation_queue)));
         v.push(("channel_moderation_mod", r3::<String, ModAction, S, _>(moderation::channel_moderation_mod)));
         v.push(("channel_moderation_log", r4::<String, Option<i64>, Option<u32>, S, _>(moderation::channel_moderation_log)));

@@ -248,6 +248,18 @@ impl ChannelService {
         Ok(n)
     }
 
+    /// A relay connected: every row waiting for a later try goes now. A
+    /// row that found no relay waited 15 s, then twice as long each time,
+    /// and the issue of a joiner queued behind it waited with it — after a
+    /// start whose relays came late, minutes (the Gate of #80, 2026-10-25).
+    pub async fn outbox_relays_came(&self) -> Result<u64> {
+        let n = db::outbox::due_now(&self.env.db, self.now()).await?;
+        if n > 0 {
+            self.env.outbox.notify_one();
+        }
+        Ok(n)
+    }
+
     /// What a channel has in the outbox, for its page.
     pub async fn outbox_summary(&self, community_id: &str) -> Result<db::outbox::Summary> {
         db::outbox::summary(&self.env.db, community_id).await

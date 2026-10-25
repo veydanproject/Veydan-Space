@@ -28,6 +28,35 @@ export type QueuePage = { items: Array<QueueItem>, next_before?: number,
  */
 total: number, };
 
+/** A reader of a channel as its team sees them (`channel_readers`); the journal does not list readers, the keeper's rows or its snapshot do. */
+export type ReaderView = { 
+/**
+ * Hex pubkey.
+ */
+pubkey: string, 
+/**
+ * When the keeper let them in.
+ */
+since: number, 
+/**
+ * The levels the journal gives (ids; the base level 0 is everybody's
+ * and left out), as `StaffView::levels`.
+ */
+levels: Array<number>, };
+
+/** A page of the readers, as `channel_readers` answers: newest first, the staff, the banned and me left out; `partial`: shards of the snapshot still on their way. */
+export type ReadersPage = { readers: Array<ReaderView>, 
+/**
+ * How many readers match the query, on every page.
+ */
+total: number, 
+/**
+ * Some shards of the snapshot are not on this device yet (asked of
+ * the hosts): readers may be missing, and asked again soon the list
+ * may hold them.
+ */
+partial: boolean, };
+
 /** One act of moderation, as `channel_moderation_mod` takes it; tagged by `t`. */
 export type ModAction = { "t": "hide", targets: Array<string>, } | { "t": "hide_author", author: string, from: number, to: number, } | { "t": "unhide", targets: Array<string>, } | { "t": "approve", target: string, version: string, } | { "t": "reject", target: string, } | { "t": "spam", author: string, target?: string, } | { "t": "mute", who: string, until?: number, } | { "t": "unmute", who: string, } | { "t": "trust", who: string, trusted: boolean, };
 
