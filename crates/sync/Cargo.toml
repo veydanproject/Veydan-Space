@@ -18,7 +18,7 @@ hkdf = "0.13"
 chacha20poly1305 = "0.10"
 argon2 = "0.6.0-rc.8"
 rand = { version = "0.10", features = ["thread_rng"] }
-zstd = "0.13"
+zstd = "0.14.3"
 hex = "0.4"
 zeroize = "1"
 base64 = "0.22"

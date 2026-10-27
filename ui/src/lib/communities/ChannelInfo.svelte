@@ -563,7 +563,8 @@
 
 <style>
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-5); }
+  /* The ends stop the finger dead: Android's webview stretches an inner scroller (and the one it passes the rest to) past its end and back, which shook the panel at its bottom. */
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: none; padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-5); }
   .card-top { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; }
   .cover-edit { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
   .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); letter-spacing: -0.2px; overflow-wrap: anywhere; word-break: break-word; }

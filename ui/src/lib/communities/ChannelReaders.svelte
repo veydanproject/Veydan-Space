@@ -149,7 +149,8 @@
         </li>
       {/each}
     </ul>
-  {:else if !loading}
+  {:else if !loading || reads > 0}
+    <!-- Kept through a read again (every change of the journal or the keeper): a line gone and back at the bottom of the panel shook it. -->
     <p class="hint">{searching ? $t('chan_readers_nothing') : $t('chan_readers_none')}</p>
   {/if}
 

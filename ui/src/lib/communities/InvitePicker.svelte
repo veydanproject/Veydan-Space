@@ -17,6 +17,7 @@
   import { channelError } from './errors';
   import { staffOf } from './permissions';
   import { channelsApi, type ChannelDetail } from './api';
+  import { looksLikeKey as typedKey, personKey } from './pubkey';
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
 
@@ -36,7 +37,7 @@
   $effect(() => { if (!open) { key = ''; error = ''; done = []; } });
 
   const cid = $derived(detail.channel.id);
-  const looksLikeKey = $derived(/^(npub1[0-9a-z]{20,}|[0-9a-f]{64})$/i.test(key.trim()));
+  const looksLikeKey = $derived(typedKey(key));
   const all = $derived(contactsOf());
   const haystacks = $derived(contactHaystacks(all));
   /** The banned of the channel: neither invited nor made authors (a moderator's list). */
@@ -57,10 +58,17 @@
       if (purpose === 'author') await channelStore.act(cid, { op: 'set_role', who, role: 'author' });
       else await channelStore.invite(cid, who);
       done = [...done, who];
-      if (who === key.trim()) key = '';
+      if (who === personKey(key)) key = '';
     } catch (e) {
       error = channelError(e, tr);
     } finally { busy = false; }
+  }
+
+  /** The key typed into the field: the commands take hex, an npub is decoded here; a mistyped one is refused before them. */
+  function pickTyped() {
+    const who = personKey(key);
+    if (who) pick(who);
+    else error = tr('chan_err_bad_key');
   }
 
   const cta = $derived(purpose === 'author' ? $t('chan_make_author') : $t('chan_invite'));
@@ -70,9 +78,9 @@
   width="min(440px, calc(100vw - 24px))">
   <div class="body">
     <input type="text" bind:value={key} placeholder={$t('chan_invite_placeholder')} aria-label={$t('chan_invite_field')} spellcheck="false" disabled={busy}
-      onkeydown={(e) => { if (e.key === 'Enter' && looksLikeKey) pick(key.trim()); }} />
+      onkeydown={(e) => { if (e.key === 'Enter' && looksLikeKey) pickTyped(); }} />
     {#if looksLikeKey}
-      <button class="btn btn-primary" disabled={busy} onclick={() => pick(key.trim())}>{cta}</button>
+      <button class="btn btn-primary" disabled={busy} onclick={pickTyped}>{cta}</button>
     {/if}
     <p class="hint">{purpose === 'author' ? $t('chan_add_author_hint') : $t('chan_invite_hint')}</p>
     {#if error}<div class="error-msg">{error}</div>{/if}

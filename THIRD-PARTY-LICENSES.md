@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 900
+- **Rust / Cargo crates:** 898
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 1056
+- **Total third-party components:** 1054
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -38,8 +38,8 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 | License | Count |
 |---|---:|
-| MIT OR Apache-2.0 | 320 |
-| MIT | 166 |
+| MIT OR Apache-2.0 | 319 |
+| MIT | 165 |
 | MIT OR Apache-2.0 (platform dep) | 115 |
 | Apache-2.0 OR MIT | 111 |
 | MIT (platform dep) | 29 |
@@ -103,7 +103,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (900)
+## Full acknowledgements — Rust crates (898)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -999,9 +999,7 @@ Thank you to the authors of the following Cargo crates:
 | zlib-rs | 0.6.5 | Zlib |
 | zmij | 1.0.21 | MIT |
 | zopfli | 0.8.3 | Apache-2.0 |
-| zstd | 0.13.3 | MIT |
 | zstd | 0.14.3 | BSD-3-Clause |
-| zstd-safe | 7.2.4 | MIT OR Apache-2.0 |
 | zstd-safe | 8.2.0 | BSD-3-Clause |
 | zstd-sys | 2.1.2+zstd.1.5.7 | BSD-3-Clause |
 | zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib |
@@ -1024,9 +1022,9 @@ Thank you to the authors of the following npm packages:
 | @jridgewell/resolve-uri | 3.1.2 | MIT |
 | @jridgewell/sourcemap-codec | 1.5.5 | MIT |
 | @jridgewell/trace-mapping | 0.3.31 | MIT |
-| @oxc-project/types | 0.138.0 | MIT |
+| @oxc-project/types | 0.139.0 | MIT |
 | @polka/url | 1.0.0-next.29 | MIT |
-| @rolldown/binding-linux-x64-gnu | 1.1.4 | MIT |
+| @rolldown/binding-linux-x64-gnu | 1.1.5 | MIT |
 | @rolldown/pluginutils | 1.0.1 | MIT |
 | @floating-ui/core | 1.8.0 | MIT |
 | @floating-ui/dom | 1.8.0 | MIT |
@@ -1037,7 +1035,7 @@ Thank you to the authors of the following npm packages:
 | @sveltejs/acorn-typescript | 1.0.10 | MIT |
 | @sveltejs/adapter-static | 3.0.10 | MIT |
 | @sveltejs/kit | 2.63.0 | MIT |
-| @sveltejs/kit | 2.69.1 | MIT |
+| @sveltejs/kit | 2.70.2 | MIT |
 | @sveltejs/load-config | 0.1.1 | MIT |
 | @sveltejs/load-config | 0.2.0 | MIT |
 | @sveltejs/vite-plugin-svelte | 5.1.1 | MIT |
@@ -1106,7 +1104,7 @@ Thank you to the authors of the following npm packages:
 | debug | 4.4.3 | MIT |
 | deepmerge | 4.3.1 | MIT |
 | detect-libc | 2.1.2 | Apache-2.0 |
-| devalue | 5.8.1 | MIT |
+| devalue | 5.9.4 | MIT |
 | esbuild | 0.25.12 | MIT |
 | esm-env | 1.2.2 | MIT |
 | esrap | 2.2.11 | MIT |
@@ -1126,14 +1124,14 @@ Thank you to the authors of the following npm packages:
 | mrmime | 2.0.1 | MIT |
 | ms | 2.1.3 | MIT |
 | nanoid | 3.3.12 | MIT |
-| nanoid | 3.3.15 | MIT |
+| nanoid | 3.3.20 | MIT |
 | obug | 2.1.3 | MIT |
 | orderedmap | 2.1.1 | MIT |
 | picocolors | 1.1.1 | ISC |
 | picomatch | 4.0.4 | MIT |
-| picomatch | 4.0.5 | MIT |
+| picomatch | 4.0.7 | MIT |
 | postcss | 8.5.15 | MIT |
-| postcss | 8.5.16 | MIT |
+| postcss | 8.5.31 | MIT |
 | prosemirror-changeset | 2.4.3 | MIT |
 | prosemirror-commands | 1.7.2 | MIT |
 | prosemirror-dropcursor | 1.8.3 | MIT |
@@ -1148,7 +1146,7 @@ Thank you to the authors of the following npm packages:
 | prosemirror-transform | 1.12.1 | MIT |
 | prosemirror-view | 1.42.4 | MIT |
 | readdirp | 4.1.2 | MIT |
-| rolldown | 1.1.4 | MIT |
+| rolldown | 1.1.5 | MIT |
 | rollup | 4.61.1 | MIT |
 | rollup | 4.62.2 | MIT |
 | rope-sequence | 1.3.4 | MIT |
@@ -1156,7 +1154,7 @@ Thank you to the authors of the following npm packages:
 | set-cookie-parser | 3.1.0 | MIT |
 | set-cookie-parser | 3.1.1 | MIT |
 | sirv | 3.0.2 | MIT |
-| source-map-js | 1.2.1 | BSD-3-Clause |
+| source-map-js | 1.2.2 | BSD-3-Clause |
 | svelte | 5.56.2 | MIT |
 | svelte | 5.56.4 | MIT |
 | svelte-check | 4.6.0 | MIT |
@@ -1170,7 +1168,7 @@ Thank you to the authors of the following npm packages:
 | undici-types | 8.3.0 | MIT |
 | utrie | 1.0.2 | MIT |
 | vite | 6.4.3 | MIT |
-| vite | 8.1.3 | MIT |
+| vite | 8.1.6 | MIT |
 | vitefu | 1.1.3 | MIT |
 | w3c-keyname | 2.2.8 | MIT |
 | zimmerframe | 1.1.4 | MIT |

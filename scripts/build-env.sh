@@ -97,7 +97,7 @@ export RUSTFLAGS="-L $DEV_PREFIX/usr/lib/x86_64-linux-gnu -L /usr/lib/x86_64-lin
 export PATH="$DEV_PREFIX/usr/bin:$PATH"
 export GCC_EXEC_PREFIX="$DEV_PREFIX/usr/lib/gcc/"
 # Runtime: let the loader find the WebKit .so.0 we extracted into the prefix
-export LD_LIBRARY_PATH="$LIBDIR:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export XKB_CONFIG_ROOT="${XKB_CONFIG_ROOT:-$DEV_PREFIX/usr/share/X11/xkb}"
 export FONTCONFIG_PATH="${FONTCONFIG_PATH:-$DEV_PREFIX/etc/fonts}"
 export FONTCONFIG_FILE="${FONTCONFIG_FILE:-$DEV_PREFIX/etc/fonts/fonts.conf}"
