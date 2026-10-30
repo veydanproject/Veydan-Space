@@ -27,6 +27,7 @@
     <string name="veydan_push_link_group_nameless">Link do grupy</string>
     <string name="veydan_push_link_contact">Kontakt: %s</string>
     <string name="veydan_push_link_contact_nameless">Kontakt</string>
+    <string name="veydan_push_forwarded">Przekazano: %s</string>
     <string name="veydan_push_invite">Zaproszenie do grupy %s</string>
     <string name="veydan_push_join_request">Prośba o dołączenie do %s</string>
     <string name="veydan_push_welcome">Jesteś w grupie %s</string>

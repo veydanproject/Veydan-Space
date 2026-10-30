@@ -24,6 +24,8 @@
   import { inviteStore } from './inviteStore.svelte';
   import { countdown, formatCode, isPermanentQr, QR_REFRESH_AHEAD_SECS, QR_TTL_SECS, reusableQr } from './invites';
   import ScanQr from './ScanQr.svelte';
+  import ShareOutSheet from '../content/ShareOutSheet.svelte';
+  import { contactShareItem, type ShareOutItem } from '../content/shareOut';
   import ServerBox from '../servers/ServerBox.svelte';
   import ServerPicker from '../servers/ServerPicker.svelte';
   import { serverStore } from '../servers/serverStore.svelte';
@@ -53,6 +55,9 @@
   const DRAW_RETRY_SECS = 15;
   let retryAt = 0;
   let linkNote = $state(false);
+  let sharing = $state(false);
+  let shareItem = $state<ShareOutItem | null>(null);
+  let shareId = '';
   let codeOpen = $state(false);
   let codeFor = $state<string | null>('');
   let code = $state<InviteView | null>(null);
@@ -141,7 +146,11 @@
     void draw();
   }
 
-  /** A link for one person and a week: a new one each time, so a forwarded link lets in one more at most. */
+  /**
+   * A link for one person and a week: a new one each time, so a forwarded link
+   * lets in one more at most. It goes through the sheet of the ways out (copying
+   * is one of them); the link to a server of mine is still copied at once.
+   */
   async function copyLink() {
     error = '';
     linkNote = false;
@@ -154,9 +163,9 @@
       }
       const v = await inviteStore.create({ kind: 'link', label: '' });
       if (!v.link) throw new Error('no link');
-      await navigator.clipboard.writeText(v.link);
-      copiedToast();
-      linkNote = true;
+      shareId = v.id;
+      shareItem = contactShareItem(v.link);
+      sharing = true;
     } catch (e) {
       error = messengerError(e);
     }
@@ -259,7 +268,7 @@
   {/if}
 
   <div class="actions">
-    <button class="btn btn-ghost btn-sm" onclick={copyLink}><Icon name={linkNote ? 'check' : 'link'} size={13} />{$t('msg_inv_copy_link')}</button>
+    <button class="btn btn-ghost btn-sm" onclick={copyLink}><Icon name={qrServer ? (linkNote ? 'check' : 'link') : 'share'} size={13} />{$t(qrServer ? 'msg_inv_copy_link' : 'msg_share_out_open')}</button>
     {#if !qrServer}
     <button class="btn btn-ghost btn-sm" class:active={codeOpen} aria-expanded={codeOpen} onclick={() => (codeOpen = !codeOpen)}>
       <Icon name="key" size={13} />{$t('msg_inv_code_24h')}
@@ -287,6 +296,8 @@
   {/if}
 
   {#if error}<div class="error-msg">{error}</div>{/if}
+
+  <ShareOutSheet bind:open={sharing} item={shareItem} title={$t('msg_share_out')} qr={() => messengerApi.links.contactQr(shareId)} />
 
   <ScanQr {onchat} {onmanual} autostart={scan} onclosed={onscanclosed} />
 </div>

@@ -13,7 +13,8 @@ export type NoticeBody =
   | { t: 'text'; text: string }
   | { t: 'link'; link: 'web' | 'group' | 'contact'; title: string }
   | { t: 'media'; kind: string; name: string; caption?: string; duration_ms?: number; batch?: string }
-  | { t: 'invite' | 'join_request' | 'welcome'; group_name: string };
+  | { t: 'invite' | 'join_request' | 'welcome'; group_name: string }
+  | { t: 'forwarded'; body: NoticeBody };
 
 type Tr = (key: TranslationKey, vars?: Record<string, string>) => string;
 
@@ -96,6 +97,8 @@ export function bodyLine(body: NoticeBody | null, t: Tr): string {
       if (body.caption) return `${EMOJI[kind]} ${body.caption}`;
       return `${EMOJI[kind]} ${word}${body.duration_ms ? ` (${duration(body.duration_ms)})` : ''}`;
     }
+    case 'forwarded':
+      return t('msg_notice_forwarded', { text: bodyLine(body.body, t) });
     case 'invite':
       return t('msg_notice_group_invite');
     case 'join_request':

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-readable"
+description = "Enables the readable command without any pre-configured scope."
+commands.allow = ["readable"]
+
+[[permission]]
+identifier = "deny-readable"
+description = "Denies the readable command without any pre-configured scope."
+commands.deny = ["readable"]

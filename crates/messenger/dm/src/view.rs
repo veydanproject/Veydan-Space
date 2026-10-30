@@ -6,9 +6,10 @@
 pub use messenger_contacts::CardView;
 use messenger_contacts::ContactCard;
 use crate::botcard::BotCard;
-use messenger_store::messages::{MessageRow, CT_BOT_CARD, CT_CONTACT, DIR_IN};
+use messenger_store::messages::{MessageRow, CT_BOT_CARD, CT_CONTACT, CT_MEDIA, CT_TEXT, DIR_IN};
 pub use messenger_store::reactions::ReactionView;
-use messenger_core::TextFormat;
+use messenger_core::envelope::FIELD_FWD;
+use messenger_core::{Forwarded, TextFormat};
 pub use messenger_richtext::md::{self, MdBlock};
 use serde::{Deserialize, Serialize};
 
@@ -144,6 +145,11 @@ pub struct MessageView {
     /// shown as plain text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rich: Option<Vec<MdBlock>>,
+    /// A forwarded text or media (`messenger_core::envelope::FIELD_FWD`):
+    /// «Forwarded from `name`», or from nobody named. Absent on a message
+    /// that is no forward, and on one forwarded with the sender hidden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fwd: Option<Forwarded>,
 }
 
 fn review_ok() -> String {
@@ -167,6 +173,7 @@ impl MessageView {
         let typed = is_card || r.content_type == CT_BOT_CARD;
         let markdown = TextFormat::from_name(Some(&r.fmt)).is_markdown();
         let rich = if markdown { r.text.as_deref().and_then(md::parse) } else { None };
+        let fwd = forwarded(&r.content_type, &r.envelope_json);
         Self {
             id: r.id,
             chat_id: r.chat_id,
@@ -193,8 +200,21 @@ impl MessageView {
             version: None,
             fmt: markdown.then(|| TextFormat::Markdown.name().to_string()),
             rich,
+            fwd,
         }
     }
+}
+
+/// The `fwd` of a stored text or media: of its envelope, or of what the
+/// placeholder of an upload keeps until its envelope is made. Read only
+/// when it names the field.
+pub fn forwarded(content_type: &str, envelope_json: &str) -> Option<Forwarded> {
+    if !matches!(content_type, CT_TEXT | CT_MEDIA) || !envelope_json.contains(FIELD_FWD) {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(envelope_json).ok()?;
+    let f = v.get(FIELD_FWD)?.as_object()?;
+    Some(Forwarded::named(f.get("name").and_then(|n| n.as_str())))
 }
 
 /// The line of a checked contact card for chat lists: the name it shows

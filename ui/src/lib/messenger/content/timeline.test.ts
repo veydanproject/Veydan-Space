@@ -111,6 +111,19 @@ describe('buildTimeline', () => {
     expect(buildTimeline(many, { many: false }).flatMap((i) => (i.type === 'album' ? [i.messages.length] : []))).toEqual([MAX_ALBUM, 2]);
   });
 
+  it('lays an album out in the order its files were picked, not as their uploads ended', () => {
+    // Picked HEIC, video, JPEG: the video and the photo made a JPEG came in out of that order.
+    const at = (m: MessengerMessage, pos: number) => ({ ...m, media: { ...m.media, pos } });
+    const list = [at(pic(ANN, NOON, 'b1', 'video'), 1), at(pic(ANN, NOON + 1, 'b1'), 0), at(pic(ANN, NOON + 2, 'b1'), 2)];
+    const album = buildTimeline(list, { many: false })[1];
+    expect(album.type === 'album' && album.messages.map((m) => m.id)).toEqual([list[1], list[0], list[2]].map((m) => m.id));
+    expect(album.type === 'album' && album.id, 'the id stays with the first that came').toBe(`album:${list[0].id}`);
+    // A sender that said no place for one of them: as they came.
+    const old = [list[0], pic(ANN, NOON + 1, 'b1'), list[2]];
+    const asCame = buildTimeline(old, { many: false })[1];
+    expect(asCame.type === 'album' && asCame.messages.map((m) => m.id)).toEqual(old.map((m) => m.id));
+  });
+
   it('puts no more than ten into one album', () => {
     const list = Array.from({ length: 23 }, (_, i) => pic(ANN, NOON + i, 'big'));
     const sizes = buildTimeline(list, { many: false }).flatMap((i) => (i.type === 'album' ? [i.messages.length] : []));

@@ -8,6 +8,7 @@ import {
   messengerApi,
   type BotCard,
   type DmAction,
+  type MessengerBatch,
   type MessengerChat,
   type MessengerMessage,
   type MessengerPoster,
@@ -357,6 +358,18 @@ class ChatStore {
   }
 
   /**
+   * Messages of the open chat (`ids`) forwarded to `targets`
+   * (`messenger_forward`). What a chat got shows at once when it is the
+   * open one; one result per chat.
+   */
+  async forward(sourceChat: string, ids: string[], targets: string[], hideSender: boolean, comment: string | null) {
+    const results = await messengerApi.dm.forward(sourceChat, ids, targets, hideSender, comment);
+    for (const r of results) if (r.target === this.activeId) for (const m of r.sent) this.upsert(m);
+    this.scheduleChatsRefresh();
+    return results;
+  }
+
+  /**
    * A contact card into `chat`: mine when `pubkey` is `null` (with my phone
    * when `includePhone`), else that person's public profile. `server` (a
    * private server of mine) puts its card on my card.
@@ -380,7 +393,7 @@ class ChatStore {
    * Attach a local file; the placeholder appears at once. Files of one `batch` are shown together.
    * `original`: a picture goes as it is, not compressed.
    */
-  async sendFile(path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null, captionFmt: TextFormat | null = null) {
+  async sendFile(path: string, caption?: string, batch?: MessengerBatch, original = false, poster: MessengerPoster | null = null, captionFmt: TextFormat | null = null) {
     const chat = this.active;
     const to = this.target(chat);
     if (!chat) throw new Error("no chat");
@@ -423,6 +436,16 @@ class ChatStore {
     await messengerApi.dm.delete(messageId, forEveryone);
     await this.reloadWindow();
     this.scheduleChatsRefresh();
+  }
+
+  /** Several messages deleted for me at once (the mode of choosing): the window is read again once. */
+  async removeMany(ids: string[]) {
+    try {
+      for (const id of ids) await messengerApi.dm.delete(id, false);
+    } finally {
+      await this.reloadWindow();
+      this.scheduleChatsRefresh();
+    }
   }
 
   async retry(messageId: string) {

@@ -43,6 +43,22 @@ export function albumKey(m: MessengerMessage): string | null {
   return family && typeof batch === 'string' && batch ? batch : null;
 }
 
+/** The place of a file among those picked with it (`pos`), when its sender said it. */
+function posOf(m: MessengerMessage): number | null {
+  const { pos } = (m.media ?? {}) as { pos?: unknown };
+  return typeof pos === 'number' && Number.isInteger(pos) && pos >= 0 ? pos : null;
+}
+
+/**
+ * The files of an album in the order they were picked: each comes when its
+ * upload ends, a video after the photos picked behind it. Only when every
+ * one says its place; otherwise as they came.
+ */
+function picked(messages: MessengerMessage[]): MessengerMessage[] {
+  if (messages.length < 2 || messages.some((m) => posOf(m) === null)) return messages;
+  return [...messages].sort((a, b) => posOf(a)! - posOf(b)!);
+}
+
 function units(messages: MessengerMessage[]): Unit[] {
   const out: Unit[] = [];
   // Where the files of a batch gather: each takes the time its upload ended,
@@ -120,7 +136,8 @@ export function buildTimeline(messages: MessengerMessage[], opts: TimelineOption
     const last = !continues(u, list[i + 1]);
     const others = opts.many && head.direction === 'in';
     const run = { first, last, showAuthor: others && first, showAvatar: others && last, indent: others };
-    if (u.kind === 'album') out.push({ type: 'album', id: `album:${head.id}`, variant: u.variant, messages: u.messages, ...run });
+    // The id stays with the file that came first: a later one placed before it does not draw the album anew.
+    if (u.kind === 'album') out.push({ type: 'album', id: `album:${head.id}`, variant: u.variant, messages: picked(u.messages), ...run });
     else out.push({ type: 'bubble', id: head.id, message: head, ...run });
   });
   return out;

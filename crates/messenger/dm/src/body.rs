@@ -20,6 +20,16 @@ const MAX_BATCH: usize = 64;
 ///
 /// A type from a newer app is told by its text when it has one.
 pub fn body_of(envelope: &Envelope) -> Option<Body> {
+    let body = body_of_type(envelope)?;
+    Some(if envelope.fwd().is_some() { forwarded(body) } else { body })
+}
+
+/// What a forward carries, said to be forwarded.
+fn forwarded(body: Body) -> Body {
+    Body::Forwarded { body: Box::new(body) }
+}
+
+fn body_of_type(envelope: &Envelope) -> Option<Body> {
     match envelope.t.as_str() {
         T_TEXT => text(&words(envelope, envelope.as_text())),
         T_MEDIA => Some(media(envelope)),
@@ -42,6 +52,11 @@ fn words(envelope: &Envelope, text: Option<&str>) -> String {
 /// what is no message of a chat or has nothing to say (a card of the bot:
 /// the list words it itself).
 pub fn body_of_row(row: &MessageRow) -> Option<Body> {
+    let body = body_of_row_type(row)?;
+    Some(if crate::view::forwarded(&row.content_type, &row.envelope_json).is_some() { forwarded(body) } else { body })
+}
+
+fn body_of_row_type(row: &MessageRow) -> Option<Body> {
     let words = row.plain.as_deref().or(row.text.as_deref());
     match row.content_type.as_str() {
         repo::CT_TEXT => text(words.unwrap_or_default()),
@@ -252,6 +267,25 @@ mod tests {
         let card = row("contact", None, None, Some(serde_json::json!({ "display_name": "Анна", "pubkey": "ab" })));
         assert_eq!(body_of_row(&card), Some(Body::Link { link: LinkKind::Contact, title: "Анна".into() }));
         assert_eq!(body_of_row(&row("bot_card", None, None, None)), None);
+    }
+
+    #[test]
+    fn a_forward_is_told_as_what_it_carries() {
+        let anna = messenger_core::Forwarded::named(Some("Анна"));
+        let text = Envelope::text("привет").with_fwd(Some(&anna));
+        let fwd = |b: Body| Some(Body::Forwarded { body: Box::new(b) });
+        assert_eq!(body_of(&text), fwd(Body::Text { text: "привет".into() }));
+        let photo = file(serde_json::json!({ "kind": "image", "name": "a.png", "fwd": {} }));
+        assert_eq!(body_of(&photo), fwd(Body::Media { kind: "image".into(), name: "a.png".into(), caption: None, duration_ms: None, batch: None }));
+        assert_eq!(body_of(&Envelope::text("   ").with_fwd(Some(&anna))), None, "nothing to show stays nothing");
+        assert_eq!(body_of(&Envelope::text("привет")), Some(Body::Text { text: "привет".into() }), "no fwd, no mark");
+
+        let mut stored = row("text", Some("привет"), None, None);
+        stored.envelope_json = text.encode();
+        assert_eq!(body_of_row(&stored), fwd(Body::Text { text: "привет".into() }));
+        let mut voice = row("media", None, None, Some(serde_json::json!({ "kind": "voice", "name": "v.weba", "duration_ms": 1000 })));
+        voice.envelope_json = r#"{"v":1,"t":"media","kind":"voice","fwd":{"name":"Анна"}}"#.into();
+        assert_eq!(body_of_row(&voice), fwd(Body::Media { kind: "voice".into(), name: "v.weba".into(), caption: None, duration_ms: Some(1000), batch: None }));
     }
 
     #[test]

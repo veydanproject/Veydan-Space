@@ -1,0 +1,4 @@
+/target/
+/android/build/
+/android/.tauri/
+/android/.gradle/

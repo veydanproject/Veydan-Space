@@ -627,7 +627,7 @@ Thank you to the authors of the following Cargo crates:
 | proc-macro-error-attr2 | 2.0.0 | MIT OR Apache-2.0 |
 | proc-macro-error2 | 2.0.1 | MIT OR Apache-2.0 |
 | proc-macro2 | 1.0.106 | MIT OR Apache-2.0 |
-| pulldown-cmark | 0.13.4 | MIT |
+| pulldown-cmark | 0.13.5 | MIT |
 | pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 |
 | qrcode | 0.14.1 | MIT OR Apache-2.0 |
 | quick-error | 2.0.1 | MIT OR Apache-2.0 |

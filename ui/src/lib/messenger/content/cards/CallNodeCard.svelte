@@ -31,14 +31,16 @@
   );
 
   async function connect() {
-    const yes = await ask({
-      title: $t('msg_call_nodes_confirm_title'),
-      message: $t('msg_call_nodes_confirm_text', { addr: view.addr }),
-      confirmLabel: $t('msg_call_nodes_confirm_yes'),
-      variant: 'primary',
-    });
-    if (!yes) return;
-    failure = await callNodesStore.addFromCard(view.link);
+    const result = await callNodesStore.confirmFromCard(view, (addr) =>
+      ask({
+        title: $t('msg_call_nodes_confirm_title'),
+        message: $t('msg_call_nodes_confirm_text', { addr }),
+        confirmLabel: $t('msg_call_nodes_confirm_yes'),
+        variant: 'primary',
+      }),
+    );
+    if (result === null) return;
+    failure = result;
     if (!failure) {
       added = true;
       linkStore.refresh();

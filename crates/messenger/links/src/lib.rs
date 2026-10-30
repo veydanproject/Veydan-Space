@@ -18,6 +18,7 @@
 //! - `server`: the card of a server (`veydan://server/…`), alone or riding on the link of a person or a group (`srv=`).
 //! - `web`: a sign-in to the web cabinet of Veydan Cloud (`veydan://web/…`).
 //! - `channel`: the link of a channel of a community (`veydan://channel/…`), grammar only.
+//! - `outside`: what a link the system hands to the app may be.
 //! - `error`: refusals, as stable codes.
 //!
 //! Everything in this crate is pure: no network, no storage, no clock.
@@ -28,6 +29,7 @@ pub mod channel;
 pub mod contact;
 pub mod error;
 pub mod kind;
+pub mod outside;
 pub mod recover;
 pub mod server;
 pub mod uri;
@@ -39,6 +41,7 @@ pub use channel::ChannelLink;
 pub use contact::{contact_link, is_invite_secret, ContactLink, INVITE_LINK_CHARS};
 pub use error::LinkError;
 pub use kind::LinkType;
+pub use outside::{from_outside, SCANNER_ONLY};
 pub use recover::RecoverLink;
 pub use server::{server_id, ServerLink};
 pub use uri::{Uri, UriBuilder, MAX_LINK_LEN, SCHEME};

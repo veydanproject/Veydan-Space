@@ -46,6 +46,8 @@ veydan-lock = { path = "../lock" }
 # The messenger: a workspace of its own, free of Tauri (internal/messenger-spec.md).
 messenger-core = { path = "../messenger/core" }
 messenger-runtime = { path = "../messenger/runtime" }
+# A picked photo of HEIC made a JPEG (`common`), with the phone's decoder.
+messenger-media = { path = "../messenger/media" }
 # The choices of chats (pin, mute, archive) another module reads back for its
 # rows of the list of chats (src/net_lend.rs).
 messenger-store = { path = "../messenger/store" }
@@ -82,6 +84,8 @@ arboard = { version = "3.6", default-features = false, features = ["image-data",
 tauri-plugin-veydan-push = { path = "../tauri-plugin-veydan-push" }
 # The phone's side of a call: the ringing notification, its service, the sound.
 tauri-plugin-veydan-call = { path = "../tauri-plugin-veydan-call" }
+# The phone's gallery in the sheet of the paperclip, its camera and Photo Picker, its decoder of HEIC.
+tauri-plugin-veydan-media = { path = "../tauri-plugin-veydan-media" }
 jni = "0.21"
 
 [dev-dependencies]

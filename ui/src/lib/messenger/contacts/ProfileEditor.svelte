@@ -19,7 +19,7 @@
   import PhoneField from './PhoneField.svelte';
   import SocialEditor from './SocialEditor.svelte';
   import { codePoints, sameInput, websiteOf } from './profileEdit';
-  import { profileDraft } from './profileDraft';
+  import { profileDraft } from './profileDraft.svelte';
   import { fieldOf, profileCodeOf, profileErrorText, type ProfileField } from './profileErrors';
 
   interface Props {
@@ -35,7 +35,7 @@
   const owner = messengerStore.identity?.pubkey ?? null;
   const draft = profileDraft.take(owner);
   const start = draft?.start ?? profileInputOf(messengerStore.ownProfile);
-  let form = $state<MessengerProfileInput>(structuredClone(draft?.form ?? start));
+  let form = $state<MessengerProfileInput>($state.snapshot(draft?.form ?? start));
   let about = $state(draft?.about ?? start.about ?? '');
   let phone = $state(draft?.phone ?? '');
   let share = $state(draft?.share ?? true);

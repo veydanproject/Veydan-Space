@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-albums"
+description = "Enables the albums command without any pre-configured scope."
+commands.allow = ["albums"]
+
+[[permission]]
+identifier = "deny-albums"
+description = "Denies the albums command without any pre-configured scope."
+commands.deny = ["albums"]

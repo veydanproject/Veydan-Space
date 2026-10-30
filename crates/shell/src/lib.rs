@@ -18,6 +18,7 @@ mod command_futures;
 mod app;
 mod commands;
 pub mod demo;
+pub mod links;
 mod distribution;
 mod lock;
 #[cfg(target_os = "android")]

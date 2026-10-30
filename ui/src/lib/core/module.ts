@@ -409,6 +409,15 @@ export interface ModuleDef {
    */
   resume?: () => Promise<boolean>;
   /**
+   * The module that shows the links the system hands to the app (a
+   * `veydan://…` clicked outside it; `core/links`): the messenger, whose
+   * cards they are. `read` takes the waiting link and shows its card, false
+   * when the module cannot read yet; `ready` says when it can, read
+   * reactively: the router asks again once it turns true. The shell lets it
+   * read only while the app is unlocked.
+   */
+  links?: { ready: () => boolean; read: () => Promise<boolean> };
+  /**
    * Mobile: the editor of labels and references another module's forms show
    * on their records (passwords, TOTP). The notes keep the labels, so the
    * notes module provides it; without it a form has no label editor.

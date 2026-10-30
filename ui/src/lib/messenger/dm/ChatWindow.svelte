@@ -19,7 +19,7 @@
   import Composer from './Composer.svelte';
   import RelationBanner from './RelationBanner.svelte';
   import MediaBubble from '../media/MediaBubble.svelte';
-  import AttachButton from '../media/AttachButton.svelte';
+  import AttachButton, { type AttachOptions } from '../media/AttachButton.svelte';
   import MediaViewer from '../media/MediaViewer.svelte';
   import { viewer } from '../media/viewer.svelte';
   import type { MessengerPicked, MessengerPoster, MessengerRecording, TextFormat } from "../api";
@@ -42,6 +42,10 @@
   import ServerLabel from '../servers/ServerLabel.svelte';
   import { serverStore } from '../servers/serverStore.svelte';
   import { privateInvite } from '../servers/privateInvite.svelte';
+  import ForwardDialog from '../content/ForwardDialog.svelte';
+  import { buildTimeline } from '../content/timeline';
+  import { holdBack } from '../attach/sheetBack';
+  import { addUnits, chosenText, forwardable, MAX_FORWARD_MESSAGES, selectUnits, toggleUnit, unitRange, type Unit } from './select';
 
   interface Props {
     chat: MessengerChat;
@@ -111,7 +115,7 @@
    * `m`: the message pressed, what the items act on. `target`: what a reaction from the menu lands on (an album's last part).
    * `caption`: what Edit changes (an album's part that carries its caption).
    */
-  let menu = $state<{ open: boolean; x: number; y: number; m: MessengerMessage | null; target: MessengerMessage | null; caption: MessengerMessage | null }>({ open: false, x: 0, y: 0, m: null, target: null, caption: null });
+  let menu = $state<{ open: boolean; x: number; y: number; m: MessengerMessage | null; target: MessengerMessage | null; caption: MessengerMessage | null; album: MessengerMessage[] | null }>({ open: false, x: 0, y: 0, m: null, target: null, caption: null, album: null });
   /** The menu of a message shows the whole emoji picker instead of the quick strip. */
   let menuMore = $state(false);
   /** A computer: the reactions alone, over the hovered message's «Реакция» button. */
@@ -136,7 +140,90 @@
   // Leaving a chat drops reply/edit state, and a picture it had open.
   let lastChat = '';
   $effect(() => {
-    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; earlierEmpty = 0; historyEnd = false; historyAsked = false; anchor = null; viewer.close(); }
+    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; earlierEmpty = 0; historyEnd = false; historyAsked = false; anchor = null; viewer.close(); stopChoosing(); forward.open = false; }
+  });
+
+  /**
+   * The mode of choosing messages: a tap ticks a message or an album
+   * (Shift ticks the run from the last one), the header acts on what is
+   * ticked. Only what may be forwarded is ticked (`forwardable`), at most
+   * `MAX_FORWARD_MESSAGES` messages. The system «Назад» and Esc leave the
+   * mode before they leave the chat.
+   */
+  let choosing = $state(false);
+  let chosen = $state<string[]>([]);
+  /** The row ticked last: where a Shift+click runs from. */
+  let tickedLast: string | null = null;
+  const units = $derived(choosing ? selectUnits(buildTimeline(chatStore.messages, { many: isGroup })) : []);
+  const chosenSet = $derived(new Set(chosen));
+  const atLimit = $derived(chosen.length >= MAX_FORWARD_MESSAGES);
+  const chosenWords = $derived(choosing ? chosenText(chatStore.messages, chosen) : '');
+
+  function startChoosing(ids: string[] = []) {
+    menu.open = false;
+    choosing = true;
+    chosen = ids.slice(0, MAX_FORWARD_MESSAGES);
+    tickedLast = ids.length ? units.find((u) => u.ids.includes(ids[0]))?.key ?? null : null;
+  }
+
+  function stopChoosing() {
+    choosing = false;
+    chosen = [];
+    tickedLast = null;
+  }
+
+  $effect(() => {
+    if (!choosing) return;
+    return untrack(() => holdBack(stopChoosing, 'chooseMessages'));
+  });
+
+  // What was removed or failed meanwhile is ticked no more.
+  $effect(() => {
+    if (!choosing) return;
+    const fit = new Set(units.flatMap((u) => u.ids));
+    if (untrack(() => chosen).some((id) => !fit.has(id))) chosen = untrack(() => chosen).filter((id) => fit.has(id));
+  });
+
+  function tickUnit(u: Unit | undefined, range: boolean) {
+    if (!u) return;
+    const r = range && tickedLast ? addUnits(chosen, unitRange(units, tickedLast, u.key)) : toggleUnit(chosen, u);
+    chosen = r.chosen;
+    tickedLast = u.key;
+    if (r.refused) toast.info($t('msg_fwd_limit', { n: String(MAX_FORWARD_MESSAGES) }));
+  }
+
+  function copyChosen() {
+    if (!chosenWords) return;
+    navigator.clipboard.writeText(chosenWords).then(() => toast.success($t('msg_text_copied'))).catch(() => {});
+    stopChoosing();
+  }
+
+  async function deleteChosen() {
+    const ids = [...chosen];
+    if (!ids.length || !(await confirmStore.ask($t('msg_fwd_delete_confirm', { n: String(ids.length) }), $t('msg_fwd_delete'), true))) return;
+    stopChoosing();
+    await guard(() => chatStore.removeMany(ids));
+  }
+
+  /** The sheet of a forward and what it forwards. */
+  let forward = $state<{ open: boolean; ids: string[] }>({ open: false, ids: [] });
+  function openForward(ids: string[]) {
+    menu.open = false;
+    if (ids.length) forward = { open: true, ids: [...ids] };
+  }
+  /** What of a pressed message (or its album) may be forwarded. */
+  const fitOf = (m: MessengerMessage, album?: MessengerMessage[] | null) => (album?.length ? album : [m]).filter(forwardable).map((x) => x.id);
+
+  // Esc leaves the mode first; a dialog, a menu or the viewer over the chat takes its own Esc.
+  $effect(() => {
+    const onkey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !choosing || e.defaultPrevented || forward.open || menu.open || viewer.item) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      stopChoosing();
+    };
+    window.addEventListener('keydown', onkey, true);
+    return () => window.removeEventListener('keydown', onkey, true);
   });
 
   // The list of transfers asked for a message of this chat: shown once the
@@ -467,9 +554,13 @@
     try { return decodeURIComponent(last); } catch { return last; }
   }
 
-  /** Picked paths: the picker, a drop, the clipboard of a computer, a phone's `content://`. */
-  function attach(paths: string[]) {
-    return attachEach(paths, pathName, (p) => messengerApi.media.importPicked(p));
+  /**
+   * Picked paths: the picker, a drop, the clipboard of a computer, a phone's `content://`.
+   * From the sheet: `original` turns «без сжатия» on for this sending, `asFile` sends them as they are.
+   */
+  function attach(paths: string[], opts: AttachOptions = {}) {
+    if (opts.original && canAttachNow) original = true;
+    return attachEach(paths, pathName, (p) => messengerApi.media.importPicked(p, !!opts.asFile));
   }
 
   /** Files the webview handed over on a paste, as bytes; one too large for that goes by its path when the computer's clipboard names it. */
@@ -554,6 +645,7 @@
     error = "";
     const refused: string[] = [];
     const other: string[] = [];
+    const asFiles: string[] = [];
     for (const p of items) {
       const key = ++pickSeq;
       picked = [...picked, { key, file: null }];
@@ -562,6 +654,8 @@
         // The runtime refuses a file over the limit; one that told no size then is caught here.
         if (file.size > MAX_SEND_BYTES) throw new Error(`err.file_too_large: ${file.name}`);
         picked = picked.map((x) => (x.key === key ? { key, file } : x));
+        // A photo the phone could not bring to a common format goes as a file; the user is told.
+        if (file.note === 'unsupported_format') asFiles.push(`${file.name}: ${$t('msg_attach_as_file')}`);
         if (file.kind === 'video' && file.url) {
           const poster = await videoPoster(file.url);
           if (poster) picked = picked.map((x) => (x.key === key ? { key, file: { ...file, preview: posterUrl(poster) }, poster } : x));
@@ -573,7 +667,7 @@
         else other.push(explain(e));
       }
     }
-    error = [...refused, ...other].join('\n');
+    error = [...refused, ...asFiles, ...other].join('\n');
   }
 
   function unpick(key: number) {
@@ -597,7 +691,7 @@
     const batch = files.length > 1 ? crypto.randomUUID() : undefined;
     for (const [i, f] of files.entries()) {
       try {
-        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch, asIs, f.poster, fmt);
+        await chatStore.sendFile(f.path, !reply && i === files.length - 1 ? text : undefined, batch ? { id: batch, pos: i } : undefined, asIs, f.poster, fmt);
       } catch (e) {
         // What did not leave waits again.
         picked = files.slice(i).map(({ poster, ...file }) => ({ key: ++pickSeq, file, poster }));
@@ -612,7 +706,7 @@
     e.preventDefault();
     menuMore = false;
     menuReact = false;
-    menu = { open: true, x: e.clientX, y: e.clientY, m, target: reactionTarget(m, album), caption: editTarget(m, album) };
+    menu = { open: true, x: e.clientX, y: e.clientY, m, target: reactionTarget(m, album), caption: editTarget(m, album), album: album ?? null };
   }
 
   /** The buttons of a hovered message: «Ещё» opens its menu under the button, «Реакция» the reactions over it. */
@@ -622,19 +716,21 @@
       return below ? { x: r.left, y: r.bottom + 4 } : { x: r.left + r.width / 2, y: r.top };
     };
     const target = reactionTarget(m, album);
+    const fit = fitOf(m, album);
     return {
       more: (el: HTMLElement) => {
         const { x, y } = at(el, true);
         menuMore = false;
         menuReact = false;
-        menu = { open: true, x, y, m, target, caption: editTarget(m, album) };
+        menu = { open: true, x, y, m, target, caption: editTarget(m, album), album: album ?? null };
       },
+      forward: fit.length ? () => openForward(fit) : undefined,
       react: reactable(target)
         ? (el: HTMLElement) => {
             const { x, y } = at(el, false);
             menuMore = false;
             menuReact = true;
-            menu = { open: true, x, y, m, target, caption: editTarget(m, album) };
+            menu = { open: true, x, y, m, target, caption: editTarget(m, album), album: album ?? null };
           }
         : undefined,
     };
@@ -689,6 +785,10 @@
     const list: MenuEntry[] = [];
     if (!m.deleted) {
       if (canReply(m)) list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => answer(m) });
+      // An album goes, and is ticked, whole.
+      const fit = fitOf(m, menu.album);
+      if (fit.length) list.push({ label: $t('msg_fwd_forward'), icon: 'forward', onselect: () => openForward(fit) });
+      list.push({ label: $t('msg_fwd_select'), icon: 'check-circle', onselect: () => startChoosing(fit) });
       if (m.text) list.push({ label: $t('msg_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').then(() => toast.success($t('msg_text_copied'))).catch(() => {}) });
       const caption = menu.caption ?? m;
       if (canEdit(caption, chat.can_send)) list.push({ label: $t('msg_message_edit'), icon: 'pencil', shortcut: !phone && lastEditable()?.id === caption.id ? '↑' : undefined, onselect: () => { replyTo = null; editing = caption; } });
@@ -731,23 +831,45 @@
   <MediaBubble message={m} />
 {/snippet}
 
+<!-- While choosing, a row is a tick: a tap on it ticks it and reaches nothing inside (a picture, a link, a card). -->
+{#snippet chooser(key: string, row: Snippet)}
+  {#if choosing}
+    {@const u = units.find((x) => x.key === key)}
+    {@const on = !!u && u.ids.every((id) => chosenSet.has(id))}
+    <div class="pickable" class:on role="checkbox" aria-checked={on} aria-disabled={!u || (!on && atLimit)} aria-label={$t('msg_fwd_select')} tabindex={u ? 0 : -1}
+      onclickcapture={(e) => { e.preventDefault(); e.stopPropagation(); tickUnit(u, e.shiftKey); }}
+      onkeydown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); tickUnit(u, e.shiftKey); } }}>
+      <span class="pick-tick" class:on class:none={!u} class:dim={!on && atLimit} aria-hidden="true">{#if on}<Icon name="check" size={13} />{/if}</span>
+      <div class="pick-row">{@render row()}</div>
+    </div>
+  {:else}
+    {@render row()}
+  {/if}
+{/snippet}
+
 {#snippet bubble(item: Extract<TimelineItem, { type: "bubble" }>)}
-  <MessageBubble message={item.message} first={item.first} last={item.last} showAuthor={item.showAuthor} peerTitle={chat.title} {author} highlighted={highlighted === item.message.id}
-    onmenu={openMenu} onreplyclick={jumpTo} onretry={(m) => guard(() => chatStore.retry(m.id))} media={attachment} onreacterror={(e) => (error = explain(e))}
-    onreply={canReply(item.message) ? () => answer(item.message) : undefined}
-    actions={phone ? undefined : hoverActions(item.message)} selected={selectedId === item.message.id} />
+  {#snippet row()}
+    <MessageBubble message={item.message} first={item.first} last={item.last} showAuthor={item.showAuthor} peerTitle={chat.title} {author} highlighted={highlighted === item.message.id}
+      onmenu={choosing ? (e) => e.preventDefault() : openMenu} onreplyclick={jumpTo} onretry={(m) => guard(() => chatStore.retry(m.id))} media={attachment} onreacterror={(e) => (error = explain(e))}
+      onreply={!choosing && canReply(item.message) ? () => answer(item.message) : undefined}
+      actions={phone || choosing ? undefined : hoverActions(item.message)} selected={selectedId === item.message.id} />
+  {/snippet}
+  {@render chooser(item.id, row)}
 {/snippet}
 
 {#snippet album(item: Extract<TimelineItem, { type: "album" }>)}
   {@const who = item.messages[0].sender_pubkey}
-  <AlbumBubble messages={item.messages} variant={item.variant} first={item.first} last={item.last} author={item.showAuthor && author ? author(who) : null} authorTint={tint(who)} {highlighted}
-    onmenu={(e, m) => openMenu(e, m, item.messages)} onretry={(m) => guard(() => chatStore.retry(m.id))} onreacterror={(e) => (error = explain(e))}
-    onreply={canReply(item.messages[item.messages.length - 1]) ? () => answer(item.messages[item.messages.length - 1]) : undefined}
-    actions={phone ? undefined : hoverActions(item.messages[item.messages.length - 1], item.messages)} selected={!!selectedId && item.messages.some((p) => p.id === selectedId)} />
+  {#snippet row()}
+    <AlbumBubble messages={item.messages} variant={item.variant} first={item.first} last={item.last} author={item.showAuthor && author ? author(who) : null} authorTint={tint(who)} {highlighted}
+      onmenu={choosing ? (e) => e.preventDefault() : (e, m) => openMenu(e, m, item.messages)} onretry={(m) => guard(() => chatStore.retry(m.id))} onreacterror={(e) => (error = explain(e))}
+      onreply={!choosing && canReply(item.messages[item.messages.length - 1]) ? () => answer(item.messages[item.messages.length - 1]) : undefined}
+      actions={phone || choosing ? undefined : hoverActions(item.messages[item.messages.length - 1], item.messages)} selected={!!selectedId && item.messages.some((p) => p.id === selectedId)} />
+  {/snippet}
+  {@render chooser(item.id, row)}
 {/snippet}
 
 {#snippet composerTools()}
-  <AttachButton disabled={!sessionActive || !canAttach || !!editing} onfiles={attach} onclipboard={attachClipboard} />
+  <AttachButton disabled={!sessionActive || !canAttach || !!editing} onfiles={attach} surface={isGroup ? 'group' : 'dm'} chatId={chat.id} onerror={(e) => (error = explain(e))} />
 {/snippet}
 
 {#snippet tray()}
@@ -774,6 +896,13 @@
 <section class="window" bind:this={windowEl} style:--bottom-h={phone ? `${bottomH}px` : undefined}>
   {#if dropOver}<div class="drop" aria-hidden="true"><Icon name="paperclip" size={22} /><span>{$t("msg_drop_here")}</span></div>{/if}
   <header class="head" class:phone>
+    {#if choosing}
+      <button class="icon" onclick={stopChoosing} title={$t('msg_fwd_select_exit')} aria-label={$t('msg_fwd_select_exit')}><Icon name="x" size={phone ? 22 : 16} /></button>
+      <div class="chosen" aria-live="polite">{$t('msg_fwd_selected', { n: String(chosen.length) })}</div>
+      <button class="icon" disabled={!chosenWords} onclick={copyChosen} title={$t('msg_copy')} aria-label={$t('msg_copy')}><Icon name="copy" size={phone ? 20 : 16} /></button>
+      <button class="icon" disabled={!chosen.length} onclick={deleteChosen} title={$t('msg_fwd_delete')} aria-label={$t('msg_fwd_delete')}><Icon name="trash-2" size={phone ? 20 : 16} /></button>
+      <button class="icon go" disabled={!chosen.length} onclick={() => openForward(chosen)} title={$t('msg_fwd_forward')} aria-label={$t('msg_fwd_forward')}><Icon name="forward" size={phone ? 22 : 18} /></button>
+    {:else}
     {#if onback}
       {#if phone}<button class="icon back" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
       {:else}<button class="icon back narrow-only" onclick={onback} title={$t('msg_back')}><Icon name="arrow-left" size={16} /></button>{/if}
@@ -808,6 +937,7 @@
     <TransfersChip {phone} />
     {#if actions}{@render actions()}{/if}
     <button class="icon" onclick={openChatMenu} title={$t("msg_chat_menu")}><Icon name="more-vertical" size={16} /></button>
+    {/if}
   </header>
 
   {#if !isGroup}<RelationBanner {chat} busy={acting} onaction={act} />{/if}
@@ -870,6 +1000,7 @@
 </section>
 
 <MediaViewer />
+<ForwardDialog bind:open={forward.open} chatId={chat.id} ids={forward.ids} onforwarded={stopChoosing} />
 <ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} header={reactable(menu.target) ? quick : undefined} onclose={() => (menu.open = false)} />
 <ContextMenu bind:open={seen.open} x={seen.x} y={seen.y} items={[]} header={readers} onclose={() => (seen.open = false)} />
 <ContextMenu bind:open={chatMenu.open} x={chatMenu.x} y={chatMenu.y} items={chatItems} onclose={() => (chatMenu.open = false)} />
@@ -909,6 +1040,23 @@
   .sub .online { color: var(--accent-text); }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
+  .icon:disabled { opacity: 0.4; cursor: default; background: none; }
+  .icon.go:not(:disabled) { color: var(--accent-text); }
+  /* The header while choosing: how many, and what to do with them. */
+  .chosen { flex: 1; min-width: 0; font-weight: var(--fw-bold); font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A row while choosing: its tick before it, the whole row takes the tap. */
+  .pickable { display: flex; align-items: center; gap: var(--sp-1); padding-inline-start: var(--sp-3); cursor: pointer; user-select: none; -webkit-user-select: none; border-radius: var(--radius-sm); }
+  .pickable[aria-disabled='true']:not(.on) { cursor: default; }
+  .pickable.on { background: var(--accent-bg); }
+  .pickable:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .pick-row { flex: 1; min-width: 0; }
+  .pick-tick {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--text-3);
+    display: inline-flex; align-items: center; justify-content: center; color: #fff; transition: opacity var(--dur-fast) var(--ease);
+  }
+  .pick-tick.on { background: var(--accent); border-color: var(--accent); }
+  .pick-tick.dim { opacity: 0.3; }
+  .pick-tick.none { visibility: hidden; }
   @media (pointer: coarse) {
     .icon { padding: 10px; }
     .head { padding-inline: var(--sp-2); gap: var(--sp-2); }

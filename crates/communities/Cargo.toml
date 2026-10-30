@@ -32,6 +32,9 @@ ts-rs = { version = "12", default-features = false, features = ["serde-compat"] 
 veydan-core = { path = "../core" }
 # The module contract, the seams of the messenger, picked files, the unread count.
 veydan-shell = { path = "../shell" }
+# A phone's HEIC photo made a JPEG before it goes (`common`), by the decoder
+# the messenger's host keeps for the app, as a chat's photo.
+messenger-media = { path = "../messenger/media" }
 # The box `communities` the secrets of the channels are kept in.
 veydan-lock = { path = "../lock" }
 # The engine of the channels (crates/communities/core, free of Tauri).
@@ -47,6 +50,8 @@ messenger-transport = { path = "../messenger/transport" }
 # The push plugin's keeper: its wake, its foreground service, its periodic
 # wake. The plugin is the messenger's, set up before this module.
 tauri-plugin-veydan-push = { path = "../tauri-plugin-veydan-push" }
+# The shot of the system camera is deleted from the cache once a channel holds its copy.
+tauri-plugin-veydan-media = { path = "../tauri-plugin-veydan-media" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

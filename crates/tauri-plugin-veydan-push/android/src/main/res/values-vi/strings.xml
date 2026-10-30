@@ -27,6 +27,7 @@
     <string name="veydan_push_link_group_nameless">Liên kết đến nhóm</string>
     <string name="veydan_push_link_contact">Liên hệ: %s</string>
     <string name="veydan_push_link_contact_nameless">Liên hệ</string>
+    <string name="veydan_push_forwarded">Đã chuyển tiếp: %s</string>
     <string name="veydan_push_invite">Mời bạn vào nhóm %s</string>
     <string name="veydan_push_join_request">Xin tham gia %s</string>
     <string name="veydan_push_welcome">Bạn đã ở trong nhóm %s</string>

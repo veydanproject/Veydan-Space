@@ -37,7 +37,9 @@ export const profileDraft = {
     return d;
   },
   keep(d: ProfileDraft) {
-    kept = structuredClone(d);
+    // A snapshot first: the form's parts may be reactive proxies, which
+    // structuredClone refuses.
+    kept = structuredClone($state.snapshot(d));
   },
   clear() {
     kept = null;

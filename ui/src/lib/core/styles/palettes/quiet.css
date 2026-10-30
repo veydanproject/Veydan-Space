@@ -156,6 +156,11 @@
   --bubble-out-text:    #f1effd;
   --bubble-out-meta:    rgba(241, 239, 253, 0.75);
   --press-tint:         rgba(112, 102, 198, 0.12);  /* a long press resting on a row */
+  /* Over a photo or a video (a tile of the gallery, a viewer): the same in both themes, as the picture is. */
+  --media-scrim:        rgba(0, 0, 0, 0.55);  /* a label on a picture: the length of a video */
+  --media-scrim-soft:   rgba(0, 0, 0, 0.25);  /* an empty circle of choice */
+  --media-ring:         0 0 0 1px rgba(0, 0, 0, 0.15);  /* the edge of a white mark on a light picture */
+  --media-icon-shadow:  drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));  /* a white icon on a picture */
 }
 
 /* ── Colours: LIGHT ── */
@@ -288,4 +293,9 @@
   --bubble-out-text:    #1c1840;
   --bubble-out-meta:    #4a4480;
   --press-tint:         rgba(112, 102, 198, 0.12);
+  /* Over a photo or a video (a tile of the gallery, a viewer): the same in both themes, as the picture is. */
+  --media-scrim:        rgba(0, 0, 0, 0.55);  /* a label on a picture: the length of a video */
+  --media-scrim-soft:   rgba(0, 0, 0, 0.25);  /* an empty circle of choice */
+  --media-ring:         0 0 0 1px rgba(0, 0, 0, 0.15);  /* the edge of a white mark on a light picture */
+  --media-icon-shadow:  drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));  /* a white icon on a picture */
 }

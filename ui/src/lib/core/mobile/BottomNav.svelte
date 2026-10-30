@@ -44,35 +44,35 @@
 
 {#snippet count(it: NavItem)}
   {@const n = it.badge?.() ?? 0}
-  {#if n > 0}<span class="badge">{n > 99 ? "99+" : n}</span>{/if}
+  {#if n > 0}<span class="m-bar-badge">{n > 99 ? "99+" : n}</span>{/if}
 {/snippet}
 
 {#snippet item(it: NavItem)}
   {#if it.href}
     <a
       href={it.href}
-      class="item"
+      class="m-bar-item"
       class:active={activeId === it.id}
       aria-current={activeId === it.id ? 'page' : undefined}
       data-sveltekit-replacestate={isTab(it.href) ? '' : undefined}
     >
-      <span class="ico"><Icon name={it.icon} size={22} />{@render count(it)}</span>
-      <span class="label">{$t(it.title)}</span>
+      <span class="m-bar-ico"><Icon name={it.icon} size={22} />{@render count(it)}</span>
+      <span class="m-bar-label">{$t(it.title)}</span>
     </a>
   {:else}
-    <button type="button" class="item" class:active={activeId === it.id} onclick={it.onclick}>
-      <span class="ico"><Icon name={it.icon} size={22} />{@render count(it)}</span>
-      <span class="label">{$t(it.title)}</span>
+    <button type="button" class="m-bar-item" class:active={activeId === it.id} onclick={it.onclick}>
+      <span class="m-bar-ico"><Icon name={it.icon} size={22} />{@render count(it)}</span>
+      <span class="m-bar-label">{$t(it.title)}</span>
     </button>
   {/if}
 {/snippet}
 
 <!-- The bar floats over the glow; its slot keeps the room, so no screen scrolls under it. -->
 <nav class="nav">
-  <div class="bar" style:--cols={items.length + (hub ? 1 : 0)}>
+  <div class="bar m-bar" style:--cols={items.length + (hub ? 1 : 0)}>
     {#each left as it (it.id)}{@render item(it)}{/each}
     {#if hub}
-      <button type="button" class="item item--hub" class:active={hubActive} onclick={onhub} aria-label={product.name}>
+      <button type="button" class="m-bar-item item--hub" class:active={hubActive} onclick={onhub} aria-label={product.name}>
         <img class="hub-logo" src="/logo.png" alt="" />
       </button>
     {/if}
@@ -86,47 +86,13 @@
     height: calc(var(--nav-h) + var(--nav-gap) + var(--sab));
     padding: 0 var(--sp-2) calc(var(--nav-gap) + var(--sab));
   }
-  /* «In the air»: a glass plate 26 round, 8 from the sides. */
+  /* «In the air»: the shared plate (mobile.css .m-bar), 8 from the sides. */
   .bar {
     display: grid;
     grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
     grid-template-rows: 100%;
     height: 100%;
     padding: var(--sp-1) var(--sp-2);
-    border-radius: var(--radius-bar);
-    background: var(--pane-strong);
-    -webkit-backdrop-filter: var(--pane-filter);
-    backdrop-filter: var(--pane-filter);
-    border: 1px solid var(--pane-border);
-    box-shadow: var(--pane-highlight), var(--pane-shadow);
-  }
-  .item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    min-width: 0;
-    min-height: 0;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-head);
-    background: transparent;
-    color: var(--text-2);
-    text-decoration: none;
-    font: inherit;
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semibold);
-    transition: color var(--dur-fast), background var(--dur-fast);
-  }
-  .label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item.active { color: var(--accent-text); }
-  .item:active { color: var(--text); background: var(--surface-hover); }
-  .ico { position: relative; display: inline-flex; }
-  .badge {
-    position: absolute; top: -5px; left: calc(100% - 8px); min-width: 17px; height: 17px; padding: 0 4px;
-    border-radius: var(--radius-badge); background: var(--danger); color: #fff; box-shadow: 0 0 0 2px var(--pane-strong);
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 17px; text-align: center;
   }
   /* The product's apps: its logo alone, no word under it. */
   .hub-logo { width: 34px; height: 34px; object-fit: contain; }

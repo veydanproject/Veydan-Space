@@ -28,7 +28,7 @@
   import PickedTray from './PickedTray.svelte';
   import PostEditor from './PostEditor.svelte';
   import { composerOfDraft, postDrafts, splitPost, type PostDraft } from './postEditor';
-  import { Picked } from './picked.svelte';
+  import { Picked, type AddOpts } from './picked.svelte';
   import { feedUnits } from './albums';
   import { channelStore, communityOf } from './channelStore.svelte';
   import UploadLine from './UploadLine.svelte';
@@ -432,8 +432,8 @@
 
   /** Picked files wait above the composer for the words that go with them, as in a chat. */
   const tray = new Picked();
-  function attach(paths: string[]) {
-    tray.add(paths);
+  function attach(paths: string[], opts?: AddOpts) {
+    tray.add(paths, opts);
   }
 
   /**
@@ -734,7 +734,7 @@
 {/snippet}
 
 {#snippet composerTools()}
-  {#if files}<AttachButton onfiles={attach} />{/if}
+  {#if files}<AttachButton onfiles={attach} surface="channel" {chatId} />{/if}
 {/snippet}
 
 {#snippet trayView()}

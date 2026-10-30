@@ -348,6 +348,7 @@ fn descriptor(kind: MediaKind, name: &str, caption: Option<&str>) -> MediaDescri
         servers: vec!["https://blob.example".into()],
         caption: caption.map(String::from),
         batch: None,
+        pos: None,
         dim: None,
         duration_ms: None,
         waveform: None,

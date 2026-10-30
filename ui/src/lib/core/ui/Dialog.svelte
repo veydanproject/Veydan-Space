@@ -21,6 +21,10 @@
     closeOnBackdrop?: boolean;
     /** The phone's sheet keeps its × (default true); a question whose footer has «Отмена» passes false. */
     closable?: boolean;
+    /** The phone's sheet can be pulled up to the whole screen (BottomSheet `expandable`). */
+    expandable?: boolean;
+    /** The phone's sheet without a title: what a screen reader calls it. */
+    label?: string;
     onclose?: () => void;
     header?: Snippet;
     children: Snippet;
@@ -33,6 +37,8 @@
     width,
     closeOnBackdrop = true,
     closable = true,
+    expandable = false,
+    label,
     onclose,
     header,
     children,
@@ -63,9 +69,9 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#if isMobile}
-  <BottomSheet open={!!open} title={header ? '' : (title ?? '')} onclose={close} {closable}>
+  <BottomSheet open={!!open} title={header ? '' : (title ?? '')} onclose={close} {closable} {expandable} {label}>
     {#if header}<div class="sheet-header">{@render header()}</div>{/if}
-    <div class="sheet-body">{@render children()}</div>
+    <div class="sheet-body" class:grow={expandable}>{@render children()}</div>
     {#if footer}<div class="sheet-actions">{@render footer()}</div>{/if}
   </BottomSheet>
 {:else if open}
@@ -184,6 +190,8 @@
   /* The phone's sheet. */
   .sheet-header { display: flex; align-items: center; gap: var(--sp-3); }
   .sheet-body { display: flex; flex-direction: column; gap: var(--sp-3); line-height: 1.45; }
+  /* A sheet that can be pulled up fills the screen it grew to. */
+  .sheet-body.grow { flex: 1 0 auto; }
   /* A finger does not drag a resize corner: the field grows with its text. */
   .sheet-body :global(textarea) { resize: none; }
   /* Stacked, the whole width, 48 high, the verb on top: the footer reads

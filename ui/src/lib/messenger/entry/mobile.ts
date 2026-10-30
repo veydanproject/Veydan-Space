@@ -11,8 +11,11 @@ import { callLog } from '../calls/callLog.svelte';
 import { followRoute, launchRoute, startPushBridge } from '../push/bridge';
 import { BASE, callsHref, groupsHref, sectionHref } from '../mobile/routes';
 import { chatSections } from '../seams/sections.svelte';
+import { isTauriHost } from '../api';
+import { provideMessengerAttach } from '../attach/builtin';
 import NoticeBanner from '../push/NoticeBanner.svelte';
 import CallWatcher from '../calls/CallWatcher.svelte';
+import IncomingLink from '../incoming/IncomingLink.svelte';
 
 /**
  * The bar of the messenger's tabs: «Чаты», «Группы», the sections modules
@@ -31,6 +34,9 @@ export function tabs(): NavItem[] {
 
 const TABS = new Set([BASE, groupsHref(), callsHref(), `${BASE}/section`]);
 
+/** The messenger's items of the sheet of the paperclip, given at the start and taken back at the stop. */
+let stopAttach: (() => void) | null = null;
+
 export const module: ModuleDef = {
   ...common,
   nav: [navItem],
@@ -42,18 +48,28 @@ export const module: ModuleDef = {
   overlays: [
     { id: 'notices', component: NoticeBanner, place: 'window' },
     { id: 'calls', component: CallWatcher, place: 'window' },
+    // A link clicked outside the app: its card, once the app is unlocked.
+    { id: 'incoming-link', component: IncomingLink, place: 'window' },
   ],
   // The tabs keep the bar of the tabs; the chat, contacts and settings screens use the whole height.
   bar: (url) => (TABS.has(url.pathname.replace(/\/$/, '')) ? tabs() : url.pathname.startsWith(`${BASE}/`) ? null : undefined),
   // The bar of the tabs has no apps button: the header of each tab carries it.
   hubInHeader: (url) => TABS.has(url.pathname.replace(/\/$/, '')),
   async start() {
+    if (!stopAttach) {
+      const stops = [provideMessengerAttach()];
+      // The browser preview adds a test item to show that an item is one file (attach/previewItem.ts).
+      if (import.meta.env.DEV && !isTauriHost) stops.push((await import('../attach/previewItem')).providePreviewAttach());
+      stopAttach = () => stops.forEach((stop) => stop());
+    }
     messengerStore.ensureLoaded().catch(() => {});
     // Taps on notifications are followed from the start of the app, not
     // from the first screen of the messenger that is shown.
     startPushBridge().catch(() => {});
   },
   stop() {
+    stopAttach?.();
+    stopAttach = null;
     messengerStore.stop();
   },
   // A tapped notification that started the app leads further than the default app.

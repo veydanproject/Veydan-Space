@@ -27,6 +27,7 @@
     <string name="veydan_push_link_group_nameless">Tautan ke grup</string>
     <string name="veydan_push_link_contact">Kontak: %s</string>
     <string name="veydan_push_link_contact_nameless">Kontak</string>
+    <string name="veydan_push_forwarded">Diteruskan: %s</string>
     <string name="veydan_push_invite">Mengundang Anda ke grup %s</string>
     <string name="veydan_push_join_request">Meminta bergabung ke %s</string>
     <string name="veydan_push_welcome">Anda sudah bergabung ke grup %s</string>

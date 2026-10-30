@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the app's FileProvider may hand to another app: the shots of the
+  system camera alone (`cacheDir/attach-capture/`, tauri-plugin-veydan-media),
+  each by a grant of its one URI. Nothing of the external storage, nothing
+  else of the cache (ROO-144). The `name` is the folder's: `forgetCapture`
+  takes only a URI of this folder. wry's own camera of `<input type="file"
+  capture>` (getExternalFilesDir) has no root here and falls back to the
+  file picker; the app's pages have no such input.
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-  <external-path name="my_images" path="." />
-  <cache-path name="my_cache_images" path="." />
+  <cache-path name="attach-capture" path="attach-capture/" />
 </paths>

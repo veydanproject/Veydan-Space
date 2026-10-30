@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The permissions of the gallery are declared by the products themselves
+     (gen/android/app/src/main/AndroidManifest.xml of Space and Chat): they
+     are what the declaration in Google Play is about. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <!-- The system's camera app the tile «Камера» starts (Android 11+ sees only what it names). -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.VIDEO_CAPTURE" />
+        </intent>
+    </queries>
+</manifest>

@@ -165,6 +165,9 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         batch: Option<String>,
     },
+    /// A text or a file somebody forwarded (`fwd` of its envelope): told
+    /// as `body` is, said to be forwarded ("Forwarded: 📷 Photo").
+    Forwarded { body: Box<Body> },
     /// Somebody invites me to a group of that name.
     Invite { group_name: String },
     /// Somebody asks to join a group I manage.
@@ -217,6 +220,11 @@ mod tests {
         let json = serde_json::to_value(&file).unwrap();
         assert_eq!(json, serde_json::json!({ "t": "media", "kind": "file", "name": "a.pdf" }), "no null anywhere");
         assert_eq!(serde_json::from_value::<Body>(json).unwrap(), file);
+
+        let fwd = Body::Forwarded { body: Box::new(Body::Text { text: "hi".into() }) };
+        let json = serde_json::to_value(&fwd).unwrap();
+        assert_eq!(json, serde_json::json!({ "t": "forwarded", "body": { "t": "text", "text": "hi" } }));
+        assert_eq!(serde_json::from_value::<Body>(json).unwrap(), fwd);
 
         let link = Body::Link { link: LinkKind::Group, title: "Клуб".into() };
         let json = serde_json::to_value(&link).unwrap();

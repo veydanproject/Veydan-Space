@@ -233,6 +233,16 @@ messenger_dm_send_recording messenger all
 messenger_dm_send_text messenger all
 messenger_emoji_top messenger all
 messenger_emoji_used messenger all
+messenger_forward messenger all
+messenger_gallery_access messenger all
+messenger_gallery_albums messenger all
+messenger_gallery_capture messenger all
+messenger_gallery_forget_thumbs messenger all
+messenger_gallery_pick messenger all
+messenger_gallery_readable messenger all
+messenger_gallery_recent messenger all
+messenger_gallery_request messenger all
+messenger_gallery_thumb messenger all
 messenger_group_act messenger all
 messenger_group_answer_invite messenger all
 messenger_group_answer_request messenger all
@@ -263,6 +273,7 @@ messenger_identity_delete messenger all
 messenger_identity_export messenger all
 messenger_identity_get messenger all
 messenger_identity_import messenger all
+messenger_link_incoming messenger all
 messenger_link_preview messenger all
 messenger_links_inspect messenger all
 messenger_manifest_info messenger all
@@ -351,6 +362,7 @@ messenger_servers_private messenger all
 messenger_servers_use_own messenger all
 messenger_servers_use_veydan messenger all
 messenger_set_enabled messenger all
+messenger_share_out messenger all
 messenger_social_platforms messenger all
 messenger_status messenger all
 messenger_ui_prefs_get messenger all

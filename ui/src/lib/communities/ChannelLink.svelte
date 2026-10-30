@@ -13,7 +13,7 @@
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { ShareDialog, confirmStore } from '$lib/messenger/seams/shared';
+  import { ShareDialog, ShareOutSheet, channelShareItem, confirmStore } from '$lib/messenger/seams/shared';
   import { channelsApi, type ChannelDetail } from './api';
   import { channelStore } from './channelStore.svelte';
   import { channelError } from './errors';
@@ -26,6 +26,7 @@
 
   let copied = $state(false);
   let sharing = $state(false);
+  let sharingOut = $state(false);
   let qr = $state<string | null>(null);
   let busy = $state(false);
   let error = $state('');
@@ -77,6 +78,7 @@
     <div class="row">
       <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name={copied ? 'check' : 'copy'} size={13} />{copied ? $t('chan_link_copied') : $t('chan_copy')}</button>
       <button class="btn btn-ghost btn-sm" onclick={() => (sharing = true)}><Icon name="send" size={13} />{$t('chan_share')}</button>
+      <button class="btn btn-ghost btn-sm" onclick={() => (sharingOut = true)}><Icon name="share" size={13} />{$t('msg_share_out_open')}</button>
       <button class="btn btn-ghost btn-sm" disabled={busy} onclick={toggleQr}><Icon name="qr-code" size={13} />{qr ? $t('chan_qr_hide') : $t('chan_qr_show')}</button>
       {#if canRotateLink(detail)}
         <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={13} />{$t('chan_link_rotate')}</button>
@@ -86,6 +88,7 @@
     {#if error}<div class="error-msg">{error}</div>{/if}
   </section>
   <ShareDialog bind:open={sharing} {link} exclude={detail.channel.chat_id} />
+  <ShareOutSheet bind:open={sharingOut} item={channelShareItem(link)} qr={() => channelsApi.linkQr(cid)} />
 {/if}
 
 <style>

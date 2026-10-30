@@ -245,17 +245,18 @@ export const channelsApi = {
   /** `scopeId`: the section of a new post with a file; a comment's is its post's. */
   /** `batch`: the files picked together (an album), the same for each; `caption`: with the last of them; `fmt`: `md` when the caption is Markdown. */
   /**
-   * `original`: a photo goes as it is, not made smaller; `poster`: the frame of a video the page took,
+   * `original`: a photo goes as it is, not made smaller; `asFile`: as it is, a phone's HEIC is not made a
+   * JPEG (the item «Файл»); `poster`: the frame of a video the page took,
    * the readers' preview before they fetch it (as a chat's file).
    */
   mediaSend: (
     communityId: string,
     src: string,
-    opts: { postId?: string; parent?: string | null; caption?: string; fmt?: TextFormat | null; scopeId?: string | null; batch?: string; original?: boolean; poster?: ChannelPoster | null } = {},
+    opts: { postId?: string; parent?: string | null; caption?: string; fmt?: TextFormat | null; scopeId?: string | null; batch?: string; original?: boolean; asFile?: boolean; poster?: ChannelPoster | null } = {},
   ) =>
     call<UploadView>('channel_media_send', {
       communityId, src, postId: opts.postId ?? null, parent: opts.parent ?? null, caption: opts.caption || null, fmt: opts.caption ? (opts.fmt ?? null) : null, scopeId: opts.scopeId ?? null,
-      batch: opts.batch ?? null, options: { original: opts.original ?? false, poster: opts.poster ?? null },
+      batch: opts.batch ?? null, options: { original: opts.original ?? false, as_file: opts.asFile ?? false, poster: opts.poster ?? null },
     }),
   /**
    * A voice message or a circle recorded in the composer, as a post (`scopeId`: its section) or a comment
@@ -291,7 +292,7 @@ export const channelsApi = {
   /** Where a fetched video or sound plays, whatever its size (the messenger's server of files); `null`: take `mediaUrl`. */
   mediaPlay: (communityId: string, messageId: string) => call<string | null>('channel_media_play', { communityId, messageId }),
   /** A picked file made a file of the device, with where the page reads a video for its frame. */
-  mediaImport: (src: string) => call<ImportedFile>('channel_media_import', { src }),
+  mediaImport: (src: string, asFile = false) => call<ImportedFile>('channel_media_import', { src, asFile }),
   uploads: (communityId: string) => call<UploadView[]>('channel_uploads', { communityId }),
 
   moderation: {
@@ -603,7 +604,7 @@ function buildDemo(): Record<string, DemoChannel> {
         { pubkey: MARINA, role: 'author', muted: false, trusted: true, since: T0 - 10 * D },
         { pubkey: NIKITA, role: 'member', muted: true, muted_until: T0 + 20 * H, trusted: false, since: T0 - 2 * D },
       ],
-      has_key: true, waiting: 0, link: `veydan://channel/${c1}?r=node-1.veydan.net&e=1#s=demo-secret`,
+      has_key: true, waiting: 0, link: `veydan://channel/${c1}?r=node-1.veydan.net&e=1&s=demo-secret`,
       ...base(posts1),
       comments_of: { [first]: thread },
       queue: [
@@ -852,7 +853,7 @@ if (!isTauri) {
         view: channel(cid, input.name, input.about ?? '', ME, { join: input.join, my_role: 'owner', members: 1, kept_here: true, relays: input.relays, storage: input.storage, created_at: now(), updated_at: now() }),
         history: input.history ?? 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [],
         staff: [{ pubkey: ME, role: 'owner', muted: false, trusted: false, since: now() }], has_key: true, waiting: 0,
-        link: `veydan://channel/${cid}?r=node-1.veydan.net&e=1#s=new`, posts: [], comments_of: {}, queue: [], log: [], requests: [], banned: [],
+        link: `veydan://channel/${cid}?r=node-1.veydan.net&e=1&s=new`, posts: [], comments_of: {}, queue: [], log: [], requests: [], banned: [],
       };
       data()[cid] = c;
       return detail(c);
@@ -932,7 +933,7 @@ if (!isTauri) {
     channel_answer_request: (a) => { const c = ch(a); c.requests = c.requests.filter((r) => r.requester !== a?.requester); return detail(c); },
     channel_avatar_set: (a) => { const c = ch(a); c.view.picture = picture('#9b51e0', '#f2c94c', '★'); return detail(c); },
     channel_avatar_remove: (a) => { const c = ch(a); c.view.picture = undefined; return detail(c); },
-    channel_rotate_link: (a) => { const c = ch(a); c.view.link_epoch += 1; c.link = `veydan://channel/${c.view.id}?r=node-1.veydan.net&e=${c.view.link_epoch}#s=rotated`; return detail(c); },
+    channel_rotate_link: (a) => { const c = ch(a); c.view.link_epoch += 1; c.link = `veydan://channel/${c.view.id}?r=node-1.veydan.net&e=${c.view.link_epoch}&s=rotated`; return detail(c); },
     channel_link_qr: () => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges"><rect width="21" height="21" fill="#fff"/><path d="M0 0h7v7H0zM14 0h7v7h-7zM0 14h7v7H0zM9 2h2v2H9zM9 9h3v3H9zM14 10h2v2h-2zM10 15h2v2h-2zM16 16h3v3h-3z" fill="#000"/><path d="M2 2h3v3H2zM16 2h3v3h-3zM2 16h3v3H2z" fill="#fff"/></svg>',
     channel_forget: (a) => { delete data()[String(a?.communityId)]; },
     channel_history: (a) => {

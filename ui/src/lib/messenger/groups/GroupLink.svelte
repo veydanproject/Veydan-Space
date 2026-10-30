@@ -14,12 +14,15 @@
   import { isManager } from './permissions';
   import { confirmStore } from '../shared/confirm.svelte';
   import ShareDialog from '../content/ShareDialog.svelte';
+  import ShareOutSheet from '../content/ShareOutSheet.svelte';
+  import { groupShareItem } from '../content/shareOut';
 
   interface Props { group: MessengerGroup }
   let { group }: Props = $props();
 
   let copied = $state(false);
   let sharing = $state(false);
+  let sharingOut = $state(false);
   let qr = $state<string | null>(null);
   let busy = $state(false);
   let error = $state('');
@@ -68,6 +71,7 @@
     <div class="row">
       <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name={copied ? 'check' : 'copy'} size={13} />{copied ? $t('msg_group_link_copied') : $t('msg_copy')}</button>
       <button class="btn btn-ghost btn-sm" onclick={() => (sharing = true)}><Icon name="send" size={13} />{$t('msg_share')}</button>
+      <button class="btn btn-ghost btn-sm" onclick={() => (sharingOut = true)}><Icon name="share" size={13} />{$t('msg_share_out_open')}</button>
       <button class="btn btn-ghost btn-sm" disabled={busy} onclick={toggleQr}><Icon name="qr-code" size={13} />{qr ? $t('msg_group_qr_hide') : $t('msg_group_qr_show')}</button>
       {#if group.kind === 'public' && isManager(group)}
         <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={13} />{$t('msg_group_link_rotate')}</button>
@@ -78,7 +82,10 @@
   </section>
 {/if}
 
-{#if group.link}<ShareDialog bind:open={sharing} link={group.link} exclude={group.chat_id} />{/if}
+{#if group.link}
+  <ShareDialog bind:open={sharing} link={group.link} exclude={group.chat_id} />
+  <ShareOutSheet bind:open={sharingOut} item={groupShareItem(group.link)} qr={() => messengerApi.groups.linkQr(group.id)} />
+{/if}
 
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }

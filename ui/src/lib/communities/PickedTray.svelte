@@ -5,11 +5,13 @@
   The files picked for a post or a comment, above the composer (the
   composer's `attachments`), as a chat's tray: a picture as a small
   square of itself, any other file with its icon and name, each with a
-  way to take it out; the words typed go as their caption.
+  way to take it out; the words typed go as their caption. Below it, what
+  it tells of them (a photo that goes as a file).
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import PickedNotes from './PickedNotes.svelte';
   import { pickedIcon, type Picked } from './picked.svelte';
 
   let { picked }: { picked: Picked } = $props();
@@ -26,6 +28,7 @@
     </div>
   {/each}
 </div>
+<PickedNotes {picked} />
 
 <style>
   /* As ChatWindow's tray: small cards that scroll sideways, pictures as they look. */

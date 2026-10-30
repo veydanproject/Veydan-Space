@@ -7,6 +7,15 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Requested by the WebView together with RECORD_AUDIO; missing it auto-denies the prompt -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- The gallery in the sheet of the paperclip of the messenger (ROO-110):
+         the newest photos and videos as a grid, asked for only when the user
+         taps «Разрешить доступ». Android 14+ may give a part of them
+         (READ_MEDIA_VISUAL_USER_SELECTED); Android 12 and older read the
+         storage. Without them the system's Photo Picker still works. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Optional hardware: Google Play otherwise takes CAMERA and RECORD_AUDIO as a camera and a microphone the phone must have. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
@@ -30,6 +39,28 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- A veydan:// link clicked outside the app (crates/shell/src/links.rs).
+             Not MainActivity: the intent that carries the link must not stay the
+             base intent of a task, which the system keeps in its recent tasks.
+             This one keeps the link in memory, starts MainActivity with an
+             intent of its own and leaves no task behind. -->
+        <activity
+            android:name="net.veydan.shell.LinkActivity"
+            android:exported="true"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <!-- ChromeOS ARC++ uses a different action for deep links -->
+                <action android:name="org.chromium.arc.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="veydan" />
             </intent-filter>
         </activity>
 

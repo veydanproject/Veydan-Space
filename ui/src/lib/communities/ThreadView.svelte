@@ -24,8 +24,8 @@
   import { uploadsUnder } from './uploads';
   import FeedPost from './FeedPost.svelte';
   import PickedTray from './PickedTray.svelte';
-  import { Picked } from './picked.svelte';
-  import { channelStore } from './channelStore.svelte';
+  import { Picked, type AddOpts } from './picked.svelte';
+  import { channelStore, chatIdOf } from './channelStore.svelte';
   import { nameStore } from './names.svelte';
   import { channelsApi, type ChannelDetail, type ChannelRecording, type FeedItemView, type TextFormat } from './api';
   import { channelError } from './errors';
@@ -202,8 +202,8 @@
 
   /** Picked files wait above the composer for the words that go with them; several go as one album. */
   const tray = new Picked();
-  function attach(paths: string[]) {
-    tray.add(paths);
+  function attach(paths: string[], opts?: AddOpts) {
+    tray.add(paths, opts);
   }
 
   async function sendFiles(caption: string, fmt: TextFormat | null = null) {
@@ -308,7 +308,7 @@
 {/snippet}
 
 {#snippet tools()}
-  {#if canAttach(detail)}<AttachButton onfiles={attach} />{/if}
+  {#if canAttach(detail)}<AttachButton onfiles={attach} surface="thread" chatId={chatIdOf(cid)} />{/if}
 {/snippet}
 
 {#snippet trayView()}

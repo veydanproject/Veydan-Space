@@ -184,8 +184,9 @@ is_package() { grep -q "^[^	]*	$1	-	" <<<"$root_deps"$'\n'"$messenger_deps"; }
 #    (crates/communities/core) and their module (crates/communities) take
 #    its types, its grammar of links and the routes of its pool; the engine
 #    makes the cover of a channel as the messenger makes the picture of a
-#    group (crates/messenger/avatar). The product names the push and the
-#    call plugins itself: tauri-build finds the Android library of a plugin
+#    group (crates/messenger/avatar) and brings a phone's HEIC photo to a
+#    JPEG as a chat does (crates/messenger/media). The product names the
+#    push, the call and the gallery plugins itself: tauri-build finds the Android library of a plugin
 #    through the direct dependencies of the product.
 MATRIX='
 crates/build-cfg                 veydan-build-cfg          lib      no
@@ -200,16 +201,17 @@ crates/sync-host                 veydan-sync-host          lib      yes  crates/
 crates/shell                     veydan-shell              lib      yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host
 crates/pass                      veydan-pass               module   yes  crates/build-cfg crates/core crates/lock crates/sync-host crates/shell
 crates/notes                     veydan-notes              module   yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host crates/shell
-crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/messenger/http crates/messenger/store crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
-crates/communities               veydan-communities        module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/communities/core crates/messenger/core crates/messenger/links crates/messenger/transport crates/tauri-plugin-veydan-push
+crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/messenger/http crates/messenger/store crates/messenger/media crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call crates/tauri-plugin-veydan-media
+crates/communities               veydan-communities        module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/communities/core crates/messenger/core crates/messenger/links crates/messenger/media crates/messenger/transport crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-media
 crates/tor                       veydan-tor                module   yes  crates/build-cfg crates/core crates/shell
 crates/cloud                     veydan-cloud              module   yes  crates/build-cfg crates/core crates/shell crates/sync crates/recovery crates/lock crates/sync-host
 crates/tauri-plugin-veydan-push  tauri-plugin-veydan-push  plugin   yes  crates/build-cfg
 crates/tauri-plugin-veydan-call  tauri-plugin-veydan-call  plugin   yes  crates/build-cfg crates/messenger/rtc
-apps/space                       veydanspace               product  yes  crates/build-cfg crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/communities crates/tor crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+crates/tauri-plugin-veydan-media tauri-plugin-veydan-media plugin   yes  crates/build-cfg
+apps/space                       veydanspace               product  yes  crates/build-cfg crates/shell crates/core crates/lock crates/sync crates/sync-host crates/pass crates/notes crates/messenger-app crates/communities crates/tor crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call crates/tauri-plugin-veydan-media
 apps/notes                       veydannotes               product  yes  crates/shell crates/notes
 apps/pass                        veydanpass                product  yes  crates/shell crates/pass
-apps/chat                        veydanchat                product  yes  crates/build-cfg crates/shell crates/messenger-app crates/communities crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call
+apps/chat                        veydanchat                product  yes  crates/build-cfg crates/shell crates/messenger-app crates/communities crates/cloud crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call crates/tauri-plugin-veydan-media
 '
 # A snapshot holds the rows of its product only.
 if [ -n "$snapshot" ]; then

@@ -43,7 +43,7 @@
     /** Answer it (a swipe to the left on a touch screen); absent where it cannot be answered. */
     onreply?: () => void;
     /** A computer: the buttons of a hovered message; `react` absent where one cannot react. */
-    actions?: { react?: (anchor: HTMLElement) => void; more: (anchor: HTMLElement) => void };
+    actions?: { react?: (anchor: HTMLElement) => void; forward?: () => void; more: (anchor: HTMLElement) => void };
     /** Its menu is open. */
     selected?: boolean;
   }
@@ -54,6 +54,8 @@
   /** The part the album's reactions are kept on. */
   const reacted = $derived(reactionTarget(head, messages));
   const out = $derived(head.direction === 'out');
+  /** Forwarded: the parts of one album are forwarded together, with one name. */
+  const fwd = $derived(messages.find((m) => m.fwd)?.fwd ?? null);
   const captions = $derived(messages.filter((m) => m.text?.trim()));
   const failed = $derived(messages.filter((m) => m.status === 'failed'));
   // The backend's own words go to the log; the button says it in the UI's language.
@@ -119,9 +121,10 @@
 <div class="line" class:out class:first class:last class:selected class:highlighted={messages.some((m) => m.id === highlighted)} use:swipeReply={{ onreply }}>
   <div class="brow">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="bubble {variant}" class:failed={failed.length > 0} class:bare={overlay && !author}
+  <div class="bubble {variant}" class:failed={failed.length > 0} class:bare={overlay && !author && !fwd}
     oncontextmenu={(e) => onmenu(e, partAt(e.target))} use:longpress={press}>
     {#if author}<span class="author" style="color: {authorTint}">{author}</span>{/if}
+    {#if fwd}<span class="fwd">{fwd.name ? $t('msg_fwd_from', { name: fwd.name }) : $t('msg_fwd_from_nameless')}</span>{/if}
 
     {#if pictures.length}
       <div class="mosaic" aria-label={messages.length > 1 ? $t('msg_album_n', { n: String(messages.length) }) : undefined}>
@@ -164,6 +167,7 @@
       <div class="acts">
         {#if onreply}<button class="act" onclick={onreply} title={$t('msg_message_reply')} aria-label={$t('msg_message_reply')}><Icon name="reply" size={18} /></button>{/if}
         {#if actions.react}<button class="act" onclick={(e) => actions.react?.(e.currentTarget)} title={$t('msg_react_title')} aria-label={$t('msg_react_title')} aria-haspopup="true"><Icon name="smile-plus" size={18} /></button>{/if}
+        {#if actions.forward}<button class="act" onclick={actions.forward} title={$t('msg_fwd_forward')} aria-label={$t('msg_fwd_forward')}><Icon name="forward" size={18} /></button>{/if}
         <button class="act" onclick={(e) => actions.more(e.currentTarget)} title={$t('msg_message_more')} aria-label={$t('msg_message_more')} aria-haspopup="menu"><Icon name="more-vertical" size={18} /></button>
       </div>
     {/if}
@@ -209,6 +213,10 @@
   .line.out .bubble { border-bottom-right-radius: var(--r-tail); }
   .bubble.failed { border-color: var(--danger-border); }
   .author { font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 1.2; padding: 4px 8px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Forwarded: whose it was, over the pictures. */
+  .fwd { font-size: var(--fs-2xs); font-style: italic; color: var(--text-2); line-height: 1.3; padding: 4px 8px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .line.out .fwd { color: var(--bubble-out-meta); }
+  .author + .fwd { padding-top: 0; }
 
   .mosaic { position: relative; display: flex; flex-direction: column; gap: 2px; border-radius: calc(var(--r) - 3px); overflow: hidden; }
   .row { display: flex; gap: 2px; min-height: 0; }

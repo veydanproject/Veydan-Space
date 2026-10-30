@@ -28,6 +28,7 @@
   import { installTooltips } from '$lib/core/ui/tooltip';
   import { appLock } from '$lib/core/lock/store.svelte';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
+  import LinkInbox from '$lib/core/links/LinkInbox.svelte';
   import { updaterStore } from '$lib/core/store/updater.svelte';
   import UpdateBanner from '$lib/core/desktop/UpdateBanner.svelte';
   import { listen } from '@tauri-apps/api/event';
@@ -466,6 +467,8 @@
   {#each windowOverlays as overlay (overlay.key)}
     <overlay.component />
   {/each}
+  <!-- A link clicked outside the app, read once it is unlocked. -->
+  <LinkInbox />
   <!-- A new data file: the first start (section 12), and what it left to set up. -->
   <Wizard />
   <SetupCard floating />

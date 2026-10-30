@@ -27,6 +27,7 @@
     <string name="veydan_push_link_group_nameless">그룹 링크</string>
     <string name="veydan_push_link_contact">연락처: %s</string>
     <string name="veydan_push_link_contact_nameless">연락처</string>
+    <string name="veydan_push_forwarded">전달됨: %s</string>
     <string name="veydan_push_invite">%s 그룹에 초대했습니다</string>
     <string name="veydan_push_join_request">%s 그룹에 가입을 요청했습니다</string>
     <string name="veydan_push_welcome">%s 그룹에 참여했습니다</string>

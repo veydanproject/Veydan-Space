@@ -237,6 +237,9 @@ pub struct NetService {
     /// The wall clock at the last beat. The wall clock goes on while the
     /// device sleeps; the clock of the timers does not.
     last_beat: std::sync::Mutex<Option<std::time::SystemTime>>,
+    /// How many times a registry or a bridge was asked. Kept for the tests
+    /// that say nothing is asked with the user's own servers.
+    asked: std::sync::atomic::AtomicUsize,
 }
 
 impl NetService {
@@ -257,6 +260,7 @@ impl NetService {
             net,
             relays_down_since: std::sync::Mutex::new(None),
             last_beat: std::sync::Mutex::new(None),
+            asked: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -271,7 +275,7 @@ impl NetService {
             .await?
             .as_deref()
             .and_then(NetMode::parse)
-            .unwrap_or(NetMode::Off))
+            .unwrap_or(NetMode::Auto))
     }
 
     async fn stamp(&self, key: &str) -> Result<Option<i64>> {
@@ -412,6 +416,7 @@ impl NetService {
     /// no registry named, nothing is asked: a list kept from before is used
     /// while its signatures hold (the root's key is built in).
     pub async fn refresh_list(&self, manifest: &Manifest) -> Result<usize> {
+        self.count_asked();
         let client = messenger_http::client(Duration::from_secs(6), Duration::from_secs(12))?;
         let mut last = no_registry();
         for registry in &manifest.registries {
@@ -446,6 +451,16 @@ impl NetService {
         Err(last)
     }
 
+    /// How many times a registry or a bridge was asked since the start.
+    #[cfg(test)]
+    pub(crate) fn asked(&self) -> usize {
+        self.asked.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn count_asked(&self) {
+        self.asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Whether the list is due: never asked, or asked long ago.
     pub async fn list_is_stale(&self) -> Result<bool> {
         Ok(self
@@ -458,6 +473,7 @@ impl NetService {
     /// whatever the rule says: a client of its own, bound to a rule that
     /// sends nothing to a bridge.
     async fn direct_carries(&self, registries: &[String]) -> bool {
+        self.count_asked();
         let Ok(builder) =
             messenger_http::builder_on(Net::new(), Duration::from_secs(5), DIRECT_PATIENCE)
         else {
@@ -482,6 +498,7 @@ impl NetService {
     /// Pushes bytes through a bridge, in use or not. The bridge that
     /// carried is remembered.
     async fn bridge_carries(&self) -> Result<bool> {
+        self.count_asked();
         let Some(client) = self.net.client() else {
             return Ok(false);
         };
@@ -647,8 +664,22 @@ impl MessengerRuntime {
         Ok(())
     }
 
+    /// Bridges carry only the project's servers: with the user's own chosen,
+    /// or none chosen yet, no registry and no bridge is asked, whatever the
+    /// entry (a check, a trouble, a change of mode). The checks of the
+    /// entries below stand on this one.
+    async fn net_is_available(&self) -> Result<bool> {
+        Ok(self.relays.servers_mode().await? == Some(ServersMode::Veydan))
+    }
+
     pub async fn net_set_mode(&self, mode: NetMode) -> Result<NetStatus> {
         self.net.set_mode(mode).await?;
+        if !self.net_is_available().await? {
+            // The choice is kept for the day the project's servers are used;
+            // nothing is asked now.
+            self.net_apply().await?;
+            return self.net_status().await;
+        }
         // The registries of the manifest in use: none is built in.
         let (manifest, _) = self.relays.current_manifest().await?;
         if mode != NetMode::Off {
@@ -670,6 +701,9 @@ impl MessengerRuntime {
 
     /// Tries the direct way and a bridge now, and acts on it as the mode says.
     pub async fn net_check(&self) -> Result<NetCheck> {
+        if !self.net_is_available().await? {
+            return Err(MessengerError::Invalid("net_unavailable_own_servers".into()));
+        }
         let (manifest, _) = self.relays.current_manifest().await?;
         let check = self.net.check(&manifest).await?;
         self.net_apply().await?;
@@ -679,6 +713,9 @@ impl MessengerRuntime {
     /// Something failed that a throttled way would explain. Checks, unless
     /// it did so a moment ago.
     pub async fn net_trouble(&self) -> Result<Option<NetCheck>> {
+        if !self.net_is_available().await? {
+            return Ok(None);
+        }
         if !self.net.check_is_due().await? {
             return Ok(None);
         }
@@ -695,7 +732,7 @@ impl MessengerRuntime {
         // level `any` (it keeps the rule itself, and notices the servers
         // or the silent mode coming back).
         self.call_registry_tick().await;
-        if self.relays.servers_mode().await? != Some(ServersMode::Veydan) {
+        if !self.net_is_available().await? {
             return Ok(());
         }
         let status = self.status().await?;
@@ -900,6 +937,7 @@ mod tests {
             net: Net::new(),
             relays_down_since: std::sync::Mutex::new(None),
             last_beat: std::sync::Mutex::new(None),
+            asked: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 

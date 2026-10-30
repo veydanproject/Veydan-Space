@@ -20,6 +20,9 @@ pub enum LinkError {
     Param,
     /// A parameter this type cannot do without is absent.
     Missing,
+    /// Handed over by the system (clicked outside the app) and of a type
+    /// opened only from the app's own scanner or a paste (`outside`).
+    ScannerOnly,
 }
 
 impl LinkError {
@@ -32,6 +35,7 @@ impl LinkError {
             Self::Id => "link_bad_id",
             Self::Param => "link_bad_param",
             Self::Missing => "link_missing_param",
+            Self::ScannerOnly => "link_scanner_only",
         }
     }
 }

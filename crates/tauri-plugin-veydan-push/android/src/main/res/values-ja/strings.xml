@@ -27,6 +27,7 @@
     <string name="veydan_push_link_group_nameless">グループへのリンク</string>
     <string name="veydan_push_link_contact">連絡先：%s</string>
     <string name="veydan_push_link_contact_nameless">連絡先</string>
+    <string name="veydan_push_forwarded">転送: %s</string>
     <string name="veydan_push_invite">グループ「%s」に招待しています</string>
     <string name="veydan_push_join_request">「%s」への参加をリクエストしています</string>
     <string name="veydan_push_welcome">グループ「%s」に参加しました</string>

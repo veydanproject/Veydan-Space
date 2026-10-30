@@ -11,7 +11,7 @@ use crate::MessengerRuntime;
 use messenger_core::{MessengerError, PubKey, Result};
 use messenger_groups::{GroupKind, GroupLink};
 use messenger_links::contact::{npub_of, pubkey_of_npub};
-use messenger_links::{BridgeLink, CallNodeLink, ChannelLink, ContactLink, LinkError, LinkType, RecoverLink, ServerLink, Uri, WebLink};
+use messenger_links::{from_outside, BridgeLink, CallNodeLink, ChannelLink, ContactLink, LinkError, LinkType, RecoverLink, ServerLink, Uri, WebLink};
 use messenger_store::servers;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -286,6 +286,18 @@ impl MessengerRuntime {
             out.push(self.link_inspect(link).await?);
         }
         Ok(out)
+    }
+
+    /// A link the system handed to the app (clicked outside it): the card
+    /// `link_inspect` gives, for a type that may come from outside; a
+    /// sign-in, a recovery and the linking of a device are refused as
+    /// `link_scanner_only` (`messenger_links::outside`). The card only
+    /// shows: what it offers is done when the user presses its button.
+    pub async fn link_incoming(&self, text: &str) -> Result<LinkView> {
+        match from_outside(text) {
+            Ok(link) => self.link_inspect(link).await,
+            Err(e) => Ok(LinkView::invalid(e)),
+        }
     }
 
     pub async fn link_inspect(&self, link: &str) -> Result<LinkView> {
@@ -654,6 +666,29 @@ mod tests {
         assert_eq!(got[2], LinkView::Invalid { code: "link_bad_id".into() });
         let json = serde_json::to_value(&got[0]).unwrap();
         assert_eq!(json, serde_json::json!({ "kind": "web", "link": format!("veydan://web/{id}"), "id": id }));
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_link_from_outside_is_a_card_or_a_refusal() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = runtime(&dir).await;
+        let bob = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
+        let contact = format!("veydan://contact/{}", npub_of(&bob).unwrap());
+        match rt.link_incoming(&contact).await.unwrap() {
+            LinkView::Contact { pubkey, is_contact, .. } => assert!(pubkey == bob.as_hex() && !is_contact, "shown, not added"),
+            other => panic!("{other:?}"),
+        }
+        assert!(rt.contacts().get(&bob).await.unwrap().is_none(), "nothing is done by the link itself");
+        let scanner_only = LinkView::Invalid { code: "link_scanner_only".into() };
+        for link in ["veydan://web/0123456789abcdef", "veydan://recover/abc?c=AB7K-2QZD-9MXP", "veydan://link/ab/abandon"] {
+            assert_eq!(rt.link_incoming(link).await.unwrap(), scanner_only, "{link}");
+        }
+        // A bare key is pasted, never handed over by the system.
+        assert_eq!(rt.link_incoming(&npub_of(&bob).unwrap()).await.unwrap(), LinkView::Invalid { code: "link_bad_scheme".into() });
+        assert_eq!(rt.link_incoming("veydan://%%%").await.unwrap(), LinkView::Invalid { code: "link_bad_type".into() });
+        let long = format!("{contact}?n={}", "x".repeat(messenger_links::MAX_LINK_LEN));
+        assert_eq!(rt.link_incoming(&long).await.unwrap(), LinkView::Invalid { code: "link_too_long".into() });
         rt.shutdown().await;
     }
 

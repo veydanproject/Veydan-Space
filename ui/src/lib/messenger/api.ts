@@ -253,6 +253,24 @@ export interface MessengerMessage {
    * plain text. Rendered by `content/Markdown.svelte`, never as HTML.
    */
   rich?: MdBlock[] | null;
+  /**
+   * A forwarded text or file: «Forwarded from `name`», or from nobody named.
+   * Absent on a message that is no forward, and on one forwarded with the
+   * sender hidden.
+   */
+  fwd?: { name?: string } | null;
+}
+
+/** What one chat got of a forward (`messenger_runtime::forward`). */
+export interface MessengerForwardResult {
+  /** The chat id. */
+  target: string;
+  /** The new messages there, in order, the comment first. */
+  sent: MessengerMessage[];
+  /** Why the rest did not go; a message that failed stays in the chat as failed. */
+  error?: string;
+  /** Files that could not go to this chat (`err.forward_media_unavailable`). */
+  skipped?: { message_id: string; reason: string }[];
 }
 
 /** How the words of a message are written: `md` Markdown; `null` plain text. */
@@ -568,6 +586,26 @@ export interface MessengerPicked {
   preview: string | null;
   /** A video: where the webview reads it, for a frame of it. */
   url?: string | null;
+  /** `unsupported_format`: a photo the phone could not bring to a common format; it goes as a file. */
+  note?: 'unsupported_format';
+}
+
+/** A photo or a video of the phone's gallery. */
+export interface MessengerGalleryItem {
+  id: string;
+  kind: 'image' | 'video';
+  /** `content://`, for `importPicked`. */
+  path: string;
+  width: number;
+  height: number;
+  /** Seconds, for a video. */
+  duration?: number;
+}
+
+/** Files picked together (`id`, one album on the other side) and the place of one among them, from 0. */
+export interface MessengerBatch {
+  id: string;
+  pos: number;
 }
 
 /** A frame the UI took from a video it sends: a JPEG (base64, no `data:` prefix) and the size of the video. */
@@ -1598,6 +1636,34 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_dm_edit: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.text = String(a?.text); m.fmt = a?.fmt === 'md' ? 'md' : null; m.rich = null; m.edited_at = Math.floor(Date.now() / 1000); } return m; },
   messenger_dm_delete: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.deleted = true; m.text = null; } },
   messenger_dm_retry: () => undefined,
+  // The demo's forward: copies in each chat, in the order of the source, «Forwarded from» its title unless hidden.
+  messenger_forward: (a): MessengerForwardResult[] => {
+    const source = String(a?.sourceChat);
+    const ids = new Set((a?.messageIds as string[] | undefined) ?? []);
+    const from = mockChats.find((c) => c.id === source);
+    const picked = (mockMessages[source] ?? []).filter((m) => ids.has(m.id) && !m.deleted);
+    const comment = typeof a?.comment === 'string' && a.comment.trim() ? a.comment.trim() : null;
+    let seq = 0;
+    return ((a?.targets as string[] | undefined) ?? []).map((target) => {
+      const now = Math.floor(Date.now() / 1000);
+      const copy = (over: Partial<MessengerMessage>): MessengerMessage => ({
+        id: `fw${Date.now().toString(16)}${(seq++).toString(16)}`, chat_id: target, direction: 'out', status: 'sent', content_type: 'text', text: null,
+        sender_pubkey: 'ab'.repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null,
+        delivered_at: null, read_at: null, seen_by: [], reactions: [], media: null, ...over,
+      });
+      const sent = [
+        ...(comment ? [copy({ text: comment })] : []),
+        ...picked.map((m) => copy({
+          content_type: m.content_type, text: m.text, fmt: m.fmt ?? null, rich: m.rich ?? null, media: m.media, card: m.card ?? null,
+          fwd: a?.hideSender || m.content_type === 'contact' ? null : m.fwd ?? { name: m.direction === 'in' && from?.kind === 'dm' ? from.title : undefined },
+        })),
+      ];
+      mockMessages[target] = [...(mockMessages[target] ?? []), ...sent];
+      const last = sent[sent.length - 1];
+      mockChats = mockChats.map((x) => (x.id === target && last ? { ...x, last_message_at: now, last_preview: last.text, last_body: null } : x));
+      return { target, sent };
+    });
+  },
   messenger_media_servers: () => mockMediaServers,
   messenger_media_server_put: (a) => {
     const i = (a?.input ?? {}) as MessengerMediaServerInput;
@@ -1617,7 +1683,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const size = kind === 'image' ? 3_400_000 : 24 * 1024 * 1024;
     const id = `local:${Date.now().toString(16)}${Math.random().toString(16).slice(2, 8)}`;
     const transferId = `demo-send-${id.slice(6)}`;
-    const m: MessengerMessage = { id, chat_id: c.id, direction: 'out', status: 'uploading', content_type: 'media', text: (a?.caption as string) ?? null, sender_pubkey: 'ab'.repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: { name, mime, size, kind, local_path: String(a?.path), transfer_id: transferId, ...(a?.batch ? { batch: String(a.batch) } : {}) } };
+    const m: MessengerMessage = { id, chat_id: c.id, direction: 'out', status: 'uploading', content_type: 'media', text: (a?.caption as string) ?? null, sender_pubkey: 'ab'.repeat(32), reply_to: null, created_at: now, edited_at: null, deleted: false, failure_reason: null, delivered_at: null, read_at: null, seen_by: [], reactions: [], media: { name, mime, size, kind, local_path: String(a?.path), transfer_id: transferId, ...(a?.batch ? { batch: String(a.batch) } : {}), ...(typeof a?.pos === 'number' ? { pos: a.pos } : {}) } };
     mockMessages[c.id] = [...(mockMessages[c.id] ?? []), m];
     mockChats = mockChats.map((x) => (x.id === c.id ? { ...x, last_message_at: now, last_preview: `📎 ${name}`, last_body: { t: "media", kind, name, caption: (a?.caption as string) || undefined } } : x));
     // The upload plays: a picture is compressed first unless it goes as it is.
@@ -1708,7 +1774,9 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_media_url: () => null,
   messenger_media_open: () => undefined,
   messenger_open_url: (a) => { window.open(String(a?.url), '_blank', 'noopener'); },
+  messenger_share_out: (a) => { console.info('[demo] share out by', a?.via); },
   messenger_links_inspect: (a) => ((a?.links ?? []) as string[]).map((l) => mockInspect(l)),
+  messenger_link_incoming: () => null,
   messenger_contact_link: (a) => {
     const c = mockContacts.find((x) => x.pubkey === a?.pubkey);
     const s = a?.server ? mockPrivateServers.find((x) => x.id === a.server) : undefined;
@@ -2157,12 +2225,16 @@ Object.assign(devMocks, demoCallMocks({
 // The call nodes of the settings: net/callNodesDemo.ts.
 Object.assign(devMocks, demoCallNodeMocks());
 
+/** Commands whose arguments the browser demo does not print. */
+const SECRET_ARGS = new Set(['messenger_share_out']);
+
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke<T>(cmd, args);
   }
-  console.warn(`[dev-browser] messenger invoke('${cmd}')`, args ?? '');
+  // A text shared out carries an invitation's secret: its words stay out of the log.
+  console.warn(`[dev-browser] messenger invoke('${cmd}')`, SECRET_ARGS.has(cmd) ? '…' : (args ?? ''));
   return devMocks[cmd]?.(args) as T;
 }
 
@@ -2234,10 +2306,22 @@ export const messengerApi = {
   },
   /** Open an http(s) link in the system browser. */
   openUrl: (url: ExternalUrl) => invoke<void>('messenger_open_url', { url }),
+  /**
+   * A text into another app (shareOut.ts): `send` the phone's list of apps,
+   * `sms` its SMS app, `mail` a letter (a computer has this one alone).
+   */
+  shareOut: (via: 'send' | 'sms' | 'mail', text: string, subject?: string) =>
+    invoke<void>('messenger_share_out', { via, text, subject: subject ?? null }),
 
   links: {
     /** One answer per link, in the order asked. Asks nothing of the network. */
     inspect: (links: InternalLinkText[]) => invoke<LinkView[]>('messenger_links_inspect', { links }),
+    /**
+     * The link the system handed to the app (a `veydan://…` clicked outside
+     * it), once: its card, or why it is not opened from outside; null when
+     * none waits. Fails while the messenger cannot read it: the link waits.
+     */
+    incoming: () => invoke<LinkView | null>('messenger_link_incoming'),
     /**
      * The link of a person, to share. With `server` (a private server of
      * mine), the link of the private chat there: it carries the server's card.
@@ -2375,6 +2459,13 @@ export const messengerApi = {
     react: (messageId: string, emoji: string) => invoke<MessengerMessage>('messenger_dm_react', { messageId, emoji }),
     delete: (messageId: string, forEveryone: boolean) => invoke<void>('messenger_dm_delete', { messageId, forEveryone }),
     retry: (messageId: string) => invoke<void>('messenger_dm_retry', { messageId }),
+    /**
+     * Forward messages of `sourceChat` (at most 100) to chats of contacts and
+     * groups of mine (at most 10). `hideSender`: they go as mine, without
+     * «forwarded from». `comment` goes first, as a text of its own.
+     */
+    forward: (sourceChat: string, messageIds: string[], targets: string[], hideSender: boolean, comment: string | null = null) =>
+      invoke<MessengerForwardResult[]>('messenger_forward', { sourceChat, messageIds, targets, hideSender, comment: comment?.trim() || null }),
     relation: (peer: string) => invoke<MessengerRelation>('messenger_dm_relation', { peer }),
     /**
      * A request may carry the secret of the peer's invitation, and with a
@@ -2645,6 +2736,26 @@ export const messengerApi = {
     history: (group: string, before: number, limit = 200) => invoke<number>('messenger_group_history', { group, before, limit }),
   },
 
+  /** The phone's gallery in the sheet of the paperclip (attach/AndroidMediaLibrary). */
+  gallery: {
+    access: () => invoke<'full' | 'partial' | 'denied'>('messenger_gallery_access'),
+    request: () => invoke<'full' | 'partial' | 'denied'>('messenger_gallery_request'),
+    recent: (o: { cursor?: string; limit: number; kind?: 'image' | 'video'; album?: string }) =>
+      invoke<{ items: MessengerGalleryItem[]; cursor?: string }>('messenger_gallery_recent', {
+        cursor: o.cursor ?? null, limit: o.limit, kind: o.kind ?? null, album: o.album ?? null,
+      }),
+    albums: () => invoke<{ id: string; title: string; count: number }[]>('messenger_gallery_albums'),
+    /** An address of the app's server of files, never base64. */
+    thumb: (uri: string, side: number) => invoke<string>('messenger_gallery_thumb', { uri, side }),
+    /** The addresses of thumbnails handed out answer no more: the gallery is read anew. */
+    forgetThumbs: () => invoke<void>('messenger_gallery_forget_thumbs'),
+    /** Which of the items chosen in the grid the app may still read, each by its own row. */
+    readable: (uris: string[]) => invoke<string[]>('messenger_gallery_readable', { uris }),
+    /** The system camera: the address of the shot, `null` when given up; refused with `camera_denied`. */
+    capture: (kind: 'photo' | 'video') => invoke<string | null>('messenger_gallery_capture', { kind }),
+    /** The system's Photo Picker. */
+    pick: (multiple: boolean, kind: 'image' | 'video' | 'media') => invoke<string[]>('messenger_gallery_pick', { multiple, kind }),
+  },
   media: {
     servers: () => invoke<MessengerMediaServer[]>('messenger_media_servers'),
     putServer: (input: MessengerMediaServerInput) => invoke<MessengerMediaServer>('messenger_media_server_put', { input }),
@@ -2663,9 +2774,11 @@ export const messengerApi = {
     grantAccess: () => invoke<void>('messenger_media_grant_access'),
     /**
      * A picked file as the composer holds it (Android copies `content://` in first).
-     * A file over `MAX_SEND_BYTES` is refused with `err.file_too_large`.
+     * A file over `MAX_SEND_BYTES` is refused with `err.file_too_large`. On a phone a HEIC photo
+     * becomes a JPEG (`note: 'unsupported_format'` when it could not, and goes as a file);
+     * `asFile` (the item «Файл»): it goes as it is.
      */
-    importPicked: (path: string) => invoke<MessengerPicked>('messenger_media_import', { path }),
+    importPicked: (path: string, asFile = false) => invoke<MessengerPicked>('messenger_media_import', { path, asFile }),
     /**
      * A file pasted into a chat that the webview handed over as bytes, picked like `importPicked`.
      * Up to `MAX_PASTE_BYTES` (`err.file_too_large`); a picture is named by what its bytes are.
@@ -2674,11 +2787,11 @@ export const messengerApi = {
       invoke<MessengerPicked>('messenger_media_import_bytes', { name: name ?? null, dataBase64: await blobToBase64(blob) }),
     /** What a computer's clipboard holds when the webview handed over nothing: picked paths (copied files, or its picture as a PNG). */
     pasteClipboard: () => invoke<string[]>('messenger_clipboard_paste'),
-    /** `batch`: the same for files picked together. `original`: a picture goes as it is, not compressed. */
+    /** `batch`: the same for files picked together, and the place of this one among them (from 0). `original`: a picture goes as it is, not compressed. */
     /** `poster`: a frame of a video, the other side's preview before it fetches the file. */
     /** `captionFmt`: `md` when the caption is written in Markdown. */
-    sendFile: (to: string, path: string, caption?: string, batch?: string, original = false, poster: MessengerPoster | null = null, captionFmt: TextFormat | null = null) =>
-      invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, captionFmt: caption?.trim() ? captionFmt : null, batch: batch ?? null, original, poster }),
+    sendFile: (to: string, path: string, caption?: string, batch?: MessengerBatch, original = false, poster: MessengerPoster | null = null, captionFmt: TextFormat | null = null) =>
+      invoke<MessengerMessage>('messenger_dm_send_file', { to, path, caption: caption?.trim() || null, captionFmt: caption?.trim() ? captionFmt : null, batch: batch?.id ?? null, pos: batch?.pos ?? null, original, poster }),
     download: (messageId: string, manual: boolean) => invoke<string | null>('messenger_media_download', { messageId, manual }),
     /** The file is on a server only its sender named (neither the project's nor mine): fetched only by hand. */
     foreignServer: (messageId: string) => invoke<boolean>('messenger_media_foreign_server', { messageId }),

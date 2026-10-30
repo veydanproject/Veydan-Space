@@ -16,10 +16,14 @@
     onback?: () => void;
     /** The × of the head (default true); a question with its own «Отмена» has none (design kit, dialog on a phone). */
     closable?: boolean;
+    /** Pulled up it grows to the whole screen (the head is then the grip), down it shrinks back, then closes. */
+    expandable?: boolean;
+    /** The name a screen reader says when the sheet has no title (default the title). */
+    label?: string;
     children: Snippet;
   }
 
-  let { open, title = '', onclose, onback, closable = true, children }: Props = $props();
+  let { open, title = '', onclose, onback, closable = true, expandable = false, label, children }: Props = $props();
 
   let sheetEl = $state<HTMLDivElement>();
   let dragY = $state(0);
@@ -28,11 +32,13 @@
   let viewH = $state(typeof window === 'undefined' ? 800 : window.innerHeight);
   let startY = 0;
   let startH = 0;
+  let full = $state(false);
 
   const cap = $derived(Math.max(160, Math.round((viewH - kb) * 0.95)));
 
   $effect(() => {
     if (open) dragY = 0;
+    else full = false;
   });
 
   $effect(() => {
@@ -53,14 +59,21 @@
 
   function onPointerMove(e: PointerEvent) {
     if (!dragging) return;
-    dragY = Math.max(0, e.clientY - startY);
+    const dy = e.clientY - startY;
+    // Up is only counted (the sheet stays on the bottom edge); down moves it.
+    dragY = expandable && !full ? Math.max(-60, dy) : Math.max(0, dy);
   }
 
   function onPointerUp() {
     if (!dragging) return;
     dragging = false;
-    if (dragY > Math.min(120, startH * 0.25)) onclose();
-    else dragY = 0;
+    const moved = dragY;
+    dragY = 0;
+    if (expandable && moved < -40 && !full) full = true;
+    else if (moved > Math.min(120, startH * 0.25)) {
+      if (full) full = false;
+      else onclose();
+    }
   }
 
   onDestroy(() => {
@@ -78,12 +91,14 @@
     in:sheetIn
     out:sheetOut
     class:dragging
+    class:full
     role="dialog"
     aria-modal="true"
-    aria-label={title}
-    style:transform="translateY({dragY}px)"
+    aria-label={label ?? title}
+    style:transform="translateY({Math.max(0, dragY)}px)"
     style:bottom="{kb}px"
-    style:max-height="{cap}px"
+    style:max-height="{full ? viewH - kb : cap}px"
+    style:height={full ? `${viewH - kb}px` : undefined}
     style:padding-bottom={kb > 0 ? '12px' : undefined}
   >
     <div
@@ -129,6 +144,8 @@
     transition: transform var(--dur-base) var(--ease-drawer);
   }
   .m-sheet.dragging { transition: none; }
+  .m-sheet.full { border-radius: 0; padding-top: var(--sat); }
+  .m-sheet.full .body { flex: 1 1 auto; }
   .handle {
     touch-action: none;
     padding: 10px 0 8px;

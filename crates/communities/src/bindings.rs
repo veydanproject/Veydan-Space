@@ -59,7 +59,7 @@ pub fn channels_ts() -> String {
     out += &export::<FeedCursorView>(&cfg, "Where the next page starts: `next` of the page before, passed back as it came.");
     out += &export::<FeedPageView>(&cfg, "A page of `channel_history` or `channel_thread`; `asked`: the relays were asked for more, which comes as `channel.message`.");
     out += &export::<UploadView>(&cfg, "A file of mine on its way to the hosts of a channel (`channel_media_send`, `channel_uploads`); its progress comes as `channel.media`.");
-    out += &export::<crate::commands::ImportedFile>(&cfg, "A file picked to be sent, a file of the device now (`channel_media_import`); `url`: where the page reads a video for its frame.");
+    out += &export::<crate::commands::ImportedFile>(&cfg, "A file picked to be sent, a file of the device now (`channel_media_import`); `url`: where the page reads a video for its frame; `preview`: a picture of it; `note`: `unsupported_format`, a photo that goes as a file.");
     out += &export::<ChannelPreview>(&cfg, "The card of a channel from its link, before joining (`channel_preview_link`).");
     out += &export::<StoragePlanView>(&cfg, "Where the files of a new channel of mine live (`channel_storage_plan`): the free public media of the messenger without Veydan Cloud.");
     out += &export::<InviteView>(&cfg, "An invitation to a channel, one that came to me (`in`) or one I sent (`out`).");

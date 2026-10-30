@@ -703,6 +703,12 @@ impl MediaService {
         }
     }
 
+    /// Where a file of a chat of `server` (`None`: the home set) is
+    /// uploaded to: the public bases of my enabled servers there.
+    pub async fn bases_of(&self, server: Option<&str>) -> Vec<String> {
+        self.own_bases(server).await
+    }
+
     /// Public bases of our enabled servers of `server` (`None`: the home
     /// set): mirrors to try on download. A private chat's file is asked of
     /// its server's alone, so the home set never hears of it.

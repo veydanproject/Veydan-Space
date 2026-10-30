@@ -20,6 +20,10 @@
 //! forwarding call, it belongs in a messenger crate.
 
 pub mod push;
+// The phone's gallery in the sheet of the paperclip, and its decoder of HEIC.
+pub mod gallery;
+// «Поделиться» outside Veydan: a text into another app.
+pub mod share_out;
 // Notifications of a computer: the app shows them itself while it runs.
 #[cfg(desktop)]
 pub mod desktop_notify;
@@ -57,6 +61,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::path::Path;
 use crate::media_server::MediaServer;
+use messenger_media::common::Common;
 #[cfg(desktop)]
 use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
@@ -1169,6 +1174,33 @@ pub async fn messenger_dm_send_text(
     .await
 }
 
+/// Forward messages of `source_chat` to `targets` (chat ids, at most
+/// `MAX_FORWARD_TARGETS`: direct chats with contacts, groups where I may
+/// write), at most `MAX_FORWARD_MESSAGES`, in the order of the chat.
+/// `hide_sender`: they go as mine, without «forwarded from». `comment`
+/// goes first, as a text of its own. One result per chat
+/// (`messenger_runtime::forward`).
+#[tauri::command]
+pub async fn messenger_forward(
+    source_chat: String,
+    message_ids: Vec<String>,
+    targets: Vec<String>,
+    hide_sender: bool,
+    comment: Option<String>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<Vec<messenger_runtime::ForwardResult>> {
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger
+            .runtime_unlocked()
+            .await?
+            .forward(&source_chat, &message_ids, &targets, hide_sender, comment.as_deref())
+            .await
+            .map_err(map_err)
+    })
+    .await
+}
+
 /// `fmt` as for a new text: an edit says how its text is written.
 #[tauri::command]
 pub async fn messenger_dm_edit(
@@ -1526,6 +1558,8 @@ pub async fn messenger_dm_send_file(
     caption_fmt: Option<String>,
     // The same for files picked together: they are shown as one album.
     batch: Option<String>,
+    // The place of the file among those of `batch`, from 0.
+    pos: Option<u32>,
     original: Option<bool>,
     // A frame the UI took from a video, shown before the file is fetched.
     poster: Option<messenger_runtime::Poster>,
@@ -1544,7 +1578,7 @@ pub async fn messenger_dm_send_file(
             &local,
             caption.as_deref(),
             TextFormat::from_name(caption_fmt.as_deref()),
-            batch.as_deref(),
+            batch.as_deref().map(|b| (b, pos)),
             original.unwrap_or(false),
             poster,
         )
@@ -1560,19 +1594,78 @@ pub async fn messenger_dm_send_file(
 /// computer's picker has let in. A file over 1 GiB is refused
 /// (`err.file_too_large`), a `content://` one before it is copied and
 /// with the name its source gives (`err.file_too_large: IMG_1.mp4`).
+///
+/// A photo of a format not every client shows (HEIC) is written as a JPEG
+/// in place of the copy (`messenger_media::common`; a phone only): it is a
+/// photo from here on, `IMG_1.jpg`. One the phone cannot read stays as it
+/// is and goes as a file, said by `note` (`unsupported_format`). `as_file`
+/// (the item «Файл»): the file goes as it is, whatever it is. A shot of
+/// the camera is deleted from the cache once the import is through, never
+/// before: a copy that failed (no room, a read that broke off) leaves it
+/// where it was.
 #[tauri::command]
 pub async fn messenger_media_import(
     path: String,
+    as_file: Option<bool>,
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Picked> {
-    let rt = messenger.runtime_unlocked().await?;
-    let copied = path.starts_with("content://");
-    let local = import_picked(&app, &path, rt.config().data_dir()).await?;
-    if !copied && !was_picked(&app, &local, rt.config().data_dir()) {
-        return Err(AppError::Other(NOT_PICKED.into()));
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let imported = async {
+            let rt = messenger.runtime_unlocked().await?;
+            let copied = path.starts_with("content://");
+            let local = import_picked(&app, &path, rt.config().data_dir()).await?;
+            if !copied && !was_picked(&app, &local, rt.config().data_dir()) {
+                return Err(AppError::Other(NOT_PICKED.into()));
+            }
+            // Only a copy of the app's own is converted: the user's file is never touched.
+            let (local, note) = if copied && as_file != Some(true) {
+                common_step(local, platform_decoder(&app).as_deref()).await
+            } else {
+                (local, None)
+            };
+            let mut view = picked_view(&app, &rt, &local).await?;
+            view.note = note;
+            Ok(view)
+        };
+        then_forget(imported.await, gallery::forget_capture(&app, &path)).await
+    })
+    .await
+}
+
+/// `note` of a picked photo the phone could not convert: it goes as a file.
+const NOTE_UNSUPPORTED: &str = "unsupported_format";
+
+/// The decoder of the platform the app keeps (`gallery::offer_decoder`); none on a computer.
+fn platform_decoder(app: &tauri::AppHandle) -> Option<Arc<dyn messenger_media::common::PictureConverter>> {
+    app.try_state::<messenger_media::common::PlatformDecoder>().map(|d| d.0.clone())
+}
+
+/// The common step of every way a file comes into a chat's composer
+/// (the pickers, the sheet, the camera, the clipboard; platform-spec 7.4):
+/// the app's own copy of a photo of a format not every client shows is
+/// written as a JPEG in its place; one the decoder cannot read stays and
+/// is said by its note (`unsupported_format`). Only a copy of the app's is
+/// given here.
+async fn common_step(
+    local: std::path::PathBuf,
+    decoder: Option<&dyn messenger_media::common::PictureConverter>,
+) -> (std::path::PathBuf, Option<&'static str>) {
+    match messenger_media::common::to_common(&local, decoder).await {
+        Common::Converted(jpeg) => (jpeg, None),
+        Common::Unsupported => (local, Some(NOTE_UNSUPPORTED)),
+        Common::AsIs => (local, None),
     }
-    picked_view(&app, &rt, &local).await
+}
+
+/// What an import ended with; `forget` (the shot of the camera leaves the
+/// cache) runs only once it went through: a failed one keeps its source.
+async fn then_forget<T>(imported: CmdResult<T>, forget: impl std::future::Future<Output = ()>) -> CmdResult<T> {
+    if imported.is_ok() {
+        forget.await;
+    }
+    imported
 }
 
 /// A file in the composer as `messenger_media_import` gives it.
@@ -1583,14 +1676,16 @@ async fn picked_view(app: &tauri::AppHandle, rt: &MessengerRuntime, local: &Path
         "video" if messenger_runtime::passive(&picked.mime) => app.state::<MediaServer>().url(local, &picked.mime).await,
         _ => None,
     };
-    Ok(Picked { picked, url })
+    Ok(Picked { picked, url, note: None })
 }
 
 /// A file pasted into a chat that the webview handed over as bytes (a
 /// screenshot, a picture copied in a browser): written to `outgoing/` and
-/// picked from there, as `messenger_media_import` gives a picked file.
-/// Base64: a phone's IPC has no raw bodies. Up to `MAX_PASTE_BYTES`
-/// (`err.file_too_large`); a larger file is attached by its path.
+/// picked from there, as `messenger_media_import` gives a picked file,
+/// through the same common step (a HEIC of a phone's clipboard becomes a
+/// JPEG, or goes as a file with its note). Base64: a phone's IPC has no
+/// raw bodies. Up to `MAX_PASTE_BYTES` (`err.file_too_large`); a larger
+/// file is attached by its path.
 #[tauri::command]
 pub async fn messenger_media_import_bytes(
     name: Option<String>,
@@ -1604,8 +1699,21 @@ pub async fn messenger_media_import_bytes(
     }
     let bytes = B64.decode(data_base64.as_bytes()).map_err(|_| AppError::Other("the pasted file is not base64".into()))?;
     let rt = messenger.runtime_unlocked().await?;
-    let local = rt.import_pasted(name.as_deref(), &bytes).await.map_err(map_err)?;
-    picked_view(&app, &rt, &local).await
+    let (local, note) = import_pasted(&rt, name.as_deref(), &bytes, platform_decoder(&app).as_deref()).await?;
+    let mut view = picked_view(&app, &rt, &local).await?;
+    view.note = note;
+    Ok(view)
+}
+
+/// Pasted bytes as the app's own copy in `outgoing/`, through the common step.
+async fn import_pasted(
+    rt: &MessengerRuntime,
+    name: Option<&str>,
+    bytes: &[u8],
+    decoder: Option<&dyn messenger_media::common::PictureConverter>,
+) -> CmdResult<(std::path::PathBuf, Option<&'static str>)> {
+    let local = rt.import_pasted(name, bytes).await.map_err(map_err)?;
+    Ok(common_step(local, decoder).await)
 }
 
 /// What a computer's clipboard holds for a chat when the webview handed
@@ -1908,6 +2016,9 @@ pub struct Picked {
     #[serde(flatten)]
     picked: messenger_runtime::PickedView,
     url: Option<String>,
+    /// What the composer tells of it: `unsupported_format`, a photo that goes as a file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<&'static str>,
 }
 
 /// The address the webview reads the attachment of a message at, when it
@@ -1955,6 +2066,27 @@ pub async fn messenger_links_inspect(
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
         messenger.runtime()?.links_inspect(&links).await.map_err(map_err)
+    })
+    .await
+}
+
+/// The link the system handed to the app (a `veydan://…` clicked outside
+/// it, `veydan_shell::links`), once: its card, or why it is not opened from
+/// outside. Asked at the start of the page and after every
+/// `links://incoming`. While the messenger cannot read it (locked, not
+/// started) the link stays with the shell, and this answers the error.
+#[tauri::command]
+pub async fn messenger_link_incoming(
+    app: tauri::AppHandle,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<Option<LinkView>> {
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        let runtime = messenger.runtime()?;
+        let Some(link) = veydan_shell::links::take(&app) else {
+            return Ok(None);
+        };
+        runtime.link_incoming(&link).await.map(Some).map_err(map_err)
     })
     .await
 }
@@ -2595,6 +2727,105 @@ mod tests {
 
         let copied = copy_picked(picked("fits.bin", &file), &data_dir, 100).await.unwrap();
         assert_eq!(std::fs::read(&copied).unwrap().len(), 100, "exactly the limit goes");
+    }
+
+    /// A shot of the camera leaves the cache only once its import went
+    /// through: a copy that failed (here the read broke off) keeps it, and
+    /// it may be picked again (ROO-144, return 1).
+    #[tokio::test]
+    async fn a_shot_of_the_camera_stays_when_its_copy_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let shot = dir.path().join("attach-capture").join("shot.jpg");
+        std::fs::create_dir_all(shot.parent().unwrap()).unwrap();
+        std::fs::write(&shot, b"\xFF\xD8 the shot").unwrap();
+        let data_dir = dir.path().join(DATA_SUBDIR);
+        let forget = || async { std::fs::remove_file(&shot).unwrap() };
+
+        let broken = veydan_shell::FileSource {
+            name: "shot.jpg".into(),
+            len: None,
+            open: Arc::new(|| Err(std::io::Error::other("no room left"))),
+        };
+        let failed = then_forget(copy_picked(broken, &data_dir, 1 << 20).await, forget()).await;
+        assert!(failed.is_err());
+        assert!(shot.exists(), "the shot is kept");
+
+        let copied = then_forget(copy_picked(picked("shot.jpg", &shot), &data_dir, 1 << 20).await, forget()).await.unwrap();
+        assert!(!shot.exists(), "it goes once the copy is the app's own");
+        assert_eq!(std::fs::read(&copied).unwrap(), b"\xFF\xD8 the shot");
+    }
+
+    /// The decoder of a phone in a test: a JPEG of its own, or a failure.
+    struct Decoder {
+        fail: bool,
+    }
+
+    #[async_trait]
+    impl messenger_media::common::PictureConverter for Decoder {
+        async fn to_jpeg(&self, _src: &Path, dst: &Path, _max_pixels: u64, _quality: u8) -> Result<(), String> {
+            if self.fail {
+                return Err("not readable".into());
+            }
+            std::fs::write(dst, b"\xFF\xD8\xFF\xE0 a jpeg").map_err(|e| e.to_string())
+        }
+    }
+
+    /// The first bytes of a HEIC of an iPhone.
+    fn heic_bytes() -> Vec<u8> {
+        let mut b = 24u32.to_be_bytes().to_vec();
+        b.extend_from_slice(b"ftypheic\0\0\0\0mif1heic");
+        b.extend_from_slice(b"\0\0\0\x08meta");
+        b
+    }
+
+    /// A store of secrets in memory: the runtime of a test without the lock.
+    #[derive(Default)]
+    struct Memory(std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>);
+
+    #[async_trait]
+    impl SecretStore for Memory {
+        async fn get(&self, key: &str) -> messenger_core::Result<Option<Zeroizing<Vec<u8>>>> {
+            Ok(self.0.lock().unwrap().get(key).cloned().map(Zeroizing::new))
+        }
+        async fn put(&self, key: &str, value: &[u8]) -> messenger_core::Result<()> {
+            self.0.lock().unwrap().insert(key.into(), value.to_vec());
+            Ok(())
+        }
+        async fn delete(&self, key: &str) -> messenger_core::Result<()> {
+            self.0.lock().unwrap().remove(key);
+            Ok(())
+        }
+        async fn is_unlocked(&self) -> bool {
+            true
+        }
+    }
+
+    /// A HEIC pasted from a phone's clipboard takes the common step of any
+    /// import: a photo `.jpg` (`image/jpeg`, kind `image`) when the decoder
+    /// reads it; one it cannot read stays as it was and goes as a file with
+    /// its note; a computer (no decoder) leaves it a file, as before.
+    #[tokio::test]
+    async fn a_pasted_heic_takes_the_common_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MessengerConfig::new(dir.path().join(DATA_SUBDIR));
+        let rt = MessengerRuntime::start(config, Arc::new(Memory::default())).await.unwrap();
+
+        let (jpeg, note) = import_pasted(&rt, Some("IMG_7.heic"), &heic_bytes(), Some(&Decoder { fail: false })).await.unwrap();
+        assert_eq!(note, None);
+        let view = rt.picked(&jpeg).await.unwrap();
+        assert_eq!((view.name.as_str(), view.mime.as_str(), view.kind.as_str()), ("IMG_7.jpg", "image/jpeg", "image"));
+        assert_eq!(std::fs::read_dir(jpeg.parent().unwrap()).unwrap().count(), 1, "the HEIC copy went");
+
+        let (kept, note) = import_pasted(&rt, Some("IMG_8.heic"), &heic_bytes(), Some(&Decoder { fail: true })).await.unwrap();
+        assert_eq!(note, Some(NOTE_UNSUPPORTED));
+        assert_eq!(std::fs::read(&kept).unwrap(), heic_bytes(), "it goes as it was");
+        let view = rt.picked(&kept).await.unwrap();
+        assert_eq!((view.name.as_str(), view.kind.as_str()), ("IMG_8.heic", "file"));
+
+        let (desktop, note) = import_pasted(&rt, Some("IMG_9.heic"), &heic_bytes(), None).await.unwrap();
+        assert_eq!(note, None);
+        assert_eq!(desktop.file_name().unwrap(), "IMG_9.heic");
+        rt.shutdown().await;
     }
 
     /// A path that is not `content://` is read only when the user picked it:

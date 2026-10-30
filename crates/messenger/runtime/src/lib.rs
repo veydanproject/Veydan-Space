@@ -23,6 +23,7 @@ pub mod bindings;
 pub mod call_nodes;
 pub mod calls;
 pub mod cards;
+pub mod forward;
 pub mod groups;
 pub mod link;
 pub mod meta;
@@ -73,6 +74,7 @@ pub use messenger_dm::{
     Action as DmAction, ChatView, MessageView, ReactionView, RelationView, UI_EVENT_CHAT_READ, UI_EVENT_CHAT_RECEIPT,
     UI_EVENT_CONTACT_PRIVATE_UPDATED, UI_EVENT_EMOJI_UPDATED, UI_EVENT_OWN_PRIVATE_UPDATED, UI_EVENT_UI_PREFS_UPDATED,
 };
+pub use forward::{ForwardResult, ForwardSkip, MAX_FORWARD_MESSAGES, MAX_FORWARD_TARGETS};
 pub use media::{passive, PickedView, Poster, Recording};
 pub use avatars::{AvatarPreview, UI_EVENT_AVATAR_READY};
 pub use cards::{ContactPrivateView, OwnPrivateView};
@@ -215,6 +217,14 @@ impl MessengerRuntime {
         // Installs from before the choice existed keep the project's servers.
         if settings::get(&store, relays::KEY_MODE).await?.is_none() && identity.get().await?.is_some() {
             settings::set(&store, relays::KEY_MODE, "veydan").await?;
+        }
+        // The bridge: a new install starts on `auto`, written now so that the
+        // identity made later does not read as an install from before; an
+        // install from before the default changed keeps `off` until the user
+        // chooses. A choice already made is never touched.
+        if settings::get(&store, net::KEY_MODE).await?.is_none() {
+            let mode = if identity.get().await?.is_some() { net::NetMode::Off } else { net::NetMode::Auto };
+            settings::set(&store, net::KEY_MODE, mode.as_str()).await?;
         }
         let signer = load_signer(&identity).await;
         // Before any connection is made: the way to the servers the app was
@@ -1192,6 +1202,86 @@ mod tests {
         let of_manifest = &manifest.media_for_region("default")[0].id;
         assert!(ids.contains(of_manifest), "{of_manifest} from the manifest: {ids:?}");
         assert!(ids.contains(&"blossom-mine-example".to_string()), "the user's own server stays: {ids:?}");
+        rt.shutdown().await;
+    }
+
+    async fn start_net_mode(cfg: &MessengerConfig, secrets: &Arc<MemorySecretStore>) -> (MessengerRuntime, net::NetMode) {
+        let rt = MessengerRuntime::start(cfg.clone(), secrets.clone()).await.unwrap();
+        let mode = rt.net_status().await.unwrap().mode;
+        (rt, mode)
+    }
+
+    #[tokio::test]
+    async fn bridge_is_auto_in_a_new_install_and_stays_after_registration() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let secrets = Arc::new(MemorySecretStore::unlocked());
+        let (rt, mode) = start_net_mode(&cfg, &secrets).await;
+        assert_eq!(mode, net::NetMode::Auto);
+        assert_eq!(settings::get(&rt.store, net::KEY_MODE).await.unwrap().as_deref(), Some("auto"), "written at the first start");
+        rt.identity().create("pw").await.unwrap();
+        rt.shutdown().await;
+        let (rt, mode) = start_net_mode(&cfg, &secrets).await;
+        assert_eq!(mode, net::NetMode::Auto, "registration does not turn it off");
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn bridge_is_off_in_an_install_from_before_and_a_choice_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let secrets = Arc::new(MemorySecretStore::unlocked());
+        let rt = MessengerRuntime::start(cfg.clone(), secrets.clone()).await.unwrap();
+        // An install from before: identity, and no `net.mode` key.
+        rt.identity().create("pw").await.unwrap();
+        settings::delete(&rt.store, net::KEY_MODE).await.unwrap();
+        rt.shutdown().await;
+        let (rt, mode) = start_net_mode(&cfg, &secrets).await;
+        assert_eq!(mode, net::NetMode::Off);
+        assert_eq!(settings::get(&rt.store, net::KEY_MODE).await.unwrap().as_deref(), Some("off"), "the key is written once");
+        rt.shutdown().await;
+
+        for chosen in [net::NetMode::On, net::NetMode::Off, net::NetMode::Auto] {
+            let rt = MessengerRuntime::start(cfg.clone(), secrets.clone()).await.unwrap();
+            settings::set(&rt.store, net::KEY_MODE, chosen.as_str()).await.unwrap();
+            rt.shutdown().await;
+            let (rt, mode) = start_net_mode(&cfg, &secrets).await;
+            assert_eq!(mode, chosen, "a choice stays over a start");
+            rt.shutdown().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn the_bridge_asks_nothing_with_own_or_no_servers() {
+        use crate::ServersMode;
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+        for servers in [Some(ServersMode::Own), None] {
+            match servers {
+                Some(mode) => rt.relays.set_servers_mode(mode).await.unwrap(),
+                None => settings::delete(&rt.store, relays::KEY_MODE).await.unwrap(),
+            }
+            for mode in [net::NetMode::Off, net::NetMode::On, net::NetMode::Auto] {
+                settings::set(&rt.store, net::KEY_MODE, mode.as_str()).await.unwrap();
+                let err = rt.net_check().await.unwrap_err().to_string();
+                assert!(err.contains("net_unavailable_own_servers"), "{err}");
+                assert!(rt.net_trouble().await.unwrap().is_none());
+                let heard = UiEvent {
+                    name: "error".into(),
+                    payload: serde_json::json!({ "family": "media", "error": "err.network" }),
+                };
+                rt.net_heard(&heard).await;
+                rt.net_watch().await.unwrap();
+                rt.net_tick().await.unwrap();
+                for next in [net::NetMode::Auto, net::NetMode::On, net::NetMode::Off] {
+                    let status = rt.net_set_mode(next).await.unwrap();
+                    assert_eq!(status.mode, next, "the choice is kept");
+                    assert!(!status.available && !status.active);
+                }
+                assert_eq!(rt.net.asked(), 0, "{servers:?} {mode:?}: nothing was asked");
+            }
+        }
         rt.shutdown().await;
     }
 

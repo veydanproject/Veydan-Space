@@ -73,11 +73,15 @@ pub struct Recording {
     pub bytes: Vec<u8>,
 }
 
-struct AttachmentMeta {
-    kind: MediaKind,
-    mime: String,
-    duration_ms: Option<u64>,
-    waveform: Option<Vec<u8>>,
+pub(crate) struct AttachmentMeta {
+    pub(crate) kind: MediaKind,
+    pub(crate) mime: String,
+    pub(crate) duration_ms: Option<u64>,
+    pub(crate) waveform: Option<Vec<u8>>,
+    /// The preview and the size of a file sent already (a forward that
+    /// goes up again): what a video had of its poster.
+    pub(crate) thumb: Option<String>,
+    pub(crate) dim: Option<(u32, u32)>,
 }
 
 /// A picked file waiting in the composer (`MessengerRuntime::picked`).
@@ -537,6 +541,8 @@ impl UploadJob {
                 // The caption lives on the placeholder row, and how it is written.
                 let row = self.dm.message(&placeholder).await.ok().flatten();
                 let caption_format = TextFormat::from_name(row.as_ref().and_then(|m| m.fmt.as_deref()));
+                // A forward that had to go up again says whom it is of.
+                let fwd = row.as_ref().and_then(|m| m.fwd.clone());
                 descriptor.caption = row.and_then(|m| m.text);
                 let caption_format = if descriptor.caption.is_some() { caption_format } else { TextFormat::Plain };
                 // What the app knew before the upload (a recording's kind,
@@ -550,6 +556,7 @@ impl UploadJob {
                     }
                     descriptor.duration_ms = ph.get("duration_ms").and_then(|v| v.as_u64());
                     descriptor.batch = ph.get("batch").and_then(|v| v.as_str()).map(String::from);
+                    descriptor.pos = ph.get("pos").and_then(|v| v.as_u64()).and_then(|p| u32::try_from(p).ok());
                     descriptor.dim = ph.get("dim").and_then(|v| serde_json::from_value::<(u32, u32)>(v.clone()).ok());
                     descriptor.thumb = ph.get("thumb").and_then(|v| v.as_str()).filter(|t| valid_thumb(t)).map(String::from);
                     descriptor.waveform = ph
@@ -557,7 +564,7 @@ impl UploadJob {
                         .and_then(|v| v.as_array())
                         .map(|a| a.iter().filter_map(|x| x.as_u64()).map(|x| x.min(255) as u8).collect());
                 }
-                let envelope = descriptor.to_envelope().with_format(caption_format);
+                let envelope = descriptor.to_envelope().with_format(caption_format).with_fwd(fwd.as_ref());
                 let mut local = serde_json::to_value(&descriptor).unwrap_or_else(|_| serde_json::json!({}));
                 local["local_path"] = serde_json::Value::String(local_path);
                 local["transfer_id"] = serde_json::Value::String(transfer_id.clone());
@@ -752,12 +759,13 @@ impl MessengerRuntime {
         batch: Option<&str>,
         original: bool,
     ) -> Result<MessageView> {
-        self.dm_send_file_with(to, path, caption, TextFormat::Plain, batch, original, None).await
+        self.dm_send_file_with(to, path, caption, TextFormat::Plain, batch.map(|b| (b, None)), original, None).await
     }
 
     /// `dm_send_file` with a frame the UI took from a video (`Poster`):
     /// written anew as the preview the other side sees before it fetches
-    /// the file. A frame that cannot be read is left out.
+    /// the file. A frame that cannot be read is left out. `batch` carries
+    /// the place of the file among those picked with it (`pos`).
     #[allow(clippy::too_many_arguments)]
     pub async fn dm_send_file_with(
         &self,
@@ -765,14 +773,14 @@ impl MessengerRuntime {
         path: &Path,
         caption: Option<&str>,
         caption_format: TextFormat,
-        batch: Option<&str>,
+        batch: Option<(&str, Option<u32>)>,
         original: bool,
         poster: Option<Poster>,
     ) -> Result<MessageView> {
-        if batch.is_some_and(|b| !messenger_media::descriptor::valid_batch(b)) {
+        if batch.is_some_and(|(b, _)| !messenger_media::descriptor::valid_batch(b)) {
             return Err(MessengerError::Invalid("err.bad_batch".into()));
         }
-        self.send_attachment(to, path, caption, caption_format, None, batch, original, poster).await
+        self.send_attachment(to, path, caption, caption_format, None, batch, original, poster, None).await
     }
 
     /// Bytes the user pasted into a chat (a file the webview handed over,
@@ -846,8 +854,8 @@ impl MessengerRuntime {
         let path = dir.join(format!("{}.{ext}", rec.kind.as_str()));
         tokio::fs::write(&path, &rec.bytes).await?;
         let waveform = rec.waveform.map(|w| w.into_iter().take(messenger_media::descriptor::MAX_WAVEFORM).collect::<Vec<u8>>());
-        let meta = AttachmentMeta { kind: rec.kind, mime, duration_ms: rec.duration_ms, waveform };
-        let result = self.send_attachment(to, &path, caption, TextFormat::Plain, Some(meta), None, false, None).await;
+        let meta = AttachmentMeta { kind: rec.kind, mime, duration_ms: rec.duration_ms, waveform, thumb: None, dim: None };
+        let result = self.send_attachment(to, &path, caption, TextFormat::Plain, Some(meta), None, false, None, None).await;
         if result.is_err() {
             let _ = tokio::fs::remove_dir_all(&dir).await;
         }
@@ -855,17 +863,38 @@ impl MessengerRuntime {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn send_attachment(
+    pub(crate) async fn send_attachment(
         &self,
         to: &str,
         path: &Path,
         caption: Option<&str>,
         caption_format: TextFormat,
         meta_override: Option<AttachmentMeta>,
-        batch: Option<&str>,
+        batch: Option<(&str, Option<u32>)>,
         original: bool,
         poster: Option<Poster>,
+        // A forward: the envelope made once the file is up says so.
+        fwd: Option<&messenger_core::Forwarded>,
     ) -> Result<MessageView> {
+        let (placeholder, _, _) = self.start_attachment(to, path, caption, caption_format, meta_override, batch, original, poster, fwd).await?;
+        Ok(placeholder)
+    }
+
+    /// `send_attachment`, with the transfer of the upload and its run:
+    /// the run ends once the message is out, or the upload stopped.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn start_attachment(
+        &self,
+        to: &str,
+        path: &Path,
+        caption: Option<&str>,
+        caption_format: TextFormat,
+        meta_override: Option<AttachmentMeta>,
+        batch: Option<(&str, Option<u32>)>,
+        original: bool,
+        poster: Option<Poster>,
+        fwd: Option<&messenger_core::Forwarded>,
+    ) -> Result<(MessageView, String, tokio::task::JoinHandle<()>)> {
         let keys = self.session_keys().await?;
         let group = to.strip_prefix("group:").map(String::from);
         // A person in the home chat or a private one (`<key>@<server>`).
@@ -903,6 +932,12 @@ impl MessengerRuntime {
             if let Some(w) = m.waveform {
                 fields["waveform"] = serde_json::json!(w);
             }
+            if let Some(t) = m.thumb.filter(|t| valid_thumb(t)) {
+                fields["thumb"] = t.into();
+            }
+            if let Some((w, h)) = m.dim {
+                fields["dim"] = serde_json::json!([w, h]);
+            }
         }
         // A picture says how large it is shown, so the other side keeps
         // its place before the file is there; one sent as it is says so,
@@ -927,9 +962,13 @@ impl MessengerRuntime {
                 }
             }
         }
-        // Files picked together stay together on the other side.
-        if let Some(b) = batch {
+        // Files picked together stay together on the other side, in the
+        // order they were picked.
+        if let Some((b, pos)) = batch {
             fields["batch"] = b.into();
+            if let Some(p) = pos {
+                fields["pos"] = p.into();
+            }
         }
         let placeholder = match (&group, &peer) {
             (Some(g), _) => self.groups().media_placeholder(&keys, g, fields, caption, caption_format).await?,
@@ -946,10 +985,41 @@ impl MessengerRuntime {
         let mut fields = placeholder.media.clone().unwrap_or_else(|| serde_json::json!({}));
         fields["transfer_id"] = serde_json::Value::String(transfer.id.clone());
         messenger_store::messages::set_media_json(&self.store, &placeholder.id, &fields.to_string()).await?;
+        if let Some(f) = fwd {
+            let mut kept = serde_json::json!({ messenger_core::envelope::FIELD_FWD: f });
+            if caption_format.is_markdown() {
+                kept[messenger_core::envelope::FIELD_FMT] = caption_format.name().into();
+            }
+            messenger_store::messages::set_placeholder_envelope(&self.store, &placeholder.id, &kept.to_string()).await?;
+        }
 
         let job = self.upload_job(keys);
-        tokio::spawn(job.run(transfer.id, placeholder.id.clone(), placeholder.chat_id.clone()));
-        Ok(self.dm.message(&placeholder.id).await?.unwrap_or(placeholder))
+        let run = tokio::spawn(job.run(transfer.id.clone(), placeholder.id.clone(), placeholder.chat_id.clone()));
+        Ok((self.dm.message(&placeholder.id).await?.unwrap_or(placeholder), transfer.id, run))
+    }
+
+    /// A copy of `path` named `name` in a folder of its own in `outgoing/`:
+    /// a file the app owns, which its upload may remove.
+    pub(crate) async fn own_copy_of(&self, path: &Path, name: &str) -> Result<PathBuf> {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let dir = self.outgoing().join(format!("{stamp:x}"));
+        tokio::fs::create_dir_all(&dir).await?;
+        let dest = dir.join(name);
+        let src = path.to_path_buf();
+        let copied = {
+            let dest = dest.clone();
+            tokio::task::spawn_blocking(move || copy_to_new(&src, &dest)).await.map_err(|e| MessengerError::Io(e.to_string()))?
+        };
+        if let Err(e) = copied {
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+            return Err(e.into());
+        }
+        Ok(dest)
+    }
+
+    /// Remove a copy `own_copy_of` made.
+    pub(crate) async fn drop_own_copy(&self, path: &Path) {
+        drop_own_copy(&self.outgoing(), path).await;
     }
 
     async fn descriptor_of(&self, message_id: &str) -> Result<(MessageView, MediaDescriptor)> {
@@ -1755,6 +1825,33 @@ mod tests {
         until(async || status_of(&rt, &t).await == "done").await;
         let m = sent(&rt, &t).await;
         assert!(m.get("thumb").is_none() && m.get("dim").is_none(), "{m}");
+        rt.shutdown().await;
+    }
+
+    /// Files picked together say their place among them: each goes when
+    /// its upload ends, the receiver lays the album out by it.
+    #[tokio::test]
+    async fn a_file_of_a_batch_says_its_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let mut rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
+        let backend = MemoryBackend::new("https://mem.example/a");
+        use_memory(&mut rt, &backend);
+        with_session(&rt).await;
+        let peer = Keys::generate().public_key().to_hex();
+        let file = dir.path().join("notes.txt");
+        std::fs::write(&file, vec![7u8; 4096]).unwrap();
+
+        let ph = rt.dm_send_file_with(&peer, &file, None, TextFormat::Plain, Some(("b1234567", Some(2))), false, None).await.unwrap();
+        let t = transfer_of(&ph);
+        until(async || status_of(&rt, &t).await == "done").await;
+        let m = sent(&rt, &t).await;
+        assert_eq!((m["batch"].as_str(), m["pos"].as_u64()), (Some("b1234567"), Some(2)), "{m}");
+
+        let ph = rt.dm_send_file(&peer, &file, None, Some("b1234567"), false).await.unwrap();
+        let t = transfer_of(&ph);
+        until(async || status_of(&rt, &t).await == "done").await;
+        assert!(sent(&rt, &t).await.get("pos").is_none(), "no place said, none sent");
         rt.shutdown().await;
     }
 

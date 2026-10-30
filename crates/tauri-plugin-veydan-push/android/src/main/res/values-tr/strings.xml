@@ -27,6 +27,7 @@
     <string name="veydan_push_link_group_nameless">Grup bağlantısı</string>
     <string name="veydan_push_link_contact">Kişi: %s</string>
     <string name="veydan_push_link_contact_nameless">Kişi</string>
+    <string name="veydan_push_forwarded">İletildi: %s</string>
     <string name="veydan_push_invite">Sizi %s grubuna davet ediyor</string>
     <string name="veydan_push_join_request">%s grubuna katılmak istiyor</string>
     <string name="veydan_push_welcome">%s grubundasınız</string>

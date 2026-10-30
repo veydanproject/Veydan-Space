@@ -161,6 +161,7 @@ pub fn module() -> Module {
                 commands::messenger_emoji_top,
                 commands::messenger_dm_delete,
                 commands::messenger_dm_retry,
+                commands::messenger_forward,
                 commands::messenger_dm_relation,
                 commands::messenger_dm_action,
                 commands::messenger_dm_blocked,
@@ -196,6 +197,7 @@ pub fn module() -> Module {
                 commands::messenger_group_rotate_link,
                 commands::messenger_group_link_qr,
                 commands::messenger_links_inspect,
+                commands::messenger_link_incoming,
                 commands::messenger_contact_link,
                 commands::messenger_link_preview,
                 commands::messenger_group_forget,
@@ -208,6 +210,16 @@ pub fn module() -> Module {
                 commands::messenger_media_server_check,
                 commands::messenger_dm_send_file,
                 commands::messenger_media_import,
+                commands::gallery::messenger_gallery_access,
+                commands::gallery::messenger_gallery_request,
+                commands::gallery::messenger_gallery_recent,
+                commands::gallery::messenger_gallery_albums,
+                commands::gallery::messenger_gallery_thumb,
+                commands::gallery::messenger_gallery_forget_thumbs,
+                commands::gallery::messenger_gallery_readable,
+                commands::gallery::messenger_gallery_capture,
+                commands::gallery::messenger_gallery_pick,
+                commands::share_out::messenger_share_out,
                 commands::messenger_media_import_bytes,
                 commands::messenger_clipboard_paste,
                 commands::messenger_media_download,
@@ -267,6 +279,9 @@ fn setup(app: &mut tauri::App) -> SetupResult {
     // The phone's side of a call; see commands/call_android.rs.
     #[cfg(target_os = "android")]
     app.handle().plugin(tauri_plugin_veydan_call::init())?;
+    // The phone's gallery in the sheet of the paperclip; see commands/gallery.rs.
+    #[cfg(target_os = "android")]
+    app.handle().plugin(tauri_plugin_veydan_media::init())?;
     let core = app.state::<Core>();
     // The switch is the shell's now: the old setting goes.
     tauri::async_runtime::block_on(veydan_core::settings::delete(
@@ -274,6 +289,8 @@ fn setup(app: &mut tauri::App) -> SetupResult {
         commands::OLD_ENABLED_KEY,
     ))?;
     app.manage(MessengerState::new(app.handle().clone(), &core.app_data_dir));
+    // The phone's decoder of HEIC, for the photos of chats and of channels (commands/gallery.rs).
+    commands::gallery::offer_decoder(app.handle());
     let media_server = media_server::MediaServer::default();
     app.manage(media_server.clone());
     // The same server for the files of the channels (media_server.rs).

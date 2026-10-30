@@ -6,16 +6,32 @@
 // caption: several picked together go as one album (one `batch`, the
 // caption with the last), what did not go waits again. A picture shows
 // as a small square of itself (`channel_picked_preview`), asked once
-// for each path and let go with the tray.
+// for each path and let go with the tray. A phone's file is made the
+// module's own copy as it is added (`channel_media_import`), as a chat's
+// is: a HEIC is a JPEG in the tray already, or a file the tray says so of.
 
 import { videoPoster } from '$lib/messenger/seams/shared';
-import { channelsApi, type ChannelPoster, type TextFormat } from './api';
+import { channelsApi, type ChannelPoster, type ImportedFile, type TextFormat } from './api';
 
 export interface PickedFile {
   key: number;
   /** A path of the disk, or what the picker of a phone gives (`content://`). */
   path: string;
   name: string;
+  /** Picked in the sheet with «без сжатия»: a photo goes as it is. */
+  original?: boolean;
+  /** Picked by «Файл»: it goes as it is (a HEIC is not made a JPEG). */
+  asFile?: boolean;
+  /** `unsupported_format`: a phone's photo its decoder could not read; it goes as a file. */
+  note?: 'unsupported_format';
+  /** A video of the copy, where the webview reads it for its frame. */
+  url?: string;
+}
+
+/** How the files of the sheet of the paperclip go (its «без сжатия», its item «Файл»). */
+export interface AddOpts {
+  original?: boolean;
+  asFile?: boolean;
 }
 
 /** The name of a picked path, for the tray: `content://…/IMG_1.jpg` too. */
@@ -50,13 +66,22 @@ export const pickedIcon = (name: string) => (isPicture(name) ? 'image' : isVideo
 export type PreviewOf = (path: string) => Promise<string | null>;
 
 /** A video about to go: the file it goes as (a phone's made a file of the device) and the frame its readers see before they fetch it. */
-export type VideoOf = (path: string) => Promise<{ path: string; poster: ChannelPoster | null }>;
+export type VideoOf = (path: string, asFile?: boolean) => Promise<{ path: string; poster: ChannelPoster | null }>;
 
 /** As a chat's composer does: the frame is taken where the webview reads the video (the messenger's server of files). */
-export const takeVideo: VideoOf = async (path) => {
-  const f = await channelsApi.mediaImport(path);
+export const takeVideo: VideoOf = async (path, asFile = false) => {
+  const f = await channelsApi.mediaImport(path, asFile);
   return { path: f.path, poster: f.url ? await videoPoster(f.url) : null };
 };
+
+/** A phone's file made the module's own copy, with its picture and what to tell of it. */
+export type ImportOf = (path: string, asFile: boolean) => Promise<ImportedFile>;
+
+/** The frame of a video the webview reads at `url`. */
+export type PosterOf = (url: string) => Promise<ChannelPoster | null>;
+
+/** A file of a phone, by what the picker of a phone gives: it is copied as it is added. */
+export const isPhoneFile = (path: string) => path.startsWith('content://');
 
 /** How a file of the tray goes. */
 export interface SendOpts {
@@ -66,6 +91,10 @@ export interface SendOpts {
   batch?: string;
   /** A video: the frame its readers see before they fetch it. */
   poster?: ChannelPoster | null;
+  /** A photo goes as it is, not made smaller. */
+  original?: boolean;
+  /** It goes as it is, as a file (a HEIC is not made a JPEG). */
+  asFile?: boolean;
 }
 
 export class Picked {
@@ -79,15 +108,50 @@ export class Picked {
   private seq = 0;
   /** The paths asked, each with what tells its answer from that of an earlier ask. */
   private asked = new Map<string, object>();
+  /** The copies of phone's files on their way, by the key of the file. */
+  private copying = new Map<number, Promise<void>>();
 
   constructor(
     private previewOf: PreviewOf = (path) => channelsApi.pickedPreview(path),
     private videoOf: VideoOf = takeVideo,
+    private importOf: ImportOf = (path, asFile) => channelsApi.mediaImport(path, asFile),
+    private posterOf: PosterOf = videoPoster,
   ) {}
 
-  add(paths: string[]) {
-    this.files = [...this.files, ...paths.map((path) => ({ key: ++this.seq, path, name: pathName(path) }))];
-    for (const path of paths) this.ask(path);
+  add(paths: string[], opts: AddOpts = {}) {
+    const how = { ...(opts.original ? { original: true } : {}), ...(opts.asFile ? { asFile: true } : {}) };
+    const added = paths.map((path) => ({ key: ++this.seq, path, name: pathName(path), ...how }));
+    this.files = [...this.files, ...added];
+    for (const f of added) {
+      if (isPhoneFile(f.path)) this.copy(f);
+      else this.ask(f.path);
+    }
+  }
+
+  /** What the tray tells of its files: a photo that goes as a file, by its name. */
+  get unsupported(): string[] {
+    return this.files.flatMap((f) => (f.note === 'unsupported_format' ? [f.name] : []));
+  }
+
+  /**
+   * A phone's file becomes the module's own copy at once (a HEIC its JPEG):
+   * the tray holds the copy, under its name, with its picture. One that
+   * could not be copied stays as picked, its picture asked as before, and
+   * the sending tells what is wrong with it. One taken out meanwhile is let be.
+   */
+  private copy(f: PickedFile) {
+    const job = this.importOf(f.path, !!f.asFile).then(
+      (got) => {
+        if (!this.files.some((x) => x.key === f.key)) return;
+        const note = got.note === 'unsupported_format' ? { note: 'unsupported_format' as const } : {};
+        const url = got.url ? { url: got.url } : {};
+        this.files = this.files.map((x) => (x.key === f.key ? { ...x, path: got.path, name: got.name, ...note, ...url } : x));
+        this.asked.set(got.path, {});
+        this.set(got.path, got.preview ?? null);
+      },
+      () => { if (this.files.some((x) => x.key === f.key)) this.ask(f.path); },
+    );
+    this.copying.set(f.key, job.finally(() => this.copying.delete(f.key)));
   }
 
   remove(key: number) {
@@ -143,16 +207,23 @@ export class Picked {
    * the rest; it and those after it wait again, and the refusal is thrown.
    */
   async send(go: (path: string, opts: SendOpts) => Promise<unknown>, caption = '', fmt: TextFormat | null = null) {
+    // A phone's file goes as its copy: one still being made is waited for.
+    while (this.copying.size) await Promise.all(this.copying.values());
     const files = this.files;
     this.files = [];
     const batch = files.length > 1 ? newBatch() : undefined;
     for (const [i, f] of files.entries()) {
       try {
         const last = i === files.length - 1 && !!caption;
-        const opts: SendOpts = { caption: last ? caption : undefined, fmt: last && fmt ? fmt : undefined, batch };
+        const opts: SendOpts = {
+          caption: last ? caption : undefined, fmt: last && fmt ? fmt : undefined, batch,
+          ...(f.original ? { original: true } : {}), ...(f.asFile ? { asFile: true } : {}),
+        };
         // A video goes with a frame of it, as in a chat; without one when it cannot be taken. A phone's
         // file of no known kind goes as the copy the import makes (a video among them with its frame).
-        const video = isVideo(f.name) || kindUnknown(f.path, f.name) ? await this.videoOf(f.path).catch(() => null) : null;
+        const video = f.url
+          ? { path: f.path, poster: await this.posterOf(f.url).catch(() => null) }
+          : isVideo(f.name) || kindUnknown(f.path, f.name) ? await this.videoOf(f.path, !!f.asFile).catch(() => null) : null;
         await (video ? go(video.path, { ...opts, poster: video.poster }) : go(f.path, opts));
       } catch (e) {
         this.files = [...files.slice(i), ...this.files];

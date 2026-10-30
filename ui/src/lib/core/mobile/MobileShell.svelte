@@ -17,6 +17,7 @@
   import { hub } from '$lib/core/mobile/hub.svelte';
   import HubSheet from '$lib/core/mobile/HubSheet.svelte';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
+  import LinkInbox from '$lib/core/links/LinkInbox.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
   import { leavesOff, registry } from '$lib/core/registry';
   import Wizard from '$lib/core/onboarding/Wizard.svelte';
@@ -113,6 +114,8 @@
   {#each overlays as overlay (overlay.key)}
     <overlay.component />
   {/each}
+  <!-- A link clicked outside the app, read once it is unlocked. -->
+  <LinkInbox />
   {#if withHub}
     <HubSheet open={hub.isOpen} onclose={() => hub.close()} />
   {/if}

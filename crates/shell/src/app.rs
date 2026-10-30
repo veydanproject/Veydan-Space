@@ -289,6 +289,8 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
         w.apply_to_context(&mut context, product.name);
     }
     let windows = hold_windows(context.config_mut());
+    // The schemes of links the product takes from the system (`crate::links`).
+    let link_schemes = crate::links::schemes(context.config());
 
     let modules = with_shell(modules);
     let start = match Start::of(product, &modules) {
@@ -305,8 +307,10 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
     let builder = builder
         // Must be first: second launch is closed here before other plugins run.
         // No key of its own: the plugin takes the product's identifier.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             crate::tray::show_main_window(app);
+            // A link clicked outside starts the app again with it.
+            crate::links::received_args(app, &args);
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -328,6 +332,7 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
     let builder = builder
         .manage(StartState::default())
         .setup(move |app| {
+            crate::links::setup(app.handle(), link_schemes);
             // A --workdir profile keeps the same layout inside its own directory.
             #[cfg(desktop)]
             let app_data_dir = match workdir {
@@ -364,7 +369,16 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
             }
         });
     #[cfg(mobile)]
-    builder.run(context).expect("error while running veydan");
+    builder
+        .build(context)
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            // Back in front: a link clicked outside may wait (`crate::links`).
+            #[cfg(target_os = "android")]
+            if let tauri::RunEvent::WindowEvent { event: tauri::WindowEvent::Resumed, .. } = _event {
+                crate::links::resumed(_app);
+            }
+        });
 }
 
 #[cfg(test)]

@@ -58,7 +58,8 @@
         "crates/messenger",
         "crates/messenger-app",
         "crates/desktop-notify",
-        "crates/tauri-plugin-veydan-push"
+        "crates/tauri-plugin-veydan-push",
+        "crates/tauri-plugin-veydan-media"
       ]
     },
     "communities": {
@@ -171,7 +172,8 @@
         "opener",
         "barcode-scanner",
         "veydan-push",
-        "veydan-call"
+        "veydan-call",
+        "veydan-media"
       ],
       "extra": [
         "apps/space/extension"

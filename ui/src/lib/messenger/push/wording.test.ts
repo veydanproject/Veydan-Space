@@ -31,6 +31,13 @@ describe('a notification line', () => {
     expect(bodyLine(null, t)).toBe('New message');
   });
 
+  it('says a forward is one, with what it carries', () => {
+    expect(bodyLine({ t: 'forwarded', body: { t: 'text', text: 'hi' } }, t)).toBe('Forwarded: hi');
+    expect(bodyLine({ t: 'forwarded', body: media('voice', { duration_ms: 12_400 }) }, t)).toBe('Forwarded: 🎤 Voice message (0:12)');
+    const ru = messengerTranslations.ru as Record<string, string>;
+    expect(ru.msg_notice_forwarded.replace('{text}', '📷 Фото')).toBe('Переслано: 📷 Фото');
+  });
+
   it('tells a link by what it names', () => {
     expect(bodyLine({ t: 'link', link: 'web', title: 'example.org/a' }, t)).toBe('🔗 example.org/a');
     expect(bodyLine({ t: 'link', link: 'group', title: 'Club' }, t)).toBe('🔗 Group “Club”');

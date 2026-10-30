@@ -40,7 +40,7 @@
     /** Answer it (a swipe to the left on a touch screen); absent where it cannot be answered. */
     onreply?: () => void;
     /** A computer: the buttons of a hovered message; `react` absent where one cannot react. */
-    actions?: { react?: (anchor: HTMLElement) => void; more: (anchor: HTMLElement) => void };
+    actions?: { react?: (anchor: HTMLElement) => void; forward?: () => void; more: (anchor: HTMLElement) => void };
     /** Its menu is open. */
     selected?: boolean;
   }
@@ -94,6 +94,7 @@
   <div class="bubble" class:bare class:deleted={m.deleted} class:failed={m.status === 'failed'} oncontextmenu={(e) => onmenu(e, m)}
     use:longpress={{ onpress: (p) => onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), m) }}>
     {#if author && showAuthor}<span class="author" style="color: {tint(m.sender_pubkey)}">{author(m.sender_pubkey)}</span>{/if}
+    {#if m.fwd && !m.deleted}<span class="fwd">{m.fwd.name ? $t('msg_fwd_from', { name: m.fwd.name }) : $t('msg_fwd_from_nameless')}</span>{/if}
     {#if m.reply_to && !m.deleted}
       {@const thumb = replyThumb(m.reply_to)}
       <button class="reply" onclick={() => onreplyclick(m.reply_to!.id)}>
@@ -141,6 +142,7 @@
       <div class="acts">
         {#if onreply}<button class="act" onclick={onreply} title={$t('msg_message_reply')} aria-label={$t('msg_message_reply')}><Icon name="reply" size={18} /></button>{/if}
         {#if actions.react}<button class="act" onclick={(e) => actions.react?.(e.currentTarget)} title={$t('msg_react_title')} aria-label={$t('msg_react_title')} aria-haspopup="true"><Icon name="smile-plus" size={18} /></button>{/if}
+        {#if actions.forward}<button class="act" onclick={actions.forward} title={$t('msg_fwd_forward')} aria-label={$t('msg_fwd_forward')}><Icon name="forward" size={18} /></button>{/if}
         <button class="act" onclick={(e) => actions.more(e.currentTarget)} title={$t('msg_message_more')} aria-label={$t('msg_message_more')} aria-haspopup="menu"><Icon name="more-vertical" size={18} /></button>
       </div>
     {/if}
@@ -193,6 +195,9 @@
     .bubble { max-width: 86%; -webkit-touch-callout: none; }
     .line { padding-inline: var(--sp-3); touch-action: pan-y; }
   }
+  /* Forwarded: whose it was, over what it says. */
+  .fwd { font-size: var(--fs-2xs); font-style: italic; color: var(--text-2); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+  .line.out .fwd { color: var(--bubble-out-meta); }
   .author { font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
   .tomb { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
   .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: 1; white-space: nowrap; }

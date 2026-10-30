@@ -97,6 +97,8 @@ internal sealed class Body {
   data class Invite(val groupName: String) : Body()
   data class JoinRequest(val groupName: String) : Body()
   data class Welcome(val groupName: String) : Body()
+  /** A text or a file somebody forwarded: told as `body` is. */
+  data class Forwarded(val body: Body) : Body()
 
   companion object {
     fun from(json: JSONObject?): Body? {
@@ -114,6 +116,7 @@ internal sealed class Body {
         "invite" -> Invite(json.str("group_name") ?: "")
         "join_request" -> JoinRequest(json.str("group_name") ?: "")
         "welcome" -> Welcome(json.str("group_name") ?: "")
+        "forwarded" -> from(json.optJSONObject("body"))?.let { Forwarded(it) }
         else -> null
       }
     }

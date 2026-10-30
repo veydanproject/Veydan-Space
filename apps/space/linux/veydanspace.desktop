@@ -3,6 +3,7 @@ Categories=Network;WebBrowser;Security;
 Comment=Multi-Accounting Workspace
 Exec={{exec}} %U
 Icon={{icon}}
+MimeType=x-scheme-handler/veydan;
 Name={{name}}
 StartupNotify=true
 StartupWMClass={{exec}}

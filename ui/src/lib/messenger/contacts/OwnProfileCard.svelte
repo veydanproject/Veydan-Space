@@ -3,21 +3,27 @@
 
 <!--
   My profile as others see it (avatar, name, bio, links, website), my
-  phone as only I see it, "Send my card", and the editor.
+  phone as only I see it, «Поделиться контактом» (a new link for one
+  person into another app, ShareOutSheet), and the editor.
 -->
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { pushState } from '$app/navigation';
+  import { page } from '$app/state';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
-  import { profileLabel } from '../api';
+  import { messengerApi, messengerError, profileLabel } from '../api';
   import { linkActions } from '../content/actions';
   import type { ExternalUrl } from '../content/types';
-  import ShareDialog from '../content/ShareDialog.svelte';
+  import ShareOutSheet from '../content/ShareOutSheet.svelte';
+  import { contactShareItem, type ShareOutItem } from '../content/shareOut';
+  import { inviteStore } from '../invites/inviteStore.svelte';
   import Avatar from './Avatar.svelte';
   import BioView from './BioView.svelte';
   import SocialLinks from './SocialLinks.svelte';
   import ProfileEditor from './ProfileEditor.svelte';
-  import { profileDraft } from './profileDraft';
+  import { profileDraft } from './profileDraft.svelte';
   import MyQrButton from '../invites/MyQrButton.svelte';
 
   interface Props {
@@ -29,6 +35,10 @@
   // An edit left unpublished (another chat, the media settings) opens again as it was.
   let editing = $state(profileDraft.has(messengerStore.identity?.pubkey));
   let sharing = $state(false);
+  let shareItem = $state<ShareOutItem | null>(null);
+  let shareId = '';
+  let shareBusy = $state(false);
+  let shareError = $state('');
   let saved = $state(false);
   let savedTimer: ReturnType<typeof setTimeout> | null = null;
   let copied = $state(false);
@@ -45,8 +55,41 @@
     if (!messengerStore.ownPrivate && canAct) messengerStore.loadOwnPrivate().catch(() => {});
   });
 
-  function closed(ok: boolean) {
+  // Editing is a step of history, as in the group's info: the phone's back
+  // button and gesture leave the editor for the profile (the typing is kept
+  // by the editor's onDestroy), not the settings for the chats.
+  /** The step of history editing made, while it is the current one. */
+  let stepped = false;
+
+  function step() {
+    try { pushState('', { ...page.state, profileEdit: true }); stepped = true; } catch { stepped = false; }
+  }
+
+  function startEdit() {
+    editing = true;
+    saved = false;
+    step();
+  }
+
+  /** Back from editing to the profile: over the step it made, which ends it. */
+  function stopEdit() {
     editing = false;
+    if (stepped && page.state.profileEdit) window.history.back();
+    stepped = false;
+  }
+
+  // An edit kept from a moment ago opens at once: its step is made as it mounts.
+  // (The step of an earlier mount may still be the current one: it is taken over.)
+  onMount(() => { if (!editing) return; if (page.state.profileEdit) stepped = true; else step(); });
+
+  // A back left the step of editing.
+  $effect(() => {
+    void page.state.profileEdit;
+    if (editing && stepped && !page.state.profileEdit) { editing = false; stepped = false; }
+  });
+
+  function closed(ok: boolean) {
+    stopEdit();
     if (!ok) return;
     saved = true;
     if (savedTimer) clearTimeout(savedTimer);
@@ -66,6 +109,28 @@
     }).catch(() => {});
   }
 
+  /**
+   * «Поделиться контактом»: a link for one person and a week, a new one each
+   * time (as «Скопировать ссылку» of MyQr), so a link sent on lets in one
+   * more at most. Nothing else of me goes with it.
+   */
+  async function share() {
+    if (shareBusy) return;
+    shareBusy = true;
+    shareError = '';
+    try {
+      const v = await inviteStore.create({ kind: 'link', label: '' });
+      if (!v.link) throw new Error('no link');
+      shareId = v.id;
+      shareItem = contactShareItem(v.link);
+      sharing = true;
+    } catch (e) {
+      shareError = messengerError(e);
+    } finally {
+      shareBusy = false;
+    }
+  }
+
   const shortSite = (u: string) => u.replace(/^https?:\/\//i, '').replace(/\/$/, '');
 </script>
 
@@ -75,7 +140,7 @@
     {#if !editing}
       <span class="title-actions">
         <MyQrButton disabled={!canAct} />
-        <button class="btn btn-ghost btn-sm" disabled={!canAct} onclick={() => { editing = true; saved = false; }}>
+        <button class="btn btn-ghost btn-sm" disabled={!canAct} onclick={startEdit}>
           <Icon name="pencil" size={12} />{$t('msg_own_edit')}
         </button>
       </span>
@@ -126,17 +191,18 @@
     {#if saved}<div class="saved" role="status"><Icon name="check" size={13} />{$t('msg_profile_saved')}</div>{/if}
 
     <div class="send">
-      <button class="btn btn-primary btn-sm" disabled={!canAct} onclick={() => (sharing = true)}>
-        <Icon name="send" size={13} />{$t('msg_profile_send_card')}
+      <button class="btn btn-primary btn-sm" disabled={!canAct || shareBusy} onclick={share}>
+        <Icon name="share" size={13} />{$t('msg_share_out')}
       </button>
-      <p class="hint">{$t('msg_profile_send_card_hint')}</p>
+      <p class="hint">{$t('msg_share_out_hint')}</p>
+      {#if shareError}<div class="error-msg">{shareError}</div>{/if}
     </div>
   {:else}
     <ProfileEditor onclose={closed} {onopenmedia} />
   {/if}
 </div>
 
-<ShareDialog bind:open={sharing} card={{ pubkey: null }} />
+<ShareOutSheet bind:open={sharing} item={shareItem} title={$t('msg_share_out')} qr={() => messengerApi.links.contactQr(shareId)} />
 
 <style>
   .own { min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: var(--sp-3); }

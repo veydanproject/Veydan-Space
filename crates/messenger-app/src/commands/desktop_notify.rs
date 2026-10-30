@@ -97,6 +97,8 @@ pub struct Words {
     /// `{name}` is the person's.
     pub link_contact: String,
     pub link_contact_nameless: String,
+    /// A forwarded message; `{text}` is the line of what it carries.
+    pub forwarded: String,
     /// The body of a ringing call's notification.
     pub call_audio: String,
     pub call_video: String,
@@ -131,6 +133,7 @@ impl Default for Words {
             link_group_nameless: "Link to a group".into(),
             link_contact: "Contact: {name}".into(),
             link_contact_nameless: "Contact".into(),
+            forwarded: "Forwarded: {text}".into(),
             call_audio: "Incoming call".into(),
             call_video: "Incoming video call".into(),
             call_answer: "Answer".into(),
@@ -202,6 +205,7 @@ fn body_line(body: &Body, words: &Words) -> String {
                 format!("{emoji} {word}")
             }
         }
+        Body::Forwarded { body } => words.forwarded.replace("{text}", &body_line(body, words)),
         Body::Invite { group_name } => format!("{}: {group_name}", words.group_invite),
         Body::JoinRequest { group_name } => format!("{}: {group_name}", words.group_request),
         Body::Welcome { group_name } => format!("{}: {group_name}", words.group_welcome),
@@ -1250,6 +1254,19 @@ mod tests {
             duration_ms,
             batch: batch.map(String::from),
         })
+    }
+
+    #[test]
+    fn a_forward_is_said_with_what_it_carries() {
+        let fwd = |b: Option<Body>| Some(Body::Forwarded { body: Box::new(b.unwrap()) });
+        let line = |b| shown_line(word(notice(ChatKind::Dm, b), &words()).unwrap());
+        assert_eq!(line(fwd(Some(Body::Text { text: "hi".into() }))).as_deref(), Some("Forwarded: hi"));
+        assert_eq!(line(fwd(media("image", "a.png", None, None, None))).as_deref(), Some("Forwarded: 📷 Photo"));
+        let mut ru = words();
+        ru.forwarded = "Переслано: {text}".into();
+        ru.voice = "Голосовое".into();
+        let w = word(notice(ChatKind::Dm, fwd(media("voice", "v.weba", None, Some(12_400), None))), &ru).unwrap();
+        assert_eq!(shown_line(w).as_deref(), Some("Переслано: 🎤 Голосовое (0:12)"));
     }
 
     #[test]

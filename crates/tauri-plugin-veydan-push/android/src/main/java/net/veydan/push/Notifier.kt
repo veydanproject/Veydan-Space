@@ -236,7 +236,12 @@ internal object Notifier {
   private fun line(context: Context, notice: Notice): String {
     val more = if (notice.count > 1) " " + context.getString(R.string.veydan_push_more, notice.count - 1) else ""
     val body = notice.body ?: return context.getString(R.string.veydan_push_one) + more
-    val text = when (body) {
+    return request(context, notice) + words(context, body) + more
+  }
+
+  /** What one message is, without who sent it. */
+  private fun words(context: Context, body: Body): String =
+    when (body) {
       is Body.Text -> body.text
       is Body.Link -> when (body.link) {
         "group" -> "🔗 " + (body.title?.let { context.getString(R.string.veydan_push_link_group, it) }
@@ -249,9 +254,8 @@ internal object Notifier {
       is Body.Invite -> context.getString(R.string.veydan_push_invite, body.groupName)
       is Body.JoinRequest -> context.getString(R.string.veydan_push_join_request, body.groupName)
       is Body.Welcome -> context.getString(R.string.veydan_push_welcome, body.groupName)
+      is Body.Forwarded -> context.getString(R.string.veydan_push_forwarded, words(context, body.body))
     }
-    return request(context, notice) + text + more
-  }
 
   /** Files are told by their name; a picture, a video, a recording by what it is. */
   private fun media(context: Context, body: Body.Media): String {

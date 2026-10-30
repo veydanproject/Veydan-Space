@@ -25,8 +25,14 @@
   import { linkStore } from './linkStore.svelte';
   import type { LinkSegment } from './types';
 
-  interface Props { link: LinkSegment }
-  let { link: l }: Props = $props();
+  interface Props {
+    link: LinkSegment;
+    /** Whether a channel not here yet asks its relay for its name. A link
+        from outside the app does not: the relay is the link's, and the
+        user has not pressed anything yet. */
+    preview?: boolean;
+  }
+  let { link: l, preview = true }: Props = $props();
 
   const view = $derived(l.type === 'internal' ? linkStore.view(l.link) : null);
 
@@ -42,7 +48,7 @@
     const host = channelHost;
     const v = view;
     cardName = null;
-    if (!host?.linkTitle || v?.kind !== 'channel' || channelRow) return;
+    if (!preview || !host?.linkTitle || v?.kind !== 'channel' || channelRow) return;
     let alive = true;
     host.linkTitle(v.link).then((n) => { if (alive) cardName = n; }).catch(() => {});
     return () => { alive = false; };

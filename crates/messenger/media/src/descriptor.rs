@@ -10,7 +10,7 @@
 //!  "chunks":[{"sha256":"<hex of ciphertext chunk 0>","size":183438}],
 //!  "algo":"aes-256-gcm","key":"<base64>","iv":"<base64>",
 //!  "servers":["https://media.example/bucket"],
-//!  "caption":"look","batch":"<id>","dim":[1280,720]}
+//!  "caption":"look","batch":"<id>","pos":0,"dim":[1280,720]}
 //! ```
 //!
 //! A chunk lives at `<server>/<chunk sha256>` on every listed server. The
@@ -110,6 +110,11 @@ pub struct MediaDescriptor {
     pub caption: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub batch: Option<String>,
+    /// The place of the file among those of its `batch`, from 0: the
+    /// order they were picked in. Each goes when its upload ends, so a
+    /// receiver lays out the album by this, not by the time it came.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pos: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dim: Option<(u32, u32)>,
     /// Length of a recording in milliseconds (voice, circle, audio, video).
@@ -319,6 +324,7 @@ pub(crate) mod tests {
             servers: vec!["https://media.example/bucket".into()],
             caption: Some("look".into()),
             batch: None,
+            pos: None,
             dim: Some((1280, 720)),
             duration_ms: None,
             waveform: None,
@@ -326,6 +332,18 @@ pub(crate) mod tests {
         };
         d.set_key(&FileKey { key: [1; 32], base_nonce: [2; 12] });
         d
+    }
+
+    /// `fwd` (a forward) is no part of the file: a descriptor reads past
+    /// it, as one of a build before the field does, and never writes it.
+    #[test]
+    fn a_forwarded_file_is_the_same_file() {
+        let d = sample();
+        let fwd = messenger_core::Forwarded::named(Some("Анна"));
+        let e = d.to_envelope().with_fwd(Some(&fwd));
+        let back = MediaDescriptor::from_envelope(&Envelope::parse(&e.encode()).unwrap()).unwrap();
+        assert_eq!(back, d);
+        assert!(!serde_json::to_string(&back).unwrap().contains("fwd"));
     }
 
     #[test]
@@ -340,6 +358,19 @@ pub(crate) mod tests {
             d.batch = Some(bad.to_string());
             assert!(d.validate().is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn pos_travels_and_is_optional() {
+        let mut d = sample();
+        d.batch = Some("0123abcd".into());
+        d.pos = Some(2);
+        let json = d.to_envelope().encode();
+        assert!(json.contains(r#""pos":2"#), "{json}");
+        assert_eq!(MediaDescriptor::from_envelope(&Envelope::parse(&json).unwrap()).unwrap().pos, Some(2));
+        let old = sample().to_envelope().encode();
+        assert!(!old.contains("pos"), "{old}");
+        assert_eq!(MediaDescriptor::from_envelope(&Envelope::parse(&old).unwrap()).unwrap().pos, None);
     }
 
     #[test]

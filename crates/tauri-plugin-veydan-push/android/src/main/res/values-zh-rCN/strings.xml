@@ -27,6 +27,7 @@
     <string name="veydan_push_link_group_nameless">群组链接</string>
     <string name="veydan_push_link_contact">联系人：%s</string>
     <string name="veydan_push_link_contact_nameless">联系人</string>
+    <string name="veydan_push_forwarded">转发：%s</string>
     <string name="veydan_push_invite">邀请你加入群组“%s”</string>
     <string name="veydan_push_join_request">申请加入“%s”</string>
     <string name="veydan_push_welcome">你已加入群组“%s”</string>

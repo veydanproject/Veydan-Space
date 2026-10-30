@@ -16,6 +16,8 @@
 //! - `upload` / `download`: several chunks at once, with resume.
 //! - `prepare`: a photo made smaller, its size, the preview the message
 //!   carries, the frame of a video.
+//! - `common`: a picked photo of a format not every client shows (HEIC)
+//!   written anew as a JPEG by the platform's decoder.
 //! - `control`: pause, cancel and "retry now" of a running transfer.
 //! - `progress`: stages, counts, speed and the events the host sees.
 //! - `runs`: a run as another process with the same data folder sees it.
@@ -25,6 +27,7 @@
 //! knows about chats.
 
 pub mod backend;
+pub mod common;
 pub mod control;
 pub mod crypto;
 pub mod descriptor;

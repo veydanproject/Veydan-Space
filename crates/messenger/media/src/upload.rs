@@ -515,6 +515,7 @@ pub async fn upload(
         servers: vec![here],
         caption: params.caption.filter(|c| !c.trim().is_empty()),
         batch: params.batch,
+        pos: None,
         dim: None,
         duration_ms: None,
         waveform: None,

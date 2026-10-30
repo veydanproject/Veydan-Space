@@ -23,5 +23,13 @@ declare namespace App {
     mediaViewer?: boolean;
     /** The info of a group is being edited (messenger/groups/GroupInfo.svelte). */
     groupEdit?: boolean;
+    /** The sheet of the paperclip is open (messenger/attach/sheetBack.ts). */
+    attachSheet?: boolean;
+    /** The mode of choosing messages of a chat is on (messenger/dm/ChatWindow.svelte). */
+    chooseMessages?: boolean;
+    /** The sheet of a forward is open (messenger/content/ForwardDialog.svelte). */
+    forwardSheet?: boolean;
+    /** My profile is being edited (messenger/contacts/OwnProfileCard.svelte). */
+    profileEdit?: boolean;
   }
 }

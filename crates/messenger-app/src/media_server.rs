@@ -12,6 +12,17 @@
 //! one file (`MediaServer::url`); anything else is 404. GET and HEAD, with
 //! one byte range (`Range: bytes=…`), read from the disk a piece at a time.
 //! One request for each connection.
+//!
+//! The small pictures of the phone's gallery in the sheet of the paperclip
+//! (`MediaServer::thumb_url`) take names of a pool of their own, with its
+//! own bound: scrolling through thousands of photos forgets only older
+//! thumbnails, never the name of a video of a chat that plays and seeks.
+//! That pool forgets the thumbnail handed out longest ago (a name handed
+//! out again is the newest), so the page, which keeps fewer addresses than
+//! the pool holds (`THUMB_URLS` of attach/gallery.svelte.ts), never holds
+//! one forgotten here. A thumbnail of an item the app may no longer read
+//! loses its name (`forget_thumb`), and all of them go when the page reads
+//! the gallery anew (`forget_thumbs`, the app came back to the screen).
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -19,8 +30,12 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
-/// Names kept at once; the oldest is forgotten first.
+/// Names kept at once for the files of chats; the oldest is forgotten first.
 const MAX_FILES: usize = 1024;
+/// Names kept at once for the thumbnails of the gallery: a few screens of
+/// a grid, scrolled back and forth. The page keeps fewer (`THUMB_URLS` = 384).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const MAX_THUMBS: usize = 512;
 /// A request head longer than this is refused.
 const MAX_HEAD: usize = 16 * 1024;
 
@@ -37,10 +52,68 @@ struct Names {
     order: VecDeque<String>,
 }
 
+impl Names {
+    /// The name of `path` (served as `mime`), given anew when it has none;
+    /// past `max` names the oldest goes. `renew`: a name handed out again
+    /// is the newest (the pool of thumbnails); else the first hand-out
+    /// counts (the files of chats).
+    fn name(&mut self, path: &Path, mime: &str, max: usize, renew: bool) -> Option<String> {
+        if let Some(t) = self.by_path.get(path).cloned() {
+            if let Some(s) = self.by_token.get_mut(&t) {
+                s.mime = mime.to_string();
+            }
+            if renew {
+                self.order.retain(|o| o != &t);
+                self.order.push_back(t.clone());
+            }
+            return Some(t);
+        }
+        let t = token()?;
+        self.by_token.insert(t.clone(), Served { path: path.to_path_buf(), mime: mime.to_string() });
+        self.by_path.insert(path.to_path_buf(), t.clone());
+        self.order.push_back(t.clone());
+        while self.order.len() > max {
+            if let Some(old) = self.order.pop_front() {
+                if let Some(s) = self.by_token.remove(&old) {
+                    self.by_path.remove(&s.path);
+                }
+            }
+        }
+        Some(t)
+    }
+
+    /// The name of `path` goes: its address answers 404 from now on.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    fn forget(&mut self, path: &Path) {
+        if let Some(t) = self.by_path.remove(path) {
+            self.by_token.remove(&t);
+            self.order.retain(|o| o != &t);
+        }
+    }
+
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    fn clear(&mut self) {
+        *self = Names::default();
+    }
+}
+
+/// The names given out: of the files of chats, and of the thumbnails of the gallery.
+#[derive(Default)]
+struct Pools {
+    files: Names,
+    thumbs: Names,
+}
+
+impl Pools {
+    fn served(&self, token: &str) -> Option<Served> {
+        self.files.by_token.get(token).or_else(|| self.thumbs.by_token.get(token)).cloned()
+    }
+}
+
 /// The server and the files it may give out.
 #[derive(Clone, Default)]
 pub struct MediaServer {
-    names: Arc<Mutex<Names>>,
+    names: Arc<Mutex<Pools>>,
     port: Arc<tokio::sync::OnceCell<u16>>,
 }
 
@@ -63,32 +136,34 @@ impl MediaServer {
     /// server starts with the first one. `None` when it cannot listen.
     pub async fn url(&self, path: &Path, mime: &str) -> Option<String> {
         let port = *self.port.get_or_try_init(|| self.listen()).await.ok()?;
-        let token = {
-            let mut n = self.names.lock().unwrap();
-            match n.by_path.get(path).cloned() {
-                Some(t) => {
-                    if let Some(s) = n.by_token.get_mut(&t) {
-                        s.mime = mime.to_string();
-                    }
-                    t
-                }
-                None => {
-                    let t = token()?;
-                    n.by_token.insert(t.clone(), Served { path: path.to_path_buf(), mime: mime.to_string() });
-                    n.by_path.insert(path.to_path_buf(), t.clone());
-                    n.order.push_back(t.clone());
-                    while n.order.len() > MAX_FILES {
-                        if let Some(old) = n.order.pop_front() {
-                            if let Some(s) = n.by_token.remove(&old) {
-                                n.by_path.remove(&s.path);
-                            }
-                        }
-                    }
-                    t
-                }
-            }
-        };
+        let token = self.names.lock().unwrap().files.name(path, mime, MAX_FILES, false)?;
         Some(format!("http://127.0.0.1:{port}/{token}"))
+    }
+
+    /// The address of a thumbnail of the gallery (a JPEG the plugin wrote
+    /// into the app's cache), named from the pool of thumbnails.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub async fn thumb_url(&self, path: &Path) -> Option<String> {
+        let port = *self.port.get_or_try_init(|| self.listen()).await.ok()?;
+        let token = self.names.lock().unwrap().thumbs.name(path, "image/jpeg", MAX_THUMBS, true)?;
+        Some(format!("http://127.0.0.1:{port}/{token}"))
+    }
+
+    /// The thumbnails at `paths` lose their names (the app may no longer
+    /// read their items): what was handed out for them answers 404.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub fn forget_thumb(&self, paths: &[PathBuf]) {
+        let mut names = self.names.lock().unwrap();
+        for path in paths {
+            names.thumbs.forget(path);
+        }
+    }
+
+    /// Every thumbnail handed out loses its name (the page reads the
+    /// gallery anew: the access may have changed while the app was away).
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub fn forget_thumbs(&self) {
+        self.names.lock().unwrap().thumbs.clear();
     }
 
     async fn listen(&self) -> std::io::Result<u16> {
@@ -137,7 +212,7 @@ fn range(header: Option<&str>, len: u64) -> Result<Option<(u64, u64)>, ()> {
     Ok(Some((start, end)))
 }
 
-async fn serve(stream: TcpStream, names: Arc<Mutex<Names>>) -> std::io::Result<()> {
+async fn serve(stream: TcpStream, names: Arc<Mutex<Pools>>) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream);
     let mut head = String::new();
     loop {
@@ -165,7 +240,7 @@ async fn serve(stream: TcpStream, names: Arc<Mutex<Names>>) -> std::io::Result<(
         .find(|(k, _)| k.trim().eq_ignore_ascii_case("range"))
         .map(|(_, v)| v.trim().to_string());
     let token = target.trim_start_matches('/').split(['?', '#', '/']).next().unwrap_or_default();
-    let served = names.lock().unwrap().by_token.get(token).cloned();
+    let served = names.lock().unwrap().served(token);
     let Some(served) = served else {
         return reply(reader.get_mut(), "404 Not Found", &[], true).await;
     };
@@ -276,5 +351,97 @@ mod tests {
         let other = format!("{}/{}", url.rsplit_once('/').unwrap().0, "0".repeat(64));
         let (head, got) = get(&other, "").await;
         assert!(head.starts_with("HTTP/1.1 404") && got.is_empty(), "{head}");
+    }
+
+    /// Scrolling through more thumbnails than their pool holds forgets
+    /// the oldest thumbnails only: the name of a video of a chat still
+    /// serves its ranges (ROO-110, 1b-2), and a forgotten thumbnail is 404.
+    #[tokio::test]
+    async fn thumbnails_do_not_push_out_the_files_of_chats() {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join("v.mp4");
+        std::fs::write(&video, vec![7u8; 4096]).unwrap();
+        let server = MediaServer::default();
+        let url = server.url(&video, "video/mp4").await.unwrap();
+
+        let thumb = dir.path().join("t.jpg");
+        std::fs::write(&thumb, b"\xFF\xD8thumb").unwrap();
+        let first = server.thumb_url(&thumb).await.unwrap();
+        assert_eq!(server.thumb_url(&thumb).await.unwrap(), first, "one name for a thumbnail");
+        let (head, got) = get(&first, "").await;
+        assert!(head.starts_with("HTTP/1.1 200") && head.contains("Content-Type: image/jpeg"), "{head}");
+        assert_eq!(got, b"\xFF\xD8thumb");
+
+        // Thousands of photos scrolled past, each a name of the pool of thumbnails.
+        for i in 0..(MAX_FILES + MAX_THUMBS) * 4 {
+            server.thumb_url(&dir.path().join(format!("{i}.jpg"))).await.unwrap();
+        }
+        let (head, got) = get(&url, "Range: bytes=100-199\r\n").await;
+        assert!(head.starts_with("HTTP/1.1 206"), "the video still seeks: {head}");
+        assert_eq!(got.len(), 100);
+        let (head, _) = get(&first, "").await;
+        assert!(head.starts_with("HTTP/1.1 404"), "the oldest thumbnail is forgotten: {head}");
+        let n = server.names.lock().unwrap();
+        assert_eq!((n.files.order.len(), n.thumbs.order.len()), (1, MAX_THUMBS));
+    }
+
+    /// The pool of thumbnails forgets the one handed out longest ago: the
+    /// page scrolls forward past the pool and back, and every address it
+    /// keeps (fewer than the pool) still answers; a thumbnail asked again
+    /// is the newest. One forgotten (no access) or all of them (the page
+    /// reads anew) answer 404 at once.
+    #[tokio::test]
+    async fn the_pool_of_thumbnails_keeps_what_was_handed_out_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = MediaServer::default();
+        let path = |i: usize| {
+            let p = dir.path().join(format!("{i}.jpg"));
+            std::fs::write(&p, b"\xFF\xD8").unwrap();
+            p
+        };
+        // What the page keeps: its newest addresses, fewer than the pool.
+        const KEPT: usize = 384;
+        let mut kept: std::collections::VecDeque<(usize, String)> = Default::default();
+        let hand = |i: usize, url: String, kept: &mut std::collections::VecDeque<(usize, String)>| {
+            kept.retain(|(j, _)| *j != i);
+            kept.push_back((i, url));
+            while kept.len() > KEPT {
+                kept.pop_front();
+            }
+        };
+        // Forward through 1 500 tiles, then back to the first, a screen of 24 at a time.
+        let order: Vec<usize> = (0..1500).chain((0..1500).rev()).collect();
+        for screen in order.chunks(24) {
+            for &i in screen {
+                // The page asks only what it does not keep.
+                if kept.iter().any(|(j, _)| *j == i) {
+                    continue;
+                }
+                let url = server.thumb_url(&path(i)).await.unwrap();
+                hand(i, url, &mut kept);
+            }
+            for (_, url) in kept.iter().rev().take(24) {
+                assert!(get(url, "").await.0.starts_with("HTTP/1.1 200"));
+            }
+        }
+        for (i, url) in &kept {
+            assert!(get(url, "").await.0.starts_with("HTTP/1.1 200"), "tile {i} kept by the page is served");
+        }
+
+        // Asked again, the oldest is the newest and outlives those after it.
+        let a = server.thumb_url(&path(5000)).await.unwrap();
+        for i in 6000..6000 + MAX_THUMBS - 1 {
+            server.thumb_url(&path(i)).await.unwrap();
+        }
+        assert_eq!(server.thumb_url(&path(5000)).await.unwrap(), a);
+        server.thumb_url(&path(7000)).await.unwrap();
+        assert!(get(&a, "").await.0.starts_with("HTTP/1.1 200"), "renewed, it stays");
+
+        server.forget_thumb(&[path(5000)]);
+        assert!(get(&a, "").await.0.starts_with("HTTP/1.1 404"), "an item out of the access");
+        let b = server.thumb_url(&path(7000)).await.unwrap();
+        server.forget_thumbs();
+        assert!(get(&b, "").await.0.starts_with("HTTP/1.1 404"), "all of them, on a new read");
+        assert_ne!(server.thumb_url(&path(7000)).await.unwrap(), b, "a new name, not the old one");
     }
 }

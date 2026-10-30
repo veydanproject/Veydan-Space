@@ -28,8 +28,8 @@ fn r5<A, B, C, D, E, R>(_: fn(A, B, C, D, E) -> R) -> usize {
 fn r6<A, B, C, D, E, G, R>(_: fn(A, B, C, D, E, G) -> R) -> usize {
     std::mem::size_of::<R>()
 }
-#[allow(clippy::too_many_arguments)]
-fn r9<A, B, C, D, E, G, H, I, J, R>(_: fn(A, B, C, D, E, G, H, I, J) -> R) -> usize {
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn r10<A, B, C, D, E, G, H, I, J, K, R>(_: fn(A, B, C, D, E, G, H, I, J, K) -> R) -> usize {
     std::mem::size_of::<R>()
 }
 
@@ -172,6 +172,7 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_emoji_top", r2(crate::commands::messenger_emoji_top)));
     v.push(("messenger_dm_delete", r3(crate::commands::messenger_dm_delete)));
     v.push(("messenger_dm_retry", r2(crate::commands::messenger_dm_retry)));
+    v.push(("messenger_forward", r6(crate::commands::messenger_forward)));
     v.push(("messenger_dm_relation", r2(crate::commands::messenger_dm_relation)));
     v.push(("messenger_dm_action", r5(crate::commands::messenger_dm_action)));
     v.push(("messenger_groups_list", r1(crate::commands::messenger_groups_list)));
@@ -196,8 +197,18 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_media_server_remove", r2(crate::commands::messenger_media_server_remove)));
     v.push(("messenger_media_server_set_enabled", r3(crate::commands::messenger_media_server_set_enabled)));
     v.push(("messenger_media_server_check", r2(crate::commands::messenger_media_server_check)));
-    v.push(("messenger_dm_send_file", r9(crate::commands::messenger_dm_send_file)));
-    v.push(("messenger_media_import", r3(crate::commands::messenger_media_import)));
+    v.push(("messenger_dm_send_file", r10(crate::commands::messenger_dm_send_file)));
+    v.push(("messenger_media_import", r4(crate::commands::messenger_media_import)));
+    v.push(("messenger_gallery_access", r1(crate::commands::gallery::messenger_gallery_access)));
+    v.push(("messenger_gallery_request", r1(crate::commands::gallery::messenger_gallery_request)));
+    v.push(("messenger_gallery_recent", r5(crate::commands::gallery::messenger_gallery_recent)));
+    v.push(("messenger_gallery_albums", r1(crate::commands::gallery::messenger_gallery_albums)));
+    v.push(("messenger_gallery_thumb", r3(crate::commands::gallery::messenger_gallery_thumb)));
+    v.push(("messenger_gallery_forget_thumbs", r1(crate::commands::gallery::messenger_gallery_forget_thumbs)));
+    v.push(("messenger_gallery_readable", r2(crate::commands::gallery::messenger_gallery_readable)));
+    v.push(("messenger_gallery_capture", r2(crate::commands::gallery::messenger_gallery_capture)));
+    v.push(("messenger_gallery_pick", r3(crate::commands::gallery::messenger_gallery_pick)));
+    v.push(("messenger_share_out", r4(crate::commands::share_out::messenger_share_out)));
     v.push(("messenger_media_import_bytes", r4(crate::commands::messenger_media_import_bytes)));
     v.push(("messenger_clipboard_paste", r1(crate::commands::messenger_clipboard_paste)));
     v.push(("messenger_media_download", r3(crate::commands::messenger_media_download)));
@@ -214,6 +225,7 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_media_url", r3(crate::commands::messenger_media_url)));
     v.push(("messenger_open_url", r2(crate::commands::messenger_open_url)));
     v.push(("messenger_links_inspect", r2(crate::commands::messenger_links_inspect)));
+    v.push(("messenger_link_incoming", r2(crate::commands::messenger_link_incoming)));
     v.push(("messenger_contact_link", r3(crate::commands::messenger_contact_link)));
     v.push(("messenger_private_link_qr", r2(crate::commands::messenger_private_link_qr)));
     v.push(("messenger_link_preview", r2(crate::commands::messenger_link_preview)));

@@ -755,6 +755,19 @@ pub async fn set_media_json(store: &Store, id: &str, media_json: &str) -> Result
     Ok(())
 }
 
+/// What the placeholder of an upload keeps of the envelope to come
+/// (`fmt` of its caption, `fwd` of a forward). Only a placeholder
+/// (`local:…`) is changed: the envelope of a message is what was sent.
+pub async fn set_placeholder_envelope(store: &Store, id: &str, envelope_json: &str) -> Result<()> {
+    sqlx::query("UPDATE msg_messages SET envelope_json = ? WHERE id = ? AND id LIKE 'local:%'")
+        .bind(envelope_json)
+        .bind(id)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
 /// After a restart no upload is running: placeholders show as paused, all
 /// but these (another process with the data folder may be sending them).
 pub async fn pause_uploading_except(store: &Store, ids: &[String]) -> Result<u64> {

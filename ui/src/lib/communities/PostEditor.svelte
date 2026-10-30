@@ -24,6 +24,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { AttachButton, onKeyboard, onPhone, myKey, type MdBlock } from '$lib/messenger/seams/shared';
   import FeedPost from './FeedPost.svelte';
+  import PickedNotes from './PickedNotes.svelte';
   import { pickedIcon, type Picked } from './picked.svelte';
   import { channelsApi, mediaOf, type ChannelDetail, type FeedItemView, type TextFormat } from './api';
   import { channelError } from './errors';
@@ -273,7 +274,7 @@
     {/each}
     </div>
     {#if docked && picked && canAttach}
-      <span class="bar-attach"><AttachButton onfiles={(p) => picked?.add(p)} /></span>
+      <span class="bar-attach"><AttachButton onfiles={(p, o) => picked?.add(p, o)} surface="post" {chatId} /></span>
     {/if}
   </div>
 {/snippet}
@@ -305,11 +306,12 @@
       {/each}
       {#if canAttach && !(narrow && touch)}
         <div class="thumb add" title={$t('chan_add')}>
-          <AttachButton onfiles={(p) => picked?.add(p)} />
+          <AttachButton onfiles={(p, o) => picked?.add(p, o)} surface="post" {chatId} />
           <span class="add-label" aria-hidden="true"><Icon name="plus" size={18} />{$t('chan_add')}</span>
         </div>
       {/if}
     </div>
+    <PickedNotes {picked} />
     {#if files.length}<p class="hint">{$t('chan_editor_media_hint')}</p>{/if}
   {/if}
 {/snippet}

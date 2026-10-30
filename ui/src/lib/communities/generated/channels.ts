@@ -442,7 +442,7 @@ status: string, error?: string, done: number, total: number, created_at: number,
  */
 kind?: string, };
 
-/** A file picked to be sent, a file of the device now (`channel_media_import`); `url`: where the page reads a video for its frame. */
+/** A file picked to be sent, a file of the device now (`channel_media_import`); `url`: where the page reads a video for its frame; `preview`: a picture of it; `note`: `unsupported_format`, a photo that goes as a file. */
 export type ImportedFile = { 
 /**
  * What `channel_media_send` sends.
@@ -456,7 +456,17 @@ name: string,
  * A video the webview plays, from the messenger's server of files;
  * `null` for anything else, or without the messenger.
  */
-url?: string, };
+url?: string, 
+/**
+ * A picture as the tray shows it (`picked_preview` of the copy: a
+ * phone's HEIC as its JPEG); `null` for anything else.
+ */
+preview?: string, 
+/**
+ * `unsupported_format`: a phone's photo its decoder could not read; it
+ * goes as a file, and the composer says so.
+ */
+note?: string, };
 
 /** The card of a channel from its link, before joining (`channel_preview_link`). */
 export type ChannelPreview = { community_id: string, name: string, about: string, 

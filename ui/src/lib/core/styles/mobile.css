@@ -462,6 +462,55 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   gap: var(--sp-3);
 }
 
+/* ── Floating bar («in the air»): the app's navigation and the strip of the attach sheet ── */
+/* A glass plate 26 round; each user lays its items out itself (a grid, a strip). */
+.m-bar {
+  border-radius: var(--radius-bar);
+  background: var(--pane-strong);
+  -webkit-backdrop-filter: var(--pane-filter);
+  backdrop-filter: var(--pane-filter);
+  border: 1px solid var(--pane-border);
+  box-shadow: var(--pane-highlight), var(--pane-shadow);
+}
+/* An item: the icon over a caption; the current one in the accent. */
+.m-bar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-head);
+  background: transparent;
+  color: var(--text-2);
+  text-decoration: none;
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  transition: color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast) var(--ease);
+}
+.m-bar-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-bar-item.active { color: var(--accent-text); }
+.m-bar-item:active { color: var(--text); background: var(--surface-hover); }
+.m-bar-ico { position: relative; display: inline-flex; }
+/* A count (or a word, «новое») at the icon's corner. */
+.m-bar-badge {
+  position: absolute; top: -5px; left: calc(100% - 8px); min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: var(--radius-badge); background: var(--danger); color: #fff; box-shadow: 0 0 0 2px var(--pane-strong);
+  font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 17px; text-align: center; white-space: nowrap;
+}
+.m-bar-badge.accent { background: var(--accent); }
+/* A bar of choices (the attach sheet): the chosen item stands on a pill, a press sinks to .97 (M01). */
+.m-bar--pick .m-bar-item { padding: 0 var(--sp-2); }
+.m-bar--pick .m-bar-item.active { background: var(--accent-tint); }
+.m-bar--pick .m-bar-item:active { transform: scale(0.97); transition-duration: var(--dur-press); }
+@media (prefers-reduced-motion: reduce) {
+  .m-bar--pick .m-bar-item:active { transform: none; }
+}
+
 /* ── Gradient button ── */
 .m-btn-grad {
   display: flex;

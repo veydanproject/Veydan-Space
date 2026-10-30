@@ -11,6 +11,7 @@ import { messengerStore } from '../store.svelte';
 import { BASE } from '../mobile/routes';
 import AccountStep from '../onboarding/AccountStep.svelte';
 import ProfileStep from '../onboarding/ProfileStep.svelte';
+import { incomingLinks } from '../incoming/incomingStore.svelte';
 
 /** The key and the servers are here: the account of this device is whole. */
 async function hasAccount(): Promise<boolean> {
@@ -60,6 +61,8 @@ export const common: Omit<ModuleDef, 'nav' | 'settings'> = {
   ],
   // Passed by at the first start, the account waits on the card «Finish setting up».
   setup: [{ id: 'account', order: 10, title: 'msg_setup_account', icon: 'user', href: () => BASE, step: 'account', done: hasAccount }],
+  // A link clicked outside the app is a card of the messenger: read once its runtime runs.
+  links: { ready: () => !!messengerStore.status?.runtime, read: incomingLinks.read },
 };
 
 /** The messenger owns the key of the account: who it is, for the settings and the page «Account». */

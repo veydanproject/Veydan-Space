@@ -18,6 +18,38 @@ pub const ENVELOPE_VERSION: u32 = 1;
 /// marks as they were typed.
 pub const FIELD_FMT: &str = "fmt";
 
+/// `"fwd":{"name":"<author>"}` on a `text` or a `media`: the sender
+/// forwards a message somebody wrote, `name` being what the author was
+/// called on the sender's device then (internal/messenger-wire.md §3, «Пересылка»).
+/// No key of the author rides on it: a forward does not give a third
+/// person a key they were never given. A forward with «hide the sender»
+/// has no `fwd`, and is a message of its sender like any other. A reader
+/// before the field shows a message of the sender.
+pub const FIELD_FWD: &str = "fwd";
+
+/// The longest `fwd.name` kept, in characters; the rest is cut.
+pub const MAX_FWD_NAME_CHARS: usize = 100;
+
+/// What `fwd` says: the message was forwarded, from `name` when the
+/// sender knew one.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Forwarded {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl Forwarded {
+    /// A name as it may stand in `fwd`: one line without control
+    /// characters, at most `MAX_FWD_NAME_CHARS`; none when nothing is left.
+    pub fn named(name: Option<&str>) -> Self {
+        let name = name.map(|n| {
+            let flat: String = n.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+            flat.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_FWD_NAME_CHARS).collect::<String>()
+        });
+        Self { name: name.filter(|n| !n.is_empty()) }
+    }
+}
+
 /// How the words of a text, an edit or a caption are written.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TextFormat {
@@ -555,6 +587,26 @@ impl Envelope {
     pub fn format(&self) -> TextFormat {
         TextFormat::from_name(self.str_field(FIELD_FMT))
     }
+
+    /// The same envelope said to be forwarded (`FIELD_FWD`), or said to be
+    /// nobody's forward when `fwd` is none.
+    pub fn with_fwd(mut self, fwd: Option<&Forwarded>) -> Self {
+        match fwd {
+            Some(f) => self.fields.insert(FIELD_FWD.into(), serde_json::to_value(Forwarded::named(f.name.as_deref())).expect("fwd serializes")),
+            None => self.fields.remove(FIELD_FWD),
+        };
+        self
+    }
+
+    /// Whom a forwarded `text` or `media` came from (`FIELD_FWD`). None
+    /// on any other type, and when the field is no object.
+    pub fn fwd(&self) -> Option<Forwarded> {
+        if self.t != T_TEXT && self.t != T_MEDIA {
+            return None;
+        }
+        let f = self.fields.get(FIELD_FWD)?.as_object()?;
+        Some(Forwarded::named(f.get("name").and_then(Value::as_str)))
+    }
 }
 
 #[cfg(test)]
@@ -585,6 +637,31 @@ mod tests {
             let e = Envelope::parse(&format!(r#"{{"v":1,"t":"text","text":"x","fmt":{odd}}}"#)).unwrap();
             assert_eq!(e.format(), TextFormat::Plain, "{odd} is plain text");
         }
+    }
+
+    #[test]
+    fn fwd_golden_vectors() {
+        let anna = Forwarded::named(Some("Анна"));
+        let e = Envelope::text("hi").with_fwd(Some(&anna));
+        assert_eq!(e.encode(), r#"{"v":1,"t":"text","fwd":{"name":"Анна"},"text":"hi"}"#);
+        assert_eq!(Envelope::parse(&e.encode()).unwrap().fwd(), Some(anna.clone()));
+        assert_eq!(e.clone().with_fwd(None).encode(), r#"{"v":1,"t":"text","text":"hi"}"#, "hidden: no trace of it");
+        assert_eq!(Envelope::text("hi").with_fwd(Some(&Forwarded::named(None))).encode(), r#"{"v":1,"t":"text","fwd":{},"text":"hi"}"#);
+        assert_eq!(Envelope::text("hi").fwd(), None, "an old envelope is nobody's forward");
+        // A reader before the field: the same text, written the same way.
+        let old_reader = Envelope::parse(r#"{"v":1,"t":"text","fmt":"md","text":"**hi**","fwd":{"name":"Анна"}}"#).unwrap();
+        assert_eq!((old_reader.as_text(), old_reader.format()), (Some("**hi**"), TextFormat::Markdown));
+        let media = Envelope::parse(r#"{"v":1,"t":"media","name":"a.png","fwd":{"name":"  Борис\n Б  "}}"#).unwrap();
+        assert_eq!(media.fwd(), Some(Forwarded::named(Some("Борис Б"))), "one line");
+        for odd in [r#""Анна""#, "1", "null", r#"["x"]"#] {
+            assert_eq!(Envelope::parse(&format!(r#"{{"v":1,"t":"text","text":"x","fwd":{odd}}}"#)).unwrap().fwd(), None, "{odd}");
+        }
+        let odd_name = Envelope::parse(r#"{"v":1,"t":"text","text":"x","fwd":{"name":7,"key":"ab"}}"#).unwrap();
+        assert_eq!(odd_name.fwd(), Some(Forwarded::default()), "a name that is no string is none; nothing else is read");
+        assert_eq!(Envelope::parse(r#"{"v":1,"t":"edit","target":"a","text":"x","fwd":{"name":"A"}}"#).unwrap().fwd(), None, "a text and a media only");
+        let long = "я".repeat(300);
+        assert_eq!(Forwarded::named(Some(&long)).name.unwrap().chars().count(), MAX_FWD_NAME_CHARS);
+        assert_eq!(Forwarded::named(Some(" \u{7} ")).name, None);
     }
 
     #[test]

@@ -775,6 +775,8 @@ pub async fn channel_read(community_id: String, at: Option<i64>, state: tauri::S
 #[serde(default)]
 pub struct FileOptions {
     pub original: bool,
+    /// The item «Файл» of the sheet: the file goes as it is (a phone's HEIC is not made a JPEG).
+    pub as_file: bool,
     pub poster: Option<communities_core::media::Poster>,
 }
 
@@ -799,50 +801,64 @@ pub async fn channel_media_send(
     state: tauri::State<'_, CommunitiesState>,
 ) -> CmdResult<UploadView> {
     let _timed = crate::log::Timed::start("channel_media_send");
-    use tauri::Manager;
-    let d = state.driver()?;
-    let keys = d.keys()?;
-    let outgoing = d.files.join(OUTGOING_DIR);
-    // A copy `channel_media_import` made (a phone's video, for its frame)
-    // goes as it is; a file of the disk too; one a phone hands over by its
-    // URI is copied first, as the upload reads it again on a retry. A copy
-    // goes under the name the user picked, not its own.
-    let (path, name) = match own_copy(&outgoing, &src) {
-        Some(copy) => {
-            let name = crate::views::upload_name(&copy.to_string_lossy());
-            (copy, name)
-        }
-        None => {
-            let source = app.state::<Shell>().open_source(&src)?;
-            if std::path::Path::new(&src).is_file() {
-                (std::path::PathBuf::from(&src), crate::views::upload_name(&src))
-            } else {
-                let open = source.open.clone();
-                (copy_out(move || open(), &source.name, outgoing.clone()).await?, source.name.clone())
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        use tauri::Manager;
+        let d = state.driver()?;
+        let keys = d.keys()?;
+        let outgoing = d.files.join(OUTGOING_DIR);
+        // A copy `channel_media_import` made (a phone's video, for its frame)
+        // goes as it is; a file of the disk too; one a phone hands over by its
+        // URI is copied first, as the upload reads it again on a retry. A copy
+        // goes under the name the user picked, not its own.
+        let FileOptions { original, as_file, poster } = options.unwrap_or_default();
+        let (path, name) = match own_copy(&outgoing, &src) {
+            Some(copy) => {
+                let name = crate::views::upload_name(&copy.to_string_lossy());
+                (copy, name)
             }
-        }
-    };
-    let FileOptions { original, poster } = options.unwrap_or_default();
-    let file = NewFile {
-        name: Some(name.as_str()).filter(|n| !n.is_empty()),
-        caption: caption.as_deref(),
-        scope_id: scope_id.as_deref(),
-        post_id: post_id.as_deref(),
-        parent: parent.as_deref(),
-        batch: batch.as_deref(),
-        original,
-        poster,
-        fmt: format(fmt.as_deref()),
-        ..NewFile::at(&path)
-    };
-    let placed = d.service.media_placeholder_file(&keys, &community_id, file).await;
-    let (row, outcome) = placed.map_err(|e| {
-        drop_copy(&outgoing, &path);
-        map_err(e)
-    })?;
-    d.apply(outcome).await;
-    spawn_send(&d, keys, community_id, row.id.clone(), outgoing);
-    Ok(row.into())
+            None => {
+                let source = app.state::<Shell>().open_source(&src)?;
+                if std::path::Path::new(&src).is_file() {
+                    (std::path::PathBuf::from(&src), crate::views::upload_name(&src))
+                } else {
+                    let open = source.open.clone();
+                    let copy = copy_out(move || open(), &source.name, outgoing.clone()).await?;
+                    if as_file {
+                        (copy, source.name.clone())
+                    } else {
+                        // Added to the tray, a phone's file was imported already (`channel_media_import`);
+                        // one sent straight from its URI takes the same step here.
+                        let (copy, name, _) = common_copy(platform_decoder(&app).as_deref(), copy, &source.name).await;
+                        (copy, name)
+                    }
+                }
+            }
+        };
+        let file = NewFile {
+            name: Some(name.as_str()).filter(|n| !n.is_empty()),
+            caption: caption.as_deref(),
+            scope_id: scope_id.as_deref(),
+            post_id: post_id.as_deref(),
+            parent: parent.as_deref(),
+            batch: batch.as_deref(),
+            original,
+            poster,
+            fmt: format(fmt.as_deref()),
+            ..NewFile::at(&path)
+        };
+        let placed = d.service.media_placeholder_file(&keys, &community_id, file).await;
+        let (row, outcome) = placed.map_err(|e| {
+            drop_copy(&outgoing, &path);
+            map_err(e)
+        })?;
+        // The row holds the copy now: a shot of the camera goes from the cache.
+        forget_capture(&app, &src).await;
+        d.apply(outcome).await;
+        spawn_send(&d, keys, community_id, row.id.clone(), outgoing);
+        Ok(row.into())
+    })
+    .await
 }
 
 /// A voice message or a video circle recorded in the composer, as a post
@@ -1042,20 +1058,38 @@ pub struct ImportedFile {
     #[ts(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// A picture as the tray shows it (`picked_preview` of the copy: a
+    /// phone's HEIC as its JPEG); `null` for anything else.
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    /// `unsupported_format`: a phone's photo its decoder could not read; it
+    /// goes as a file, and the composer says so.
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
+/// A picked file made the module's own copy as it is added to the tray,
+/// not when it is sent (ROO-110 §3.5): a phone's HEIC is a JPEG from here
+/// on, under its name as one and with its picture (`preview`), or it goes
+/// as a file, said by `note`; `as_file` (the item «Файл») keeps it as it
+/// is. A path of the disk is not copied. A shot of the camera leaves the
+/// cache once the copy is made.
 #[tauri::command]
-pub async fn channel_media_import(src: String, app: tauri::AppHandle, state: tauri::State<'_, CommunitiesState>) -> CmdResult<ImportedFile> {
+pub async fn channel_media_import(src: String, as_file: Option<bool>, app: tauri::AppHandle, state: tauri::State<'_, CommunitiesState>) -> CmdResult<ImportedFile> {
     let _timed = crate::log::Timed::start("channel_media_import");
     use tauri::Manager;
     let d = state.driver()?;
     let source = app.state::<Shell>().open_source(&src)?;
-    let (path, name) = if std::path::Path::new(&src).is_file() {
-        (std::path::PathBuf::from(&src), crate::views::upload_name(&src))
+    let (path, name, note) = if std::path::Path::new(&src).is_file() {
+        (std::path::PathBuf::from(&src), crate::views::upload_name(&src), None)
     } else {
         let open = source.open.clone();
-        (copy_out(move || open(), &source.name, d.files.join(OUTGOING_DIR)).await?, source.name.clone())
+        let copy = copy_out(move || open(), &source.name, d.files.join(OUTGOING_DIR)).await?;
+        if as_file == Some(true) { (copy, source.name.clone(), None) } else { common_copy(platform_decoder(&app).as_deref(), copy, &source.name).await }
     };
+    forget_capture(&app, &src).await;
     let url = match communities_core::media::playable_by_name(&name).filter(|m| m.starts_with("video/")) {
         Some(mime) => match veydan_shell::seams::seam::<dyn MediaUrls, _, _>(&app) {
             Some(urls) => urls.url(&path, &mime).await.ok().flatten(),
@@ -1063,7 +1097,13 @@ pub async fn channel_media_import(src: String, app: tauri::AppHandle, state: tau
         },
         None => None,
     };
-    Ok(ImportedFile { path: path.to_string_lossy().into_owned(), name, url })
+    let preview = if url.is_some() { None } else { preview_of(path.clone()).await };
+    Ok(ImportedFile { path: path.to_string_lossy().into_owned(), name, url, preview, note: note.map(str::to_string) })
+}
+
+/// The tray's picture of a file of the device (`picked_preview`), off the runtime's threads.
+async fn preview_of(path: std::path::PathBuf) -> Option<String> {
+    tokio::task::spawn_blocking(move || picked_preview(std::fs::File::open(path).ok()?).ok().flatten()).await.ok().flatten()
 }
 
 /// The cover of a channel as a `data:` URL, read from the hosts of the
@@ -1129,6 +1169,48 @@ async fn copy_out(open: impl FnOnce() -> std::io::Result<std::fs::File> + Send +
     .await
     .map_err(|e| AppError::Other(format!("channel_invalid: the copy did not finish: {e}")))?;
     copied.map_err(AppError::io)
+}
+
+/// A copy of a phone's photo of a format not every client shows (HEIC) as
+/// the JPEG the phone's decoder writes in its place, named as one
+/// (`messenger_media::common`, as a chat's photo). A computer has no
+/// decoder: the copy stays and goes as a file. One the phone cannot read
+/// stays as it is and goes as a file too, said by its note
+/// (`unsupported_format`). Only this module's own copy is converted, never
+/// the user's file.
+async fn common_copy(
+    decoder: Option<&dyn messenger_media::common::PictureConverter>,
+    copy: std::path::PathBuf,
+    name: &str,
+) -> (std::path::PathBuf, String, Option<&'static str>) {
+    use messenger_media::common::Common;
+    match messenger_media::common::to_common(&copy, decoder).await {
+        Common::Converted(jpeg) => (jpeg, messenger_media::common::common_name(name), None),
+        Common::Unsupported => (copy, name.to_string(), Some(NOTE_UNSUPPORTED)),
+        Common::AsIs => (copy, name.to_string(), None),
+    }
+}
+
+/// `note` of a photo the phone could not bring to a common format, as a chat's.
+const NOTE_UNSUPPORTED: &str = "unsupported_format";
+
+/// The decoder of pictures the messenger's host keeps for the app; none on a computer.
+fn platform_decoder(app: &tauri::AppHandle) -> Option<std::sync::Arc<dyn messenger_media::common::PictureConverter>> {
+    use tauri::Manager;
+    app.try_state::<messenger_media::common::PlatformDecoder>().map(|d| d.0.clone())
+}
+
+/// The shot of the system camera behind `src` (a `content://` of the app's
+/// FileProvider in `attach-capture`), once this module holds a copy of it:
+/// its file in the cache goes. The gallery plugin deletes nothing else.
+async fn forget_capture(app: &tauri::AppHandle, src: &str) {
+    #[cfg(target_os = "android")]
+    if src.starts_with("content://") && src.contains(".fileprovider/") {
+        use tauri_plugin_veydan_media::VeydanMediaExt;
+        let _ = app.veydan_media().forget_capture(src).await;
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = (app, src);
 }
 
 /// How long a copy no row names stays (`sweep_outgoing`): one picked a
@@ -1254,6 +1336,56 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A picture of one pixel the decoder of a test writes (its bytes are a PNG: the preview reads bytes, not names).
+    const PIXEL: &[u8] = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0d\x49\x44\x41\x54\x78\xda\x63\x64\x60\xf8\x5f\x0f\x00\x02\x87\x01\x80\xeb\x47\xba\x92\x00\x00\x00\x00\x49\x45\x4e\x44\xae\x42\x60\x82";
+
+    /// The decoder of a phone in a test: its picture, or a failure.
+    struct Decoder {
+        fail: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl messenger_media::common::PictureConverter for Decoder {
+        async fn to_jpeg(&self, _src: &std::path::Path, dst: &std::path::Path, _max_pixels: u64, _quality: u8) -> Result<(), String> {
+            if self.fail {
+                return Err("not readable".into());
+            }
+            std::fs::write(dst, PIXEL).map_err(|e| e.to_string())
+        }
+    }
+
+    /// A phone's HEIC added to the tray of a post, a comment or the editor
+    /// of a post is the module's JPEG before «Отправить» is tapped: its
+    /// path, its name `.jpg` and its picture; one the decoder cannot read
+    /// stays a file, with the note the composer shows; a computer leaves it
+    /// a file without a word (ROO-144, return 1).
+    #[tokio::test]
+    async fn a_heic_added_to_the_tray_is_a_jpeg_before_it_is_sent() {
+        let root = std::env::temp_dir().join(format!("communities-heic-{}-{}", std::process::id(), now()));
+        let outgoing = root.join(OUTGOING_DIR);
+        std::fs::create_dir_all(&outgoing).unwrap();
+        let heic = |name: &str| {
+            let path = outgoing.join(name);
+            std::fs::write(&path, b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic\x00\x00\x00\x08meta").unwrap();
+            path
+        };
+
+        let (path, name, note) = common_copy(Some(&Decoder { fail: false }), heic("1-IMG_1.heic"), "IMG_1.heic").await;
+        assert_eq!((name.as_str(), note), ("IMG_1.jpg", None));
+        assert_eq!(path, outgoing.join("1-IMG_1.jpg"));
+        assert!(!outgoing.join("1-IMG_1.heic").exists(), "the HEIC copy went");
+        assert!(preview_of(path).await.is_some_and(|url| url.starts_with("data:image/")), "the tray shows it");
+
+        let broken = heic("2-IMG_2.heic");
+        let (path, name, note) = common_copy(Some(&Decoder { fail: true }), broken.clone(), "IMG_2.heic").await;
+        assert_eq!((path, name.as_str(), note), (broken.clone(), "IMG_2.heic", Some(NOTE_UNSUPPORTED)));
+        assert_eq!(preview_of(broken.clone()).await, None, "an icon in the tray");
+
+        let (path, _, note) = common_copy(None, heic("3-IMG_3.heic"), "IMG_3.heic").await;
+        assert_eq!((path, note), (outgoing.join("3-IMG_3.heic"), None));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A phone's video copied by `channel_media_import` (for its frame) is
     /// sent by the path of that copy: it is the module's own file, taken
     /// without the picker's word, under the name the user picked; nothing
@@ -1368,7 +1500,7 @@ mod command_futures {
         v.push(("channel_media_pause", r2::<String, S, _>(channel_media_pause)));
         v.push(("channel_media_wake", r2::<String, S, _>(channel_media_wake)));
         v.push(("channel_media_play", r4::<String, String, tauri::AppHandle, S, _>(channel_media_play)));
-        v.push(("channel_media_import", r3::<String, tauri::AppHandle, S, _>(channel_media_import)));
+        v.push(("channel_media_import", r4::<String, Option<bool>, tauri::AppHandle, S, _>(channel_media_import)));
         v.push(("channel_media_fetch_cancel", r2::<String, S, _>(channel_media_fetch_cancel)));
         v.push(("channel_uploads", r2::<String, S, _>(channel_uploads)));
         v.push(("channel_scopes", r2::<String, S, _>(levels::channel_scopes)));

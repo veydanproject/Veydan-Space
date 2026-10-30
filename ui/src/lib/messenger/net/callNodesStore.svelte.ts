@@ -98,6 +98,16 @@ class CallNodesStore {
   add = (text: string, key?: string) => this.attempt(() => messengerApi.callNodes.add(text.trim(), key));
   /** From the card of a link: its failure is the card's alone. */
   addFromCard = (link: string) => this.attempt(() => messengerApi.callNodes.add(link), true);
+  /**
+   * From the card of a link, once `question` agrees to the address: the node
+   * connected is the one asked about, whatever the card shows by the answer.
+   * `null` when the answer is no.
+   */
+  confirmFromCard = async (card: { link: string; addr: string }, question: (addr: string) => Promise<boolean>) => {
+    const { link, addr } = card;
+    if (!(await question(addr))) return null;
+    return this.addFromCard(link);
+  };
   remove = (id: string) => this.attempt(() => messengerApi.callNodes.remove(id));
   setTrust = (trust: CallTrust) => this.attempt(() => messengerApi.callNodes.setTrust(trust));
   refreshRegistry = () => this.attempt(() => messengerApi.callNodes.refresh());

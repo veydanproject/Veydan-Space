@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import { profileDraft, type ProfileDraft } from './profileDraft';
+import { profileDraft, type ProfileDraft } from './profileDraft.svelte';
 
 const input = { name: 'a', display_name: 'A', about: 'x', website: null, nip05: null, lud16: null, socials: [], bot: false, commands: [] };
 const draft = (owner: string): ProfileDraft => ({

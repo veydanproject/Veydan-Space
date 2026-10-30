@@ -28,6 +28,13 @@ const cacheDir = product.cacheDir;
 export default defineConfig(async () => ({
   plugins: [veydanModules(product), svelteCssGuard(), sveltekit()],
   cacheDir,
+  // Dependencies reached only through lazy modules (terminal, inspector, QR
+  // scanner) are bundled at the start of the dev server: found later, they make
+  // Vite reload the page while it starts, and the webview of a cold start
+  // shows "Importing a module script failed" or a 500 (ROO-176).
+  optimizeDeps: {
+    include: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links", "html2canvas", "jsqr"],
+  },
   // vitest keeps its defaults: its root is the UI project, so the build and
   // work folders of the repository (data/, tmp/ with publish.sh's
   // snapshots and clones) are outside what it searches for tests.

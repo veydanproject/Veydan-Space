@@ -106,6 +106,36 @@ describe('the call nodes of the settings', () => {
   });
 });
 
+describe('the card of a call node', () => {
+  beforeEach(() => {
+    callNodesStore.reset();
+    asked.length = 0;
+  });
+
+  it('connects the node it asked about when another link comes during the question', async () => {
+    const other = `veydan://call-node/${'cd'.repeat(32)}?a=198.51.100.9%3A443&t=inv-2`;
+    // The card's props, as a link from the system replaces them while the question is open.
+    const card = { link: LINK, addr: '203.0.113.7:8443' };
+    const prompted: string[] = [];
+    let answer!: (yes: boolean) => void;
+    const done = callNodesStore.confirmFromCard(card, (addr) => {
+      prompted.push(addr);
+      return new Promise((r) => (answer = r));
+    });
+    Object.assign(card, { link: other, addr: '198.51.100.9:443' });
+    answer(true);
+    expect(await done).toBe('');
+    expect(prompted).toEqual(['203.0.113.7:8443']);
+    expect(callNodesStore.isMine(ID)).toBe(true);
+    expect(callNodesStore.isMine('cd'.repeat(32))).toBe(false);
+  });
+
+  it('connects nothing when the answer is no', async () => {
+    expect(await callNodesStore.confirmFromCard({ link: LINK, addr: 'x' }, async () => false)).toBeNull();
+    expect(asked).not.toContain('messenger_call_nodes_add');
+  });
+});
+
 describe('the screens of the call nodes', () => {
   it('word every failure and ask before an invitation is spent', () => {
     for (const [name, source] of Object.entries({ card: cardSource, panel: panelSource })) {
@@ -130,5 +160,10 @@ describe('the fixes of the review of the call nodes', () => {
 
   it('let the card of an invitation offer it unless this device holds its own credentials', () => {
     expect(cardSource).toContain('view.has_token ? callNodesStore.holdsCredentials(view.id) : callNodesStore.isMine(view.id)');
+  });
+
+  it('let the card connect only through the question that fixes the link', () => {
+    expect(cardSource).toContain('callNodesStore.confirmFromCard(view,');
+    expect(cardSource).not.toContain('addFromCard(');
   });
 });

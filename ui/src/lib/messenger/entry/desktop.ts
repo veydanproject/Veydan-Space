@@ -12,6 +12,7 @@ import { messengerStore } from '../store.svelte';
 import { startDesktopNotices } from '../push/desktop';
 import DesktopNotices from '../push/DesktopNotices.svelte';
 import CallOverlay from '../calls/CallOverlay.svelte';
+import IncomingLink from '../incoming/IncomingLink.svelte';
 import { messengerPalette } from '../palette.svelte';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -31,6 +32,8 @@ export const module: ModuleDef = {
   overlays: [
     { id: 'notices', component: DesktopNotices, place: 'window' },
     { id: 'calls', component: CallOverlay, place: 'window' },
+    // A link clicked outside the app: its card, once the app is unlocked.
+    { id: 'incoming-link', component: IncomingLink, place: 'window' },
   ],
   // New chat, new group, contacts, settings and every chat by name in the palette.
   palette: messengerPalette,

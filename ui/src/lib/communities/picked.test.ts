@@ -5,6 +5,7 @@
 // each path, the icon when there is none, let go with the tray.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ImportedFile } from './api';
 import { Picked, pickedIcon } from './picked.svelte';
 
 /** A preview that answers when told to. */
@@ -97,6 +98,84 @@ describe('the pictures of the tray', () => {
     expect(picked.files).toEqual([]);
     expect(picked.previews).toEqual({});
     expect(previewOf).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('a phone\'s file added to the tray', () => {
+  const heic = 'content://media/external/images/media/41';
+  const broken = 'content://media/external/images/media/42';
+  const copies: Record<string, ImportedFile> = {
+    [heic]: { path: '/outgoing/1-IMG_1.jpg', name: 'IMG_1.jpg', preview: 'data:image/jpeg;base64,AAAA' },
+    [broken]: { path: '/outgoing/2-IMG_2.heic', name: 'IMG_2.heic', note: 'unsupported_format' },
+  };
+
+  it('is the module\'s copy before it is sent: a HEIC a JPEG with its picture, an unreadable one a file the tray tells of', async () => {
+    const previewOf = vi.fn(async () => null);
+    const importOf = vi.fn(async (path: string) => copies[path]);
+    const picked = new Picked(previewOf, undefined, importOf);
+    picked.add([heic, broken, '/disk/a.png']);
+    await settle();
+    expect(importOf.mock.calls).toEqual([[heic, false], [broken, false]]);
+    expect(picked.files.map((f) => [f.path, f.name, f.note])).toEqual([
+      ['/outgoing/1-IMG_1.jpg', 'IMG_1.jpg', undefined],
+      ['/outgoing/2-IMG_2.heic', 'IMG_2.heic', 'unsupported_format'],
+      ['/disk/a.png', 'a.png', undefined],
+    ]);
+    expect(picked.previews).toEqual({ '/outgoing/1-IMG_1.jpg': 'data:image/jpeg;base64,AAAA', '/outgoing/2-IMG_2.heic': null, '/disk/a.png': null });
+    // The phone's files are not asked of the decoder of pictures again; a file of the disk is.
+    expect(previewOf.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['/disk/a.png']);
+    expect(picked.unsupported).toEqual(['IMG_2.heic']);
+
+    const go = vi.fn(async () => {});
+    await picked.send(go);
+    expect(go.mock.calls.map((c) => (c as unknown as [string])[0])).toEqual(['/outgoing/1-IMG_1.jpg', '/outgoing/2-IMG_2.heic', '/disk/a.png']);
+    expect(picked.unsupported).toEqual([]);
+  });
+
+  it('goes by «Файл» as it is, and is sent only once its copy is made', async () => {
+    let done: (f: ImportedFile) => void = () => {};
+    const importOf = vi.fn((path: string) => new Promise<ImportedFile>((ok) => { done = ok; void path; }));
+    const picked = new Picked(async () => null, undefined, importOf);
+    picked.add([heic], { asFile: true });
+    expect(importOf).toHaveBeenCalledWith(heic, true);
+    const go = vi.fn(async () => {});
+    const sent = picked.send(go);
+    await settle();
+    expect(go).not.toHaveBeenCalled();
+    done({ path: '/outgoing/3-IMG_1.heic', name: 'IMG_1.heic' });
+    await sent;
+    expect(go.mock.calls).toEqual([['/outgoing/3-IMG_1.heic', { caption: undefined, fmt: undefined, batch: undefined, asFile: true }]]);
+  });
+
+  it('taken out while it is copied stays out; one that could not be copied waits as picked', async () => {
+    let done: (f: ImportedFile) => void = () => {};
+    const picked = new Picked(async () => 'data:x', undefined, vi.fn(() => new Promise<ImportedFile>((ok) => { done = ok; })));
+    picked.add([heic]);
+    picked.remove(picked.files[0].key);
+    done(copies[heic]);
+    await settle();
+    expect(picked.files).toEqual([]);
+    expect(picked.previews).toEqual({});
+
+    const failing = new Picked(async () => null, undefined, async () => { throw new Error('err.io'); });
+    failing.add([heic]);
+    await settle();
+    expect(failing.files.map((f) => f.path)).toEqual([heic]);
+    expect(failing.previews).toEqual({ [heic]: null });
+  });
+
+  it('a video goes with the frame of its copy', async () => {
+    const poster = { jpeg: 'AAAA', width: 1920, height: 1080 };
+    const posterOf = vi.fn(async () => poster);
+    const videoOf = vi.fn();
+    const clip = 'content://media/external/video/media/7';
+    const picked = new Picked(async () => null, videoOf, async () => ({ path: '/outgoing/4-clip.mp4', name: 'clip.mp4', url: 'http://127.0.0.1:1/v' }), posterOf);
+    picked.add([clip]);
+    const go = vi.fn(async () => {});
+    await picked.send(go);
+    expect(go.mock.calls.map((c) => c as unknown as [string, { poster?: unknown }]).map((c) => [c[0], c[1].poster])).toEqual([['/outgoing/4-clip.mp4', poster]]);
+    expect(posterOf).toHaveBeenCalledWith('http://127.0.0.1:1/v');
+    expect(videoOf).not.toHaveBeenCalled();
   });
 });
 
