@@ -100,21 +100,22 @@
 <div class="card calls">
   <div class="card-title"><Icon name="network" size={16} />{$t('msg_calls_nodes_title')}</div>
   <p class="muted">{$t('msg_calls_nodes_moved')}</p>
-  <button class="btn btn-ghost btn-sm open" onclick={() => (settingsRequest.tab = 'network')}>
-    <Icon name="arrow-right" size={12} />{$t('msg_card_open')}
+  <button class="btn btn-ghost open" onclick={() => (settingsRequest.tab = 'network')}>
+    <Icon name="arrow-right" size={18} />{$t('msg_card_open')}
   </button>
   {#if error}<div class="error-msg">{error}</div>{/if}
 </div>
 
 <style>
   .calls { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
   .hint { font-size: var(--fs-xs); color: var(--text-3); }
-  .warn-line { margin: 0; font-size: var(--fs-sm); color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: var(--radius-sm); padding: 8px 10px; }
+  .warn-line { margin: 0; font-size: var(--fs-sm); color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); }
+  /* The settings of a card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
-  .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--text); }
+  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+  .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
+  .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; font-size: var(--fs-base); color: var(--text); }
   /* A phone is narrower than the two choices in one line: each wraps its words instead of the row running off. */
   .seg { align-self: flex-start; max-width: 100%; }
   .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }

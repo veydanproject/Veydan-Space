@@ -8,7 +8,7 @@
   import { t, locale, type TranslationKey } from '$lib/core/i18n';
   import { SYNC_HREF } from '$lib/core/onboarding/setup';
   import { formatDateTime } from '$lib/core/utils';
-  import NavRow from '$lib/cloud/NavRow.svelte';
+  import NavRow from '$lib/core/ui/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
 
   /** The anchor of the block (`?section=sync` of the page «Account»); none inside the settings, whose own section is #sync. */
@@ -50,8 +50,8 @@
 </script>
 
 <RowList label={$t('settings_sync_section')} id={anchor || undefined}>
-  <NavRow icon={status?.joined ? 'refresh-cw' : 'cloud'} title={$t('settings_sync_backend')} sub={line} href={SYNC_HREF} tone={status && !status.joined ? 'warn' : undefined} />
+  <NavRow variant="list" icon={status?.joined ? 'refresh-cw' : 'cloud'} title={$t('settings_sync_backend')} sub={line} href={SYNC_HREF} tone={status && !status.joined ? 'warn' : undefined} />
   {#if devices}
-    <NavRow icon="smartphone" title={$t('settings_sync_storage_devices')} sub={devices} />
+    <NavRow variant="list" icon="smartphone" title={$t('settings_sync_storage_devices')} sub={devices} />
   {/if}
 </RowList>

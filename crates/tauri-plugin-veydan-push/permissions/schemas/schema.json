@@ -379,6 +379,18 @@
           "markdownDescription": "Denies the keeper_periodic command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-settings",
+          "markdownDescription": "Enables the open_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-settings",
+          "markdownDescription": "Denies the open_settings command without any pre-configured scope."
+        },
+        {
           "description": "Enables the permission_state command without any pre-configured scope.",
           "type": "string",
           "const": "allow-permission-state",

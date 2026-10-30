@@ -182,7 +182,7 @@
   .acts .spam { flex: 0 0 auto; color: var(--danger-text); padding-inline: var(--sp-3); }
   @container (max-width: 360px) {
     .acts { gap: 6px; }
-    .acts .btn { padding-inline: 6px; font-size: var(--fs-sm); }
+    .acts .btn { padding-inline: var(--sp-3); font-size: var(--fs-sm); white-space: normal; text-wrap: balance; line-height: 1.25; }
     .acts .btn:not(.spam) > :global(svg) { display: none; }
   }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

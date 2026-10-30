@@ -111,13 +111,13 @@
         <li class="line">
           <!-- Initials only: a picture of a blocked person is not fetched. -->
           <span class="who">
-            <Avatar url={null} label={b.name} seed={b.peer} size={32} />
+            <Avatar url={null} label={b.name} seed={b.peer} size={36} />
             <span class="who-text"><span class="name">{b.name}</span>{#if !namedByKey(b)}<code class="npub">{b.npub.slice(0, 16)}…</code>{/if}</span>
           </span>
           {#if b.banned}
             <span class="muted small">{$t('msg_rel_banned_short')}</span>
           {:else}
-            <button class="btn btn-ghost btn-sm" disabled={privacyStore.unblocking === b.peer} onclick={() => privacyStore.unblock(b.peer)}>
+            <button class="btn btn-ghost" disabled={privacyStore.unblocking === b.peer} onclick={() => privacyStore.unblock(b.peer)}>
               {$t('msg_rel_cta_unblock')}
             </button>
           {/if}
@@ -132,18 +132,23 @@
 
 <style>
   .privacy { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-xs); }
   .warn { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
-  .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); }
+  .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; font-size: var(--fs-base); }
+  /* The settings of a card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
+  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+  .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
   /* A phone is narrower than four choices in one line: each wraps its words instead of the row running off. */
   .seg { align-self: flex-start; max-width: 100%; }
   .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
-  .blocked { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-  .who { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  /* Rows of 48 with a line between them (as the facts of «Профиль и ключ»). */
+  .blocked { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .blocked .line { min-height: 48px; padding: var(--sp-1) 0; }
+  .blocked .line + .line { border-top: 1px solid var(--border); }
+  .blocked .btn { flex-shrink: 0; }
+  .who { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .who-text { display: flex; flex-direction: column; min-width: 0; }
   .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .npub { font-size: var(--fs-2xs); color: var(--text-3); }

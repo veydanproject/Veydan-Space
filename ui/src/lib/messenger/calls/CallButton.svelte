@@ -88,12 +88,12 @@
     {#if !videoInMenu}
       <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('video')} use:hold={toSettings}
         title={reason || $t('msg_call_video_start')} aria-label={$t('msg_call_video_start')}>
-        <CallIcon name="video" size={17} />
+        <CallIcon name="video" size={18} />
       </button>
     {/if}
     <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('audio')} use:hold={toSettings}
       title={reason || $t('msg_call_start')} aria-label={$t('msg_call_start')}>
-      <CallIcon name="phone" size={16} />
+      <CallIcon name="phone" size={18} />
     </button>
     {#if refusal}<span class="refusal" role="status">{refusal}</span>{/if}
   </span>
@@ -103,12 +103,15 @@
 <style>
   .wrap { position: relative; display: inline-flex; }
   .icon {
-    border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm);
+    border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; padding: 0; border-radius: var(--radius); flex-shrink: 0;
     -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
   }
   @media (hover: hover) { .icon:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); } }
   .icon:disabled { opacity: 0.45; cursor: default; }
-  @media (pointer: coarse) { .icon { padding: 10px; } }
+  /* A head's buttons: 36 on a computer, 40 for a finger (as the feed's). */
+  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  @media (pointer: coarse) { .icon { width: 40px; height: 40px; border-radius: var(--radius-md); } }
   .refusal {
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: max-content; max-width: 260px;
     padding: 6px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); line-height: 1.4;

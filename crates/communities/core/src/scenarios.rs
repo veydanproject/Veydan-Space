@@ -3535,12 +3535,17 @@ async fn an_issue_the_relay_did_not_take_is_sent_again_by_the_keeper() {
 /// A message sealed by `holder` under the key of `epoch`, signed by
 /// `author`, dated `at`.
 async fn forged_under(holder: &Node, epoch: u32, author: &nostr::key::Keys, cid: &str, links: Links, text: &str, at: i64) -> nostr::prelude::Event {
+    forged_envelope_under(holder, epoch, author, cid, links, &Envelope::text(text), at).await
+}
+
+/// `forged_under` of any envelope (a deletion, an edit).
+async fn forged_envelope_under(holder: &Node, epoch: u32, author: &nostr::key::Keys, cid: &str, links: Links, envelope: &Envelope, at: i64) -> nostr::prelude::Event {
     let rows = db::keys::epochs(holder.svc.db(), cid, SCOPE_EVERYONE).await.unwrap_or_default();
     let hex_key = rows.iter().find(|r| r.epoch == i64::from(epoch)).and_then(|r| r.key_hex.clone()).unwrap_or_else(|| panic!("no key of epoch {epoch}"));
     let raw: [u8; 32] = hex::decode(hex_key).ok().and_then(|b| b.try_into().ok()).unwrap_or_else(|| panic!("key"));
     let key = EpochKey { epoch, key: keydist::Key32(raw) };
     let place = Place::feed(cid);
-    let inner = wire::sign_inner(author, &place, &links, &Envelope::text(text).encode(), at).unwrap_or_else(|e| panic!("{e}"));
+    let inner = wire::sign_inner(author, &place, &links, &envelope.encode(), at).unwrap_or_else(|e| panic!("{e}"));
     let payload = wire::Payload::event(wire::T_MSG, &inner).unwrap_or_else(|e| panic!("{e}"));
     wire::seal_content(&place, &key, links.outer_target(), &payload, at).unwrap_or_else(|e| panic!("{e}"))
 }
@@ -3566,15 +3571,17 @@ async fn comments_written_before_a_ban_stand_on_a_device_that_came_after_it() {
     w.pump(&all).await;
     let (post, _) = owner.svc.send_post(&owner.keys, &cid, "the post", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
     w.pump(&all).await;
+    // Two epochs more, then the ban: `a` holds the keys of 1, 2 and 3, and
+    // comments under 2, one of the last two before the ban.
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("rotate: {e}"));
+    w.pump(&all).await;
     w.clock.advance(5);
     a.svc.send_comment(&a.keys, &cid, &post, None, "before the ban", TextFormat::Plain).await.unwrap_or_else(|e| panic!("comment: {e}"));
     w.pump(&all).await;
-    // Two epochs more, then the ban: `a` holds the keys of 1, 2 and 3.
-    for _ in 0..2 {
-        w.clock.advance(5);
-        owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("rotate: {e}"));
-        w.pump(&all).await;
-    }
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("rotate: {e}"));
+    w.pump(&all).await;
     assert!(has_key(&a, &cid, 3).await);
     w.clock.advance(5);
     let before_ban = w.clock.now();
@@ -3607,6 +3614,189 @@ async fn comments_written_before_a_ban_stand_on_a_device_that_came_after_it() {
     }
 }
 
+
+/// The live run of 2026-10-30 (STA-56): the bots of a host restored on
+/// empty folders refused every old post and comment of an author removed
+/// after writing them (`message refused: NotMember`), which the devices
+/// there at the time keep — a person's new device the same. A removal is
+/// judged at the date of what was written, as a ban is: an author put out
+/// later, staff then or a reader then, stands on a device that came after,
+/// under one of the last two epochs before the removal. What they date
+/// before it but seal under an older key they still hold, what they date
+/// after it, and a deletion of their own words dated before it, stand
+/// nowhere (the review of 2026-10-30).
+#[tokio::test]
+async fn posts_and_comments_of_an_author_removed_later_stand_on_a_device_that_came_after() {
+    let w = World::new();
+    let owner = w.node().await;
+    let (a, s, b) = (w.node().await, w.node().await, w.node().await);
+    let all = [&owner, &a, &s, &b];
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    for n in [&a, &s, &b] {
+        join_by_link(&w, &owner, n, &cid, &all).await;
+    }
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    let old_epoch = a.svc.member(&a.keys).newest_key(&cid, SCOPE_EVERYONE).await.ok().flatten().map_or(0, |k| k.epoch);
+    let in_old_epoch = w.clock.now();
+    // Two epochs on; `s` an author: a post of theirs; `a` a reader: a comment under it.
+    for _ in 0..2 {
+        w.clock.advance(5);
+        owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("rotate: {e}"));
+        w.pump(&all).await;
+    }
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(5);
+    let (post, _) = s.svc.send_post(&s.keys, &cid, "by the author", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(5);
+    let (comment, _) = a.svc.send_comment(&a.keys, &cid, &post, None, "by the reader", TextFormat::Plain).await.unwrap_or_else(|e| panic!("comment: {e}"));
+    w.pump(&all).await;
+    assert_eq!(thread_texts(&b, &cid, &post).await, vec!["by the reader".to_string()]);
+    let feed_b: Vec<String> = history(&b, &cid, 50, None).await.items.into_iter().filter_map(|i| i.text).collect();
+    assert!(feed_b.contains(&"by the author".to_string()), "the post before the removal: {feed_b:?}");
+    let current = a.svc.member(&a.keys).newest_key(&cid, SCOPE_EVERYONE).await.ok().flatten().map_or(0, |k| k.epoch);
+    assert!(current >= old_epoch + 2, "{old_epoch} → {current}");
+    // Both removed (no ban), an epoch past it.
+    w.clock.advance(5);
+    let before_removal = w.clock.now();
+    w.clock.advance(5);
+    for n in [&a, &s] {
+        owner.svc.act(&owner.keys, &cid, OpBody::Remove { who: pk(n) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+        w.pump(&all).await;
+    }
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("rotate: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(600);
+    tick(&owner).await;
+    w.pump(&all).await;
+    // Written after the removal: dated after it under the key `a` still
+    // holds; dated before it under the old key of three epochs back; a
+    // deletion of their own comment dated before it. Nowhere.
+    let thread = Links { thread: Some(post.clone()), ..Links::default() };
+    let late = forged_under(&a, current, &a.keys, &cid, thread.clone(), "after the removal", w.clock.now()).await;
+    let back = forged_under(&a, old_epoch, &a.keys, &cid, thread, "back-dated under an old key", in_old_epoch + 1).await;
+    let undo = forged_envelope_under(&a, current, &a.keys, &cid, Links { target: Some(comment.clone()), ..Links::default() }, &Envelope::delete(&comment), before_removal).await;
+    for ev in [&late, &back, &undo] {
+        inject(&w, ev);
+    }
+    w.pump(&all).await;
+    // A device that comes after the removal.
+    let c = w.node().await;
+    let all = [&owner, &b, &c];
+    join_by_link(&w, &owner, &c, &cid, &all).await;
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    c.svc.listen(&c.keys).await.unwrap_or_else(|e| panic!("listen: {e}"));
+    w.pump(&all).await;
+    for n in [&b, &c] {
+        let feed: Vec<String> = history(n, &cid, 50, None).await.items.into_iter().filter_map(|i| i.text).collect();
+        assert!(feed.contains(&"by the author".to_string()), "the removed author's post on every device: {feed:?}");
+        assert_eq!(thread_texts(n, &cid, &post).await, vec!["by the reader".to_string()], "the same comments on every device");
+    }
+}
+
+/// The review of 2026-10-30: one removed, in again, and removed again
+/// held the key of the epoch before the first removal; dated in the time
+/// they were out, under that key, nothing of theirs stands (the time out
+/// is no time in).
+#[tokio::test]
+async fn what_one_removed_twice_dates_into_the_time_out_stands_nowhere() {
+    let w = World::new();
+    let owner = w.node().await;
+    let (a, b) = (w.node().await, w.node().await);
+    let all = [&owner, &a, &b];
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    for n in [&a, &b] {
+        join_by_link(&w, &owner, n, &cid, &all).await;
+    }
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    let (post, _) = owner.svc.send_post(&owner.keys, &cid, "the post", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    let first = a.svc.member(&a.keys).newest_key(&cid, SCOPE_EVERYONE).await.ok().flatten().map_or(0, |k| k.epoch);
+    // Out, an epoch on, then in again by the link, and out again.
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, OpBody::Remove { who: pk(&a) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(5);
+    let while_out = w.clock.now();
+    owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("rotate: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(400);
+    tick(&owner).await;
+    w.pump(&all).await;
+    join_by_link(&w, &owner, &a, &cid, &all).await;
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, OpBody::Remove { who: pk(&a) }).await.unwrap_or_else(|e| panic!("remove again: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("rotate: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(600);
+    tick(&owner).await;
+    w.pump(&all).await;
+    let thread = Links { thread: Some(post.clone()), ..Links::default() };
+    inject(&w, &forged_under(&a, first, &a.keys, &cid, thread, "in the time out", while_out).await);
+    w.pump(&all).await;
+    let c = w.node().await;
+    let all = [&owner, &b, &c];
+    join_by_link(&w, &owner, &c, &cid, &all).await;
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    c.svc.listen(&c.keys).await.unwrap_or_else(|e| panic!("listen: {e}"));
+    w.pump(&all).await;
+    for n in [&b, &c] {
+        assert!(thread_texts(n, &cid, &post).await.is_empty(), "nothing dated into the time out");
+    }
+}
+
+/// The review of 2026-10-30: a removed author's old post that comes to a
+/// device after the removal goes by the premoderation in force now, as
+/// their new words would; it is not shown before a moderator lets it.
+#[tokio::test]
+async fn an_old_post_of_one_removed_waits_for_the_premoderation_in_force_now() {
+    let w = World::new();
+    let owner = w.node().await;
+    let s = w.node().await;
+    let all = [&owner, &s];
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    join_by_link(&w, &owner, &s, &cid, &all).await;
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    owner.svc.act(&owner.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(5);
+    let (post, _) = s.svc.send_post(&s.keys, &cid, "by the author", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, OpBody::Remove { who: pk(&s) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(5);
+    owner.svc.act(&owner.keys, &cid, Settings { premod: Some(Premod::All), ..Settings::default() }.body()).await.unwrap_or_else(|e| panic!("premod: {e}"));
+    w.pump(&all).await;
+    let c = w.node().await;
+    let all = [&owner, &c];
+    join_by_link(&w, &owner, &c, &cid, &all).await;
+    w.clock.advance(300);
+    tick(&owner).await;
+    w.pump(&all).await;
+    c.svc.listen(&c.keys).await.unwrap_or_else(|e| panic!("listen: {e}"));
+    w.pump(&all).await;
+    let row = db::content::get(c.svc.db(), &post).await.ok().flatten().unwrap_or_else(|| panic!("the post came"));
+    assert_eq!(row.review, crate::marks::REVIEW_PENDING, "held by the premoderation in force now");
+}
 /// The trial of 1.6, problem 10: a reader new to a busy channel caught
 /// up the newest 500 events of each kind (strfry's cap of a REQ) and no
 /// more. The journal asked for by a link, then the journal, the epochs

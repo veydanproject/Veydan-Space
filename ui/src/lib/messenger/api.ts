@@ -711,6 +711,12 @@ export interface MessengerPushDevice {
   reason: string | null;
   detail: string | null;
   permission: PushPermission | null;
+  /**
+   * What keeps messages from ringing: notifications off for the app (`off`),
+   * or the phone's channel of direct messages or of groups below high. Absent
+   * from an older runtime.
+   */
+  quiet?: 'off' | 'dm' | 'groups' | null;
 }
 
 /** `unknown` is a word of a newer server. */
@@ -960,7 +966,7 @@ let mockDesktopNotify: MessengerDesktopNotify = { enabled: true, sound: true, av
 // `messenger.demo.desk=1`: the demo is a computer (no push, notifications of its own).
 const mockDesk = typeof localStorage !== 'undefined' && localStorage.getItem('messenger.demo.desk') === '1';
 let mockPush: MessengerPushView = {
-  device: { supported: !mockDesk, available: !mockDesk, reason: null, detail: null, permission: 'prompt' },
+  device: { supported: !mockDesk, available: !mockDesk, reason: null, detail: null, permission: 'prompt', quiet: null },
   status: {
     enabled: false, offered: false, server: 'https://vpush.veydan.net', server_custom: false,
     dm: true, groups: true, state: 'off', last_ok_at: null, expires_at: null, error: null, relays: [],
@@ -2136,6 +2142,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_push_test: (): MessengerPushTest => ({ outcome: 'delivered', trace: '5f3a9c1e' }),
   messenger_push_take_tap: () => null,
   messenger_push_clear: () => undefined,
+  messenger_push_open_settings: () => undefined,
   messenger_notify_get: () => mockNotify,
   messenger_privacy_get: () => mockPrivacy,
   messenger_presence_list: () => mockPresence(),
@@ -2359,6 +2366,8 @@ export const messengerApi = {
       invoke<MessengerNotifySettings>('messenger_notify_set', { content, lockscreenHidden }),
     /** `dm`, `group:<id>`, or nothing for every notification about messages. */
     clear: (key?: string) => invoke<void>('messenger_push_clear', { key: key ?? null }),
+    /** The phone's settings where messages ring again: the quiet channel, or the app's notifications. */
+    openSettings: () => invoke<void>('messenger_push_open_settings'),
   },
 
   /** What the other side learns: read receipts and presence. */

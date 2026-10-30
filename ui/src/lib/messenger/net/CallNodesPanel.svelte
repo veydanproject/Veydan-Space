@@ -117,8 +117,8 @@
     <div class="block">
       <div class="line">
         <span class="label">{$t('msg_call_nodes_list')}</span>
-        <button class="btn btn-ghost btn-sm" disabled={callNodesStore.probing || callNodesStore.busy} onclick={() => callNodesStore.probe()}>
-          <span class:spin={callNodesStore.probing}><Icon name="refresh-cw" size={12} /></span>{$t('msg_call_nodes_check')}
+        <button class="btn btn-ghost" disabled={callNodesStore.probing || callNodesStore.busy} onclick={() => callNodesStore.probe()}>
+          <span class:spin={callNodesStore.probing}><Icon name="refresh-cw" size={18} /></span>{$t('msg_call_nodes_check')}
         </button>
       </div>
       {#if v.nodes.length}
@@ -145,7 +145,7 @@
               </div>
               {#if n.mine}
                 <button class="icon-btn danger-soft" disabled={callNodesStore.busy} title={$t('msg_calls_node_remove')}
-                  aria-label={$t('msg_calls_node_remove')} onclick={() => remove(n)}><Icon name="trash-2" size={14} /></button>
+                  aria-label={$t('msg_calls_node_remove')} onclick={() => remove(n)}><Icon name="trash-2" size={18} /></button>
               {/if}
             </li>
           {/each}
@@ -157,7 +157,7 @@
         <div class="registry">
           <span>{v.registry_checked_at ? $t('msg_call_nodes_registry', { time: stamp(v.registry_checked_at) }) : $t('msg_call_nodes_registry_never')}</span>
           {#if !v.registry_paused}
-            <button class="btn btn-ghost btn-sm" disabled={callNodesStore.busy} onclick={() => callNodesStore.refreshRegistry()}>
+            <button class="btn btn-ghost" disabled={callNodesStore.busy} onclick={() => callNodesStore.refreshRegistry()}>
               {$t('msg_call_nodes_registry_refresh')}
             </button>
           {/if}
@@ -176,7 +176,7 @@
         <input class="key" type="password" bind:value={key} placeholder={$t('msg_calls_node_key_placeholder')} autocomplete="off" disabled={callNodesStore.busy} />
       {/if}
       <button class="btn btn-ghost" type="submit" disabled={callNodesStore.busy || !text.trim()}>
-        <Icon name="plus" size={14} />{$t('msg_calls_node_add')}
+        <Icon name="plus" size={18} />{$t('msg_calls_node_add')}
       </button>
     </form>
     <p class="hint">{$t('msg_call_nodes_add_hint')}</p>
@@ -186,18 +186,19 @@
 
 <style>
   .nodes { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
   .hint { font-size: var(--fs-xs); color: var(--text-3); }
+  /* The parts of the card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
-  .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--text); }
+  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+  .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
+  .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; font-size: var(--fs-base); color: var(--text); }
   /* A phone is narrower than three choices in one line: each wraps its words instead of the row running off. */
   .seg { align-self: flex-start; max-width: 100%; }
   .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: 7px 0; border-bottom: 1px solid var(--divider); }
-  .row:last-child { border-bottom: none; }
+  .row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-1) 0; }
+  .row + .row { border-top: 1px solid var(--border); }
   .row.unused .node { opacity: 0.55; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
   .dot.active { background: var(--success-text); }
@@ -212,15 +213,15 @@
   .meta .key { display: inline-flex; }
   .tag {
     display: inline-flex; align-items: center; padding: 0 7px; border-radius: var(--radius-pill);
-    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); white-space: nowrap;
+    background: var(--surface-3); border: 1px solid var(--border); color: var(--text-2); white-space: nowrap;
   }
   .tag.own { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }
   .tag.volunteer { border-style: dashed; }
   .registry { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-xs); color: var(--text-3); }
   .add { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .add input {
-    min-width: 0; font: inherit; font-size: var(--fs-xs); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+    min-width: 0; min-height: 44px; font: inherit; font-size: var(--fs-sm); color: var(--text);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .add .ref { flex: 2 1 220px; font-family: var(--font-mono); }
   .add .key { flex: 1 1 140px; }

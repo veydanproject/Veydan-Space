@@ -44,9 +44,9 @@ describe('«Пожаловаться» is there for everyone (Play, 2026-10-22)'
   });
 });
 
-describe('the counts of the team in the menu (a phone, 2026-10-23)', () => {
+describe('the counts of the team in the menu, each in its badge', () => {
   const counts = (queue: number, requests: number, levels: number): StaffCounts => ({ queue, requests, levels, openQueue: noop, openRequests: noop, openLevels: noop });
-  const withCounts = (c: StaffCounts | null) => channelEntries(detail('owner').channel, detail('owner'), false, tr, acts, c).map((e) => ('label' in e ? e.label : '—'));
+  const withCounts = (c: StaffCounts | null) => channelEntries(detail('owner').channel, detail('owner'), false, tr, acts, c).map((e) => ('label' in e ? ('badge' in e && e.badge ? `${e.label} ${e.badge}` : e.label) : '—'));
 
   it('come first, each with its number, then a line', () => {
     expect(withCounts(counts(4, 2, 2)).slice(0, 5)).toEqual(['chan_menu_queue 4', 'chan_mod_tab_requests 2', 'chan_menu_level_requests 2', '—', 'chan_info']);

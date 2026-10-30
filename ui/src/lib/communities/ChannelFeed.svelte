@@ -627,11 +627,11 @@
   const queue = $derived(channelStore.queue[cid] ?? 0);
   const asks = $derived(channelStore.requests[cid] ?? 0);
   const levelAsks = $derived(channelStore.levelRequests[cid] ?? 0);
-  /** What waits for me in the team, as the pills of the head show it (each to whom it is for). */
+  /** What waits for me in the team (each to whom it is for). */
   const waitingQueue = $derived(isModerator(detail) ? queue : 0);
   const waitingAsks = $derived(answersRequests(detail) ? asks : 0);
   const waitingLevels = $derived(isModerator(detail) ? levelAsks : 0);
-  /** On a phone the pills leave the head (2026-10-23): one count on ⋮, the rows in its menu. */
+  /** One count on ⋮, the rows in its menu (the redesign of the feed: no pills in the head, on a computer either). */
   const waitingAll = $derived(waitingQueue + waitingAsks + waitingLevels);
 
   let headMenu = $state<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
@@ -692,15 +692,19 @@
       cancelJoin,
       leave,
       forget,
-    }, phone ? {
+    }, {
       queue: waitingQueue, requests: waitingAsks, levels: waitingLevels,
       openQueue: () => openInfo('queue'), openRequests: () => openInfo('requests'), openLevels: () => openInfo('levels'),
-    } : null);
+    });
   });
 
+  // The head's menu: its width, and its right edge under the ⋮'s.
+  const HEAD_MENU_W = 288;
+  /** The menu of a post: reactions on top, the moderator's pair side by side (the mockup c6.js, variant A). */
+  const ITEM_MENU_W = 316;
   function openHeadMenu(e: MouseEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    headMenu = { open: true, x: r.right - 220, y: r.bottom + 4 };
+    headMenu = { open: true, x: r.right - HEAD_MENU_W, y: r.bottom + 4 };
   }
 
   // The thread follows the post it is of: a new count, an edit, a removal.
@@ -741,28 +745,28 @@
   <PickedTray picked={tray} />
 {/snippet}
 
-{#snippet stateNote(icon: string, title: string, text: string)}
+{#snippet stateNote(icon: string, title: string, text: string, tone: '' | 'mute' = '')}
   <div class="placeholder">
-    <span class="ph-icon"><Icon name={icon} size={24} /></span>
+    <span class="ph-icon" class:mute={tone === 'mute'}><Icon name={icon} size={24} /></span>
     <p>{title}</p>
     <span>{text}</span>
   </div>
 {/snippet}
 
 {#snippet window()}
-  <section class="window">
+  <section class="window" class:phone>
     <header class="head" class:phone>
       {#if onback}
         {#if phone}<button class="icon back" onclick={onback} aria-label={$t('chan_back')}><Icon name="chevron-left" size={24} /></button>
-        {:else}<button class="icon back narrow-only" onclick={onback} title={$t('chan_back')}><Icon name="arrow-left" size={16} /></button>{/if}
+        {:else}<button class="icon back narrow-only" onclick={onback} title={$t('chan_back')}><Icon name="arrow-left" size={18} /></button>{/if}
       {/if}
       <div class="ident" role="button" tabindex="0" onclick={() => (panel === 'info' ? (panel = null) : openInfo())}
         onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openInfo(); } }}>
-        <Avatar {...cover(row?.picture, cid)} label={row?.name ?? ''} seed={cid} size={36} />
+        <Avatar {...cover(row?.picture, cid)} label={row?.name ?? ''} seed={cid} size={phone ? 36 : 40} />
         <div class="who">
           <div class="title">
             <span class="t-name">{row?.name ?? $t('chan_kind')}</span>
-            {#if row?.muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}
+            {#if row?.muted}<span class="dim"><Icon name="bell-off" size={14} /></span>{/if}
           </div>
           <div class="sub">
             {#if where === 'waiting_key' || where === 'joining'}<span class="warn-text">{$t('chan_state_joining')}</span>
@@ -777,59 +781,51 @@
             aria-label={$t('chan_sections_button', { title: shownName })} title={$t('chan_sections_button', { title: shownName })}><Icon name="layout-grid" size={20} /></button>
         {:else}
           <button bind:this={sectionButton} class="sec-btn" style:--chip={shownColor} onclick={() => (tilesOpen = !tilesOpen)} aria-haspopup="dialog" aria-expanded={tilesOpen}
-            title={$t('chan_sections_button', { title: shownName })}>
-            <SectionBadge scope={shownScope} communityId={cid} size={24} />
+            aria-label={$t('chan_sections_button', { title: shownName })} title={$t('chan_sections_button', { title: shownName })}>
+            <SectionBadge scope={shownScope} communityId={cid} size={24} noPhoto />
             <span class="sec-name">{shownName}</span>
             <span class="sec-caret" class:up={tilesOpen}><Icon name="chevron-down" size={16} /></span>
           </button>
         {/if}
       {/if}
-      {#if !phone && isModerator(detail) && queue > 0}
-        <button class="pill" onclick={() => openInfo('queue')} title={$t('chan_mod_tab_queue')}><Icon name="shield" size={13} />{queue}</button>
-      {/if}
-      {#if !phone && answersRequests(detail) && asks > 0}
-        <button class="pill" onclick={() => openInfo('requests')} title={$t('chan_mod_tab_requests')}><Icon name="user-plus" size={13} />{asks}</button>
-      {/if}
-      {#if !phone && isModerator(detail) && levelAsks > 0}
-        <button class="pill" onclick={() => openInfo('levels')} title={$t('chan_mod_tab_levels')}><Icon name="layers" size={13} />{levelAsks}</button>
-      {/if}
-      <button class="icon menu-btn" onclick={openHeadMenu} title={$t('chan_menu')} aria-label={phone && waitingAll > 0 ? `${$t('chan_menu')}: ${waitingAll}` : $t('chan_menu')}><Icon name="more-vertical" size={phone ? 20 : 16} />
-        {#if phone && waitingAll > 0}<span class="menu-count" aria-hidden="true">{waitingAll > 99 ? '99+' : waitingAll}</span>{/if}</button>
-      {#if sectioned && phone && (where === 'reading' || where === 'catching_up')}<span class="h-stripe" style:background={shownColor} aria-hidden="true"></span>{/if}
+      <button class="icon menu-btn" class:on={headMenu.open} aria-expanded={headMenu.open} aria-haspopup="menu" onclick={openHeadMenu} title={$t('chan_menu')} aria-label={waitingAll > 0 ? `${$t('chan_menu')}: ${waitingAll}` : $t('chan_menu')}><Icon name="more-vertical" size={20} />
+        {#if waitingAll > 0}<span class="menu-count" aria-hidden="true">{waitingAll > 99 ? '99+' : waitingAll}</span>{/if}</button>
     </header>
     <!-- Under the head, the colour of the section shown (the accent for «Все»). -->
-    {#if sectioned && !phone && (where === 'reading' || where === 'catching_up')}<div class="stripe" style:background={shownColor} aria-hidden="true"></div>{/if}
+    {#if sectioned && (where === 'reading' || where === 'catching_up')}<div class="stripe" style:background={shownColor} aria-hidden="true"></div>{/if}
 
-    {#if locked}
-      <div class="strip info locked-note" role="status">
-        <Icon name="lock" size={13} />
-        <span class="strip-text"><b>{$t('chan_scope_locked')}.</b> {lockedText}</span>
-        <button class="icon" onclick={() => (locked = null)} aria-label={$t('chan_close')} title={$t('chan_close')}><Icon name="x" size={13} /></button>
-      </div>
-    {/if}
-
-    {#if pinnedPost && where === 'reading'}
-      <button class="pinbar" class:phone onclick={showPinned}>
-        <Icon name="pin" size={14} />
-        <span class="pin-text"><b>{$t('chan_pinned')}</b> {pinnedPost.text ?? pinnedMedia(pinnedPost)}</span>
-      </button>
-    {/if}
-    {#if row?.needs_update}
-      <div class="strip warn"><Icon name="download" size={13} /><span class="strip-text">{$t('chan_needs_update')}</span>
-        <button class="btn btn-ghost btn-sm" onclick={() => void goto('/settings#updates')}>{$t('chan_update')}</button></div>
-    {/if}
-    {#if where === 'catching_up'}
-      <div class="strip info" role="status"><Icon name="key" size={13} />{$t(countKey('chan_state_catching_up', detail?.waiting ?? 0, $locale), { n: String(detail?.waiting ?? 0) })}</div>
-    {/if}
-    {#if offerForMe}
-      <div class="strip info transfer" role="status"><Icon name="key" size={13} />
-        <span class="strip-text">{$t('chan_transfer_in', { name: nameStore.label(offerForMe.peer) })}</span>
-        <button class="btn btn-primary btn-sm" onclick={() => answerTransfer(true)}>{$t('chan_transfer_accept')}</button>
-        <button class="btn btn-ghost btn-sm" onclick={() => answerTransfer(false)}>{$t('chan_transfer_decline')}</button>
-      </div>
-    {/if}
-    {#if mutedText && joined(detail)}<div class="strip warn"><Icon name="bell-off" size={13} />{mutedText}</div>{/if}
-    {#if error}<div class="strip danger" role="alert">{error}</div>{/if}
+    <!-- The bars under the head: cards the feed's width. -->
+    <div class="strips">
+      {#if locked}
+        <div class="strip locked-note" role="status">
+          <span class="s-icon"><Icon name="lock" size={16} /></span>
+          <span class="strip-text"><b>{$t('chan_scope_locked')}.</b> {lockedText}</span>
+          <button class="icon" onclick={() => (locked = null)} aria-label={$t('chan_close')} title={$t('chan_close')}><Icon name="x" size={18} /></button>
+        </div>
+      {/if}
+      {#if pinnedPost && where === 'reading'}
+        <button class="strip pinbar" onclick={showPinned}>
+          <span class="s-icon"><Icon name="pin" size={16} /></span>
+          <span class="pin-text"><b>{$t('chan_pinned')}</b> {pinnedPost.text ?? pinnedMedia(pinnedPost)}</span>
+        </button>
+      {/if}
+      {#if row?.needs_update}
+        <div class="strip warn"><span class="s-icon"><Icon name="download" size={16} /></span><span class="strip-text">{$t('chan_needs_update')}</span>
+          <button class="btn btn-ghost btn-sm" onclick={() => void goto('/settings#updates')}>{$t('chan_update')}</button></div>
+      {/if}
+      {#if where === 'catching_up'}
+        <div class="strip" role="status"><span class="s-icon"><Icon name="key" size={16} /></span><span class="strip-text">{$t(countKey('chan_state_catching_up', detail?.waiting ?? 0, $locale), { n: String(detail?.waiting ?? 0) })}</span></div>
+      {/if}
+      {#if offerForMe}
+        <div class="strip transfer" role="status"><span class="s-icon"><Icon name="key" size={16} /></span>
+          <span class="strip-text">{$t('chan_transfer_in', { name: nameStore.label(offerForMe.peer) })}</span>
+          <button class="btn btn-primary btn-sm" onclick={() => answerTransfer(true)}>{$t('chan_transfer_accept')}</button>
+          <button class="btn btn-ghost btn-sm" onclick={() => answerTransfer(false)}>{$t('chan_transfer_decline')}</button>
+        </div>
+      {/if}
+      {#if mutedText && joined(detail)}<div class="strip warn"><span class="s-icon"><Icon name="bell-off" size={16} /></span><span class="strip-text">{mutedText}</span></div>{/if}
+      {#if error}<div class="strip danger" role="alert"><span class="s-icon"><Icon name="alert-triangle" size={16} /></span><span class="strip-text">{error}</span></div>{/if}
+    </div>
 
     <div class="scroll" bind:this={scroller} {onscroll}>
       <div class="content">
@@ -839,7 +835,7 @@
           <div class="loading"><Icon name="loader" size={14} />{$t('chan_loading')}</div>
         {:else if waitingKey}
           <div class="placeholder">
-            <span class="ph-icon" class:away={keeperAway}><Icon name="key" size={24} /></span>
+            <span class="ph-icon away"><Icon name="key" size={24} /></span>
             {#if keeperAway && row}
               <p>{$t('chan_keeper_away')}</p>
               <span>{row.keeper_last_seen ? $t('chan_keeper_away_seen', { when: listStamp(row.keeper_last_seen) }) : $t('chan_keeper_away_text')}</span>
@@ -848,8 +844,8 @@
               <span>{$t('chan_waiting_key_text')}</span>
             {/if}
             <div class="ph-acts">
-              {#if keeperAway && row?.owner !== me}<button class="btn btn-primary btn-sm" onclick={writeOwner}><Icon name="send" size={13} />{$t('chan_write_owner')}</button>{/if}
-              {#if !isOwner(detail)}<button class="btn btn-ghost btn-sm" onclick={cancelJoin}><Icon name="x" size={13} />{$t('chan_cancel_join')}</button>{/if}
+              {#if keeperAway && row?.owner !== me}<button class="btn btn-primary" onclick={writeOwner}><Icon name="send" size={18} />{$t('chan_write_owner')}</button>{/if}
+              {#if !isOwner(detail)}<button class="btn btn-ghost" onclick={cancelJoin}><Icon name="x" size={18} />{$t('chan_cancel_join')}</button>{/if}
             </div>
           </div>
         {:else if where === 'requested'}
@@ -857,7 +853,7 @@
         {:else if where === 'rejected'}
           {@render stateNote('x', $t('chan_state_rejected'), $t('chan_rejected_text'))}
         {:else if where === 'disbanded'}
-          {@render stateNote('archive', $t('chan_state_disbanded'), $t('chan_disbanded_text'))}
+          {@render stateNote('archive', $t('chan_state_disbanded'), $t('chan_disbanded_text'), 'mute')}
         {:else if where === 'none'}
           {@render stateNote('lock-square-rounded', $t('chan_state_none'), $t('chan_none_text'))}
         {:else}
@@ -913,20 +909,19 @@
       {#if posting}
         <!-- The composer above. -->
       {:else if pickToPost}
-        <div class="no-composer to-section">
-          <Icon name="layout-grid" size={13} />
-          <span>{$t('chan_open_section_to_post')}</span>
-          <button class="btn btn-ghost btn-sm" onclick={() => (tilesOpen = true)}>{$t('chan_sections')}</button>
-        </div>
+        <div class="no-composer"><div class="nc-in to-section">
+          <span class="nc-hint"><Icon name="layout-grid" size={16} /><span>{$t('chan_open_section_to_post')}</span></span>
+          <button class="btn btn-ghost" onclick={() => (tilesOpen = true)}>{$t('chan_sections')}</button>
+        </div></div>
       {:else if where === 'reading' || where === 'catching_up'}
-        <div class="no-composer">
-          <Icon name={canComment(detail, me) ? 'message-circle' : 'lock-square-rounded'} size={13} />
-          {canComment(detail, me) ? $t('chan_readers_comment') : mutedText ?? $t('chan_readers_read')}
-        </div>
+        <div class="no-composer"><div class="nc-in">
+          <span class="nc-hint"><Icon name={canComment(detail, me) ? 'message-circle' : 'lock-square-rounded'} size={16} />
+            <span>{canComment(detail, me) ? $t('chan_readers_comment') : mutedText ?? $t('chan_readers_read')}</span></span>
+        </div></div>
       {:else if where && where !== 'waiting_key' && where !== 'joining'}
-        <div class="no-composer">
-          <button class="btn btn-ghost btn-sm" onclick={forget}><Icon name="trash-2" size={13} />{$t('chan_forget')}</button>
-        </div>
+        <div class="no-composer"><div class="nc-in">
+          <button class="btn btn-ghost" onclick={forget}><Icon name="trash-2" size={18} />{$t('chan_forget')}</button>
+        </div></div>
       {/if}
     </div>
   </section>
@@ -934,7 +929,9 @@
 
 {#snippet side()}
   {#if panel === 'thread' && threadOf && detail}
+    {@const look = sectionOf(lv.scopes, threadOf)}
     <ThreadView {detail} post={threadOf} parts={albumOf.get(threadOf.id) ?? null} section={sectionTitle(lv.scopes, threadOf)}
+      sectionColor={look ? lookOf(look).color : null} sectionIcon={look ? lookOf(look).icon : null}
       onedit={openEdit} onclose={() => { panel = null; threadOf = null; }} />
   {:else if panel === 'info' && detail}
     <ChannelInfo {detail} bind:moderation bind:modTab onclose={() => (panel = null)} onforgotten={() => { panel = null; onback?.(); }} />
@@ -953,7 +950,7 @@
 </div>
 <MediaViewer />
 <ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={entries} header={menu.item && !menu.item.deleted && joined(detail) ? quick : undefined}
-  onclose={() => (menu.open = false)} />
+  width="{ITEM_MENU_W}px" onclose={() => (menu.open = false)} />
 {#if detail}<PersonActions bind:this={acts} {detail} onerror={(e) => (error = e)} />{/if}
 {#if detail}<LevelRequestDialog bind:open={asking.open} {detail} preselect={asking.level} />{/if}
 {#if detail && sectioned}
@@ -961,114 +958,133 @@
     onpick={pick} onlocked={onLocked} onsettings={canSetUpSections(detail) ? setUpSections : undefined} />
 {/if}
 {#if detail && canSetUpSections(detail)}<ScopeDialog bind:open={scopeDialog.open} {detail} scopeId={scopeDialog.id} />{/if}
-<ContextMenu bind:open={headMenu.open} x={headMenu.x} y={headMenu.y} items={headEntries} onclose={() => (headMenu.open = false)} />
+<ContextMenu bind:open={headMenu.open} x={headMenu.x} y={headMenu.y} items={headEntries} width="{HEAD_MENU_W}px" onclose={() => (headMenu.open = false)} />
 
 <style>
   .host { position: relative; height: 100%; min-height: 0; display: flex; flex-direction: column; }
   .under { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .under > :global(*) { flex: 1; min-height: 0; }
   .under.covered { visibility: hidden; }
-  .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; }
-  .head.phone {
-    position: relative; z-index: 2; margin: var(--sp-2) var(--sp-2) 0; min-height: 60px; padding-left: var(--sp-1);
-    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head);
-    background: var(--pane-strong); box-shadow: var(--pane-highlight), var(--pane-shadow);
-    -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
-  }
-  .head.phone .back { color: var(--text); padding: 10px; }
-  .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1; cursor: pointer; border-radius: var(--radius-sm); }
+  .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; container-type: inline-size; }
+  /* The head (the redesign of the feed): who on the left, its name never gives way; the section, ⋮ with one count. */
+  .head { display: flex; align-items: center; gap: 10px; padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; box-sizing: border-box; }
+  /* A phone and a tablet: the whole screen, the head a bar. */
+  /* Over the feed's own layers (a post's ⋮ on its media), under the info panel that lies over the conversation (WithInfo):
+     no layer of the scale sits there, so the base's plus two. */
+  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); min-height: 60px; gap: 6px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-1); background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
+  .head.phone .back { color: var(--text); }
+  .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 160px; flex: 1 1 auto; cursor: pointer; border-radius: var(--radius-sm); }
+  .head.phone .ident { min-width: 0; gap: 10px; }
   .ident:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-  .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-base); overflow: hidden; white-space: nowrap; }
+  .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-md); overflow: hidden; white-space: nowrap; }
   .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .sub { font-size: var(--fs-2xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font-size: var(--fs-sm); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .warn-text { color: var(--warn-text); }
   .dim { color: var(--text-3); display: inline-flex; }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
+  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .head .icon { flex-shrink: 0; width: 36px; height: 36px; padding: 0; align-items: center; justify-content: center; border-radius: var(--radius); }
+  .head.phone .icon { width: 40px; height: 40px; border-radius: var(--radius-md); }
   .narrow-only { display: none; }
-  @media (max-width: 860px) { .narrow-only { display: inline-flex; } }
-  .pill {
-    display: inline-flex; align-items: center; gap: 4px; border: none; cursor: pointer; font: inherit; font-size: var(--fs-2xs);
-    font-weight: var(--fw-bold); padding: 3px 8px; border-radius: var(--radius-pill); background: var(--accent); color: #fff;
-  }
-  /* The button of the sections (the redesign, 2026-10-23): the mark and the name of the section shown, tinted with its colour. */
+  @media (max-width: 860px) { .head .narrow-only { display: inline-flex; } }
+  /* The button of the sections: the mark and the name of the section shown, the caret. */
   .sec-btn {
-    display: inline-flex; align-items: center; gap: 8px; height: 36px; max-width: 260px; padding: 0 8px 0 6px; flex-shrink: 1; min-width: 0;
-    border-radius: 12px; cursor: pointer; font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text);
-    border: 1px solid color-mix(in srgb, var(--chip) 45%, transparent); background: color-mix(in srgb, var(--chip) 16%, transparent);
+    display: inline-flex; align-items: center; gap: var(--sp-2); height: 36px; max-width: 260px; padding: 0 10px 0 6px; flex-shrink: 0; min-width: 0;
+    border: none; border-radius: var(--radius-md); background: none; cursor: pointer; font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text);
+    transition: background var(--dur-fast);
   }
-  .sec-btn:hover { background: color-mix(in srgb, var(--chip) 24%, transparent); }
+  .sec-btn:hover, .sec-btn[aria-expanded="true"] { background: var(--surface-2); }
   .sec-btn:focus-visible, .sec-icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .sec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sec-caret { display: inline-flex; color: color-mix(in srgb, var(--chip) 60%, var(--text)); transition: transform var(--dur-fast); }
+  .sec-caret { display: inline-flex; color: var(--text-3); transition: transform var(--dur-fast); }
   .sec-caret.up { transform: rotate(180deg); }
-  @media (max-width: 760px) { .sec-name { display: none; } }
-  /* On a phone an icon alone, beside the menu, in the section's tint. */
-  .sec-icon.icon { border-radius: 12px; background: color-mix(in srgb, var(--chip) 16%, transparent); color: color-mix(in srgb, var(--chip) 65%, var(--text)); }
+  /* On a phone an icon alone, beside the menu, in the ink of the section's colour. */
+  .sec-icon.icon { color: color-mix(in srgb, var(--chip) 65%, var(--text)); }
+  .sec-icon.icon[aria-expanded="true"] { background: var(--surface-2); }
   .stripe { height: 3px; flex-shrink: 0; }
-  .menu-btn { position: relative; flex-shrink: 0; }
-  /* What waits for the team, on ⋮ of a phone: the sum of the pills a desktop shows. */
-  .menu-count {
-    position: absolute; top: 4px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px;
-    display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #fff;
-    font-size: 11px; font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--pane-strong);
+  .menu-btn { position: relative; }
+  /* While its menu is open the ⋮ stays lit. */
+  .menu-btn.on { background: var(--surface-2); color: var(--text); }
+  /* The count on ⋮ is the primitive .menu-count of base.css; on a phone it sits a little lower. */
+  .head.phone .menu-count { top: 0; right: -2px; }
+  /* The bars under the head: cards the feed's width. */
+  .strips { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-6) 0; flex-shrink: 0; }
+  .strips:not(:has(> *)) { display: none; }
+  .strip {
+    display: flex; align-items: center; gap: 10px; width: 100%; max-width: 720px; margin: 0 auto; min-height: 44px; box-sizing: border-box;
+    padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--bubble-in-border); background: var(--bubble-in-bg);
+    color: var(--text-2); font: inherit; font-size: var(--fs-sm); line-height: 1.45; text-align: left;
   }
-  .head.phone .sec-icon { flex-shrink: 0; }
-  /* The phone's head gives its name and «Раздел «X» · N читателей» the room (2026-10-23): tighter gaps, buttons narrower than tall. */
-  .head.phone { gap: 4px; padding-right: 4px; }
-  .head.phone .ident { gap: 10px; }
-  .head.phone .back { padding: 10px 8px; }
-  .head.phone .menu-btn { padding: 10px 8px; }
-  .head.phone .sec-icon { padding: 10px 9px; }
-  .h-stripe { position: absolute; left: 16px; right: 16px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; pointer-events: none; }
-  .locked-note b { font-weight: var(--fw-semibold); color: var(--text-body); }
-  .pinbar {
-    display: flex; align-items: center; gap: var(--sp-2); width: 100%; padding: 8px var(--sp-5); border: none; border-bottom: 1px solid var(--pane-border);
-    background: var(--surface); color: var(--accent-text-2); font: inherit; font-size: var(--fs-xs); text-align: left; cursor: pointer; flex-shrink: 0;
-  }
-  .pinbar:hover { background: var(--surface-hover); }
-  /* On a phone the bar sits inset under the inset head, as one more pane. */
-  .pinbar.phone { width: auto; margin: var(--sp-2) var(--sp-2) 0; padding: 8px var(--sp-3); border: 1px solid var(--pane-border); border-radius: var(--radius-md); }
+  .s-icon { flex-shrink: 0; width: 28px; height: 28px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); }
   .strip-text { flex: 1; min-width: 0; }
+  .strip .icon { flex-shrink: 0; }
+  .locked-note b { font-weight: var(--fw-semibold); color: var(--text-body); }
+  .pinbar { cursor: pointer; }
+  .pinbar:hover { background: var(--surface-hover); }
+  .strip.pinbar:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .pin-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
-  .pin-text b { color: var(--accent-text-2); font-weight: var(--fw-semibold); margin-right: 4px; }
-  .strip { display: flex; align-items: center; gap: 6px; padding: 6px var(--sp-4); font-size: var(--fs-xs); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .strip.info { color: var(--text-2); background: var(--surface-2); }
-  .strip.transfer .strip-text { flex: 1; min-width: 0; }
-  .strip.warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-border); }
+  .pin-text b { color: var(--accent-text); font-weight: var(--fw-bold); margin-right: 4px; }
+  .strip.warn { color: var(--text); background: var(--warn-bg); border-color: var(--warn-border); }
+  .strip.warn .s-icon { background: var(--warn-bg); color: var(--warn-text); }
   .strip.danger { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); }
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; }
+  .strip.danger .s-icon { background: var(--danger-bg); color: var(--danger-text); }
+  /* The feed: a column of cards. */
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-6) var(--sp-4); display: flex; flex-direction: column; }
   .content { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-3); flex-shrink: 0; }
   .content:has(> .placeholder) { margin-bottom: auto; }
-  .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); color: var(--text-3); text-align: center; padding: var(--sp-6); }
-  .ph-icon { width: 56px; height: 56px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-tint); color: var(--accent-text-2); }
-  .placeholder p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .placeholder span { font-size: var(--fs-xs); max-width: 340px; line-height: 1.5; }
+  /* The states without a feed. */
+  .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text-2); text-align: center; padding: var(--sp-6); }
+  .ph-icon { width: 56px; height: 56px; margin-bottom: 6px; border-radius: var(--radius-lg); display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); }
+  .placeholder p { margin: 0; color: var(--text); font-weight: var(--fw-bold); font-size: var(--fs-lg); }
+  .placeholder span { font-size: var(--fs-base); max-width: 380px; line-height: 1.55; }
   .ph-icon.away { background: var(--warn-bg); color: var(--warn-text); }
+  .ph-icon.mute { background: var(--surface-3); color: var(--text-3); }
   .ph-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-2); }
   .loading { display: flex; justify-content: center; align-items: center; gap: var(--sp-2); color: var(--text-3); padding: var(--sp-2); font-size: var(--fs-xs); }
   .loading :global(svg) { animation: spin 1.1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .earlier { display: flex; justify-content: center; }
-  .history-start { text-align: center; color: var(--text-3); font-size: var(--fs-xs); padding: var(--sp-1); }
-  .out-note { align-self: center; display: inline-flex; align-items: center; gap: 6px; text-align: center; line-height: 1.4; font-size: var(--fs-xs); color: var(--text-2); padding: 4px 12px; border-radius: var(--radius-pill); background: var(--surface-2); }
+  .history-start { text-align: center; color: var(--text-3); font-size: var(--fs-xs); padding: var(--sp-2) var(--sp-1) 0; }
+  .out-note { align-self: center; display: inline-flex; align-items: center; gap: 6px; text-align: center; line-height: 1.4; font-size: var(--fs-xs); color: var(--text-2); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-2); }
   /* A list kept hidden takes no place; the one shown lays its cards out as children of the feed. */
   .list { display: none; }
   .list.on { display: contents; }
   .day { display: flex; justify-content: center; }
-  .day span { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--text-2); padding: 3px 10px; border-radius: var(--radius-pill); background: var(--surface-2); border: 1px solid var(--border); }
+  .day span { display: inline-flex; align-items: center; height: 26px; box-sizing: border-box; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); padding: 0 var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-3); border: 1px solid var(--border); }
   .bottom { flex-shrink: 0; }
   .compose.off { display: none; }
-  .no-composer { display: flex; align-items: center; justify-content: center; gap: 6px; padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-3); }
-  .quick { display: flex; gap: 2px; padding: 2px; }
-  .q { border: none; background: none; font-size: 20px; width: 36px; height: 36px; border-radius: var(--radius-sm); cursor: pointer; }
+  /* The foot without a composer: what readers do, or the way to a section, the feed's width. */
+  .no-composer { padding: var(--sp-3) var(--sp-6); border-top: 1px solid var(--pane-border); }
+  .nc-in { max-width: 720px; margin: 0 auto; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: var(--sp-3); }
+  .nc-in.to-section { justify-content: space-between; }
+  .nc-hint { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-base); color: var(--text-3); }
+  .nc-hint :global(svg) { flex-shrink: 0; }
+  .no-composer .btn { min-height: var(--control-h); flex-shrink: 0; }
+  .window.phone .no-composer .btn { min-height: var(--control-h-lg); }
+  /* A narrow window: the name keeps its room, the section is its mark alone. */
+  @container (max-width: 620px) {
+    .head:not(.phone) .sec-name, .head:not(.phone) .sec-caret { display: none; }
+    .head:not(.phone) .sec-btn { width: 36px; padding: 0; justify-content: center; }
+    .window:not(.phone) .strips, .window:not(.phone) .scroll, .window:not(.phone) .no-composer { padding-left: var(--sp-4); padding-right: var(--sp-4); }
+  }
+  /* A phone (a tablet keeps the computer's room around the cards). */
+  @container (max-width: 599px) {
+    .window.phone .strips { padding: var(--sp-2) var(--sp-3) 0; }
+    .window.phone .scroll { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+    .window.phone .content { gap: 10px; }
+    .window.phone .no-composer { padding: 10px var(--sp-3) 14px; }
+  }
+  /* The reactions over the menu of a post: round 40, spread across it (the mockup c6.js). */
+  .quick { display: flex; justify-content: space-between; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2); }
+  /* The circles shrink to fit any width of the menu (40 at most, 44 on a finger), evenly spread, none cut. */
+  .q { flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; height: auto; padding: 0; border: none; background: var(--surface-3); font-size: 20px; line-height: 1; border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
+  @media (pointer: coarse) { .q { max-width: 44px; } }
+  .q:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .q:hover { background: var(--surface-hover); }
   .q.mine { background: var(--accent-bg); }
   @media (pointer: coarse) {
     .icon { padding: 10px; }
-    .head { padding-inline: var(--sp-2); gap: var(--sp-2); }
-    .scroll { padding-inline: var(--sp-2); }
   }
 </style>

@@ -175,7 +175,7 @@
   .phase.clock { font-variant-numeric: tabular-nums; color: var(--success-text); font-weight: var(--fw-semibold); }
   .ended .phase { color: var(--text-2); }
   .via, .muted-mark {
-    display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: var(--radius-pill); font-size: var(--fs-2xs);
+    display: inline-flex; align-items: center; gap: 3px; padding: 1px var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-2xs);
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); cursor: help;
   }
   .via.relay { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }

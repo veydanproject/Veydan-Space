@@ -89,6 +89,8 @@ pub const JOINS_PER_MINUTE: usize = 120;
 /// join (`JOIN_RETRY_SECS`, ten minutes).
 pub const OWED_FIRST_WAIT_SECS: i64 = 15;
 pub const OWED_MAX_WAIT_SECS: i64 = 600;
+/// How often one never let in is told so again (`channel.not_let_in`).
+pub const NOT_LET_IN_EVERY: i64 = 600;
 
 /// The bounds of a keeper (fields, so that tests can lower them).
 #[derive(Clone, Copy, Debug)]
@@ -435,6 +437,9 @@ pub struct Keeper {
     /// The operations of the journal acted on in this run (`on_op`): the
     /// rows (`mark_op`) are asked once for each.
     ops_done: std::collections::HashSet<String>,
+    /// When each key the journal names but never let in was last told so
+    /// (`channel.not_let_in`, once in `NOT_LET_IN_EVERY`).
+    not_let_in_told: std::collections::HashMap<String, i64>,
     /// The issues sent to the user at work on this device (or the owner):
     /// the service hands them to its own member side at once
     /// (`take_issued_to_me`), not by the echo of the relay.
@@ -481,6 +486,7 @@ impl Keeper {
             cloud_asked: None,
             snapshot_pending: None,
             ops_done: Default::default(),
+            not_let_in_told: Default::default(),
             to_me: Vec::new(),
             snapshot_out: None,
             built_mark: None,
@@ -517,6 +523,7 @@ impl Keeper {
             cloud_asked: None,
             snapshot_pending: None,
             ops_done: Default::default(),
+            not_let_in_told: Default::default(),
             to_me: Vec::new(),
             snapshot_out: None,
             built_mark: None,
@@ -834,6 +841,26 @@ impl Keeper {
             self.admit_reader(log, from, now).await?;
             return Ok(Joined::Issued);
         }
+        // A join written before the journal put this person out is one the
+        // removal undid: a keeper that reads two days of notes again with no
+        // rows of the keeper before it (an emergency on a fresh device) let
+        // the one removed back in by it (an e2e of 2026-10-30). Dropped
+        // without a word: an old client told `rejected` would stop its feed.
+        // The join and the removal are dated by two clocks, and nothing of the
+        // journal orders a note: a join dated at or before the removal counts
+        // as a replay (a new one comes with a new invitation, minutes later;
+        // one refused by a clock far behind is sent again by its app).
+        // Operations the journal rejected (a demoted moderator's) put nobody out.
+        let out_at = log
+            .ordered()
+            .filter(|o| log.rejection(&o.id()).is_none())
+            .filter(|o| matches!(&o.body, OpBody::Remove { who } | OpBody::Ban { who, .. } if who == from))
+            .map(|o| o.created_at)
+            .max();
+        if out_at.is_some_and(|t| join.created_at <= t) {
+            self.env.say.line(&format!("{} from {} for {}: written before the journal put them out, a replay: dropped", wire::T_JOIN, from.short(), crate::service::short(&self.community_id)));
+            return Ok(Joined::Refused("put out after this join"));
+        }
         // A channel past what a snapshot names would fail every snapshot
         // after it: the newcomer is refused, clearly, at the door.
         let readers = self.scopes.get(SCOPE_EVERYONE).map_or(0, ScopeKeeper::members_len);
@@ -976,7 +1003,21 @@ impl Keeper {
     /// `channel.rebundle`: the bundle of the current generation again, to
     /// a current member only (`join` is never called here).
     pub async fn on_rebundle(&mut self, log: &OpLog, from: &PubKey, r: &Rebundle, now: i64) -> Result<bool> {
-        if r.community_id != self.community_id || r.check().is_err() || !self.in_scope(from, &r.scope_id) {
+        if r.community_id != self.community_id || r.check().is_err() {
+            return Ok(false);
+        }
+        if !self.in_scope(from, &r.scope_id) {
+            // Staff by the journal never let in as a reader (made an author
+            // before any invitation): told so, once a while, instead of
+            // silence, so that it stops asking and is invited. Anyone else
+            // is answered nothing.
+            let told = self.not_let_in_told.get(from.as_hex()).is_some_and(|t| now - t < NOT_LET_IN_EVERY);
+            if !self.is_member(from) && log.state().role_of(from).is_some() && !told {
+                self.not_let_in_told.insert(from.as_hex().to_string(), now);
+                let body = wire::NotLetIn { community_id: self.community_id.clone(), scope_id: r.scope_id.clone() };
+                self.send_note(Some(log.state()), from, wire::T_NOT_LET_IN, &body, now).await?;
+                tracing::info!(community = %self.community_id, who = %from.short(), "a bundle asked by one never let in: told to be invited first");
+            }
             return Ok(false);
         }
         let issued = self.sk(&r.scope_id)?.kd_mut().bundle_for(member_id(from)?, secs(now)).map_err(kd)?;

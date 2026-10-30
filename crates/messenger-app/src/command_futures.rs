@@ -117,6 +117,7 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_push_ticket_revoke", r2(crate::commands::push::messenger_push_ticket_revoke)));
     v.push(("messenger_push_take_tap", r1(crate::commands::push::messenger_push_take_tap)));
     v.push(("messenger_push_clear", r2(crate::commands::push::messenger_push_clear)));
+    v.push(("messenger_push_open_settings", r1(crate::commands::push::messenger_push_open_settings)));
     v.push(("messenger_notify_get", r2(crate::commands::push::messenger_notify_get)));
     v.push(("messenger_notify_set", r4(crate::commands::push::messenger_notify_set)));
     v.push(("messenger_status", r2(crate::commands::messenger_status)));

@@ -51,11 +51,11 @@
 {#if !many}
   <div class="chips" role="radiogroup" aria-label={label || $t('msg_srv_row_server')}>
     {#if none !== null}
-      <button type="button" class="chip" class:on={value === null} role="radio" aria-checked={value === null} {disabled} onclick={() => pick(null)}>{none}</button>
+      <button type="button" class="srv-chip" class:on={value === null} role="radio" aria-checked={value === null} {disabled} onclick={() => pick(null)}>{none}</button>
     {/if}
     {#each servers as s (s.id)}
-      <button type="button" class="chip" class:on={value === s.id} role="radio" aria-checked={value === s.id} {disabled} onclick={() => pick(s.id)}>
-        <Icon name="server-2" size={12} /><span class="chip-text">{nameOfServer(s)}</span>
+      <button type="button" class="srv-chip" class:on={value === s.id} role="radio" aria-checked={value === s.id} {disabled} onclick={() => pick(s.id)}>
+        <Icon name="server-2" size={12} /><span class="srv-chip-text">{nameOfServer(s)}</span>
       </button>
     {/each}
   </div>
@@ -95,14 +95,18 @@
 
 <style>
   .chips { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0;
-    font: inherit; font-size: var(--fs-xs); color: var(--text-2); cursor: pointer;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 4px 10px;
+  /* A chip of the design book: 32 high, 13 semibold, the chosen one in the accent. */
+  .srv-chip {
+    display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%; min-width: 0; min-height: 32px;
+    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 0 var(--sp-3);
+    transition: border-color var(--dur-fast), color var(--dur-fast);
   }
-  .chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip.on { background: var(--accent-tint); color: var(--accent-text-2); border-color: transparent; }
-  .chip:disabled { opacity: 0.5; cursor: default; }
+  .srv-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srv-chip:hover:not(:disabled) { border-color: var(--border-2); color: var(--text); }
+  .srv-chip.on { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent-border); }
+  .srv-chip:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .srv-chip:disabled { opacity: 0.5; cursor: default; }
 
   .many { display: flex; flex-direction: column; gap: 6px; }
   .field {
@@ -113,7 +117,7 @@
   .field-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .host { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .count { font-size: var(--fs-2xs); color: var(--text-3); padding: 0 6px; border-radius: var(--radius-pill); background: var(--surface-2); }
+  .count { font-size: var(--fs-2xs); color: var(--text-3); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-2); }
   .list { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
   .search {
     font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);
@@ -132,5 +136,5 @@
   .opt.on { background: var(--accent-tint); }
   .opt.on .name { color: var(--accent-text-2); }
   .empty { padding: 8px; font-size: var(--fs-xs); color: var(--text-3); }
-  @media (pointer: coarse) { .chip { padding: 8px 12px; font-size: var(--fs-sm); } .opt { padding: 10px 8px; } .search { font-size: var(--fs-md); } }
+  @media (pointer: coarse) { .srv-chip { min-height: 40px; padding: 0 var(--sp-4); } .opt { padding: 10px 8px; } .search { font-size: var(--fs-md); } }
 </style>

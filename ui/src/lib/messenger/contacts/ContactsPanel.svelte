@@ -199,7 +199,7 @@
   }
   .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .tag { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.5px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--accent-tint); color: var(--accent-text-2); }
+  .tag { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.5px; padding: 1px var(--sp-2); border-radius: var(--radius-sm); background: var(--accent-tint); color: var(--accent-text-2); }
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
   .meta code { font-family: var(--font-mono); }
   .verified { color: var(--success-text); }

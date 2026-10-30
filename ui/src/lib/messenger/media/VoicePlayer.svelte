@@ -92,7 +92,8 @@
 </div>
 
 <style>
-  .voice { display: flex; align-items: center; gap: var(--sp-2); min-width: 220px; max-width: 320px; }
+  /* A wide wave (mockups c7.js): play 40, the wave across the bubble, the time at its end on the same line. */
+  .voice { display: flex; align-items: center; gap: var(--sp-3); width: 300px; max-width: 100%; padding: var(--sp-1) 0; }
   .play {
     width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
     background: var(--accent); color: #fff; display: inline-flex; align-items: center; justify-content: center;
@@ -100,11 +101,11 @@
   .play:disabled { opacity: 0.6; }
   .spin :global(svg) { animation: spin 1.1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-  .wave { display: flex; align-items: center; gap: 2px; height: 26px; cursor: pointer; overflow: hidden; }
-  .wave i { display: block; flex: 1 1 0; min-width: 2px; max-width: 4px; border-radius: 2px; background: var(--text-3); opacity: 0.55; }
+  .body { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex: 1; }
+  .wave { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 2px; height: 26px; cursor: pointer; overflow: hidden; }
+  .wave i { display: block; flex: 0 1 3px; min-width: 2px; border-radius: 2px; background: var(--text-3); opacity: 0.55; }
   .wave i.done { background: var(--accent); opacity: 1; }
-  .row { display: flex; align-items: center; gap: var(--sp-2); }
+  .row { flex: none; display: flex; align-items: center; gap: var(--sp-2); }
   .time { font-size: var(--fs-2xs); color: var(--text-3); font-family: var(--font-mono); }
   .rate {
     height: 18px; padding: 0 6px; border: none; border-radius: var(--radius-pill); background: var(--surface-hover);

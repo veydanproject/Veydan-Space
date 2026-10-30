@@ -786,6 +786,9 @@ pub const T_ADMIT: &str = "channel.admit";
 pub const T_REJECTED: &str = "channel.rejected";
 pub const T_ISSUE: &str = "channel.issue";
 pub const T_REBUNDLE: &str = "channel.rebundle";
+/// The keeper to one the journal names who asked for a bundle and was never
+/// let in as a reader (2026-10-30): invite first.
+pub const T_NOT_LET_IN: &str = "channel.not_let_in";
 pub const T_MISSED: &str = "channel.missed";
 pub const T_LEAVE: &str = "channel.leave";
 pub const T_KEEPER_MASTER: &str = "keeper.master";
@@ -1022,6 +1025,27 @@ impl Rejected {
         }
         if self.reason.as_deref().is_some_and(|r| r.chars().count() > MAX_REQUEST_NOTE_CHARS) {
             return Err("reason");
+        }
+        Ok(())
+    }
+}
+
+/// `channel.not_let_in`: the keeper's answer to a `channel.rebundle` of one
+/// the journal names (staff) whom it never let in as a reader: no bundle
+/// comes until they are invited (or join) and admitted.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotLetIn {
+    pub community_id: String,
+    pub scope_id: String,
+}
+
+impl NotLetIn {
+    pub fn check(&self) -> Check {
+        if !is_hex(&self.community_id, 64) {
+            return Err("community_id");
+        }
+        if self.scope_id.is_empty() || self.scope_id.len() > 64 {
+            return Err("scope_id");
         }
         Ok(())
     }

@@ -138,15 +138,19 @@
     <p class="hint">{$t(`chan_premod_hint_${premod}` as 'chan_premod_hint_off')}</p>
   </section>
 
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  <!-- The verb stays at the foot of the panel while the rules scroll under it (the owner's rule, 2026-10-25). -->
   <div class="actions">
-    <button class="btn btn-primary btn-sm" disabled={busy || !valid} onclick={save}>{$t('chan_save')}</button>
-    {#if saved}<span class="saved">{$t('chan_saved')}</span>{/if}
+    {#if error}<div class="error-msg">{error}</div>{/if}
+    <div class="actions-row">
+      <button class="btn btn-primary btn-sm" disabled={busy || !valid} onclick={save}>{$t('chan_save')}</button>
+      {#if saved}<span class="saved">{$t('chan_saved')}</span>{/if}
+    </div>
   </div>
 </div>
 
 <style>
-  .settings { display: flex; flex-direction: column; gap: var(--sp-5); }
+  /* It fills the panel's scroll down into its bottom padding (--sp-4), so its bar of actions stands at the very foot even when the rules are short. */
+  .settings { flex: 1 0 auto; margin-bottom: calc(-1 * var(--sp-4)); display: flex; flex-direction: column; gap: var(--sp-5); }
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
   .sub { font-size: var(--fs-xs); color: var(--text-2); }
@@ -167,7 +171,13 @@
   }
   .field:focus { outline: none; border-color: var(--accent-border); }
   .field.bad { border-color: var(--danger-border); }
-  .actions { display: flex; align-items: center; gap: var(--sp-3); }
+  /* Pinned to the foot of ModerationPanel's scroll, out to its edges: the negative margins and bottom take back its padding (--sp-4), which a sticky box otherwise keeps clear of. */
+  .actions {
+    position: sticky; bottom: calc(-1 * var(--sp-4)); z-index: calc(var(--z-base) + 1); margin: auto calc(-1 * var(--sp-4)) 0;
+    display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4);
+    background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); border-top: 1px solid var(--border);
+  }
+  .actions-row { display: flex; align-items: center; gap: var(--sp-3); }
   .saved { font-size: var(--fs-xs); color: var(--success-text, var(--success)); }
   @media (pointer: coarse) {
     .field { font-size: var(--fs-md); min-height: 44px; }

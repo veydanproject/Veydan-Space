@@ -72,7 +72,8 @@
   }
 </script>
 
-<Dialog open={ask !== null} title={$t('msg_srv_invite_title')} width="min(420px, calc(100vw - 24px))" onclose={() => privateInvite.close()}>
+<Dialog open={ask !== null} title={$t('msg_srv_invite_title')} width="min(420px, calc(100vw - 24px))" onclose={() => privateInvite.close()}
+  footer={ask ? ways : undefined}>
   {#if ask}
     <div class="body">
       {#if peer}
@@ -84,39 +85,51 @@
       <p class="lead">{$t(peer ? 'msg_srv_invite_lead_peer' : 'msg_srv_invite_lead')}</p>
       {#if (serverStore.list?.length ?? 0) > 1}<ServerPicker bind:value={server} disabled={busy} />{/if}
       {#if chosen}
-        <ServerBox server={{ ...chosen, is_veydan: false }} />
+        <div class="srv"><ServerBox server={{ ...chosen, is_veydan: false }} /></div>
       {:else if serverStore.list}
         <p class="lead">{$t('msg_srv_list_empty')}</p>
       {/if}
       {#if error}<div class="error-msg">{error}</div>{/if}
-      <div class="ways">
-        {#if peer}
-          <button type="button" class="btn btn-primary" disabled={busy || !chosen} onclick={send}>
-            <Icon name={busy ? 'loader' : 'send'} size={14} />{$t('msg_srv_invite_send')}
-          </button>
-        {/if}
-        <button type="button" class="btn" class:btn-primary={!peer} class:btn-ghost={!!peer} disabled={busy || !chosen} onclick={copy}>
-          <Icon name="copy" size={14} />{$t('msg_srv_invite_copy')}
-        </button>
-        {#if !peer}
-          <button type="button" class="btn btn-ghost" disabled={busy || !chosen} onclick={share}>
-            <Icon name="message-circle" size={14} />{$t('msg_srv_invite_share')}
-          </button>
-        {/if}
-      </div>
       <p class="note">{$t('msg_srv_invite_link_hint')}</p>
     </div>
   {/if}
 </Dialog>
+
+<!-- The ways in stay at the window's foot while the server's card scrolls (the owner's rule). -->
+{#snippet ways()}
+  <div class="ways">
+    {#if peer}
+      <button type="button" class="btn btn-primary" disabled={busy || !chosen} onclick={send}>
+        <Icon name={busy ? 'loader' : 'send'} size={18} />{$t('msg_srv_invite_send')}
+      </button>
+    {/if}
+    <button type="button" class="btn" class:btn-primary={!peer} class:btn-ghost={!!peer} disabled={busy || !chosen} onclick={copy}>
+      <Icon name="copy" size={18} />{$t('msg_srv_invite_copy')}
+    </button>
+    {#if !peer}
+      <button type="button" class="btn btn-ghost" disabled={busy || !chosen} onclick={share}>
+        <Icon name="message-circle" size={18} />{$t('msg_srv_invite_share')}
+      </button>
+    {/if}
+  </div>
+{/snippet}
 
 <ShareDialog bind:open={sharing} card={{ pubkey: null }} {server} />
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .who { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lead { margin: 0; font-size: var(--fs-sm); color: var(--text-body); line-height: 1.5; }
-  .ways { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .ways .btn { justify-content: center; }
-  .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lead { margin: 0; font-size: var(--fs-base); color: var(--text-body); line-height: 1.5; }
+  /* The server as one card of rows, a line between them (design book, «Пригласить в частный чат»). */
+  .srv :global(.srv-box) { gap: 0; padding: var(--sp-1) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  .srv :global(.head), .srv :global(.row) { align-items: center; padding: var(--sp-2) 0; font-size: var(--fs-sm); }
+  .srv :global(.rows) { gap: 0; font-size: var(--fs-sm); }
+  .srv :global(.row) { border-top: 1px solid var(--border); }
+  .srv :global(dt), .srv :global(.head .label) { color: var(--text-2); }
+  .srv :global(dd) { color: var(--text); }
+  /* The ways side by side where their words fit, else one under the other, the whole width. */
+  .ways { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .ways .btn { flex: 1 1 auto; justify-content: center; }
+  .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
 </style>

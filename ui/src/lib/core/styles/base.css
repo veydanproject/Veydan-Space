@@ -516,6 +516,83 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--text-2);
 }
 
+/* ── A row of a list pane ── one row for the chats, the groups, the channels, the calls, the contacts and the
+   requests: 64 high, an avatar of 48, the text column right of it — the name over the line, the marks of the
+   row (kind, muted, pinned; 14, --text-3) right after the name, the time and the counts at the right end.
+   `.list-rows` on the <ul>, each <li> holds one `.list-row` (a button, or a box with a `.list-row-main`
+   button and its trailing buttons); an <li> of another kind (a label, a rule) is not a row. Between two
+   rows a hairline of --divider from the text (72 from the left) to 12 from the right, hidden beside a
+   hovered or chosen row. `.unread`: the name heavier, the line bright and bold, the time in the accent;
+   the count is a `.count-pill.lg`. */
+.list-rows { --list-avatar: 48px; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.list-row {
+  position: relative; display: flex; align-items: center; gap: var(--sp-3); box-sizing: border-box; width: 100%;
+  min-height: 64px; padding: var(--sp-2) var(--sp-3); border: none; border-radius: var(--radius-lg);
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.list-row:hover { background: var(--surface-hover); }
+.list-row:focus-visible, .list-row-main:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+.list-row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
+.list-rows > li:has(> .list-row) + li > .list-row::before {
+  content: ''; position: absolute; top: -0.5px; left: calc(var(--sp-3) * 2 + var(--list-avatar)); right: var(--sp-3); height: 1px;
+  background: var(--divider); pointer-events: none; transition: opacity var(--dur-fast) var(--ease);
+}
+.list-rows > li > .list-row:is(:hover, .active)::before,
+.list-rows > li:has(> .list-row:is(:hover, .active)) + li > .list-row::before { opacity: 0; }
+/* A row with buttons of its own at the end: its main part is a button over the whole rest of the row. */
+.list-row-main {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); align-self: stretch;
+  margin: calc(var(--sp-2) * -1) 0 calc(var(--sp-2) * -1) calc(var(--sp-3) * -1); padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
+  border: none; border-radius: var(--radius-lg) 0 0 var(--radius-lg); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.list-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.list-row-top, .list-row-bottom { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.list-row-name { min-width: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row-mark { flex-shrink: 0; display: inline-flex; color: var(--text-3); }
+.list-row-time { flex-shrink: 0; margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.list-row-line { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row.unread .list-row-name { font-weight: var(--fw-extrabold); }
+.list-row.unread .list-row-line { color: var(--text); font-weight: var(--fw-semibold); }
+.list-row.unread .list-row-time { color: var(--accent-text); font-weight: var(--fw-bold); }
+
+/* ── A list as a column of covers ── (the list pane at 72: chats, groups,
+   channels, calls, contacts). The open one is lit; a count sits on its corner. */
+.list-cover {
+  position: relative; flex-shrink: 0; display: grid; place-items: center; width: 52px; height: 52px; padding: 0;
+  border: none; border-radius: var(--radius-lg); background: none; color: var(--text-2); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.list-cover:hover { background: var(--surface-hover); color: var(--text); }
+.list-cover:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+.list-cover.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
+/* Its corner count is the .count-pill of 18 (below, .muted/.missed its colours) in a ring of the chrome. */
+.list-cover-corner { position: absolute; top: 0; right: 0; box-shadow: 0 0 0 2px var(--chrome); }
+.list-cover-empty { display: grid; place-items: center; width: 52px; height: 52px; color: var(--text-3); }
+.list-cover-empty .spinner { width: 20px; height: 20px; }
+
+/* ── A count ── one counter everywhere: a section of the rail, a row of a list, a cover's corner, ⋮,
+   a tile, a tab, a block's head. A pill never narrower than tall, the number centred in tabular figures.
+   Sizes: .sm 18 (a corner, ⋮, a tab), 20 by default (a block's head), .lg 22 (a row of a list).
+   Colours: the accent with white (unread, the default), .quiet (muted, or only a total), .danger (missed, errors).
+   .list-cover-corner and .menu-count are counts of 18 under their own names. */
+.count-pill, .list-cover-corner, .menu-count {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--radius-pill);
+  background: var(--accent); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap;
+}
+.count-pill.sm, .list-cover-corner, .menu-count { min-width: 18px; height: 18px; padding: 0 5px; font-size: var(--fs-2xs); }
+.count-pill.lg { min-width: 22px; height: 22px; padding: 0 7px; }
+.count-pill.quiet, .list-cover-corner.muted { background: var(--surface-3); color: var(--text-2); }
+.count-pill.danger, .list-cover-corner.missed { background: var(--danger); color: #fff; }
+/* On a segmented control (itself surface-3) the quiet count steps a shade down to stay visible. */
+.seg .count-pill.quiet { background: var(--surface-2); }
+
+/* ── The count on ⋮ ── what waits behind a head's menu (a channel's feed, a chat, a group): one count of 18
+   on the button's corner, the rows are in its menu. The button is position: relative. */
+.menu-count { position: absolute; top: -2px; right: -4px; pointer-events: none; }
+
 /* ── Segmented control ── (view tabs on Board, language/theme pickers)
    Container is a pill-box; the active option gets the accent tint. */
 .seg {
@@ -544,6 +621,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .seg-btn:hover:not(.active):not(:disabled) { color: var(--text); }
 .seg-btn.active { background: var(--accent-bg); color: var(--accent-text); }
+.seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
 .seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 /* Standalone segment buttons (Settings language/theme: 44px, own borders) */
 .seg-btn-lg {

@@ -105,9 +105,27 @@ impl ChannelService {
     /// An event of a channel. `live`: it came now (not from a sync of the
     /// past): old epochs are refused for live content only (wire §4).
     pub async fn on_event(&self, keys: &Keys, signed: &serde_json::Value, live: bool) -> Result<Outcome> {
+        // A marker of `settle`: the events before it were read.
+        if self.settle_heard(signed) {
+            return Ok(Outcome::default());
+        }
         // How far each kind was heard, for the catch-up after a start; a
-        // forged event moves nothing but where the next one asks from.
-        self.heard(signed, live).await?;
+        // forged event moves nothing but where the next one asks from. An
+        // epoch or a snapshot of a channel whose journal is not here yet is
+        // dropped (it cannot be checked): it moves no cursor either, so that
+        // the next round asks for it again (a device restored on a fresh
+        // folder heard the epochs before the journal and never again).
+        let kind = signed["kind"].as_u64().and_then(|k| u16::try_from(k).ok());
+        let before_journal = match kind {
+            Some(wire::KIND_EPOCH) | Some(wire::KIND_SNAPSHOT) => match tag(signed, "h") {
+                Some(cid) => self.log(&cid).await?.is_none(),
+                None => false,
+            },
+            _ => false,
+        };
+        if !before_journal {
+            self.heard(signed, live).await?;
+        }
         let out = match signed["kind"].as_u64().and_then(|k| u16::try_from(k).ok()) {
             Some(wire::KIND_JOURNAL) => self.on_journal(keys, signed).await?,
             Some(wire::KIND_EPOCH) => self.on_epoch_event(keys, signed).await?,
@@ -338,6 +356,7 @@ impl ChannelService {
             out.note("an epoch before the journal");
             return Ok(out);
         };
+        self.note_epoch_heard(&cid, &log, signed).await?;
         let m = self.member(keys).on_epoch(&log, signed, self.now()).await?;
         if !m.keys.is_empty() {
             self.mark(Some(format!("channel {}: the secrets of links owed, by the new key", short(&cid))));
@@ -537,21 +556,31 @@ impl ChannelService {
         Ok(out)
     }
 
-    /// Of a message by an author the journal bans now, written before that
-    /// ban: the reader its author was then, by the key of its epoch (wire
-    /// §4, 2026-10-22). Only under an epoch alive at its date — not dated
-    /// before the epoch began, nor sealed under one older than the epoch
-    /// before the one current then (the guard of live content, `current −
-    /// 1`, at its date): a banned reader holding old keys writes back no
-    /// further than the life of the last epoch they held before the ban.
-    async fn before_ban(&self, log: &OpLog, author: &PubKey, written: i64, epoch: u32, scope_id: &str) -> Result<Option<Reader>> {
-        let state = log.state();
-        if !state.is_banned(author) {
+    /// Of a message by an author who is not in now (`out_now`), banned or
+    /// removed by the journal, written before the journal put them out
+    /// last: the reader its author was then, by the key of its epoch (wire
+    /// §4, 2026-10-22 for a ban, 2026-10-30 for a removal). Bound to that
+    /// last time put out, not to the message's own date: sealed under the
+    /// epoch current then or the one before it (one put out holding older
+    /// keys writes back no further than the last two epochs before), dated
+    /// before it, not before its epoch began, and — after an earlier time
+    /// put out — under an epoch that began after it (the time out is no
+    /// time in). A key that no snapshot names and no operation put out is
+    /// still judged at the head: holding the key of an epoch is no proof of
+    /// having been in. Judged at the head instead, a device that came after
+    /// the removal (a new device, a folder restored empty) dropped every
+    /// old message of a removed author that the devices there at the time
+    /// keep.
+    async fn before_out(&self, log: &OpLog, author: &PubKey, out_now: bool, written: i64, epoch: u32, scope_id: &str) -> Result<Option<Reader>> {
+        if !out_now {
             return Ok(None);
         }
+        let state = log.state();
         let applied = || log.ordered().filter(|o| log.rejection(&o.id()).is_none());
-        let ban_at = applied().filter_map(|o| matches!(&o.body, OpBody::Ban { who, .. } if who == author).then_some(o.created_at)).max();
-        if ban_at.is_none_or(|b| written >= b) {
+        let put_out = |o: &&crate::op::Op| matches!(&o.body, OpBody::Ban { who, .. } | OpBody::Remove { who } if who == author);
+        let outs: Vec<i64> = applied().filter(put_out).map(|o| o.created_at).collect();
+        let Some(last_out) = outs.iter().copied().max() else { return Ok(None) };
+        if written >= last_out {
             return Ok(None);
         }
         let rows = db::keys::epochs(&self.env.db, &state.community_id, scope_id).await?;
@@ -559,14 +588,18 @@ impl ChannelService {
         if written < own.at - wire::SKEW_SECS {
             return Ok(None);
         }
-        let current_then = rows.iter().filter(|r| r.at <= written).map(|r| r.epoch).max().unwrap_or(0);
-        if i64::from(epoch) < current_then - 1 {
+        let current_at = |t: i64| rows.iter().filter(|r| r.at <= t).map(|r| r.epoch).max().unwrap_or(0);
+        let e = i64::from(epoch);
+        if e < current_at(written) - 1 || e < current_at(last_out) - 1 {
             return Ok(None);
         }
-        // In since the epoch began, and after any earlier time put out.
-        let out = applied().filter_map(|o| matches!(&o.body, OpBody::Ban { who, .. } | OpBody::Remove { who } if who == author).then_some(o.created_at)).filter(|t| *t <= written).max();
-        let since = out.map_or(own.at, |t| own.at.max(t + 1)).min(written);
-        Ok(Some(Reader { since }))
+        // Put out before too: in again only under an epoch begun since.
+        if let Some(earlier) = outs.iter().copied().filter(|t| *t <= written).max() {
+            if own.at <= earlier {
+                return Ok(None);
+            }
+        }
+        Ok(Some(Reader { since: own.at.min(written) }))
     }
 
     /// A message: who is in, banned and muted by the journal at max(its
@@ -579,18 +612,26 @@ impl ChannelService {
         let cid = state.community_id.clone();
         let Ok(env) = Envelope::parse(&m.content) else { return Ok(()) };
         let written = m.created_at.min(self.now());
-        // Written before a ban (wire §4, 2026-10-22): judged at its date on
-        // every device, the one that heard it then and the one that came
-        // after the ban alike; that its author was in shows the key of its
-        // epoch, dated within the life of that epoch (the trial of 1.6,
-        // problem 8).
-        let before_ban = self.before_ban(log, &m.author, written, epoch, scope_id).await?;
-        let at = if before_ban.is_some() { written } else { m.created_at.max(Self::head_at(log, self.now())) };
-        let reader = before_ban.or(reader);
+        // Written before its author was put out (wire §4: a ban 2026-10-22,
+        // a removal 2026-10-30): judged at its date on every device, the
+        // one that heard it then and the one that came after alike; that
+        // its author was in shows the key of its epoch, one of the last two
+        // before they were put out (the trial of 1.6, problem 8; the review
+        // of 2026-10-30). What the head says of them stays what a
+        // premoderation, an edit and a deletion are judged by.
+        let head = m.created_at.max(Self::head_at(log, self.now()));
+        let snapshot_reader = reader;
+        let out_now = rules_at(log, &m.author, snapshot_reader.as_ref(), head).standing == crate::state::Standing::Outsider;
+        let before_out = self.before_out(log, &m.author, out_now, written, epoch, scope_id).await?;
+        let at = if before_out.is_some() { written } else { head };
+        let reader = before_out.or(reader);
         let rules = rules_at(log, &m.author, reader.as_ref(), at);
         let then = rules_at(log, &m.author, reader.as_ref(), written);
         let kind = if m.is_post() { Content::Post } else { Content::Comment };
         let author = m.author.as_hex().to_string();
+        // The message an edit, a deletion or a reaction changes: told with
+        // the event, since the event's own id names no row.
+        let target = matches!(env.t.as_str(), T_REACTION | T_EDIT | T_DELETE).then(|| env.str_field("target").map(str::to_string)).flatten();
         match env.t.as_str() {
             T_TEXT | T_MEDIA => {
                 if let Some(closed) = rules.closed_written(&then, kind, written) {
@@ -624,7 +665,7 @@ impl ChannelService {
                     text: if env.t == T_MEDIA { env.str_field("caption") } else { env.as_text() }.map(str::to_string),
                     media_json: (env.t == T_MEDIA).then(|| m.content.clone()),
                     version: m.id.as_hex().to_string(),
-                    review: if rules.subject_to_premod() { REVIEW_PENDING } else { REVIEW_OK }.into(),
+                    review: if rules.subject_to_premod() || (before_out.is_some() && premod_now(log, &m.author, before_out.as_ref(), head)) { REVIEW_PENDING } else { REVIEW_OK }.into(),
                     mod_state: db::content::MOD_SHOWN.into(),
                     deleted: false,
                     received_at: self.now(),
@@ -654,7 +695,8 @@ impl ChannelService {
             T_EDIT => {
                 let (Some(target), Some(text)) = (env.str_field("target"), env.str_field("text")) else { return Ok(()) };
                 let Some(row) = db::content::get(&self.env.db, target).await? else { return Ok(()) };
-                if row.author != author || row.scope_id != scope_id || m.links.target.as_deref() != Some(target) {
+                // One who is out now edits nothing, whatever the date says.
+                if out_now || row.author != author || row.scope_id != scope_id || m.links.target.as_deref() != Some(target) {
                     return Ok(());
                 }
                 // An edit of a file is a new caption (wire §4, 2026-10-23):
@@ -677,7 +719,9 @@ impl ChannelService {
                 let Some(target) = env.str_field("target") else { return Ok(()) };
                 let Some(row) = db::content::get(&self.env.db, target).await? else { return Ok(()) };
                 let Some(target_author) = PubKey::parse(&row.author) else { return Ok(()) };
-                if row.scope_id != scope_id || m.links.target.as_deref() != Some(target) || !state.can_delete_message(&m.author, reader.as_ref(), &target_author) {
+                // By what the head says of the one who deletes: one put out
+                // deletes nothing back-dated, not even their own.
+                if row.scope_id != scope_id || m.links.target.as_deref() != Some(target) || !state.can_delete_message(&m.author, snapshot_reader.as_ref(), &target_author) {
                     return Ok(());
                 }
                 if row.deleted {
@@ -687,7 +731,11 @@ impl ChannelService {
             }
             _ => return Ok(()),
         }
-        out.event(UI_EVENT_CHANNEL_MESSAGE, serde_json::json!({ "community_id": cid, "id": m.id.as_hex() }));
+        let mut ev = serde_json::json!({ "community_id": cid, "id": m.id.as_hex() });
+        if let Some(target) = target {
+            ev["target"] = target.into();
+        }
+        out.event(UI_EVENT_CHANNEL_MESSAGE, ev);
         Ok(())
     }
 
@@ -979,6 +1027,18 @@ impl ChannelService {
                 let join = Join { community_id: cid.clone(), proof: None, admit_id: Some(admit.admit_id.clone()), created_at: now };
                 self.send_join(state, &keeper, &join).await?;
                 self.refresh_row(state, &me, Some(MEMBERSHIP_JOINING)).await?;
+            }
+            wire::T_NOT_LET_IN => {
+                let Some(log) = log else { return Ok(out) };
+                let body: wire::NotLetIn = wire::note_body(&env)?;
+                let keeper = log.state().keeper().is_some_and(|k| k.pubkey == n.sender);
+                if body.check().is_ok() && body.community_id == cid && keeper {
+                    self.say(&format!("{} from {} for {}: never let in as a reader, invite first", env.t, n.sender.short(), short(&cid)));
+                    if let Ok(mut r) = self.not_let_in.lock() {
+                        r.insert(cid.clone());
+                    }
+                    out.event(UI_EVENT_CHANNEL_UPDATED, serde_json::json!({ "community_id": cid, "keeper": crate::service::NEVER_LET_IN }));
+                }
             }
             wire::T_REJECTED => {
                 let Some(log) = log else { return Ok(out) };
@@ -1349,6 +1409,15 @@ impl ChannelService {
     }
 }
 
+/// Whether the premoderation in force at the head holds a message of one
+/// put out since, judged as the member they were (`Rules::subject_to_premod`
+/// takes nobody outside): what they wrote before comes to a device after
+/// them through the queue as their new words would.
+fn premod_now(log: &OpLog, author: &PubKey, reader: Option<&Reader>, head: i64) -> bool {
+    let mut rules = rules_at(log, author, reader, head);
+    rules.standing = crate::state::Standing::Member;
+    rules.subject_to_premod()
+}
 #[cfg(test)]
 mod tests {
     use super::*;

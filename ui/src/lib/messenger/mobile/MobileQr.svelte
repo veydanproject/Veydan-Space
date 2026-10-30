@@ -8,7 +8,7 @@
   it goes back where it was asked from.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { t } from '$lib/core/i18n';
@@ -24,6 +24,8 @@
   markPhone();
 
   let manual = $state(false);
+  /** MyQr's actions, kept in the bottom bar of the page. */
+  let foot = $state<Snippet>();
   const scan = page.url.searchParams.get('scan') === '1';
 
   onMount(() => {
@@ -32,14 +34,27 @@
   });
 </script>
 
-<MobileFrame title={$t('msg_inv_my_qr')} onback={() => void leave(BASE)}>
-  <div class="pad">
-    <MyQr onchat={(id) => goto(chatHref(id))} onmanual={() => (manual = true)} {scan} onscanclosed={() => void leave(BASE)} />
+<!-- The middle scrolls; the actions stay in a bar at the bottom of the screen (the owner's rule). -->
+<MobileFrame title={$t('msg_inv_my_qr')} onback={() => void leave(BASE)} scroll={false}>
+  <div class="mid">
+    <div class="pad">
+      <MyQr bind:foot onchat={(id) => goto(chatHref(id))} onmanual={() => (manual = true)} {scan} onscanclosed={() => void leave(BASE)} />
+    </div>
   </div>
+  {#if foot}<div class="foot">{@render foot()}</div>{/if}
 </MobileFrame>
 
 <NewChatDialog bind:open={manual} onopened={() => { if (chatStore.activeId) goto(chatHref(chatStore.activeId)); }} />
 
 <style>
+  /* The frame's own scroll and padding, now of the middle alone. */
+  .mid { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--sp-3); }
   .pad { padding: var(--sp-4); }
+  /* Under the scroll, the content's edges kept (--sp-3 + --sp-4); the home indicator's inset under it. */
+  .foot {
+    flex-shrink: 0; display: flex;
+    padding: var(--sp-3) calc(var(--sp-3) + var(--sp-4)) calc(var(--sp-3) + var(--sab, 0px));
+    background: var(--m-nav, var(--glass-bar)); border-top: 1px solid var(--border);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+  }
 </style>

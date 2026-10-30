@@ -12,12 +12,12 @@ import { scheduleText } from './moderation/schedule';
 
 type Translate = (key: string, params?: Record<string, string>) => string;
 
-const JOINS = ['open', 'request', 'invite'];
-const HISTORIES = ['open', 'from_join'];
+export const JOINS = ['open', 'request', 'invite'];
+export const HISTORIES = ['open', 'from_join'];
 const PREMODS = ['off', 'newcomers', 'all'];
 
 /** A value of a rule as the settings word it; any other value (a newer core) as it came. */
-const choice = (tr: Translate, prefix: string, known: string[], v: string): string => (known.includes(v) ? tr(`${prefix}${v}`) : v);
+export const choice = (tr: Translate, prefix: string, known: string[], v: string): string => (known.includes(v) ? tr(`${prefix}${v}`) : v);
 
 const OUT_REASONS = ['left', 'removed', 'banned'];
 

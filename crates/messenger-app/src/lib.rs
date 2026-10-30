@@ -82,6 +82,7 @@ pub fn module() -> Module {
                 commands::push::messenger_push_test,
                 commands::push::messenger_push_take_tap,
                 commands::push::messenger_push_clear,
+                commands::push::messenger_push_open_settings,
                 #[cfg(desktop)]
                 commands::desktop_notify::messenger_desktop_notify_get,
                 #[cfg(desktop)]

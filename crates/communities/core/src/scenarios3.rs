@@ -178,6 +178,230 @@ async fn a_lost_keeper_device_is_replaced_by_an_emergency_generation() {
 }
 
 #[tokio::test]
+async fn an_emergency_that_failed_half_way_is_resumed_when_asked_again() {
+    let w = World::new();
+    let (a, b, r, cid) = owner_two_devices(&w).await;
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&[&a, &b, &r]).await;
+    // The hosts are down: the shards of the snapshot cannot be had, and the
+    // emergency is refused before it writes anything.
+    w.hosts.set_down(H1, true);
+    w.hosts.set_down(H2, true);
+    let err = b.svc.keeper_take(&b.keys, &cid, true).await.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(err.contains(crate::handover::NO_READERS), "{err}");
+    assert!(b.svc.keeper_take_status(&cid).await.ok().flatten().is_none(), "no take row");
+    let serial = |n: &Node| {
+        let (svc, cid) = (n.svc.clone(), cid.clone());
+        async move { svc.log(&cid).await.ok().flatten().and_then(|l| l.state().keeper().map(|k| k.serial)) }
+    };
+    assert_eq!(serial(&b).await, Some(0), "no series announced");
+    w.hosts.set_down(H1, false);
+    w.hosts.set_down(H2, false);
+    w.pump(&[&b, &r]).await;
+    // An emergency that failed after its `keeper` operation went out (a
+    // failure past the readers): the row says emergency, no keeper here.
+    // Asked again, the same take goes on to its end.
+    b.svc.keeper_take(&b.keys, &cid, false).await.unwrap_or_else(|e| panic!("take: {e}"));
+    let mut take = b.svc.keeper_take_status(&cid).await.ok().flatten().unwrap_or_else(|| panic!("the take row"));
+    take.mode = db::handover::MODE_EMERGENCY.into();
+    db::handover::put_take(b.svc.db(), &take).await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(!keeps(&b, &cid).await);
+    b.svc.keeper_take(&b.keys, &cid, true).await.unwrap_or_else(|e| panic!("take again: {e}"));
+    w.pump(&[&b, &r]).await;
+    assert!(keeps(&b, &cid).await, "the emergency was resumed");
+    assert!(b.svc.keeper_take_status(&cid).await.ok().flatten().is_none());
+    let bundles = db::keys::bundles(r.svc.db(), &cid, SCOPE_EVERYONE).await.unwrap_or_default();
+    assert!(bundles.iter().any(|(_, _, emergency)| *emergency), "the reader got the emergency bundle: {bundles:?}");
+    b.svc.send_post(&b.keys, &cid, "resumed", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&b, &r]).await;
+    assert_eq!(post_texts(&r, &cid).await, ["resumed"]);
+}
+
+/// The owner, a reader who stays and two who are put out (each removal an
+/// epoch of its own), and a snapshot that names the readers.
+async fn owner_and_readers(w: &World) -> (Node, Node, Node, Node, String) {
+    let a = w.node().await;
+    let cid = create(w, &a, JoinMode::Open).await;
+    let (r, g1, g2) = (w.node().await, w.node().await, w.node().await);
+    join_by_link(w, &a, &r, &cid, &[&a, &r]).await;
+    join_by_link(w, &a, &g1, &cid, &[&a, &r, &g1]).await;
+    join_by_link(w, &a, &g2, &cid, &[&a, &r, &g1, &g2]).await;
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&[&a, &r, &g1, &g2]).await;
+    (a, r, g1, g2, cid)
+}
+
+async fn put_out(w: &World, a: &Node, who: &Node, cid: &str, all: &[&Node]) {
+    w.clock.advance(10);
+    a.svc.act(&a.keys, cid, OpBody::Remove { who: pk(who) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(all).await;
+    // The epoch that leaves them out, now rather than at the keeper's hour.
+    a.svc.rotate_now(cid).await.unwrap_or_else(|e| panic!("rotate: {e}"));
+    w.clock.advance(10);
+    tick(a).await;
+    w.pump(all).await;
+}
+
+#[tokio::test]
+async fn a_takeover_by_a_device_that_heard_no_epoch_is_refused_and_begins_past_them_once_heard() {
+    let w = World::new();
+    let (a, r, g1, _g2, cid) = owner_and_readers(&w).await;
+    put_out(&w, &a, &g1, &cid, &[&a, &r, &g1]).await;
+    let newest_a = db::keys::newest_epoch(r.svc.db(), &cid).await.unwrap_or(0);
+    assert!(newest_a >= 2, "the keeper rotated past the removal: {newest_a}");
+    // A is lost. The owner's fresh device has the journal and the keys, no epoch event.
+    let c = w.device(a.keys.clone()).await;
+    c.hold(KIND_EPOCH, true);
+    w.pump(&[&c]).await;
+    assert!(c.svc.log(&cid).await.ok().flatten().is_some(), "the journal is here");
+    let err = c.svc.keeper_take(&c.keys, &cid, true).await.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(err.contains("epochs of the channel are not here"), "{err}");
+    assert!(c.svc.keeper_take_status(&cid).await.ok().flatten().is_none(), "nothing of the take was written");
+    // Heard: the series begins past the newest epoch, and the reader takes it.
+    c.hold(KIND_EPOCH, false);
+    w.pump(&[&c]).await;
+    // No snapshot after the removal: the one put out is still in the newest.
+    let snap_after = c.svc.member(&c.keys).latest_snapshot(&cid).await.ok().flatten().map(|s| s.at).unwrap_or(0);
+    let removed_at = c.svc.log(&cid).await.ok().flatten().and_then(|l| l.ordered().filter(|o| matches!(o.body, OpBody::Remove { .. })).map(|o| o.created_at).max()).unwrap_or(0);
+    assert!(snap_after < removed_at, "the newest snapshot predates the removal ({snap_after} < {removed_at})");
+    c.svc.keeper_take(&c.keys, &cid, true).await.unwrap_or_else(|e| panic!("take: {e}"));
+    w.pump(&[&c, &r, &g1]).await;
+    let from = c.svc.log(&cid).await.ok().flatten().and_then(|l| l.state().keeper().map(|k| k.from_epoch)).unwrap_or(0);
+    assert!(from > newest_a, "the series begins past {newest_a}: {from}");
+    assert_eq!(db::keys::newest_epoch(r.svc.db(), &cid).await.unwrap_or(0), from, "the reader took the first epoch of the series");
+    c.svc.send_post(&c.keys, &cid, "from the new keeper", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&c, &r]).await;
+    assert_eq!(post_texts(&r, &cid).await, ["from the new keeper"]);
+    w.pump(&[&g1]).await;
+    let emergency_bundles = db::keys::bundles(g1.svc.db(), &cid, SCOPE_EVERYONE).await.unwrap_or_default().into_iter().filter(|(_, _, e)| *e).count();
+    assert_eq!(emergency_bundles, 0, "the one put out after the snapshot gets no bundle of the new generation");
+    assert!(!post_texts(&g1, &cid).await.contains(&"from the new keeper".to_string()));
+    assert!(r.errors().is_empty(), "{:?}", r.errors());
+}
+
+#[tokio::test]
+async fn a_partly_behind_device_takes_the_keeper_past_the_epochs_on_the_relays() {
+    let w = World::new();
+    let (a, r, g1, g2, cid) = owner_and_readers(&w).await;
+    // A device of the owner that heard epoch 1, then no epoch live.
+    let c = w.device(a.keys.clone()).await;
+    w.pump(&[&c]).await;
+    c.hold(KIND_EPOCH, true);
+    put_out(&w, &a, &g1, &cid, &[&a, &r, &g1, &c]).await;
+    put_out(&w, &a, &g2, &cid, &[&a, &r, &g2, &c]).await;
+    let newest_a = db::keys::newest_epoch(r.svc.db(), &cid).await.unwrap_or(0);
+    assert!(newest_a >= 3, "{newest_a}");
+    assert!(c.svc.newest_epoch_known(&cid).await.unwrap_or(0) < newest_a, "behind: the epochs since were not heard");
+    // A is lost. The take brings the channel to its head from the relays
+    // first (the epochs come by a catch-up, not live), then numbers past it.
+    let pump = async {
+        for _ in 0..60 {
+            c.sync().await;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    };
+    let (taken, ()) = tokio::join!(c.svc.keeper_take_at_head(&c.keys, &cid, true, false, std::time::Duration::from_secs(20)), pump);
+    taken.unwrap_or_else(|e| panic!("take: {e}"));
+    let from = c.svc.log(&cid).await.ok().flatten().and_then(|l| l.state().keeper().map(|k| k.from_epoch)).unwrap_or(0);
+    assert!(from > newest_a, "the series begins past {newest_a}: {from}");
+    w.pump(&[&c, &r]).await;
+    c.svc.send_post(&c.keys, &cid, "past the head", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&c, &r]).await;
+    assert_eq!(post_texts(&r, &cid).await, ["past the head"]);
+}
+
+#[tokio::test]
+async fn a_removal_the_journal_rejected_leaves_the_reader_in_the_emergency_generation() {
+    let w = World::new();
+    let (a, b, x, cid) = owner_two_devices(&w).await;
+    let m = w.node().await;
+    join_by_link(&w, &a, &m, &cid, &[&a, &b, &x, &m]).await;
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&m), role: Role::Moderator }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&[&a, &b, &x, &m]).await;
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&[&a, &b, &x, &m]).await;
+    // A demotes M, who does not hear it and removes X: kept, rejected.
+    m.hold(crate::wire::KIND_JOURNAL, true);
+    w.clock.advance(10);
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&m), role: Role::Member }).await.unwrap_or_else(|e| panic!("demote: {e}"));
+    w.pump(&[&a, &b, &x]).await;
+    w.clock.advance(10);
+    m.svc.act(&m.keys, &cid, OpBody::Remove { who: pk(&x) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&[&a, &b, &x, &m]).await;
+    let log = b.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    let removal = log.ordered().find(|o| matches!(&o.body, OpBody::Remove { who } if *who == pk(&x))).map(|o| o.id()).unwrap_or_else(|| panic!("the removal is kept"));
+    assert!(log.rejection(&removal).is_some(), "the journal rejected the demoted moderator's removal");
+    // A is lost; B takes it over in an emergency: X is a reader still.
+    b.svc.keeper_take(&b.keys, &cid, true).await.unwrap_or_else(|e| panic!("take: {e}"));
+    w.pump(&[&b, &x]).await;
+    let bundles = db::keys::bundles(x.svc.db(), &cid, SCOPE_EVERYONE).await.unwrap_or_default();
+    assert!(bundles.iter().any(|(_, _, emergency)| *emergency), "X got the emergency bundle: {bundles:?}");
+    b.svc.send_post(&b.keys, &cid, "X reads on", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&b, &x]).await;
+    assert!(post_texts(&x, &cid).await.contains(&"X reads on".to_string()), "{:?}", post_texts(&x, &cid).await);
+}
+
+#[tokio::test]
+async fn an_epoch_of_a_stolen_keeper_key_far_ahead_does_not_move_where_a_series_begins() {
+    let w = World::new();
+    let (a, b, r, cid) = owner_two_devices(&w).await;
+    // A snapshot that names the reader, as an emergency needs.
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&[&a, &b, &r]).await;
+    let kkeys = a.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("keeper")).lock().await.keys().clone();
+    let real = &w.relay.of_kind(KIND_EPOCH)[0];
+    for (epoch, prev) in [(u32::MAX - 1, Some(u32::MAX - 2)), (u32::MAX, None), (4_000_000_000, Some(3_999_999_999))] {
+        let mut content: crate::epoch::EpochContent = serde_json::from_str(real["content"].as_str().unwrap_or("")).unwrap_or_else(|e| panic!("{e}"));
+        content.event.epoch = epoch;
+        content.event.prev_epoch = prev;
+        let ev = crate::epoch::sign_epoch(&kkeys, &cid, SCOPE_EVERYONE, &content).unwrap_or_else(|e| panic!("{e}"));
+        w.relay.events.lock().unwrap_or_else(|p| p.into_inner()).push(serde_json::to_value(&ev).unwrap_or_default());
+    }
+    w.pump(&[&a, &b, &r]).await;
+    let known = b.svc.newest_epoch_known(&cid).await.unwrap_or(0);
+    assert!(known < 100, "the forged epochs counted: {known}");
+    b.svc.keeper_take(&b.keys, &cid, true).await.unwrap_or_else(|e| panic!("take: {e}"));
+    let from = b.svc.log(&cid).await.ok().flatten().and_then(|l| l.state().keeper().map(|k| k.from_epoch)).unwrap_or(0);
+    assert!(from < 100, "{from}");
+    w.clock.advance(400);
+    tick(&b).await;
+    w.pump(&[&b, &r]).await;
+    b.svc.send_post(&b.keys, &cid, "numbers sane", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&b, &r]).await;
+    assert_eq!(post_texts(&r, &cid).await, ["numbers sane"]);
+}
+
+#[tokio::test]
+async fn a_take_row_of_a_series_the_journal_went_past_is_dropped_not_resumed() {
+    let w = World::new();
+    let (a, b, r, cid) = owner_two_devices(&w).await;
+    // A hears nothing of the journal any more (it never hands over). B
+    // announces a take; then a third device of the owner takes the keeper
+    // (a later series), and B is asked for an emergency.
+    a.hold(crate::wire::KIND_JOURNAL, true);
+    b.svc.keeper_take(&b.keys, &cid, false).await.unwrap_or_else(|e| panic!("take: {e}"));
+    w.pump(&[&a, &b, &r]).await;
+    let c = w.device(a.keys.clone()).await;
+    w.pump(&[&c]).await;
+    // B's series never published an epoch: the owner says so (`force`).
+    c.svc.keeper_take_with(&c.keys, &cid, false, true).await.unwrap_or_else(|e| panic!("take: {e}"));
+    w.pump(&[&a, &c, &r]).await;
+    w.pump(&[&b]).await;
+    let mut take = b.svc.keeper_take_status(&cid).await.ok().flatten().unwrap_or_else(|| panic!("B still waits"));
+    take.mode = db::handover::MODE_EMERGENCY.into();
+    db::handover::put_take(b.svc.db(), &take).await.unwrap_or_else(|e| panic!("{e}"));
+    // B's row names a series the journal went past: dropped, and B takes a new one.
+    b.svc.keeper_take_with(&b.keys, &cid, true, true).await.unwrap_or_else(|e| panic!("take again: {e}"));
+    let series = b.svc.log(&cid).await.ok().flatten().and_then(|l| l.state().keeper().map(|k| k.serial)).unwrap_or(0);
+    assert!(series as i64 > take.serial, "a series of its own past the stale one: {series} > {}", take.serial);
+    assert!(keeps(&b, &cid).await);
+}
+
+#[tokio::test]
 async fn a_take_is_the_owners_alone_and_not_on_the_keepers_device() {
     let w = World::new();
     let (a, _b, r, cid) = owner_two_devices(&w).await;
@@ -427,4 +651,255 @@ async fn tickets_stop_at_fifty_and_an_open_channel_has_none() {
     let open = create(&w, &o2, JoinMode::Open).await;
     let err = o2.svc.tickets_request(&o2.keys, &open, 1).await.err().map(|e| e.to_string()).unwrap_or_default();
     assert!(err.contains("open channel"), "{err}");
+}
+
+#[tokio::test]
+async fn a_join_written_before_its_writer_was_put_out_is_dropped_without_a_word() {
+    let w = World::new();
+    let (a, _b, r, cid) = owner_two_devices(&w).await;
+    let written = w.clock.now();
+    w.clock.advance(600);
+    a.svc.act(&a.keys, &cid, OpBody::Remove { who: pk(&r) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&[&a, &r]).await;
+    let k = a.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("keeper"));
+    let log = a.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("log"));
+    let replay = crate::wire::Join { community_id: cid.clone(), proof: None, admit_id: Some("6".repeat(32)), created_at: written };
+    let got = k.lock().await.on_join(&log, &pk(&r), &replay, w.clock.now()).await.unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(got, crate::keeper::Joined::Refused("put out after this join"));
+    w.pump(&[&a, &r]).await;
+    assert_ne!(membership(&r, &cid).await, crate::service::MEMBERSHIP_REJECTED, "nothing said to the one put out");
+    // A join written after the removal (a new invitation) is no replay.
+    w.clock.advance(1);
+    let fresh = crate::wire::Join { community_id: cid.clone(), proof: None, admit_id: Some("7".repeat(32)), created_at: w.clock.now() };
+    let got = k.lock().await.on_join(&log, &pk(&r), &fresh, w.clock.now()).await.unwrap_or_else(|e| panic!("{e}"));
+    assert_ne!(got, crate::keeper::Joined::Refused("put out after this join"));
+}
+
+#[tokio::test]
+async fn a_take_row_left_after_the_keeper_was_written_is_dropped_not_kept_for_ever() {
+    let w = World::new();
+    let (a, b, r, cid) = owner_two_devices(&w).await;
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&[&a, &b, &r]).await;
+    b.svc.keeper_take(&b.keys, &cid, true).await.unwrap_or_else(|e| panic!("take: {e}"));
+    assert!(keeps(&b, &cid).await);
+    // A run that failed after the keeper was written left its row.
+    let series = b.svc.log(&cid).await.ok().flatten().and_then(|l| l.state().keeper().cloned()).unwrap_or_else(|| panic!("keeper"));
+    let row = db::handover::TakeRow {
+        community_id: cid.clone(),
+        keeper_pubkey: series.pubkey.as_hex().to_string(),
+        serial: i64::from(series.serial),
+        from_epoch: i64::from(series.from_epoch),
+        mode: db::handover::MODE_EMERGENCY.into(),
+        started_at: w.clock.now(),
+    };
+    db::handover::put_take(b.svc.db(), &row).await.unwrap_or_else(|e| panic!("{e}"));
+    b.svc.keeper_take(&b.keys, &cid, true).await.unwrap_or_else(|e| panic!("asked again: {e}"));
+    assert!(b.svc.keeper_take_status(&cid).await.ok().flatten().is_none(), "the row went");
+    assert!(keeps(&b, &cid).await);
+    let err = b.svc.keeper_take(&b.keys, &cid, true).await.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(err.contains("this device keeps the channel"), "{err}");
+}
+
+#[tokio::test]
+async fn an_epoch_heard_before_its_journal_moves_no_cursor_and_is_asked_again() {
+    let w = World::new();
+    let (a, _b, _r, cid) = owner_two_devices(&w).await;
+    // A fresh device of the owner hears an epoch before the journal (a page
+    // of epochs before the page of the journal): dropped, and the next round
+    // must ask for it again.
+    let c = w.device(a.keys.clone()).await;
+    let ev = w.relay.of_kind(KIND_EPOCH)[0].clone();
+    c.svc.on_event(&c.keys, &ev, false).await.unwrap_or_else(|e| panic!("{e}"));
+    let at = db::channels::heard_at(c.svc.db(), &cid, crate::transport::PART_EPOCHS).await.unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(at, None, "no cursor moved by an epoch that could not be taken");
+}
+
+#[tokio::test]
+async fn one_in_the_channel_is_not_invited_again_and_a_done_invitation_holds_no_place() {
+    let w = World::new();
+    let a = w.node().await;
+    let cid = create(&w, &a, JoinMode::Invite).await;
+    let r = w.node().await;
+    let all = [&a, &r];
+    let invite = |a: &Node, r: &Node| {
+        let (svc, keys, cid, who) = (a.svc.clone(), a.keys.clone(), cid.clone(), pk(r));
+        async move { svc.invite(&keys, &cid, &who).await.map(|(id, _)| id) }
+    };
+    invite(&a, &r).await.unwrap_or_else(|e| panic!("invite: {e}"));
+    w.pump(&all).await;
+    let got = db::channels::invites(r.svc.db(), "in", &["received"]).await.unwrap_or_default();
+    let id = got.first().map(|i| i.invite_id.clone()).unwrap_or_else(|| panic!("no invitation came"));
+    let out = r.svc.answer_invite(&id, true).await.unwrap_or_else(|e| panic!("accept: {e}"));
+    let _ = out;
+    w.pump(&all).await;
+    tick(&a).await;
+    w.pump(&all).await;
+    assert_eq!(membership(&r, &cid).await, MEMBERSHIP_JOINED);
+    let err = invite(&a, &r).await.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(err.contains(crate::service::ChannelService::ALREADY_MEMBER), "{err}");
+    // Three more let in by invitations: four accepted, as many as a channel
+    // holds open, and none of them open any more.
+    for _ in 0..3 {
+        let p = w.node().await;
+        invite(&a, &p).await.unwrap_or_else(|e| panic!("invite: {e}"));
+        w.pump(&[&a, &p]).await;
+        let id = db::channels::invites(p.svc.db(), "in", &["received"]).await.unwrap_or_default().first().map(|i| i.invite_id.clone()).unwrap_or_else(|| panic!("no invitation"));
+        p.svc.answer_invite(&id, true).await.unwrap_or_else(|e| panic!("accept: {e}"));
+        w.pump(&[&a, &p]).await;
+        tick(&a).await;
+        w.pump(&[&a, &p]).await;
+        assert_eq!(membership(&p, &cid).await, MEMBERSHIP_JOINED);
+    }
+    let fifth = w.node().await;
+    invite(&a, &fifth).await.unwrap_or_else(|e| panic!("a fifth invitation past four done: {e}"));
+    // Put out: invited again, the old accepted invitation holds no place.
+    w.clock.advance(10);
+    a.svc.act(&a.keys, &cid, OpBody::Remove { who: pk(&r) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&all).await;
+    tick(&a).await;
+    w.pump(&all).await;
+    invite(&a, &r).await.unwrap_or_else(|e| panic!("invited again: {e}"));
+}
+
+/// Review of 2026-10-30, finding 1: the owner took the keeper on a phone
+/// D while his other devices were offline, D published no epoch (its
+/// hosts down) and was lost. Every other device was refused for good
+/// (`EPOCHS_NOT_HERE`: none of the current series' epochs here), the app
+/// having no `force`. Brought to the head and read to its end with every
+/// page answered, a series that published nothing is known so, and the
+/// take numbers past it by itself.
+#[tokio::test]
+async fn a_keeper_series_that_published_nothing_is_taken_past_without_the_owners_word() {
+    let w = World::new();
+    let (a, b, r, cid) = owner_two_devices(&w).await;
+    let d = w.device(a.keys.clone()).await;
+    w.pump(&[&a, &b, &r, &d]).await;
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&[&a, &b, &r, &d]).await;
+    // D takes the keeper in an emergency; then its hosts are down: no
+    // epoch goes out.
+    d.svc.keeper_take(&d.keys, &cid, true).await.unwrap_or_else(|e| panic!("take on D: {e}"));
+    w.hosts.set_down(H1, true);
+    w.hosts.set_down(H2, true);
+    for _ in 0..3 {
+        w.clock.advance(400);
+        tick(&d).await;
+        w.pump(&[&d]).await;
+    }
+    let series = b.svc.log(&cid).await.ok().flatten();
+    w.pump(&[&b, &r]).await;
+    let d_from = b.svc.log(&cid).await.ok().flatten().and_then(|l| l.state().keeper().map(|k| k.from_epoch)).unwrap_or(0);
+    assert!(series.is_some() && d_from > 0);
+    assert!(b.svc.newest_epoch_known(&cid).await.unwrap_or(0) < d_from, "D published no epoch");
+    // D is lost; the hosts are back. B takes the keeper.
+    w.hosts.set_down(H1, false);
+    w.hosts.set_down(H2, false);
+    let pump = async {
+        for _ in 0..60 {
+            b.sync().await;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    };
+    let (taken, ()) = tokio::join!(b.svc.keeper_take_at_head(&b.keys, &cid, true, false, std::time::Duration::from_secs(20)), pump);
+    taken.unwrap_or_else(|e| panic!("take on B: {e}"));
+    let from = b.svc.log(&cid).await.ok().flatten().and_then(|l| l.state().keeper().map(|k| k.from_epoch)).unwrap_or(0);
+    assert!(from > d_from, "past D's series: {from} > {d_from}");
+    for _ in 0..3 {
+        w.clock.advance(400);
+        tick(&b).await;
+        w.pump(&[&b, &r]).await;
+    }
+    b.svc.send_post(&b.keys, &cid, "after D", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&b, &r]).await;
+    assert_eq!(post_texts(&r, &cid).await, ["after D"]);
+}
+
+/// The review of 2026-10-30, finding 3: a reader the journal names only to
+/// trust (staff entries hold such ones) who left was refused for good as
+/// «already a member»; a moderator's device, which knows the readers by a
+/// snapshot, refused one removed after it until the next snapshot. In now
+/// is an author and above by the journal, or a reader the journal did not
+/// put out since, refused where known: the keeper's rows (a leave takes
+/// them out at once) and the journal.
+#[tokio::test]
+async fn one_who_left_or_was_removed_since_is_invited_again() {
+    let w = World::new();
+    let a = w.node().await;
+    let cid = create(&w, &a, JoinMode::Open).await;
+    let (r, m, x) = (w.node().await, w.node().await, w.node().await);
+    let all = [&a, &r, &m, &x];
+    for n in [&r, &m, &x] {
+        join_by_link(&w, &a, n, &cid, &all).await;
+    }
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&all).await;
+    a.svc.act(&a.keys, &cid, OpBody::SetTrusted { who: pk(&r), trusted: true }).await.unwrap_or_else(|e| panic!("trust: {e}"));
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&m), role: Role::Moderator }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    // In: refused on the keeper.
+    let err = a.svc.invite(&a.keys, &cid, &pk(&r)).await.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(err.contains(crate::service::ChannelService::ALREADY_MEMBER), "{err}");
+    // Left: the trust in the journal is no place in the channel.
+    let out = r.svc.leave(&r.keys, &cid).await.unwrap_or_else(|e| panic!("leave: {e}"));
+    let _ = out;
+    w.pump(&all).await;
+    tick(&a).await;
+    w.pump(&all).await;
+    a.svc.invite(&a.keys, &cid, &pk(&r)).await.unwrap_or_else(|e| panic!("one who left, invited again: {e}"));
+    // Removed after the snapshot the moderator's device holds: invited again
+    // there at once, not after the next snapshot.
+    w.clock.advance(5);
+    a.svc.act(&a.keys, &cid, OpBody::Remove { who: pk(&x) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&[&a, &m, &x]).await;
+    m.svc.invite(&m.keys, &cid, &pk(&x)).await.unwrap_or_else(|e| panic!("one removed, invited by the moderator: {e}"));
+}
+
+/// Production, 2026-10-30: agent bots made authors by the journal before
+/// they were invited (a migration named them staff at once) were refused
+/// as «already a member», so the keeper never let them in: no reader row,
+/// no key, a follow that failed every 90 s. In the channel, for an
+/// invitation, is what the keeper let in; staff it never let in are
+/// invited, admitted and given the keys like anyone, their role kept; and
+/// before that, the keeper answers their ask for a bundle with a refusal
+/// they can read («never let in: invite first») instead of silence.
+#[tokio::test]
+async fn staff_never_let_in_are_invited_admitted_and_told_why_no_bundle_comes() {
+    let w = World::new();
+    let a = w.node().await;
+    let cid = create(&w, &a, JoinMode::Invite).await;
+    let s = w.node().await;
+    let all = [&a, &s];
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    // Not let in: an ask for a bundle is refused, in words.
+    s.svc.ask_journal(&cid).await.unwrap_or_else(|e| panic!("ask: {e}"));
+    w.pump(&all).await;
+    if let Some(log) = s.svc.log(&cid).await.ok().flatten() {
+        s.svc.member(&s.keys).ask_rebundle(log.state(), SCOPE_EVERYONE, 0, w.clock.now()).await.unwrap_or_else(|e| panic!("rebundle: {e}"));
+    }
+    w.pump(&all).await;
+    tick(&a).await;
+    w.pump(&all).await;
+    assert_eq!(s.svc.refused_by_keeper(&cid).await.unwrap_or_default().as_deref(), Some(crate::service::NEVER_LET_IN), "the keeper says why");
+    // Invited although staff, admitted on acceptance, the role kept.
+    a.svc.invite(&a.keys, &cid, &pk(&s)).await.unwrap_or_else(|e| panic!("staff never let in, invited: {e}"));
+    w.pump(&all).await;
+    let id = db::channels::invites(s.svc.db(), "in", &["received"]).await.unwrap_or_default().first().map(|i| i.invite_id.clone()).unwrap_or_else(|| panic!("no invitation came"));
+    s.svc.answer_invite(&id, true).await.unwrap_or_else(|e| panic!("accept: {e}"));
+    w.pump(&all).await;
+    tick(&a).await;
+    w.pump(&all).await;
+    assert!(newest(&s, &cid).await.is_some(), "a key of the channel came");
+    assert_eq!(s.svc.refused_by_keeper(&cid).await.unwrap_or_default(), None, "the refusal is gone once let in");
+    let role = s.svc.log(&cid).await.ok().flatten().and_then(|l| l.state().role_of(&pk(&s)));
+    assert_eq!(role, Some(Role::Author));
+    let err = a.svc.invite(&a.keys, &cid, &pk(&s)).await.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(err.contains(crate::service::ChannelService::ALREADY_MEMBER), "let in now: {err}");
+    s.svc.send_post(&s.keys, &cid, "by the agent", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    assert_eq!(post_texts(&a, &cid).await, ["by the agent"]);
 }

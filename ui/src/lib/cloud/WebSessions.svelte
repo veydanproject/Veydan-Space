@@ -17,7 +17,7 @@
   import { dateOf, errorKeyOf } from '$lib/cloud/account';
   import { webStore } from '$lib/cloud/web.svelte';
   import { CABINET_HOST, originLine, WEB_LOGIN_ROUTE } from '$lib/cloud/web';
-  import NavRow from '$lib/cloud/NavRow.svelte';
+  import NavRow from '$lib/core/ui/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
 
   onMount(() => {
@@ -38,20 +38,20 @@
 </script>
 
 <RowList label={$t('cloud_web_title')} id="web-sign-ins">
-  <NavRow icon={isMobile ? 'scan' : 'qr-code'} title={$t('cloud_web_scan')} sub={$t('cloud_web_scan_sub', { host: CABINET_HOST })} href={WEB_LOGIN_ROUTE} />
+  <NavRow variant="list" icon={isMobile ? 'scan' : 'qr-code'} title={$t('cloud_web_scan')} sub={$t('cloud_web_scan_sub', { host: CABINET_HOST })} href={WEB_LOGIN_ROUTE} />
   {#each sessions as session (session.id)}
-    <NavRow icon="world" title={originLine(session.country, session.ua_family, $t, $locale)} sub={line(session.created_at, session.last_seen_at)}>
-      {#snippet trailing()}
+    <NavRow variant="list" icon="world" title={originLine(session.country, session.ua_family, $t, $locale)} sub={line(session.created_at, session.last_seen_at)}>
+      {#snippet end()}
         <button class="btn btn-ghost btn-sm danger" type="button" disabled={webStore.busy} onclick={() => webStore.revoke({ id: session.id })}>{$t('cloud_web_end')}</button>
       {/snippet}
     </NavRow>
   {/each}
   {#if sessions.length > 1}
-    <NavRow icon="x" tone="danger" title={$t('cloud_web_end_all')} onclick={() => webStore.revoke({ all: true })} disabled={webStore.busy} />
+    <NavRow variant="list" icon="x" tone="bad" danger title={$t('cloud_web_end_all')} onclick={() => webStore.revoke({ all: true })} disabled={webStore.busy} />
   {/if}
   {#if webStore.frozenUntil}
-    <NavRow icon="lock" tone="warn" title={$t('cloud_web_frozen', { date: dateOf(webStore.frozenUntil, $locale) })} sub={$t('cloud_web_frozen_sub')}>
-      {#snippet trailing()}
+    <NavRow variant="list" icon="lock" tone="warn" title={$t('cloud_web_frozen', { date: dateOf(webStore.frozenUntil, $locale) })} sub={$t('cloud_web_frozen_sub')}>
+      {#snippet end()}
         <button class="btn btn-ghost btn-sm" type="button" disabled={webStore.busy} onclick={() => webStore.unfreeze()}>{$t('cloud_web_unfreeze')}</button>
       {/snippet}
     </NavRow>

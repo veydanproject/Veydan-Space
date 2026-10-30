@@ -15,6 +15,7 @@ import ChannelFeed from './ChannelFeed.svelte';
 import InvitesBar from './InvitesBar.svelte';
 import NewChannelDialog from './NewChannelDialog.svelte';
 import { channelStore } from './channelStore.svelte';
+import { nameStore } from './names.svelte';
 import { coverStore } from './coverStore.svelte';
 import { previewLine } from './lines';
 import { channelsApi, type ChannelView } from './api';
@@ -75,6 +76,13 @@ export const channelSection: ChatSectionHost = {
   unread: () => channelStore.unread,
   refresh: () => channelStore.scheduleList(),
   above: InvitesBar,
+  // The same invitations, as the narrow list shows them: an icon, their names and who invites (InvitesBar's words).
+  aboveSummary: () => {
+    const list = channelStore.invites;
+    if (!list.length) return null;
+    const tr = get(t);
+    return { icon: 'user-plus', words: list.map((i) => `${i.name} · ${tr('chan_invited_by', { name: nameStore.label(i.peer) })}`).join('\n') };
+  },
   view: ChannelFeed,
   create: NewChannelDialog,
   linkTitle,

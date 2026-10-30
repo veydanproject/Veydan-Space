@@ -154,8 +154,7 @@ impl ChannelService {
         }
         let last = state.keeper().ok_or_else(|| invalid("no keeper"))?;
         let serial = last.serial.checked_add(1).ok_or_else(|| invalid("keeper"))?;
-        let newest = db::keys::newest_epoch(&self.env.db, community_id).await?;
-        let from_epoch = newest.saturating_add(2).max(last.from_epoch.saturating_add(1));
+        let from_epoch = self.next_series_epoch(community_id, last.from_epoch).await?;
         let kk = Keys::generate();
         let pubkey = Self::me(&kk)?;
         secrets::put_keeper_keys(self.env.secrets.as_ref(), community_id, &kk).await?;

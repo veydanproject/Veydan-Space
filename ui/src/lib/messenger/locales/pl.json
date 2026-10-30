@@ -487,6 +487,8 @@
     "msg_push_enable": "Włącz powiadomienia",
     "msg_push_toggle": "Powiadamiaj o nowych wiadomościach",
     "msg_push_refused": "Powiadomienia dla tej aplikacji są wyłączone. Włącz je w ustawieniach telefonu i wróć tutaj.",
+    "msg_push_quiet": "Powiadomienia o wiadomościach przychodzą bez dźwięku",
+    "msg_push_quiet_fix": "Ustaw",
     "msg_push_reason_no_config": "Ta wersja aplikacji nie ma ustawień push: powiadomienia w niej nie działają.",
     "msg_push_reason_no_play": "Na tym telefonie brakuje usług Google, a powiadomienia push przechodzą przez nie.",
     "msg_push_reason_token_failed": "Usługa push nie odpowiedziała. Sprawdź połączenie i spróbuj ponownie.",

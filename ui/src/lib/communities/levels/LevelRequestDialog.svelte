@@ -67,7 +67,7 @@
 
 <Dialog bind:open title={$t('chan_level_request_title')} width="min(460px, calc(100vw - 24px))">
   <div class="body">
-    <p class="hint">{$t('chan_levels_explain')}</p>
+    <p class="lead">{$t('chan_levels_explain')}</p>
     <ul class="options" role="radiogroup" aria-label={$t('chan_level')}>
       {#each options as l (l.id)}
         {@const a = adds(l, lv.levels, lv.my_levels, lv.scopes)}
@@ -76,7 +76,7 @@
           <label class="option" class:active={picked === l.id} class:sent>
             <input type="radio" name="level" value={l.id} checked={picked === l.id} disabled={busy || sent} onchange={() => (picked = l.id)} />
             <span class="text">
-              <span class="name"><Icon name="layers" size={13} />{l.name}{#if sent}<span class="tag">{$t('chan_level_request_sent')}</span>{/if}</span>
+              <span class="name"><Icon name="layers" size={14} />{l.name}{#if sent}<span class="tag">{$t('chan_level_request_sent')}</span>{/if}</span>
               {#if a.scopes.length}<span class="sub">{$t('chan_level_request_adds', { list: a.scopes.map((s) => `«${s.title}»`).join(', ') })}</span>{/if}
               {#if a.rights.length}<span class="sub">{$t('chan_level_request_rights', { list: a.rights.map((r) => $t(`chan_right_${r}_short` as 'chan_right_comment_short')).join(', ') })}</span>{/if}
             </span>
@@ -93,31 +93,36 @@
   </div>
   {#snippet footer()}
     <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('chan_cancel')}</button>
-    <button type="button" class="btn btn-primary" disabled={busy || picked === null} onclick={send}><Icon name="send" size={14} />{$t('chan_level_request_send')}</button>
+    <button type="button" class="btn btn-primary" disabled={busy || picked === null} onclick={send}><Icon name="send" size={18} />{$t('chan_level_request_send')}</button>
   {/snippet}
 </Dialog>
 
 <style>
-  .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
-  .options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .body { display: flex; flex-direction: column; gap: var(--sp-4); }
+  .lead { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: 1.5; }
+  .hint { margin: calc(-1 * var(--sp-2)) 0 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  /* The levels: rows of a choice, the chosen one in the accent. */
+  .options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .option {
-    display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); cursor: pointer; user-select: none;
-    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
+    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3); cursor: pointer; user-select: none;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2);
+    transition: background var(--dur-fast), border-color var(--dur-fast);
   }
+  @media (hover: hover) { .option:hover:not(.active):not(.sent) { background: var(--surface-hover); } }
+  .option:has(input:focus-visible) { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .option.active { border-color: var(--accent-border); background: var(--accent-bg); }
   .option.sent { cursor: default; opacity: 0.75; }
-  .option input { margin-top: 3px; flex-shrink: 0; }
+  .option input { margin-top: 2px; flex-shrink: 0; }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); overflow-wrap: anywhere; }
+  .name { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow-wrap: anywhere; }
   .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
-  .tag { font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 6px; border-radius: var(--radius-pill); background: var(--success-bg); color: var(--success-text, var(--success)); }
-  .field-wrap { display: flex; flex-direction: column; gap: 4px; }
-  .label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
+  .tag { font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--success-bg); color: var(--success-text, var(--success)); }
+  .field-wrap { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   .field {
-    width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 8px 10px; resize: vertical;
+    width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-base); color: var(--text); background: var(--surface-3);
+    border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-3); resize: vertical;
   }
   .field:focus { outline: none; border-color: var(--accent-border); }
-  @media (pointer: coarse) { .field { font-size: var(--fs-md); } .option { padding: var(--sp-3); } }
+  @media (pointer: coarse) { .field { font-size: var(--fs-md); } }
 </style>

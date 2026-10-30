@@ -510,6 +510,8 @@ export const messengerTranslations = {
     msg_push_toggle: 'Notify me about new messages',
     msg_push_refused:
       'Notifications are turned off for this app. Turn them on in the phone settings, then come back.',
+    msg_push_quiet: 'Message notifications come without a sound',
+    msg_push_quiet_fix: 'Set up',
     msg_push_reason_no_config: 'This build has no push settings: notifications cannot work in it.',
     msg_push_reason_no_play: 'Google services are missing on this phone; pushes go through them.',
     msg_push_reason_token_failed: 'The push service did not answer. Check the connection and try again.',
@@ -2206,6 +2208,8 @@ export const messengerTranslations = {
     msg_push_toggle: 'Сообщать о новых сообщениях',
     msg_push_refused:
       'Уведомления для приложения выключены. Включите их в настройках телефона и вернитесь сюда.',
+    msg_push_quiet: 'Уведомления о сообщениях приходят без звука',
+    msg_push_quiet_fix: 'Настроить',
     msg_push_reason_no_config: 'В этой сборке нет настроек пушей: уведомления в ней не работают.',
     msg_push_reason_no_play: 'На телефоне нет сервисов Google, а пуши идут через них.',
     msg_push_reason_token_failed: 'Пуш-сервис не ответил. Проверьте связь и попробуйте ещё раз.',

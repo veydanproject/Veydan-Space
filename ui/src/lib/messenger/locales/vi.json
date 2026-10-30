@@ -487,6 +487,8 @@
     "msg_push_enable": "Bật thông báo",
     "msg_push_toggle": "Báo cho tôi khi có tin nhắn mới",
     "msg_push_refused": "Thông báo của ứng dụng này đang bị tắt. Hãy bật trong cài đặt điện thoại rồi quay lại đây.",
+    "msg_push_quiet": "Thông báo tin nhắn đến không có âm thanh",
+    "msg_push_quiet_fix": "Thiết lập",
     "msg_push_reason_no_config": "Bản dựng này không có cấu hình thông báo đẩy: thông báo không thể hoạt động trong bản này.",
     "msg_push_reason_no_play": "Điện thoại này không có dịch vụ Google, mà thông báo đẩy lại đi qua đó.",
     "msg_push_reason_token_failed": "Dịch vụ thông báo đẩy không phản hồi. Hãy kiểm tra kết nối và thử lại.",

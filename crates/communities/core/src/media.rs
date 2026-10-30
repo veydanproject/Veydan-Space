@@ -102,6 +102,10 @@ pub struct NewScopePhoto {
 /// (`wire::seal_bytes`, base64 of nonce, ciphertext and tag).
 pub const MAX_SCOPE_PHOTO_BLOB: usize = MAX_COVER_BYTES / 3 * 4 + 64;
 
+/// The photo of a section, width by height: the 3:2 of its tile, cut from
+/// the middle of the picture (the owner's word of 2026-10-25, «да, делаем»).
+pub const SCOPE_PHOTO_SIZE: (u32, u32) = (960, 640);
+
 /// A file I picked as the tray above the composer shows it before it is
 /// sent: a picture as a square JPEG of `PICKED_PREVIEW_SIDE` of its
 /// center, made from the pixels alone, as a `data:` URL. `None` for a
@@ -1243,7 +1247,7 @@ impl ChannelService {
         if !may_upload(&state, &me) {
             return Err(invalid("not permitted to upload"));
         }
-        let jpeg = square_jpeg(bytes, "cover").await?;
+        let jpeg = picked_jpeg(bytes, "cover", None).await?;
         let sha = sha256_hex(&jpeg);
         let jpeg = Arc::new(jpeg);
         let copies = self.put_everywhere(keys, &state.storage, &sha, jpeg.clone(), "image/jpeg", "cover").await?;
@@ -1293,8 +1297,10 @@ impl ChannelService {
 
     // ─── The photo of a section ─────────────────────────────────────────────
 
-    /// The photo of a section made from any picture the owner or an admin picked (wire
-    /// §14.1, 2026-10-23; owner and admins, 2026-10-25): a square JPEG as a cover is, sealed under a key
+    /// The photo of a section made from any picture the owner or an admin
+    /// picked (wire §14.1, 2026-10-23; owner and admins, 2026-10-25): a JPEG
+    /// of `SCOPE_PHOTO_SIZE` from the middle of it (2026-10-25; a square as a
+    /// cover before), sealed under a key
     /// of its own (`wire::seal_bytes`) and put on the hosts of the channel
     /// as the cover is; the key travels in the sealed meta alone, so the
     /// hosts hold a picture nobody else opens. Nothing of the channel is
@@ -1305,7 +1311,7 @@ impl ChannelService {
         if !state.role_of(&Self::me(keys)?).is_some_and(|r| crate::roles::permits(r, crate::roles::Action::SetScope)) {
             return Err(invalid("not permitted"));
         }
-        let jpeg = square_jpeg(bytes, "photo").await?;
+        let jpeg = picked_jpeg(bytes, "photo", Some(SCOPE_PHOTO_SIZE)).await?;
         let mut raw = [0u8; 32];
         getrandom::fill(&mut raw).map_err(|e| MessengerError::Crypto(e.to_string()))?;
         let sealed = wire::seal_bytes(&keydist::ChannelKey(raw), &jpeg)?.into_bytes();
@@ -1397,18 +1403,24 @@ impl ChannelService {
     }
 }
 
-/// A picture the user picked (up to `MAX_COVER_INPUT_BYTES`) as a square
-/// JPEG of `messenger_avatar::OWN_SIDE` of its center, from pixels alone,
-/// within `MAX_COVER_BYTES`: a cover, the photo of a section.
-async fn square_jpeg(bytes: &[u8], what: &str) -> Result<Vec<u8>> {
+/// A picture the user picked (up to `MAX_COVER_INPUT_BYTES`) as a JPEG of
+/// its center from pixels alone, within `MAX_COVER_BYTES`: `None`, a square
+/// of `messenger_avatar::OWN_SIDE` (a cover); `Some((w, h))`, that shape
+/// (the photo of a section).
+async fn picked_jpeg(bytes: &[u8], what: &str, shape: Option<(u32, u32)>) -> Result<Vec<u8>> {
     if bytes.len() > MAX_COVER_INPUT_BYTES {
         return Err(invalid(&format!("a {what} is too large")));
     }
     let picked = bytes.to_vec();
     let jpeg = tokio::task::spawn_blocking(move || {
         let img = messenger_avatar::decode(&picked)?;
-        let whole = messenger_avatar::CropRect { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
-        messenger_avatar::crop_square(&img, whole, messenger_avatar::OWN_SIDE)
+        match shape {
+            Some((w, h)) => messenger_avatar::crop_center(&img, w, h, MAX_COVER_BYTES),
+            None => {
+                let whole = messenger_avatar::CropRect { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
+                messenger_avatar::crop_square(&img, whole, messenger_avatar::OWN_SIDE)
+            }
+        }
     })
     .await
     .map_err(|e| MessengerError::Other(e.to_string()))?

@@ -384,6 +384,9 @@ pub async fn channel_keeper_keep_on(community_id: String, on: bool, state: tauri
     keeper_status(&d, &community_id).await
 }
 
+/// How long a take of the keeper waits for the channel to come to its head.
+const TAKE_HEAD_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// «Сделать хранителем это устройство» (internal/communities-wire.md §15):
 /// the owner takes the keeper over from his other device, which hands its
 /// state over; `emergency`: that device is lost, a new generation starts
@@ -395,11 +398,14 @@ pub async fn channel_keeper_take(community_id: String, emergency: Option<bool>, 
         let _timed = crate::log::Timed::start("channel_keeper_take");
         let d = state.driver()?;
         let keys = d.keys()?;
-        let outcome = {
-            let lock = d.service.lock_of(&community_id).await;
-            let _guard = lock.lock().await;
-            d.service.keeper_take(&keys, &community_id, emergency.unwrap_or(false)).await.map_err(map_err)?
-        };
+        // Brought to its head from the relays first (the lock of the channel
+        // is taken inside, once the events came): a series numbered from a
+        // partial view clashes with the epochs the keeper before published.
+        let outcome = d
+            .service
+            .keeper_take_at_head(&keys, &community_id, emergency.unwrap_or(false), false, TAKE_HEAD_WAIT)
+            .await
+            .map_err(map_err)?;
         d.apply(outcome).await;
         d.wake_now();
         keeper_status(&d, &community_id).await

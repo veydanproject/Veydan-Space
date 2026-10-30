@@ -24,8 +24,9 @@ const post = (author: string, extra: Partial<FeedItemView> = {}): FeedItemView =
   id: 'p', community_id: 'c', post_id: '', author, created_at: 1, text: 'hi', review: 'ok', hidden: false, deleted: false, pinned: false,
   reactions: [], comments: 0, pending: false, ...extra,
 });
+/** An item by its label; a group's title `# label`; a pair `a | b`; a line between groups `—`. */
 const labels = (d: ChannelDetail, item: FeedItemView) =>
-  itemEntries(item, d, ME, tr, acts).map((e) => ('label' in e ? e.label : '—'));
+  itemEntries(item, d, ME, tr, acts).map((e) => (e.type === 'separator' ? '—' : e.type === 'heading' ? `# ${e.label}` : e.type === 'pair' ? e.items.map((p) => p.label).join(' | ') : e.label));
 
 describe('the menu of a post', () => {
   it('offers a reader the comments, the copy, a message to the author and a report', () => {
@@ -38,8 +39,9 @@ describe('the menu of a post', () => {
 
   it('offers a moderator the pin, the hiding, the author\'s mute and ban and the removal of a post below (ревью UX п. 18)', () => {
     expect(labels(detail('moderator'), post('w'))).toEqual([
-      'chan_menu_comments', 'chan_menu_copy', 'chan_menu_pin', 'chan_mod_hide_author', 'chan_member_mute', 'chan_menu_write', '—',
-      'chan_menu_hide', 'chan_menu_delete', 'chan_member_ban', 'chan_menu_report',
+      'chan_menu_comments', 'chan_menu_copy', 'chan_menu_pin', 'chan_menu_write', '—',
+      '# chan_mod_title', 'chan_menu_hide', 'chan_mod_hide_author', 'chan_member_mute', '—',
+      'chan_menu_delete', 'chan_member_ban', 'chan_menu_report',
     ]);
   });
 
@@ -50,8 +52,16 @@ describe('the menu of a post', () => {
   });
 
   it('offers a moderator the decision on a post that waits, and no pin for it', () => {
-    expect(labels(detail('moderator'), post('w', { review: 'pending' }))).toContain('chan_mod_approve');
+    expect(labels(detail('moderator'), post('w', { review: 'pending' }))).toContain('chan_mod_approve | chan_mod_reject');
     expect(labels(detail('moderator'), post('w', { review: 'pending' }))).not.toContain('chan_menu_pin');
+  });
+
+  it('puts the verdict on a waiting post as a pair at the top of «Модерация», the dangerous ones last (the mockup c6.js, variant A)', () => {
+    expect(labels(detail('moderator'), post('w', { review: 'pending' }))).toEqual([
+      'chan_menu_comments', 'chan_menu_copy', 'chan_menu_write', '—',
+      '# chan_mod_title', 'chan_mod_approve | chan_mod_reject', 'chan_menu_hide', 'chan_mod_hide_author', 'chan_member_mute', '—',
+      'chan_menu_delete', 'chan_mod_spam', 'chan_menu_report',
+    ]);
   });
 
   it('offers nothing for a post removed', () => {

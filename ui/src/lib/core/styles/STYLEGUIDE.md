@@ -15,7 +15,7 @@ token or primitive already exists.**
 | `src/lib/core/styles/base.css` | Global reset + reusable primitives (`.btn`, `.icon-btn`, `.badge`, `.page`, `.card`, `.tab-bar`, `.empty-state`, `.spinner`, `.vtip`, …). |
 | `src/lib/core/styles/mobile.css` | Phone layer on top of the two: `--m-*` colours, `--touch`, `--nav-h`, safe-area insets `--sat`/`--sab`/`--sal`/`--sar`, `.m-*` primitives. Loaded by the mobile shell only — its tokens do not exist on a computer. |
 | `src/lib/core/theme.ts` | `data-theme` (dark / light) × `data-palette` (`quiet`), and the one colour a user may choose: the accent (`applyAccent`). |
-| `src/lib/core/ui/*` | The shared components: `Dialog`, `Modal`, `Drawer`, `ContextMenu`, `CustomSelect`, `Pane`, `Skeleton`, `ToastHost`/`toast.svelte.ts`, `ConfirmHost`/`confirm.svelte.ts`, `tooltip.ts`, `motion.ts`. |
+| `src/lib/core/ui/*` | The shared components: `Dialog`, `Modal`, `Drawer`, `ContextMenu`, `CustomSelect`, `Pane`, `Skeleton`, `ToastHost`/`toast.svelte.ts`, `ConfirmHost`/`confirm.svelte.ts`, `tooltip.ts`, `motion.ts`, and the shared rows (`NavRow`, `Tile`, `Chev`, `StatePill`, `ToggleRow`, `ChoiceRow`, `TermHint`, the action `scrollTabs`, see «Shared rows»). |
 
 `tokens.css` and `base.css` are imported by each shell (`DesktopShell.svelte`,
 `MobileShell.svelte`) and by `StartErrorScreen.svelte`; `mobile.css` by
@@ -101,7 +101,22 @@ field is a pill.
 · `.icon-btn`(+`.success/.danger/.accent-soft`) · `.badge`(+`-accent/-ok/-danger/-warn`) · `.chip`(+`.active`)
 · `.tab-bar`/`.tab`(+`.active`)/`.tab-count` · `.seg`/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
 · `.mono`(text in the mono face) · `.mono-chip` · `.data-table`(+`-head/-row`) · `.empty-state`/`.empty-icon` · `.loading`/`.spinner`/`.spin`
-· `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`.
+· `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`
+· `.list-rows` > `li` > `.list-row`(+`.active/.unread`) — the one row of a list pane (chats, groups, channels, calls,
+  contacts, requests): 64 high, an avatar of 48, `.list-row-body` with `.list-row-top` (`.list-row-name`, then the
+  marks `.list-row-mark` — kind, muted, pinned, 14 in `--text-3` — then `.list-row-time` at the right) over
+  `.list-row-bottom` (`.list-row-line`, then the `.count-pill.lg`). A hairline of `--divider` between two rows, from
+  the text (72 from the left) to 12 from the right, hidden beside a hovered or chosen row; an `li` without a row
+  (a label, the rule after the pinned) breaks it. A row with buttons at its end: a box `.list-row` with a
+  `.list-row-main` button. `.unread`: the name 800, the line `--text` 600, the time in `--accent-text`.
+· `.list-cover`(+`.active`)/`.list-cover-corner`(+`.muted/.missed`)/`.list-cover-empty` (a list pane at 72, a column of covers).
+· `.count-pill` — the one counter everywhere (a section of the rail, a row of a list, a cover's corner, ⋮, a tile,
+  a tab, a block's head): a pill never narrower than tall, the number centred, bold, tabular figures. Sizes:
+  `.sm` 18 (`--fs-2xs`: a corner, ⋮, a tab), 20 by default (`--fs-xs`: a block's head), `.lg` 22 (a row of a list).
+  Colours: the accent with white (unread, the default), `.quiet` (surface-3 / text-2: muted, or only a total),
+  `.danger` (missed, errors). A corner count adds only its position and a 2px ring of `--chrome`.
+  Never a rounded square (`--radius-badge` is for kind chips, not for numbers).
+· `.menu-count` (the count on the corner of a head's ⋮: a `.count-pill` of 18 under its own name; the button is `position: relative`).
 A button and an icon button sink to .97 under the press (`--dur-press`); the
 phone's `.m-ibtn` and `.m-btn-grad` too.
 Checkboxes and radios are marks, not fields: base.css sizes them to content with
@@ -113,6 +128,59 @@ a recovery code, a fingerprint — is `.mono` (or a `<code>`), never a local
 `!=` as `≠` or `->` as an arrow. A component declares no ligature rules;
 a hint in such a field stays in the UI font (`::placeholder { font-family:
 var(--font-ui) }`).
+
+## Shared rows
+
+A row that repeats in several modules is one component of `core/ui`; a module
+keeps no copy of its own.
+
+- **`NavRow`** — a row that leads somewhere: a tile with the icon, the title,
+  a line `sub` (text or a snippet), at its end `count` (a quiet `.count-pill`)
+  or `end` (a snippet: a `StatePill`, a word, a control), the chevron
+  (`chevron`; by default when it has `href` or `onclick`). The whole row is the
+  link (`href`) or the button (`onclick`); `disabled` fades it. `tone` colours
+  the tile, `danger` the title, `nowrap` cuts the title with «…», `page` sets
+  `data-page` so the focus comes back to the row from its page, `id` is an
+  anchor. `variant`: `panel` (the default: the contents of «О канале» /
+  «О группе», 56 / 60 on touch, in a card of rows, the root `.nav`), `list`
+  (the lists of the cloud: 64, a hairline under it, the tile in the accent,
+  `end` in place of the chevron), `compact` (a line of a block, «Медиа и
+  файлы»: 46 / 50, the icon without a tile, the count a quiet number).
+- **`Tile`** — the square of an icon at the start of a row: 36, `--radius`,
+  the icon 18; `tone` `plain` · `ok` · `warn` · `bad` · `accent` · `clear` ·
+  `dashed` (the place of a new one).
+- **`Chev`** — the chevron of a row that leads further: 16, `--text-3`.
+- **`StatePill`** — a state at the end of a row or a head: 22, `--fs-xs`
+  semibold; `ok` · `warn` · `bad`.
+- **`ToggleRow`** — a yes / no setting as a card, the whole card the
+  `button role="switch"` (`aria-checked`), the `.toggle` inside only drawn:
+  `title`, `hint`, `on` (bindable), `onclick` (what the press does; without it
+  the press flips `on`), `disabled`, `label` (an accessible name of its own).
+  64 high, `--radius-lg`, the title 14 semibold, the hint 13 `--text-2`;
+  `surface` `strong` (a dialog, `--pane-strong`) or `panel` (`--surface-2`
+  with `--border`). A switch that is a button of its own beside a label
+  (`aria-pressed`, the settings of the messenger) stays as it is.
+- **`ChoiceRow`** — one choice of a few, the whole row the `button role="radio"`
+  (`aria-checked`), the caller wraps the rows in a `role="radiogroup"` with its
+  label: `icon`, `title`, `hint`, `checked`, `onclick`, `disabled`. 60 high,
+  `--radius-md`, a tile of 36 (`--radius-sm`), the title 14 bold, the hint 13
+  `--text-2`, the check 18; the chosen one `--accent-bg` / `--accent-border`.
+  `surface` `dialog` (`--surface-3`) or `panel` (`--surface-2`). A choice
+  made of native radios (`<label>` + `<input type="radio">`) stays as it is.
+- **`TermHint`** — the «?» beside a term where a thing is made (a new level, a
+  new section): `term` and the note as its children; the note opens under the
+  row of the term (the nearest `position: relative` box), up to 440 wide,
+  pointing at the «?», and the same button closes it. In a dialog's title it
+  goes into `titleAside`.
+- **`scrollTabs`** (`core/ui/scrollTabs.ts`, an action) — a row of tabs that
+  scrolls sideways (the row keeps its own `overflow-x: auto` and hidden
+  scrollbar): `use:scrollTabs={{ selected, watch, wheel, fadeStart }}`. It marks
+  a clipped edge with `fade-end` (and, with `fadeStart`, `fade-start`) for the
+  row's own mask (`.tabs:global(.fade-end) { mask-image: … }`), keeps the chosen
+  tab (`[aria-selected="true"]`) in view when `selected` changes by moving the
+  row alone (`scrollTo`, never `scrollIntoView`), measures again on a resize and
+  when `watch` changes (the tabs, their counts), and with `wheel` turns a
+  mouse's wheel into sideways scrolling.
 
 ## Feedback
 

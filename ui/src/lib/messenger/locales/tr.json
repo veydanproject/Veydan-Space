@@ -487,6 +487,8 @@
     "msg_push_enable": "Bildirimleri aç",
     "msg_push_toggle": "Yeni mesajları bildir",
     "msg_push_refused": "Bu uygulama için bildirimler kapalı. Telefon ayarlarından açın, sonra buraya dönün.",
+    "msg_push_quiet": "Mesaj bildirimleri sessiz geliyor",
+    "msg_push_quiet_fix": "Ayarla",
     "msg_push_reason_no_config": "Bu derlemede anlık bildirim ayarları yok: bildirimler bu derlemede çalışamaz.",
     "msg_push_reason_no_play": "Bu telefonda Google hizmetleri yok; anlık bildirimler bu hizmetler üzerinden gelir.",
     "msg_push_reason_token_failed": "Anlık bildirim hizmeti yanıt vermedi. Bağlantıyı kontrol edip tekrar deneyin.",

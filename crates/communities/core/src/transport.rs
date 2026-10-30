@@ -527,13 +527,42 @@ impl ChannelService {
     /// that a journal longer than a relay hands back for one REQ comes
     /// down to its `create` (the trial of 1.6, problem 10).
     pub async fn ask_journal(&self, community_id: &str) -> Result<()> {
+        self.ask_journal_answered(community_id).await.map(|_| ())
+    }
+
+    /// `ask_journal`; whether a relay answered every page asked.
+    pub(crate) async fn ask_journal_answered(&self, community_id: &str) -> Result<bool> {
+        let mut answered = true;
         for (part, f) in filters(community_id, false).into_iter().filter(|(p, _)| *p == PART_JOURNAL || *p == PART_CARD) {
             let since = self.open_round(community_id, part, LIVE_MARGIN_SECS).await?;
             let mut filter = with_since(f, since);
             filter.0["limit"] = serde_json::json!(catch_up_limit());
-            self.env.net.send(Outbound::Sync { scope: scope(community_id), filter, local: vec![] }).await?;
+            answered &= self.env.net.send(Outbound::Sync { scope: scope(community_id), filter, local: vec![] }).await?.is_delivered();
         }
-        Ok(())
+        Ok(answered)
+    }
+
+    /// Asks the relays of a channel for `parts` of it (`PART_EPOCHS`,
+    /// `PART_SNAPSHOTS`, …), a page of the catch-up each, as `ask_journal`
+    /// does for the journal: what a device that takes the keeper over needs
+    /// before it numbers anything.
+    pub async fn ask_parts(&self, community_id: &str, parts: &[&str]) -> Result<()> {
+        self.ask_parts_answered(community_id, parts).await.map(|_| ())
+    }
+
+    /// `ask_parts`; whether a relay answered every page asked.
+    pub(crate) async fn ask_parts_answered(&self, community_id: &str, parts: &[&str]) -> Result<bool> {
+        let mut answered = true;
+        for (part, f) in filters(community_id, false).into_iter().filter(|(p, _)| parts.contains(p)) {
+            // The newest page whatever was heard before: what a takeover
+            // numbers from must not hang on the cursor of an earlier round
+            // (epochs heard before their journal were dropped, not kept).
+            let _ = self.open_round(community_id, part, LIVE_MARGIN_SECS).await?;
+            let mut filter = with_since(f, None);
+            filter.0["limit"] = serde_json::json!(catch_up_limit());
+            answered &= self.env.net.send(Outbound::Sync { scope: scope(community_id), filter, local: vec![] }).await?.is_delivered();
+        }
+        Ok(answered)
     }
 
     /// Sends the catch-up and the live subscriptions: what a host does at

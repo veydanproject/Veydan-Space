@@ -158,35 +158,58 @@
   }
 </script>
 
-<Dialog bind:open title={$t('msg_newchat_title')} width="min(440px, calc(100vw - 24px))">
-  <div class="body">
-    <input type="text" bind:value={key} placeholder={$t('msg_newchat_placeholder')} aria-label={$t('msg_newchat_placeholder')} spellcheck="false" disabled={busy}
-      onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) enter(); }} />
+<!-- The window's verb (open the sign-in, the private chat, send, start) stays at its foot while the contacts scroll (the owner's rule). -->
+{#snippet verbs()}
+  {#if webId}
+    {@const id = webId}
+    <button class="btn btn-primary" onclick={() => { reset(); go(webLoginHref(id)); }}><Icon name="world" size={18} />{$t('msg_inv_web_open')}</button>
+  {/if}
+  {#if privateServer}
+    <button class="btn btn-primary" disabled={busy} onclick={openPrivate}>
+      <Icon name="message-circle" size={18} />{$t('msg_srv_card_open_private')}
+    </button>
+  {/if}
+  {#if sending}
+    <button class="btn btn-primary" disabled={busy || (codeOpen && !linkInvite && (!typedCode || !text.trim()))} onclick={send}>
+      <Icon name="send" size={18} />{$t('msg_inv_send')}
+    </button>
+  {:else if peer && !privateServer}
+    <button class="btn btn-primary" disabled={busy} onclick={() => peer && start(peer)}>{$t('msg_newchat_start')}</button>
+  {/if}
+{/snippet}
 
-    {#if shortcuts && !q}
-      <ul class="list shortcuts">
-        <li><button class="row" onclick={() => go(contactsHref())}><span class="sc"><Icon name="book-user" size={18} /></span><span class="name">{$t('msg_contacts_title')}</span><Icon name="chevron-right" size={16} /></button></li>
-        <li><button class="row" onclick={() => go(qrHref(true))}><span class="sc"><Icon name="scan" size={18} /></span><span class="name">{$t('msg_newchat_scan')}</span><Icon name="chevron-right" size={16} /></button></li>
-        <li><button class="row" onclick={() => go(qrHref())}><span class="sc"><Icon name="qr-code" size={18} /></span><span class="name">{$t('msg_newchat_my_qr')}</span><Icon name="chevron-right" size={16} /></button></li>
-      </ul>
-    {/if}
-    {#if !q && serverStore.list?.length}
-      <!-- Someone I never talked to: my link of a private chat, to send by any way. -->
-      <ul class="list shortcuts">
-        <li><button class="row" onclick={() => { open = false; privateInvite.show(); }}><span class="sc"><Icon name="server-2" size={18} /></span><span class="name">{$t('msg_srv_invite_title')}</span><Icon name="chevron-right" size={16} /></button></li>
+<Dialog bind:open title={$t('msg_newchat_title')} width="min(440px, calc(100vw - 24px))"
+  footer={webId || privateServer || sending || (peer && !privateServer) ? verbs : undefined}>
+  <div class="body">
+    <label class="field">
+      <Icon name="search" size={16} />
+      <input type="text" bind:value={key} placeholder={$t('msg_newchat_placeholder')} aria-label={$t('msg_newchat_placeholder')} spellcheck="false" disabled={busy}
+        onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) enter(); }} />
+    </label>
+
+    {#if !q && (shortcuts || serverStore.list?.length)}
+      <!-- The ways to start a chat: tiles in one row, the icon over the word (a phone also reaches the contacts and the QR codes here); one alone is a wide tile. -->
+      <ul class="ways">
+        {#if shortcuts}
+          <li><button class="way" onclick={() => go(contactsHref())}><Icon name="book-user" size={18} /><span>{$t('msg_contacts_title')}</span></button></li>
+          <li><button class="way" onclick={() => go(qrHref(true))}><Icon name="scan" size={18} /><span>{$t('msg_newchat_scan')}</span></button></li>
+          <li><button class="way" onclick={() => go(qrHref())}><Icon name="qr-code" size={18} /><span>{$t('msg_newchat_my_qr')}</span></button></li>
+        {/if}
+        {#if serverStore.list?.length}
+          <!-- Someone I never talked to: my link of a private chat, to send by any way. -->
+          <li><button class="way" onclick={() => { open = false; privateInvite.show(); }}><Icon name="server-2" size={18} /><span>{$t('msg_srv_invite_title')}</span></button></li>
+        {/if}
       </ul>
     {/if}
 
     {#if linkError}<div class="error-msg">{linkError}</div>{/if}
     {#if webId}
-      {@const id = webId}
       <!-- Pasted here by me: the screen of approval asks before anything is approved. -->
       <p class="hint">{$t('msg_inv_web_link')}</p>
-      <button class="btn btn-primary" onclick={() => { reset(); go(webLoginHref(id)); }}><Icon name="world" size={13} />{$t('msg_inv_web_open')}</button>
     {/if}
     {#if link}
       <div class="person">
-        <Avatar url={null} label={link.name || '?'} seed={link.pubkey} size={34} />
+        <Avatar url={null} label={link.name || '?'} seed={link.pubkey} size={36} />
         <span class="person-text">
           <span class="name">{link.name || `${link.pubkey.slice(0, 12)}…`}</span>
           {#if link.invite}<span class="note"><Icon name="check-circle" size={12} />{$t('msg_inv_link_has_invite')}</span>{/if}
@@ -196,11 +219,7 @@
       {#if privateServer}<ServerBox server={privateServer} />{/if}
     {/if}
 
-    {#if privateServer}
-      <button class="btn btn-primary" disabled={busy} onclick={openPrivate}>
-        <Icon name="message-circle" size={13} />{$t('msg_srv_card_open_private')}
-      </button>
-    {:else if peer && !linkInvite}
+    {#if !privateServer && peer && !linkInvite}
       {#if codeOpen}
         <input class="code mono" type="text" inputmode="numeric" autocomplete="one-time-code" bind:value={code} placeholder={$t('msg_inv_code_placeholder')}
           disabled={busy} aria-label={$t('msg_inv_code_placeholder')} />
@@ -211,11 +230,6 @@
 
     {#if sending}
       <textarea rows="3" bind:value={text} placeholder={$t('msg_inv_message_placeholder')} aria-label={$t('msg_inv_message_placeholder')} disabled={busy} maxlength="1000"></textarea>
-      <button class="btn btn-primary" disabled={busy || (codeOpen && !linkInvite && (!typedCode || !text.trim()))} onclick={send}>
-        <Icon name="send" size={13} />{$t('msg_inv_send')}
-      </button>
-    {:else if peer && !privateServer}
-      <button class="btn btn-primary" disabled={busy} onclick={() => peer && start(peer)}>{$t('msg_newchat_start')}</button>
     {/if}
     {#if error}<div class="error-msg">{error}</div>{/if}
 
@@ -225,7 +239,7 @@
         {#each contacts as c (c.pubkey)}
           <li>
             <button class="row" disabled={busy} onclick={() => pick(c)}>
-              <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={34} />
+              <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={36} />
               <span class="name">{contactLabel(c)}</span>
               <code>{c.npub.slice(0, 12)}…</code>
             </button>
@@ -242,38 +256,62 @@
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  input, textarea {
-    font: inherit; font-size: var(--fs-sm); color: var(--text); width: 100%;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 9px 12px;
+  /* The field of whom: 44 high with the search glyph (48 under a finger). */
+  .field {
+    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h-lg); padding: 0 var(--sp-3);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-3);
   }
+  .field:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .field :global(svg) { flex-shrink: 0; }
+  .field input { flex: 1; min-width: 0; align-self: stretch; padding: 0; border: 0; background: none; font: inherit; font-size: var(--fs-base); color: var(--text); }
+  .field input:focus { outline: none; box-shadow: none; }
+  .code, textarea {
+    font: inherit; font-size: var(--fs-base); color: var(--text); width: 100%;
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3);
+  }
+  .code { min-height: var(--control-h-lg); letter-spacing: 2px; font-variant-numeric: tabular-nums; }
   textarea { resize: vertical; min-height: 64px; line-height: 1.4; }
-  input:focus, textarea:focus { outline: none; border-color: var(--accent-border); }
-  .code { letter-spacing: 2px; font-variant-numeric: tabular-nums; }
+  .code:focus, textarea:focus { outline: none; border-color: var(--accent-border); }
   .more {
     display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer;
     font: inherit; font-size: var(--fs-xs); color: var(--accent-text-3); text-align: left; line-height: 1.4;
   }
   .more :global(svg) { flex-shrink: 0; }
+  .more:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; border-radius: var(--radius-xs); }
   .person { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .person-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text); }
   .server-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); }
-  .btn :global(svg) { margin-right: 2px; }
-  .label { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); }
-  .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  /* The ways to start a chat: tiles of one row, the icon in the accent over the word. */
+  .ways { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--sp-2); }
+  .way {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%; min-height: 76px;
+    padding: var(--sp-2) 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
+    color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1.25; text-align: center; cursor: pointer;
+  }
+  .way :global(svg) { flex-shrink: 0; color: var(--accent-text); }
+  .way span { overflow-wrap: break-word; }
+  .way:hover { background: var(--surface-row-hover); }
+  .way:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  /* One way alone (a computer: «Пригласить в частный чат»): a wide tile 48, the icon before the word. */
+  .ways li:only-child .way { flex-direction: row; justify-content: flex-start; gap: var(--sp-3); min-height: 48px; padding: 0 var(--sp-3); font-size: var(--fs-base); text-align: left; }
+  /* «Контакты» in sentence case over their rows. */
+  .label { margin-top: var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
+  /* The contacts: rows right under the ways, no card around them (the row's hover reaches the dialog's padding). */
+  .list { list-style: none; margin: 0 calc(-1 * var(--sp-2)); padding: 0; display: flex; flex-direction: column; }
   .row {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 6px 8px; text-align: left;
-    border: none; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; cursor: pointer;
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-1) var(--sp-2); text-align: left;
+    border: none; border-radius: var(--radius-md); background: none; color: var(--text-3); font: inherit; cursor: pointer;
   }
   .row:hover:not(:disabled) { background: var(--surface-row-hover); }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .shortcuts { max-height: none; }
-  .shortcuts .row { min-height: 48px; color: var(--text-2); }
-  .shortcuts .name { color: var(--text); }
-  .sc { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-tint); color: var(--accent-text-2); }
-  code { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
+  .row:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .name { flex: 1; min-width: 0; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  code { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
   @media (pointer: coarse) {
+    .field { min-height: var(--sp-12); }
+    .row { min-height: 56px; }
+    .way { min-height: 80px; }
     .more { min-height: 40px; }
   }
 </style>

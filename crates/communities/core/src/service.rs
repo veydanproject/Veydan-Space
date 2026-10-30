@@ -23,7 +23,7 @@ use crate::member::Member;
 use crate::op::{History, JoinMode, KeeperRef, Op, OpBody};
 use crate::roles::{permits, Action, Role};
 use crate::secrets;
-use crate::state::{ChannelState, Content, Reader, SCOPE_EVERYONE};
+use crate::state::{rules_at, ChannelState, Content, Reader, SCOPE_EVERYONE};
 use crate::wire::{self, Admit, Card, Invite, InviteReply, Issue, Join, JoinProof, Leave, LinkPayload, Links, Payload, Place, Rejected, Request};
 use keydist::{RootSecret, SchemeId};
 use messenger_core::traits::UiEvent;
@@ -41,6 +41,9 @@ pub const UI_EVENT_CHANNEL_MESSAGE: &str = "channel.message";
 /// under the comments until `until`, kept nowhere.
 pub const UI_EVENT_CHANNEL_TYPING: &str = "channel.typing";
 pub const UI_EVENT_CHANNEL_INVITE: &str = "channel.invite";
+/// What the keeper says to one the journal names (staff) who asks for a
+/// bundle and was never let in as a reader (`channel.not_let_in`).
+pub const NEVER_LET_IN: &str = "never let in: invite first";
 pub const UI_EVENT_CHANNEL_REQUEST: &str = "channel.request";
 pub use crate::outbox::UI_EVENT_CHANNEL_OUTBOX;
 
@@ -259,6 +262,13 @@ pub struct ChannelService {
     /// Channels an epoch was asked for now (`rotate_now`): taken by the
     /// next turn of their keeper, never waiting for its lock.
     rotate_asked: Arc<std::sync::Mutex<HashMap<String, Vec<Option<String>>>>>,
+    /// The markers of a catch-up read (`settle`): the way into the host's
+    /// stream and those on their way.
+    pub(crate) settle: Arc<crate::settle::Settle>,
+    /// The channels whose keeper said I was never let in as a reader
+    /// (`channel.not_let_in`): asking it for a bundle is no use until an
+    /// invitation lets me in (`refused_by_keeper`).
+    pub(crate) not_let_in: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
     /// What each keeper kept here looked like after its last turn.
     pub(crate) statuses: Arc<std::sync::Mutex<HashMap<String, KeeperStatus>>>,
     /// What a blob host said when it last refused a blob of each keeper
@@ -361,6 +371,8 @@ impl ChannelService {
             retry_delays: Arc::new(messenger_media::service::RETRY_DELAYS.to_vec()),
             photo_slots: Arc::new(tokio::sync::Semaphore::new(messenger_media::prepare::PHOTO_SLOTS)),
             rotate_asked: Arc::default(),
+            settle: Arc::default(),
+            not_let_in: Arc::default(),
             statuses: Arc::default(),
             troubles: Arc::default(),
             uploading: Arc::default(),
@@ -445,7 +457,7 @@ impl ChannelService {
         log.head_time().min(now + wire::SKEW_SECS)
     }
 
-    pub(crate) fn me(keys: &Keys) -> Result<PubKey> {
+    pub fn me(keys: &Keys) -> Result<PubKey> {
         PubKey::parse(&keys.public_key().to_hex()).ok_or_else(|| invalid("my key"))
     }
 
@@ -1838,6 +1850,25 @@ impl ChannelService {
         Ok(out)
     }
 
+    /// What the keeper said, if it refused me a bundle: `NEVER_LET_IN` until
+    /// a bundle of the channel is here (an invitation let me in).
+    pub async fn refused_by_keeper(&self, community_id: &str) -> Result<Option<String>> {
+        let said = self.not_let_in.lock().map(|r| r.contains(community_id)).unwrap_or(false);
+        if !said {
+            return Ok(None);
+        }
+        if !db::keys::bundles(&self.env.db, community_id, SCOPE_EVERYONE).await?.is_empty() {
+            if let Ok(mut r) = self.not_let_in.lock() {
+                r.remove(community_id);
+            }
+            return Ok(None);
+        }
+        Ok(Some(NEVER_LET_IN.to_string()))
+    }
+
+    /// Why an invitation is not made: the person is in the channel already.
+    pub const ALREADY_MEMBER: &str = "already a member";
+
     /// An invitation of mine as a moderator (wire §7, the limits of
     /// groups): to the person and a copy to my devices.
     pub async fn invite(&self, keys: &Keys, community_id: &str, who: &PubKey) -> Result<(String, Outcome)> {
@@ -1849,9 +1880,32 @@ impl ChannelService {
         if state.is_banned(who) {
             return Err(invalid("banned"));
         }
+        // One in the channel already needs no invitation: refused as such,
+        // not as the cap (live run 2026-10-30: bots restored on empty folders
+        // were invited again and met «too many open invitations»). In, for an
+        // invitation, is what the keeper let in: a reader the journal did not
+        // put out since. A role in the journal is not: staff named before any
+        // invitation (a migration made agent bots authors first) hold no
+        // reader row and no key until invited and admitted, their role kept.
+        // Refused only where that is known now, the keeper's own rows (a
+        // leave takes them out at once); a snapshot may name one who left
+        // after it, and only frees the place of their invitation under the cap.
+        let log = self.log(community_id).await?.ok_or_else(|| invalid("unknown channel"))?;
+        let member = self.member(keys);
+        let kept = member.kept_here(&state).await?;
+        let readers = member.known_readers(&log).await?;
+        let reader_in = |p: &PubKey| {
+            readers.readers.iter().find(|(r, _)| r == p.as_hex()).is_some_and(|(_, since)| rules_at(&log, p, Some(&Reader { since: *since }), i64::MAX).standing != crate::state::Standing::Outsider)
+        };
+        if kept && reader_in(who) {
+            return Err(invalid(Self::ALREADY_MEMBER));
+        }
+        let is_member = |hex: &str| PubKey::parse(hex).is_some_and(|p| reader_in(&p));
         let now = self.now();
         db::channels::expire_invites(&self.env.db, now).await?;
-        let open = db::channels::invites(&self.env.db, "out", &["sent", "accepted"]).await?;
+        // An invitation accepted by one who is in now is done, whatever its row
+        // says: it holds no place under the cap.
+        let open: Vec<_> = db::channels::invites(&self.env.db, "out", &["sent", "accepted"]).await?.into_iter().filter(|i| i.status == "sent" || !is_member(&i.peer)).collect();
         let to_channel = open.iter().filter(|i| i.community_id == community_id).count();
         let to_person = open.iter().filter(|i| i.peer == who.as_hex()).count();
         if open.len() >= MAX_OPEN_INVITES || to_channel >= MAX_INVITES_PER_CHANNEL || to_person >= MAX_INVITES_PER_PERSON {

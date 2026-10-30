@@ -170,7 +170,7 @@
   <div class="tools">
     {#if group.requests.length > SEARCH_FROM || query}
       <div class="search">
-        <Icon name="search" size={13} />
+        <Icon name="search" size={16} />
         <input type="search" bind:value={query} placeholder={$t('msg_greq_search')} aria-label={$t('msg_greq_search')} />
       </div>
     {/if}
@@ -238,14 +238,18 @@
 <style>
   .tools { display: flex; flex-direction: column; gap: var(--sp-2); }
   .search {
-    display: flex; align-items: center; gap: 6px; padding: 0 12px; color: var(--text-3);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill);
+    display: flex; align-items: center; gap: var(--sp-2); min-height: calc(var(--control-h) - var(--sp-1)); padding: 0 var(--sp-3); color: var(--text-3);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius);
   }
   .search:focus-within { border-color: var(--accent-border); }
-  .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 7px 0; outline: none; }
+  .search :global(svg) { flex-shrink: 0; }
+  .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
-  .tick-all { display: flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-3); font-size: var(--fs-xs); color: var(--text-2); cursor: pointer; user-select: none; }
-  .seg-btn { height: 28px; padding: 0 var(--sp-3); font-size: var(--fs-xs); }
+  /* One quiet line over the list (c11): «Выбрать все» on the left, the order on the right. */
+  .tick-all { display: flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); cursor: pointer; user-select: none; }
+  .row .seg { gap: 2px; padding: 2px; }
+  .seg-btn { height: var(--control-h-sm); padding: 0 var(--sp-2); font-size: var(--fs-xs); }
+  .seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
   .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .nothing { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
   .empty-state { padding: var(--sp-10) var(--sp-4); }

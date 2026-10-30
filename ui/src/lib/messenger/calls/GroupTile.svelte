@@ -179,7 +179,7 @@
   .ok { color: #7ee2a8; pointer-events: auto; cursor: help; }
   .mark { color: #ffb4a8; }
   .talk {
-    display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: 3px; padding: 2px var(--sp-2); border-radius: var(--radius-pill);
     background: var(--success); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
   .pin { position: absolute; z-index: 2; top: 6px; right: 6px; }

@@ -487,6 +487,8 @@
     "msg_push_enable": "开启通知",
     "msg_push_toggle": "新消息时通知我",
     "msg_push_refused": "此应用的通知已关闭。请在手机设置中开启，然后返回这里。",
+    "msg_push_quiet": "消息通知没有声音",
+    "msg_push_quiet_fix": "设置",
     "msg_push_reason_no_config": "此版本没有推送设置：通知在其中无法工作。",
     "msg_push_reason_no_play": "这部手机上没有 Google 服务，而推送需要通过它们。",
     "msg_push_reason_token_failed": "推送服务没有响应。请检查网络连接后重试。",

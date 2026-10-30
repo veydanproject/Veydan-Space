@@ -42,13 +42,23 @@
   const phone = onPhone();
   const label = (s: ScopeView) => (s.scope_id === EVERYONE && !s.title ? $t('chan_scope_everyone') : s.title);
 
-  /** Where the panel stands: under the button, its right edge on the button's. */
-  let at = $state({ top: 0, right: 0 });
+  /**
+   * Where the panel stands: under the button, its right edge on the button's,
+   * never past the pane of the feed the button is in (12 from its edges); in
+   * a narrow pane its whole width, the tiles in two columns.
+   */
+  const GAP = 12;
+  const WIDTH = 600;
+  let at = $state({ top: 0, left: 0, width: WIDTH, height: 0, cols: 3 });
   $effect(() => {
     if (!open || phone || !anchor) return;
     const place = () => {
       const r = anchor!.getBoundingClientRect();
-      at = { top: Math.round(r.bottom + 8), right: Math.max(8, Math.round(window.innerWidth - r.right)) };
+      const box = (anchor!.closest('.window') ?? document.documentElement).getBoundingClientRect();
+      const width = Math.round(Math.min(WIDTH, box.width - GAP * 2));
+      const left = Math.round(Math.min(Math.max(box.left + GAP, r.right - width), box.right - GAP - width));
+      const top = Math.round(r.bottom + 8);
+      at = { top, left, width, height: Math.round(Math.min(box.bottom, window.innerHeight) - top - GAP), cols: width >= 520 ? 3 : 2 };
     };
     place();
     window.addEventListener('resize', place);
@@ -96,7 +106,7 @@
   <div class="head">
     <span class="h-title">{$t('chan_sections')}</span>
     {#if onsettings}
-      <button type="button" class="settings" onclick={() => { close(); onsettings?.(); }}><Icon name="adjustments-horizontal" size={16} />{$t('chan_sections_settings')}</button>
+      <button type="button" class="btn btn-ghost btn-sm settings" onclick={() => { close(); onsettings?.(); }}><Icon name="adjustments-horizontal" size={16} />{$t('chan_sections_settings')}</button>
     {/if}
   </div>
   <div class="grid">
@@ -113,11 +123,12 @@
         onclick={() => pick(tile)}>
         {#if photo}<img class="bg" src={photo} alt="" /><span class="shade"></span>{/if}
         <span class="top">
-          {#if photo}<span class="on-photo"><Icon name={look?.icon ?? 'folder'} size={18} /></span>
-          {:else}<SectionBadge {scope} {communityId} size={36} />{/if}
-          {#if tile.kind === 'locked'}<span class="lock"><Icon name="lock" size={16} /></span>
-          {:else if scope?.hidden}<span class="hidden-mark"><Icon name="eye-off" size={13} />{$t('chan_scope_hidden_mark')}</span>
-          {:else if count > 0}<span class="count">{count > 99 ? '99+' : count}</span>{/if}
+          <SectionBadge {scope} {communityId} size={34} noPhoto />
+          <span class="marks">
+            {#if tile.kind === 'locked'}<span class="lock"><Icon name="lock" size={14} /></span>
+            {:else if scope?.hidden}<span class="hidden-mark"><Icon name="eye-off" size={14} />{$t('chan_scope_hidden_mark')}</span>
+            {:else if count > 0}<span class="count-pill lg">{count > 99 ? '99+' : count}</span>{/if}
+          </span>
         </span>
         <span class="words">
           <span class="name">{name}</span>
@@ -126,7 +137,7 @@
       </button>
     {/each}
   </div>
-  {#if tiles.some((x) => x.kind !== 'all' && x.scope.hidden)}<p class="hint">{$t('chan_scope_hidden_hint')}</p>{/if}
+  {#if tiles.some((x) => x.kind !== 'all' && x.scope.hidden)}<p class="hint"><Icon name="eye-off" size={14} /><span>{$t('chan_scope_hidden_hint')}</span></p>{/if}
 {/snippet}
 
 {#if phone}
@@ -135,62 +146,66 @@
   </BottomSheet>
 {:else if open}
   <div class="catch" use:portal role="presentation" onclick={close}></div>
-  <div class="panel" bind:this={panel} use:portal role="dialog" tabindex="-1" aria-label={$t('chan_sections')} style:top="{at.top}px" style:right="{at.right}px">
+  <div class="panel" bind:this={panel} use:portal role="dialog" tabindex="-1" aria-label={$t('chan_sections')} style:top="{at.top}px" style:left="{at.left}px"
+    style:width="{at.width}px" style:max-height="{at.height}px" style:--cols={at.cols}>
     {@render grid()}
   </div>
 {/if}
 
 <style>
-  .catch { position: fixed; inset: var(--overlay-inset, 0); z-index: 900; }
+  .catch { position: fixed; inset: var(--overlay-inset, 0); z-index: calc(var(--z-popover) - 1); }
+  /* Under its button, never past the pane of the feed (its place is computed above). */
   .panel {
-    position: fixed; z-index: 901; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 120px); overflow-y: auto;
-    display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); box-sizing: border-box;
-    border-radius: var(--radius-lg, 20px); background: var(--glass-bg); border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-highlight), var(--shadow-lg); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+    position: fixed; z-index: var(--z-popover); overflow-y: auto; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4);
+    border-radius: var(--radius-pane); background: var(--glass-bg); border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-highlight), var(--shadow-lg); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
   }
   .sheet { display: flex; flex-direction: column; gap: var(--sp-3); padding: 0 var(--sp-1) var(--sp-3); }
-  .head { display: flex; align-items: center; gap: var(--sp-2); }
-  .h-title { flex: 1; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .sheet .h-title { font-size: 18px; }
-  .settings {
-    display: inline-flex; align-items: center; gap: 6px; border: none; background: none; cursor: pointer; font: inherit;
-    font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--accent-text-2); padding: 6px 8px; border-radius: var(--radius-sm);
-  }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 32px; }
+  .h-title { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
+  .sheet .h-title { font-size: var(--fs-lg); }
+  .settings { gap: 6px; color: var(--accent-text); border-color: transparent; background: none; }
   .settings:hover { background: var(--accent-tint); }
-  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  /* One scheme for every tile: its icon on its colour, its marks on the right; the name and its note under. */
+  .grid { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: var(--sp-2); }
   .sheet .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tile {
-    position: relative; height: 120px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between;
-    padding: 12px; border-radius: 16px; font: inherit; color: var(--text); text-align: left; cursor: pointer;
-    border: 1px solid color-mix(in srgb, var(--t-color) 28%, transparent); background: color-mix(in srgb, var(--t-color) 10%, var(--pane-strong));
-    transition: border-color var(--dur-fast, 120ms), background var(--dur-fast, 120ms);
+    position: relative; min-height: 112px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; gap: 14px;
+    padding: var(--sp-3); border-radius: var(--radius-lg); font: inherit; color: var(--text); text-align: left; cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--t-color) 30%, var(--border)); background: color-mix(in srgb, var(--t-color) 10%, var(--surface-3));
+    transition: border-color var(--dur-fast), background var(--dur-fast);
   }
-  .sheet .tile { height: 112px; border-radius: 18px; }
-  .tile:hover { background: color-mix(in srgb, var(--t-color) 16%, var(--pane-strong)); }
+  .sheet .tile { min-height: 116px; }
+  .tile:hover { background: color-mix(in srgb, var(--t-color) 16%, var(--surface-3)); }
   .tile:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
-  /* The section shown: ringed in its colour. */
-  .tile.current { border: 2px solid var(--t-color); padding: 11px; background: color-mix(in srgb, var(--t-color) 18%, var(--pane-strong)); }
-  .tile.locked { background: var(--pane-strong); border-color: var(--pane-strong-border); }
-  .tile.locked .top :global(.badge), .tile.locked .words { opacity: 0.7; }
-  .tile.hidden { border-style: dashed; }
-  .tile.photo { color: #fff; border-color: transparent; }
+  /* The section shown: ringed in the accent's ink. */
+  .tile.current { border-color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-text); }
+  .tile.locked .top :global(.sec-mark), .tile.locked .words { opacity: 0.6; }
+  .tile.hidden { border-style: dashed; border-color: color-mix(in srgb, var(--t-color) 55%, transparent); }
+  /* Over its background the section keeps its one colour: the plate of the icon and a frame of 2px. */
+  .tile.photo { color: #fff; border-width: 2px; border-color: var(--t-color); padding: calc(var(--sp-3) - 1px); }
+  /* Its frame is already 2px: the accent's alone, no ring inside it. */
+  .tile.photo.current { border-color: var(--accent-text); box-shadow: none; }
   .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 30%, rgba(0, 0, 0, 0.62)); }
-  .top { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
-  .on-photo { width: 36px; height: 36px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); color: #fff; }
-  .count {
-    min-width: 22px; height: 22px; padding: 0 6px; box-sizing: border-box; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center;
-    background: var(--accent); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums;
+  .top { position: relative; align-self: stretch; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-2); }
+  .marks { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; }
+  /* The count is the .count-pill of base.css, 22. */
+  .lock { width: 22px; height: 22px; border-radius: var(--radius-pill); display: inline-flex; align-items: center; justify-content: center; background: var(--surface-2); color: var(--text-3); }
+  .hidden-mark {
+    display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 var(--sp-2); box-sizing: border-box; border-radius: var(--radius-pill);
+    background: var(--danger-bg); color: var(--danger-text); font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap;
   }
-  .lock { color: var(--text-2); display: inline-flex; padding-top: 2px; }
-  .photo .lock { color: #fff; }
-  .hidden-mark { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); font-weight: var(--fw-medium); color: var(--danger-text); }
-  .photo .hidden-mark { color: #fff; }
-  .words { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tile.current .sub { color: color-mix(in srgb, var(--t-color) 55%, var(--text)); }
-  .photo .sub { color: rgba(255, 255, 255, 0.86); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
-  @media (max-width: 520px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .words { position: relative; align-self: stretch; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub {
+    font-size: var(--fs-xs); line-height: 1.35; color: var(--text-2); overflow: hidden;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  }
+  .photo .sub { color: rgba(255, 255, 255, 0.8); }
+  .hint { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--divider); font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .hint :global(svg) { flex-shrink: 0; margin-top: 2px; }
+  /* A tablet: three columns in the sheet. */
+  @media (min-width: 600px) { .sheet .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 </style>

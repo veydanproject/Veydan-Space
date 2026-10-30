@@ -196,6 +196,32 @@ Denies the keeper_periodic command without any pre-configured scope.
 <tr>
 <td>
 
+`veydan-push:allow-open-settings`
+
+</td>
+<td>
+
+Enables the open_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-push:deny-open-settings`
+
+</td>
+<td>
+
+Denies the open_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `veydan-push:allow-permission-state`
 
 </td>

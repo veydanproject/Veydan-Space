@@ -28,7 +28,7 @@
   import { cloudPage } from '$lib/cloud/status.svelte';
   import { connectCloudVault, loadVaultState, type VaultState } from '$lib/cloud/vault';
   import Actions from '$lib/cloud/Actions.svelte';
-  import NavRow from '$lib/cloud/NavRow.svelte';
+  import NavRow from '$lib/core/ui/NavRow.svelte';
   import Notice from '$lib/cloud/Notice.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
 
@@ -137,10 +137,10 @@
 </script>
 
 <RowList label={$t('cloud_access_title')} id="recovery-key">
-  <NavRow icon="smartphone" title={$t('cloud_link_add_entry')} sub={$t('cloud_link_add_sub')} href="/cloud/add-device" />
+  <NavRow variant="list" icon="smartphone" title={$t('cloud_link_add_entry')} sub={$t('cloud_link_add_sub')} href="/cloud/add-device" />
   {#if hasAccount}
-    <NavRow icon="key" title={$t('cloud_recovery_key')} sub={keyLine} tone={status && !issued ? 'warn' : undefined}>
-      {#snippet trailing()}
+    <NavRow variant="list" icon="key" title={$t('cloud_recovery_key')} sub={keyLine} tone={status && !issued ? 'warn' : undefined}>
+      {#snippet end()}
         {#if !asking && !words && status}
           {#if issued}
             <button class="btn btn-ghost btn-sm" type="button" onclick={() => start('reissue')}>{$t('cloud_recovery_reissue_short')}</button>
@@ -198,9 +198,9 @@
       </form>
     {/if}
 
-    <NavRow icon="users" title={$t('cloud_trustees_entry')} sub={trusteesLine} href="/cloud/trustees" disabled={!issued} />
+    <NavRow variant="list" icon="users" title={$t('cloud_trustees_entry')} sub={trusteesLine} href="/cloud/trustees" disabled={!issued} />
   {/if}
-  <NavRow icon="shield" title={$t('cloud_trustees_help_entry')} sub={$t('cloud_help_sub')} href="/cloud/help" />
+  <NavRow variant="list" icon="shield" title={$t('cloud_trustees_help_entry')} sub={$t('cloud_help_sub')} href="/cloud/help" />
 </RowList>
 
 {#if hasAccount}

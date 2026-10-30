@@ -61,6 +61,7 @@ class PushStore {
   };
   setPrefs = (dm: boolean, groups: boolean) => this.run(() => messengerApi.push.setPrefs(dm, groups));
   setServer = (url: string | null) => this.run(() => messengerApi.push.setServer(url));
+  openSettings = () => this.run(() => messengerApi.push.openSettings());
 
   /** What a notification may say. Loaded with the view; changed on its own. */
   notify = $state<MessengerNotifySettings | null>(null);

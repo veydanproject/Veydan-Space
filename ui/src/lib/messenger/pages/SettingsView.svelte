@@ -4,6 +4,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { t } from '$lib/core/i18n';
+  import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
   import IdentityCard from '../identity/IdentityCard.svelte';
   import OwnProfileCard from '../contacts/OwnProfileCard.svelte';
@@ -90,7 +91,7 @@
     <CallsPanel />
   {:else if s?.runtime}
     <div class="card status-card">
-      <div class="card-title">{$t('msg_status_title')}</div>
+      <div class="card-title"><Icon name="activity" size={16} />{$t('msg_status_title')}</div>
       <dl class="status-grid">
         <dt>{$t('msg_status_version')}</dt><dd><code>{s.runtime.version}</code></dd>
         <dt>{$t('msg_status_schema')}</dt><dd><code>{s.runtime.schema_version}</code></dd>
@@ -106,7 +107,7 @@
         <dt>{$t('msg_status_outbox')}</dt>
         <dd>{String(s.runtime.outbox_pending)}</dd>
       </dl>
-      <button class="btn btn-ghost btn-sm" onclick={() => messengerStore.refresh()}>{$t('msg_status_refresh')}</button>
+      <button class="btn btn-ghost" onclick={() => messengerStore.refresh()}>{$t('msg_status_refresh')}</button>
     </div>
     <DebugFeed />
   {/if}
@@ -123,7 +124,13 @@
   }
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--accent-text-2); border-bottom-color: var(--accent); }
-  .settings :global(.card) { max-width: none; }
+  /* Every section's cards as «Профиль и ключ» (design book): surface-2 with a line, radius 16, padding 16/20,
+     a title of 15 with its icon in text-2. */
+  .settings :global(.card) {
+    max-width: none; padding: var(--sp-4) var(--sp-5); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); box-shadow: none;
+  }
+  .settings :global(.card-title) { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
+  .settings :global(.card-title svg) { flex-shrink: 0; color: var(--text-2); }
   .media-anchor { scroll-margin-top: var(--sp-12); }
   .status-card { display: flex; flex-direction: column; gap: var(--sp-3); align-items: flex-start; }
   .status-grid { display: grid; grid-template-columns: max-content 1fr; gap: var(--sp-2) var(--sp-4); margin: 0; font-size: var(--fs-sm); }
@@ -136,5 +143,5 @@
     position: sticky; top: calc(-1 * var(--sp-3)); z-index: 1; margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) 0;
     padding: var(--sp-3) var(--sp-3) var(--sp-2); background: var(--bg);
   }
-  code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-2); padding: 2px 7px; border-radius: var(--radius-badge); }
+  code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-3); padding: 2px 7px; border-radius: var(--radius-badge); }
 </style>

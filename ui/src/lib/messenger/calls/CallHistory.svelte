@@ -38,8 +38,13 @@
     onchat: (chatId: string) => void;
     /** «Позвонить» of an empty journal: a new call. */
     onnew?: () => void;
+    /**
+     * The column is its covers (72 px, a computer): an avatar per row, the
+     * name its tooltip, the count of its calls on the corner (red: missed).
+     */
+    covers?: boolean;
   }
-  let { selected = null, onselect, onchat, onnew }: Props = $props();
+  let { selected = null, onselect, onchat, onnew, covers = false }: Props = $props();
 
   const phone = onPhone();
   const tr = (key: string, params?: Record<string, string>) => $t(key as 'msg_title', params);
@@ -135,20 +140,20 @@
   {@const p = who(e)}
   {@const to = target(e)}
   <li>
-    <div class="row" class:active={selected === r.key} class:missed={r.missed}>
-      <button class="main" onclick={() => onselect(r)} oncontextmenu={(ev) => { ev.preventDefault(); menu = { open: true, x: ev.clientX, y: ev.clientY, row: r }; }}
+    <div class="list-row" class:active={selected === r.key} class:missed={r.missed}>
+      <button class="list-row-main" onclick={() => onselect(r)} oncontextmenu={(ev) => { ev.preventDefault(); menu = { open: true, x: ev.clientX, y: ev.clientY, row: r }; }}
         use:longpress={{ onpress: (pt) => (menu = { open: true, x: pt.x, y: pt.y, row: r }) }}>
-        <Avatar url={p.picture} label={p.name} seed={p.seed} size={42} />
-        <span class="body">
-          <span class="top">
-            {#if e.kind === 'group'}<span class="dim"><Icon name="users" size={12} /></span>{/if}
-            <span class="name">{p.name}</span>
+        <Avatar url={p.picture} label={p.name} seed={p.seed} size={48} />
+        <span class="list-row-body">
+          <span class="list-row-top">
+            <span class="list-row-name">{p.name}</span>
             {#if r.calls.length > 1}<span class="count">({r.calls.length})</span>{/if}
-            <span class="time">{timeOfDay(e.started_at)}</span>
+            {#if e.kind === 'group'}<span class="list-row-mark"><Icon name="users" size={14} /></span>{/if}
+            <span class="list-row-time">{timeOfDay(e.started_at)}</span>
           </span>
-          <span class="bottom">
-            <span class="glyph"><CallIcon name={glyph(e)} size={13} /></span>
-            <span class="what">{words(e)}</span>
+          <span class="list-row-bottom">
+            <span class="glyph"><CallIcon name={glyph(e)} size={14} /></span>
+            <span class="list-row-line what">{words(e)}</span>
           </span>
         </span>
       </button>
@@ -159,6 +164,31 @@
   </li>
 {/snippet}
 
+{#snippet cover(r: LogRow)}
+  {@const p = who(r.head)}
+  <li>
+    <button class="list-cover" class:active={selected === r.key} title={p.name} aria-label={p.name} onclick={() => onselect(r)}
+      oncontextmenu={(ev) => { ev.preventDefault(); menu = { open: true, x: ev.clientX, y: ev.clientY, row: r }; }}
+      use:longpress={{ onpress: (pt) => (menu = { open: true, x: pt.x, y: pt.y, row: r }) }}>
+      <Avatar url={p.picture} label={p.name} seed={p.seed} size={42} />
+      {#if r.missed || r.calls.length > 1}<span class="list-cover-corner" class:muted={!r.missed} class:missed={r.missed}>{r.calls.length > 99 ? '99+' : r.calls.length}</span>{/if}
+    </button>
+  </li>
+{/snippet}
+
+{#if covers}
+  <div class="covers" onscroll={nearEnd}>
+    {#if !callLog.loaded}
+      <span class="list-cover-empty" role="status"><span class="spinner" aria-hidden="true"></span></span>
+    {:else if sections.length === 0}
+      <span class="list-cover-empty" role="status" aria-label={callLog.failed ? $t('msg_calls_load_failed') : filter === 'missed' ? $t('msg_calls_empty_missed') : $t('msg_calls_empty')} title={callLog.failed ? $t('msg_calls_load_failed') : filter === 'missed' ? $t('msg_calls_empty_missed') : $t('msg_calls_empty')}><CallIcon name="phone" size={22} /></span>
+    {:else}
+      <ul class="covers-list">
+        {#each sections as s (s.day)}{#each s.rows as r (r.key)}{@render cover(r)}{/each}{/each}
+      </ul>
+    {/if}
+  </div>
+{:else}
 <div class="filter">
   <div class="tab-bar" role="tablist">
     <button role="tab" class="tab" class:active={filter === 'all'} aria-selected={filter === 'all'} onclick={() => (filter = 'all')}>{$t('msg_calls_all')}</button>
@@ -168,7 +198,7 @@
 
 <div class="list-wrap" onscroll={nearEnd}>
   {#if !callLog.loaded}
-    <Skeleton height={64} size={42} trailing />
+    <Skeleton height={64} size={48} trailing />
   {:else if callLog.failed && !callLog.entries.length}
     <div class="empty">
       <span class="empty-icon"><Icon name="alert-triangle" size={26} /></span>
@@ -188,15 +218,16 @@
   {:else}
     {#each sections as s (s.day)}
       <h3 class="day">{heading(s.at)}</h3>
-      <ul class="list divided">
+      <ul class="list-rows">
         {#each s.rows as r (r.key)}{@render row(r)}{/each}
       </ul>
     {/each}
     {#if callLog.complete && filter === 'all'}
-      <button class="clear" onclick={clearAll}><Icon name="trash-2" size={13} />{$t('msg_calls_clear')}</button>
+      <button class="clear" onclick={clearAll}><Icon name="trash-2" size={16} />{$t('msg_calls_clear')}</button>
     {/if}
   {/if}
 </div>
+{/if}
 
 <ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} onclose={() => (menu.open = false)} />
 
@@ -207,26 +238,16 @@
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
   .day { margin: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: none; }
   .day:first-child { margin-top: var(--sp-1); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
-  .row { display: flex; align-items: center; border-radius: var(--radius-lg); transition: background var(--dur-fast) var(--ease); }
-  .row:hover { background: var(--surface-hover); }
-  .row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
-  .main {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); min-height: 64px; padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
-    border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
-  }
-  .body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-  .top, .bottom { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .name { font-weight: var(--fw-semibold); font-size: var(--fs-body); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .missed .name, .missed .count { color: var(--danger-text); }
+  /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows;
+     the row's main part a .list-row-main button, the handset at its end. */
+  .dial:focus-visible, .clear:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .missed .list-row-name, .missed .count { color: var(--danger-text); }
   .count { font-size: var(--fs-sm); color: var(--text-2); flex-shrink: 0; }
-  .dim { color: var(--text-3); display: inline-flex; flex-shrink: 0; }
-  .time { margin-left: auto; font-size: var(--fs-xs); color: var(--text-2); flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .glyph { display: inline-flex; color: var(--text-3); flex-shrink: 0; }
   .missed .glyph { color: var(--danger-text); }
-  .what { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .what { font-variant-numeric: tabular-nums; }
   .dial {
-    flex-shrink: 0; width: 40px; height: 40px; margin: 0 var(--sp-2); border: none; border-radius: 50%;
+    flex-shrink: 0; width: 36px; height: 36px; margin: 0 calc(var(--sp-1) * -1) 0 var(--sp-2); border: none; border-radius: var(--radius);
     display: inline-flex; align-items: center; justify-content: center; background: none; color: var(--success-text); cursor: pointer;
   }
   @media (hover: hover) { .dial:hover:not(:disabled) { background: var(--success-bg); } }
@@ -238,9 +259,12 @@
   .empty-icon { width: 56px; height: 56px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-tint); color: var(--accent-text-2); margin-bottom: var(--sp-1); }
   .empty .btn { margin-top: var(--sp-2); }
   .clear {
-    display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3); border: none; background: none; cursor: pointer; color: var(--text-3); font: inherit; font-size: var(--fs-xs);
+    display: flex; align-items: center; justify-content: center; gap: var(--sp-1); width: fit-content; height: 36px; margin: var(--sp-2) auto 0;
+    padding: 0 var(--sp-3); border: none; border-radius: var(--radius); background: none; cursor: pointer; color: var(--text-3); font: inherit; font-size: var(--fs-sm);
   }
   .clear:hover { color: var(--danger-text); }
+  /* The column of covers: the open one lit, the count on the corner. */
+  .covers { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; padding: var(--sp-1) 0 var(--sp-3); }
+  .covers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }
   @media (pointer: coarse) { .dial { width: 44px; height: 44px; } }
 </style>

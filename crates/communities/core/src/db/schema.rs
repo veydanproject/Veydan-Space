@@ -888,6 +888,16 @@ pub(crate) const MIGRATION_033: &str = r#"
 ALTER TABLE cm_reactions ADD COLUMN kept INTEGER NOT NULL DEFAULT 1;
 "#;
 
+/// `034_epochs_heard`: the newest epoch number heard of each channel in an
+/// epoch event of a keeper the journal names, taken or not (a new keeper
+/// series is numbered past it, wire §15): kept across a restart.
+pub(crate) const MIGRATION_034: &str = r#"
+CREATE TABLE IF NOT EXISTS cm_epochs_heard (
+    community_id TEXT PRIMARY KEY,
+    epoch INTEGER NOT NULL
+);
+"#;
+
 /// The migrations of the database, oldest first.
 pub(crate) fn migrations() -> Migrator {
     Migrator::with_migrations(vec![
@@ -924,5 +934,6 @@ pub(crate) fn migrations() -> Migrator {
         Migration::new(31, Cow::Borrowed("upload_keys"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_031), false),
         Migration::new(32, Cow::Borrowed("cloud_keys"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_032), false),
         Migration::new(33, Cow::Borrowed("reaction_tombstones"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_033), false),
+        Migration::new(34, Cow::Borrowed("epochs_heard"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_034), false),
     ])
 }

@@ -25,9 +25,15 @@
     danger?: boolean;
     disabled?: boolean;
     shortcut?: string;
+    /** A count at the end of the row, in a pill (what waits behind it). */
+    badge?: string;
     onselect: () => void;
   }
-  export type MenuEntry = MenuItem | { type: 'separator' };
+  /**
+   * Only the look of a menu: a line between groups; the title of a group (a quiet line, not an item);
+   * two items side by side as a pair of buttons, the first the primary one (both reached by the keys).
+   */
+  export type MenuEntry = MenuItem | { type: 'separator' } | { type: 'heading'; label: string; icon?: string } | { type: 'pair'; items: [MenuItem, MenuItem] };
 
   interface Props {
     open: boolean;
@@ -39,9 +45,37 @@
     header?: Snippet;
     /** 'point': its corner at (x, y), the default; 'above': centred over (x, y), 8 above it (below when there is no room). */
     place?: 'point' | 'above';
+    /** A roomier menu of a computer: rows 40 high, icons 18, this width (a channel’s ⋮). */
+    width?: string;
   }
 
-  let { open = $bindable(), x, y, items, onclose, header, place = 'point' }: Props = $props();
+  let { open = $bindable(), x, y, items, onclose, header, place = 'point', width }: Props = $props();
+  const uid = $props.id();
+
+  type Shown = { entry: MenuEntry; id?: string; labelledby?: string };
+  /**
+   * What is drawn: never a line first, last, or right after another line or a title (a menu whose
+   * first group is empty would start with a lone line); a title gets an id, and a pair under it names
+   * its group by it.
+   */
+  const shown = $derived.by((): Shown[] => {
+    const out: Shown[] = [];
+    let heading: string | undefined;
+    items.forEach((entry, i) => {
+      const prev = out[out.length - 1]?.entry;
+      if (entry.type === 'separator') {
+        if (!prev || prev.type === 'separator' || prev.type === 'heading') return;
+        heading = undefined;
+        out.push({ entry });
+      } else if (entry.type === 'heading') {
+        heading = `${uid}-h${i}`;
+        out.push({ entry, id: heading });
+      } else if (entry.type === 'pair') out.push({ entry, labelledby: heading });
+      else out.push({ entry });
+    });
+    while (out.length && out[out.length - 1].entry.type === 'separator') out.pop();
+    return out;
+  });
 
   let menuEl = $state<HTMLDivElement | null>(null);
   let style = $state('');
@@ -163,9 +197,19 @@
     <BottomSheet open={!!open} title="" onclose={dismissSheet}>
       {#if header}<div class="sheet-menu-header">{@render header()}</div>{/if}
       <div class="sheet-menu" role="menu">
-        {#each items as item (item)}
+        {#each shown as { entry: item, id, labelledby } (item)}
           {#if item.type === 'separator'}
             <div class="sheet-sep"></div>
+          {:else if item.type === 'heading'}
+            <div class="sheet-heading" role="presentation" {id}>{#if item.icon}<Icon name={item.icon} size={16} />{/if}{item.label}</div>
+          {:else if item.type === 'pair'}
+            <div class="sheet-pair" role="group" aria-labelledby={labelledby}>
+              {#each item.items as p, i (i)}
+                <button class="sheet-pair-btn btn" class:btn-primary={i === 0} class:btn-ghost={i !== 0} class:danger={p.danger} disabled={p.disabled} role="menuitem" onclick={() => fire(p)}>
+                  {#if p.icon}<Icon name={p.icon} size={18} />{/if}<span class="menu-label">{p.label}</span>
+                </button>
+              {/each}
+            </div>
           {:else}
             <button
               class="sheet-item"
@@ -176,6 +220,7 @@
             >
               {#if item.icon}<Icon name={item.icon} size={20} />{:else}<span class="sheet-icon-gap"></span>{/if}
               <span class="menu-label">{item.label}</span>
+              {#if item.badge}<span class="count-pill lg">{item.badge}</span>{/if}
             </button>
           {/if}
         {/each}
@@ -183,13 +228,23 @@
     </BottomSheet>
   </div>
 {:else if open && !isMobile}
-  <div bind:this={menuEl} class="context-menu" style={style} style:transform-origin={origin} use:portal role="menu" tabindex="-1" out:menuOut>
+  <div bind:this={menuEl} class="context-menu" class:roomy={!!width} style={style} style:width={width} style:transform-origin={origin} use:portal role="menu" tabindex="-1" out:menuOut>
     {#if header}
       <div class="menu-header">{@render header()}</div>
     {/if}
-    {#each items as item (item)}
+    {#each shown as { entry: item, id, labelledby } (item)}
       {#if item.type === 'separator'}
         <div class="menu-sep"></div>
+      {:else if item.type === 'heading'}
+        <div class="menu-heading" role="presentation" {id}>{#if item.icon}<Icon name={item.icon} size={14} />{/if}{item.label}</div>
+      {:else if item.type === 'pair'}
+        <div class="menu-pair" role="group" aria-labelledby={labelledby}>
+          {#each item.items as p, i (i)}
+            <button class="menu-item pair-btn" class:primary={i === 0} class:danger={p.danger} disabled={p.disabled} role="menuitem" onclick={() => fire(p)}>
+              {#if p.icon}<Icon name={p.icon} size={width ? 18 : 14} />{/if}<span class="menu-label">{p.label}</span>
+            </button>
+          {/each}
+        </div>
       {:else}
         <button
           class="menu-item"
@@ -198,8 +253,9 @@
           role="menuitem"
           onclick={() => fire(item)}
         >
-          {#if item.icon}<Icon name={item.icon} size={14} />{:else}<span class="icon-gap"></span>{/if}
+          {#if item.icon}<Icon name={item.icon} size={width ? 18 : 14} />{:else}<span class="icon-gap"></span>{/if}
           <span class="menu-label">{item.label}</span>
+          {#if item.badge}<span class="count-pill" class:lg={!!width}>{item.badge}</span>{/if}
           {#if item.shortcut}<span class="menu-shortcut">{item.shortcut}</span>{/if}
         </button>
       {/if}
@@ -283,11 +339,41 @@
     font-family: var(--font-mono);
   }
 
+
+  /* The roomier menu: 288 wide by its caller, rows 40, the groups apart. */
+  /* Its inset is the difference of the radii, so a row's corner follows the menu's. */
+  .context-menu.roomy { max-width: calc(100vw - 8px); padding: calc(var(--radius-lg) - var(--radius)); border-radius: var(--radius-lg); }
+  .roomy .menu-item { min-height: 40px; gap: var(--sp-3); padding: 0 10px; border-radius: var(--radius); }
+  .roomy .menu-item :global(svg) { color: var(--text-3); }
+  .roomy .menu-item.danger :global(svg) { color: var(--danger-text); }
+  .roomy .icon-gap { width: 18px; }
+  .roomy .menu-sep { margin: calc(var(--radius-lg) - var(--radius)) 0; }
+
   .menu-sep {
     height: 1px;
     margin: 4px 2px;
     background: var(--border);
   }
+
+  /* The title of a group: a quiet line over its items, not one of them. */
+  .menu-heading {
+    display: flex; align-items: center; gap: 6px;
+    padding: var(--sp-1) var(--sp-3) var(--sp-2);
+    color: var(--text-3); font-size: var(--fs-xs); font-weight: var(--fw-bold);
+  }
+  .menu-heading :global(svg) { flex-shrink: 0; }
+  /* Two items side by side, as buttons 36: the first the primary one, the second a quiet one. */
+  .menu-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); padding: 0 var(--sp-1) var(--sp-2); }
+  .menu-item.pair-btn {
+    justify-content: center; gap: 6px; min-height: 36px; padding: 0 var(--sp-2); border-radius: var(--radius);
+    border: 1px solid var(--border-2); background: var(--surface-3); font-weight: var(--fw-semibold);
+  }
+  .menu-item.pair-btn .menu-label { flex: 0 1 auto; }
+  .menu-item.pair-btn.primary { border-color: transparent; background: var(--accent-grad); color: #fff; }
+  .menu-item.pair-btn.primary :global(svg) { color: #fff; }
+  .menu-item.pair-btn:hover:not(:disabled), .menu-item.pair-btn:focus:not(:disabled) { background: var(--surface-hover); }
+  .menu-item.pair-btn.primary:hover:not(:disabled), .menu-item.pair-btn.primary:focus:not(:disabled) { background: var(--accent-grad); filter: brightness(1.1); }
+  .menu-item.pair-btn:focus-visible { box-shadow: none; outline: 2px solid var(--accent-border); outline-offset: 2px; }
 
   /* The phone's sheet: rows of the shell's lists (mobile.css .m-row), 52px high. */
   .sheet-menu-header {
@@ -321,4 +407,13 @@
   .sheet-item.danger :global(svg) { color: var(--danger-text); }
   .sheet-icon-gap { width: 20px; flex-shrink: 0; }
   .sheet-sep { height: 1px; margin: var(--sp-1) var(--sp-2); background: var(--border); flex-shrink: 0; }
+  .sheet-heading {
+    display: flex; align-items: center; gap: 6px; padding: var(--sp-2) var(--sp-2) var(--sp-1);
+    color: var(--text-3); font-size: var(--fs-sm); font-weight: var(--fw-bold);
+  }
+  .sheet-heading :global(svg) { flex-shrink: 0; }
+  /* The pair on a phone: two buttons 44 side by side, the width of the sheet. */
+  .sheet-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2) var(--sp-2); }
+  .sheet-pair-btn { min-height: 44px; justify-content: center; }
+  .sheet-pair-btn .menu-label { flex: 0 1 auto; }
 </style>

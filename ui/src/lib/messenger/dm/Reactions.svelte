@@ -59,17 +59,19 @@
   .reactions { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip {
     position: relative; display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--control-h-sm); padding: 0 var(--sp-3);
-    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-3);
     color: var(--text-2); font: inherit; line-height: 1; cursor: pointer;
     transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
   }
   .chip:hover:not(:disabled) { background: var(--surface-hover); }
   .chip:disabled { cursor: default; }
   .chip.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
-  .emoji { font-size: var(--fs-lg); line-height: 1; }
-  .count { font-size: var(--fs-base); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; animation: roll 120ms var(--ease); }
+  .chip.mine .count { color: var(--accent-text); }
+  .chip:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .emoji { font-size: var(--fs-body); line-height: 1; }
+  .count { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-2); font-variant-numeric: tabular-nums; animation: roll 120ms var(--ease); }
   .chip.pop .emoji { animation: pop 200ms cubic-bezier(0.2, 0.9, 0.3, 1.15); }
-  .chip.add { width: var(--control-h-lg); justify-content: center; padding: 0; border-style: dashed; background: none; color: var(--text-soft); }
+  .chip.add { justify-content: center; padding: 0 var(--sp-2); color: var(--text-3); }
   @keyframes pop { 50% { transform: scale(1.2); } }
   @keyframes roll { from { transform: translateY(60%); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .count, .chip.pop .emoji { animation: none; } }

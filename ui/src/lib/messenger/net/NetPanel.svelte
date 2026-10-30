@@ -55,8 +55,8 @@
       <span class="dot" class:via={s.active}></span>
       <span class="way">{way}</span>
       <span class="known">{$t('msg_bridge_known', { count: String(s.bridges) })}</span>
-      <button class="btn btn-ghost btn-sm" disabled={netStore.busy} onclick={() => netStore.runCheck()}>
-        <Icon name="refresh-cw" size={12} />{$t('msg_bridge_check')}
+      <button class="btn btn-ghost" disabled={netStore.busy} onclick={() => netStore.runCheck()}>
+        <Icon name="refresh-cw" size={18} />{$t('msg_bridge_check')}
       </button>
     </div>
     {#if netStore.check}
@@ -73,7 +73,7 @@
             <button
               class="icon-btn danger-soft" disabled={netStore.busy} title={$t('msg_bridge_remove')}
               aria-label={$t('msg_bridge_remove')} onclick={() => netStore.removeBridge(bridge.id)}
-            ><Icon name="trash-2" size={14} /></button>
+            ><Icon name="trash-2" size={18} /></button>
           </li>
         {/each}
       </ul>
@@ -82,7 +82,7 @@
     <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
       <input type="text" bind:value={newBridge} placeholder="veydan://vlink/…" spellcheck="false" disabled={netStore.busy} />
       <button class="btn btn-ghost" type="submit" disabled={netStore.busy || !newBridge.trim()}>
-        <Icon name="plus" size={14} />{$t('msg_bridge_add')}
+        <Icon name="plus" size={18} />{$t('msg_bridge_add')}
       </button>
     </form>
     <p class="hint">{$t('msg_bridge_add_hint')}</p>
@@ -91,7 +91,6 @@
 </div>
 
 <style>
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .bridges { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
   .hint { font-size: var(--fs-xs); color: var(--text-3); }
@@ -102,14 +101,16 @@
   .way { color: var(--text); }
   .known { color: var(--text-3); font-size: var(--fs-xs); margin-right: auto; }
   .meta { font-size: var(--fs-xs); color: var(--text-3); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-  .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-  .row code { font-family: var(--font-mono); font-size: var(--fs-xs); }
+  /* Rows of 48 with a line between them, as the facts of «Профиль и ключ». */
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-1) 0; }
+  .row + .row { border-top: 1px solid var(--border); }
+  .row code { font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; min-width: 0; }
   .spacer { flex: 1; }
   .add { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .add input {
-    flex: 1; min-width: 0; font: inherit; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+    flex: 1 1 220px; min-width: 0; min-height: 44px; font: inherit; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .add input:focus { outline: none; border-color: var(--accent-border); }
 </style>

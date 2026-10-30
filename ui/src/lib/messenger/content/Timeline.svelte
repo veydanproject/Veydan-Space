@@ -64,7 +64,7 @@
     {@const who = item.type === 'album' ? item.messages[0].sender_pubkey : item.message.sender_pubkey}
     <div class="row" class:first={item.first}>
       <div class="gutter">
-        {#if item.showAvatar}<Avatar url={nameStore.picture(who)} label={nameStore.label(who)} seed={who} size={30} />{/if}
+        {#if item.showAvatar}<Avatar url={nameStore.picture(who)} label={nameStore.label(who)} seed={who} size={32} />{/if}
       </div>
       {#if item.type === 'album'}{@render album(item)}{:else}{@render bubble(item)}{/if}
     </div>
@@ -77,18 +77,21 @@
 
 <style>
   .day, .system { display: flex; justify-content: center; margin: var(--sp-3) 0 var(--sp-1); }
-  .day span { font-size: var(--fs-2xs); color: var(--text-3); background: var(--surface-2); border: 1px solid var(--border); padding: 3px 10px; border-radius: var(--radius-pill); }
-  .system { margin: var(--sp-2) var(--sp-4); }
-  .system span { font-size: var(--fs-xs); color: var(--text-2); text-align: center; line-height: 1.4; }
+  /* The day mark quiet in the middle (mockups c7.js): a pill 24 without a frame, fs-xs 600, text-2 on surface-3. */
+  .day span { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); padding: 0 var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-3); }
+  /* A line of an event: quieter than the messages, in the middle. */
+  .system { margin: var(--sp-3) var(--sp-4) var(--sp-1); }
+  .system span { font-size: var(--fs-xs); color: var(--text-3); text-align: center; line-height: 1.4; }
   .system.fold { flex-direction: column; align-items: center; gap: 3px; }
   .fold-head {
     display: inline-flex; align-items: center; gap: 4px; border: none; background: none; cursor: pointer;
-    font: inherit; font-size: var(--fs-xs); color: var(--text-2); padding: 2px 8px; border-radius: var(--radius-pill);
+    font: inherit; font-size: var(--fs-xs); color: var(--text-3); padding: 2px 8px; border-radius: var(--radius-pill);
   }
   .fold-head:hover { color: var(--text); background: var(--surface-3); }
   .row { display: flex; align-items: flex-end; padding-left: var(--sp-3); }
-  .gutter { width: 30px; flex-shrink: 0; display: flex; padding-bottom: 1px; }
-  .row > :global(.line) { flex: 1; min-width: 0; padding-left: 6px; }
+  /* The picture of the author once, at the bottom of the run, beside its last bubble. */
+  .gutter { width: 32px; flex-shrink: 0; display: flex; padding-bottom: 1px; }
+  .row > :global(.line) { flex: 1; min-width: 0; padding-left: var(--sp-2); }
   @media (pointer: coarse) {
     .row { padding-left: var(--sp-2); }
     .fold-head { padding: 8px 12px; }

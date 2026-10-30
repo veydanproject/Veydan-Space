@@ -13,6 +13,7 @@
 </script>
 
 <script lang="ts">
+  import { scrollTabs } from '$lib/core/ui/scrollTabs';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { PanelHead } from '$lib/messenger/seams/shared';
@@ -54,6 +55,11 @@
   /** The count a tab carries: what waits there. */
   const count = (v: ModerationTab): number =>
     v === 'requests' ? (channelStore.requests[cid] ?? 0) : v === 'levels' ? (channelStore.levelRequests[cid] ?? 0) : v === 'queue' ? (channelStore.queue[cid] ?? 0) : 0;
+
+  // A narrow panel clips the row of tabs: it scrolls sideways (the wheel of a mouse too), the chosen tab
+  // stays in view, and a clipped edge fades so the row reads as going on (as the tabs of the account).
+  // The fades follow the row's room: other tabs or their counts (a count widens its tab), the panel's width.
+  const widths = $derived(tabs.map((v) => `${v}:${count(v)}`).join());
 </script>
 
 <PanelHead title={$t('chan_mod_title')} {onback} />
@@ -61,13 +67,13 @@
 <div class="scroll">
   {#if showsTickets(detail)}<TicketsLine {detail} />{/if}
   {#if tabs.length > 1}
-    <div class="seg tabs" role="tablist" aria-label={$t('chan_mod_title')}>
+    <div class="seg tabs" role="tablist" aria-label={$t('chan_mod_title')} use:scrollTabs={{ selected: tab, watch: widths, wheel: true, fadeStart: true }}>
       {#each tabs as v (v)}
         {@const label = $t(`chan_mod_tab_${v}` as 'chan_mod_tab_queue')}
         <!-- Every tab says its word; when they do not fit the panel's width they scroll sideways. -->
         <button class="seg-btn" class:active={tab === v} role="tab" aria-selected={tab === v} onclick={() => (tab = v)}>
           {#if v === 'settings'}<Icon name="settings" size={14} />{/if}<span class="tab-name">{label}</span>
-          {#if count(v)}<span class="tab-count">{count(v) > 99 ? '99+' : count(v)}</span>{/if}
+          {#if count(v)}<span class="count-pill sm quiet">{count(v) > 99 ? '99+' : count(v)}</span>{/if}
         </button>
       {/each}
     </div>
@@ -86,5 +92,13 @@
   .tabs { align-self: stretch; flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tabs .seg-btn { flex: 1 0 auto; justify-content: center; gap: 5px; padding: 0 var(--sp-2); }
-  .seg-btn.active .tab-count { background: var(--accent); color: #fff; }
+  /* The keyboard's ring inside the tab: the row clips what sticks out. */
+  .tabs .seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); mask-image: linear-gradient(to right, #000 85%, transparent); }
+  .tabs:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, #000 85%, transparent); mask-image: linear-gradient(to left, #000 85%, transparent); }
+  .tabs:global(.fade-start.fade-end) {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 15%, #000 85%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 15%, #000 85%, transparent);
+  }
+  .seg-btn.active .count-pill.quiet { background: var(--accent); color: #fff; }
 </style>

@@ -68,12 +68,18 @@
      * as the message `/name`.
      */
     commands?: BotCommand[];
+    /**
+     * Only the look. `thread`: the comments of a post (the mockup c6.js) — the tools a quiet row above, then one
+     * row of the field (a pill 44) and the round send 44, no bar around them. A chat keeps its own look.
+     */
+    variant?: 'thread';
   }
   let {
     disabled = false, placeholder, replyTo, editing, peerTitle, oncancel, onsend, tools, draftKey, oneditlast,
     onrecording, canRecord = true, autofocus = true, attached = null, attachments, onpastefiles, onpasteclipboard, canattach = true,
-    markdown = false, onexpand, commands = [],
+    markdown = false, onexpand, commands = [], variant,
   }: Props = $props();
+  const thread = $derived(variant === 'thread');
 
   let emojiOpen = $state(false);
 
@@ -643,6 +649,13 @@
   ]);
 </script>
 
+{#snippet emojiToggle()}
+  <button class="tool" data-emoji-toggle tabindex="-1" {disabled} aria-expanded={dock === 'open'}
+    onpointerdown={keepFocus} onmousedown={keepFocus} onclick={toggleEmoji} aria-label={dock === 'open' ? $t('msg_emoji_keyboard') : $t('msg_emoji_title')}>
+    <Icon name={dock === 'open' ? 'keyboard' : 'smile'} size={18} />
+  </button>
+{/snippet}
+
 {#snippet mdChip()}
   <span class="mdchip" title={$t('msg_fmt_md_on')}>
     <Icon name="file-code" size={13} /><span>Markdown</span>
@@ -678,7 +691,7 @@
   </div>
 {/snippet}
 
-<div class="composer" class:docked={touch && !!dock} bind:this={root}>
+<div class="composer" class:docked={touch && !!dock} class:thread bind:this={root}>
   {#if editing || replyTo}
     <div class="context">
       <Icon name={editing ? 'pencil' : 'reply'} size={14} />
@@ -713,18 +726,19 @@
       {#if sel && !recording && !fmtMenu.open}{@render formatBar()}{/if}
     </div>
   {/if}
+  <!-- The thread on a phone: its tools a quiet row above the field, as on a computer. -->
+  {#if thread && touch && tools && !held}<div class="tools-row">{@render tools()}</div>{/if}
   <div class="row">
     {#if touch}
       {#if held}
         <TouchRecorder bind:this={heldEl} bind:phase={heldPhase} kind={held} locked={heldLocked} dx={gesture.dx} dy={gesture.dy}
           oncancel={endHeld} ondone={(c) => recorded(held!, c)} onerror={recordingFailed} />
       {/if}
+        <!-- A chat on a phone (the owner: «только переставить», c7.js): attach left of the field, the smile inside it at its end. -->
+        {#if tools && !thread && !held}<div class="side-tools">{@render tools()}</div>{/if}
         <!-- Stays in the page while a recording goes: taking the field away would close the keyboard. -->
         <div class="field" class:away={!!held}>
-          <button class="tool" data-emoji-toggle tabindex="-1" {disabled} aria-expanded={dock === 'open'}
-            onpointerdown={keepFocus} onmousedown={keepFocus} onclick={toggleEmoji} aria-label={dock === 'open' ? $t('msg_emoji_keyboard') : $t('msg_emoji_title')}>
-            <Icon name={dock === 'open' ? 'keyboard' : 'smile'} size={21} />
-          </button>
+          {#if thread}{@render emojiToggle()}{/if}
           {#if commands.length}{@render slashButton()}{/if}
           <!-- A tap on the field while the panel is open brings the keyboard back. -->
           <textarea
@@ -733,7 +747,7 @@
             oninput={() => { cmdAll = false; resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onpointerup={readSel} {onpaste} onfocus={() => focused(true)} onblur={() => { sel = null; focused(false); }}
             onpointerdown={() => { if (dock === 'open') { el?.removeAttribute('inputmode'); dock = 'tokb'; } }}
           ></textarea>
-          {#if tools}{@render tools()}{/if}
+          {#if !thread}{@render emojiToggle()}{/if}
           {#if onexpand}{@render expandButton()}{/if}
         </div>
       {#if canRecordNow}
@@ -745,13 +759,13 @@
           onmousedown={keepFocus} oncontextmenu={keepFocus}
           aria-label={sends ? $t('msg_composer_send') : $t(mode === "circle" ? "msg_rec_circle" : "msg_rec_voice")}>
           {#key sends ? "send" : mode}
-            <span class="glyph"><Icon name={sends ? "send" : mode === "circle" ? "circle-video" : "mic"} size={sends ? 17 : 19} /></span>
+            <span class="glyph"><Icon name={sends ? "send" : mode === "circle" ? "circle-video" : "mic"} size={18} /></span>
           {/key}
         </button>
       {:else}
         <button class="send" class:off={!canSend} aria-disabled={!canSend} tabindex="-1"
           onpointerdown={keepFocus} onmousedown={keepFocus} onclick={submit} aria-label={$t('msg_composer_send')}>
-          <Icon name={editing ? 'check' : 'send'} size={17} />
+          <Icon name={editing ? 'check' : 'send'} size={18} />
         </button>
       {/if}
     {:else if recording === "voice"}
@@ -833,9 +847,10 @@
 {/if}
 
 <style>
-  .composer { position: relative; background: transparent; padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+  /* The field under the conversation's column: as wide (720) and in the middle; 52 high, its buttons 40 with icons 18. */
+  .composer { position: relative; background: transparent; padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; max-width: calc(720px + 2 * var(--sp-3)); margin-inline: auto; box-sizing: border-box; }
   .row {
-    padding: 6px; border-radius: var(--radius-card);
+    padding: 6px; border-radius: var(--radius-bar);
     background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
   }
   .row:focus-within { border-color: var(--accent-border); }
@@ -843,7 +858,6 @@
   .dfield { position: relative; flex: 1; min-width: 0; display: flex; align-items: flex-end; }
   .dfield textarea { flex: 1; min-width: 0; }
   .dfield :global(.picker) { left: auto; right: 0; bottom: calc(100% + 14px); }
-  .tool.voice { border: 1px solid var(--border-2); }
   /* «/» beside the smile in a chat with a bot: the glyph itself, the weight of the icons beside it. */
   .tool.slash { font: inherit; font-size: 19px; font-weight: var(--fw-semibold); line-height: 1; }
   /* The commands of the bot: a menu over the composer, framed as the context menus. Opaque: inside the
@@ -857,13 +871,15 @@
     animation: menu-in var(--dur-fast) var(--ease) both;
   }
   .cmd {
-    display: flex; align-items: baseline; gap: var(--sp-2); flex-shrink: 0; min-height: 36px; padding: var(--sp-1) var(--sp-3);
-    border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text);
+    display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; min-height: 36px; padding: var(--sp-1) var(--sp-3);
+    border: none; border-radius: var(--radius); background: transparent; color: var(--text);
     font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer;
   }
-  .cmd.on { background: var(--surface-hover); }
-  .cmd-name { flex-shrink: 0; font-weight: var(--fw-semibold); color: var(--accent-text-2); }
-  .cmd-about { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--fs-xs); }
+  /* The chosen one in the accent; the command in mono, the words beside it quieter (mockups c1.js). */
+  .cmd.on { background: var(--accent-bg); }
+  .cmd-name { flex-shrink: 0; min-width: 80px; font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--accent-text); }
+  .cmd-about { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--fs-sm); }
+  .cmd.on .cmd-about { color: var(--text); }
   @keyframes menu-in { from { opacity: 0; transform: translateY(4px); } }
   @media (prefers-reduced-motion: reduce) { .cmds { animation: none; } }
   /* «MD» beside the field where Markdown is the rule: lit while the words are Markdown. */
@@ -957,6 +973,8 @@
       --attach-w: 40px; --attach-h: 38px;
     }
     .field:focus-within { border-color: transparent; }
+    /* The attach of a chat, left of the field (c7.js), the size it had inside it. */
+    .side-tools { flex: none; display: flex; align-items: flex-end; min-height: 40px; --attach-w: 40px; --attach-h: 38px; }
     .field.away { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; opacity: 0; pointer-events: none; border: none; }
     .field textarea { min-width: 0; border: none; border-radius: 0; background: none; font-size: var(--fs-md); line-height: 22px; padding: 8px 2px; min-height: 38px; max-height: 82px; }
     /* The field shows the focus, not the text inside it. */
@@ -1012,5 +1030,59 @@
       .dfield { flex: 1 1 100%; order: -1; }
       .row > .send { margin-left: auto; }
     }
+  }
+  /*
+   * A chat (every variant but the thread's), mockups c7.js: one pill 48 — attach, the words, the smile, circle, voice
+   * (on a phone the field's own order) — and beside it the round send 48. The pill is drawn under the row's buttons,
+   * up to the send; the send keeps its states.
+   */
+  .composer:not(.thread) .row {
+    position: relative; isolation: isolate; gap: 2px; padding: var(--sp-1) 0 var(--sp-1) var(--sp-1);
+    border: none; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  .composer:not(.thread) .row::before {
+    content: ''; position: absolute; z-index: -1; inset: 0 calc(48px + var(--sp-2)) 0 0; pointer-events: none;
+    border-radius: calc(48px / 2); background: var(--pane-strong); border: 1px solid var(--pane-strong-border);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+  }
+  .composer:not(.thread) .row:focus-within::before { border-color: var(--accent-border); }
+  .composer:not(.thread) .row > :global(.attach) { width: 40px; height: 40px; }
+  .composer:not(.thread) .row > .send { width: 48px; height: 48px; margin: calc(-1 * var(--sp-1)) 0 calc(-1 * var(--sp-1)) var(--sp-3); }
+  @media (pointer: coarse) {
+    .composer:not(.thread) .row::before { -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
+    .composer:not(.thread) .row:focus-within::before { border-color: var(--pane-strong-border); }
+  }
+  @media not (pointer: coarse) {
+    @container (max-width: 440px) {
+      .composer:not(.thread) .row > .send { margin-left: auto; }
+    }
+  }
+  /*
+   * `variant="thread"` (the comments of a post, the mockup c6.js): under a thin line, the tools a quiet row of 32
+   * (attach, MD, circle, voice), then the field — a pill 44 with the smile at its end — and the round send 44.
+   */
+  .composer.thread { max-width: none; margin: 0; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3) var(--sp-3); border-top: 1px solid var(--border); }
+  .composer.thread .row {
+    flex-wrap: wrap; align-items: center; column-gap: 2px; row-gap: var(--sp-1); padding: 0;
+    border: none; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  .composer.thread .row > .tool, .composer.thread .row > :global(.attach), .composer.thread .tools-row > :global(.attach) { width: 32px; height: 32px; color: var(--text-3); }
+  .composer.thread .row > .tool.mdtag { width: auto; height: 24px; margin: 0 var(--sp-1); }
+  .composer.thread .dfield, .composer.thread .field {
+    order: 1; flex: 1 1 calc(100% - 52px); min-width: 0; min-height: 44px; box-sizing: border-box; align-items: flex-end;
+    padding: 0 1px 0 var(--sp-2); border: 1px solid var(--border); border-radius: calc(var(--control-h-lg) / 2); background: var(--surface-3);
+  }
+  .composer.thread .dfield:focus-within, .composer.thread .field:focus-within { border-color: var(--accent-border); }
+  .composer.thread .dfield textarea, .composer.thread .field textarea { min-height: 42px; padding: 10px 4px; }
+  .composer.thread .dfield .tool { width: 40px; height: 40px; margin-bottom: 1px; }
+  .composer.thread .row > .send { order: 2; width: 44px; height: 44px; margin-left: var(--sp-1); }
+  .tools-row { display: flex; align-items: center; gap: 2px; min-height: 32px; }
+  .tools-row:not(:has(*)) { display: none; }
+  @media (pointer: coarse) {
+    .composer.thread { padding-bottom: calc(var(--sp-2) + var(--sab, 0px)); }
+    .composer.thread .tools-row > :global(.attach) { width: 40px; height: 40px; }
+    .composer.thread .field .tool { width: 40px; height: 40px; margin: 1px 0; }
+    .composer.thread .field { flex-basis: auto; }
+    .composer.thread .row { flex-wrap: nowrap; }
   }
 </style>

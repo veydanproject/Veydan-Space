@@ -68,9 +68,9 @@
 <div class="panel">
   <PanelHead title={$t('msg_shared_title')} {onback} />
 
-  <div class="tabs" role="tablist">
+  <div class="seg tabs" role="tablist">
     {#each SECTION_ORDER as s (s)}
-      <button class="tab" class:on={s === section} role="tab" aria-selected={s === section} onclick={() => (section = s)}>
+      <button class="seg-btn" class:active={s === section} role="tab" aria-selected={s === section} onclick={() => (section = s)}>
         {$t(SECTIONS[s].label)}
       </button>
     {/each}
@@ -123,26 +123,25 @@
 
 <style>
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
-  .tabs { display: flex; gap: 4px; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); overflow-x: auto; flex-shrink: 0; scrollbar-width: none; }
-  .tab {
-    display: inline-flex; align-items: center; flex-shrink: 0; padding: 5px 9px; border: none; border-radius: var(--radius-pill);
-    background: none; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer; white-space: nowrap;
-  }
-  .tab:hover { background: var(--surface-3); color: var(--text); }
-  .tab.on { background: var(--accent-tint); color: var(--accent-text-2); }
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
-  .month { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); padding-top: var(--sp-2); }
+  /* The sections: one row of segments under the head (design book, «Медиа и файлы»). */
+  .tabs { display: flex; flex-shrink: 0; gap: 2px; margin: var(--sp-3) var(--sp-4) 0; overflow-x: auto; scrollbar-width: none; }
+  .tabs .seg-btn { flex: 1 0 auto; justify-content: center; height: 34px; padding: 0 var(--sp-1); font-size: var(--fs-sm); white-space: nowrap; }
+  .tabs .seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+  .month { font-size: var(--fs-sm); color: var(--text-2); font-weight: var(--fw-bold); padding-top: var(--sp-2); }
   .month:first-child { padding-top: 0; }
-  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
-  .cell { aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-xs); }
+  /* «октябрь 2026 г.» of the calendar starts with a capital, as a caption (design book). */
+  .month::first-letter { text-transform: uppercase; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-1); }
+  .cell { aspect-ratio: 1; overflow: hidden; border-radius: var(--radius); }
   .cell :global(.placeholder-name) { display: none; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
   .item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   /* Its own line height, never squeezed by the column: descenders and commas stay whole */
-  .meta { flex: none; line-height: 1.5; font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { flex: none; line-height: 1.5; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item { flex: none; }
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-6, 32px) var(--sp-4); color: var(--text-3); font-size: var(--fs-xs); text-align: center; }
   .empty :global(svg) { opacity: 0.7; }
   .end { display: flex; justify-content: center; padding: var(--sp-2) 0; }
-  @media (pointer: coarse) { .tab { padding: 8px 12px; } }
+  @media (pointer: coarse) { .tabs .seg-btn { height: 40px; } }
 </style>

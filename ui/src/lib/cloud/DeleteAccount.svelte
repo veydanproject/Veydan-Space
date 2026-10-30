@@ -10,7 +10,7 @@
   import { cloudPage } from '$lib/cloud/status.svelte';
   import { isMobile } from '$lib/core/platform';
   import Actions from '$lib/cloud/Actions.svelte';
-  import NavRow from '$lib/cloud/NavRow.svelte';
+  import NavRow from '$lib/core/ui/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
 
   let { startOpen = false }: { startOpen?: boolean } = $props();
@@ -63,7 +63,7 @@
 
 <RowList id="delete">
   {#if !open}
-    <NavRow icon="trash-2" tone="danger" title={$t('cloud_delete_title')} sub={$t('cloud_delete_sub')} onclick={show} />
+    <NavRow variant="list" icon="trash-2" tone="bad" danger title={$t('cloud_delete_title')} sub={$t('cloud_delete_sub')} onclick={show} />
   {:else}
     <div class="zone" class:m={isMobile}>
       <h2>{$t('cloud_delete_title')}</h2>

@@ -106,8 +106,8 @@
 
 <style>
   .link {
-    padding: var(--sp-3); border-radius: var(--radius-md); border: 1px solid var(--border);
-    background: var(--surface); color: var(--text); min-width: 0;
+    padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); min-width: 0;
   }
   .link.pending { padding: var(--sp-2) var(--sp-3); }
   .wait { display: flex; align-items: center; gap: 6px; font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

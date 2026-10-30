@@ -487,6 +487,8 @@
     "msg_push_enable": "Benachrichtigungen einschalten",
     "msg_push_toggle": "Über neue Nachrichten benachrichtigen",
     "msg_push_refused": "Benachrichtigungen sind für diese App ausgeschaltet. Schalte sie in den Einstellungen des Smartphones ein und kehre dann zurück.",
+    "msg_push_quiet": "Benachrichtigungen über Nachrichten kommen ohne Ton",
+    "msg_push_quiet_fix": "Einrichten",
     "msg_push_reason_no_config": "Dieser Build hat keine Push-Einstellungen: Benachrichtigungen funktionieren darin nicht.",
     "msg_push_reason_no_play": "Auf diesem Smartphone fehlen die Google-Dienste; Push-Benachrichtigungen laufen über sie.",
     "msg_push_reason_token_failed": "Der Push-Dienst hat nicht geantwortet. Prüfe die Verbindung und versuche es erneut.",

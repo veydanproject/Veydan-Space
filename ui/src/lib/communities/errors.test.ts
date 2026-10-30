@@ -11,6 +11,7 @@ describe('a refusal of the module of channels', () => {
   it('is worded by its code, which starts the message of the error', () => {
     expect(channelError({ code: 'other', message: 'channel_not_permitted: not permitted' }, tr)).toBe('chan_err_not_permitted');
     expect(channelError({ code: 'other', message: 'channel_invite_only: this channel takes invitations only' }, tr)).toBe('chan_err_invite_only');
+    expect(channelError({ code: 'other', message: 'channel_already_member: already a member' }, tr)).toBe('chan_err_already_member');
     expect(channelError('channel_no_key: no key of the channel yet', tr)).toBe('chan_err_no_key');
   });
 

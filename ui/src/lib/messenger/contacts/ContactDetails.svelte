@@ -88,8 +88,10 @@
 </script>
 
 <div class="details">
+  <!-- The head of the way В: the picture on the left, the words beside it. -->
   <div class="who">
-    <Avatar url={contact.profile?.picture ?? null} label={name} seed={contact.pubkey} size={88} />
+    <Avatar url={contact.profile?.picture ?? null} label={name} seed={contact.pubkey} size={72} />
+    <div class="who-words">
     <h2 class="name">{name}</h2>
     {#if contact.nickname && contact.profile && contact.nickname.trim() !== (contact.profile.display_name || contact.profile.name)}
       <span class="sub">{contact.profile.display_name || contact.profile.name}</span>
@@ -97,10 +99,11 @@
     {#if contact.profile?.nip05}
       <span class="nip05" class:ok={verified} class:bad={nip05 === false}
         title={verified ? $t('msg_contacts_nip05_ok') : nip05 === false ? $t('msg_contacts_nip05_failed') : undefined}>
-        {contact.profile.nip05}{verified ? ' ✓' : nip05 === false ? ' ✗' : ''}
+        {contact.profile.nip05}{#if verified}<span class="mark" role="img" aria-label={$t('msg_contacts_nip05_ok')}><Icon name="check" size={14} /></span>{:else if nip05 === false}<span class="mark" role="img" aria-label={$t('msg_contacts_nip05_failed')}><Icon name="x" size={14} /></span>{/if}
       </span>
     {/if}
     {#if contact.followed}<span class="tag">{$t('msg_contacts_following')}</span>{/if}
+    </div>
   </div>
 
   <div class="actions">
@@ -132,7 +135,7 @@
     <h3>{$t('msg_id_npub')}</h3>
     <div class="key">
       <code>{contact.npub}</code>
-      <button class="icon" onclick={copyKey} title={$t('msg_copy')} aria-label={$t('msg_copy')}><Icon name="copy" size={15} /></button>
+      <button class="icon" onclick={copyKey} title={$t('msg_copy')} aria-label={$t('msg_copy')}><Icon name="copy" size={18} /></button>
     </div>
   </section>
 
@@ -142,64 +145,91 @@
       <label><span>{$t('msg_contacts_nickname')}</span><input type="text" bind:value={nick} disabled={busy} placeholder={contact.profile?.display_name || contact.profile?.name || ''} /></label>
       <label><span>{$t('msg_contacts_note')}</span><input type="text" bind:value={note} disabled={busy} /></label>
     </div>
-    {#if changed}
-      <div class="save"><button class="btn btn-primary btn-sm" disabled={busy} onclick={save}>{$t('msg_contacts_save')}</button></div>
-    {/if}
   </section>
 
   <div class="more">
     <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => run(() => messengerStore.setFollowed(contact.pubkey, !contact.followed))}>
-      <Icon name="user" size={13} />{contact.followed ? $t('msg_contacts_unfollow') : $t('msg_contacts_follow')}
+      <Icon name="user" size={18} />{contact.followed ? $t('msg_contacts_unfollow') : $t('msg_contacts_follow')}
     </button>
     <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => run(() => messengerStore.requestProfile(contact.pubkey))}>
-      <Icon name="refresh-cw" size={13} />{$t('msg_contacts_refresh')}
+      <Icon name="refresh-cw" size={18} />{$t('msg_contacts_refresh')}
     </button>
     {#if contact.profile?.nip05}
-      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={verify}><Icon name="rosette-discount-check" size={13} />{$t('msg_contacts_verify_nip05')}</button>
+      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={verify}><Icon name="rosette-discount-check" size={18} />{$t('msg_contacts_verify_nip05')}</button>
     {/if}
     <span class="spacer"></span>
-    <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={remove}><Icon name="trash-2" size={13} />{$t('msg_contacts_remove')}</button>
+    <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={remove}><Icon name="trash-2" size={18} />{$t('msg_contacts_remove')}</button>
   </div>
+
+  <!-- The unsaved form's bar (STYLEGUIDE): at the foot of the pane, the card scrolls above it. -->
+  {#if changed}
+    <div class="savebar">
+      <p class="unsaved" role="status"><span class="dot" aria-hidden="true"></span>{$t('msg_profile_unsaved')}</p>
+      <button class="btn btn-primary" disabled={busy} onclick={save}>{$t('msg_contacts_save')}</button>
+    </div>
+  {/if}
 </div>
 
 <ShareDialog bind:open={shareOpen} card={{ pubkey: contact.pubkey }} exclude={`dm:${contact.pubkey}`} />
 
 
 <style>
-  .details { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-6) var(--sp-5); max-width: 560px; width: 100%; margin: 0 auto; }
-  .who { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); text-align: center; }
-  .name { margin: var(--sp-3) 0 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); overflow-wrap: anywhere; }
+  /* It fills the pane's height, so the bar of an unsaved edit rests at the foot even under a short card. */
+  .details { flex: 1 0 auto; display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-8) var(--sp-6); max-width: 560px; width: 100%; margin: 0 auto; }
+  .who { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; }
+  .who-words { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
+  .name { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); overflow-wrap: anywhere; }
   .sub { font-size: var(--fs-sm); color: var(--text-2); }
-  .nip05 { font-size: var(--fs-sm); color: var(--text-2); }
+  .nip05 { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-2); overflow-wrap: anywhere; }
+  .nip05 :global(svg) { flex-shrink: 0; }
+  .mark { display: inline-flex; flex-shrink: 0; }
   .nip05.ok { color: var(--success-text); }
   .nip05.bad { color: var(--danger-text); }
-  .tag { margin-top: var(--sp-1); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.5px; padding: 1px 8px; border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text-2); }
-  .actions { display: flex; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; }
+  /* A tag in sentence case. */
+  .tag { display: inline-block; height: 22px; line-height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text); }
+  .tag::first-letter { text-transform: uppercase; }
+  /* Four actions of one size. */
+  .actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
   .act {
-    display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 84px; padding: var(--sp-2) var(--sp-3);
-    border: none; border-radius: var(--radius-lg); background: none; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-2);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); color: var(--text);
+    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); text-align: center; cursor: pointer;
+    transition: background var(--dur-fast), border-color var(--dur-fast);
   }
-  .disc { width: 48px; height: 48px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--surface-3); color: var(--text); }
-  .act.primary .disc { background: var(--accent-bg); color: var(--accent-text); }
-  .act.call .disc { background: var(--success-bg); color: var(--success-text); }
-  @media (hover: hover) { .act:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); } }
+  .act:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .disc { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); }
+  @media (hover: hover) { .act:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); } }
   .act:disabled { opacity: 0.45; cursor: default; }
-  .block { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); }
-  .block h3 { margin: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
-  .about { margin: 0; font-size: var(--fs-sm); color: var(--text-body); white-space: pre-wrap; }
-  .key { display: flex; align-items: center; gap: var(--sp-2); }
-  .key code { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); overflow-wrap: anywhere; }
-  .icon { border: none; background: none; color: var(--text-soft); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius); }
+  .block { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); }
+  .block h3 { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
+  .about { margin: 0; font-size: var(--fs-base); line-height: 1.5; color: var(--text-body); white-space: pre-wrap; }
+  .key { display: flex; align-items: flex-start; gap: var(--sp-2); }
+  .key code { flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-3); font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); overflow-wrap: anywhere; }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-hover); }
+  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-2); }
-  .grid label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
+  .grid label { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-2); }
   .grid input {
-    font: inherit; font-size: var(--fs-sm); color: var(--text);
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 8px 10px;
+    font: inherit; font-size: var(--fs-base); color: var(--text); height: var(--control-h);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
+    scroll-margin-bottom: 96px; /* a field reached by the keyboard stops above the bar of an unsaved edit */
   }
   .grid input:focus { outline: none; border-color: var(--accent-border); }
-  .save { display: flex; justify-content: flex-end; }
   .more { display: flex; gap: var(--sp-1); flex-wrap: wrap; align-items: center; }
   .spacer { flex: 1; }
   .btn.danger { color: var(--danger-text); }
+  .savebar {
+    position: sticky; bottom: 0; z-index: 1; margin-top: auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+  }
+  .unsaved {
+    flex: 1 1 180px; min-width: 0; margin: 0; display: flex; align-items: center; gap: var(--sp-2);
+    font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2);
+  }
+  .dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--warn-text); }
+  .savebar .btn { flex-shrink: 0; }
+  @media (pointer: coarse) { .savebar .btn { flex: 1; } }
+  @media (max-width: 420px) { .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

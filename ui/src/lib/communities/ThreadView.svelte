@@ -43,11 +43,14 @@
     parts?: FeedItemView[] | null;
     /** The title of the post's section, when it is not everyone's. */
     section?: string | null;
+    /** The section's look, as the feed draws its chip: its colour and its icon. */
+    sectionColor?: string | null;
+    sectionIcon?: string | null;
     /** «Изменить» in the menu of the post (the dialog is the feed's). */
     onedit?: (item: FeedItemView) => void;
     onclose: () => void;
   }
-  let { detail, post, parts = null, section = null, onedit, onclose }: Props = $props();
+  let { detail, post, parts = null, section = null, sectionColor = null, sectionIcon = null, onedit, onclose }: Props = $props();
 
   const phone = onPhone();
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
@@ -291,9 +294,11 @@
   /** As many as the post counts, or as are read here when more. */
   const commentCount = $derived(Math.max(post.comments, comments.length));
 
+  /** The menu of a post or a comment: reactions on top, the moderator's pair side by side (the mockup c6.js, variant A). */
+  const ITEM_MENU_W = 316;
   function postMenu(e: MouseEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    menu = { open: true, x: r.right - 220, y: r.bottom + 4, item: post };
+    menu = { open: true, x: r.right - ITEM_MENU_W, y: r.bottom + 4, item: post };
   }
   const placeholder = $derived($t('chan_compose_comment'));
 </script>
@@ -316,30 +321,37 @@
 {/snippet}
 
 <div class="panel">
-  <!-- The bar of the page: «Пост», on a phone with its section and channel under it; the menu of the post; the way back. -->
+  <!-- The bar of the page: «Пост» with its section and channel under it (the mockup c6.js); the menu of the post; the way back. -->
   <header class="phead" class:phone>
     {#if phone}<button class="icon back" onclick={onclose} aria-label={$t('chan_back')}><Icon name="chevron-left" size={24} /></button>{/if}
     <div class="ph-titles">
       <span class="ph-title">{$t('chan_post_page')}</span>
-      {#if phone}<span class="ph-sub">{section ? `${section} · ` : ''}{detail.channel.name}</span>{/if}
+      <span class="ph-sub">{section ? `${section} · ` : ''}{detail.channel.name}</span>
     </div>
     {#if !isLocal(post.id)}
-      <button class="icon" onclick={postMenu} aria-label={$t('chan_post_menu')} title={$t('chan_post_menu')}><Icon name="more-vertical" size={phone ? 20 : 16} /></button>
+      <button class="icon" onclick={postMenu} aria-label={$t('chan_post_menu')} title={$t('chan_post_menu')}><Icon name="more-vertical" size={phone ? 20 : 18} /></button>
     {/if}
-    {#if !phone}<button class="icon" onclick={onclose} aria-label={$t('chan_close')} title={$t('chan_close')}><Icon name="x" size={16} /></button>{/if}
+    {#if !phone}<button class="icon" onclick={onclose} aria-label={$t('chan_close')} title={$t('chan_close')}><Icon name="x" size={18} /></button>{/if}
   </header>
   <div class="scroll" bind:this={scroller} {onscroll}>
-    <FeedPost item={post} {parts} {detail} full section={phone ? null : section} onreact={react} onmenu={(at, it) => (menu = { open: true, x: at.x, y: at.y, item: it })} />
+    <div class="post-box">
+      <FeedPost item={post} {parts} {detail} full {section} {sectionColor} {sectionIcon} onreact={react} onmenu={(at, it) => (menu = { open: true, x: at.x, y: at.y, item: it })} />
+    </div>
     <div class="label">{$t('chan_comments')}{#if commentCount}{' · '}{commentCount}{/if}</div>
+    <div class="thread">
     {#if loadingEarlier}<div class="loading"><Icon name="loader" size={14} /></div>
     {:else if nextBefore}<button class="btn btn-ghost btn-sm earlier" onclick={earlier}><Icon name="arrow-up" size={13} />{$t('chan_load_earlier')}</button>{/if}
     {#if loading}
       <div class="loading"><Icon name="loader" size={14} /></div>
     {:else if !comments.length}
-      <p class="empty">{detail.comments === 'on' ? $t('chan_comments_empty') : $t('chan_comments_off')}</p>
+      <!-- No comments yet: the design system's empty state, the words as they were. -->
+      <div class="empty-state thread-empty">
+        <span class="empty-icon"><Icon name="message-circle" size={24} /></span>
+        <span>{detail.comments === 'on' ? $t('chan_comments_empty') : $t('chan_comments_off')}</span>
+      </div>
     {/if}
     {#each ordered as c (c.item.id)}
-      <div class="row" style:--depth={c.depth}>
+      <div class="row" class:child={c.depth > 0} style:--depth={c.depth}>
         <FeedPost item={c.item} {detail} comment
           replyTo={c.item.parent_id ? nameStore.label(byId.get(c.item.parent_id)?.author ?? '') : null}
           pending={feedStore.isPending(c.item)} failure={feedStore.failure(c.item.id)} onretry={retryOutbox}
@@ -348,6 +360,7 @@
     {/each}
     {#each uploads as u (u.id)}<UploadLine {u} />{/each}
     {#if error}<div class="error-msg">{error}</div>{/if}
+    </div>
   </div>
   {#if typers.length}<div class="typing"><TypingLine who={typers} muted /></div>{/if}
   {#if can}
@@ -358,7 +371,7 @@
         <button class="x" onclick={() => (replyTo = null)} aria-label={$t('chan_cancel')}><Icon name="x" size={13} /></button>
       </div>
     {/if}
-    <Composer replyTo={null} editing={null} peerTitle={detail.channel.name} {placeholder} oncancel={() => (replyTo = null)} onsend={send} {tools}
+    <Composer variant="thread" replyTo={null} editing={null} peerTitle={detail.channel.name} {placeholder} oncancel={() => (replyTo = null)} onsend={send} {tools}
       draftKey={`${detail.channel.chat_id}#${post.id}`} autofocus={!phone} onrecording={record} canRecord={canRecord(detail, me, 'comment')} markdown attached={tray.files.length ? 'ready' : null}
       attachments={tray.files.length ? trayView : undefined} canattach={canAttach(detail)} />
   {:else}
@@ -366,17 +379,19 @@
   {/if}
 </div>
 
-<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={entries} header={menu.item && !menu.item.deleted ? quick : undefined} onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={entries} header={menu.item && !menu.item.deleted ? quick : undefined} width="{ITEM_MENU_W}px" onclose={() => (menu.open = false)} />
 <PersonActions bind:this={acts} {detail} onerror={(e) => (error = e)} />
 
 <style>
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
-  .phead { display: flex; align-items: center; gap: var(--sp-1); min-height: 56px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .phead { display: flex; align-items: center; gap: var(--sp-1); min-height: 60px; box-sizing: border-box; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .ph-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .ph-title { font-weight: var(--fw-bold); font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ph-sub { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
+  .ph-title { font-weight: var(--fw-bold); font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The buttons of the bar: 36 with their icons 18 (44 on a phone). */
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
+  .icon:focus-visible, .x:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   /* On a phone the bar floats inset, as the head of the channel over its feed. */
   .phead.phone {
     position: relative; z-index: 2; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1);
@@ -385,14 +400,27 @@
     -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
   .phead.phone .ph-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
-  .phead.phone .back { color: var(--text); padding: 10px; }
-  .phead.phone .icon { padding: 10px; }
+  .phead.phone .back { color: var(--text); }
+  .phead.phone .icon { width: 44px; height: 44px; }
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); }
-  .label { margin-top: var(--sp-2); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); }
-  .row { padding-left: calc(min(var(--depth), 3) * 16px); }
+  /* The page (the mockup c6.js): the post the whole width, a strip «Комментарии · N», the thread under it. */
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+  .post-box { padding: var(--sp-5) var(--sp-4) var(--sp-4); }
+  .phone + .scroll .post-box { padding-top: var(--sp-4); }
+  /* «Комментарии · 31»: a quiet strip across the page. */
+  .label { flex-shrink: 0; padding: var(--sp-2) var(--sp-4); background: var(--surface-2); border-block: 1px solid var(--border); font-size: var(--fs-sm); color: var(--text-2); font-weight: var(--fw-bold); }
+  .thread { flex: 1 0 auto; display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) var(--sp-4); }
+  /* An answer: indented under its comment, a thread line under the avatar of the one it answers. */
+  .row { position: relative; }
+  .row.child { padding-left: calc(min(var(--depth), 3) * 44px); }
+  .row.child::before {
+    content: ''; position: absolute; left: calc((min(var(--depth), 3) - 1) * 44px + 15px); top: 0; bottom: var(--sp-3);
+    width: 2px; border-radius: 1px; background: var(--border);
+  }
   .earlier { align-self: center; }
-  .empty { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
+  .thread-empty { flex: 1; padding: var(--sp-8) var(--sp-4); }
+  .thread-empty span:not(.empty-icon) { color: var(--text-2); font-size: var(--fs-base); }
+  .thread-empty .empty-icon { background: var(--accent-bg); color: var(--accent-text); }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   /* «печатает…» under the comments, above the field: a quiet line of the thread. */
   .typing { display: flex; min-width: 0; padding: 2px var(--sp-4) var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); }
@@ -400,8 +428,12 @@
   .r-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .x { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px; }
   .no-composer { display: flex; align-items: center; justify-content: center; gap: 6px; padding: var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-3); }
-  .quick { display: flex; gap: 2px; padding: 2px; }
-  .q { border: none; background: none; font-size: 20px; width: 36px; height: 36px; border-radius: var(--radius-sm); cursor: pointer; }
+  /* The reactions over the menu of a post: round 40, spread across it (the mockup c6.js). */
+  .quick { display: flex; justify-content: space-between; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2); }
+  /* The circles shrink to fit any width of the menu (40 at most, 44 on a finger), evenly spread, none cut. */
+  .q { flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; height: auto; padding: 0; border: none; background: var(--surface-3); font-size: 20px; line-height: 1; border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
+  @media (pointer: coarse) { .q { max-width: 44px; } }
+  .q:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .q:hover { background: var(--surface-hover); }
   .q.mine { background: var(--accent-bg); }
 </style>

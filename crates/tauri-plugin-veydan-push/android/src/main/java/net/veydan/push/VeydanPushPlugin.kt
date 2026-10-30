@@ -62,6 +62,7 @@ class VeydanPushPlugin(private val activity: Activity) : Plugin(activity) {
   override fun load(webView: WebView) {
     PushState.attach(this)
     Notifier.ensureChannels(activity)
+    Log.i(PushState.TAG, "at start: ${Notifier.channels(activity)}")
     activity.runOnUiThread {
       ProcessLifecycleOwner.get().lifecycle.addObserver(PushState.screen)
     }
@@ -99,7 +100,22 @@ class VeydanPushPlugin(private val activity: Activity) : Plugin(activity) {
         .put("reason", reason)
         .put("permission", state())
         .put("appId", activity.packageName)
+        .put("quiet", Notifier.quiet(activity))
     )
+  }
+
+  /**
+   * Opens the system settings where messages are made to ring again: the
+   * channel that is quiet, or the app's notifications when they are off.
+   */
+  @Command
+  fun openSettings(invoke: Invoke) {
+    try {
+      activity.startActivity(Notifier.settings(activity))
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject("the settings did not open: ${e.javaClass.simpleName}")
+    }
   }
 
   @Command

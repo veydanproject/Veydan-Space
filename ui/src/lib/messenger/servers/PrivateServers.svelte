@@ -74,7 +74,7 @@
 </script>
 
 <div class="private">
-  <div class="title"><Icon name="server-2" size={14} />{$t('msg_srv_list_title')}</div>
+  <div class="title"><Icon name="server-2" size={16} />{$t('msg_srv_list_title')}</div>
   <p class="meta">{$t('msg_srv_list_hint')}</p>
   {#if serverStore.list && serverStore.list.length}
     <ul class="list">
@@ -90,11 +90,11 @@
             </span>
             <span class="meta">{chatsText(s.chats ?? 0)} · {groupsText(s.groups ?? 0)}</span>
           </div>
-          <button class="btn btn-ghost btn-sm invite" onclick={() => privateInvite.show({ server: s.id })}>
-            <Icon name="user-plus" size={13} />{$t('msg_srv_invite_row')}
+          <button class="btn btn-ghost invite" onclick={() => privateInvite.show({ server: s.id })}>
+            <Icon name="user-plus" size={18} />{$t('msg_srv_invite_row')}
           </button>
           <button class="icon-btn danger-soft" title={$t('msg_srv_remove')} aria-label={$t('msg_srv_remove')} disabled={busy} onclick={() => remove(s)}>
-            <Icon name="trash-2" size={13} />
+            <Icon name="trash-2" size={18} />
           </button>
         </li>
       {/each}
@@ -109,8 +109,8 @@
     <div class="add-row">
       <input id="srv-add-link" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false"
         placeholder="veydan://server/…" bind:value={link} disabled={adding} />
-      <button type="submit" class="btn btn-ghost btn-sm" disabled={adding || !link.trim()}>
-        <Icon name={adding ? 'loader' : 'plus'} size={13} />{$t('msg_relay_add')}
+      <button type="submit" class="btn btn-ghost" disabled={adding || !link.trim()}>
+        <Icon name={adding ? 'loader' : 'plus'} size={18} />{$t('msg_relay_add')}
       </button>
     </div>
     {#if addError}<div class="error-msg">{addError}</div>{/if}
@@ -118,29 +118,30 @@
 </div>
 
 <style>
-  .private { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-  .row {
-    display: flex; align-items: center; gap: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
-  }
+  /* A part of the servers' card: a line above it, its rows of 48 with a line between them (as «Профиль и ключ»). */
+  .private { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+  .title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
+  .title :global(svg) { flex-shrink: 0; color: var(--text-2); }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-2) 0; }
+  .row + .row { border-top: 1px solid var(--border); }
+  .invite { flex-shrink: 0; }
   .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); word-break: break-all; }
   .facts { display: flex; flex-wrap: wrap; gap: 4px; }
   .fact {
     display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: var(--radius-pill);
-    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font-size: var(--fs-2xs); line-height: 18px;
+    border: 1px solid var(--border); background: var(--surface-3); color: var(--text-2); font-size: var(--fs-2xs); line-height: 18px;
   }
   .fact.off { color: var(--text-3); border-style: dashed; background: none; }
   .meta { margin: 0; color: var(--text-3); font-size: var(--fs-xs); }
   .add { display: flex; flex-direction: column; gap: 6px; margin-top: var(--sp-1); }
-  .add-label { font-size: var(--fs-xs); color: var(--text-3); }
+  .add-label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   .add-row { display: flex; gap: var(--sp-2); align-items: center; }
   .add-row input {
-    flex: 1; min-width: 0; font: inherit; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+    flex: 1; min-width: 0; min-height: 44px; font: inherit; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .add-row input:focus { outline: none; border-color: var(--accent-border); }
   @media (pointer: coarse) { .add-row input { font-size: var(--fs-md); } }

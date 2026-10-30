@@ -13,7 +13,7 @@ type Translate = (key: string, params?: Record<string, string>) => string;
 /** The codes worded by the dictionary (`chan_err_<code>`, without `channel_`). */
 export const KNOWN = new Set([
   'unknown', 'unknown_message', 'not_permitted', 'upload_not_permitted', 'no_keeper', 'no_key', 'not_here_yet', 'link_owner',
-  'owner_stays', 'kept_here', 'too_many_invites', 'invite_only', 'invite_expired', 'invite_unknown', 'not_author', 'banned',
+  'owner_stays', 'kept_here', 'too_many_invites', 'already_member', 'invite_only', 'invite_expired', 'invite_unknown', 'not_author', 'banned',
   'upload_removed', 'file_unsupported', 'self', 'no_relay', 'invalid', 'bad_link', 'bad_key', 'not_delivered', 'transport',
   'preview_unreachable', 'upload_cancelled', 'upload_refused', 'cover_unsupported', 'cover_too_large', 'cover_address',
   // The channel's own server takes files from its team alone (communities-wire §9.1).

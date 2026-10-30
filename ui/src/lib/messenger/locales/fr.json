@@ -487,6 +487,8 @@
     "msg_push_enable": "Activer les notifications",
     "msg_push_toggle": "M'avertir des nouveaux messages",
     "msg_push_refused": "Les notifications sont désactivées pour cette application. Activez-les dans les paramètres du téléphone, puis revenez ici.",
+    "msg_push_quiet": "Les notifications de messages arrivent sans son",
+    "msg_push_quiet_fix": "Régler",
     "msg_push_reason_no_config": "Cette version de l'application ne contient pas de paramètres push : les notifications n'y fonctionnent pas.",
     "msg_push_reason_no_play": "Les services Google sont absents de ce téléphone ; or les notifications push passent par eux.",
     "msg_push_reason_token_failed": "Le service push n'a pas répondu. Vérifiez la connexion et réessayez.",

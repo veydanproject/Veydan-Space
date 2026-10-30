@@ -168,18 +168,24 @@
 {#snippet more(over: boolean)}
   {#if !local}
     <button class="more" class:over onclick={moreAt} aria-label={$t('chan_post_menu')} title={$t('chan_post_menu')}>
-      <Icon name={comment ? 'more-horizontal' : 'more-vertical'} size={comment ? 16 : 18} />
+      <Icon name="more-vertical" size={18} />
     </button>
   {/if}
 {/snippet}
 
+{#snippet sectionMark()}
+  <span class="scope-mark" class:tinted={!!sectionColor} style:--tag={sectionColor} title={$t('chan_section')}>
+    <Icon name={sectionIcon ?? 'folder'} size={14} /><span class="scope-name">{section}</span>
+  </span>
+{/snippet}
+
 {#snippet marks()}
-  {#if item.review === 'pending'}<div class="mark warn"><Icon name="clock" size={12} />{$t('chan_review_pending')}</div>{/if}
-  {#if item.review === 'rejected'}<div class="mark danger"><Icon name="x" size={12} />{$t('chan_review_rejected')}</div>{/if}
-  {#if item.hidden}<div class="mark"><Icon name="eye-off" size={12} />{$t('chan_hidden_mark')}</div>{/if}
+  {#if item.review === 'pending'}<div class="mark warn"><Icon name="clock" size={14} />{$t('chan_review_pending')}</div>{/if}
+  {#if item.review === 'rejected'}<div class="mark danger"><Icon name="x" size={14} />{$t('chan_review_rejected')}</div>{/if}
+  {#if item.hidden}<div class="mark"><Icon name="eye-off" size={14} />{$t('chan_hidden_mark')}</div>{/if}
   {#if failure !== null}
     <div class="mark danger unsent-mark" role="alert" title={failure || undefined}>
-      <Icon name="alert-triangle" size={12} />{$t('chan_not_sent')}
+      <Icon name="alert-triangle" size={14} />{$t('chan_not_sent')}
       {#if onretry}<button class="retry" onclick={() => onretry?.(item)}><Icon name="refresh-cw" size={11} />{$t('chan_retry')}</button>{/if}
     </div>
   {/if}
@@ -189,7 +195,7 @@
   {#if !item.deleted && !local && item.reactions.length}
     <div class="reactions msg-font">
       {#each item.reactions as r (r.emoji)}
-        <button class="chip" class:mine={r.mine} aria-pressed={r.mine} onclick={() => onreact(item, r.emoji)} title={$t('chan_react')}>
+        <button class="react" class:mine={r.mine} aria-pressed={r.mine} onclick={() => onreact(item, r.emoji)} title={$t('chan_react')}>
           <span class="emoji">{r.emoji}</span><span class="count">{r.count}</span>
         </button>
       {/each}
@@ -202,7 +208,7 @@
   id={full ? undefined : `post-${item.id}`} oncontextmenu={menuAt} use:longpress={{ onpress: (p) => { if (!local) onmenu(p, item); } }}>
   {#if comment}
     <header class="head">
-      <Avatar url={nameStore.picture(item.author)} label={name} seed={item.author} size={28} />
+      <Avatar url={nameStore.picture(item.author)} label={name} seed={item.author} size={32} />
       <div class="who">
         <span class="name">
           <span class="name-text">{name}</span>
@@ -245,26 +251,38 @@
         {@render reactions()}
         <span class="spacer"></span>
         {#if onreply}
-          <button class="link" onclick={() => onreply?.(item)}><Icon name="reply" size={13} />{$t('chan_reply')}</button>
+          <button class="link reply" onclick={() => onreply?.(item)}><Icon name="reply" size={14} />{$t('chan_reply')}</button>
         {/if}
       </footer>
     {/if}
   {:else}
-    <!-- The title, with the section (in «Все») and the menu beside it; a post without words has its menu on its pictures. -->
+    <!-- The section (in «Все», and on the post page) a chip on a line of its own above the title, the menu at the
+         right of that line (the mockups c6.js, c10.js): the title keeps the whole width at any width of the feed.
+         The title row: the title, the pin beside it, and the menu when there is no section line; a post without
+         words has its menu on its pictures. -->
     {#if title || !(menuOnMedia || menuBeside)}
-      <header class="title-row">
-        {#if title}
-          <svelte:element this={full ? 'h2' : 'h3'} class="title" bind:this={titleEl}>{title}</svelte:element>
-        {:else if item.deleted}<p class="tomb row-tomb"><Icon name="trash-2" size={12} />{$t('chan_post_deleted')}</p>
-        {:else}<span class="spacer"></span>{/if}
-        {#if item.pinned}<span class="dim pin" title={$t('chan_pinned')}><Icon name="pin" size={14} /></span>{/if}
-        {#if section}
-          <span class="scope-mark" class:tinted={!!sectionColor} style:--tag={sectionColor} title={$t('chan_section')}>
-            <Icon name={sectionIcon ?? 'folder'} size={12} /><span class="scope-name">{section}</span>
-          </span>
-        {/if}
-        {#if !full}{@render more(false)}{/if}
-      </header>
+      {@const titled = !!title || item.deleted || !section}
+      {#if section}
+        <div class="section-line">
+          {@render sectionMark()}
+          {#if item.pinned && !titled}<span class="pin" title={$t('chan_pinned')}><Icon name="pin" size={16} /></span>{/if}
+          {#if !full}{@render more(false)}{/if}
+        </div>
+      {/if}
+      {#if titled}
+        <header class="title-row">
+          {#if title}
+            <svelte:element this={full ? 'h2' : 'h3'} class="title" bind:this={titleEl}>{title}</svelte:element>
+          {:else if item.deleted}<p class="tomb row-tomb"><Icon name="trash-2" size={12} />{$t('chan_post_deleted')}</p>
+          {:else}<span class="spacer"></span>{/if}
+          {#if item.pinned || (!full && !section)}
+            <span class="tags">
+              {#if item.pinned}<span class="pin" title={$t('chan_pinned')}><Icon name="pin" size={16} /></span>{/if}
+              {#if !full && !section}{@render more(false)}{/if}
+            </span>
+          {/if}
+        </header>
+      {/if}
     {/if}
 
     {@render marks()}
@@ -315,7 +333,7 @@
     {@render reactions()}
 
     <footer class="byline">
-      <Avatar url={nameStore.picture(item.author)} label={name} seed={item.author} size={full && phone ? 26 : 22} />
+      <Avatar url={nameStore.picture(item.author)} label={name} seed={item.author} size={full ? 28 : 22} />
       <span class="author">{name}</span>
       {#if full && role !== 'member'}<span class="role {role}">{$t(`chan_role_${role}` as 'chan_role_admin')}</span>{/if}
       <span class="stamp">
@@ -325,9 +343,9 @@
       </span>
       <span class="spacer"></span>
       {#if commentable}
-        <button class="link comments" onclick={() => oncomments?.(item)}
+        <button class="link comments" class:go={!item.comments} onclick={() => oncomments?.(item)}
           aria-label={item.comments ? $t('chan_comments_n', { n: String(item.comments) }) : $t('chan_comments_none')}>
-          {#if item.comments}<Icon name="message-circle" size={15} />{item.comments}{:else}{$t('chan_comments_none')}{/if}
+          {#if item.comments}<Icon name="message-circle" size={16} />{item.comments}{:else}{$t('chan_comments_none')}{/if}
           <Icon name="chevron-right" size={14} />
         </button>
       {/if}
@@ -341,12 +359,27 @@
     transition: box-shadow var(--dur-base) var(--ease);
   }
   .post.card, .post.comment { border-radius: var(--radius-card, 18px); background: var(--bubble-in-bg); border: 1px solid var(--bubble-in-border); }
-  .post.card { padding: var(--sp-4); gap: 10px; border-radius: 18px; }
-  .post.phone.card { padding: 14px; border-radius: var(--radius-pane); }
+  /* A card of the feed (the redesign of the feed): 20 round, the title row, the words, the reactions, who at its foot. */
+  .post.card { width: min(720px, 100%); padding: 14px var(--sp-4) var(--sp-3) var(--sp-5); gap: 10px; border-radius: var(--radius-pane); box-sizing: border-box; }
+  .post.phone.card { width: min(680px, 100%); padding: var(--sp-3) var(--sp-3) 10px var(--sp-4); }
   .post.full { width: 100%; gap: var(--sp-3); }
-  .post.comment { width: 100%; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-lg); gap: 6px; }
+  /* A comment: a card of its own (the mockup c4.js), 16 round. */
+  /*
+   * A comment of a thread (the mockup c6.js): no box, the avatar 32 in a column of its own, beside it one line of
+   * the name, the role, the time and ⋮, then its words, its file, the reactions and «Ответить».
+   */
+  .post.comment {
+    width: 100%; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: start; column-gap: var(--sp-3); row-gap: var(--sp-1);
+    padding: var(--sp-2) 0; border: none; border-radius: 0; background: none;
+  }
+  .comment .head { display: contents; }
+  .comment > :not(.head) { grid-column: 2 / -1; min-width: 0; }
+  .comment > .mark { justify-self: start; }
+  /* Mine that waits or was given up keeps an edge, so it reads apart. */
+  .post.comment.pending, .post.comment.unsent { padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--warn-border); border-radius: var(--radius-lg); }
+  .post.comment.unsent { border-style: solid; border-color: var(--danger-border); }
   .post.highlighted { box-shadow: 0 0 0 2px var(--accent-border); }
-  .post.pending.card, .post.pending.comment { border-style: dashed; border-color: var(--warn-border); }
+  .post.pending.card { border-style: dashed; border-color: var(--warn-border); }
   .post.hidden { opacity: 0.7; }
   /* Mine on its way: dimmed with a clock until the runtime tells of it; given up: an edge of danger. */
   .post.sending { opacity: 0.72; }
@@ -359,48 +392,60 @@
   }
 
   /* A comment's head: who and when on top. */
-  .head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-  .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .head { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
+  .who { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--sp-2); row-gap: 2px; min-height: 32px; }
   .name { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .name-text { font-size: var(--fs-xs); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .when { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-2xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .name-text { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .when { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* A moderator's or an author's chip is drawn by its edge: a grey fill on the post's own fill is lost in the dark. */
-  .role { flex-shrink: 0; font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 6px; border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: transparent; color: var(--text-2); }
+  .role { flex-shrink: 0; display: inline-flex; align-items: center; height: 20px; box-sizing: border-box; font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: transparent; color: var(--text-2); }
   .role.owner { border-color: transparent; background: var(--accent-tint); color: var(--accent-text-2); }
   .role.admin { border-color: transparent; background: var(--success-bg); color: var(--success-text, var(--success)); }
   .sep { margin-inline: 3px; }
-  .dim { color: var(--text-3); display: inline-flex; }
 
-  /* A post's title row: the first line, then the pin, the section, the menu. */
-  .title-row { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
+  /* The line of the section above the title: its chip, the menu at its right (the mockups c6.js, c10.js). */
+  .section-line { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 32px; margin-right: -6px; }
+  .section-line .more { width: 32px; height: 32px; padding: 0; margin-left: auto; color: var(--text-3); }
+  .section-line .more:hover { color: var(--text); }
+  .full .section-line { min-height: 0; margin-right: 0; }
+  /* A post's title row: the title the whole width, the pin beside it (and the menu, when no section line holds it). */
+  .title-row { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; margin-right: -6px; }
+  .section-line + .title-row { margin-top: -2px; }
+  .tags { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; min-width: 0; margin-left: auto; }
   .title {
-    flex: 1; min-width: 0; margin: 0; font-size: 17px; line-height: 23px; font-weight: var(--fw-bold); color: var(--text);
+    flex: 1; min-width: 0; margin: 0; padding-top: var(--sp-1); font-size: var(--fs-md); line-height: 23px; font-weight: var(--fw-bold); color: var(--text);
     overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
   }
-  .full .title { font-size: var(--fs-xl); line-height: 26px; display: block; overflow: visible; user-select: text; }
-  .full.phone .title { font-size: 22px; line-height: 28px; }
-  .pin { padding-top: 4px; }
+  /* The post page: the title 20, the whole width; the pin beside it, on its first line. */
+  .full .title { font-size: var(--fs-xl); line-height: 26px; letter-spacing: -0.01em; display: block; overflow: visible; user-select: text; padding-top: 0; }
+  .full .title-row { margin-right: 0; }
+  .full .tags { min-height: 26px; }
+  .pin { display: inline-flex; flex-shrink: 0; color: var(--accent-text); }
   .scope-mark {
-    display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 40%; flex-shrink: 1; height: 22px; padding: 0 8px; margin-top: 1px;
-    border-radius: var(--radius-sm); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--accent-text-2); background: var(--accent-tint);
+    display: inline-flex; align-items: center; gap: 5px; min-width: 0; flex-shrink: 1; height: 24px; padding: 0 var(--sp-2); box-sizing: border-box;
+    border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text-2); background: var(--accent-tint);
   }
   /* A section of its own colour (stage 4): its words in it, its fill a tint of it. */
-  .scope-mark.tinted { color: var(--tag); background: color-mix(in srgb, var(--tag) 16%, transparent); }
+  .scope-mark.tinted { color: var(--tag); background: color-mix(in srgb, var(--tag) 14%, transparent); }
   .scope-mark :global(svg) { flex-shrink: 0; }
   .scope-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .more { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 3px; border-radius: var(--radius-sm); flex-shrink: 0; }
-  .comment .more { padding: 6px; }
+  .more { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 3px; border-radius: var(--radius); flex-shrink: 0; }
+  .tags .more, .beside-menu .more { width: 32px; height: 32px; padding: 0; }
+  /* The menu of a comment as the actions beside a message (mockups c1.js): round 32, muted, a fill under the pointer only. */
+  .comment .more { width: 32px; height: 32px; padding: 0; margin-right: -6px; border-radius: 50%; color: var(--text-2); }
+  .comment .more:hover { color: var(--text); background: var(--surface-hover); }
+  .comment .more:focus-visible, .reply:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .more:hover { color: var(--text); background: var(--surface-3); }
   /* The menu of a post without words, on the corner of its pictures. */
   .more.over { position: absolute; top: 8px; right: 8px; z-index: 1; padding: 4px; border-radius: 50%; background: rgba(0, 0, 0, 0.45); color: #fff; }
   .more.over:hover { background: rgba(0, 0, 0, 0.6); color: #fff; }
 
-  .mark { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--text-2); }
+  .mark { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; height: 24px; box-sizing: border-box; font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-3); color: var(--text-2); }
   .mark.warn { background: var(--warn-bg); color: var(--warn-text); }
   .mark.danger { background: var(--danger-bg); color: var(--danger-text); }
   .text { color: var(--text); }
   .card .text, .full .text { color: var(--text-body); }
-  .comment .text :global(.text) { font-size: var(--fs-sm); }
+  .comment .text :global(.text) { font-size: var(--fs-base); line-height: 1.45; }
   .media { display: flex; flex-direction: column; gap: 4px; }
   /* Pictures as one block: the menu of a post without words sits on its corner. */
   .visual { position: relative; width: min(420px, 100%); }
@@ -439,44 +484,60 @@
   .dots { position: absolute; display: inline-flex; align-items: center; font-size: var(--fs-body); line-height: 1; color: var(--text-2); pointer-events: none; }
   .read {
     align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; margin-top: -4px; padding: 2px 0; border: none; background: none; cursor: pointer;
-    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text-2);
+    font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--accent-text);
   }
   .read:hover { text-decoration: underline; text-underline-offset: 2px; }
 
   .reactions { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius);
-    background: var(--surface-2); color: var(--text-2); font: inherit; line-height: 1; cursor: pointer;
+  /* A reaction's pill: its own class, not the global `.chip` (another height, fill and hover). */
+  .react {
+    display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+    background: var(--surface-3); color: var(--text-2); font: inherit; line-height: 1; cursor: pointer;
   }
-  .comment .chip { height: 26px; padding: 0 8px; border-radius: var(--radius-sm); }
-  .chip:hover { background: var(--surface-hover); }
-  .chip.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
+  .react:hover { background: var(--surface-hover); }
+  .react.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
   .emoji { font-size: 15px; }
-  .count { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+  .count { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
 
   /* A comment's foot: its reactions, «Ответить». */
-  .foot { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding-top: 2px; }
+  .foot { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-top: 2px; }
+  /* «Ответить» right after the reactions, not at the far end. */
+  .foot .spacer { display: none; }
   .spacer { flex: 1; }
   /* A post's foot: who, when, edited when; its comments on the right. */
   .byline {
-    display: flex; align-items: center; gap: 6px; min-width: 0; padding-top: 10px; border-top: 1px solid var(--divider);
-    font-size: var(--fs-xs); color: var(--text-3);
+    display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 36px; box-sizing: border-box; padding-top: 10px; margin-right: -6px; border-top: 1px solid var(--divider);
+    font-size: var(--fs-sm); color: var(--text-3);
   }
-  .phone .byline { font-size: var(--fs-sm); }
-  .author { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); color: var(--text-2); }
+  .author { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-semibold); color: var(--text-2); }
   .stamp { display: inline-flex; align-items: center; white-space: nowrap; flex-shrink: 0; }
-  .full .stamp { margin-left: 2px; }
+  .full .stamp { margin-left: 2px; font-size: var(--fs-xs); }
+  /* The post page: who wrote it, a line under the words above a thin line (the mockup c6.js). */
+  .full .byline { gap: var(--sp-2); padding-top: var(--sp-3); margin-right: 0; }
+  .full .author { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .edited { color: var(--text-2); text-decoration: underline dotted; text-underline-offset: 3px; cursor: default; }
   .link {
     display: inline-flex; align-items: center; gap: 5px; border: none; background: none; cursor: pointer; padding: 4px 6px; border-radius: var(--radius-sm);
     font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text-2);
   }
   .link:hover { background: var(--accent-tint); }
-  .comments { flex-shrink: 0; gap: 4px; font-weight: var(--fw-medium); font-size: var(--fs-sm); margin-right: -6px; }
+  /* «Ответить» under a comment: a quiet link, 13 (the mockup c6.js). */
+  .link.reply { gap: var(--sp-1); padding: 4px 0; font-size: var(--fs-sm); color: var(--text-3); }
+  .link.reply:hover { background: none; color: var(--text); }
+  /* The way to the comments: their count in the quiet text; none yet, «Комментировать» in the accent. */
+  .comments { flex-shrink: 0; gap: 5px; height: 32px; padding: 0 6px 0 var(--sp-2); font-weight: var(--fw-semibold); font-size: var(--fs-sm); color: var(--text-2); border-radius: var(--radius); }
+  .comments:hover { background: var(--surface-3); }
+  .comments.go { color: var(--accent-text); }
+  .comments.go:hover { background: var(--accent-tint); }
+  .react:focus-visible, .comments:focus-visible, .tags .more:focus-visible, .section-line .more:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  @media (max-width: 599px) { .phone.card { gap: var(--sp-2); } }
   @media (pointer: coarse) {
     .post { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
-    .comment .more { padding: 10px; }
+    .comment .more { width: 40px; height: 40px; padding: 0; margin: -4px -8px -4px 0; }
     .more { padding: 8px; margin: -5px -5px -5px 0; }
+    .tags .more, .beside-menu .more, .section-line .more { width: 40px; height: 40px; margin: -4px -4px -4px 0; }
+    .section-line .more { margin-left: auto; }
+    .link.reply { padding: 8px 0; }
     .more.over { padding: 8px; margin: 0; }
     .link { padding: 8px; }
     .read { padding: 6px 0; }

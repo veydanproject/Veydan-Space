@@ -79,6 +79,11 @@ export interface ChatSectionHost {
   refresh: () => void;
   /** Over the list, under the search (the invitations waiting for an answer). */
   above?: Component;
+  /**
+   * What `above` holds, for the narrow list of covers (72), where the banner itself is not drawn: its icon
+   * and its words as a tooltip; `null` when it holds nothing.
+   */
+  aboveSummary?: () => { icon: string; words: string } | null;
   /** The page of an open row: a pane on a computer, the screen on a phone. */
   view: Component<SectionViewProps>;
   /** The dialog of a new row. */

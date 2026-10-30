@@ -13,10 +13,11 @@
 -->
 <script lang="ts">
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { contactLabel, messengerApi, messengerError, type InviteView } from '../api';
   import { messengerStore } from '../store.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
@@ -40,8 +41,13 @@
     scan?: boolean;
     /** The camera that started at once was closed without a code. */
     onscanclosed?: () => void;
+    /** Its actions (the link, the code, the picture to read), for the host to keep at its foot: the window's footer, the page's bottom bar. */
+    foot?: Snippet;
   }
-  let { onchat, onmanual, scan = false, onscanclosed }: Props = $props();
+  let { onchat, onmanual, scan = false, onscanclosed, foot = $bindable() }: Props = $props();
+
+  // The host renders them outside its scroll, so they stay in sight (the owner's rule).
+  foot = actions;
 
   const nowSec = () => Math.floor(Date.now() / 1000);
 
@@ -219,7 +225,7 @@
 
   {#if serverStore.list?.length}
     <div class="for">
-      <span class="muted small">{$t('msg_srv_qr_for')}</span>
+      <span class="cap">{$t('msg_srv_qr_for')}</span>
       <ServerPicker bind:value={qrServer} none={homeLabel} label={$t('msg_srv_qr_for')} />
     </div>
   {/if}
@@ -250,92 +256,91 @@
     {/if}
   </div>
 
-  <div class="line">
-    <span class="line-text">
-      <span>{$t('msg_inv_qr_permanent')}</span>
-      {#if !permanent}<span class="muted small">{$t('msg_inv_qr_timed_hint')}</span>{/if}
-    </span>
-    <button class="toggle" class:on={permanent} disabled={drawing || !!inviteStore.revoking} role="switch" aria-checked={permanent} aria-label={$t('msg_inv_qr_permanent')}
-      onclick={() => void setPermanent(!permanent)}></button>
-  </div>
+  <!-- The whole row is the switch (design book, «QR»). -->
+  <ToggleRow surface="panel" title={$t('msg_inv_qr_permanent')} hint={permanent ? undefined : $t('msg_inv_qr_timed_hint')} label={$t('msg_inv_qr_permanent')}
+    on={permanent} disabled={drawing || !!inviteStore.revoking} onclick={() => void setPermanent(!permanent)} />
   {/if}
 
   {#if myKey}
     <div class="key">
-      <span class="muted small">{$t('msg_inv_my_key')}</span>
+      <span class="cap">{$t('msg_inv_my_key')}</span>
       <code>{myKey}</code>
     </div>
   {/if}
 
-  <div class="actions">
-    <button class="btn btn-ghost btn-sm" onclick={copyLink}><Icon name={qrServer ? (linkNote ? 'check' : 'link') : 'share'} size={13} />{$t(qrServer ? 'msg_inv_copy_link' : 'msg_share_out_open')}</button>
-    {#if !qrServer}
-    <button class="btn btn-ghost btn-sm" class:active={codeOpen} aria-expanded={codeOpen} onclick={() => (codeOpen = !codeOpen)}>
-      <Icon name="key" size={13} />{$t('msg_inv_code_24h')}
-    </button>
-    {/if}
-  </div>
-  {#if linkNote}<p class="muted small" role="status">{$t(qrServer ? 'msg_srv_invite_copied' : 'msg_inv_link_copied')}</p>{/if}
+  <ShareOutSheet bind:open={sharing} item={shareItem} title={$t('msg_share_out')} qr={() => messengerApi.links.contactQr(shareId)} />
+</div>
 
-  {#if codeOpen && !qrServer}
-    <div class="code-box">
-      {#if code}
-        <div class="code-row">
-          <span class="code mono">{formatCode(code.secret)}</span>
-          <button class="btn btn-ghost btn-sm" onclick={copyCode}><Icon name={codeCopied ? 'check' : 'copy'} size={13} />{$t('msg_copy')}</button>
-        </div>
-        {#if code.expires_at != null}<p class="muted small">{$t('msg_inv_code_until', { time: stamp(code.expires_at) })}</p>{/if}
-        <p class="muted small">{$t('msg_inv_code_hint')}</p>
-        <button class="btn btn-ghost btn-sm self-start" onclick={() => (code = null)}>{$t('msg_inv_code_another')}</button>
-      {:else}
-        <span class="label">{$t('msg_inv_code_for')}</span>
-        <CustomSelect options={forOptions} bind:value={codeFor} />
-        <button class="btn btn-primary btn-sm self-start" disabled={codeBusy} onclick={makeCode}>{$t('msg_inv_create_code')}</button>
+{#snippet actions()}
+  <div class="foot">
+    <!-- The code opens right over the button that asks for it (the body above may be scrolled away). -->
+    {#if codeOpen && !qrServer}
+      <div class="code-box">
+        {#if code}
+          <div class="code-row">
+            <span class="code mono">{formatCode(code.secret)}</span>
+            <button class="btn btn-ghost btn-sm" onclick={copyCode}><Icon name={codeCopied ? 'check' : 'copy'} size={13} />{$t('msg_copy')}</button>
+          </div>
+          {#if code.expires_at != null}<p class="muted small">{$t('msg_inv_code_until', { time: stamp(code.expires_at) })}</p>{/if}
+          <p class="muted small">{$t('msg_inv_code_hint')}</p>
+          <button class="btn btn-ghost btn-sm self-start" onclick={() => (code = null)}>{$t('msg_inv_code_another')}</button>
+        {:else}
+          <span class="label">{$t('msg_inv_code_for')}</span>
+          <CustomSelect options={forOptions} bind:value={codeFor} />
+          <button class="btn btn-primary btn-sm self-start" disabled={codeBusy} onclick={makeCode}>{$t('msg_inv_create_code')}</button>
+        {/if}
+      </div>
+    {/if}
+
+    {#if error}<div class="error-msg">{error}</div>{/if}
+    <div class="actions">
+      <button class="btn btn-ghost" onclick={copyLink}><Icon name={qrServer ? (linkNote ? 'check' : 'link') : 'upload'} size={18} />{$t(qrServer ? 'msg_inv_copy_link' : 'msg_share_out_open')}</button>
+      {#if !qrServer}
+      <button class="btn btn-ghost" class:active={codeOpen} aria-expanded={codeOpen} onclick={() => (codeOpen = !codeOpen)}>
+        <Icon name="key" size={18} />{$t('msg_inv_code_24h')}
+      </button>
       {/if}
     </div>
-  {/if}
+    {#if linkNote}<p class="muted small" role="status">{$t(qrServer ? 'msg_srv_invite_copied' : 'msg_inv_link_copied')}</p>{/if}
 
-  {#if error}<div class="error-msg">{error}</div>{/if}
-
-  <ShareOutSheet bind:open={sharing} item={shareItem} title={$t('msg_share_out')} qr={() => messengerApi.links.contactQr(shareId)} />
-
-  <ScanQr {onchat} {onmanual} autostart={scan} onclosed={onscanclosed} />
-</div>
+    <ScanQr {onchat} {onmanual} autostart={scan} onclosed={onscanclosed} />
+  </div>
+{/snippet}
 
 <style>
   .myqr { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .hint { margin: 0; font-size: var(--fs-base); color: var(--text-body); line-height: 1.5; }
   .muted { color: var(--text-2); font-size: var(--fs-xs); line-height: 1.4; }
   .small { font-size: var(--fs-xs); }
   p.muted { margin: 0; }
+  /* The caption over a part: «Куда пригласить», «Ваш ключ». */
+  .cap { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   .strip {
-    display: flex; align-items: center; gap: 6px; padding: 8px var(--sp-3); border-radius: var(--radius-sm); font-size: var(--fs-xs);
+    display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); font-size: var(--fs-xs);
     color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); line-height: 1.4;
   }
-  .for { display: flex; flex-direction: column; gap: 6px; }
+  .for { display: flex; flex-direction: column; gap: var(--sp-2); }
   .center { text-align: center; }
   .qrbox { display: flex; justify-content: center; }
   /* A code is read by a camera: always dark on light, whatever the theme. */
-  .qr { width: min(260px, 100%); aspect-ratio: 1; height: auto; background: #fff; border-radius: var(--radius-md); padding: 8px; image-rendering: pixelated; }
+  .qr { width: min(200px, 100%); aspect-ratio: 1; height: auto; background: #fff; border-radius: var(--radius-lg); padding: var(--sp-2); image-rendering: pixelated; }
   .placeholder { display: flex; align-items: center; justify-content: center; color: var(--text-3); background: var(--surface-2); border: 1px solid var(--border); }
-  .under { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; text-align: center; min-height: 28px; font-variant-numeric: tabular-nums; }
-  .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); }
-  .line-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .key { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .under { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; text-align: center; min-height: 28px; margin-top: calc(-1 * var(--sp-2)); font-variant-numeric: tabular-nums; }
+  .under .muted { color: var(--text-3); }
+  .key { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
   .key code {
-    font-size: var(--fs-2xs); color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 6px 8px; overflow-wrap: anywhere; user-select: all;
+    font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); overflow-wrap: anywhere; user-select: all;
   }
-  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
-  .actions .btn :global(svg) { margin-right: 2px; }
-  .btn.active { background: var(--surface-3); }
+  /* The foot: «Скопировать ссылку | Код на 24 ч» side by side; «Выбрать картинку» (ScanQr) the whole width under them. */
+  .foot { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .actions .btn { flex: 1 1 auto; justify-content: center; }
+  .btn.active { background: var(--surface-hover); border-color: var(--border-2); }
   .danger { color: var(--danger-text); }
-  .code-box { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
+  .code-box { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); }
   .code-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
   .code { font-size: var(--fs-2xl); font-weight: var(--fw-bold); letter-spacing: 2px; user-select: all; font-variant-numeric: tabular-nums; }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
   .self-start { align-self: flex-start; }
-  @media (pointer: coarse) {
-    .actions .btn { flex: 1 1 auto; min-height: 40px; justify-content: center; }
-  }
 </style>

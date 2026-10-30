@@ -25,7 +25,12 @@ class VeydanMessagingService : FirebaseMessagingService() {
       Log.w(PushState.TAG, "push dropped: no type")
       return
     }
-    val outcome = if (push.type == Push.TYPE_SEALED) sealed(message.data) else handle(push)
+    val outcome = try {
+      if (push.type == Push.TYPE_SEALED) sealed(message.data) else handle(push)
+    } catch (e: Exception) {
+      // Where it broke, not what the push said.
+      "not shown: ${e.javaClass.simpleName} at ${e.stackTrace.firstOrNull() ?: "?"}"
+    }
     Log.i(PushState.TAG, "push type=${push.type} trace=${push.trace}: $outcome")
   }
 
@@ -63,7 +68,7 @@ class VeydanMessagingService : FirebaseMessagingService() {
       "no_keys" -> {
         if (PushState.visible && PushState.live) return "not shown, the app is on the screen"
         val notice = PlainNotice(kind = Push.TYPE_DM, chat = null, title = null, muted = false, count = 1)
-        if (Notifier.showPlain(this, notice)) "shown plain (sealed, no keys)" else "not shown, notifications are off"
+        if (Notifier.showPlain(this, notice)) "shown plain (sealed, no keys)${Notifier.quietNote(this, notice.kind)}" else "not shown, notifications are off"
       }
       "dropped" -> "dropped: ${answer.optString("reason")}"
       else -> "dropped: ${answer.optString("error")}"
@@ -107,7 +112,7 @@ class VeydanMessagingService : FirebaseMessagingService() {
     }
     return when (val outcome = answer?.let { Outcome.from(it) }) {
       null -> plain(push, PlainNotice.of(push), "no answer from the core")
-      is Outcome.Show -> if (Notifier.show(this, outcome.notice)) "shown" else "not shown, notifications are off"
+      is Outcome.Show -> if (Notifier.show(this, outcome.notice)) shown(outcome.notice.kind, outcome.notice.muted) else "not shown, notifications are off"
       is Outcome.Plain -> plain(push, outcome.plain, "the core says only that something came")
       is Outcome.Quiet -> "quiet: ${outcome.reason}"
       is Outcome.Call -> Notifier.ring(this, outcome.call)
@@ -128,8 +133,16 @@ class VeydanMessagingService : FirebaseMessagingService() {
    */
   private fun plain(push: Push, notice: PlainNotice, why: String): String {
     if (push.call) return "not shown, a call that could not be opened ($why)"
-    return if (Notifier.showPlain(this, notice)) "shown plain ($why)" else "not shown, notifications are off ($why)"
+    return if (Notifier.showPlain(this, notice)) "shown plain ($why)${Notifier.quietNote(this, notice.kind)}" else "not shown, notifications are off ($why)"
   }
+
+  /**
+   * "shown", and why it may not have been heard: a muted chat comes
+   * quiet on purpose; a channel turned below high by the user or the
+   * phone shows a message without a sound, or not on top, or not at all.
+   */
+  private fun shown(kind: String, muted: Boolean): String =
+    (if (muted) "shown silent (muted)" else "shown") + Notifier.quietNote(this, kind)
 
   override fun onNewToken(token: String) {
     Log.i(PushState.TAG, "the push service gave a new token")

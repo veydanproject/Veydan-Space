@@ -220,6 +220,11 @@ async fn the_photo_of_a_section_is_sealed_and_shown_to_who_reads_its_meta() {
     let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
     let url = b.svc.scope_photo_data_url(&cid, &gold, dir.path()).await.unwrap_or_else(|e| panic!("{e}")).unwrap_or_else(|| panic!("the photo"));
     assert!(url.starts_with("data:image/jpeg;base64,"));
+    // The middle of the picture in the 3:2 of a tile (960×640), not a square as a cover.
+    use base64::Engine as _;
+    let jpeg = base64::engine::general_purpose::STANDARD.decode(&url["data:image/jpeg;base64,".len()..]).unwrap_or_else(|e| panic!("{e}"));
+    let img = messenger_avatar::decode(&jpeg).unwrap_or_else(|e| panic!("decode: {e:?}"));
+    assert_eq!((img.width(), img.height()), crate::media::SCOPE_PHOTO_SIZE);
     assert_eq!(b.svc.scope_photo_data_url(&cid, SCOPE_EVERYONE, dir.path()).await.unwrap_or_else(|e| panic!("{e}")), None, "no photo");
     // Replaced: the old blob is removed from the hosts.
     let next = owner.svc.upload_scope_photo(&owner.keys, &cid, &png).await.unwrap_or_else(|e| panic!("photo: {e}"));

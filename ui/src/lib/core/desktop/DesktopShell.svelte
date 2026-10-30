@@ -393,7 +393,7 @@
           >
             <Icon name={item.icon} size={16} />
             <span class="nav-label" class:hidden={navFit >= 2}>{$t(item.title as TranslationKey)}</span>
-            {#if badge > 0}<span class="nav-badge">{badge > 99 ? '99+' : badge}</span>{/if}
+            {#if badge > 0}<span class="count-pill nav-badge">{badge > 99 ? '99+' : badge}</span>{/if}
           </a>
         {/each}
       </nav>
@@ -569,11 +569,7 @@
     min-width: 0;
   }
 
-  .nav-badge {
-    min-width: 20px; height: 20px; padding: 0 var(--sp-1); border-radius: var(--radius-badge);
-    background: var(--accent); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold);
-    display: inline-flex; align-items: center; justify-content: center;
-  }
+  /* The count of a module is the .count-pill of base.css. */
   .nav-link {
     display: flex;
     align-items: center;

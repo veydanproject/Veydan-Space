@@ -51,7 +51,7 @@
 {/snippet}
 
 {#snippet window()}
-  <ChatWindow {chat} {onback} {actions} leadEntries={lead} ontitle={() => (info = !info)} />
+  <ChatWindow {chat} {onback} {actions} leadEntries={lead} menuWidth={288} ontitle={() => (info = !info)} />
 {/snippet}
 
 {#snippet panel()}

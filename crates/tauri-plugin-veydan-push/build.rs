@@ -19,6 +19,7 @@ const COMMANDS: &[&str] = &[
     "remove_listener",
     "keeper_foreground",
     "keeper_periodic",
+    "open_settings",
 ];
 
 fn main() {

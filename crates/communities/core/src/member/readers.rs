@@ -132,7 +132,7 @@ impl Member {
     /// by its row, not its lock (a turn of the keeper reads content again
     /// while it holds it, `ChannelService::hand_to_me`). The rows of a
     /// keeper the journal has gone past (wire §15) say nothing any more.
-    async fn kept_here(&self, state: &ChannelState) -> Result<bool> {
+    pub(crate) async fn kept_here(&self, state: &ChannelState) -> Result<bool> {
         let Some(current) = state.keeper() else { return Ok(false) };
         Ok(kept::keeper(&self.env.db, &state.community_id).await?.is_some_and(|r| r.keeper_pubkey == current.pubkey.as_hex()))
     }

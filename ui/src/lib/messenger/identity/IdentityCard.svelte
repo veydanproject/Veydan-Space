@@ -52,10 +52,10 @@
 
   <div class="actions">
     <button class="btn btn-ghost" disabled={locked} onclick={() => open(panel === 'export' ? 'none' : 'export')}>
-      <Icon name="key" size={14} />{$t('msg_id_export_btn')}
+      <Icon name="key" size={18} />{$t('msg_id_export_btn')}
     </button>
     <button class="btn btn-ghost danger" disabled={locked} onclick={() => open(panel === 'delete' ? 'none' : 'delete')}>
-      <Icon name="trash-2" size={14} />{$t('msg_id_delete_btn')}
+      <Icon name="trash-2" size={18} />{$t('msg_id_delete_btn')}
     </button>
   </div>
 
@@ -89,16 +89,26 @@
 </div>
 
 <style>
-  .identity { max-width: 640px; display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
+  /* A card of the settings page, as «Мой профиль» beside it (design book, «Профиль и ключ»). */
+  .card.identity {
+    max-width: 640px; display: flex; flex-direction: column; gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); box-shadow: none;
+  }
+  .card-title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
+  .card-title :global(svg) { color: var(--text-2); }
+  /* The key in a field on the card; its label as every caption of the page. */
+  .identity :global(.copy-field .label) { font-size: var(--fs-sm); font-weight: var(--fw-bold); }
+  .identity :global(.copy-field .row) { align-items: center; }
+  .identity :global(.copy-field code) { background: var(--surface-3); border: 1px solid var(--border); }
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .locked-note {
     display: flex; align-items: center; gap: var(--sp-2);
     font-size: var(--fs-sm); color: var(--text-2);
-    background: var(--surface-2); border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3);
+    background: var(--surface-3); border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3);
   }
   .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .actions .btn :global(svg) { flex-shrink: 0; }
   .actions.end { justify-content: flex-end; }
   .panel {
     display: flex; flex-direction: column; gap: var(--sp-3);
@@ -109,11 +119,11 @@
     background: var(--danger-bg); border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3);
   }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
-  .field span { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+  .field span { color: var(--text-2); font-size: var(--fs-sm); font-weight: var(--fw-bold); }
   .field input {
     font: inherit; color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    padding: 8px 10px;
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius);
+    min-height: 44px; padding: 0 var(--sp-3);
   }
   .field input:focus { outline: none; border-color: var(--accent-border); }
   .btn.danger { color: var(--danger-text); }

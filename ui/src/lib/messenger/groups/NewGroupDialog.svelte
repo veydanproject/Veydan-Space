@@ -8,6 +8,8 @@
   import { groupError } from './errors';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
+  import ChoiceRow from '$lib/core/ui/ChoiceRow.svelte';
   import { groupStore } from './groupStore.svelte';
   import { chatStore } from '../chats/chatStore.svelte';
   import { linkStore } from '../content/linkStore.svelte';
@@ -109,49 +111,42 @@
 
 <Dialog bind:open title={$t('msg_group_new_title')} width="min(460px, calc(100vw - 24px))">
   <div class="body">
-    <div class="tabs" role="tablist">
-      <button role="tab" class="tab" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('msg_group_new_create')}</button>
-      <button role="tab" class="tab" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('msg_group_new_join')}</button>
+    <div class="seg tabs" role="tablist">
+      <button role="tab" class="seg-btn" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('msg_group_new_create')}</button>
+      <button role="tab" class="seg-btn" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('msg_group_new_join')}</button>
     </div>
 
     {#if tab === 'create'}
-      <div class="kinds">
+      <div class="kinds" role="radiogroup">
         {#each ['private', 'public'] as const as k}
-          <button class="kind" class:active={kind === k} onclick={() => (kind = k)} disabled={busy}>
-            <span class="kind-title"><Icon name={k === 'public' ? 'world' : 'lock-square-rounded'} size={14} />{$t(`msg_group_kind_${k}` as 'msg_group_kind_public')}</span>
-            <span class="kind-text">{$t(`msg_group_kind_${k}_text` as 'msg_group_kind_public_text')}</span>
-          </button>
+          <ChoiceRow icon={k === 'public' ? 'world' : 'lock-square-rounded'}
+            title={$t(`msg_group_kind_${k}` as 'msg_group_kind_public')} hint={$t(`msg_group_kind_${k}_text` as 'msg_group_kind_public_text')}
+            checked={kind === k} onclick={() => (kind = k)} disabled={busy} />
         {/each}
       </div>
-      <input class="field" type="text" bind:value={name} maxlength="64" placeholder={$t('msg_group_name')} disabled={busy}
+      <input class="field tall" type="text" bind:value={name} maxlength="64" placeholder={$t('msg_group_name')} aria-label={$t('msg_group_name')} disabled={busy}
         onkeydown={(e) => { if (e.key === 'Enter' && name.trim()) create(); }} />
-      <textarea class="field" rows="2" bind:value={about} maxlength="500" placeholder={$t('msg_group_about')} disabled={busy}></textarea>
+      <textarea class="field" rows="2" bind:value={about} maxlength="500" placeholder={$t('msg_group_about')} aria-label={$t('msg_group_about')} disabled={busy}></textarea>
       {#if servers.length}
         <div class="where">
-          <span class="where-label">{$t('msg_group_where')}</span>
+          <span class="cap">{$t('msg_group_where')}</span>
           <ServerPicker bind:value={server} none={homeLabel} disabled={busy} label={$t('msg_group_where')} />
-          <span class="option-hint">{chosen ? $t('msg_group_where_private', { name: nameOfServer(chosen) }) : $t('msg_group_where_home')}</span>
+          <span class="where-hint">{chosen ? $t('msg_group_where_private', { name: nameOfServer(chosen) }) : $t('msg_group_where_home')}</span>
         </div>
       {/if}
       {#if kind === 'private'}
-        <div class="option">
-          <div class="option-info">
-            <span>{$t('msg_group_history_for_new')}</span>
-            <span class="option-hint">{$t(history ? 'msg_group_note_history_on' : 'msg_group_note_history_off')}</span>
-          </div>
-          <button class="toggle" class:on={history} role="switch" aria-checked={history} aria-label={$t('msg_group_history_for_new')}
-            disabled={busy} onclick={() => (history = !history)}></button>
-        </div>
+        <!-- The whole row is the switch. -->
+        <ToggleRow surface="panel" title={$t('msg_group_history_for_new')} hint={$t(history ? 'msg_group_note_history_on' : 'msg_group_note_history_off')}
+          on={history} disabled={busy} onclick={() => (history = !history)} />
       {:else}
         <p class="hint">{$t('msg_group_note_public')}</p>
       {/if}
-      {#if error}<div class="error-msg">{error}</div>{/if}
-      <button class="btn btn-primary" disabled={busy || !name.trim()} onclick={create}>{$t('msg_group_create')}</button>
+      {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
     {:else}
-      <textarea class="field mono" rows="3" bind:value={url} placeholder="veydan://group/…" spellcheck="false" disabled={busy}></textarea>
+      <textarea class="field mono" rows="3" bind:value={url} placeholder="veydan://group/…" aria-label={$t('msg_group_new_join')} spellcheck="false" disabled={busy}></textarea>
       {#if parsed}
         <div class="found">
-          <Icon name={parsed.kind === 'public' ? 'world' : 'lock-square-rounded'} size={14} />
+          <Icon name={parsed.kind === 'public' ? 'world' : 'lock-square-rounded'} size={16} />
           <span><b>{parsed.name || $t('msg_group_unnamed')}</b> · {$t(`msg_group_kind_${parsed.kind}` as 'msg_group_kind_public')}</span>
         </div>
         {#if parsed.server}
@@ -161,53 +156,58 @@
         {/if}
         <p class="hint">{$t(parsed.kind === 'public' ? 'msg_group_join_hint_public' : 'msg_group_join_hint_private')}</p>
         {#if parsed.kind === 'private'}
-          <input class="field" type="text" bind:value={note} maxlength="300" placeholder={$t('msg_group_join_note')} disabled={busy} />
+          <input class="field tall" type="text" bind:value={note} maxlength="300" placeholder={$t('msg_group_join_note')} aria-label={$t('msg_group_join_note')} disabled={busy} />
         {/if}
       {:else if url.trim()}
         <p class="hint bad">{$t('msg_group_link_bad')}</p>
       {:else}
         <p class="hint">{$t('msg_group_join_hint')}</p>
       {/if}
-      {#if error}<div class="error-msg">{error}</div>{/if}
-      <button class="btn btn-primary" disabled={busy || !parsed} onclick={join}>
+      {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+    {/if}
+  </div>
+
+  <!-- The verb of the form is fixed at the foot; the body scrolls above it. -->
+  {#snippet footer()}
+    {#if tab === 'create'}
+      <button class="btn btn-primary go" disabled={busy || !name.trim()} onclick={create}>{$t('msg_group_create')}</button>
+    {:else}
+      <button class="btn btn-primary go" disabled={busy || !parsed} onclick={join}>
         {$t(parsed?.kind === 'private' ? 'msg_group_join_ask' : 'msg_group_join')}
       </button>
     {/if}
-  </div>
+  {/snippet}
 </Dialog>
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); }
-  .tab { flex: 1; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text-2); padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; justify-content: center; text-align: center; }
-  /* The action of the form spans it: its word stands in the middle. */
-  .body > .btn { justify-content: center; }
-  .tab.active { background: var(--surface); color: var(--text); font-weight: var(--fw-semibold); }
-  .kinds { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
-  .kind {
-    display: flex; flex-direction: column; gap: 4px; text-align: left; padding: var(--sp-3); cursor: pointer; font: inherit; color: inherit;
-    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
-  }
-  .kind.active { border-color: var(--accent-border); background: var(--accent-tint); }
-  .kind-title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-bold); }
-  .kind-text { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
+  .body > :global(*) { flex-shrink: 0; min-width: 0; }
+  .tabs { display: flex; width: 100%; }
+  .tabs .seg-btn { flex: 1; justify-content: center; height: 36px; font-size: var(--fs-base); }
+  /* The one button under the line: the whole width, 44 high (48 under a finger). */
+  .go { flex: 1; justify-content: center; min-height: var(--control-h-lg); }
+
+  .kinds { display: flex; flex-direction: column; gap: var(--sp-2); }
+
   .field {
-    width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 9px 12px; resize: vertical;
+    width: 100%; font: inherit; font-size: var(--fs-base); color: var(--text); background: var(--surface-3);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3); resize: none;
   }
+  .field.tall { height: var(--control-h-lg); padding: 0 var(--sp-3); }
   .field:focus { outline: none; border-color: var(--accent-border); }
   .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
-  .option {
-    display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3);
-    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
-  }
-  .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: 1.4; }
-  .option-hint { font-size: var(--fs-xs); color: var(--text-3); }
-  .found { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); overflow-wrap: anywhere; }
-  .where { display: flex; flex-direction: column; gap: 6px; }
-  .where-label { font-size: var(--fs-xs); color: var(--text-3); }
+
+  .where { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .cap { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
+  .where-hint { font-size: var(--fs-xs); color: var(--text-3); }
+
+
+  .found { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); padding: var(--sp-3); border-radius: var(--radius-md); background: var(--surface-3); border: 1px solid var(--border); overflow-wrap: anywhere; }
+  .found :global(svg) { flex-shrink: 0; }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
   .hint.bad { color: var(--danger-text); }
-  @media (pointer: coarse) { .field { font-size: var(--fs-md); } }
-  @media (max-width: 420px) { .kinds { grid-template-columns: 1fr; } }
+  @media (pointer: coarse) {
+    .field { font-size: var(--fs-md); }
+    .field.tall, .go { min-height: var(--sp-12); }
+  }
 </style>

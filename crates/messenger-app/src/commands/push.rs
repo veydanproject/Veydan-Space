@@ -43,6 +43,9 @@ pub struct PushDevice {
     pub detail: Option<String>,
     /// `granted`, `denied`, `prompt`, `prompt-with-rationale`.
     pub permission: Option<String>,
+    /// What keeps messages from ringing: `off`, `dm`, `groups`; none when
+    /// they ring, and on a desktop.
+    pub quiet: Option<String>,
 }
 
 impl PushDevice {
@@ -54,6 +57,7 @@ impl PushDevice {
             reason: None,
             detail: None,
             permission: None,
+            quiet: None,
         }
     }
 }
@@ -101,6 +105,7 @@ async fn device(app: &tauri::AppHandle) -> CmdResult<PushDevice> {
         reason: s.reason,
         detail: None,
         permission: permission_name(s.permission),
+        quiet: s.quiet,
     })
 }
 
@@ -455,6 +460,20 @@ pub async fn messenger_push_take_tap(app: tauri::AppHandle) -> CmdResult<Option<
     {
         let _ = app;
         Ok(None)
+    }
+}
+
+/// Opens the phone's settings where messages ring again (`PushDevice::quiet`).
+#[tauri::command]
+pub async fn messenger_push_open_settings(app: tauri::AppHandle) -> CmdResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        bridge(&app)?.open_settings().await.map_err(failed)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(())
     }
 }
 

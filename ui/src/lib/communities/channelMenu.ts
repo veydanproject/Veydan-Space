@@ -31,8 +31,8 @@ export interface ChannelActions {
 }
 
 /**
- * What waits for the team, said in the menu on a phone instead of the pills
- * of the head (2026-10-23): each count with the way to its screen.
+ * What waits for the team, said in the head menu (on every screen, the ⋮
+ * carrying their sum): each count with the way to its screen.
  */
 export interface StaffCounts {
   queue: number;
@@ -46,13 +46,13 @@ export interface StaffCounts {
 /** The rows of the counts that are not zero, first in the menu. */
 export function countEntries(c: StaffCounts, tr: Translate): MenuEntry[] {
   const rows: MenuEntry[] = [];
-  if (c.queue > 0) rows.push({ label: `${tr('chan_menu_queue')} ${c.queue}`, icon: 'shield', onselect: c.openQueue });
-  if (c.requests > 0) rows.push({ label: `${tr('chan_mod_tab_requests')} ${c.requests}`, icon: 'user-plus', onselect: c.openRequests });
-  if (c.levels > 0) rows.push({ label: `${tr('chan_menu_level_requests')} ${c.levels}`, icon: 'layers', onselect: c.openLevels });
+  if (c.queue > 0) rows.push({ label: tr('chan_menu_queue'), badge: String(c.queue), icon: 'shield', onselect: c.openQueue });
+  if (c.requests > 0) rows.push({ label: tr('chan_mod_tab_requests'), badge: String(c.requests), icon: 'user-plus', onselect: c.openRequests });
+  if (c.levels > 0) rows.push({ label: tr('chan_menu_level_requests'), badge: String(c.levels), icon: 'layers', onselect: c.openLevels });
   return rows;
 }
 
-/** The entries of the head menu of `row`; `waitingKey`: a key is still awaited; `counts`: what waits for the team (a phone). */
+/** The entries of the head menu of `row`; `waitingKey`: a key is still awaited; `counts`: what waits for the team (null: none to show). */
 export function channelEntries(
   row: Pick<ChannelView, 'pinned' | 'muted' | 'archived'>, d: ChannelDetail | null | undefined, waitingKey: boolean, tr: Translate, a: ChannelActions,
   counts: StaffCounts | null = null,

@@ -6,6 +6,7 @@
   import { toast } from '$lib/core/ui/toast.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import type { Snippet } from 'svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import { chatStore } from './chatStore.svelte';
@@ -38,8 +39,12 @@
     onopenrow?: (chatId: string) => void;
     /** The row of a module's section open now. */
     selected?: string | null;
+    /** The column is its covers (72 px, a computer): a cover per row, the name its tooltip. */
+    covers?: boolean;
+    /** What scrolls with the rows above them (the offers of a phone's list), so nothing stands over the rows. */
+    top?: Snippet;
   }
-  let { query, kind = 'dm', onopen, onopenrow, selected = null }: Props = $props();
+  let { query, kind = 'dm', onopen, onopenrow, selected = null, covers = false, top }: Props = $props();
 
   /** The section a module gives, when `kind` names one: its rows instead of the messenger's chats. */
   const host = $derived(kind === 'dm' || kind === 'group' ? null : chatSections.get(kind));
@@ -141,22 +146,22 @@
 
 {#snippet extRow(r: SectionRow)}
   <li>
-    <button class="chat" class:active={selected === r.chatId} onclick={() => onopenrow?.(r.chatId)} oncontextmenu={(e) => { e.preventDefault(); rowMenu = { open: true, x: e.clientX, y: e.clientY, row: r }; }}
+    <button class="chat list-row" class:active={selected === r.chatId} class:unread={r.unread > 0 && !r.muted} onclick={() => onopenrow?.(r.chatId)} oncontextmenu={(e) => { e.preventDefault(); rowMenu = { open: true, x: e.clientX, y: e.clientY, row: r }; }}
       use:longpress={{ onpress: (p) => (rowMenu = { open: true, x: p.x, y: p.y, row: r }) }}>
       <!-- A picture the module already has (a `data:` URL) is shown as it is; an address is fetched by the runtime. -->
-      <Avatar url={r.picture?.startsWith('data:') ? null : r.picture} src={r.picture?.startsWith('data:') ? r.picture : null} label={r.title} seed={r.seed} size={42} />
-      <span class="body">
-        <span class="top">
-          {#if host}<span class="dim"><Icon name={host.icon} size={12} /></span>{/if}
-          <span class="title">{r.title}</span>
-          {#if r.muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}
-          {#if r.pinned}<span class="dim"><Icon name="pin" size={12} /></span>{/if}
-          <span class="stamp">{listStamp(r.at)}</span>
+      <Avatar url={r.picture?.startsWith('data:') ? null : r.picture} src={r.picture?.startsWith('data:') ? r.picture : null} label={r.title} seed={r.seed} size={48} />
+      <span class="list-row-body">
+        <span class="list-row-top">
+          <span class="list-row-name">{r.title}</span>
+          {#if host}<span class="list-row-mark"><Icon name={host.icon} size={14} /></span>{/if}
+          {#if r.muted}<span class="list-row-mark"><Icon name="bell-off" size={14} /></span>{/if}
+          {#if r.pinned}<span class="list-row-mark"><Icon name="pin" size={14} /></span>{/if}
+          <span class="list-row-time">{listStamp(r.at)}</span>
         </span>
-        <span class="bottom">
-          <span class="preview">{r.preview}</span>
-          {#if r.asks}<span class="badge asks"><Icon name="user-plus" size={11} />{r.asks > 99 ? '99+' : r.asks}</span>{/if}
-          {#if r.unread > 0}<span class="badge" class:muted={r.muted}>{r.unread > 99 ? '99+' : r.unread}</span>{/if}
+        <span class="list-row-bottom">
+          <span class="list-row-line">{r.preview}</span>
+          {#if r.asks}<span class="count-pill lg asks"><Icon name="user-plus" size={11} />{r.asks > 99 ? '99+' : r.asks}</span>{/if}
+          {#if r.unread > 0}<span class="count-pill lg" class:quiet={r.muted}>{r.unread > 99 ? '99+' : r.unread}</span>{/if}
         </span>
       </span>
     </button>
@@ -165,63 +170,135 @@
 
 {#snippet row(c: MessengerChat)}
   <li>
-    <button class="chat" class:active={chatStore.activeId === c.id} onclick={() => onopen(c)} oncontextmenu={(e) => openMenu(e, c)}
+    <button class="chat list-row" class:active={chatStore.activeId === c.id} class:unread={c.unread > 0 && !c.is_muted} onclick={() => onopen(c)} oncontextmenu={(e) => openMenu(e, c)}
       use:longpress={{ onpress: (p) => (menu = { open: true, x: p.x, y: p.y, chat: c }) }}>
-      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={42} online={c.kind === 'dm' && presenceStore.status(c.peer_pubkey) === 'online'} />
-      <span class="body">
-        <span class="top">
-          {#if c.kind === "group"}<span class="dim"><Icon name="users" size={12} /></span>{/if}
-          <span class="title">{c.title}</span>
-          {#if c.server_id}<ServerLabel server={c.server_id} />{/if}
-          {#if c.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}
-          {#if c.pinned}<span class="dim"><Icon name="pin" size={12} /></span>{/if}
-          <span class="stamp">{listStamp(c.last_message_at)}</span>
+      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={48} online={c.kind === 'dm' && presenceStore.status(c.peer_pubkey) === 'online'} />
+      <span class="list-row-body">
+        <span class="list-row-top">
+          <span class="list-row-name">{c.title}</span>
+          {#if c.kind === "group"}<span class="list-row-mark"><Icon name="users" size={14} /></span>{/if}
+          {#if c.is_muted}<span class="list-row-mark"><Icon name="bell-off" size={14} /></span>{/if}
+          {#if c.pinned}<span class="list-row-mark"><Icon name="pin" size={14} /></span>{/if}
+          {#if c.server_id}<ServerLabel server={c.server_id} size="icon" />{/if}
+          <span class="list-row-time">{listStamp(c.last_message_at)}</span>
         </span>
-        <span class="bottom">
+        <span class="list-row-bottom">
           {#if drafts.get(c.id)?.trim() && chatStore.activeId !== c.id}
-            <span class="preview"><span class="draft">{$t('msg_chat_draft')}</span> {drafts.get(c.id)}</span>
+            <span class="list-row-line"><span class="draft">{$t('msg_chat_draft')}</span> {drafts.get(c.id)}</span>
           {:else}
-            <span class="preview">{preview(c)}</span>
+            <span class="list-row-line">{preview(c)}</span>
           {/if}
           {#if asking(c)}
-            <span class="badge asks" title={$t('msg_greq_badge', { n: String(asking(c)) })} aria-label={$t('msg_greq_badge', { n: String(asking(c)) })}>
+            <span class="count-pill lg asks" title={$t('msg_greq_badge', { n: String(asking(c)) })} aria-label={$t('msg_greq_badge', { n: String(asking(c)) })}>
               <Icon name="user-plus" size={11} />{asking(c) > 99 ? '99+' : asking(c)}
             </span>
           {/if}
-          {#if c.unread > 0}<span class="badge" class:muted={c.is_muted}>{c.unread > 99 ? '99+' : c.unread}</span>{/if}
+          {#if c.unread > 0}<span class="count-pill lg" class:quiet={c.is_muted}>{c.unread > 99 ? '99+' : c.unread}</span>{/if}
         </span>
       </span>
     </button>
   </li>
 {/snippet}
 
+<!-- The pinned at the top of a list: a quiet label over them and a line after them (by the pin they already carry). -->
+{#snippet pinLabel()}
+  <li class="pin-label"><Icon name="pin" size={12} />{$t('chan_pinned')}</li>
+{/snippet}
+{#snippet pinRule()}
+  <li class="pin-rule" aria-hidden="true"></li>
+{/snippet}
+
+{#snippet corner(n: number, muted: boolean)}
+  <span class="list-cover-corner" class:muted>{n > 99 ? '99+' : n}</span>
+{/snippet}
+
+{#snippet extCover(r: SectionRow)}
+  <li>
+    <button class="list-cover" class:active={selected === r.chatId} title={r.title} aria-label={r.title} onclick={() => onopenrow?.(r.chatId)}
+      oncontextmenu={(e) => { e.preventDefault(); rowMenu = { open: true, x: e.clientX, y: e.clientY, row: r }; }}
+      use:longpress={{ onpress: (p) => (rowMenu = { open: true, x: p.x, y: p.y, row: r }) }}>
+      <Avatar url={r.picture?.startsWith('data:') ? null : r.picture} src={r.picture?.startsWith('data:') ? r.picture : null} label={r.title} seed={r.seed} size={42} />
+      {#if r.unread > 0}{@render corner(r.unread, r.muted)}{:else if r.asks}{@render corner(r.asks, false)}{/if}
+    </button>
+  </li>
+{/snippet}
+
+{#snippet chatCover(c: MessengerChat)}
+  <li>
+    <button class="list-cover" class:active={chatStore.activeId === c.id} title={c.title} aria-label={c.title} onclick={() => onopen(c)} oncontextmenu={(e) => openMenu(e, c)}
+      use:longpress={{ onpress: (p) => (menu = { open: true, x: p.x, y: p.y, chat: c }) }}>
+      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={42} online={c.kind === 'dm' && presenceStore.status(c.peer_pubkey) === 'online'} />
+      {#if c.unread > 0}{@render corner(c.unread, c.is_muted)}{:else if asking(c)}{@render corner(asking(c), false)}{/if}
+    </button>
+  </li>
+{/snippet}
+
+{#if covers}
+  {@const shown = host ? hostVisible : visible}
+  {@const folded = host ? hostArchived.length : archived.length}
+  <div class="covers">
+    <div class="covers-scroll">
+      {#if requests > 0}
+        <button class="list-cover" onclick={openRequests} title={$t('msg_req_row', { n: String(requests) })} aria-label={$t('msg_req_row', { n: String(requests) })}>
+          <span class="req-icon"><Icon name="user-question" size={18} /></span>
+        </button>
+      {/if}
+      {#if host && shown.length === 0 && folded === 0 && !q && host.loading?.()}
+        <div class="list-cover-empty" role="status"><span class="spinner" aria-hidden="true"></span></div>
+      {:else if shown.length === 0 && folded === 0}
+        {@const icon = host ? host.icon : kind === 'group' ? 'users' : 'message-circle'}
+        {@const words = q ? $t('msg_chats_nothing_found') : host ? $t(host.emptyTitle) : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}
+        <div class="list-cover-empty" role="status" aria-label={words} title={words}><Icon name={icon} size={22} /></div>
+      {:else}
+        <ul class="covers-list">
+          {#if host}{#each hostVisible as r (r.chatId)}{@render extCover(r)}{/each}{:else}{#each visible as c (c.id)}{@render chatCover(c)}{/each}{/if}
+        </ul>
+        {#if showArchived && folded}
+          <ul class="covers-list folded">
+            {#if host}{#each hostArchived as r (r.chatId)}{@render extCover(r)}{/each}{:else}{#each archived as c (c.id)}{@render chatCover(c)}{/each}{/if}
+          </ul>
+        {/if}
+      {/if}
+    </div>
+    {#if folded}
+      <button class="list-cover arch" class:on={showArchived} aria-pressed={showArchived} onclick={() => (showArchived = !showArchived)}
+        title={$t('msg_chats_archived', { n: String(folded) })} aria-label={$t('msg_chats_archived', { n: String(folded) })}>
+        <Icon name="archive" size={18} />{@render corner(folded, true)}
+      </button>
+    {/if}
+  </div>
+{:else}
 <div class="list-wrap">
+  {@render top?.()}
   {#if requests > 0}
     <!-- No unread badge: a request must not call anyone back to the app. -->
-    <button class="chat requests" onclick={openRequests}>
+    <button class="chat list-row requests" onclick={openRequests}>
       <span class="req-icon"><Icon name="user-question" size={20} /></span>
-      <span class="body">
-        <span class="top"><span class="title">{$t('msg_req_row', { n: String(requests) })}</span></span>
-        <span class="bottom"><span class="preview">{$t('msg_req_row_hint')}</span></span>
+      <span class="list-row-body">
+        <span class="list-row-top"><span class="list-row-name">{$t('msg_req_row', { n: String(requests) })}</span><span class="list-row-mark chev"><Icon name="chevron-right" size={16} /></span></span>
+        <span class="list-row-bottom"><span class="list-row-line">{$t('msg_req_row_hint')}</span></span>
       </span>
-      <span class="dim"><Icon name="chevron-right" size={16} /></span>
     </button>
   {/if}
   {#if host}
     {#if hostVisible.length === 0 && hostArchived.length === 0 && !q && host.loading?.()}
-      <div class="empty loading" role="status">
+      <div class="empty-state list-empty loading" role="status">
         <span class="spinner" aria-hidden="true"></span>
         {#if host.loadingTitle}<p>{$t(host.loadingTitle)}</p>{/if}
       </div>
     {:else if hostVisible.length === 0 && hostArchived.length === 0}
-      <div class="empty">
-        <Icon name={host.icon} size={28} />
+      <div class="empty-state list-empty">
+        <div class="empty-icon"><Icon name={host.icon} size={24} /></div>
         <p>{q ? $t('msg_chats_nothing_found') : $t(host.emptyTitle)}</p>
         {#if !q}<span>{$t(host.emptyHint)}</span>{/if}
       </div>
     {:else}
-      <ul class="list divided">
-        {#each hostVisible as r (r.chatId)}{@render extRow(r)}{/each}
+      <ul class="list-rows">
+        {#each hostVisible as r, i (r.chatId)}
+          {#if i === 0 && r.pinned}{@render pinLabel()}{/if}
+          {@render extRow(r)}
+          {#if r.pinned && hostVisible[i + 1] && !hostVisible[i + 1].pinned}{@render pinRule()}{/if}
+        {/each}
       </ul>
       {#if hostArchived.length}
         <button class="archived-toggle" onclick={() => (showArchived = !showArchived)}>
@@ -230,21 +307,25 @@
           <Icon name={showArchived ? 'chevron-up' : 'chevron-down'} size={13} />
         </button>
         {#if showArchived}
-          <ul class="list divided">
+          <ul class="list-rows">
             {#each hostArchived as r (r.chatId)}{@render extRow(r)}{/each}
           </ul>
         {/if}
       {/if}
     {/if}
   {:else if visible.length === 0 && archived.length === 0}
-    <div class="empty">
-      <Icon name={kind === 'group' ? 'users' : 'message-circle'} size={28} />
+    <div class="empty-state list-empty">
+      <div class="empty-icon"><Icon name={kind === 'group' ? 'users' : 'message-circle'} size={24} /></div>
       <p>{q ? $t('msg_chats_nothing_found') : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}</p>
       {#if !q}<span>{kind === 'group' ? $t('msg_groups_empty_hint') : $t('msg_chats_empty_hint')}</span>{/if}
     </div>
   {:else}
-    <ul class="list divided">
-      {#each visible as c (c.id)}{@render row(c)}{/each}
+    <ul class="list-rows">
+      {#each visible as c, i (c.id)}
+        {#if i === 0 && c.pinned}{@render pinLabel()}{/if}
+        {@render row(c)}
+        {#if c.pinned && visible[i + 1] && !visible[i + 1].pinned}{@render pinRule()}{/if}
+      {/each}
     </ul>
     {#if archived.length}
       <button class="archived-toggle" onclick={() => (showArchived = !showArchived)}>
@@ -253,59 +334,57 @@
         <Icon name={showArchived ? 'chevron-up' : 'chevron-down'} size={13} />
       </button>
       {#if showArchived}
-        <ul class="list divided">
+        <ul class="list-rows">
           {#each archived as c (c.id)}{@render row(c)}{/each}
         </ul>
       {/if}
     {/if}
   {/if}
 </div>
+{/if}
 
 <ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} onclose={() => (menu.open = false)} />
 <ContextMenu bind:open={rowMenu.open} x={rowMenu.x} y={rowMenu.y} items={rowItems} onclose={() => (rowMenu.open = false)} />
 
 <style>
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
-  .chat {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; text-align: left;
-    min-height: 64px; padding: var(--sp-2) var(--sp-3); border: none; border-radius: var(--radius-lg);
-    background: none; color: inherit; font: inherit; cursor: pointer;
-    transition: background var(--dur-fast) var(--ease);
-  }
-  .chat:hover { background: var(--surface-hover); }
-  .chat.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
-  .requests { margin-bottom: 2px; }
+  /* The rows (chats, groups, a module's section alike) are the .list-row of base.css: 64, an avatar of 48,
+     the marks after the name, a hairline between two rows from the text; unread, the .unread of it. */
+  .archived-toggle:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  /* «Запросы · N»: a row of its own over the list, its tile in the accent, its chevron at the end of the name. */
+  .requests { margin-bottom: var(--sp-1); }
+  .requests .list-row-line { color: var(--text-2); }
+  .chev { margin-left: auto; }
   .req-icon {
-    width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-    background: var(--surface-3); color: var(--text-2);
+    width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-bg); color: var(--accent-text);
   }
-  .body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-  .top, .bottom { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .title { font-weight: var(--fw-semibold); font-size: var(--fs-body); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dim { color: var(--text-3); display: inline-flex; flex-shrink: 0; }
-  .stamp { margin-left: auto; font-size: var(--fs-xs); color: var(--text-2); flex-shrink: 0; }
   .draft { color: var(--danger-text); }
-  .preview { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  .badge {
-    flex-shrink: 0; min-width: 20px; height: 20px; padding: 0 var(--sp-1); border-radius: var(--radius-badge);
-    background: var(--accent); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold);
-    display: inline-flex; align-items: center; justify-content: center;
+  /* The counts are the .count-pill of base.css (22 on a row; .quiet when the chat is muted). */
+  /* The pinned: a quiet label over them, a line after them. */
+  .pin-label {
+    display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3) var(--sp-1);
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3);
   }
-  .badge.muted { background: var(--surface-3); color: var(--text-2); }
+  .pin-rule { height: 1px; margin: var(--sp-2) var(--sp-3); background: var(--divider); }
   /* Requests to join wait: the accent's tint, so the unread count stays the one that calls. */
-  .badge.asks { gap: 3px; background: var(--accent-tint); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }
-  .empty {
-    display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center;
-    padding: var(--sp-8) var(--sp-4); color: var(--text-3);
-  }
-  .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .empty span { font-size: var(--fs-xs); line-height: 1.5; }
-  .empty.loading .spinner { width: 20px; height: 20px; }
+  .asks { gap: 3px; background: var(--accent-tint); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }
+  /* Nothing to list (or nothing found): the design system's empty state, its tile 56. */
+  .list-empty { padding: var(--sp-10) var(--sp-4); }
+  .list-empty p { margin: 0; font-size: var(--fs-base); }
+  .list-empty.loading .spinner { width: 20px; height: 20px; }
   .archived-toggle {
     display: flex; align-items: center; gap: 6px; width: 100%; margin-top: var(--sp-2);
     padding: var(--sp-2) var(--sp-3); border: none; background: none; cursor: pointer;
     color: var(--text-3); font: inherit; font-size: var(--fs-xs);
   }
   .archived-toggle:hover { color: var(--text-2); }
+
+  /* The column of covers: the open one lit, its count on the corner, the archive at the foot. */
+  .covers { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding-bottom: var(--sp-3); }
+  .covers-scroll { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); padding: var(--sp-1) 0 var(--sp-2); }
+  .covers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }
+  .covers-list.folded { padding-top: var(--sp-1); border-top: 1px solid var(--divider); }
+  .list-cover.on { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); color: var(--accent-text); }
+  .list-cover.arch { width: 44px; height: 44px; border-radius: var(--radius-md); }
 </style>

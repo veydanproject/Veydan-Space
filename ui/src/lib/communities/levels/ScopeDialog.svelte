@@ -4,12 +4,14 @@
 <!--
   A section of a channel, new (`scope_add`, communities-wire §14.1) or the
   settings of one (`scope_set`, §14.7; the owner's and the admins'): its title, the line on its
-  tile, its mark (an icon of the set or a photo), its colour, and whether it
+  tile, its mark (an icon of the set, a background picture under it if any),
+  its one colour (the icon's tile, and the frame of the background), and whether it
   is hidden — then its title and look are sealed in its own feed, and those
   it is closed to do not learn even its name. Beside them, how the tile and
   the button of the head look, and the order of the sections (each move
   goes at once). How a new section's keys go and how much of its past a
-  newcomer reads stay under «Подробнее»; neither changes later.
+  newcomer reads are chosen under «Скрытый раздел»; neither changes later. A new
+  section tells what its terms mean behind a «?» beside each (TermHint).
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
@@ -22,9 +24,11 @@
   import { canSetUpSections } from '../permissions';
   import type { ChannelDetail } from '../api';
   import SectionBadge from './SectionBadge.svelte';
+  import TermHint from '$lib/core/ui/TermHint.svelte';
   import { EVERYONE, levelsOf } from './sections';
   import { SCOPE_TITLE_MAX, checkScope, type ScopeProblem } from './editor';
   import { SECTION_COLORS, SECTION_ICONS, moved, ordered, sectionColor, sectionInk } from './look';
+  import { scopePhotos } from './scopePhotos.svelte';
   import type { ScopeHistory, ScopeScheme, ScopeSetInput, ScopeView } from './types';
 
   interface Props {
@@ -58,7 +62,6 @@
   let hidden = $state(false);
   let scheme = $state<ScopeScheme>('sd-v1');
   let history = $state<ScopeHistory>('open');
-  let more = $state(false);
   let tried = $state(false);
   let busy = $state(false);
   let error = $state('');
@@ -74,7 +77,7 @@
     mode = s?.photo ? 'photo' : 'icon';
     hidden = !!s?.hidden;
     pendingPhoto = null;
-    scheme = 'sd-v1'; history = 'open'; more = false; tried = false; error = ''; busy = false;
+    scheme = 'sd-v1'; history = 'open'; tried = false; error = ''; busy = false;
   }
 
   let wasOpen = false;
@@ -175,43 +178,55 @@
   const draft = $derived({ scope_id: target ?? 'new', title: title.trim(), icon: icon ?? undefined, color: color ?? undefined, photo: mode === 'photo' ? was?.photo : undefined });
   const draftColor = $derived(sectionColor(color) ?? 'var(--accent)');
   const draftInk = $derived(sectionInk(color));
+  /** The background as the form now says: the section's picture, unless «Убрать» took it away. */
+  const photoSrc = $derived(mode === 'photo' && target && was?.photo ? scopePhotos.src(cid, target, was.photo) : null);
+  const hasPhoto = $derived(mode === 'photo' && !!(was?.photo || pendingPhoto));
+  /** «Убрать»: the section is its icon again (an existing one's picture goes on «Сохранить», as the old «Иконка» did). */
+  function dropPhoto() { mode = 'icon'; pendingPhoto = null; }
   const draftName = $derived(title.trim() || (everyone ? $t('chan_scope_everyone') : $t('chan_scope_title')));
 </script>
 
-<Dialog bind:open title={isNew ? $t('chan_scope_new') : $t('chan_scope_edit')} width={isNew ? 'min(760px, calc(100vw - 24px))' : 'min(860px, calc(100vw - 24px))'}>
-  <div class="cols" class:phone>
-    <aside class="side">
-      <span class="label">{$t('chan_scope_look')}</span>
-      <div class="preview" class:hidden style:--t-color={draftColor}>
-        <span class="p-top">
-          <SectionBadge scope={draft} communityId={cid} size={40} noPhoto={mode === 'icon'} />
-          {#if hidden}<span class="hidden-mark"><Icon name="eye-off" size={13} />{$t('chan_scope_hidden_mark')}</span>{/if}
-        </span>
-        <span class="p-words"><span class="p-name">{draftName}</span>{#if note.trim()}<span class="p-sub">{note.trim()}</span>{/if}</span>
-      </div>
-      <div class="p-head" style:--t-color={draftColor}>
-        <SectionBadge scope={draft} communityId={cid} size={20} noPhoto={mode === 'icon'} />
-        <span class="p-head-text">{$t('chan_scope_head_button')}</span>
-        <span class="p-stripe"></span>
-      </div>
+<!-- A new one: beside its title, the «?» of what it is. -->
+{#snippet newAside()}<TermHint term={$t('chan_scope_new')}>{$t('chan_scope_new_hint')}</TermHint>{/snippet}
 
-      {#if !isNew && manager && scopes.length > 1}
-        <span class="label order-label">{$t('chan_scope_order')}</span>
+<Dialog bind:open title={isNew ? $t('chan_scope_new') : $t('chan_scope_edit')} titleAside={isNew ? newAside : undefined} width="min(880px, calc(100vw - 24px))">
+  <div class="cols" class:phone>
+    <section class="look">
+      <span class="label">{$t('chan_scope_look')}</span>
+      <div class="look-row">
+        <div class="preview" class:fresh={isNew} class:hidden class:framed={hasPhoto} class:pic={!!photoSrc} style:--t-color={draftColor}>
+          {#if photoSrc}<img class="p-bg" src={photoSrc} alt="" /><span class="p-shade"></span>{/if}
+          <span class="p-top">
+            <SectionBadge scope={draft} communityId={cid} size={40} noPhoto />
+            {#if hidden}<span class="hidden-mark"><Icon name="eye-off" size={14} />{$t('chan_scope_hidden_mark')}</span>{/if}
+          </span>
+          <span class="p-words"><span class="p-name">{draftName}</span>{#if note.trim()}<span class="p-sub">{note.trim()}</span>{/if}</span>
+        </div>
+        <div class="p-head" style:--t-color={draftColor}>
+          <span class="p-head-text">{$t('chan_scope_head_button')}</span>
+          <span class="p-stripe"></span>
+        </div>
+      </div>
+    </section>
+
+    {#if !isNew && manager && scopes.length > 1}
+      <section class="order-box">
+        <span class="label">{$t('chan_scope_order')}</span>
         <ol class="order">
           {#each scopes as s, i (s.scope_id)}
             <li class="o-row" class:on={s.scope_id === target}>
               <button type="button" class="o-pick" onclick={() => switchTo(s)} disabled={busy} aria-current={s.scope_id === target ? 'true' : undefined}>
-                <SectionBadge scope={s} communityId={cid} size={20} />
+                <SectionBadge scope={s} communityId={cid} size={24} />
                 <span class="o-name">{label(s)}</span>
                 {#if s.hidden}<span class="o-tag">{$t('chan_scope_hidden_mark')}</span>{/if}
               </button>
-              <button type="button" class="icon" disabled={busy || i === 0} onclick={() => move(i, -1)} aria-label={`${$t('chan_scope_up')}: ${label(s)}`} title={$t('chan_scope_up')}><Icon name="arrow-up" size={14} /></button>
-              <button type="button" class="icon" disabled={busy || i === scopes.length - 1} onclick={() => move(i, 1)} aria-label={`${$t('chan_scope_down')}: ${label(s)}`} title={$t('chan_scope_down')}><Icon name="arrow-down" size={14} /></button>
+              <button type="button" class="icon" disabled={busy || i === 0} onclick={() => move(i, -1)} aria-label={`${$t('chan_scope_up')}: ${label(s)}`} title={$t('chan_scope_up')}><Icon name="arrow-up" size={16} /></button>
+              <button type="button" class="icon" disabled={busy || i === scopes.length - 1} onclick={() => move(i, 1)} aria-label={`${$t('chan_scope_down')}: ${label(s)}`} title={$t('chan_scope_down')}><Icon name="arrow-down" size={16} /></button>
             </li>
           {/each}
         </ol>
-      {/if}
-    </aside>
+      </section>
+    {/if}
 
     <div class="main">
       <label class="field-wrap">
@@ -219,54 +234,59 @@
         <input class="field" type="text" bind:value={title} maxlength={SCOPE_TITLE_MAX} placeholder={everyone ? $t('chan_scope_everyone') : $t('chan_scope_title_ph')}
           aria-invalid={tried && !!problem} disabled={busy} />
       </label>
-      {#if isNew}<p class="hint">{$t(hidden ? 'chan_scope_hidden_text' : 'chan_scope_new_hint')}</p>{/if}
       {#if tried && problem}<div class="error-msg" role="alert">{$t(PROBLEM[problem] as 'chan_scope_err_title')}</div>{/if}
       <label class="field-wrap">
         <span class="label">{$t('chan_scope_note')}</span>
         <input class="field" type="text" bind:value={note} maxlength={NOTE_MAX} placeholder={$t('chan_scope_note_ph')} disabled={busy} />
       </label>
 
-      <div class="row-head">
+      <section class="mark">
         <span class="label">{$t('chan_scope_badge')}</span>
-        <div class="seg" role="radiogroup" aria-label={$t('chan_scope_badge')}>
-          <button type="button" class="seg-btn" class:active={mode === 'icon'} role="radio" aria-checked={mode === 'icon'} disabled={busy} onclick={() => (mode = 'icon')}>{$t('chan_scope_badge_icon')}</button>
-          <button type="button" class="seg-btn" class:active={mode === 'photo'} role="radio" aria-checked={mode === 'photo'} disabled={busy} onclick={() => (mode = 'photo')}>{$t('chan_scope_badge_photo')}</button>
-        </div>
-      </div>
-      {#if mode === 'icon'}
-        <div class="icons" role="radiogroup" aria-label={$t('chan_scope_badge_icon')} style:--t-color={draftColor} style:--t-ink={draftInk}>
-          {#each SECTION_ICONS as it (it.key)}
-            {@const on = icon === it.key}
-            <button type="button" class="ico" class:on role="radio" aria-checked={on} disabled={busy}
-              aria-label={$t(`chan_icon_${it.key.replace(/-/g, '_')}` as 'chan_icon_star')} title={$t(`chan_icon_${it.key.replace(/-/g, '_')}` as 'chan_icon_star')}
-              onclick={() => (icon = it.key)}><Icon name={it.icon} size={20} /></button>
-          {/each}
-        </div>
-      {:else}
-        <div class="photo-row">
-          <SectionBadge scope={draft} communityId={cid} size={56} />
-          <div class="photo-acts">
-            <button type="button" class="btn btn-ghost btn-sm" disabled={busy} onclick={pickPhoto}><Icon name="camera" size={13} />{$t(was?.photo || pendingPhoto ? 'chan_scope_photo_change' : 'chan_scope_photo_pick')}</button>
-            {#if pendingPhoto}<span class="hint">{pendingPhoto.split(/[\\/]/).pop()}</span>{/if}
-            <span class="hint">{$t('chan_scope_photo_hint')}</span>
+        <div class="m-card" style:--t-color={draftColor} style:--t-ink={draftInk}>
+          <div class="icons" role="radiogroup" aria-label={$t('chan_scope_badge_icon')}>
+            {#each SECTION_ICONS as it (it.key)}
+              {@const on = icon === it.key}
+              <button type="button" class="ico" class:on role="radio" aria-checked={on} disabled={busy}
+                aria-label={$t(`chan_icon_${it.key.replace(/-/g, '_')}` as 'chan_icon_star')} title={$t(`chan_icon_${it.key.replace(/-/g, '_')}` as 'chan_icon_star')}
+                onclick={() => (icon = it.key)}><Icon name={it.icon} size={20} /></button>
+            {/each}
+          </div>
+
+          <div class="m-part">
+            <span class="label">{$t('chan_scope_color')}</span>
+            <div class="swatches" role="radiogroup" aria-label={$t('chan_scope_color')}>
+              {#each SECTION_COLORS as name, i (name)}
+                <button type="button" class="sw" class:on={color === i} role="radio" aria-checked={color === i} style:--sw="var(--sec-{name})" disabled={busy}
+                  aria-label={$t(`chan_color_${name}` as 'chan_color_violet')} title={$t(`chan_color_${name}` as 'chan_color_violet')} onclick={() => (color = i)}></button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="m-part">
+            <span class="label">{$t('chan_scope_badge_photo')}</span>
+            <div class="bg-row">
+              <div class="bg-box" class:none={!photoSrc} class:framed={hasPhoto}>
+                {#if photoSrc}<img src={photoSrc} alt="" />{:else}<Icon name="image" size={24} />{/if}
+              </div>
+              <div class="bg-acts">
+                <span class="bg-btns">
+                  <button type="button" class="btn btn-ghost btn-sm" disabled={busy} onclick={pickPhoto}><Icon name="camera" size={18} />{$t(hasPhoto ? 'chan_scope_photo_change' : 'chan_scope_photo_pick')}</button>
+                  {#if hasPhoto}<button type="button" class="btn btn-ghost btn-sm drop" disabled={busy} onclick={dropPhoto}><Icon name="x" size={18} />{$t('chan_editor_remove')}</button>{/if}
+                </span>
+                {#if pendingPhoto}<span class="hint">{pendingPhoto.split(/[\\/]/).pop()}</span>{/if}
+                <span class="res"><span class="mono">960×640 px</span><span class="hint">{$t('chan_scope_photo_hint')}</span></span>
+              </div>
+            </div>
           </div>
         </div>
-      {/if}
-
-      <span class="label">{$t('chan_scope_color')}</span>
-      <div class="swatches" role="radiogroup" aria-label={$t('chan_scope_color')}>
-        {#each SECTION_COLORS as name, i (name)}
-          <button type="button" class="sw" class:on={color === i} role="radio" aria-checked={color === i} style:--sw="var(--sec-{name})" disabled={busy}
-            aria-label={$t(`chan_color_${name}` as 'chan_color_violet')} title={$t(`chan_color_${name}` as 'chan_color_violet')} onclick={() => (color = i)}></button>
-        {/each}
-      </div>
+      </section>
 
       {#if manager && !everyone}
         <div class="hide-box" class:on={hidden}>
           <div class="hide-text">
             <span class="hide-title"><Icon name="eye-off" size={16} />{$t('chan_scope_hidden')}</span>
             <span class="hint">{$t('chan_scope_hidden_text')}</span>
-            {#if lateHide}<span class="late" role="status"><Icon name="alert-triangle" size={13} />{$t('chan_scope_hidden_late')}</span>{/if}
+            {#if lateHide}<span class="late" role="status"><Icon name="alert-triangle" size={14} />{$t('chan_scope_hidden_late')}</span>{/if}
           </div>
           <button type="button" class="toggle" class:on={hidden} role="switch" aria-checked={hidden} aria-label={$t('chan_scope_hidden')} disabled={busy}
             onclick={() => (hidden = !hidden)}></button>
@@ -274,32 +294,29 @@
       {/if}
 
       {#if isNew}
-        <button type="button" class="more" aria-expanded={more} onclick={() => (more = !more)}>
-          {$t('chan_scope_more')}<Icon name={more ? 'chevron-up' : 'chevron-down'} size={13} />
-        </button>
-        {#if more}
-          <div class="choice">
-            <span class="label">{$t('chan_scope_scheme')}</span>
-            <div class="chips" role="radiogroup" aria-label={$t('chan_scope_scheme')}>
-              {#each [['sd-v1', 'sd'], ['flat-v1', 'flat']] as [v, k] (v)}
-                <button type="button" class="chip" class:active={scheme === v} role="radio" aria-checked={scheme === v} disabled={busy}
-                  onclick={() => (scheme = v as ScopeScheme)}>{cap($t(`chan_scope_scheme_${k}` as 'chan_scope_scheme_sd'))}</button>
-              {/each}
-            </div>
-            <span class="hint">{$t(scheme === 'flat-v1' ? 'chan_scope_scheme_flat_hint' : 'chan_scope_scheme_sd_hint')}</span>
+        <div class="choice">
+          <span class="label term">{$t('chan_scope_scheme')}<TermHint term={$t('chan_scope_scheme')}>
+            {#each ['sd', 'flat'] as k (k)}<span class="pl"><b>{cap($t(`chan_scope_scheme_${k}` as 'chan_scope_scheme_sd'))}</b> — {$t(`chan_scope_scheme_${k}_hint` as 'chan_scope_scheme_sd_hint')}</span>{/each}
+          </TermHint></span>
+          <div class="chips" role="radiogroup" aria-label={$t('chan_scope_scheme')}>
+            {#each [['sd-v1', 'sd'], ['flat-v1', 'flat']] as [v, k] (v)}
+              <button type="button" class="chip" class:active={scheme === v} role="radio" aria-checked={scheme === v} disabled={busy}
+                onclick={() => (scheme = v as ScopeScheme)}>{cap($t(`chan_scope_scheme_${k}` as 'chan_scope_scheme_sd'))}</button>
+            {/each}
           </div>
-          <div class="choice">
-            <span class="label">{$t('chan_rule_history')}</span>
-            <div class="chips" role="radiogroup" aria-label={$t('chan_rule_history')}>
-              {#each ['open', 'from_join'] as v (v)}
-                <button type="button" class="chip" class:active={history === v} role="radio" aria-checked={history === v} disabled={busy}
-                  onclick={() => (history = v as ScopeHistory)}>{$t(`chan_history_${v}` as 'chan_history_open')}</button>
-              {/each}
-            </div>
-            <span class="hint">{$t(`chan_history_${history}_hint` as 'chan_history_open_hint')}</span>
+        </div>
+        <div class="choice">
+          <span class="label term">{$t('chan_rule_history')}<TermHint term={$t('chan_rule_history')}>
+            {#each ['open', 'from_join'] as v (v)}<span class="pl"><b>{$t(`chan_history_${v}` as 'chan_history_open')}</b> — {$t(`chan_history_${v}_hint` as 'chan_history_open_hint')}</span>{/each}
+          </TermHint></span>
+          <div class="chips" role="radiogroup" aria-label={$t('chan_rule_history')}>
+            {#each ['open', 'from_join'] as v (v)}
+              <button type="button" class="chip" class:active={history === v} role="radio" aria-checked={history === v} disabled={busy}
+                onclick={() => (history = v as ScopeHistory)}>{$t(`chan_history_${v}` as 'chan_history_open')}</button>
+            {/each}
           </div>
-          <p class="hint">{$t('chan_scope_fixed')}</p>
-        {/if}
+        </div>
+        <p class="hint">{$t('chan_scope_fixed')}</p>
       {/if}
       {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
     </div>
@@ -315,79 +332,161 @@
 <style>
   /* The spinner of a primary button, on its fill. */
   .spinner.light { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
-  .cols { display: flex; gap: var(--sp-5); min-width: 0; }
-  .side { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: var(--sp-3); padding-right: var(--sp-5); border-right: 1px solid var(--divider); }
-  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
-  /* On a phone the form first, then how it looks and the order. */
-  .cols.phone { flex-direction: column; gap: var(--sp-4); }
-  .cols.phone .side { order: 2; width: auto; padding-right: 0; border-right: none; }
-  .label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
-  .order-label { margin-top: var(--sp-2); }
-  .preview {
-    height: 130px; box-sizing: border-box; padding: 14px; border-radius: 16px; display: flex; flex-direction: column; justify-content: space-between;
-    border: 1px solid color-mix(in srgb, var(--t-color) 35%, transparent); background: color-mix(in srgb, var(--t-color) 12%, var(--pane-strong));
+  /*
+    A computer: what it looks like and the order on the left, the form on the right.
+    A narrow window, a tablet and a phone: one column — what it looks like first, the form, the order last.
+  */
+  .cols {
+    display: grid; grid-template-columns: 272px minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: 'look main' 'order main';
+    column-gap: var(--sp-6); row-gap: var(--sp-5); min-width: 0;
   }
+  .look { grid-area: look; }
+  .order-box { grid-area: order; }
+  .look, .order-box { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+  .main { grid-area: main; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-4); padding-left: var(--sp-6); border-left: 1px solid var(--divider); }
+  .look-row { display: flex; flex-direction: column; gap: var(--sp-2); }
+  @media (max-width: 1000px) {
+    .cols { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'look' 'main' 'order'; row-gap: var(--sp-4); }
+    .main { padding-left: 0; border-left: none; }
+    .look-row { display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: start; gap: var(--sp-4); }
+    .preview { height: 120px; }
+  }
+  .cols.phone { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'look' 'main' 'order'; row-gap: var(--sp-4); }
+  .cols.phone .main { padding-left: 0; border-left: none; }
+  .cols.phone .look-row { display: grid; grid-template-columns: 280px minmax(0, 1fr); align-items: start; gap: var(--sp-4); }
+  .cols.phone .preview { height: 140px; }
+  @media (max-width: 600px) {
+    .cols.phone .look-row, .look-row { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  }
+  .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
+  /* A term with its «?»: the row its note opens under. */
+  .term { position: relative; display: flex; align-items: center; }
+  .pl { display: block; }
+
+  /* What it looks like: the tile (a picture under it is framed in the colour) and the button of the head. */
+  .preview {
+    position: relative; overflow: hidden; height: 140px; box-sizing: border-box; padding: var(--sp-3); border-radius: var(--radius-head);
+    display: flex; flex-direction: column; justify-content: space-between;
+    border: 1px solid color-mix(in srgb, var(--t-color) 35%, var(--border)); background: color-mix(in srgb, var(--t-color) 12%, var(--surface-2));
+  }
+  .preview.fresh { border-color: var(--accent-border); }
+  .preview.framed { border: 2px solid var(--t-color); }
   .preview.hidden { border-style: dashed; }
+  .p-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .p-shade { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.45)); }
+  .p-top, .p-words { position: relative; }
   .p-top { display: flex; align-items: flex-start; justify-content: space-between; }
-  .p-words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .p-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .p-sub { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hidden-mark { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); font-weight: var(--fw-medium); color: var(--danger-text); }
-  .p-head { display: flex; align-items: center; gap: var(--sp-2); height: 36px; padding: 0 10px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: var(--fs-xs); color: var(--text-2); }
-  .p-head-text { flex: 1; min-width: 0; }
-  .p-stripe { width: 40px; height: 3px; border-radius: 2px; background: var(--t-color); }
-  .order { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  .o-row { display: flex; align-items: center; gap: 2px; border-radius: var(--radius-sm); border: 1px solid var(--divider); background: var(--surface-2); padding-right: 2px; }
-  .o-row.on { border-color: var(--accent-border); background: var(--accent-tint); }
-  .o-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); padding: 7px 8px; border: none; background: none; font: inherit; font-size: var(--fs-xs); color: var(--text); text-align: left; cursor: pointer; }
+  .p-words { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+  .p-name { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p-sub { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preview.pic .p-name { color: #fff; }
+  .preview.pic .p-sub { color: rgba(255, 255, 255, 0.82); }
+  .hidden-mark {
+    display: inline-flex; align-items: center; gap: var(--sp-1); height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
+    background: var(--danger-bg); color: var(--danger-text); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+  }
+  .p-head {
+    display: flex; align-items: center; gap: var(--sp-2); height: var(--control-h-lg); box-sizing: border-box; padding: 0 var(--sp-3); border-radius: var(--radius-md);
+    background: var(--surface-2); border: 1px solid var(--border); font-size: var(--fs-sm); color: var(--text-2);
+  }
+  .p-head-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p-stripe { width: 44px; height: 3px; border-radius: var(--radius-pill); background: var(--t-color); flex-shrink: 0; }
+
+  /* The order: one card of rows, the current one in the accent. */
+  .order {
+    list-style: none; margin: 0; padding: var(--sp-1); display: flex; flex-direction: column;
+    border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .o-row { position: relative; display: flex; align-items: center; gap: var(--sp-1); min-height: var(--control-h-lg); padding-right: var(--sp-1); border-radius: var(--radius-md); }
+  .o-row + .o-row::before { content: ''; position: absolute; top: 0; left: var(--sp-2); right: var(--sp-2); height: 1px; background: var(--divider); }
+  .o-row.on { background: var(--accent-bg); }
+  .o-row.on::before, .o-row.on + .o-row::before { display: none; }
+  .o-pick {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); height: var(--control-h-lg); padding: 0 var(--sp-2); border: none; background: none;
+    font: inherit; font-size: var(--fs-base); color: var(--text); text-align: left; cursor: pointer;
+  }
+  .o-row.on .o-name { font-weight: var(--fw-bold); }
   .o-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .o-tag { font-size: var(--fs-2xs); color: var(--text-3); flex-shrink: 0; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
+  .o-tag { font-size: var(--fs-xs); color: var(--text-3); flex-shrink: 0; }
+  .icon {
+    flex-shrink: 0; width: var(--control-h-sm); height: var(--control-h-sm); border: none; background: none; color: var(--text-2); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: var(--radius-sm);
+  }
   .icon:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
-  .icon:disabled { opacity: 0.35; cursor: default; }
-  .field-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .icon:disabled { opacity: 0.3; cursor: default; }
+
+  /* The fields. */
+  .field-wrap { display: flex; flex-direction: column; gap: var(--sp-2); }
   .field {
-    width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 8px 10px;
+    width: 100%; height: var(--control-h-lg); box-sizing: border-box; font: inherit; font-size: var(--fs-base); color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 0 var(--sp-3);
   }
   .field:focus { outline: none; border-color: var(--accent-border); }
   .field[aria-invalid='true'] { border-color: var(--danger-border); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
-  .row-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-top: 2px; }
-  .icons { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
-  .cols.phone .icons { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4; }
+
+  /* The mark: the icon always, the one colour (its tile, and the frame of a background), the background if any. */
+  .mark { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .m-card {
+    display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-lg);
+    background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .m-part { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
+  .icons { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: var(--sp-2); }
   .ico {
     aspect-ratio: 1; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
-    border-radius: 11px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2);
+    border-radius: var(--radius-md); border: none; background: var(--surface-3); color: var(--text-2);
   }
-  .ico:hover:not(:disabled) { color: var(--text); border-color: var(--border-2); }
-  .ico.on { background: var(--t-color); border-color: var(--t-color); color: var(--t-ink); }
-  .photo-row { display: flex; align-items: center; gap: var(--sp-3); }
-  .photo-acts { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
-  .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
-  .sw { width: 30px; height: 30px; border-radius: 50%; border: none; padding: 0; cursor: pointer; background: var(--sw); }
+  .ico:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
+  .ico.on, .ico.on:hover:not(:disabled) { background: var(--t-color); color: var(--t-ink); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--t-color); }
+  .ico:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  /* Outside the mark of the chosen one, so both are seen. */
+  .ico.on:focus-visible { outline-offset: 6px; }
+  .swatches { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+  .sw { width: 34px; height: 34px; border-radius: 50%; border: none; padding: 0; cursor: pointer; background: var(--sw); }
   .sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
   .sw:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 4px; }
+  .bg-row { display: flex; align-items: center; gap: var(--sp-4); }
+  /* The picture of the section in the 3:2 of a tile (960×640): cut to fill, the colour as its frame. */
+  .bg-box {
+    position: relative; overflow: hidden; flex-shrink: 0; width: 192px; aspect-ratio: 3 / 2; box-sizing: border-box; border-radius: var(--radius-lg);
+    border: 2px solid var(--t-color);
+  }
+  .bg-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .bg-box.none { border-style: dashed; border-color: var(--border-2); background: var(--surface-3); display: grid; place-items: center; color: var(--text-3); }
+  .bg-box.none.framed { border-color: var(--t-color); }
+  .bg-acts { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
+  .bg-btns { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .bg-btns .btn { gap: var(--sp-2); }
+  .res { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .res .mono { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text); }
+  .drop { color: var(--text-2); }
+
+  /* Hidden. */
   .hide-box {
-    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3); margin-top: 2px; border-radius: var(--radius-md);
+    display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg);
     background: var(--surface-2); border: 1px solid var(--border);
   }
   .hide-box.on { background: var(--danger-bg); border-color: var(--danger-border); }
-  .hide-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  .hide-title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
+  .hide-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+  .hide-title { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .hide-box.on .hide-title :global(svg) { color: var(--danger-text); }
-  .late { display: inline-flex; align-items: flex-start; gap: 6px; font-size: var(--fs-xs); line-height: 1.45; color: var(--warn-text); }
+  .hide-text .hint { line-height: 1.45; }
+  .late { display: inline-flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-xs); line-height: 1.45; color: var(--warn-text); }
   .late :global(svg) { flex-shrink: 0; margin-top: 2px; }
-  .more {
-    align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; border: none; background: none; cursor: pointer;
-    font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text-2);
+  .choice { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  /* A phone (not a tablet's sheet): five icons a row, the background the whole width. */
+  @media (max-width: 600px) {
+    .cols.phone .icons { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .cols.phone .ico { border-radius: var(--radius-lg); }
+    .cols.phone .swatches { gap: var(--sp-2); }
+    .cols.phone .sw { width: 30px; height: 30px; }
+    .cols.phone .bg-row { flex-direction: column; align-items: stretch; }
+    .cols.phone .bg-box { width: 100%; }
   }
-  .choice { display: flex; flex-direction: column; gap: 6px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   @media (pointer: coarse) {
-    .field { font-size: var(--fs-md); }
-    .chip { min-height: 40px; padding-inline: 14px; }
-    .icon { padding: 10px; }
-    .sw { width: 36px; height: 36px; }
+    .field { height: 48px; font-size: var(--fs-md); }
+    .chip { min-height: 40px; padding-inline: var(--sp-4); }
   }
 </style>

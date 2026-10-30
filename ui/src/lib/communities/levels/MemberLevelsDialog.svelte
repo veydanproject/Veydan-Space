@@ -98,6 +98,6 @@
   .text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
   .sub { font-size: var(--fs-2xs); color: var(--text-3); }
-  .tag { font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 6px; border-radius: var(--radius-pill); border: 1px solid var(--border-strong); color: var(--text-2); }
+  .tag { font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border-strong); color: var(--text-2); }
   @media (pointer: coarse) { .check { padding: 10px 4px; } }
 </style>

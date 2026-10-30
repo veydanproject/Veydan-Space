@@ -102,11 +102,11 @@
       </div>
       <div class="servers-actions">
         {#if mode === 'veydan'}
-          <button class="btn btn-ghost btn-sm" disabled={busy} onclick={checkManifest}>
-            <Icon name="refresh-cw" size={13} />{$t('msg_srv_check')}
+          <button class="btn btn-ghost" disabled={busy} onclick={checkManifest}>
+            <Icon name="refresh-cw" size={18} />{$t('msg_srv_check')}
           </button>
         {/if}
-        <button class="btn btn-ghost btn-sm" disabled={busy} onclick={switchMode}>
+        <button class="btn btn-ghost" disabled={busy} onclick={switchMode}>
           {mode === 'own' ? $t('msg_srv_use_veydan') : $t('msg_srv_use_own')}
         </button>
       </div>
@@ -116,9 +116,9 @@
         <b>{$t('msg_srv_cloud_title')}</b>
         <span class="muted small">{$t('msg_srv_cloud_text')}</span>
         <div class="servers-actions">
-          <button class="btn btn-ghost btn-sm" onclick={() => (cloudAccount = false)}>{$t('common_cancel')}</button>
-          <button class="btn btn-ghost btn-sm" disabled={busy} onclick={keepCloudAndSwitch}>{$t('msg_srv_cloud_keep')}</button>
-          <button class="btn btn-danger btn-sm" onclick={() => goto('/cloud?delete=1')}>{$t('msg_srv_cloud_delete')}</button>
+          <button class="btn btn-ghost" onclick={() => (cloudAccount = false)}>{$t('common_cancel')}</button>
+          <button class="btn btn-ghost" disabled={busy} onclick={keepCloudAndSwitch}>{$t('msg_srv_cloud_keep')}</button>
+          <button class="btn btn-danger" onclick={() => goto('/cloud?delete=1')}>{$t('msg_srv_cloud_delete')}</button>
         </div>
       </div>
     {/if}
@@ -181,7 +181,7 @@
         ></button>
         {#if r.source === 'user'}
           <button class="icon-btn danger-soft" title={$t('msg_relay_remove')} disabled={busy} onclick={() => run(() => messengerStore.removeRelay(r.url))}>
-            <Icon name="trash-2" size={13} />
+            <Icon name="trash-2" size={18} />
           </button>
         {:else}
           <span class="icon-spacer"></span>
@@ -197,26 +197,24 @@
 
 <style>
   .relays { max-width: 640px; display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-xs); }
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
   .controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); }
-  .control { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
+  .control { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); }
   .control select {
-    font: inherit; color: var(--text); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 8px;
+    font: inherit; color: var(--text); background: var(--surface-3); min-height: 44px;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
-  .control-info { display: flex; flex-direction: column; }
+  .control select:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .control-info { display: flex; flex-direction: column; gap: 2px; }
   /* A setting row like every other switch: the text takes the row, the switch sits at its end. */
-  .control.silent { flex: 1 1 100%; gap: var(--sp-3); }
+  .control.silent { flex: 1 1 100%; gap: var(--sp-3); min-height: 48px; }
   .control.silent .control-info { flex: 1; min-width: 0; }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-  .row {
-    display: flex; align-items: center; gap: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: var(--surface);
-  }
+  /* The servers as rows of 48 with a line between them (as the facts of «Профиль и ключ»). */
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+  .row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-1) 0; }
+  .row + .row { border-top: 1px solid var(--border); }
   .row.off { opacity: 0.6; }
   .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); word-break: break-all; }
@@ -224,12 +222,12 @@
   .dot.connected { background: var(--success-text); }
   .dot.connecting { background: var(--color-warning); }
   .dot.paused { background: var(--danger-text); }
-  .icon-spacer { width: 28px; }
+  .icon-spacer { width: 32px; flex-shrink: 0; }
   .servers { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
   .servers-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .servers-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .cloud-offer {
     display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-sm);
-    padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+    padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-3);
   }
 </style>

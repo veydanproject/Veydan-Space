@@ -100,13 +100,13 @@
           </span>
           <span class="actions">
             {#if s.kind === 's3'}
-              <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => editCredentials(s)}><Icon name="key" size={12} />{$t('msg_media_keys')}</button>
+              <button class="btn btn-ghost" disabled={busy} onclick={() => editCredentials(s)}><Icon name="key" size={18} />{$t('msg_media_keys')}</button>
             {/if}
-            <button class="btn btn-ghost btn-sm" disabled={busy || !canAct || needsSecret(s)} onclick={() => check(s.id)}>{$t('msg_media_check')}</button>
+            <button class="btn btn-ghost" disabled={busy || !canAct || needsSecret(s)} onclick={() => check(s.id)}>{$t('msg_media_check')}</button>
             <button class="toggle" class:on={s.enabled} disabled={busy} aria-pressed={s.enabled} aria-label={$t("msg_relay_enabled")} title={$t("msg_relay_enabled")}
               onclick={() => run(() => messengerApi.media.setServerEnabled(s.id, !s.enabled))}></button>
             {#if s.source === 'user'}
-              <button class="icon danger" disabled={busy} onclick={() => run(() => messengerApi.media.removeServer(s.id))} title={$t('msg_relay_remove')}><Icon name="trash-2" size={14} /></button>
+              <button class="icon-btn danger-soft" disabled={busy} onclick={() => run(() => messengerApi.media.removeServer(s.id))} title={$t('msg_relay_remove')}><Icon name="trash-2" size={18} /></button>
             {/if}
           </span>
         </li>
@@ -117,9 +117,9 @@
   {#if editing || adding}
     <form class="form" onsubmit={(e) => { e.preventDefault(); if (formValid) save(); }}>
       {#if adding}
-        <div class="seg">
-          <button type="button" class:active={kind === 's3'} onclick={() => (kind = 's3')}>S3</button>
-          <button type="button" class:active={kind === 'blossom'} onclick={() => (kind = 'blossom')}>Blossom</button>
+        <div class="seg kinds" role="radiogroup" aria-label="S3 / Blossom">
+          <button type="button" class="seg-btn" class:active={kind === 's3'} role="radio" aria-checked={kind === 's3'} onclick={() => (kind = 's3')}>S3</button>
+          <button type="button" class="seg-btn" class:active={kind === 'blossom'} role="radio" aria-checked={kind === 'blossom'} onclick={() => (kind = 'blossom')}>Blossom</button>
         </div>
         <label class="wide"><span>{kind === 's3' ? $t('msg_media_endpoint') : 'URL'}</span>
           <input type="text" bind:value={url} placeholder="https://…" spellcheck="false" disabled={busy} /></label>
@@ -134,13 +134,13 @@
           placeholder={editing ? $t('msg_media_secret_keep') : ''} /></label>
       {/if}
       <div class="form-actions wide">
-        <button type="button" class="btn btn-ghost btn-sm" disabled={busy} onclick={resetForm}>{$t('msg_back')}</button>
-        <button type="submit" class="btn btn-primary btn-sm" disabled={busy || !formValid}>{$t('msg_media_save_check')}</button>
+        <button type="button" class="btn btn-ghost" disabled={busy} onclick={resetForm}>{$t('msg_back')}</button>
+        <button type="submit" class="btn btn-primary" disabled={busy || !formValid}>{$t('msg_media_save_check')}</button>
       </div>
       <p class="muted small wide">{$t('msg_media_secret_hint')}</p>
     </form>
   {:else}
-    <button class="btn btn-ghost btn-sm add" disabled={busy} onclick={() => { resetForm(); adding = true; }}><Icon name="plus" size={12} />{$t('msg_media_add')}</button>
+    <button class="btn btn-ghost add" disabled={busy} onclick={() => { resetForm(); adding = true; }}><Icon name="plus" size={18} />{$t('msg_media_add')}</button>
   {/if}
 
   {#if error}<div class="error-msg">{error}</div>{/if}
@@ -148,32 +148,33 @@
 
 <style>
   .media-servers { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; line-height: 1.5; }
   .small { font-size: var(--fs-xs); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-  .row { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); flex-wrap: wrap; }
+  /* The servers as rows of 48 with a line between them (as the facts of «Профиль и ключ»). */
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); min-height: 48px; padding: var(--sp-2) 0; flex-wrap: wrap; }
+  .row + .row { border-top: 1px solid var(--border); }
   .row.off { opacity: 0.6; }
-  .kind { font-size: var(--fs-2xs); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 7px; border-radius: var(--radius-sm); background: var(--accent-tint); color: var(--accent-text-2); }
+  .kind { flex-shrink: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 2px var(--sp-2); border-radius: var(--radius-sm); background: var(--accent-tint); color: var(--accent-text-2); }
   .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 200px; }
   .info code { font-family: var(--font-mono); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta { font-size: var(--fs-2xs); color: var(--text-3); }
+  .meta { font-size: var(--fs-xs); color: var(--text-3); }
   .ok { color: var(--success-text); } .bad { color: var(--danger-text); } .warn { color: var(--warn-text); }
-  .actions { display: inline-flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+  .actions { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .phone .info { flex: 1 1 0; }
   .phone .info code { white-space: normal; overflow-wrap: anywhere; }
   .phone .actions { flex-basis: 100%; justify-content: flex-end; }
   @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
-  .icon.danger:hover { color: var(--danger-text); background: var(--danger-bg); }
-  .form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+  /* The form under the list: a line above it, fields of 44 under captions as on «Профиль и ключ». */
+  .form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
   .form .wide { grid-column: 1 / -1; }
-  .form label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
-  .form input { font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; }
+  .form label { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
+  .form input {
+    font: inherit; font-size: var(--fs-base); font-weight: var(--fw-normal); color: var(--text); min-height: 44px; min-width: 0;
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
+  }
   .form input:focus { outline: none; border-color: var(--accent-border); }
-  .form-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }
-  .seg { grid-column: 1 / -1; display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; width: max-content; }
-  .seg button { border: none; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 5px 14px; cursor: pointer; }
-  .seg button.active { background: var(--accent-tint); color: var(--accent-text-2); }
+  .form-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); flex-wrap: wrap; }
+  .kinds { grid-column: 1 / -1; justify-self: start; }
   .add { align-self: flex-start; }
 </style>

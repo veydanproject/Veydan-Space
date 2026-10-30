@@ -20,8 +20,10 @@
     /** The contact open in the pane (its key). */
     selected?: string | null;
     onselect: (c: MessengerContact) => void;
+    /** The column is its covers (72 px, a computer): an avatar per contact, the name its tooltip. */
+    covers?: boolean;
   }
-  let { query, selected = null, onselect }: Props = $props();
+  let { query, selected = null, onselect, covers = false }: Props = $props();
 
   const q = $derived(query.trim());
   const haystacks = $derived(contactHaystacks(messengerStore.contacts));
@@ -32,6 +34,23 @@
   );
 </script>
 
+{#if covers}
+  <div class="covers">
+    {#if contacts.length === 0}
+      <span class="list-cover-empty" role="status" aria-label={q ? $t('msg_chats_nothing_found') : $t('msg_contacts_empty')} title={q ? $t('msg_chats_nothing_found') : $t('msg_contacts_empty')}><Icon name="book-user" size={22} /></span>
+    {:else}
+      <ul class="covers-list">
+        {#each contacts as c (c.pubkey)}
+          <li>
+            <button class="list-cover" class:active={selected === c.pubkey} title={contactLabel(c)} aria-label={contactLabel(c)} onclick={() => onselect(c)}>
+              <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={42} online={presenceStore.status(c.pubkey) === 'online'} />
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+{:else}
 <div class="list-wrap">
   {#if contacts.length === 0}
     <div class="empty">
@@ -40,14 +59,14 @@
       {#if !q}<span>{$t('msg_contacts_text')}</span>{/if}
     </div>
   {:else}
-    <ul class="list">
+    <ul class="list-rows">
       {#each contacts as c (c.pubkey)}
         <li>
-          <button class="row" class:active={selected === c.pubkey} onclick={() => onselect(c)}>
-            <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={42} online={presenceStore.status(c.pubkey) === 'online'} />
-            <span class="body">
-              <span class="name">{contactLabel(c)}</span>
-              <span class="meta">{c.profile?.nip05 || `${c.npub.slice(0, 16)}…`}</span>
+          <button class="list-row" class:active={selected === c.pubkey} onclick={() => onselect(c)}>
+            <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={48} online={presenceStore.status(c.pubkey) === 'online'} />
+            <span class="list-row-body">
+              <span class="list-row-top"><span class="list-row-name">{contactLabel(c)}</span></span>
+              <span class="list-row-bottom"><span class="list-row-line">{c.profile?.nip05 || `${c.npub.slice(0, 16)}…`}</span></span>
             </span>
           </button>
         </li>
@@ -55,21 +74,15 @@
     </ul>
   {/if}
 </div>
+{/if}
 
 <style>
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-  .row {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 64px; padding: var(--sp-2) var(--sp-3);
-    border: none; border-radius: var(--radius-lg); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
-    transition: background var(--dur-fast) var(--ease);
-  }
-  .row:hover { background: var(--surface-hover); }
-  .row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
-  .body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-  .name { font-weight: var(--fw-semibold); font-size: var(--fs-body); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows. */
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; padding: var(--sp-8) var(--sp-4); color: var(--text-3); }
   .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
   .empty span { font-size: var(--fs-xs); line-height: 1.5; }
+  /* The column of covers: the open one lit. */
+  .covers { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; padding: var(--sp-1) 0 var(--sp-3); }
+  .covers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }
 </style>

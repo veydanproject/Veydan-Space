@@ -8,7 +8,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
@@ -69,6 +72,90 @@ internal object Notifier {
 
   fun allowed(context: Context): Boolean =
     NotificationManagerCompat.from(context).areNotificationsEnabled()
+
+  /**
+   * What keeps a message from ringing and showing on top: notifications
+   * off for the app (`off`), or a channel of messages (`dm`, `groups`)
+   * below high or without a sound it can play, which only the user or the
+   * phone could do: the channels are made high, with the default sound.
+   * Null when both ring. The channels are not made anew for it: what the
+   * user chose there stays as they chose.
+   */
+  fun quiet(context: Context): String? {
+    if (!allowed(context)) return "off"
+    ensureChannels(context)
+    val manager = context.getSystemService(NotificationManager::class.java) ?: return null
+    return listOf(CHANNEL_DM, CHANNEL_GROUPS).firstOrNull {
+      val channel = manager.getNotificationChannel(it)
+      channel == null || channel.importance < NotificationManager.IMPORTANCE_HIGH || sound(context, channel).let { s -> s == "none" || s == "missing" }
+    }
+  }
+
+  /**
+   * The sound of a channel: `yes`, `none` when "None" is chosen (for the
+   * channel, or for the phone when the channel keeps the phone's default),
+   * `missing` when its file is gone: deleted, or renumbered in the media
+   * store after the phone moved its data. `unknown` when this app may not
+   * read the file (the user's own music): neither there nor gone as far as
+   * it can tell, so not quiet. One open of the file, no player.
+   */
+  private fun sound(context: Context, channel: NotificationChannel): String {
+    val uri = channel.sound ?: return "none"
+    val direct = opens(context, uri)
+    if (direct != "missing") return direct
+    // The phone's default (`content://settings/system/notification_sound`)
+    // opens only through a cache the system may not have made; the sound it
+    // stands for is what plays.
+    val type = RingtoneManager.getDefaultType(uri)
+    if (type == -1) return direct
+    val actual = RingtoneManager.getActualDefaultRingtoneUri(context, type) ?: return "none"
+    return opens(context, actual)
+  }
+
+  private fun opens(context: Context, uri: Uri): String =
+    try {
+      val file = context.contentResolver.openAssetFileDescriptor(uri, "r")
+      file?.close()
+      if (file == null) "missing" else "yes"
+    } catch (e: SecurityException) {
+      "unknown"
+    } catch (e: Exception) {
+      "missing"
+    }
+
+  /** Where the system settings for [quiet] are: its channel, or the app's notifications. */
+  fun settings(context: Context): Intent {
+    val channel = quiet(context)?.takeIf { it != "off" }
+    val intent = if (channel != null) {
+      Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_CHANNEL_ID, channel)
+    } else {
+      Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+    }
+    return intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+  }
+
+  /**
+   * The channels of messages as the system keeps them, a line for the log:
+   * a phone where messages come quiet is read by one logcat.
+   */
+  fun channels(context: Context): String {
+    val manager = context.getSystemService(NotificationManager::class.java) ?: return "no notification manager"
+    val each = listOf(CHANNEL_DM, CHANNEL_GROUPS).joinToString(", ") { id ->
+      val channel = manager.getNotificationChannel(id)
+      if (channel == null) "$id: none" else "$id: importance=${channel.importance} sound=${sound(context, channel)}"
+    }
+    return "notifications=${if (allowed(context)) "on" else "off"}, $each"
+  }
+
+  /** What the log adds to "shown" when the channel of the message would not ring: why nothing was heard. */
+  fun quietNote(context: Context, kind: String): String {
+    val id = if (kind == "group") CHANNEL_GROUPS else CHANNEL_DM
+    val manager = context.getSystemService(NotificationManager::class.java) ?: return ""
+    val channel = manager.getNotificationChannel(id) ?: return " (channel $id: none)"
+    val sound = sound(context, channel)
+    if (channel.importance >= NotificationManager.IMPORTANCE_HIGH && sound != "none" && sound != "missing") return ""
+    return " (channel $id quiet: importance=${channel.importance} sound=$sound)"
+  }
 
   /** A message with everything known about it. False when the system would not show it. */
   fun show(context: Context, notice: Notice): Boolean {

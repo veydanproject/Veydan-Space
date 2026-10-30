@@ -164,10 +164,13 @@ pub(crate) fn code_of(text: &str) -> &'static str {
         "no key of the channel yet" => "channel_no_key",
         "no key of the channel to hand the new link on" => "channel_no_key",
         "the journal of the channel is not here yet" => "channel_not_here_yet",
+        // A take of the keeper before the channel came to its head (wire §15).
+        communities_core::handover::EPOCHS_NOT_HERE | communities_core::handover::NO_READERS => "channel_not_here_yet",
         "the link names another owner" => "channel_link_owner",
         "the owner does not leave" => "channel_owner_stays",
         "this device keeps the channel" => "channel_kept_here",
         "too many open invitations" => "channel_too_many_invites",
+        communities_core::service::ChannelService::ALREADY_MEMBER => "channel_already_member",
         "this channel takes invitations only" => "channel_invite_only",
         "the invitation expired" => "channel_invite_expired",
         "unknown invitation" => "channel_invite_unknown",
@@ -1889,6 +1892,15 @@ impl Shared {
                 }
             }
         });
+        // A marker of a catch-up read (`ChannelService::settle`) goes down
+        // the same stream, behind the pages the pool handed it: the keeper
+        // is taken over only once what the relays answered was read.
+        let settle_tx = pool_tx.clone();
+        let me = communities_core::service::ChannelService::me(keys).map_err(map_err)?;
+        driver.service.set_settle_sink(Some(Arc::new(move |json| {
+            let (Some(id), Some(url)) = (messenger_core::EventId::parse(json["id"].as_str().unwrap_or_default()), RelayUrl::parse("wss://settle.invalid")) else { return false };
+            settle_tx.send(RawEvent { id, kind: 0, pubkey: me.clone(), created_at: messenger_core::Timestamp(0), json, source: EventSource::Sync { url } }).is_ok()
+        })));
         route_channels(Some(ChannelRoutes { relays: Arc::new(move |id| routes.of(id)), events: pool_tx }));
         let task = tauri::async_runtime::spawn(driver.clone().run(events, signals));
         // The keepers' turn beside the loop, from the start (what a run

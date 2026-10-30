@@ -497,6 +497,13 @@ impl World {
         });
         // No automatic attempts of a file: a failure is told at once.
         let svc = ChannelService::new(db, Arc::new(MemSecrets::default()), net.clone(), self.hosts.clone(), self.clock.clone()).with_retry_delays(Vec::new());
+        // A marker of `settle` comes behind what a Sync brought, as the
+        // module's loop reads its stream.
+        let sink_net = net.clone();
+        svc.set_settle_sink(Some(Arc::new(move |m| {
+            lock(&sink_net.synced).push(m);
+            true
+        })));
         svc.set_signer(Some(keys.clone()));
         Node { keys, me, svc, net, events_seen: Mutex::new(0), inbox_seen: Mutex::new(HashMap::new()), hold: Mutex::new(BTreeSet::new()), held: Mutex::new(Vec::new()), errors: Mutex::new(Vec::new()), wake_at: Mutex::new(None) }
     }

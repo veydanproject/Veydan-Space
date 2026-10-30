@@ -61,6 +61,14 @@
   <span class="net {netState}" title={$t(`msg_net_${netState}` as 'msg_net_on', { connected: String(connected), total: String(total) })}></span>
 {/snippet}
 
+<!-- The offers are the head of the list: they scroll away with the rows rather than stand over them. -->
+{#snippet offers()}
+  <div class="offers">
+    <BridgeOffer />
+    <PushOffer />
+  </div>
+{/snippet}
+
 {#snippet actions()}
   {#if !needsIdentity && s?.runtime}<MeButton />{/if}
 {/snippet}
@@ -88,13 +96,10 @@
     </div>
     {#if host}
       {#if host.above}{@const Above = host.above}<Above />{/if}
-    {:else if kind === 'dm'}
-      <BridgeOffer />
-      <PushOffer />
-    {:else}
+    {:else if kind !== 'dm'}
       <InvitesBar />
     {/if}
-    <ChatList {query} {kind} onopen={open} onopenrow={(id) => goto(sectionItemHref(id))} />
+    <ChatList {query} {kind} onopen={open} onopenrow={(id) => goto(sectionItemHref(id))} top={!host && kind === 'dm' ? offers : undefined} />
     {#if host}
       <button class="fab" onclick={() => (creating = true)} aria-label={$t(host.newTitle)}><Icon name={host.newIcon} size={22} /></button>
     {:else if kind === 'group'}
@@ -119,18 +124,23 @@
   .intro { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
   .strip { padding: var(--sp-2) var(--sp-4); font-size: var(--fs-xs); color: var(--warn-text); background: var(--warn-bg); border-bottom: 1px solid var(--warn-border); }
   .search {
-    display: flex; align-items: center; gap: 8px; margin: var(--sp-2) var(--sp-3); padding: 0 12px; flex-shrink: 0;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-3);
+    display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) var(--sp-3); padding: 0 var(--sp-4); flex-shrink: 0;
+    background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
   }
   /* The pill is the field: its border is the one focus mark. */
   .search:focus-within { border-color: var(--accent-border); }
   .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-md); color: var(--text); min-height: 42px; padding: 0; }
   .search input::-webkit-search-cancel-button { display: none; }
-  .clear { border: none; background: none; color: var(--text-3); display: inline-flex; padding: 8px; }
+  .clear { border: none; background: none; color: var(--text-3); display: inline-flex; padding: var(--sp-2); }
+  /* Inside the list, whose own side gap (--sp-2) would add to the cards' margin: they keep the edge of the search. */
+  .offers { margin: 0 calc(-1 * var(--sp-2)); }
   .fab {
     position: absolute; right: var(--sp-4); bottom: var(--sp-4); width: 56px; height: 56px; border: none; border-radius: 50%;
     background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center;
     box-shadow: var(--shadow-accent);
   }
   .fab:active { filter: brightness(0.92); }
+  /* The list scrolls its last row out from under the «+»: the button (56), its offset and the list's own gap.
+     The bar of sections lies under .content and holds the safe area itself. */
+  :global(.list-wrap):has(~ .fab) { padding-bottom: calc(56px + var(--sp-4) + var(--sp-2)); }
 </style>

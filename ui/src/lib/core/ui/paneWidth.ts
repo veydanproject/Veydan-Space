@@ -46,3 +46,52 @@ export function keyWidth(width: number, key: string, side: 'left' | 'right', min
   if (key === 'End') return clampWidth(max, min, max);
   return null;
 }
+
+// The list's column of the messenger (chats, groups, channels, calls,
+// contacts): words from 260 to 480 px, 350 by default; dragged under 180 it
+// is the column of covers, 72 px, and goes no narrower; dragged out of it
+// past 180 it comes back at 260.
+
+/** The column of covers. */
+export const LIST_COVERS = 72;
+/** The narrowest and the widest with words, and the default. */
+export const LIST_MIN = 260;
+export const LIST_MAX = 480;
+export const LIST_DEFAULT = 350;
+/** Under this the column is its covers. */
+export const LIST_FOLD = 180;
+/** What the runtime keeps for the covers: it keeps 200…2000 px (`ui_prefs`), so the covers go as its least. */
+export const LIST_KEPT_COVERS = 200;
+/** The least the conversation beside the list keeps of the window. */
+const FEED_MIN = 400;
+
+/** The width under the pointer (`px`, already within the bounds) → the one the column takes. */
+export function listWidth(px: number): number {
+  if (px < LIST_FOLD) return LIST_COVERS;
+  if (px < LIST_MIN) return LIST_MIN;
+  return px;
+}
+
+/** The keyboard (PaneResizer's `snap`): a step out of the covers is 260 at once, a step under 260 the covers. */
+export function listKeyWidth(px: number, prev: number): number {
+  if (px > prev && prev < LIST_MIN) return LIST_MIN;
+  if (px < prev && px < LIST_MIN) return LIST_COVERS;
+  return listWidth(px);
+}
+
+/** The widest the column may be in a shell `shellWidth` wide (its sections' column and gaps taken): 480, the conversation keeping 400. */
+export function listMax(shellWidth: number): number {
+  if (!(shellWidth > 0)) return LIST_MAX;
+  return Math.max(LIST_MIN, Math.min(LIST_MAX, Math.floor(shellWidth - 72 - 24 - FEED_MIN)));
+}
+
+/** The width kept (`null`: never set) → the column's: anything kept under 260 is the covers. */
+export function keptListWidth(kept: number | null, max: number): number {
+  if (kept == null) return clampWidth(LIST_DEFAULT, LIST_MIN, max);
+  return kept < LIST_MIN ? LIST_COVERS : clampWidth(kept, LIST_MIN, max);
+}
+
+/** The column's width → what is kept. */
+export function keepListWidth(px: number): number {
+  return px < LIST_MIN ? LIST_KEPT_COVERS : Math.round(px);
+}

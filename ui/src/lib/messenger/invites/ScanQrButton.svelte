@@ -41,17 +41,16 @@
 
 {#if !phone}
   <Dialog bind:open title={$t('msg_inv_scan_title')} width="min(420px, calc(100vw - 24px))">
-    {#if open}
-      <div class="body">
-        <p class="hint">{$t('msg_inv_scan_image_hint')}</p>
-        <ScanQr onchat={opened} />
-      </div>
-    {/if}
+    {#if open}<p class="hint">{$t('msg_inv_scan_image_hint')}</p>{/if}
+    <!-- «Выбрать картинку» (and what it read) at the window's foot (the owner's rule). -->
+    {#snippet footer()}
+      {#if open}<div class="foot"><ScanQr onchat={opened} /></div>{/if}
+    {/snippet}
   </Dialog>
 {/if}
 
 <style>
   .btn :global(svg) { margin-right: 2px; }
-  .body { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .foot { flex: 1; min-width: 0; }
   .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
 </style>

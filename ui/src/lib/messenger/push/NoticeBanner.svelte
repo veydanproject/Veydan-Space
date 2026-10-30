@@ -266,7 +266,7 @@
   .title { font-weight: var(--fw-semibold); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .more {
     flex-shrink: 0; font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
-    padding: 0 6px; border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text-2);
+    padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text-2);
   }
   .when { margin-left: auto; flex-shrink: 0; font-size: var(--fs-2xs); color: var(--text-3); }
   .label { font-size: var(--fs-2xs); color: var(--accent-text-2); }

@@ -61,6 +61,8 @@
       </label>
 
       <!-- A channel's post is named by the report itself: there are no chat messages to attach. -->
+      {#if s.target.context.t !== 'channel' || s.target.canBlock}
+      <div class="checks">
       {#if s.target.context.t !== 'channel'}
         <label class="check">
           <input type="checkbox" bind:checked={s.attach} disabled={s.busy} />
@@ -72,6 +74,8 @@
           <input type="checkbox" bind:checked={s.block} disabled={s.busy} />
           <span>{$t('msg_report_block', { name: s.target.name })}</span>
         </label>
+      {/if}
+      </div>
       {/if}
 
       {#if s.target.target === 'group'}<p class="note">{$t('msg_report_group_note')}</p>{/if}
@@ -88,14 +92,29 @@
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .list { display: flex; flex-direction: column; gap: 2px; }
-  .list.sub { padding-inline-start: var(--sp-5); border-inline-start: 2px solid var(--border); margin-inline-start: 7px; }
-  .radio, .check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-body); cursor: pointer; user-select: none; padding-block: 4px; }
-  .check { align-items: flex-start; }
-  .field { display: flex; flex-direction: column; gap: 4px; }
-  .label { font-size: var(--fs-xs); color: var(--text-3); }
-  textarea { resize: vertical; min-height: 64px; font: inherit; font-size: var(--fs-sm); color: var(--text-body); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
-  .count { align-self: flex-end; font-size: var(--fs-2xs); color: var(--text-3); }
-  .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
-  @media (pointer: coarse) { .radio, .check { min-height: 40px; } }
+  /* The reasons: one card of rows (design book, «Пожаловаться»). */
+  .list {
+    display: flex; flex-direction: column; padding: var(--sp-1);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2);
+  }
+  .list.sub { margin-top: calc(-1 * var(--sp-2)); margin-inline-start: var(--sp-6); }
+  .radio, .check { display: flex; gap: var(--sp-3); font-size: var(--fs-base); color: var(--text-body); cursor: pointer; user-select: none; }
+  .radio { align-items: center; min-height: 40px; padding: 0 var(--sp-3); border-radius: var(--radius); }
+  .radio:hover { background: var(--surface-hover); color: var(--text); }
+  .radio:has(input:checked) { color: var(--text); }
+  .radio:has(input:focus-visible) { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .radio input:focus-visible { outline: none; }
+  .checks { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .check { align-items: flex-start; line-height: 1.45; }
+  .check input { margin-top: 2px; }
+  .field { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
+  textarea {
+    resize: vertical; min-height: 80px; font: inherit; font-size: var(--fs-base); line-height: 1.45; color: var(--text);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3);
+  }
+  textarea:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 0; }
+  .count { align-self: flex-end; margin-top: calc(-1 * var(--sp-1)); font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+  @media (pointer: coarse) { .radio { min-height: 44px; } .check { min-height: 40px; } }
 </style>

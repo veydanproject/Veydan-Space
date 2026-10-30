@@ -166,22 +166,22 @@
       <ul class="facts">
         {#if website}
           <li>
-            <span class="fact-icon"><Icon name="world" size={14} /></span>
+            <span class="fact-icon"><Icon name="world" size={16} /></span>
             <button type="button" class="link" onclick={openSite} title={website}>{shortSite(website)}</button>
           </li>
         {/if}
         {#if p?.lud16}
           <li>
-            <span class="fact-icon"><Icon name="zap" size={14} /></span>
+            <span class="fact-icon"><Icon name="zap" size={16} /></span>
             <span class="value">{p.lud16}</span>
           </li>
         {/if}
         {#if own?.phone}
           <li class="phone">
-            <span class="fact-icon"><Icon name="phone" size={14} /></span>
+            <span class="fact-icon"><Icon name="phone" size={16} /></span>
             <div class="phone-text">
               <button type="button" class="link plain" onclick={copyPhone} title={$t('msg_copy')}>{copied ? $t('msg_card_copied') : own.phone}</button>
-              <span class="private-note"><Icon name="lock-square-rounded" size={11} />{$t('msg_profile_phone_view_hint')}</span>
+              <span class="private-note"><Icon name="lock-square-rounded" size={12} />{$t('msg_profile_phone_view_hint')}</span>
             </div>
           </li>
         {/if}
@@ -191,8 +191,8 @@
     {#if saved}<div class="saved" role="status"><Icon name="check" size={13} />{$t('msg_profile_saved')}</div>{/if}
 
     <div class="send">
-      <button class="btn btn-primary btn-sm" disabled={!canAct || shareBusy} onclick={share}>
-        <Icon name="share" size={13} />{$t('msg_share_out')}
+      <button class="btn btn-primary" disabled={!canAct || shareBusy} onclick={share}>
+        <Icon name="upload" size={18} />{$t('msg_share_out')}
       </button>
       <p class="hint">{$t('msg_share_out_hint')}</p>
       {#if shareError}<div class="error-msg">{shareError}</div>{/if}
@@ -205,39 +205,45 @@
 <ShareOutSheet bind:open={sharing} item={shareItem} title={$t('msg_share_out')} qr={() => messengerApi.links.contactQr(shareId)} />
 
 <style>
-  .own { min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: var(--sp-3); }
+  /* A card of the settings page: surface-2 with a line, radius 16 (design book, «Профиль и ключ»). */
+  .card.own {
+    min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); box-shadow: none;
+  }
   .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
-  .title-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .card-title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
+  .card-title :global(svg) { color: var(--text-2); }
+  .title-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
   .btn :global(svg) { margin-right: 2px; }
-  .head { display: flex; gap: var(--sp-3); align-items: center; min-width: 0; }
+  .head { display: flex; gap: var(--sp-4); align-items: center; min-width: 0; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow-wrap: anywhere; word-break: break-word; }
+  .name { font-size: var(--fs-lg); font-weight: var(--fw-bold); overflow-wrap: anywhere; word-break: break-word; }
   .name.unnamed { color: var(--text-3); font-weight: var(--fw-semibold); }
-  .meta { color: var(--text-3); font-size: var(--fs-xs); overflow-wrap: anywhere; word-break: break-word; }
+  .meta { color: var(--text-3); font-size: var(--fs-sm); overflow-wrap: anywhere; word-break: break-word; }
   .nip05 { display: inline-flex; align-items: center; gap: 4px; }
   .nip05.ok { color: var(--success-text); }
-  .facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-  .facts li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; font-size: var(--fs-sm); }
+  /* Site, lightning address, phone: rows with a tile, a line between them. */
+  .facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .facts li { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-1) 0; font-size: var(--fs-base); }
+  .facts li + li { border-top: 1px solid var(--border); }
   .fact-icon {
-    width: 28px; height: 28px; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-2);
+    width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); background: var(--surface-3); border: 1px solid var(--border); color: var(--text-2);
     display: inline-flex; align-items: center; justify-content: center;
   }
-  .value { padding-top: 5px; overflow-wrap: anywhere; word-break: break-word; color: var(--text-body); }
+  .value { overflow-wrap: anywhere; word-break: break-word; color: var(--text-body); }
   .link {
-    padding: 5px 0 0; border: none; background: none; cursor: pointer; font: inherit; text-align: left;
+    padding: 0; border: none; background: none; cursor: pointer; font: inherit; text-align: left;
     color: var(--accent-text-3); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-word; min-width: 0;
   }
   .link.plain { color: var(--text); text-decoration: none; font-variant-numeric: tabular-nums; }
-  .link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .link:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; border-radius: 4px; }
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .private-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text); }
   .saved { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--success-text); }
   .send { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
-  .hint { margin: 0; flex: 1; min-width: 200px; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
+  .hint { margin: 0; flex: 1; min-width: 200px; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
   @media (pointer: coarse) {
-    .fact-icon { width: 32px; height: 32px; }
-    .link { min-height: 40px; padding-top: 6px; }
+    .link { min-height: 40px; display: inline-flex; align-items: center; }
     .send .btn { width: 100%; }
   }
 </style>

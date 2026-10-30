@@ -340,6 +340,7 @@ messenger_profile_own_set messenger all
 messenger_profile_request messenger all
 messenger_push_clear messenger all
 messenger_push_mark_offered messenger all
+messenger_push_open_settings messenger all
 messenger_push_refresh messenger all
 messenger_push_set_enabled messenger all
 messenger_push_set_prefs messenger all

@@ -16,14 +16,18 @@
     onback?: () => void;
     /** The × of the head (default true); a question with its own «Отмена» has none (design kit, dialog on a phone). */
     closable?: boolean;
+    /** Beside the title, in the head (a «?» of what the title means). */
+    titleAside?: Snippet;
     /** Pulled up it grows to the whole screen (the head is then the grip), down it shrinks back, then closes. */
     expandable?: boolean;
     /** The name a screen reader says when the sheet has no title (default the title). */
     label?: string;
     children: Snippet;
+    /** The sheet's actions: under the scrolling body, always in sight (the owner's rule: the buttons stay at the foot, the middle scrolls). */
+    footer?: Snippet;
   }
 
-  let { open, title = '', onclose, onback, closable = true, expandable = false, label, children }: Props = $props();
+  let { open, title = '', onclose, onback, closable = true, titleAside, expandable = false, label, children, footer }: Props = $props();
 
   let sheetEl = $state<HTMLDivElement>();
   let dragY = $state(0);
@@ -124,7 +128,11 @@
             <Icon name="arrow-left" size={20} />
           </button>
         {/if}
-        <h2>{title}</h2>
+        <!-- The «?» right after the title, outside the heading: its note is not read as part of the title. -->
+        <div class="title-row">
+          <h2>{title}</h2>
+          {#if titleAside}<span class="aside" role="presentation" onpointerdown={(e) => e.stopPropagation()}>{@render titleAside()}</span>{/if}
+        </div>
         {#if closable}<button type="button" class="m-ibtn" onclick={onclose} aria-label={$t('common_close')} onpointerdown={(e) => e.stopPropagation()}>
           <Icon name="x" size={20} />
         </button>{/if}
@@ -133,6 +141,8 @@
     <div class="body">
       {@render children()}
     </div>
+    <!-- Outside the body: it never scrolls away; the sheet's bottom padding keeps it above the safe area. -->
+    {#if footer}<div class="foot">{@render footer()}</div>{/if}
   </div>
 {/if}
 
@@ -173,7 +183,11 @@
     touch-action: none;
     flex-shrink: 0;
   }
-  h2 { flex: 1; margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); pointer-events: none; }
+  /* The title and what it keeps beside it: dragged with the head; the row a note opens under. */
+  .title-row { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; pointer-events: none; }
+  h2 { min-width: 0; margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); }
+  /* What the title keeps beside it (a «?»): pressed, not dragged; its note is placed by the title's row. */
+  .aside { display: inline-flex; pointer-events: auto; }
   .body {
     flex: 0 1 auto;
     min-height: 0;
@@ -184,4 +198,5 @@
     touch-action: pan-y;
   }
   .body > :global(*) { flex-shrink: 0; }
+  .foot { flex-shrink: 0; padding-top: var(--sp-3); }
 </style>

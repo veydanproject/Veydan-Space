@@ -53,6 +53,10 @@ pub struct State {
     pub reason: Option<String>,
     pub permission: Permission,
     pub app_id: String,
+    /// What keeps messages from ringing: `off` (notifications off for the
+    /// app), `dm` or `groups` (that channel below high); none when they ring.
+    #[serde(default)]
+    pub quiet: Option<String>,
 }
 
 /// May the app show notifications.
@@ -140,6 +144,12 @@ impl<R: Runtime> VeydanPush<R> {
 
     pub async fn permission(&self) -> Result<Permission> {
         Ok(self.call::<PermissionAnswer>("permissionState", ()).await?.state)
+    }
+
+    /// Opens the system settings of what [`State::quiet`] names: the quiet
+    /// channel, or the app's notifications.
+    pub async fn open_settings(&self) -> Result<()> {
+        self.call::<serde_json::Value>("openSettings", ()).await.map(|_| ())
     }
 
     /// Shows the system question when it may still be shown.

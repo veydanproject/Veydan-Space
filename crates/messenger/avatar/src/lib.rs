@@ -37,7 +37,7 @@ use sha2::{Digest, Sha256};
 pub use clip::{picture_ext, png_of_rgba, MAX_CLIP_PIXELS};
 pub use decode::{decode, still_photo, upright_size, Decoded};
 pub use error::AvatarError;
-pub use square::{card_thumb, crop_square, photo_jpeg, preview_jpeg, square_thumb, CropRect};
+pub use square::{card_thumb, crop_center, crop_square, photo_jpeg, preview_jpeg, square_thumb, CropRect};
 
 /// The largest file a picture is read from.
 pub const MAX_INPUT_BYTES: usize = 40 * 1024 * 1024;

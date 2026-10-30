@@ -75,13 +75,10 @@
 </script>
 
 <Dialog bind:open title={purpose === 'author' ? $t('chan_add_author_title', { name: detail.channel.name }) : $t('chan_invite_title', { name: detail.channel.name })}
-  width="min(440px, calc(100vw - 24px))">
+  width="min(440px, calc(100vw - 24px))" footer={looksLikeKey ? keyFooter : undefined}>
   <div class="body">
     <input type="text" bind:value={key} placeholder={$t('chan_invite_placeholder')} aria-label={$t('chan_invite_field')} spellcheck="false" disabled={busy}
       onkeydown={(e) => { if (e.key === 'Enter' && looksLikeKey) pickTyped(); }} />
-    {#if looksLikeKey}
-      <button class="btn btn-primary" disabled={busy} onclick={pickTyped}>{cta}</button>
-    {/if}
     <p class="hint">{purpose === 'author' ? $t('chan_add_author_hint') : $t('chan_invite_hint')}</p>
     {#if error}<div class="error-msg">{error}</div>{/if}
     {#if shown.length}
@@ -102,6 +99,11 @@
   </div>
 </Dialog>
 
+<!-- The window's verb for a typed key stays at its foot (the owner's rule); a row keeps its own. -->
+{#snippet keyFooter()}
+  <button class="btn btn-primary" disabled={busy} onclick={pickTyped}>{cta}</button>
+{/snippet}
+
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   input {
@@ -114,6 +116,5 @@
   .row { display: flex; align-items: center; gap: var(--sp-3); padding: 6px 8px; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .done { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text, var(--success)); }
-  .body > .btn { justify-content: center; }
   @media (pointer: coarse) { input { font-size: var(--fs-md); min-height: 44px; } }
 </style>

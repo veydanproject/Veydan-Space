@@ -108,6 +108,38 @@ pub fn crop_square(img: &Decoded, rect: CropRect, side: u32) -> Result<Vec<u8>, 
     Ok(jpeg(&scale_square(&part, side), QUALITY))
 }
 
+/// The middle of the picture in the shape `width` by `height` (as much of it
+/// as that shape holds), scaled to exactly that, up or down; at the best
+/// quality that keeps the JPEG within `max_bytes` (a photo of noise may need
+/// less than `QUALITY`). The photo of a channel's section, 960×640.
+pub fn crop_center(img: &Decoded, width: u32, height: u32, max_bytes: usize) -> Result<Vec<u8>, AvatarError> {
+    if width == 0 || height == 0 || width > MAX_PHOTO_SIDE || height > MAX_PHOTO_SIDE {
+        return Err(AvatarError::BadCrop);
+    }
+    let (iw, ih) = (img.width(), img.height());
+    let (wide, tall) = (u64::from(iw) * u64::from(height), u64::from(ih) * u64::from(width));
+    let (cw, ch) = if wide > tall {
+        (((u64::from(ih) * u64::from(width)) / u64::from(height)).clamp(1, u64::from(iw)) as u32, ih)
+    } else {
+        (iw, ((u64::from(iw) * u64::from(height)) / u64::from(width)).clamp(1, u64::from(ih)) as u32)
+    };
+    let part = imageops::crop_imm(&img.rgb, (iw - cw) / 2, (ih - ch) / 2, cw, ch).to_image();
+    let scaled = if (cw, ch) == (width, height) {
+        part
+    } else if cw > width {
+        shrink(&part, width, height)
+    } else {
+        imageops::resize(&part, width, height, FilterType::Lanczos3)
+    };
+    for quality in std::iter::once(QUALITY).chain(CARD_QUALITIES) {
+        let out = jpeg(&scaled, quality);
+        if out.len() <= max_bytes {
+            return Ok(out);
+        }
+    }
+    Err(AvatarError::TooLarge)
+}
+
 /// Any picture as a square of its center, `side` by `side` or the size of
 /// that square when the picture is smaller (never scaled up). Made for the
 /// avatars of others, so decoded within their smaller budget.

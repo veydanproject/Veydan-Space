@@ -6,7 +6,7 @@
   import { onMount } from 'svelte';
   import { accountSource, type AccountLink } from '$lib/core/account';
   import { t, type TranslationKey } from '$lib/core/i18n';
-  import NavRow from '$lib/cloud/NavRow.svelte';
+  import NavRow from '$lib/core/ui/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
 
   /** How many rows there are, for the page that shows them under a tab of their own. */
@@ -27,7 +27,7 @@
 {#if links.length > 0}
   <RowList label={$t('cloud_account_owner')}>
     {#each links as link (link.id)}
-      <NavRow icon={link.icon} title={$t(link.title as TranslationKey)} sub={link.value ? $t(link.value as TranslationKey) : ''} href={link.href} />
+      <NavRow variant="list" icon={link.icon} title={$t(link.title as TranslationKey)} sub={link.value ? $t(link.value as TranslationKey) : ''} href={link.href} />
     {/each}
   </RowList>
 {/if}

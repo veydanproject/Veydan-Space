@@ -568,6 +568,35 @@ fn crop_square_scales_a_small_part_up() {
 }
 
 #[test]
+fn crop_center_cuts_the_middle_in_the_shape_asked() {
+    // A wide picture: its middle in 3:2, full height; red on the left, blue on the right.
+    let decoded = decode(&png_rgb(&two_tone(600, 200))).unwrap();
+    let jpeg = crop_center(&decoded, 960, 640, 1024 * 1024).unwrap();
+    assert_clean_jpeg(&jpeg);
+    let out = rgb_of(&jpeg);
+    assert_eq!(out.dimensions(), (960, 640));
+    assert!(is_red(out.get_pixel(20, 320)));
+    assert!(is_blue(out.get_pixel(940, 320)));
+
+    // A tall picture: its middle 30×20 (rows 140..160), the whole width, scaled up; red in the middle of that.
+    let tall = RgbImage::from_fn(30, 300, |_, y| if (145..155).contains(&y) { Rgb([255, 0, 0]) } else { Rgb([0, 0, 255]) });
+    let out = rgb_of(&crop_center(&decode(&png_rgb(&tall)).unwrap(), 960, 640, 1024 * 1024).unwrap());
+    assert_eq!(out.dimensions(), (960, 640));
+    assert!(is_red(out.get_pixel(480, 320)));
+    assert!(is_blue(out.get_pixel(480, 10)));
+}
+
+#[test]
+fn crop_center_fits_noise_within_its_bound_or_refuses() {
+    let decoded = decode(&png_rgb(&noise(1600, 1200))).unwrap();
+    let jpeg = crop_center(&decoded, 960, 640, 1024 * 1024).unwrap();
+    assert!(jpeg.len() <= 1024 * 1024);
+    assert_eq!(rgb_of(&jpeg).dimensions(), (960, 640));
+    assert_eq!(crop_center(&decoded, 960, 640, 1000).unwrap_err(), AvatarError::TooLarge);
+    assert_eq!(crop_center(&decoded, 0, 640, 1024 * 1024).unwrap_err(), AvatarError::BadCrop);
+}
+
+#[test]
 fn crop_square_accepts_rounding_at_the_edges() {
     let decoded = decode(&png_rgb(&two_tone(30, 30))).unwrap();
     let rect = CropRect { x: 1.0 / 3.0, y: 1.0 / 3.0, w: 2.0 / 3.0 + 1e-9, h: 2.0 / 3.0 };

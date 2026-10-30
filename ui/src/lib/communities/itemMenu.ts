@@ -8,7 +8,7 @@
 // role below). The page gives the acts; this file only decides which are
 // offered, by the rules of permissions.ts.
 
-import type { MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
+import type { MenuEntry, MenuItem } from '$lib/core/ui/ContextMenu.svelte';
 import type { ChannelDetail, FeedItemView } from './api';
 import { canComment, canDelete, canEdit, canModerate, canPin, isModerator, mutedNow, staffOf } from './permissions';
 
@@ -37,10 +37,18 @@ export interface ItemActions {
   report: () => void;
 }
 
-/** The entries of the menu of `item` for me (`me`, hex), in their order. */
+/**
+ * The entries of the menu of `item` for me (`me`, hex), in their order, in groups
+ * a line apart (the mockup c6.js, variant A): the frequent ones (the post, its words,
+ * its author), the moderator's under their title «Модерация» (a waiting one's verdict
+ * a pair of buttons), then the dangerous ones.
+ */
 export function itemEntries(item: FeedItemView, d: ChannelDetail, me: string | null, tr: Translate, a: ItemActions): MenuEntry[] {
-  const list: MenuEntry[] = [];
-  if (item.deleted) return list;
+  if (item.deleted) return [];
+  const list: MenuItem[] = [];
+  const review: MenuItem[] = [];
+  const author: MenuItem[] = [];
+  const mod: MenuItem[] = [];
   const isPost = !item.post_id;
   const others = item.author !== me;
   if (isPost && a.comment && (d.comments === 'on' || item.comments > 0)) {
@@ -52,22 +60,35 @@ export function itemEntries(item: FeedItemView, d: ChannelDetail, me: string | n
     list.push({ label: tr(item.pinned ? 'chan_menu_unpin' : 'chan_menu_pin'), icon: 'pin', onselect: () => a.pin?.(!item.pinned) });
   }
   if (item.review === 'pending' && isModerator(d) && others) {
-    if (a.approve) list.push({ label: tr('chan_mod_approve'), icon: 'check', onselect: a.approve });
-    if (a.reject) list.push({ label: tr('chan_mod_reject'), icon: 'x', onselect: a.reject });
+    if (a.approve) review.push({ label: tr('chan_mod_approve'), icon: 'check', onselect: a.approve });
+    if (a.reject) review.push({ label: tr('chan_mod_reject'), icon: 'x', onselect: a.reject });
   }
   // What a moderator does to the author from their message, as from the team (and as a group's chat does).
   const below = others && canModerate(d, item.author, me);
-  if (below && a.hideAuthor) list.push({ label: tr('chan_mod_hide_author'), icon: 'eye-off', onselect: a.hideAuthor });
-  if (below && a.mute && !mutedNow(staffOf(d, item.author))) list.push({ label: tr('chan_member_mute'), icon: 'bell-off', onselect: a.mute });
-  if (a.edit && canEdit(item, me)) list.push({ label: tr('chan_menu_edit'), icon: 'pencil', onselect: a.edit });
+  if (a.hide && !item.hidden && below) mod.push({ label: tr('chan_menu_hide'), icon: 'eye-off', onselect: a.hide });
+  if (below && a.hideAuthor) mod.push({ label: tr('chan_mod_hide_author'), icon: 'eye-off', onselect: a.hideAuthor });
+  if (below && a.mute && !mutedNow(staffOf(d, item.author))) mod.push({ label: tr('chan_member_mute'), icon: 'bell-off', onselect: a.mute });
+  if (a.edit && canEdit(item, me)) author.push({ label: tr('chan_menu_edit'), icon: 'pencil', onselect: a.edit });
   // «Написать автору» is a message, not the comments: an icon of its own.
-  if (others) list.push({ label: tr('chan_menu_write'), icon: 'send', onselect: a.write });
-  const danger: MenuEntry[] = [];
-  if (a.hide && !item.hidden && below) danger.push({ label: tr('chan_menu_hide'), icon: 'eye-off', onselect: a.hide });
+  if (others) author.push({ label: tr('chan_menu_write'), icon: 'send', onselect: a.write });
+  const danger: MenuItem[] = [];
   if (canDelete(d, item, me)) danger.push({ label: tr('chan_menu_delete'), icon: 'trash-2', danger: true, onselect: a.remove });
   if (below && item.review === 'pending' && a.spam) danger.push({ label: tr('chan_mod_spam'), icon: 'ban', danger: true, onselect: a.spam });
   else if (below && a.ban) danger.push({ label: tr('chan_member_ban'), icon: 'user-cancel', danger: true, onselect: a.ban });
   if (others) danger.push({ label: tr('chan_menu_report'), icon: 'alert-triangle', danger: true, onselect: a.report });
-  if (danger.length) list.push({ type: 'separator' }, ...danger);
-  return list;
+  // The moderator's group: its title, the verdict a pair of buttons (one alone stays a row), then the rest.
+  const moderation: MenuEntry[] = [];
+  if (review.length || mod.length) {
+    moderation.push({ type: 'heading', label: tr('chan_mod_title'), icon: 'shield' });
+    if (review.length === 2) moderation.push({ type: 'pair', items: [review[0], review[1]] });
+    else moderation.push(...review);
+    moderation.push(...mod);
+  }
+  const out: MenuEntry[] = [];
+  for (const group of [[...list, ...author], moderation, danger] as MenuEntry[][]) {
+    if (!group.length) continue;
+    if (out.length) out.push({ type: 'separator' });
+    out.push(...group);
+  }
+  return out;
 }

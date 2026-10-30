@@ -18,9 +18,14 @@
   import { channelStore } from './channelStore.svelte';
   import { channelError } from './errors';
   import { canRotateLink } from './permissions';
+  import Box from './info/Box.svelte';
 
-  interface Props { detail: ChannelDetail }
-  let { detail }: Props = $props();
+  interface Props {
+    detail: ChannelDetail;
+    /** Its title above it; none on a page of its own, whose head says it. */
+    heading?: boolean;
+  }
+  let { detail, heading = true }: Props = $props();
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
 
@@ -72,36 +77,41 @@
 
 {#if link}
   <section class="block">
-    <div class="label">{$t('chan_link')}</div>
-    <p class="hint">{$t(`chan_link_hint_${detail.channel.join}` as 'chan_link_hint_open')}</p>
-    <code class="link">{link}</code>
-    <div class="row">
-      <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name={copied ? 'check' : 'copy'} size={13} />{copied ? $t('chan_link_copied') : $t('chan_copy')}</button>
-      <button class="btn btn-ghost btn-sm" onclick={() => (sharing = true)}><Icon name="send" size={13} />{$t('chan_share')}</button>
-      <button class="btn btn-ghost btn-sm" onclick={() => (sharingOut = true)}><Icon name="share" size={13} />{$t('msg_share_out_open')}</button>
-      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={toggleQr}><Icon name="qr-code" size={13} />{qr ? $t('chan_qr_hide') : $t('chan_qr_show')}</button>
-      {#if canRotateLink(detail)}
-        <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={13} />{$t('chan_link_rotate')}</button>
-      {/if}
-    </div>
-    {#if qr}<img class="qr" src={qr} alt={$t('chan_qr_alt', { name: detail.channel.name })} />{/if}
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if heading}<div class="label">{$t('chan_link')}</div>{/if}
+    <Box kind="text">
+      <p class="hint">{$t(`chan_link_hint_${detail.channel.join}` as 'chan_link_hint_open')}</p>
+      <code class="link">{link}</code>
+      <div class="grid">
+        <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name={copied ? 'check' : 'copy'} size={18} />{copied ? $t('chan_link_copied') : $t('chan_copy')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={() => (sharing = true)}><Icon name="send" size={18} />{$t('chan_share')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={() => (sharingOut = true)}><Icon name="upload" size={18} />{$t('msg_share_out_open')}</button>
+        <button class="btn btn-ghost btn-sm" disabled={busy} onclick={toggleQr}><Icon name="qr-code" size={18} />{qr ? $t('chan_qr_hide') : $t('chan_qr_show')}</button>
+        {#if canRotateLink(detail)}
+          <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={18} />{$t('chan_link_rotate')}</button>
+        {/if}
+      </div>
+      {#if qr}<img class="qr" src={qr} alt={$t('chan_qr_alt', { name: detail.channel.name })} />{/if}
+      {#if error}<div class="error-msg">{error}</div>{/if}
+    </Box>
   </section>
   <ShareDialog bind:open={sharing} {link} exclude={detail.channel.chat_id} />
   <ShareOutSheet bind:open={sharingOut} item={channelShareItem(link)} qr={() => channelsApi.linkQr(cid)} />
 {/if}
 
 <style>
-  .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .label { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.45; }
+  .block { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .label { display: flex; align-items: center; min-height: 24px; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
+  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.5; }
   .link {
-    font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-2); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; overflow-wrap: anywhere;
-    max-height: 66px; overflow-y: auto; user-select: all;
+    font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); background: var(--surface-3);
+    border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); overflow-wrap: anywhere; word-break: break-all;
+    max-height: 96px; overflow-y: auto; user-select: all;
   }
-  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+  .grid .btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .grid .btn { min-height: calc(var(--control-h-sm) + var(--sp-1)); min-width: 0; padding-inline: var(--sp-2); white-space: normal; text-wrap: balance; text-align: center; line-height: 1.25; }
   .danger { color: var(--danger-text); }
   /* A code is read by a camera: always dark on light, whatever the theme. */
-  .qr { align-self: center; width: min(240px, 100%); height: auto; background: #fff; border-radius: var(--radius-md); padding: 6px; image-rendering: pixelated; }
+  .qr { align-self: center; width: min(240px, 100%); height: auto; background: #fff; border-radius: var(--radius-md); padding: var(--sp-2); image-rendering: pixelated; }
+  @media (pointer: coarse) { .grid .btn { min-height: var(--control-h-lg); } }
 </style>

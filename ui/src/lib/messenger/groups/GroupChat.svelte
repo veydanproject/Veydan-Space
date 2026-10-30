@@ -40,7 +40,7 @@
   }
   let { chat, onback }: Props = $props();
 
-  /** A phone's bar has no room for one more count: there the queue is in the chat menu. */
+  /** A phone: the calls are entries of the chat menu. */
   const phone = onPhone();
   let info = $state(false);
   /** The panel shows the moderation of the group. */
@@ -130,11 +130,16 @@
   function modEntries(m: MessengerMessage) {
     const list: MenuEntry[] = [];
     if (!hasModeration(group) || m.direction === 'out' || m.content_type === 'system') return list;
+    // The moderator's group under its title (mockups c8.js); the verdict a pair of buttons.
     if (m.review === 'pending' && canApprove(group)) {
-      list.push({ label: $t('msg_mod_approve'), icon: 'check', onselect: () => decide({ t: 'approve', target: m.id, version: m.version ?? m.id }) });
-      list.push({ label: $t('msg_mod_reject'), icon: 'x', onselect: () => decide({ t: 'reject', target: m.id }) });
+      list.push({ type: 'heading', label: $t('msg_mod_title'), icon: 'shield' });
+      list.push({ type: 'pair', items: [
+        { label: $t('msg_mod_approve'), icon: 'check', onselect: () => decide({ t: 'approve', target: m.id, version: m.version ?? m.id }) },
+        { label: $t('msg_mod_reject'), icon: 'x', onselect: () => decide({ t: 'reject', target: m.id }) },
+      ] });
       if (canSpam(group, m.sender_pubkey)) list.push({ label: $t('msg_mod_spam'), icon: 'ban', danger: true, onselect: () => spam(m) });
     } else if (canHide(group, m.sender_pubkey)) {
+      list.push({ type: 'heading', label: $t('msg_mod_title'), icon: 'shield' });
       list.push({ label: $t('msg_mod_hide'), icon: 'eye-off', onselect: () => decide({ t: 'hide', targets: [m.id] }) });
       list.push({ label: $t('msg_mod_hide_author'), icon: 'eye-off', onselect: () => { hiding = { open: true, author: m.sender_pubkey, span: 'hour' }; } });
     }
@@ -205,8 +210,18 @@
   /** On a phone the header keeps its plate free: the calls are entries of its menu. */
   let callButton = $state<ReturnType<typeof GroupCallButton>>();
 
+  /** What waits for the team (each to whom it is for): one count on ⋮, the rows at the top of its menu, as a channel's. */
+  const waitingQueue = $derived(isModerator(group) && group?.queue ? group.queue : 0);
+  const waitingAsks = $derived(answersRequests(group) ? group?.requests.length ?? 0 : 0);
+  const waitingAll = $derived(waitingQueue + waitingAsks);
+  /** The head's menu as a channel's: roomy, this wide. */
+  const MENU_W = 288;
+
   const entries = $derived.by((): MenuEntry[] => {
     const list: MenuEntry[] = [];
+    if (waitingQueue > 0) list.push({ label: $t('msg_mod_tab_queue'), badge: String(waitingQueue), icon: 'shield', onselect: () => openModeration('queue') });
+    if (waitingAsks > 0) list.push({ label: $t('msg_group_requests'), badge: String(waitingAsks), icon: 'user-plus', onselect: () => openModeration('requests') });
+    if (list.length) list.push({ type: 'separator' });
     if (phone && callButton?.canStart()) {
       const blocked = !!callButton.startBlocked();
       list.push(
@@ -245,16 +260,6 @@
 
 {#snippet actions()}
   <GroupCallButton bind:this={callButton} {chat} {group} menuStarts={phone} />
-  {#if !phone && isModerator(group) && group.queue}
-    <button class="pill" onclick={() => openModeration('queue')} title={$t('msg_mod_title')}>
-      <Icon name="shield" size={13} />{group.queue}
-    </button>
-  {/if}
-  {#if answersRequests(group) && group.requests.length > 0}
-    <button class="pill" onclick={() => openModeration('requests')} title={$t('msg_group_requests')}>
-      <Icon name="user-plus" size={13} />{group.requests.length}
-    </button>
-  {/if}
 {/snippet}
 
 {#snippet banner()}
@@ -297,7 +302,7 @@
 {/snippet}
 
 {#snippet window()}
-  <ChatWindow chat={view} {onback} {subtitle} {actions} {banner} {footer} {author} {systemText} chatEntries={entries}
+  <ChatWindow chat={view} {onback} {subtitle} {actions} {banner} {footer} {author} {systemText} chatEntries={entries} menuCount={waitingAll} menuWidth={MENU_W}
     extraEntries={modEntries} canModerate={moderate} moreHistory={membership === 'joined'} {explainError} ontitle={() => { moderation = false; info = !info; }} />
 {/snippet}
 
@@ -312,11 +317,8 @@
   options={hideOptions} cta={$t('msg_mod_hide')} danger {busy} onconfirm={hideAuthor} />
 
 <style>
-  .sub-line { display: inline-flex; align-items: center; gap: 4px; }
-  .pill {
-    display: inline-flex; align-items: center; gap: 4px; border: none; cursor: pointer; font: inherit; font-size: var(--fs-2xs);
-    font-weight: var(--fw-bold); padding: 3px 8px; border-radius: var(--radius-pill); background: var(--accent); color: #fff;
-  }
+  /* Inline, not a flex box: in a narrow head (a phone) the line ellipsizes instead of turning into «…». */
+  .sub-line :global(svg) { vertical-align: middle; }
   .strip { display: flex; align-items: center; gap: 6px; padding: 6px var(--sp-4); font-size: var(--fs-xs); border-bottom: 1px solid var(--border); }
   .strip.info { color: var(--text-2); background: var(--surface-2); }
   .strip.warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-border); }

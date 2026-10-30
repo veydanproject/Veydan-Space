@@ -487,6 +487,8 @@
     "msg_push_enable": "알림 켜기",
     "msg_push_toggle": "새 메시지 알림 받기",
     "msg_push_refused": "이 앱의 알림이 꺼져 있습니다. 휴대폰 설정에서 알림을 켠 후 돌아오세요.",
+    "msg_push_quiet": "메시지 알림이 소리 없이 옵니다",
+    "msg_push_quiet_fix": "설정",
     "msg_push_reason_no_config": "이 빌드에는 푸시 설정이 없어 알림이 작동하지 않습니다.",
     "msg_push_reason_no_play": "이 휴대폰에 Google 서비스가 없습니다. 푸시는 Google 서비스를 거쳐 전달됩니다.",
     "msg_push_reason_token_failed": "푸시 서비스가 응답하지 않았습니다. 연결을 확인하고 다시 시도하세요.",

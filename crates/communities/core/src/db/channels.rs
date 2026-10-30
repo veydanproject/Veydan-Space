@@ -118,6 +118,7 @@ pub async fn delete(db: &Db, id: &str) -> Result<()> {
         "DELETE FROM cm_keepers WHERE community_id = ?",
         "DELETE FROM cm_pending WHERE community_id = ?",
         "DELETE FROM cm_epochs WHERE community_id = ?",
+        "DELETE FROM cm_epochs_heard WHERE community_id = ?",
         "DELETE FROM cm_bundles WHERE community_id = ?",
         "DELETE FROM cm_posts WHERE community_id = ?",
         "DELETE FROM cm_comments WHERE community_id = ?",

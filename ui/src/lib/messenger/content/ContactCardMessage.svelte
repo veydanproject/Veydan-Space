@@ -105,9 +105,9 @@
   <span class="damaged"><Icon name="alert-triangle" size={12} />{$t('msg_card_damaged')}</span>
 {:else}
   <div class="contact-card">
-    <span class="kicker"><Icon name="user" size={11} />{$t('msg_card_contact_title')}</span>
+    <span class="kicker"><Icon name="user" size={14} />{$t('msg_card_contact_title')}</span>
     <div class="top">
-      <Avatar url={null} src={card.avatar} {label} seed={card.pubkey} size={48} />
+      <Avatar url={null} src={card.avatar} {label} seed={card.pubkey} size={44} />
       <div class="who">
         <span class="name" title={label}>{label}</span>
         <span class="sub">{#if second}{second}{:else}<code>{shortKey}</code>{/if}</span>
@@ -131,13 +131,13 @@
       <div class="facts">
         {#if website}
           <button type="button" class="fact" onclick={openSite} title={website}>
-            <Icon name="world" size={13} /><span class="value">{websiteText}</span><Icon name="external-link" size={11} />
+            <Icon name="world" size={14} /><span class="value">{websiteText}</span><Icon name="external-link" size={14} />
           </button>
         {/if}
         {#if card.phone}
           <button type="button" class="fact" onclick={copyPhone}
             title={ownCard ? $t('msg_card_phone_hint') : $t('msg_card_copy')} aria-label="{$t('msg_card_phone')}: {card.phone}. {$t('msg_card_copy')}">
-            <Icon name="phone" size={13} /><span class="value">{card.phone}</span>
+            <Icon name="phone" size={14} /><span class="value">{card.phone}</span>
             <span class="copy" class:done={copied}><Icon name={copied ? 'check' : 'copy'} size={12} />{copied ? $t('msg_card_copied') : ''}</span>
           </button>
         {/if}
@@ -165,16 +165,16 @@
       {#if error}<div class="error">{error}</div>{/if}
       <div class="row">
         {#if known}
-          <button class="btn btn-primary btn-sm" disabled={busy} onclick={write}>
-            <Icon name="message-circle" size={13} />{$t('msg_card_write')}
+          <button class="btn btn-primary" disabled={busy} onclick={write}>
+            <Icon name="message-circle" size={18} />{$t('msg_card_write')}
           </button>
           <span class="known"><Icon name="check" size={12} />{added ? $t('msg_card_added') : $t('msg_card_already_contact')}</span>
         {:else}
-          <button class="btn btn-primary btn-sm" disabled={busy} onclick={accept}>
-            <Icon name="user-plus" size={13} />{$t('msg_card_add_contact')}
+          <button class="btn btn-primary" disabled={busy} onclick={accept}>
+            <Icon name="user-plus" size={18} />{$t('msg_card_add_contact')}
           </button>
-          <button class="btn btn-ghost btn-sm" disabled={busy} onclick={write}>
-            <Icon name="message-circle" size={13} />{$t('msg_card_write')}
+          <button class="btn btn-ghost" disabled={busy} onclick={write}>
+            <Icon name="message-circle" size={18} />{$t('msg_card_write')}
           </button>
         {/if}
       </div>
@@ -183,20 +183,19 @@
 {/if}
 
 <style>
+  /* The bubble is the card (mockups c7.js): no box inside it. */
   .contact-card {
     display: flex; flex-direction: column; gap: var(--sp-2);
-    width: 320px; max-width: 100%;
-    padding: var(--sp-3); border-radius: var(--radius-md); border: 1px solid var(--border);
-    background: var(--surface); color: var(--text);
+    width: 336px; max-width: 100%; color: var(--text);
   }
   .kicker {
-    display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
-    color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px;
+    display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-bold);
+    color: var(--text-2);
   }
   .top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub code { font-family: var(--font-mono); }
   .bio-box { min-width: 0; }
   .more {
@@ -206,12 +205,12 @@
   .more:hover { text-decoration: underline; }
   .facts { display: flex; flex-direction: column; gap: 2px; }
   .fact {
-    display: flex; align-items: center; gap: 7px; width: 100%; min-width: 0; text-align: left;
-    border: none; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-xs);
-    padding: 4px 6px; margin-inline: -6px; border-radius: var(--radius-sm); cursor: pointer;
+    display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; min-height: 36px; text-align: left;
+    border: none; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-sm);
+    padding: 0 var(--sp-1); margin-inline: calc(-1 * var(--sp-1)); border-radius: var(--radius-sm); cursor: pointer;
   }
   .fact:hover { background: var(--surface-row-hover, var(--surface-2)); color: var(--text); }
-  .fact:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .fact:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 1px; }
   .fact :global(svg) { flex-shrink: 0; }
   .value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
   .copy { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: var(--fs-2xs); color: var(--text-3); }
@@ -221,12 +220,16 @@
   .server .btn { align-self: flex-start; }
   .status { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); }
   .status.closed { color: var(--warn-text); }
-  .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  /* Its buttons 40, side by side the card's width; stacked for a finger. */
+  .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+  /* The two buttons equal (mockups c7.js). */
+  .row .btn { flex: 1 1 0; min-width: 0; min-height: var(--control-h); gap: var(--sp-2); justify-content: center; }
   .known { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--text-3); padding: 0 4px; }
   .error { font-size: var(--fs-xs); color: var(--danger-text); line-height: 1.4; }
   .damaged { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
   @media (pointer: coarse) {
-    .fact { padding: 8px 6px; font-size: var(--fs-sm); }
+    .row { flex-direction: column; align-items: stretch; }
+    .fact { min-height: var(--control-h); }
     .more { padding: 4px 0; }
   }
 </style>

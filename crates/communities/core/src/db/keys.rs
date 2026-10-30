@@ -165,6 +165,28 @@ pub async fn newest_epoch(db: &Db, community_id: &str) -> Result<u32> {
     Ok(max.and_then(|e| u32::try_from(e).ok()).unwrap_or(0))
 }
 
+/// The newest epoch number heard of a channel in any epoch event of a
+/// keeper, taken or not (`ChannelService::note_epoch_heard`): 0 when none.
+pub async fn epoch_heard(db: &Db, community_id: &str) -> Result<u32> {
+    let e = sqlx::query_scalar::<_, i64>("SELECT epoch FROM cm_epochs_heard WHERE community_id = ?")
+        .bind(community_id)
+        .fetch_optional(db.pool())
+        .await
+        .map_err(storage)?;
+    Ok(e.and_then(|e| u32::try_from(e).ok()).unwrap_or(0))
+}
+
+/// `epoch_heard` raised to `epoch` (never lowered).
+pub async fn note_epoch_heard(db: &Db, community_id: &str, epoch: u32) -> Result<()> {
+    sqlx::query("INSERT INTO cm_epochs_heard (community_id, epoch) VALUES (?, ?) ON CONFLICT(community_id) DO UPDATE SET epoch = MAX(epoch, excluded.epoch)")
+        .bind(community_id)
+        .bind(i64::from(epoch))
+        .execute(db.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
 /// The newest generation of a scope this device heard of, by the epochs
 /// and its bundles (0: none): an emergency generation goes above it.
 pub async fn newest_gen(db: &Db, community_id: &str, scope_id: &str) -> Result<u32> {

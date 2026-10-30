@@ -139,8 +139,8 @@
   {#if !phone}
     <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={picked} />
   {/if}
-  <button class="btn btn-primary btn-sm" disabled={reading} onclick={begin}>
-    <Icon name={reading ? 'loader' : phone ? 'scan' : 'image'} size={13} />{phone ? $t('msg_inv_scan') : $t('msg_inv_scan_image')}
+  <button class="btn btn-primary" disabled={reading} onclick={begin}>
+    <Icon name={reading ? 'loader' : phone ? 'scan' : 'image'} size={18} />{phone ? $t('msg_inv_scan') : $t('msg_inv_scan_image')}
   </button>
 
   {#if joined}
@@ -155,14 +155,10 @@
 
 <style>
   .scan { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
-  .scan > .btn { align-self: flex-start; }
-  .scan > .btn :global(svg) { margin-right: 2px; }
+  .scan > .btn { align-self: stretch; justify-content: center; }
   .joined { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-md); background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text); }
   .joined .mark { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: var(--bg); }
   .joined-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--text); }
   .joined-text span { color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
   .link-btn { margin-left: 6px; padding: 0; border: 0; background: none; color: var(--accent-text-3); font: inherit; text-decoration: underline; cursor: pointer; }
-  @media (pointer: coarse) {
-    .scan > .btn { align-self: stretch; min-height: 40px; justify-content: center; }
-  }
 </style>

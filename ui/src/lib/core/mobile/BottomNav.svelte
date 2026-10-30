@@ -44,7 +44,7 @@
 
 {#snippet count(it: NavItem)}
   {@const n = it.badge?.() ?? 0}
-  {#if n > 0}<span class="m-bar-badge">{n > 99 ? "99+" : n}</span>{/if}
+  {#if n > 0}<span class="count-pill sm danger nav-count">{n > 99 ? "99+" : n}</span>{/if}
 {/snippet}
 
 {#snippet item(it: NavItem)}
@@ -94,6 +94,8 @@
     height: 100%;
     padding: var(--sp-1) var(--sp-2);
   }
+  /* The count of a tab is the .count-pill of 18 (base.css), .danger, on the icon corner in a ring of the pane. */
+  .nav-count { position: absolute; top: -5px; left: calc(100% - 8px); box-shadow: 0 0 0 2px var(--pane-strong); }
   /* The product's apps: its logo alone, no word under it. */
   .hub-logo { width: 34px; height: 34px; object-fit: contain; }
 </style>

@@ -78,8 +78,10 @@
   <div class="details" class:phone>
     <div class="who">
       <Avatar url={picture} label={name} seed={group ? chatId : head.peer} size={72} />
-      <h2 class="name">{name}</h2>
-      {#if !can}<span class="note">{$t(chat ? 'msg_calls_not_callable' : 'msg_calls_chat_gone')}</span>{/if}
+      <div class="who-words">
+        <h2 class="name">{name}</h2>
+        {#if !can}<span class="note">{$t(chat ? 'msg_calls_not_callable' : 'msg_calls_chat_gone')}</span>{/if}
+      </div>
     </div>
     <div class="actions">
       {#if group}
@@ -99,12 +101,13 @@
       </button>
     </div>
 
-    <h3 class="sub">{$t('msg_calls_history')}</h3>
-    <ul class="calls divided">
+    <section class="block">
+      <h3>{$t('msg_calls_history')}</h3>
+      <ul class="calls">
       {#each calls as e (e.call_id)}
         {@const w = words(e)}
         <li class="call-row" class:missed={isLogMissed(e)}>
-          <span class="glyph"><CallIcon name={glyph(e)} size={14} /></span>
+          <span class="glyph"><CallIcon name={glyph(e)} size={16} /></span>
           <span class="text">
             <span class="title">{w.title}</span>
             {#if w.detail}<span class="detail">{w.detail}</span>{/if}
@@ -112,38 +115,50 @@
           <span class="when">{shortStamp(e.started_at)}</span>
         </li>
       {/each}
-    </ul>
-    <button class="forget" onclick={forget}><Icon name="trash-2" size={13} />{$t('msg_calls_forget')}</button>
+      </ul>
+    </section>
+    <button class="forget" onclick={forget}><Icon name="trash-2" size={14} />{$t('msg_calls_forget')}</button>
   </div>
 {/if}
 
 <style>
-  .details { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-6) var(--sp-5); max-width: 520px; width: 100%; margin: 0 auto; }
+  /* The way В: the avatar 72 beside the name; a column of 560, as the contact's card. */
+  .details { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-8) var(--sp-6); max-width: 560px; width: 100%; margin: 0 auto; }
   .details.phone { padding: 0 0 var(--sp-3); }
-  .who { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; }
-  .name { margin: var(--sp-2) 0 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); overflow-wrap: anywhere; }
+  .who { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; }
+  .who-words { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
+  .name { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); overflow-wrap: anywhere; }
   .note { font-size: var(--fs-xs); color: var(--text-3); }
-  .actions { display: flex; justify-content: center; gap: var(--sp-3); flex-wrap: wrap; }
+  /* The actions of one size side by side (three; a group's two). */
+  .actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--sp-2); }
   .act {
-    display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 84px; padding: var(--sp-2) var(--sp-3);
-    border: none; border-radius: var(--radius-lg); background: none; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-2);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); color: var(--text);
+    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); text-align: center; cursor: pointer;
+    transition: background var(--dur-fast), border-color var(--dur-fast);
   }
-  .disc { width: 48px; height: 48px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--surface-3); color: var(--text); }
-  .act.call .disc { background: var(--success-bg); color: var(--success-text); }
-  @media (hover: hover) { .act:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); } }
+  .act:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .disc { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--success-bg); color: var(--success-text); }
+  @media (hover: hover) { .act:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); } }
   .act:disabled { opacity: 0.45; cursor: default; }
-  .sub { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
-  .calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
-  .call-row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-2); }
-  .glyph { display: inline-flex; color: var(--text-3); flex-shrink: 0; }
-  .text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-  .title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
+  /* The calls: one card of rows, its title in sentence case. */
+  .block { display: flex; flex-direction: column; padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); }
+  .block h3 { margin: 0; padding-bottom: var(--sp-1); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
+  .calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .call-row { display: flex; align-items: center; gap: var(--sp-3); min-height: 56px; padding: var(--sp-2) 0; }
+  .call-row + .call-row { border-top: 1px solid var(--divider); }
+  .glyph { flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center; background: var(--surface-3); color: var(--text-2); }
+  .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .title { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .detail { font-size: var(--fs-xs); color: var(--text-2); font-variant-numeric: tabular-nums; }
   .missed .glyph, .missed .title { color: var(--danger-text); }
   .when { font-size: var(--fs-xs); color: var(--text-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  /* «Удалить из истории»: a quiet button under the card. */
   .forget {
-    align-self: center; display: inline-flex; align-items: center; gap: 6px; padding: var(--sp-2) var(--sp-3);
-    border: none; border-radius: var(--radius); background: none; color: var(--text-3); font: inherit; font-size: var(--fs-xs); cursor: pointer;
+    align-self: center; display: inline-flex; align-items: center; gap: var(--sp-1); height: 36px; padding: 0 var(--sp-3);
+    border: none; border-radius: var(--radius); background: none; color: var(--text-3); font: inherit; font-size: var(--fs-sm); cursor: pointer;
   }
   .forget:hover { color: var(--danger-text); background: var(--danger-bg); }
+  .forget:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  @media (pointer: coarse) { .forget { height: 44px; } }
 </style>

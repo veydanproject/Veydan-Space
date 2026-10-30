@@ -60,7 +60,7 @@
     <input type="text" bind:value={to} placeholder="npub1… / hex" spellcheck="false" disabled={busy || !canSend} />
     <input type="text" bind:value={text} placeholder={$t('msg_debug_send_placeholder')} disabled={busy || !canSend} />
     <button class="btn btn-primary" type="submit" disabled={busy || !canSend || !to.trim() || !text.trim()}>
-      <Icon name="message-circle" size={14} />{$t('msg_debug_send')}
+      <Icon name="message-circle" size={18} />{$t('msg_debug_send')}
     </button>
   </form>
   {#if !canSend}<div class="muted small">{$t('msg_debug_no_session')}</div>{/if}
@@ -69,7 +69,7 @@
 
   <div class="feed-head">
     <span class="muted small">{$t('msg_debug_feed', { n: String(messengerStore.feed.length) })}</span>
-    <button class="btn btn-ghost btn-sm" disabled={!messengerStore.feed.length} onclick={() => messengerStore.clearFeed()}>{$t('msg_debug_clear')}</button>
+    <button class="btn btn-ghost" disabled={!messengerStore.feed.length} onclick={() => messengerStore.clearFeed()}>{$t('msg_debug_clear')}</button>
   </div>
   <ul class="list">
     {#each messengerStore.feed as e, i (e.at + ':' + i)}
@@ -84,21 +84,20 @@
 
 <style>
   .feed { max-width: 640px; display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-xs); }
   .send { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .send input {
-    flex: 1; min-width: 160px; font: inherit; font-size: var(--fs-sm); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+    flex: 1; min-width: 160px; min-height: 44px; font: inherit; font-size: var(--fs-base); color: var(--text);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
-  .send input:first-child { font-family: var(--font-mono); font-size: var(--fs-xs); }
+  .send input:first-child { font-family: var(--font-mono); font-size: var(--fs-sm); }
   .send input:focus { outline: none; border-color: var(--accent-border); }
-  .feed-head { display: flex; align-items: center; justify-content: space-between; }
+  .feed-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
   .row {
     display: grid; grid-template-columns: 70px 100px 1fr; gap: var(--sp-2); align-items: baseline;
-    font-size: var(--fs-xs); padding: 4px 8px; border-radius: var(--radius-sm); background: var(--surface-2);
+    font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); background: var(--surface-3);
   }
   .time { color: var(--text-3); font-family: var(--font-mono); }
   .name { font-family: var(--font-mono); color: var(--text-2); }

@@ -64,6 +64,10 @@
     chatEntries?: MenuEntry[];
     /** Entries of the chat menu put before all others. */
     leadEntries?: MenuEntry[];
+    /** What waits for the team (a group: the queue and the requests), one count on ⋮; its rows are in the menu. */
+    menuCount?: number;
+    /** The chat menu as a channel's: roomy, this wide in px (a group). */
+    menuWidth?: number;
     /**
      * Entries of a message's menu the chat adds (a group: what its
      * moderators do), put before the ways to delete it.
@@ -77,7 +81,7 @@
     explainError?: (e: unknown) => string | null;
     ontitle?: () => void;
   }
-  let { chat, onback, actions, banner, footer, subtitle, author, systemText, chatEntries, leadEntries, extraEntries, canModerate, moreHistory = false, explainError, ontitle }: Props = $props();
+  let { chat, onback, actions, banner, footer, subtitle, author, systemText, chatEntries, leadEntries, menuCount = 0, menuWidth, extraEntries, canModerate, moreHistory = false, explainError, ontitle }: Props = $props();
   const isGroup = $derived(chat.kind === "group");
   const canAttach = $derived(chat.mode === "full_chat" || chat.mode === "group");
   /** A phone screen: its back is a chevron, its header the bar colour, no keyboard on its own. */
@@ -454,33 +458,42 @@
 
   function openChatMenu(e: MouseEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    chatMenu = { open: true, x: r.right - 200, y: r.bottom + 4 };
+    chatMenu = { open: true, x: r.right - (menuWidth ?? 200), y: r.bottom + 4 };
   }
+
+  /** A red row of a menu (not a line, a title or a pair). */
+  const isDanger = (e: MenuEntry) => (e.type === undefined || e.type === 'item') && !!e.danger;
 
   const chatItems = $derived.by((): MenuEntry[] => {
     const list: MenuEntry[] = [...(leadEntries ?? [])];
-    if (chatEntries) list.push(...chatEntries);
-    // A banned key cannot be unblocked, so the menu has no way back for it.
-    else if (chat.mode === "blocked") { if (!chat.banned) list.push({ label: $t("msg_rel_cta_unblock"), icon: "lock-open", onselect: () => act("unblock") }); }
+    // A chat of two: the relation first, what may be undone in the middle, the dangerous ones red and last
+    // (the groups of the menu by a line, mockups c1.js); a group's own red entries go last too, as a channel's ⋮.
+    const danger: MenuEntry[] = [];
+    if (chatEntries) for (const e of chatEntries) (isDanger(e) ? danger : list).push(e);
     else {
-      if (chat.is_contact) list.push({ label: $t("msg_rel_cta_remove"), icon: "user-minus", onselect: () => act("remove") });
-      // The bot of Veydan Cloud is approved by the build and is nobody's contact.
-      else if (chat.mode !== "request_received" && !chat.bot) list.push({ label: $t("msg_rel_cta_add"), icon: "user-plus", onselect: () => act("request") });
-      list.push({ label: $t("msg_rel_cta_block"), icon: "user-cancel", danger: true, onselect: () => act("block") });
-    }
-    // The home chat with a person: a private chat on a server of mine is offered here.
-    if (chat.kind === "dm" && chat.peer_pubkey && !chat.server_id && !chat.bot && chat.mode !== "blocked" && serverStore.list?.length) {
-      const peer = chat.peer_pubkey;
-      list.push({ label: $t("msg_srv_invite_title"), icon: "server-2", onselect: () => privateInvite.show({ peer }) });
+      // The home chat with a person: a private chat on a server of mine is offered here.
+      if (chat.kind === "dm" && chat.peer_pubkey && !chat.server_id && !chat.bot && chat.mode !== "blocked" && serverStore.list?.length) {
+        const peer = chat.peer_pubkey;
+        list.push({ label: $t("msg_srv_invite_title"), icon: "server-2", onselect: () => privateInvite.show({ peer }) });
+      }
+      // A banned key cannot be unblocked, so the menu has no way back for it.
+      if (chat.mode === "blocked") { if (!chat.banned) list.push({ label: $t("msg_rel_cta_unblock"), icon: "lock-open", onselect: () => act("unblock") }); }
+      else {
+        if (chat.is_contact) list.push({ label: $t("msg_rel_cta_remove"), icon: "user-minus", onselect: () => act("remove") });
+        // The bot of Veydan Cloud is approved by the build and is nobody's contact.
+        else if (chat.mode !== "request_received" && !chat.bot) list.push({ label: $t("msg_rel_cta_add"), icon: "user-plus", onselect: () => act("request") });
+        danger.push({ label: $t("msg_rel_cta_block"), icon: "user-cancel", danger: true, onselect: () => act("block") });
+      }
     }
     // A person can be reported even after being blocked; the bot of Veydan Cloud is ours.
     if (chat.kind === "dm" && chat.peer_pubkey && !chat.bot) {
       const accused = chat.peer_pubkey;
-      list.push({ label: $t("msg_report"), icon: "alert-triangle", danger: true, onselect: () => reportStore.open({
+      danger.push({ label: $t("msg_report"), icon: "alert-triangle", danger: true, onselect: () => reportStore.open({
         accused, name: chat.title, context: { t: chat.mode === "request_received" ? "request" : "dm" }, canBlock: chat.mode !== "blocked",
       }) });
     }
-    list.push({ type: "separator" });
+    // No line on top of the menu or twice in a row (the bot of Veydan Cloud has no entries of a relation).
+    if (list.length && list[list.length - 1].type !== "separator") list.push({ type: "separator" });
     list.push({ label: chat.pinned ? $t("msg_chat_unpin") : $t("msg_chat_pin"), icon: "pin", onselect: () => chatStore.setPinned(chat.id, !chat.pinned) });
     list.push({ label: chat.is_muted ? $t("msg_chat_unmute") : $t("msg_chat_mute"), icon: chat.is_muted ? "bell" : "bell-off", onselect: () => chatStore.setMuted(chat.id, !chat.is_muted) });
     // An archived chat is closed (as a deleted one): its page is left with it.
@@ -493,7 +506,8 @@
       onback?.();
     } });
     // A group is left, not deleted: its own entries say how.
-    if (!isGroup) list.push({ label: $t("msg_chat_delete"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_chat_delete_confirm", { name: chat.title }), $t("msg_chat_delete"), true)) { await chatStore.deleteChat(chat.id); onback?.(); } } });
+    if (!isGroup) danger.push({ label: $t("msg_chat_delete"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_chat_delete_confirm", { name: chat.title }), $t("msg_chat_delete"), true)) { await chatStore.deleteChat(chat.id); onback?.(); } } });
+    if (danger.length) list.push({ type: "separator" }, ...danger);
     return list;
   });
 
@@ -797,15 +811,19 @@
         const { x, y } = menu;
         list.push({ label: $t('msg_seen_by', { n: String(m.seen_by.length) }), icon: 'eye', onselect: () => (seen = { open: true, x, y, who: [...m.seen_by] }) });
       }
+      // The groups as a post's menu: the moderator's under its title, then all the red ones last, after one line.
       const extra = extraEntries?.(m) ?? [];
-      if (extra.length) list.push({ type: 'separator' }, ...extra);
+      const mod = extra.filter((e) => !isDanger(e));
+      const danger = extra.filter(isDanger);
+      if (mod.length) list.push({ type: 'separator' }, ...mod);
       // Anyone may report what another person wrote, not only a moderator; never a line of the app itself.
       const reported = reportTarget(m);
-      if (reported) list.push({ label: $t('msg_report'), icon: 'alert-triangle', danger: true, onselect: () => reportStore.open(reported) });
-      list.push({ type: 'separator' });
-      list.push({ label: $t('msg_message_delete_me'), icon: 'trash-2', danger: true, onselect: () => guard(() => chatStore.remove(m.id, false)) });
+      if (reported) danger.push({ label: $t('msg_report'), icon: 'alert-triangle', danger: true, onselect: () => reportStore.open(reported) });
+      danger.push({ label: $t('msg_message_delete_me'), icon: 'trash-2', danger: true, onselect: () => guard(() => chatStore.remove(m.id, false)) });
       // The author deletes for everyone; a moderator hides instead (the owner's decision 8) where the core keeps marks, and removes where it does not.
-      if (own || canModerate?.(m)) list.push({ label: $t("msg_message_delete_all"), icon: "trash-2", danger: true, onselect: () => guard(() => chatStore.remove(m.id, true)) });
+      if (own || canModerate?.(m)) danger.push({ label: $t("msg_message_delete_all"), icon: "trash-2", danger: true, onselect: () => guard(() => chatStore.remove(m.id, true)) });
+      if (list.length) list.push({ type: 'separator' });
+      list.push(...danger);
     }
     return list;
   });
@@ -873,6 +891,8 @@
 {/snippet}
 
 {#snippet tray()}
+  <!-- The picked files, and «without compression» at the end of their row (mockups c1.js). -->
+  <div class="tray-row">
   <div class="tray">
     {#each picked as p (p.key)}
       <div class="pick" class:picture={!!p.file?.preview} title={p.file ? `${p.file.name} · ${bytes(p.file.size, localeTag($locale))}` : undefined}>
@@ -891,6 +911,7 @@
       <span class="box" aria-hidden="true">{#if original}<Icon name="check" size={11} />{/if}</span>{$t('msg_xfer_original')}
     </button>
   {/if}
+  </div>
 {/snippet}
 
 <section class="window" bind:this={windowEl} style:--bottom-h={phone ? `${bottomH}px` : undefined}>
@@ -905,22 +926,22 @@
     {:else}
     {#if onback}
       {#if phone}<button class="icon back" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
-      {:else}<button class="icon back narrow-only" onclick={onback} title={$t('msg_back')}><Icon name="arrow-left" size={16} /></button>{/if}
+      {:else}<button class="icon back narrow-only" onclick={onback} title={$t('msg_back')}><Icon name="arrow-left" size={18} /></button>{/if}
     {/if}
     {#snippet identity()}
-      <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={36} online={presence === 'online'} />
+      <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={40} online={presence === 'online'} />
       <div class="who">
         <div class="title"><span class="t-name">{chat.title}</span>{#if chat.server_id && !phone}<ServerLabel server={chat.server_id} info />{/if}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
         <div class="sub">
           <!-- On a phone the name has the line to itself: the chip goes under it. -->
-          {#if chat.server_id && phone}<ServerLabel server={chat.server_id} info />{/if}
-          {#if !sessionActive}{$t('msg_chat_locked')}
+          {#if chat.server_id && phone}<ServerLabel server={chat.server_id} size="icon" info />{/if}
+          <span class="sub-text">{#if !sessionActive}{$t('msg_chat_locked')}
           {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
           {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
           {:else if subtitle}{@render subtitle()}
           {:else if typing}<TypingLine />
           {:else if presenceText}<span class:online={presence === 'online'}>{presenceText}</span>
-          {:else}<code>{chat.peer_npub ? `${chat.peer_npub.slice(0, 14)}…${chat.peer_npub.slice(-6)}` : ''}</code>{/if}
+          {:else}<code>{chat.peer_npub ? `${chat.peer_npub.slice(0, 14)}…${chat.peer_npub.slice(-6)}` : ''}</code>{/if}</span>
         </div>
       </div>
     {/snippet}
@@ -936,7 +957,9 @@
     {/if}
     <TransfersChip {phone} />
     {#if actions}{@render actions()}{/if}
-    <button class="icon" onclick={openChatMenu} title={$t("msg_chat_menu")}><Icon name="more-vertical" size={16} /></button>
+    <button class="icon menu-btn" class:on={chatMenu.open} aria-expanded={chatMenu.open} aria-haspopup="menu" onclick={openChatMenu} title={$t("msg_chat_menu")}
+      aria-label={menuCount > 0 ? `${$t("msg_chat_menu")}: ${menuCount}` : $t("msg_chat_menu")}><Icon name="more-vertical" size={18} />
+      {#if menuCount > 0}<span class="menu-count" aria-hidden="true">{menuCount > 99 ? '99+' : menuCount}</span>{/if}</button>
     {/if}
   </header>
 
@@ -1001,9 +1024,9 @@
 
 <MediaViewer />
 <ForwardDialog bind:open={forward.open} chatId={chat.id} ids={forward.ids} onforwarded={stopChoosing} />
-<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} header={reactable(menu.target) ? quick : undefined} onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} width={menuReact ? undefined : "288px"} header={reactable(menu.target) ? quick : undefined} onclose={() => (menu.open = false)} />
 <ContextMenu bind:open={seen.open} x={seen.x} y={seen.y} items={[]} header={readers} onclose={() => (seen.open = false)} />
-<ContextMenu bind:open={chatMenu.open} x={chatMenu.x} y={chatMenu.y} items={chatItems} onclose={() => (chatMenu.open = false)} />
+<ContextMenu bind:open={chatMenu.open} x={chatMenu.x} y={chatMenu.y} items={chatItems} width={menuWidth ? `${menuWidth}px` : undefined} onclose={() => (chatMenu.open = false)} />
 
 <style>
   .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: transparent; }
@@ -1016,28 +1039,29 @@
     font-size: var(--fs-md); font-weight: var(--fw-semibold);
     -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   }
-  .head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; }
-  /* The phone: the bar colour of the shell, the strip under the status bar included; its back is the chevron of every phone screen. */
+  /* The head as the feed's (FeedHeader): the cover 40, the name 16 bold, the line under it 13; buttons 36 with icons 18. */
+  .head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; box-sizing: border-box; }
+  /* The phone: a bar the screen's width, as a channel's (the glass of the bars, the line under it); its back is the chevron of every phone screen.
+     Over the conversation's own layers, under the info panel that lies over it (WithInfo): the base's plus two. */
   .head.phone {
-    position: relative; z-index: 2; margin: var(--sp-2) var(--sp-2) 0; min-height: 60px; padding-left: var(--sp-1);
-    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head);
-    background: var(--pane-strong); box-shadow: var(--pane-highlight), var(--pane-shadow);
-    -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+    position: relative; z-index: calc(var(--z-base) + 2); min-height: 60px; box-sizing: border-box; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-1);
+    background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
   }
-  .head.phone .back { color: var(--text); padding: 10px; }
+  .head.phone .back { color: var(--text); }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1; }
   .ident.clickable { cursor: pointer; border-radius: var(--radius-sm); }
   .ident.clickable:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-  .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-md); line-height: var(--lh-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .dim { color: var(--text-3); display: inline-flex; }
-  .sub { font-size: var(--fs-2xs); color: var(--text-3); }
-  .sub :global(.srv-label) { margin-inline-end: 6px; vertical-align: 1px; }
-  .head.phone .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font-size: var(--fs-sm); color: var(--text-3); }
+  /* On a phone the server mark and the line share a row: the line ellipsizes, the mark's touch ring is not clipped. */
+  .head.phone .sub { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+  .head.phone .sub-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sub code { font-family: var(--font-mono); }
   .offline { color: var(--warn-text); }
-  .sub .online { color: var(--accent-text); }
+  .sub .online { color: var(--success-text); }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   .icon:disabled { opacity: 0.4; cursor: default; background: none; }
@@ -1057,6 +1081,14 @@
   .pick-tick.on { background: var(--accent); border-color: var(--accent); }
   .pick-tick.dim { opacity: 0.3; }
   .pick-tick.none { visibility: hidden; }
+  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .head .icon { flex-shrink: 0; width: 36px; height: 36px; padding: 0; align-items: center; justify-content: center; border-radius: var(--radius); }
+  .head.phone .icon { width: 40px; height: 40px; border-radius: var(--radius-md); }
+  .menu-btn { position: relative; }
+  /* While its menu is open the ⋮ stays lit. */
+  .menu-btn.on { background: var(--surface-2); color: var(--text); }
+  /* The count on ⋮ is the primitive .menu-count of base.css; on a phone it sits a little lower. */
+  .head.phone .menu-count { top: 0; right: -2px; }
   @media (pointer: coarse) {
     .icon { padding: 10px; }
     .head { padding-inline: var(--sp-2); gap: var(--sp-2); }
@@ -1067,7 +1099,8 @@
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) 0 calc(var(--sp-3) + var(--bottom-h, 0px)); display: flex; flex-direction: column; }
   .bottom { flex-shrink: 0; }
   .bottom.float { position: absolute; left: 0; right: 0; bottom: 0; }
-  .content { margin-top: auto; display: flex; flex-direction: column; flex-shrink: 0; }
+  /* The conversation a column of 720 in the middle, as the feed of a channel (the lines keep their own gutter). */
+  .content { margin-top: auto; display: flex; flex-direction: column; flex-shrink: 0; width: 100%; max-width: calc(720px + 2 * var(--sp-4)); margin-inline: auto; }
   /* Nothing to show yet: the note stands in the middle. */
   .content:has(> .placeholder) { margin-bottom: auto; }
   .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); color: var(--text-3); text-align: center; padding: var(--sp-6); }
@@ -1090,7 +1123,8 @@
   @keyframes to-bottom-in { from { opacity: 0; transform: scale(0.9); } }
   @media (prefers-reduced-motion: reduce) { .to-bottom { animation: none; } }
   /* Picked files above the field: pictures as they look, the rest by name. */
-  .tray { display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; }
+  .tray-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .tray { flex: 1; min-width: 0; display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; }
   .pick {
     position: relative; flex-shrink: 0; width: 64px; height: 64px; border-radius: var(--radius-md); overflow: hidden;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px;
@@ -1107,17 +1141,18 @@
   .pick:not(.picture) .pick-name { margin-bottom: 12px; }
   /* Pictures go compressed unless this is on, for this sending only. */
   .original {
-    display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin-top: 2px; padding: 4px 8px 4px 6px; cursor: pointer;
-    border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2);
-    font: inherit; font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
+    flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--control-h-sm); padding: 0 var(--sp-3); cursor: pointer;
+    border: 1px solid var(--border); border-radius: var(--radius-pill); background: none; color: var(--text-2);
+    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-medium); white-space: nowrap;
   }
+  .original:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   .original.on { border-color: var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-text-2); }
   .original .box {
     width: 14px; height: 14px; border-radius: var(--radius-xs); border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center;
   }
   .error-line { white-space: pre-line; }
   .unpick {
-    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: none; border-radius: 50%; cursor: pointer;
+    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; padding: 0; border: none; border-radius: 50%; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;
   }
   @media (pointer: coarse) { .pick { width: 72px; height: 72px; } .unpick { width: 24px; height: 24px; } }

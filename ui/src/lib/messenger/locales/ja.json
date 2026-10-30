@@ -487,6 +487,8 @@
     "msg_push_enable": "通知をオンにする",
     "msg_push_toggle": "新しいメッセージを通知",
     "msg_push_refused": "このアプリの通知はオフになっています。スマートフォンの設定でオンにしてから戻ってください。",
+    "msg_push_quiet": "メッセージの通知が音なしで届きます",
+    "msg_push_quiet_fix": "設定",
     "msg_push_reason_no_config": "このビルドにはプッシュの設定がないため、通知は機能しません。",
     "msg_push_reason_no_play": "このスマートフォンにはGoogleサービスがありません。プッシュはGoogleサービスを経由します。",
     "msg_push_reason_token_failed": "プッシュサービスが応答しませんでした。接続を確認して、もう一度お試しください。",

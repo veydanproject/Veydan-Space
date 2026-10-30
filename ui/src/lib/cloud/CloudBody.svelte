@@ -19,6 +19,7 @@
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { scrollTabs } from '$lib/core/ui/scrollTabs';
   import Icon from '$lib/core/Icon.svelte';
   import { accountSource, loadAccount, type AccountProfile } from '$lib/core/account';
   import { t, locale } from '$lib/core/i18n';
@@ -114,18 +115,8 @@
   let picked = $state<Tab>(startDelete ? 'own' : (section && SECTION_TAB[section]) || 'plan');
   const tab = $derived(tabs.some((x) => x.id === picked) ? picked : 'plan');
   let tabsEl = $state<HTMLElement | null>(null);
-  /** The row is scrolled to its end (or not scrollable): its right edge no longer fades. */
-  let tabsEnd = $state(false);
-  function tabsScrolled() {
-    if (tabsEl) tabsEnd = tabsEl.scrollLeft + tabsEl.clientWidth >= tabsEl.scrollWidth - 2;
-  }
-  $effect(() => { void tabs; void tick().then(tabsScrolled); });
-
-  // The row of tabs scrolls on a phone: the chosen one stays in view.
-  $effect(() => {
-    void tab;
-    tabsEl?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  });
+  // The row of tabs scrolls on a phone: the chosen one stays in view, and its right edge fades
+  // while there is more of it (`scrollTabs`).
 
   /** The arrows move along the tabs (the keyboard's way through a tablist). */
   function tabKey(e: KeyboardEvent) {
@@ -189,7 +180,7 @@
       </Notice>
     {/if}
 
-    <div class="tabs" class:end={tabsEnd} role="tablist" aria-label={$t('cloud_account_title')} tabindex="-1" bind:this={tabsEl} onkeydown={tabKey} onscroll={tabsScrolled}>
+    <div class="tabs" role="tablist" aria-label={$t('cloud_account_title')} tabindex="-1" bind:this={tabsEl} onkeydown={tabKey} use:scrollTabs={{ selected: tab, watch: tabs }}>
       {#each tabs as x (x.id)}
         <button
           type="button"
@@ -301,12 +292,9 @@
   .ctab:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
   .ctab[aria-selected='true'] { color: var(--accent-text); border-bottom-color: var(--accent); }
   /* A phone: one line that scrolls, its right edge fading so the row reads as going on. */
-  .m .tabs {
-    margin: 0 calc(-1 * var(--sp-4)); padding: 0 var(--sp-4); gap: 0;
-    -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent);
-  }
+  .m .tabs { margin: 0 calc(-1 * var(--sp-4)); padding: 0 var(--sp-4); gap: 0; }
+  .m .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent); }
   .m .ctab { min-height: var(--sp-12); padding: 0 var(--sp-4); font-size: var(--fs-body); }
-  .m .tabs.end { -webkit-mask-image: none; mask-image: none; }
 
   .panel { display: flex; flex-direction: column; gap: var(--sp-4); }
   .m .panel { gap: var(--sp-3); }

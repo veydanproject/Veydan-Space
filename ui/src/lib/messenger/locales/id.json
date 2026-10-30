@@ -487,6 +487,8 @@
     "msg_push_enable": "Aktifkan notifikasi",
     "msg_push_toggle": "Beri tahu saya tentang pesan baru",
     "msg_push_refused": "Notifikasi dinonaktifkan untuk aplikasi ini. Aktifkan di setelan ponsel, lalu kembali ke sini.",
+    "msg_push_quiet": "Notifikasi pesan datang tanpa suara",
+    "msg_push_quiet_fix": "Atur",
     "msg_push_reason_no_config": "Build ini tidak memiliki setelan push: notifikasi tidak dapat berfungsi di dalamnya.",
     "msg_push_reason_no_play": "Layanan Google tidak ada di ponsel ini, padahal push dikirim melalui layanan tersebut.",
     "msg_push_reason_token_failed": "Layanan push tidak merespons. Periksa koneksi dan coba lagi.",

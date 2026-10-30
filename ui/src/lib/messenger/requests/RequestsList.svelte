@@ -56,19 +56,19 @@
         <span>{$t('msg_req_empty_hint')}</span>
       </div>
     {:else}
-      <ul class="list divided">
+      <ul class="list-rows">
         {#each requestStore.items as r (r.peer)}
           <li>
-            <button class="req" class:active={requestStore.selected === r.peer} onclick={() => onopen(r)}>
-              <Avatar url={null} label={requestName(r)} seed={r.peer} size={42} />
-              <span class="body">
-                <span class="top">
-                  <span class="title">{requestName(r)}</span>
-                  <span class="stamp">{listStamp(r.at)}</span>
+            <button class="list-row" class:active={requestStore.selected === r.peer} onclick={() => onopen(r)}>
+              <Avatar url={null} label={requestName(r)} seed={r.peer} size={48} />
+              <span class="list-row-body">
+                <span class="list-row-top">
+                  <span class="list-row-name">{requestName(r)}</span>
+                  <span class="list-row-time">{listStamp(r.at)}</span>
                 </span>
-                <span class="bottom">
-                  <span class="preview">{firstLine(r.text)}</span>
-                  {#if r.held > 0}<span class="held" title={$t('msg_req_held', { n: String(r.held) })} aria-label={$t('msg_req_held', { n: String(r.held) })}>+{r.held}</span>{/if}
+                <span class="list-row-bottom">
+                  <span class="list-row-line">{firstLine(r.text)}</span>
+                  {#if r.held > 0}<span class="count-pill lg quiet" title={$t('msg_req_held', { n: String(r.held) })} aria-label={$t('msg_req_held', { n: String(r.held) })}>+{r.held}</span>{/if}
                 </span>
               </span>
             </button>
@@ -86,25 +86,11 @@
 
 <style>
   .requests { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-1); display: flex; flex-direction: column; }
-  .intro { margin: var(--sp-2) var(--sp-3) var(--sp-3); font-size: var(--fs-xs); line-height: 1.5; color: var(--text-3); }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); display: flex; flex-direction: column; }
+  .intro { margin: var(--sp-3) var(--sp-3) var(--sp-3); font-size: var(--fs-sm); line-height: 1.45; color: var(--text-3); }
   .note { margin: 0; padding: var(--sp-6) var(--sp-4); text-align: center; font-size: var(--fs-sm); color: var(--text-2); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
-  .req {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; text-align: left;
-    padding: var(--sp-2) var(--sp-3); border: none; border-radius: var(--radius-md);
-    background: none; color: inherit; font: inherit; cursor: pointer;
-    transition: background var(--dur-fast) var(--ease);
-  }
-  .req:hover { background: var(--surface-row-hover); }
-  .req.active { background: var(--accent-tint); }
-  .body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-  .top, .bottom { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .title { font-weight: var(--fw-semibold); font-size: var(--fs-sm); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .stamp { margin-left: auto; font-size: var(--fs-2xs); color: var(--text-3); flex-shrink: 0; }
-  .preview { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  /* Not a badge of unread: grey, the count of messages held behind the request. */
-  .held { flex-shrink: 0; font-size: var(--fs-2xs); color: var(--text-3); }
+  /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows. */
+  /* The count held behind the request is the .count-pill of base.css, .quiet: not an unread one. */
   .empty {
     display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center;
     padding: var(--sp-8) var(--sp-4); color: var(--text-3);

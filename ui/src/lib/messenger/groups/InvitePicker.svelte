@@ -46,13 +46,10 @@
   }
 </script>
 
-<Dialog bind:open title={$t('msg_group_invite_title', { name: group.name })} width="min(440px, calc(100vw - 24px))">
+<Dialog bind:open title={$t('msg_group_invite_title', { name: group.name })} width="min(440px, calc(100vw - 24px))" footer={looksLikeKey ? keyFooter : undefined}>
   <div class="body">
     <input type="text" bind:value={key} placeholder={$t('msg_newchat_placeholder')} spellcheck="false" disabled={busy}
       onkeydown={(e) => { if (e.key === 'Enter' && looksLikeKey) invite(key.trim()); }} />
-    {#if looksLikeKey}
-      <button class="btn btn-primary" disabled={busy} onclick={() => invite(key.trim())}>{$t('msg_group_invite')}</button>
-    {/if}
     <p class="hint">{$t('msg_group_invite_hint')}</p>
     {#if error}<div class="error-msg">{error}</div>{/if}
     {#if contacts.length}
@@ -72,6 +69,11 @@
     {/if}
   </div>
 </Dialog>
+
+<!-- The window's verb for a typed key stays at its foot (the owner's rule); a row keeps its own. -->
+{#snippet keyFooter()}
+  <button class="btn btn-primary" disabled={busy} onclick={() => invite(key.trim())}>{$t('msg_group_invite')}</button>
+{/snippet}
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }

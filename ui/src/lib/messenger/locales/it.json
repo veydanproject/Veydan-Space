@@ -487,6 +487,8 @@
     "msg_push_enable": "Attiva le notifiche",
     "msg_push_toggle": "Avvisami dei nuovi messaggi",
     "msg_push_refused": "Le notifiche sono disattivate per questa app. Attivale nelle impostazioni del telefono, poi torna qui.",
+    "msg_push_quiet": "Le notifiche dei messaggi arrivano senza suono",
+    "msg_push_quiet_fix": "Imposta",
     "msg_push_reason_no_config": "Questa build non ha impostazioni push: le notifiche non possono funzionare.",
     "msg_push_reason_no_play": "Su questo telefono mancano i servizi Google, e le notifiche push passano da lì.",
     "msg_push_reason_token_failed": "Il servizio push non ha risposto. Controlla la connessione e riprova.",

@@ -52,11 +52,11 @@
       {#each [...(home ? [home] : []), ...privates] as c (c.id)}
         <li>
           <button type="button" class="row" class:here={c.id === current} disabled={c.id === current} onclick={() => onopen(c.id)}>
-            <Icon name={c.server_id ? 'server-2' : 'message-circle'} size={16} />
+            <span class="tile"><Icon name={c.server_id ? 'server-2' : 'message-circle'} size={18} /></span>
             <span class="what">
               <span class="top">
                 {#if c.server_id}<ServerLabel server={c.server_id} size="md" />{:else}<span class="home">{$t('msg_srv_peer_home')}</span>{/if}
-                {#if c.unread > 0}<span class="count">{c.unread > 99 ? '99+' : c.unread}</span>{/if}
+                {#if c.unread > 0}<span class="count-pill lg">{c.unread > 99 ? '99+' : c.unread}</span>{/if}
                 <span class="stamp">{c.id === current ? $t('msg_srv_peer_here') : listStamp(c.last_message_at)}</span>
               </span>
               <span class="preview">{line(c)}</span>
@@ -67,7 +67,7 @@
       {#each missing as s (s.id)}
         <li>
           <button type="button" class="row open" onclick={() => privateInvite.show({ peer: pubkey, server: s.id })}>
-            <Icon name="user-plus" size={16} />
+            <span class="tile"><Icon name="user-plus" size={18} /></span>
             <span class="what"><span class="open-text">{$t('msg_srv_peer_open', { name: nameOfServer(s) })}</span></span>
           </button>
         </li>
@@ -77,26 +77,28 @@
 {/if}
 
 <style>
-  .peer-chats { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); }
-  h3 { margin: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
+  .peer-chats { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); }
+  /* The title of the card in sentence case, as the other cards of the page. */
+  h3 { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .rows li + li { border-top: 1px solid var(--divider, var(--border)); }
+  .rows li { position: relative; }
+  /* The line between rows starts after the tile. */
+  .rows li + li::before { content: ''; position: absolute; top: 0; left: var(--sp-12); right: 0; height: 1px; background: var(--border-2); }
   .row {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-2) var(--sp-1);
-    border: none; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-sm);
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 52px; padding: var(--sp-2) 0;
+    border: none; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-md);
   }
   .row :global(svg) { flex-shrink: 0; }
-  @media (hover: hover) { .row:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); } }
+  .row:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .tile { flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center; background: var(--surface-3); color: var(--text-2); }
+  @media (hover: hover) { .row:hover:not(:disabled) { color: var(--text); } .row:hover:not(:disabled) .tile { background: var(--surface-hover); } }
   .row:disabled { cursor: default; }
   .row.here { opacity: 0.75; }
   .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .home { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
-  .stamp { margin-left: auto; font-size: var(--fs-2xs); color: var(--text-3); flex-shrink: 0; }
-  .count {
-    min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-badge); flex-shrink: 0;
-    background: var(--accent); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold); display: inline-flex; align-items: center; justify-content: center;
-  }
-  .preview { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .open-text { font-size: var(--fs-sm); color: var(--accent-text-2); font-weight: var(--fw-semibold); line-height: 1.35; overflow-wrap: anywhere; }
+  .home { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
+  .stamp { margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  /* The unread count is the .count-pill of base.css, 22 on a row. */
+  .preview { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .open-text { font-size: var(--fs-base); color: var(--text); font-weight: var(--fw-bold); line-height: 1.35; overflow-wrap: anywhere; }
 </style>

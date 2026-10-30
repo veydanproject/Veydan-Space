@@ -27,6 +27,8 @@
     label?: string;
     onclose?: () => void;
     header?: Snippet;
+    /** Beside the title, in the same head (a «?» of what the title means); a phone's sheet keeps it in its head too. */
+    titleAside?: Snippet;
     children: Snippet;
     footer?: Snippet;
   }
@@ -41,6 +43,7 @@
     label,
     onclose,
     header,
+    titleAside,
     children,
     footer,
   }: Props = $props();
@@ -68,11 +71,13 @@
 
 <svelte:window onkeydown={onKeydown} />
 
+<!-- The phone's footer goes to the sheet's own foot, outside its scrolling body: the buttons stay in sight. -->
+{#snippet sheetFooter()}<div class="sheet-actions">{@render footer?.()}</div>{/snippet}
+
 {#if isMobile}
-  <BottomSheet open={!!open} title={header ? '' : (title ?? '')} onclose={close} {closable} {expandable} {label}>
+  <BottomSheet open={!!open} title={header ? '' : (title ?? '')} onclose={close} {closable} {titleAside} {expandable} {label} footer={footer ? sheetFooter : undefined}>
     {#if header}<div class="sheet-header">{@render header()}</div>{/if}
     <div class="sheet-body" class:grow={expandable}>{@render children()}</div>
-    {#if footer}<div class="sheet-actions">{@render footer()}</div>{/if}
   </BottomSheet>
 {:else if open}
   <div
@@ -98,7 +103,8 @@
         <div class="dialog-header">{@render header()}</div>
       {:else if title}
         <div class="dialog-header">
-          <h2 class="dialog-title">{title}</h2>
+          <!-- The «?» right after the title, outside the heading: its note is not read as part of the title. -->
+          <div class="dialog-title-row"><h2 class="dialog-title">{title}</h2>{@render titleAside?.()}</div>
           <button class="dialog-close" onclick={close} aria-label={$t('common_close')} title={$t('common_close')}>
             <Icon name="x" size={16} />
           </button>
@@ -157,7 +163,16 @@
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
+  /* The title and its «?»: the row a note opens under. */
+  .dialog-title-row {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
   .dialog-title {
+    min-width: 0;
     font-size: var(--fs-lg);
     font-weight: var(--fw-bold);
     line-height: 1.35;
@@ -196,7 +211,7 @@
   .sheet-body :global(textarea) { resize: none; }
   /* Stacked, the whole width, 48 high, the verb on top: the footer reads
      «Отмена, verb» like the desktop's, the sheet turns it over (design kit). */
-  .sheet-actions { display: flex; flex-direction: column-reverse; gap: var(--sp-2); padding-top: var(--sp-1); }
+  .sheet-actions { display: flex; flex-direction: column-reverse; gap: var(--sp-2); }
   .sheet-actions :global(.btn) {
     width: 100%;
     min-height: 48px;

@@ -41,19 +41,20 @@
 {/if}
 
 <style>
-  .strip { display: flex; align-items: center; gap: 2px; white-space: normal; }
+  /* Every reaction fits whatever the menu's width: the circles share the row and shrink, at most 40 (44 on touch). */
+  .strip { display: flex; align-items: center; justify-content: space-between; gap: 2px; padding: 0 var(--sp-1); white-space: normal; box-sizing: border-box; min-width: 0; }
   .quick {
-    flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center;
-    width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: 50%;
+    flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; display: inline-flex; align-items: center; justify-content: center;
+    padding: 0; border: 1px solid transparent; border-radius: 50%;
     background: none; font: inherit; font-size: var(--fs-xl); line-height: 1; cursor: pointer; color: var(--text-2);
   }
   .quick:hover { background: var(--surface-hover, var(--surface-3)); }
   .quick.mine { border-color: var(--accent); background: var(--accent-tint); }
-  .quick.other { font-size: inherit; }
+  .quick.other { font-size: inherit; background: var(--surface-3); }
+  .quick:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
   .more-picker { width: 300px; max-width: 100%; white-space: normal; }
   @media (pointer: coarse) {
-    .strip { justify-content: space-between; }
-    .quick { width: 44px; height: 44px; font-size: 26px; flex: 0 0 auto; }
+    .quick { max-width: 44px; font-size: 26px; }
     .more-picker { width: 100%; }
   }
 </style>

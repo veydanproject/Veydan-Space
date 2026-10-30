@@ -71,6 +71,7 @@ pub mod roles;
 pub mod schedule;
 pub mod secrets;
 pub mod service;
+pub mod settle;
 pub mod snapshot;
 pub mod staff_keys;
 pub mod state;

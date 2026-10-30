@@ -24,6 +24,8 @@
   import { channelStore, chatIdOf } from './channelStore.svelte';
   import { channelError } from './errors';
   import type { ChannelDetail } from './api';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
+  import ChoiceRow from '$lib/core/ui/ChoiceRow.svelte';
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
 
@@ -180,167 +182,182 @@
   }
 </script>
 
-<Dialog bind:open title={tab === 'join' ? $t('chan_join_title') : $t('chan_new_title')} width="min(480px, calc(100vw - 24px))">
+<Dialog bind:open title={tab === 'join' ? $t('chan_join_title') : $t('chan_new_title')} width="min(520px, calc(100vw - 24px))">
   <div class="body">
     {#if !fromCard}
-    <div class="tabs" role="tablist">
-      <button role="tab" class="tab" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('chan_new_create')}</button>
-      <button role="tab" class="tab" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('chan_new_join')}</button>
+    <div class="seg tabs" role="tablist">
+      <button role="tab" class="seg-btn" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('chan_new_create')}</button>
+      <button role="tab" class="seg-btn" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('chan_new_join')}</button>
     </div>
     {/if}
 
     {#if tab === 'create'}
       <div class="top">
-        <button class="cover" onclick={pickCover} disabled={busy} title={$t('chan_cover_set')} aria-label={$t('chan_cover_set')}>
-          {#if cover}<Icon name="check" size={20} />{:else}<Icon name="camera" size={20} />{/if}
+        <button class="cover" class:picked={!!cover} onclick={pickCover} disabled={busy} title={$t('chan_cover_set')} aria-label={$t('chan_cover_set')}>
+          {#if cover}<Icon name="check" size={18} />{:else}<Icon name="camera" size={22} />{/if}
         </button>
         <div class="names">
-          <input class="field" type="text" bind:value={name} maxlength="64" placeholder={$t('chan_name')} aria-label={$t('chan_name')} disabled={busy}
+          <input class="field tall" type="text" bind:value={name} maxlength="64" placeholder={$t('chan_name')} aria-label={$t('chan_name')} disabled={busy}
             onkeydown={(e) => { if (e.key === 'Enter' && name.trim() && serversOk) create(); }} />
           {#if cover}<span class="option-hint">{$t('chan_cover_picked', { name: cover.split(/[\\/]/).pop() ?? '' })}</span>{/if}
         </div>
       </div>
       <textarea class="field" rows="2" bind:value={about} maxlength="500" placeholder={$t('chan_about')} aria-label={$t('chan_about')} disabled={busy}></textarea>
 
-      <div class="kinds" role="radiogroup" aria-label={$t('chan_rule_join')}>
-        {#each JOINS as k (k)}
-          <button class="kind" class:active={join === k} role="radio" aria-checked={join === k} onclick={() => (join = k)} disabled={busy}>
-            <span class="kind-title"><Icon name={k === 'open' ? 'world' : k === 'request' ? 'user-question' : 'lock-square-rounded'} size={14} />{$t(`chan_join_${k}` as 'chan_join_open')}</span>
-            <span class="kind-text">{$t(`chan_join_${k}_hint` as 'chan_join_open_hint')}</span>
-          </button>
-        {/each}
-      </div>
+      <section class="sec">
+        <span class="cap" id="chan-new-join">{$t('chan_rule_join')}</span>
+        <div class="kinds" role="radiogroup" aria-labelledby="chan-new-join">
+          {#each JOINS as k (k)}
+            <ChoiceRow icon={k === 'open' ? 'world' : k === 'request' ? 'user-question' : 'lock-square-rounded'}
+              title={$t(`chan_join_${k}` as 'chan_join_open')} hint={$t(`chan_join_${k}_hint` as 'chan_join_open_hint')}
+              checked={join === k} onclick={() => (join = k)} disabled={busy} />
+          {/each}
+        </div>
+      </section>
 
       {#if longHistory}
-        <div class="option">
-          <div class="option-info">
-            <span>{$t('chan_history_for_new')}</span>
-            <span class="option-hint">{$t(history === 'open' ? 'chan_history_open_hint' : 'chan_history_from_join_hint')}</span>
-          </div>
-          <button class="toggle" class:on={history === 'open'} role="switch" aria-checked={history === 'open'} aria-label={$t('chan_history_for_new')}
-            disabled={busy} onclick={() => (history = history === 'open' ? 'from_join' : 'open')}></button>
-        </div>
+        <ToggleRow title={$t('chan_history_for_new')} hint={$t(history === 'open' ? 'chan_history_open_hint' : 'chan_history_from_join_hint')}
+          on={history === 'open'} disabled={busy} onclick={() => (history = history === 'open' ? 'from_join' : 'open')} />
       {:else}
         <div class="option">
           <div class="option-info">
-            <span>{$t('chan_history_for_new')}</span>
+            <span class="option-title">{$t('chan_history_for_new')}</span>
             <span class="option-hint">{$t('chan_history_open_hint')} {$t('chan_history_needs_storage')}</span>
           </div>
         </div>
       {/if}
 
-      <div class="where">
+      <section class="sec where">
         {#if servers.length}
-          <span class="where-label">{$t('chan_where')}</span>
+          <span class="cap">{$t('chan_where')}</span>
           <ServerPicker bind:value={server} none={homeServersLabel()} disabled={busy} label={$t('chan_where')} />
         {/if}
         <span class="option-hint">{chosen ? $t('chan_where_private', { name: nameOfServer(chosen) }) : $t('chan_where_home')}</span>
-        {#if !serversOk}<p class="hint bad">{chosen ? $t('chan_where_no_files') : $t('chan_servers_none')}</p>
-        {:else if !chosen && plan.free}<span class="option-hint">{$t('chan_free_media_note', { days: String(plan.retention_days) })}</span>{/if}
-      </div>
+        {#if !serversOk}<p class="hint bad"><Icon name="alert-triangle" size={16} /><span>{chosen ? $t('chan_where_no_files') : $t('chan_servers_none')}</span></p>
+        {:else if !chosen && plan.free}<p class="note"><Icon name="info" size={18} /><span>{$t('chan_free_media_note', { days: String(plan.retention_days) })}</span></p>{/if}
+      </section>
 
-      <p class="hint">{$t('chan_keeper_note')}</p>
-      {#if error}<div class="error-msg">{error}</div>{/if}
-      <button class="btn btn-primary" disabled={busy || !name.trim() || !serversOk} aria-busy={busy} onclick={create}>
-        {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t('chan_create')}
-      </button>
+      <p class="note"><Icon name="info" size={18} /><span>{$t('chan_keeper_note')}</span></p>
+      {#if error}<div class="error-msg" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>{/if}
     {:else}
       {#if fromCard && !showLink}
-        <button type="button" class="link-toggle" aria-expanded="false" onclick={() => (showLink = true)}><Icon name="link" size={13} />{$t('chan_join_show_link')}</button>
+        <button type="button" class="link-toggle" aria-expanded="false" onclick={() => (showLink = true)}><Icon name="link" size={18} />{$t('chan_join_show_link')}</button>
       {:else}
-        <textarea class="field mono" rows="3" bind:value={url} placeholder="veydan://channel/…" aria-label={$t('chan_join_link')} spellcheck="false" disabled={busy}></textarea>
+        <label class="sec">
+          <span class="cap">{$t('chan_join_link')}</span>
+          <textarea class="field mono" class:bad={!!url.trim() && !linkLooksRight} rows="3" bind:value={url} placeholder="veydan://channel/…" aria-label={$t('chan_join_link')} spellcheck="false" disabled={busy}></textarea>
+        </label>
       {/if}
       {#if url.trim() && !linkLooksRight}
-        <p class="hint bad">{$t('chan_link_bad')}</p>
+        <p class="hint bad"><Icon name="alert-triangle" size={16} /><span>{$t('chan_link_bad')}</span></p>
       {:else if linkLooksRight}
         {#if preview}
           {@const c = coverOf(preview.picture)}
-          <div class="card">
+          <div class="ch-card">
             <Avatar url={c.url} src={c.src} label={preview.name} seed={preview.community_id} size={48} />
-            <div class="card-text">
-              <span class="card-name">{preview.name}</span>
-              <span class="card-sub">
-                <Icon name={preview.join === 'open' ? 'world' : preview.join === 'request' ? 'user-question' : 'lock-square-rounded'} size={11} />
+            <div class="ch-card-text">
+              <span class="ch-card-name">{preview.name}</span>
+              <span class="ch-card-sub">
+                <Icon name={preview.join === 'open' ? 'world' : preview.join === 'request' ? 'user-question' : 'lock-square-rounded'} size={14} />
                 {$t(`chan_join_${preview.join}` as 'chan_join_open')} · {readers}
               </span>
-              {#if preview.about}<span class="card-about">{preview.about}</span>{/if}
+              {#if preview.about}<span class="ch-card-about">{preview.about}</span>{/if}
             </div>
           </div>
           {#if way === 'request'}
-            <input class="field" type="text" bind:value={note} maxlength="300" placeholder={$t('chan_join_note')} aria-label={$t('chan_join_note')} disabled={busy} />
+            <input class="field tall" type="text" bind:value={note} maxlength="300" placeholder={$t('chan_join_note')} aria-label={$t('chan_join_note')} disabled={busy} />
           {:else if way === 'closed'}
-            <p class="hint">{$t('chan_preview_invite_only')}</p>
+            <p class="note"><Icon name="lock-square-rounded" size={18} /><span>{$t('chan_preview_invite_only')}</span></p>
           {/if}
         {:else if previewError}
-          <div class="error-msg">{previewError}</div>
+          <div class="error-msg" role="alert"><Icon name="alert-triangle" size={18} /><span>{previewError}</span></div>
           <button class="btn btn-ghost btn-sm retry" onclick={() => { previewedFor = url.trim(); void loadPreview(url.trim()); }}>
-            <Icon name="refresh-cw" size={13} />{$t('chan_retry')}
+            <Icon name="refresh-cw" size={16} />{$t('chan_retry')}
           </button>
         {:else}
-          <div class="found"><Icon name="loader" size={16} /><span>{$t('chan_preview_loading')}</span></div>
+          <div class="found" role="status"><span class="spinner" aria-hidden="true"></span><span>{$t('chan_preview_loading')}</span></div>
         {/if}
       {:else}
         <p class="hint">{$t('chan_join_hint')}</p>
       {/if}
-      {#if error}<div class="error-msg">{error}</div>{/if}
-      <button class="btn btn-primary" disabled={busy || !linkLooksRight || !way || way === 'closed' || previewing} aria-busy={busy} onclick={enter}>
+      {#if error}<div class="error-msg" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>{/if}
+    {/if}
+  </div>
+
+  {#snippet footer()}
+    {#if tab === 'create'}
+      <button class="btn btn-primary go" disabled={busy || !name.trim() || !serversOk} aria-busy={busy} onclick={create}>
+        {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t('chan_create')}
+      </button>
+    {:else}
+      <button class="btn btn-primary go" disabled={busy || !linkLooksRight || !way || way === 'closed' || previewing} aria-busy={busy} onclick={enter}>
         {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{way === 'open' ? $t('chan_preview_open') : way === 'request' ? $t('chan_preview_request') : $t('chan_join_cta')}
       </button>
     {/if}
-  </div>
+  {/snippet}
 </Dialog>
 
 <style>
   /* The spinner of a primary button, on its fill. */
   .spinner.light { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
-  .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); }
-  .tab { flex: 1; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text-2); padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; justify-content: center; text-align: center; }
-  .tab.active { background: var(--surface); color: var(--text); font-weight: var(--fw-semibold); }
-  .body > .btn { justify-content: center; }
+  .body { display: flex; flex-direction: column; gap: var(--sp-4); }
+  .body > :global(*) { flex-shrink: 0; min-width: 0; }
+  .tabs { display: flex; width: 100%; }
+  .tabs .seg-btn { flex: 1; justify-content: center; height: 36px; font-size: var(--fs-base); }
+  /* Only the button under the line: the whole width, 48 high. */
+  .go { flex: 1; justify-content: center; min-height: 48px; font-size: var(--fs-body); }
+
   .top { display: flex; align-items: center; gap: var(--sp-3); }
   .cover {
-    width: 56px; height: 56px; flex-shrink: 0; border-radius: 50%; border: 1px dashed var(--accent-border); background: var(--accent-tint);
-    color: var(--accent-text-2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%; border: 1px dashed var(--accent-border); background: var(--accent-bg);
+    color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
   }
-  .names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  .kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2); }
-  .kind {
-    display: flex; flex-direction: column; gap: 4px; text-align: left; padding: var(--sp-3); cursor: pointer; font: inherit; color: inherit;
-    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
-  }
-  .kind.active { border-color: var(--accent-border); background: var(--accent-tint); }
-  .kind-title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-bold); }
-  .kind-text { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
+  .cover.picked { border-style: solid; background: var(--accent-grad); color: #fff; }
+  .names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+
+  .sec { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .cap { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
+
+  .kinds { display: flex; flex-direction: column; gap: var(--sp-2); }
+
   .field {
-    width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 9px 12px; resize: vertical;
+    width: 100%; font: inherit; font-size: var(--fs-base); color: var(--text); background: var(--surface-3);
+    border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-2) var(--sp-3); resize: vertical;
   }
+  .field.tall { height: var(--control-h-lg); padding: 0 var(--sp-3); }
   .field:focus { outline: none; border-color: var(--accent-border); }
+  .field.bad { border-color: var(--danger-text); }
   .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+
   .option {
-    display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3);
-    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 64px; padding: var(--sp-3) var(--sp-4);
+    font: inherit; color: var(--text); text-align: left;
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-lg); background: var(--pane-strong);
   }
-  .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: 1.4; }
-  .option-hint { font-size: var(--fs-xs); color: var(--text-3); }
-  .where { display: flex; flex-direction: column; gap: 6px; }
-  .where-label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
-  .found { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); }
-  .card { display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); }
-  .card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-  .card-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card-sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
-  .card-about { font-size: var(--fs-sm); color: var(--text-body); line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-base); line-height: 1.4; }
+  .option-title { font-weight: var(--fw-semibold); }
+  .option-hint { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .where :global(.chip) { min-height: 36px; padding-inline: var(--sp-3); font-size: var(--fs-sm); gap: var(--sp-2); }
+
+  .note { display: flex; gap: var(--sp-2); align-items: flex-start; margin: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
+  .note :global(svg) { flex-shrink: 0; color: var(--text-3); margin-top: 1px; }
+  .error-msg { display: flex; gap: var(--sp-2); align-items: flex-start; line-height: 1.45; }
+  .error-msg :global(svg) { flex-shrink: 0; margin-top: 1px; }
+
+  .found { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md); background: var(--surface-3); border: 1px solid var(--border); }
+  .ch-card { display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-4); border-radius: var(--radius-lg); background: var(--pane-strong); border: 1px solid var(--pane-strong-border); }
+  .ch-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+  .ch-card-name { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ch-card-sub { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-3); }
+  .ch-card-about { font-size: var(--fs-base); color: var(--text-2); line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .retry { align-self: flex-start; }
   .link-toggle {
-    align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: none; background: none; cursor: pointer;
-    font: inherit; font-size: var(--fs-xs); color: var(--text-3);
+    align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) 0; border: none; background: none; cursor: pointer;
+    font: inherit; font-size: var(--fs-sm); color: var(--text-3);
   }
   .link-toggle:hover { color: var(--text-2); }
-  .found :global(svg) { flex-shrink: 0; }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
-  .hint.bad { color: var(--danger-text); }
-  @media (pointer: coarse) { .field { font-size: var(--fs-md); } }
-  @media (max-width: 460px) { .kinds { grid-template-columns: 1fr; } }
+  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.5; }
+  .hint.bad { display: flex; gap: var(--sp-2); align-items: center; color: var(--danger-text); }
+  .hint.bad :global(svg) { flex-shrink: 0; }
+  @media (pointer: coarse) { .field { font-size: var(--fs-md); } .field.tall { height: 48px; } }
 </style>

@@ -3,6 +3,7 @@
 
 <!-- The way to «QR»: a screen of its own on the phone (where it also scans by the camera), a dialog on the desktop (where it reads a picture). -->
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -21,6 +22,8 @@
 
   const phone = onPhone();
   let open = $state(false);
+  /** MyQr's actions, kept in the window's footer. */
+  let foot = $state<Snippet>();
 
   function go() {
     if (phone) void goto(qrHref());
@@ -35,8 +38,8 @@
 {/if}
 
 {#if !phone}
-  <Dialog bind:open title={$t('msg_inv_my_qr')} width="min(420px, calc(100vw - 24px))">
-    {#if open}<MyQr onchat={(id) => { open = false; openChat(id).catch(() => {}); }} />{/if}
+  <Dialog bind:open title={$t('msg_inv_my_qr')} width="min(420px, calc(100vw - 24px))" footer={open ? foot : undefined}>
+    {#if open}<MyQr bind:foot onchat={(id) => { open = false; openChat(id).catch(() => {}); }} />{/if}
   </Dialog>
 {/if}
 

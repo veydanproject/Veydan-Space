@@ -112,7 +112,7 @@
       {#each items as v (v.id)}
         {@const live = isActive(v, now)}
         <li class="row" class:ended={!live}>
-          <span class="kind"><Icon name={v.kind === 'code' ? 'key' : v.kind === 'qr' ? 'qr-code' : 'link'} size={15} /></span>
+          <span class="kind"><Icon name={v.kind === 'code' ? 'key' : v.kind === 'qr' ? 'qr-code' : 'link'} size={16} /></span>
           <span class="info">
             <span class="name">{[title(v), v.label].filter(Boolean).join(' · ')}</span>
             <span class="meta">{meta(v)}</span>
@@ -120,11 +120,11 @@
           {#if live}
             <span class="buttons">
               {#if v.kind !== 'qr'}
-                <button class="btn btn-ghost btn-sm" onclick={() => copy(v)} aria-label={$t('msg_copy')} title={$t('msg_copy')}>
-                  <Icon name={copied === v.id ? 'check' : 'copy'} size={13} />
+                <button class="btn btn-ghost" onclick={() => copy(v)} aria-label={$t('msg_copy')} title={$t('msg_copy')}>
+                  <Icon name={copied === v.id ? 'check' : 'copy'} size={18} />
                 </button>
               {/if}
-              <button class="btn btn-ghost btn-sm danger" disabled={inviteStore.revoking === v.id} onclick={() => revoke(v)}>{$t('msg_inv_revoke')}</button>
+              <button class="btn btn-ghost danger" disabled={inviteStore.revoking === v.id} onclick={() => revoke(v)}>{$t('msg_inv_revoke')}</button>
             </span>
           {/if}
         </li>
@@ -133,15 +133,14 @@
   {/if}
 
   <div class="actions">
-    <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => create('link')}><Icon name="link" size={13} />{$t('msg_inv_create_link')}</button>
-    <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => create('code')}><Icon name="key" size={13} />{$t('msg_inv_create_code')}</button>
+    <button class="btn btn-ghost" disabled={busy} onclick={() => create('link')}><Icon name="link" size={18} />{$t('msg_inv_create_link')}</button>
+    <button class="btn btn-ghost" disabled={busy} onclick={() => create('code')}><Icon name="key" size={18} />{$t('msg_inv_create_code')}</button>
   </div>
   {#if error || (inviteStore.list && inviteStore.error)}<p class="warn">{error || inviteStore.error}</p>{/if}
 </div>
 
 <style>
   .invites { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; line-height: 1.45; }
   .warn { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
   .strip {
@@ -149,20 +148,21 @@
     color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border);
   }
   .strip :global(svg) { flex-shrink: 0; margin-top: 2px; }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-  .row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+  /* Rows of 48 with a tile of 36 and a line between them (as the facts of «Профиль и ключ»). */
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-1) 0; }
+  .row + .row { border-top: 1px solid var(--border); }
   .row.ended { opacity: 0.6; }
   .kind {
-    width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-2);
+    width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); background: var(--surface-3); border: 1px solid var(--border); color: var(--text-2);
     display: inline-flex; align-items: center; justify-content: center;
   }
   .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .name { font-size: var(--fs-base); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .meta { font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
-  .buttons { display: flex; gap: 4px; flex-shrink: 0; }
+  .buttons { display: flex; gap: var(--sp-2); flex-shrink: 0; }
   .danger { color: var(--danger-text); }
-  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
-  .actions .btn :global(svg) { margin-right: 2px; }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   @media (pointer: coarse) {
     .actions .btn { flex: 1 1 auto; min-height: 40px; justify-content: center; }
   }

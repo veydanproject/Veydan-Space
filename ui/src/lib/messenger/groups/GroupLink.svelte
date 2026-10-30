@@ -17,8 +17,12 @@
   import ShareOutSheet from '../content/ShareOutSheet.svelte';
   import { groupShareItem } from '../content/shareOut';
 
-  interface Props { group: MessengerGroup }
-  let { group }: Props = $props();
+  interface Props {
+    group: MessengerGroup;
+    /** Its title above it; none on a page of its own, whose head says it. */
+    heading?: boolean;
+  }
+  let { group, heading = true }: Props = $props();
 
   let copied = $state(false);
   let sharing = $state(false);
@@ -65,20 +69,22 @@
 
 {#if group.link}
   <section class="block">
-    <div class="label">{$t('msg_group_link')}</div>
-    <p class="hint">{$t(group.kind === 'public' ? 'msg_group_link_hint_public' : 'msg_group_link_hint_private')}</p>
-    <code class="link">{group.link}</code>
-    <div class="row">
-      <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name={copied ? 'check' : 'copy'} size={13} />{copied ? $t('msg_group_link_copied') : $t('msg_copy')}</button>
-      <button class="btn btn-ghost btn-sm" onclick={() => (sharing = true)}><Icon name="send" size={13} />{$t('msg_share')}</button>
-      <button class="btn btn-ghost btn-sm" onclick={() => (sharingOut = true)}><Icon name="share" size={13} />{$t('msg_share_out_open')}</button>
-      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={toggleQr}><Icon name="qr-code" size={13} />{qr ? $t('msg_group_qr_hide') : $t('msg_group_qr_show')}</button>
-      {#if group.kind === 'public' && isManager(group)}
-        <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={13} />{$t('msg_group_link_rotate')}</button>
-      {/if}
+    {#if heading}<div class="label">{$t('msg_group_link')}</div>{/if}
+    <div class="link-box">
+      <p class="hint">{$t(group.kind === 'public' ? 'msg_group_link_hint_public' : 'msg_group_link_hint_private')}</p>
+      <code class="link">{group.link}</code>
+      <div class="grid">
+        <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name={copied ? 'check' : 'copy'} size={18} />{copied ? $t('msg_group_link_copied') : $t('msg_copy')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={() => (sharing = true)}><Icon name="send" size={18} />{$t('msg_share')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={() => (sharingOut = true)}><Icon name="upload" size={18} />{$t('msg_share_out_open')}</button>
+        <button class="btn btn-ghost btn-sm" disabled={busy} onclick={toggleQr}><Icon name="qr-code" size={18} />{qr ? $t('msg_group_qr_hide') : $t('msg_group_qr_show')}</button>
+        {#if group.kind === 'public' && isManager(group)}
+          <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={18} />{$t('msg_group_link_rotate')}</button>
+        {/if}
+      </div>
+      {#if qr}<img class="qr" src={qr} alt={$t('msg_group_qr_alt', { name: group.name })} />{/if}
+      {#if error}<div class="error-msg">{error}</div>{/if}
     </div>
-    {#if qr}<img class="qr" src={qr} alt={$t('msg_group_qr_alt', { name: group.name })} />{/if}
-    {#if error}<div class="error-msg">{error}</div>{/if}
   </section>
 {/if}
 
@@ -88,16 +94,20 @@
 {/if}
 
 <style>
-  .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .label { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); font-weight: var(--fw-bold); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.45; }
+  .block { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .label { display: flex; align-items: center; min-height: 24px; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
+  .link-box { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); }
+  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.5; }
   .link {
-    font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-2); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; overflow-wrap: anywhere;
-    max-height: 66px; overflow-y: auto; user-select: all;
+    font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); background: var(--surface-3);
+    border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); overflow-wrap: anywhere; word-break: break-all;
+    max-height: 96px; overflow-y: auto; user-select: all;
   }
-  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+  .grid .btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .grid .btn { min-height: var(--control-h-sm); min-width: 0; padding-inline: var(--sp-2); white-space: normal; text-wrap: balance; text-align: center; line-height: 1.25; }
   .danger { color: var(--danger-text); }
   /* A code is read by a camera: always dark on light, whatever the theme. */
-  .qr { align-self: center; width: min(240px, 100%); height: auto; background: #fff; border-radius: var(--radius-md); padding: 6px; image-rendering: pixelated; }
+  .qr { align-self: center; width: min(240px, 100%); height: auto; background: #fff; border-radius: var(--radius-md); padding: var(--sp-2); image-rendering: pixelated; }
+  @media (pointer: coarse) { .grid .btn { min-height: var(--control-h-lg); } }
 </style>

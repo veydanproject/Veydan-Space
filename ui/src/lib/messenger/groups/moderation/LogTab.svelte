@@ -17,7 +17,7 @@
   import { moderationError } from '../errors';
   import { stamp } from '../../shared/time';
   import { messengerApi, type LogEntry, type MessengerGroup } from '../../api';
-  import { aboutPerson, actionText, detailText } from './log';
+  import { aboutPerson, actionText, detailText, parseDetail } from './log';
   import { weekdayNames } from './schedule';
 
   interface Props {
@@ -63,6 +63,8 @@
 
   const what = (e: LogEntry): string => actionText(e, say);
   const more = (e: LogEntry): string => detailText(e, say, stamp, names);
+  /** A line whose decision no longer acts (it says «больше не действует») is drawn quieter. */
+  const lapsed = (e: LogEntry): boolean => parseDetail(e.detail)?.active === false;
 
   /**
    * A person by name; a message by its words while the chat holds it, else
@@ -85,7 +87,7 @@
   <ul class="log">
     {#each items as e, i (`${e.at}:${e.by}:${e.action}:${e.target}:${i}`)}
       {@const detail = more(e)}
-      <li class="entry">
+      <li class="entry" class:lapsed={lapsed(e)}>
         <div class="line"><b>{what(e)}</b>{#if whom(e)} <span class="target">{whom(e)}</span>{/if}</div>
         <div class="meta">{nameStore.label(e.by)} · {stamp(e.at)}{#if detail} · {detail}{/if}</div>
       </li>
@@ -98,12 +100,18 @@
 
 <style>
   .empty { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
-  .log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .entry { display: flex; flex-direction: column; gap: 2px; padding: 8px 4px; border-bottom: 1px solid var(--divider); min-width: 0; }
-  .line { font-size: var(--fs-sm); color: var(--text); overflow-wrap: anywhere; }
+  /* The journal: one card of rows, a line between them (design book, «Модерация группы · журнал»). */
+  .log {
+    list-style: none; margin: 0; padding: var(--sp-1) var(--sp-3); display: flex; flex-direction: column;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2);
+  }
+  .entry { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3) 0; min-width: 0; }
+  .entry + .entry { border-top: 1px solid var(--divider); }
+  .line { font-size: var(--fs-base); line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
   /* Markup drops the blank between the two; the gap is the style's. */
   .target { color: var(--text-2); margin-left: 0.35em; }
-  .meta { font-size: var(--fs-2xs); color: var(--text-3); overflow-wrap: anywhere; }
+  .meta { font-size: var(--fs-xs); line-height: 1.4; color: var(--text-3); overflow-wrap: anywhere; }
+  .lapsed .line { opacity: 0.6; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; margin-top: var(--sp-2); }
 </style>
