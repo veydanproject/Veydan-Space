@@ -4003,7 +4003,8 @@ mod tests {
         phone.dm.emoji_used("🔥", now - 100).await.unwrap();
 
         let note = alice.dm.emoji_snapshot_if_due(now).await.unwrap().expect("uses were counted");
-        assert_eq!(note, Envelope::own_emoji(&[("❤️".into(), 2, now), ("👍".into(), 1, now)]));
+        // Three uses in one second keep their order: now, now + 1, now + 2.
+        assert_eq!(note, Envelope::own_emoji(&[("❤️".into(), 2, now + 2), ("👍".into(), 1, now + 1)]));
         assert!(alice.dm.emoji_snapshot_if_due(now).await.unwrap().is_none(), "nothing new");
         alice.dm.emoji_used("👍", now + 1).await.unwrap();
         assert!(alice.dm.emoji_snapshot_if_due(now + 599).await.unwrap().is_none(), "not twice in ten minutes");
@@ -4014,7 +4015,7 @@ mod tests {
         assert_eq!(phone.dm.emoji_top(6).await.unwrap(), vec!["❤️", "👍", "🔥"]);
         assert!(phone.receive(&own_note(&alice.keys, &note, now)).await.is_empty(), "the same map again");
         assert_eq!(names(&phone.receive(&own_note(&alice.keys, &later, now + 600)).await), vec!["emoji.updated"]);
-        assert_eq!(phone.dm.emoji_top(2).await.unwrap(), vec!["👍", "❤️"], "a tie goes to the last used");
+        assert_eq!(phone.dm.emoji_top(2).await.unwrap(), vec!["👍", "❤️"], "the used last first");
         // A map older than what the phone knows takes nothing away.
         assert!(phone.receive(&own_note(&alice.keys, &note, now + 700)).await.is_empty());
         assert_eq!(phone.dm.emoji_top(6).await.unwrap(), vec!["👍", "❤️", "🔥"]);
@@ -4023,7 +4024,8 @@ mod tests {
         let junk = Envelope::new(messenger_core::envelope::T_OWN_EMOJI)
             .with("usage", serde_json::json!({ "ok": [9, 1], "😂": "x", "😮": [1], "🎉": [50, now] }));
         assert_eq!(names(&phone.receive(&own_note(&alice.keys, &junk, now)).await), vec!["emoji.updated"]);
-        assert_eq!(phone.dm.emoji_top(6).await.unwrap(), vec!["🎉", "👍", "❤️", "🔥"]);
+        // 🎉 is the most used, but the first line is of the used last.
+        assert_eq!(phone.dm.emoji_top(6).await.unwrap(), vec!["👍", "❤️", "🎉", "🔥"]);
         // The phone still owes the others its own 🔥: a map it heard does not
         // settle that.
         assert!(phone.dm.emoji_snapshot_if_due(now).await.unwrap().is_some(), "the phone's own 🔥");

@@ -16,7 +16,7 @@ const view = (extra: Partial<ChannelView> = {}): ChannelView => ({
 });
 const detail = (extra: Partial<ChannelDetail> = {}, v: Partial<ChannelView> = {}): ChannelDetail => ({
   channel: view(v), history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], staff: [], disbanded: false,
-  has_key: true, waiting: 0, ...extra,
+  has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false, ...extra,
 });
 
 describe('the line of a channel in the list of chats', () => {

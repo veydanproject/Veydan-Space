@@ -563,6 +563,45 @@ async fn a_declined_handover_changes_nothing() {
     assert!(o.svc.transfer(&o.keys, &cid, &pk(&o)).await.is_err());
 }
 
+/// A channel handed over: my note of the keys names the owner who made it
+/// (the author of its `create`), not the owner now, and a device of mine
+/// that never heard the journal joins it; a `create` of somebody else
+/// under its id (here the owner now) is not its genesis there (ROO-271,
+/// ROO-323).
+#[tokio::test]
+async fn a_channel_handed_over_shows_on_a_device_without_its_journal_by_the_author_of_its_create() {
+    let w = World::new();
+    let (o, m, r, cid) = channel_with_team(&w).await;
+    let all = [&o, &m, &r];
+    o.svc.transfer(&o.keys, &cid, &pk(&m)).await.unwrap_or_else(|e| panic!("transfer: {e}"));
+    w.pump(&all).await;
+    m.svc.transfer_answer(&m.keys, &cid, true).await.unwrap_or_else(|e| panic!("accept: {e}"));
+    w.pump(&all).await;
+    let log = r.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    assert_eq!((log.state().owner.clone(), log.creator().cloned()), (pk(&m), Some(pk(&o))));
+    let body = r.svc.member(&r.keys).own_keys_for_test(log.state()).await;
+    assert_eq!(body.owner.as_deref(), Some(o.me.as_hex()), "who made it, not the owner now");
+    // A create of the owner now under the id, before everything on the
+    // relay; a device of the reader that heard nothing of it all.
+    let real = log.ordered().next().cloned().unwrap_or_else(|| panic!("create"));
+    w.relay.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(0, crate::scenarios::forged_create(&cid, &real, &m.keys));
+    let tablet = w.device(r.keys.clone()).await;
+    tablet.skip_all(&w.relay);
+    tablet.skip_inboxes(&w.relay);
+    w.clock.advance(crate::member::OWN_KEYS_EVERY_SECS + 1);
+    r.svc.turn().await.unwrap_or_else(|e| panic!("turn: {e}"));
+    let all = [&o, &m, &r, &tablet];
+    w.pump(&all).await;
+    assert_eq!(tablet.svc.log(&cid).await.ok().flatten().and_then(|l| l.creator().cloned()), Some(pk(&o)), "the real create, not the other");
+    assert_eq!(membership(&tablet, &cid).await, MEMBERSHIP_JOINED, "joined there by itself");
+    assert_eq!(newest(&tablet, &cid).await, newest(&r, &cid).await);
+    tablet.svc.listen(&tablet.keys).await.unwrap_or_else(|e| panic!("listen: {e}"));
+    w.pump(&all).await;
+    m.svc.send_post(&m.keys, &cid, "the new owner", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    assert_eq!(post_texts(&tablet, &cid).await, ["the new owner"]);
+}
+
 // ─── The tickets of the moderators (wire §17) ───────────────────────────────
 
 /// A `request` channel with a moderator (not the owner) and a post by the owner.
@@ -902,4 +941,227 @@ async fn staff_never_let_in_are_invited_admitted_and_told_why_no_bundle_comes() 
     s.svc.send_post(&s.keys, &cid, "by the agent", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
     w.pump(&all).await;
     assert_eq!(post_texts(&a, &cid).await, ["by the agent"]);
+}
+
+// ─── A channel catches up by itself (ROO-270) ───────────────────────────────
+
+/// The gift wraps on the relay so far, to anyone.
+fn wraps_on_relay(w: &World) -> usize {
+    w.relay.inbox.lock().map(|i| i.values().map(Vec::len).sum::<usize>()).unwrap_or(0)
+}
+
+/// Production, RC 5.2.0: «19 more posts will open when the keeper is
+/// online», for good. A reader asked for the bundle of a new generation
+/// once, when its epoch came; the answer lost, the epoch heard again is a
+/// `Duplicate` and asks nothing, and the posts waited for the next epoch.
+/// Asked again by the turn once `REBUNDLE_EVERY_SECS` passed, not sooner.
+#[tokio::test]
+async fn a_rebundle_whose_answer_was_lost_is_asked_again_and_the_key_comes_at_a_later_turn() {
+    let w = World::new();
+    let (a, b, r, cid) = owner_two_devices(&w).await;
+    // A snapshot that names the reader, as an emergency needs.
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&[&a, &b, &r]).await;
+    let before = newest(&r, &cid).await.map(|k| k.epoch);
+    // A is lost; B takes over by a new generation, whose bundle to the
+    // reader is lost on the way.
+    b.svc.keeper_take(&b.keys, &cid, true).await.unwrap_or_else(|e| panic!("take: {e}"));
+    w.pump(&[&b]).await;
+    r.skip_inboxes(&w.relay);
+    // The reader hears the epoch of the new generation and asks once; that
+    // answer is lost too.
+    w.pump(&[&r]).await;
+    w.pump(&[&b]).await;
+    r.skip_inboxes(&w.relay);
+    w.pump(&[&b, &r]).await;
+    assert_eq!(newest(&r, &cid).await.map(|k| k.epoch), before, "no key: both answers were lost");
+    // What is posted now waits for the keeper, and is said to.
+    b.svc.send_post(&b.keys, &cid, "after the loss", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&b, &r]).await;
+    assert_eq!(waiting(&r, &cid).await, crate::member::Waiting { keeper: 1, ..Default::default() });
+    // Within the pause the turn asks nothing.
+    let sent = wraps_on_relay(&w);
+    tick(&r).await;
+    assert_eq!(wraps_on_relay(&w), sent, "asked again within the pause");
+    // After it, the next turn asks again, and the key comes.
+    w.clock.advance(crate::service::REBUNDLE_EVERY_SECS);
+    tick(&r).await;
+    w.pump(&[&b, &r]).await;
+    let after = newest(&r, &cid).await.map(|k| k.epoch);
+    assert!(after > before, "{before:?} → {after:?}");
+    assert_eq!(post_texts(&r, &cid).await, ["after the loss"]);
+    assert_eq!(waiting(&r, &cid).await.total(), 0);
+}
+
+async fn waiting(n: &Node, cid: &str) -> crate::member::Waiting {
+    let log = n.svc.log(cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    n.svc.member(&n.keys).waiting(log.state()).await.unwrap_or_else(|e| panic!("waiting: {e}"))
+}
+
+/// Posts under an epoch whose event has not come yet wait for the relay,
+/// not for the keeper: the page says «catching up», not «when the keeper is
+/// online» (RC 5.2.0: the keeper's text for whatever waited).
+#[tokio::test]
+async fn posts_under_an_epoch_not_heard_yet_wait_for_the_relay_not_for_the_keeper() {
+    let w = World::new();
+    let a = w.node().await;
+    let cid = create(&w, &a, JoinMode::Open).await;
+    let r = w.node().await;
+    let all = [&a, &r];
+    join_by_link(&w, &a, &r, &cid, &all).await;
+    r.hold(KIND_EPOCH, true);
+    w.clock.advance(400);
+    a.svc.rotate_now(&cid).await.unwrap_or_else(|e| panic!("rotate: {e}"));
+    tick(&a).await;
+    a.svc.send_post(&a.keys, &cid, "under the new epoch", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    assert!(post_texts(&r, &cid).await.is_empty());
+    assert_eq!(waiting(&r, &cid).await, crate::member::Waiting { ahead: 1, ..Default::default() });
+    r.hold(KIND_EPOCH, false);
+    w.pump(&all).await;
+    assert_eq!(post_texts(&r, &cid).await, ["under the new epoch"]);
+    assert_eq!(waiting(&r, &cid).await.total(), 0);
+}
+
+/// `asker` asks the keeper on `keeper` for a bundle, and it answers.
+async fn ask_bundle(w: &World, asker: &Node, keeper: &Node, all: &[&Node], cid: &str) {
+    let log = asker.svc.log(cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    asker.svc.member(&asker.keys).ask_rebundle(log.state(), SCOPE_EVERYONE, 1, w.clock.now()).await.unwrap_or_else(|e| panic!("rebundle: {e}"));
+    w.pump(all).await;
+    tick(keeper).await;
+    w.pump(all).await;
+}
+
+/// Staff whom the keeper let in before, gone from its tree (a keeper
+/// recovered without them), are let in again by their ask for a bundle,
+/// not told «never let in»: by the keeper's rows of its readers, or by the
+/// newest snapshot. One removed after the snapshot is not.
+#[tokio::test]
+async fn staff_out_of_the_tree_but_known_as_readers_are_let_in_again() {
+    let w = World::new();
+    let a = w.node().await;
+    let cid = create(&w, &a, JoinMode::Open).await;
+    let s = w.node().await;
+    let all = [&a, &s];
+    join_by_link(&w, &a, &s, &cid, &all).await;
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    let keeper = a.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("keeper"));
+    let log = a.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    assert!(!a.svc.member(&a.keys).in_snapshot(&log, &pk(&s)).await.unwrap_or(true), "no snapshot names the author yet");
+    // Gone from the tree, its reader row kept: let in again.
+    keeper.lock().await.drop_leaf(&pk(&s), w.clock.now()).await.unwrap_or_else(|e| panic!("drop: {e}"));
+    assert!(!keeper.lock().await.is_member(&pk(&s)));
+    ask_bundle(&w, &s, &a, &all, &cid).await;
+    assert!(keeper.lock().await.is_member(&pk(&s)), "let in again by the keeper's rows");
+    assert_eq!(s.svc.refused_by_keeper(&cid).await.unwrap_or_default(), None, "not told «never let in»");
+    // Gone from the tree and from the rows: the snapshot names them.
+    w.clock.advance(600);
+    tick(&a).await;
+    w.pump(&all).await;
+    let log = a.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    assert!(a.svc.member(&a.keys).in_snapshot(&log, &pk(&s)).await.unwrap_or(false), "the snapshot names the author");
+    w.clock.advance(5);
+    keeper.lock().await.drop_leaf(&pk(&s), w.clock.now()).await.unwrap_or_else(|e| panic!("drop: {e}"));
+    db::keeper::reader_out(a.svc.db(), &cid, pk(&s).as_hex()).await.unwrap_or_else(|e| panic!("{e}"));
+    ask_bundle(&w, &s, &a, &all, &cid).await;
+    assert!(keeper.lock().await.is_member(&pk(&s)), "let in again by the snapshot");
+    assert_eq!(s.svc.refused_by_keeper(&cid).await.unwrap_or_default(), None);
+    s.svc.send_post(&s.keys, &cid, "by the author", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    assert_eq!(post_texts(&a, &cid).await, ["by the author"]);
+    // Removed after the snapshot, the role given again: the snapshot lets
+    // nobody the journal put out since back in.
+    w.clock.advance(5);
+    a.svc.act(&a.keys, &cid, OpBody::Remove { who: pk(&s) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&all).await;
+    tick(&a).await;
+    w.pump(&all).await;
+    if a.svc.log(&cid).await.ok().flatten().is_some_and(|l| l.state().role_of(&pk(&s)).is_none()) {
+        a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+        w.pump(&all).await;
+    }
+    let log = a.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    assert!(!a.svc.member(&a.keys).in_snapshot(&log, &pk(&s)).await.unwrap_or(true), "put out after the snapshot");
+    ask_bundle(&w, &s, &a, &all, &cid).await;
+    assert!(!keeper.lock().await.is_member(&pk(&s)), "the one removed is not let in by the snapshot");
+}
+
+/// One the tree lost, removed while out of it, the role given again: its
+/// reader row went with the removal and does not let it in. Nor does a row
+/// an older run left from before the removal.
+#[tokio::test]
+async fn one_removed_after_the_tree_lost_them_is_not_let_in_by_the_rows() {
+    let w = World::new();
+    let a = w.node().await;
+    let cid = create(&w, &a, JoinMode::Open).await;
+    let s = w.node().await;
+    let all = [&a, &s];
+    join_by_link(&w, &a, &s, &cid, &all).await;
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    let keeper = a.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("keeper"));
+    keeper.lock().await.drop_leaf(&pk(&s), w.clock.now()).await.unwrap_or_else(|e| panic!("drop: {e}"));
+    let since = db::keeper::reader_since(a.svc.db(), &cid, pk(&s).as_hex()).await.ok().flatten().unwrap_or_else(|| panic!("the row is kept"));
+    w.clock.advance(5);
+    a.svc.act(&a.keys, &cid, OpBody::Remove { who: pk(&s) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&all).await;
+    tick(&a).await;
+    w.pump(&all).await;
+    assert_eq!(db::keeper::reader_since(a.svc.db(), &cid, pk(&s).as_hex()).await.unwrap_or_default(), None, "the removal drops the row");
+    w.clock.advance(5);
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    ask_bundle(&w, &s, &a, &all, &cid).await;
+    assert!(!keeper.lock().await.is_member(&pk(&s)), "no row: not let in");
+    // A row from before the removal (an older run kept it): weighed
+    // against the time of the removal, it lets nobody in.
+    db::keeper::reader_in(a.svc.db(), &cid, pk(&s).as_hex(), since).await.unwrap_or_else(|e| panic!("{e}"));
+    w.clock.advance(5);
+    ask_bundle(&w, &s, &a, &all, &cid).await;
+    assert!(!keeper.lock().await.is_member(&pk(&s)), "a row older than the removal: not let in");
+}
+
+/// Staff made a plain member again, its mute (a setting the journal keeps)
+/// still on: named by the journal, but no staff, it is not let in again by
+/// its row when the tree lost it.
+#[tokio::test]
+async fn staff_made_a_member_with_settings_kept_is_not_let_in_by_the_rows() {
+    let w = World::new();
+    let a = w.node().await;
+    let cid = create(&w, &a, JoinMode::Open).await;
+    let s = w.node().await;
+    let all = [&a, &s];
+    join_by_link(&w, &a, &s, &cid, &all).await;
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Author }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    a.svc.act(&a.keys, &cid, OpBody::SetMuted { who: pk(&s), muted: true, until: None }).await.unwrap_or_else(|e| panic!("mute: {e}"));
+    a.svc.act(&a.keys, &cid, OpBody::SetRole { who: pk(&s), role: Role::Member }).await.unwrap_or_else(|e| panic!("role: {e}"));
+    w.pump(&all).await;
+    let log = a.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    assert_eq!(log.state().role_of(&pk(&s)), Some(Role::Member), "the journal still names them");
+    let keeper = a.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("keeper"));
+    keeper.lock().await.drop_leaf(&pk(&s), w.clock.now()).await.unwrap_or_else(|e| panic!("drop: {e}"));
+    assert!(db::keeper::reader_since(a.svc.db(), &cid, pk(&s).as_hex()).await.ok().flatten().is_some(), "the row is kept");
+    ask_bundle(&w, &s, &a, &all, &cid).await;
+    assert!(!keeper.lock().await.is_member(&pk(&s)), "a member is not let in again by its row");
+}
+
+/// The owner is never told «never let in»: a device of the owner's that
+/// asks for a bundle while the keeper's tree lacks the owner (rows lost
+/// with it) is let in again.
+#[tokio::test]
+async fn the_owner_is_never_told_not_let_in_and_is_let_in_again() {
+    let w = World::new();
+    let (a, b, r, cid) = owner_two_devices(&w).await;
+    let all = [&a, &b, &r];
+    let keeper = a.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("keeper"));
+    keeper.lock().await.drop_leaf(&pk(&b), w.clock.now()).await.unwrap_or_else(|e| panic!("drop: {e}"));
+    db::keeper::reader_out(a.svc.db(), &cid, pk(&b).as_hex()).await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(!keeper.lock().await.is_member(&pk(&b)));
+    ask_bundle(&w, &b, &a, &all, &cid).await;
+    assert_eq!(b.svc.refused_by_keeper(&cid).await.unwrap_or_default(), None, "the owner is never refused");
+    assert!(keeper.lock().await.is_member(&pk(&b)), "the owner is let in again");
+    let not_let_in = b.errors().iter().chain(a.errors().iter()).filter(|e| e.contains("not_let_in")).count();
+    assert_eq!(not_let_in, 0);
 }

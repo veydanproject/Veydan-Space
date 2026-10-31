@@ -303,7 +303,8 @@ impl DmService {
         settings::set(&self.store, KEY_EMOJI_DIRTY, "1").await
     }
 
-    /// The `n` emoji I use most, the most used first.
+    /// `n` emoji: the ones I used last, the newest first, then the ones I
+    /// use most (`emoji_usage::top`).
     pub async fn emoji_top(&self, n: usize) -> Result<Vec<String>> {
         if n == 0 {
             return Ok(vec![]);

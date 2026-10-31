@@ -43,12 +43,13 @@ export async function shareOut(item: ShareOutItem, way: Exclude<ShareOutWay, 'qr
 }
 
 /**
- * My contact as words for another app: one sentence with the link, nothing
- * else of me (no phone, no name). The words are changed here only.
+ * My contact as words for another app: a line of invitation, the link and
+ * my name when I have one (no phone, nothing else of me). The words are changed here only.
  */
-export function contactShareItem(url: string): ShareOutItem {
+export function contactShareItem(url: string, name?: string | null): ShareOutItem {
   const tr = get(t) as (k: string, p?: Record<string, string>) => string;
-  return { text: tr('msg_share_out_contact_text', { link: url }), subject: tr('msg_share_out_contact_subject'), url };
+  const who = name?.trim();
+  return { text: tr('msg_share_out_contact_text', { link: url }) + (who ? `\n${who}` : ''), subject: tr('msg_share_out_contact_subject'), url };
 }
 
 /** A group's link as words for another app: one sentence with the link, not even the group's name. */

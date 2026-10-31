@@ -36,6 +36,17 @@
   const draft = profileDraft.take(owner);
   const start = draft?.start ?? profileInputOf(messengerStore.ownProfile);
   let form = $state<MessengerProfileInput>($state.snapshot(draft?.form ?? start));
+  /**
+   * One field «Имя» (ROO-259 item 10): what is typed goes into both the
+   * display name and the name, so every other client shows the same; a
+   * profile where they differ shows the display name, or the name when
+   * there is none. The name stays in the profile for a nickname to come.
+   */
+  let shownName = $state(form.display_name?.trim() || form.name?.trim() || '');
+  function typeName() {
+    form.display_name = shownName;
+    form.name = shownName;
+  }
   let about = $state(draft?.about ?? start.about ?? '');
   let phone = $state(draft?.phone ?? '');
   let share = $state(draft?.share ?? true);
@@ -146,14 +157,9 @@
 
   <section class="block fields">
     <div class="field">
-      <label for="own-display-name">{$t('msg_own_display_name')}</label>
-      <input id="own-display-name" type="text" bind:value={form.display_name} disabled={busy} maxlength="100" autocomplete="nickname" />
-      <p class="hint">{$t('msg_profile_display_name_hint')}</p>
-    </div>
-    <div class="field">
       <label for="own-name">{$t('msg_own_name')}</label>
-      <input id="own-name" type="text" bind:value={form.name} disabled={busy} maxlength="100" spellcheck="false" autocapitalize="off" autocomplete="username" />
-      <p class="hint">{$t('msg_profile_name_hint')}</p>
+      <input id="own-name" type="text" bind:value={shownName} oninput={typeName} disabled={busy} maxlength="100" autocomplete="nickname" />
+      <p class="hint">{$t('msg_profile_display_name_hint')}</p>
     </div>
   </section>
 
@@ -185,10 +191,6 @@
     <div class="field">
       <label for="own-nip05">NIP-05</label>
       <input id="own-nip05" type="text" bind:value={form.nip05} disabled={busy} placeholder="user@domain" spellcheck="false" autocapitalize="off" />
-    </div>
-    <div class="field">
-      <label for="own-lud16">{$t('msg_profile_lud16')}</label>
-      <input id="own-lud16" type="text" bind:value={form.lud16} disabled={busy} placeholder="name@wallet.example" spellcheck="false" autocapitalize="off" />
     </div>
   </section>
 

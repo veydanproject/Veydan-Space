@@ -346,7 +346,7 @@
   .play { position: absolute; color: #fff; filter: var(--media-icon-shadow); }
   .dur.big { left: var(--sp-3); bottom: var(--sp-3); font-size: var(--fs-xs); }
 
-  .albums { position: absolute; inset: var(--control-h) 0 0; z-index: var(--z-panel); overflow-y: auto; }
+  .albums { position: absolute; inset: var(--control-h) 0 0; z-index: var(--z-panel); overflow-y: auto; background: var(--m-sheet); border-radius: var(--radius-md); }
   .none { padding: var(--sp-6) 0; }
 
   .add-bar { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0; }

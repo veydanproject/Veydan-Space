@@ -18,7 +18,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
-  import { contactLabel, messengerApi, messengerError, type InviteView } from '../api';
+  import { contactLabel, messengerApi, messengerError, profileLabel, type InviteView } from '../api';
   import { messengerStore } from '../store.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
   import { clock, stamp } from '../shared/time';
@@ -27,6 +27,7 @@
   import ScanQr from './ScanQr.svelte';
   import ShareOutSheet from '../content/ShareOutSheet.svelte';
   import { contactShareItem, type ShareOutItem } from '../content/shareOut';
+  import { qrSrc as svgSrc, saveQr, saveQrError } from '../content/saveQr';
   import ServerBox from '../servers/ServerBox.svelte';
   import ServerPicker from '../servers/ServerPicker.svelte';
   import { serverStore } from '../servers/serverStore.svelte';
@@ -55,6 +56,10 @@
   let permanent = $state(false);
   let current = $state<InviteView | null>(null);
   let qrSrc = $state<string | null>(null);
+  /** The SVG of what is shown, for «Сохранить». */
+  let qrSvg = '';
+  let serverSvg = '';
+  let saving = $state(false);
   let drawing = $state(false);
   let error = $state('');
   /** After a failed draw the next try waits this long: a runtime that refuses is not asked every second. */
@@ -93,10 +98,11 @@
   $effect(() => {
     const s = qrServer;
     serverQr = null;
+    serverSvg = '';
     if (!s) return;
     let live = true;
     messengerApi.servers.privateLinkQr(s)
-      .then((svg) => { if (live) serverQr = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`; })
+      .then((svg) => { if (live) { serverSvg = svg; serverQr = svgSrc(svg); } })
       .catch((e) => { if (live) error = messengerError(e); });
     return () => { live = false; };
   });
@@ -113,8 +119,9 @@
       const svg = await messengerApi.links.contactQr(v.id);
       if (destroyed) return;
       current = v;
+      qrSvg = svg;
       // Shown as an image: nothing inside the picture can run.
-      qrSrc = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+      qrSrc = svgSrc(svg);
     } catch (e) {
       error = messengerError(e);
       retryAt = nowSec() + DRAW_RETRY_SECS;
@@ -170,10 +177,25 @@
       const v = await inviteStore.create({ kind: 'link', label: '' });
       if (!v.link) throw new Error('no link');
       shareId = v.id;
-      shareItem = contactShareItem(v.link);
+      shareItem = contactShareItem(v.link, profileLabel(messengerStore.ownProfile));
       sharing = true;
     } catch (e) {
       error = messengerError(e);
+    }
+  }
+
+  /** «Сохранить»: the code shown now as a picture (a timed one stops letting in when its time is over). */
+  async function save() {
+    const svg = qrServer ? serverSvg : qrSvg;
+    if (!svg || saving) return;
+    error = '';
+    saving = true;
+    try {
+      await saveQr(svg, 'veydan-my-qr');
+    } catch (e) {
+      error = saveQrError(e, messengerError);
+    } finally {
+      saving = false;
     }
   }
 
@@ -294,6 +316,7 @@
 
     {#if error}<div class="error-msg">{error}</div>{/if}
     <div class="actions">
+      <button class="btn btn-ghost" disabled={saving || !(qrServer ? serverQr : qrSrc)} onclick={save}><Icon name="download" size={18} />{$t('msg_qr_save')}</button>
       <button class="btn btn-ghost" onclick={copyLink}><Icon name={qrServer ? (linkNote ? 'check' : 'link') : 'upload'} size={18} />{$t(qrServer ? 'msg_inv_copy_link' : 'msg_share_out_open')}</button>
       {#if !qrServer}
       <button class="btn btn-ghost" class:active={codeOpen} aria-expanded={codeOpen} onclick={() => (codeOpen = !codeOpen)}>
@@ -332,7 +355,7 @@
     font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); background: var(--surface-2);
     border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); overflow-wrap: anywhere; user-select: all;
   }
-  /* The foot: «Скопировать ссылку | Код на 24 ч» side by side; «Выбрать картинку» (ScanQr) the whole width under them. */
+  /* The foot: «Сохранить | Поделиться | Код на 24 ч» side by side; «Выбрать картинку» (ScanQr) the whole width under them. */
   .foot { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
   .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   .actions .btn { flex: 1 1 auto; justify-content: center; }

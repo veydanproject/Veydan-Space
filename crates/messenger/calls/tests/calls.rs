@@ -1260,7 +1260,7 @@ async fn no_restart_is_made_on_a_live_way_for_a_peer_that_takes_none() {
 /// the call keeps its record. My own calls go out as before, and a glare
 /// with the peer is settled as any.
 #[tokio::test]
-async fn a_device_that_takes_no_calls_ignores_the_invitation_without_a_word() {
+async fn a_device_that_takes_no_calls_rings_for_none_without_a_word() {
     let w = World::new(&[("alice", None), ("bob-1", None), ("bob-2", Some(1))], false).await;
     let (alice, bob1, bob2) = (w.p(0), w.p(1), w.p(2));
     assert!(bob2.calls.incoming_enabled().await.unwrap());
@@ -1272,8 +1272,8 @@ async fn a_device_that_takes_no_calls_ignores_the_invitation_without_a_word() {
     assert_eq!(bob1.incoming().len(), 1);
     assert!(bob2.incoming().is_empty(), "no ring");
     assert!(bob2.calls.current().await.is_none());
-    assert!(bob2.records().await.is_empty(), "no record");
-    assert!(bob2.sent.lock().unwrap().is_empty(), "not a word");
+    assert_eq!(bob2.records().await.len(), 1, "on record all the same");
+    assert!(bob2.said_to_others().is_empty(), "not a word");
     bob1.calls.accept(&call.call_id).await.unwrap();
     w.settle().await;
     assert_eq!(phase(bob1), Some(Phase::Active));
@@ -1281,8 +1281,7 @@ async fn a_device_that_takes_no_calls_ignores_the_invitation_without_a_word() {
     w.advance(5).await;
     alice.calls.end(&call.call_id).await.unwrap();
     w.settle().await;
-    assert!(bob2.records().await.is_empty(), "the answer's and the end's copies make no record either");
-    assert!(bob2.ended().is_empty());
+    assert_eq!(bob2.records().await[0].outcome.as_deref(), Some("ended"), "closed by the answer's and the end's copies");
     assert_eq!(bob1.records().await[0].outcome.as_deref(), Some("ended"));
 
     // Nobody else takes it: the caller's timer makes it a missed call,
@@ -1291,10 +1290,11 @@ async fn a_device_that_takes_no_calls_ignores_the_invitation_without_a_word() {
     w.advance(1).await;
     let call = alice.calls.start(&bob1.pk(), Media::Audio).await.unwrap();
     w.settle().await;
-    assert!(bob2.sent.lock().unwrap().is_empty());
+    assert!(bob2.said_to_others().is_empty());
     w.advance(RING_TIMEOUT.as_secs() + 1).await;
     assert_eq!(alice.ended().last().unwrap(), &(call.call_id.clone(), "missed".to_string()));
-    assert!(bob2.records().await.is_empty());
+    assert_eq!(repo::get(&bob2.store, &call.call_id).await.unwrap().unwrap().outcome.as_deref(), Some("missed"));
+    assert!(bob2.said_to_others().is_empty());
     *bob1.deaf.lock().unwrap() = false;
 
     // The device still calls out, and a glare with the peer is settled.
@@ -1408,12 +1408,14 @@ async fn the_history_of_a_call_may_come_backwards() {
     *bob2.deaf.lock().unwrap() = false;
 
     // The catch-up hands it all over newest first: the end, the answer
-    // of my other device, the invitation.
+    // of my other device, the invitation. (Without the note of my other
+    // device: the signals alone tell it here.)
     let mut history = alice.wraps_to(bob2);
     history.extend(bob1.wraps_to(bob2));
     let mut kinds: Vec<(i64, WireEvent, String)> = history
         .into_iter()
         .filter_map(|e| open_dm(&bob2.keys, &e, true).map(|m| (m.created_at.secs(), e, Envelope::parse(&m.content).unwrap().t)))
+        .filter(|(_, _, t)| t.starts_with("call."))
         .collect();
     kinds.sort_by_key(|(at, _, t)| (-at, if t == "call.invite" { 1 } else { 0 }));
     let order: Vec<&str> = kinds.iter().map(|(_, _, t)| t.as_str()).collect();
@@ -1559,7 +1561,7 @@ async fn relay_only_without_a_node_fails_and_the_policy_is_kept() {
     w.settle().await;
     assert_eq!(alice.ended().last().map(|(_, o)| o.as_str()), Some("failed"));
     assert!(alice.calls.current().await.is_none());
-    assert!(alice.sent.lock().unwrap().is_empty(), "no invitation left");
+    assert!(alice.said_to_others().is_empty(), "no invitation left");
     assert!(bob.incoming().is_empty());
     let _ = Outcome::Failed;
 }
@@ -1977,4 +1979,452 @@ async fn a_call_of_a_private_chat_goes_by_its_server_alone() {
         assert!(rows[0].chat_id.ends_with(&format!("@{s1}")), "on record in the private chat");
     }
     assert!(chats::get(&bob.store, &chats::dm_chat_id(alice.pk().as_hex(), None)).await.unwrap().is_none(), "no home chat came of it");
+}
+
+// ─── The journal on every device of mine (`own.call`, `own.call_hide`) ──────
+
+/// When the relays drop a wrap (NIP-40 `expiration`); `None`: kept.
+fn expiration(event: &WireEvent) -> Option<i64> {
+    let ev: nostr::prelude::Event = serde_json::from_value(event.json.clone()).ok()?;
+    ev.tags.iter().find(|t| t.kind() == "expiration").and_then(|t| t.as_slice().get(1)?.parse().ok())
+}
+
+/// The type of what a wrap carries, opened by `keys`.
+fn type_of(keys: &Keys, event: &WireEvent) -> Option<String> {
+    open_dm(keys, event, false).map(|m| Envelope::parse(&m.content).unwrap().t)
+}
+
+impl World {
+    /// Where everybody's sending stands now: what comes after it is what
+    /// a device away since then misses.
+    fn mark(&self) -> Vec<usize> {
+        self.parties.iter().map(|p| p.sent.lock().unwrap().len()).collect()
+    }
+
+    /// What the relays still hold for `to` of what the others published
+    /// since `mark`: the wraps not expired by now, newest first, as a
+    /// catch-up hands them.
+    fn kept_for(&self, to: &Party, mark: &[usize]) -> Vec<WireEvent> {
+        let now = self.now();
+        let mut kept: Vec<(i64, WireEvent)> = vec![];
+        for (party, from) in self.parties.iter().zip(mark) {
+            if std::ptr::eq(party.as_ref(), to) {
+                continue;
+            }
+            let all = party.sent.lock().unwrap()[*from..].to_vec();
+            let me = Party { sent: Mutex::new(all), ..Party::shell(party) };
+            for e in me.wraps_to(to) {
+                if expiration(&e).is_some_and(|at| at <= now) {
+                    continue;
+                }
+                let Some(m) = open_dm(&to.keys, &e, true) else { continue };
+                kept.push((m.created_at.secs(), e));
+            }
+        }
+        kept.sort_by_key(|(at, _)| -at);
+        kept.into_iter().map(|(_, e)| e).collect()
+    }
+
+    /// `to` was away since `mark` and comes back: it hears again, and the
+    /// catch-up hands it what the relays still hold.
+    async fn come_back(&self, to: &Party, mark: &[usize]) -> Vec<String> {
+        *to.deaf.lock().unwrap() = false;
+        let kept = self.kept_for(to, mark);
+        let kinds = kept.iter().filter_map(|e| type_of(&to.keys, e)).collect();
+        for e in &kept {
+            self.carry_as_history(to, e).await;
+        }
+        self.settle().await;
+        kinds
+    }
+}
+
+impl Party {
+    /// A party of the same keys with nothing of its own, for reading wraps.
+    fn shell(of: &Party) -> Self {
+        let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        Self {
+            name: of.name,
+            keys: of.keys.clone(),
+            store: of.store.clone(),
+            dm: of.dm.clone(),
+            calls: of.calls.clone(),
+            handler: of.handler.clone(),
+            rx: Mutex::new(rx),
+            ui: Mutex::new(vec![]),
+            sent: Mutex::new(vec![]),
+            deaf: Mutex::new(false),
+            started: AtomicI64::new(0),
+        }
+    }
+
+    async fn journal(&self) -> Vec<String> {
+        repo::history(&self.store, None, 100).await.unwrap().into_iter().map(|r| r.call.call_id).collect()
+    }
+
+    /// The types of what this party sent to anybody but its own devices.
+    fn said_to_others(&self) -> Vec<Outbound> {
+        self.sent.lock().unwrap().iter().filter(|o| !matches!(o, Outbound::PublishOwn { .. })).cloned().collect()
+    }
+}
+
+#[tokio::test]
+async fn a_device_away_longer_than_the_signals_live_has_the_call_from_my_other_device() {
+    let w = World::new(&[("alice-linux", None), ("alice-phone", Some(0)), ("bob", None)], false).await;
+    let (linux, phone, bob) = (w.p(0), w.p(1), w.p(2));
+
+    // Away for ten minutes: the invitation (a minute) and the rest (five)
+    // are gone from the relays; the note of my other device is not.
+    let mark = w.mark();
+    *phone.deaf.lock().unwrap() = true;
+    let call = linux.calls.start(&bob.pk(), Media::Video).await.unwrap();
+    w.settle().await;
+    bob.calls.accept(&call.call_id).await.unwrap();
+    w.settle().await;
+    w.advance(10).await;
+    linux.calls.end(&call.call_id).await.unwrap();
+    w.settle().await;
+    w.advance(600).await;
+    assert!(phone.records().await.is_empty());
+    let kinds = w.come_back(phone, &mark).await;
+    assert_eq!(kinds, vec!["own.call"], "only the note outlives the signals");
+    let row = repo::get(&phone.store, &call.call_id).await.unwrap().unwrap();
+    assert_eq!((row.direction.as_str(), row.media.as_str(), row.outcome.as_deref()), ("out", "video", Some("ended")));
+    assert_eq!(row.duration_secs(), Some(10));
+    assert_eq!(phone.journal().await, vec![call.call_id.clone()]);
+    assert_eq!(phone.feed(bob).await.last().unwrap()["outcome"], "ended");
+    assert!(phone.incoming().is_empty());
+    assert!(phone.said_to_others().is_empty());
+    assert!(!phone.sent.lock().unwrap().iter().any(|o| matches!(o, Outbound::PublishOwn { .. })), "the note is not told back");
+
+    // Away for two minutes, a call of Bob nobody took: the invitation is
+    // gone, Bob's end and my other device's note are there.
+    w.advance(1).await;
+    let mark = w.mark();
+    *phone.deaf.lock().unwrap() = true;
+    let missed = bob.calls.start(&linux.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    assert_eq!(linux.incoming().last().unwrap().call_id, missed.call_id);
+    w.advance(RING_TIMEOUT.as_secs() + 1).await;
+    assert_eq!(linux.ended().last().unwrap(), &(missed.call_id.clone(), "missed".to_string()));
+    w.advance(120 - RING_TIMEOUT.as_secs() - 1).await;
+    let mut kinds = w.come_back(phone, &mark).await;
+    kinds.sort();
+    assert_eq!(kinds, vec!["call.end", "own.call"]);
+    let row = repo::get(&phone.store, &missed.call_id).await.unwrap().unwrap();
+    assert_eq!((row.direction.as_str(), row.outcome.as_deref()), ("in", Some("missed")));
+    assert_eq!(phone.journal().await, vec![missed.call_id.clone(), call.call_id.clone()]);
+    assert!(phone.incoming().is_empty(), "nothing rings for a call that is over");
+    assert!(phone.said_to_others().is_empty(), "no word to Bob");
+}
+
+#[tokio::test]
+async fn the_words_of_a_call_before_its_record_outlive_a_restart() {
+    let w = World::new(&[("alice", None), ("bob-1", None), ("bob-2", Some(1))], false).await;
+    let (alice, bob1, bob2) = (w.p(0), w.p(1), w.p(2));
+    *bob2.deaf.lock().unwrap() = true;
+    let call = alice.calls.start(&bob1.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    bob1.calls.accept(&call.call_id).await.unwrap();
+    w.settle().await;
+    w.advance(10).await;
+    alice.calls.end(&call.call_id).await.unwrap();
+    w.settle().await;
+
+    // The end and the answer come first, the app restarts, the
+    // invitation comes after: the record is of a call taken.
+    let mut early = alice.wraps_to(bob2);
+    early.extend(bob1.wraps_to(bob2));
+    let by_type = |t: &str| early.iter().find(|e| type_of(&bob2.keys, e).as_deref() == Some(t)).cloned().unwrap();
+    let (end, answer, invite) = (by_type("call.end"), by_type("call.answer"), by_type("call.invite"));
+    w.advance(20).await;
+    w.carry_as_history(bob2, &end).await;
+    w.carry_as_history(bob2, &answer).await;
+    w.settle().await;
+    assert!(bob2.records().await.is_empty());
+    let after = repo::early_get(&bob2.store, &call.call_id).await.unwrap().unwrap();
+    assert_eq!(after.outcome.as_deref(), Some("ended"));
+
+    let (calls, _rx) = CallService::new(
+        bob2.store.clone(),
+        bob2.dm.clone(),
+        Arc::new(w.engine.clone()),
+        Arc::new(StaticServerSets(vec![])),
+        NodeClient::new("test"),
+        w.clock.clone(),
+    );
+    calls.set_signer(Some(bob2.keys.clone()));
+    let handler = CallDmHandler::new(calls.clone(), Arc::new(DmHandler::new(bob2.dm.clone())));
+    let msg = open_dm(&bob2.keys, &invite, true).unwrap();
+    handler.handle(msg, &bob2.ctx(&w.clock)).await.unwrap();
+    let row = repo::get(&bob2.store, &call.call_id).await.unwrap().unwrap();
+    assert_eq!(row.outcome.as_deref(), Some("ended"), "taken on my other device, not missed");
+    assert_eq!(row.duration_secs(), Some(10));
+    assert!(calls.current().await.is_none(), "nothing rang");
+    assert_eq!(repo::early_get(&bob2.store, &call.call_id).await.unwrap(), None, "the record took them");
+}
+
+#[tokio::test]
+async fn a_device_that_takes_no_calls_has_them_on_record_and_tells_the_others() {
+    let w = World::new(&[("alice", None), ("bob-1", None), ("bob-2", Some(1)), ("bob-3", Some(1))], false).await;
+    let (alice, bob1, bob2, bob3) = (w.p(0), w.p(1), w.p(2), w.p(3));
+    bob2.calls.set_incoming_enabled(false).await.unwrap();
+
+    // Bob's first device takes it; the second has it on record.
+    let call = alice.calls.start(&bob1.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    assert!(bob2.incoming().is_empty());
+    assert_eq!(bob2.records().await[0].outcome, None, "on record while it rings elsewhere");
+    bob1.calls.accept(&call.call_id).await.unwrap();
+    w.settle().await;
+    w.advance(5).await;
+    alice.calls.end(&call.call_id).await.unwrap();
+    w.settle().await;
+    let row = repo::get(&bob2.store, &call.call_id).await.unwrap().unwrap();
+    assert_eq!(row.outcome.as_deref(), Some("ended"));
+    assert_eq!(row.duration_secs(), Some(5));
+    assert_eq!(bob2.journal().await, vec![call.call_id.clone()]);
+
+    // Nobody takes it, and only the device that takes no calls is there
+    // (the one that rings is away, the third came after the signals).
+    *bob1.deaf.lock().unwrap() = true;
+    *bob3.deaf.lock().unwrap() = true;
+    let mark = w.mark();
+    w.advance(1).await;
+    let call = alice.calls.start(&bob1.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    w.advance(RING_TIMEOUT.as_secs() + 1).await;
+    assert_eq!(repo::get(&bob2.store, &call.call_id).await.unwrap().unwrap().outcome.as_deref(), Some("missed"));
+    assert!(bob2.said_to_others().is_empty(), "not a word to the caller");
+    *bob1.deaf.lock().unwrap() = false;
+    w.advance(600).await;
+    assert_eq!(w.come_back(bob3, &mark).await, vec!["own.call"]);
+    let row = repo::get(&bob3.store, &call.call_id).await.unwrap().unwrap();
+    assert_eq!((row.direction.as_str(), row.outcome.as_deref()), ("in", Some("missed")));
+}
+
+#[tokio::test]
+async fn a_call_hidden_on_one_device_goes_from_the_others() {
+    let w = World::new(&[("alice-linux", None), ("alice-phone", Some(0)), ("bob", None)], false).await;
+    let (linux, phone, bob) = (w.p(0), w.p(1), w.p(2));
+    let mut ids = vec![];
+    for _ in 0..2 {
+        w.advance(1).await;
+        let call = linux.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+        w.settle().await;
+        bob.calls.decline(&call.call_id).await.unwrap();
+        w.settle().await;
+        ids.push(call.call_id);
+    }
+    assert_eq!(phone.journal().await, vec![ids[1].clone(), ids[0].clone()]);
+
+    // Hidden on the phone: gone on the computer.
+    phone.calls.hide(std::slice::from_ref(&ids[0])).await.unwrap();
+    w.settle().await;
+    assert_eq!(phone.journal().await, vec![ids[1].clone()]);
+    assert_eq!(linux.journal().await, vec![ids[1].clone()]);
+    assert!(linux.events(messenger_calls::UI_EVENT_CALL_LOG_UPDATED).len() == 1, "the screen reads the journal again");
+    assert!(repo::get(&linux.store, &ids[0]).await.unwrap().is_some(), "the line in the chat stays");
+
+    // A call the phone never heard of, hidden before its note comes.
+    let mark = w.mark();
+    *phone.deaf.lock().unwrap() = true;
+    w.advance(1).await;
+    let call = linux.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.decline(&call.call_id).await.unwrap();
+    w.settle().await;
+    w.advance(1).await;
+    linux.calls.hide(std::slice::from_ref(&call.call_id)).await.unwrap();
+    w.settle().await;
+    w.advance(600).await;
+    assert_eq!(w.come_back(phone, &mark).await, vec!["own.call_hide", "own.call"]);
+    assert!(repo::get(&phone.store, &call.call_id).await.unwrap().is_some(), "on record");
+    assert_eq!(phone.journal().await, vec![ids[1].clone()], "and out of the journal");
+
+    // Cleared on the computer while the phone is away, with a call of
+    // that time it learns of later: none of them in its journal.
+    let mark = w.mark();
+    *phone.deaf.lock().unwrap() = true;
+    w.advance(1).await;
+    let call = linux.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.decline(&call.call_id).await.unwrap();
+    w.settle().await;
+    w.advance(1).await;
+    linux.calls.hide_all().await.unwrap();
+    w.settle().await;
+    assert!(linux.journal().await.is_empty());
+    w.advance(600).await;
+    assert_eq!(w.come_back(phone, &mark).await, vec!["own.call_hide", "own.call"]);
+    assert!(phone.journal().await.is_empty());
+    assert!(repo::get(&phone.store, &call.call_id).await.unwrap().is_some());
+
+    // A call after the clearing is in the journal of both.
+    w.advance(1).await;
+    let after = linux.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.decline(&after.call_id).await.unwrap();
+    w.settle().await;
+    assert_eq!(linux.journal().await, vec![after.call_id.clone()]);
+    assert_eq!(phone.journal().await, vec![after.call_id.clone()]);
+}
+
+#[tokio::test]
+async fn an_older_client_drops_the_notes_of_the_journal_unread() {
+    let w = World::new(&[("alice-1", None), ("alice-2", Some(0)), ("bob", None)], false).await;
+    let (alice1, alice2, bob) = (w.p(0), w.p(1), w.p(2));
+    let call = alice1.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.decline(&call.call_id).await.unwrap();
+    w.settle().await;
+    alice1.calls.hide(std::slice::from_ref(&call.call_id)).await.unwrap();
+    w.settle().await;
+    let notes: Vec<WireEvent> = alice1
+        .wraps_to(alice2)
+        .into_iter()
+        .filter(|e| type_of(&alice2.keys, e).is_some_and(|t| t == "own.call" || t == "own.call_hide"))
+        .collect();
+    assert_eq!(notes.len(), 2);
+
+    // A client of before them has no door for them: its DM module alone.
+    let older = World::new(&[("alice-old", None)], false).await;
+    let old = Party::new("alice-old", alice1.keys.clone(), older.clock.clone(), false, FakeEngine::new()).await;
+    let dm_only = DmHandler::new(old.dm.clone());
+    for e in &notes {
+        let msg = open_dm(&old.keys, e, true).unwrap();
+        assert!(dm_only.handle(msg, &old.ctx(&older.clock)).await.unwrap().is_empty());
+    }
+    assert!(chats::list(&old.store, true).await.unwrap().is_empty(), "no chat, no line");
+}
+
+/// `note` of the journal, as my device `from` would wrap it to my others.
+fn own_note(from: &Party, note: &messenger_calls::own::CallNote, at: i64) -> WireEvent {
+    messenger_dm::wrap::wrap_own(&from.keys, &note.to_envelope().encode(), at).unwrap()
+}
+
+#[tokio::test]
+async fn the_note_of_my_other_device_before_the_signals_rings_for_nothing_and_goes_back_unsaid() {
+    let w = World::new(&[("alice", None), ("bob-1", None), ("bob-2", Some(1)), ("bob-3", Some(1))], false).await;
+    let (alice, bob1, bob2, bob3) = (w.p(0), w.p(1), w.p(2), w.p(3));
+    *bob2.deaf.lock().unwrap() = true;
+    *bob3.deaf.lock().unwrap() = true;
+    let call = alice.calls.start(&bob1.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    bob1.calls.accept(&call.call_id).await.unwrap();
+    w.settle().await;
+    w.advance(10).await;
+    alice.calls.end(&call.call_id).await.unwrap();
+    w.settle().await;
+    let mut wraps = alice.wraps_to(bob2);
+    wraps.extend(bob1.wraps_to(bob2));
+    let by_type = |t: &str| wraps.iter().find(|e| type_of(&bob2.keys, e).as_deref() == Some(t)).cloned().unwrap();
+    let (invite, end, note) = (by_type("call.invite"), by_type("call.end"), by_type("own.call"));
+    *bob2.deaf.lock().unwrap() = false;
+    *bob3.deaf.lock().unwrap() = false;
+
+    // The call was over within the minute of its invitation: the note
+    // came first, the invitation after it, still fresh.
+    w.deliver(bob2, &note, false).await;
+    w.deliver(bob2, &invite, false).await;
+    // The end came first, the note after it, then the invitation.
+    w.deliver(bob3, &end, false).await;
+    w.deliver(bob3, &note, false).await;
+    w.deliver(bob3, &invite, false).await;
+    w.settle().await;
+    w.advance(RING_TIMEOUT.as_secs() + 1).await;
+    for p in [bob2, bob3] {
+        assert!(p.incoming().is_empty(), "{}: nothing rings for a call that is over", p.name);
+        assert!(p.calls.current().await.is_none(), "{}", p.name);
+        let row = repo::get(&p.store, &call.call_id).await.unwrap().unwrap();
+        assert_eq!((row.outcome.as_deref(), row.duration_secs()), (Some("ended"), Some(10)), "{}", p.name);
+        assert!(p.sent.lock().unwrap().is_empty(), "{}: not a word, to my devices nor to Alice", p.name);
+    }
+}
+
+#[tokio::test]
+async fn a_note_of_another_peer_chat_or_direction_does_not_touch_the_record_of_its_id() {
+    let w = World::new(&[("alice-linux", None), ("alice-phone", Some(0)), ("bob", None), ("carol", None)], false).await;
+    let (linux, phone, bob, carol) = (w.p(0), w.p(1), w.p(2), w.p(3));
+    let call = linux.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.decline(&call.call_id).await.unwrap();
+    w.settle().await;
+    let before = repo::get(&phone.store, &call.call_id).await.unwrap().unwrap();
+    let base = messenger_calls::own::CallNote::of(&before).unwrap();
+    // What says more: taken, by the relay.
+    let mut more = base.clone();
+    more.answered_at = Some(before.started_at);
+    more.via_relay = true;
+
+    let now = w.now();
+    let mut other_peer = more.clone();
+    other_peer.peer = carol.pk();
+    let mut other_chat = more.clone();
+    other_chat.server = Some("s1".into());
+    let mut other_way = more.clone();
+    other_way.direction = Direction::In;
+    for note in [other_peer, other_chat, other_way] {
+        w.deliver(phone, &own_note(linux, &note, now), false).await;
+        w.settle().await;
+        assert_eq!(repo::get(&phone.store, &call.call_id).await.unwrap().unwrap(), before, "{note:?}");
+    }
+    assert!(chats::get(&phone.store, &chats::dm_chat_id(carol.pk().as_hex(), None)).await.unwrap().is_none(), "no chat of Carol");
+
+    // The note of this record is taken.
+    w.deliver(phone, &own_note(linux, &more, now), false).await;
+    w.settle().await;
+    let row = repo::get(&phone.store, &call.call_id).await.unwrap().unwrap();
+    assert_eq!((row.answered_at, row.via_relay), (Some(before.started_at), true));
+}
+
+#[tokio::test]
+async fn the_end_of_a_call_is_the_same_on_every_device_whatever_order_the_notes_come_in() {
+    let w = World::new(&[("alice-1", None), ("alice-2", Some(0)), ("alice-3", Some(0)), ("bob", None)], false).await;
+    let (a1, a2, a3, bob) = (w.p(0), w.p(1), w.p(2), w.p(3));
+    *a2.deaf.lock().unwrap() = true;
+    *a3.deaf.lock().unwrap() = true;
+    let call = a1.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    bob.calls.accept(&call.call_id).await.unwrap();
+    w.settle().await;
+    w.advance(10).await;
+    bob.calls.end(&call.call_id).await.unwrap();
+    w.settle().await;
+    let row = repo::get(&a1.store, &call.call_id).await.unwrap().unwrap();
+    let end = row.ended_at.unwrap();
+    // The same end heard a second later on a device of mine, and a word
+    // as strong of the same time.
+    let first = messenger_calls::own::CallNote::of(&row).unwrap();
+    let mut later = first.clone();
+    later.ended_at = end + 1;
+    let mut declined = first.clone();
+    declined.outcome = Outcome::Declined;
+    let now = w.now();
+    let (first, later, declined) = (own_note(a1, &first, now), own_note(a1, &later, now), own_note(a1, &declined, now));
+    *a2.deaf.lock().unwrap() = false;
+    *a3.deaf.lock().unwrap() = false;
+    for e in [&later, &first, &declined] {
+        w.deliver(a2, e, false).await;
+    }
+    for e in [&declined, &first, &later] {
+        w.deliver(a3, e, false).await;
+    }
+    for e in [&later, &declined] {
+        w.deliver(a1, e, false).await;
+    }
+    w.settle().await;
+    let rows = [
+        repo::get(&a1.store, &call.call_id).await.unwrap().unwrap(),
+        repo::get(&a2.store, &call.call_id).await.unwrap().unwrap(),
+        repo::get(&a3.store, &call.call_id).await.unwrap().unwrap(),
+    ];
+    for r in &rows {
+        assert_eq!((r.ended_at, r.outcome.as_deref(), r.duration_secs()), (Some(end), Some("declined"), Some(10)), "{r:?}");
+    }
+
+    // A clearing up to that end takes it out of every journal.
+    for p in [a1, a2, a3] {
+        assert_eq!(repo::hide_ended_before(&p.store, end, now).await.unwrap(), 1, "{}", p.name);
+    }
 }

@@ -5,8 +5,8 @@
 //! a mail or another app (internal/messenger-spec.md, «Ссылка из системы»).
 //!
 //! A product takes them when its Tauri config names a scheme of its own
-//! (`plugins.deep-link`, `desktop.schemes`): Space does, the other products
-//! do not. A computer starts the app with the link as an argument, and a
+//! (`plugins.deep-link`, `desktop.schemes`): Space and Chat do, Notes and
+//! Pass do not; with both installed the system asks which one opens it. A computer starts the app with the link as an argument, and a
 //! second start hands its arguments to the first (`single_instance`). A
 //! phone hands it to an activity of its own (`LinkActivity` of the shell's
 //! Android library), which keeps it in memory, tells the running app

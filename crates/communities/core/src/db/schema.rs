@@ -898,6 +898,74 @@ CREATE TABLE IF NOT EXISTS cm_epochs_heard (
 );
 "#;
 
+/// `036_keeper_asked`: of a channel I am in, when this device last asked
+/// its keeper for a bundle (`channel.rebundle`, asked again after
+/// `REBUNDLE_EVERY_SECS`), and when the keeper said I was never let in as
+/// a reader (`channel.not_let_in`, none once a bundle came): the page says
+/// «an invitation is needed», after a restart too. 035 is skipped: a
+/// build of 2026-10-30 had one, reverted.
+pub(crate) const MIGRATION_036: &str = r#"
+ALTER TABLE cm_channels ADD COLUMN rebundle_at INTEGER;
+ALTER TABLE cm_channels ADD COLUMN refused_at INTEGER;
+"#;
+
+/// `037_own_wait`: a note of my own keys (`own.channel_keys`) of a
+/// channel whose journal is not here yet, kept while its journal is asked
+/// of the relays the note names (internal/communities-wire.md §6.4,
+/// 2026-10-31: a channel opened on one device shows on the other by
+/// itself); and of a channel I am in, when this device last told my other
+/// devices its keys (sent again after `OWN_KEYS_EVERY_SECS`, so that a
+/// device added later finds the note on the relays).
+pub(crate) const MIGRATION_037: &str = r#"
+CREATE TABLE IF NOT EXISTS cm_own_wait (
+    community_id TEXT PRIMARY KEY NOT NULL,
+    owner        TEXT NOT NULL,
+    relays_json  TEXT NOT NULL,
+    body_json    TEXT NOT NULL,
+    received_at  INTEGER NOT NULL
+);
+ALTER TABLE cm_channels ADD COLUMN own_keys_at INTEGER;
+"#;
+
+/// `038_level_asks`: the requests for a level that came to me as a
+/// moderator, one row per request (its fingerprint, wire §14.4,
+/// 2026-10-31: a request after a refusal is lost nowhere) until it is
+/// answered, and the answers apart, so that a request heard after its
+/// answer stays closed: by its fingerprint, or, an answer of an older
+/// build or of before this migration (`fingerprint` empty), by
+/// `asked_at`. `cm_level_requests` keeps mine (`out`) with the
+/// fingerprint of the last one. What came to me before is moved over:
+/// a request waiting without a fingerprint, an answer by its date.
+pub(crate) const MIGRATION_038: &str = r#"
+CREATE TABLE IF NOT EXISTS cm_level_asks (
+    community_id TEXT NOT NULL,
+    requester    TEXT NOT NULL,
+    level        INTEGER NOT NULL,
+    fingerprint  TEXT NOT NULL,                -- '' heard before this migration
+    note         TEXT NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    heard_at     INTEGER NOT NULL,
+    PRIMARY KEY (community_id, requester, level, fingerprint)
+);
+CREATE TABLE IF NOT EXISTS cm_level_answers (
+    community_id TEXT NOT NULL,
+    requester    TEXT NOT NULL,
+    level        INTEGER NOT NULL,
+    fingerprint  TEXT NOT NULL,                -- '' answers every request up to asked_at
+    asked_at     INTEGER NOT NULL,
+    granted      INTEGER NOT NULL,
+    reason       TEXT,
+    at           INTEGER NOT NULL,
+    PRIMARY KEY (community_id, requester, level, fingerprint, asked_at)
+);
+INSERT OR IGNORE INTO cm_level_asks (community_id, requester, level, fingerprint, note, created_at, heard_at)
+    SELECT community_id, requester, level, '', note, created_at, updated_at FROM cm_level_requests WHERE direction = 'in' AND status = 'pending';
+INSERT OR IGNORE INTO cm_level_answers (community_id, requester, level, fingerprint, asked_at, granted, reason, at)
+    SELECT community_id, requester, level, '', created_at, status = 'granted', reason, updated_at FROM cm_level_requests WHERE direction = 'in' AND status != 'pending';
+DELETE FROM cm_level_requests WHERE direction = 'in';
+ALTER TABLE cm_level_requests ADD COLUMN fingerprint TEXT NOT NULL DEFAULT '';
+"#;
+
 /// The migrations of the database, oldest first.
 pub(crate) fn migrations() -> Migrator {
     Migrator::with_migrations(vec![
@@ -935,5 +1003,8 @@ pub(crate) fn migrations() -> Migrator {
         Migration::new(32, Cow::Borrowed("cloud_keys"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_032), false),
         Migration::new(33, Cow::Borrowed("reaction_tombstones"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_033), false),
         Migration::new(34, Cow::Borrowed("epochs_heard"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_034), false),
+        Migration::new(36, Cow::Borrowed("keeper_asked"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_036), false),
+        Migration::new(37, Cow::Borrowed("own_wait"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_037), false),
+        Migration::new(38, Cow::Borrowed("level_asks"), MigrationType::Simple, sqlx::SqlSafeStr::into_sql_str(MIGRATION_038), false),
     ])
 }

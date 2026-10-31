@@ -26,10 +26,12 @@
 
   // The session with the servers starts a moment after they are chosen: the picture and the name wait for it.
   const canAct = $derived(!!messengerStore.status?.runtime?.session_active);
-  const had = $derived((messengerStore.ownProfile?.display_name ?? '').trim());
+  // One name (ROO-259 item 10): the display name, or the name without one.
+  const ownName = () => messengerStore.ownProfile?.display_name?.trim() || messengerStore.ownProfile?.name?.trim() || '';
+  const had = $derived(ownName());
 
   onMount(() => {
-    name = messengerStore.ownProfile?.display_name ?? '';
+    name = ownName();
     // The status is asked again until the session is there (the store hears of it by its events too).
     const again = setInterval(() => {
       if (messengerStore.status?.runtime?.session_active) clearInterval(again);
@@ -45,7 +47,8 @@
     busy = true;
     error = '';
     try {
-      await messengerStore.saveOwnProfile({ ...profileInputOf(messengerStore.ownProfile), display_name: wanted || null });
+      // Into both, so every other client shows the same.
+      await messengerStore.saveOwnProfile({ ...profileInputOf(messengerStore.ownProfile), display_name: wanted || null, name: wanted || null });
       next();
     } catch (e) {
       error = profileErrorText(e);

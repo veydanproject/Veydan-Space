@@ -13,7 +13,7 @@
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { ShareDialog, ShareOutSheet, channelShareItem, confirmStore } from '$lib/messenger/seams/shared';
+  import { ShareDialog, ShareOutSheet, channelShareItem, confirmStore, saveQr, saveQrError } from '$lib/messenger/seams/shared';
   import { channelsApi, type ChannelDetail } from './api';
   import { channelStore } from './channelStore.svelte';
   import { channelError } from './errors';
@@ -33,6 +33,7 @@
   let sharing = $state(false);
   let sharingOut = $state(false);
   let qr = $state<string | null>(null);
+  let qrSvg = '';
   let busy = $state(false);
   let error = $state('');
 
@@ -59,10 +60,19 @@
     if (qr) { qr = null; return; }
     error = ''; busy = true;
     try {
-      const svg = await channelsApi.linkQr(cid);
+      qrSvg = await channelsApi.linkQr(cid);
       // Shown as an image: nothing inside the picture can run.
-      qr = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+      qr = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(qrSvg)))}`;
     } catch (e) { error = channelError(e, tr); }
+    finally { busy = false; }
+  }
+
+  /** The code as a picture, after the warning: whoever sees it gets in, as with the link. */
+  async function save() {
+    if (!qr || !(await confirmStore.ask($t('msg_qr_save_key_warn'), $t('msg_qr_save')))) return;
+    error = ''; busy = true;
+    try { await saveQr(qrSvg, 'veydan-channel-qr'); }
+    catch (e) { error = saveQrError(e, (x) => channelError(x, tr)); }
     finally { busy = false; }
   }
 
@@ -90,7 +100,10 @@
           <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={18} />{$t('chan_link_rotate')}</button>
         {/if}
       </div>
-      {#if qr}<img class="qr" src={qr} alt={$t('chan_qr_alt', { name: detail.channel.name })} />{/if}
+      {#if qr}
+        <img class="qr" src={qr} alt={$t('chan_qr_alt', { name: detail.channel.name })} />
+        <button class="btn btn-ghost btn-sm save" disabled={busy} onclick={save}><Icon name="download" size={18} />{$t('msg_qr_save')}</button>
+      {/if}
       {#if error}<div class="error-msg">{error}</div>{/if}
     </Box>
   </section>
@@ -113,5 +126,6 @@
   .danger { color: var(--danger-text); }
   /* A code is read by a camera: always dark on light, whatever the theme. */
   .qr { align-self: center; width: min(240px, 100%); height: auto; background: #fff; border-radius: var(--radius-md); padding: var(--sp-2); image-rendering: pixelated; }
-  @media (pointer: coarse) { .grid .btn { min-height: var(--control-h-lg); } }
+  .save { align-self: center; }
+  @media (pointer: coarse) { .grid .btn, .save { min-height: var(--control-h-lg); } }
 </style>

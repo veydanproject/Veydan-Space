@@ -5,6 +5,7 @@
   import { tick } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Tabs from '$lib/core/ui/Tabs.svelte';
   import { messengerStore } from '../store.svelte';
   import IdentityCard from '../identity/IdentityCard.svelte';
   import OwnProfileCard from '../contacts/OwnProfileCard.svelte';
@@ -27,15 +28,14 @@
   // The shown section is shared with the desk's nav (MessengerPage).
   let tab = $derived<SettingsTab>(settingsUi.tab);
   const pick = (id: SettingsTab) => (settingsUi.tab = id);
-  let chips = $state<HTMLElement | null>(null);
+  const tabs = $derived(SETTINGS_TABS.map((id) => ({ id, label: $t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile') })));
 
-  // Asked for from elsewhere (a long press on a call button): that tab, its chip in view.
+  // Asked for from elsewhere (a long press on a call button): that tab, kept in view by the row.
   $effect(() => {
     const want = settingsRequest.tab;
     if (!want) return;
     settingsRequest.tab = null;
     pick(want);
-    void tick().then(() => chips?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
   });
   const s = $derived(messengerStore.status);
 
@@ -51,24 +51,15 @@
 
 <div class="settings">
   {#if compact}
-    <!-- The phone: the sections as the shell's segment chips, kept in view
-         while the section scrolls; a chip cut at the edge says the row scrolls. -->
-    <div class="m-seg seg-sticky" role="tablist" bind:this={chips}>
-      {#each SETTINGS_TABS as id}
-        <button role="tab" class="m-seg-btn" class:active={tab === id} aria-selected={tab === id}
-          onclick={(e) => { pick(id); (e.currentTarget as HTMLElement).scrollIntoView({ inline: 'nearest', block: 'nearest' }); }}>
-          {$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')}
-        </button>
-      {/each}
+    <!-- The phone: the sections as the tabs of «Аккаунт», kept in view while
+         the section scrolls. -->
+    <div class="tabs-sticky">
+      <Tabs {tabs} selected={tab} onpick={pick} label={$t('msg_settings_title_full')} phone />
     </div>
   {:else}
     <!-- A narrow window, where the column of the nav is not shown: the sections as tabs. -->
-    <div class="tabs narrow-only" role="tablist">
-      {#each SETTINGS_TABS as id}
-        <button role="tab" class="tab" class:active={tab === id} aria-selected={tab === id} onclick={() => pick(id)}>
-          {$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')}
-        </button>
-      {/each}
+    <div class="narrow-only">
+      <Tabs {tabs} selected={tab} onpick={pick} label={$t('msg_settings_title_full')} />
     </div>
   {/if}
 
@@ -115,15 +106,7 @@
 
 <style>
   .settings { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 820px; width: 100%; }
-  @media (min-width: 861px) { .tabs.narrow-only { display: none; } }
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
-  .tab { white-space: nowrap; }
-  .tab {
-    border: none; background: none; font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold);
-    color: var(--text-2); padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
-  }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--accent-text-2); border-bottom-color: var(--accent); }
+  @media (min-width: 861px) { .narrow-only { display: none; } }
   /* Every section's cards as «Профиль и ключ» (design book): surface-2 with a line, radius 16, padding 16/20,
      a title of 15 with its icon in text-2. */
   .settings :global(.card) {
@@ -139,9 +122,9 @@
   .status-grid dd { margin: 0; min-width: 0; color: var(--text-body); }
   .status-grid code { overflow-wrap: anywhere; }
   /* Under the screen's bar, over the content that scrolls beneath it. */
-  .seg-sticky {
+  .tabs-sticky {
     position: sticky; top: calc(-1 * var(--sp-3)); z-index: 1; margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) 0;
-    padding: var(--sp-3) var(--sp-3) var(--sp-2); background: var(--bg);
+    padding: var(--sp-3) var(--sp-3) 0; background: var(--bg); --tabs-bleed: var(--sp-3);
   }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-3); padding: 2px 7px; border-radius: var(--radius-badge); }
 </style>

@@ -191,7 +191,7 @@
          app shows messages itself too and the toggle may be absent. -->
     {#if device.quiet}
       <div class="line">
-        <span class="warn">{$t('msg_push_quiet')}</span>
+        <span class="warn">{$t(device.quiet === 'off' ? 'msg_push_refused' : 'msg_push_quiet')}</span>
         <button class="btn btn-ghost btn-sm" disabled={pushStore.busy} onclick={() => pushStore.openSettings()}>
           {$t('msg_push_quiet_fix')}
         </button>

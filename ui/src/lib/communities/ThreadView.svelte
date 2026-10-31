@@ -371,7 +371,7 @@
         <button class="x" onclick={() => (replyTo = null)} aria-label={$t('chan_cancel')}><Icon name="x" size={13} /></button>
       </div>
     {/if}
-    <Composer variant="thread" replyTo={null} editing={null} peerTitle={detail.channel.name} {placeholder} oncancel={() => (replyTo = null)} onsend={send} {tools}
+    <Composer replyTo={null} editing={null} peerTitle={detail.channel.name} {placeholder} oncancel={() => (replyTo = null)} onsend={send} {tools}
       draftKey={`${detail.channel.chat_id}#${post.id}`} autofocus={!phone} onrecording={record} canRecord={canRecord(detail, me, 'comment')} markdown attached={tray.files.length ? 'ready' : null}
       attachments={tray.files.length ? trayView : undefined} canattach={canAttach(detail)} />
   {:else}

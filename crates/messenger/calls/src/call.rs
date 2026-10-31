@@ -15,6 +15,9 @@ pub const UI_EVENT_CALL_STATE: &str = "call.state";
 /// Also for a call that was missed while I was away, with no `call.incoming`
 /// before it.
 pub const UI_EVENT_CALL_ENDED: &str = "call.ended";
+/// The journal of calls changed by a note of my other device (a call came
+/// to it or went out of it): `{}`, the screen reads it again.
+pub const UI_EVENT_CALL_LOG_UPDATED: &str = "call_log.updated";
 /// `{ "call_id": "...", "stats": SessionStats }`, as the engine tells them.
 pub const UI_EVENT_CALL_STATS: &str = "call.stats";
 /// `{ "call_id": "...", "level": 0.0..1.0 }`: the sound from the peer.

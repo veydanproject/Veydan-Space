@@ -71,6 +71,13 @@ pub const OUT_DISBANDED: &str = "disbanded";
 /// the week a note lives (wire §7).
 pub const JOIN_RETRY_SECS: i64 = 600;
 pub const JOIN_RETRY_MAX_SECS: i64 = 6 * 3600;
+/// A bundle I lack is asked for again so long after the last ask
+/// (`ensure_keys`): an answer lost on the way is not waited for until the
+/// next epoch.
+pub const REBUNDLE_EVERY_SECS: i64 = 600;
+/// So long, when the keeper said I was never let in: an invitation is
+/// what lets me in, the ask only finds out whether one did.
+pub const REFUSED_REBUNDLE_EVERY_SECS: i64 = 6 * 3600;
 
 /// A keeper held elsewhere when the loop comes for its turn (a command's
 /// turn and its uploads): tried again this much later, not waited for.
@@ -101,6 +108,10 @@ pub struct Outcome {
     pub events: Vec<UiEvent>,
     /// The set of channels to listen to changed.
     pub resubscribe: bool,
+    /// The relays a channel is asked on changed before its row is here (a
+    /// journal asked of the relays a note of my own names): the host reads
+    /// its routes again before it sends the asks (`take_asks`).
+    pub routes: bool,
     /// When a keeper wants its cycle run again (unix seconds).
     pub wake: Option<u64>,
     /// For the log of whoever runs the service.
@@ -114,6 +125,7 @@ impl Outcome {
     pub(crate) fn merge(&mut self, mut other: Outcome) {
         self.events.append(&mut other.events);
         self.resubscribe |= other.resubscribe;
+        self.routes |= other.routes;
         self.notes.append(&mut other.notes);
         self.pending.append(&mut other.pending);
         self.wake = match (self.wake, other.wake) {
@@ -265,10 +277,9 @@ pub struct ChannelService {
     /// The markers of a catch-up read (`settle`): the way into the host's
     /// stream and those on their way.
     pub(crate) settle: Arc<crate::settle::Settle>,
-    /// The channels whose keeper said I was never let in as a reader
-    /// (`channel.not_let_in`): asking it for a bundle is no use until an
-    /// invitation lets me in (`refused_by_keeper`).
-    pub(crate) not_let_in: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    /// When the bundles of each channel I am in were last looked at
+    /// (`ensure_keys`): once a `REBUNDLE_EVERY_SECS`, by the turn.
+    bundles_checked: Arc<std::sync::Mutex<HashMap<String, i64>>>,
     /// What each keeper kept here looked like after its last turn.
     pub(crate) statuses: Arc<std::sync::Mutex<HashMap<String, KeeperStatus>>>,
     /// What a blob host said when it last refused a blob of each keeper
@@ -372,7 +383,7 @@ impl ChannelService {
             photo_slots: Arc::new(tokio::sync::Semaphore::new(messenger_media::prepare::PHOTO_SLOTS)),
             rotate_asked: Arc::default(),
             settle: Arc::default(),
-            not_let_in: Arc::default(),
+            bundles_checked: Arc::default(),
             statuses: Arc::default(),
             troubles: Arc::default(),
             uploading: Arc::default(),
@@ -1119,6 +1130,16 @@ impl ChannelService {
             if let Err(e) = self.refresh_given_keys(&keys).await {
                 self.env.say.state("upload keys", Some(&format!("not read: {e}")), "read again");
             }
+            self.mark(Some("the bundles I lack".into()));
+            match self.ask_bundles(&keys).await {
+                Ok(()) => self.env.say.state("bundles", None, "looked at again"),
+                Err(e) => self.env.say.state("bundles", Some(&format!("not looked at: {e}")), "looked at again"),
+            }
+            self.mark(Some("my keys to my other devices".into()));
+            match self.resend_own_keys(&keys).await {
+                Ok(()) => self.env.say.state("my keys to my other devices", None, "sent again"),
+                Err(e) => self.env.say.state("my keys to my other devices", Some(&format!("not sent again: {e}")), "sent again"),
+            }
             self.mark(Some("the secrets of links".into()));
             match self.publish_owed_links(&keys).await {
                 Ok(()) => self.env.say.state("secrets of links", None, "out again"),
@@ -1151,6 +1172,25 @@ impl ChannelService {
         let fetches = if self.signer().is_some() { self.take_fetches() } else { Vec::new() };
         wake = merge(wake, self.env.fetches.wake());
         Ok(Turned { wake, jobs, fetches })
+    }
+
+    /// The keys of every channel I am in to my other devices again, once
+    /// `OWN_KEYS_EVERY_SECS` passed since they last went (wire §6.4): a
+    /// device added since, or one that missed the note, finds one on the
+    /// relays and shows the channel by itself.
+    async fn resend_own_keys(&self, keys: &Keys) -> Result<()> {
+        let now = self.now();
+        for cid in db::channels::own_keys_due(&self.env.db, MEMBERSHIP_JOINED, now - crate::member::OWN_KEYS_EVERY_SECS).await? {
+            let lock = self.lock_of(&cid).await;
+            let _guard = lock.lock().await;
+            let Some(log) = self.log(&cid).await? else { continue };
+            if !log.state().disbanded {
+                self.member(keys).send_own_keys(log.state(), now).await?;
+            }
+            // Nothing to send yet (no bundle here): looked at again at the time.
+            db::channels::set_own_keys_at(&self.env.db, &cid, now).await?;
+        }
+        Ok(())
     }
 
     /// The turn of one keeper: the channel's lock only for what changes
@@ -1405,8 +1445,13 @@ impl ChannelService {
         self.enqueue(community_id, db::outbox::LANE_CHANNEL, wire::KIND_JOURNAL, &signed, Some(&op.id().0)).await?;
         let mut out = Outcome { pending: vec![op.id().0], ..Outcome::default() };
         self.refresh_row(log.state(), &me, None).await?;
+        // The operation is in the journal and the outbox already: a failure
+        // of the keeper here is told, not returned, or the caller would make
+        // it again (its next turn puts the members in step anyway).
         if let Some(k) = self.keeper(community_id).await? {
-            k.lock().await.on_op(&log, &op, now).await?;
+            if let Err(e) = k.lock().await.on_op(&log, &op, now).await {
+                tracing::warn!(community = %short(community_id), error = %e, "the keeper did not take my operation at once");
+            }
         }
         match &op.body {
             OpBody::RotateLink { link_epoch } => {
@@ -1851,16 +1896,14 @@ impl ChannelService {
     }
 
     /// What the keeper said, if it refused me a bundle: `NEVER_LET_IN` until
-    /// a bundle of the channel is here (an invitation let me in).
+    /// a bundle of the channel is here (an invitation let me in). Kept in
+    /// the row of the channel: a restart does not forget it.
     pub async fn refused_by_keeper(&self, community_id: &str) -> Result<Option<String>> {
-        let said = self.not_let_in.lock().map(|r| r.contains(community_id)).unwrap_or(false);
-        if !said {
+        if db::channels::refused_at(&self.env.db, community_id).await?.is_none() {
             return Ok(None);
         }
         if !db::keys::bundles(&self.env.db, community_id, SCOPE_EVERYONE).await?.is_empty() {
-            if let Ok(mut r) = self.not_let_in.lock() {
-                r.remove(community_id);
-            }
+            db::channels::set_refused_at(&self.env.db, community_id, None).await?;
             return Ok(None);
         }
         Ok(Some(NEVER_LET_IN.to_string()))
@@ -2009,16 +2052,50 @@ impl ChannelService {
         Ok(out)
     }
 
-    /// A device of mine that holds no bundle of a channel I am in asks the
-    /// keeper for one (wire §6.4: no note of my own came).
+    /// The bundles I lack of a channel, asked of its keeper
+    /// (`Member::bundles_wanted`): a device of mine no note of my own
+    /// reached (wire §6.4), or a rebundle asked once at an epoch whose
+    /// answer was lost (the epoch heard again is a `Duplicate` and asks
+    /// nothing). Not before `REBUNDLE_EVERY_SECS` after the last ask
+    /// (`REFUSED_REBUNDLE_EVERY_SECS` once the keeper said I was never let
+    /// in). Whether anything was asked.
     pub async fn ensure_keys(&self, keys: &Keys, community_id: &str) -> Result<bool> {
         let state = self.state(community_id).await?;
-        let member = self.member(keys);
-        if member.has_bundle(community_id, SCOPE_EVERYONE).await? {
+        if state.disbanded || state.keeper().is_none() {
             return Ok(false);
         }
-        member.ask_rebundle(&state, SCOPE_EVERYONE, 1, self.now()).await?;
-        Ok(true)
+        let now = self.now();
+        let pause = if db::channels::refused_at(&self.env.db, community_id).await?.is_some() { REFUSED_REBUNDLE_EVERY_SECS } else { REBUNDLE_EVERY_SECS };
+        if db::channels::rebundle_at(&self.env.db, community_id).await?.is_some_and(|at| now - at < pause) {
+            return Ok(false);
+        }
+        if let Ok(mut c) = self.bundles_checked.lock() {
+            c.insert(community_id.to_string(), now);
+        }
+        let member = self.member(keys);
+        let wanted = member.bundles_wanted(&state).await?;
+        for (scope_id, gen) in &wanted {
+            member.ask_rebundle(&state, scope_id, *gen, now).await?;
+            self.say(&format!("{} for {} ({scope_id}, generation {gen}): asked, no bundle here", wire::T_REBUNDLE, short(community_id)));
+        }
+        Ok(!wanted.is_empty())
+    }
+
+    /// Every channel I am in, its bundles looked at once a
+    /// `REBUNDLE_EVERY_SECS` (at the first turn after a start too): those I
+    /// lack asked for (`ensure_keys`). One that fails holds back no other.
+    async fn ask_bundles(&self, keys: &Keys) -> Result<()> {
+        let now = self.now();
+        for row in db::channels::list(&self.env.db).await?.into_iter().filter(|r| r.membership == MEMBERSHIP_JOINED) {
+            let checked = self.bundles_checked.lock().ok().and_then(|c| c.get(&row.id).copied());
+            if checked.is_some_and(|at| now - at < REBUNDLE_EVERY_SECS) {
+                continue;
+            }
+            if let Err(e) = self.ensure_keys(keys, &row.id).await {
+                self.say(&format!("{} for {}: not asked, at the next turn: {e}", wire::T_REBUNDLE, short(&row.id)));
+            }
+        }
+        Ok(())
     }
 
     /// The channels this device keeps.

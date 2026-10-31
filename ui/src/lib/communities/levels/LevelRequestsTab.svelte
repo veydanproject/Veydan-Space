@@ -78,6 +78,9 @@
       refusing.open = false;
     } catch (e) {
       error = channelError(e, tr);
+      // The answer may be in the journal already (the note did not go): the
+      // list says what is still to answer.
+      void load();
     } finally {
       acting = null;
     }

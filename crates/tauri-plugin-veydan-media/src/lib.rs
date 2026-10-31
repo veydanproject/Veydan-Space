@@ -10,8 +10,9 @@
 //! writes a HEIC photo anew as a JPEG with the phone's own decoder. It
 //! reads rows, never whole files, and asks the user for nothing before a
 //! tap. It also hands a text to another app (the system's list of apps,
-//! SMS, a letter) for «Поделиться» (ROO-173). The app's Rust code calls
-//! it; nothing is open to the page.
+//! SMS, a letter) for «Поделиться» (ROO-173), and puts a picture of the
+//! app (a QR code of «Сохранить», ROO-297) into the gallery. The app's
+//! Rust code calls it; nothing is open to the page.
 //!
 //! The plugin knows nothing about the messenger; it carries strings.
 
@@ -201,6 +202,14 @@ impl<R: Runtime> VeydanMedia<R> {
     pub async fn share_text(&self, via: &str, text: &str, subject: Option<&str>) -> Result<()> {
         let args = serde_json::json!({ "via": via, "text": text, "subject": subject });
         self.call::<serde_json::Value>("shareText", args).await.map(|_| ())
+    }
+
+    /// A PNG (`base64`) into the gallery, album Pictures/Veydan, as `name`.
+    /// Android 9 and older ask to write the storage first: refused with
+    /// `storage_denied` when the user says no.
+    pub async fn save_picture(&self, base64: &str, name: &str) -> Result<()> {
+        let args = serde_json::json!({ "data": base64, "name": name });
+        self.call::<serde_json::Value>("savePicture", args).await.map(|_| ())
     }
 }
 

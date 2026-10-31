@@ -109,6 +109,102 @@ pub async fn set_out_reason(db: &Db, id: &str, reason: Option<&str>) -> Result<(
     Ok(())
 }
 
+/// When this device last asked the keeper of a channel for a bundle
+/// (`channel.rebundle`); none when it never did.
+pub async fn set_rebundle_at(db: &Db, id: &str, at: i64) -> Result<()> {
+    sqlx::query("UPDATE cm_channels SET rebundle_at = ? WHERE id = ?").bind(at).bind(id).execute(db.pool()).await.map_err(storage)?;
+    Ok(())
+}
+
+pub async fn rebundle_at(db: &Db, id: &str) -> Result<Option<i64>> {
+    let at = sqlx::query_scalar::<_, Option<i64>>("SELECT rebundle_at FROM cm_channels WHERE id = ?").bind(id).fetch_optional(db.pool()).await.map_err(storage)?;
+    Ok(at.flatten())
+}
+
+/// When this device last told my other devices the keys of a channel
+/// (`own.channel_keys`); none when it never did.
+pub async fn set_own_keys_at(db: &Db, id: &str, at: i64) -> Result<()> {
+    sqlx::query("UPDATE cm_channels SET own_keys_at = ? WHERE id = ?").bind(at).bind(id).execute(db.pool()).await.map_err(storage)?;
+    Ok(())
+}
+
+/// The channels I am in whose keys this device last told my other
+/// devices before `before` (or never).
+pub async fn own_keys_due(db: &Db, membership: &str, before: i64) -> Result<Vec<String>> {
+    sqlx::query_scalar::<_, String>("SELECT id FROM cm_channels WHERE membership = ? AND (own_keys_at IS NULL OR own_keys_at < ?) ORDER BY id")
+        .bind(membership)
+        .bind(before)
+        .fetch_all(db.pool())
+        .await
+        .map_err(storage)
+}
+
+/// A note of my own keys of a channel whose journal is not here yet
+/// (`cm_own_wait`): the owner and the relays it names, the note itself.
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
+pub struct OwnWaitRow {
+    pub community_id: String,
+    pub owner: String,
+    pub relays_json: String,
+    pub body_json: String,
+    pub received_at: i64,
+}
+
+/// How long a note of my own keys waits for its journal.
+pub const OWN_WAIT_TTL_SECS: i64 = 7 * 24 * 3600;
+
+/// Keeps the note (the newest of a channel in place of the one before).
+pub async fn put_own_wait(db: &Db, row: &OwnWaitRow) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO cm_own_wait (community_id, owner, relays_json, body_json, received_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(community_id) DO UPDATE SET owner = excluded.owner, relays_json = excluded.relays_json, body_json = excluded.body_json, received_at = excluded.received_at",
+    )
+    .bind(&row.community_id)
+    .bind(&row.owner)
+    .bind(&row.relays_json)
+    .bind(&row.body_json)
+    .bind(row.received_at)
+    .execute(db.pool())
+    .await
+    .map_err(storage)?;
+    Ok(())
+}
+
+pub async fn own_wait(db: &Db, community_id: &str) -> Result<Option<OwnWaitRow>> {
+    sqlx::query_as::<_, OwnWaitRow>("SELECT community_id, owner, relays_json, body_json, received_at FROM cm_own_wait WHERE community_id = ?")
+        .bind(community_id)
+        .fetch_optional(db.pool())
+        .await
+        .map_err(storage)
+}
+
+/// Every note that waits, those past `OWN_WAIT_TTL_SECS` before `now`
+/// dropped first.
+pub async fn own_waits(db: &Db, now: i64) -> Result<Vec<OwnWaitRow>> {
+    sqlx::query("DELETE FROM cm_own_wait WHERE received_at < ?").bind(now - OWN_WAIT_TTL_SECS).execute(db.pool()).await.map_err(storage)?;
+    sqlx::query_as::<_, OwnWaitRow>("SELECT community_id, owner, relays_json, body_json, received_at FROM cm_own_wait ORDER BY community_id")
+        .fetch_all(db.pool())
+        .await
+        .map_err(storage)
+}
+
+pub async fn drop_own_wait(db: &Db, community_id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM cm_own_wait WHERE community_id = ?").bind(community_id).execute(db.pool()).await.map_err(storage)?;
+    Ok(())
+}
+
+/// When the keeper said I was never let in (`channel.not_let_in`); none
+/// once a bundle came.
+pub async fn set_refused_at(db: &Db, id: &str, at: Option<i64>) -> Result<()> {
+    sqlx::query("UPDATE cm_channels SET refused_at = ? WHERE id = ?").bind(at).bind(id).execute(db.pool()).await.map_err(storage)?;
+    Ok(())
+}
+
+pub async fn refused_at(db: &Db, id: &str) -> Result<Option<i64>> {
+    let at = sqlx::query_scalar::<_, Option<i64>>("SELECT refused_at FROM cm_channels WHERE id = ?").bind(id).fetch_optional(db.pool()).await.map_err(storage)?;
+    Ok(at.flatten())
+}
+
 /// Forget a channel on this device: every row of it, in every table.
 pub async fn delete(db: &Db, id: &str) -> Result<()> {
     let mut tx = db.write_tx().await?;
@@ -140,8 +236,11 @@ pub async fn delete(db: &Db, id: &str) -> Result<()> {
         "DELETE FROM cm_levels WHERE community_id = ?",
         "DELETE FROM cm_meta_owed WHERE community_id = ?",
         "DELETE FROM cm_level_requests WHERE community_id = ?",
+        "DELETE FROM cm_level_asks WHERE community_id = ?",
+        "DELETE FROM cm_level_answers WHERE community_id = ?",
         "DELETE FROM cm_heartbeats WHERE community_id = ?",
         "DELETE FROM cm_outbox WHERE community_id = ?",
+        "DELETE FROM cm_own_wait WHERE community_id = ?",
         "DELETE FROM cm_channels WHERE id = ?",
     ] {
         sqlx::query(sql).bind(id).execute(&mut *tx).await.map_err(storage)?;
@@ -382,6 +481,16 @@ pub async fn delete_pending(db: &Db, event_id: &str) -> Result<()> {
 pub async fn expire_pending(db: &Db, now: i64) -> Result<u64> {
     let res = sqlx::query("DELETE FROM cm_pending WHERE received_at <= ?").bind(now - PENDING_TTL_SECS).execute(db.pool()).await.map_err(storage)?;
     Ok(res.rows_affected())
+}
+
+/// What waits in a channel, by what it waits under: `(scope_id, epoch,
+/// key_id, count)`.
+pub async fn pending_groups(db: &Db, community_id: &str) -> Result<Vec<(String, i64, String, i64)>> {
+    sqlx::query_as::<_, (String, i64, String, i64)>("SELECT scope_id, epoch, key_id, COUNT(*) FROM cm_pending WHERE community_id = ? GROUP BY scope_id, epoch, key_id")
+        .bind(community_id)
+        .fetch_all(db.pool())
+        .await
+        .map_err(storage)
 }
 
 pub async fn count_pending(db: &Db, community_id: &str) -> Result<i64> {

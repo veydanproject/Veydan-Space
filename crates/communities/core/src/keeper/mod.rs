@@ -42,7 +42,8 @@ use crate::blobs::BlobHosts;
 use crate::db::{self, keeper as rows, Db};
 use crate::log::OpLog;
 use crate::op::{JoinMode, Op, OpBody, OpId, MAX_HEADS};
-use crate::roles::{permits, Action};
+use crate::member::readers::PutOut;
+use crate::roles::{permits, Action, Role};
 use crate::secrets;
 use crate::state::{ChannelState, FLAT_MAX_MEMBERS, SCOPE_EVERYONE};
 use crate::wire::{self, Admit, Issue, Join, KeeperMaster, LinkPayload, Missed, Rebundle, Rejected};
@@ -725,6 +726,15 @@ impl Keeper {
         member_id(who).is_ok_and(|m| self.scopes.get(scope_id).is_some_and(|s| s.kd().is_member(&m)))
     }
 
+    /// The leaf of `who` gone from the tree of `everyone`, its reader row
+    /// kept: a tree that lost one (a keeper recovered without them).
+    #[cfg(test)]
+    pub(crate) async fn drop_leaf(&mut self, who: &PubKey, now: i64) -> Result<()> {
+        let m = member_id(who)?;
+        self.sk(SCOPE_EVERYONE)?.kd_mut().revoke(&[m], Revoke::Ban, secs(now));
+        self.save(SCOPE_EVERYONE).await
+    }
+
     /// Puts `who` out of every scope kept here (a ban, a removal, a leave).
     async fn put_out(&mut self, who: &PubKey, why: Revoke, now: i64) -> Result<()> {
         let m = member_id(who)?;
@@ -1001,21 +1011,42 @@ impl Keeper {
     }
 
     /// `channel.rebundle`: the bundle of the current generation again, to
-    /// a current member only (`join` is never called here).
-    pub async fn on_rebundle(&mut self, log: &OpLog, from: &PubKey, r: &Rebundle, now: i64) -> Result<bool> {
+    /// a current member. One not in the tree of `everyone` is let in again
+    /// (`admit_reader`) when it is the owner, or staff by the journal (an
+    /// author or above; a reader the journal mutes, trusts or levels is
+    /// not) whom this keeper let in before (its rows) or the newest
+    /// snapshot names (`known`), and nothing put out since (`PutOut`): a
+    /// tree that lost them (a keeper recovered without them) does not keep
+    /// them out.
+    pub async fn on_rebundle(&mut self, log: &OpLog, from: &PubKey, r: &Rebundle, known: bool, now: i64) -> Result<bool> {
         if r.community_id != self.community_id || r.check().is_err() {
             return Ok(false);
+        }
+        let state = log.state();
+        if !self.is_member(from) && !state.is_banned(from) && !state.disbanded {
+            let owner = state.owner == *from;
+            let staff = state.role_of(from).is_some_and(|r| r >= Role::Author);
+            // A row is no reader once the journal put them out after it: a
+            // ban or a removal drops the row (`on_op`); one an older run
+            // left is weighed against the time of the removal.
+            let known = known
+                || (staff && rows::reader_since(&self.env.db, &self.community_id, from.as_hex()).await?.is_some_and(|since| PutOut::of(log, None).keeps(state, from.as_hex(), since)));
+            if owner || (staff && known) {
+                self.admit_reader(log, from, now).await?;
+                self.env.say.line(&format!("{} from {} for {}: not in the tree, {}: let in again", wire::T_REBUNDLE, from.short(), crate::service::short(&self.community_id), if owner { "the owner" } else { "staff known as a reader" }));
+                return Ok(true);
+            }
         }
         if !self.in_scope(from, &r.scope_id) {
             // Staff by the journal never let in as a reader (made an author
             // before any invitation): told so, once a while, instead of
             // silence, so that it stops asking and is invited. Anyone else
-            // is answered nothing.
+            // is answered nothing; the owner never is told so (let in above).
             let told = self.not_let_in_told.get(from.as_hex()).is_some_and(|t| now - t < NOT_LET_IN_EVERY);
-            if !self.is_member(from) && log.state().role_of(from).is_some() && !told {
+            if !self.is_member(from) && state.owner != *from && state.role_of(from).is_some() && !told {
                 self.not_let_in_told.insert(from.as_hex().to_string(), now);
                 let body = wire::NotLetIn { community_id: self.community_id.clone(), scope_id: r.scope_id.clone() };
-                self.send_note(Some(log.state()), from, wire::T_NOT_LET_IN, &body, now).await?;
+                self.send_note(Some(state), from, wire::T_NOT_LET_IN, &body, now).await?;
                 tracing::info!(community = %self.community_id, who = %from.short(), "a bundle asked by one never let in: told to be invited first");
             }
             return Ok(false);
@@ -1066,14 +1097,19 @@ impl Keeper {
             return Ok(());
         }
         match &op.body {
-            OpBody::Ban { who, .. } | OpBody::Remove { who } => {
-                if self.is_member(who) {
-                    self.put_out(who, Revoke::Ban, now).await?;
-                }
-            }
+            // Out of the trees it is in, and its row dropped whether it is
+            // in a tree or not (one the tree lost is not let in again by
+            // its row, `on_rebundle`).
+            OpBody::Ban { who, .. } | OpBody::Remove { who } => self.put_out(who, Revoke::Ban, now).await?,
             // The levels of one person: their scopes put in step at once,
             // so that a grant issues now (wire §14.4).
-            OpBody::SetLevels { who, .. } => self.sync_member(log, who, now).await?,
+            // Marked done already: a failure leaves it to the next turn.
+            OpBody::SetLevels { who, .. } => {
+                if let Err(e) = self.sync_member(log, who, now).await {
+                    self.members_dirty = true;
+                    return Err(e);
+                }
+            }
             // The rules of the channel (how readers get in, the history):
             // the policy follows at once, not at the next turn.
             OpBody::Settings { .. } => self.sync_policy(log.state()).await?,

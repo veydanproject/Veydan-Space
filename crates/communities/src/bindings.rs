@@ -12,7 +12,7 @@
 
 use crate::views::{
     ChannelAction, ChannelDetail, ChannelPreview, ChannelView, FeedCursorView, FeedItemView, FeedPageView, InviteStatusView, InviteView, KeeperStatus, LastPost, LevelInput, TicketsView,
-    LevelRequestView, LevelRights, LevelView, LogEntry, LogPage, ModAction, ModSettings, NewChannelInput, NewScopeInput, OutboxView, ScopeSetInput, QueueItem, QueuePage, ReactionCount, RequestView,
+    LevelRequestView, LevelRights, LevelView, LogEntry, LogPage, ModAction, ModSettings, MyLevelRequestView, NewChannelInput, NewScopeInput, OutboxView, ScopeSetInput, QueueItem, QueuePage, ReactionCount, RequestView,
     ReaderView, ReadersPage, ScheduleView, ScopeView, StaffView, StoragePlanView, TransferView, UploadView,
 };
 use ts_rs::{Config, TS};
@@ -51,6 +51,7 @@ pub fn channels_ts() -> String {
     out += &export::<StaffView>(&cfg, "Somebody the journal names: staff, or a reader it mutes or trusts.");
     out += &export::<TransferView>(&cfg, "A handover of the channel to a new owner (communities-wire §16): offered to me (`in`) or by me (`out`).");
     out += &export::<OutboxView>(&cfg, "What of mine in a channel still waits for the relays; `channel_outbox_retry` tries it now, `channel.outbox` tells of each row.");
+    out += &export::<MyLevelRequestView>(&cfg, "A request for a level I made: waiting, or refused with the moderator's reason until I ask again (communities-wire §14.4).");
     out += &export::<ChannelDetail>(&cfg, "A channel as `channel_get` and the commands that change it answer: the row, the rules, the staff, whether a key is here, the link to hand on.");
     out += &export::<NewChannelInput>(&cfg, "What `channel_create` takes: a name, how readers get in, the relays and the blob hosts of the channel.");
     out += &export::<ChannelAction>(&cfg, "An operation of the journal as `channel_act` takes it, tagged by `op`; `leave` leaves the channel.");

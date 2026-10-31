@@ -123,16 +123,17 @@
   .title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
   .title :global(svg) { flex-shrink: 0; color: var(--text-2); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-2) 0; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-height: 48px; padding: var(--sp-2) 0; }
   .row + .row { border-top: 1px solid var(--border); }
-  .invite { flex-shrink: 0; }
-  .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  /* The words take the width of the row; «Пригласить» and the bin lie under them, to the right, never over a label. */
+  .invite { flex-shrink: 0; margin-left: auto; }
+  .info { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); word-break: break-all; }
+  code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); overflow-wrap: anywhere; }
   .facts { display: flex; flex-wrap: wrap; gap: 4px; }
   .fact {
     display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: var(--radius-pill);
-    border: 1px solid var(--border); background: var(--surface-3); color: var(--text-2); font-size: var(--fs-2xs); line-height: 18px;
+    border: 1px solid var(--border); background: var(--surface-3); color: var(--text-2); font-size: var(--fs-2xs); line-height: 18px; white-space: nowrap;
   }
   .fact.off { color: var(--text-3); border-style: dashed; background: none; }
   .meta { margin: 0; color: var(--text-3); font-size: var(--fs-xs); }

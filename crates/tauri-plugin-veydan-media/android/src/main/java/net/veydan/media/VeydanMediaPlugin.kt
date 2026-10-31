@@ -91,12 +91,21 @@ class ShareArgs {
   var subject: String? = null
 }
 
+@InvokeArg
+class SavePictureArgs {
+  /** The PNG, as base64. */
+  var data: String? = null
+  /** Its file name in the gallery. */
+  var name: String? = null
+}
+
 private const val TAG = "VeydanMedia"
 private const val CAMERA = "camera"
 private const val IMAGES = "images"
 private const val VIDEO = "video"
 private const val SELECTED = "selected"
 private const val STORAGE = "storage"
+private const val WRITE = "write"
 private const val PREFS = "veydan-media"
 private const val ASKED = "asked"
 
@@ -117,6 +126,8 @@ private const val ASKED = "asked"
     Permission(strings = [MediaPermissions.VIDEO], alias = VIDEO),
     Permission(strings = [MediaPermissions.USER_SELECTED], alias = SELECTED),
     Permission(strings = [MediaPermissions.STORAGE], alias = STORAGE),
+    // Android 9 and older only (maxSdkVersion 28 in the products): the public Pictures of «Сохранить».
+    Permission(strings = [Manifest.permission.WRITE_EXTERNAL_STORAGE], alias = WRITE),
     Permission(strings = [Manifest.permission.CAMERA], alias = CAMERA),
   ]
 )
@@ -461,6 +472,48 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
       } catch (e: ActivityNotFoundException) {
         invoke.reject("no_app")
       }
+    }
+  }
+
+  // ─── Save a picture ──────────────────────────────────────────────────────
+
+  private fun mayWritePictures() =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || granted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+
+  /**
+   * A PNG of the app (a QR code, ROO-297) into the gallery, Pictures/Veydan.
+   * Android 10+ asks nothing; an older one asks to write the storage, at
+   * this tap only, and is refused with `storage_denied` when the user says no.
+   */
+  @Command
+  fun savePicture(invoke: Invoke) {
+    if (!mayWritePictures()) {
+      requestPermissionForAlias(WRITE, invoke, "savePictureAnswered")
+      return
+    }
+    writePicture(invoke)
+  }
+
+  @PermissionCallback
+  fun savePictureAnswered(invoke: Invoke) {
+    if (!mayWritePictures()) {
+      invoke.reject("storage_denied")
+      return
+    }
+    writePicture(invoke)
+  }
+
+  private fun writePicture(invoke: Invoke) {
+    val args = invoke.parseArgs(SavePictureArgs::class.java)
+    val data = args.data
+    val name = args.name
+    if (data.isNullOrEmpty() || name.isNullOrEmpty()) {
+      invoke.reject("no picture")
+      return
+    }
+    background(invoke) {
+      Pictures.saveToGallery(activity, android.util.Base64.decode(data, android.util.Base64.DEFAULT), name)
+      JSObject()
     }
   }
 }

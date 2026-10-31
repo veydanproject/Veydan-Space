@@ -96,6 +96,7 @@ class ChannelStore {
   loaded = $state(false);
 
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private countTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private listTimer: ReturnType<typeof setTimeout> | null = null;
   private stopListening: (() => void) | null = null;
 
@@ -380,6 +381,15 @@ class ChannelStore {
     this.drop(communityId);
   }
 
+  /** The counts of a channel whose counts are shown, read once after a burst of news. */
+  private scheduleCounts(communityId: string) {
+    if (!(communityId in this.levelRequests) || this.countTimers.has(communityId)) return;
+    this.countTimers.set(communityId, setTimeout(() => {
+      this.countTimers.delete(communityId);
+      this.refreshCounts(communityId).catch(() => {});
+    }, 250));
+  }
+
   /**
    * Gives up waiting for the keeper's key: a channel joined without a key
    * is left first (the journal hears it), then the channel goes from this
@@ -399,6 +409,8 @@ class ChannelStore {
         // Levels given (or anything else changed): a request sent is no longer said as waiting.
         if (cid) this.levelAsked = clearAsked(this.levelAsked, cid);
         if (cid) this.schedule(cid);
+        // Another device of mine or another moderator answered a request: the counts follow.
+        if (cid) this.scheduleCounts(cid);
         if (cid) this.bumpJournal(cid);
         this.scheduleList();
         break;
@@ -519,6 +531,8 @@ class ChannelStore {
   reset() {
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
+    for (const t of this.countTimers.values()) clearTimeout(t);
+    this.countTimers.clear();
     if (this.retry) clearTimeout(this.retry);
     this.retry = null;
     feedStore.reset();

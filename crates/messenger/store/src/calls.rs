@@ -322,9 +322,271 @@ pub async fn latest_start(store: &Store) -> Result<Option<i64>> {
         .map_err(storage)
 }
 
+// ─── The same journal on every device of mine (migration 042) ──────────────
+
+/// Every call that ended at or before this time (unix seconds) is out of
+/// the journal: the journal was cleared here or on another device of
+/// mine, and a call this device learns of later stays out too.
+pub const KEY_CLEARED_AT: &str = "calls_cleared_at";
+/// A word of a call whose record never came is forgotten after this long.
+pub const EARLY_KEPT_SECS: i64 = 7 * 86_400;
+
+/// What came of a call before its record did (`msg_call_early`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, sqlx::FromRow)]
+pub struct EarlyRow {
+    pub answered_at: Option<i64>,
+    pub outcome: Option<String>,
+    pub ended_at: Option<i64>,
+    pub hidden_at: Option<i64>,
+}
+
+impl EarlyRow {
+    /// Whether the call is over, or taken on another device of mine: its
+    /// invitation then makes a record and rings for nothing.
+    pub fn settled(&self) -> bool {
+        self.answered_at.is_some() || self.outcome.is_some()
+    }
+}
+
+/// The entry of the call, made when its first word comes; words of calls
+/// whose record never came go with it after `EARLY_KEPT_SECS`.
+async fn early_entry(store: &Store, call_id: &str, now: i64) -> Result<()> {
+    sqlx::query("DELETE FROM msg_call_early WHERE noted_at < ?")
+        .bind(now - EARLY_KEPT_SECS)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    sqlx::query("INSERT OR IGNORE INTO msg_call_early (call_id, noted_at) VALUES (?, ?)")
+        .bind(call_id)
+        .bind(now)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
+pub async fn early_get(store: &Store, call_id: &str) -> Result<Option<EarlyRow>> {
+    sqlx::query_as::<_, EarlyRow>("SELECT answered_at, outcome, ended_at, hidden_at FROM msg_call_early WHERE call_id = ?")
+        .bind(call_id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)
+}
+
+/// The words kept for the call, gone from here: the record takes them.
+pub async fn early_take(store: &Store, call_id: &str) -> Result<Option<EarlyRow>> {
+    let row = early_get(store, call_id).await?;
+    if row.is_some() {
+        early_forget(store, call_id).await?;
+    }
+    Ok(row)
+}
+
+pub async fn early_forget(store: &Store, call_id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM msg_call_early WHERE call_id = ?").bind(call_id).execute(store.pool()).await.map_err(storage)?;
+    Ok(())
+}
+
+/// The call was taken at `at`, before its record: the earliest answer
+/// counts, and an end that came first and read it as missed was of a
+/// call taken.
+pub async fn early_answered(store: &Store, call_id: &str, at: i64, now: i64) -> Result<()> {
+    early_entry(store, call_id, now).await?;
+    sqlx::query(
+        "UPDATE msg_call_early SET answered_at = MIN(COALESCE(answered_at, ?), ?),
+         outcome = CASE WHEN outcome = ? THEN ? ELSE outcome END WHERE call_id = ?",
+    )
+    .bind(at)
+    .bind(at)
+    .bind(OUTCOME_MISSED)
+    .bind(OUTCOME_ENDED)
+    .bind(call_id)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(())
+}
+
+/// The call is over, before its record. The first end holds, as on the
+/// record.
+pub async fn early_ended(store: &Store, call_id: &str, outcome: &str, at: i64, now: i64) -> Result<()> {
+    early_entry(store, call_id, now).await?;
+    sqlx::query(
+        "UPDATE msg_call_early SET ended_at = ?,
+         outcome = CASE WHEN ? = ? AND answered_at IS NOT NULL THEN ? ELSE ? END
+         WHERE call_id = ? AND outcome IS NULL",
+    )
+    .bind(at)
+    .bind(outcome)
+    .bind(OUTCOME_MISSED)
+    .bind(OUTCOME_ENDED)
+    .bind(outcome)
+    .bind(call_id)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(())
+}
+
+/// The call was taken out of the journal on another device of mine before
+/// its record came here.
+pub async fn early_hidden(store: &Store, call_id: &str, at: i64, now: i64) -> Result<()> {
+    early_entry(store, call_id, now).await?;
+    sqlx::query("UPDATE msg_call_early SET hidden_at = COALESCE(hidden_at, ?) WHERE call_id = ?")
+        .bind(at)
+        .bind(call_id)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
+}
+
+/// The call was taken at `at`: an earlier answer than the one on record
+/// replaces it (another device of mine heard it first). `true` when it did.
+pub async fn set_answered_min(store: &Store, call_id: &str, at: i64) -> Result<bool> {
+    let res = sqlx::query("UPDATE msg_calls SET answered_at = ? WHERE call_id = ? AND (answered_at IS NULL OR answered_at > ?)")
+        .bind(at)
+        .bind(call_id)
+        .bind(at)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(res.rows_affected() == 1)
+}
+
+/// Take out of the journal every call that ended at or before `before`,
+/// and keep the mark for calls that come later (`KEY_CLEARED_AT`).
+pub async fn hide_ended_before(store: &Store, before: i64, at: i64) -> Result<u64> {
+    if cleared_at(store).await? < before {
+        crate::settings::set(store, KEY_CLEARED_AT, &before.to_string()).await?;
+    }
+    let res = sqlx::query(
+        "UPDATE msg_calls SET hidden_at = ? WHERE outcome IS NOT NULL AND hidden_at IS NULL AND COALESCE(ended_at, started_at) <= ?",
+    )
+    .bind(at)
+    .bind(before)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(res.rows_affected())
+}
+
+/// When the journal was last cleared on any device of mine; 0 for never.
+pub async fn cleared_at(store: &Store) -> Result<i64> {
+    Ok(crate::settings::get(store, KEY_CLEARED_AT).await?.and_then(|v| v.parse().ok()).unwrap_or(0))
+}
+
+/// The call, once over, out of the journal when it ended before the
+/// journal was cleared. `true` when it went.
+pub async fn hide_if_cleared(store: &Store, call_id: &str, at: i64) -> Result<bool> {
+    let res = sqlx::query(
+        "UPDATE msg_calls SET hidden_at = ? WHERE call_id = ? AND outcome IS NOT NULL AND hidden_at IS NULL AND COALESCE(ended_at, started_at) <= ?",
+    )
+    .bind(at)
+    .bind(call_id)
+    .bind(cleared_at(store).await?)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(res.rows_affected() == 1)
+}
+
+/// Whether the call is out of the journal.
+pub async fn is_hidden(store: &Store, call_id: &str) -> Result<bool> {
+    Ok(sqlx::query_scalar::<_, Option<i64>>("SELECT hidden_at FROM msg_calls WHERE call_id = ?")
+        .bind(call_id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)?
+        .flatten()
+        .is_some())
+}
+
+/// Take the call out of the journal, also while it is under way (another
+/// device of mine hid it once it was over there). `true` when it went.
+pub async fn hide_one(store: &Store, call_id: &str, at: i64) -> Result<bool> {
+    let res = sqlx::query("UPDATE msg_calls SET hidden_at = ? WHERE call_id = ? AND hidden_at IS NULL")
+        .bind(at)
+        .bind(call_id)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(res.rows_affected() == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_words_before_the_record_are_kept_and_go_after_a_week() {
+        let store = Store::open_in_memory().await.unwrap();
+        assert_eq!(early_get(&store, "c1").await.unwrap(), None);
+        early_ended(&store, "c1", OUTCOME_MISSED, 150, 1000).await.unwrap();
+        early_ended(&store, "c1", OUTCOME_FAILED, 160, 1000).await.unwrap();
+        let row = early_get(&store, "c1").await.unwrap().unwrap();
+        assert_eq!((row.outcome.as_deref(), row.ended_at), (Some(OUTCOME_MISSED), Some(150)), "the first end holds");
+        assert!(row.settled());
+        early_answered(&store, "c1", 120, 1000).await.unwrap();
+        early_answered(&store, "c1", 110, 1000).await.unwrap();
+        early_answered(&store, "c1", 130, 1000).await.unwrap();
+        let row = early_get(&store, "c1").await.unwrap().unwrap();
+        assert_eq!((row.answered_at, row.outcome.as_deref()), (Some(110), Some(OUTCOME_ENDED)), "taken, so not missed; the first answer");
+
+        // An answer first, then an end that reads it as missed.
+        early_answered(&store, "c2", 200, 1000).await.unwrap();
+        early_ended(&store, "c2", OUTCOME_MISSED, 260, 1000).await.unwrap();
+        assert_eq!(early_get(&store, "c2").await.unwrap().unwrap().outcome.as_deref(), Some(OUTCOME_ENDED));
+
+        early_hidden(&store, "c3", 300, 1000).await.unwrap();
+        let row = early_get(&store, "c3").await.unwrap().unwrap();
+        assert_eq!(row.hidden_at, Some(300));
+        assert!(!row.settled());
+
+        assert!(early_take(&store, "c1").await.unwrap().is_some());
+        assert_eq!(early_get(&store, "c1").await.unwrap(), None, "taken by the record");
+        early_hidden(&store, "c4", 400, 1000 + EARLY_KEPT_SECS + 1).await.unwrap();
+        assert_eq!(early_get(&store, "c2").await.unwrap(), None, "a week on, the record never came");
+        assert!(early_get(&store, "c4").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_clearing_holds_for_calls_that_come_later() {
+        let store = Store::open_in_memory().await.unwrap();
+        let call = |id: &str, at: i64| NewCall {
+            call_id: id.into(),
+            chat_id: "dm:aa".into(),
+            peer: "aa".into(),
+            direction: DIR_IN.into(),
+            media: MEDIA_AUDIO.into(),
+            started_at: at,
+        };
+        insert(&store, &call("a", 100)).await.unwrap();
+        insert(&store, &call("live", 150)).await.unwrap();
+        finish(&store, "a", OUTCOME_ENDED, 120).await.unwrap();
+        assert!(set_answered_min(&store, "a", 105).await.unwrap());
+        assert!(!set_answered_min(&store, "a", 108).await.unwrap());
+        assert!(set_answered_min(&store, "a", 101).await.unwrap());
+        assert_eq!(get(&store, "a").await.unwrap().unwrap().answered_at, Some(101));
+
+        assert_eq!(cleared_at(&store).await.unwrap(), 0);
+        assert_eq!(hide_ended_before(&store, 200, 500).await.unwrap(), 1, "a call under way stays");
+        assert_eq!(hide_ended_before(&store, 150, 600).await.unwrap(), 0);
+        assert_eq!(cleared_at(&store).await.unwrap(), 200, "the mark only moves on");
+        assert!(is_hidden(&store, "a").await.unwrap());
+        assert!(!is_hidden(&store, "live").await.unwrap());
+
+        // A call that ended before the clearing, learned of later.
+        insert(&store, &call("late", 170)).await.unwrap();
+        assert!(!hide_if_cleared(&store, "late", 700).await.unwrap(), "under way");
+        finish(&store, "late", OUTCOME_MISSED, 190).await.unwrap();
+        assert!(hide_if_cleared(&store, "late", 700).await.unwrap());
+        finish(&store, "live", OUTCOME_ENDED, 250).await.unwrap();
+        assert!(!hide_if_cleared(&store, "live", 700).await.unwrap(), "ended after it");
+        assert!(hide_one(&store, "live", 800).await.unwrap());
+        assert!(!hide_one(&store, "live", 900).await.unwrap());
+        assert!(history(&store, None, 10).await.unwrap().is_empty());
+    }
 
     #[tokio::test]
     async fn a_call_is_recorded_once_and_ends_once() {

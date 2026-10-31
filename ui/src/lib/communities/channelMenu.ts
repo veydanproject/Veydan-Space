@@ -32,15 +32,14 @@ export interface ChannelActions {
 
 /**
  * What waits for the team, said in the head menu (on every screen, the ⋮
- * carrying their sum): each count with the way to its screen.
+ * carrying their sum): each count with the way to its screen. Requests for
+ * a level are not here: a bar over the feed tells them (ROO-259 item 3).
  */
 export interface StaffCounts {
   queue: number;
   requests: number;
-  levels: number;
   openQueue: () => void;
   openRequests: () => void;
-  openLevels: () => void;
 }
 
 /** The rows of the counts that are not zero, first in the menu. */
@@ -48,7 +47,6 @@ export function countEntries(c: StaffCounts, tr: Translate): MenuEntry[] {
   const rows: MenuEntry[] = [];
   if (c.queue > 0) rows.push({ label: tr('chan_menu_queue'), badge: String(c.queue), icon: 'shield', onselect: c.openQueue });
   if (c.requests > 0) rows.push({ label: tr('chan_mod_tab_requests'), badge: String(c.requests), icon: 'user-plus', onselect: c.openRequests });
-  if (c.levels > 0) rows.push({ label: tr('chan_menu_level_requests'), badge: String(c.levels), icon: 'layers', onselect: c.openLevels });
   return rows;
 }
 

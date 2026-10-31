@@ -29,13 +29,14 @@ pub mod feed;
 pub mod group;
 pub mod handler;
 pub mod node_client;
+pub mod own;
 pub mod registry;
 pub mod servers;
 pub mod service;
 pub mod signal;
 
 pub use call::{
-    CallView, Direction, Outcome, Phase, ReconnectReason, VideoSize, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING,
+    CallView, Direction, Outcome, Phase, ReconnectReason, VideoSize, UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_LOG_UPDATED,
     UI_EVENT_CALL_LEVEL, UI_EVENT_CALL_STATE, UI_EVENT_CALL_STATS,
 };
 pub use engine::{

@@ -16,6 +16,7 @@
   import ShareDialog from '../content/ShareDialog.svelte';
   import ShareOutSheet from '../content/ShareOutSheet.svelte';
   import { groupShareItem } from '../content/shareOut';
+  import { qrSrc, saveQr, saveQrError } from '../content/saveQr';
 
   interface Props {
     group: MessengerGroup;
@@ -28,6 +29,7 @@
   let sharing = $state(false);
   let sharingOut = $state(false);
   let qr = $state<string | null>(null);
+  let qrSvg = '';
   let busy = $state(false);
   let error = $state('');
 
@@ -51,10 +53,19 @@
     if (qr) { qr = null; return; }
     error = ''; busy = true;
     try {
-      const svg = await messengerApi.groups.linkQr(group.id);
+      qrSvg = await messengerApi.groups.linkQr(group.id);
       // Shown as an image: nothing inside the picture can run.
-      qr = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+      qr = qrSrc(qrSvg);
     } catch (e) { error = messengerError(e); }
+    finally { busy = false; }
+  }
+
+  /** The code as a picture, after the warning: whoever sees it gets in, as with the link. */
+  async function save() {
+    if (!qr || !(await confirmStore.ask($t('msg_qr_save_key_warn'), $t('msg_qr_save')))) return;
+    error = ''; busy = true;
+    try { await saveQr(qrSvg, 'veydan-group-qr'); }
+    catch (e) { error = saveQrError(e, messengerError); }
     finally { busy = false; }
   }
 
@@ -82,7 +93,10 @@
           <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={18} />{$t('msg_group_link_rotate')}</button>
         {/if}
       </div>
-      {#if qr}<img class="qr" src={qr} alt={$t('msg_group_qr_alt', { name: group.name })} />{/if}
+      {#if qr}
+        <img class="qr" src={qr} alt={$t('msg_group_qr_alt', { name: group.name })} />
+        <button class="btn btn-ghost btn-sm save" disabled={busy} onclick={save}><Icon name="download" size={18} />{$t('msg_qr_save')}</button>
+      {/if}
       {#if error}<div class="error-msg">{error}</div>{/if}
     </div>
   </section>
@@ -109,5 +123,6 @@
   .danger { color: var(--danger-text); }
   /* A code is read by a camera: always dark on light, whatever the theme. */
   .qr { align-self: center; width: min(240px, 100%); height: auto; background: #fff; border-radius: var(--radius-md); padding: var(--sp-2); image-rendering: pixelated; }
-  @media (pointer: coarse) { .grid .btn { min-height: var(--control-h-lg); } }
+  .save { align-self: center; }
+  @media (pointer: coarse) { .grid .btn, .save { min-height: var(--control-h-lg); } }
 </style>

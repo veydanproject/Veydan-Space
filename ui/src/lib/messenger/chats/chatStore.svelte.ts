@@ -427,8 +427,8 @@ class ChatStore {
   async react(messageId: string, emoji: string) {
     const m = await messengerApi.dm.react(messageId, emoji);
     if (m.chat_id === this.activeId) this.upsert(m);
-    // A reaction put counts toward popular emoji in the runtime: read the new order.
-    if (m.reactions.some((r) => r.emoji === emoji && r.mine)) usageStore.load().catch(() => {});
+    // A reaction put counts in the runtime and is the newest: first at once, then the order is read.
+    if (m.reactions.some((r) => r.emoji === emoji && r.mine)) usageStore.reacted(emoji);
     return m;
   }
 

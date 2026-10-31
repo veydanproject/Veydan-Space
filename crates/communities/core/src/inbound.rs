@@ -68,6 +68,8 @@ const KEEPER_NOTES: [&str; 7] = [wire::T_JOIN, wire::T_ADMIT, wire::T_REBUNDLE, 
 /// The most notes that wait in the queue of a keeper (`cm_keeper_inbox`):
 /// a week of joins of a busy channel; past it a joiner sends again.
 pub const MAX_QUEUED_NOTES: i64 = 20_000;
+/// The relays of a note of my own keys asked for its journal, at most.
+const MAX_OWN_RELAYS: usize = 8;
 /// How many notes of the queue are read at once.
 const QUEUE_BATCH: i64 = 200;
 
@@ -236,9 +238,17 @@ impl ChannelService {
         // Invitations that came before the journal: borne out by it, or dropped.
         let state = log.state();
         db::channels::verify_invites(&self.env.db, &cid, |peer| PubKey::parse(peer).is_some_and(|p| state.role_of(&p).is_some_and(Role::is_moderator))).await?;
+        // My keys from my other device that waited for this journal.
+        out.merge(self.own_keys_waited(keys, &log).await?);
         // The force of the marks follows the journal (a demoted moderator's
         // hides lapse, a lifted ban shows again).
         self.refresh_marks(&log).await?;
+        // The requests for a level it answers close here too.
+        if let OpBody::SetLevels { who, .. } = &op.body {
+            if applied {
+                out.merge(self.on_set_levels(state, who).await?);
+            }
+        }
         // A new keeper series names where the notes to the keeper go: a join
         // of mine that waits goes there at once, not hours later at its
         // next time (живой запуск 2026-10-23: a join sent to the inbox of a
@@ -896,7 +906,7 @@ impl ChannelService {
         let ours = env.t.starts_with("channel.") || KEEPER_NOTES.contains(&env.t.as_str());
         let now = self.now();
         if n.kind == KIND_OWN {
-            if env.t == T_OWN_KEYS || env.t == wire::T_INVITE {
+            if env.t == T_OWN_KEYS || env.t == wire::T_INVITE || env.t == wire::T_LEVEL_RESOLVE {
                 return self.on_own_note(keys, n, &env).await;
             }
             return Ok(out);
@@ -1034,8 +1044,11 @@ impl ChannelService {
                 let keeper = log.state().keeper().is_some_and(|k| k.pubkey == n.sender);
                 if body.check().is_ok() && body.community_id == cid && keeper {
                     self.say(&format!("{} from {} for {}: never let in as a reader, invite first", env.t, n.sender.short(), short(&cid)));
-                    if let Ok(mut r) = self.not_let_in.lock() {
-                        r.insert(cid.clone());
+                    // Kept in the row of the channel (a restart does not
+                    // forget it); a refusal heard after a bundle came says
+                    // nothing any more.
+                    if db::keys::bundles(&self.env.db, &cid, SCOPE_EVERYONE).await?.is_empty() {
+                        db::channels::set_refused_at(&self.env.db, &cid, Some(self.now())).await?;
                     }
                     out.event(UI_EVENT_CHANNEL_UPDATED, serde_json::json!({ "community_id": cid, "keeper": crate::service::NEVER_LET_IN }));
                 }
@@ -1117,14 +1130,16 @@ impl ChannelService {
                 let Some(log) = log else { return Ok(out) };
                 let body: wire::LevelRequest = wire::note_body(&env)?;
                 if body.community_id == cid {
-                    out.merge(self.on_level_request(&me, log.state(), &n.sender, n.created_at, &body).await?);
+                    // Its own date, not the wrap's: the same on every device of mine.
+                    out.merge(self.on_level_request(&me, log.state(), &n.sender, body.created_at, &body).await?);
                 }
             }
             wire::T_LEVEL_RESOLVE => {
                 let Some(log) = log else { return Ok(out) };
                 let body: wire::LevelResolve = wire::note_body(&env)?;
                 if body.community_id == cid {
-                    out.merge(self.on_level_resolve(&me, log.state(), &n.sender, &body).await?);
+                    // The date of the rumor: when it was sent, the same in every replay.
+                    out.merge(self.on_level_resolve(&me, log.state(), &n.sender, n.created_at, &body).await?);
                 }
             }
             wire::T_INVITE => {
@@ -1290,7 +1305,13 @@ impl ChannelService {
             }
             wire::T_REBUNDLE => {
                 let body: Rebundle = wire::note_body(env)?;
-                k.on_rebundle(log, &sender, &body, now).await?;
+                // Staff the newest snapshot here names a reader: let in
+                // again if the tree lost them (`Keeper::on_rebundle`).
+                let known = match self.signer() {
+                    Some(keys) if !k.is_member(&sender) && log.state().role_of(&sender).is_some() => self.member(&keys).in_snapshot(log, &sender).await?,
+                    _ => false,
+                };
+                k.on_rebundle(log, &sender, &body, known, now).await?;
             }
             wire::T_MISSED => {
                 let body: Missed = wire::note_body(env)?;
@@ -1330,15 +1351,30 @@ impl ChannelService {
             }
             return Ok(out);
         }
+        if env.t == wire::T_LEVEL_RESOLVE {
+            let body: wire::LevelResolve = wire::note_body(env)?;
+            return self.on_own_level_resolve(&body).await;
+        }
         let body: OwnKeys = wire::note_body(env)?;
-        let Some(log) = self.log(&body.community_id).await? else { return Ok(out) };
+        let Some(log) = self.log(&body.community_id).await? else {
+            self.wait_for_journal(&body, &mut out).await?;
+            return Ok(out);
+        };
+        self.take_own_keys(keys, &log, &body).await
+    }
+
+    /// My keys of a channel from my other device, its journal here: taken,
+    /// and the channel joined on this device.
+    async fn take_own_keys(&self, keys: &Keys, log: &OpLog, body: &OwnKeys) -> Result<Outcome> {
+        let mut out = Outcome::default();
+        let me = Self::me(keys)?;
         let was = db::channels::get(&self.env.db, &body.community_id).await?.map(|r| r.membership);
-        self.mark(Some(format!("{} for {}: the keys of my other device", env.t, short(&body.community_id))));
-        let m = self.member(keys).on_own_keys(log.state(), &n.sender, &body).await?;
+        self.mark(Some(format!("{T_OWN_KEYS} for {}: the keys of my other device", short(&body.community_id))));
+        let m = self.member(keys).on_own_keys(log.state(), &me, body).await?;
         self.refresh_row(log.state(), &me, Some(MEMBERSHIP_JOINED)).await?;
         // Heard again (no key new here, joined already): nothing changed.
         let fresh = was.as_deref() != Some(MEMBERSHIP_JOINED) || !m.keys.is_empty();
-        self.mark(Some(format!("{} for {}: what waited for the keys read again, the secrets of links owed", env.t, short(&body.community_id))));
+        self.mark(Some(format!("{T_OWN_KEYS} for {}: what waited for the keys read again, the secrets of links owed", short(&body.community_id))));
         self.read_pending(keys, m.pending, &mut out).await?;
         self.publish_owed_links(keys).await?;
         if fresh {
@@ -1346,6 +1382,58 @@ impl ChannelService {
             out.event(UI_EVENT_CHANNEL_UPDATED, serde_json::json!({ "community_id": body.community_id }));
         }
         Ok(out)
+    }
+
+    /// My keys of a channel whose journal is not here (opened or made on
+    /// my other device, wire §6.4): kept, the author of the `create` the
+    /// note names made the only one taken for the id (as a link's, §3), and
+    /// the journal asked of the relays it names; the note is taken when the
+    /// journal comes (`own_keys_waited`). A note of an older build names
+    /// neither: dropped as before, the next one of the newer build brings
+    /// the channel.
+    async fn wait_for_journal(&self, body: &OwnKeys, out: &mut Outcome) -> Result<()> {
+        let cid = &body.community_id;
+        let relays: Vec<String> = body.relays.iter().filter_map(|r| messenger_core::RelayUrl::parse(r)).map(|r| r.as_str().to_string()).take(MAX_OWN_RELAYS).collect();
+        let owner = body.owner.as_deref().and_then(PubKey::parse);
+        let (Some(owner), false) = (owner, relays.is_empty()) else {
+            out.note(format!("{T_OWN_KEYS} for {}: no journal here and no relay to ask it of", short(cid)));
+            return Ok(());
+        };
+        if cid.len() != 64 || !cid.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(());
+        }
+        self.mark(Some(format!("{T_OWN_KEYS} for {}: the journal asked of the relays of my other device", short(cid))));
+        self.expect_owner(cid, &owner).await?;
+        let row = db::channels::OwnWaitRow {
+            community_id: cid.clone(),
+            owner: owner.as_hex().to_string(),
+            relays_json: serde_json::to_string(&relays)?,
+            body_json: serde_json::to_string(body)?,
+            received_at: self.now(),
+        };
+        db::channels::put_own_wait(&self.env.db, &row).await?;
+        for ask in self.journal_asks(cid).await? {
+            self.ask_later(ask);
+        }
+        out.routes = true;
+        out.note(format!("{T_OWN_KEYS} for {}: the journal asked of the relays of my other device", short(cid)));
+        Ok(())
+    }
+
+    /// A journal came of a channel whose keys waited for it (`wait_for_journal`):
+    /// they are taken now. The note waits on while the journal here does not
+    /// know a section it names yet (its operations come in any order).
+    pub(crate) async fn own_keys_waited(&self, keys: &Keys, log: &OpLog) -> Result<Outcome> {
+        let cid = &log.state().community_id;
+        let Some(row) = db::channels::own_wait(&self.env.db, cid).await? else { return Ok(Outcome::default()) };
+        let Ok(body) = serde_json::from_str::<OwnKeys>(&row.body_json) else {
+            db::channels::drop_own_wait(&self.env.db, cid).await?;
+            return Ok(Outcome::default());
+        };
+        if body.scopes.iter().all(|s| log.state().scopes.contains_key(&s.scope_id)) {
+            db::channels::drop_own_wait(&self.env.db, cid).await?;
+        }
+        self.take_own_keys(keys, log, &body).await
     }
 
     /// Whether a sealed event may wait in `cm_pending`: anybody can sign

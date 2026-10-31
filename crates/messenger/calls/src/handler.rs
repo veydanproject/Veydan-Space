@@ -3,8 +3,9 @@
 
 //! The door of the calls in the chain of DM handlers: `call.*` envelopes,
 //! whether a message (the invitation) or a note (the rest), go to the
-//! call service and nowhere else; everything else goes on to the next
-//! handler. Stands in front of `DmHandler`, as `GroupDmHandler` does:
+//! call service and nowhere else, and so do the notes of the journal
+//! between my devices (`own.call`, `own.call_hide`); everything else goes
+//! on to the next handler. Stands in front of `DmHandler`, as `GroupDmHandler` does:
 //!
 //! ```text
 //! GroupDmHandler → CallDmHandler → DmHandler
@@ -15,6 +16,7 @@
 
 use crate::service::CallService;
 use async_trait::async_trait;
+use messenger_core::envelope::{T_OWN_CALL, T_OWN_CALL_HIDE};
 use messenger_core::{Context, DmInbound, Effect, Envelope, Handler, Result};
 use std::sync::Arc;
 
@@ -35,6 +37,12 @@ impl Handler<DmInbound> for CallDmHandler {
         if let Ok(envelope) = Envelope::parse(&msg.content) {
             if envelope.is_call() {
                 self.service.on_dm(&msg, &envelope, ctx).await?;
+                return Ok(vec![]);
+            }
+            // The journal of calls between my devices: the DM module
+            // would drop the note as one it does not know.
+            if envelope.t == T_OWN_CALL || envelope.t == T_OWN_CALL_HIDE {
+                self.service.on_own(&msg, &envelope, ctx).await?;
                 return Ok(vec![]);
             }
         }

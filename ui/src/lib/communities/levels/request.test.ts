@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EVERYONE } from './sections';
-import { adds, clearAsked, levelFor, markAsked, requestable } from './request';
+import { adds, clearAsked, levelFor, markAsked, requestable, waitingLevels } from './request';
 import type { LevelView, ScopeView } from './types';
 
 const api = vi.hoisted(() => ({
@@ -57,6 +57,13 @@ describe('a request for a level', () => {
   beforeEach(() => {
     channelStore.reset();
     api.request.mockClear();
+  });
+
+  it('waits as the channel keeps it after a restart, and as asked here', () => {
+    const mine = [{ level: 2, status: 'pending' }, { level: 3, status: 'refused' }];
+    expect(waitingLevels({}, 'c', mine)).toEqual([2]);
+    expect(waitingLevels({ c: [3, 2] }, 'c', mine)).toEqual([3, 2]);
+    expect(waitingLevels({ d: [1] }, 'c', undefined)).toEqual([]);
   });
 
   it('is kept by channel, once per level, and cleared for that channel alone', () => {

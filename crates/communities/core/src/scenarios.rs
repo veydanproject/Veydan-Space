@@ -637,6 +637,131 @@ async fn two_devices_of_one_member_share_the_keys_by_a_note_of_their_own() {
     assert!(laptop.svc.ensure_keys(&laptop.keys, &cid).await.is_ok() || laptop.svc.log(&cid).await.ok().flatten().is_none());
 }
 
+/// A device of mine that never heard the journal of a channel (it was
+/// off, or listens to other relays): my note of the keys names the relays
+/// and the owner, the journal is asked there, and the channel is joined
+/// there by itself (ROO-271, wire §6.4).
+async fn a_device_that_heard_no_journal(w: &World, of: &Node) -> Node {
+    let other = w.device(of.keys.clone()).await;
+    other.skip_all(&w.relay);
+    other
+}
+
+/// What a resubscribe asks once the channel is joined: the catch-up.
+async fn listen(w: &World, n: &Node, all: &[&Node]) {
+    n.svc.listen(&n.keys).await.unwrap_or_else(|e| panic!("listen: {e}"));
+    w.pump(all).await;
+}
+
+#[tokio::test]
+async fn a_channel_opened_by_its_link_on_one_device_shows_on_the_other_with_no_link() {
+    let w = World::new();
+    let owner = w.node().await;
+    let phone = w.node().await;
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    owner.svc.send_post(&owner.keys, &cid, "before", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&owner]).await;
+    let desktop = a_device_that_heard_no_journal(&w, &phone).await;
+    join_by_link(&w, &owner, &phone, &cid, &[&owner, &phone]).await;
+    assert_eq!(membership(&phone, &cid).await, MEMBERSHIP_JOINED);
+    w.pump(&[&owner, &phone, &desktop]).await;
+    assert!(desktop.svc.log(&cid).await.ok().flatten().is_some(), "the journal came from the relays the note named");
+    assert_eq!(membership(&desktop, &cid).await, MEMBERSHIP_JOINED, "joined there by itself");
+    assert_eq!(newest(&desktop, &cid).await, newest(&phone, &cid).await, "with the keys of my other device");
+    assert!(db::channels::own_wait(desktop.svc.db(), &cid).await.ok().flatten().is_none(), "the note waits no more");
+    listen(&w, &desktop, &[&owner, &phone, &desktop]).await;
+    assert_eq!(post_texts(&desktop, &cid).await, ["before"], "the posts before");
+    owner.svc.send_post(&owner.keys, &cid, "after", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&owner, &phone, &desktop]).await;
+    let mut texts = post_texts(&desktop, &cid).await;
+    texts.sort();
+    assert_eq!(texts, ["after", "before"], "and a post since");
+}
+
+#[tokio::test]
+async fn a_channel_made_on_one_device_shows_on_the_owners_other_with_its_keys() {
+    let w = World::new();
+    let owner = w.node().await;
+    let phone = a_device_that_heard_no_journal(&w, &owner).await;
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    owner.svc.send_post(&owner.keys, &cid, "first", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&owner]).await;
+    phone.skip_all(&w.relay);
+    w.pump(&[&owner, &phone]).await;
+    assert_eq!(membership(&phone, &cid).await, MEMBERSHIP_JOINED);
+    listen(&w, &phone, &[&owner, &phone]).await;
+    assert_eq!(newest(&phone, &cid).await, newest(&owner, &cid).await);
+    let root = |n: &Node| {
+        let s = n.svc.env.secrets.clone();
+        let cid = cid.clone();
+        async move { crate::secrets::root(s.as_ref(), &cid).await.ok().flatten().map(|r| *r.as_bytes()) }
+    };
+    assert!(root(&phone).await.is_some() && root(&phone).await == root(&owner).await, "the root with them");
+    assert_eq!(post_texts(&phone, &cid).await, ["first"]);
+}
+
+#[tokio::test]
+async fn a_note_of_my_keys_without_relays_is_dropped_as_before_and_new_fields_are_read_by_an_old_body() {
+    let w = World::new();
+    let owner = w.node().await;
+    let phone = w.node().await;
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    join_by_link(&w, &owner, &phone, &cid, &[&owner, &phone]).await;
+    let log = phone.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+    let body = phone.svc.member(&phone.keys).own_keys_for_test(log.state()).await;
+    assert_eq!(body.relays, ["wss://r1.example", "wss://r2.example"]);
+    assert_eq!(body.owner.as_deref(), Some(owner.me.as_hex()));
+    // A body of an older build (none of the two) and one of a newer build
+    // (a field this build does not know) are both read.
+    let mut old = serde_json::to_value(&body).unwrap_or_default();
+    if let Some(o) = old.as_object_mut() {
+        o.remove("relays");
+        o.remove("owner");
+    }
+    let parsed: crate::member::OwnKeys = serde_json::from_value(old.clone()).unwrap_or_else(|e| panic!("old body: {e}"));
+    assert!(parsed.relays.is_empty() && parsed.owner.is_none());
+    let mut newer = serde_json::to_value(&body).unwrap_or_default();
+    newer["later"] = serde_json::json!({ "x": 1 });
+    let parsed: crate::member::OwnKeys = serde_json::from_value(newer).unwrap_or_else(|e| panic!("newer body: {e}"));
+    assert_eq!(parsed, body);
+    // The old note reaches a device without the journal: nothing is asked.
+    let desktop = a_device_that_heard_no_journal(&w, &phone).await;
+    let syncs = desktop.net.syncs.lock().map(|s| s.len()).unwrap_or(0);
+    let mut env = messenger_core::Envelope::new(crate::member::T_OWN_KEYS);
+    if let serde_json::Value::Object(m) = old {
+        env.fields.extend(m);
+    }
+    let opened = crate::notes::Opened { id: "0".repeat(64), sender: phone.me.clone(), kind: crate::notes::KIND_OWN, content: env.encode(), created_at: w.clock.now() };
+    desktop.svc.on_note(&desktop.keys, &opened, None).await.unwrap_or_else(|e| panic!("old note: {e}"));
+    assert!(db::channels::own_wait(desktop.svc.db(), &cid).await.ok().flatten().is_none());
+    assert!(desktop.svc.log(&cid).await.ok().flatten().is_none());
+    desktop.svc.run_asks().await;
+    assert_eq!(desktop.net.syncs.lock().map(|s| s.len()).unwrap_or(0), syncs, "no journal asked");
+}
+
+#[tokio::test]
+async fn the_keys_go_to_my_other_devices_again_after_some_days_for_a_device_added_since() {
+    let w = World::new();
+    let owner = w.node().await;
+    let phone = w.node().await;
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    join_by_link(&w, &owner, &phone, &cid, &[&owner, &phone]).await;
+    let mine = |n: &Node| w.relay.inbox.lock().map(|i| i.get(n.me.as_hex()).map_or(0, Vec::len)).unwrap_or(0);
+    let before = mine(&phone);
+    phone.svc.turn().await.unwrap_or_else(|e| panic!("turn: {e}"));
+    flush(&phone).await;
+    assert_eq!(mine(&phone), before, "nothing again within the days");
+    w.clock.advance(crate::member::OWN_KEYS_EVERY_SECS + 1);
+    // A device added since, that finds none of the notes before.
+    let tablet = a_device_that_heard_no_journal(&w, &phone).await;
+    tablet.skip_inboxes(&w.relay);
+    phone.svc.turn().await.unwrap_or_else(|e| panic!("turn: {e}"));
+    flush(&phone).await;
+    assert_eq!(mine(&phone), before + 1, "the note again");
+    w.pump(&[&owner, &phone, &tablet]).await;
+    assert_eq!(membership(&tablet, &cid).await, MEMBERSHIP_JOINED);
+}
+
 #[tokio::test]
 async fn a_device_without_a_note_asks_for_its_bundle() {
     let w = World::new();
@@ -1351,7 +1476,7 @@ async fn invitations_stop_at_four_open_in_a_channel() {
 /// The `create` of the channel, signed again by `forger` under its id:
 /// dated back until its op id sorts before the real one, so that the
 /// order of the rows (`received_at, op_id`) puts it first.
-fn forged_create(cid: &str, real: &crate::op::Op, forger: &nostr::key::Keys) -> serde_json::Value {
+pub(crate) fn forged_create(cid: &str, real: &crate::op::Op, forger: &nostr::key::Keys) -> serde_json::Value {
     let me = PubKey::parse(&forger.public_key().to_hex()).unwrap_or_else(|| panic!("key"));
     for back in 0..512 {
         let op = crate::op::Op::new(cid, &me, vec![], real.created_at - back, real.body.clone());
@@ -4143,6 +4268,446 @@ async fn a_request_for_a_level_granted_brings_the_keys_and_refused_brings_the_re
     assert_eq!(owner.svc.log(&cid).await.ok().flatten().map(|l| l.ordered().count()).unwrap_or(0), ops);
     assert!(owner.svc.level_requests(&cid).await.unwrap_or_default().is_empty());
     assert!(reader.errors().is_empty(), "{:?}", reader.errors());
+}
+
+/// The relays hand the answers of the week again at every start: a grant
+/// taken back since, or the refusal of an earlier request, heard after a
+/// refusal does not stand for it, nor closes a request made since (ROO-264).
+#[tokio::test]
+async fn an_older_answer_heard_again_leaves_the_refusal_and_the_request_since() {
+    let w = World::new();
+    let (owner, reader, cid) = channel_with_reader(&w).await;
+    let all = [&owner, &reader];
+    let lvl = level(&w, &owner, &cid, "Gold", &[], &all).await;
+    reader.svc.level_request(&reader.keys, &cid, lvl, "").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    let first = reader.svc.my_level_requests(&cid).await.unwrap_or_default().first().map_or(0, |r| r.created_at);
+    owner.svc.level_request_act(&owner.keys, &cid, &pk(&reader), lvl, false, Some("not yet")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    w.pump(&all).await;
+    let said = |rows: Vec<db::levels::LevelRequestRow>| rows.into_iter().map(|r| (r.status, r.reason)).collect::<Vec<_>>();
+    let refused = vec![(db::levels::REQ_REFUSED.to_string(), Some("not yet".to_string()))];
+    assert_eq!(said(reader.svc.my_level_requests(&cid).await.unwrap_or_default()), refused);
+    let state = reader.svc.state(&cid).await.unwrap_or_else(|e| panic!("{e}"));
+    let old_grant = wire::LevelResolve { community_id: cid.clone(), level: lvl, granted: true, reason: None, requester: None, asked_at: None, requests: None };
+    let older_refusal = wire::LevelResolve { granted: false, reason: Some("earlier".into()), asked_at: Some(first - 1), ..old_grant.clone() };
+    for body in [&old_grant, &older_refusal] {
+        reader.svc.on_level_resolve(&reader.me, &state, &owner.me, first, body).await.unwrap_or_else(|e| panic!("{e}"));
+    }
+    assert_eq!(said(reader.svc.my_level_requests(&cid).await.unwrap_or_default()), refused, "the refusal stays");
+    w.clock.advance(60);
+    reader.svc.level_request(&reader.keys, &cid, lvl, "again").await.unwrap_or_else(|e| panic!("request: {e}"));
+    let refusal_heard_again = wire::LevelResolve { granted: false, reason: Some("not yet".into()), asked_at: Some(first), ..old_grant.clone() };
+    // A moderator's older build names no request: the date of its note says
+    // it was sent before the request since (QA ROO-314).
+    let old_build_refusal = wire::LevelResolve { granted: false, reason: Some("earlier".into()), ..old_grant.clone() };
+    for body in [&refusal_heard_again, &old_build_refusal] {
+        reader.svc.on_level_resolve(&reader.me, &state, &owner.me, first, body).await.unwrap_or_else(|e| panic!("{e}"));
+    }
+    assert_eq!(said(reader.svc.my_level_requests(&cid).await.unwrap_or_default()), [(db::levels::REQ_PENDING.to_string(), None)], "the request made since waits");
+    reader.svc.on_level_resolve(&reader.me, &state, &owner.me, w.clock.now(), &old_build_refusal).await.unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(said(reader.svc.my_level_requests(&cid).await.unwrap_or_default()), [(db::levels::REQ_REFUSED.to_string(), Some("earlier".to_string()))], "an old build's answer sent since answers it");
+    assert!(reader.errors().is_empty(), "{:?}", reader.errors());
+}
+
+/// The owner on two devices, a reader, a level: the requests for it that
+/// wait on each device of the owner, as the rows say (not `level_requests`,
+/// which closes what the journal answered when listed).
+async fn owner_two_devices_with_level(w: &World) -> (Node, Node, Node, String, u8) {
+    let (a, reader, cid) = channel_with_reader(w).await;
+    let b = w.device(a.keys.clone()).await;
+    let all = [&a, &b, &reader];
+    w.pump(&all).await;
+    let lvl = level(w, &a, &cid, "Gold", &[], &all).await;
+    (a, b, reader, cid, lvl)
+}
+
+async fn waiting_rows(n: &Node, cid: &str) -> Vec<(String, i64)> {
+    let mut rows: Vec<(String, i64)> = db::levels::level_asks(n.svc.db(), cid).await.unwrap_or_default().into_iter().map(|r| (r.requester, r.level)).collect();
+    rows.dedup();
+    rows
+}
+
+async fn ops(n: &Node, cid: &str) -> usize {
+    n.svc.log(cid).await.ok().flatten().map_or(0, |l| l.ordered().count())
+}
+
+#[tokio::test]
+async fn a_level_given_on_one_device_of_the_owner_closes_the_request_on_the_other() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    reader.svc.level_request(&reader.keys, &cid, lvl, "please").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    let asked = vec![(reader.me.as_hex().to_string(), i64::from(lvl))];
+    assert_eq!((waiting_rows(&a, &cid).await, waiting_rows(&b, &cid).await), (asked.clone(), asked), "both devices of the owner hold the request");
+    let before = ops(&a, &cid).await;
+    // Pressed twice: the second press finds the level in the journal.
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, true, None).await.unwrap_or_else(|e| panic!("grant: {e}"));
+    assert!(waiting_rows(&a, &cid).await.is_empty(), "closed at once on the device that answered");
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, true, None).await.unwrap_or_else(|e| panic!("grant again: {e}"));
+    assert_eq!(ops(&a, &cid).await, before + 1, "one operation for two presses");
+    w.pump(&all).await;
+    assert!(waiting_rows(&b, &cid).await.is_empty(), "the journal closed it on the other device");
+    let mine = reader.svc.my_level_requests(&cid).await.unwrap_or_default();
+    assert!(mine.iter().any(|r| r.level == i64::from(lvl) && r.status == db::levels::REQ_GRANTED));
+    // Asked again for a level the journal gives: kept by neither device.
+    let note = wire::LevelRequest { community_id: cid.clone(), level: lvl, note: String::new(), created_at: w.clock.now(), id: None };
+    for n in [&a, &b] {
+        let state = n.svc.state(&cid).await.unwrap_or_else(|e| panic!("{e}"));
+        n.svc.on_level_request(&n.me, &state, &pk(&reader), note.created_at, &note).await.unwrap_or_else(|e| panic!("{e}"));
+        assert!(waiting_rows(n, &cid).await.is_empty(), "a request for a level held is not kept");
+    }
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+}
+
+#[tokio::test]
+async fn a_refusal_on_one_device_of_the_owner_closes_the_request_on_the_other() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    reader.svc.level_request(&reader.keys, &cid, lvl, "").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    assert_eq!(waiting_rows(&b, &cid).await.len(), 1);
+    let before = ops(&a, &cid).await;
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, false, Some("not yet")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    w.pump(&all).await;
+    assert!(waiting_rows(&b, &cid).await.is_empty(), "my copy of the refusal closed it on the other device");
+    let row = db::levels::level_answers(b.svc.db(), &cid).await.unwrap_or_default();
+    assert_eq!(row.iter().map(|r| (r.granted, r.reason.as_deref())).collect::<Vec<_>>(), [(false, Some("not yet"))]);
+    assert_eq!(ops(&a, &cid).await, before, "a refusal is in no journal");
+    let mine = reader.svc.my_level_requests(&cid).await.unwrap_or_default();
+    assert!(mine.iter().any(|r| r.status == db::levels::REQ_REFUSED && r.reason.as_deref() == Some("not yet")));
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+}
+
+/// The gift wraps to the inbox of the owner's key so far.
+fn wraps_to(w: &World, n: &Node) -> usize {
+    w.relay.inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(n.me.as_hex()).map_or(0, Vec::len)
+}
+
+/// The other device hears my copy of the refusal before the request it
+/// answers (history caught up in another order): the request, when it
+/// comes, is not opened there.
+#[tokio::test]
+async fn a_refusal_heard_before_the_request_on_the_other_device_keeps_it_closed() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    let before = wraps_to(&w, &a);
+    reader.svc.level_request(&reader.keys, &cid, lvl, "").await.unwrap_or_else(|e| panic!("request: {e}"));
+    reader.sync().await;
+    assert_eq!(wraps_to(&w, &a), before + 1, "the request in the inbox of the owner");
+    a.sync().await;
+    assert_eq!(waiting_rows(&a, &cid).await.len(), 1);
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, false, Some("not yet")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    a.sync().await;
+    assert!(wraps_to(&w, &a) > before + 1, "my copy of the refusal went");
+    {
+        let mut inbox = w.relay.inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let list = inbox.get_mut(a.me.as_hex()).unwrap_or_else(|| panic!("the inbox of the owner"));
+        let request = list.remove(before);
+        list.push(request);
+    }
+    b.sync().await;
+    assert!(waiting_rows(&b, &cid).await.is_empty(), "the request that came after my answer stays closed");
+    w.pump(&all).await;
+    assert!(waiting_rows(&b, &cid).await.is_empty());
+    let row = db::levels::level_answers(b.svc.db(), &cid).await.unwrap_or_default();
+    assert_eq!(row.iter().map(|r| (r.granted, r.reason.as_deref())).collect::<Vec<_>>(), [(false, Some("not yet"))]);
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+}
+
+/// My copy of a refusal held back (my own notes do not go), the requester
+/// asks again, then the copy goes by the outbox, wrapped anew with a later
+/// date: it closes the request it answered, not the new one.
+#[tokio::test]
+async fn a_copy_of_a_refusal_that_went_late_leaves_the_request_made_since() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    reader.svc.level_request(&reader.keys, &cid, lvl, "first").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    w.relay.refuse(crate::notes::KIND_OWN, true);
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, false, Some("not yet")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    w.pump(&all).await;
+    let mine = reader.svc.my_level_requests(&cid).await.unwrap_or_default();
+    assert!(mine.iter().any(|r| r.status == db::levels::REQ_REFUSED), "the requester heard the refusal");
+    assert_eq!(waiting_rows(&b, &cid).await.len(), 1, "my copy did not go");
+    w.clock.advance(60);
+    reader.svc.level_request(&reader.keys, &cid, lvl, "again").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    let before = wraps_to(&w, &a);
+    w.relay.refuse(crate::notes::KIND_OWN, false);
+    w.clock.advance(crate::keeper::OWED_MAX_WAIT_SECS);
+    w.pump(&all).await;
+    assert!(wraps_to(&w, &a) > before, "my copy went at last");
+    for n in [&a, &b] {
+        assert_eq!(shown(n, &cid).await, ["again"], "the request made since stays");
+    }
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+}
+
+/// A press whose operation went out and whose rest failed (the card left
+/// standing): the next press makes no second operation and closes it.
+#[tokio::test]
+async fn a_press_after_a_failure_past_the_operation_makes_no_second_one() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    reader.svc.level_request(&reader.keys, &cid, lvl, "").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    let held = a.svc.state(&cid).await.unwrap_or_else(|e| panic!("{e}")).levels_of(&pk(&reader));
+    a.svc.act(&a.keys, &cid, OpBody::SetLevels { who: pk(&reader), levels: held | (1u64 << lvl) }).await.unwrap_or_else(|e| panic!("act: {e}"));
+    assert_eq!(waiting_rows(&a, &cid).await.len(), 1, "the card still stands");
+    let before = ops(&a, &cid).await;
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, true, None).await.unwrap_or_else(|e| panic!("grant: {e}"));
+    assert_eq!(ops(&a, &cid).await, before, "no second operation");
+    assert!(waiting_rows(&a, &cid).await.is_empty());
+    w.pump(&all).await;
+    assert!(waiting_rows(&b, &cid).await.is_empty());
+    assert_eq!(w.relay.of_kind(wire::KIND_JOURNAL).iter().filter(|e| e["content"].as_str().is_some_and(|c| c.contains("set_levels"))).count(), 1, "one set_levels on the relay");
+}
+
+/// The notes of the requests the moderators' tab shows on a device: one
+/// per person and level, the last of those unanswered.
+async fn shown(n: &Node, cid: &str) -> Vec<String> {
+    n.svc.level_requests(cid).await.unwrap_or_else(|e| panic!("{e}")).into_iter().map(|r| r.note).collect()
+}
+
+async fn mine_waits(reader: &Node, cid: &str) -> bool {
+    reader.svc.my_level_requests(cid).await.unwrap_or_default().iter().any(|r| r.status == db::levels::REQ_PENDING)
+}
+
+/// Asked again in the same second as the refused request (ROO-289, 1):
+/// every device of the owner shows the new one, the relays handing the
+/// week again close it nowhere, the requester's own included.
+#[tokio::test]
+async fn a_request_in_the_second_of_the_refused_one_waits_on_every_device() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    reader.svc.level_request(&reader.keys, &cid, lvl, "first").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, false, Some("not yet")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    w.pump(&all).await;
+    assert!(!mine_waits(&reader, &cid).await, "the refusal came");
+    reader.svc.level_request(&reader.keys, &cid, lvl, "again").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    for n in [&a, &b] {
+        assert_eq!(shown(n, &cid).await, ["again"], "the new request waits");
+    }
+    assert!(mine_waits(&reader, &cid).await);
+    for n in all {
+        n.replay_inboxes();
+    }
+    w.pump(&all).await;
+    for n in [&a, &b] {
+        assert_eq!(shown(n, &cid).await, ["again"], "heard again, the refusal of the first does not close it");
+    }
+    assert!(mine_waits(&reader, &cid).await, "the requester's request since waits");
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+}
+
+/// The new request from a device of the requester whose clock is behind:
+/// its date is before the refused one's (ROO-289, 2).
+#[tokio::test]
+async fn a_request_dated_before_the_refused_one_waits_on_every_device() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    reader.svc.level_request(&reader.keys, &cid, lvl, "first").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, false, Some("not yet")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(-30);
+    reader.svc.level_request(&reader.keys, &cid, lvl, "again").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.clock.advance(30);
+    w.pump(&all).await;
+    for n in [&a, &b] {
+        assert_eq!(shown(n, &cid).await, ["again"], "the new request waits");
+    }
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+}
+
+/// The inbox of the owner reordered by `f`: at `before` the first request,
+/// the last the new one, between them my copy of the refusal.
+fn reorder_owner_inbox(w: &World, a: &Node, before: usize, f: impl FnOnce(&mut Vec<serde_json::Value>)) {
+    let mut inbox = w.relay.inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let list = inbox.get_mut(a.me.as_hex()).unwrap_or_else(|| panic!("the inbox of the owner"));
+    assert!(list.len() >= before + 3, "the first request, my copy, the new one");
+    f(list);
+}
+
+/// R1 heard and refused on A, R2 in the same second; the other device
+/// hears R2, then R1 late, then my copy of the refusal (ROO-289, 3); or
+/// the copy first, then R2 and R1 (ROO-289, 4).
+async fn the_other_device_keeps_the_new_request(copy_first: bool) {
+    {
+        let w = World::new();
+        let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+        let all = [&a, &b, &reader];
+        let before = wraps_to(&w, &a);
+        reader.svc.level_request(&reader.keys, &cid, lvl, "first").await.unwrap_or_else(|e| panic!("request: {e}"));
+        reader.sync().await;
+        a.sync().await;
+        a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, false, Some("not yet")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+        a.sync().await;
+        reader.svc.level_request(&reader.keys, &cid, lvl, "again").await.unwrap_or_else(|e| panic!("request: {e}"));
+        reader.sync().await;
+        a.sync().await;
+        assert_eq!(shown(&a, &cid).await, ["again"]);
+        reorder_owner_inbox(&w, &a, before, |list| {
+            if copy_first {
+                let first = list.remove(before);
+                list.push(first);
+            } else {
+                let again = list.pop().unwrap_or_else(|| unreachable!());
+                list.insert(before, again);
+            }
+        });
+        b.sync().await;
+        assert_eq!(shown(&b, &cid).await, ["again"], "the new request waits (copy first: {copy_first})");
+        w.pump(&all).await;
+        for n in [&a, &b] {
+            assert_eq!(shown(n, &cid).await, ["again"], "copy first: {copy_first}");
+        }
+        assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+    }
+}
+
+#[tokio::test]
+async fn the_other_device_keeps_the_new_request_heard_before_the_first() {
+    the_other_device_keeps_the_new_request(false).await;
+}
+
+#[tokio::test]
+async fn the_other_device_keeps_the_new_request_heard_after_the_copy() {
+    the_other_device_keeps_the_new_request(true).await;
+}
+
+/// My copy of a refusal held back, the requester asks again in the same
+/// second, then the copy goes by the outbox (ROO-289, 5): it closes the
+/// request it answered, not the new one.
+#[tokio::test]
+async fn a_late_copy_of_a_refusal_leaves_the_request_of_the_same_second() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    reader.svc.level_request(&reader.keys, &cid, lvl, "first").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    w.relay.refuse(crate::notes::KIND_OWN, true);
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, false, Some("not yet")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    reader.svc.level_request(&reader.keys, &cid, lvl, "again").await.unwrap_or_else(|e| panic!("request: {e}"));
+    w.pump(&all).await;
+    assert_eq!(shown(&b, &cid).await, ["again"], "my copy did not go");
+    let before = wraps_to(&w, &a);
+    w.relay.refuse(crate::notes::KIND_OWN, false);
+    w.clock.advance(crate::keeper::OWED_MAX_WAIT_SECS);
+    w.pump(&all).await;
+    assert!(wraps_to(&w, &a) > before, "my copy went at last");
+    for n in [&a, &b] {
+        assert_eq!(shown(n, &cid).await, ["again"], "the request made since stays");
+    }
+    // Refused on B now: the copy closes it on A too.
+    b.svc.level_request_act(&b.keys, &cid, &pk(&reader), lvl, false, Some("no")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    w.pump(&all).await;
+    for n in [&a, &b] {
+        assert!(shown(n, &cid).await.is_empty());
+    }
+    let mine = reader.svc.my_level_requests(&cid).await.unwrap_or_default();
+    assert_eq!(mine.iter().map(|r| (r.status.as_str(), r.reason.as_deref())).collect::<Vec<_>>(), [(db::levels::REQ_REFUSED, Some("no"))]);
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+}
+
+/// Requests of builds before fingerprints, and asked again and again: an
+/// older build's request is told apart by what it says, its moderator's
+/// copy of a refusal closes by the date; one person keeps at most
+/// `MAX_ASKS_OF_ONE` waiting of a level, and the answer closes all.
+#[tokio::test]
+async fn requests_of_an_older_build_and_many_of_one_person() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    let state = b.svc.state(&cid).await.unwrap_or_else(|e| panic!("{e}"));
+    let now = w.clock.now();
+    let old = |note: &str, at: i64| wire::LevelRequest { community_id: cid.clone(), level: lvl, note: note.into(), created_at: at, id: None };
+    for r in [old("one", now - 10), old("two", now - 10), old("one", now - 10)] {
+        b.svc.on_level_request(&b.me, &state, &pk(&reader), r.created_at, &r).await.unwrap_or_else(|e| panic!("{e}"));
+    }
+    assert_eq!(db::levels::level_asks(b.svc.db(), &cid).await.unwrap_or_default().len(), 2, "two that say otherwise, one heard twice");
+    assert_eq!(shown(&b, &cid).await, ["two"]);
+    // The copy of an older build names no fingerprints: by its date.
+    let copy = wire::LevelResolve { community_id: cid.clone(), level: lvl, granted: false, reason: Some("no".into()), requester: Some(reader.me.as_hex().to_string()), asked_at: Some(now - 10), requests: None };
+    b.svc.on_own_level_resolve(&copy).await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(shown(&b, &cid).await.is_empty());
+    b.svc.on_level_request(&b.me, &state, &pk(&reader), now - 10, &old("three", now - 10)).await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(shown(&b, &cid).await.is_empty(), "of its date: answered");
+    // Asked six times since: four wait, the last shown, one answer for all.
+    for i in 0..6 {
+        reader.svc.level_request(&reader.keys, &cid, lvl, &format!("ask {i}")).await.unwrap_or_else(|e| panic!("request: {e}"));
+    }
+    w.pump(&all).await;
+    for n in [&a, &b] {
+        assert_eq!(db::levels::level_asks(n.svc.db(), &cid).await.unwrap_or_default().len(), crate::levels::MAX_ASKS_OF_ONE);
+        assert_eq!(shown(n, &cid).await, ["ask 5"]);
+    }
+    a.svc.level_request_act(&a.keys, &cid, &pk(&reader), lvl, false, Some("no")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    w.pump(&all).await;
+    for n in [&a, &b] {
+        assert!(db::levels::level_asks(n.svc.db(), &cid).await.unwrap_or_default().is_empty(), "the answer closed every one");
+    }
+    let mine = reader.svc.my_level_requests(&cid).await.unwrap_or_default();
+    assert_eq!(mine.iter().map(|r| (r.status.as_str(), r.note.as_str())).collect::<Vec<_>>(), [(db::levels::REQ_REFUSED, "ask 5")]);
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
+}
+
+/// Six requests of one person for a level: the two oldest go, kept as
+/// answered. Heard again from the relays before the answer, they do not
+/// put the last one out, nor does one held back on the way; heard again
+/// after the refusal, none waits once more (ROO-289).
+#[tokio::test]
+async fn requests_let_go_past_four_do_not_wait_again_when_heard_again() {
+    let w = World::new();
+    let (a, b, reader, cid, lvl) = owner_two_devices_with_level(&w).await;
+    let all = [&a, &b, &reader];
+    for i in 1..=6 {
+        reader.svc.level_request(&reader.keys, &cid, lvl, &format!("R{i}")).await.unwrap_or_else(|e| panic!("request: {e}"));
+        w.clock.advance(1);
+    }
+    w.pump(&all).await;
+    let waiting = |n: &Node| {
+        let svc = n.svc.clone();
+        let cid = cid.clone();
+        async move { db::levels::level_asks(svc.db(), &cid).await.unwrap_or_default().into_iter().map(|r| r.note).collect::<Vec<_>>() }
+    };
+    for n in [&a, &b] {
+        assert_eq!(waiting(n).await, ["R3", "R4", "R5", "R6"]);
+    }
+    for n in all {
+        n.replay_inboxes();
+    }
+    w.pump(&all).await;
+    // One held back on the way, older than the four: it goes itself.
+    let state = b.svc.state(&cid).await.unwrap_or_else(|e| panic!("{e}"));
+    let late = wire::LevelRequest { community_id: cid.clone(), level: lvl, note: "late".into(), created_at: w.clock.now() - 60, id: Some("e".repeat(32)) };
+    b.svc.on_level_request(&b.me, &state, &pk(&reader), late.created_at, &late).await.unwrap_or_else(|e| panic!("{e}"));
+    for n in [&a, &b] {
+        assert_eq!(waiting(n).await, ["R3", "R4", "R5", "R6"], "heard again, the two that went stay out and the last stays");
+        assert_eq!(shown(n, &cid).await, ["R6"]);
+    }
+    b.svc.level_request_act(&b.keys, &cid, &pk(&reader), lvl, false, Some("no")).await.unwrap_or_else(|e| panic!("refuse: {e}"));
+    w.pump(&all).await;
+    let mine = reader.svc.my_level_requests(&cid).await.unwrap_or_default();
+    assert_eq!(mine.iter().map(|r| (r.status.as_str(), r.note.as_str())).collect::<Vec<_>>(), [(db::levels::REQ_REFUSED, "R6")], "the answer named the last");
+    for n in all {
+        n.replay_inboxes();
+    }
+    w.pump(&all).await;
+    for n in [&a, &b] {
+        assert!(waiting(n).await.is_empty(), "heard again after the refusal, none waits");
+        assert!(shown(n, &cid).await.is_empty());
+    }
+    assert!(a.errors().is_empty() && b.errors().is_empty(), "{:?} {:?}", a.errors(), b.errors());
 }
 
 #[tokio::test]

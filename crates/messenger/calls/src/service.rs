@@ -86,11 +86,14 @@ use crate::engine::{
 };
 use crate::feed::Feed;
 use crate::node_client::NodeClient;
+use crate::own::{weight, CallNote, HideNote};
 use crate::servers::{CallNode, NodeClass, ServerSets, KEY_RELAY_POLICY};
 use crate::signal::{self, new_call_id, Signal, INVITE_EXPIRATION_SECS, INVITE_TTL_SECS, NOTE_EXPIRATION_SECS};
+use messenger_core::envelope::KIND_OWN_RUMOR;
 use messenger_core::traits::UiEvent;
 use messenger_core::{Clock, Context, DmInbound, Effect, Envelope, MessengerError, PubKey, Result};
-use messenger_dm::wrap::{wrap_expiring, wrap_note_as, Wake};
+use messenger_dm::peer::to_my_devices;
+use messenger_dm::wrap::{wrap_expiring, wrap_note_as, wrap_own_on, Wake};
 use messenger_dm::{DmPeer, DmService};
 use messenger_store::{calls as repo, settings, Store};
 use nostr::key::Keys;
@@ -292,41 +295,18 @@ struct Current {
     told_video: (bool, bool),
 }
 
-/// What came of a call before its invitation did: the relays keep no
-/// order, and a catch-up gives the newest first. Kept until the
-/// invitation makes the record, and written into it then.
+/// What came of a call before its invitation did, of what only matters
+/// while it rings: the relays keep no order, and a catch-up gives the
+/// newest first. The answer and the end of it are kept in the store
+/// (`repo::early_*`), so that a restart between them and the record
+/// loses nothing.
 #[derive(Clone, Debug, Default)]
 struct Early {
-    answered_at: Option<i64>,
-    end: Option<(Outcome, i64)>,
     /// The peer's last word of its video (`call.video`), when it came
     /// before the invitation: a caller whose camera failed says so right
     /// after an invitation that still says `video`, and the note may
     /// overtake it. With it, whether that video is a screen.
     video: Option<(bool, bool)>,
-}
-
-impl Early {
-    /// Whether the call is over, or taken on another device of mine:
-    /// the invitation then makes a record and rings for nothing.
-    fn settled(&self) -> bool {
-        self.answered_at.is_some() || self.end.is_some()
-    }
-
-    fn answered(&mut self, at: i64) {
-        self.answered_at.get_or_insert(at);
-        // An end that came first read the call as missed; it was taken.
-        if let Some((outcome, _)) = self.end.as_mut() {
-            if *outcome == Outcome::Missed {
-                *outcome = Outcome::Ended;
-            }
-        }
-    }
-
-    /// The first end holds, as it does on the record.
-    fn ended(&mut self, outcome: Outcome, at: i64) {
-        self.end.get_or_insert((outcome, at));
-    }
 }
 
 #[derive(Default)]
@@ -353,10 +333,6 @@ impl State {
 
     fn current_of(&mut self, call_id: &str) -> Option<&mut Current> {
         self.current.as_mut().filter(|c| c.view.call_id == call_id)
-    }
-
-    fn early_of(&self, call_id: &str) -> Option<&Early> {
-        self.early.iter().find(|(id, _)| id == call_id).map(|(_, e)| e)
     }
 
     fn early_mut(&mut self, call_id: &str) -> &mut Early {
@@ -814,6 +790,57 @@ impl CallService {
         }
         Ok(())
     }
+
+    /// A note of my other device about the journal (`own.call`,
+    /// `own.call_hide`; the handler calls this): the record made or added
+    /// to, calls taken out of the journal. Nothing goes back.
+    pub async fn on_own(&self, msg: &DmInbound, envelope: &Envelope, ctx: &Context) -> Result<()> {
+        let inner = &self.inner;
+        let me = &ctx.my_pubkey;
+        if msg.rumor_kind != KIND_OWN_RUMOR || &msg.sender != me || msg.recipients.iter().any(|p| p != me) {
+            return Ok(());
+        }
+        // The chat the note is of, as for a message: a call of a private
+        // chat only by that server, and only where it is.
+        let Some(server) = inner.dm.server_of_inbound(msg).await? else { return Ok(()) };
+        let effects = if let Some(note) = CallNote::parse(envelope) {
+            if note.server != server || note.peer == *me {
+                return Ok(());
+            }
+            let mut st = inner.state.lock().await;
+            inner.take_note(&mut st, note).await?
+        } else if let Some(hide) = HideNote::parse(envelope) {
+            inner.take_hide(hide).await?
+        } else {
+            vec![]
+        };
+        inner.emit(effects);
+        Ok(())
+    }
+
+    /// Take calls out of the journal, here and on my other devices; a call
+    /// under way stays. Their lines in the chats stay.
+    pub async fn hide(&self, call_ids: &[String]) -> Result<()> {
+        let inner = &self.inner;
+        let now = inner.clock.now().secs();
+        repo::hide(&inner.store, call_ids, now).await?;
+        let ids: Vec<String> = call_ids.iter().filter(|id| signal::is_call_id(id)).cloned().collect();
+        for chunk in ids.chunks(crate::own::HIDE_MAX) {
+            inner.tell_hide(&HideNote::Calls(chunk.to_vec()), now);
+        }
+        Ok(())
+    }
+
+    /// Take every call that is over out of the journal, here and on my
+    /// other devices; one that ends after this stays.
+    pub async fn hide_all(&self) -> Result<()> {
+        let inner = &self.inner;
+        let now = inner.clock.now().secs();
+        repo::hide_all(&inner.store, now).await?;
+        repo::hide_ended_before(&inner.store, now, now).await?;
+        inner.tell_hide(&HideNote::AllBefore(now), now);
+        Ok(())
+    }
 }
 
 impl Current {
@@ -1072,7 +1099,7 @@ impl Inner {
         }
         State::remember(&mut st.recent, cur.view.call_id.clone(), RECENT_KEPT);
         let now = self.clock.now().secs();
-        match self.feed.finish(&cur.view, outcome, now).await {
+        match self.finish(&cur.view, outcome, now).await {
             Ok(effects) => self.emit(effects),
             Err(e) => self.emit(vec![error_event(&e)]),
         }
@@ -1462,24 +1489,32 @@ impl Inner {
                 if st.recent.contains(&call_id) || st.current_of(&call_id).is_some() {
                     return Ok(Followup::None);
                 }
-                // This device takes no calls: the invitation is nobody's
-                // business here, not even on record (my other devices ring
-                // for it, and the one that takes it keeps the record); not
-                // a word back, which would stop them ringing. Unless I am
-                // calling the same peer: that is my own call coming back
-                // (both called at once), settled below as any glare.
-                let glare = st.current.as_ref().is_some_and(|c| same_chat(&c.view) && c.view.direction == Direction::Out);
-                if !glare && !self.incoming_enabled().await? {
-                    State::remember(&mut st.recent, call_id, RECENT_KEPT);
+                // Over on record already: my other device's note came
+                // before the invitation (the call ended within its minute).
+                if self.feed.get(&call_id).await?.is_some_and(|r| r.outcome.is_some()) {
                     return Ok(Followup::None);
                 }
                 // The time inside the rumor is when the call began; a clock
                 // ahead of mine makes no call of the future, nor a longer ring.
                 let at = at.min(now);
-                if st.early_of(&call_id).is_some_and(Early::settled) {
+                // This device takes no calls: nothing rings and not a word
+                // goes back, which would stop my other devices ringing; the
+                // call is on record all the same, the answer and the end of
+                // it close it as on any device of mine. Unless I am calling
+                // the same peer: that is my own call coming back (both
+                // called at once), settled below as any glare.
+                let glare = st.current.as_ref().is_some_and(|c| same_chat(&c.view) && c.view.direction == Direction::Out);
+                let takes_none = !glare && !self.incoming_enabled().await?;
+                if takes_none || repo::early_get(&self.store, &call_id).await?.is_some_and(|e| e.settled()) {
                     // Over, or taken on another device of mine, before I saw
                     // it: on record as that, and nothing rings.
-                    let (effects, _) = self.begin_record(st, &call_id, &peer_hex, server, Direction::In, media, at).await?;
+                    let (mut effects, early) = self.begin_record(st, &call_id, &peer_hex, server, Direction::In, media, at).await?;
+                    let ended = early.is_some_and(|e| e.outcome.is_some());
+                    if takes_none && !ended && now - at > INVITE_TTL_SECS {
+                        if let Some(view) = self.view_of(&call_id).await? {
+                            effects.extend(self.finish(&view, Outcome::Missed, at).await?);
+                        }
+                    }
                     self.emit(effects);
                     return Ok(Followup::None);
                 }
@@ -1487,7 +1522,7 @@ impl Inner {
                     // A missed call, on record and in the chat; nothing rings.
                     let mut effects = self.feed.begin_in(&call_id, &peer_hex, server, Direction::In, media, at).await?;
                     if let Some(view) = self.view_of(&call_id).await? {
-                        effects.extend(self.feed.finish(&view, Outcome::Missed, at).await?);
+                        effects.extend(self.finish(&view, Outcome::Missed, at).await?);
                     }
                     self.emit(effects);
                     return Ok(Followup::None);
@@ -1528,7 +1563,7 @@ impl Inner {
                         self.send_to(st, peer, &Signal::Busy { call_id: call_id.clone() }, true).await;
                         let mut effects = self.feed.begin_in(&call_id, &peer_hex, server, Direction::In, media, at).await?;
                         if let Some(view) = self.view_of(&call_id).await? {
-                            effects.extend(self.feed.finish(&view, Outcome::Busy, now).await?);
+                            effects.extend(self.finish(&view, Outcome::Busy, now).await?);
                         }
                         self.emit(effects);
                         return Ok(Followup::None);
@@ -1830,17 +1865,42 @@ impl Inner {
         direction: Direction,
         media: Media,
         at: i64,
-    ) -> Result<(Vec<Effect>, Option<Early>)> {
+    ) -> Result<(Vec<Effect>, Option<repo::EarlyRow>)> {
+        self.begin_record_as(st, call_id, peer, server, direction, media, at, true).await
+    }
+
+    /// The same; `tell: false` closes the record by its early end without
+    /// a word to my other devices (the record came of their note).
+    #[allow(clippy::too_many_arguments)]
+    async fn begin_record_as(
+        &self,
+        st: &mut State,
+        call_id: &str,
+        peer: &str,
+        server: Option<&str>,
+        direction: Direction,
+        media: Media,
+        at: i64,
+        tell: bool,
+    ) -> Result<(Vec<Effect>, Option<repo::EarlyRow>)> {
         let mut effects = self.feed.begin_in(call_id, peer, server, direction, media, at).await?;
-        let early = st.take_early(call_id);
+        st.take_early(call_id);
+        let early = repo::early_take(&self.store, call_id).await?;
         if let Some(early) = &early {
             if let Some(when) = early.answered_at {
                 self.feed.answered(call_id, when).await?;
             }
-            if let Some((outcome, when)) = early.end {
+            if let (Some(outcome), Some(when)) = (early.outcome.as_deref().and_then(Outcome::parse), early.ended_at) {
                 if let Some(view) = self.view_of(call_id).await? {
-                    effects.extend(self.feed.finish(&view, outcome, when).await?);
+                    if tell {
+                        effects.extend(self.finish(&view, outcome, when).await?);
+                    } else {
+                        effects.extend(self.feed.finish(&view, outcome, when).await?);
+                    }
                 }
+            }
+            if let Some(when) = early.hidden_at {
+                repo::hide_one(&self.store, call_id, when).await?;
             }
         }
         Ok((effects, early))
@@ -1863,11 +1923,11 @@ impl Inner {
                 // Its end came first and read it as missed; it was taken
                 // before that end (by the times of the two).
                 if row.outcome.as_deref() == Some(repo::OUTCOME_MISSED) && row.ended_at.is_none_or(|ended| at <= ended) {
-                    let effects = self.feed.correct(call_id, Outcome::Ended).await?;
+                    let effects = self.correct(call_id, Outcome::Ended).await?;
                     self.emit(effects);
                 }
             }
-            None => st.early_mut(call_id).answered(at),
+            None => repo::early_answered(&self.store, call_id, at, self.clock.now().secs()).await?,
         }
         Ok(())
     }
@@ -1877,7 +1937,7 @@ impl Inner {
     async fn note_end_by(&self, st: &mut State, call_id: &str, reason: &str, at: i64) -> Result<()> {
         let answered = match self.feed.get(call_id).await? {
             Some(row) => row.answered_at.is_some(),
-            None => st.early_of(call_id).is_some_and(|e| e.answered_at.is_some()),
+            None => repo::early_get(&self.store, call_id).await?.is_some_and(|e| e.answered_at.is_some()),
         };
         self.note_end(st, call_id, outcome_of(reason, answered), at).await
     }
@@ -1888,12 +1948,11 @@ impl Inner {
         if self.feed.get(call_id).await?.is_some() {
             self.close_record(call_id, outcome, at).await
         } else if st.recent.iter().any(|id| id == call_id) {
-            // Held here and closed, or ignored on purpose (this device
-            // takes no calls): nothing of it is kept.
+            // Held here and closed, or forgotten (the losing half of a
+            // glare): nothing of it is kept.
             Ok(())
         } else {
-            st.early_mut(call_id).ended(outcome, at);
-            Ok(())
+            repo::early_ended(&self.store, call_id, outcome.as_str(), at, self.clock.now().secs()).await
         }
     }
 
@@ -1908,6 +1967,7 @@ impl Inner {
             State::remember(&mut st.recent, call_id.to_string(), RECENT_KEPT);
         }
         st.take_early(call_id);
+        repo::early_forget(&self.store, call_id).await?;
         let effects = self.feed.forget(call_id).await?;
         self.emit(effects);
         Ok(())
@@ -1920,11 +1980,11 @@ impl Inner {
         let Some(row) = self.feed.get(call_id).await? else { return Ok(()) };
         if row.outcome.is_none() {
             if let Some(view) = self.view_of(call_id).await? {
-                let effects = self.feed.finish(&view, outcome, at).await?;
+                let effects = self.finish(&view, outcome, at).await?;
                 self.emit(effects);
             }
         } else if row.outcome.as_deref() == Some(repo::OUTCOME_MISSED) && outcome != Outcome::Missed {
-            let effects = self.feed.correct(call_id, outcome).await?;
+            let effects = self.correct(call_id, outcome).await?;
             self.emit(effects);
         }
         Ok(())
@@ -1943,6 +2003,151 @@ impl Inner {
         view.video_remote_screen = false;
         Ok(Some(view))
     }
+
+    // ─── The journal on my other devices (`own.call`, `own.call_hide`) ────
+
+    /// The record is over (`Feed::finish`), and my other devices are told
+    /// what it says; a call that ended before the journal was cleared is
+    /// out of it at once.
+    async fn finish(&self, view: &CallView, outcome: Outcome, at: i64) -> Result<Vec<Effect>> {
+        let mut effects = self.feed.finish(view, outcome, at).await?;
+        if !effects.is_empty() {
+            repo::hide_if_cleared(&self.store, &view.call_id, self.clock.now().secs()).await?;
+            effects.extend(self.tell_devices(&view.call_id).await);
+        }
+        Ok(effects)
+    }
+
+    /// Another word of a closed record (`Feed::correct`), told to my other
+    /// devices too.
+    async fn correct(&self, call_id: &str, outcome: Outcome) -> Result<Vec<Effect>> {
+        let mut effects = self.feed.correct(call_id, outcome).await?;
+        if !effects.is_empty() {
+            effects.extend(self.tell_devices(call_id).await);
+        }
+        Ok(effects)
+    }
+
+    /// `own.call` of the record, for my other devices: by the way of its
+    /// chat (my home relays, or the private server alone). Nothing for a
+    /// record under way or of a group call, nor without the keys.
+    async fn tell_devices(&self, call_id: &str) -> Vec<Effect> {
+        let Ok(Some(row)) = self.feed.get(call_id).await else { return vec![] };
+        let (Some(note), Ok(keys)) = (CallNote::of(&row), self.signer()) else { return vec![] };
+        let server = note.server.as_deref();
+        match wrap_own_on(&keys, &note.to_envelope().encode(), self.clock.now().secs(), server) {
+            Ok(event) => vec![Effect::Send(to_my_devices(server, event))],
+            Err(e) => vec![error_event(&e)],
+        }
+    }
+
+    fn tell_hide(&self, note: &HideNote, now: i64) {
+        let Ok(keys) = self.signer() else { return };
+        match messenger_dm::wrap::wrap_own(&keys, &note.to_envelope().encode(), now) {
+            Ok(event) => self.emit(vec![Effect::Send(to_my_devices(None, event))]),
+            Err(e) => self.emit(vec![error_event(&e)]),
+        }
+    }
+
+    /// My other device's record of a call: made here when there is none
+    /// (the signals were gone from the relays when this device came), or
+    /// added to: the earlier answer, a relay, an outcome that says more
+    /// (`own::weight`). A call this device holds keeps its own end. Nothing
+    /// goes back: the device that knew more said it already.
+    async fn take_note(&self, st: &mut State, note: CallNote) -> Result<Vec<Effect>> {
+        let id = note.call_id.as_str();
+        let now = self.clock.now().secs();
+        let mut effects = vec![];
+        let row = match self.feed.get(id).await? {
+            // Of another call than the note says (another peer, chat or
+            // direction, or a group call): the note is not of this record.
+            Some(row) if !note.is_of(&row) => return Ok(vec![]),
+            Some(row) => row,
+            // Forgotten here: the losing half of a glare.
+            None if st.recent.iter().any(|r| r == id) => return Ok(vec![]),
+            None => {
+                let started_at = note.started_at.min(now);
+                let peer = note.peer.as_hex();
+                let (begun, _) =
+                    self.begin_record_as(st, id, peer, note.server.as_deref(), note.direction, note.media, started_at, false).await?;
+                effects.extend(begun);
+                let Some(row) = self.feed.get(id).await? else { return Ok(effects) };
+                row
+            }
+        };
+        let mut changed = !effects.is_empty();
+        if let Some(at) = note.answered_at {
+            changed |= repo::set_answered_min(&self.store, id, at).await?;
+        }
+        if note.via_relay && !row.via_relay {
+            repo::set_via_relay(&self.store, id, true).await?;
+            changed = true;
+        }
+        let mut told = false;
+        if st.current_of(id).is_none() {
+            let answered = note.answered_at.is_some() || row.answered_at.is_some();
+            let outcome = if note.outcome == Outcome::Missed && answered { Outcome::Ended } else { note.outcome };
+            match row.outcome.as_deref().and_then(Outcome::parse) {
+                None => {
+                    if let Some(view) = self.view_of(id).await? {
+                        effects.extend(self.feed.finish(&view, outcome, note.ended_at).await?);
+                        told = true;
+                    }
+                }
+                Some(mine) if weight(outcome) > weight(mine) => {
+                    effects.extend(self.feed.correct_at(id, outcome, Some(note.ended_at)).await?);
+                    told = true;
+                }
+                // A word as strong with another time of the end (one device
+                // heard the end later than the other) or another word: the
+                // earliest end holds, then the smaller word, so that every
+                // device keeps one record whatever order the notes come in,
+                // and one clearing takes the call out of every journal.
+                Some(mine)
+                    if weight(outcome) == weight(mine)
+                        && (note.ended_at, outcome.as_str()) < (row.ended_at.unwrap_or(row.started_at), mine.as_str()) =>
+                {
+                    effects.extend(self.feed.correct_at(id, outcome, Some(note.ended_at)).await?);
+                    told = true;
+                }
+                _ => {}
+            }
+        }
+        if !told && changed {
+            effects.extend(self.feed.refresh(id).await?);
+        }
+        if told || changed {
+            repo::hide_if_cleared(&self.store, id, now).await?;
+            effects.push(log_updated());
+        }
+        Ok(effects)
+    }
+
+    /// Calls taken out of the journal on my other device: the ones on
+    /// record here at once, the others when their record comes.
+    async fn take_hide(&self, note: HideNote) -> Result<Vec<Effect>> {
+        let now = self.clock.now().secs();
+        let hidden = match note {
+            HideNote::Calls(ids) => {
+                let mut hidden = false;
+                for id in &ids {
+                    if self.feed.get(id).await?.is_some() {
+                        hidden |= repo::hide_one(&self.store, id, now).await?;
+                    } else {
+                        repo::early_hidden(&self.store, id, now, now).await?;
+                    }
+                }
+                hidden
+            }
+            HideNote::AllBefore(before) => repo::hide_ended_before(&self.store, before, now).await? > 0,
+        };
+        Ok(if hidden { vec![log_updated()] } else { vec![] })
+    }
+}
+
+/// The journal changed by my other device: the screen reads it again.
+fn log_updated() -> Effect {
+    Effect::Emit(UiEvent { name: crate::call::UI_EVENT_CALL_LOG_UPDATED.into(), payload: serde_json::json!({}) })
 }
 
 /// The call node of the private server `id`, as the candidates of a call

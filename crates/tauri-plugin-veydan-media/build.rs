@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "pick_system",
     "convert",
     "share_text",
+    "save_picture",
 ];
 
 fn main() {

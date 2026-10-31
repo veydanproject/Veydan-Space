@@ -1670,14 +1670,16 @@ impl MessengerRuntime {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    /// Take calls out of the journal (their lines in the chats stay).
+    /// Take calls out of the journal (their lines in the chats stay), on
+    /// my other devices too.
     pub async fn call_history_hide(&self, call_ids: &[String]) -> Result<()> {
-        repo::hide(&self.store, call_ids, now_secs()).await.map(drop)
+        self.calls.service.hide(call_ids).await
     }
 
-    /// Take every call that is over out of the journal.
+    /// Take every call that is over out of the journal, on my other
+    /// devices too.
     pub async fn call_history_clear(&self) -> Result<()> {
-        repo::hide_all(&self.store, now_secs()).await.map(drop)
+        self.calls.service.hide_all().await
     }
 
     /// How many calls rang here unanswered since the journal was last looked at.

@@ -513,6 +513,8 @@ interface DemoChannel {
   staff: StaffViewLv[];
   has_key: boolean;
   waiting: number;
+  waiting_keeper: number;
+  keeper_refused: boolean;
   link?: string;
   posts: FeedItemView[];
   comments_of: Record<string, FeedItemView[]>;
@@ -604,7 +606,7 @@ function buildDemo(): Record<string, DemoChannel> {
         { pubkey: MARINA, role: 'author', muted: false, trusted: true, since: T0 - 10 * D },
         { pubkey: NIKITA, role: 'member', muted: true, muted_until: T0 + 20 * H, trusted: false, since: T0 - 2 * D },
       ],
-      has_key: true, waiting: 0, link: `veydan://channel/${c1}?r=node-1.veydan.net&e=1&s=demo-secret`,
+      has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false, link: `veydan://channel/${c1}?r=node-1.veydan.net&e=1&s=demo-secret`,
       ...base(posts1),
       comments_of: { [first]: thread },
       queue: [
@@ -629,7 +631,7 @@ function buildDemo(): Record<string, DemoChannel> {
       }),
       history: 'from_join', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [],
       staff: [{ pubkey: ALICE, role: 'owner', muted: false, trusted: false, since: T0 - 60 * D }],
-      has_key: true, waiting: 3,
+      has_key: true, waiting: 3, waiting_keeper: 0, keeper_refused: false,
       ...base([
         item(c2, ALICE, T0 - 2 * D, 'Итоги прошлой недели: победила работа «Туман над рекой».', { media_json: media('fog.jpg', 'image', 640_000, 'Туман над рекой', [960, 640]), reactions: [{ emoji: '👏', count: 51, mine: false }], comments: 18 }),
         item(c2, ALICE, T0 - 2 * H, 'Задание недели: отражения. Присылайте в комментарии до воскресенья.', { comments: 2 }),
@@ -639,25 +641,25 @@ function buildDemo(): Record<string, DemoChannel> {
       view: channel(c3, 'Рецепты без спешки', 'Простые рецепты на каждый день.', BORIS, {
         picture: picture('#27ae60', '#a8e063', '🍲'), membership: 'joining', members: 97, created_at: T0 - 2 * 60, updated_at: T0 - 2 * 60, keeper_last_seen: T0 - 50 * 60,
       }),
-      history: 'open', post_mode: 'authors', comments: 'off', premod: 'off', pinned: [], staff: [], has_key: false, waiting: 0, ...base([]),
+      history: 'open', post_mode: 'authors', comments: 'off', premod: 'off', pinned: [], staff: [], has_key: false, waiting: 0, waiting_keeper: 0, keeper_refused: false, ...base([]),
     },
     // Joined an hour ago; the keeper last handed out a key three days ago.
     [c9]: {
       view: channel(c9, 'Клуб садоводов', 'Рассада, сорта и урожай.', VERA, { membership: 'joining', members: 214, created_at: T0 - H, updated_at: T0 - H, keeper_last_seen: T0 - 3 * D }),
-      history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], staff: [], has_key: false, waiting: 0, ...base([]),
+      history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], staff: [], has_key: false, waiting: 0, waiting_keeper: 0, keeper_refused: false, ...base([]),
     },
     [c4]: {
       view: channel(c4, 'Закрытый клуб тестировщиков', 'Сборки до релиза и разбор ошибок.', MARINA, { join: 'request', membership: 'requested', members: 58 }),
-      history: 'from_join', post_mode: 'authors', comments: 'on', premod: 'all', pinned: [], staff: [], has_key: false, waiting: 0, ...base([]),
+      history: 'from_join', post_mode: 'authors', comments: 'on', premod: 'all', pinned: [], staff: [], has_key: false, waiting: 0, waiting_keeper: 0, keeper_refused: false, ...base([]),
     },
     [c5]: {
       view: channel(c5, 'Старый канал команды', 'Архив объявлений прошлого года.', ALICE, { membership: 'out', out_reason: 'removed', members: 12, archived: true }),
-      history: 'open', post_mode: 'authors', comments: 'off', premod: 'off', pinned: [], staff: [], has_key: true, waiting: 0,
+      history: 'open', post_mode: 'authors', comments: 'off', premod: 'off', pinned: [], staff: [], has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false,
       ...base([item(c5, ALICE, T0 - 200 * D, 'Итоги года: спасибо всем, кто был с нами.', { reactions: [{ emoji: '❤️', count: 8, mine: false }] })]),
     },
     [ca]: {
       view: channel(ca, 'Курс фотографии', 'Двенадцать уроков для начинающих.', MARINA, { membership: 'disbanded', out_reason: 'disbanded', members: 0, updated_at: T0 - 4 * D }),
-      history: 'open', post_mode: 'authors', comments: 'off', premod: 'off', pinned: [], staff: [], has_key: true, waiting: 0, ...base([]),
+      history: 'open', post_mode: 'authors', comments: 'off', premod: 'off', pinned: [], staff: [], has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false, ...base([]),
     },
     [c6]: {
       view: channel(c6, 'Анонсы релизов', 'Коротко о каждой новой версии.', BORIS, {
@@ -666,7 +668,7 @@ function buildDemo(): Record<string, DemoChannel> {
       }),
       history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [],
       staff: [{ pubkey: BORIS, role: 'owner', muted: false, trusted: false, since: T0 - 90 * D }, { pubkey: ME, role: 'author', muted: false, trusted: false, since: T0 - 9 * D }],
-      has_key: true, waiting: 0,
+      has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false,
       ...base([item(c6, BORIS, T0 - D, 'Вышла 5.2: каналы и новые реакции.', { reactions: [{ emoji: '🚀', count: 140, mine: false }], comments: 0 })]),
     },
   };
@@ -774,7 +776,7 @@ function detail(c: DemoChannel): ChannelDetail {
   return {
     channel: { ...c.view }, history: c.history, post_mode: c.post_mode, comments: c.comments, premod: c.premod, schedule: c.schedule,
     pinned: [...c.pinned], staff: c.staff.map((s) => ({ ...s, levels: s.levels ? [...s.levels] : undefined })), disbanded: c.view.membership === 'disbanded', has_key: c.has_key,
-    waiting: c.waiting, keeper: c.view.owner, link: c.view.membership === 'joined' ? c.link : undefined,
+    waiting: c.waiting, waiting_keeper: c.waiting_keeper, keeper_refused: c.keeper_refused, keeper: c.view.owner, link: c.view.membership === 'joined' ? c.link : undefined,
     // Stage 2 (communities-wire §14): what the core will add to ChannelDetail.
     ...(c.scopes ? { scopes: scopesFor(c), levels: (c.levels ?? []).map((l) => ({ ...l, scopes: [...l.scopes], can: { ...l.can } })), my_levels: [...(c.my_levels ?? [0])] } : {}),
     ...(c.transfer ? { transfer: { ...c.transfer } } : {}),
@@ -852,7 +854,7 @@ if (!isTauri) {
       const c: DemoChannel = {
         view: channel(cid, input.name, input.about ?? '', ME, { join: input.join, my_role: 'owner', members: 1, kept_here: true, relays: input.relays, storage: input.storage, created_at: now(), updated_at: now() }),
         history: input.history ?? 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [],
-        staff: [{ pubkey: ME, role: 'owner', muted: false, trusted: false, since: now() }], has_key: true, waiting: 0,
+        staff: [{ pubkey: ME, role: 'owner', muted: false, trusted: false, since: now() }], has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false,
         link: `veydan://channel/${cid}?r=node-1.veydan.net&e=1&s=new`, posts: [], comments_of: {}, queue: [], log: [], requests: [], banned: [],
       };
       data()[cid] = c;
@@ -905,7 +907,7 @@ if (!isTauri) {
       const request = /join=request/.test(link);
       const c: DemoChannel = {
         view: channel(cid, request ? 'Клуб по заявкам' : 'Канал по ссылке', 'Демо: канал, открытый по ссылке.', BORIS, { join: request ? 'request' : 'open', membership: request ? 'requested' : 'joining', members: 40 }),
-        history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], staff: [], has_key: false, waiting: 0,
+        history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], staff: [], has_key: false, waiting: 0, waiting_keeper: 0, keeper_refused: false,
         posts: [], comments_of: {}, queue: [], log: [], requests: [], banned: [],
       };
       data()[cid] = c;

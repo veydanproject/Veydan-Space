@@ -126,14 +126,14 @@ mod tests {
         let path = dir.path().join("sub").join(FILE_NAME);
         let db = Db::open(&path).await.unwrap();
         assert_eq!(db.schema_version().await.unwrap(), Db::latest_migration());
-        assert_eq!(Db::latest_migration(), 34);
+        assert_eq!(Db::latest_migration(), 38);
         let tables: Vec<String> = sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'cm_%' ORDER BY name").fetch_all(db.pool()).await.unwrap();
         assert_eq!(
             tables,
             [
                 "cm_admits", "cm_avatar", "cm_bundles", "cm_channels", "cm_cloud_keys", "cm_comments", "cm_epochs", "cm_epochs_heard", "cm_genesis", "cm_heartbeats", "cm_invites", "cm_joining", "cm_keeper", "cm_keeper_blobs", "cm_keeper_cloud_keys", "cm_keeper_events", "cm_keeper_flat", "cm_keeper_header", "cm_keeper_held_joins", "cm_keeper_inbox", "cm_keeper_invites",
                 "cm_keeper_members", "cm_keeper_missed", "cm_keeper_ops", "cm_keeper_pending", "cm_keeper_readers", "cm_keeper_retired", "cm_keeper_revoked", "cm_keeper_snapshot", "cm_keeper_take", "cm_keeper_tickets", "cm_keeper_upload_keys", "cm_keeper_uploads", "cm_keeper_wraps",
-                "cm_keepers", "cm_known_files", "cm_level_requests", "cm_levels", "cm_link_owed", "cm_local_files", "cm_marks", "cm_meta_owed", "cm_ops", "cm_outbox", "cm_pending",
+                "cm_keepers", "cm_known_files", "cm_level_answers", "cm_level_asks", "cm_level_requests", "cm_levels", "cm_link_owed", "cm_local_files", "cm_marks", "cm_meta_owed", "cm_ops", "cm_outbox", "cm_own_wait", "cm_pending",
                 "cm_posts", "cm_reactions", "cm_read", "cm_readers", "cm_requests", "cm_scopes", "cm_snapshots", "cm_staff", "cm_sync", "cm_tickets", "cm_transfers", "cm_upload_keys", "cm_uploads"
             ]
         );

@@ -2233,14 +2233,14 @@ Object.assign(devMocks, demoCallMocks({
 Object.assign(devMocks, demoCallNodeMocks());
 
 /** Commands whose arguments the browser demo does not print. */
-const SECRET_ARGS = new Set(['messenger_share_out']);
+const SECRET_ARGS = new Set(['messenger_share_out', 'messenger_gallery_save_picture']);
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke<T>(cmd, args);
   }
-  // A text shared out carries an invitation's secret: its words stay out of the log.
+  // A text shared out or a QR saved carries an invitation's secret: it stays out of the log.
   console.warn(`[dev-browser] messenger invoke('${cmd}')`, SECRET_ARGS.has(cmd) ? '…' : (args ?? ''));
   return devMocks[cmd]?.(args) as T;
 }
@@ -2537,11 +2537,11 @@ export const messengerApi = {
     foreground: (visible: boolean) => invoke<void>('messenger_presence_foreground', { visible }),
   },
 
-  /** Which emoji I use most, the same on every device of mine. */
+  /** Which emoji I used last and use most, the same on every device of mine. */
   emoji: {
     /** I picked this emoji in the composer (a reaction counts by itself). */
     used: (emoji: string) => invoke<void>('messenger_emoji_used', { emoji }),
-    /** Most used first. */
+    /** The used last first (the newest of them first), then the most used. */
     top: (n: number) => invoke<string[]>('messenger_emoji_top', { n }),
   },
 
@@ -2655,7 +2655,8 @@ export const messengerApi = {
   /**
    * The journal of calls (the section «Звонки»): the calls that are over,
    * of two and of groups, newest first. Taking one out leaves its line in
-   * the chat.
+   * the chat; my other devices take it out too. `call_log.updated` says my
+   * other device changed it.
    */
   callLog: {
     /** A page strictly older than `before` (a `started_at`). */
@@ -2764,6 +2765,8 @@ export const messengerApi = {
     capture: (kind: 'photo' | 'video') => invoke<string | null>('messenger_gallery_capture', { kind }),
     /** The system's Photo Picker. */
     pick: (multiple: boolean, kind: 'image' | 'video' | 'media') => invoke<string[]>('messenger_gallery_pick', { multiple, kind }),
+    /** A PNG (base64) into the gallery, Pictures/Veydan: «Сохранить» of a QR code; refused with `storage_denied`. */
+    savePicture: (png: string, name: string) => invoke<void>('messenger_gallery_save_picture', { png, name }),
   },
   media: {
     servers: () => invoke<MessengerMediaServer[]>('messenger_media_servers'),

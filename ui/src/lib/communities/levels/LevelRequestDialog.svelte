@@ -17,7 +17,7 @@
   import { channelError } from '../errors';
   import type { ChannelDetail } from '../api';
   import { levelsOf } from './sections';
-  import { adds, requestable } from './request';
+  import { adds, requestable, waitingLevels } from './request';
 
   interface Props {
     open: boolean;
@@ -32,7 +32,7 @@
   const cid = $derived(detail.channel.id);
   const lv = $derived(levelsOf(detail));
   const options = $derived(requestable(lv.levels, lv.my_levels, lv.scopes));
-  const asked = $derived(channelStore.levelAsked[cid] ?? []);
+  const asked = $derived(waitingLevels(channelStore.levelAsked, cid, detail.my_level_requests));
 
   let picked = $state<number | null>(null);
   let note = $state('');

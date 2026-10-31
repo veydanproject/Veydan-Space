@@ -5,8 +5,9 @@
   A reader's own levels in the card of a channel (communities-wire §14.1,
   spec §5): the chips of the levels they have, in plain words which
   sections are open to them and which are closed, and the way to ask for
-  a level that gives more. A request sent is said until the channel
-  changes.
+  a level that gives more. A request sent is said while it waits (after a
+  restart too, as the channel keeps it); a refused one says so, with the
+  moderator's reason, until I ask for that level again.
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
@@ -14,7 +15,7 @@
   import { channelStore } from '../channelStore.svelte';
   import type { ChannelDetail } from '../api';
   import { BASE_LEVEL, EVERYONE, levelsOf } from './sections';
-  import { requestable } from './request';
+  import { requestable, waitingLevels } from './request';
   import { orderedLevels } from './editor';
   import LevelRequestDialog from './LevelRequestDialog.svelte';
   import Box from '../info/Box.svelte';
@@ -31,7 +32,16 @@
   const open = $derived(lv.scopes.filter((s) => s.mine || s.scope_id === EVERYONE).map((s) => `«${titleOf(s)}»`));
   const closed = $derived(lv.scopes.filter((s) => !s.mine && s.scope_id !== EVERYONE).map((s) => `«${titleOf(s)}»`));
   const options = $derived(requestable(lv.levels, lv.my_levels, lv.scopes));
-  const asked = $derived((channelStore.levelAsked[cid] ?? []).map((id) => lv.levels.find((l) => l.id === id)?.name).filter(Boolean) as string[]);
+  const waiting = $derived(waitingLevels(channelStore.levelAsked, cid, detail.my_level_requests));
+  const asked = $derived(waiting.map((id) => lv.levels.find((l) => l.id === id)?.name).filter(Boolean) as string[]);
+  const refused = $derived(
+    (detail.my_level_requests ?? [])
+      .filter((r) => r.status === 'refused' && !waiting.includes(r.level))
+      .flatMap((r) => {
+        const name = lv.levels.find((l) => l.id === r.level)?.name;
+        return name ? [{ level: r.level, name, reason: r.reason }] : [];
+      }),
+  );
 
   let asking = $state(false);
 </script>
@@ -50,6 +60,10 @@
     {#if asked.length}
       <p class="sent" role="status"><Icon name="clock" size={14} />{$t('chan_level_request_sent_text', { name: asked.join('», «') })}</p>
     {/if}
+    {#each refused as r (r.level)}
+      <p class="refused" role="status"><Icon name="x" size={14} />
+        <span>{$t('chan_level_refused_text', { name: r.name })}{#if r.reason}<br />{$t('chan_level_refused_reason', { reason: r.reason })}{/if}</span></p>
+    {/each}
     {#if options.length}
       <button class="btn btn-ghost btn-sm" onclick={() => (asking = true)}><Icon name="layers" size={18} />{$t('chan_level_request')}</button>
     {/if}
@@ -72,6 +86,10 @@
     margin: 0; display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
     font-size: var(--fs-xs); line-height: 1.45; color: var(--accent-text-2); background: var(--accent-bg); border: 1px solid var(--accent-border);
   }
-  .sent :global(svg) { flex-shrink: 0; margin-top: 2px; }
+  .refused {
+    margin: 0; display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
+    font-size: var(--fs-xs); line-height: 1.45; color: var(--text); background: var(--warn-bg); border: 1px solid var(--warn-border); overflow-wrap: anywhere;
+  }
+  .sent :global(svg), .refused :global(svg) { flex-shrink: 0; margin-top: 2px; }
   @media (pointer: coarse) { .btn { min-height: var(--control-h-lg); } }
 </style>

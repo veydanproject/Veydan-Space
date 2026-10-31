@@ -795,13 +795,23 @@ impl Listener {
                 return;
             }
         };
-        let known = rows
+        let mut known: HashMap<String, Vec<RelayUrl>> = rows
             .into_iter()
             .map(|row| {
                 let relays: Vec<String> = serde_json::from_str(&row.relays_json).unwrap_or_default();
                 (row.id, relays.iter().filter_map(|r| RelayUrl::parse(r)).collect())
             })
             .collect();
+        // A channel my other device is in, whose journal is asked of the
+        // relays its note named (wire §6.4): routed there until its row is.
+        match self.service.own_waits().await {
+            Ok(waits) => {
+                for (cid, relays) in waits {
+                    known.entry(cid).or_insert_with(|| relays.iter().filter_map(|r| RelayUrl::parse(r)).collect());
+                }
+            }
+            Err(e) => crate::log::clog!("the channels my other device is in were not read: {e}"),
+        }
         self.routes.set(known);
     }
 
@@ -1356,6 +1366,11 @@ impl Driver {
         }
         if !outcome.pending.is_empty() {
             self.service.outbox_notify().notify_one();
+        }
+        // The asks below go where the routes say: a journal asked of the
+        // relays of my own note needs them read first.
+        if outcome.routes {
+            self.refresh_routes().await;
         }
         if message {
             crate::seams::unread_changed(self);
@@ -2378,6 +2393,32 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// A channel my other device is in, whose journal is not here yet: routed
+    /// to the relays my note of its keys named, its journal asked there by
+    /// the round, and no route once its row names its own (ROO-271).
+    #[tokio::test]
+    async fn the_journal_my_note_waits_for_is_asked_on_the_relays_it_names() {
+        let net = FakeNet::new(true);
+        let service = service(net.clone()).await;
+        let cid = "c".repeat(64);
+        let row = db::channels::OwnWaitRow {
+            community_id: cid.clone(),
+            owner: "d".repeat(64),
+            relays_json: serde_json::json!(["wss://mine.example"]).to_string(),
+            body_json: "{}".into(),
+            received_at: now_secs() as i64,
+        };
+        db::channels::put_own_wait(service.db(), &row).await.unwrap();
+        let listener = Listener::new(service.clone(), net.clone(), Routes::default());
+        listener.listen().await;
+        assert_eq!(listener.routes.of(&cid), vec![RelayUrl::parse("wss://mine.example").unwrap()]);
+        let asked = net.sent().into_iter().any(|o| matches!(&o, Outbound::Sync { scope: Scope::Channel { id }, filter, .. } if id == &cid && filter.0["kinds"] == serde_json::json!([communities_core::wire::KIND_JOURNAL])));
+        assert!(asked, "the journal asked by the round");
+        db::channels::drop_own_wait(service.db(), &cid).await.unwrap();
+        listener.listen().await;
+        assert!(listener.routes.of(&cid).is_empty());
     }
 
     /// A channel no longer followed has its subscriptions closed and its

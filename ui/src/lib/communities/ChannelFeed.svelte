@@ -50,7 +50,7 @@
   import { cover } from './cover';
   import { isMine, QUICK } from './reactions';
   import {
-    amMuted, answersRequests, canAttach, canComment, canPost, canSetUpSections, isModerator, isOwner, joined, keeperAwayAt, standing, staffOf, type Standing,
+    amMuted, answersRequests, canAttach, catchUpNote, canComment, canPost, canSetUpSections, isModerator, isOwner, joined, keeperAwayAt, standing, staffOf, type Standing,
   } from './permissions';
   import type { ModerationTab } from './moderation/ModerationPanel.svelte';
   import PersonActions from './moderation/PersonActions.svelte';
@@ -631,8 +631,12 @@
   const waitingQueue = $derived(isModerator(detail) ? queue : 0);
   const waitingAsks = $derived(answersRequests(detail) ? asks : 0);
   const waitingLevels = $derived(isModerator(detail) ? levelAsks : 0);
-  /** One count on ⋮, the rows in its menu (the redesign of the feed: no pills in the head, on a computer either). */
-  const waitingAll = $derived(waitingQueue + waitingAsks + waitingLevels);
+  /**
+   * One count on ⋮, the rows in its menu (the redesign of the feed: no pills
+   * in the head, on a computer either). Requests for a level have a bar over
+   * the feed instead (ROO-259 item 3).
+   */
+  const waitingAll = $derived(waitingQueue + waitingAsks);
 
   let headMenu = $state<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
 
@@ -661,8 +665,12 @@
     return () => clearInterval(timer);
   });
   const waitingKey = $derived(where === 'waiting_key' || where === 'joining');
+  /** The keeper said I was never let in: an invitation is needed, not a wait. */
+  const needsInvite = $derived(waitingKey && !!detail?.keeper_refused);
   /** Waited too long for a key, and the keeper has not been heard of for as long (or ever). */
-  const keeperAway = $derived(!!row && waitingKey && keeperAwayAt(row, nowS));
+  const keeperAway = $derived(!!row && waitingKey && !needsInvite && keeperAwayAt(row, nowS));
+  /** What the strip of a channel catching up says, by what its posts wait for. */
+  const catchUp = $derived(detail ? catchUpNote(detail) : null);
 
   /** «Вам передают канал» (communities-wire §16): an offer of the owner, not answered yet. */
   const offerForMe = $derived(offerToMe(detail));
@@ -693,8 +701,8 @@
       leave,
       forget,
     }, {
-      queue: waitingQueue, requests: waitingAsks, levels: waitingLevels,
-      openQueue: () => openInfo('queue'), openRequests: () => openInfo('requests'), openLevels: () => openInfo('levels'),
+      queue: waitingQueue, requests: waitingAsks,
+      openQueue: () => openInfo('queue'), openRequests: () => openInfo('requests'),
     });
   });
 
@@ -813,8 +821,8 @@
         <div class="strip warn"><span class="s-icon"><Icon name="download" size={16} /></span><span class="strip-text">{$t('chan_needs_update')}</span>
           <button class="btn btn-ghost btn-sm" onclick={() => void goto('/settings#updates')}>{$t('chan_update')}</button></div>
       {/if}
-      {#if where === 'catching_up'}
-        <div class="strip" role="status"><span class="s-icon"><Icon name="key" size={16} /></span><span class="strip-text">{$t(countKey('chan_state_catching_up', detail?.waiting ?? 0, $locale), { n: String(detail?.waiting ?? 0) })}</span></div>
+      {#if where === 'catching_up' && catchUp}
+        <div class="strip" role="status"><span class="s-icon"><Icon name="key" size={16} /></span><span class="strip-text">{$t(countKey(catchUp.key, catchUp.n, $locale), { n: String(catchUp.n) })}</span></div>
       {/if}
       {#if offerForMe}
         <div class="strip transfer" role="status"><span class="s-icon"><Icon name="key" size={16} /></span>
@@ -822,6 +830,11 @@
           <button class="btn btn-primary btn-sm" onclick={() => answerTransfer(true)}>{$t('chan_transfer_accept')}</button>
           <button class="btn btn-ghost btn-sm" onclick={() => answerTransfer(false)}>{$t('chan_transfer_decline')}</button>
         </div>
+      {/if}
+      {#if waitingLevels > 0}
+        <div class="strip" role="status"><span class="s-icon"><Icon name="layers" size={16} /></span>
+          <span class="strip-text">{$t('chan_level_requests_bar', { n: String(waitingLevels) })}</span>
+          <button class="btn btn-ghost btn-sm" onclick={() => openInfo('levels')}>{$t('chan_level_requests_open')}</button></div>
       {/if}
       {#if mutedText && joined(detail)}<div class="strip warn"><span class="s-icon"><Icon name="bell-off" size={16} /></span><span class="strip-text">{mutedText}</span></div>{/if}
       {#if error}<div class="strip danger" role="alert"><span class="s-icon"><Icon name="alert-triangle" size={16} /></span><span class="strip-text">{error}</span></div>{/if}
@@ -836,7 +849,10 @@
         {:else if waitingKey}
           <div class="placeholder">
             <span class="ph-icon away"><Icon name="key" size={24} /></span>
-            {#if keeperAway && row}
+            {#if needsInvite}
+              <p>{$t('chan_needs_invite')}</p>
+              <span>{$t('chan_needs_invite_text')}</span>
+            {:else if keeperAway && row}
               <p>{$t('chan_keeper_away')}</p>
               <span>{row.keeper_last_seen ? $t('chan_keeper_away_seen', { when: listStamp(row.keeper_last_seen) }) : $t('chan_keeper_away_text')}</span>
             {:else}
@@ -844,7 +860,7 @@
               <span>{$t('chan_waiting_key_text')}</span>
             {/if}
             <div class="ph-acts">
-              {#if keeperAway && row?.owner !== me}<button class="btn btn-primary" onclick={writeOwner}><Icon name="send" size={18} />{$t('chan_write_owner')}</button>{/if}
+              {#if (keeperAway || needsInvite) && row?.owner !== me}<button class="btn btn-primary" onclick={writeOwner}><Icon name="send" size={18} />{$t('chan_write_owner')}</button>{/if}
               {#if !isOwner(detail)}<button class="btn btn-ghost" onclick={cancelJoin}><Icon name="x" size={18} />{$t('chan_cancel_join')}</button>{/if}
             </div>
           </div>

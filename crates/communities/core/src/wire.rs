@@ -1059,10 +1059,39 @@ pub struct LevelRequest {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
     pub created_at: i64,
+    /// 16 random bytes, hex: this request apart from another of the same
+    /// person and level, of the same second too (2026-10-31, ROO-289); an
+    /// older build sends none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+}
+
+/// How many requests one answer names at most (`LevelResolve::requests`).
+pub const MAX_ANSWERED_REQUESTS: usize = 8;
+
+/// A fingerprint of a request: its `id`, or the hash of an older build's
+/// request (`LevelRequest::fingerprint`).
+fn is_fingerprint(f: &str) -> bool {
+    is_hex(f, 32) || is_hex(f, 64)
 }
 
 impl LevelRequest {
+    /// What tells this request apart on every device of a moderator and
+    /// of the requester (§14.4): its `id`; an older build's request, which
+    /// has none, by the SHA-256 of what it says.
+    pub fn fingerprint(&self) -> String {
+        if let Some(id) = &self.id {
+            return id.clone();
+        }
+        use sha2::{Digest, Sha256};
+        let said = format!("{}\n{}\n{}\n{}", self.community_id, self.level, self.created_at, self.note);
+        hex::encode(Sha256::digest(said.as_bytes()))
+    }
+
     pub fn check(&self, now: i64) -> Check {
+        if self.id.as_deref().is_some_and(|id| !is_hex(id, 32)) {
+            return Err("id");
+        }
         if !is_hex(&self.community_id, 64) {
             return Err("community_id");
         }
@@ -1079,6 +1108,9 @@ impl LevelRequest {
 
 /// A moderator answers a request for a level (§14.4): a grant is the
 /// `set_levels` of the journal, this note only tells; a refusal says why.
+/// The copy to the moderator's own devices names the `requester` and the
+/// request (`asked_at`) they close; the note to the requester names the
+/// request alone.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LevelResolve {
     pub community_id: String,
@@ -1086,6 +1118,16 @@ pub struct LevelResolve {
     pub granted: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requester: Option<String>,
+    /// The `created_at` of the request the copy answers (not the date of
+    /// its wrap, new at every attempt of the outbox).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_at: Option<i64>,
+    /// The fingerprints of the requests answered (2026-10-31, ROO-289):
+    /// they, not `asked_at`, say what the answer closes where they are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests: Option<Vec<String>>,
 }
 
 impl LevelResolve {
@@ -1095,6 +1137,15 @@ impl LevelResolve {
         }
         if self.reason.as_deref().is_some_and(|r| r.chars().count() > MAX_REQUEST_NOTE_CHARS) {
             return Err("reason");
+        }
+        if self.requester.as_deref().is_some_and(|r| !is_hex(r, 64)) {
+            return Err("requester");
+        }
+        if self.asked_at.is_some_and(|t| t < 0) {
+            return Err("asked_at");
+        }
+        if self.requests.as_ref().is_some_and(|r| r.len() > MAX_ANSWERED_REQUESTS || r.iter().any(|f| !is_fingerprint(f))) {
+            return Err("requests");
         }
         Ok(())
     }
@@ -1687,6 +1738,31 @@ mod tests {
         let master = KeeperMaster { community_id: CID.into(), scope_id: "everyone".into(), gen: 2, master: B64.encode([1u8; 32]) };
         assert_eq!(master.check(), Ok(()));
         assert_eq!(KeeperMaster { master: B64.encode([1u8; 31]), ..master }.check(), Err("master"));
+        // `requester` only in the copy to my own devices: the note of an
+        // older build reads without it, and the note to the reader has none.
+        let old: LevelResolve = serde_json::from_value(serde_json::json!({ "community_id": CID, "level": 2, "granted": false, "reason": "no" })).unwrap();
+        assert_eq!((old.requester.as_deref(), old.check()), (None, Ok(())));
+        assert!(!note_envelope(T_LEVEL_RESOLVE, &old).unwrap().contains("requester"));
+        assert_eq!(old.asked_at, None);
+        assert_eq!(LevelResolve { requester: Some("c".repeat(64)), asked_at: Some(1_760_000_000), ..old.clone() }.check(), Ok(()));
+        assert_eq!(LevelResolve { asked_at: Some(-1), ..old.clone() }.check(), Err("asked_at"));
+        assert_eq!(LevelResolve { requester: Some("me".into()), ..old.clone() }.check(), Err("requester"));
+        // The fingerprints of the requests (ROO-289): none from an older build.
+        assert_eq!(old.requests, None);
+        assert!(!note_envelope(T_LEVEL_RESOLVE, &old).unwrap().contains("requests"));
+        assert_eq!(LevelResolve { requests: Some(vec!["d".repeat(32), "e".repeat(64)]), ..old.clone() }.check(), Ok(()));
+        assert_eq!(LevelResolve { requests: Some(vec!["d".repeat(31)]), ..old.clone() }.check(), Err("requests"));
+        assert_eq!(LevelResolve { requests: Some(vec!["d".repeat(32); MAX_ANSWERED_REQUESTS + 1]), ..old }.check(), Err("requests"));
+        let now = 1_760_000_000;
+        let asked: LevelRequest = serde_json::from_value(serde_json::json!({ "community_id": CID, "level": 2, "created_at": now })).unwrap();
+        assert_eq!((asked.id.as_deref(), asked.check(now)), (None, Ok(())));
+        assert!(!note_envelope(T_LEVEL_REQUEST, &asked).unwrap().contains("\"id\""));
+        let fp = asked.fingerprint();
+        assert_eq!(fp.len(), 64, "an older build's request by the hash of what it says");
+        assert_eq!(LevelRequest { note: "x".into(), ..asked.clone() }.fingerprint().len(), 64);
+        assert_ne!(LevelRequest { note: "x".into(), ..asked.clone() }.fingerprint(), fp);
+        assert_eq!(LevelRequest { id: Some("f".repeat(32)), ..asked.clone() }.fingerprint(), "f".repeat(32));
+        assert_eq!(LevelRequest { id: Some("f".repeat(64)), ..asked }.check(now), Err("id"));
         for t in [T_JOIN, T_REQUEST, T_INVITE, T_INVITE_REPLY, T_ADMIT, T_REJECTED, T_ISSUE, T_REBUNDLE, T_MISSED, T_LEAVE] {
             assert!(t.starts_with("channel."), "{t}");
         }

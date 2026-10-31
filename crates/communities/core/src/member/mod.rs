@@ -33,6 +33,10 @@ use fetch::Want;
 
 /// The note to my own devices (rumor 30078, wire §6.4).
 pub const T_OWN_KEYS: &str = "own.channel_keys";
+/// How often the keys of a channel I am in go to my other devices again
+/// though nothing changed: the relays keep a note to me for about a week
+/// (as `own.ui`, messenger-dm `UI_PREFS_EVERY_SECS`).
+pub const OWN_KEYS_EVERY_SECS: i64 = 3 * 86_400;
 /// The keys of epochs one such note carries at most: under an open
 /// history the chain gives the rest, under `from_join` the keeper's
 /// missed pages do.
@@ -41,6 +45,57 @@ pub const OWN_KEYS_MAX: usize = 64;
 /// The mark an epoch event that ran ahead waits under in `cm_pending`.
 fn ahead_marker(scope_id: &str) -> String {
     format!("epoch-ahead:{scope_id}")
+}
+
+/// What waits in a channel, by what it waits for (`Member::waiting`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Waiting {
+    /// The key of an epoch only the keeper gives: a bundle I lack (a new
+    /// generation, none at all), a flat epoch, one I was not in.
+    pub keeper: u32,
+    /// The key of an epoch whose shard is fetched of the hosts.
+    pub shard: u32,
+    /// Epochs (or a link) not here yet: the relay brings them.
+    pub ahead: u32,
+    /// The snapshot that tells who the author is.
+    pub snapshot: u32,
+}
+
+impl Waiting {
+    pub fn total(&self) -> u32 {
+        self.keeper.saturating_add(self.shard).saturating_add(self.ahead).saturating_add(self.snapshot)
+    }
+}
+
+enum Wait {
+    Keeper,
+    Shard,
+    Ahead,
+    Snapshot,
+}
+
+fn parse_epoch(json: &str, community_id: &str, scope_id: &str) -> Option<Verified<EpochEvent>> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let ev = read_epoch(&value, community_id, scope_id).ok()?;
+    Some(Verified::after_signature_check(ev.content.event))
+}
+
+/// What content sealed under `epoch` of a scope waits for, by the rows of
+/// its epochs and my keys: an event not here, or a key held already, is
+/// the relay's to bring (or about to open).
+fn wait_of(rows: &[EpochRow], keys: &MemberKeys, community_id: &str, scope_id: &str, epoch: i64) -> Wait {
+    let Some(row) = rows.iter().find(|r| r.epoch == epoch && !r.event_json.is_empty()) else { return Wait::Ahead };
+    if row.key_hex.is_some() {
+        return Wait::Ahead;
+    }
+    let Some(ev) = parse_epoch(&row.event_json, community_id, scope_id) else { return Wait::Ahead };
+    if ev.scheme == keydist::SchemeId::FlatV1 {
+        return Wait::Keeper;
+    }
+    match keys.state(scope_id).map(|m| m.status(&ev)) {
+        Some(Status::Read { .. }) => Wait::Shard,
+        _ => Wait::Keeper,
+    }
 }
 
 /// Where I stand in a channel the epochs put me out of.
@@ -63,7 +118,8 @@ pub struct OwnEpoch {
 }
 
 /// `own.channel_keys` (wire §6.4): my bundle, my keys and the link, for
-/// my other devices.
+/// my other devices; sent again after `OWN_KEYS_EVERY_SECS`, so that a
+/// device added later finds one on the relays.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnKeys {
     pub community_id: String,
@@ -82,6 +138,15 @@ pub struct OwnKeys {
     /// recovers it) only with the root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root: Option<OwnRoot>,
+    /// The relays of the channel and the owner who made it (hex, the
+    /// author of its `create`, not the owner since a handover), as its
+    /// journal names them (wire §6.4, 2026-10-31): a device of mine without
+    /// the journal asks them for it, and takes only the `create` of that
+    /// author.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relays: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 /// The root secret in `own.channel_keys`, with the serial of the keeper
@@ -183,9 +248,73 @@ impl Member {
     }
 
     /// `channel.rebundle` for the bundle of `gen` (wire §7).
+    /// When it was asked is kept: asked again `REBUNDLE_EVERY_SECS` later
+    /// while the bundle has not come (`ChannelService::ensure_keys`).
     pub async fn ask_rebundle(&self, state: &ChannelState, scope_id: &str, gen: u32, now: i64) -> Result<()> {
         let body = Rebundle { community_id: state.community_id.clone(), scope_id: scope_id.to_string(), gen };
-        self.to_keeper(state, wire::T_REBUNDLE, &body, now).await
+        self.to_keeper(state, wire::T_REBUNDLE, &body, now).await?;
+        db::channels::set_rebundle_at(&self.env.db, &state.community_id, now).await
+    }
+
+    /// The bundles I lack, as `(scope, generation)` to ask for: of
+    /// `everyone` when I hold none (a device no note of mine reached), of
+    /// any scope whose newest epoch waiting here is of a generation newer
+    /// than my bundles (`NeedBundle`). A section I hold no bundle of is
+    /// not asked for: the keeper issues one when the levels give it.
+    pub async fn bundles_wanted(&self, state: &ChannelState) -> Result<Vec<(String, u32)>> {
+        let cid = &state.community_id;
+        let mut out = Vec::new();
+        for scope_id in state.scopes.keys() {
+            let keys = self.load(cid, scope_id).await?;
+            if !keys.state(scope_id).is_some_and(|s| !s.bundles.is_empty()) {
+                if scope_id == SCOPE_EVERYONE {
+                    out.push((scope_id.clone(), 1));
+                }
+                continue;
+            }
+            let rows = db::keys::epochs(&self.env.db, cid, scope_id).await?;
+            for row in rows.iter().rev().filter(|r| r.key_hex.is_none() && !r.event_json.is_empty()) {
+                let Some(ev) = parse_epoch(&row.event_json, cid, scope_id) else { continue };
+                if let Some(Status::NeedBundle { gen }) = keys.state(scope_id).map(|m| m.status(&ev)) {
+                    out.push((scope_id.clone(), gen));
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// What waits in `cm_pending` of a channel, by what it waits for: the
+    /// page says «when the keeper is online» only of what waits for the
+    /// keeper (communities-wire §6.2).
+    pub async fn waiting(&self, state: &ChannelState) -> Result<Waiting> {
+        let cid = &state.community_id;
+        let mut w = Waiting::default();
+        let mut scopes: std::collections::HashMap<String, (Vec<EpochRow>, MemberKeys)> = std::collections::HashMap::new();
+        for (scope_id, epoch, key_id, n) in db::channels::pending_groups(&self.env.db, cid).await? {
+            let n = u32::try_from(n).unwrap_or(u32::MAX);
+            let reason = if key_id == readers::SNAPSHOT_MARKER {
+                Wait::Snapshot
+            } else if key_id == ahead_marker(&scope_id) || key_id.starts_with("link:") {
+                Wait::Ahead
+            } else {
+                if !scopes.contains_key(&scope_id) {
+                    let rows = db::keys::epochs(&self.env.db, cid, &scope_id).await?;
+                    let keys = self.load(cid, &scope_id).await?;
+                    scopes.insert(scope_id.clone(), (rows, keys));
+                }
+                let (rows, keys) = &scopes[&scope_id];
+                wait_of(rows, keys, cid, &scope_id, epoch)
+            };
+            let slot = match reason {
+                Wait::Keeper => &mut w.keeper,
+                Wait::Shard => &mut w.shard,
+                Wait::Ahead => &mut w.ahead,
+                Wait::Snapshot => &mut w.snapshot,
+            };
+            *slot = slot.saturating_add(n);
+        }
+        Ok(w)
     }
 
     // ─── channel.issue ──────────────────────────────────────────────────────
@@ -219,6 +348,10 @@ impl Member {
         let joined = db::channels::get(&self.env.db, &state.community_id).await?.is_some_and(|r| r.membership == crate::service::MEMBERSHIP_JOINED);
         let new_bundle = !issued.bundle.is_empty() && db::keys::bundles(&self.env.db, &state.community_id, &scope_id).await?.iter().all(|(gen, bytes, _)| *gen != i64::from(issued.gen) || bytes.as_slice() != issued.bundle.as_ref());
         self.take_issued(state, &scope_id, &issued, &mut out).await?;
+        // Let in: a refusal of the keeper heard before says nothing now.
+        if new_bundle && scope_id == SCOPE_EVERYONE {
+            db::channels::set_refused_at(&self.env.db, &state.community_id, None).await?;
+        }
         let fresh = !joined || new_bundle || !out.keys.is_empty();
         if let Some(link) = &issue.link {
             step("the secret of the link kept");
@@ -571,8 +704,14 @@ impl Member {
         }
         // To my own inbox by the outbox, off this call.
         crate::outbox::queue_note(&self.env, cid, None, &[], T_OWN_KEYS, &body, 0, None, now).await?;
+        db::channels::set_own_keys_at(&self.env.db, cid, now).await?;
         tracing::debug!(community = %cid, "own.channel_keys queued");
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn own_keys_for_test(&self, state: &ChannelState) -> OwnKeys {
+        self.own_keys(state, SCOPE_EVERYONE).await.ok().flatten().unwrap_or_else(|| panic!("own keys"))
     }
 
     async fn own_keys(&self, state: &ChannelState, scope_id: &str) -> Result<Option<OwnKeys>> {
@@ -623,6 +762,8 @@ impl Member {
             link,
             scopes: Vec::new(),
             root: None,
+            relays: state.relays.clone(),
+            owner: Some(state.creator.as_hex().to_string()),
         }))
     }
 

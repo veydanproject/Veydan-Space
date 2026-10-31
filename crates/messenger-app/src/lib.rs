@@ -220,6 +220,7 @@ pub fn module() -> Module {
                 commands::gallery::messenger_gallery_readable,
                 commands::gallery::messenger_gallery_capture,
                 commands::gallery::messenger_gallery_pick,
+                commands::gallery::messenger_gallery_save_picture,
                 commands::share_out::messenger_share_out,
                 commands::messenger_media_import_bytes,
                 commands::messenger_clipboard_paste,

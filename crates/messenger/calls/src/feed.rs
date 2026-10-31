@@ -168,9 +168,21 @@ impl Feed {
     /// Another word of a closed record: a device that never rang wrote
     /// "missed" before the device that took the call said how it ended.
     pub async fn correct(&self, call_id: &str, outcome: Outcome) -> Result<Vec<Effect>> {
+        self.correct_at(call_id, outcome, None).await
+    }
+
+    /// The same, with the end at `ended_at` (my other device's, by its
+    /// note); `None` keeps the end on record.
+    pub async fn correct_at(&self, call_id: &str, outcome: Outcome, ended_at: Option<i64>) -> Result<Vec<Effect>> {
         let Some(row) = repo::get(&self.store, call_id).await? else { return Ok(vec![]) };
-        let ended_at = row.ended_at.unwrap_or(row.started_at);
+        let ended_at = ended_at.or(row.ended_at).unwrap_or(row.started_at);
         repo::set_outcome(&self.store, call_id, outcome.as_str(), ended_at).await?;
+        self.refresh(call_id).await
+    }
+
+    /// The line told again from the record (an earlier answer came, so
+    /// another duration).
+    pub async fn refresh(&self, call_id: &str) -> Result<Vec<Effect>> {
         let Some(row) = repo::get(&self.store, call_id).await? else { return Ok(vec![]) };
         let id = system_id(call_id);
         msgs::set_media_json(&self.store, &id, &details(&row).to_string()).await?;

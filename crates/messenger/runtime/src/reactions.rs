@@ -97,7 +97,8 @@ impl MessengerRuntime {
         self.dm.emoji_used(emoji, SystemClock.now().secs()).await
     }
 
-    /// The `n` emoji I use most, on any of my devices; the most used first.
+    /// `n` emoji of any of my devices: the ones used last, the newest
+    /// first, then the ones used most.
     pub async fn emoji_top(&self, n: usize) -> Result<Vec<String>> {
         self.dm.emoji_top(n).await
     }

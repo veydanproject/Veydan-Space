@@ -37,6 +37,67 @@ use messenger_core::{PubKey, Result};
 /// `cm_pending`.
 pub const SNAPSHOT_MARKER: &str = "snapshot";
 
+/// Whom the journal put out after a snapshot of the readers was made
+/// (`ChannelService::emergency_readers`, a keeper that lets a reader of
+/// the snapshot in again, `Member::in_snapshot`): the snapshot may be
+/// older than a removal or a ban. "After" is by the journal's ancestry: an
+/// operation that is no ancestor of the heads the snapshot names (one
+/// concurrent with it too) is after it; by the clocks only when one of
+/// those heads is not here. Operations the journal rejected (a demoted
+/// moderator's) put nobody out.
+pub(crate) struct PutOut {
+    after: std::collections::HashSet<String>,
+    at: std::collections::HashMap<String, i64>,
+}
+
+impl PutOut {
+    pub(crate) fn of(log: &OpLog, snapshot: Option<&Snapshot>) -> Self {
+        // What the snapshot was made after: its heads and every operation
+        // they descend from. One concurrent with it (on no path to its
+        // heads) is after it, wherever the order of the journal puts it.
+        let before = snapshot.and_then(|s| {
+            let mut seen: std::collections::HashSet<crate::op::OpId> = std::collections::HashSet::new();
+            let mut todo: Vec<crate::op::OpId> = s.heads.clone();
+            while let Some(id) = todo.pop() {
+                if seen.contains(&id) {
+                    continue;
+                }
+                let op = log.get(&id)?;
+                todo.extend(op.parents.iter().cloned());
+                seen.insert(id);
+            }
+            Some(seen)
+        });
+        let mut after: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut at: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for op in log.ordered() {
+            if log.rejection(&op.id()).is_some() {
+                continue;
+            }
+            if let crate::op::OpBody::Ban { who, .. } | crate::op::OpBody::Remove { who } = &op.body {
+                let who = who.as_hex().to_string();
+                match &before {
+                    Some(b) if b.contains(&op.id()) => {}
+                    Some(_) => {
+                        after.insert(who);
+                    }
+                    None => {
+                        let t = at.entry(who).or_insert(op.created_at);
+                        *t = (*t).max(op.created_at);
+                    }
+                }
+            }
+        }
+        Self { after, at }
+    }
+
+    /// Whether a reader of the snapshot (`who`, hex, let in at `since`)
+    /// is one still: not banned, not put out after it.
+    pub(crate) fn keeps(&self, state: &ChannelState, who: &str, since: i64) -> bool {
+        !state.banned.contains(who) && !self.after.contains(who) && self.at.get(who).is_none_or(|t| since > *t)
+    }
+}
+
 /// Before the first snapshot of a channel, any author the journal does
 /// not ban counts as a reader this long after its `create` (wire §8).
 pub const FIRST_SNAPSHOT_WINDOW_SECS: i64 = MIN_INTERVAL_SECS;
@@ -229,6 +290,21 @@ impl Member {
             }
         }
         Ok(Some(out))
+    }
+
+    /// Whether the newest snapshot here names `who` a reader the journal
+    /// has not put out since (`PutOut`). By the shards in the cache only:
+    /// asked under the keeper's lock, nothing is fetched.
+    pub(crate) async fn in_snapshot(&self, log: &OpLog, who: &PubKey) -> Result<bool> {
+        let state = log.state();
+        let Some(s) = self.latest_snapshot(&state.community_id).await? else { return Ok(false) };
+        for index in 0..s.shards.len() {
+            let Ok(entries) = self.cached_shard(&s, index).await? else { continue };
+            if let Some(e) = entries.iter().find(|e| hex::encode(e.pubkey) == who.as_hex()) {
+                return Ok(PutOut::of(log, Some(&s)).keeps(state, who.as_hex(), i64::from(e.since)));
+            }
+        }
+        Ok(false)
     }
 
     /// Every reader known here, for the list the team reads

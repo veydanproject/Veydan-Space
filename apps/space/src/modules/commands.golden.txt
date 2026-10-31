@@ -242,6 +242,7 @@ messenger_gallery_pick messenger all
 messenger_gallery_readable messenger all
 messenger_gallery_recent messenger all
 messenger_gallery_request messenger all
+messenger_gallery_save_picture messenger all
 messenger_gallery_thumb messenger all
 messenger_group_act messenger all
 messenger_group_answer_invite messenger all

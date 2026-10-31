@@ -16,7 +16,7 @@ const detail = (role: string | null, owner = role === 'owner' ? ME : 'o'): Chann
     id: 'c', chat_id: 'channel:c', name: 'C', about: '', owner, join: 'open', membership: 'joined', my_role: role ?? undefined, members: 1,
     relays: [], storage: [], link_epoch: 1, kept_here: false, needs_update: false, unread: 0, pinned: false, muted: false, archived: false, created_at: 0, updated_at: 0, last_at: 0,
   },
-  history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], disbanded: false, has_key: true, waiting: 0,
+  history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], disbanded: false, has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false,
   staff: role ? [{ pubkey: ME, role, muted: false, trusted: false, since: 0 }] : [],
 });
 const post = (author: string): FeedItemView => ({
@@ -45,16 +45,16 @@ describe('«Пожаловаться» is there for everyone (Play, 2026-10-22)'
 });
 
 describe('the counts of the team in the menu, each in its badge', () => {
-  const counts = (queue: number, requests: number, levels: number): StaffCounts => ({ queue, requests, levels, openQueue: noop, openRequests: noop, openLevels: noop });
+  const counts = (queue: number, requests: number): StaffCounts => ({ queue, requests, openQueue: noop, openRequests: noop });
   const withCounts = (c: StaffCounts | null) => channelEntries(detail('owner').channel, detail('owner'), false, tr, acts, c).map((e) => ('label' in e ? ('badge' in e && e.badge ? `${e.label} ${e.badge}` : e.label) : '—'));
 
   it('come first, each with its number, then a line', () => {
-    expect(withCounts(counts(4, 2, 2)).slice(0, 5)).toEqual(['chan_menu_queue 4', 'chan_mod_tab_requests 2', 'chan_menu_level_requests 2', '—', 'chan_info']);
+    expect(withCounts(counts(4, 2)).slice(0, 4)).toEqual(['chan_menu_queue 4', 'chan_mod_tab_requests 2', '—', 'chan_info']);
   });
 
   it('leave out what is zero, and say nothing when all are', () => {
-    expect(withCounts(counts(0, 3, 0)).slice(0, 3)).toEqual(['chan_mod_tab_requests 3', '—', 'chan_info']);
-    expect(withCounts(counts(0, 0, 0))[0]).toBe('chan_info');
+    expect(withCounts(counts(0, 3)).slice(0, 3)).toEqual(['chan_mod_tab_requests 3', '—', 'chan_info']);
+    expect(withCounts(counts(0, 0))[0]).toBe('chan_info');
     expect(withCounts(null)[0]).toBe('chan_info');
   });
 });

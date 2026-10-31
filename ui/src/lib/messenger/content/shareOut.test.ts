@@ -28,11 +28,12 @@ describe('shareOut', () => {
 
   it('says my contact in one sentence with the link and nothing else', () => {
     const item = contactShareItem(LINK);
-    expect(item.text).toBe(`Это я в Veydan — открой ссылку, чтобы добавить меня в контакты: ${LINK}`);
+    expect(item.text).toBe(`Добавь меня в Veydan Chat\n${LINK}`);
+    expect(contactShareItem(LINK, ' Анна ').text).toBe(`Добавь меня в Veydan Chat\n${LINK}\nАнна`);
     expect(item.subject).toBe('Мой контакт в Veydan');
     expect(item.url).toBe(LINK);
     locale.set('en');
-    expect(contactShareItem(LINK).text).toBe(`It’s me on Veydan — open the link to add me to your contacts: ${LINK}`);
+    expect(contactShareItem(LINK).text).toBe(`Add me on Veydan Chat\n${LINK}`);
   });
 
   it('gives a letter its subject, SMS and the list the text alone, the clipboard the link alone', async () => {

@@ -432,6 +432,12 @@ impl ChannelService {
                 out.push(Outbound::Sync { scope: scope(&row.id), filter, local });
             }
         }
+        // The journals my keys from my other device wait for.
+        if parts {
+            for (cid, _) in self.own_waits().await? {
+                out.extend(self.journal_asks(&cid).await?);
+            }
+        }
         // The notes to me on my own relays that no channel's page reaches
         // (an invitation from a channel not known here, the copies of my
         // other devices), in the same round of the notes to me: the relays
@@ -533,13 +539,36 @@ impl ChannelService {
     /// `ask_journal`; whether a relay answered every page asked.
     pub(crate) async fn ask_journal_answered(&self, community_id: &str) -> Result<bool> {
         let mut answered = true;
+        for ask in self.journal_asks(community_id).await? {
+            answered &= self.env.net.send(ask).await?.is_delivered();
+        }
+        Ok(answered)
+    }
+
+    /// The pages of `ask_journal`, a round opened for each.
+    pub(crate) async fn journal_asks(&self, community_id: &str) -> Result<Vec<Outbound>> {
+        let mut out = Vec::new();
         for (part, f) in filters(community_id, false).into_iter().filter(|(p, _)| *p == PART_JOURNAL || *p == PART_CARD) {
             let since = self.open_round(community_id, part, LIVE_MARGIN_SECS).await?;
             let mut filter = with_since(f, since);
             filter.0["limit"] = serde_json::json!(catch_up_limit());
-            answered &= self.env.net.send(Outbound::Sync { scope: scope(community_id), filter, local: vec![] }).await?.is_delivered();
+            out.push(Outbound::Sync { scope: scope(community_id), filter, local: vec![] });
         }
-        Ok(answered)
+        Ok(out)
+    }
+
+    /// The channels whose journal a note of my own keys waits for
+    /// (`cm_own_wait`), with the relays it names: asked there by every
+    /// catch-up until it comes, and routed there meanwhile.
+    pub async fn own_waits(&self) -> Result<Vec<(String, Vec<String>)>> {
+        let mut out = Vec::new();
+        for w in db::channels::own_waits(&self.env.db, self.now()).await? {
+            if self.log(&w.community_id).await?.is_some() {
+                continue;
+            }
+            out.push((w.community_id, serde_json::from_str::<Vec<String>>(&w.relays_json).unwrap_or_default()));
+        }
+        Ok(out)
     }
 
     /// Asks the relays of a channel for `parts` of it (`PART_EPOCHS`,
@@ -576,15 +605,16 @@ impl ChannelService {
         Ok(())
     }
 
-    /// The relays of the channels followed here, each once: what the host
-    /// puts into its pool for `Scope::Channel`.
+    /// The relays of the channels followed here and of those whose journal
+    /// a note of my own waits for, each once: what the host puts into its
+    /// pool for `Scope::Channel`.
     pub async fn relays(&self) -> Result<Vec<String>> {
         let mut out: Vec<String> = Vec::new();
-        for (row, _) in self.followed().await? {
-            for r in serde_json::from_str::<Vec<String>>(&row.relays_json).unwrap_or_default() {
-                if !out.contains(&r) {
-                    out.push(r);
-                }
+        let mut lists: Vec<Vec<String>> = self.followed().await?.into_iter().map(|(row, _)| serde_json::from_str::<Vec<String>>(&row.relays_json).unwrap_or_default()).collect();
+        lists.extend(self.own_waits().await?.into_iter().map(|(_, relays)| relays));
+        for r in lists.into_iter().flatten() {
+            if !out.contains(&r) {
+                out.push(r);
             }
         }
         Ok(out)

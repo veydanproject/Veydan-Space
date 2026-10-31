@@ -17,7 +17,7 @@ const detail = (role: string | null): ChannelDetail => ({
     id: 'c', chat_id: 'channel:c', name: 'C', about: '', owner: 'o', join: 'open', membership: 'joined', my_role: role ?? undefined, members: 1,
     relays: [], storage: [], link_epoch: 1, kept_here: false, needs_update: false, unread: 0, pinned: false, muted: false, archived: false, created_at: 0, updated_at: 0, last_at: 0,
   },
-  history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], disbanded: false, has_key: true, waiting: 0,
+  history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], disbanded: false, has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false,
   staff: role ? [{ pubkey: ME, role, muted: false, trusted: false, since: 0 }, { pubkey: 'w', role: 'author', muted: false, trusted: false, since: 0 }] : [],
 });
 const post = (author: string, extra: Partial<FeedItemView> = {}): FeedItemView => ({

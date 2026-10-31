@@ -74,12 +74,14 @@ internal object Notifier {
     NotificationManagerCompat.from(context).areNotificationsEnabled()
 
   /**
-   * What keeps a message from ringing and showing on top: notifications
-   * off for the app (`off`), or a channel of messages (`dm`, `groups`)
-   * below high or without a sound it can play, which only the user or the
-   * phone could do: the channels are made high, with the default sound.
-   * Null when both ring. The channels are not made anew for it: what the
-   * user chose there stays as they chose.
+   * What surely keeps a message from ringing: notifications off for the
+   * app (`off`), or a channel of messages (`dm`, `groups`) that makes no
+   * sound: below default importance, "None" chosen for its sound, or its
+   * own file gone. Default importance rings, only without the banner on
+   * top: OPPO and OnePlus give it to new apps, and a phone that rings was
+   * told "no sound" (ROO-259 item 7). A sound that could not be checked is
+   * not quiet. Null when both ring. The channels are not made anew for it:
+   * what the user chose there stays as they chose.
    */
   fun quiet(context: Context): String? {
     if (!allowed(context)) return "off"
@@ -87,9 +89,13 @@ internal object Notifier {
     val manager = context.getSystemService(NotificationManager::class.java) ?: return null
     return listOf(CHANNEL_DM, CHANNEL_GROUPS).firstOrNull {
       val channel = manager.getNotificationChannel(it)
-      channel == null || channel.importance < NotificationManager.IMPORTANCE_HIGH || sound(context, channel).let { s -> s == "none" || s == "missing" }
+      channel == null || silent(context, channel)
     }
   }
+
+  /** A channel that plays no sound for sure: below default, or its sound is "None" or gone. */
+  private fun silent(context: Context, channel: NotificationChannel): Boolean =
+    channel.importance < NotificationManager.IMPORTANCE_DEFAULT || sound(context, channel).let { it == "none" || it == "missing" }
 
   /**
    * The sound of a channel: `yes`, `none` when "None" is chosen (for the
@@ -105,22 +111,25 @@ internal object Notifier {
     if (direct != "missing") return direct
     // The phone's default (`content://settings/system/notification_sound`)
     // opens only through a cache the system may not have made; the sound it
-    // stands for is what plays.
+    // stands for is what plays. That file not opening here does not mean it
+    // is gone: the phone plays its own default by its own means.
     val type = RingtoneManager.getDefaultType(uri)
     if (type == -1) return direct
     val actual = RingtoneManager.getActualDefaultRingtoneUri(context, type) ?: return "none"
-    return opens(context, actual)
+    return opens(context, actual).let { if (it == "missing") "unknown" else it }
   }
 
   private fun opens(context: Context, uri: Uri): String =
     try {
       val file = context.contentResolver.openAssetFileDescriptor(uri, "r")
       file?.close()
-      if (file == null) "missing" else "yes"
-    } catch (e: SecurityException) {
-      "unknown"
-    } catch (e: Exception) {
+      if (file == null) "unknown" else "yes"
+    } catch (e: java.io.FileNotFoundException) {
       "missing"
+    } catch (e: Exception) {
+      // Not allowed to read it (the user's own music), or a provider of
+      // the phone's maker that answers otherwise: neither there nor gone.
+      "unknown"
     }
 
   /** Where the system settings for [quiet] are: its channel, or the app's notifications. */
@@ -152,9 +161,9 @@ internal object Notifier {
     val id = if (kind == "group") CHANNEL_GROUPS else CHANNEL_DM
     val manager = context.getSystemService(NotificationManager::class.java) ?: return ""
     val channel = manager.getNotificationChannel(id) ?: return " (channel $id: none)"
-    val sound = sound(context, channel)
-    if (channel.importance >= NotificationManager.IMPORTANCE_HIGH && sound != "none" && sound != "missing") return ""
-    return " (channel $id quiet: importance=${channel.importance} sound=$sound)"
+    // The rule of [quiet]: default importance rings too, only without the banner.
+    if (!silent(context, channel)) return ""
+    return " (channel $id quiet: importance=${channel.importance} sound=${sound(context, channel)})"
   }
 
   /** A message with everything known about it. False when the system would not show it. */

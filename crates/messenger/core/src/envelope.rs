@@ -142,6 +142,19 @@ pub const T_OWN_CARD: &str = "own.card";
 /// (1–40) to a width of 200…2000 px. The later `at` wins; sent on a change
 /// and again every few days, so a new device learns it.
 pub const T_OWN_UI: &str = "own.ui";
+/// `{"t":"own.call","call_id":"<hex>","peer":"<hex>","srv"?:"<server id>",
+/// "direction":"in"|"out","media":"audio"|"video","started_at":<secs>,
+/// "answered_at"?:<secs>,"ended_at":<secs>,"outcome":"missed"|…,
+/// "via_relay":bool}` — a call between two as this device has it on record
+/// once it is over, so a device of mine that was away (the signals of a
+/// call live a minute or five on the relays) has it too. A reader makes
+/// the record or adds to it: the earlier answer, a relay, and an outcome
+/// that says more (`ended`, `declined`, `busy` over `failed` over `missed`).
+pub const T_OWN_CALL: &str = "own.call";
+/// `{"t":"own.call_hide","call_ids":["<hex>",…]}` or
+/// `{"t":"own.call_hide","all_before":<secs>}` — calls taken out of the
+/// journal: these, or every one that ended at or before the time.
+pub const T_OWN_CALL_HIDE: &str = "own.call_hide";
 /// Every type of a note between my devices starts so.
 pub const T_OWN_PREFIX: &str = "own.";
 

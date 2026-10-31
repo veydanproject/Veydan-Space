@@ -200,10 +200,7 @@
   </li>
 {/snippet}
 
-<!-- The pinned at the top of a list: a quiet label over them and a line after them (by the pin they already carry). -->
-{#snippet pinLabel()}
-  <li class="pin-label"><Icon name="pin" size={12} />{$t('chan_pinned')}</li>
-{/snippet}
+<!-- The pinned are told by the pin on their row and a line after them. -->
 {#snippet pinRule()}
   <li class="pin-rule" aria-hidden="true"></li>
 {/snippet}
@@ -295,7 +292,6 @@
     {:else}
       <ul class="list-rows">
         {#each hostVisible as r, i (r.chatId)}
-          {#if i === 0 && r.pinned}{@render pinLabel()}{/if}
           {@render extRow(r)}
           {#if r.pinned && hostVisible[i + 1] && !hostVisible[i + 1].pinned}{@render pinRule()}{/if}
         {/each}
@@ -322,7 +318,6 @@
   {:else}
     <ul class="list-rows">
       {#each visible as c, i (c.id)}
-        {#if i === 0 && c.pinned}{@render pinLabel()}{/if}
         {@render row(c)}
         {#if c.pinned && visible[i + 1] && !visible[i + 1].pinned}{@render pinRule()}{/if}
       {/each}
@@ -361,11 +356,7 @@
   }
   .draft { color: var(--danger-text); }
   /* The counts are the .count-pill of base.css (22 on a row; .quiet when the chat is muted). */
-  /* The pinned: a quiet label over them, a line after them. */
-  .pin-label {
-    display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3) var(--sp-1);
-    font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3);
-  }
+  /* The pinned: a line after them. */
   .pin-rule { height: 1px; margin: var(--sp-2) var(--sp-3); background: var(--divider); }
   /* Requests to join wait: the accent's tint, so the unread count stays the one that calls. */
   .asks { gap: 3px; background: var(--accent-tint); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }

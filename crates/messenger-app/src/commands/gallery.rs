@@ -245,6 +245,51 @@ pub async fn messenger_gallery_pick(multiple: bool, kind: String, app: tauri::Ap
     }
 }
 
+/// A picture larger than this is not a QR code of the page.
+const MAX_PICTURE: usize = 4 << 20;
+
+/// What the page wants to save, looked at before the phone sees it: a PNG
+/// (`base64`) of `MAX_PICTURE` bytes at most, and the name it is saved
+/// under — letters, digits, `-` and `_`, 64 at most, `.png` added.
+/// Refused with `picture_bad`.
+fn picture_to_save(png: &str, name: &str) -> CmdResult<String> {
+    use base64::Engine;
+    let bad = || AppError::Other("picture_bad".into());
+    if png.len() > MAX_PICTURE / 3 * 4 + 4 {
+        return Err(bad());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(png).map_err(|_| bad())?;
+    if bytes.len() > MAX_PICTURE || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err(bad());
+    }
+    let stem = name.strip_suffix(".png").unwrap_or(name);
+    if stem.is_empty() || stem.len() > 64 || !stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err(bad());
+    }
+    Ok(format!("{stem}.png"))
+}
+
+/// «Сохранить» of a QR code (ROO-297): the PNG the page drew, into the
+/// phone's gallery, album Pictures/Veydan. A computer saves it where its
+/// dialog says, from the page; this answers it has no gallery.
+/// `storage_denied`: an Android 9 or older was not let write the storage.
+#[tauri::command]
+pub async fn messenger_gallery_save_picture(png: String, name: String, app: tauri::AppHandle) -> CmdResult<()> {
+    let name = picture_to_save(&png, &name)?;
+    #[cfg(target_os = "android")]
+    {
+        app.veydan_media().save_picture(&png, &name).await.map_err(|e| {
+            let e = e.to_string();
+            AppError::Other(if e.contains("storage_denied") { "storage_denied".into() } else { e })
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (name, app);
+        Err(AppError::Other(NO_GALLERY.into()))
+    }
+}
+
 /// The shot of the camera behind `picked`, once it is imported: its file
 /// in the cache goes (the plugin deletes only a shot of `attach-capture`).
 pub(crate) async fn forget_capture(app: &tauri::AppHandle, picked: &str) {
@@ -279,5 +324,32 @@ struct PhoneDecoder(tauri::AppHandle);
 impl messenger_media::common::PictureConverter for PhoneDecoder {
     async fn to_jpeg(&self, src: &std::path::Path, dst: &std::path::Path, max_pixels: u64, quality: u8) -> Result<(), String> {
         self.0.veydan_media().convert(src, dst, max_pixels, quality).await.map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+
+    fn b64(bytes: &[u8]) -> String {
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    #[test]
+    fn only_a_png_of_a_plain_name_is_saved() {
+        let png = b64(b"\x89PNG\r\n\x1a\n rest");
+        assert_eq!(picture_to_save(&png, "veydan-qr").unwrap(), "veydan-qr.png");
+        assert_eq!(picture_to_save(&png, "veydan_qr_2.png").unwrap(), "veydan_qr_2.png");
+        // Not a PNG, not base64, too large.
+        assert!(picture_to_save(&b64(b"GIF89a"), "qr").is_err());
+        assert!(picture_to_save("not base64!", "qr").is_err());
+        let mut big = b"\x89PNG\r\n\x1a\n".to_vec();
+        big.resize(MAX_PICTURE + 1, 0);
+        assert!(picture_to_save(&b64(&big), "qr").is_err());
+        // A name is a word: no folder, no other extension, not empty.
+        for name in ["", ".png", "../qr", "qr/x", "qr.jpg", "qr name", "я", &"a".repeat(65)] {
+            assert!(picture_to_save(&png, name).is_err(), "{name:?}");
+        }
     }
 }

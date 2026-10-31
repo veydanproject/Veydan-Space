@@ -209,6 +209,7 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_gallery_readable", r2(crate::commands::gallery::messenger_gallery_readable)));
     v.push(("messenger_gallery_capture", r2(crate::commands::gallery::messenger_gallery_capture)));
     v.push(("messenger_gallery_pick", r3(crate::commands::gallery::messenger_gallery_pick)));
+    v.push(("messenger_gallery_save_picture", r3(crate::commands::gallery::messenger_gallery_save_picture)));
     v.push(("messenger_share_out", r4(crate::commands::share_out::messenger_share_out)));
     v.push(("messenger_media_import_bytes", r4(crate::commands::messenger_media_import_bytes)));
     v.push(("messenger_clipboard_paste", r1(crate::commands::messenger_clipboard_paste)));

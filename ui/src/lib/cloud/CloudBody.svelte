@@ -19,7 +19,7 @@
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { scrollTabs } from '$lib/core/ui/scrollTabs';
+  import Tabs from '$lib/core/ui/Tabs.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { accountSource, loadAccount, type AccountProfile } from '$lib/core/account';
   import { t, locale } from '$lib/core/i18n';
@@ -114,18 +114,6 @@
   ]);
   let picked = $state<Tab>(startDelete ? 'own' : (section && SECTION_TAB[section]) || 'plan');
   const tab = $derived(tabs.some((x) => x.id === picked) ? picked : 'plan');
-  let tabsEl = $state<HTMLElement | null>(null);
-  // The row of tabs scrolls on a phone: the chosen one stays in view, and its right edge fades
-  // while there is more of it (`scrollTabs`).
-
-  /** The arrows move along the tabs (the keyboard's way through a tablist). */
-  function tabKey(e: KeyboardEvent) {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-    e.preventDefault();
-    const i = tabs.findIndex((x) => x.id === tab);
-    picked = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length].id;
-    void tick().then(() => tabsEl?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
-  }
 
   function toPlans() {
     document.getElementById('plans')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -180,20 +168,7 @@
       </Notice>
     {/if}
 
-    <div class="tabs" role="tablist" aria-label={$t('cloud_account_title')} tabindex="-1" bind:this={tabsEl} onkeydown={tabKey} use:scrollTabs={{ selected: tab, watch: tabs }}>
-      {#each tabs as x (x.id)}
-        <button
-          type="button"
-          role="tab"
-          class="ctab"
-          id="cloud-tab-{x.id}"
-          aria-selected={tab === x.id}
-          aria-controls="cloud-panel-{x.id}"
-          tabindex={tab === x.id ? 0 : -1}
-          onclick={() => (picked = x.id)}
-        >{x.label}</button>
-      {/each}
-    </div>
+    <Tabs {tabs} selected={tab} onpick={(id) => (picked = id)} label={$t('cloud_account_title')} idPrefix="cloud" phone={isMobile} />
 
     <!-- Every panel stays mounted (its state and its links' ids kept); only the chosen one shows. -->
     <div class="panel" role="tabpanel" id="cloud-panel-plan" aria-labelledby="cloud-tab-plan" hidden={tab !== 'plan'}>
@@ -277,24 +252,6 @@
   .line { display: block; }
   .center { display: flex; justify-content: center; }
   .turn { display: inline-flex; }
-
-  /* The parts of the page, one at a time: a row of tabs under the name, the chosen one underlined. */
-  .tabs { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--divider); overflow-x: auto; scrollbar-width: none; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .ctab {
-    flex-shrink: 0; min-height: var(--control-h-lg); padding: 0 var(--sp-3); margin-bottom: -1px;
-    border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none;
-    color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); white-space: nowrap; cursor: pointer;
-    transition: color var(--dur-fast), border-color var(--dur-fast);
-  }
-  .ctab:hover { color: var(--text); }
-  /* The row scrolls and clips: the keyboard's ring drawn inside the tab. */
-  .ctab:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
-  .ctab[aria-selected='true'] { color: var(--accent-text); border-bottom-color: var(--accent); }
-  /* A phone: one line that scrolls, its right edge fading so the row reads as going on. */
-  .m .tabs { margin: 0 calc(-1 * var(--sp-4)); padding: 0 var(--sp-4); gap: 0; }
-  .m .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent); }
-  .m .ctab { min-height: var(--sp-12); padding: 0 var(--sp-4); font-size: var(--fs-body); }
 
   .panel { display: flex; flex-direction: column; gap: var(--sp-4); }
   .m .panel { gap: var(--sp-3); }

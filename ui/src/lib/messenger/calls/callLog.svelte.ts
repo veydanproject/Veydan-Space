@@ -99,9 +99,9 @@ class CallLogStore {
     this.missed = 0;
   }
 
-  /** Runtime event → the journal: a call that ended is in it now. Called by the module store. */
+  /** Runtime event → the journal: a call that ended is in it now, or my other device changed it. Called by the module store. */
   handleEvent(ev: MessengerUiEvent) {
-    if (ev.name !== 'call.ended' && ev.name !== 'group_call.ended') return;
+    if (ev.name !== 'call.ended' && ev.name !== 'group_call.ended' && ev.name !== 'call_log.updated') return;
     if (this.loaded) this.load().catch(() => {});
     this.refreshMissed().catch(() => {});
   }

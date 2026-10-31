@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChannelDetail, StaffView } from './api';
 import {
-  KEEPER_AWAY_SECS, canAttach, canComment, canRecord, canDelete, canEdit, canModerate, canPost, canSetUpSections, isManager, isModerator, keeperAwayAt, losesModeration, mutedNow, rolesFor, standing,
+  KEEPER_AWAY_SECS, canAttach, catchUpNote, canComment, canRecord, canDelete, canEdit, canModerate, canPost, canSetUpSections, isManager, isModerator, keeperAwayAt, losesModeration, mutedNow, rolesFor, standing,
 } from './permissions';
 
 const ME = 'aa'.repeat(32);
@@ -20,7 +20,7 @@ function channel(mine: string | null, over: Partial<ChannelDetail> = {}, members
       relays: [], storage: [], link_epoch: 1, kept_here: false, needs_update: false, unread: 0, pinned: false, muted: false, archived: false,
       created_at: 0, updated_at: 0, last_at: 0,
     },
-    history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], disbanded: false, has_key: true, waiting: 0,
+    history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], disbanded: false, has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false,
     staff: [
       ...(mine && mine !== 'member' ? [staff(ME, mine)] : []),
       staff('owner', 'owner'), staff('admin', 'admin'), staff('mod', 'moderator'), staff('author', 'author'),
@@ -137,6 +137,14 @@ describe('where I stand in a channel', () => {
     expect(standing(channel(null))).toBe('reading');
     expect(standing(channel(null, { has_key: false }))).toBe('waiting_key');
     expect(standing(channel(null, { waiting: 3 }))).toBe('catching_up');
+  });
+
+  it('says «when the keeper is online» only of what waits for the keeper (ROO-270)', () => {
+    expect(catchUpNote(channel(null))).toBeNull();
+    // Epochs ahead, a shard, a snapshot: they come by themselves.
+    expect(catchUpNote(channel(null, { waiting: 19 }))).toEqual({ key: 'chan_state_syncing', n: 19 });
+    // Some wait for the keeper: those alone are counted under its text.
+    expect(catchUpNote(channel(null, { waiting: 19, waiting_keeper: 4 }))).toEqual({ key: 'chan_state_catching_up', n: 4 });
   });
 
   it('is outside in each of the ways', () => {

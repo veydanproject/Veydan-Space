@@ -25,6 +25,8 @@ export { default as ShareDialog } from '../content/ShareDialog.svelte';
 /** «Поделиться…» into another app: the sheet of the ways out and the words of a channel's link. */
 export { default as ShareOutSheet } from '../content/ShareOutSheet.svelte';
 export { channelShareItem } from '../content/shareOut';
+/** «Сохранить» of a QR code: into the gallery of a phone, a file of a computer. */
+export { saveQr, saveQrError } from '../content/saveQr';
 export { default as PanelHead } from '../shared/PanelHead.svelte';
 export { default as WithInfo } from '../shared/WithInfo.svelte';
 export { default as Composer } from '../dm/Composer.svelte';

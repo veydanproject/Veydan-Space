@@ -47,8 +47,6 @@
   const own = $derived(messengerStore.ownPrivate);
   const canAct = $derived(!!messengerStore.status?.runtime?.session_active);
   const label = $derived(profileLabel(p));
-  /** The short name under the display name, when both are set and differ. */
-  const handle = $derived(p?.name && p.display_name && p.name.trim() !== p.display_name.trim() ? p.name.trim() : null);
   const website = $derived(p?.website && /^https?:\/\/\S+$/i.test(p.website) ? p.website : null);
 
   $effect(() => {
@@ -122,7 +120,7 @@
       const v = await inviteStore.create({ kind: 'link', label: '' });
       if (!v.link) throw new Error('no link');
       shareId = v.id;
-      shareItem = contactShareItem(v.link);
+      shareItem = contactShareItem(v.link, label);
       sharing = true;
     } catch (e) {
       shareError = messengerError(e);
@@ -152,7 +150,6 @@
       <Avatar url={p?.picture ?? null} label={label || (messengerStore.identity?.npub ?? '?')} seed={messengerStore.identity?.pubkey} size={72} />
       <div class="who">
         <div class="name" class:unnamed={!label}>{label || $t('msg_own_unnamed')}</div>
-        {#if handle}<div class="meta">@{handle}</div>{/if}
         {#if p?.nip05}
           <div class="meta nip05" class:ok={p.nip05_verified}><Icon name={p.nip05_verified ? 'rosette-discount-check' : 'world'} size={12} />{p.nip05}</div>
         {/if}
@@ -162,18 +159,12 @@
     {#if p?.bio?.length}<BioView spans={p.bio} />{/if}
     {#if p?.socials?.length}<SocialLinks socials={p.socials} />{/if}
 
-    {#if website || p?.lud16 || own?.phone}
+    {#if website || own?.phone}
       <ul class="facts">
         {#if website}
           <li>
             <span class="fact-icon"><Icon name="world" size={16} /></span>
             <button type="button" class="link" onclick={openSite} title={website}>{shortSite(website)}</button>
-          </li>
-        {/if}
-        {#if p?.lud16}
-          <li>
-            <span class="fact-icon"><Icon name="zap" size={16} /></span>
-            <span class="value">{p.lud16}</span>
           </li>
         {/if}
         {#if own?.phone}
@@ -222,7 +213,7 @@
   .meta { color: var(--text-3); font-size: var(--fs-sm); overflow-wrap: anywhere; word-break: break-word; }
   .nip05 { display: inline-flex; align-items: center; gap: 4px; }
   .nip05.ok { color: var(--success-text); }
-  /* Site, lightning address, phone: rows with a tile, a line between them. */
+  /* Site, phone: rows with a tile, a line between them. */
   .facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .facts li { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-1) 0; font-size: var(--fs-base); }
   .facts li + li { border-top: 1px solid var(--border); }
@@ -230,7 +221,6 @@
     width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); background: var(--surface-3); border: 1px solid var(--border); color: var(--text-2);
     display: inline-flex; align-items: center; justify-content: center;
   }
-  .value { overflow-wrap: anywhere; word-break: break-word; color: var(--text-body); }
   .link {
     padding: 0; border: none; background: none; cursor: pointer; font: inherit; text-align: left;
     color: var(--accent-text-3); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-word; min-width: 0;

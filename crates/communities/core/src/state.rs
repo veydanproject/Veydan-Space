@@ -162,6 +162,10 @@ pub struct ChannelState {
     /// Which link secret admits newcomers (wire §10).
     pub link_epoch: u32,
     pub owner: PubKey,
+    /// The author of the `create`: the owner who made the channel, not
+    /// moved by a handover; the only author of a genesis a device without
+    /// the journal takes (the `o` of a link, `owner` of my note of keys).
+    pub creator: PubKey,
     /// Hex public key → what the journal says of them.
     pub staff: BTreeMap<String, Staff>,
     pub banned: BTreeSet<String>,
@@ -388,6 +392,7 @@ impl ChannelState {
             comments: Comments::On,
             link_epoch: 0,
             owner: op.author.clone(),
+            creator: op.author.clone(),
             staff,
             banned: BTreeSet::new(),
             keepers: vec![keeper.clone()],

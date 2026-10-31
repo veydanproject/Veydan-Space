@@ -9,8 +9,9 @@
 
 use communities_core::db::channels::{ChannelRow, InviteRow, RequestRow};
 use communities_core::db::content::UploadRow;
+use communities_core::member::Waiting;
 use communities_core::moderation::{LogLine, QueueLine};
-use communities_core::db::levels::LevelRequestRow;
+use communities_core::db::levels::{LevelRequestRow, REQ_PENDING, REQ_REFUSED};
 use communities_core::levels::{scope_shown, Names};
 use std::collections::HashMap;
 use communities_core::state::{ChannelState, Staff, BASE_LEVEL, MAX_LEVEL_ID, SCOPE_EVERYONE};
@@ -225,8 +226,18 @@ pub struct ChannelDetail {
     /// for the keeper's key».
     pub has_key: bool,
     /// Posts and comments here that wait for a key newer than the one
-    /// held: with `has_key` the page says «the key is old, catching up».
+    /// held, an epoch, a shard or a snapshot: with `has_key` the page says
+    /// «catching up».
     pub waiting: u32,
+    /// Of `waiting`, those that wait for the keeper alone (a bundle or a
+    /// key only it gives): the page says «when the keeper is online» only
+    /// of these; the rest come by themselves (communities-wire §6.2).
+    #[serde(default)]
+    pub waiting_keeper: u32,
+    /// The keeper said I was never let in as a reader
+    /// (`channel.not_let_in`): the page says «an invitation is needed».
+    #[serde(default)]
+    pub keeper_refused: bool,
     /// The keeper of the current series, hex pubkey.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -248,6 +259,12 @@ pub struct ChannelDetail {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub my_levels: Option<Vec<u8>>,
+    /// My requests for a level that wait or were refused (wire §14.4): a
+    /// refusal, with its reason, stays until I ask for that level again
+    /// (always given; optional to a page made before it).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_level_requests: Option<Vec<MyLevelRequestView>>,
     /// The channel handed to a new owner (wire §16): an offer to me not
     /// answered yet, or mine not taken yet.
     #[ts(optional)]
@@ -299,7 +316,7 @@ impl ChannelDetail {
         channel: ChannelView,
         state: &ChannelState,
         has_key: bool,
-        waiting: u32,
+        waiting: &Waiting,
         link: Option<String>,
         names: &Names,
         me: Option<&PubKey>,
@@ -319,9 +336,12 @@ impl ChannelDetail {
             staff: state.staff.iter().map(|(k, s)| StaffView::of(k, s)).collect(),
             disbanded: state.disbanded,
             has_key,
-            waiting,
+            waiting: waiting.total(),
+            waiting_keeper: waiting.keeper,
+            keeper_refused: false,
             keeper: state.keeper().map(|k| k.pubkey.as_hex().to_string()),
             link,
+            my_level_requests: None,
             transfer: None,
             outbox: None,
         }
@@ -499,6 +519,37 @@ pub struct LevelRequestView {
 impl From<LevelRequestRow> for LevelRequestView {
     fn from(r: LevelRequestRow) -> Self {
         Self { requester: r.requester, level: u8::try_from(r.level).unwrap_or(u8::MAX), note: r.note, created_at: r.created_at }
+    }
+}
+
+/// A request for a level I made, as «Мои уровни» say it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct MyLevelRequestView {
+    pub level: u8,
+    /// `pending` | `refused`
+    #[ts(type = "\"pending\" | \"refused\"")]
+    pub status: String,
+    /// What the moderator said refusing it.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+}
+
+impl MyLevelRequestView {
+    /// What «Мои уровни» say of my requests: those that wait or were
+    /// refused, of a level the channel still has (`exists`) and I do not
+    /// hold (`held`): given since, by the answer or by the journal, a
+    /// request is none any more.
+    pub(crate) fn shown(rows: Vec<LevelRequestRow>, exists: impl Fn(u8) -> bool, held: &[u8]) -> Vec<Self> {
+        rows.into_iter()
+            .filter(|r| r.status == REQ_PENDING || r.status == REQ_REFUSED)
+            .filter_map(|r| {
+                let level = u8::try_from(r.level).ok().filter(|l| exists(*l) && !held.contains(l))?;
+                Some(Self { level, status: r.status, reason: r.reason.filter(|x| !x.trim().is_empty()), updated_at: r.updated_at })
+            })
+            .collect()
     }
 }
 
@@ -1431,5 +1482,36 @@ mod tests {
         assert_eq!(levels.iter().find(|l| l.id == 1).map(|l| l.scopes.clone()), Some(vec![open.clone()]));
         let levels = LevelView::all(&state, &names, Some(&owner), 0);
         assert_eq!(levels.iter().find(|l| l.id == 1).map(|l| l.scopes.len()), Some(2));
+    }
+
+    /// «Мои уровни» say a request that waits or was refused, the reason of
+    /// a refusal with it (a blank one is none); a level given since, or
+    /// gone from the channel, is not said (ROO-284).
+    #[test]
+    fn my_requests_shown_are_waiting_or_refused_of_a_level_not_held() {
+        let row = |level: i64, status: &str, reason: Option<&str>| LevelRequestRow {
+            community_id: "aa".repeat(32),
+            requester: "c".repeat(64),
+            level,
+            direction: "out".into(),
+            status: status.into(),
+            note: String::new(),
+            reason: reason.map(Into::into),
+            created_at: 10,
+            updated_at: 20,
+            fingerprint: String::new(),
+        };
+        let rows = vec![
+            row(1, REQ_REFUSED, Some("Not yet")),
+            row(2, REQ_PENDING, None),
+            row(3, REQ_REFUSED, Some("  ")),
+            row(4, "granted", None),
+            row(5, REQ_REFUSED, Some("held since")),
+            row(9, REQ_REFUSED, Some("level gone")),
+            row(300, REQ_PENDING, None),
+        ];
+        let shown = MyLevelRequestView::shown(rows, |l| l != 9, &[5]);
+        let said: Vec<_> = shown.iter().map(|r| (r.level, r.status.as_str(), r.reason.as_deref())).collect();
+        assert_eq!(said, [(1, "refused", Some("Not yet")), (2, "pending", None), (3, "refused", None)]);
     }
 }

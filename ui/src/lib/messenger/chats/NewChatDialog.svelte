@@ -284,13 +284,14 @@
   .server-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); }
   /* The ways to start a chat: tiles of one row, the icon in the accent over the word. */
   .ways { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--sp-2); }
+  .ways li { display: flex; }
   .way {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%; min-height: 76px;
     padding: var(--sp-2) 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
-    color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1.25; text-align: center; cursor: pointer;
+    color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1.25; text-align: center; cursor: pointer; hyphens: auto;
   }
   .way :global(svg) { flex-shrink: 0; color: var(--accent-text); }
-  .way span { overflow-wrap: break-word; }
+  .way span { overflow-wrap: break-word; text-wrap: balance; }
   .way:hover { background: var(--surface-row-hover); }
   .way:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
   /* One way alone (a computer: «Пригласить в частный чат»): a wide tile 48, the icon before the word. */
@@ -308,6 +309,11 @@
   .name { flex: 1; min-width: 0; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   code { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+  /* A narrow screen: the tiles in a grid of 2×2, each as high as its row's tallest. */
+  @media (max-width: 520px) {
+    .ways { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-columns: auto; }
+    .ways li:only-child { grid-column: 1 / -1; }
+  }
   @media (pointer: coarse) {
     .field { min-height: var(--sp-12); }
     .row { min-height: 56px; }

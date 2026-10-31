@@ -12,9 +12,10 @@ pub mod levels;
 pub mod moderation;
 
 use crate::state::{map_err, take_journal, CommunitiesState, Driver, JOURNAL_WAIT, PREVIEW_WAIT};
-use crate::views::{chat_id, ChannelAction, ChannelDetail, ChannelPreview, ChannelView, FeedCursorView, FeedPageView, InviteView, LastPost, NewChannelInput, StoragePlanView, TransferView, UploadView, OUTGOING_DIR};
+use crate::views::{chat_id, ChannelAction, ChannelDetail, ChannelPreview, ChannelView, FeedCursorView, FeedPageView, InviteView, LastPost, MyLevelRequestView, NewChannelInput, StoragePlanView, TransferView, UploadView, OUTGOING_DIR};
 use communities_core::db::{self, channels::ChannelRow};
 use communities_core::link::ChannelLink;
+use communities_core::member::Waiting;
 use communities_core::media::{picked_preview, NewFile, NewRecording, Progress, RecordingPlace, Sink, MAX_COVER_INPUT_BYTES, UPLOAD_CANCELLED, UPLOAD_PAUSED};
 use communities_core::service::{NewChannel, MEMBERSHIP_JOINED};
 use communities_core::transport::FeedCursor;
@@ -112,17 +113,23 @@ pub(crate) async fn detail(d: &Driver, community_id: &str) -> CmdResult<ChannelD
     let names = d.service.names(&log).await.map_err(map_err)?;
     let state = log.state().clone();
     let me = d.service.signer().and_then(|k| PubKey::parse(&k.public_key().to_hex()));
-    let has_key = match d.service.signer() {
-        Some(keys) => d.service.member(&keys).newest_key(community_id, SCOPE_EVERYONE).await.map_err(map_err)?.is_some(),
-        None => false,
+    // What waits, by what it waits for: «when the keeper is online» is
+    // said only of what waits for the keeper.
+    let (has_key, waiting) = match d.service.signer() {
+        Some(keys) => {
+            let member = d.service.member(&keys);
+            (member.newest_key(community_id, SCOPE_EVERYONE).await.map_err(map_err)?.is_some(), member.waiting(&state).await.map_err(map_err)?)
+        }
+        None => (false, Waiting::default()),
     };
-    let waiting = db::channels::count_pending(d.service.db(), community_id).await.map_err(map_err)?;
-    let waiting = u32::try_from(waiting).unwrap_or(u32::MAX);
     // The link is handed on by those in the channel.
     let link = if row.membership == MEMBERSHIP_JOINED { d.service.share_link(community_id).await.ok() } else { None };
     let unread = db::content::unread_by_scope(d.service.db(), community_id, me.as_ref().map_or("", |m| m.as_hex())).await.map_err(map_err)?;
     let view = view_of(d, row, &crate::seams::chat_prefs(d).await, None).await?;
-    let mut detail = ChannelDetail::of(view, &state, has_key, waiting, link, &names, me.as_ref(), &unread);
+    let mut detail = ChannelDetail::of(view, &state, has_key, &waiting, link, &names, me.as_ref(), &unread);
+    detail.keeper_refused = d.service.refused_by_keeper(community_id).await.map_err(map_err)?.is_some();
+    let mine = d.service.my_level_requests(community_id).await.map_err(map_err)?;
+    detail.my_level_requests = Some(MyLevelRequestView::shown(mine, |l| state.levels.contains_key(&l), detail.my_levels.as_deref().unwrap_or_default()));
     detail.transfer = d.service.transfer_of(community_id).await.map_err(map_err)?.map(|t| TransferView { direction: t.direction, peer: t.peer, status: t.status, created_at: t.created_at });
     detail.outbox = Some(d.service.outbox_summary(community_id).await.map_err(map_err)?.into());
     Ok(detail)

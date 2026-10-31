@@ -12,7 +12,7 @@ function channel(role: string, transfer?: TransferView): ChannelDetail {
       id: 'c', chat_id: 'channel:c', name: 'C', about: '', owner: role === 'owner' ? ME : 'o', join: 'open', membership: 'joined', my_role: role, members: 3,
       relays: [], storage: [], link_epoch: 1, kept_here: false, needs_update: false, unread: 0, pinned: false, muted: false, archived: false, created_at: 0, updated_at: 0, last_at: 0,
     },
-    history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], disbanded: false, has_key: true, waiting: 0, staff: [], transfer,
+    history: 'open', post_mode: 'authors', comments: 'on', premod: 'off', pinned: [], disbanded: false, has_key: true, waiting: 0, waiting_keeper: 0, keeper_refused: false, staff: [], transfer,
   };
 }
 const t = (direction: 'in' | 'out', status: 'offered' | 'declined'): TransferView => ({ direction, peer: 'bb'.repeat(32), status, created_at: 1 });

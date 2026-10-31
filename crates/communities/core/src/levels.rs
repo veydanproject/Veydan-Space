@@ -25,6 +25,18 @@ use std::collections::{BTreeMap, HashMap};
 /// (wire §14.4): `{community_id, requester}`.
 pub const UI_EVENT_CHANNEL_LEVEL_REQUEST: &str = "channel.level_request";
 
+/// How many unanswered requests of one person for one level a moderator's
+/// device keeps (wire §14.4): the tab shows the last, an answer closes all.
+pub const MAX_ASKS_OF_ONE: usize = 4;
+// An answer names every request it closes.
+const _: () = assert!(MAX_ASKS_OF_ONE <= wire::MAX_ANSWERED_REQUESTS);
+
+/// The oldest answer to a request kept: none older can come any more
+/// (a note of a week, the skew).
+fn answers_kept_since(now: i64) -> i64 {
+    now - wire::NOTE_MAX_AGE_SECS - 2 * wire::SKEW_SECS
+}
+
 /// The name of the base level until the owner gives it one.
 pub const BASE_LEVEL_NAME: &str = "Базовый";
 
@@ -123,6 +135,11 @@ impl ScopeChange {
 /// spaces around do not count.
 fn same_name(a: &str, b: &str) -> bool {
     a.trim().to_lowercase() == b.trim().to_lowercase()
+}
+
+/// Whether the journal gives `who` the level.
+fn holds(state: &ChannelState, who: &PubKey, level: u8) -> bool {
+    state.levels_of(who) & 1u64.checked_shl(u32::from(level)).unwrap_or(0) != 0
 }
 
 impl ChannelService {
@@ -298,7 +315,7 @@ impl ChannelService {
 
     /// Asks the moderators for a level: `channel.level_request` to each of
     /// them, through the relays of the channel as `channel.request` goes;
-    /// kept here as mine until an answer comes.
+    /// kept here as mine, with its fingerprint (`id`), until an answer comes.
     pub async fn level_request(&self, keys: &Keys, community_id: &str, level: u8, note: &str) -> Result<Outcome> {
         let state = self.state(community_id).await?;
         let me = Self::me(keys)?;
@@ -309,7 +326,9 @@ impl ChannelService {
             return Err(invalid("the level is held already"));
         }
         let now = self.now();
-        let body = LevelRequest { community_id: community_id.to_string(), level, note: note.trim().to_string(), created_at: now };
+        let mut raw = [0u8; 16];
+        getrandom::fill(&mut raw).map_err(|e| MessengerError::Crypto(e.to_string()))?;
+        let body = LevelRequest { community_id: community_id.to_string(), level, note: note.trim().to_string(), created_at: now, id: Some(hex::encode(raw)) };
         body.check(now).map_err(invalid)?;
         for m in state.moderators() {
             self.send_note(Some(&state), community_id, &m, wire::T_LEVEL_REQUEST, &body, None).await?;
@@ -324,6 +343,7 @@ impl ChannelService {
             reason: None,
             created_at: now,
             updated_at: now,
+            fingerprint: body.fingerprint(),
         };
         db::levels::put_level_request(&self.env.db, &row).await?;
         let mut out = Outcome::default();
@@ -331,87 +351,280 @@ impl ChannelService {
         Ok(out)
     }
 
-    /// The requests for a level waiting for me as a moderator, oldest
-    /// first; one the journal has answered meanwhile (another moderator's
-    /// `set_levels`) is closed here and not listed.
+    /// The requests for a level waiting for me as a moderator, one per
+    /// person and level: the last of those unanswered (by its date, then
+    /// as heard), oldest first. Those the journal has answered meanwhile
+    /// (another moderator's `set_levels`) are closed here and not listed.
     pub async fn level_requests(&self, community_id: &str) -> Result<Vec<LevelRequestRow>> {
         let state = self.state(community_id).await?;
-        let mut out = Vec::new();
-        for r in db::levels::level_requests(&self.env.db, community_id, "in", REQ_PENDING).await? {
+        let mut last: BTreeMap<(String, i64), db::levels::LevelAskRow> = BTreeMap::new();
+        let mut answered: BTreeMap<(String, i64), Vec<db::levels::LevelAskRow>> = BTreeMap::new();
+        for r in db::levels::level_asks(&self.env.db, community_id).await? {
             let level = u8::try_from(r.level).unwrap_or(u8::MAX);
-            let held = PubKey::parse(&r.requester).is_some_and(|who| state.levels_of(&who) & (1u64.checked_shl(u32::from(level)).unwrap_or(0)) != 0);
+            let held = PubKey::parse(&r.requester).is_some_and(|who| holds(&state, &who, level));
+            let key = (r.requester.clone(), r.level);
             if held || !state.levels.contains_key(&level) {
-                db::levels::set_level_request(&self.env.db, community_id, &r.requester, level, "in", REQ_GRANTED, None, self.now()).await?;
+                answered.entry(key).or_default().push(r);
                 continue;
             }
-            out.push(r);
+            // Ordered by date, then as heard: the later one stands.
+            last.insert(key, r);
         }
+        for ((requester, level), asks) in answered {
+            self.answer_asks(community_id, &requester, u8::try_from(level).unwrap_or(u8::MAX), &asks, true, None).await?;
+        }
+        let mut out: Vec<LevelRequestRow> = last
+            .into_values()
+            .map(|r| LevelRequestRow {
+                community_id: r.community_id,
+                requester: r.requester,
+                level: r.level,
+                direction: "in".into(),
+                status: REQ_PENDING.into(),
+                note: r.note,
+                reason: None,
+                created_at: r.created_at,
+                updated_at: r.heard_at,
+                fingerprint: r.fingerprint,
+            })
+            .collect();
+        out.sort_by(|a, b| (a.created_at, &a.requester, a.level).cmp(&(b.created_at, &b.requester, b.level)));
         Ok(out)
     }
 
-    /// A moderator answers a request: a grant is `set_levels` of the
-    /// journal (the levels held and this one) and a note that says so; a
-    /// refusal is a note with the reason, the journal untouched.
+    /// The requests `asks` answered: gone from those that wait, each answer
+    /// kept by its fingerprint (one of before fingerprints by its date), so
+    /// that the request heard again stays closed. `true` when any went.
+    async fn answer_asks(&self, community_id: &str, requester: &str, level: u8, asks: &[db::levels::LevelAskRow], granted: bool, reason: Option<&str>) -> Result<bool> {
+        let now = self.now();
+        let mut any = false;
+        for a in asks {
+            let answer = db::levels::LevelAnswerRow {
+                community_id: community_id.to_string(),
+                requester: requester.to_string(),
+                level: i64::from(level),
+                fingerprint: a.fingerprint.clone(),
+                asked_at: a.created_at,
+                granted,
+                reason: reason.map(str::to_string),
+                at: now,
+            };
+            db::levels::put_level_answer(&self.env.db, &answer, answers_kept_since(now)).await?;
+            any |= db::levels::drop_level_ask(&self.env.db, community_id, requester, level, &a.fingerprint).await?;
+        }
+        Ok(any)
+    }
+
+    /// A moderator answers the requests of a person for a level, every one
+    /// unanswered here (the tab shows the last): a grant is `set_levels` of
+    /// the journal (the levels held and this one) and a note that says so;
+    /// a refusal is a note with the reason, the journal untouched, and its
+    /// copy to my other devices. Both name the requests answered by their
+    /// fingerprints (and, for an older build, the date of the last). A
+    /// level the journal gives already (a second press, or one after a
+    /// press whose note did not go) is not published again. The requests
+    /// are closed as soon as the journal holds the answer: a failure of the
+    /// notes leaves no card to press once more.
     pub async fn level_request_act(&self, keys: &Keys, community_id: &str, requester: &PubKey, level: u8, grant: bool, reason: Option<&str>) -> Result<Outcome> {
         let state = self.state(community_id).await?;
         let me = Self::me(keys)?;
         if !state.role_of(&me).is_some_and(|r| crate::roles::permits(r, crate::roles::Action::SetLevels)) {
             return Err(invalid("not permitted"));
         }
+        if grant && !state.levels.contains_key(&level) {
+            return Err(invalid("unknown level"));
+        }
+        let reason = reason.map(str::trim).filter(|r| !r.is_empty()).map(str::to_string);
+        // The requests answered, named to the requester too: relays hand an
+        // answer again at every start, and an older one must not stand for
+        // a request made since. One heard before fingerprints makes the
+        // requester judge by the date.
+        let asks = db::levels::level_asks_of(&self.env.db, community_id, requester.as_hex(), level).await?;
+        let asked = asks.iter().map(|r| r.created_at).max();
+        let fingerprints: Vec<String> = asks.iter().filter(|r| !r.fingerprint.is_empty()).map(|r| r.fingerprint.clone()).take(wire::MAX_ANSWERED_REQUESTS).collect();
+        let known = (!fingerprints.is_empty()).then(|| fingerprints.clone());
+        let to_requester = known.clone().filter(|_| asks.iter().all(|r| !r.fingerprint.is_empty()));
+        let body = LevelResolve {
+            community_id: community_id.to_string(),
+            level,
+            granted: grant,
+            reason: if grant { None } else { reason },
+            requester: None,
+            asked_at: asked,
+            requests: to_requester,
+        };
+        body.check().map_err(invalid)?;
         let mut out = Outcome::default();
-        if grant {
-            if !state.levels.contains_key(&level) {
-                return Err(invalid("unknown level"));
-            }
+        if grant && !holds(&state, requester, level) {
             let bits = state.levels_of(requester) | (1u64 << level);
             out.merge(self.act(keys, community_id, OpBody::SetLevels { who: requester.clone(), levels: bits }).await?);
         }
-        let reason = reason.map(str::trim).filter(|r| !r.is_empty()).map(str::to_string);
-        let body = LevelResolve { community_id: community_id.to_string(), level, granted: grant, reason: if grant { None } else { reason.clone() } };
-        body.check().map_err(invalid)?;
-        self.send_note(Some(&state), community_id, requester, wire::T_LEVEL_RESOLVE, &body, None).await?;
-        let status = if grant { REQ_GRANTED } else { REQ_REFUSED };
-        db::levels::set_level_request(&self.env.db, community_id, requester.as_hex(), level, "in", status, body.reason.as_deref(), self.now()).await?;
+        let asked_at = asked.unwrap_or_else(|| self.now());
+        self.answer_asks(community_id, requester.as_hex(), level, &asks, grant, body.reason.as_deref()).await?;
         out.event(UI_EVENT_CHANNEL_LEVEL_REQUEST, serde_json::json!({ "community_id": community_id, "requester": requester.as_hex() }));
+        self.send_note(Some(&state), community_id, requester, wire::T_LEVEL_RESOLVE, &body, None).await?;
+        // A grant reaches my other devices by the journal (`on_set_levels`);
+        // a refusal is in no journal.
+        if !grant {
+            let copy = LevelResolve { requester: Some(requester.as_hex().to_string()), asked_at: Some(asked_at), requests: known, ..body };
+            self.copy_to_me(community_id, wire::T_LEVEL_RESOLVE, &copy).await?;
+        }
+        Ok(out)
+    }
+
+    /// `set_levels` of the journal: the requests of that person it answers
+    /// are closed here (my other device, or another moderator, gave the
+    /// level).
+    pub(crate) async fn on_set_levels(&self, state: &ChannelState, who: &PubKey) -> Result<Outcome> {
+        let mut out = Outcome::default();
+        let mut by_level: BTreeMap<i64, Vec<db::levels::LevelAskRow>> = BTreeMap::new();
+        for r in db::levels::level_asks(&self.env.db, &state.community_id).await? {
+            if r.requester == who.as_hex() && holds(state, who, u8::try_from(r.level).unwrap_or(u8::MAX)) {
+                by_level.entry(r.level).or_default().push(r);
+            }
+        }
+        let mut closed = false;
+        for (level, asks) in by_level {
+            closed |= self.answer_asks(&state.community_id, who.as_hex(), u8::try_from(level).unwrap_or(u8::MAX), &asks, true, None).await?;
+        }
+        if closed {
+            out.event(UI_EVENT_CHANNEL_LEVEL_REQUEST, serde_json::json!({ "community_id": state.community_id, "requester": who.as_hex() }));
+        }
+        Ok(out)
+    }
+
+    /// The copy of my answer from my other device (`requester` and
+    /// `asked_at` named): the requests it names by fingerprint are closed
+    /// here, and those heard before fingerprints up to `asked_at`; not
+    /// heard here yet, they are kept answered, so that they do not open
+    /// when they come. A request it does not name stays, whatever its date.
+    /// A copy of an older build names none: it answers by `asked_at`.
+    pub(crate) async fn on_own_level_resolve(&self, body: &LevelResolve) -> Result<Outcome> {
+        let mut out = Outcome::default();
+        let (Some(requester), Some(asked_at)) = (body.requester.as_deref(), body.asked_at) else { return Ok(out) };
+        if body.check().is_err() {
+            return Ok(out);
+        }
+        let now = self.now();
+        let answer = |fingerprint: &str| db::levels::LevelAnswerRow {
+            community_id: body.community_id.clone(),
+            requester: requester.to_string(),
+            level: i64::from(body.level),
+            fingerprint: fingerprint.to_string(),
+            asked_at,
+            granted: body.granted,
+            reason: body.reason.clone(),
+            at: now,
+        };
+        let named: &[String] = body.requests.as_deref().unwrap_or_default();
+        if body.requests.is_some() {
+            for f in named {
+                db::levels::put_level_answer(&self.env.db, &answer(f), answers_kept_since(now)).await?;
+            }
+        } else {
+            db::levels::put_level_answer(&self.env.db, &answer(""), answers_kept_since(now)).await?;
+        }
+        let mut closed = false;
+        for a in db::levels::level_asks_of(&self.env.db, &body.community_id, requester, body.level).await? {
+            let by_date = (body.requests.is_none() || a.fingerprint.is_empty()) && a.created_at <= asked_at;
+            if by_date || named.contains(&a.fingerprint) {
+                closed |= db::levels::drop_level_ask(&self.env.db, &body.community_id, requester, body.level, &a.fingerprint).await?;
+            }
+        }
+        if closed {
+            out.event(UI_EVENT_CHANNEL_LEVEL_REQUEST, serde_json::json!({ "community_id": body.community_id, "requester": requester }));
+        }
         Ok(out)
     }
 
     /// `channel.level_request` heard by me (a moderator by the journal):
-    /// kept, at most `MAX_REQUESTS` waiting a channel.
+    /// kept by its fingerprint beside the others of that person and level
+    /// (at most `MAX_ASKS_OF_ONE`, the oldest go, kept answered), at most
+    /// `MAX_REQUESTS` people and levels waiting a channel; one for a level
+    /// the journal gives already is not, nor one answered already (heard
+    /// again, or after the copy of the answer).
     pub(crate) async fn on_level_request(&self, me: &PubKey, state: &crate::state::ChannelState, from: &PubKey, created_at: i64, body: &LevelRequest) -> Result<Outcome> {
         let mut out = Outcome::default();
         let now = self.now();
-        if body.check(now).is_err() || !state.role_of(me).is_some_and(crate::roles::Role::is_moderator) || state.is_banned(from) || !state.levels.contains_key(&body.level) {
+        if body.check(now).is_err() || !state.role_of(me).is_some_and(crate::roles::Role::is_moderator) || state.is_banned(from) || !state.levels.contains_key(&body.level) || holds(state, from, body.level) {
             return Ok(out);
         }
-        let waiting = db::levels::level_requests(&self.env.db, &state.community_id, "in", REQ_PENDING).await?;
-        let again = waiting.iter().any(|r| r.requester == from.as_hex() && r.level == i64::from(body.level));
-        if waiting.len() >= crate::service::MAX_REQUESTS && !again {
+        let fingerprint = body.fingerprint();
+        if db::levels::level_answered(&self.env.db, &state.community_id, from.as_hex(), body.level, &fingerprint, created_at).await? {
+            return Ok(out);
+        }
+        let asks = db::levels::level_asks(&self.env.db, &state.community_id).await?;
+        let waiting: std::collections::BTreeSet<(&str, i64)> = asks.iter().map(|r| (r.requester.as_str(), r.level)).collect();
+        if waiting.len() >= crate::service::MAX_REQUESTS && !waiting.contains(&(from.as_hex(), i64::from(body.level))) {
             out.note("too many requests for levels");
             return Ok(out);
         }
-        let row = LevelRequestRow {
+        let ask = db::levels::LevelAskRow {
             community_id: state.community_id.clone(),
             requester: from.as_hex().to_string(),
             level: i64::from(body.level),
-            direction: "in".into(),
-            status: REQ_PENDING.into(),
+            fingerprint,
             note: body.note.clone(),
-            reason: None,
             created_at,
-            updated_at: now,
+            heard_at: now,
         };
-        db::levels::put_level_request(&self.env.db, &row).await?;
+        if !db::levels::put_level_ask(&self.env.db, &ask).await? {
+            return Ok(out);
+        }
+        // Past `MAX_ASKS_OF_ONE` the oldest go, by their date: a request
+        // held back on the way and heard after four later ones goes itself,
+        // and the last stays for the answer to name. One that goes is kept
+        // as answered, so that the relays handing it again open nothing.
+        let mut of_one: Vec<_> = asks.into_iter().filter(|r| r.requester == ask.requester && r.level == ask.level).collect();
+        of_one.push(ask.clone());
+        // Stable: of the same moment, the one heard first goes first.
+        of_one.sort_by_key(|r| r.created_at);
+        let mut kept_new = true;
+        for old in of_one.iter().take(of_one.len().saturating_sub(MAX_ASKS_OF_ONE)) {
+            db::levels::drop_level_ask(&self.env.db, &state.community_id, &old.requester, body.level, &old.fingerprint).await?;
+            kept_new &= old.fingerprint != ask.fingerprint;
+            if !old.fingerprint.is_empty() {
+                let gone = db::levels::LevelAnswerRow {
+                    community_id: state.community_id.clone(),
+                    requester: old.requester.clone(),
+                    level: old.level,
+                    fingerprint: old.fingerprint.clone(),
+                    asked_at: old.created_at,
+                    granted: false,
+                    reason: None,
+                    at: now,
+                };
+                db::levels::put_level_answer(&self.env.db, &gone, answers_kept_since(now)).await?;
+            }
+        }
+        if !kept_new {
+            return Ok(out);
+        }
         out.event(UI_EVENT_CHANNEL_LEVEL_REQUEST, serde_json::json!({ "community_id": state.community_id, "requester": from.as_hex() }));
         Ok(out)
     }
 
     /// `channel.level_resolve` to me, from a moderator by the journal: my
-    /// request answered.
-    pub(crate) async fn on_level_resolve(&self, me: &PubKey, state: &crate::state::ChannelState, from: &PubKey, body: &LevelResolve) -> Result<Outcome> {
+    /// request answered. Only a request that waits takes an answer: one
+    /// that names it by its fingerprint; an answer that names no
+    /// fingerprints (an older build), or a request of mine of before
+    /// fingerprints, by the date: not one older than it (`asked_at`, else
+    /// the date of the note, `sent_at`: an answer sent before the request
+    /// does not answer it). The relays hand the answers of the week again
+    /// at every start, a grant taken back since or the refusal of an
+    /// earlier request with them (ROO-264, ROO-289).
+    pub(crate) async fn on_level_resolve(&self, me: &PubKey, state: &crate::state::ChannelState, from: &PubKey, sent_at: i64, body: &LevelResolve) -> Result<Outcome> {
         let mut out = Outcome::default();
         let moderator = state.role_of(from).is_some_and(crate::roles::Role::is_moderator) && !state.is_banned(from);
         if body.check().is_err() || !moderator {
+            return Ok(out);
+        }
+        let mine = db::levels::level_request(&self.env.db, &state.community_id, me.as_hex(), body.level, "out").await?;
+        let answers = |r: &LevelRequestRow| match (&body.requests, r.fingerprint.is_empty()) {
+            (Some(named), false) => named.contains(&r.fingerprint),
+            _ => body.asked_at.unwrap_or(sent_at) >= r.created_at,
+        };
+        if !mine.is_some_and(|r| r.status == REQ_PENDING && answers(&r)) {
             return Ok(out);
         }
         let status = if body.granted { REQ_GRANTED } else { REQ_REFUSED };

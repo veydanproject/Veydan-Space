@@ -34,7 +34,9 @@ pub type Signals = mpsc::UnboundedSender<Signal>;
 /// What goes out was sent by the service itself (`Transport`).
 pub fn effects(outcome: Outcome, signals: &Signals) -> Vec<Effect> {
     let out: Vec<Effect> = outcome.events.into_iter().map(Effect::Emit).collect();
-    if outcome.resubscribe {
+    // New routes are read by the next round of listening, which asks
+    // the journals they are for (`catch_up`).
+    if outcome.resubscribe || outcome.routes {
         let _ = signals.send(Signal::Resubscribe);
     }
     if let Some(at) = outcome.wake {

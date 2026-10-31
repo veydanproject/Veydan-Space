@@ -244,6 +244,17 @@ status: "offered" | "declined", created_at: number, };
 /** What of mine in a channel still waits for the relays; `channel_outbox_retry` tries it now, `channel.outbox` tells of each row. */
 export type OutboxView = { queued: number, failed: number, error?: string, };
 
+/** A request for a level I made: waiting, or refused with the moderator's reason until I ask again (communities-wire §14.4). */
+export type MyLevelRequestView = { level: number, 
+/**
+ * `pending` | `refused`
+ */
+status: "pending" | "refused", 
+/**
+ * What the moderator said refusing it.
+ */
+reason?: string, updated_at: number, };
+
 /** A channel as `channel_get` and the commands that change it answer: the row, the rules, the staff, whether a key is here, the link to hand on. */
 export type ChannelDetail = { channel: ChannelView, 
 /**
@@ -273,9 +284,21 @@ pinned: Array<string>, staff: Array<StaffView>, disbanded: boolean,
 has_key: boolean, 
 /**
  * Posts and comments here that wait for a key newer than the one
- * held: with `has_key` the page says «the key is old, catching up».
+ * held, an epoch, a shard or a snapshot: with `has_key` the page says
+ * «catching up».
  */
 waiting: number, 
+/**
+ * Of `waiting`, those that wait for the keeper alone (a bundle or a
+ * key only it gives): the page says «when the keeper is online» only
+ * of these; the rest come by themselves (communities-wire §6.2).
+ */
+waiting_keeper: number, 
+/**
+ * The keeper said I was never let in as a reader
+ * (`channel.not_let_in`): the page says «an invitation is needed».
+ */
+keeper_refused: boolean, 
 /**
  * The keeper of the current series, hex pubkey.
  */
@@ -297,6 +320,12 @@ levels?: Array<LevelView>,
  * The levels I hold (the base level 0 left out).
  */
 my_levels?: Array<number>, 
+/**
+ * My requests for a level that wait or were refused (wire §14.4): a
+ * refusal, with its reason, stays until I ask for that level again
+ * (always given; optional to a page made before it).
+ */
+my_level_requests?: Array<MyLevelRequestView>, 
 /**
  * The channel handed to a new owner (wire §16): an offer to me not
  * answered yet, or mine not taken yet.

@@ -785,7 +785,7 @@ impl Bench {
                 let who = reader_pk(self.spread(i))?;
                 i += 1;
                 let r = Rebundle { community_id: self.cid.clone(), scope_id: SCOPE_EVERYONE.into(), gen };
-                if g.on_rebundle(&log, &who, &r, self.w.clock.now()).await? {
+                if g.on_rebundle(&log, &who, &r, false, self.w.clock.now()).await? {
                     done += 1;
                 }
             }

@@ -218,6 +218,10 @@ impl Transport for Net {
                 lock(&self.relay.inbox).entry(recipient.as_hex().to_string()).or_default().push(event.json);
             }
             Outbound::PublishOwn { event } => {
+                // `KIND_OWN` refused: my own notes do not go for now.
+                if lock(&self.relay.refuse).contains(&crate::notes::KIND_OWN) {
+                    return Ok(Ack { accepted_by: vec![], rejected_by: vec![(relay, "timeout".into())] });
+                }
                 lock(&self.relay.inbox).entry(self.me.as_hex().to_string()).or_default().push(event.json);
             }
             Outbound::Subscribe { id, filter, .. } => lock(&self.subscribed).push((id.0, filter.0)),
@@ -561,6 +565,12 @@ impl Node {
     pub fn skip_inboxes(&self, relay: &Relay) {
         let lens: Vec<(String, usize)> = lock(&relay.inbox).iter().map(|(k, v)| (k.clone(), v.len())).collect();
         lock(&self.inbox_seen).extend(lens);
+    }
+
+    /// Hears every gift wrap again from the first (the relays hand the
+    /// notes of the week again at every start).
+    pub fn replay_inboxes(&self) {
+        lock(&self.inbox_seen).clear();
     }
 
     fn note_err(&self, e: MessengerError) {

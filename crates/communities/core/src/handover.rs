@@ -251,46 +251,8 @@ impl ChannelService {
         let member = self.member(keys);
         let mut readers = member.all_readers(log).await?.ok_or_else(|| invalid(NO_READERS))?;
         let snapshot = member.latest_snapshot(&state.community_id).await?;
-        // What the snapshot was made after: its heads and every operation
-        // they descend from. One concurrent with it (on no path to its
-        // heads) is after it, wherever the order of the journal puts it.
-        let before = snapshot.as_ref().and_then(|s| {
-            let mut seen: std::collections::HashSet<crate::op::OpId> = std::collections::HashSet::new();
-            let mut todo: Vec<crate::op::OpId> = s.heads.clone();
-            while let Some(id) = todo.pop() {
-                if seen.contains(&id) {
-                    continue;
-                }
-                let op = log.get(&id)?;
-                todo.extend(op.parents.iter().cloned());
-                seen.insert(id);
-            }
-            Some(seen)
-        });
-        let mut out_after: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut out_at: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
-        for op in log.ordered() {
-            if log.rejection(&op.id()).is_some() {
-                continue;
-            }
-            if let OpBody::Ban { who, .. } | OpBody::Remove { who } = &op.body {
-                let who = who.as_hex().to_string();
-                match &before {
-                    Some(b) if b.contains(&op.id()) => {}
-                    Some(_) => {
-                        out_after.insert(who);
-                    }
-                    None => {
-                        let t = out_at.entry(who).or_insert(op.created_at);
-                        *t = (*t).max(op.created_at);
-                    }
-                }
-            }
-        }
-        readers.retain(|r| {
-            let who = hex::encode(r.pubkey);
-            !state.banned.contains(&who) && !out_after.contains(&who) && out_at.get(&who).is_none_or(|t| i64::from(r.since) > *t)
-        });
+        let out = crate::member::readers::PutOut::of(log, snapshot.as_ref());
+        readers.retain(|r| out.keeps(state, &hex::encode(r.pubkey), i64::from(r.since)));
         Ok(readers)
     }
 

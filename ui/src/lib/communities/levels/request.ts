@@ -53,3 +53,13 @@ export function clearAsked(asked: Asked, communityId: string): Asked {
   const { [communityId]: _gone, ...rest } = asked;
   return rest;
 }
+
+/**
+ * The levels I wait for an answer on: asked from this device since the
+ * channel last changed, or waiting by the channel's own word (its
+ * `my_level_requests`, which a restart keeps).
+ */
+export function waitingLevels(asked: Asked, communityId: string, mine: readonly { level: number; status: string }[] | null | undefined): number[] {
+  const kept = (mine ?? []).filter((r) => r.status === 'pending').map((r) => r.level);
+  return [...new Set([...(asked[communityId] ?? []), ...kept])];
+}

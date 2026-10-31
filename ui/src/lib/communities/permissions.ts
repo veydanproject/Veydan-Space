@@ -146,6 +146,18 @@ export function keeperAwayAt(c: Pick<ChannelView, 'updated_at' | 'keeper_last_se
 
 export type Standing = 'reading' | 'waiting_key' | 'catching_up' | 'joining' | 'requested' | 'rejected' | 'out' | 'none' | 'disbanded';
 
+/**
+ * What the strip of a channel catching up says (`catching_up`): «when the
+ * keeper is online» only of what waits for the keeper (a bundle or a key
+ * only it gives), counted alone; otherwise the epochs, shards or snapshot
+ * the posts wait for come by themselves.
+ */
+export function catchUpNote(d: Pick<ChannelDetail, 'waiting' | 'waiting_keeper'>): { key: 'chan_state_catching_up' | 'chan_state_syncing'; n: number } | null {
+  if (d.waiting <= 0) return null;
+  if (d.waiting_keeper > 0) return { key: 'chan_state_catching_up', n: d.waiting_keeper };
+  return { key: 'chan_state_syncing', n: d.waiting };
+}
+
 export function standing(d: ChannelDetail): Standing {
   if (d.disbanded || d.channel.membership === 'disbanded') return 'disbanded';
   switch (d.channel.membership) {

@@ -248,6 +248,32 @@ Denies the request command without any pre-configured scope.
 <tr>
 <td>
 
+`veydan-media:allow-save-picture`
+
+</td>
+<td>
+
+Enables the save_picture command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-media:deny-save-picture`
+
+</td>
+<td>
+
+Denies the save_picture command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `veydan-media:allow-share-text`
 
 </td>
