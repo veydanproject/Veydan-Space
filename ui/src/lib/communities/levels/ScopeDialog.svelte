@@ -349,12 +349,10 @@
     .cols { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'look' 'main' 'order'; row-gap: var(--sp-4); }
     .main { padding-left: 0; border-left: none; }
     .look-row { display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: start; gap: var(--sp-4); }
-    .preview { height: 120px; }
   }
   .cols.phone { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'look' 'main' 'order'; row-gap: var(--sp-4); }
   .cols.phone .main { padding-left: 0; border-left: none; }
   .cols.phone .look-row { display: grid; grid-template-columns: 280px minmax(0, 1fr); align-items: start; gap: var(--sp-4); }
-  .cols.phone .preview { height: 140px; }
   @media (max-width: 600px) {
     .cols.phone .look-row, .look-row { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
   }
@@ -365,7 +363,7 @@
 
   /* What it looks like: the tile (a picture under it is framed in the colour) and the button of the head. */
   .preview {
-    position: relative; overflow: hidden; height: 140px; box-sizing: border-box; padding: var(--sp-3); border-radius: var(--radius-head);
+    position: relative; overflow: hidden; aspect-ratio: 3 / 2; box-sizing: border-box; padding: var(--sp-3); border-radius: var(--radius-head);
     display: flex; flex-direction: column; justify-content: space-between;
     border: 1px solid color-mix(in srgb, var(--t-color) 35%, var(--border)); background: color-mix(in srgb, var(--t-color) 12%, var(--surface-2));
   }
@@ -439,13 +437,13 @@
   }
   .ico:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
   .ico.on, .ico.on:hover:not(:disabled) { background: var(--t-color); color: var(--t-ink); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--t-color); }
-  .ico:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .ico:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   /* Outside the mark of the chosen one, so both are seen. */
   .ico.on:focus-visible { outline-offset: 6px; }
   .swatches { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
   .sw { width: 34px; height: 34px; border-radius: 50%; border: none; padding: 0; cursor: pointer; background: var(--sw); }
   .sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
-  .sw:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 4px; }
+  .sw:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }
   .bg-row { display: flex; align-items: center; gap: var(--sp-4); }
   /* The picture of the section in the 3:2 of a tile (960×640): cut to fill, the colour as its frame. */
   .bg-box {

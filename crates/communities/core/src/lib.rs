@@ -106,6 +106,11 @@ pub mod testkit;
 #[cfg(feature = "tools")]
 #[doc(hidden)]
 pub mod bench;
+/// What the keeper of the stand (`communities-cli keeper`) does past the
+/// app: its limits from the environment, readers without a device.
+#[cfg(any(test, feature = "tools"))]
+#[doc(hidden)]
+pub mod stand;
 
 pub use keydist::SchemeId;
 pub use link::{ChannelLink, LinkSecret};

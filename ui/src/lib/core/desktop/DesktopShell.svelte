@@ -219,19 +219,24 @@
 
   // The top bar holds every module's entries: when they do not fit the window,
   // the bar tightens its spacing, then shows the entries as icons with the name
-  // as a tooltip. The width each step needs is worked out from the entries'
+  // as a tooltip, then drops the product's name by the logo. A window narrower
+  // still (440 px) scrolls the bar sideways instead of squeezing its icons
+  // into each other (ROO-481). The width each step needs is worked out from the entries'
   // text rather than read back from the bar after a change: a webview may
   // restyle later than the read, and the step would then be measured wrong.
   // The numbers mirror the styles of .topbar-inner and .nav-link below.
   const NAV_FIT = [
-    { gap: 24, pad: 14, labels: true },
-    { gap: 12, pad: 8, labels: true },
-    { gap: 12, pad: 10, labels: false },
+    { gap: 24, pad: 14, labels: true, name: true },
+    { gap: 12, pad: 8, labels: true, name: true },
+    { gap: 12, pad: 10, labels: false, name: true },
+    { gap: 12, pad: 10, labels: false, name: false },
   ] as const;
   const NAV_ICON = 14;
   const NAV_INNER_GAP = 8;
   let topbarInner = $state<HTMLElement | null>(null);
   let navFit = $state(0);
+  /** Even the last step is wider than the bar: the bar scrolls. */
+  let navScrolls = $state(false);
   let measure: CanvasRenderingContext2D | null = null;
   function textWidth(el: Element | null): number {
     if (!el) return 0;
@@ -249,12 +254,18 @@
     const labels = links.map((a) => textWidth(a.querySelector('.nav-label')));
     const badges = links.map((a) => a.querySelector<HTMLElement>('.nav-badge')?.offsetWidth ?? 0);
     const navGap = navEl ? parseFloat(getComputedStyle(navEl).columnGap) || 0 : 0;
+    const brand = el.querySelector<HTMLElement>('.topbar-brand');
+    const logo = brand?.querySelector<HTMLElement>('.brand-tile')?.offsetWidth ?? 0;
+    const name = brand ? (parseFloat(getComputedStyle(brand).columnGap) || 0) + textWidth(brand.querySelector('.brand-name')) : 0;
+    // Without the tail a scrolled bar gives its buttons (.topbar-right.scrolls).
+    const right = el.querySelector<HTMLElement>('.topbar-right');
     const fixed =
-      (el.querySelector<HTMLElement>('.topbar-brand')?.offsetWidth ?? 0) +
-      (el.querySelector<HTMLElement>('.topbar-right')?.offsetWidth ?? 0) +
+      logo +
+      (right ? right.offsetWidth - (parseFloat(getComputedStyle(right).paddingRight) || 0) : 0) +
       navGap * Math.max(0, links.length - 1);
     const width = (step: (typeof NAV_FIT)[number]) =>
       fixed +
+      (step.name ? name : 0) +
       2 * step.gap +
       links.reduce(
         (sum, _, i) =>
@@ -264,17 +275,20 @@
     let level = 0;
     while (level < NAV_FIT.length - 1 && width(NAV_FIT[level]) > el.clientWidth) level++;
     navFit = level;
+    navScrolls = width(NAV_FIT[level]) > el.clientWidth;
   }
   $effect(() => {
     const el = topbarInner;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => fitNav());
     observer.observe(el);
+    el.addEventListener('wheel', wheelBar, { passive: false });
     // The bar is first laid out with the fallback font; the real one is narrower.
     document.fonts?.addEventListener('loadingdone', fitNav);
     void document.fonts?.ready.then(fitNav);
     return () => {
       observer.disconnect();
+      el.removeEventListener('wheel', wheelBar);
       document.fonts?.removeEventListener('loadingdone', fitNav);
     };
   });
@@ -283,6 +297,17 @@
     void nav.map((item) => item.id).join();
     void $locale;
     untrack(fitNav);
+  });
+  /** A scrolled bar: the wheel of a mouse moves it sideways. */
+  function wheelBar(e: WheelEvent) {
+    if (!navScrolls || !topbarInner || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+    topbarInner.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }
+  // A scrolled bar: the open module stays in sight.
+  $effect(() => {
+    void $page.url.pathname;
+    if (navScrolls) untrack(() => topbarInner?.querySelector('.nav-link.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
   });
 
   function isActive(href: string) {
@@ -365,12 +390,12 @@
   {#if !standaloneNotes && !(single && isCsd)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <header class="topbar" class:slim={single} class:csd={isCsd}>
-     <div class="topbar-inner" class:fit-tight={navFit >= 1} bind:this={topbarInner}>
+     <div class="topbar-inner" class:fit-tight={navFit >= 1} class:scrolls={navScrolls} bind:this={topbarInner}>
       <a href="/" class="topbar-brand">
         <span class="brand-tile">
           <img src="/logo.png" alt={product.name} class="brand-logo" />
         </span>
-        <span class="brand-name">{product.name}</span>
+        <span class="brand-name" class:hidden={navFit >= 3}>{product.name}</span>
       </a>
 
       {#if single}
@@ -379,7 +404,7 @@
           {#if away}{@render backHome('nav-link')}{/if}
         </nav>
       {:else}
-      <nav class="topbar-nav">
+      <nav class="topbar-nav" class:scrolls={navScrolls}>
         {#each nav as item (item.id)}
           {@const badge = item.badge?.() ?? 0}
           <a
@@ -399,7 +424,7 @@
       </nav>
       {/if}
 
-      <div class="topbar-right">
+      <div class="topbar-right" class:scrolls={navScrolls}>
         {#if !isCsd && !single}
           {#each titleTools as tool (tool.id)}
             <button class="theme-toggle" onclick={tool.onclick} title={$t(tool.title as TranslationKey)}>
@@ -582,6 +607,7 @@
     font-size: var(--fs-base);
     font-weight: var(--fw-semibold);
     white-space: nowrap;
+    flex-shrink: 0;
     transition: background var(--dur-fast), color var(--dur-fast);
   }
 
@@ -594,13 +620,26 @@
   .topbar-inner.fit-tight { gap: 0.75rem; }
   .nav-link.tight { padding: 0 8px; }
   .nav-link.icon-only { gap: 4px; padding: 0 10px; }
-  .nav-label.hidden { display: none; }
+  .nav-label.hidden,
+  .brand-name.hidden { display: none; }
+  /* The last step: the icons keep their size and the bar scrolls, faded at
+     the edge; the tail past the last button keeps it out of the fade. */
+  .topbar-inner.scrolls {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  .topbar-inner.scrolls::-webkit-scrollbar { display: none; }
+  .topbar-nav.scrolls { flex: none; }
+  .topbar-right.scrolls { padding-right: 24px; }
 
   .topbar-right {
     display: flex;
     align-items: center;
     gap: var(--sp-1);
     margin-left: auto;
+    flex-shrink: 0;
   }
 
   /* The quick buttons: 36, flat until hovered, an 18px glyph. */

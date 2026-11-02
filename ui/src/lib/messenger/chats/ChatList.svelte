@@ -345,7 +345,7 @@
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
   /* The rows (chats, groups, a module's section alike) are the .list-row of base.css: 64, an avatar of 48,
      the marks after the name, a hairline between two rows from the text; unread, the .unread of it. */
-  .archived-toggle:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .archived-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   /* «Запросы · N»: a row of its own over the list, its tile in the accent, its chevron at the end of the name. */
   .requests { margin-bottom: var(--sp-1); }
   .requests .list-row-line { color: var(--text-2); }

@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "Links zum Anmelden, zur Wiederherstellung eines Kontos und zum Verknüpfen eines Geräts werden nur mit dem Scanner in der App geöffnet: So kann dir keine Website einen davon zur Bestätigung unterschieben.",
     "msg_inlink_long_title": "Der Link ist zu lang",
     "msg_inlink_long_text": "So lange Links öffnet Veydan nicht. Bitte um den Link noch einmal.",
+    "msg_card_link_short": "Im Browser",
+    "msg_card_preview_short": "Vorschau",
     "msg_card_link_open": "Im Browser öffnen",
     "msg_card_link_moved": "Der Link leitet von {host} weiter.",
     "msg_card_link_risk_insecure": "Keine Verschlüsselung: Jeder auf dem Weg kann die Seite lesen und verändern.",

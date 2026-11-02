@@ -90,7 +90,7 @@
   >
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
     <div
-      class="dialog"
+      class="dialog on-glass"
       in:dialogIn
       out:dialogOut
       style={width ? `width:${width}` : undefined}

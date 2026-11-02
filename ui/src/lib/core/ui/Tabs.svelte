@@ -2,12 +2,12 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  The parts of a page, one at a time: a row of tabs, the chosen one
-  underlined. One look for «Аккаунт» and «Настройки чата» (ROO-259 item 8).
+  The parts of a page, one at a time: a row of words on the page's own
+  background, no bar under them, the chosen one bold with a short mark. One look for «Аккаунт» and «Настройки чата» (ROO-259 item 8).
   On a phone the row is one line that scrolls, reaching the edges of the
   screen through the page's padding (`--tabs-bleed`, that padding at the
-  sides; 16 by default), its right edge fading while there is more of it;
-  the chosen tab is kept in view (`scrollTabs`). The arrows move along the
+  sides; 16 by default), a clipped edge fading while there is more of the
+  row on that side; the chosen tab is kept in view (`scrollTabs`). The arrows move along the
   tabs.
 -->
 <script lang="ts" generics="T extends string">
@@ -36,7 +36,7 @@
   }
 </script>
 
-<div class="tabs" class:m={phone} role="tablist" aria-label={label} tabindex="-1" bind:this={row} onkeydown={key} use:scrollTabs={{ selected, watch: tabs }}>
+<div class="tabs" class:m={phone} role="tablist" aria-label={label} tabindex="-1" bind:this={row} onkeydown={key} use:scrollTabs={{ selected, watch: tabs, fadeStart: true }}>
   {#each tabs as x (x.id)}
     <button
       type="button"
@@ -52,19 +52,26 @@
 </div>
 
 <style>
-  .tabs { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--divider); overflow-x: auto; scrollbar-width: none; }
+  .tabs { display: flex; gap: var(--sp-5); padding: 0; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .ctab {
-    flex-shrink: 0; min-height: var(--control-h-lg); padding: 0 var(--sp-3); margin-bottom: -1px;
-    border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    position: relative; flex-shrink: 0; min-height: var(--control-h-lg); padding: 0;
+    border: 0; border-radius: 0; background: none;
     color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); white-space: nowrap; cursor: pointer;
-    transition: color var(--dur-fast), border-color var(--dur-fast);
+    transition: color var(--dur-fast);
   }
   .ctab:hover { color: var(--text); }
   /* The row scrolls and clips: the keyboard's ring drawn inside the tab. */
-  .ctab:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
-  .ctab[aria-selected='true'] { color: var(--accent-text); border-bottom-color: var(--accent); }
-  .m { margin: 0 calc(-1 * var(--tabs-bleed, var(--sp-4))); padding: 0 var(--sp-4); gap: 0; }
-  .m:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent); }
-  .m .ctab { min-height: var(--sp-12); padding: 0 var(--sp-4); font-size: var(--fs-body); }
+  .ctab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  .ctab[aria-selected='true'] { color: var(--text); font-weight: var(--fw-bold); }
+  /* The short mark under the chosen word. */
+  .ctab[aria-selected='true']::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
+  .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
+  .tabs:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
+  .tabs:global(.fade-start.fade-end) {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+  }
+  .m { margin: 0 calc(-1 * var(--tabs-bleed, var(--sp-4))); padding: 0 var(--sp-4); }
+  .m .ctab { min-height: var(--sp-12); font-size: var(--fs-body); }
 </style>

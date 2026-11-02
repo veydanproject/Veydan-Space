@@ -344,6 +344,7 @@
     "notes_panel_resize": "Panelin genişliğini değiştir",
     "notes_task_checkbox": "Görev: {text}",
     "notes_task_checkbox_empty": "Boş görev",
+    "notes_attachment_gone": "Dosya silindi",
     "notes_smart_profile_search": "Profil bul…"
   },
   "mobile": {

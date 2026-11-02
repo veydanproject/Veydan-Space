@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "로그인, 계정 복구, 기기 연결 링크는 앱의 스캐너로만 열립니다. 그래서 어떤 사이트도 이런 링크를 몰래 승인하게 만들 수 없습니다.",
     "msg_inlink_long_title": "링크가 너무 깁니다",
     "msg_inlink_long_text": "Veydan은 이렇게 긴 링크를 열지 않습니다. 링크를 다시 요청하세요.",
+    "msg_card_link_short": "브라우저",
+    "msg_card_preview_short": "미리 보기",
     "msg_card_link_open": "브라우저에서 열기",
     "msg_card_link_moved": "이 링크는 {host}에서 다른 곳으로 이어집니다.",
     "msg_card_link_risk_insecure": "암호화되지 않음: 중간에 있는 누구나 페이지를 읽고 바꿀 수 있습니다.",

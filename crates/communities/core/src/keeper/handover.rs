@@ -82,18 +82,29 @@ impl Keeper {
     /// once instead of asking. A flat scope before its first epoch has
     /// nothing to give yet.
     pub(crate) async fn reissue_all(&mut self, log: &OpLog, now: i64) -> Result<()> {
-        let tickets = self.ticket_members().await?;
         for scope_id in self.scope_ids() {
-            let sk = self.sk(&scope_id)?;
-            if sk.scheme() == SchemeId::FlatV1 && sk.published_head().is_none() {
+            self.reissue_scope(log, &scope_id, now).await?;
+        }
+        Ok(())
+    }
+
+    /// A bundle again to every member of one scope (`reissue_all`).
+    pub(crate) async fn reissue_scope(&mut self, log: &OpLog, scope_id: &str, now: i64) -> Result<()> {
+        let tickets = self.ticket_members().await?;
+        let sk = self.sk(scope_id)?;
+        if sk.scheme() == SchemeId::FlatV1 && sk.published_head().is_none() {
+            return Ok(());
+        }
+        for m in sk.members().into_iter().filter(|m| !tickets.contains(m)) {
+            let Some(who) = PubKey::parse(&hex::encode(m.0)) else { continue };
+            // A leaf of a migration past the wall: none (they ask again).
+            if let Some(why) = self.walled_for(log.state(), scope_id, &m).await {
+                tracing::warn!(community = %self.community_id, scope = %scope_id, who = %who.short(), why, "keeper hands out no new leaf");
                 continue;
             }
-            for m in sk.members().into_iter().filter(|m| !tickets.contains(m)) {
-                let Some(who) = PubKey::parse(&hex::encode(m.0)) else { continue };
-                let issued = self.sk(&scope_id)?.kd_mut().bundle_for(m, secs(now)).map_err(kd)?;
-                self.save(&scope_id).await?;
-                self.send_issue(log, &who, &issued, now).await?;
-            }
+            let issued = self.sk(scope_id)?.kd_mut().bundle_for(m, secs(now)).map_err(kd)?;
+            self.save(scope_id).await?;
+            self.send_issue(log, &who, &issued, now).await?;
         }
         Ok(())
     }
@@ -101,29 +112,51 @@ impl Keeper {
     /// A planned generation of every tree scope from the root held here (a
     /// new owner's, spec §7.8): the live one stays for `grace_secs` while
     /// the members take bundles of the new one; after it the former owner,
-    /// whose root derived the old one, derives nothing the keeper uses. A
-    /// scope in a migration already is left as it is.
+    /// whose root derived the old one, derives nothing the keeper uses.
+    ///
+    /// A scope with two generations live (the channel was handed over
+    /// again within the grace of the handover before: the generation of
+    /// the owner before the last and his successor's) gets an emergency
+    /// generation of the root held here instead, at once: keydist holds
+    /// two generations, so a third planned one cannot be, and the state
+    /// used to leave such a scope as it was — the new owner's keeper then
+    /// ran on his predecessor's generation, whose master that predecessor
+    /// derives from his root for as long as it is current, banned or not
+    /// (ROO-400, the review of 21a70d071). Both masters not held here go
+    /// into `retired_masters`; the first epoch of the series carries the
+    /// new generation alone, and every member gets a bundle of it
+    /// (`reissue_all`, after this).
     pub(crate) async fn migrate_all(&mut self, grace_secs: u64, now: i64) -> Result<()> {
         let root = self.root.clone().ok_or_else(|| messenger_core::MessengerError::SecretMissing(secrets::root_name(&self.community_id)))?;
         for scope_id in self.scope_ids() {
             let Some(sk) = self.scopes.remove(&scope_id) else { continue };
-            let ScopeKeeper::Sd(sd) = sk else {
+            let ScopeKeeper::Sd(mut sd) = sk else {
                 self.scopes.insert(scope_id, sk);
                 continue;
             };
+            let scope = wire::scope_ref(&self.community_id, &scope_id)?;
+            let gen = sd.generation().gen.checked_add(1).ok_or_else(|| kd(keydist::Error::Params("generation number")))?;
             if sd.state().gens.len() > 1 {
-                tracing::warn!(community = %self.community_id, scope = %scope_id, "a migration runs already: the new owner's generation waits for it");
-                self.scopes.insert(scope_id, ScopeKeeper::Sd(sd));
+                let master = GenerationMaster::derive(&root, &scope, SchemeId::SdV1, gen);
+                sd.emergency_regenerate(master, secs(now)).map_err(kd)?;
+                let changes = sd.take_changes();
+                let header = sd.state().header();
+                self.scopes.insert(scope_id.clone(), ScopeKeeper::Sd(sd));
+                rows::write_changes(&self.env.db, &self.community_id, &scope_id, &changes).await?;
+                rows::write_changes(&self.env.db, &self.community_id, &scope_id, &[Change::Header(header)]).await?;
+                // The pending epoch of the state handed over, built under
+                // the generations now retired, is dropped with its uploads.
+                rows::drop_uploads_except(&self.env.db, &self.community_id, &scope_id, None).await?;
+                tracing::warn!(community = %self.community_id, scope = %scope_id, gen, "two generations of roots not held here were live: an emergency generation of the new owner's root replaces both");
                 continue;
             }
-            let gen = sd.generation().gen.saturating_add(1);
             // keydist takes the grace of a planned migration from its policy:
             // the owner's 7 days for this one, the usual after it.
             let mut st = sd.into_state();
             let before = st.policy.thresholds.clone();
             st.policy.thresholds.grace_secs = grace_secs;
             let mut sd = SdKeeper::from_state(st).map_err(kd)?;
-            let master = GenerationMaster::derive(&root, &wire::scope_ref(&self.community_id, &scope_id)?, SchemeId::SdV1, gen);
+            let master = GenerationMaster::derive(&root, &scope, SchemeId::SdV1, gen);
             sd.migrate(master, None, secs(now)).map_err(kd)?;
             let changes = sd.take_changes();
             let mut st = sd.into_state();

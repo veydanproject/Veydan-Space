@@ -16,7 +16,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use sqlx::{Pool, Sqlite};
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use veydan_core::{BoxFuture, CmdResult, Core};
 use veydan_sync::{sha256_hex, Engine, Hlc, HlcClock, LocalState, Op};
@@ -253,6 +253,12 @@ pub trait Handler: Send + Sync {
 
     /// Its tables of sync positions; a new binding empties them.
     fn state_tables(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// The tables whose rows its collect reads: a local write there starts
+    /// a cycle soon (`crate::edits`). Files on disk start none.
+    fn tables(&self) -> &'static [&'static str] {
         &[]
     }
 
@@ -712,6 +718,33 @@ impl Registry {
     /// The settings that keep ops for rows that are not here.
     pub fn hold_keys(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.tables.iter().filter_map(|t| t.spec.hold)
+    }
+
+    /// The tables a local edit of which a cycle publishes: those of the
+    /// entities pushed, their link tables and the handlers'. The settings
+    /// are not among them: a write says its table, not its key, and the
+    /// cycle writes keys of its own there every time (`checked_tables`).
+    pub fn edited_tables(&self) -> HashSet<&'static str> {
+        self.tables
+            .iter()
+            .filter(|t| t.push && t.spec.entity != crate::system::SETTING_ENTITY)
+            .flat_map(|t| std::iter::once(t.spec.table).chain(t.spec.links.iter().map(|l| l.table)))
+            .chain(
+                self.handlers
+                    .iter()
+                    .flat_map(|h| h.handler.tables().iter().copied()),
+            )
+            .collect()
+    }
+
+    /// The pushed tables a write to which is an edit only when their rows
+    /// differ from what was synced afterwards: the settings, where the
+    /// cycle and the app write local keys beside the shared ones.
+    pub fn checked_tables(&self) -> Vec<&Table> {
+        self.tables
+            .iter()
+            .filter(|t| t.push && t.spec.entity == crate::system::SETTING_ENTITY)
+            .collect()
     }
 
     /// The tables of sync positions the handlers keep.

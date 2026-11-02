@@ -27,7 +27,6 @@ aes-gcm.workspace = true
 base64.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 getrandom.workspace = true
-qrcode.workspace = true
 # The clock of a posting schedule: a time zone by name, its rules bundled
 # with the app, so that every device reads "09:00 in Europe/Berlin" the same
 # way, whatever its system holds.

@@ -128,6 +128,17 @@ pub async fn set_own_keys_at(db: &Db, id: &str, at: i64) -> Result<()> {
     Ok(())
 }
 
+/// The ids of the channels of a membership: what a turn walks without the
+/// row (`list` reads when each keeper was last heard of, a pass over every
+/// epoch of every channel).
+pub async fn ids_of(db: &Db, membership: &str) -> Result<Vec<String>> {
+    sqlx::query_scalar::<_, String>("SELECT id FROM cm_channels WHERE membership = ? ORDER BY updated_at DESC, id")
+        .bind(membership)
+        .fetch_all(db.pool())
+        .await
+        .map_err(storage)
+}
+
 /// The channels I am in whose keys this device last told my other
 /// devices before `before` (or never).
 pub async fn own_keys_due(db: &Db, membership: &str, before: i64) -> Result<Vec<String>> {
@@ -245,7 +256,9 @@ pub async fn delete(db: &Db, id: &str) -> Result<()> {
     ] {
         sqlx::query(sql).bind(id).execute(&mut *tx).await.map_err(storage)?;
     }
-    tx.commit().await.map_err(storage)
+    tx.commit().await.map_err(storage)?;
+    db.mirrors().forget(id);
+    Ok(())
 }
 
 // ─── The staff and the keepers, as the journal says ─────────────────────────

@@ -52,5 +52,5 @@
   .what :global(svg) { flex-shrink: 0; color: var(--text-3); }
   .what .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .what:hover :global(svg) { color: var(--text); }
-  .what:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; border-radius: 4px; }
+  .what:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 </style>

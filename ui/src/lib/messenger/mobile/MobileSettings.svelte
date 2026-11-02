@@ -22,6 +22,6 @@
 </script>
 
 <!-- "Settings" alone is the app's own tab: this screen is the messenger's. -->
-<MobileFrame title={$t('msg_settings_title_full')} onback={() => goto(BASE)}>
+<MobileFrame title={$t('msg_settings_title_full')} onback={() => goto(BASE)} scroll={false}>
   <SettingsView compact />
 </MobileFrame>

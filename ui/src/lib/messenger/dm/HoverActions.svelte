@@ -39,6 +39,6 @@
   }
   .act:hover { background: var(--surface-hover); color: var(--text); }
   .act.open { background: var(--accent-tint); color: var(--accent-text); }
-  .act:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   @media (hover: none), (pointer: coarse) { .acts { display: none; } }
 </style>

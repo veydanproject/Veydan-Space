@@ -19,7 +19,7 @@ use crate::service::{NewChannel, MEMBERSHIP_JOINED, MEMBERSHIP_LEFT, MEMBERSHIP_
 use crate::state::SCOPE_EVERYONE;
 use crate::testkit::{Node, World, H1, H2, H3};
 use crate::wire::{self, KIND_CONTENT, KIND_EPOCH};
-use keydist::{EpochKey, KeyDistribution};
+use keydist::{EpochKey, Key32, KeyDistribution};
 use messenger_core::PubKey;
 use std::sync::atomic::Ordering;
 
@@ -407,6 +407,71 @@ async fn a_ban_puts_the_reader_out_at_the_window_and_the_others_read_on() {
     assert!(post_texts(&a, &cid).await.is_empty());
 }
 
+/// The newest post the list of chats shows for a channel (its preview).
+async fn preview(n: &Node, cid: &str) -> Option<String> {
+    let rows = db::channels::list(n.svc.db()).await.unwrap_or_else(|e| panic!("list: {e}"));
+    n.svc.last_posts(Some(&n.me), &rows).await.unwrap_or_else(|e| panic!("last posts: {e}")).remove(cid).and_then(|m| m.text)
+}
+
+/// Spec §7.3 (ROO-416): a post inside the window of a ban is sealed under
+/// the key the banned reader still holds; their own app keeps none of it
+/// all the same — not in the feed, not in the preview of the list — and
+/// what it heard before the ban came is forgotten once it does. The
+/// others read it.
+#[tokio::test]
+async fn the_banned_reader_keeps_nothing_written_after_the_ban() {
+    let w = World::new();
+    let owner = w.node().await;
+    let (a, b, c) = (w.node().await, w.node().await, w.node().await);
+    let all = [&owner, &a, &b, &c];
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    for r in [&a, &b, &c] {
+        join_by_link(&w, &owner, r, &cid, &all).await;
+    }
+    owner.svc.send_post(&owner.keys, &cid, "p1", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(10);
+    owner.svc.act(&owner.keys, &cid, OpBody::Ban { who: pk(&a), reason: None }).await.unwrap_or_else(|e| panic!("ban: {e}"));
+    // c hears the ban after the post below.
+    w.pump(&[&owner, &a, &b]).await;
+    w.clock.advance(10);
+    owner.svc.send_post(&owner.keys, &cid, "p2", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&owner, &a, &b]).await;
+    assert_eq!(w.relay.epochs(), vec![1], "inside the window: the key a holds");
+    assert!(has_key(&a, &cid, 1).await);
+    assert_eq!(post_texts(&a, &cid).await, vec!["p1".to_string()], "the feed of the banned");
+    assert_eq!(preview(&a, &cid).await.as_deref(), Some("p1"), "the preview of the banned");
+    assert_eq!(preview(&b, &cid).await.as_deref(), Some("p2"));
+    assert!(post_texts(&b, &cid).await.contains(&"p2".to_string()));
+
+    // c is banned too, and hears p3 before its ban.
+    w.clock.advance(10);
+    owner.svc.act(&owner.keys, &cid, OpBody::Ban { who: pk(&c), reason: None }).await.unwrap_or_else(|e| panic!("ban: {e}"));
+    w.clock.advance(1);
+    owner.svc.send_post(&owner.keys, &cid, "p3", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&[&owner, &b]).await;
+    let ban_c = w.relay.of_kind(wire::KIND_JOURNAL).last().cloned().unwrap_or_else(|| panic!("no ban"));
+    for post in w.relay.of_kind(KIND_CONTENT) {
+        c.svc.on_event(&c.keys, &post, false).await.unwrap_or_else(|e| panic!("post to c: {e}"));
+    }
+    assert_eq!(preview(&c, &cid).await.as_deref(), Some("p3"), "heard before the ban");
+    c.svc.on_event(&c.keys, &ban_c, false).await.unwrap_or_else(|e| panic!("ban to c: {e}"));
+    w.pump(&all).await;
+    assert_eq!(post_texts(&c, &cid).await.into_iter().filter(|t| t == "p3").count(), 0, "forgotten once the ban came");
+    assert_eq!(preview(&c, &cid).await.as_deref(), Some("p2"), "the last post before the ban of c");
+    assert_eq!(preview(&a, &cid).await.as_deref(), Some("p1"));
+    assert_eq!(preview(&b, &cid).await.as_deref(), Some("p3"));
+
+    // p1, from before the ban of a, deleted since: gone at a too.
+    w.clock.advance(10);
+    let p1 = db::content::posts(owner.svc.db(), &cid, None, 100).await.unwrap_or_default().into_iter().find(|p| p.text.as_deref() == Some("p1")).unwrap_or_else(|| panic!("no p1"));
+    owner.svc.send_delete(&owner.keys, &cid, &p1.id).await.unwrap_or_else(|e| panic!("delete: {e}"));
+    w.pump(&all).await;
+    assert!(post_texts(&a, &cid).await.is_empty(), "the deletion of p1 at the banned");
+    assert_eq!(preview(&a, &cid).await, None);
+    assert!(!post_texts(&b, &cid).await.contains(&"p1".to_string()));
+}
+
 /// A tree past keydist's threshold of a planned migration (more than half
 /// of the leaves handed out revoked): keydist's `next_wake` says "now"
 /// until a migration starts, and the engine starts none yet. The turn
@@ -482,6 +547,122 @@ async fn rotate_now_builds_an_epoch_at_once_and_supersedes_one_that_waits() {
     assert!(!has_key(&reader, &cid, 3).await);
     // The blobs of the burnt epoch and of epoch 2 went (open history).
     assert!(owner.svc.keeper(&cid).await.ok().flatten().is_some());
+    assert!(reader.errors().is_empty(), "{:?}", reader.errors());
+}
+
+/// The audit of ROO-396, 1.2: with the hosts down every window that came
+/// (a ban, `rotate_now`, a join under `from_join`) replaced the pending
+/// epoch and burnt its number; after seventeen of them the epoch published
+/// at last named a predecessor further back than `MAX_GAP`, which every
+/// member refused, and all after it (they name one never taken) waited
+/// for ever. The keeper now keeps the pending epoch once one more number
+/// burnt would open such a gap: the newer changes go into the epoch after
+/// it, as soon as the hosts are back.
+#[tokio::test]
+async fn a_pending_epoch_is_not_replaced_past_the_gap_the_members_take() {
+    let w = World::new();
+    let owner = w.node().await;
+    let (reader, other) = (w.node().await, w.node().await);
+    let all = [&owner, &reader, &other];
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    join_by_link(&w, &owner, &reader, &cid, &all).await;
+    join_by_link(&w, &owner, &other, &cid, &all).await;
+    assert_eq!(w.relay.epochs(), vec![1]);
+    w.hosts.set_down(H1, true);
+    w.hosts.set_down(H2, true);
+    // Seventeen windows with no host up: urgent epochs, then a ban, whose
+    // window comes with the clock once no number is left to burn.
+    for _ in 0..17 {
+        w.clock.advance(400);
+        owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("rotate now: {e}"));
+        w.pump(&all).await;
+    }
+    owner.svc.act(&owner.keys, &cid, OpBody::Ban { who: pk(&other), reason: None }).await.unwrap_or_else(|e| panic!("ban: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(400);
+    tick(&owner).await;
+    w.pump(&all).await;
+    let st = keeper_state(&owner, &cid).await;
+    let pending = st.pending.as_ref().map(|p| p.key.epoch).unwrap_or_else(|| panic!("an epoch waits for the hosts"));
+    assert!(st.next_epoch - 1 <= crate::epoch::MAX_GAP, "the numbers burnt stay within the gap: next {}", st.next_epoch);
+    assert_eq!(w.relay.epochs(), vec![1], "nothing went out while the hosts were down");
+    assert!(st.schedule.due_at.is_some_and(|d| d <= u64::try_from(owner.svc.now()).unwrap_or(0)), "the ban's window is past and its epoch waits behind the pending one");
+    // The turn that keeps the pending epoch asks to be woken for its
+    // retry, not for the due time of the ban behind `now`: that one came
+    // back after every turn, and the loop turned at full speed while the
+    // hosts were down (the review of 21a70d071).
+    {
+        let log = owner.svc.log(&cid).await.ok().flatten().unwrap_or_else(|| panic!("journal"));
+        let k = owner.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("keeper"));
+        let now = owner.svc.now();
+        let turn = k.lock().await.tick(&log, now).await.unwrap_or_else(|e| panic!("tick: {e}"));
+        assert_eq!(turn.waiting, Some(pending));
+        let wake = turn.next_wake.unwrap_or_else(|| panic!("a wake for the retry"));
+        assert!(wake > u64::try_from(now).unwrap_or(0), "the wake {wake} is past now {now}");
+    }
+    // The hosts are back: the pending epoch goes out, and the changes that
+    // waited (the ban, the urgent epochs asked for) make the one after it.
+    w.hosts.set_down(H1, false);
+    w.hosts.set_down(H2, false);
+    tick(&owner).await;
+    w.pump(&all).await;
+    for _ in 0..3 {
+        w.clock.advance(10);
+        tick(&owner).await;
+        w.pump(&all).await;
+    }
+    let published = w.relay.epochs();
+    assert_eq!(published[1], pending, "the epoch that waited went out with its number: {published:?}");
+    let last = *published.last().unwrap_or(&0);
+    assert!(last > pending, "the epoch of the ban after it: {published:?}");
+    assert!(has_key(&reader, &cid, pending).await && has_key(&reader, &cid, last).await, "the reader took every epoch published");
+    assert_eq!(newest(&reader, &cid).await.map(|k| k.epoch), Some(last));
+    assert!(!has_key(&other, &cid, last).await, "the banned reader does not");
+    owner.svc.send_post(&owner.keys, &cid, "the hosts are back", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    assert_eq!(post_texts(&reader, &cid).await, vec!["the hosts are back".to_string()]);
+    assert!(reader.errors().is_empty(), "{:?}", reader.errors());
+}
+
+/// The audit of ROO-396, 1.3: the first page of the keys a member missed
+/// goes with its bundle, and a page of 1000 with an `sd-v1` bundle made a
+/// wrap of ~131.4 KB after the two NIP-44 envelopes with their padding,
+/// which the relays refuse (`maxEventSize` 131 072): the member never got
+/// its bundle nor a key. The page with the bundle is the shorter one
+/// (`MISSED_PAGE_BUNDLED`); every note stays under the limit with room,
+/// and the rest of the keys follow by `channel.missed`.
+#[tokio::test]
+async fn a_thousand_missed_keys_reach_a_member_in_notes_the_relays_take() {
+    use crate::testkit::MAX_EVENT_BYTES;
+    let w = World::new();
+    let owner = w.node().await;
+    let reader = w.node().await;
+    let all = [&owner, &reader];
+    let cid = create(&w, &owner, JoinMode::Open, History::FromJoin, &[H1, H2]).await;
+    join_by_link(&w, &owner, &reader, &cid, &all).await;
+    owner.svc.act(&owner.keys, &cid, OpBody::RotateNow { scope_id: None }).await.unwrap_or_else(|e| panic!("{e}"));
+    w.pump(&all).await;
+    let first = newest(&reader, &cid).await.map(|k| k.epoch).unwrap_or_else(|| panic!("the reader's first epoch"));
+    // A thousand epochs the reader missed during a migration, as the
+    // keeper keeps their keys for it.
+    let keys: Vec<EpochKey> = (0..1000u32).map(|i| EpochKey { epoch: first + 10 + i, key: Key32([(i % 251) as u8 + 1; 32]) }).collect();
+    {
+        let k = owner.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("keeper"));
+        k.lock().await.put_missed_for_test(SCOPE_EVERYONE, keys.clone()).await.unwrap_or_else(|e| panic!("missed: {e}"));
+    }
+    owner.net.wrap_max.store(0, Ordering::SeqCst);
+    let wraps_before = owner.net.wraps.load(Ordering::SeqCst);
+    let state = reader.svc.log(&cid).await.ok().flatten().map(|l| l.state().clone()).unwrap_or_else(|| panic!("journal"));
+    let gen = keeper_state(&owner, &cid).await.gens.last().map_or(1, |g| g.gen);
+    reader.svc.member(&reader.keys).ask_rebundle(&state, SCOPE_EVERYONE, gen, reader.svc.now()).await.unwrap_or_else(|e| panic!("rebundle: {e}"));
+    w.pump(&all).await;
+    for k in &keys {
+        assert!(has_key(&reader, &cid, k.epoch).await, "the key of epoch {}", k.epoch);
+    }
+    let largest = owner.net.wrap_max.load(Ordering::SeqCst);
+    assert!(largest > 0 && largest <= MAX_EVENT_BYTES * 7 / 8, "the largest note {largest} bytes, under {MAX_EVENT_BYTES} with room");
+    let notes = owner.net.wraps.load(Ordering::SeqCst) - wraps_before;
+    assert!(notes >= 2, "the bundle with the first page, then the rest: {notes} notes");
     assert!(reader.errors().is_empty(), "{:?}", reader.errors());
 }
 

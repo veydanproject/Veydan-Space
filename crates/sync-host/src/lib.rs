@@ -10,6 +10,7 @@
 //! - `config`   — settings + storage adapter factory
 //! - `state`    — persistence of log positions and per-row state
 //! - `gc`       — blob garbage collection
+//! - `edits`    — a local edit starts a cycle soon; so does the app going to the background or coming back
 //! - `commands` — the `sync_*` commands; the shell routes them
 //!
 //! The crate knows no table of a module: the modules register their
@@ -23,6 +24,7 @@ pub mod commands;
 pub mod config;
 mod cycle;
 mod debug;
+pub mod edits;
 mod fs_hash;
 pub mod gc;
 pub mod join;
@@ -34,7 +36,7 @@ mod system;
 pub use config::{check_install_marker, SyncConfig};
 pub use cycle::{
     blob_gone, blob_quarantined, collect, cycle, open_engine, prepare, push_error, push_own,
-    reconcile_own_log, run_cycle, start, status, trigger_cycle, vault_active, Gathered, Pending,
+    reconcile_own_log, run_cycle, start, status, trigger_cycle, vault_active, Gathered, Pending, Ran,
     PushFailed, Saves, StorageDevice, SyncStatus,
 };
 pub use debug::{debug_on, trace, trace_skip, SyncDebugEntry, SyncDebugState};
@@ -186,6 +188,12 @@ pub struct SyncManager {
     /// a cycle before that would publish with a registry the data file has not
     /// been reconciled with (audit KA2-09).
     ready: AtomicBool,
+    /// Why the cycles wait for the backend (the messenger behind `cloud`
+    /// not up), as last told to the journal.
+    waiting: Mutex<Option<String>>,
+    /// A cycle was asked for while they waited: the scheduler runs it as
+    /// soon as they no longer do, not an interval later.
+    held: AtomicBool,
     registry: Registry,
 }
 
@@ -198,6 +206,8 @@ impl SyncManager {
             debug: debug::Debug::default(),
             sched_skip: AtomicBool::new(false),
             ready: AtomicBool::new(false),
+            waiting: Mutex::new(None),
+            held: AtomicBool::new(false),
             registry,
         }
     }
@@ -210,6 +220,35 @@ impl SyncManager {
     /// Called once the start checks of the data file passed.
     pub fn mark_ready(&self) {
         self.ready.store(true, Ordering::SeqCst);
+    }
+
+    /// Note why a cycle asked for now waits (`None`: it does not); a cycle
+    /// that waits is held. Returns the line for the journal when the reason
+    /// changed: each reason is told once, not on every tick.
+    pub(crate) fn note_waiting(&self, why: Option<&str>) -> Option<String> {
+        if why.is_some() {
+            self.held.store(true, Ordering::SeqCst);
+        }
+        let mut told = self.waiting.lock().unwrap_or_else(|e| e.into_inner());
+        if told.as_deref() == why {
+            return None;
+        }
+        let line = match why {
+            Some(why) => format!("waiting: {why}"),
+            None => "no longer waiting".to_string(),
+        };
+        *told = why.map(str::to_string);
+        Some(line)
+    }
+
+    /// A cycle was held while the cycles waited.
+    pub(crate) fn is_held(&self) -> bool {
+        self.held.load(Ordering::SeqCst)
+    }
+
+    /// The held cycle runs.
+    pub(crate) fn release_held(&self) {
+        self.held.store(false, Ordering::SeqCst);
     }
 
     pub fn registry(&self) -> &Registry {

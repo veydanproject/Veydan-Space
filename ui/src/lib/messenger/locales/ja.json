@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "サインイン、アカウントの復元、デバイスのリンクに使うリンクは、アプリ内のスキャナーでのみ開けます。これにより、どのサイトもそれらをこっそり承認させることはできません。",
     "msg_inlink_long_title": "リンクが長すぎます",
     "msg_inlink_long_text": "Veydan はこれほど長いリンクを開きません。もう一度リンクをもらってください。",
+    "msg_card_link_short": "ブラウザ",
+    "msg_card_preview_short": "プレビュー",
     "msg_card_link_open": "ブラウザで開く",
     "msg_card_link_moved": "このリンクは{host}からさらに別の場所へ転送されます。",
     "msg_card_link_risk_insecure": "暗号化なし：経路上の誰でもページを読み取り、改ざんできます。",

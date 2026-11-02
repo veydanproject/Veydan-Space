@@ -13,7 +13,7 @@ scenario_a() {
   start_keeper
   start_swarm --readers "$READERS" --minutes "$JOIN_MINUTES" --rate "$RATE" --inboxes "$INBOXES"
   join=$(wait_line "$DIR/swarm.log" '.phase == "join"' $((JOIN_MINUTES * 60 + 600)) "$SWARM_FROM")
-  ready=$(wait_line "$DIR/swarm.log" '.ready' $((1800 * SCALE)) "$SWARM_FROM")
+  ready=$(wait_line "$DIR/swarm.log" '.ready' $((1800 * SLOW)) "$SWARM_FROM")
   check=$(swarm_cmd "expect key=1 min-epoch=1 timeout=120" || true)
   keeper_cmd state; sleep 3
   members=$(jq -r 'select(.event == "state") | .state.members' "$DIR/keeper.log" | tail -1)

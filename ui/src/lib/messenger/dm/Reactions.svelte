@@ -67,7 +67,7 @@
   .chip:disabled { cursor: default; }
   .chip.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
   .chip.mine .count { color: var(--accent-text); }
-  .chip:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .chip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .emoji { font-size: var(--fs-body); line-height: 1; }
   .count { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-2); font-variant-numeric: tabular-nums; animation: roll 120ms var(--ease); }
   .chip.pop .emoji { animation: pop 200ms cubic-bezier(0.2, 0.9, 0.3, 1.15); }

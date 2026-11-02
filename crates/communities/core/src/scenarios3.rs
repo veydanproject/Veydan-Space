@@ -542,6 +542,198 @@ async fn a_channel_handed_over_is_the_new_owners_from_his_keeper_on() {
     assert!(r.errors().is_empty() && m.errors().is_empty(), "{:?} {:?}", r.errors(), m.errors());
 }
 
+/// The audit of ROO-396, 1.4: the generation before a handover derives
+/// from the former owner's root, which never left his devices, and its
+/// master opens every block of its generation whatever his leaves; for the
+/// grace of a week every epoch carried its cover, so a former owner banned
+/// the day after read on for six days. Banned or removed during the grace,
+/// the grace ends: the epoch of the ban carries the new owner's generation
+/// alone, the other readers read on.
+#[tokio::test]
+async fn a_former_owner_banned_in_the_grace_of_a_handover_opens_no_epoch_after_it() {
+    let w = World::new();
+    let (o, m, r, cid) = channel_with_team(&w).await;
+    let all = [&o, &m, &r];
+    o.svc.transfer(&o.keys, &cid, &pk(&m)).await.unwrap_or_else(|e| panic!("transfer: {e}"));
+    w.pump(&all).await;
+    m.svc.transfer_answer(&m.keys, &cid, true).await.unwrap_or_else(|e| panic!("accept: {e}"));
+    w.pump(&all).await;
+    let k = m.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("kept by the new owner"));
+    let (old_gen, new_gen) = {
+        let k = k.lock().await;
+        let gens = &k.scope(SCOPE_EVERYONE).unwrap_or_else(|| panic!("scope")).state().gens;
+        assert_eq!(gens.len(), 2, "the former owner's generation and the new one, for the grace");
+        (gens[0].gen, gens[1].gen)
+    };
+    let epochs_before = w.relay.epochs().len();
+    // The first day of the grace: the new owner bans the former one.
+    w.clock.advance(86_400);
+    m.svc.act(&m.keys, &cid, OpBody::Ban { who: pk(&o), reason: None }).await.unwrap_or_else(|e| panic!("ban: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(400);
+    tick(&m).await;
+    w.pump(&all).await;
+    let epochs = w.relay.of_kind(KIND_EPOCH);
+    assert!(epochs.len() > epochs_before, "the epoch of the ban went out");
+    let last = epochs.last().unwrap_or_else(|| panic!("an epoch"));
+    let content: crate::epoch::EpochContent = serde_json::from_str(last["content"].as_str().unwrap_or("")).unwrap_or_else(|e| panic!("{e}"));
+    assert!(content.event.tree(old_gen).is_none(), "no cover of the generation the former owner's root derives");
+    assert!(content.event.tree(new_gen).is_some(), "the new owner's generation covers the readers");
+    assert_eq!(k.lock().await.scope_keeper(SCOPE_EVERYONE).map(|s| s.generations()), Some(1), "the grace is over");
+    // The reader reads on; the former owner reads nothing new.
+    m.svc.send_post(&m.keys, &cid, "after the former owner", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    assert_eq!(post_texts(&r, &cid).await, ["after the former owner"]);
+    assert!(post_texts(&o, &cid).await.is_empty());
+    assert!(r.errors().is_empty() && m.errors().is_empty(), "{:?} {:?}", r.errors(), m.errors());
+}
+
+/// The review of 21a70d071 (ROO-400): a channel handed over twice within
+/// the grace of the first handover (A → B → C) left C's keeper on B's
+/// generation — `migrate_all` passed a scope with two generations live
+/// (A's in its grace, B's), and the end of A's grace at B's ban left B's
+/// generation current, whose master B derives from his root whatever his
+/// leaves. Now C's keeper starts an emergency generation of C's root at the
+/// handover (a third planned one cannot be, keydist holds two), so B's
+/// master — kept here as B's keeper held it — opens no block of C's epochs
+/// from the first, and B put out (`put_out`: a ban, a removal) reads
+/// nothing after: the epoch of it carries no generation B derives.
+async fn a_former_owner_put_out_after_two_handovers_opens_no_epoch(put_out: fn(PubKey) -> crate::op::OpBody) {
+    use keydist::{GenerationKind, GenerationMaster, SchemeId};
+    let w = World::new();
+    let (a, b, c, cid) = channel_with_team(&w).await;
+    let x = w.node().await;
+    join_by_link(&w, &a, &x, &cid, &[&a, &b, &c, &x]).await;
+    let all = [&a, &b, &c, &x];
+    a.svc.transfer(&a.keys, &cid, &pk(&b)).await.unwrap_or_else(|e| panic!("transfer to B: {e}"));
+    w.pump(&all).await;
+    b.svc.transfer_answer(&b.keys, &cid, true).await.unwrap_or_else(|e| panic!("B accepts: {e}"));
+    w.pump(&all).await;
+    // What B holds: the masters of both live generations (A's in its
+    // grace, his own), and his root, which derives his.
+    let (gen_a, gen_b, master_b) = {
+        let k = b.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("kept by B"));
+        let k = k.lock().await;
+        let gens = &k.scope(SCOPE_EVERYONE).unwrap_or_else(|| panic!("scope")).state().gens;
+        assert_eq!(gens.len(), 2, "A's generation in its grace and B's");
+        (gens[0].gen, gens[1].gen, gens[1].master.clone())
+    };
+    let root_b = secrets::root(b.svc.env.secrets.as_ref(), &cid).await.ok().flatten().unwrap_or_else(|| panic!("B's root"));
+    let scope = crate::wire::scope_ref(&cid, SCOPE_EVERYONE).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(GenerationMaster::derive(&root_b, &scope, SchemeId::SdV1, gen_b), master_b, "B's root derives B's generation");
+    // The first day of A's grace: B hands the channel over to C.
+    w.clock.advance(86_400);
+    b.svc.transfer(&b.keys, &cid, &pk(&c)).await.unwrap_or_else(|e| panic!("transfer to C: {e}"));
+    w.pump(&all).await;
+    c.svc.transfer_answer(&c.keys, &cid, true).await.unwrap_or_else(|e| panic!("C accepts: {e}"));
+    w.pump(&all).await;
+    let k = c.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("kept by C"));
+    let gen_c = {
+        let k = k.lock().await;
+        let gens = &k.scope(SCOPE_EVERYONE).unwrap_or_else(|| panic!("scope")).state().gens;
+        assert_eq!(gens.len(), 1, "C's generation alone: {:?}", gens.iter().map(|g| g.gen).collect::<Vec<_>>());
+        let g = &gens[0];
+        assert!(g.gen > gen_b);
+        assert_eq!(g.kind, GenerationKind::Emergency, "two generations of other roots were live: an emergency one");
+        assert_ne!(g.master, GenerationMaster::derive(&root_b, &scope, SchemeId::SdV1, g.gen), "not of B's root");
+        assert_ne!(g.master, master_b);
+        g.gen
+    };
+    // Everybody reads C's first post by a bundle of C's generation, B too:
+    // he is a member still.
+    c.svc.send_post(&c.keys, &cid, "the third owner", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    for n in [&a, &b, &x] {
+        assert_eq!(post_texts(n, &cid).await, ["the third owner"], "{}", n.me.short());
+    }
+    let epochs_before = w.relay.of_kind(KIND_EPOCH).len();
+    // C puts B out. The epoch of it carries C's generation alone: no block
+    // of it is sealed under a generation B's masters open.
+    w.clock.advance(3600);
+    c.svc.act(&c.keys, &cid, put_out(pk(&b))).await.unwrap_or_else(|e| panic!("put out: {e}"));
+    w.pump(&all).await;
+    w.clock.advance(400);
+    tick(&c).await;
+    w.pump(&all).await;
+    let epochs = w.relay.of_kind(KIND_EPOCH);
+    assert!(epochs.len() > epochs_before, "the epoch of the ban went out");
+    for ev in &epochs[epochs_before..] {
+        let content: crate::epoch::EpochContent = serde_json::from_str(ev["content"].as_str().unwrap_or("")).unwrap_or_else(|e| panic!("{e}"));
+        assert!(content.event.tree(gen_a).is_none() && content.event.tree(gen_b).is_none(), "no cover of a generation B's masters open");
+        assert_eq!(content.event.newest_gen(), Some(gen_c));
+        assert_eq!(content.event.trees.len(), 1);
+    }
+    c.svc.send_post(&c.keys, &cid, "after the second former owner", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    for n in [&a, &x] {
+        assert_eq!(post_texts(n, &cid).await, ["after the second former owner", "the third owner"], "{}", n.me.short());
+    }
+    assert_eq!(post_texts(&b, &cid).await, ["the third owner"], "B reads nothing after");
+    assert!(x.errors().is_empty() && c.errors().is_empty() && a.errors().is_empty(), "{:?} {:?} {:?}", x.errors(), c.errors(), a.errors());
+}
+
+#[tokio::test]
+async fn a_former_owner_banned_after_two_handovers_opens_no_epoch() {
+    a_former_owner_put_out_after_two_handovers_opens_no_epoch(|who| OpBody::Ban { who, reason: None }).await;
+}
+
+#[tokio::test]
+async fn a_former_owner_removed_after_two_handovers_opens_no_epoch() {
+    a_former_owner_put_out_after_two_handovers_opens_no_epoch(|who| OpBody::Remove { who }).await;
+}
+
+/// The net under the states kept before ROO-400: a keeper whose current
+/// generation is of a root not held here (as a channel handed over twice
+/// within a grace left the new owner's) replaces it with an emergency
+/// generation of its root at the next turn, and the members, handed
+/// bundles of it, read on; the master of the generation replaced opens no
+/// epoch after.
+#[tokio::test]
+async fn a_generation_of_a_root_not_held_here_is_replaced_at_the_next_turn() {
+    use keydist::{GenerationKind, GenerationMaster, SchemeId};
+    let w = World::new();
+    let (o, m, r, cid) = channel_with_team(&w).await;
+    let all = [&o, &m, &r];
+    o.svc.send_post(&o.keys, &cid, "before", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    let k = o.svc.keeper(&cid).await.ok().flatten().unwrap_or_else(|| panic!("kept by the owner"));
+    let foreign = GenerationMaster::from_bytes([0x5a; 32]);
+    let gen_before = {
+        let mut k = k.lock().await;
+        let gen = k.scope(SCOPE_EVERYONE).unwrap_or_else(|| panic!("scope")).generation().gen;
+        k.plant_foreign_generation_for_test(SCOPE_EVERYONE, foreign.clone()).await.unwrap_or_else(|e| panic!("plant: {e}"));
+        gen
+    };
+    let epochs_before = w.relay.of_kind(KIND_EPOCH).len();
+    w.clock.advance(60);
+    tick(&o).await;
+    w.pump(&all).await;
+    let root = secrets::root(o.svc.env.secrets.as_ref(), &cid).await.ok().flatten().unwrap_or_else(|| panic!("the root"));
+    let scope = crate::wire::scope_ref(&cid, SCOPE_EVERYONE).unwrap_or_else(|e| panic!("{e}"));
+    let gen_after = {
+        let k = k.lock().await;
+        let gens = &k.scope(SCOPE_EVERYONE).unwrap_or_else(|| panic!("scope")).state().gens;
+        assert_eq!(gens.len(), 1);
+        assert_eq!(gens[0].gen, gen_before + 1);
+        assert_eq!(gens[0].kind, GenerationKind::Emergency);
+        assert_eq!(gens[0].master, GenerationMaster::derive(&root, &scope, SchemeId::SdV1, gen_before + 1), "of the root held here");
+        gens[0].gen
+    };
+    let epochs = w.relay.of_kind(KIND_EPOCH);
+    assert!(epochs.len() > epochs_before, "the epoch of the new generation went out");
+    for ev in &epochs[epochs_before..] {
+        let content: crate::epoch::EpochContent = serde_json::from_str(ev["content"].as_str().unwrap_or("")).unwrap_or_else(|e| panic!("{e}"));
+        assert!(content.event.tree(gen_before).is_none(), "no cover of the generation replaced");
+        assert_eq!(content.event.newest_gen(), Some(gen_after));
+    }
+    o.svc.send_post(&o.keys, &cid, "after", TextFormat::Plain).await.unwrap_or_else(|e| panic!("post: {e}"));
+    w.pump(&all).await;
+    for n in [&m, &r] {
+        assert_eq!(post_texts(n, &cid).await, ["after", "before"], "{}", n.me.short());
+    }
+    assert!(r.errors().is_empty() && m.errors().is_empty() && o.errors().is_empty(), "{:?} {:?} {:?}", r.errors(), m.errors(), o.errors());
+}
+
 #[tokio::test]
 async fn a_declined_handover_changes_nothing() {
     let w = World::new();

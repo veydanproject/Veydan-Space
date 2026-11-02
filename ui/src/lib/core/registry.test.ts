@@ -218,25 +218,24 @@ describe('the registry', () => {
 
   it('gives a product of one module its own screens on the phone instead of Home (11.7)', () => {
     use(backup, notes);
-    expect(rootNav().map((n) => n.id)).toEqual(['notes', 'settings']);
-    expect(rootNav()[0].href).toBe('/notes');
+    expect(rootNav()?.map((n) => n.id)).toEqual(['notes', 'settings']);
+    expect(rootNav()?.[0].href).toBe('/notes');
+    // Space has no root bar: Home is the grid (Settings its last tile), the screens lead back by their arrow.
     use(browser, notes, chat, backup);
-    expect(rootNav().map((n) => n.id)).toEqual(['home', 'settings']);
-    expect(rootNav()[0].href).toBe('/');
+    expect(rootNav()).toBeNull();
   });
 
   it('gives that product the bar of its first screen when the module has one, Settings too (the chat\'s tabs)', () => {
     const tabs = [
       { id: 'chats', title: 'ctx_kind_note', icon: 'message-circle', href: '/messenger' },
       { id: 'calls', title: 'ctx_kind_note', icon: 'phone', href: '/messenger/calls' },
-      { id: 'settings', title: 'app_settings', icon: 'settings', href: '/settings' },
     ] as const;
     const withTabs: ModuleDef = { ...chat, nav: [{ id: 'messenger', title: 'ctx_kind_note', icon: 'message-circle', href: '/messenger' }], bar: (url) => (url.pathname === '/messenger' ? [...tabs] : undefined) };
     use(withTabs, backup);
-    expect(rootNav().map((n) => n.id)).toEqual(['chats', 'calls', 'settings']);
-    // Space keeps Home: the tabs are the messenger's own screens only.
+    expect(rootNav()?.map((n) => n.id)).toEqual(['chats', 'calls']);
+    // Space has no root bar: the tabs are the messenger's own screens only.
     use(browser, withTabs, backup);
-    expect(rootNav().map((n) => n.id)).toEqual(['home', 'settings']);
+    expect(rootNav()).toBeNull();
   });
 
   it('leaves out quick access to a module where the module is the whole product (Pass)', () => {

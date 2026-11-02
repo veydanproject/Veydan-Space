@@ -728,7 +728,7 @@
 {#if levelsFor.who}<MemberLevelsDialog bind:open={levelsFor.open} {detail} who={levelsFor.who} />{/if}
 
 <style>
-  .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
+  .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
   /* The ends stop the finger dead: Android's webview stretches an inner scroller (and the one it passes the rest to) past its end and back, which shook the panel at its bottom. */
   .scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: none; padding: var(--sp-4) var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
   /* A tablet or a wide window: the column stays readable in the middle. */
@@ -753,7 +753,7 @@
   /* Busy with something else: the cover stays as it is (not the dimming of base.css), only its camera fades. */
   .cover-btn:disabled { opacity: 1; cursor: default; }
   .cover-btn:disabled .cam { opacity: 0.45; }
-  .cover-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .cover-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .cam {
     position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
     background: var(--glass-bg-raised); border: 1px solid var(--border-2); color: var(--text);
@@ -768,7 +768,7 @@
     background: var(--surface-2); color: var(--text); cursor: pointer; transition: background var(--dur-fast) var(--ease);
   }
   .edit-btn:hover { background: var(--surface-hover); }
-  .edit-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .edit-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .here {
     display: inline-flex; align-items: center; gap: var(--sp-1); height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
     background: var(--success-bg); color: var(--success-text, var(--success)); font-size: var(--fs-xs); font-weight: var(--fw-semibold);

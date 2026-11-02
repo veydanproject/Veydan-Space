@@ -45,6 +45,7 @@
   import NoteContextSheet from '$lib/notes/mobile/NoteContextSheet.svelte';
   import PlaceholderSheet from '$lib/notes/mobile/PlaceholderSheet.svelte';
   import { SaveQueue } from '$lib/notes/mobile/save-queue';
+  import { trackWrite, writesSettled } from '$lib/notes/store/writes';
 
   // "new" means nothing is stored yet; the note is created on the first edit.
   let id = $state(page.params.id ?? 'new');
@@ -327,6 +328,9 @@
     const seq = ++loadSeq;
     const forId = id;
     try {
+      // The page left a moment ago may still be writing this note.
+      await writesSettled(forId);
+      if (seq !== loadSeq || id !== forId) return;
       const n = await api.notes.get(forId);
       if (seq !== loadSeq || id !== forId) return;
       // A buffer kept when its save failed comes back into the editor and is saved again.
@@ -383,6 +387,12 @@
     }
   }
 
+  /** The attachment names of the note as last read, for «File deleted» in the text. */
+  let attachmentNames = $state<{ noteId: string; names: Set<string> } | null>(null);
+  const knownAttachments = $derived(
+    attachmentNames?.noteId === id ? { prefix: `attachments/${id}/`, names: attachmentNames.names } : null,
+  );
+
   async function loadAttachments() {
     if (id === 'new') return;
     const seq = loadSeq;
@@ -391,6 +401,7 @@
     if (seq !== loadSeq || id !== forId) return;
     attachments = list;
     const names = new Set(attachments.map((a) => a.name));
+    attachmentNames = { noteId: forId, names };
     for (const name of Object.keys(thumbs)) {
       if (!names.has(name)) {
         urls.forget(name);
@@ -910,13 +921,13 @@
 
   /** Writes every pending edit, the ones typed while it writes too. */
   function save(): Promise<void> {
-    return queue.save();
+    return id === 'new' ? queue.save() : trackWrite(id, queue.save());
   }
 
   /** Keep the buffer as the note's draft when it could not be written; the next open restores it. */
   function keepDraft() {
     if (id === 'new') return;
-    void shared.notes.draftSave(id, content).catch(() => {});
+    void trackWrite(id, shared.notes.draftSave(id, content)).catch(() => {});
   }
 
   /** One write of the buffer as it is now; the queue repeats it for edits made meanwhile. */
@@ -1035,11 +1046,10 @@
 
   // Flush a pending edit when the user navigates away.
   // The buffer, not the badge, says what is unsaved: a failed save is tried again here.
+  // A write already on its way is waited for too: the page that opens the note next reads after it.
   onDestroy(() => {
-    if (queue.unsaved) {
-      if (externalChange) keepDraft();
-      else void save();
-    }
+    if (queue.unsaved && externalChange) keepDraft();
+    else if (queue.unsaved || queue.busy) void save();
     urls.release();
   });
 </script>
@@ -1094,9 +1104,10 @@
     </button>
   </div>
   <div class="meta">
-    {#if updatedAt}
-      <p class="when">{$t('notes_meta_updated')} · {fmtDateTime(updatedAt, $locale)}</p>
-    {/if}
+    <!-- Held empty until the first save, so the line coming in does not move the text being typed -->
+    <p class="when" aria-hidden={!updatedAt}>
+      {#if updatedAt}{$t('notes_meta_updated')} · {fmtDateTime(updatedAt, $locale)}{:else}&nbsp;{/if}
+    </p>
     {#if error}
       <div class="m-error">{error}</div>
     {/if}
@@ -1171,6 +1182,7 @@
       autofocus={isNew}
       {content}
       {resolveSrc}
+      {knownAttachments}
       placeholder={$t('notes_body_placeholder')}
       onchange={onRichChange}
       onwiki={(q) => { wikiOpen = q !== null; if (q !== null) wikiQuery = q; }}
@@ -1336,7 +1348,7 @@
     flex-direction: column;
     min-height: 0;
     padding: 0 0 calc(72px + var(--sab));
-    background: var(--bg);
+    background: transparent;
     animation: vfade var(--dur-base) ease-out;
   }
   .m-header {
@@ -1348,7 +1360,7 @@
   .meta {
     flex-shrink: 0;
     padding: var(--sp-2) var(--sp-4) var(--sp-2);
-    background: var(--bg);
+    background: transparent;
   }
   .conflict-banner {
     display: flex;

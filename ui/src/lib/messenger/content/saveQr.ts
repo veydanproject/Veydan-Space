@@ -4,43 +4,18 @@
 // «Сохранить» of a QR code (ROO-297): the code the screen shows, as a PNG.
 // A phone puts it into its gallery, album Pictures/Veydan
 // (`messenger_gallery_save_picture`); a computer writes it where its save
-// dialog says. The picture is drawn here from the SVG the screen shows, so
-// what is saved is what is seen; the link itself never leaves the code.
+// dialog says. The picture is the one the screen shows, logo and all
+// ($lib/core/ui/qrPicture), so what is saved is what is seen; the link
+// itself never leaves the code.
 
 import { get } from 'svelte/store';
 import { t } from '$lib/core/i18n';
+import { qrPng } from '$lib/core/ui/qrPicture';
 import { toast } from '$lib/core/ui/toast.svelte';
 import { isTauriHost, messengerApi, messengerError } from '../api';
 
 // The messenger may not ask $lib/core/platform; attach/library.ts asks the same way.
 const android = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
-
-/** The side of the saved picture: sharp in print and on a big screen, still small (a few dozen KB). */
-const SIDE = 1024;
-
-/** `<img src>` of a QR's SVG, as the screens show it: an image, nothing inside it can run. */
-export function qrSrc(svg: string): string {
-  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
-}
-
-/** The SVG of a code drawn as a PNG of `side` pixels on white (the code has its quiet zone). */
-export async function qrPng(svg: string, side = SIDE): Promise<Uint8Array> {
-  const img = new Image();
-  img.src = qrSrc(svg);
-  await img.decode();
-  const canvas = document.createElement('canvas');
-  canvas.width = side;
-  canvas.height = side;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('no canvas');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, side, side);
-  // Modules stay squares: a camera reads edges.
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(img, 0, 0, side, side);
-  const blob = await new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error('no png'))), 'image/png'));
-  return new Uint8Array(await blob.arrayBuffer());
-}
 
 function base64(bytes: Uint8Array): string {
   let s = '';

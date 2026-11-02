@@ -127,7 +127,7 @@ describe('a save answer', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(notesStore.contentRev).toBe(rev);
-    expect(notesStore.activeNote?.content).toBe('Hello');
+    expect(notesStore.activeNote?.content).toBe('Hello world');
     expect(notesStore.activeNote?.content_hash).toBe('h:Hello w');
     expect(notesStore.saveStatus).toBe('unsaved');
 
@@ -252,6 +252,63 @@ describe('switching notes', () => {
   });
 });
 
+describe('a note entered again', () => {
+  it('shows what was typed in an editor mounted again, before and after its save', async () => {
+    const a = note('a', '', 'h0');
+    await open(a);
+    notesStore.onContentChange('Typed');
+    // The page is left and entered back: the note is the open one, the editor takes its body.
+    await notesStore.openNote('a');
+    expect(notes.get).toHaveBeenCalledTimes(1);
+    expect(notesStore.activeNote?.content).toBe('Typed');
+
+    notes.update.mockImplementationOnce(async (_id: string, input: NoteUpdateInput) => saved(a, input));
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(updateCalls()).toEqual([['a', { content: 'Typed', base_hash: 'h0' }]]);
+    expect(notesStore.activeNote?.content).toBe('Typed');
+
+    // Typed on the body shown, the next save keeps the text and goes on the hash of the last one.
+    notes.update.mockImplementationOnce(async (_id: string, input: NoteUpdateInput) => saved(a, input));
+    notesStore.onContentChange('Typed more');
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(updateCalls()[1]).toEqual(['a', { content: 'Typed more', base_hash: 'h:Typed' }]);
+  });
+
+  it('is read after the save of what was typed in it when it was left (A, B, A)', async () => {
+    const a = note('a', '', 'h0');
+    await open(a);
+    notesStore.onContentChange('Typed just now');
+    const saving = gate<Note>();
+    notes.update.mockReturnValueOnce(saving.promise);
+    await open(note('b', 'Beta'));
+    expect(updateCalls()).toEqual([['a', { content: 'Typed just now', base_hash: 'h0' }]]);
+
+    notes.get.mockResolvedValueOnce(note('a', 'Typed just now'));
+    const toA = notesStore.openNote('a');
+    await vi.advanceTimersByTimeAsync(0);
+    // The file still holds the body before the save: not read yet.
+    expect(notes.get).toHaveBeenCalledTimes(2);
+    expect(notesStore.noteLoading).toBe(true);
+
+    saving.resolve(saved(a, { content: 'Typed just now' }));
+    await toA;
+    expect(notes.get).toHaveBeenCalledTimes(3);
+    expect(notesStore.activeNote?.content).toBe('Typed just now');
+  });
+
+  it('that dropped out of the list saves what was typed in it', async () => {
+    const a = note('a', 'Alpha', 'hA');
+    await open(a);
+    notesStore.onContentChange('Alpha typed');
+    notes.update.mockImplementationOnce(async (_id: string, input: NoteUpdateInput) => saved(a, input));
+    notesStore.leaveNote();
+    expect(notesStore.activeNoteId).toBe(null);
+    expect(updateCalls()).toEqual([['a', { content: 'Alpha typed', base_hash: 'hA' }]]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(updateCalls()).toHaveLength(1);
+  });
+});
+
 describe('contentRev', () => {
   it('grows when the store puts a body into the editor', async () => {
     const a = note('a', 'Alpha', 'hA');
@@ -321,5 +378,27 @@ describe('external changes of other notes', () => {
     expect(notes.list).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1000);
     expect(notes.list).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('autosave', () => {
+  it('saves typing that never pauses 6 s after its first key, and a pause 3 s after the last', async () => {
+    const a = note('a', 'A', 'h0');
+    await open(a);
+    notes.update.mockImplementation(async (_id: string, input: NoteUpdateInput) => saved(a, input));
+
+    // A key every 2 s: the debounce alone would never save.
+    for (let i = 1; i <= 3; i++) {
+      notesStore.onContentChange(`A${i}`);
+      await vi.advanceTimersByTimeAsync(2000);
+    }
+    expect(updateCalls()).toEqual([['a', { content: 'A3', base_hash: 'h0' }]]);
+
+    notesStore.onContentChange('A4');
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(updateCalls()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(updateCalls()[1]).toEqual(['a', { content: 'A4', base_hash: 'h:A3' }]);
+    notes.update.mockReset();
   });
 });

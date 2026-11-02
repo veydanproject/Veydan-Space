@@ -434,7 +434,7 @@
   /* The menu of a comment as the actions beside a message (mockups c1.js): round 32, muted, a fill under the pointer only. */
   .comment .more { width: 32px; height: 32px; padding: 0; margin-right: -6px; border-radius: 50%; color: var(--text-2); }
   .comment .more:hover { color: var(--text); background: var(--surface-hover); }
-  .comment .more:focus-visible, .reply:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .comment .more:focus-visible, .reply:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .more:hover { color: var(--text); background: var(--surface-3); }
   /* The menu of a post without words, on the corner of its pictures. */
   .more.over { position: absolute; top: 8px; right: 8px; z-index: 1; padding: 4px; border-radius: 50%; background: rgba(0, 0, 0, 0.45); color: #fff; }
@@ -478,8 +478,8 @@
   .rest.clamp { max-height: calc(var(--fs-body) * var(--lh-body) * 3); overflow: hidden; }
   .rest-inner { display: flex; flex-direction: column; gap: 6px; }
   .rest.clamp.fade {
-    -webkit-mask: linear-gradient(#000, #000) top / 100% var(--cut-top) no-repeat, linear-gradient(to right, #000 calc(100% - 64px), transparent calc(100% - 16px)) 0 var(--cut-top) / 100% var(--cut-line) no-repeat;
-    mask: linear-gradient(#000, #000) top / 100% var(--cut-top) no-repeat, linear-gradient(to right, #000 calc(100% - 64px), transparent calc(100% - 16px)) 0 var(--cut-top) / 100% var(--cut-line) no-repeat;
+    -webkit-mask: linear-gradient(black, black) top / 100% var(--cut-top) no-repeat, linear-gradient(to right, black calc(100% - 64px), transparent calc(100% - 16px)) 0 var(--cut-top) / 100% var(--cut-line) no-repeat;
+    mask: linear-gradient(black, black) top / 100% var(--cut-top) no-repeat, linear-gradient(to right, black calc(100% - 64px), transparent calc(100% - 16px)) 0 var(--cut-top) / 100% var(--cut-line) no-repeat;
   }
   .dots { position: absolute; display: inline-flex; align-items: center; font-size: var(--fs-body); line-height: 1; color: var(--text-2); pointer-events: none; }
   .read {
@@ -529,7 +529,7 @@
   .comments:hover { background: var(--surface-3); }
   .comments.go { color: var(--accent-text); }
   .comments.go:hover { background: var(--accent-tint); }
-  .react:focus-visible, .comments:focus-visible, .tags .more:focus-visible, .section-line .more:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .react:focus-visible, .comments:focus-visible, .tags .more:focus-visible, .section-line .more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   @media (max-width: 599px) { .phone.card { gap: var(--sp-2); } }
   @media (pointer: coarse) {
     .post { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }

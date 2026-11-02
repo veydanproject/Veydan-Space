@@ -12,6 +12,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import { qrPicture } from '$lib/core/ui/qrPicture';
   import { messengerError } from '../api';
   import { shareOut, shareOutWays, type ShareOutItem, type ShareOutWay } from './shareOut';
 
@@ -62,10 +63,10 @@
     busy = true;
     try {
       if (way === 'qr') {
-        const svg = await qr!();
+        // Shown as an image, the logo in it: nothing inside the picture can run.
+        const src = await qrPicture(await qr!());
         if (mine !== opening) return;
-        // Shown as an image: nothing inside the picture can run.
-        qrSrc = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+        qrSrc = src;
         showQr = true;
         return;
       }
@@ -122,7 +123,8 @@
     display: inline-flex; align-items: center; justify-content: center;
   }
   .qr { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); }
-  .qr img { width: min(260px, 100%); aspect-ratio: 1; height: auto; background: #fff; border-radius: var(--radius-md); padding: 8px; image-rendering: pixelated; }
+  /* The card of the code is in the picture, white whatever the theme. */
+  .qr img { width: min(260px, 100%); aspect-ratio: 1; height: auto; }
   .btn :global(svg) { margin-right: 2px; }
   @media (pointer: coarse) {
     .way { min-height: 48px; }

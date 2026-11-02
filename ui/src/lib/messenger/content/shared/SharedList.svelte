@@ -104,7 +104,7 @@
             {#each mo.items as m (m.id)}
               <li class="item">
                 <span class="meta">{meta(m)}</span>
-                {#if section === 'files'}<MediaBubble message={m} variant="card" wide />{:else}<MediaBubble message={m} />{/if}
+                {#if section === 'files'}<MediaBubble message={m} variant="card" />{:else}<MediaBubble message={m} />{/if}
               </li>
             {/each}
           </ul>
@@ -126,7 +126,7 @@
   /* The sections: one row of segments under the head (design book, «Медиа и файлы»). */
   .tabs { display: flex; flex-shrink: 0; gap: 2px; margin: var(--sp-3) var(--sp-4) 0; overflow-x: auto; scrollbar-width: none; }
   .tabs .seg-btn { flex: 1 0 auto; justify-content: center; height: 34px; padding: 0 var(--sp-1); font-size: var(--fs-sm); white-space: nowrap; }
-  .tabs .seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .tabs .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
   .month { font-size: var(--fs-sm); color: var(--text-2); font-weight: var(--fw-bold); padding-top: var(--sp-2); }
   .month:first-child { padding-top: 0; }
@@ -144,4 +144,12 @@
   .empty :global(svg) { opacity: 0.7; }
   .end { display: flex; justify-content: center; padding: var(--sp-2) 0; }
   @media (pointer: coarse) { .tabs .seg-btn { height: 40px; } }
+  /* On a phone the sections are words on the screen's glow, the chosen one bold with a short mark (as every row of tabs). */
+  :global(.msg-m) .panel { background: transparent; }
+  :global(.msg-m) .tabs { gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; margin: 0; padding-inline: var(--sp-4); }
+  :global(.msg-m) .tabs .seg-btn { position: relative; flex: 0 0 auto; gap: var(--sp-1); height: var(--control-h-lg); padding: 0; border-radius: 0; background: none; font-size: var(--fs-base); }
+  :global(.msg-m) .tabs .seg-btn:hover:not(.active) { background: none; color: var(--text); }
+  :global(.msg-m) .tabs .seg-btn.active { background: none; color: var(--text); font-weight: var(--fw-bold); }
+  :global(.msg-m) .tabs .seg-btn.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
+  :global(.msg-m) .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
 </style>

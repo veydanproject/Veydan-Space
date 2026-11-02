@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
-  import Icon from '$lib/core/Icon.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import type { BlockedView, DmFrom } from '../api';
   import InvitesCard from '../invites/InvitesCard.svelte';
@@ -27,52 +27,32 @@
 </script>
 
 <div class="card privacy">
-  <div class="card-title"><Icon name="eye-off" size={16} /> {$t('msg_privacy_title')}</div>
+  <div class="card-title">{$t('msg_privacy_title')}</div>
 
   {#if !view}
     <p class="muted">{privacyStore.error || $t('loading')}</p>
   {:else}
     <div class="block">
-      <div class="line">
-        <span>{$t('msg_privacy_read_receipts')}</span>
-        <button
-          class="toggle"
-          class:on={view.read_receipts}
-          disabled={privacyStore.busy}
-          onclick={() => privacyStore.setReadReceipts(!view.read_receipts)}
-          aria-pressed={view.read_receipts}
-          aria-label={$t('msg_privacy_read_receipts')}
-        ></button>
-      </div>
-      <p class="muted small">{$t('msg_privacy_read_receipts_hint')}</p>
+      <ToggleRow surface="row" title={$t('msg_privacy_read_receipts')} hint={$t('msg_privacy_read_receipts_hint')} label={$t('msg_privacy_read_receipts')}
+        on={view.read_receipts} disabled={privacyStore.busy} onclick={() => privacyStore.setReadReceipts(!view.read_receipts)} />
     </div>
     <div class="block">
-      <div class="line">
-        <span>{$t('msg_privacy_presence')}</span>
-        <button
-          class="toggle"
-          class:on={view.presence}
-          disabled={privacyStore.busy}
-          onclick={() => privacyStore.setPresence(!view.presence)}
-          aria-pressed={view.presence}
-          aria-label={$t('msg_privacy_presence')}
-        ></button>
-      </div>
-      <p class="muted small">{$t('msg_privacy_presence_hint')}</p>
+      <ToggleRow surface="row" title={$t('msg_privacy_presence')} hint={$t('msg_privacy_presence_hint')} label={$t('msg_privacy_presence')}
+        on={view.presence} disabled={privacyStore.busy} onclick={() => privacyStore.setPresence(!view.presence)} />
     </div>
     {#if privacyStore.error}<p class="warn">{privacyStore.error}</p>{/if}
   {/if}
 </div>
 
 <div class="card privacy">
-  <div class="card-title"><Icon name="shield-lock" size={16} /> {$t('msg_privacy_dm_title')}</div>
+  <div class="card-title">{$t('msg_privacy_dm_title')}</div>
 
   {#if !dm}
     <p class="muted">{privacyStore.dmError || $t('loading')}</p>
   {:else}
     <div class="block">
       <div class="label">{$t('msg_privacy_dm_from')}</div>
-      <div class="seg" role="radiogroup" aria-label={$t('msg_privacy_dm_from')}>
+      <div class="seg seg-fill" role="radiogroup" aria-label={$t('msg_privacy_dm_from')}>
         {#each DM_FROM as v (v)}
           <button class="seg-btn" class:active={dmFrom === v} role="radio" aria-checked={dmFrom === v}
             disabled={privacyStore.dmBusy} onclick={() => privacyStore.setDmFrom(v)}>
@@ -84,7 +64,7 @@
     </div>
     <div class="block">
       <div class="label">{$t('msg_privacy_keep')}</div>
-      <div class="seg" role="radiogroup" aria-label={$t('msg_privacy_keep')}>
+      <div class="seg seg-fill" role="radiogroup" aria-label={$t('msg_privacy_keep')}>
         {#each KEEP_DAYS as d (d)}
           <button class="seg-btn" class:active={dm.keep_days === d} role="radio" aria-checked={dm.keep_days === d}
             disabled={privacyStore.dmBusy} onclick={() => privacyStore.setKeepDays(d)}>
@@ -99,7 +79,7 @@
 </div>
 
 <div class="card privacy">
-  <div class="card-title"><Icon name="user-cancel" size={16} /> {$t('msg_privacy_blocked')}</div>
+  <div class="card-title">{$t('msg_privacy_blocked')}</div>
 
   {#if !privacyStore.blocked}
     <p class="muted">{privacyStore.dmError || $t('loading')}</p>
@@ -133,16 +113,13 @@
 <style>
   .privacy { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
-  .small { font-size: var(--fs-xs); }
+  .small { font-size: var(--fs-sm); }
   .warn { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
   .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; font-size: var(--fs-base); }
   /* The settings of a card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
-  /* A phone is narrower than four choices in one line: each wraps its words instead of the row running off. */
-  .seg { align-self: flex-start; max-width: 100%; }
-  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
   /* Rows of 48 with a line between them (as the facts of «Профиль и ключ»). */
   .blocked { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .blocked .line { min-height: 48px; padding: var(--sp-1) 0; }

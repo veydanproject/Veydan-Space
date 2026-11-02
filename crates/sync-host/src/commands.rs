@@ -6,7 +6,7 @@
 //! profiles have commands of their own in the modules that own them.
 
 use crate::config::{self, build_storage, load_binding, load_config};
-use crate::cycle::{run_cycle, status, trigger_cycle, SyncStatus};
+use crate::cycle::{run_cycle, status, trigger_cycle, Ran, SyncStatus};
 use crate::debug::{ensure_debug_loaded, trace_skip, SyncDebugState, DEBUG_SETTING};
 use crate::{join, Host, SyncConfig, SyncManager, EVENT_STATUS};
 use chrono::Utc;
@@ -226,7 +226,10 @@ pub async fn sync_run_now(
 ) -> CmdResult<SyncStatus> {
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
-        run_cycle(&app, "manual").await?;
+        // The cycles wait for the messenger: the user is told why, not an error of sync.
+        if let Ran::Waits(why) = run_cycle(&app, "manual").await? {
+            return Err(AppError::other(format!("sync waits: {why}")));
+        }
         status(&core, &sync).await
     })
     .await

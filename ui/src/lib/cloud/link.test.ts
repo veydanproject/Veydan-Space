@@ -7,7 +7,6 @@ import {
   linkErrorKey,
   NewDeviceLink,
   OldDeviceLink,
-  qrDataUrl,
   timeLeft,
   type LinkDone,
   type LinkStart,
@@ -199,7 +198,6 @@ describe('the helpers of a link', () => {
     expect(timeLeft(1000, 400)).toBe('10:00');
     expect(timeLeft(1000, 991)).toBe('0:09');
     expect(timeLeft(1000, 2000)).toBe('0:00');
-    expect(qrDataUrl('<svg/>')).toBe(`data:image/svg+xml;base64,${btoa('<svg/>')}`);
     expect(linkErrorKey(null)).toBeNull();
     expect(linkErrorKey({ code: 'something_new', message: 'x', request_id: null })).toBeNull();
   });

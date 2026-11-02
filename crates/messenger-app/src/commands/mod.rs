@@ -174,6 +174,21 @@ impl Slot {
     fn error(&self) -> Option<String> {
         read(&self.error).clone()
     }
+
+    /// Why there is no runtime, in words for the journal: a start that
+    /// failed — the shell then switches it back off, so the switch (`enabled`)
+    /// comes after the reason —, switched off by the user, or a start under
+    /// way (the app starts the modules after sync). `None` while it runs.
+    fn down(&self, enabled: bool) -> Option<String> {
+        if self.current().is_some() {
+            return None;
+        }
+        Some(match (self.error(), enabled) {
+            (Some(e), _) => format!("the messenger did not start: {e}"),
+            (None, false) => "the messenger is switched off".into(),
+            (None, true) => "the messenger is starting".into(),
+        })
+    }
 }
 
 /// A lock a panic poisoned still holds what it held.
@@ -285,6 +300,16 @@ impl MessengerState {
     /// The runtime, or the error the commands answer while there is none.
     pub(crate) fn runtime(&self) -> CmdResult<Arc<MessengerRuntime>> {
         self.slot.runtime()
+    }
+
+    /// Why there is no runtime, for the journal of another module that
+    /// waits for it ([`Slot::down`]). `None` while it runs.
+    pub(crate) fn down(&self) -> Option<String> {
+        let enabled = self
+            .app
+            .try_state::<Shell>()
+            .is_none_or(|shell| shell.module_enabled(MODULE_ID));
+        self.slot.down(enabled)
     }
 
     /// The runtime, for a command that shows what the chats hold or speaks
@@ -2628,7 +2653,11 @@ mod tests {
         };
         let slot = Slot::default();
         assert!(matches!(slot.runtime(), Err(AppError::Other(m)) if m == STOPPED));
+        // Before the start the app makes after sync, a cycle waits with why.
+        assert_eq!(slot.down(true).as_deref(), Some("the messenger is starting"));
+        assert_eq!(slot.down(false).as_deref(), Some("the messenger is switched off"));
         slot.start(MessengerRuntime::start(config.clone(), secrets.clone()), serve).await.unwrap();
+        assert_eq!(slot.down(true), None);
         let rt = slot.runtime().unwrap();
         rt.relays().add_user(&relay.url, None).await.unwrap();
         rt.servers_use_own().await.unwrap();
@@ -2673,6 +2702,10 @@ mod tests {
         let reason = slot.error().unwrap();
         assert!(reason.contains("broken"), "{reason}");
         assert!(matches!(slot.runtime(), Err(AppError::Other(m)) if m == reason));
+        assert!(slot.down(true).is_some_and(|why| why.starts_with("the messenger did not start") && why.contains("broken")));
+        // Switched on by the user, it failed and the shell switched it back
+        // off: the journal tells the failure, not a switch the user made.
+        assert_eq!(slot.down(false), slot.down(true));
         db.close().await;
     }
 

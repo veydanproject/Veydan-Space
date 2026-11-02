@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "Les liens de connexion, de récupération d’un compte et d’association d’un appareil ne s’ouvrent qu’avec le scanner de l’application : ainsi aucun site ne peut vous en glisser un à approuver.",
     "msg_inlink_long_title": "Le lien est trop long",
     "msg_inlink_long_text": "Veydan n’ouvre pas des liens aussi longs. Redemandez le lien.",
+    "msg_card_link_short": "Dans le navigateur",
+    "msg_card_preview_short": "Aperçu",
     "msg_card_link_open": "Ouvrir dans le navigateur",
     "msg_card_link_moved": "Le lien redirige ailleurs depuis {host}.",
     "msg_card_link_risk_insecure": "Aucun chiffrement : n'importe qui sur le trajet peut lire et modifier la page.",

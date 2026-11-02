@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use common::*;
-use keydist::issued::MISSED_PAGE;
+use keydist::issued::{MISSED_PAGE, MISSED_PAGE_BUNDLED};
 use keydist::{
     open_epoch, Bundle, Change, EpochOut, Error, GenerationKind, GenerationMaster, History, Issued, KeeperState,
     KeyDistribution, MemberId, MemberState, Policy, Revoke, RootSecret, Rotate, SchemeId, ScopeRef, Status,
@@ -649,15 +649,18 @@ fn missed_keys_come_in_pages_and_go_once_everyone_migrated() {
         assert_eq!(w.k.stats().missed_len as usize, n);
         assert_eq!(w.k.stats().migrated, 9);
         let late = w.k.bundle_for(mid(9), w.now).unwrap();
-        assert_eq!(late.missed.len(), MISSED_PAGE);
+        // The page with the bundle is the shorter one (the two make one
+        // note, bounded by the relays), the rest in full pages.
+        assert_eq!(late.missed.len(), MISSED_PAGE_BUNDLED);
         assert!(late.missed_more);
         let rest = w.k.missed_page(&mid(9), late.missed.last().unwrap().epoch, MISSED_PAGE).unwrap();
-        assert_eq!(rest.missed.len(), 100);
+        assert_eq!(rest.missed.len(), n - MISSED_PAGE_BUNDLED);
         assert!(!rest.missed_more && rest.bundle.is_empty() && rest.current.is_none());
         // A full page with the largest bundle (sd-v1, depth 24) fits the
         // 64 KiB plaintext of a NIP-44 envelope.
         assert!(late.to_bytes().len() - late.bundle.len() + 9707 < 65_535);
         w.take(mid(9), &late);
+        w.take(mid(9), &rest);
         for e in &epochs {
             assert_eq!(w.held[&mid(9)].key(e.event.epoch), Some(&e.key));
         }

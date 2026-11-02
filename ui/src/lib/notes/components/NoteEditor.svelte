@@ -346,8 +346,16 @@
   const pendingFetch = $derived(attachments.filter((a) => !a.present && a.size >= askAboveBytes));
   const pendingFetchBytes = $derived(pendingFetch.reduce((n, a) => n + a.size, 0));
 
+  /** The attachment names of the note as last read, for «File deleted» in the text. */
+  let attachmentNames = $state<{ noteId: string; names: Set<string> } | null>(null);
+  const knownAttachments = $derived(
+    note && attachmentNames?.noteId === note.id ? { prefix: `attachments/${note.id}/`, names: attachmentNames.names } : null,
+  );
+
   async function loadAttachments() {
-    attachments = note ? await api.notes.attachmentList(note.id) : [];
+    const forId = note?.id;
+    attachments = forId ? await api.notes.attachmentList(forId) : [];
+    if (forId) attachmentNames = { noteId: forId, names: new Set(attachments.map((a) => a.name)) };
   }
 
   $effect(() => {
@@ -881,6 +889,7 @@
               content={contentValue}
               baseDir={note.base_dir}
               noteId={note.id}
+              {knownAttachments}
               {readonly}
               placeholder={$t('note_content_placeholder')}
               notes={notesStore.list}

@@ -17,7 +17,8 @@
 //! - lane `inbox`: a note by NIP-59 to somebody, wrapped anew with the
 //!   keys of `signer` at every send; `after_seq` holds it until every
 //!   channel row of its channel up to that `seq` is gone: the keeper's
-//!   `channel.issue` of a scope follows the operation that made it.
+//!   `channel.issue` of a scope follows the operation that made it. A
+//!   pass sends the notes after the rows of every other lane (`due`).
 //!
 //! A row sent is deleted; `state` is a label for the page (`queued`, or
 //! `failed` after many attempts, still retried).
@@ -221,9 +222,15 @@ pub async fn count(db: &Db, community_id: &str, lane: &str) -> Result<i64> {
         .map_err(storage)
 }
 
-/// The rows whose time came, by channel, lane and `seq`.
+/// The rows whose time came, by channel, lane and `seq`, the notes of
+/// every channel last: a pass wraps each note anew, and a keeper that let
+/// in a queue of joins (a day offline: 172 000 issues) held its epoch,
+/// a ban in it, behind all of them in one pass (`lane` by name put
+/// `inbox` before `keeper`; the bench of ROO-419). Nothing of the wire
+/// orders a note before an event of another lane; one behind a channel
+/// row waits for it (`after_seq`).
 pub async fn due(db: &Db, now: i64) -> Result<Vec<OutboxRow>> {
-    sqlx::query_as::<_, OutboxRow>(sqlx::AssertSqlSafe(format!("SELECT {COLS} FROM cm_outbox WHERE next_at <= ? ORDER BY community_id, lane, seq")))
+    sqlx::query_as::<_, OutboxRow>(sqlx::AssertSqlSafe(format!("SELECT {COLS} FROM cm_outbox WHERE next_at <= ? ORDER BY lane = '{LANE_INBOX}', community_id, lane, seq")))
         .bind(now)
         .fetch_all(db.pool())
         .await
@@ -386,8 +393,10 @@ mod tests {
         assert!(state_of(&db, CID, LANE_REPLACEABLE, "c1").await.unwrap().is_none(), "the older card is gone");
         let issue = enqueue_note(&db, CID, &note("r", "issue", op), 14).await.unwrap();
         assert_eq!(enqueue_note(&db, CID, &note("r", "issue", op), 15).await.unwrap(), issue);
+        let epoch = enqueue_event(&db, CID, LANE_KEEPER, 1392, "ep", None, "{}", 14).await.unwrap();
         let due = due(&db, 20).await.unwrap();
-        assert_eq!(due.iter().map(|r| r.seq).collect::<Vec<_>>(), vec![op, post, issue, card], "channel, then inbox, then replaceable");
+        assert_eq!(due.iter().map(|r| r.seq).collect::<Vec<_>>(), vec![op, post, epoch, card, issue], "channel, keeper, replaceable, the notes last");
+        sent(&db, epoch).await.unwrap();
         assert_eq!(channel_rows_up_to(&db, CID, op).await.unwrap(), 1, "the note waits for the operation");
         sent(&db, op).await.unwrap();
         assert_eq!(channel_rows_up_to(&db, CID, op).await.unwrap(), 0, "and goes once it is out");

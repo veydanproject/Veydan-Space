@@ -344,6 +344,7 @@
     "notes_panel_resize": "调整面板宽度",
     "notes_task_checkbox": "任务：{text}",
     "notes_task_checkbox_empty": "空任务",
+    "notes_attachment_gone": "文件已删除",
     "notes_smart_profile_search": "查找配置文件…"
   },
   "mobile": {

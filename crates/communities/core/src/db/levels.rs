@@ -368,7 +368,7 @@ mod tests {
                 .unwrap();
         }
         super::super::schema::migrations().run(&pool).await.unwrap();
-        let db = Db { pool };
+        let db = Db { pool, mirrors: Default::default(), retired: Default::default() };
         let asks = level_asks(&db, &cid).await.unwrap();
         assert_eq!(asks.iter().map(|r| (r.requester.as_str(), r.fingerprint.as_str(), r.created_at)).collect::<Vec<_>>(), [("r1", "", 100)]);
         let answers = level_answers(&db, &cid).await.unwrap();

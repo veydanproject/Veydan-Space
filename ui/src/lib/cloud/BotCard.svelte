@@ -12,7 +12,7 @@
   «Открыть аккаунт», «Активировать сейчас» (screens). A request known to be
   over, or out of time, offers no button. A value of a shape held by
   `botCard.ts` — a code of a sign-in, a key of a purchase — is shown large
-  (`CopyValue`, with its copy for a key). Every word is `botCard.ts`'s;
+  (`CopyValue`, with its copy). Every word is `botCard.ts`'s;
   nothing of the card is drawn as markup or as a link.
 -->
 <script lang="ts" module>
@@ -96,22 +96,23 @@
 </script>
 
 {#if view}
-  <div class="card {view.tone}">
+  <div class="bot-card {view.tone}">
     <div class="top">
-      <span class="ico"><Icon name={view.icon} size={16} /></span>
+      <span class="ico"><!-- The triangle is drawn wider than the rest: one step smaller, it looks the same size. -->
+        <Icon name={view.icon} size={view.icon === 'alert-triangle' ? 18 : 20} /></span>
       <div class="words">
         {#if view.title}<p class="title">{view.title}</p>{/if}
         <p class="text">{view.text}</p>
         {#if view.detail}<p class="detail">{view.detail}</p>{/if}
       </div>
     </div>
-    {#if view.value}<div class="value"><CopyValue text={view.value.text} copy={view.value.copy} large={!view.value.copy} /></div>{/if}
+    {#if view.value}<div class="value"><CopyValue text={view.value.text} copy={view.value.copy} large={!!view.value.large} /></div>{/if}
     {#if view.note}<p class="note">{view.note}</p>{/if}
     {#if view.action}
       {@const action = view.action}
       {@const danger = action.id === 'cancel' || action.id === 'web_deny' || action.id === 'web_end'}
       <div class="row">
-        <button class="btn btn-sm {danger ? 'btn-danger' : 'btn-primary'}" type="button" disabled={(action.id === 'cancel' && alertsStore.busy) || ((action.id === 'web_deny' || action.id === 'web_end') && webStore.busy)} onclick={() => run(action)}>
+        <button class="act" class:danger class:main={action.id === 'web_confirm'} type="button" disabled={(action.id === 'cancel' && alertsStore.busy) || ((action.id === 'web_deny' || action.id === 'web_end') && webStore.busy)} onclick={() => run(action)}>
           {action.label}
         </button>
       </div>
@@ -120,21 +121,29 @@
 {/if}
 
 <style>
-  .card { display: flex; flex-direction: column; gap: var(--sp-2); width: min(340px, 100%); }
+  /* The bubble is the card: no box inside it. */
+  .bot-card { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
   .top { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
   /* The mark and its tone are those of the banners of the same cards (RecoveryAlert.svelte). */
-  .ico {
-    width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-    background: var(--surface-3); color: var(--text-2);
-  }
-  .danger .ico { color: var(--danger-text); background: var(--danger-bg); }
-  .warn .ico { color: var(--warn-text); background: var(--warn-bg); }
-  .ok .ico { color: var(--success-text); background: var(--success-bg); }
+  .ico { width: 20px; height: calc(var(--fs-body) * var(--lh-body)); flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--accent-text-2); }
+  .danger .ico { color: var(--danger-text); }
+  .warn .ico { color: var(--warn-text); }
+  .ok .ico { color: var(--success-text); }
   .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .title { margin: 0; font-size: var(--fs-sm); font-weight: var(--fw-bold); line-height: 1.45; }
-  .text { margin: 0; font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
-  .detail { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
-  .value { padding-left: calc(30px + var(--sp-2)); }
-  .note { margin: 0; padding-left: calc(30px + var(--sp-2)); font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
-  .row { display: flex; padding-left: calc(30px + var(--sp-2)); }
+  .title { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); line-height: var(--lh-body); }
+  /* The card is a message: its words are as large as a message's. */
+  .text { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); overflow-wrap: anywhere; }
+  .detail { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); overflow-wrap: anywhere; }
+  .value { padding-left: calc(20px + var(--sp-2)); }
+  .note { margin: 0; padding-left: calc(20px + var(--sp-2)); font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); overflow-wrap: anywhere; }
+  /* One quiet action under the words, every one the same width: from their edge to the time of the message (MessageBubble). */
+  .row { display: flex; margin-top: var(--sp-2); padding-left: calc(20px + var(--sp-2)); padding-right: var(--file-meta); }
+  .act {
+    flex: 1; min-width: 0; min-height: var(--control-h); padding: 0 var(--sp-3); border: none; border-radius: var(--radius-md); cursor: pointer;
+    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text-2);
+  }
+  .act:disabled { opacity: 0.5; cursor: default; }
+  .act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .act.danger { background: var(--danger-bg); color: var(--danger-text); }
+  .act.main { background: var(--accent); color: #fff; }
 </style>

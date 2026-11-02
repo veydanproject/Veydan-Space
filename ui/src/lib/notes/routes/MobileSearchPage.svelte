@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { leave } from '$lib/core/ui/back';
   import Icon from '$lib/core/Icon.svelte';
+  import HubButton from '$lib/core/ui/HubButton.svelte';
   import { api, formatError, type NoteSearchResult, type NoteTag } from '$lib/notes/mobile/api';
   import { locale, t } from '$lib/core/mobile/i18n';
   import NotesBurger from '$lib/notes/mobile/NotesBurger.svelte';
@@ -80,6 +81,7 @@
 
 <div class="m-page">
   <div class="m-header">
+    <HubButton />
     <NotesBurger />
     <h1 class="m-title">{$t('nav_search')}</h1>
   </div>

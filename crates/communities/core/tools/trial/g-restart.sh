@@ -18,7 +18,7 @@ scenario_g() {
   e0=$(published); e1=$((e0 + 1))
   rot=$(cli rotate-now | tail -1)
   wait_line "$DIR/keeper.log" ".state.published == $e1" 600 "$KEEPER_FROM" >/dev/null || true
-  rest=$(swarm_cmd "expect bots=11-$((READERS - 1)) epoch=$e1 timeout=$((900 * SCALE))" || true)
+  rest=$(swarm_cmd "expect bots=11-$((READERS - 1)) epoch=$e1 timeout=$((900 * SLOW))" || true)
   local ok=false
   [ "$(jq -r .equal <<<"$inproc")" = true ] && [ "$(jq -r .equal_to_saved <<<"$loaded")" = true ] && [ "$(jq -r .ok <<<"$rest")" = true ] && ok=true
   result g "$ok" "$(jq -cn --argjson i "$inproc" --argjson l "$loaded" --argjson r "$rot" --argjson s "$rest" --arg e "$e1"     '{in_process: $i, new_process: $l, rotate: $r, epoch: ($e|tonumber), readers: {ok: $s.ok, bad: $s.bad, secs: $s.secs, sample: $s.sample}}')"

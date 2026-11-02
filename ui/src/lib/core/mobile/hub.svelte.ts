@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 // The sheet of the product's apps (HubSheet): one state for the shell, which
-// shows the sheet, and for the buttons that open it (the bar's centre button,
-// a screen header's HubButton).
+// shows the sheet, and for the button that opens it (the logo in the header of a tab, core/ui/HubButton).
 
 class Hub {
   /** The product has apps to choose between; a product of one module has none. */

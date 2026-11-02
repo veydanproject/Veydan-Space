@@ -30,7 +30,7 @@
     scroll?: boolean;
     /** Hide the bar (the chat brings its own header). */
     bare?: boolean;
-    /** The product's apps button left of the title (a tab of the bar without it). */
+    /** The product's apps button left of the title (a tab of the bar, which has no logo). */
     hubButton?: boolean;
     children: Snippet;
   }
@@ -51,7 +51,7 @@
         <button class="ibtn" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
       {/if}
       {#if hubButton && !onback}<HubButton />{/if}
-      <h1 class:inset={!onback && !hubButton}>{title}</h1>
+      <h1>{title}</h1>
       {#if lead}{@render lead()}{/if}
       <span class="spacer"></span>
       {#if actions}{@render actions()}{/if}
@@ -71,10 +71,11 @@
   .msg-m { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; }
   .bar {
     display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; min-height: 52px;
-    padding: var(--sp-1) var(--sp-2); background: var(--m-head, var(--surface)); border-bottom: 1px solid var(--border);
+    padding: var(--sp-1) var(--sp-2); background: none; border-bottom: 0;
+    --edge-l: var(--sp-2); --edge-r: var(--sp-2); --edge-t: var(--sp-1);
   }
   h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  h1.inset { padding-left: var(--sp-2); }
+  h1:first-child { padding-left: var(--sp-2); }
   .spacer { flex: 1; }
   .bar :global(.ibtn), .ibtn {
     display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0;
@@ -85,12 +86,12 @@
   /* With the keyboard up the home-indicator inset is under the keyboard. */
   .kb-open { --sab: 0px; }
   .content { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .content.scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--sp-3) var(--sp-3) calc(var(--sp-5) + var(--sab, 0px)); gap: var(--sp-3); }
+  .content.scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--sp-3) var(--sp-3) calc(var(--sp-5) + var(--sab, 0px)); gap: var(--sp-3); }
   /* The settings' panels are the desktop's cards: on a phone they take the
      look of the shell's own cards (mobile.css .m-card) and its tighter padding. */
   .content.scroll :global(.card) {
     max-width: none; width: 100%; padding: var(--sp-4);
-    background: var(--m-card, var(--surface)); border-color: var(--m-card-border, var(--border));
+    background: var(--pane-strong); border-color: var(--m-card-border, var(--border));
     border-radius: var(--m-radius, var(--radius-lg)); box-shadow: var(--m-card-shadow, none);
   }
 </style>

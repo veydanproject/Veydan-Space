@@ -109,6 +109,17 @@ export function transferLines(p: TransferState, w: Words): TransferLines {
   return { line1: '', line2: size };
 }
 
+/**
+ * The one line a file in a message has: how much and how fast while it moves,
+ * else what stops it. The parts and the stage stay in the list of transfers.
+ */
+export function oneLine(p: TransferState | null, l: TransferLines, w: Words): string {
+  if (!p) return l.line1;
+  if (p.status === 'paused') return [w.t('msg_xfer_paused_short'), l.line2].filter(Boolean).join(' · ');
+  if (p.status === 'running' && (p.stage === 'uploading' || p.stage === 'downloading')) return l.line2 || l.line1;
+  return l.line1 || l.line2;
+}
+
 /** A file of a message that is not on this device: its size, and its parts when the message lists them. */
 export function remoteLines(size: number, chunks: number | undefined, w: Words): TransferLines {
   const s = bytes(size, localeTag(w.locale));

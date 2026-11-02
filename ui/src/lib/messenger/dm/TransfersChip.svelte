@@ -32,7 +32,7 @@
 </script>
 
 {#if any}
-  <button class="xfer" onclick={toggle} aria-haspopup="dialog" aria-expanded={open}
+  <button class="xfer" class:phone onclick={toggle} aria-haspopup="dialog" aria-expanded={open}
     aria-label={$t('msg_xfer_chip', { up: String(counts.up), down: String(counts.down), failed: String(counts.failed) })}
     title={$t('msg_xfer_title')}>
     <span class="wide">
@@ -57,13 +57,15 @@
     color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums;
     transition: background var(--dur-fast), color var(--dur-fast);
   }
+  /* On a phone the name comes first: the chip is only its numbers, its tap area stays. */
+  .xfer.phone { height: 24px; padding: 0 var(--sp-1); background: none; border-color: transparent; }
   .xfer:hover { background: var(--surface-hover); color: var(--text); }
-  .xfer:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .xfer:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .n { display: inline-flex; align-items: center; gap: 2px; }
   .n.failed { color: var(--danger-text); }
   .wide { display: inline-flex; align-items: center; gap: 6px; }
   .narrow { display: none; }
-  @media (pointer: coarse) { .xfer { height: 36px; } }
+  @media (pointer: coarse) { .xfer:not(.phone) { height: 36px; } }
   @media (max-width: 520px) {
     .wide { display: none; }
     .narrow { display: inline-flex; align-items: center; gap: 5px; }

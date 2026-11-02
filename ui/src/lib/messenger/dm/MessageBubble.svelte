@@ -83,6 +83,8 @@
   const statusTitle = $derived($t(`msg_status_${shown}` as 'msg_status_sent'));
   // The time sits on the last line of the text, as in other messengers, when
   // text ends the bubble: no card instead of it.
+  /** A file with no words: the time stands at the end of its line. */
+  const fileOnly = $derived(!m.deleted && !m.text && !m.edited_at && !m.reply_to && !m.fwd && m.content_type === 'media' && ['file', 'audio'].includes(mediaOf(m)?.kind ?? ''));
   const metaInline = $derived(
     !!m.text && !m.deleted && m.content_type !== 'contact' && !m.bot_card
       && (m.content_type !== 'media' || !!media),
@@ -92,7 +94,7 @@
 <div class="line" class:out class:first class:last class:highlighted class:selected class:fresh data-mid={m.id} use:swipeReply={{ onreply: m.deleted ? undefined : onreply }}>
   <div class="brow">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="bubble" class:bare class:contact={m.content_type === 'contact' && !m.deleted} class:deleted={m.deleted} class:failed={m.status === 'failed'} oncontextmenu={(e) => onmenu(e, m)}
+  <div class="bubble on-glass" class:bare class:file-only={fileOnly} class:bot={!!m.bot_card && !m.deleted} class:contact={m.content_type === 'contact' && !m.deleted} class:deleted={m.deleted} class:failed={m.status === 'failed'} oncontextmenu={(e) => onmenu(e, m)}
     use:longpress={{ onpress: (p) => onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), m) }}>
     {#if author && showAuthor}<span class="author" style="color: {tint(m.sender_pubkey)}">{author(m.sender_pubkey)}</span>{/if}
     {#if m.fwd && !m.deleted}<span class="fwd">{m.fwd.name ? $t('msg_fwd_from', { name: m.fwd.name }) : $t('msg_fwd_from_nameless')}</span>{/if}
@@ -184,6 +186,15 @@
   .line.out .bubble { border-bottom-right-radius: var(--r-tail); }
   .bubble.failed { border-color: var(--danger-border); }
   /* A contact's card: the bubble itself is the card, with the card's padding. */
+  .bubble.file-only, .bubble:has(:global(.file-line)) { width: min(400px, 86%); box-sizing: border-box; padding: var(--sp-3); }
+  .bubble.file-only { --file-meta: 60px; }
+  .bubble.file-only > .meta { position: absolute; right: var(--sp-3); bottom: var(--sp-3); }
+  /* Words under the file's line take the width: the time goes under them. */
+  .bubble.file-only:has(:global(.err), :global(.fail), :global(.foreign)) { --file-meta: 0px; }
+  .bubble.file-only:has(:global(.err), :global(.fail), :global(.foreign)) > .meta { position: static; }
+  .bubble.bot { width: min(400px, 86%); box-sizing: border-box; padding: var(--sp-3); --file-meta: 56px; }
+  /* With an action the time stands beside it, in the middle of its height. */
+  .bubble.bot:has(:global(.act)) > .meta { position: absolute; right: var(--sp-3); bottom: calc(var(--sp-3) + (var(--control-h) - var(--fs-2xs)) / 2); }
   .bubble.contact { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
   .bubble.contact > .meta { margin-top: var(--sp-1); }
   .line .bubble.bare, .line.out .bubble.bare { background: none; border-color: transparent; padding: 0; }
@@ -225,7 +236,7 @@
   @media (prefers-reduced-motion: reduce) { .status :global(svg) { animation: none !important; } }
   .reply {
     display: flex; align-items: center; gap: 8px; text-align: left; width: 100%;
-    border: none; border-left: 2px solid var(--accent); border-radius: var(--radius-xs); background: var(--surface-3);
+    border: none; border-left: 2px solid var(--accent); border-radius: var(--radius-xs); background: color-mix(in srgb, var(--text) 6%, transparent);
     padding: 3px 8px; color: inherit; font: inherit; cursor: pointer; min-width: 0;
   }
   .line.out .reply { background: color-mix(in srgb, var(--accent) 10%, transparent); }

@@ -344,6 +344,7 @@
     "notes_panel_resize": "Redimensionar painel",
     "notes_task_checkbox": "Tarefa: {text}",
     "notes_task_checkbox_empty": "Tarefa vazia",
+    "notes_attachment_gone": "Arquivo excluído",
     "notes_smart_profile_search": "Buscar perfil…"
   },
   "mobile": {

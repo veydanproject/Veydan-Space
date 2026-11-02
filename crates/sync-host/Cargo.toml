@@ -33,5 +33,5 @@ veydan-sync = { path = "../sync" }
 zeroize = "1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tempfile = "3"

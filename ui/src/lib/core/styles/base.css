@@ -62,7 +62,7 @@ body {
 input, select, textarea {
   font-family: inherit;
   font-size: var(--fs-base);
-  background: var(--surface-3);
+  background: var(--pane-strong);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: var(--radius);
@@ -100,7 +100,7 @@ input[type="checkbox"], input[type="radio"] {
   flex: none;
   border: 1px solid var(--border-2);
   border-radius: var(--radius-xs);
-  background: var(--surface-2) center / 75% no-repeat;
+  background: var(--pane-strong) center / 75% no-repeat;
   vertical-align: middle;
   cursor: pointer;
 }
@@ -124,10 +124,19 @@ input[type="radio"]:checked {
 input[type="checkbox"]:hover:not(:disabled), input[type="radio"]:hover:not(:disabled) { border-color: var(--accent-border); }
 input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 input[type="checkbox"]:focus, input[type="radio"]:focus { box-shadow: none; }
-input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* The ring of every other control that draws none of its own (zero specificity: any local rule or `outline: none` wins). */
+:where(button, a[href], summary, [role="tab"], [role="switch"], [role="button"], [role="menuitem"], [tabindex]:not([tabindex="-1"])):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 input::placeholder, textarea::placeholder { color: var(--text-3); }
+/* A field is the window's glass, not a solid surface (which is black over the glow): its line in the dark is the
+   glass's own, and a hint keeps 4.5:1 on the lighter glow. A dialog's fields are the same glass over its own. */
+[data-theme='dark'] :is(input, select, textarea):where(:not([type="checkbox"], [type="radio"], :focus)) { border-color: var(--pane-strong-border); }
+/* A checkbox or a radio not chosen keeps an edge of 3:1 on any glass. */
+[data-theme='dark'] input:where([type="checkbox"], [type="radio"]):where(:not(:checked, :indeterminate)) { border-color: var(--text-dim); }
+[data-theme='dark'] :is(input, textarea)::placeholder { color: var(--text-2); }
 select option { background: var(--surface); color: var(--text); }
+[data-theme='dark'] :is(.tab-bar, .seg, .seg-btn-lg) { border-color: var(--pane-strong-border); }
 
 button {
   cursor: pointer;
@@ -163,8 +172,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-primary { background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-accent); }
 .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
-.btn-ghost { background: var(--surface-3); color: var(--text-body); border: 1px solid var(--border); }
+.btn-ghost { background: var(--pane-strong); color: var(--text-body); border: 1px solid var(--border); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); border-color: var(--border-2); }
+/* A quiet button is the same glass wherever it lies (a page, a card, a bar, a bubble, a dialog): its fill is the
+   glass, not --surface-3, which is a solid colour and is black over the glow. In the dark the line and the hover
+   are the glass's own; in the light they stay --border, or a white button on a white card has no edge. */
+[data-theme='dark'] .btn-ghost { border-color: var(--pane-strong-border); }
+[data-theme='dark'] .btn-ghost:hover:not(:disabled) { background: var(--pane-strong-border); border-color: var(--border-2); }
 .btn-success { background: var(--success-grad); color: #fff; box-shadow: 0 5px 16px rgba(52, 211, 153, 0.28); }
 .btn-success:hover:not(:disabled) { filter: brightness(1.08); }
 .btn-success-soft { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
@@ -238,7 +252,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .page-sub { font-size: var(--fs-xs); color: var(--text-2); }
 
 /* ── Card / section ── */
-.card {
+.card,
+.glass-card {
   background: var(--pane-strong);
   border: 1px solid var(--pane-strong-border);
   border-radius: var(--radius-card);
@@ -246,6 +261,32 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   transition: border-color 0.18s, transform 0.18s;
   box-shadow: var(--pane-highlight), var(--pane-shadow);
 }
+/* What sits on a card (fields, chips, tiles, segments, quiet buttons) takes the card's own glass, not the solid
+   surfaces, which are black over the glow: one rule for every card, on a computer and on a phone, the settings' and
+   the info panels' alike. `.glass-card` is the same card for a block that has a class of its own (a box of an info
+   panel); `.on-glass` only gives the tokens (a local block that draws its own look). In the dark the lines on it are the glass's own; in the light they stay --border, or a white field on a white card has no edge. */
+.card,
+.glass-card,
+.data-table,
+.on-glass {
+  --surface: var(--pane-strong);
+  --surface-2: var(--pane-strong);
+  --surface-3: var(--pane-strong);
+  --m-field: var(--pane-strong);
+  --m-seg: var(--pane-strong);
+}
+[data-theme='dark'] :is(.card, .glass-card, .data-table, .on-glass) {
+  --surface-hover: var(--pane-strong-border);
+  --border: var(--pane-strong-border);
+  --border-2: var(--pane-strong-border);
+  /* The glow under a card is lighter than the page: the quietest text keeps 4.5:1 on it. */
+  --text-3: var(--text-2);
+  /* The off switch's track is darker than the glass: it takes the dimmest text colour to keep 3:1 against it. */
+  --toggle-off: var(--text-dim);
+}
+/* The glow under a card is lighter than the page: a hint in a field and the active segment keep 4.5:1 on it. */
+[data-theme='dark'] :is(.card, .glass-card, .data-table, .on-glass) :is(input, textarea)::placeholder { color: var(--text-2); }
+[data-theme='dark'] :is(.card, .glass-card, .data-table, .on-glass) .seg-btn.active { color: var(--text); }
 .card--hover:hover { border-color: var(--border-2); transform: translateY(-2px); }
 .card-title { font-size: var(--fs-md); font-weight: var(--fw-bold); }
 
@@ -426,7 +467,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   height: var(--control-h);
   flex-shrink: 0;
   padding: 0;
-  background: var(--surface-2);
+  background: var(--pane-strong);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-2);
@@ -470,12 +511,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   width: 56px;
   height: 56px;
   border-radius: var(--radius-lg);
-  background: var(--surface-3);
+  background: var(--pane-strong);
+  box-shadow: inset 0 0 0 1px var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-3);
 }
+[data-theme='dark'] .empty-icon { box-shadow: inset 0 0 0 1px var(--pane-strong-border); color: var(--text-2); }
 .empty-icon svg { opacity: 1; }
 
 /* ── Tabs ── the sections of a page: the kit's segmented control */
@@ -485,7 +528,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   gap: 2px;
   max-width: 100%;
   padding: 3px;
-  background: var(--surface-3);
+  background: var(--pane-strong);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   flex-shrink: 0;
@@ -532,7 +575,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   transition: background var(--dur-fast) var(--ease);
 }
 .list-row:hover { background: var(--surface-hover); }
-.list-row:focus-visible, .list-row-main:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+.list-row:focus-visible, .list-row-main:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .list-row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
 .list-rows > li:has(> .list-row) + li > .list-row::before {
   content: ''; position: absolute; top: -0.5px; left: calc(var(--sp-3) * 2 + var(--list-avatar)); right: var(--sp-3); height: 1px;
@@ -564,7 +607,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   transition: background var(--dur-fast) var(--ease);
 }
 .list-cover:hover { background: var(--surface-hover); color: var(--text); }
-.list-cover:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+.list-cover:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .list-cover.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
 /* Its corner count is the .count-pill of 18 (below, .muted/.missed its colours) in a ring of the chrome. */
 .list-cover-corner { position: absolute; top: 0; right: 0; box-shadow: 0 0 0 2px var(--chrome); }
@@ -591,14 +634,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ── The count on ⋮ ── what waits behind a head's menu (a channel's feed, a chat, a group): one count of 18
    on the button's corner, the rows are in its menu. The button is position: relative. */
-.menu-count { position: absolute; top: -2px; right: -4px; pointer-events: none; }
+.menu-count { position: absolute; top: -4px; right: -4px; pointer-events: none; }
 
 /* ── Segmented control ── (view tabs on Board, language/theme pickers)
    Container is a pill-box; the active option gets the accent tint. */
 .seg {
   display: inline-flex;
   gap: 4px;
-  background: var(--surface-3);
+  background: var(--pane-strong);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 3px;
@@ -621,8 +664,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .seg-btn:hover:not(.active):not(:disabled) { color: var(--text); }
 .seg-btn.active { background: var(--accent-bg); color: var(--accent-text); }
-.seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+.seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* `.seg-fill`: the control across its card, the options of one width, their words wrapped on a narrow screen. */
+.seg.seg-fill { display: flex; width: 100%; box-sizing: border-box; }
+.seg.seg-fill .seg-btn {
+  flex: 1 1 0; min-width: 0; justify-content: center; text-align: center; white-space: normal; line-height: 1.25;
+  height: auto; min-height: max(32px, var(--touch, 0px)); padding-block: 6px;
+}
 /* Standalone segment buttons (Settings language/theme: 44px, own borders) */
 .seg-btn-lg {
   display: inline-flex;
@@ -631,7 +680,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   height: var(--control-h-lg);
   padding: 0 20px;
   border-radius: var(--radius);
-  background: var(--surface-3);
+  background: var(--pane-strong);
   border: 1px solid var(--border);
   color: var(--text-body);
   font-size: var(--fs-base);

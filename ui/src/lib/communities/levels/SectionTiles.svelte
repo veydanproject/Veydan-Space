@@ -171,14 +171,13 @@
   .grid { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: var(--sp-2); }
   .sheet .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tile {
-    position: relative; min-height: 112px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; gap: 14px;
+    position: relative; aspect-ratio: 3 / 2; box-sizing: border-box; overflow: clip; display: flex; flex-direction: column; justify-content: space-between; gap: 14px;
     padding: var(--sp-3); border-radius: var(--radius-lg); font: inherit; color: var(--text); text-align: left; cursor: pointer;
     border: 1px solid color-mix(in srgb, var(--t-color) 30%, var(--border)); background: color-mix(in srgb, var(--t-color) 10%, var(--surface-3));
     transition: border-color var(--dur-fast), background var(--dur-fast);
   }
-  .sheet .tile { min-height: 116px; }
   .tile:hover { background: color-mix(in srgb, var(--t-color) 16%, var(--surface-3)); }
-  .tile:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   /* The section shown: ringed in the accent's ink. */
   .tile.current { border-color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-text); }
   .tile.locked .top :global(.sec-mark), .tile.locked .words { opacity: 0.6; }

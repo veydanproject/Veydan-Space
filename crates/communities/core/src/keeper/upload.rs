@@ -21,7 +21,7 @@ use crate::blobs::fetch_verified;
 use crate::db::keeper as rows;
 use messenger_core::{MessengerError, Result};
 use nostr::key::Keys;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -59,10 +59,14 @@ impl What {
 /// The work of a job.
 #[derive(Clone, Debug)]
 pub enum Work {
-    /// Blobs on every host of `hosts` that lacks them, by the rows.
-    Put { what: What, hosts: Vec<String>, blobs: Vec<(String, Arc<Vec<u8>>)> },
+    /// Blobs on every host of `hosts` that lacks them, by the rows;
+    /// those of `paths` (sha256 → path: the shards and proofs of an epoch
+    /// in Merkle mode, wire §9) under their path too, so that a host that
+    /// serves no paths takes none of the epoch.
+    Put { what: What, hosts: Vec<String>, blobs: Vec<(String, Arc<Vec<u8>>)>, paths: BTreeMap<String, String> },
     /// Blobs the hosts `from` hold on each host of `to` that lacks them
-    /// (wire §9: the rest catch up).
+    /// (wire §9: the rest catch up); a shard or proof of an epoch under its
+    /// path too, on a host that serves paths (the bytes name it).
     Copy { what: What, from: Vec<String>, to: Vec<String>, hashes: Vec<String> },
     /// Blobs removed from the hosts: `(host, sha256)` retired and due.
     Delete { items: Vec<(String, String)> },
@@ -171,6 +175,7 @@ pub async fn run(env: &Env, job: &Job) -> Result<Done> {
             let have = if snapshot { BTreeSet::new() } else { rows::uploads(&env.db, cid, scope_id, epoch).await? };
             let writable = env.writable(&env.uploader(&job.keeper), to, Some(cid)).await;
             for (host, key) in &writable {
+                let paths_here = env.blobs.serves_paths(host).await;
                 let mut all = true;
                 for sha in hashes {
                     if have.contains(&(host.clone(), sha.clone())) {
@@ -185,7 +190,15 @@ pub async fn run(env: &Env, job: &Job) -> Result<Done> {
                         all = false;
                         break;
                     };
-                    if env.blobs.put_keyed(&env.uploader(&job.keeper), key.as_deref(), host, sha, &bytes).await.is_err() {
+                    let path = match what {
+                        What::Epoch { .. } if paths_here => crate::blobs::key_path_of(cid, scope_id, &bytes),
+                        _ => None,
+                    };
+                    let put = match &path {
+                        Some(path) => env.blobs.put_at(&env.uploader(&job.keeper), key.as_deref(), host, path, sha, &bytes).await,
+                        None => env.blobs.put_keyed(&env.uploader(&job.keeper), key.as_deref(), host, sha, &bytes).await,
+                    };
+                    if put.is_err() {
                         all = false;
                         break;
                     }
@@ -287,10 +300,15 @@ struct HostEnd {
 /// `key`: `None`, the host needs the key of its server and this device has
 /// not it: refused at once; `Some(k)`, the key it carries (`None`: none).
 async fn put_to(env: &Env, job: &Job, host: &str, key: Option<Option<String>>, mut have: BTreeSet<String>) -> Result<HostEnd> {
-    let Work::Put { what, blobs, .. } = &job.work else { return Ok(HostEnd::default()) };
+    let Work::Put { what, blobs, paths, .. } = &job.work else { return Ok(HostEnd::default()) };
     let Some(key) = key else {
         return Ok(HostEnd { refused: Some(format!("{host}: {}", crate::upload_keys::NEEDS_KEY)), ..HostEnd::default() });
     };
+    // An epoch its members read by path is of no use on a host without
+    // paths: it takes none of it, and the block of the keeper says why.
+    if !paths.is_empty() && !env.blobs.serves_paths(host).await {
+        return Ok(HostEnd { refused: Some(format!("{host} {}", crate::blobs::NO_PATHS)), ..HostEnd::default() });
+    }
     let cid = &job.community_id;
     let (scope_id, epoch) = what.rows();
     let short = crate::service::short(cid);
@@ -302,7 +320,11 @@ async fn put_to(env: &Env, job: &Job, host: &str, key: Option<Option<String>>, m
             return Ok(HostEnd { cancelled: true, ..HostEnd::default() });
         }
         env.say.mark(Some(format!("keeper {short}: a blob of {} ({} KB) to {host}", what.name(), bytes.len() / 1024)));
-        match env.blobs.put_keyed(&env.uploader(&job.keeper), key.as_deref(), host, sha, bytes).await {
+        let put = match paths.get(sha) {
+            Some(path) => env.blobs.put_at(&env.uploader(&job.keeper), key.as_deref(), host, path, sha, bytes).await,
+            None => env.blobs.put_keyed(&env.uploader(&job.keeper), key.as_deref(), host, sha, bytes).await,
+        };
+        match put {
             Ok(()) => {
                 rows::add_upload(&env.db, cid, scope_id, epoch, host, sha).await?;
                 have.insert(sha.clone());
@@ -326,7 +348,7 @@ mod tests {
             })
             .collect();
         let what = What::Epoch { scope_id: crate::state::SCOPE_EVERYONE.into(), epoch: 1 };
-        Job { community_id: cid.into(), keeper: Keys::generate(), work: Work::Put { what, hosts: hosts.iter().map(|h| (*h).to_string()).collect(), blobs }, cancel: Arc::default() }
+        Job { community_id: cid.into(), keeper: Keys::generate(), work: Work::Put { what, hosts: hosts.iter().map(|h| (*h).to_string()).collect(), blobs, paths: BTreeMap::new() }, cancel: Arc::default() }
     }
 
     /// The hosts take the blobs at once, each in turn (живой запуск

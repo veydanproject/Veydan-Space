@@ -89,7 +89,7 @@
     border: none; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-md);
   }
   .row :global(svg) { flex-shrink: 0; }
-  .row:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .tile { flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center; background: var(--surface-3); color: var(--text-2); }
   @media (hover: hover) { .row:hover:not(:disabled) { color: var(--text); } .row:hover:not(:disabled) .tile { background: var(--surface-hover); } }
   .row:disabled { cursor: default; }

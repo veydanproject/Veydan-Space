@@ -41,7 +41,7 @@
     transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
   }
   .q:hover, .q.on { color: var(--accent-text); background: var(--accent-tint); }
-  .q:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 1px; }
+  .q:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .note {
     position: absolute; top: calc(100% + var(--sp-2)); left: 0; right: 0; max-width: 440px; z-index: var(--z-popover);
     display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); box-sizing: border-box;

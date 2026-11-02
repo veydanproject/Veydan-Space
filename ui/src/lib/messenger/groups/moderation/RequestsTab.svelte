@@ -249,7 +249,7 @@
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); cursor: pointer; user-select: none; }
   .row .seg { gap: 2px; padding: 2px; }
   .seg-btn { height: var(--control-h-sm); padding: 0 var(--sp-2); font-size: var(--fs-xs); }
-  .seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .nothing { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
   .empty-state { padding: var(--sp-10) var(--sp-4); }

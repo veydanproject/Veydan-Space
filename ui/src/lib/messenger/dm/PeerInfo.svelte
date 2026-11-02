@@ -83,7 +83,7 @@
       </section>
 
       {#if profile?.socials?.length || website}
-        <section class="box">
+        <section class="box glass-card">
           {#if profile?.socials?.length}
             <span class="label">{$t('msg_peer_links')}</span>
             <SocialLinks socials={profile.socials} />
@@ -98,7 +98,7 @@
       {/if}
 
       {#if phone || chat.peer_npub}
-        <section class="box keys">
+        <section class="box glass-card keys">
           {#if phone}
             <div class="field">
               <CopyField label={$t('msg_peer_phone')} value={phone} />
@@ -126,7 +126,7 @@
 </div>
 
 <style>
-  .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
+  .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
   /* A tablet or a wide window: the column stays readable in the middle. */
   .scroll > :global(*) { width: 100%; max-width: 560px; align-self: center; flex-shrink: 0; }
@@ -146,7 +146,7 @@
   .about-label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-2); }
 
   /* The cards: the links and the site; the phone and the key, each with its copy. */
-  .box { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); }
+  .box { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-3); border-radius: var(--radius-lg); }
   .label { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .box > :global(.socials) { margin-bottom: var(--sp-1); }
   .site {
@@ -155,7 +155,7 @@
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); transition: border-color var(--dur-fast) var(--ease);
   }
   .site:hover { border-color: var(--accent-border); }
-  .site:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .site:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .site :global(svg) { flex: none; }
   .site :global(svg:last-child) { color: var(--text-3); }
   .site-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

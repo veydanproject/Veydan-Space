@@ -5,7 +5,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Editor } from '@tiptap/core';
-  import { noteExtensions, unclosedMarkAt, TPL_CLOSE, TPL_OPEN, WIKI_CLOSE, WIKI_OPEN, type ResolveSrc } from '$lib/notes/tiptap-ext';
+  import {
+    noteExtensions, setKnownAttachments, unclosedMarkAt, TPL_CLOSE, TPL_OPEN, WIKI_CLOSE, WIKI_OPEN,
+    type KnownAttachments, type ResolveSrc,
+  } from '$lib/notes/tiptap-ext';
   import { stockHistoryChord, takeHistory } from '$lib/core/keybindings';
   import type { EditAction } from '$lib/notes/markdown-edit';
   import { portal } from '$lib/core/portal';
@@ -14,6 +17,8 @@
   interface Props {
     content: string;
     resolveSrc: ResolveSrc;
+    /** The note's attachments; a link to one not among them shows «File deleted». Null: not read yet. */
+    knownAttachments?: KnownAttachments | null;
     placeholder: string;
     onchange: (md: string) => void;
     /** Text typed after an unclosed `[[`, or null when no wiki link is being typed. */
@@ -25,7 +30,7 @@
     autofocus?: boolean;
   }
 
-  let { content, resolveSrc, placeholder, onchange, onwiki, onwikilink, ontpl, autofocus = false }: Props = $props();
+  let { content, resolveSrc, knownAttachments = null, placeholder, onchange, onwiki, onwikilink, ontpl, autofocus = false }: Props = $props();
 
   let hostEl: HTMLElement | null = $state(null);
   let editor: Editor | null = null;
@@ -88,6 +93,7 @@
     });
     lastEmitted = content;
     isEmpty = editor.isEmpty;
+    setKnownAttachments(editor, knownAttachments);
     const host = hostEl!;
     host.addEventListener('touchstart', onTouchStart, { passive: false });
     host.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -113,6 +119,11 @@
     lastEmitted = md;
     editor.chain().setMeta('addToHistory', false).setContent(md, { contentType: 'markdown', emitUpdate: false }).run();
     isEmpty = editor.isEmpty;
+  });
+
+  $effect(() => {
+    const known = knownAttachments;
+    if (editor) setKnownAttachments(editor, known);
   });
 
   $effect(() => {
@@ -444,6 +455,22 @@
   .host :global([data-resize-container]), .host :global([data-resize-wrapper]) { max-width: 100%; }
   .host :global([data-resize-container]) { touch-action: pan-y; }
   .host :global([data-resize-wrapper] img) { display: block; }
+  /* An attachment deleted while its link stayed in the text; the resizable image's container has an inline display */
+  .host :global(.note-att-gone-img) { display: none !important; }
+  .host :global(.note-att-gone) {
+    display: inline-block;
+    max-width: 100%;
+    padding: 0.1em 0.5em;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text-3);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+    vertical-align: middle;
+    user-select: none;
+  }
+  .host :global(.note-att-gone-link) { color: var(--text-3); text-decoration: line-through; }
   .host :global([data-resize-handle]) {
     width: 22px;
     height: 22px;

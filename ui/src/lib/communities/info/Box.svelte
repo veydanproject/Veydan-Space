@@ -24,10 +24,10 @@
   let { tag = 'div', kind = 'rows', fromText = false, tight = false, start = false, children, ...rest }: Props = $props();
 </script>
 
-<svelte:element this={tag} {...rest} class="box {kind}" class:from-text={fromText} class:tight class:start>{@render children()}</svelte:element>
+<svelte:element this={tag} {...rest} class="box glass-card {kind}" class:from-text={fromText} class:tight class:start>{@render children()}</svelte:element>
 
 <style>
-  .box { --line-left: var(--sp-3); display: flex; flex-direction: column; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); }
+  .box { --line-left: var(--sp-3); display: flex; flex-direction: column; border-radius: var(--radius-lg); }
   /* The row's padding, its tile (36), the gap. */
   .from-text { --line-left: calc(var(--sp-3) * 2 + 36px); }
   .rows { list-style: none; margin: 0; padding: var(--sp-1); }

@@ -40,7 +40,7 @@
   <div class="overlay" in:backdropIn out:backdropOut use:portal use:backdropDismiss={oncancel} role="presentation">
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
     <div
-      class="modal"
+      class="modal on-glass"
       in:dialogIn
       out:dialogOut
       onclick={(e) => e.stopPropagation()}

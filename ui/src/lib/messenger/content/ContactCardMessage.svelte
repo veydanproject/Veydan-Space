@@ -183,7 +183,7 @@
 {/if}
 
 <style>
-  /* The bubble is the card (mockups c7.js): no box inside it. */
+  /* The bubble is the card: no box inside it. */
   .contact-card {
     display: flex; flex-direction: column; gap: var(--sp-2);
     width: 336px; max-width: 100%; color: var(--text);
@@ -210,7 +210,7 @@
     padding: 0 var(--sp-1); margin-inline: calc(-1 * var(--sp-1)); border-radius: var(--radius-sm); cursor: pointer;
   }
   .fact:hover { background: var(--surface-row-hover, var(--surface-2)); color: var(--text); }
-  .fact:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 1px; }
+  .fact:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .fact :global(svg) { flex-shrink: 0; }
   .value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
   .copy { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: var(--fs-2xs); color: var(--text-3); }
@@ -222,13 +222,13 @@
   .status.closed { color: var(--warn-text); }
   /* Its buttons 40, side by side the card's width; stacked for a finger. */
   .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-  /* The two buttons equal (mockups c7.js). */
-  .row .btn { flex: 1 1 0; min-width: 0; min-height: var(--control-h); gap: var(--sp-2); justify-content: center; }
-  .known { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--text-3); padding: 0 4px; }
+  /* The main button takes what the other leaves. */
+  .row .btn { flex: 1 1 auto; min-width: 0; min-height: var(--control-h); gap: var(--sp-2); justify-content: center; white-space: nowrap; }
+  .row .btn-ghost { flex: 0 0 auto; }
+  .known { display: inline-flex; flex: none; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--success-text, var(--success)); white-space: nowrap; }
   .error { font-size: var(--fs-xs); color: var(--danger-text); line-height: 1.4; }
   .damaged { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
   @media (pointer: coarse) {
-    .row { flex-direction: column; align-items: stretch; }
     .fact { min-height: var(--control-h); }
     .more { padding: 4px 0; }
   }

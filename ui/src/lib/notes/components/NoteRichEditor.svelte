@@ -7,7 +7,9 @@
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { api, downloadNoteAttachment } from '$lib/notes/api';
   import { pasteHasHiddenFiles } from '$lib/notes/files';
-  import { noteExtensions, unclosedMarkAt, TPL_CLOSE, TPL_OPEN, WIKI_CLOSE, WIKI_OPEN } from '$lib/notes/tiptap-ext';
+  import {
+    noteExtensions, setKnownAttachments, unclosedMarkAt, TPL_CLOSE, TPL_OPEN, WIKI_CLOSE, WIKI_OPEN, type KnownAttachments,
+  } from '$lib/notes/tiptap-ext';
   import PlaceholderPicker from './PlaceholderPicker.svelte';
   import type { EditAction } from '$lib/notes/markdown-edit';
   import type { NoteListItem } from '$lib/notes/types';
@@ -21,6 +23,8 @@
     /** Absolute dir the relative attachment links resolve against */
     baseDir?: string;
     noteId?: string;
+    /** The note's attachments; a link to one not among them shows «File deleted». Null: not read yet */
+    knownAttachments?: KnownAttachments | null;
     readonly?: boolean;
     placeholder?: string;
     notes: NoteListItem[];
@@ -39,7 +43,7 @@
   }
 
   let {
-    content, baseDir, noteId, readonly = false, placeholder = '', notes, excludeId = null,
+    content, baseDir, noteId, knownAttachments = null, readonly = false, placeholder = '', notes, excludeId = null,
     onchange, onwikilink, placeholderText, placeholderPreview, onfiles, onclipboardfiles, onhotkey,
   }: Props = $props();
 
@@ -93,7 +97,13 @@
     lastContent = content;
     lastEmitted = editor.getMarkdown();
     isEmpty = editor.isEmpty;
+    setKnownAttachments(editor, knownAttachments);
     return () => editor?.destroy();
+  });
+
+  $effect(() => {
+    const known = knownAttachments;
+    if (editor) setKnownAttachments(editor, known);
   });
 
   // Content changed outside the editor (history restore, merge, external file change, source mode)
@@ -569,6 +579,22 @@
   .host :global(hr) { border: none; border-top: 1px solid var(--border); margin: 1.2em 0; }
   .host :global(img) { max-width: 100%; height: auto; border-radius: var(--radius-sm); vertical-align: middle; }
   .host :global([data-resize-container]) { max-width: 100%; vertical-align: middle; }
+  /* An attachment deleted while its link stayed in the text; the resizable image's container has an inline display */
+  .host :global(.note-att-gone-img) { display: none !important; }
+  .host :global(.note-att-gone) {
+    display: inline-block;
+    max-width: 100%;
+    padding: 0.1em 0.5em;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text-3);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+    vertical-align: middle;
+    user-select: none;
+  }
+  .host :global(.note-att-gone-link) { color: var(--text-3); text-decoration: line-through; }
   .host :global([data-resize-wrapper]) { max-width: 100%; }
   .host :global([data-resize-wrapper] img) { display: block; }
   .host :global([data-resize-handle]) {

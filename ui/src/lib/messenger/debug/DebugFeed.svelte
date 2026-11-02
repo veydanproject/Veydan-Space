@@ -53,7 +53,7 @@
 </script>
 
 <div class="card feed">
-  <div class="card-title"><Icon name="bug" size={16} /> {$t('msg_debug_title')}</div>
+  <div class="card-title">{$t('msg_debug_title')}</div>
   <p class="muted">{$t('msg_debug_text')}</p>
 
   <form class="send" onsubmit={(e) => { e.preventDefault(); send(); }}>
@@ -83,7 +83,7 @@
 </div>
 
 <style>
-  .feed { max-width: 640px; display: flex; flex-direction: column; gap: var(--sp-3); }
+  .feed { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-xs); }
   .send { display: flex; gap: var(--sp-2); flex-wrap: wrap; }

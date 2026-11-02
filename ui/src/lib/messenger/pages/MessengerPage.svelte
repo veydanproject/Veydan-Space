@@ -287,7 +287,7 @@
         class:hidden-narrow={view === 'settings' || (view === 'contacts' ? !!contact : view === 'calls' ? !!callChat : host ? !!sectionChat : !listView || !!chatStore.active || !!request)}>
       {#if view === 'settings'}
       <!-- The settings (design kit): their sections in the list's column, the chosen one in the pane. -->
-      <aside class="rail setnav">
+      <aside class="on-glass rail setnav">
         <h2 class="setnav-title">{$t('msg_settings_title_full')}</h2>
         <nav class="setnav-list">
           {#each SETTINGS_TABS as id (id)}
@@ -299,7 +299,7 @@
         </nav>
       </aside>
       {:else if view === 'contacts'}
-      <aside class="rail">
+      <aside class="on-glass rail">
         {#if covers}
           {@render coversTop(() => (addingContact = true), $t('msg_contacts_new'), 'user-plus', $t('msg_contacts_search'), !!contactQuery)}
         {:else}
@@ -319,7 +319,7 @@
         <ContactList query={contactQuery} selected={contactKey} onselect={(c) => (contactKey = c.pubkey)} {covers} />
       </aside>
       {:else if view === 'calls'}
-      <aside class="rail">
+      <aside class="on-glass rail">
         {#if covers}
           <!-- The journal has no search: the new call alone. -->
           <div class="covers-top">
@@ -335,7 +335,7 @@
         <CallHistory {covers} selected={callChat ? callRow : null} onselect={(r) => { callChat = r.head.chat_id; callRow = r.key; }} onchat={writeTo} onnew={() => (newCall = true)} />
       </aside>
       {:else if host}
-      <aside class="rail">
+      <aside class="on-glass rail">
         {#if covers}
           {@render coversTop(() => (creating[host.id] = true), $t(host.newTitle), host.newIcon, $t('msg_chats_search'), !!query)}
           {@const summary = host.aboveSummary?.()}
@@ -356,7 +356,7 @@
         <ChatList {query} kind={host.id} selected={sectionChat} onopen={openChat} onopenrow={(id) => (sectionChat = id)} {covers} />
       </aside>
       {:else}
-      <aside class="rail">
+      <aside class="on-glass rail">
         {#if covers}
           {#if view === 'groups'}
             {@render coversTop(() => (newGroup = true), $t('msg_groups_new'), 'users-plus', $t('msg_chats_search'), !!query)}
@@ -398,7 +398,7 @@
       {/if}
       </div>
 
-      <main class="pane" class:hidden-narrow={(listView && !chatStore.active && !request) || (view === 'calls' && !callChat) || (!!host && !sectionChat)}>
+      <main class="on-glass pane" class:hidden-narrow={(listView && !chatStore.active && !request) || (view === 'calls' && !callChat) || (!!host && !sectionChat)}>
         {#if host}
           {#if sectionChat}
             {@const View = host.view}
@@ -584,7 +584,7 @@
   /* The chosen section: the accent fill with its line, the words white, the icon in the accent (design book). */
   .setnav-item.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--text); }
   .setnav-item.active :global(svg) { color: var(--accent-text); }
-  .setnav-item:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .setnav-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .pane-head {
     display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; min-height: 64px; padding: 0 var(--sp-6);
     background: var(--pane-head); border-bottom: 1px solid var(--pane-border);

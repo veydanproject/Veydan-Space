@@ -15,3 +15,9 @@ messenger-core.workspace = true
 nostr.workspace = true
 base64.workspace = true
 sha2.workspace = true
+# The picture of a link as a QR code (src/qr.rs); drawn here, not by the crate.
+qrcode.workspace = true
+
+[dev-dependencies]
+# Reads the codes back in the tests of src/qr.rs, logo and all.
+rqrr = { version = "0.11", default-features = false }

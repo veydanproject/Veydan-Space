@@ -33,17 +33,52 @@ export function captureSupported(kind: CaptureKind): boolean {
   return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && pickMime(kind) !== null;
 }
 
+/**
+ * The camera gave a picture in this run of the app. Android WebView never
+ * answers `granted` to the query of the permission, whatever the system
+ * allowed, so without this the tile came back dark after Home and wanted
+ * a tap. The system takes the permission back only by ending the process.
+ */
+let cameraGiven = false;
+
+/** What the camera sees, for the tile of the gallery: no sound. Null when it cannot be had. */
+export async function openPreview(): Promise<MediaStream | null> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return null;
+  try {
+    await messengerApi.media.grantAccess().catch(() => {});
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'environment', width: { ideal: 480 }, height: { ideal: 480 } } });
+    cameraGiven = true;
+    return stream;
+  } catch {
+    cameraGiven = false;
+    return null;
+  }
+}
+
+/** The camera was allowed before: the preview starts without asking anything. */
+export async function cameraAllowed(): Promise<boolean> {
+  if (cameraGiven) return true;
+  try {
+    return (await navigator.permissions.query({ name: 'camera' as PermissionName })).state === 'granted';
+  } catch {
+    return false;
+  }
+}
+
 export async function openStream(kind: CaptureKind, facing: 'user' | 'environment' = 'user'): Promise<MediaStream> {
   if (!captureSupported(kind)) throw new CaptureError('unsupported');
   try {
     await messengerApi.media.grantAccess().catch(() => {});
-    return await navigator.mediaDevices.getUserMedia(
+    const stream = await navigator.mediaDevices.getUserMedia(
       kind === 'voice'
         ? { audio: { echoCancellation: true, noiseSuppression: true } }
         : { audio: true, video: { facingMode: facing, width: { ideal: 480 }, height: { ideal: 480 }, aspectRatio: 1 } },
     );
+    if (kind === 'circle') cameraGiven = true;
+    return stream;
   } catch (e) {
     const name = (e as DOMException)?.name ?? '';
+    if (kind === 'circle' && (name === 'NotAllowedError' || name === 'SecurityError')) cameraGiven = false;
     if (name === 'NotAllowedError' || name === 'SecurityError') throw new CaptureError('denied', e);
     if (name === 'NotFoundError' || name === 'OverconstrainedError') throw new CaptureError('no_device', e);
     if (name === 'NotReadableError' || name === 'AbortError') throw new CaptureError('busy', e);

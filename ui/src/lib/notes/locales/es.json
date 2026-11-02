@@ -344,6 +344,7 @@
     "notes_panel_resize": "Cambiar el ancho del panel",
     "notes_task_checkbox": "Tarea: {text}",
     "notes_task_checkbox_empty": "Tarea vacía",
+    "notes_attachment_gone": "Archivo eliminado",
     "notes_smart_profile_search": "Buscar un perfil…"
   },
   "mobile": {

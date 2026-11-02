@@ -78,7 +78,9 @@
   const startValue = $derived(defaultApp || (withModules ? '' : (appOptions[0]?.id ?? '')));
   // The modules' sections, after the main list; a section that goes inside a
   // core form (`into`) is rendered there instead.
-  const sections = $derived(registry.settings().filter((s) => !s.into && (s.visible?.() ?? true)));
+  const sections = $derived(registry.settings().filter((s) => !s.into && !s.after && (s.visible?.() ?? true)));
+  // The ones that stand right after the account (the chat's settings).
+  const afterAccount = $derived(registry.settings().filter((s) => s.after === 'account' && (s.visible?.() ?? true)));
   // The account of the product, where a module shows one: first on the page, and the way to sync.
   const accountSections = $derived(registry.accountSections());
   // The Modules section: in a product of more than one module (section 12).
@@ -208,6 +210,13 @@
   {#each accountSections as section (section.id)}
     <div class="m-list account">
       <section.component />
+    </div>
+  {/each}
+
+  {#each afterAccount as section (section.id)}
+    <div class="m-section set-h"><Icon name={section.icon ?? 'layers'} size={16} />{$t(section.group)}</div>
+    <div class="m-list rows">
+      <section.component {...section.props} />
     </div>
   {/each}
 
@@ -464,7 +473,7 @@
   /* The rows of the design kit: a tile with the icon, the name, its value under it. */
   .set-h { display: flex; align-items: center; gap: var(--sp-2); }
   .set-h :global(.icon) { color: var(--text-2); }
-  .m-list:has(.set-row) { padding: var(--sp-1); }
+  .m-list:has(.set-row), .m-list.rows { padding: var(--sp-1); }
   .set-row { gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-3); border-bottom: 0; border-radius: var(--radius-lg); }
   .set-tile {
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;

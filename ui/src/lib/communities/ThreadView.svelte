@@ -320,7 +320,7 @@
   <PickedTray picked={tray} />
 {/snippet}
 
-<div class="panel">
+<div class="panel on-glass">
   <!-- The bar of the page: «Пост» with its section and channel under it (the mockup c6.js); the menu of the post; the way back. -->
   <header class="phead" class:phone>
     {#if phone}<button class="icon back" onclick={onclose} aria-label={$t('chan_back')}><Icon name="chevron-left" size={24} /></button>{/if}
@@ -391,12 +391,12 @@
   /* The buttons of the bar: 36 with their icons 18 (44 on a phone). */
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
-  .icon:focus-visible, .x:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .icon:focus-visible, .x:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   /* On a phone the bar floats inset, as the head of the channel over its feed. */
   .phead.phone {
     position: relative; z-index: 2; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1);
     border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head);
-    background: var(--pane-strong); box-shadow: var(--pane-highlight), var(--pane-shadow);
+    background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow);
     -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
   .phead.phone .ph-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
@@ -406,6 +406,8 @@
   /* The page (the mockup c6.js): the post the whole width, a strip «Комментарии · N», the thread under it. */
   .scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
   .post-box { padding: var(--sp-5) var(--sp-4) var(--sp-4); }
+  /* The page runs behind the glass of the bar (64: its 56 and its margin). */
+  .phone + .scroll { isolation: isolate; margin-top: -64px; padding-top: 64px; scroll-padding-top: 64px; -webkit-mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); }
   .phone + .scroll .post-box { padding-top: var(--sp-4); }
   /* «Комментарии · 31»: a quiet strip across the page. */
   .label { flex-shrink: 0; padding: var(--sp-2) var(--sp-4); background: var(--surface-2); border-block: 1px solid var(--border); font-size: var(--fs-sm); color: var(--text-2); font-weight: var(--fw-bold); }
@@ -433,7 +435,7 @@
   /* The circles shrink to fit any width of the menu (40 at most, 44 on a finger), evenly spread, none cut. */
   .q { flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; height: auto; padding: 0; border: none; background: var(--surface-3); font-size: 20px; line-height: 1; border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
   @media (pointer: coarse) { .q { max-width: 44px; } }
-  .q:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .q:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .q:hover { background: var(--surface-hover); }
   .q.mine { background: var(--accent-bg); }
 </style>

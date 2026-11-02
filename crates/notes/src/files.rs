@@ -200,7 +200,10 @@ pub(crate) fn write_note_file(
         tags_yaml, row.created_at, row.updated_at
     );
 
-    let full = format!("{}{}", frontmatter, content);
+    // The reader takes one newline after the closing `---` as the separator; a body that
+    // starts with a newline (an empty first line) gets it written, or it would lose that line.
+    let sep = if content.starts_with('\n') { "\n" } else { "" };
+    let full = format!("{}{}{}", frontmatter, sep, content);
     atomic_write(path, &full)
 }
 
@@ -429,7 +432,7 @@ mod wire_format_tests {
         let text = written(
             &row("Deploy", r#"["workspace:w1","profile:p1"]"#),
             &["ops", "infra"],
-            "\n# Deploy\n",
+            "# Deploy\n",
         );
         assert_eq!(
             text,
@@ -444,7 +447,7 @@ mod wire_format_tests {
              created_at: 2026-09-30T10:00:00+00:00\n\
              updated_at: 2026-09-30T11:00:00+00:00\n\
              ---\n\
-             \n# Deploy\n"
+             # Deploy\n"
         );
 
         let bare = written(&row("line1\nline2", "[]"), &[], "");
@@ -461,6 +464,14 @@ mod wire_format_tests {
              updated_at: 2026-09-30T11:00:00+00:00\n\
              ---\n"
         );
+    }
+
+    #[test]
+    fn empty_first_lines_survive_a_write_and_a_read() {
+        let r = row("Blank", "[]");
+        for body in ["", "Text", "\n\nText", "\n\n&nbsp;\n\nText", "\nText\n", "\n"] {
+            assert_eq!(parse_note_file(&written(&r, &[], body)).2, body, "{body:?}");
+        }
     }
 
     #[test]

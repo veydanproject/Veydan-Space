@@ -27,7 +27,8 @@
   import ScanQr from './ScanQr.svelte';
   import ShareOutSheet from '../content/ShareOutSheet.svelte';
   import { contactShareItem, type ShareOutItem } from '../content/shareOut';
-  import { qrSrc as svgSrc, saveQr, saveQrError } from '../content/saveQr';
+  import { qrPicture } from '$lib/core/ui/qrPicture';
+  import { saveQr, saveQrError } from '../content/saveQr';
   import ServerBox from '../servers/ServerBox.svelte';
   import ServerPicker from '../servers/ServerPicker.svelte';
   import { serverStore } from '../servers/serverStore.svelte';
@@ -102,7 +103,7 @@
     if (!s) return;
     let live = true;
     messengerApi.servers.privateLinkQr(s)
-      .then((svg) => { if (live) { serverSvg = svg; serverQr = svgSrc(svg); } })
+      .then(async (svg) => { const src = await qrPicture(svg); if (live) { serverSvg = svg; serverQr = src; } })
       .catch((e) => { if (live) error = messengerError(e); });
     return () => { live = false; };
   });
@@ -117,11 +118,12 @@
       let v = reusableQr(inviteStore.list ?? [], permanent, nowSec());
       v ??= await inviteStore.create(permanent ? { kind: 'qr', label: '' } : { kind: 'qr', label: '', ttl_secs: QR_TTL_SECS });
       const svg = await messengerApi.links.contactQr(v.id);
+      // Shown as an image, the logo in it: nothing inside the picture can run.
+      const src = await qrPicture(svg);
       if (destroyed) return;
       current = v;
       qrSvg = svg;
-      // Shown as an image: nothing inside the picture can run.
-      qrSrc = svgSrc(svg);
+      qrSrc = src;
     } catch (e) {
       error = messengerError(e);
       retryAt = nowSec() + DRAW_RETRY_SECS;
@@ -345,8 +347,8 @@
   .for { display: flex; flex-direction: column; gap: var(--sp-2); }
   .center { text-align: center; }
   .qrbox { display: flex; justify-content: center; }
-  /* A code is read by a camera: always dark on light, whatever the theme. */
-  .qr { width: min(200px, 100%); aspect-ratio: 1; height: auto; background: #fff; border-radius: var(--radius-lg); padding: var(--sp-2); image-rendering: pixelated; }
+  /* A code is read by a camera: always dark on light, whatever the theme; the card is in the picture. */
+  .qr { width: min(200px, 100%); aspect-ratio: 1; height: auto; border-radius: var(--radius-lg); }
   .placeholder { display: flex; align-items: center; justify-content: center; color: var(--text-3); background: var(--surface-2); border: 1px solid var(--border); }
   .under { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; text-align: center; min-height: 28px; margin-top: calc(-1 * var(--sp-2)); font-variant-numeric: tabular-nums; }
   .under .muted { color: var(--text-3); }

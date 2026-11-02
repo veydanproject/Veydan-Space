@@ -141,7 +141,7 @@
     border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-2xs); color: var(--text-3); border-radius: var(--radius-xs);
   }
   .npub:hover { color: var(--accent-text); }
-  .npub:focus-visible, .note-more:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .npub:focus-visible, .note-more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .more { flex-shrink: 0; align-self: flex-start; width: var(--control-h-sm); height: var(--control-h-sm); color: var(--text-3); }
   /* Their words: a plain paragraph, five lines, the rest on «ещё». */
   .note { margin: 0; padding: 0; border: none; background: none; font-size: var(--fs-sm); line-height: 1.45; color: var(--text); }
@@ -149,7 +149,7 @@
     display: block; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
     max-height: calc(5 * 1.45em); overflow: hidden;
   }
-  .note-text.over { mask-image: linear-gradient(to bottom, #000 calc(100% - 1.45em), transparent); }
+  .note-text.over { mask-image: linear-gradient(to bottom, black calc(100% - 1.45em), transparent); }
   .note-text.open { max-height: none; overflow: visible; }
   .note-more {
     align-self: flex-start; margin-top: calc(-1 * var(--sp-1)); border: none; background: none; padding: 0; cursor: pointer; border-radius: var(--radius-xs);

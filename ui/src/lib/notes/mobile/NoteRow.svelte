@@ -22,13 +22,19 @@
     onquick: (note: NoteListItem) => void;
     /** Buttons revealed by a swipe left. */
     onaction: (action: RowAction, note: NoteListItem) => void;
+    /** This row's buttons are the shown ones; the list keeps one row open and closes it when it goes false. */
+    revealed?: boolean;
+    /** Another row is open: a touch here closes it, so the tap that does it opens nothing. */
+    otherRevealed?: boolean;
+    /** The buttons were shown (`true`) or hidden (`false`) by this row. */
+    onreveal?: (open: boolean) => void;
     /** The scope line: the folder, workspace or profile the note is in, in its own colour; «Global» without it. */
     scope?: { label: string; color?: string };
     /** What the scope line names, so the chips do not repeat it. */
     hide?: { folder?: string; binding?: string };
   }
 
-  let { note, mode = 'normal', selecting = false, selected = false, onopen, ontoggle, onlongpress, onquick, onaction, scope, hide }: Props = $props();
+  let { note, mode = 'normal', selecting = false, selected = false, onopen, ontoggle, onlongpress, onquick, onaction, revealed = false, otherRevealed = false, onreveal, scope, hide }: Props = $props();
 
   const chips = $derived(note.chips.filter((c) => !(c.kind === 'folder' && c.id === hide?.folder) && `${c.kind}:${c.id}` !== hide?.binding));
 
@@ -64,6 +70,17 @@
     }
   });
 
+  /** Rests the row open or closed and tells the list. */
+  function settle(open: boolean) {
+    dx = open ? -REVEAL : 0;
+    if (open !== revealed) onreveal?.(open);
+  }
+
+  // The list opened another row or closed this one (a touch elsewhere).
+  $effect(() => {
+    if (!revealed && !dragging && dx < 0) dx = 0;
+  });
+
   function clearPress() {
     clearTimeout(pressTimer);
     pressTimer = undefined;
@@ -76,11 +93,11 @@
     startY = t0.clientY;
     axis = null;
     dragging = true;
-    suppressTap = false;
+    suppressTap = otherRevealed;
     pressTimer = setTimeout(() => {
       pressTimer = undefined;
       suppressTap = true;
-      dx = 0;
+      settle(false);
       onlongpress(note);
     }, 500);
   }
@@ -110,16 +127,14 @@
     if (!dragging) return;
     dragging = false;
     if (axis !== 'x') {
-      dx = dx <= -TRIGGER ? -REVEAL : 0;
+      settle(dx <= -TRIGGER);
       return;
     }
     if (dx > TRIGGER) {
-      dx = 0;
+      settle(false);
       onquick(note);
-    } else if (dx < -TRIGGER) {
-      dx = -REVEAL;
     } else {
-      dx = 0;
+      settle(dx < -TRIGGER);
     }
   }
 
@@ -129,7 +144,7 @@
       return;
     }
     if (dx !== 0) {
-      dx = 0;
+      settle(false);
       return;
     }
     if (selecting) ontoggle(note);
@@ -137,12 +152,12 @@
   }
 
   function act(action: RowAction) {
-    dx = 0;
+    settle(false);
     onaction(action, note);
   }
 </script>
 
-<div class="swipe" class:selected class:moved={dx !== 0 || dragging}>
+<div class="swipe" data-note-id={note.id} class:selected class:moved={dx !== 0 || dragging}>
   <div class="clip">
     <div class="reveal" class:shown={dx < 0} style:width="{REVEAL}px">
       {#each buttons as b (b.action)}

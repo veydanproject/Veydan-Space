@@ -384,7 +384,8 @@ pub struct Issued {
     /// `from_join` only: keys of epochs the member was entitled to but no
     /// cover of a bundle it holds reached (a late migration, the epochs
     /// after an emergency). Oldest first, at most one page
-    /// (`issued::MISSED_PAGE` keys). Under `open` it is always empty: the
+    /// (`issued::MISSED_PAGE_BUNDLED` keys with a bundle,
+    /// `issued::MISSED_PAGE` without). Under `open` it is always empty: the
     /// current key and the chain of the events give every earlier key.
     pub missed: Vec<EpochKey>,
     /// Whether more missed keys follow: the host asks

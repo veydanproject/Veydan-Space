@@ -10,6 +10,14 @@
 //! `BlobHosts` is the seam: the app takes the backends of the messenger
 //! (`MediaHosts`: a Blossom upload signed by the writer, a public GET),
 //! the tests an in-memory host with failures on demand.
+//!
+//! An epoch of a tree above `keydist::shard::INDEX_MAX` shards names a
+//! Merkle root, not an index blob (`communities-keydist.md` §19.3, 14): a
+//! member knows the hash of neither its proof nor its shard, so a host
+//! that serves paths keeps both under a path too (`key_path`), and the
+//! member reads them by it. A path is no proof of anything: what a host
+//! gives for it is checked against the root of the event
+//! (`keydist::shard::verify`), as a blob by hash is checked by its hash.
 
 use async_trait::async_trait;
 use messenger_core::{MessengerError, Result};
@@ -98,6 +106,50 @@ pub trait BlobHosts: Send + Sync {
     async fn revoke(&self, _app_key: &str, _host: &str, _label: &str, _pubkey: &str) -> Result<()> {
         Ok(())
     }
+    /// Whether `host` keeps blobs under a path too (`put_at`, `get_at`):
+    /// a host of an epoch in Merkle mode must. A plain Blossom host does
+    /// not.
+    async fn serves_paths(&self, _host: &str) -> bool {
+        false
+    }
+    /// `put_keyed` of a blob read by `path` too: its bytes under their
+    /// hash, and the path named to it (a second put of the same path names
+    /// it again). Removing the blob (`delete`) takes its path with it.
+    async fn put_at(&self, _signer: &Keys, _key: Option<&str>, host: &str, _path: &str, _sha256: &str, _bytes: &[u8]) -> Result<()> {
+        Err(MessengerError::Transport(format!("err.unsupported: {host} {NO_PATHS}")))
+    }
+    /// The blob at `path` (`key_path`), up to `MAX_BLOB_BYTES`; `None`
+    /// when this host has none there. Not checked here, and no hash checks
+    /// it: the root of the event does.
+    async fn get_at(&self, _host: &str, _path: &str) -> Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
+}
+
+/// What a host that serves no paths lacks, for the block of the keeper.
+pub const NO_PATHS: &str = "serves no blobs by path, which an epoch of more than 524 288 leaves needs (wire §9)";
+
+/// The path a host keeps a shard or a proof of an epoch in Merkle mode
+/// under (wire §9): `keys/<community>/<scope>/<gen>/<epoch>/<shard|proof>/<no>`.
+/// `None` for an index blob, which goes by its hash alone.
+pub fn key_path(community_id: &str, scope_id: &str, kind: keydist::BlobKind, gen: u32, epoch: u32, no: u32) -> Option<String> {
+    let kind = match kind {
+        keydist::BlobKind::Shard => "shard",
+        keydist::BlobKind::Proof => "proof",
+        keydist::BlobKind::Index => return None,
+    };
+    Some(format!("keys/{community_id}/{scope_id}/{gen}/{epoch}/{kind}/{no}"))
+}
+
+/// `key_path` of a shard or a proof by its own header (a copy from host to
+/// host knows the bytes and their hash, not the blob they are of).
+pub fn key_path_of(community_id: &str, scope_id: &str, bytes: &[u8]) -> Option<String> {
+    use keydist::shard;
+    if let Ok(h) = shard::parse_header(bytes) {
+        return key_path(community_id, scope_id, keydist::BlobKind::Shard, h.gen, h.epoch, h.shard_no);
+    }
+    let p = shard::Proof::from_bytes(bytes).ok()?;
+    key_path(community_id, scope_id, keydist::BlobKind::Proof, p.gen, p.epoch, p.shard_no)
 }
 
 /// The hex SHA-256 of bytes.

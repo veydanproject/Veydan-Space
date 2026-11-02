@@ -124,14 +124,14 @@
   <PeerChats pubkey={contact.pubkey} onopen={(id) => (onopenchat ? onopenchat(id) : onchat(contact.pubkey))} />
 
   {#if contact.profile?.bio?.length || contact.profile?.about || contact.profile?.socials?.length}
-    <section class="block">
+    <section class="block glass-card">
       <h3>{$t('msg_own_about')}</h3>
       {#if contact.profile?.bio?.length}<BioView spans={contact.profile.bio} />{:else if contact.profile?.about}<div class="about"><MessageContent text={contact.profile.about} cards={false} /></div>{/if}
       {#if contact.profile?.socials?.length}<SocialLinks socials={contact.profile.socials} compact />{/if}
     </section>
   {/if}
 
-  <section class="block">
+  <section class="block glass-card">
     <h3>{$t('msg_id_npub')}</h3>
     <div class="key">
       <code>{contact.npub}</code>
@@ -139,7 +139,7 @@
     </div>
   </section>
 
-  <section class="block">
+  <section class="block glass-card">
     <h3>{$t('msg_contacts_book')}</h3>
     <div class="grid">
       <label><span>{$t('msg_contacts_nickname')}</span><input type="text" bind:value={nick} disabled={busy} placeholder={contact.profile?.display_name || contact.profile?.name || ''} /></label>
@@ -196,18 +196,18 @@
     font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); text-align: center; cursor: pointer;
     transition: background var(--dur-fast), border-color var(--dur-fast);
   }
-  .act:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .disc { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); }
   @media (hover: hover) { .act:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); } }
   .act:disabled { opacity: 0.45; cursor: default; }
-  .block { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); }
+  .block { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); }
   .block h3 { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .about { margin: 0; font-size: var(--fs-base); line-height: 1.5; color: var(--text-body); white-space: pre-wrap; }
   .key { display: flex; align-items: flex-start; gap: var(--sp-2); }
   .key code { flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-3); font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); overflow-wrap: anywhere; }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-hover); }
-  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-2); }
   .grid label { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-2); }
   .grid input {

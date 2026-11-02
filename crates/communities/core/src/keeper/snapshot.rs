@@ -104,6 +104,45 @@ struct QueuedSnapshot {
     full: Vec<String>,
 }
 
+/// A `PendingSnapshot` as a saved bench keeps it (`Keeper::run_memory`).
+#[cfg(feature = "tools")]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct SavedSnapshot {
+    digest: String,
+    key_epoch: u32,
+    /// `pubkey`, `flags`, `levels`, `since`.
+    entries: Vec<([u8; 32], u8, u64, u32)>,
+    shards: Vec<(ShardRef, Vec<u8>)>,
+    hosts: Vec<String>,
+    /// `id`, `at`, `full`.
+    queued: Option<(String, i64, Vec<String>)>,
+}
+
+#[cfg(feature = "tools")]
+impl PendingSnapshot {
+    pub(crate) fn saved(&self) -> SavedSnapshot {
+        SavedSnapshot {
+            digest: self.digest.clone(),
+            key_epoch: self.key_epoch,
+            entries: self.entries.iter().map(|e| (e.pubkey, e.flags, e.levels, e.since)).collect(),
+            shards: self.shards.iter().map(|(r, b)| (r.clone(), b.to_vec())).collect(),
+            hosts: self.hosts.clone(),
+            queued: self.queued.as_ref().map(|q| (q.id.clone(), q.at, q.full.clone())),
+        }
+    }
+
+    pub(crate) fn of_saved(s: SavedSnapshot) -> Self {
+        PendingSnapshot {
+            digest: s.digest,
+            key_epoch: s.key_epoch,
+            entries: s.entries.into_iter().map(|(pubkey, flags, levels, since)| Entry { pubkey, flags, levels, since }).collect(),
+            shards: s.shards.into_iter().map(|(r, b)| (r, Arc::new(b))).collect(),
+            hosts: s.hosts,
+            queued: s.queued.map(|(id, at, full)| QueuedSnapshot { id, at, full }),
+        }
+    }
+}
+
 impl PendingSnapshot {
     fn hashes(&self) -> Vec<String> {
         self.shards.iter().map(|(r, _)| r.sha256.clone()).collect()
@@ -301,7 +340,7 @@ impl Keeper {
         let need = MIN_HOSTS.min(p.hosts.len()).max(1);
         if full.len() < need {
             let blobs = p.shards.iter().map(|(r, b)| (r.sha256.clone(), b.clone())).collect();
-            tick.jobs.push(self.job(Work::Put { what: What::Snapshot { digest: p.digest.clone() }, hosts: p.hosts.clone(), blobs }));
+            tick.jobs.push(self.job(Work::Put { what: What::Snapshot { digest: p.digest.clone() }, hosts: p.hosts.clone(), blobs, paths: Default::default() }));
             self.snapshot_pending = Some(p);
             return Ok(SnapshotTurn::Waiting);
         }

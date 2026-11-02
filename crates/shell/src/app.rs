@@ -372,13 +372,48 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
     builder
         .build(context)
         .expect("error while building tauri application")
-        .run(|_app, _event| {
-            // Back in front: a link clicked outside may wait (`crate::links`).
+        .run(|_app, run_event| {
             #[cfg(target_os = "android")]
-            if let tauri::RunEvent::WindowEvent { event: tauri::WindowEvent::Resumed, .. } = _event {
-                crate::links::resumed(_app);
+            if let tauri::RunEvent::Exit = run_event {
+                end_process(_app);
+            }
+            let tauri::RunEvent::WindowEvent { event, .. } = run_event else {
+                return;
+            };
+            match event {
+                // Back in front: a link clicked outside may wait (`crate::links`),
+                // and what the other devices wrote meanwhile comes in.
+                tauri::WindowEvent::Resumed => {
+                    #[cfg(target_os = "android")]
+                    crate::links::resumed(_app);
+                    veydan_sync_host::edits::app_moved(true);
+                }
+                // What was just written leaves before the system stops the app.
+                tauri::WindowEvent::Suspended => veydan_sync_host::edits::app_moved(false),
+                _ => {}
             }
         });
+}
+
+/// The activity went for good (Back from the first screen of a task the
+/// system finishes, the system freeing memory under an outside camera): no
+/// window is left, and tao ends the process with `exit()` as soon as this
+/// event returns. `exit()` runs the destructors of the C++ libraries of the
+/// process (hwui, the WebView) while their threads still run, and one of
+/// them takes a mutex already destroyed — FORTIFY `pthread_mutex_lock called
+/// on a destroyed mutex` (ROO-481, also ROO-116, ROO-167). Tauri's cleanup
+/// first, then `_exit`: the process ends the way the system ends one, with
+/// no destructor run under a living thread. The next start is a new process,
+/// as before.
+#[cfg(target_os = "android")]
+fn end_process(app: &tauri::AppHandle) -> ! {
+    extern "C" {
+        fn _exit(status: std::ffi::c_int) -> !;
+    }
+    eprintln!("shell: the activity is gone, the process ends");
+    app.cleanup_before_exit();
+    // SAFETY: `_exit` takes no pointers and does not return.
+    unsafe { _exit(0) }
 }
 
 #[cfg(test)]

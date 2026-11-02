@@ -180,6 +180,16 @@ pub struct NewChannel {
     pub storage: Vec<String>,
 }
 
+/// The keeper block's line of the hosts: what a host refused, and why
+/// nobody new is let in (`Keeper::wall_why`), both when both (a refused
+/// upload of the epoch past the wall says why it stays pending).
+fn storage_error(trouble: Option<String>, wall: Option<String>) -> Option<String> {
+    match (trouble, wall) {
+        (Some(t), Some(w)) => Some(format!("{t}; {w}")),
+        (t, w) => t.or(w),
+    }
+}
+
 /// A keeper kept here, as its last turn left it: read without waiting
 /// for the keeper (`storage_error` follows the jobs of the hosts as they
 /// end, `ChannelService::job_done`).
@@ -220,7 +230,7 @@ pub struct KeeperStatus {
 ///   (`hand_to_me` reads content with the keeper held: that way must not
 ///   lead back to a lock, which is why `take_link` is lock-free).
 /// - `keepers`, `locks`, `logs`, `fetches` are tokio mutexes held only to
-///   look something up. `statuses`, `troubles`, `uploading`,
+///   look something up. `statuses`, `troubles`, `walls`, `uploading`,
 ///   `rotate_asked`, `keeper_pks`, `transfers`, `foreign_wraps`, `admits_joined`,
 ///   `notes_caught`, `pages_asked`, `page_seen` are leaves: std mutexes, never held
 ///   across an await.
@@ -286,6 +296,9 @@ pub struct ChannelService {
     /// kept here (`job_done`), none once every host takes them again:
     /// `KeeperStatus::storage_error`.
     pub(crate) troubles: Arc<std::sync::Mutex<HashMap<String, Option<String>>>>,
+    /// Why each keeper kept here lets nobody new in, as its last turn saw
+    /// it (`Keeper::wall_why`): shown beside the trouble of a host.
+    walls: Arc<std::sync::Mutex<HashMap<String, Option<String>>>>,
     /// The jobs of the hosts running now, by `Job::key`, each with its
     /// cancel flag: a turn hands out no second job of the same key, and a
     /// pending epoch superseded cancels the job that puts its blobs.
@@ -367,6 +380,7 @@ impl ChannelService {
                 say: crate::keeper::Say::default(),
                 outbox: Arc::default(),
                 fetches: Default::default(),
+                chains: Default::default(),
                 book: Arc::default(),
                 clock: clock.clone(),
                 cloud: Arc::default(),
@@ -386,6 +400,7 @@ impl ChannelService {
             bundles_checked: Arc::default(),
             statuses: Arc::default(),
             troubles: Arc::default(),
+            walls: Arc::default(),
             uploading: Arc::default(),
             fetches: Arc::default(),
             foreign_wraps: Arc::default(),
@@ -719,6 +734,9 @@ impl ChannelService {
             // Nobody at work here: nothing kept for later.
             None => drop(k.take_issued_to_me()),
         }
+        // The wall of a generation on hosts without paths, once a change.
+        let wall = k.wall_why(log.state(), SCOPE_EVERYONE).await?;
+        k.note_turn("the readers", wall.clone(), "new readers let in again");
         let st = k.scope_keeper(SCOPE_EVERYONE);
         let status = KeeperStatus {
             epoch: st.and_then(|s| s.published_head().map(|h| h.epoch)),
@@ -728,9 +746,12 @@ impl ChannelService {
             generations: st.map_or(0, |s| u32::try_from(s.generations()).unwrap_or(u32::MAX)),
             garbage: k.garbage().await?,
             rotate_asked: false,
-            storage_error: self.troubles.lock().ok().and_then(|t| t.get(&cid).cloned().flatten()),
+            storage_error: storage_error(self.troubles.lock().ok().and_then(|t| t.get(&cid).cloned().flatten()), wall.clone()),
             at: now,
         };
+        if let Ok(mut w) = self.walls.lock() {
+            w.insert(cid.clone(), wall);
+        }
         if let Ok(mut s) = self.statuses.lock() {
             s.insert(cid, status);
         }
@@ -938,9 +959,9 @@ impl ChannelService {
         let _g = lock.lock().await;
         let Some(log) = self.log(cid).await? else { return Ok(true) };
         match (&job.want, got) {
-            (Want::Epoch { scope_id, epoch }, Got::Epoch { index, shard }) => {
+            (Want::Epoch { scope_id, epoch }, Got::Epoch { witness, shard }) => {
                 let mut m = crate::member::Outcome::default();
-                member.open_fetched(log.state(), scope_id, *epoch, &index, &shard, &mut m).await?;
+                member.open_fetched(log.state(), scope_id, *epoch, &witness, &shard, &mut m).await?;
                 if !m.keys.is_empty() {
                     out.note(format!("epoch {epoch} of {}: opened by its shard", short(cid)));
                     self.publish_owed_links(keys).await?;
@@ -974,9 +995,10 @@ impl ChannelService {
         if let Ok(mut t) = self.troubles.lock() {
             t.insert(community_id.to_string(), trouble.clone());
         }
+        let wall = self.walls.lock().ok().and_then(|w| w.get(community_id).cloned().flatten());
         if let Ok(mut s) = self.statuses.lock() {
             if let Some(st) = s.get_mut(community_id) {
-                st.storage_error = trouble;
+                st.storage_error = storage_error(trouble, wall);
             }
         }
     }
@@ -1246,8 +1268,8 @@ impl ChannelService {
         // ban while it was held elsewhere, one applied with its parents
         // late): `on_op` takes each once.
         step("the operations of the journal");
-        for o in log.ordered() {
-            k.on_op(&log, o, now).await?;
+        for (id, o) in log.ordered_ids() {
+            k.on_op_of(&log, id, o, now).await?;
         }
         // The notes that wait first (a catch-up, joins over the minute's
         // room), then the cycle.
@@ -2086,13 +2108,13 @@ impl ChannelService {
     /// lack asked for (`ensure_keys`). One that fails holds back no other.
     async fn ask_bundles(&self, keys: &Keys) -> Result<()> {
         let now = self.now();
-        for row in db::channels::list(&self.env.db).await?.into_iter().filter(|r| r.membership == MEMBERSHIP_JOINED) {
-            let checked = self.bundles_checked.lock().ok().and_then(|c| c.get(&row.id).copied());
+        for id in db::channels::ids_of(&self.env.db, MEMBERSHIP_JOINED).await? {
+            let checked = self.bundles_checked.lock().ok().and_then(|c| c.get(&id).copied());
             if checked.is_some_and(|at| now - at < REBUNDLE_EVERY_SECS) {
                 continue;
             }
-            if let Err(e) = self.ensure_keys(keys, &row.id).await {
-                self.say(&format!("{} for {}: not asked, at the next turn: {e}", wire::T_REBUNDLE, short(&row.id)));
+            if let Err(e) = self.ensure_keys(keys, &id).await {
+                self.say(&format!("{} for {}: not asked, at the next turn: {e}", wire::T_REBUNDLE, short(&id)));
             }
         }
         Ok(())

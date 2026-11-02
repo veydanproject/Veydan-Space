@@ -75,6 +75,7 @@ impl Conn {
                             continue;
                         }
                         let Ok(json) = serde_json::to_value(event.as_ref()) else { continue };
+                        crate::traffic::relay_in(json.to_string().len());
                         if !to(json) {
                             break;
                         }
@@ -92,6 +93,7 @@ impl Conn {
 
     pub async fn subscribe(&self, id: &str, filter: &Value) -> Result<()> {
         let f = Self::filter(filter)?;
+        crate::traffic::relay_out(filter.to_string().len());
         let _ = self.client.unsubscribe(&SubscriptionId::new(id)).await;
         self.client.subscribe(f).with_id(SubscriptionId::new(id)).await.map_err(net)?;
         Ok(())
@@ -100,12 +102,22 @@ impl Conn {
     /// One REQ, answered until EOSE or `patience`: the events, checked.
     pub async fn fetch(&self, filter: &Value, patience: Duration) -> Result<Vec<Value>> {
         let f = Self::filter(filter)?;
+        crate::traffic::relay_out(filter.to_string().len());
         let events = self.client.fetch_events(f).timeout(patience).await.map_err(net)?;
-        Ok(events.iter().filter(|e| e.verify().is_ok()).filter_map(|e| serde_json::to_value(e).ok()).collect())
+        let mut out = Vec::new();
+        for e in events.iter() {
+            let Ok(json) = serde_json::to_value(e) else { continue };
+            crate::traffic::relay_in(json.to_string().len());
+            if e.verify().is_ok() {
+                out.push(json);
+            }
+        }
+        Ok(out)
     }
 
     pub async fn publish(&self, json: &Value) -> Result<Ack> {
         let event: Event = serde_json::from_value(json.clone()).map_err(|e| MessengerError::Invalid(format!("event: {e}")))?;
+        crate::traffic::relay_out(json.to_string().len());
         let out = self.client.send_event(&event).save_into_database(false).await.map_err(net)?;
         let accepted_by = if out.success.is_empty() { vec![] } else { vec![self.relay.clone()] };
         let rejected_by = out.failed.values().map(|why| (self.relay.clone(), why.clone())).collect();

@@ -149,7 +149,7 @@
   .pane-resizer:hover { background: color-mix(in srgb, var(--accent-text) 6%, transparent); }
   .pane-resizer:hover .pill,
   .grip:focus-visible .pill { height: 44px; background: var(--accent-text); }
-  .grip:focus-visible { box-shadow: 0 0 0 2px var(--accent-border); }
+  .grip:focus-visible { box-shadow: 0 0 0 2px var(--focus-ring); }
 
   .pane-resizer.dragging { background: color-mix(in srgb, var(--accent) 35%, transparent); }
   .pane-resizer.dragging .grip { top: 0; height: 100%; transform: none; }

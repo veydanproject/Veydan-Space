@@ -42,7 +42,7 @@
 </script>
 
 <div class="card identity">
-  <div class="card-title"><Icon name="key" size={16} /> {$t('msg_id_title')}</div>
+  <div class="card-title">{$t('msg_id_title')}</div>
   <CopyField label={$t('msg_id_npub')} value={identity.npub} />
   <div class="meta">{$t('msg_id_created', { date: stamp(identity.created_at) })}</div>
 
@@ -89,13 +89,7 @@
 </div>
 
 <style>
-  /* A card of the settings page, as «Мой профиль» beside it (design book, «Профиль и ключ»). */
-  .card.identity {
-    max-width: 640px; display: flex; flex-direction: column; gap: var(--sp-3);
-    padding: var(--sp-4) var(--sp-5); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); box-shadow: none;
-  }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
-  .card-title :global(svg) { color: var(--text-2); }
+  .card.identity { display: flex; flex-direction: column; gap: var(--sp-3); }
   /* The key in a field on the card; its label as every caption of the page. */
   .identity :global(.copy-field .label) { font-size: var(--fs-sm); font-weight: var(--fw-bold); }
   .identity :global(.copy-field .row) { align-items: center; }

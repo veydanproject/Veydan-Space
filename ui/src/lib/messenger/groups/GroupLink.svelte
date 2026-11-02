@@ -16,7 +16,8 @@
   import ShareDialog from '../content/ShareDialog.svelte';
   import ShareOutSheet from '../content/ShareOutSheet.svelte';
   import { groupShareItem } from '../content/shareOut';
-  import { qrSrc, saveQr, saveQrError } from '../content/saveQr';
+  import { qrPicture } from '$lib/core/ui/qrPicture';
+  import { saveQr, saveQrError } from '../content/saveQr';
 
   interface Props {
     group: MessengerGroup;
@@ -54,8 +55,8 @@
     error = ''; busy = true;
     try {
       qrSvg = await messengerApi.groups.linkQr(group.id);
-      // Shown as an image: nothing inside the picture can run.
-      qr = qrSrc(qrSvg);
+      // Shown as an image, the logo in it: nothing inside the picture can run.
+      qr = await qrPicture(qrSvg);
     } catch (e) { error = messengerError(e); }
     finally { busy = false; }
   }
@@ -122,7 +123,8 @@
   .grid .btn { min-height: var(--control-h-sm); min-width: 0; padding-inline: var(--sp-2); white-space: normal; text-wrap: balance; text-align: center; line-height: 1.25; }
   .danger { color: var(--danger-text); }
   /* A code is read by a camera: always dark on light, whatever the theme. */
-  .qr { align-self: center; width: min(240px, 100%); height: auto; background: #fff; border-radius: var(--radius-md); padding: var(--sp-2); image-rendering: pixelated; }
+  /* The card of the code is in the picture, white whatever the theme. */
+  .qr { align-self: center; width: min(240px, 100%); height: auto; }
   .save { align-self: center; }
   @media (pointer: coarse) { .grid .btn, .save { min-height: var(--control-h-lg); } }
 </style>

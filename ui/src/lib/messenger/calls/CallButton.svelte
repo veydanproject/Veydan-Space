@@ -110,7 +110,7 @@
   @media (hover: hover) { .icon:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); } }
   .icon:disabled { opacity: 0.45; cursor: default; }
   /* A head's buttons: 36 on a computer, 40 for a finger (as the feed's). */
-  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   @media (pointer: coarse) { .icon { width: 40px; height: 40px; border-radius: var(--radius-md); } }
   .refusal {
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: max-content; max-width: 260px;

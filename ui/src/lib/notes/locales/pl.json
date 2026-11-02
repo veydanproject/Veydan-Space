@@ -344,6 +344,7 @@
     "notes_panel_resize": "Zmień szerokość panelu",
     "notes_task_checkbox": "Zadanie: {text}",
     "notes_task_checkbox_empty": "Puste zadanie",
+    "notes_attachment_gone": "Plik usunięty",
     "notes_smart_profile_search": "Znajdź profil…"
   },
   "mobile": {

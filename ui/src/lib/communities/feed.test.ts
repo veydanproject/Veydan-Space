@@ -37,4 +37,12 @@ describe('the feed reads as a chat', () => {
     expect(again.older).toBe(true);
     expect(texts(again.items)).toEqual(range(10, 31).map((p) => p.text));
   });
+
+  it('keeps nothing of what was read when the newest page is empty', () => {
+    let items = withNewest([], range(20, 30)).items;
+    items = withEarlier(items, range(10, 20));
+    const again = withNewest(items, []);
+    expect(again.items).toEqual([]);
+    expect(again.older).toBe(false);
+  });
 });

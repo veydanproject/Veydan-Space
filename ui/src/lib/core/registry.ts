@@ -242,11 +242,6 @@ class Registry {
     return undefined;
   }
 
-  /** Mobile: whether the screen's header, not its bar, carries the apps button. */
-  hubInHeader(url: URL): boolean {
-    return this.active.some((m) => m.hubInHeader?.(url) === true);
-  }
-
   /**
    * The module opened at `/` on the desktop (platform-spec 11.7): the one the
    * user chose, else the first that has a desktop home screen, else the first

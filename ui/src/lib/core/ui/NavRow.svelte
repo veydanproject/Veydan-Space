@@ -95,7 +95,7 @@
   }
   .hit { cursor: pointer; transition: background var(--dur-fast) var(--ease); }
   .hit:hover { background: var(--surface-row-hover); }
-  .hit:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .hit:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .off { opacity: 0.55; }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .title.nowrap { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

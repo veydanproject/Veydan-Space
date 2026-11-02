@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "Los enlaces para iniciar sesión, recuperar una cuenta y vincular un dispositivo solo se abren con el escáner de la aplicación: así ningún sitio puede colarte uno para que lo apruebes.",
     "msg_inlink_long_title": "El enlace es demasiado largo",
     "msg_inlink_long_text": "Veydan no abre enlaces tan largos. Pide el enlace de nuevo.",
+    "msg_card_link_short": "En el navegador",
+    "msg_card_preview_short": "Vista previa",
     "msg_card_link_open": "Abrir en el navegador",
     "msg_card_link_moved": "El enlace redirige desde {host}.",
     "msg_card_link_risk_insecure": "Sin cifrado: cualquiera en el camino puede leer y modificar la página.",

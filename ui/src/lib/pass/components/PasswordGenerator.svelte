@@ -115,7 +115,7 @@
       </div>
 
       <!-- Settings -->
-      <div class="section">
+      <div class="section on-glass">
         <button class="section-toggle" onclick={() => (passUi.generatorSettingsOpen = !passUi.generatorSettingsOpen)}>
           <Icon name="settings" size={13} />
           {$t('pwgen_btn_settings')}
@@ -186,7 +186,7 @@
 
       <!-- History -->
       {#if $pwSettings.historyEnabled}
-        <div class="section">
+        <div class="section on-glass">
           <div class="section-header-row">
             <span class="section-label">
               <Icon name="clock" size={13} />
@@ -259,7 +259,7 @@
     font-weight: var(--fw-semibold);
     letter-spacing: 0.04em;
     height: var(--control-h-lg);
-    background: var(--surface-3);
+    background: var(--pane-strong);
     border-color: var(--border);
     border-radius: var(--radius-md);
     color: var(--text);
@@ -349,7 +349,7 @@
     flex-direction: column;
     gap: 0.6rem;
     border-top: 1px solid var(--border);
-    background: var(--surface);
+    background: transparent;
   }
 
   .setting-row {

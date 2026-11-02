@@ -139,6 +139,7 @@
     background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center;
     box-shadow: var(--shadow-accent);
   }
+  .fab { --hit-r: var(--sp-4); }
   .fab:active { filter: brightness(0.92); }
   /* The list scrolls its last row out from under the «+»: the button (56), its offset and the list's own gap.
      The bar of sections lies under .content and holds the safe area itself. */

@@ -186,7 +186,7 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); }
   .grid button { border: none; background: none; font-size: 22px; line-height: 1; padding: 7px 0; border-radius: var(--radius); cursor: pointer; font-family: inherit; }
   .grid button:hover, .grid button:focus { background: var(--surface-3); outline: none; }
-  .tabs button:focus-visible, .grid button:focus-visible { box-shadow: inset 0 0 0 1.5px var(--accent-border); outline: none; }
+  .tabs button:focus-visible, .grid button:focus-visible { box-shadow: inset 0 0 0 1.5px var(--focus-ring); outline: none; }
   /* In the flow of a menu or a sheet: as wide as it, no shadow of its own. */
   .picker.inline { position: static; width: 100%; height: 260px; box-shadow: none; background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
   /* In the place of the keyboard: the whole width and height of its slot, the opaque surface of a keyboard. */
@@ -195,6 +195,9 @@
   .tabs .erase:active { color: var(--text); background: var(--surface-hover); }
   @media (pointer: coarse) {
     .picker:not(.inline):not(.docked) { left: 0; right: 0; width: 100%; border-radius: var(--radius-md) var(--radius-md) 0 0; border-inline: none; bottom: 100%; height: 280px; }
+    /* A finger's zone of 44 for a tab: 40 and the 4 between them, inside the row's own padding. */
+    .tabs { gap: 4px; }
+    .tabs button { min-width: 40px; height: 40px; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); }
     .grid button { font-size: 26px; padding: 8px 0; }
   }

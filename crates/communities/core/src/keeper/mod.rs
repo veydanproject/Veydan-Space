@@ -72,6 +72,11 @@ pub const FROM_JOIN_RETENTION_SECS: i64 = 30 * 24 * 3600;
 /// Two held a channel's keys back whenever one host was down (owner,
 /// 2026-10-23: eu-1 down → a new channel had no key and no cover).
 pub const MIN_HOSTS: usize = 1;
+/// The leaves a generation of `TREE` hands out before its epochs name a
+/// Merkle root (`keydist::shard::INDEX_MAX` shards, 524 288): past them its
+/// members read the proof and the shard by path (wire §9), which a plain
+/// Blossom host does not serve.
+pub const INDEX_LEAVES: u64 = keydist::shard::INDEX_MAX as u64 * TREE.leaves_per_shard as u64;
 /// How long a keeper may go unheard of (no epoch, no snapshot, no sign of
 /// life of wire §18) before a moderator who admits somebody hands a ticket
 /// over himself (wire §17).
@@ -129,6 +134,8 @@ pub struct Env {
     /// to open, a shard of a snapshot): noted on the way of an event, run
     /// off it (`ChannelService::run_fetch`).
     pub fetches: crate::member::fetch::Fetches,
+    /// What the epoch events held here chain back to, read once.
+    pub chains: crate::member::Chains,
     /// The keys this device has for the hosts of a server of the kit, and
     /// what each host needs (wire §9.1).
     pub book: Arc<crate::upload_keys::Book>,
@@ -459,6 +466,68 @@ pub struct Keeper {
     cloud_asked: Option<(i64, String)>,
 }
 
+/// What a keeper keeps only in memory and a bench resumed from a saved
+/// state gives back (`communities-bench --resume`): a keeper loaded anew
+/// says it runs at once, counts no join of the last minute, puts every
+/// reader in step again and builds its snapshot over.
+#[cfg(feature = "tools")]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct RunMemory {
+    urgent: BTreeSet<String>,
+    members_dirty: bool,
+    recent_joins: VecDeque<i64>,
+    snapshot_memo: Option<(u64, String)>,
+    readers_moved: Option<i64>,
+    /// `max_readers`, `joins_per_minute`, `small_channel`.
+    limits: (usize, usize, usize),
+    heartbeat_at: Option<i64>,
+    snapshot_pending: Option<snapshot::SavedSnapshot>,
+    ops_done: std::collections::HashSet<String>,
+    not_let_in_told: std::collections::HashMap<String, i64>,
+    built_mark: Option<(u32, u64)>,
+    published_mark: Option<u64>,
+    cloud_asked: Option<(i64, String)>,
+}
+
+#[cfg(feature = "tools")]
+impl Keeper {
+    pub(crate) fn run_memory(&self) -> RunMemory {
+        let l = self.limits;
+        RunMemory {
+            urgent: self.urgent.clone(),
+            members_dirty: self.members_dirty,
+            recent_joins: self.recent_joins.clone(),
+            snapshot_memo: self.snapshot_memo.clone(),
+            readers_moved: self.readers_moved,
+            limits: (l.max_readers, l.joins_per_minute, l.small_channel),
+            heartbeat_at: self.heartbeat_at,
+            snapshot_pending: self.snapshot_pending.as_ref().map(snapshot::PendingSnapshot::saved),
+            ops_done: self.ops_done.clone(),
+            not_let_in_told: self.not_let_in_told.clone(),
+            built_mark: self.built_mark,
+            published_mark: self.published_mark,
+            cloud_asked: self.cloud_asked.clone(),
+        }
+    }
+
+    pub(crate) fn set_run_memory(&mut self, m: RunMemory) {
+        let (max_readers, joins_per_minute, small_channel) = m.limits;
+        self.urgent = m.urgent;
+        self.members_dirty = m.members_dirty;
+        self.recent_joins = m.recent_joins;
+        self.snapshot_memo = m.snapshot_memo;
+        self.readers_moved = m.readers_moved;
+        self.limits = Limits { max_readers, joins_per_minute, small_channel };
+        self.heartbeat_at = m.heartbeat_at;
+        self.snapshot_pending = m.snapshot_pending.map(snapshot::PendingSnapshot::of_saved);
+        self.ops_done = m.ops_done;
+        self.not_let_in_told = m.not_let_in_told;
+        self.built_mark = m.built_mark;
+        self.published_mark = m.published_mark;
+        self.cloud_asked = m.cloud_asked;
+    }
+}
+
 impl Keeper {
     /// Starts keeping a new channel: the keeper's key and the root secret
     /// go to the secret store, the first generation of `everyone` is
@@ -721,9 +790,83 @@ impl Keeper {
         self.in_scope(who, SCOPE_EVERYONE)
     }
 
+    /// Why a tree of `scope_id` hands out no new leaf (`None`: it does).
+    /// Leaves are never handed out twice in a generation, so a channel
+    /// whose readers come and go passes `INDEX_LEAVES` with far fewer
+    /// readers (ROO-395); the epoch after names a Merkle root, whose proofs
+    /// and shards its members read by path only (wire §9). With fewer than
+    /// `MIN_HOSTS` hosts that serve paths, nobody would open it: the keeper
+    /// hands out no new leaf (every leaf handed out: `walled_for`), every
+    /// reader in reads on, and the turn after makes a generation of the
+    /// root held here (`regenerate_if_walled`). (`&mut`: a shared keeper is
+    /// not `Send`, its random source is not `Sync`.)
+    pub async fn wall(&mut self, state: &ChannelState, scope_id: &str) -> Option<String> {
+        let g = self.scopes.get(scope_id)?.sd()?.generation();
+        if u64::from(g.next_leaf / g.leaves_per_shard.max(1)) < u64::from(keydist::shard::INDEX_MAX) {
+            return None;
+        }
+        let next_leaf = g.next_leaf;
+        let mut serving = 0;
+        for host in &state.storage {
+            if self.env.blobs.serves_paths(host).await {
+                serving += 1;
+            }
+        }
+        let need = MIN_HOSTS.min(state.storage.len()).max(1);
+        if serving >= need {
+            return None;
+        }
+        Some(format!("no new readers: {next_leaf} leaves were handed out in this generation, and {serving} of the hosts of the channel serve blobs by path, which the epochs after {INDEX_LEAVES} need (wire §9; {need} needed)"))
+    }
+
+    /// `wall`, with what holds the generation that would end it back
+    /// (`regeneration_held`): the text of the keeper's block
+    /// (`storage_error`) and of the terminal.
+    pub async fn wall_why(&mut self, state: &ChannelState, scope_id: &str) -> Result<Option<String>> {
+        let Some(why) = self.wall(state, scope_id).await else { return Ok(None) };
+        if !self.regenerates_walled(scope_id) || !self.regeneration_held(scope_id).await? {
+            return Ok(Some(why));
+        }
+        let epoch = self.scopes.get(scope_id).and_then(ScopeKeeper::pending_epoch).unwrap_or(0);
+        Ok(Some(format!("{why}; the new generation waits behind epoch {epoch}, which no host takes and which has no number left to be replaced by (wire §5): joins are refused meanwhile")))
+    }
+
+    /// `wall` for a leaf `m` would be handed out in `scope_id`: none when
+    /// `m` holds a leaf of the current generation there already (the same
+    /// leaf again: a join or a bundle asked again).
+    pub(crate) async fn walled_for(&mut self, state: &ChannelState, scope_id: &str, m: &MemberId) -> Option<String> {
+        if self.scopes.get(scope_id)?.sd()?.leaf_of(m).is_some() {
+            return None;
+        }
+        self.wall(state, scope_id).await
+    }
+
+    /// Whether a tree of `scope_id` at the wall gets a generation of the
+    /// root held here (`regenerate_if_walled`): its members take fewer
+    /// leaves than the wall (a keeper given masters derives none).
+    pub(crate) fn regenerates_walled(&self, scope_id: &str) -> bool {
+        self.root.is_some() && self.scopes.get(scope_id).is_some_and(|s| s.sd().is_some() && (s.members_len() as u64) < INDEX_LEAVES)
+    }
+
     /// Whether `who` holds a leaf (a secret) of `scope_id` here.
     pub fn in_scope(&self, who: &PubKey, scope_id: &str) -> bool {
         member_id(who).is_ok_and(|m| self.scopes.get(scope_id).is_some_and(|s| s.kd().is_member(&m)))
+    }
+
+    /// `n` leaves of the current generation of `scope_id` handed out to
+    /// nobody: the leaves of readers who came and went, which a generation
+    /// never hands out again (a channel past `INDEX_LEAVES` without joining
+    /// half a million readers in a test).
+    #[cfg(test)]
+    pub(crate) async fn hand_out_leaves(&mut self, scope_id: &str, n: u32) -> Result<()> {
+        let Some(ScopeKeeper::Sd(sd)) = self.scopes.remove(scope_id) else { return Err(invalid("no tree scope")) };
+        let mut st = sd.into_state();
+        if let Some(g) = st.gens.last_mut() {
+            g.next_leaf += n;
+        }
+        let header = st.header();
+        self.scopes.insert(scope_id.to_string(), ScopeKeeper::Sd(SdKeeper::from_state(st).map_err(kd)?));
+        rows::write_changes(&self.env.db, &self.community_id, scope_id, &[Change::Header(header)]).await
     }
 
     /// The leaf of `who` gone from the tree of `everyone`, its reader row
@@ -733,6 +876,38 @@ impl Keeper {
         let m = member_id(who)?;
         self.sk(SCOPE_EVERYONE)?.kd_mut().revoke(&[m], Revoke::Ban, secs(now));
         self.save(SCOPE_EVERYONE).await
+    }
+
+    /// `keys` as the missed keys of a tree scope (`from_join`), as a long
+    /// migration leaves them: the state and its rows, for the tests of the
+    /// pages. The next epoch numbers past them.
+    #[cfg(test)]
+    pub(crate) async fn put_missed_for_test(&mut self, scope_id: &str, keys: Vec<keydist::EpochKey>) -> Result<()> {
+        let Some(ScopeKeeper::Sd(sd)) = self.scopes.remove(scope_id) else { return Err(invalid("no tree scope")) };
+        let mut st = sd.into_state();
+        st.next_epoch = st.next_epoch.max(keys.last().map_or(0, |k| k.epoch.saturating_add(1)));
+        st.missed = keys.clone();
+        let sd = SdKeeper::from_state(st).map_err(kd)?;
+        let header = sd.state().header();
+        self.scopes.insert(scope_id.to_string(), ScopeKeeper::Sd(sd));
+        let mut changes = vec![Change::MissedCleared, Change::Header(header)];
+        changes.extend(keys.into_iter().map(Change::Missed));
+        rows::write_changes(&self.env.db, &self.community_id, scope_id, &changes).await
+    }
+
+    /// The current generation of a tree scope as one of a root not held
+    /// here (`master`): the state a channel handed over twice within a
+    /// grace left the new owner's keeper in before ROO-400, for the test
+    /// of the net under it (`regenerate_if_foreign`).
+    #[cfg(test)]
+    pub(crate) async fn plant_foreign_generation_for_test(&mut self, scope_id: &str, master: GenerationMaster) -> Result<()> {
+        let Some(ScopeKeeper::Sd(sd)) = self.scopes.remove(scope_id) else { return Err(invalid("no tree scope")) };
+        let mut st = sd.into_state();
+        st.gens.last_mut().ok_or_else(|| invalid("a generation"))?.master = master;
+        let sd = SdKeeper::from_state(st).map_err(kd)?;
+        let header = sd.state().header();
+        self.scopes.insert(scope_id.to_string(), ScopeKeeper::Sd(sd));
+        rows::write_changes(&self.env.db, &self.community_id, scope_id, &[Change::Header(header)]).await
     }
 
     /// Puts `who` out of every scope kept here (a ban, a removal, a leave).
@@ -767,6 +942,11 @@ impl Keeper {
                     tracing::warn!(community = %self.community_id, scope = %scope_id, "a flat scope is full: nobody more is let in");
                     continue;
                 }
+                if let Some(why) = self.walled_for(log.state(), &scope_id, &m).await {
+                    tracing::warn!(community = %self.community_id, scope = %scope_id, why, "a section lets nobody more in");
+                    continue;
+                }
+                let k = self.sk(&scope_id)?;
                 let issued = k.kd_mut().join(m, secs(now)).map_err(kd)?;
                 self.save(&scope_id).await?;
                 self.send_issue(log, who, &issued, now).await?;
@@ -811,8 +991,16 @@ impl Keeper {
 
     /// Lets `who` in (or hands a member the same leaf again) and sends
     /// `channel.issue`.
+    /// A new leaf past the wall is handed out to nobody (`walled_for`):
+    /// nothing is sent, the turn after makes a generation that lets them in.
     pub async fn admit_reader(&mut self, log: &OpLog, who: &PubKey, now: i64) -> Result<()> {
-        let issued = self.sk(SCOPE_EVERYONE)?.kd_mut().join(member_id(who)?, secs(now)).map_err(kd)?;
+        let m = member_id(who)?;
+        if let Some(why) = self.walled_for(log.state(), SCOPE_EVERYONE, &m).await {
+            tracing::warn!(community = %self.community_id, who = %who.short(), why, "keeper hands out no new leaf");
+            self.note_turn("the readers", Some(why), "new readers let in again");
+            return Ok(());
+        }
+        let issued = self.sk(SCOPE_EVERYONE)?.kd_mut().join(m, secs(now)).map_err(kd)?;
         self.save(SCOPE_EVERYONE).await?;
         rows::reader_in(&self.env.db, &self.community_id, who.as_hex(), now).await?;
         self.send_issue(log, who, &issued, now).await?;
@@ -876,6 +1064,17 @@ impl Keeper {
         let readers = self.scopes.get(SCOPE_EVERYONE).map_or(0, ScopeKeeper::members_len);
         if readers >= self.limits.max_readers {
             return self.refuse(from, "the channel is full", now).await;
+        }
+        if let Some(why) = self.wall_why(state, SCOPE_EVERYONE).await? {
+            self.note_turn("the readers", Some(why), "new readers let in again");
+            // The turn after makes a generation of the root held here
+            // (`regenerate_if_walled`): the join waits for it in the queue,
+            // unless it waits behind a pending epoch with no number left
+            // to burn (`regeneration_held`): the queue would wait with it.
+            if self.regenerates_walled(SCOPE_EVERYONE) && !self.regeneration_held(SCOPE_EVERYONE).await? {
+                return Ok(Joined::Busy);
+            }
+            return self.refuse(from, "the hosts serve no paths", now).await;
         }
         while self.recent_joins.front().is_some_and(|t| *t <= now - 60) {
             self.recent_joins.pop_front();
@@ -1032,6 +1231,12 @@ impl Keeper {
             let known = known
                 || (staff && rows::reader_since(&self.env.db, &self.community_id, from.as_hex()).await?.is_some_and(|since| PutOut::of(log, None).keeps(state, from.as_hex(), since)));
             if owner || (staff && known) {
+                // A new leaf past the wall: asked again after the
+                // generation the turn after makes (`regenerate_if_walled`).
+                if self.walled_for(state, SCOPE_EVERYONE, &member_id(from)?).await.is_some() {
+                    self.env.say.line(&format!("{} from {} for {}: not in the tree, no new leaf past the wall", wire::T_REBUNDLE, from.short(), crate::service::short(&self.community_id)));
+                    return Ok(false);
+                }
                 self.admit_reader(log, from, now).await?;
                 self.env.say.line(&format!("{} from {} for {}: not in the tree, {}: let in again", wire::T_REBUNDLE, from.short(), crate::service::short(&self.community_id), if owner { "the owner" } else { "staff known as a reader" }));
                 return Ok(true);
@@ -1049,6 +1254,12 @@ impl Keeper {
                 self.send_note(Some(state), from, wire::T_NOT_LET_IN, &body, now).await?;
                 tracing::info!(community = %self.community_id, who = %from.short(), "a bundle asked by one never let in: told to be invited first");
             }
+            return Ok(false);
+        }
+        // A member without a leaf of the current generation (a migration)
+        // gets a new one: none past the wall.
+        if let Some(why) = self.walled_for(state, &r.scope_id, &member_id(from)?).await {
+            self.note_turn("the readers", Some(why), "new readers let in again");
             return Ok(false);
         }
         let issued = self.sk(&r.scope_id)?.kd_mut().bundle_for(member_id(from)?, secs(now)).map_err(kd)?;
@@ -1087,8 +1298,13 @@ impl Keeper {
     /// on every event and turn (`ChannelService::sync_ops`) for the cost
     /// of a lookup.
     pub async fn on_op(&mut self, log: &OpLog, op: &Op, now: i64) -> Result<()> {
-        let id = op.id();
-        if !log.contains(&id) || log.rejection(&id).is_some() || self.ops_done.contains(&id.0) {
+        self.on_op_of(log, &op.id(), op, now).await
+    }
+
+    /// `on_op` of an operation whose id is known (`OpLog::ordered_ids`):
+    /// the turn walks the whole journal, and hashed each operation of it.
+    pub async fn on_op_of(&mut self, log: &OpLog, id: &OpId, op: &Op, now: i64) -> Result<()> {
+        if self.ops_done.contains(&id.0) || !log.contains(id) || log.rejection(id).is_some() {
             return Ok(());
         }
         let first = rows::mark_op(&self.env.db, &self.community_id, &id.0).await?;
@@ -1100,7 +1316,10 @@ impl Keeper {
             // Out of the trees it is in, and its row dropped whether it is
             // in a tree or not (one the tree lost is not let in again by
             // its row, `on_rebundle`).
-            OpBody::Ban { who, .. } | OpBody::Remove { who } => self.put_out(who, Revoke::Ban, now).await?,
+            OpBody::Ban { who, .. } | OpBody::Remove { who } => {
+                self.put_out(who, Revoke::Ban, now).await?;
+                self.end_grace_of_former_owner(log, who, now).await?;
+            }
             // The levels of one person: their scopes put in step at once,
             // so that a grant issues now (wire §14.4).
             // Marked done already: a failure leaves it to the next turn.
@@ -1134,6 +1353,43 @@ impl Keeper {
                 self.urgent.insert(SCOPE_EVERYONE.to_string());
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// A former owner banned or removed during the grace of a handover
+    /// (wire §16, spec §7.8): the grace of every tree scope in a migration
+    /// ends now. The old generation's master is a function of his root,
+    /// which never left his devices; revoking his leaves takes nothing
+    /// from him, since the master opens every block of its generation,
+    /// and the grace of a week would have had every epoch of that week
+    /// carry a cover he opens (ROO-396, 1.4). From the next epoch built on
+    /// none does; a member that took no bundle of the new generation yet
+    /// asks for one (`NeedBundle` → `channel.rebundle`). Who was an owner:
+    /// the one who made the channel, and whoever handed it over. The
+    /// generation this ends the grace of is always one of a root not held
+    /// here, and the current one always of this root: `migrate_all` makes
+    /// the owner's at every handover (an emergency one when two of other
+    /// roots were live), and the cycle replaces one of another root
+    /// wherever it finds it (`regenerate_if_foreign`), so a former owner
+    /// put out derives nothing after the epoch of his ban (ROO-400).
+    async fn end_grace_of_former_owner(&mut self, log: &OpLog, who: &PubKey, now: i64) -> Result<()> {
+        if !self.scopes.values().any(|s| s.generations() > 1) {
+            return Ok(());
+        }
+        let state = log.state();
+        let former = state.owner != *who
+            && (state.creator == *who
+                || log.ordered().filter(|o| log.rejection(&o.id()).is_none()).any(|o| o.author == *who && matches!(o.body, OpBody::TransferOwnership { .. })));
+        if !former {
+            return Ok(());
+        }
+        for scope_id in self.scope_ids() {
+            let Some(sd) = self.sk(&scope_id)?.sd_mut() else { continue };
+            if sd.end_grace_now(secs(now)) {
+                self.save(&scope_id).await?;
+                tracing::warn!(community = %self.community_id, scope = %scope_id, who = %who.short(), "a former owner is out: the grace of the generation his root derived ends now");
+            }
         }
         Ok(())
     }
@@ -1244,3 +1500,5 @@ pub(crate) async fn take_link(db: &Db, store: &dyn SecretStore, community_id: &s
     }
     Ok(taken)
 }
+
+

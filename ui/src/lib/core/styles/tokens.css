@@ -67,6 +67,7 @@
   --lh-body:  1.4667;  /* 22px on 15px body text */
 
   /* ── Radius ── (theme-independent; «Quiet Glass» scale) */
+  --file-meta:    0px;   /* the room a file line keeps for the time of its message */
   --radius-xs:    4px;   /* small kind tiles, checkboxes */
   --radius-badge: 6px;   /* counters, kind chips */
   --radius-sm:    8px;   /* status pills, icon tiles, menu items, 32px buttons */

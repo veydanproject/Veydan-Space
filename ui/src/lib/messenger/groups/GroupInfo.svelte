@@ -386,7 +386,7 @@
 <!-- The key of the group: its version, cipher, state, who changed it and when, its fingerprint. -->
 {#snippet keyCard(k: MessengerGroupKey)}
   {@const tone = keyTone(k)}
-  <section class="box key {tone}" aria-label={$t('msg_group_key')}
+  <section class="box glass-card key {tone}" aria-label={$t('msg_group_key')}
     title={k.source === 'link' ? $t('msg_group_key_source_link', { n: String(k.link_epoch + 1) }) : $t('msg_group_key_source_random')}>
     <div class="key-head">
       <Tile icon="key" tone={KEY_TILE[tone]} />
@@ -410,7 +410,7 @@
 {#snippet membersBody()}
   <section class="block" aria-label={$t('msg_group_members')}>
     {#if manager}<button class="btn btn-ghost wide" onclick={() => (inviting = true)}><Icon name="user-plus" size={18} />{$t('msg_group_invite')}</button>{/if}
-    <ul class="box rows">
+    <ul class="box glass-card rows">
       {#each group.members as m (m.pubkey)}
         <li>
           <button class="person as-button" class:still={!entriesFor(m).length} oncontextmenu={(e) => openMenu(e, m)} onclick={(e) => openMenu(e, m)}
@@ -434,7 +434,7 @@
 
 {#snippet bannedBody()}
   <section class="block" aria-label={$t('msg_group_banned')}>
-    <ul class="box rows">
+    <ul class="box glass-card rows">
       {#each group.banned as b (b)}
         <li class="person">
           <Avatar url={nameStore.picture(b)} label={nameStore.label(b)} seed={b} size={36} />
@@ -542,7 +542,7 @@
 
     <!-- The contents: each row opens the page of what it names. -->
     {#if pages.key || pages.link}
-      <div class="nav-group">
+      <div class="nav-group glass-card">
         {#if pages.key && group.key}
           {@const k = group.key}
           {@const tone = keyTone(k)}
@@ -562,7 +562,7 @@
     <!-- What the group shared: the block of the panel about a person too. -->
     <SharedMedia {chatId} onopen={(s) => (section = s)} />
 
-    <div class="nav-group">
+    <div class="nav-group glass-card">
       <NavRow icon="users" title={$t('msg_group_members')} page="members" onclick={() => openPage('members')} count={group.members.length}>
         {#snippet sub()}<span class="stack">{#each group.members.slice(0, 7) as m (m.pubkey)}<span class="stack-av"><Avatar url={nameStore.picture(m.pubkey)} label={nameStore.label(m.pubkey)} seed={m.pubkey} size={22} /></span>{/each}</span>{/snippet}
       </NavRow>
@@ -604,11 +604,11 @@
   text={$t('msg_mod_ban_text')} check={$t('msg_mod_ban_hide')} cta={$t('msg_mod_ban')} danger busy={dialogBusy} error={dialogError} onconfirm={confirmBan} />
 
 <style>
-  .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
+  .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
   /* A tablet or a wide window: the column stays readable in the middle. */
   .scroll > :global(*) { width: 100%; max-width: 560px; align-self: center; flex-shrink: 0; }
-  .box { border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); }
+  .box { border-radius: var(--radius-lg); }
   /* A block's total is the .count-pill of base.css, .quiet. */
   .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
   .danger { color: var(--danger-text); }
@@ -618,7 +618,7 @@
   .hero-row { display: flex; align-items: center; gap: var(--sp-3); }
   .hero-row > :global(.avatar) { flex: none; }
   .cover-btn { position: relative; flex: none; display: inline-flex; padding: 0; border: none; background: none; border-radius: 50%; cursor: pointer; }
-  .cover-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .cover-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .cam {
     position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
     background: var(--glass-bg-raised); border: 1px solid var(--border-2); color: var(--text);
@@ -633,7 +633,7 @@
     background: var(--surface-2); color: var(--text); cursor: pointer; transition: background var(--dur-fast) var(--ease);
   }
   .edit-btn:hover { background: var(--surface-hover); }
-  .edit-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .edit-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .about { font-size: var(--fs-base); line-height: 1.5; color: var(--text); }
   .fact {
     display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--border-2);
@@ -674,7 +674,7 @@
     border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); transition: background var(--dur-fast) var(--ease);
   }
   .mod-row:hover { background: var(--surface-row-hover); }
-  .mod-row:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .mod-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .mod-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .mod-name { font-size: var(--fs-body); font-weight: var(--fw-bold); }
   .mod-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
@@ -683,7 +683,7 @@
 
   /* The contents: groups of rows. */
   .nav-group > :global(.nav + .nav)::before { content: ''; position: absolute; top: 0; left: 60px; right: var(--sp-3); height: 1px; background: var(--border-2); }
-  .nav-group { display: flex; flex-direction: column; padding: var(--sp-1); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); }
+  .nav-group { display: flex; flex-direction: column; padding: var(--sp-1); border-radius: var(--radius-lg); }
   .link-line { font-size: var(--fs-2xs); color: var(--text-3); }
   .stack { display: inline-flex; padding-left: var(--sp-2); margin-top: 2px; }
   .stack-av { display: inline-flex; margin-left: calc(-1 * var(--sp-2)); border-radius: 50%; box-shadow: 0 0 0 2px var(--surface-2); }
@@ -714,7 +714,7 @@
   .person { display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-md); min-width: 0; }
   .as-button { width: 100%; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background var(--dur-fast) var(--ease); }
   .as-button:hover { background: var(--surface-row-hover); }
-  .as-button:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .as-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .as-button.still { cursor: default; }
   .as-button.still:hover { background: none; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }

@@ -365,6 +365,7 @@ export const translations = {
     notes_panel_resize: 'Resize panel',
     notes_task_checkbox: 'Task: {text}',
     notes_task_checkbox_empty: 'Empty task',
+    notes_attachment_gone: 'File deleted',
     notes_smart_profile_search: 'Find a profile…',
   },
   ru: {
@@ -725,6 +726,7 @@ export const translations = {
     notes_panel_resize: 'Изменить ширину панели',
     notes_task_checkbox: 'Задача: {text}',
     notes_task_checkbox_empty: 'Пустая задача',
+    notes_attachment_gone: 'Файл удалён',
     notes_smart_profile_search: 'Найти профиль…',
   },
   mobile: {

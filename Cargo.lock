@@ -1142,7 +1142,6 @@ dependencies = [
  "messenger-richtext",
  "nostr",
  "nostr-sdk",
- "qrcode",
  "rustls",
  "serde",
  "serde_json",
@@ -4277,7 +4276,6 @@ dependencies = [
  "messenger-richtext",
  "messenger-store",
  "nostr",
- "qrcode",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -4330,6 +4328,7 @@ dependencies = [
  "base64 0.22.1",
  "messenger-core",
  "nostr",
+ "qrcode",
  "sha2 0.11.0",
 ]
 

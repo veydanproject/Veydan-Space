@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "Liên kết để đăng nhập, khôi phục tài khoản và liên kết thiết bị chỉ được mở bằng trình quét trong ứng dụng: nhờ vậy không trang web nào có thể lén đưa chúng cho bạn phê duyệt.",
     "msg_inlink_long_title": "Liên kết quá dài",
     "msg_inlink_long_text": "Veydan không mở những liên kết dài như vậy. Hãy xin lại liên kết.",
+    "msg_card_link_short": "Trong trình duyệt",
+    "msg_card_preview_short": "Xem trước",
     "msg_card_link_open": "Mở trong trình duyệt",
     "msg_card_link_moved": "Liên kết chuyển tiếp từ {host}.",
     "msg_card_link_risk_insecure": "Không mã hóa: bất kỳ ai trên đường truyền đều có thể đọc và thay đổi trang.",

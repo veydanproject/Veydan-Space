@@ -66,8 +66,10 @@ no picker yet.
   countdown bar) — `#7066c6`; text in the accent is `--accent-text` (links,
   the active item, actions of a toast), with `--accent-text-2` (mono badges) /
   `--accent-text-3`; fills `--accent-bg` / `--accent-tint`(+`-border`) ·
-  `--accent-border` (also the keyboard's focus ring) · `--accent-grad` ·
+  `--accent-border` (the frame of the chosen) · `--focus-ring` (the keyboard focus ring: solid, 3:1 or more on the backgrounds; the accent text colour) · `--accent-grad` ·
   `--shadow-accent`. A chosen accent recomputes all of them (`applyAccent`).
+  Controls without a ring of their own get it from a zero-specificity rule in `base.css` (2px, offset 2px, `--focus-ring`).
+- Touch (phone layer): `--touch` 44 is the least size of a finger zone; a control smaller than it grows an invisible `::before` to it per axis (`mobile.css`), capped by `--hit-max`, which a control with close neighbours lowers.
 - Chat: `--bubble-in-*` / `--bubble-out-*`; a held row or bubble `--press-tint`.
 - Semantic: `--success*` (+`-border`, `-grad`), `--danger*` (+`-border`, `--shadow-danger`), `--warn-*` (+`-border`).
 - Category colours (workspaces / proxy types): `--cat-purple` / `--cat-blue` / `--cat-teal` / `--cat-pink`.
@@ -88,8 +90,8 @@ no picker yet.
 
 A computer: the module's columns are panes 12 apart and 12 from the window's
 edges (`fullWidth` routes), a pane's head is 64 high with its title 20/700,
-the top navigation is one floating plate. A phone: a floating head, cards of
-rows on the glowing background, a floating tab bar (`--nav-gap` keeps the last
+the top navigation is one floating plate. A card on the window background (`.card`, `.glass-card`, the phone's `.m-card`) is the glass `--pane-strong` on both a computer and a phone; what lies on it (fields, chips, tiles, quiet buttons) takes the same glass through one token rule in `base.css`; the same rule is given by the panes and floating layers themselves (`core/ui/Pane`, `Drawer`, `Dialog`, `Modal`, the messenger and notes columns, `.data-table`) and by a local block that draws its own look through the class `.on-glass` (tokens only, no box). A field, a quiet button (`.btn-ghost`), the tile of an empty state (`.empty-icon`), the segments (`.tab-bar`, `.seg`) and a checkbox are glass by default, not `--surface-3`: a solid surface is black over the glow. In the dark their line is `--pane-strong-border`, in the light `--border`. A phone: a floating head, cards of
+rows on the glowing background, a floating tab bar, a 56 capsule (`.m-bar--nav`; `--nav-h` is its slot: 56 plus 12 of air for the counts that stand on its edge; the bar has no logo, a tab's header carries it (`core/ui/HubButton`), and Space's Home has no bar; `--nav-gap` keeps the last
 row above it). A list row is 56–64 high with `--radius-lg`; the active one is
 `--accent-bg` with `--accent-text`; segment controls are `.tab-bar`; a search
 field is a pill.
@@ -99,7 +101,7 @@ field is a pill.
 `.page` (+`--page-max` override) · `.page-header`(+`.spacer`)/`.page-sub` · `.card`(+`.card--hover`)/`.card-title`
 · `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-success-soft/-danger/-sm`)
 · `.icon-btn`(+`.success/.danger/.accent-soft`) · `.badge`(+`-accent/-ok/-danger/-warn`) · `.chip`(+`.active`)
-· `.tab-bar`/`.tab`(+`.active`)/`.tab-count` · `.seg`/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
+· `.tab-bar`/`.tab`(+`.active`)/`.tab-count` · `.seg`(+`.seg-fill`: across the card, options of one width)/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
 · `.mono`(text in the mono face) · `.mono-chip` · `.data-table`(+`-head/-row`) · `.empty-state`/`.empty-icon` · `.loading`/`.spinner`/`.spin`
 · `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`
 · `.list-rows` > `li` > `.list-row`(+`.active/.unread`) — the one row of a list pane (chats, groups, channels, calls,

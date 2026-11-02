@@ -1162,6 +1162,10 @@ impl Handler for Notes {
         &["sync_note_state"]
     }
 
+    fn tables(&self) -> &'static [&'static str] {
+        &["notes"]
+    }
+
     async fn collect(&self, cx: &mut Cycle<'_>) -> CmdResult<Collected> {
         let notes = cx
             .host

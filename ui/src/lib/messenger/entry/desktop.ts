@@ -13,6 +13,7 @@ import { startDesktopNotices } from '../push/desktop';
 import DesktopNotices from '../push/DesktopNotices.svelte';
 import CallOverlay from '../calls/CallOverlay.svelte';
 import IncomingLink from '../incoming/IncomingLink.svelte';
+import { chatSettingsSections } from '../pages/chatSettingsSections';
 import { messengerPalette } from '../palette.svelte';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -27,7 +28,8 @@ export const module: ModuleDef = {
   // The settings are a pane of the messenger's page here.
   account: accountOf(`${BASE}?view=settings`),
   // The module's switch is in the Modules section of the core (section 12).
-  settings: [],
+  // The group «Чаты» of the core's Settings: the tabs of the chat's settings.
+  settings: chatSettingsSections(),
   // The card of a ringing call and the panel of the call under way float over any page.
   overlays: [
     { id: 'notices', component: DesktopNotices, place: 'window' },

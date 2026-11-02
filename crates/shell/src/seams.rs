@@ -240,6 +240,12 @@ impl fmt::Debug for TempKey {
 /// The key of the messenger's identity at work, without giving it out
 /// (cloud-api.md §12, 2.3). Keys are 64 hex, lower case.
 pub trait Signer: Send + Sync {
+    /// Whether the identity can sign now, without touching it:
+    /// `messenger_stopped` with why while the runtime is not up (starting,
+    /// switched off, a start that failed). A signer always at hand is.
+    fn ready(&self) -> Result<(), CloudError> {
+        Ok(())
+    }
     /// The public key of the identity.
     fn pubkey(&self) -> SeamFuture<'_, String>;
     /// An event of kind 27235 with the tags `u` (exactly `url`), `method`

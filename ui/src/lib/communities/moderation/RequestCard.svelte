@@ -148,7 +148,7 @@
     display: block; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
     max-height: calc(5 * 1.45em); overflow: hidden;
   }
-  .note-text.over { mask-image: linear-gradient(to bottom, #000 calc(100% - 1.45em), transparent); }
+  .note-text.over { mask-image: linear-gradient(to bottom, black calc(100% - 1.45em), transparent); }
   .note-text.open { max-height: none; overflow: visible; }
   .note-more {
     align-self: flex-start; margin-top: calc(-1 * var(--sp-1)); border: none; background: none; padding: 0 var(--sp-3); cursor: pointer;

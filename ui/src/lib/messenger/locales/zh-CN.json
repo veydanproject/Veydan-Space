@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "用于登录、恢复账户和关联设备的链接只能用应用内的扫码器打开：这样任何网站都无法偷偷塞给你去批准。",
     "msg_inlink_long_title": "链接太长",
     "msg_inlink_long_text": "Veydan 不打开这么长的链接。请重新索取链接。",
+    "msg_card_link_short": "浏览器",
+    "msg_card_preview_short": "预览",
     "msg_card_link_open": "在浏览器中打开",
     "msg_card_link_moved": "该链接会从 {host} 继续跳转。",
     "msg_card_link_risk_insecure": "未加密：途中的任何人都能读取和篡改该页面。",

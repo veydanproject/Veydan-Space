@@ -6,6 +6,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
+  import HubButton from '$lib/core/ui/HubButton.svelte';
   import NotesNav from '$lib/notes/mobile/NotesNav.svelte';
   import NoteRow from '$lib/notes/mobile/NoteRow.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
@@ -27,6 +28,8 @@
   import { noteScope, scopeColor, type ScopeSources } from '$lib/notes/list-scope';
 
   let notes = $state<NoteListItem[]>([]);
+  // The one row whose swipe buttons are shown.
+  let revealedId = $state<string | null>(null);
 
   // Ordering shared with desktop (same localStorage key)
   let sort = $state<NoteSort>(loadSort());
@@ -279,6 +282,14 @@
     exitSelect();
   }
 
+  // A touch anywhere but the open row closes it: another row, a long press, the empty list.
+  // On the way up, so the touched row has seen that another one was open.
+  function closeRevealed(e: TouchEvent) {
+    if (!revealedId) return;
+    const row = (e.target as HTMLElement | null)?.closest('[data-note-id]');
+    if (row?.getAttribute('data-note-id') !== revealedId) revealedId = null;
+  }
+
   // ── Pull to refresh ──
 
   function scroller(el: EventTarget | null): HTMLElement | null {
@@ -311,7 +322,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="m-page list" ontouchstart={onPullStart} ontouchmove={onPullMove} ontouchend={onPullEnd} ontouchcancel={onPullEnd}>
+<div class="m-page list" ontouchstart={(e) => { closeRevealed(e); onPullStart(e); }} ontouchmove={onPullMove} ontouchend={onPullEnd} ontouchcancel={onPullEnd}>
   <div class="pull" style:height="{pull}px">
     <span class:spin={refreshing}><Icon name="refresh-cw" size={18} /></span>
   </div>
@@ -324,6 +335,7 @@
   {:else}
     <div class="m-header">
       {#if isMain}
+        <HubButton />
         <button class="m-ibtn" onclick={() => (menuOpen = true)} aria-label={$t('notes_nav_open')}><Icon name="menu" size={22} /></button>
       {:else}
         <a class="m-ibtn" href="/notes" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
@@ -401,6 +413,9 @@
           onlongpress={(x) => startSelect(x)}
           onquick={(x) => { quickNote = x; sheet = 'quick'; }}
           onaction={onAction}
+          revealed={revealedId === n.id}
+          otherRevealed={revealedId !== null && revealedId !== n.id}
+          onreveal={(open) => { if (open) revealedId = n.id; else if (revealedId === n.id) revealedId = null; }}
         />
       {/each}
     </div>
@@ -535,9 +550,9 @@
     bottom: 0;
     z-index: 30;
     display: flex;
-    background: var(--m-nav);
+    background: var(--surface);
     border-top: 1px solid var(--border);
-    height: calc(var(--nav-h) + var(--sab));
+    height: calc(var(--bar-plate-h) + var(--sab));
     padding-bottom: var(--sab);
   }
   .bulk button {

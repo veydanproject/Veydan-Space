@@ -39,6 +39,7 @@ use crate::roles::Role;
 use crate::state::{ChannelState, Rejection};
 use messenger_core::PubKey;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 /// What happened to an operation handed to `insert`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,15 +57,19 @@ pub enum Insert {
     Refused(Rejection),
 }
 
+/// The journal of a channel. Each part behind an `Arc`: a journal is cloned at every turn of its
+/// keeper and every event read (`ChannelService::log`), and one of months
+/// cloned whole every time (the bench of ROO-419); an insertion copies
+/// what it changes only while a clone holds it.
 #[derive(Clone, Debug)]
 pub struct OpLog {
     community_id: String,
-    ops: HashMap<OpId, Op>,
-    waiting: HashMap<OpId, Op>,
+    ops: Arc<HashMap<OpId, Op>>,
+    waiting: Arc<HashMap<OpId, Op>>,
     /// The agreed order, rejected operations included.
-    order: Vec<OpId>,
-    rejected: HashMap<OpId, Rejection>,
-    state: ChannelState,
+    order: Arc<Vec<OpId>>,
+    rejected: Arc<HashMap<OpId, Rejection>>,
+    state: Arc<ChannelState>,
 }
 
 /// What every operation but the first names: one parent at least, at
@@ -81,7 +86,7 @@ impl OpLog {
         let mut ops = HashMap::new();
         let community_id = op.community_id.clone();
         ops.insert(id.clone(), op);
-        Ok(Self { community_id, ops, waiting: HashMap::new(), order: vec![id], rejected: HashMap::new(), state })
+        Ok(Self { community_id, ops: Arc::new(ops), waiting: Arc::default(), order: Arc::new(vec![id]), rejected: Arc::default(), state: Arc::new(state) })
     }
 
     /// Rebuild a journal from stored operations, in any order.
@@ -112,9 +117,10 @@ impl OpLog {
                 ready.push(id.clone());
             }
         }
+        let ops = Arc::make_mut(&mut log.ops);
         while let Some(id) = ready.pop() {
             let Some(op) = aside.remove(&id) else { continue };
-            log.ops.insert(id.clone(), op);
+            ops.insert(id.clone(), op);
             for child in children.remove(&id).unwrap_or_default() {
                 if let Some(n) = missing.get_mut(&child) {
                     *n = n.saturating_sub(1);
@@ -124,7 +130,7 @@ impl OpLog {
                 }
             }
         }
-        log.waiting = aside;
+        log.waiting = Arc::new(aside);
         log.rebuild();
         Ok(log)
     }
@@ -140,6 +146,11 @@ impl OpLog {
     /// Operations in the agreed order.
     pub fn ordered(&self) -> impl Iterator<Item = &Op> {
         self.order.iter().filter_map(|id| self.ops.get(id))
+    }
+
+    /// `ordered`, each with its id (`Op::id` hashes the operation).
+    pub fn ordered_ids(&self) -> impl Iterator<Item = (&OpId, &Op)> {
+        self.order.iter().filter_map(|id| self.ops.get(id).map(|o| (id, o)))
     }
 
     pub fn len(&self) -> usize {
@@ -259,7 +270,7 @@ impl OpLog {
     /// Would this operation apply right now? For commands: refuse before
     /// anything is published.
     pub fn check(&self, op: &Op) -> Result<(), Rejection> {
-        self.state.clone().apply(op)
+        (*self.state).clone().apply(op)
     }
 
     /// Add an operation that arrived (or was just made here).
@@ -282,10 +293,10 @@ impl OpLog {
         }
         let missing: Vec<OpId> = op.parents.iter().filter(|p| !self.ops.contains_key(*p)).cloned().collect();
         if !missing.is_empty() {
-            self.waiting.insert(id, op);
+            Arc::make_mut(&mut self.waiting).insert(id, op);
             return Insert::Waiting { missing };
         }
-        self.ops.insert(id.clone(), op);
+        Arc::make_mut(&mut self.ops).insert(id.clone(), op);
         self.adopt_waiting();
         self.rebuild();
         match self.rejected.get(&id) {
@@ -307,8 +318,8 @@ impl OpLog {
                 return;
             }
             for id in ready {
-                if let Some(op) = self.waiting.remove(&id) {
-                    self.ops.insert(id, op);
+                if let Some(op) = Arc::make_mut(&mut self.waiting).remove(&id) {
+                    Arc::make_mut(&mut self.ops).insert(id, op);
                 }
             }
         }
@@ -316,9 +327,9 @@ impl OpLog {
 
     fn rebuild(&mut self) {
         let Some((order, rejected, state)) = linearize(&self.ops) else { return };
-        self.order = order;
-        self.rejected = rejected;
-        self.state = state;
+        self.order = Arc::new(order);
+        self.rejected = Arc::new(rejected);
+        self.state = Arc::new(state);
     }
 }
 

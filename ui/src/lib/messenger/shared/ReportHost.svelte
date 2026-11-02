@@ -102,7 +102,7 @@
   .radio { align-items: center; min-height: 40px; padding: 0 var(--sp-3); border-radius: var(--radius); }
   .radio:hover { background: var(--surface-hover); color: var(--text); }
   .radio:has(input:checked) { color: var(--text); }
-  .radio:has(input:focus-visible) { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .radio:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .radio input:focus-visible { outline: none; }
   .checks { display: flex; flex-direction: column; gap: var(--sp-3); }
   .check { align-items: flex-start; line-height: 1.45; }
@@ -113,7 +113,7 @@
     resize: vertical; min-height: 80px; font: inherit; font-size: var(--fs-base); line-height: 1.45; color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3);
   }
-  textarea:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 0; }
+  textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 0; }
   .count { align-self: flex-end; margin-top: calc(-1 * var(--sp-1)); font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
   @media (pointer: coarse) { .radio { min-height: 44px; } .check { min-height: 40px; } }

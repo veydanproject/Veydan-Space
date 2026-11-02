@@ -105,16 +105,19 @@
 </div>
 
 <style>
-  .link {
-    padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); border: 1px solid var(--border);
-    background: var(--surface-2); color: var(--text); min-width: 0;
-  }
-  .link.pending { padding: var(--sp-2) var(--sp-3); }
+  /* The bubble is the card: no box inside it, a line under the words. */
+  .link { min-width: min(280px, 100%); margin-top: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--border); color: var(--text); }
+  .link :global(.btn) { min-height: var(--control-h); justify-content: center; }
+  .link :global(.row) { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: nowrap; margin-top: var(--sp-1); }
+  .link :global(.row .btn) { flex: 1 1 0; min-width: 0; }
+  .link :global(.row .btn-primary) { flex: 1 1 auto; }
+  .link :global(.row .btn-primary + .btn-ghost) { flex: 0 0 auto; }
+  .link :global(.known) { white-space: nowrap; flex: none; font-size: var(--fs-sm); color: var(--success-text, var(--success)); }
   .wait { display: flex; align-items: center; gap: 6px; font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wait :global(svg) { flex-shrink: 0; animation: spin 1.1s linear infinite; }
   .channel { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .ico {
-    width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center;
     background: var(--accent-tint); color: var(--accent-text-2);
   }
   .about { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

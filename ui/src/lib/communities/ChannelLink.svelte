@@ -13,6 +13,7 @@
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { qrPicture } from '$lib/core/ui/qrPicture';
   import { ShareDialog, ShareOutSheet, channelShareItem, confirmStore, saveQr, saveQrError } from '$lib/messenger/seams/shared';
   import { channelsApi, type ChannelDetail } from './api';
   import { channelStore } from './channelStore.svelte';
@@ -61,8 +62,8 @@
     error = ''; busy = true;
     try {
       qrSvg = await channelsApi.linkQr(cid);
-      // Shown as an image: nothing inside the picture can run.
-      qr = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(qrSvg)))}`;
+      // Shown as an image, the logo in it: nothing inside the picture can run.
+      qr = await qrPicture(qrSvg);
     } catch (e) { error = channelError(e, tr); }
     finally { busy = false; }
   }
@@ -125,7 +126,8 @@
   .grid .btn { min-height: calc(var(--control-h-sm) + var(--sp-1)); min-width: 0; padding-inline: var(--sp-2); white-space: normal; text-wrap: balance; text-align: center; line-height: 1.25; }
   .danger { color: var(--danger-text); }
   /* A code is read by a camera: always dark on light, whatever the theme. */
-  .qr { align-self: center; width: min(240px, 100%); height: auto; background: #fff; border-radius: var(--radius-md); padding: var(--sp-2); image-rendering: pixelated; }
+  /* The card of the code is in the picture, white whatever the theme. */
+  .qr { align-self: center; width: min(240px, 100%); height: auto; }
   .save { align-self: center; }
   @media (pointer: coarse) { .grid .btn, .save { min-height: var(--control-h-lg); } }
 </style>

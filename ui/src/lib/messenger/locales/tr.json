@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "Oturum açma, hesap kurtarma ve cihaz bağlama bağlantıları yalnızca uygulamadaki tarayıcıyla açılır: böylece hiçbir site size onaylatmak için böyle bir bağlantı sokuşturamaz.",
     "msg_inlink_long_title": "Bağlantı çok uzun",
     "msg_inlink_long_text": "Veydan bu kadar uzun bağlantıları açmaz. Bağlantıyı yeniden isteyin.",
+    "msg_card_link_short": "Tarayıcıda",
+    "msg_card_preview_short": "Önizleme",
     "msg_card_link_open": "Tarayıcıda aç",
     "msg_card_link_moved": "Bağlantı {host} adresinden başka bir yere yönlendiriyor.",
     "msg_card_link_risk_insecure": "Şifreleme yok: yoldaki herkes sayfayı okuyabilir ve değiştirebilir.",

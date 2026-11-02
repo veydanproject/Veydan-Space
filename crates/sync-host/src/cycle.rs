@@ -15,7 +15,7 @@ use crate::registry::{
 };
 use crate::rows::{self, ApplyOutcome};
 use crate::state::RowSyncState;
-use crate::{emit_progress, gc, join, progress_pct, state, Host, RunningGuard};
+use crate::{edits, emit_progress, gc, join, progress_pct, state, Host, RunningGuard};
 use crate::{SyncManager, EVENT_STATUS};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -191,21 +191,91 @@ pub fn trigger_cycle(app: &AppHandle, source: &str) {
             trace_skip(&app, &source, "trigger", "sync disabled");
             return;
         }
+        // One that waits was told to the journal when the reason came.
         if let Err(e) = run_cycle(&app, &source).await {
             eprintln!("sync: {e}");
         }
     });
 }
 
+/// What a cycle asked for did: it ran (a failure of it is the `Err`), or
+/// it waits for the backend — no cycle, nothing to tell again.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Ran {
+    Done,
+    /// Why: the backend `cloud` signs with the identity of the messenger,
+    /// which the app starts after sync and the user may switch off.
+    Waits(String),
+}
+
+/// How a cycle starts, short of the app.
+pub(crate) enum Begin<'a> {
+    /// It waits ([`Ran::Waits`]) and is held: the scheduler runs it the
+    /// tick the wait is over. `told` is the line for the journal when the
+    /// reason changed — each reason is told once, not on every tick.
+    Waits { why: String, told: Option<String> },
+    /// Another runs.
+    Busy,
+    /// It runs while the guard lives; the last start is now and the last
+    /// error none. `told` as above, when it no longer waits.
+    Go { guard: RunningGuard<'a>, told: Option<String> },
+}
+
+/// The start of a cycle: a cycle that waits for the backend leaves the
+/// last start and the last error as they were; one that goes takes the
+/// held one with it.
+pub(crate) async fn begin<'a>(db: &sqlx::SqlitePool, sync: &'a SyncManager) -> CmdResult<Begin<'a>> {
+    let why = config::cloud_waiting(db).await;
+    let told = sync.note_waiting(why.as_deref());
+    if let Some(why) = why {
+        return Ok(Begin::Waits { why, told });
+    }
+    if sync.running.swap(true, Ordering::SeqCst) {
+        return Ok(Begin::Busy);
+    }
+    let guard = RunningGuard(&sync.running);
+    sync.release_held();
+    keep(db, "sync_last_started", &Utc::now().to_rfc3339()).await?;
+    keep(db, "sync_last_error", "").await?;
+    Ok(Begin::Go { guard, told })
+}
+
+/// A key the cycle keeps of itself — its start, its end, its error — is no
+/// edit of the user: written unheard, it starts no cycle. Heard, the error of
+/// a cycle that could not send a setting would start the next one, and so on.
+pub(crate) async fn keep(db: &sqlx::SqlitePool, key: &str, value: &str) -> Result<(), AppError> {
+    veydan_core::db::hearing(async {
+        let _own = edits::Own::new();
+        settings::set(db, key, value).await
+    })
+    .await
+}
+
 /// push local changes -> pull peers -> apply/merge -> compact -> persist.
-pub async fn run_cycle(app: &AppHandle, source: &str) -> CmdResult<()> {
+/// A cycle that has to wait for the backend is no cycle: [`Ran::Waits`].
+pub async fn run_cycle(app: &AppHandle, source: &str) -> CmdResult<Ran> {
     let core = app.state::<Core>();
     let sync = app.state::<SyncManager>();
-    if sync.running.swap(true, Ordering::SeqCst) {
-        trace_skip(app, source, "start", "already running");
-        return Err(AppError::other("sync already running"));
-    }
-    let _guard = RunningGuard(&sync.running);
+    let tell = |line: Option<String>| {
+        if let Some(line) = line {
+            eprintln!("sync: {line}");
+            trace_skip(app, source, "wait", &line);
+        }
+    };
+    let _guard = match begin(&core.db, &sync).await? {
+        Begin::Waits { why, told } => {
+            tell(told);
+            return Ok(Ran::Waits(why));
+        }
+        Begin::Busy => {
+            trace_skip(app, source, "start", "already running");
+            return Err(AppError::other("sync already running"));
+        }
+        Begin::Go { guard, told } => {
+            tell(told);
+            guard
+        }
+    };
     begin_debug_cycle(app, source);
     let db = &core.db;
     if debug_on(app) {
@@ -231,8 +301,6 @@ pub async fn run_cycle(app: &AppHandle, source: &str) -> CmdResult<()> {
             _ => trace(app, "info", "start", "cycle started"),
         }
     }
-    settings::set(db, "sync_last_started", &Utc::now().to_rfc3339()).await?;
-    settings::set(db, "sync_last_error", "").await?;
     // Let the UI show the running state for scheduled cycles too.
     let _ = app.emit(EVENT_STATUS, ());
 
@@ -241,20 +309,20 @@ pub async fn run_cycle(app: &AppHandle, source: &str) -> CmdResult<()> {
     let now = Utc::now().to_rfc3339();
     match &result {
         Ok(warnings) => {
-            settings::set(db, "sync_last_run", &now).await?;
-            settings::set(db, "sync_last_error", "").await?;
-            settings::set(db, "sync_last_warning", &warnings.join("; ")).await?;
+            keep(db, "sync_last_run", &now).await?;
+            keep(db, "sync_last_error", "").await?;
+            keep(db, "sync_last_warning", &warnings.join("; ")).await?;
             emit_progress(app, "done", 100, 0, 0, "");
             trace(app, "info", "done", "cycle finished");
         }
         Err(e) => {
-            settings::set(db, "sync_last_error", &e.to_string()).await?;
+            keep(db, "sync_last_error", &e.to_string()).await?;
             emit_progress(app, "error", 0, 0, 0, &e.to_string());
             trace(app, "error", "done", &e.to_string());
         }
     }
     let _ = app.emit(EVENT_STATUS, ());
-    result.map(|_| ())
+    result.map(|_| Ran::Done)
 }
 
 /// Blob missing for an op older than the GC grace: it was collected, not delayed.
@@ -356,7 +424,7 @@ async fn rotate(
     if let Err(re) = config::rotate_device_id(db, registry, old_head).await {
         return re;
     }
-    let _ = settings::set(db, "sync_last_warning", why).await;
+    let _ = keep(db, "sync_last_warning", why).await;
     AppError::other(why)
 }
 
@@ -857,6 +925,11 @@ struct Reread {
 /// app, and what a test runs without it. Returns non-fatal warnings
 /// (per-peer integrity problems).
 pub async fn cycle(host: Host<'_>, core: &Core, sync: &SyncManager) -> CmdResult<Vec<String>> {
+    // What the cycle applies is no edit of this device (`edits::Own`).
+    veydan_core::db::hearing(steps(host, core, sync)).await
+}
+
+async fn steps(host: Host<'_>, core: &Core, sync: &SyncManager) -> CmdResult<Vec<String>> {
     if !sync.is_ready() {
         return Err(AppError::other(
             "sync is not ready: the checks of the data file at the start did not pass; they are repeated every 30 seconds",
@@ -887,6 +960,7 @@ pub async fn cycle(host: Host<'_>, core: &Core, sync: &SyncManager) -> CmdResult
         }
     }
     // A key row made since the join was not compared with the vault's yet.
+    let own = edits::Own::new();
     match join::settle_join_key(&host, &engine, core, registry).await {
         Ok(true) => join::key_row_changed(&host).await,
         Ok(false) => {}
@@ -906,6 +980,8 @@ pub async fn cycle(host: Host<'_>, core: &Core, sync: &SyncManager) -> CmdResult
         local: &mut local,
         warnings: &mut warnings,
     };
+    drop(own);
+    edits::collecting(db).await;
     // A device that has just joined publishes nothing until it has read
     // the vault in full: what it holds would go out as new, over the vault.
     let fresh = join::fresh_binding(db).await;
@@ -1045,7 +1121,7 @@ pub async fn cycle(host: Host<'_>, core: &Core, sync: &SyncManager) -> CmdResult
     // Persist the advanced clock now: a failure while applying must not let the
     // next cycle stamp ops with an HLC below what it has already seen.
     state::save_own_state(db, &local, &clock.last()).await?;
-    settings::set(db, "sync_last_applied", &pulled.ops.len().to_string()).await?;
+    keep(db, "sync_last_applied", &pulled.ops.len().to_string()).await?;
     // A parent row missing on this device is not fatal: the ops come again next cycle.
     let mut deferred: Option<String> = None;
     let mut retries: Vec<(&str, Option<String>)> = Vec::new();
@@ -1053,6 +1129,8 @@ pub async fn cycle(host: Host<'_>, core: &Core, sync: &SyncManager) -> CmdResult
     let mut held: Option<HashSet<String>> = Some(HashSet::new());
     let mut applied: Vec<(&dyn Handler, Applied)> = Vec::new();
     let mut streams: Vec<Stream> = Vec::new();
+    // From here the cycle writes what it applies: no edit of this device.
+    let _own = edits::Own::new();
     // Edits made since the collect, found before any step writes.
     let row_tables: Vec<_> = plan
         .apply
@@ -1343,6 +1421,7 @@ pub fn start(app: &AppHandle) {
     if let Err(e) = tauri::async_runtime::block_on(prepare(&core, &sync)) {
         eprintln!("sync: start checks failed, retrying: {e}");
     }
+    edits::start(app.clone(), sync.registry());
     start_sync_scheduler(app.clone());
 }
 
@@ -1360,6 +1439,32 @@ pub async fn prepare(core: &Core, sync: &SyncManager) -> CmdResult<()> {
         .map_err(|e| AppError::other(format!("registry check failed: {e}")))?;
     sync.mark_ready();
     Ok(())
+}
+
+/// Whether the scheduler runs a cycle on this tick: sync on, a vault
+/// joined, and the interval since the last start over — measured from the
+/// start so a failed cycle does not retry every tick — or a cycle held
+/// while the cycles waited.
+async fn due(db: &sqlx::SqlitePool, sync: &SyncManager) -> bool {
+    if settings::get(db, "sync_enabled").await.as_deref() != Some("1")
+        || load_binding(db).await.is_none()
+    {
+        return false;
+    }
+    if sync.is_held() {
+        return true;
+    }
+    let interval_ms = settings::get(db, "sync_interval_sec")
+        .await
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(config::DEFAULT_INTERVAL_SEC as i64)
+        * 1000;
+    match settings::get(db, "sync_last_started").await {
+        None => true,
+        Some(last) => chrono::DateTime::parse_from_rfc3339(&last)
+            .map(|t| (Utc::now() - t.with_timezone(&Utc)).num_milliseconds() >= interval_ms)
+            .unwrap_or(true),
+    }
 }
 
 /// Background ticker. Does nothing while sync is disabled or no vault is joined.
@@ -1386,24 +1491,7 @@ fn start_sync_scheduler(app: AppHandle) {
                 continue;
             }
             let db = &core.db;
-            if settings::get(db, "sync_enabled").await.as_deref() != Some("1")
-                || load_binding(db).await.is_none()
-            {
-                continue;
-            }
-            let interval_ms = settings::get(db, "sync_interval_sec")
-                .await
-                .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(config::DEFAULT_INTERVAL_SEC as i64)
-                * 1000;
-            // Measured from the last cycle start so a failed cycle does not retry every tick.
-            let due = match settings::get(db, "sync_last_started").await {
-                None => true,
-                Some(last) => chrono::DateTime::parse_from_rfc3339(&last)
-                    .map(|t| (Utc::now() - t.with_timezone(&Utc)).num_milliseconds() >= interval_ms)
-                    .unwrap_or(true),
-            };
-            if !due {
+            if !due(db, &sync).await {
                 continue;
             }
             if running {
@@ -1412,9 +1500,141 @@ fn start_sync_scheduler(app: AppHandle) {
                 }
                 continue;
             }
+            // One that waits for the messenger is held: the first cycle of a
+            // start goes the tick it is up, not an interval after a failure.
             if let Err(e) = run_cycle(&app, "scheduler").await {
                 eprintln!("sync: {e}");
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{
+        register_sync_cloud_credentials, unregister_sync_cloud_credentials, CloudCredentials,
+        CLOUD_BACKEND, CLOUD_SLOT_TURN,
+    };
+    use crate::Registry;
+    use std::sync::{Arc, RwLock};
+    use veydan_core::BoxFuture;
+    use veydan_sync::{RequestSigner, SignFuture};
+    use zeroize::Zeroizing;
+
+    struct Signs;
+
+    impl RequestSigner for Signs {
+        fn authorization<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: Option<[u8; 32]>,
+            _: u64,
+        ) -> SignFuture<'a> {
+            Box::pin(async { Ok("Nostr e30=".to_string()) })
+        }
+    }
+
+    /// The module `cloud` over a messenger that is not up while `why` is.
+    struct Messenger {
+        why: RwLock<Option<String>>,
+    }
+
+    impl Messenger {
+        fn set(&self, why: Option<&str>) {
+            *self.why.write().unwrap() = why.map(str::to_string);
+        }
+    }
+
+    impl CloudCredentials for Messenger {
+        fn signer(&self) -> Arc<dyn RequestSigner> {
+            Arc::new(Signs)
+        }
+        fn refresh_hosts(&self) -> BoxFuture<'_, CmdResult<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn passphrase(&self) -> BoxFuture<'_, CmdResult<Zeroizing<String>>> {
+            Box::pin(async { Ok(Zeroizing::new("derived".to_string())) })
+        }
+        fn waiting(&self) -> Option<String> {
+            self.why.read().unwrap().clone()
+        }
+    }
+
+    /// The order of a start on a phone (ROO-371): sync starts before the
+    /// messenger. A cycle asked for then — by an edit, the background, the
+    /// scheduler — waits: no start, no error, the reason told once however
+    /// many times it is asked; it is held, and the scheduler runs it the
+    /// tick the messenger is up, an interval since the last start or not.
+    /// One switched off by the user waits the same way.
+    #[tokio::test]
+    async fn a_cycle_before_the_messenger_waits_and_goes_the_tick_it_is_up() {
+        let _turn = CLOUD_SLOT_TURN.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = veydan_core::db::open(&dir.path().join("app.db"), &[veydan_core::SCHEMA])
+            .await
+            .unwrap();
+        for (key, value) in [
+            ("sync_enabled", "1"),
+            ("sync_vault_id", "v1"),
+            ("sync_vault_key", "a2V5"),
+            ("sync_backend", CLOUD_BACKEND),
+            ("sync_interval_sec", "300"),
+        ] {
+            settings::set(&db, key, value).await.unwrap();
+        }
+        let last = (Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
+        settings::set(&db, "sync_last_started", &last).await.unwrap();
+        settings::set(&db, "sync_last_error", "an earlier one").await.unwrap();
+        let sync = SyncManager::new(Registry::new());
+        let messenger = Arc::new(Messenger { why: RwLock::new(None) });
+        messenger.set(Some("the messenger is starting"));
+        register_sync_cloud_credentials(messenger.clone());
+
+        assert!(!due(&db, &sync).await, "the interval is not over");
+        let mut told = Vec::new();
+        for _ in 0..5 {
+            match begin(&db, &sync).await.unwrap() {
+                Begin::Waits { why, told: line } => {
+                    assert_eq!(why, "the messenger is starting");
+                    told.extend(line);
+                }
+                _ => panic!("a cycle went before the messenger"),
+            }
+            assert!(!sync.is_running());
+        }
+        assert_eq!(told, ["waiting: the messenger is starting"], "told once");
+        assert_eq!(settings::get(&db, "sync_last_started").await.as_deref(), Some(last.as_str()));
+        assert_eq!(settings::get(&db, "sync_last_error").await.as_deref(), Some("an earlier one"));
+        assert!(due(&db, &sync).await, "the held cycle does not wait for the interval");
+
+        messenger.set(None);
+        let Begin::Go { guard, told } = begin(&db, &sync).await.unwrap() else {
+            panic!("the messenger is up and the cycle waits");
+        };
+        assert_eq!(told.as_deref(), Some("no longer waiting"));
+        assert!(sync.is_running());
+        assert_ne!(settings::get(&db, "sync_last_started").await.as_deref(), Some(last.as_str()));
+        assert_eq!(settings::get(&db, "sync_last_error").await.as_deref(), Some(""));
+        drop(guard);
+        assert!(!due(&db, &sync).await, "the held cycle went");
+
+        messenger.set(Some("the messenger is switched off"));
+        let mut told = Vec::new();
+        for _ in 0..3 {
+            let Begin::Waits { told: line, .. } = begin(&db, &sync).await.unwrap() else {
+                panic!("a cycle went with the messenger off");
+            };
+            told.extend(line);
+        }
+        assert_eq!(told, ["waiting: the messenger is switched off"]);
+        assert!(due(&db, &sync).await);
+
+        // Another backend never waits for the messenger.
+        settings::set(&db, "sync_backend", "folder").await.unwrap();
+        assert!(matches!(begin(&db, &sync).await.unwrap(), Begin::Go { .. }));
+        unregister_sync_cloud_credentials();
+        db.close().await;
+    }
 }

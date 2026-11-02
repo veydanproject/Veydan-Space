@@ -513,7 +513,7 @@ mod tests {
         assert!(started.elapsed() < CONNECT_PATIENCE + Duration::from_secs(3));
         assert!(link_qr_svg("veydan://link/ab/abandon")
             .expect("svg")
-            .contains("#000000"));
+            .contains(r#"<circle class="logo""#));
     }
 
     /// The manifest in use names the relay at `url` alone: the relays of

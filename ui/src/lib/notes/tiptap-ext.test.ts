@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import { flattenExtensions, type JSONContent } from '@tiptap/core';
+import { flattenExtensions, getSchema, type JSONContent } from '@tiptap/core';
 import { MarkdownManager } from '@tiptap/markdown';
-import { noteExtensions, noteMarkdownExtensions } from './tiptap-ext';
+import { goneAttachments, noteExtensions, noteMarkdownExtensions } from './tiptap-ext';
 
 const mm = new MarkdownManager({ extensions: noteMarkdownExtensions(), markedOptions: { gfm: true, breaks: true } });
 const parse = (md: string) => mm.parse(md);
@@ -162,5 +162,44 @@ describe('note editor: no trailing node', () => {
   it('writes a note that ends with a list as it reads it', () => {
     const md = 'Intro\n\n- item 1\n- item 2';
     expect(serialize(parse(md))).toBe(md);
+  });
+});
+
+describe('note editor: an attachment deleted while its link stayed', () => {
+  const schema = getSchema(noteExtensions((src) => src));
+  const known = { prefix: 'attachments/n1/', names: new Set(['here.png', 'doc (1).pdf']) };
+  const link = (href: string) => [{ type: 'link', attrs: { href } }];
+  const doc = (content: JSONContent[]) => schema.nodeFromJSON({ type: 'doc', content: [{ type: 'paragraph', content }] });
+
+  it('finds the image and the file link whose attachment is not in the list', () => {
+    const d = doc([
+      { type: 'text', text: 'a ' },
+      { type: 'image', attrs: { src: 'attachments/n1/gone.jpg' } },
+      { type: 'image', attrs: { src: 'attachments/n1/here.png' } },
+      { type: 'text', text: ' see ' },
+      { type: 'text', text: 'old.pdf', marks: link('attachments/n1/old.pdf') },
+    ]);
+    expect(goneAttachments(d, known).map(({ kind, name }) => ({ kind, name }))).toEqual([
+      { kind: 'image', name: 'gone.jpg' },
+      { kind: 'link', name: 'old.pdf' },
+    ]);
+  });
+
+  it('keeps present files, encoded names, other notes and web links as they are', () => {
+    const d = doc([
+      { type: 'text', text: 'doc', marks: link('attachments/n1/doc%20%281%29.pdf') },
+      { type: 'image', attrs: { src: 'attachments/n2/gone.jpg' } },
+      { type: 'image', attrs: { src: 'https://example.org/x.png' } },
+      { type: 'text', text: 'site', marks: link('https://example.org/attachments/n1/x') },
+    ]);
+    expect(goneAttachments(d, known)).toEqual([]);
+  });
+
+  it('takes a link split by bold as one run', () => {
+    const d = doc([
+      { type: 'text', text: 'old', marks: link('attachments/n1/old.pdf') },
+      { type: 'text', text: '.pdf', marks: [{ type: 'bold' }, ...link('attachments/n1/old.pdf')] },
+    ]);
+    expect(goneAttachments(d, known)).toEqual([{ kind: 'link', from: 1, to: 8, name: 'old.pdf' }]);
   });
 });

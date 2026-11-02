@@ -10,21 +10,24 @@ import { loadDefaultApp, registry } from '$lib/core/registry';
 export type { NavItem };
 
 /**
- * The root bar. Space: Home, which opens the default module when one is
- * set, and Settings. A product of one module has no Home (platform-spec
- * 11.7): its bar is that module's own screens, then Settings — the bar the
- * module gives its first screen when it has one (the chat's tabs, Settings
- * at their end), so Settings keeps the same bar.
+ * The root bar. Space has none: Home is a grid of the apps with Settings as
+ * its last tile, the apps' screens lead back to it by the arrow of their
+ * header, and the logo of a tab's header opens the sheet of the apps. A
+ * product of one module has no Home (platform-spec 11.7): its bar is that
+ * module's own screens, then Settings — the bar the module gives its first
+ * screen when it has one (the chat's tabs, Settings behind the avatar), so
+ * Settings keeps the same bar.
  */
-export function rootNav(): NavItem[] {
-  const settings: NavItem = { id: 'settings', title: 'app_settings', icon: 'settings', href: '/settings' };
+export function rootNav(): NavItem[] | null {
   const only = registry.only;
-  const home = only && registry.homeRoute(only);
+  if (!only) return null;
+  const settings: NavItem = { id: 'settings', title: 'app_settings', icon: 'settings', href: '/settings' };
+  const home = registry.homeRoute(only);
   const own = home ? only.bar?.(new URL(home, 'http://app')) : undefined;
   if (own) return own;
-  if (only && only.nav.length > 0) return [...only.nav, settings];
+  if (only.nav.length > 0) return [...only.nav, settings];
   const app = registry.navItem(loadDefaultApp());
-  return [{ id: 'home', title: 'nav_home', icon: 'home', href: app?.href ?? (only && registry.homeRoute(only)) ?? '/' }, settings];
+  return [{ id: 'home', title: 'nav_home', icon: 'home', href: app?.href ?? home ?? '/' }, settings];
 }
 
 /**

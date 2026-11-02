@@ -93,7 +93,7 @@
 </script>
 
 <div class="card invites">
-  <div class="card-title"><Icon name="qr-code" size={16} /> {$t('msg_inv_title')}</div>
+  <div class="card-title">{$t('msg_inv_title')}</div>
   <p class="muted">{$t('msg_inv_intro')}</p>
 
   {#if paused}

@@ -25,9 +25,11 @@
 //! | 36 × count | missed keys: epoch (u32), key (32), ascending |
 //! | 1     | more missed keys follow: 0 or 1 |
 //!
-//! A page holds at most `MISSED_PAGE` keys: with an `sd-v1` bundle of
-//! depth 24 it stays under 64 KiB, the plaintext limit of a NIP-44
-//! envelope.
+//! A page holds at most `MISSED_PAGE` keys; the page that goes with a
+//! bundle (`join`, `bundle_for`) at most `MISSED_PAGE_BUNDLED`. The bound
+//! is the relays', not NIP-44's: the host seals the bytes twice (the
+//! rumor into a seal, the seal into a wrap, each with padding) and the
+//! relays of the project take an event of 131 072 bytes at most.
 
 use crate::bundle::Bundle;
 use crate::generation::{GenerationKind, MigrationReason};
@@ -37,8 +39,19 @@ use crate::{EpochKey, Error, Issued, Key32, SchemeId, ScopeRef, SecretBytes};
 pub const ISSUED_MAGIC: &[u8; 4] = b"VKA1";
 /// The version of the layout.
 pub const ISSUED_VERSION: u8 = 1;
-/// The missed keys of one page, at most.
+/// The missed keys of one page, at most: what `from_bytes` takes, and
+/// what a page without a bundle (`KeyDistribution::missed_page`) holds.
+/// 1000 keys alone are ~36 KB, ~109 KB as a wrap of the messenger.
 pub const MISSED_PAGE: usize = 1000;
+/// The missed keys of the page that goes with a bundle (`join`,
+/// `bundle_for`), at most. An `sd-v1` bundle of depth 24 is 9 707 bytes;
+/// with 1000 keys the `Issued` came to ~46 KB, base64 ~61 KB, and the
+/// two NIP-44 envelopes with their padding made a wrap of ~131.4 KB, which
+/// the relays refuse (`maxEventSize` 131 072; the audit of ROO-396): the
+/// member never got its bundle. With 500 keys the wrap is ~77 KB, with
+/// room; the rest of the keys follow in pages of `MISSED_PAGE`
+/// (`missed_more`).
+pub const MISSED_PAGE_BUNDLED: usize = 500;
 
 struct Reader<'a> {
     b: &'a [u8],

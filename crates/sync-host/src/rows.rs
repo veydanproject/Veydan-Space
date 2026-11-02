@@ -271,6 +271,50 @@ fn make_op(table: &Table, id: &str, hlc: Hlc, payload: Value, deleted: bool) -> 
     }
 }
 
+/// What of a table differs from what was synced.
+struct Unsynced {
+    /// `(id, payload, hash, never synced)` of the rows changed or new.
+    rows: Vec<(String, Value, String, bool)>,
+    /// The states of the rows that disappeared since, when the table
+    /// publishes deletes.
+    gone: Vec<RowSyncState>,
+}
+
+async fn unsynced(db: &Pool<Sqlite>, table: &Table) -> CmdResult<Unsynced> {
+    let mut states = load_row_states(db, table.spec.entity).await?;
+    // The state of an id the table does not take, such as a setting key
+    // no module registers any more, is not of a row that disappeared: its
+    // tombstone would delete the value on every device (spec 9.2, rule 1).
+    states.retain(|id, _| table.takes(id));
+    let mut rows = Vec::new();
+    for (id, payload) in read_rows(db, table).await? {
+        let hash = payload_hash(&payload);
+        let prev = states.remove(&id);
+        if prev
+            .as_ref()
+            .is_some_and(|s| s.synced_hash == hash && !s.deleted)
+        {
+            continue;
+        }
+        rows.push((id, payload, hash, prev.is_none()));
+    }
+    // Whatever is left in `states` has no row any more.
+    let gone = if matches!(table.spec.delete, Delete::Ignore) {
+        Vec::new()
+    } else {
+        states.into_values().filter(|s| !s.deleted).collect()
+    };
+    Ok(Unsynced { rows, gone })
+}
+
+/// Whether the next collect may publish rows of `table`: one differs from
+/// what was synced, or disappeared. It writes nothing: a set of columns new
+/// to the states (`adopt_row_shape`) counts as a change.
+pub(crate) async fn unsent(db: &Pool<Sqlite>, table: &Table) -> CmdResult<bool> {
+    let Unsynced { rows, gone } = unsynced(db, table).await?;
+    Ok(!rows.is_empty() || !gone.is_empty())
+}
+
 /// Rows of `tables` whose synced columns differ from what the vault has,
 /// plus tombstones for rows that disappeared. Tables this build only
 /// mirrors publish nothing. While the vault is read again for a new
@@ -293,23 +337,12 @@ pub async fn collect_local_changes(
         let spec = &table.spec;
         let waits = |id: &str| reread.is_some_and(|known| !took(known, spec.entity, id));
         adopt_row_shape(db, table).await?;
-        let mut states = load_row_states(db, spec.entity).await?;
-        // The state of an id the table does not take, such as a setting key
-        // no module registers any more, is not of a row that disappeared: its
-        // tombstone would delete the value on every device (spec 9.2, rule 1).
-        states.retain(|id, _| table.takes(id));
-        for (id, payload) in read_rows(db, table).await? {
-            let hash = payload_hash(&payload);
-            let prev = states.remove(&id);
-            if prev
-                .as_ref()
-                .map(|s| s.synced_hash == hash && !s.deleted)
-                .unwrap_or(false)
-                || waits(&id)
-            {
+        let Unsynced { rows, gone } = unsynced(db, table).await?;
+        for (id, payload, hash, new) in rows {
+            if waits(&id) {
                 continue;
             }
-            if prev.is_none() {
+            if new {
                 if let Some(publish_new) = table.hooks.publish_new {
                     if !publish_new(db, &payload).await {
                         continue;
@@ -327,14 +360,7 @@ pub async fn collect_local_changes(
                 deleted: false,
             });
         }
-        if matches!(spec.delete, Delete::Ignore) {
-            continue;
-        }
-        // Whatever is left in `states` has no row any more.
-        for (_, mut st) in states
-            .into_iter()
-            .filter(|(id, s)| !s.deleted && !waits(id))
-        {
+        for mut st in gone.into_iter().filter(|s| !waits(&s.id)) {
             let hlc = clock.now();
             out.ops.push(make_op(
                 table,

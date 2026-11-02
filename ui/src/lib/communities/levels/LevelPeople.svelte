@@ -168,7 +168,7 @@
   code { font-size: var(--fs-2xs); color: var(--text-3); }
   .btn { flex-shrink: 0; }
   .icon { flex-shrink: 0; border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .icon:hover:not(:disabled) { background: var(--surface-3); }
   .icon.danger { color: var(--danger-text); }
   .icon:disabled, .btn:disabled { opacity: 0.55; cursor: default; }

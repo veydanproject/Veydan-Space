@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "Linki do logowania, odzyskiwania konta i łączenia urządzenia otwiera się tylko skanerem w aplikacji: dzięki temu żadna strona nie podsunie ci takiego linku do zatwierdzenia.",
     "msg_inlink_long_title": "Link jest za długi",
     "msg_inlink_long_text": "Veydan nie otwiera tak długich linków. Poproś o link jeszcze raz.",
+    "msg_card_link_short": "W przeglądarce",
+    "msg_card_preview_short": "Podgląd",
     "msg_card_link_open": "Otwórz w przeglądarce",
     "msg_card_link_moved": "Link przekierowuje dalej z {host}.",
     "msg_card_link_risk_insecure": "Brak szyfrowania: każdy po drodze może odczytać i podmienić stronę.",

@@ -344,6 +344,7 @@
     "notes_panel_resize": "Змінити ширину панелі",
     "notes_task_checkbox": "Завдання: {text}",
     "notes_task_checkbox_empty": "Порожнє завдання",
+    "notes_attachment_gone": "Файл видалено",
     "notes_smart_profile_search": "Знайти профіль…"
   },
   "mobile": {

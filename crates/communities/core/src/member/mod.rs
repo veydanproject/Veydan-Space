@@ -188,6 +188,56 @@ pub struct Outcome {
     pub link: Option<LinkPayload>,
 }
 
+/// The epoch each epoch event held here chains back to (`follow_chains`),
+/// by its row: an event is written once to its row (`db::keys::put_epoch`)
+/// after its signature was checked, so it is read here once a process,
+/// not at every call. None: no chain, or nothing to read.
+#[derive(Clone, Default)]
+pub struct Chains(std::sync::Arc<std::sync::Mutex<ChainMap>>);
+
+/// By channel, scope and epoch: the digest of the event read and what it
+/// chains back to.
+type ChainMap = std::collections::HashMap<String, std::collections::HashMap<String, std::collections::HashMap<i64, (String, Option<u32>)>>>;
+
+impl Chains {
+    /// The epochs of `keys` (newest first) whose event chains back to an
+    /// epoch whose key is not among them, or was not read yet: where a walk
+    /// of `follow_chains` begins. One lock for all of them.
+    fn starts(&self, community_id: &str, scope_id: &str, keys: &std::collections::BTreeMap<u32, keydist::EpochKey>, digests: &std::collections::BTreeMap<u32, String>) -> Vec<u32> {
+        let m = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let read = m.get(community_id).and_then(|c| c.get(scope_id));
+        keys.keys()
+            .rev()
+            .filter(|e| {
+                digests.get(e).is_some_and(|d| match read.and_then(|r| r.get(&i64::from(**e))).filter(|(seen, _)| seen == d) {
+                    Some((_, Some(prev))) => !keys.contains_key(prev),
+                    Some((_, None)) => false,
+                    None => true,
+                })
+            })
+            .copied()
+            .collect()
+    }
+
+    /// What the event of `epoch` chains back to, when read already.
+    fn get(&self, community_id: &str, scope_id: &str, epoch: i64, digest: &str) -> Option<Option<u32>> {
+        let m = self.0.lock().ok()?;
+        m.get(community_id)?.get(scope_id)?.get(&epoch).filter(|(d, _)| d == digest).map(|(_, prev)| *prev)
+    }
+
+    /// Reads it of the row, and keeps it.
+    fn read(&self, row: &EpochRow) -> Option<u32> {
+        let prev = serde_json::from_str::<serde_json::Value>(&row.event_json)
+            .ok()
+            .and_then(|v| read_epoch(&v, &row.community_id, &row.scope_id).ok())
+            .and_then(|ev| ev.content.event.chain.as_ref().and(ev.content.event.prev_epoch));
+        if let Ok(mut m) = self.0.lock() {
+            m.entry(row.community_id.clone()).or_default().entry(row.scope_id.clone()).or_default().insert(row.epoch, (row.digest.clone(), prev));
+        }
+        prev
+    }
+}
+
 /// The member's side of one person (all channels).
 #[derive(Clone)]
 pub struct Member {
@@ -272,8 +322,8 @@ impl Member {
                 }
                 continue;
             }
-            let rows = db::keys::epochs(&self.env.db, cid, scope_id).await?;
-            for row in rows.iter().rev().filter(|r| r.key_hex.is_none() && !r.event_json.is_empty()) {
+            let rows = db::keys::epochs_unopened(&self.env.db, cid, scope_id).await?;
+            for row in rows.iter().rev() {
                 let Some(ev) = parse_epoch(&row.event_json, cid, scope_id) else { continue };
                 if let Some(Status::NeedBundle { gen }) = keys.state(scope_id).map(|m| m.status(&ev)) {
                     out.push((scope_id.clone(), gen));
@@ -581,8 +631,8 @@ impl Member {
     /// its blobs; none when the key is held or the row is gone.
     async fn waiting_epoch(&self, state: &ChannelState, scope_id: &str, epoch: u32) -> Result<Option<(Verified<EpochEvent>, Vec<String>)>> {
         let cid = &state.community_id;
-        let rows = db::keys::epochs(&self.env.db, cid, scope_id).await?;
-        let Some(row) = rows.into_iter().find(|r| r.epoch == i64::from(epoch) && r.key_hex.is_none() && !r.event_json.is_empty()) else { return Ok(None) };
+        let row = db::keys::epoch_row(&self.env.db, cid, scope_id, i64::from(epoch)).await?;
+        let Some(row) = row.filter(|r| r.key_hex.is_none() && !r.event_json.is_empty()) else { return Ok(None) };
         let value: serde_json::Value = serde_json::from_str(&row.event_json)?;
         let ev = read_epoch(&value, cid, scope_id)?;
         let hosts = if ev.content.blobs.is_empty() { state.storage.clone() } else { ev.content.blobs.clone() };
@@ -591,61 +641,88 @@ impl Member {
 
     /// What a job must fetch to open an epoch (`fetch::Want::Epoch`), by
     /// the rows now: the index blob of the generation of my bundle and the
-    /// shard of my leaf. None when there is nothing to fetch any more (the
-    /// key came another way, the status is no longer `Read`).
+    /// shard of my leaf, or, a tree above `INDEX_MAX` shards naming a
+    /// Merkle root, the proof and the shard by their paths (wire §9). None
+    /// when there is nothing to fetch any more (the key came another way,
+    /// the status is no longer `Read`).
     pub(crate) async fn plan_epoch(&self, state: &ChannelState, scope_id: &str, epoch: u32) -> Result<Option<fetch::Plan>> {
         let Some((ev, hosts)) = self.waiting_epoch(state, scope_id, epoch).await? else { return Ok(None) };
         let keys = self.load(&state.community_id, scope_id).await?;
         let Some(Status::Read { gen, shard }) = keys.state(scope_id).map(|m| m.status(&ev)) else { return Ok(None) };
         let tree = ev.tree(gen).ok_or_else(|| invalid("generation not in the event"))?;
-        // Stage 1 reads by the index blob; a tree with more shards than an
-        // index holds names a Merkle root, whose proofs a host serves by
-        // no hash the event gives.
-        let index = tree.index.ok_or_else(|| invalid("an epoch without an index blob"))?;
-        Ok(Some(fetch::Plan::Epoch { index, shard, hosts }))
+        if let Some(index) = tree.index {
+            return Ok(Some(fetch::Plan::Epoch { index, shard, hosts }));
+        }
+        if tree.root.is_none() {
+            return Err(invalid("an epoch with neither an index blob nor a root"));
+        }
+        let cid = &state.community_id;
+        let path = |kind| crate::blobs::key_path(cid, scope_id, kind, gen, ev.epoch, shard).ok_or_else(|| invalid("path of a blob"));
+        let (proof_path, shard_path) = (path(keydist::BlobKind::Proof)?, path(keydist::BlobKind::Shard)?);
+        Ok(Some(fetch::Plan::Proved { event: Box::new((*ev).clone()), gen, shard, proof_path, shard_path, hosts }))
     }
 
     /// An epoch opened with what a job fetched (the witness and the shard,
     /// each checked by its hash), its key kept, unless it came another way
     /// meanwhile; then the chain and the epochs that still wait.
-    pub(crate) async fn open_fetched(&self, state: &ChannelState, scope_id: &str, epoch: u32, index: &[u8], shard: &[u8], out: &mut Outcome) -> Result<()> {
+    pub(crate) async fn open_fetched(&self, state: &ChannelState, scope_id: &str, epoch: u32, witness: &[u8], shard: &[u8], out: &mut Outcome) -> Result<()> {
         let Some((ev, _)) = self.waiting_epoch(state, scope_id, epoch).await? else { return Ok(()) };
         let mut keys = self.load(&state.community_id, scope_id).await?;
-        let k = keys.open(scope_id, &ev, shard, index)?;
+        let k = keys.open(scope_id, &ev, shard, witness)?;
         self.keep(&state.community_id, scope_id, &k, out).await?;
         self.open_waiting(state, scope_id, out).await
     }
 
     /// Under an open history: every key held opens the one before it from
     /// the chain of its event, as far back as the events here go (wire
-    /// §6.3: one event per epoch).
+    /// §6.3: one event per epoch). Each key walks down from where it is,
+    /// the epoch an event chains to taken from `Env::chains` once read, the
+    /// keys held from `db::keys::Mirrors`: every call read, parsed and
+    /// verified every event held, a step at a time (O(E²) for a reader
+    /// back after 7 days, 139 s; O(E) signatures checked at every epoch of
+    /// the owner, 8640 of them in a month; the bench of ROO-419).
     async fn follow_chains(&self, community_id: &str, scope_id: &str, out: &mut Outcome) -> Result<()> {
-        loop {
-            let rows = db::keys::epochs(&self.env.db, community_id, scope_id).await?;
-            let held: std::collections::BTreeSet<i64> = rows.iter().filter(|r| r.key_hex.is_some()).map(|r| r.epoch).collect();
-            let mut keys = self.load(community_id, scope_id).await?;
-            let mut progress = false;
-            for row in rows.iter().rev().filter(|r| r.key_hex.is_some() && !r.event_json.is_empty()) {
-                let Ok(value) = serde_json::from_str::<serde_json::Value>(&row.event_json) else { continue };
-                let Ok(ev) = read_epoch(&value, community_id, scope_id) else { continue };
-                let Some(prev) = ev.content.event.prev_epoch else { continue };
-                if held.contains(&i64::from(prev)) || ev.content.event.chain.is_none() {
-                    continue;
+        // Where a walk begins: a key held whose event chains to one not
+        // held, or whose event was not read yet; every other key held is
+        // passed over by what `Env::chains` holds of it.
+        let chains = self.env.chains.clone();
+        let starts = db::keys::with_mirror(&self.env.db, community_id, scope_id, |m| chains.starts(community_id, scope_id, m.keys(), m.digests())).await?;
+        let mut keys = None;
+        for start in starts {
+            let mut at = start;
+            loop {
+                let Some(row) = db::keys::epoch_row(&self.env.db, community_id, scope_id, i64::from(at)).await? else { break };
+                if row.digest.is_empty() {
+                    break;
                 }
+                let prev = match self.env.chains.get(community_id, scope_id, row.epoch, &row.digest) {
+                    Some(prev) => prev,
+                    None => self.env.chains.read(&row),
+                };
+                let Some(prev) = prev else { break };
+                if db::keys::holds_key(&self.env.db, community_id, scope_id, prev).await? {
+                    break;
+                }
+                let Ok(value) = serde_json::from_str::<serde_json::Value>(&row.event_json) else { break };
+                let Ok(ev) = read_epoch(&value, community_id, scope_id) else { break };
                 let verified = Verified::after_signature_check(ev.content.event);
+                let keys = match &mut keys {
+                    Some(k) => k,
+                    None => keys.insert(self.load(community_id, scope_id).await?),
+                };
                 match keys.follow_chain(scope_id, &verified) {
                     Ok(k) => {
                         self.keep(community_id, scope_id, &k, out).await?;
-                        progress = true;
+                        at = prev;
+                    }
+                    Err(e) => {
+                        tracing::debug!(community = %community_id, epoch = at, error = %e, "a chain did not open");
                         break;
                     }
-                    Err(e) => tracing::debug!(community = %community_id, epoch = row.epoch, error = %e, "a chain did not open"),
                 }
             }
-            if !progress {
-                return Ok(());
-            }
         }
+        Ok(())
     }
 
     /// Epochs whose events came before the bundle that opens them (a
@@ -659,15 +736,24 @@ impl Member {
         if open {
             self.follow_chains(cid, scope_id, out).await?;
         }
-        let rows = db::keys::epochs(&self.env.db, cid, scope_id).await?;
         let keys = self.load(cid, scope_id).await?;
         let Some(member) = keys.state(scope_id) else { return Ok(()) };
-        for row in rows.iter().rev().filter(|r| r.key_hex.is_none() && !r.event_json.is_empty()) {
+        // Of a history from the join, each epoch on its own: one wanted
+        // already is left as it is (`want` would keep it), unread. Every
+        // shard opened read, parsed and checked every epoch still to open,
+        // all of them for a reader back after days (O(E²): 7 days, 155 s;
+        // the bench of ROO-419).
+        for epoch in db::keys::unopened(&self.env.db, cid, scope_id).await?.into_iter().rev() {
+            let want = Want::Epoch { scope_id: scope_id.to_string(), epoch };
+            if !open && self.env.fetches.wanted(cid, &want) {
+                continue;
+            }
+            let Some(row) = db::keys::epoch_row(&self.env.db, cid, scope_id, i64::from(epoch)).await?.filter(|r| r.key_hex.is_none() && !r.event_json.is_empty()) else { continue };
             let value: serde_json::Value = serde_json::from_str(&row.event_json)?;
             let ev = read_epoch(&value, cid, scope_id)?;
             let verified = Verified::after_signature_check(ev.content.event);
             if let Status::Read { .. } = member.status(&verified) {
-                self.env.fetches.want(cid, Want::Epoch { scope_id: scope_id.to_string(), epoch: verified.epoch });
+                self.env.fetches.want(cid, want);
                 if open {
                     break;
                 }
@@ -717,10 +803,8 @@ impl Member {
     async fn own_keys(&self, state: &ChannelState, scope_id: &str) -> Result<Option<OwnKeys>> {
         let cid = &state.community_id;
         let bundles = db::keys::bundles(&self.env.db, cid, scope_id).await?;
-        let rows = db::keys::epochs(&self.env.db, cid, scope_id).await?;
-        let mut epochs: Vec<OwnEpoch> =
-            rows.iter().rev().filter_map(|r| Some(OwnEpoch { epoch: u32::try_from(r.epoch).ok()?, key: r.key_hex.clone()? })).take(OWN_KEYS_MAX).collect();
-        epochs.reverse();
+        let epochs: Vec<OwnEpoch> =
+            db::keys::newest_keys(&self.env.db, cid, scope_id, OWN_KEYS_MAX).await?.into_iter().map(|k| OwnEpoch { epoch: k.epoch, key: hex::encode(k.key.as_bytes()) }).collect();
         let issued = match bundles.last() {
             Some((_, bytes, emergency)) => {
                 let b = Bundle::from_bytes(bytes).map_err(kd)?;
@@ -824,8 +908,7 @@ impl Member {
 
     /// The key that opens a sealed event of `epoch` with `k`, if held.
     pub async fn key_for(&self, community_id: &str, scope_id: &str, epoch: u32, key_id: &str) -> Result<Option<EpochKey>> {
-        let rows = db::keys::epochs(&self.env.db, community_id, scope_id).await?;
-        let Some(row) = rows.iter().find(|r| r.epoch == i64::from(epoch)) else { return Ok(None) };
+        let Some(row) = db::keys::epoch_row(&self.env.db, community_id, scope_id, i64::from(epoch)).await? else { return Ok(None) };
         let Some(k) = row.key_hex.as_deref() else { return Ok(None) };
         let key = key_of(epoch, k)?;
         Ok((wire::key_id(&key).0 == key_id).then_some(key))
@@ -833,8 +916,7 @@ impl Member {
 
     /// The newest key held: what new content is sealed with.
     pub async fn newest_key(&self, community_id: &str, scope_id: &str) -> Result<Option<EpochKey>> {
-        let rows = db::keys::epochs(&self.env.db, community_id, scope_id).await?;
-        rows.iter().rev().find_map(|r| r.key_hex.as_deref().map(|k| (r.epoch, k.to_string()))).map(|(e, k)| key_of(u32::try_from(e).map_err(|_| invalid("epoch"))?, &k)).transpose()
+        Ok(db::keys::newest_keys(&self.env.db, community_id, scope_id, 1).await?.pop())
     }
 
     /// The epoch that `live` content may be sealed under at least (wire

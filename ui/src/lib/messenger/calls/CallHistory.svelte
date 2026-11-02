@@ -235,12 +235,19 @@
   .filter { padding: 0 var(--sp-3) var(--sp-2); flex-shrink: 0; }
   .filter .tab-bar { display: flex; }
   .filter .tab { flex: 1; justify-content: center; }
+  /* On a phone the two sections are words on the screen's glow, the chosen one bold with a short mark (as every row of tabs). */
+  :global(.msg-m) .filter { padding-inline: var(--sp-4); }
+  :global(.msg-m) .filter .tab-bar { gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; align-self: stretch; }
+  :global(.msg-m) .filter .tab { position: relative; flex: 0 0 auto; min-height: var(--control-h-lg); padding: 0; border-radius: 0; background: none; font-size: var(--fs-base); }
+  :global(.msg-m) .filter .tab.active { color: var(--text); font-weight: var(--fw-bold); background: none; }
+  :global(.msg-m) .filter .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
+  :global(.msg-m) .list-wrap { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
   .day { margin: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: none; }
   .day:first-child { margin-top: var(--sp-1); }
   /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows;
      the row's main part a .list-row-main button, the handset at its end. */
-  .dial:focus-visible, .clear:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .dial:focus-visible, .clear:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .missed .list-row-name, .missed .count { color: var(--danger-text); }
   .count { font-size: var(--fs-sm); color: var(--text-2); flex-shrink: 0; }
   .glyph { display: inline-flex; color: var(--text-3); flex-shrink: 0; }

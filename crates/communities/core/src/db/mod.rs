@@ -53,6 +53,10 @@ pub(crate) fn storage(e: impl std::fmt::Display) -> MessengerError {
 #[derive(Clone)]
 pub struct Db {
     pool: Pool<Sqlite>,
+    /// What a member holds of the epoch rows of each scope (`keys::Mirrors`).
+    mirrors: std::sync::Arc<std::sync::Mutex<keys::Mirrors>>,
+    /// The blobs each keeper kept here waits to remove (`keeper::Retired`).
+    retired: std::sync::Arc<std::sync::Mutex<keeper::Retired>>,
 }
 
 impl Db {
@@ -71,15 +75,25 @@ impl Db {
             .busy_timeout(std::time::Duration::from_secs(5));
         let pool = SqlitePoolOptions::new().max_connections(4).connect_with(options).await.map_err(storage)?;
         schema::migrations().run(&pool).await.map_err(storage)?;
-        Ok(Self { pool })
+        Ok(Self { pool, mirrors: Default::default(), retired: Default::default() })
     }
 
-    /// In-memory database for tests. Same migrations, no file.
+    /// In-memory database for tests. Same migrations, no file. The one
+    /// connection is the database: the pool never closes it (idle for 10
+    /// minutes or 30 minutes old, a new one opened an empty database, and
+    /// the bench of 100 000 found no `cm_epochs`).
     pub async fn open_in_memory() -> Result<Self> {
         let options = SqliteConnectOptions::from_str("sqlite::memory:").map_err(storage)?.foreign_keys(true);
-        let pool = SqlitePoolOptions::new().max_connections(1).connect_with(options).await.map_err(storage)?;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .min_connections(1)
+            .idle_timeout(None)
+            .max_lifetime(None)
+            .connect_with(options)
+            .await
+            .map_err(storage)?;
         schema::migrations().run(&pool).await.map_err(storage)?;
-        Ok(Self { pool })
+        Ok(Self { pool, mirrors: Default::default(), retired: Default::default() })
     }
 
     /// Version of the last migration compiled into this crate.
@@ -89,6 +103,14 @@ impl Db {
 
     pub fn pool(&self) -> &Pool<Sqlite> {
         &self.pool
+    }
+
+    pub(crate) fn mirrors(&self) -> std::sync::MutexGuard<'_, keys::Mirrors> {
+        self.mirrors.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub(crate) fn retired(&self) -> std::sync::MutexGuard<'_, keeper::Retired> {
+        self.retired.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// A transaction that writes: `BEGIN IMMEDIATE`, so it takes the lock of

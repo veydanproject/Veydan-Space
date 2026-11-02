@@ -4,7 +4,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { t } from '$lib/core/i18n';
-  import Icon from '$lib/core/Icon.svelte';
   import Tabs from '$lib/core/ui/Tabs.svelte';
   import { messengerStore } from '../store.svelte';
   import IdentityCard from '../identity/IdentityCard.svelte';
@@ -22,8 +21,10 @@
   interface Props {
     /** The host screen already shows the title (phone). */
     compact?: boolean;
+    /** The host shows the tabs itself (the nav of the core's Settings): no row of tabs here. */
+    hideTabs?: boolean;
   }
-  let { compact = false }: Props = $props();
+  let { compact = false, hideTabs = false }: Props = $props();
 
   // The shown section is shared with the desk's nav (MessengerPage).
   let tab = $derived<SettingsTab>(settingsUi.tab);
@@ -41,19 +42,25 @@
 
   let media = $state<HTMLElement | null>(null);
 
-  // From the profile: an avatar needs a media server to be stored on.
-  async function openMedia() {
+  // From the profile: an avatar needs a media server to be stored on. The tab may be another view than this one
+  // (the core's Settings mounts one per section), so the scroll waits for the element of whichever shows it.
+  function openMedia() {
+    settingsUi.focusMedia = true;
     pick('network');
-    await tick();
-    media?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+  $effect(() => {
+    if (!settingsUi.focusMedia || tab !== 'network' || !media) return;
+    settingsUi.focusMedia = false;
+    void tick().then(() => media?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  });
 </script>
 
-<div class="settings">
-  {#if compact}
-    <!-- The phone: the sections as the tabs of «Аккаунт», kept in view while
-         the section scrolls. -->
-    <div class="tabs-sticky">
+<div class="settings" class:compact>
+  {#if hideTabs}
+    <!-- The tabs are the nav of the host. -->
+  {:else if compact}
+    <!-- The phone: the sections as the tabs of «Аккаунт», above the section that scrolls under them. -->
+    <div class="tabs-fixed">
       <Tabs {tabs} selected={tab} onpick={pick} label={$t('msg_settings_title_full')} phone />
     </div>
   {:else}
@@ -63,6 +70,7 @@
     </div>
   {/if}
 
+  <div class="sbody">
   {#if tab === 'profile'}
     <!-- No profile card for an identity that is gone (removed a moment ago) -->
     {#if messengerStore.identity}
@@ -82,7 +90,7 @@
     <CallsPanel />
   {:else if s?.runtime}
     <div class="card status-card">
-      <div class="card-title"><Icon name="activity" size={16} />{$t('msg_status_title')}</div>
+      <div class="card-title">{$t('msg_status_title')}</div>
       <dl class="status-grid">
         <dt>{$t('msg_status_version')}</dt><dd><code>{s.runtime.version}</code></dd>
         <dt>{$t('msg_status_schema')}</dt><dd><code>{s.runtime.schema_version}</code></dd>
@@ -102,29 +110,36 @@
     </div>
     <DebugFeed />
   {/if}
+  </div>
 </div>
 
 <style>
   .settings { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 820px; width: 100%; }
   @media (min-width: 861px) { .narrow-only { display: none; } }
-  /* Every section's cards as «Профиль и ключ» (design book): surface-2 with a line, radius 16, padding 16/20,
-     a title of 15 with its icon in text-2. */
-  .settings :global(.card) {
-    max-width: none; padding: var(--sp-4) var(--sp-5); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); box-shadow: none;
-  }
-  .settings :global(.card-title) { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
-  .settings :global(.card-title svg) { flex-shrink: 0; color: var(--text-2); }
+  /* Every section's cards alike: the glass card of base.css (radius of a card), padding 16/20, a title of the card's own
+     size without an icon. */
+  .settings :global(.card) { max-width: none; padding: var(--sp-4) var(--sp-5); box-shadow: none; }
   .media-anchor { scroll-margin-top: var(--sp-12); }
   .status-card { display: flex; flex-direction: column; gap: var(--sp-3); align-items: flex-start; }
   .status-grid { display: grid; grid-template-columns: max-content 1fr; gap: var(--sp-2) var(--sp-4); margin: 0; font-size: var(--fs-sm); }
   .status-grid dt { color: var(--text-3); }
   /* Words wrap between words; only a path or a key may break anywhere. */
   .status-grid dd { margin: 0; min-width: 0; color: var(--text-body); }
-  .status-grid code { overflow-wrap: anywhere; }
-  /* Under the screen's bar, over the content that scrolls beneath it. */
-  .tabs-sticky {
-    position: sticky; top: calc(-1 * var(--sp-3)); z-index: 1; margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) 0;
-    padding: var(--sp-3) var(--sp-3) 0; background: var(--bg); --tabs-bleed: var(--sp-3);
+  .compact .status-grid code { display: block; overflow-wrap: anywhere; }
+  .sbody { display: flex; flex-direction: column; gap: var(--sp-4); }
+  /* The phone: the tabs stay above the section that scrolls; the section dissolves at their lower edge. The screen's frame
+     does not scroll here (MobileSettings), the section does: its padding and its cards are the frame's own. */
+  .settings.compact { flex: 1; min-height: 0; gap: 0; }
+  .tabs-fixed { flex-shrink: 0; padding: var(--sp-3) var(--sp-3) 0; --tabs-bleed: var(--sp-3); }
+  .compact .sbody {
+    flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-3) calc(var(--sp-5) + var(--sab, 0px));
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
+  }
+  .compact .sbody :global(.card) {
+    max-width: none; width: 100%;
+    background: var(--pane-strong); border-color: var(--m-card-border, var(--border));
+    box-shadow: var(--m-card-shadow, none);
   }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-3); padding: 2px 7px; border-radius: var(--radius-badge); }
 </style>

@@ -40,15 +40,21 @@
         {:else}{$t('msg_card_invalid_text')}{/if}
       </span>
     </div>
+    <button class="copy" onclick={copy} aria-label={copied ? $t('msg_group_link_copied') : $t('msg_copy')} title={copied ? $t('msg_group_link_copied') : $t('msg_copy')}><Icon name={copied ? 'check' : 'copy'} size={18} /></button>
   </div>
-  <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name={copied ? 'check' : 'copy'} size={13} />{copied ? $t('msg_group_link_copied') : $t('msg_copy')}</button>
 </div>
 
 <style>
   .box { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
-  .top { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+  .top { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; width: 100%; }
+  .about { flex: 1; }
+  .copy {
+    position: relative; flex-shrink: 0; width: 40px; height: 40px; border: none; padding: 0; border-radius: var(--radius-md); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-bg); color: var(--accent-text-2);
+  }
+  .copy::before { content: ''; position: absolute; inset: -2px; }
   .ico {
-    width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center;
     background: var(--surface-3); color: var(--text-2);
   }
   .ico.bad { color: var(--warn-text); background: var(--warn-bg); }

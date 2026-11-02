@@ -58,9 +58,14 @@ impl Keeper {
         }
         let open = rows::open(&self.env.db, &self.community_id, Some(from.as_hex())).await?;
         let room = MAX_TICKETS.saturating_sub(u32::try_from(open.len()).unwrap_or(u32::MAX));
-        let n = req.n.min(room);
         let mut minted = Vec::new();
-        for _ in 0..n {
+        for _ in 0..req.n.min(room) {
+            // A ticket is a leaf handed out, as a join is: each of them
+            // stops at the wall.
+            if let Some(why) = self.wall(state, SCOPE_EVERYONE).await {
+                self.note_turn("the readers", Some(why), "new readers let in again");
+                break;
+            }
             let mut raw = [0u8; 16];
             getrandom::fill(&mut raw).map_err(|e| messenger_core::MessengerError::Crypto(e.to_string()))?;
             let ticket_id = hex::encode(raw);
@@ -88,6 +93,7 @@ impl Keeper {
             let body = Tickets { community_id: self.community_id.clone(), tickets: chunk.to_vec() };
             self.send_note(Some(state), from, wire::T_TICKET, &body, now).await?;
         }
+        let n = u32::try_from(minted.len()).unwrap_or(u32::MAX);
         tracing::info!(community = %self.community_id, by = %from.short(), n, "keeper minted tickets");
         Ok(n)
     }

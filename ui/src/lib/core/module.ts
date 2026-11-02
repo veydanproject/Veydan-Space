@@ -38,6 +38,8 @@ export interface NavItem {
   visible?: () => boolean;
   /** Count on the entry (unread messages); nothing is shown for 0. */
   badge?: () => number;
+  /** The count is of what was missed (calls), not of what is new: it shows red. */
+  danger?: boolean;
 }
 
 /** A button of the desktop top bar's right side (TOTP, passwords, generator). */
@@ -67,7 +69,20 @@ export interface SettingsSection {
   group: Key;
   order: number;
   /** The card's body. */
-  component: Component;
+  component: Component<any>;
+  /** What the body is given as props (one component serving several sections: a tab of the messenger's settings). */
+  props?: Record<string, unknown>;
+  /**
+   * A computer: called when the page shows this section, for a module whose
+   * sections are views of one state of its own (the tabs of the chat's settings).
+   */
+  onopen?: () => void;
+  /**
+   * A computer: true while the module's own state names this section. When
+   * that moves to another section (a link inside the module asks for another
+   * tab), the page shows it. Goes with `onopen`.
+   */
+  current?: () => boolean;
   /** One line under the title. */
   hint?: Key;
   /** Tag next to the title (beta). */
@@ -91,6 +106,12 @@ export interface SettingsSection {
    * it. (On a computer the same card is an ordinary one of a low order.)
    */
   into?: 'sync' | 'account';
+  /**
+   * A phone: the section stands right after the account (and its way to
+   * sync) at the top of the page, with the group's title over it, before the
+   * core's blocks. Elsewhere `order` places it.
+   */
+  after?: 'account';
 }
 
 /**
@@ -398,11 +419,6 @@ export interface ModuleDef {
    * the shell (the root bar).
    */
   bar?: (url: URL) => NavItem[] | null | undefined;
-  /**
-   * Mobile: true for a path whose bar (`bar`) has no apps button in the
-   * middle because the screen's own header carries it (core/ui/HubButton).
-   */
-  hubInHeader?: (url: URL) => boolean;
   /**
    * Mobile: asked once at start, before the default screen opens. True when
    * the module took the user somewhere (the chat of a tapped notification).

@@ -3,7 +3,10 @@
 
 /** Tiptap extensions for the notes WYSIWYG editor (Markdown stays the storage format). */
 
-import { Node, mergeAttributes, nodeInputRule, type Extensions, type JSONContent } from '@tiptap/core';
+import { Extension, Node, mergeAttributes, nodeInputRule, type Editor, type Extensions, type JSONContent } from '@tiptap/core';
+import type { Node as PmNode } from '@tiptap/pm/model';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { StarterKit } from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
 import { markdownDestination } from '$lib/notes/markdown';
@@ -190,6 +193,116 @@ export const NoteImage = Image.extend<ImageOptions & { resolveSrc: ResolveSrc }>
   },
 });
 
+/** The attachments a note has (on disk or still in the vault); `prefix` is `attachments/<note_id>/`. */
+export interface KnownAttachments {
+  prefix: string;
+  names: ReadonlySet<string>;
+}
+
+/** An image or a link of the text whose attachment is gone; `from`–`to` is the node or the linked text. */
+export interface GoneAttachment {
+  kind: 'image' | 'link';
+  from: number;
+  to: number;
+  name: string;
+}
+
+/** The attachment name of a relative `attachments/<note_id>/<name>` path, else null. */
+function attachmentName(url: unknown, prefix: string): string | null {
+  if (typeof url !== 'string') return null;
+  let path = url;
+  try { path = decodeURIComponent(url); } catch { /* keep raw */ }
+  return path.startsWith(prefix) ? path.slice(prefix.length) : null;
+}
+
+/** Images and links of `doc` that point at an attachment of the note that is not there any more. */
+export function goneAttachments(doc: PmNode, known: KnownAttachments): GoneAttachment[] {
+  const out: GoneAttachment[] = [];
+  const gone = (url: unknown) => {
+    const name = attachmentName(url, known.prefix);
+    return name !== null && !known.names.has(name) ? name : null;
+  };
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'image') {
+      const name = gone(node.attrs.src);
+      if (name !== null) out.push({ kind: 'image', from: pos, to: pos + node.nodeSize, name });
+      return false;
+    }
+    if (!node.isText) return true;
+    const href = node.marks.find((m) => m.type.name === 'link')?.attrs.href;
+    const name = gone(href);
+    if (name === null) return false;
+    // A link split by other marks (bold part) stays one run.
+    const last = out.at(-1);
+    if (last?.kind === 'link' && last.to === pos && last.name === name) last.to = pos + node.nodeSize;
+    else out.push({ kind: 'link', from: pos, to: pos + node.nodeSize, name });
+    return false;
+  });
+  return out;
+}
+
+type GoneState = { known: KnownAttachments | null; set: DecorationSet };
+
+const goneKey = new PluginKey<GoneState>('goneAttachments');
+
+function goneLabel(name: string | null): HTMLElement {
+  const el = document.createElement('span');
+  el.className = 'note-att-gone';
+  el.contentEditable = 'false';
+  const label = get(t)('notes_attachment_gone');
+  el.textContent = name === null ? `${label} · ` : `${label} · ${name}`;
+  if (name !== null) el.title = name;
+  return el;
+}
+
+function goneDecorations(doc: PmNode, known: KnownAttachments | null): DecorationSet {
+  if (!known) return DecorationSet.empty;
+  const decos = goneAttachments(doc, known).flatMap((g) =>
+    g.kind === 'image'
+      ? [
+          Decoration.node(g.from, g.to, { class: 'note-att-gone-img' }),
+          Decoration.widget(g.from, () => goneLabel(g.name), { side: -1, key: `gone-img:${g.name}`, ignoreSelection: true }),
+        ]
+      : [
+          Decoration.inline(g.from, g.to, { class: 'note-att-gone-link' }),
+          Decoration.widget(g.from, () => goneLabel(null), { side: -1, key: 'gone-link', ignoreSelection: true }),
+        ],
+  );
+  return DecorationSet.create(doc, decos);
+}
+
+/**
+ * An image or a file link whose attachment was deleted shows «File deleted · name» instead of
+ * a broken icon. Only the view changes: the text and its links stay as they are. Nothing is
+ * shown until the note's list of attachments is known (`setKnownAttachments`).
+ */
+export const GoneAttachments = Extension.create({
+  name: 'goneAttachments',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<GoneState>({
+        key: goneKey,
+        state: {
+          init: (): GoneState => ({ known: null, set: DecorationSet.empty }),
+          apply(tr, prev, _old, state) {
+            const next = tr.getMeta(goneKey) as { known: KnownAttachments | null } | undefined;
+            if (next) return { known: next.known, set: goneDecorations(state.doc, next.known) };
+            if (!tr.docChanged) return prev;
+            return { known: prev.known, set: goneDecorations(state.doc, prev.known) };
+          },
+        },
+        props: { decorations: (state) => goneKey.getState(state)?.set },
+      }),
+    ];
+  },
+});
+
+/** Give the editor the note's attachments (null: not read yet). */
+export function setKnownAttachments(editor: Editor, known: KnownAttachments | null) {
+  if (editor.isDestroyed) return;
+  editor.view.dispatch(editor.state.tr.setMeta(goneKey, { known }).setMeta('addToHistory', false));
+}
+
 /** Single newline in Markdown (`breaks: true`) instead of the two-space hard break. */
 const SoftBreak = HardBreak.extend({
   renderMarkdown: () => '\n',
@@ -322,6 +435,7 @@ export function noteExtensions(resolveSrc: ResolveSrc): Extensions {
     }),
     TableKit,
     WikiLink,
+    GoneAttachments,
     Markdown.configure({ markedOptions: { gfm: true, breaks: true } }),
   ];
 }

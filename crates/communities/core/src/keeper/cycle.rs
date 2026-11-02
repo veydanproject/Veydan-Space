@@ -22,12 +22,12 @@
 use super::upload::{Job, What, Work};
 use super::{secs, Keeper, FROM_JOIN_RETENTION_SECS, MIN_HOSTS};
 use crate::db::{self, keeper as rows};
-use crate::epoch::{sign_epoch, EpochContent};
+use crate::epoch::{sign_epoch, EpochContent, MAX_GAP};
 use crate::log::OpLog;
 use crate::op::History;
 use crate::state::ChannelState;
 use crate::wire;
-use keydist::{EpochKey, SchemeId};
+use keydist::{EpochKey, GenerationMaster, SchemeId};
 use messenger_core::{EventId, MessengerError, Result};
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -92,7 +92,11 @@ impl Keeper {
             tracing::warn!(community = %self.community_id, error = %e, "keeper: the keys of the staff for the owner's Cloud were not made");
         }
         let scopes: Vec<String> = self.scopes.keys().cloned().collect();
+        let mut reissue = Vec::new();
         for scope_id in scopes {
+            if self.regenerate_if_foreign(&scope_id, now, &mut tick).await? || self.regenerate_if_walled(state, &scope_id, now, &mut tick).await? {
+                reissue.push(scope_id.clone());
+            }
             self.rotate_if_due(&scope_id, now, &mut tick).await?;
             let pending = self.sk(&scope_id)?.pending_epoch();
             if let Some(epoch) = pending {
@@ -107,8 +111,20 @@ impl Keeper {
                 }
             }
             self.catch_up_hosts(&scope_id, state, &mut tick).await?;
-            let wake = self.sk(&scope_id)?.next_wake();
+            // While an epoch is pending, nothing past wakes the keeper: the
+            // turn just kept the pending one (no room for one more number,
+            // its event out already), and a due time behind `now` came back
+            // after every turn of the host, so that the loop of the module
+            // turned at full speed for as long as the hosts were down
+            // (ROO-400, the review of 21a70d071). `Tick::waiting` asks for
+            // the retry; once the pending epoch is published, the due time
+            // is named again and the epoch after it is built at once.
+            let kept = self.sk(&scope_id)?.pending_epoch().is_some();
+            let wake = self.sk(&scope_id)?.next_wake().filter(|w| !(kept && *w <= secs(now)));
             tick.next_wake = min_some(tick.next_wake, wake);
+        }
+        for scope_id in reissue {
+            self.reissue_scope(log, &scope_id, now).await?;
         }
         // A snapshot that fails must not stop the epochs of every turn.
         let turn = match self.snapshot_if_due(log, now, &mut tick).await {
@@ -176,11 +192,119 @@ impl Keeper {
         }
     }
 
+    /// A tree scope whose current generation derives from no root held
+    /// here gets an emergency generation of this root: the generation of a
+    /// former owner, whose master he derives from his root for as long as
+    /// it is current, banned or not — a channel handed over twice within
+    /// a grace used to leave the new owner's keeper on his predecessor's
+    /// generation (ROO-400, the review of 21a70d071; `migrate_all` makes
+    /// the new owner's at the handover now, this is the net under every
+    /// state kept before it). A pending epoch is kept when its event is
+    /// out already or one more number burnt would open a gap the members
+    /// refuse (`rotate_if_due`): the emergency comes with the epoch after
+    /// it. Whether a generation was made, for the bundles of the scope
+    /// (`reissue_scope`). A keeper without the root (one given masters,
+    /// `keeper.master`) derives nothing and does nothing here.
+    async fn regenerate_if_foreign(&mut self, scope_id: &str, now: i64, tick: &mut Tick) -> Result<bool> {
+        let Some(root) = self.root.clone() else { return Ok(false) };
+        let cid = self.community_id.clone();
+        let sk = self.sk(scope_id)?;
+        let Some(sd) = sk.sd() else { return Ok(false) };
+        let scope = wire::scope_ref(&cid, scope_id)?;
+        let g = sd.generation();
+        if GenerationMaster::derive(&root, &scope, SchemeId::SdV1, g.gen) == g.master {
+            return Ok(false);
+        }
+        self.regenerate(scope_id, "of a root not held", now, tick).await
+    }
+
+    /// A tree scope at the wall (`Keeper::wall`: its generation handed out
+    /// `INDEX_LEAVES` leaves, and its hosts serve no paths) gets an
+    /// emergency generation of the root held here, as one of a root not
+    /// held does: its leaves are handed out again, one to each member, and
+    /// its epochs name an index blob again. Without it the epoch past the
+    /// wall was taken by no host and stayed pending for good, every ban
+    /// behind it, while the posts went on under the key before — readable
+    /// by whoever was banned with it (ROO-410, the review of a26b92633).
+    /// A tree whose members alone pass the wall, or a keeper without the
+    /// root, stays at the wall (`regenerates_walled`).
+    async fn regenerate_if_walled(&mut self, state: &ChannelState, scope_id: &str, now: i64, tick: &mut Tick) -> Result<bool> {
+        if !self.regenerates_walled(scope_id) {
+            return Ok(false);
+        }
+        let Some(why) = self.wall(state, scope_id).await else { return Ok(false) };
+        tracing::warn!(community = %self.community_id, scope = %scope_id, why, "the generation is at the wall");
+        self.regenerate(scope_id, "at the wall", now, tick).await
+    }
+
+    /// An emergency generation of the root held here for `scope_id`,
+    /// whether made. A pending epoch is kept when its event is out already
+    /// or one more number burnt would open a gap the members refuse
+    /// (`rotate_if_due`): the emergency comes with the epoch after it.
+    async fn regenerate(&mut self, scope_id: &str, why: &str, now: i64, tick: &mut Tick) -> Result<bool> {
+        let Some(root) = self.root.clone() else { return Ok(false) };
+        let cid = self.community_id.clone();
+        let scope = wire::scope_ref(&cid, scope_id)?;
+        let sk = self.sk(scope_id)?;
+        let Some(sd) = sk.sd() else { return Ok(false) };
+        let gen = sd.generation().gen.checked_add(1).ok_or_else(|| super::kd(keydist::Error::Params("generation number")))?;
+        if let Some(epoch) = sk.pending_epoch() {
+            let (sent, room) = self.pending_out_and_room(scope_id, epoch).await?;
+            if sent || !room {
+                tracing::info!(community = %cid, scope = %scope_id, epoch, why, "an emergency generation follows the pending epoch");
+                return Ok(false);
+            }
+            tick.burnt.push((scope_id.to_string(), epoch));
+        }
+        let master = GenerationMaster::derive(&root, &scope, SchemeId::SdV1, gen);
+        self.sk(scope_id)?.kd_mut().emergency_regenerate(master, secs(now)).map_err(super::kd)?;
+        self.note_build(scope_id);
+        self.save(scope_id).await?;
+        let published = self.sk(scope_id)?.published_head().map(|h| h.epoch);
+        rows::drop_uploads_except(&self.env.db, &cid, scope_id, published).await?;
+        tracing::warn!(community = %cid, scope = %scope_id, gen, why, "an emergency generation of this root replaces the generation");
+        Ok(true)
+    }
+
+    /// Of the pending epoch `epoch` of `scope_id`: whether its event went
+    /// out (or may have: queued for the relays), and whether a number is
+    /// left to burn for a replacement within the gap the members take
+    /// (wire §5).
+    async fn pending_out_and_room(&mut self, scope_id: &str, epoch: u32) -> Result<(bool, bool)> {
+        let sk = self.sk(scope_id)?;
+        let room = sk.published_head().is_some_and(|h| sk.next_epoch().saturating_sub(h.epoch) < MAX_GAP);
+        let sent = rows::event(&self.env.db, &self.community_id, scope_id, epoch).await?.is_some();
+        Ok((sent, room))
+    }
+
+    /// Whether the emergency generation of a tree at the wall
+    /// (`regenerate_if_walled`) waits behind a pending epoch with no
+    /// number left to burn: it comes with the epoch after that one, and a
+    /// pending epoch of a Merkle root on hosts without paths never goes
+    /// out (the review of ROO-410: every join waited in the queue for it
+    /// at every turn, `Busy`, and the joins behind it, for good).
+    pub(crate) async fn regeneration_held(&mut self, scope_id: &str) -> Result<bool> {
+        let Some(epoch) = self.sk(scope_id)?.pending_epoch() else { return Ok(false) };
+        let (sent, room) = self.pending_out_and_room(scope_id, epoch).await?;
+        Ok(!sent && !room)
+    }
+
     /// Builds an epoch when one is due, at once when one was asked for
     /// urgently; a pending epoch whose event has not gone out is replaced
     /// (`supersede_pending`) when something newer is due, so that a ban
     /// never waits behind an upload; the job that still puts its blobs is
-    /// cancelled (`Tick::burnt`).
+    /// cancelled (`Tick::burnt`). Each replacement burns a number, and the
+    /// members take an epoch only within `MAX_GAP` of the one before it
+    /// (wire §5): while the hosts are down the windows keep coming (a ban
+    /// every five minutes, a join under `from_join`, `rotate_now`), and
+    /// seventeen of them burnt seventeen numbers, so that the epoch
+    /// published at last named a predecessor too far back and every
+    /// member refused it and all after it for good (ROO-396, 1.2). So a
+    /// pending epoch is kept once the number its replacement would take
+    /// is `MAX_GAP` or more past the newest published epoch, and before
+    /// the first epoch of a scope is out (a replacement would name no
+    /// predecessor): the newer changes wait for its publication and go
+    /// into the epoch after it.
     async fn rotate_if_due(&mut self, scope_id: &str, now: i64, tick: &mut Tick) -> Result<()> {
         let urgent = self.urgent.remove(scope_id);
         let cid = self.community_id.clone();
@@ -188,10 +312,16 @@ impl Keeper {
         match sk.pending_epoch() {
             Some(epoch) => {
                 let newer_due = sk.due_at().is_some_and(|d| d <= secs(now));
+                let room = sk.published_head().is_some_and(|h| sk.next_epoch().saturating_sub(h.epoch) < MAX_GAP);
                 // An event that went out (or may have: queued for the
                 // relays) is never replaced: its number is the members' now.
                 let sent = rows::event(&self.env.db, &cid, scope_id, epoch).await?.is_some();
-                if (urgent || newer_due) && !sent {
+                if (urgent || newer_due) && !sent && !room {
+                    tracing::info!(community = %cid, epoch, "keeper keeps a pending epoch: one more number burnt would open a gap the members refuse");
+                    if urgent {
+                        self.urgent.insert(scope_id.to_string());
+                    }
+                } else if (urgent || newer_due) && !sent {
                     if let Some(out) = self.sk(scope_id)?.kd_mut().supersede_pending(secs(now)) {
                         tracing::info!(community = %cid, burnt = epoch, epoch = out.key.epoch, "keeper superseded a pending epoch");
                         self.note_build(scope_id);
@@ -240,7 +370,15 @@ impl Keeper {
         if full.len() < need {
             tracing::info!(community = %cid, epoch, holding = full.len(), need, "keeper waits for the hosts before the epoch event");
             let blobs = out.blobs.iter().map(|b| (hex::encode(b.sha256), Arc::new(b.bytes.clone()))).collect();
-            tick.jobs.push(self.job(Work::Put { what: What::Epoch { scope_id: scope_id.to_string(), epoch }, hosts, blobs }));
+            // A tree above `INDEX_MAX` shards names a root: its members read
+            // the proof and the shard by path (wire §9).
+            let paths = out
+                .blobs
+                .iter()
+                .filter(|b| out.event.tree(b.gen).is_some_and(|t| t.root.is_some()))
+                .filter_map(|b| crate::blobs::key_path(&cid, scope_id, b.kind, b.gen, epoch, b.no).map(|p| (hex::encode(b.sha256), p)))
+                .collect();
+            tick.jobs.push(self.job(Work::Put { what: What::Epoch { scope_id: scope_id.to_string(), epoch }, hosts, blobs, paths }));
             return Ok(false);
         }
         let Some(json) = rows::event(&self.env.db, &cid, scope_id, epoch).await? else {

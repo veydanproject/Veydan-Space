@@ -344,6 +344,7 @@
     "notes_panel_resize": "패널 크기 조절",
     "notes_task_checkbox": "작업: {text}",
     "notes_task_checkbox_empty": "빈 작업",
+    "notes_attachment_gone": "파일이 삭제됨",
     "notes_smart_profile_search": "프로필 찾기…"
   },
   "mobile": {

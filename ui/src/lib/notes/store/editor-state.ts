@@ -16,8 +16,8 @@ export function editorReady(activeNoteId: string | null, activeNote: Note | null
 
 /**
  * The open note after a save answered: the fields the save changed come from the
- * answer, the body stays the one the editor was given (what was typed since the
- * save was sent is newer than the answer), and a title typed since stays too.
+ * answer, the body stays the editor's (what was typed since the save was sent is
+ * newer than the answer), and a title typed since stays too.
  */
 export function afterSave(open: Note, saved: Note, pendingTitle: string | null): Note {
   return { ...saved, content: open.content, title: pendingTitle ?? saved.title };

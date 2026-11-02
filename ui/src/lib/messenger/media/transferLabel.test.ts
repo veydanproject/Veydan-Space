@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { messengerTranslations } from '../i18n';
 import * as label from './transferLabel';
-import { transferActions, type TransferLines, type TransferState, type Words } from './transferLabel';
+import { transferActions, type TransferLines, type TransferState, type Words, oneLine } from './transferLabel';
 
 // The space between a number and its unit does not break; written here as a plain one.
 const plain = (s: string) => s.replace(/\u00a0/g, ' ');
@@ -32,6 +32,25 @@ function state(over: Partial<TransferState>): TransferState {
     chunks_done: 82, chunks_total: 203, rate_bps: 5.2 * MB, eta_secs: 92, retry_at_ms: null, failure_reason: null, ...over,
   };
 }
+
+describe('the one line of a file in a message', () => {
+  const lines = { line1: 'Скачивание · часть 11 из 200', line2: '40 МБ из 800 МБ' };
+  const w = { t: ((k: string) => (k === 'msg_xfer_paused_short' ? 'Пауза' : k)) as never, locale: 'ru', now: 0 } as never;
+  const base = { direction: 'down', status: 'running', stage: 'downloading' } as never as Parameters<typeof oneLine>[0] & object;
+
+  it('tells how much while it moves, the stage stays in the list of transfers', () => {
+    expect(oneLine(base, lines, w)).toBe('40 МБ из 800 МБ');
+  });
+  it('tells a pause with how far it got', () => {
+    expect(oneLine({ ...base, status: 'paused' }, lines, w)).toBe('Пауза · 40 МБ из 800 МБ');
+  });
+  it('tells what stopped it', () => {
+    expect(oneLine({ ...base, status: 'failed' }, lines, w)).toBe('Скачивание · часть 11 из 200');
+  });
+  it('tells the size of a file elsewhere', () => {
+    expect(oneLine(null, { line1: '100 МБ', line2: '' }, w)).toBe('100 МБ');
+  });
+});
 
 describe('the lines of a transfer', () => {
   it('tells an upload part by part, with speed and time left', () => {

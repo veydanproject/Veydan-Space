@@ -7,6 +7,7 @@
   import { t } from '$lib/core/i18n';
   import { stamp } from '../shared/time';
   import Icon from '$lib/core/Icon.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { messengerStore } from '../store.svelte';
   import { messengerError, type RelayState } from '../api';
   import RelayAddForm from './RelayAddForm.svelte';
@@ -83,7 +84,7 @@
 </script>
 
 <div class="card relays">
-  <div class="card-title"><Icon name="server-2" size={16} /> {$t('msg_relays_title')}</div>
+  <div class="card-title">{$t('msg_relays_title')}</div>
   <p class="muted">{$t('msg_relays_text')}</p>
 
   {#if messengerStore.manifest}
@@ -142,18 +143,9 @@
       </label>
       {/if}
       <div class="control silent">
-        <div class="control-info">
-          <span>{$t('msg_relays_silent')}</span>
-          <span class="muted small">{$t('msg_relays_silent_hint')}</span>
-        </div>
-        <button
-          class="toggle"
-          class:on={messengerStore.manifest.silent_mode}
-          disabled={busy}
-          onclick={() => run(() => messengerStore.setSilent(!messengerStore.manifest?.silent_mode))}
-          aria-pressed={messengerStore.manifest.silent_mode}
-          aria-label={$t('msg_relays_silent')}
-        ></button>
+        <ToggleRow surface="row" title={$t('msg_relays_silent')} hint={$t('msg_relays_silent_hint')} label={$t('msg_relays_silent')}
+          on={messengerStore.manifest.silent_mode} disabled={busy}
+          onclick={() => run(() => messengerStore.setSilent(!messengerStore.manifest?.silent_mode))} />
       </div>
     </div>
   {/if}
@@ -196,7 +188,7 @@
 </div>
 
 <style>
-  .relays { max-width: 640px; display: flex; flex-direction: column; gap: var(--sp-3); }
+  .relays { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-xs); }
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
@@ -206,11 +198,9 @@
     font: inherit; color: var(--text); background: var(--surface-3); min-height: 44px;
     border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
-  .control select:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
-  .control-info { display: flex; flex-direction: column; gap: 2px; }
-  /* A setting row like every other switch: the text takes the row, the switch sits at its end. */
-  .control.silent { flex: 1 1 100%; gap: var(--sp-3); min-height: 48px; }
-  .control.silent .control-info { flex: 1; min-width: 0; }
+  .control select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  /* The switch row takes the line, like every other. */
+  .control.silent { flex: 1 1 100%; }
   /* The servers as rows of 48 with a line between them (as the facts of «Профиль и ключ»). */
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
   .row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-1) 0; }

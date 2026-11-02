@@ -41,7 +41,7 @@ use crate::changes::Change;
 use crate::epoch::{self, EpochOut, EpochRecipe, TreeRecipe};
 use crate::generation::{GenState, GenerationKind, GenerationOut, MigrationReason, Thresholds};
 use crate::hexser;
-use crate::issued::MISSED_PAGE;
+use crate::issued::MISSED_PAGE_BUNDLED;
 use crate::kdf::GenerationMaster;
 use crate::rng::{OsRng, Rng};
 use crate::tree::Tree;
@@ -759,7 +759,9 @@ impl<S: Scheme> TreeKeeper<S> {
         let bundle = S::bundle(g, &self.state.scope, leaf).to_bytes();
         let kind = g.kind.clone();
         let current = self.state.head.clone().filter(|h| h.epoch >= since);
-        let (missed, missed_more) = self.missed_after(since, None, MISSED_PAGE);
+        // The page that goes with the bundle is the shorter one: the two
+        // make one note of the host, bounded by its relays.
+        let (missed, missed_more) = self.missed_after(since, None, MISSED_PAGE_BUNDLED);
         Ok(Issued { scheme: S::ID, scope: self.state.scope, gen, leaf, kind, bundle, current, missed, missed_more })
     }
 
@@ -768,6 +770,27 @@ impl<S: Scheme> TreeKeeper<S> {
             self.retire_old_gens();
             self.touch_header();
         }
+    }
+
+    /// Ends the grace of a planned migration now, on the host's word (the
+    /// former owner of a channel handed over, whose root derived the old
+    /// generation, was banned or removed during it): the old generation is
+    /// dropped at once when no epoch is pending, else as soon as the
+    /// pending one (its recipe names both generations) is published and
+    /// the next is built; no epoch built from now on carries its cover.
+    /// `false` when one generation is live.
+    pub fn end_grace_now(&mut self, now: u64) -> bool {
+        if self.state.gens.len() < 2 {
+            return false;
+        }
+        if let GenerationKind::Planned { grace_until, .. } = &mut self.current_mut().kind {
+            *grace_until = (*grace_until).min(now);
+        }
+        self.touch_header();
+        if self.state.pending.is_none() {
+            self.end_grace(now);
+        }
+        true
     }
 
     /// The moment the queued changes may have their epoch.
@@ -1052,7 +1075,10 @@ impl<S: Scheme> KeyDistribution for TreeKeeper<S> {
         if self.state.head.is_none() && !self.state.members.is_empty() {
             at(at_once);
         }
-        if self.state.gens.len() > 1 {
+        // The end of the grace, while no epoch is pending: `rotate` is
+        // `Blocked` behind one, and a wake in the past would come back
+        // after every turn of the host until it is published.
+        if self.state.gens.len() > 1 && self.state.pending.is_none() {
             if let Some(until) = g.grace_until() {
                 at(until);
             }
@@ -1156,6 +1182,83 @@ mod tests {
         k.published(1);
         assert!(matches!(SdKeeper::from_state(k.state().clone()), Err(Error::Invalid(_))));
         assert!(CsKeeper::from_state(k.state().clone()).is_ok());
+    }
+
+    /// A member late to a migration under `from_join` gets the keys it
+    /// missed with its bundle, half a page of them (the two make one note
+    /// of the host, bounded by its relays), the rest in pages without a
+    /// bundle; nothing is lost between the pages.
+    #[test]
+    fn a_bundle_goes_with_half_a_page_of_missed_keys_and_the_rest_follow_in_pages() {
+        use crate::issued::{MISSED_PAGE, MISSED_PAGE_BUNDLED};
+        let params = TreeParams { depth: 6, leaves_per_shard: 8 };
+        let policy = Policy::new(300, 3600, false, History::FromJoin).with_min_epoch_interval(0);
+        let mut k = CsKeeper::new(scope(), policy, params, GenerationMaster::from_bytes([3; 32]), 0)
+            .unwrap()
+            .with_rng(Box::new(XorShift64::new(7)));
+        k.join(mid(0), 0).unwrap();
+        k.join(mid(1), 0).unwrap();
+        let first = k.rotate(1, true).built().unwrap();
+        assert!(k.published(first.key.epoch));
+        k.migrate(GenerationMaster::from_bytes([4; 32]), None, 2).unwrap();
+        // Member 0 takes its bundle of the new generation at once; member 1
+        // is away for a thousand epochs.
+        k.bundle_for(mid(0), 2).unwrap();
+        let mut all = Vec::new();
+        for i in 0..1000u64 {
+            let out = k.rotate(3 + i, true).built().unwrap();
+            assert!(k.published(out.key.epoch));
+            all.push(out.key.clone());
+        }
+        assert_eq!(k.stats().missed_len, 1000);
+        let issued = k.bundle_for(mid(1), 2000).unwrap();
+        assert!(!issued.bundle.is_empty());
+        assert_eq!(issued.missed.len(), MISSED_PAGE_BUNDLED, "half a page with the bundle");
+        assert!(issued.missed_more);
+        assert_eq!(issued.missed, all[..MISSED_PAGE_BUNDLED]);
+        let last = issued.missed.last().map_or(0, |k| k.epoch);
+        let page = k.missed_page(&mid(1), last, MISSED_PAGE).unwrap();
+        assert!(page.bundle.is_empty() && !page.missed_more);
+        assert_eq!(page.missed, all[MISSED_PAGE_BUNDLED..], "the rest in the next page, none lost");
+        // The bytes of a page parse back, within the limit of the layout.
+        assert_eq!(Issued::from_bytes(&issued.to_bytes()).unwrap(), issued);
+        assert_eq!(Issued::from_bytes(&page.to_bytes()).unwrap(), page);
+    }
+
+    /// The host ends a grace on its own word (the former owner of a
+    /// channel handed over was banned): the old generation goes at once
+    /// when nothing is pending, else with the epoch after the pending one;
+    /// the state keeps its invariants at every step, and the keeper does
+    /// not ask to be woken for the end of a grace while an epoch waits.
+    #[test]
+    fn a_grace_ended_now_drops_the_old_generation_from_the_next_epoch_built() {
+        let mut k = keeper();
+        k.join(mid(0), 0).unwrap();
+        let first = k.rotate(1, false).built().unwrap();
+        assert!(k.published(first.key.epoch));
+        assert!(!k.end_grace_now(1), "one generation: nothing to end");
+        k.migrate(GenerationMaster::from_bytes([4; 32]), None, 2).unwrap();
+        let both = k.rotate(3, true).built().unwrap();
+        assert_eq!(both.event.trees.len(), 2);
+        assert!(k.end_grace_now(4));
+        assert_eq!(k.state().gens.len(), 2, "the pending epoch names both: dropped after it");
+        assert_eq!(k.generation().grace_until(), Some(4));
+        assert!(k.next_wake().is_none_or(|w| w > 4), "no wake for the grace while an epoch is pending");
+        CsKeeper::from_state(k.state().clone()).unwrap();
+        assert!(k.published(both.key.epoch));
+        assert_eq!(k.next_wake(), Some(4), "due now that nothing is pending");
+        let after = k.rotate(5, true).built().unwrap();
+        assert_eq!(k.state().gens.len(), 1);
+        assert_eq!(after.event.trees.len(), 1);
+        assert_eq!(after.event.newest_gen(), Some(2));
+        CsKeeper::from_state(k.state().clone()).unwrap();
+        // Nothing pending: gone at once.
+        assert!(k.published(after.key.epoch));
+        k.migrate(GenerationMaster::from_bytes([5; 32]), None, 6).unwrap();
+        assert!(k.end_grace_now(7));
+        assert_eq!(k.state().gens.len(), 1);
+        assert_eq!(k.generation().gen, 3);
+        CsKeeper::from_state(k.state().clone()).unwrap();
     }
 
     #[test]

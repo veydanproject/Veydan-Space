@@ -46,6 +46,13 @@ impl ScopeKeeper {
         }
     }
 
+    pub fn sd_mut(&mut self) -> Option<&mut SdKeeper> {
+        match self {
+            Self::Sd(k) => Some(k),
+            Self::Flat(_) => None,
+        }
+    }
+
     pub fn members_len(&self) -> usize {
         match self {
             Self::Sd(k) => k.state().members.len(),
@@ -87,6 +94,14 @@ impl ScopeKeeper {
         match self {
             Self::Sd(k) => k.state().schedule.due_at,
             Self::Flat(k) => k.state().schedule.due_at,
+        }
+    }
+
+    /// The number the next epoch built takes.
+    pub fn next_epoch(&self) -> u32 {
+        match self {
+            Self::Sd(k) => k.state().next_epoch,
+            Self::Flat(k) => k.state().next_epoch,
         }
     }
 

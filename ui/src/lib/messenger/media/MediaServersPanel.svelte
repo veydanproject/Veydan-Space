@@ -79,7 +79,7 @@
 </script>
 
 <div class="card media-servers">
-  <div class="card-title"><Icon name="server-2" size={16} /> {$t('msg_media_servers_title')}</div>
+  <div class="card-title">{$t('msg_media_servers_title')}</div>
   <p class="muted">{$t('msg_media_servers_text')}</p>
 
   {#if servers.length === 0}
@@ -117,7 +117,7 @@
   {#if editing || adding}
     <form class="form" onsubmit={(e) => { e.preventDefault(); if (formValid) save(); }}>
       {#if adding}
-        <div class="seg kinds" role="radiogroup" aria-label="S3 / Blossom">
+        <div class="seg seg-fill kinds" role="radiogroup" aria-label="S3 / Blossom">
           <button type="button" class="seg-btn" class:active={kind === 's3'} role="radio" aria-checked={kind === 's3'} onclick={() => (kind = 's3')}>S3</button>
           <button type="button" class="seg-btn" class:active={kind === 'blossom'} role="radio" aria-checked={kind === 'blossom'} onclick={() => (kind = 'blossom')}>Blossom</button>
         </div>
@@ -175,6 +175,6 @@
   }
   .form input:focus { outline: none; border-color: var(--accent-border); }
   .form-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); flex-wrap: wrap; }
-  .kinds { grid-column: 1 / -1; justify-self: start; }
+  .kinds { grid-column: 1 / -1; }
   .add { align-self: flex-start; }
 </style>

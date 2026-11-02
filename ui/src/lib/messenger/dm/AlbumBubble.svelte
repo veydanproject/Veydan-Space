@@ -69,7 +69,6 @@
   const rows = $derived(mosaic(pictures));
   /** What the viewer pages through: the album's pictures and videos, in their order. */
   const pictureIds = $derived(pictures.map((m) => m.id));
-  const fileRows = $derived(mosaic(files));
   /** Pictures without words: the time sits on the last picture. */
   const overlay = $derived(variant === 'visual' && captions.length === 0);
   // Parts on their way are shown as sent for a moment (`delivery`); one
@@ -122,7 +121,7 @@
 <div class="line" class:out class:first class:last class:selected class:highlighted={messages.some((m) => m.id === highlighted)} use:swipeReply={{ onreply }}>
   <div class="brow">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="bubble {variant}" class:failed={failed.length > 0} class:bare={overlay && !author && !fwd}
+  <div class="bubble on-glass {variant}" class:failed={failed.length > 0} class:bare={overlay && !author && !fwd}
     oncontextmenu={(e) => onmenu(e, partAt(e.target))} use:longpress={press}>
     {#if author}<span class="author" style="color: {authorTint}">{author}</span>{/if}
     {#if fwd}<span class="fwd">{fwd.name ? $t('msg_fwd_from', { name: fwd.name }) : $t('msg_fwd_from_nameless')}</span>{/if}
@@ -144,14 +143,8 @@
     {/if}
     {#if files.length}
       <div class="cards" class:under={pictures.length > 0}>
-        {#each fileRows as row, r (r)}
-          <div class="card-row">
-            {#each row as m (m.id)}
-              <div class="card-cell" data-mid={m.id}>
-                <MediaBubble message={m} variant="card" wide={row.length === 1} />
-              </div>
-            {/each}
-          </div>
+        {#each files as m (m.id)}
+          <div class="card-cell" data-mid={m.id}><MediaBubble message={m} variant="card" /></div>
         {/each}
       </div>
     {/if}
@@ -194,7 +187,15 @@
     border-radius: var(--r); display: flex; flex-direction: column; gap: 4px; overflow: hidden;
   }
   /* Every album is as wide as the mosaic it holds, pictures or files. */
-  .bubble.visual, .bubble.files, .bubble.mixed { width: min(420px, 78%); padding: 3px; }
+  .bubble.visual, .bubble.mixed { width: min(420px, 78%); padding: 3px; }
+  .bubble.files { position: relative; width: min(400px, 78%); padding: var(--sp-3); --file-meta: 60px; }
+  .bubble.files > .meta:not(.inline) { position: absolute; right: var(--sp-3); bottom: var(--sp-3); padding: 0; }
+  /* Words under a line take the width: the time goes under them. */
+  .bubble.files:has(:global(.err), :global(.card-fail), :global(.foreign), .uploaded) { --file-meta: 0px; }
+  .bubble.files:has(:global(.err), :global(.card-fail), :global(.foreign), .uploaded) > .meta:not(.inline) { position: static; }
+  /* The time is on the last line only. */
+  .bubble.files .card-cell:not(:last-child) { --file-meta: 0px; }
+  .bubble.mixed .cards { padding: var(--sp-1) var(--sp-2); }
   /* A run of one author: the corners that touch the next bubble are small. */
   .line:not(.first) .bubble { border-top-left-radius: var(--r-joined); }
   /* The corner on the author's side at the bottom is always the small one: it points at the author. */
@@ -213,10 +214,8 @@
   .row { display: flex; gap: 2px; min-height: 0; }
   .cell { flex: 1 1 0; min-width: 0; display: flex; }
 
-  .cards { display: flex; flex-direction: column; gap: 3px; }
-  .card-row { display: flex; gap: 3px; }
-  .card-cell { flex: 1 1 0; min-width: 0; display: flex; }
-  .card-cell > :global(*) { flex: 1; }
+  .cards { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .card-cell { min-width: 0; }
 
   .caption { padding: 0 var(--sp-2) var(--sp-1); }
   .caption::after { content: ''; display: block; clear: both; }
@@ -243,7 +242,8 @@
   @media (pointer: coarse) {
     .bubble { -webkit-touch-callout: none; }
     /* As wide as on a computer at most (a tablet), the bubble's share of a phone. */
-    .bubble.visual, .bubble.files, .bubble.mixed { width: min(420px, 86%); max-width: 86%; }
+    .bubble.visual, .bubble.mixed { width: min(420px, 86%); max-width: 86%; }
+    .bubble.files { width: min(400px, 86%); max-width: 86%; }
     .line { padding-inline: var(--sp-3); touch-action: pan-y; }
   }
 </style>

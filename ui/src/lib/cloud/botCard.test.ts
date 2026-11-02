@@ -112,7 +112,7 @@ describe('the words of a card', () => {
       // A request under such an id is not one this device knows to be over.
       const view = cardView(requested({ request_id: word }), ctx(), t);
       expect(view.note, word).toBeNull();
-      expect(view.action, word).toEqual({ id: 'cancel', label: 'cloud_alert_not_me', requestId: word });
+      expect(view.action, word).toEqual({ id: 'cancel', label: 'cloud_web_not_me', requestId: word });
     }
   });
 
@@ -139,7 +139,7 @@ describe('the words of a card', () => {
 
 describe('the button of a card', () => {
   it('is the one of its type, or none', () => {
-    expect(cardView(requested(), ctx(), t).action).toEqual({ id: 'cancel', label: 'cloud_alert_not_me', requestId: REQUEST });
+    expect(cardView(requested(), ctx(), t).action).toEqual({ id: 'cancel', label: 'cloud_web_not_me', requestId: REQUEST });
     expect(cardView({ t: 'recovery.escrow_read', at: AT }, ctx(), t).action).toEqual({ id: 'recovery', label: 'cloud_alert_open_recovery' });
     expect(cardView({ t: 'recovery.restored', at: AT }, ctx(), t).action).toBeNull();
     expect(cardView({ t: 'account.deleted', receipt: null, at: AT }, ctx(), t).action).toBeNull();
@@ -242,7 +242,7 @@ describe('the cards of the web cabinet', () => {
   it('show the code of a sign-in large, where it came from, and «Это не я» until it expires', () => {
     const view = cardView(webLogin(), ctx(), t);
     expect(view.text).toBe('cloud_card_web_login');
-    expect(view.value).toEqual({ text: '012 345', copy: null });
+    expect(view.value).toEqual({ text: '012 345', copy: '012345', large: true });
     expect(view.detail).toBe('cloud_web_origin {"country":"Germany","browser":"cloud_web_ua_chrome"}');
     // The domain is the app's fixed words, never a value of the card.
     expect(view.note).toBe('cloud_card_web_login_only_site');

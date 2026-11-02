@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "Tautan untuk masuk, memulihkan akun, dan menautkan perangkat hanya dibuka dengan pemindai di aplikasi: dengan begitu tidak ada situs yang bisa menyelipkannya kepada Anda untuk disetujui.",
     "msg_inlink_long_title": "Tautan terlalu panjang",
     "msg_inlink_long_text": "Veydan tidak membuka tautan sepanjang ini. Mintalah tautannya lagi.",
+    "msg_card_link_short": "Di peramban",
+    "msg_card_preview_short": "Pratinjau",
     "msg_card_link_open": "Buka di peramban",
     "msg_card_link_moved": "Dari {host}, tautan ini mengalihkan ke alamat lain.",
     "msg_card_link_risk_insecure": "Tanpa enkripsi: siapa pun di sepanjang jalur dapat membaca dan mengubah halaman.",

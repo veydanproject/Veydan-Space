@@ -19,6 +19,7 @@
 //! - `web`: a sign-in to the web cabinet of Veydan Cloud (`veydan://web/…`).
 //! - `channel`: the link of a channel of a community (`veydan://channel/…`), grammar only.
 //! - `outside`: what a link the system hands to the app may be.
+//! - `qr`: a link as the picture of a QR code, the same on every screen.
 //! - `error`: refusals, as stable codes.
 //!
 //! Everything in this crate is pure: no network, no storage, no clock.
@@ -30,6 +31,7 @@ pub mod contact;
 pub mod error;
 pub mod kind;
 pub mod outside;
+pub mod qr;
 pub mod recover;
 pub mod server;
 pub mod uri;

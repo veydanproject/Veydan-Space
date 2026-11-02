@@ -73,5 +73,5 @@
   button.srv-mark:hover { color: var(--text); }
   .btn-like { cursor: pointer; }
   .btn-like:hover { border-color: var(--border-strong); color: var(--text); }
-  .btn-like:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 1px; }
+  .btn-like:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 </style>

@@ -42,7 +42,7 @@
   }
   .panel { background: var(--surface-2); }
   .choice:hover:not(.on):not(:disabled) { border-color: var(--border-2); }
-  .choice:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .choice:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .choice.on { border-color: var(--accent-border); background: var(--accent-bg); }
   .tile {
     flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center;

@@ -511,6 +511,12 @@ pub trait CloudCredentials: Send + Sync {
     fn why_no_host(&self) -> Option<String> {
         None
     }
+    /// Why the identity cannot sign yet, in the module's words (the
+    /// messenger starting, switched off, failed to start): the cycles wait
+    /// until none, and the first goes as soon as there is none.
+    fn waiting(&self) -> Option<String> {
+        None
+    }
 }
 
 /// The credentials of the process: one app, one module `cloud`.
@@ -522,6 +528,16 @@ fn cloud_slot() -> &'static RwLock<Option<Arc<dyn CloudCredentials>>> {
 /// Called by the setup of the module `cloud`; a later call replaces it.
 pub fn register_sync_cloud_credentials(credentials: Arc<dyn CloudCredentials>) {
     *cloud_slot().write().unwrap_or_else(|e| e.into_inner()) = Some(credentials);
+}
+
+/// The tests that register credentials take turns, and leave the slot of
+/// the process empty as they found it.
+#[cfg(test)]
+pub(crate) static CLOUD_SLOT_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[cfg(test)]
+pub(crate) fn unregister_sync_cloud_credentials() {
+    *cloud_slot().write().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// The credentials of the backend `cloud`, when the product has the module.
@@ -565,6 +581,15 @@ pub async fn vault_passphrase(db: &Pool<Sqlite>, typed: String) -> CmdResult<Zer
     let credentials = sync_cloud_credentials().ok_or_else(no_cloud)?;
     credentials.refresh_hosts().await?;
     credentials.passphrase().await
+}
+
+/// Why the cycles of the backend `cloud` wait: the module's
+/// [`CloudCredentials::waiting`]; nothing on another backend.
+pub async fn cloud_waiting(db: &Pool<Sqlite>) -> Option<String> {
+    if !on_cloud(db).await {
+        return None;
+    }
+    sync_cloud_credentials()?.waiting()
 }
 
 /// Whether the configured backend is `cloud`.
@@ -766,6 +791,7 @@ mod cloud_tests {
     /// One test owns the slot of the process: the credentials are global.
     #[tokio::test]
     async fn the_backend_cloud_takes_its_hosts_and_passphrase_from_the_module() {
+        let _turn = CLOUD_SLOT_TURN.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let db = db(&dir).await;
         let mut cfg = SyncConfig {
@@ -831,6 +857,7 @@ mod cloud_tests {
             .unwrap();
         assert_eq!(pass.as_str(), "typed by the user");
         assert_eq!(fake.refreshed.load(Ordering::Relaxed), 1);
+        unregister_sync_cloud_credentials();
     }
 
     #[test]

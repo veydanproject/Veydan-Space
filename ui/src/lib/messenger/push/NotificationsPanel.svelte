@@ -5,7 +5,7 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import { date } from '../shared/time';
-  import Icon from '$lib/core/Icon.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { messengerTranslations } from '../i18n';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import type { MessengerPushTicket } from '../api';
@@ -95,7 +95,7 @@
       {:else}
         <p class="muted small">{$t(phone ? 'msg_notify_text' : 'msg_dnotify_content_text')}</p>
       {/if}
-      <div class="seg choices" role="radiogroup" aria-label={$t('msg_notify_title')}>
+      <div class="seg seg-fill" role="radiogroup" aria-label={$t('msg_notify_title')}>
         {#each ['sender_text', 'sender', 'none'] as const as choice (choice)}
           <button
             class="seg-btn"
@@ -108,24 +108,15 @@
         {/each}
       </div>
       {#if phone || n.lockscreen_supported}
-        <div class="line">
-          <span>{$t('msg_notify_lockscreen')}</span>
-          <button
-            class="toggle"
-            class:on={n.lockscreen_hidden}
-            disabled={pushStore.busy || n.locked}
-            onclick={() => pushStore.setNotify(n.content, !n.lockscreen_hidden)}
-            aria-pressed={n.lockscreen_hidden}
-            aria-label={$t('msg_notify_lockscreen')}
-          ></button>
-        </div>
+        <ToggleRow surface="row" title={$t('msg_notify_lockscreen')} label={$t('msg_notify_lockscreen')} on={n.lockscreen_hidden} disabled={pushStore.busy || n.locked}
+          onclick={() => pushStore.setNotify(n.content, !n.lockscreen_hidden)} />
       {/if}
     </div>
   {/if}
 {/snippet}
 
 <div class="card push">
-  <div class="card-title"><Icon name="bell" size={16} /> {desktop ? $t('msg_dnotify_title') : $t('msg_push_title')}</div>
+  <div class="card-title">{desktop ? $t('msg_dnotify_title') : $t('msg_push_title')}</div>
 
   {#if !view || !status || !device}
     <p class="muted">{pushStore.error || $t('msg_push_loading')}</p>
@@ -135,30 +126,12 @@
     {#if !d}
       <p class="muted">{pushStore.error || $t('msg_push_loading')}</p>
     {:else}
-      <div class="line">
-        <span>{$t('msg_dnotify_toggle')}</span>
-        <button
-          class="toggle"
-          class:on={d.enabled}
-          disabled={pushStore.busy}
-          onclick={() => pushStore.setDesk(!d.enabled, d.sound)}
-          aria-pressed={d.enabled}
-          aria-label={$t('msg_dnotify_toggle')}
-        ></button>
-      </div>
+      <ToggleRow surface="row" title={$t('msg_dnotify_toggle')} label={$t('msg_dnotify_toggle')} on={d.enabled} disabled={pushStore.busy}
+        onclick={() => pushStore.setDesk(!d.enabled, d.sound)} />
       {#if d.enabled}
         {#if !d.available}<p class="warn">{$t('msg_dnotify_unavailable')}</p>{/if}
-        <div class="line">
-          <span>{$t('msg_dnotify_sound')}</span>
-          <button
-            class="toggle"
-            class:on={d.sound}
-            disabled={pushStore.busy}
-            onclick={() => pushStore.setDesk(d.enabled, !d.sound)}
-            aria-pressed={d.sound}
-            aria-label={$t('msg_dnotify_sound')}
-          ></button>
-        </div>
+        <ToggleRow surface="row" title={$t('msg_dnotify_sound')} label={$t('msg_dnotify_sound')} on={d.sound} disabled={pushStore.busy}
+          onclick={() => pushStore.setDesk(d.enabled, !d.sound)} />
         {@render contentChoices(false)}
         {#if !d.close_to_tray}
           <div class="block">
@@ -204,17 +177,8 @@
         {#if device.detail}<span class="small"> ({device.detail})</span>{/if}
       </p>
     {:else}
-      <div class="line">
-        <span>{$t('msg_push_toggle')}</span>
-        <button
-          class="toggle"
-          class:on={status.enabled}
-          disabled={pushStore.busy}
-          onclick={() => pushStore.setEnabled(!status.enabled)}
-          aria-pressed={status.enabled}
-          aria-label={$t('msg_push_toggle')}
-        ></button>
-      </div>
+      <ToggleRow surface="row" title={$t('msg_push_toggle')} label={$t('msg_push_toggle')} on={status.enabled} disabled={pushStore.busy}
+        onclick={() => pushStore.setEnabled(!status.enabled)} />
 
       {#if !status.enabled && device.permission === 'denied' && !device.quiet}
         <p class="warn">{$t('msg_push_refused')}</p>
@@ -231,28 +195,10 @@
           </p>
         {/if}
 
-        <div class="line">
-          <span>{$t('msg_push_pref_dm')}</span>
-          <button
-            class="toggle"
-            class:on={status.dm}
-            disabled={pushStore.busy}
-            onclick={() => pushStore.setPrefs(!status.dm, status.groups)}
-            aria-pressed={status.dm}
-            aria-label={$t('msg_push_pref_dm')}
-          ></button>
-        </div>
-        <div class="line">
-          <span>{$t('msg_push_pref_groups')}</span>
-          <button
-            class="toggle"
-            class:on={status.groups}
-            disabled={pushStore.busy}
-            onclick={() => pushStore.setPrefs(status.dm, !status.groups)}
-            aria-pressed={status.groups}
-            aria-label={$t('msg_push_pref_groups')}
-          ></button>
-        </div>
+        <ToggleRow surface="row" title={$t('msg_push_pref_dm')} label={$t('msg_push_pref_dm')} on={status.dm} disabled={pushStore.busy}
+          onclick={() => pushStore.setPrefs(!status.dm, status.groups)} />
+        <ToggleRow surface="row" title={$t('msg_push_pref_groups')} label={$t('msg_push_pref_groups')} on={status.groups} disabled={pushStore.busy}
+          onclick={() => pushStore.setPrefs(status.dm, !status.groups)} />
 
         {@render contentChoices(true)}
 
@@ -401,17 +347,14 @@
 <style>
   .push { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
-  .small { font-size: var(--fs-xs); }
+  .small { font-size: var(--fs-sm); }
   .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; font-size: var(--fs-base); }
   .line > .btn { flex-shrink: 0; }
   .state { margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
   .state.ok { color: var(--success-text); }
   .state.bad, .warn { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
   /* Each part of the card under a line (as «Профиль и ключ»). */
-  .block { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
-  /* Three choices wrap their words on a phone instead of running off the row. */
-  .choices { align-self: flex-start; max-width: 100%; }
-  .choices .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
+  .block { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
   /* Rows of 48 with a line between them (as the facts of «Профиль и ключ»). */
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

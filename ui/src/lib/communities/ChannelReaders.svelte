@@ -214,7 +214,7 @@
   .more:first-child { border-top: none; }
   .more:hover:not(:disabled) { background: var(--surface-row-hover); }
   .more:disabled { color: var(--text-3); cursor: default; }
-  .more:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
   .hint.with-icon { display: flex; align-items: center; gap: var(--sp-1); }
   /* On the desktop a long list scrolls inside its card, the field and the foot stay in reach; on the phone it takes the page. */

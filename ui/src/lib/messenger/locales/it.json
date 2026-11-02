@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "I link per accedere, recuperare un account e collegare un dispositivo si aprono solo con lo scanner dell’app: così nessun sito può fartene approvare uno di nascosto.",
     "msg_inlink_long_title": "Il link è troppo lungo",
     "msg_inlink_long_text": "Veydan non apre link così lunghi. Chiedi di nuovo il link.",
+    "msg_card_link_short": "Nel browser",
+    "msg_card_preview_short": "Anteprima",
     "msg_card_link_open": "Apri nel browser",
     "msg_card_link_moved": "Il link prosegue da {host}.",
     "msg_card_link_risk_insecure": "Nessuna crittografia: chiunque lungo il percorso può leggere e modificare la pagina.",

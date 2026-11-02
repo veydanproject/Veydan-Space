@@ -8,7 +8,7 @@
   import '$lib/core/styles/tokens.css';
   import '$lib/core/styles/base.css';
   import '$lib/core/styles/mobile.css';
-  import { onMount, type Snippet } from 'svelte';
+  import { onMount, setContext, type Snippet } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { syncAndroidChrome, theme } from '$lib/core/theme';
@@ -26,6 +26,7 @@
   import { startUpdateCheck } from '$lib/core/store/update-check.svelte';
   import { distribution, loadDistribution } from '$lib/core/store/distribution.svelte';
   import { t } from '$lib/core/mobile/i18n';
+  import { derived } from 'svelte/store';
 
   let { children }: { children: Snippet } = $props();
 
@@ -38,11 +39,12 @@
   }
 
   // The hub chooses between the product's apps: a product of one module has
-  // none to choose between, and its bar is the module's screens (11.7).
+  // none to choose between, and its bar is the module's screens (11.7). It is
+  // opened by the logo in the header of a screen (core/ui/HubButton); no bar has one.
   hub.available = registry.only === undefined;
   const withHub = hub.available;
-  // A screen whose header carries the apps button has no centre button in its bar.
-  const hubInBar = $derived(withHub && !registry.hubInHeader(page.url));
+  // A product of one module has no Settings in its tab bar: the avatar of the module's tabs opens the app's settings (messenger/mobile/MeButton).
+  if (registry.only) setContext('app-settings', { href: '/settings', label: derived(t, (tr) => tr('app_settings')) });
 
   // The bar for this screen: a module's own or the root one (platform-spec 11.7).
   const items = $derived(navItems(page.url));
@@ -89,7 +91,7 @@
   });
 </script>
 
-<div class="shell" class:home={page.url.pathname === '/'}>
+<div class="shell" class:home={page.url.pathname === '/'} class:no-bar={!items}>
   <AppLockGate>
     <div class="screen">
       <svelte:boundary onerror={(e) => console.error('screen failed', e)}>
@@ -105,7 +107,7 @@
       </svelte:boundary>
     </div>
     {#if items}
-      <BottomNav {items} activeId={active} hub={hubInBar} hubActive={hub.isOpen} onhub={() => hub.open()} />
+      <BottomNav {items} activeId={active} />
     {/if}
   </AppLockGate>
 </div>
@@ -138,8 +140,6 @@
     overflow: clip;
     background: var(--bg-image), var(--bg);
   }
-  /* Home has no header: the strip under the status bar is the page's own colour. */
-  .shell.home .screen { background: transparent; }
   .screen {
     flex: 1;
     min-height: 0;
@@ -147,7 +147,6 @@
     display: flex;
     flex-direction: column;
     padding-top: var(--sat);
-    background: linear-gradient(var(--m-head), var(--m-head)) top / 100% var(--sat) no-repeat;
   }
   .screen > :global(.m-page) {
     flex: 1;

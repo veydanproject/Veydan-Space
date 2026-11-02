@@ -235,6 +235,13 @@ impl ChannelService {
         if why.is_some() {
             db::channels::set_out_reason(&self.env.db, &cid, why).await?;
         }
+        // What came before the ban did and was written since: forgotten,
+        // the list shows the last post before it again.
+        if let Some(at) = banned_since(&log, &me) {
+            if db::content::forget_since(&self.env.db, &cid, at).await? > 0 {
+                out.event(UI_EVENT_CHANNEL_MESSAGE, serde_json::json!({ "community_id": cid }));
+            }
+        }
         // Invitations that came before the journal: borne out by it, or dropped.
         let state = log.state();
         db::channels::verify_invites(&self.env.db, &cid, |peer| PubKey::parse(peer).is_some_and(|p| state.role_of(&p).is_some_and(Role::is_moderator))).await?;
@@ -415,8 +422,7 @@ impl ChannelService {
         let state = log.state();
         let cid = &state.community_id;
         let Some(key) = self.member(keys).newest_key(cid, scope_id).await? else { return Ok(()) };
-        let rows = db::keys::epochs(&self.env.db, cid, scope_id).await?;
-        let Some(began) = rows.iter().find(|r| r.epoch == i64::from(key.epoch)).map(|r| r.at) else { return Ok(()) };
+        let Some(began) = db::keys::epoch_row(&self.env.db, cid, scope_id, i64::from(key.epoch)).await?.map(|r| r.at) else { return Ok(()) };
         let me = Self::me(keys)?;
         let place = wire::Place::feed_in(cid, scope_id);
         for row in db::content::written_behind(&self.env.db, cid, scope_id, me.as_hex(), i64::from(key.epoch), began - wire::SKEW_SECS).await? {
@@ -529,6 +535,12 @@ impl ChannelService {
                 Err(e) => out.note(format!("link refused: {e}")),
             },
             wire::T_MSG => match wire::verify_inner(&payload.event, &outer) {
+                // Written since the ban of me in force: kept nowhere, shown
+                // nowhere (spec §7.3), though the key of the epoch, current
+                // until the window, opens it.
+                // A deletion is no new word: what it takes away was
+                // here before the ban, and goes as on every device.
+                Ok(m) if !is_deletion(&m) && banned_since(&log, &Self::me(keys)?).is_some_and(|at| m.created_at >= at) => out.note("a message written since my ban: dropped"),
                 // Readers are not in the journal: the snapshot says who
                 // they are (wire §8); one it cannot tell yet waits for the
                 // next snapshot.
@@ -593,7 +605,7 @@ impl ChannelService {
         if written >= last_out {
             return Ok(None);
         }
-        let rows = db::keys::epochs(&self.env.db, &state.community_id, scope_id).await?;
+        let rows = db::keys::epochs_bare(&self.env.db, &state.community_id, scope_id).await?;
         let Some(own) = rows.iter().find(|r| r.epoch == i64::from(epoch)) else { return Ok(None) };
         if written < own.at - wire::SKEW_SECS {
             return Ok(None);
@@ -1497,6 +1509,26 @@ impl ChannelService {
     }
 }
 
+/// When the ban of `me` in force was put: the last ban of me in the order
+/// of the journal not undone by an unban after it, by its own date (the
+/// journal is ordered by parents, not by dates: Ban(100) → Unban(110) →
+/// Ban(90) is banned since 90); none while I am not banned.
+fn banned_since(log: &OpLog, me: &PubKey) -> Option<i64> {
+    if !log.state().is_banned(me) {
+        return None;
+    }
+    log.ordered().filter(|o| log.rejection(&o.id()).is_none()).fold(None, |at, o| match &o.body {
+        OpBody::Ban { who, .. } if who == me => Some(o.created_at),
+        OpBody::Unban { who, .. } if who == me => None,
+        _ => at,
+    })
+}
+
+/// A deletion (`T_DELETE`): what my ban lets through, written since or not.
+fn is_deletion(m: &wire::InnerMessage) -> bool {
+    Envelope::parse(&m.content).is_ok_and(|e| e.t == T_DELETE)
+}
+
 /// Whether the premoderation in force at the head holds a message of one
 /// put out since, judged as the member they were (`Rules::subject_to_premod`
 /// takes nobody outside): what they wrote before comes to a device after
@@ -1519,5 +1551,31 @@ mod tests {
         assert_eq!(channel_of_note(&own), Some(cid));
         assert_eq!(channel_of_note(&Envelope::text("hi").encode()), None);
         assert_eq!(channel_of_note("not json"), None);
+    }
+
+    /// The ban in force by the order of the journal, not the latest date
+    /// of any: a clock behind on the second ban (Ban(100) → Unban(110) →
+    /// Ban(90)) bans since 90 (ROO-416).
+    #[test]
+    fn banned_since_is_the_ban_in_force_by_the_journal() {
+        use crate::log::Insert;
+        use crate::state::tests::{create, pk};
+        let (o, me) = (pk("0"), pk("c"));
+        let mut log = OpLog::create(create(&o)).unwrap();
+        let mut at = |when: i64, body: OpBody| {
+            let op = log.next(&o, when, body);
+            assert_eq!(log.insert(op.clone()), Insert::Applied, "{:?}", op.body);
+        };
+        at(100, OpBody::Ban { who: me.clone(), reason: None });
+        at(110, OpBody::Unban { who: me.clone(), reason: None });
+        at(90, OpBody::Ban { who: me.clone(), reason: None });
+        assert_eq!(banned_since(&log, &me), Some(90));
+        let mut at = |when: i64, body: OpBody| {
+            let op = log.next(&o, when, body);
+            assert_eq!(log.insert(op.clone()), Insert::Applied, "{:?}", op.body);
+        };
+        at(120, OpBody::Unban { who: me.clone(), reason: None });
+        assert_eq!(banned_since(&log, &me), None, "unbanned");
+        assert_eq!(banned_since(&log, &pk("e")), None, "never banned");
     }
 }

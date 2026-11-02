@@ -26,7 +26,7 @@
   let { open = $bindable(true), title, titleBadge, actions, subheader, children, footer }: Props = $props();
 </script>
 
-<section class="pane">
+<section class="pane on-glass">
   {#if title || actions}
     <header class="pane-header">
       {#if title}<h2 class="pane-title">{title}</h2>{/if}

@@ -6,7 +6,7 @@
 // source of media says it can do.
 
 import { describe, expect, it, vi } from 'vitest';
-import { CAPTURE_ID, GalleryModel, PAGE, REREAD, THUMB_URLS, ThumbQueue, Viewer, durationLabel, reread, rowWindow } from './gallery.svelte';
+import { CAPTURE_ID, CameraPreview, GalleryModel, PAGE, REREAD, THUMB_URLS, ThumbQueue, Viewer, durationLabel, reread, rowWindow } from './gallery.svelte';
 import { makeMockLibrary, mockItem, MOCK_COUNT } from './MockLibrary';
 import { noGrid, type MediaItem, type MediaLibrary } from './MediaLibrary';
 import { systemPickerLibrary } from './SystemPickerLibrary';
@@ -309,7 +309,7 @@ describe('the sources of media', () => {
 
   it('give «Файл» as files, as they are, and the gallery with its «без сжатия»', () => {
     expect(builtinSource).toContain("asFile: true");
-    expect(panelSource).toMatch(/done\(\{ type: 'files', paths: model\.paths\(\), original \}\)/);
+    expect(panelSource).toMatch(/done\(\{ type: 'files', paths: model\.paths\(\), original: false \}\)/);
   });
 });
 
@@ -632,5 +632,83 @@ describe('the length of a video', () => {
     expect(durationLabel(3723)).toBe('1:02:03');
     expect(durationLabel(undefined)).toBe('');
     expect(durationLabel(Number.NaN)).toBe('');
+  });
+});
+
+describe('the preview of the camera on its tile', () => {
+  /** A camera whose answers wait until the test lets them go, and the streams it gave. */
+  function slowCamera() {
+    const asks: ((ok: boolean) => void)[] = [];
+    const opens: ((s: MediaStream) => void)[] = [];
+    const streams: { stopped: number }[] = [];
+    const stream = () => {
+      const s = { stopped: 0 };
+      streams.push(s);
+      return { getTracks: () => [{ stop: () => { s.stopped++; } }] } as unknown as MediaStream;
+    };
+    const allowed = () => new Promise<boolean>((r) => asks.push(r));
+    const open = () => new Promise<MediaStream | null>((r) => opens.push(r));
+    return { asks, opens, streams, stream, allowed, open };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it('does not open the camera when the app went behind while the access was asked', async () => {
+    let visible = true;
+    const cam = slowCamera();
+    const p = new CameraPreview(() => visible, cam.allowed, cam.open);
+    const started = p.start();
+    visible = false;
+    p.stop();
+    cam.asks[0](true);
+    await started;
+    expect(cam.opens.length).toBe(0);
+    expect(p.stream).toBeNull();
+  });
+
+  it('a start made while the app is behind opens nothing (a late reading of the access)', async () => {
+    const cam = slowCamera();
+    const p = new CameraPreview(() => false, cam.allowed, cam.open);
+    await p.start();
+    expect(cam.asks.length).toBe(0);
+    expect(p.stream).toBeNull();
+  });
+
+  it('stops a stream that comes after the app went behind', async () => {
+    let visible = true;
+    const cam = slowCamera();
+    const p = new CameraPreview(() => visible, cam.allowed, cam.open);
+    const started = p.start();
+    cam.asks[0](true);
+    await tick();
+    visible = false;
+    cam.opens[0](cam.stream());
+    await started;
+    expect(p.stream).toBeNull();
+    expect(cam.streams[0].stopped).toBe(1);
+  });
+
+  it('comes back with the app: a start asked while an older one waited is made after it', async () => {
+    let visible = true;
+    const cam = slowCamera();
+    const p = new CameraPreview(() => visible, cam.allowed, cam.open);
+    const first = p.start();
+    visible = false;
+    p.stop();
+    visible = true;
+    void p.start();
+    cam.asks[0](true);
+    await first;
+    expect(cam.opens.length).toBe(0);
+    cam.asks[1](true);
+    await tick();
+    cam.opens[0](cam.stream());
+    await tick();
+    expect(p.stream).not.toBeNull();
+    p.stop();
+    expect(cam.streams[0].stopped).toBe(1);
+  });
+
+  it('the panel asks the app to be on the screen before the camera opens', () => {
+    expect(panelSource).toMatch(/new CameraPreview\(\s*\(\) => !gone && tileShown && document\.visibilityState === 'visible'/);
   });
 });

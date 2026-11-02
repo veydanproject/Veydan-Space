@@ -35,13 +35,13 @@
 </script>
 
 <div class="card bridges">
-  <div class="card-title"><Icon name="shield" size={16} />{$t('msg_bridge_title')}</div>
+  <div class="card-title">{$t('msg_bridge_title')}</div>
   <p class="muted">{$t('msg_bridge_intro')}</p>
 
   {#if s && !s.available}
     <p class="muted">{$t('msg_bridge_own_servers')}</p>
   {:else if s}
-    <div class="seg" role="radiogroup" aria-label={$t('msg_bridge_title')}>
+    <div class="seg seg-fill" role="radiogroup" aria-label={$t('msg_bridge_title')}>
       {#each MODES as mode}
         <button
           class="seg-btn" class:active={s.mode === mode} role="radio" aria-checked={s.mode === mode}
@@ -93,8 +93,6 @@
 <style>
   .bridges { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
-  .hint { font-size: var(--fs-xs); color: var(--text-3); }
-  .seg { align-self: flex-start; }
   .state { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-sm); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
   .dot.via { background: var(--success-text); }

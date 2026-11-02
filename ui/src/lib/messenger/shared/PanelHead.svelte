@@ -46,8 +46,8 @@
   .icon:hover { color: var(--text); background: var(--surface-3); }
   @media (pointer: coarse) { .icon { padding: 10px; } }
 
-  /* The phone: the bar of the messenger's screens (mobile/MobileFrame.svelte). */
-  .head.phone { gap: var(--sp-1); min-height: 52px; padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1); background: var(--m-head, var(--surface)); }
+  /* The phone: the head of the messenger's screens (mobile/MobileFrame.svelte), no bar — no fill, no line, the glow runs behind it. */
+  .head.phone { gap: var(--sp-1); min-height: 52px; padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1); border-bottom: 0; background: none; --edge-l: var(--sp-1); --edge-r: var(--sp-2); --edge-t: var(--sp-1); }
   .head.phone .head-title { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.02em; }
   .head.phone .back { color: var(--text); padding: 10px; border-radius: var(--radius-md); }
   .head.phone .back:active { background: var(--surface-3); }

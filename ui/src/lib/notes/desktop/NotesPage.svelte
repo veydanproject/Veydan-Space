@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { notesStore } from '$lib/notes/store/notes.svelte';
   import { directory } from '$lib/core/directory';
   import { api } from '$lib/notes/api';
@@ -186,8 +186,8 @@
       return;
     }
     if (openedOutsideList) return;
-    notesStore.activeNoteId = null;
-    notesStore.activeNote = null;
+    // What was typed in it is saved on the way out.
+    untrack(() => notesStore.leaveNote());
   });
 
   async function handleFilterChange(f: ActiveFilter) {
@@ -309,7 +309,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="page-body" bind:this={pageBodyEl} class:is-dragging={dragging !== null}>
     {#if sidebarVisible}
-      <div class="sidebar" style="width: {colWidths.sidebar}%">
+      <div class="on-glass sidebar" style="width: {colWidths.sidebar}%">
         <div class="search-wrap">
           <Icon name="search" size={15} />
           <input
@@ -351,7 +351,7 @@
       ></div>
     {/if}
 
-    <div class="list-col" style="width: {viewMode === 'table' ? colWidths.table : colWidths.list}%">
+    <div class="on-glass list-col" style="width: {viewMode === 'table' ? colWidths.table : colWidths.list}%">
       <div class="list-header">
         <div class="list-title-group">
           <h2 class="list-title" title={listTitle}>{listTitle}</h2>

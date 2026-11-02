@@ -15,7 +15,10 @@
 use anyhow::Result;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{ConnectOptions, Connection, Pool, Sqlite, SqliteConnection};
+use std::cell::Cell;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Name of the data file inside the data directory.
 pub const DB_FILE: &str = "app.db";
@@ -187,9 +190,120 @@ pub async fn open(db_path: &Path, schemas: &[Schema]) -> Result<Pool<Sqlite>, Op
     }
 }
 
+/// Who hears of the rows written to the data file, by the name of their
+/// table: once for every table a transaction wrote, when it commits. A
+/// transaction rolled back and the writes of a task inside `unheard` are not
+/// told. It is called inside the commit, on the thread of the connection: it
+/// may run no query and must be quick.
+static ON_WRITE: OnceLock<fn(&str)> = OnceLock::new();
+
+/// Set who hears of the rows written (`ON_WRITE`): once, by the sync of the
+/// product, which starts a cycle soon after a local edit. A second call
+/// changes nothing.
+pub fn on_write(listener: fn(&str)) {
+    let _ = ON_WRITE.set(listener);
+}
+
+tokio::task_local! {
+    /// The task writes what is no edit of the user (`Unheard`).
+    static UNHEARD: Cell<bool>;
+}
+
+/// Run `task` so that `Unheard` inside it keeps its writes from `ON_WRITE`.
+/// A task spawned from it is outside: its writes are heard.
+pub async fn hearing<F: Future>(task: F) -> F::Output {
+    UNHEARD.scope(Cell::new(false), task).await
+}
+
+/// While held, the queries of this task, inside `hearing`, are not told to
+/// `ON_WRITE`. A connection takes it when the task gets it from the pool.
+pub struct Unheard(bool);
+
+impl Unheard {
+    pub fn new() -> Self {
+        Unheard(UNHEARD.try_with(|own| own.replace(true)).unwrap_or(false))
+    }
+}
+
+impl Default for Unheard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for Unheard {
+    fn drop(&mut self) {
+        let _ = UNHEARD.try_with(|own| own.set(self.0));
+    }
+}
+
+/// The writes a transaction keeps until it commits.
+#[derive(Default)]
+struct Writes {
+    tables: Vec<String>,
+}
+
+/// Hooks on `conn` for the task that got it: the tables a transaction writes
+/// go to `ON_WRITE` when it commits, none when it is rolled back, and none
+/// for a task inside `Unheard`.
+async fn listen(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+    if ON_WRITE.get().is_none() {
+        return Ok(());
+    }
+    let mut handle = conn.lock_handle().await?;
+    if UNHEARD.try_with(Cell::get).unwrap_or(false) {
+        handle.remove_update_hook();
+        handle.remove_commit_hook();
+        handle.remove_rollback_hook();
+        return Ok(());
+    }
+    let writes = Arc::new(Mutex::new(Writes::default()));
+    let on_update = writes.clone();
+    handle.set_update_hook(move |row| {
+        let mut writes = on_update.lock().unwrap_or_else(|e| e.into_inner());
+        if !writes.tables.iter().any(|t| t == row.table) {
+            writes.tables.push(row.table.to_owned());
+        }
+    });
+    let on_commit = writes.clone();
+    handle.set_commit_hook(move || {
+        let tables =
+            std::mem::take(&mut on_commit.lock().unwrap_or_else(|e| e.into_inner()).tables);
+        if let Some(listener) = ON_WRITE.get() {
+            for table in &tables {
+                listener(table);
+            }
+        }
+        // The commit goes on.
+        true
+    });
+    handle.set_rollback_hook(move || {
+        writes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .tables
+            .clear();
+    });
+    Ok(())
+}
+
+/// Wait until every transaction that has begun to commit is seen by the next
+/// read: `ON_WRITE` hears a commit just before it is done, holding the lock
+/// of the writer, which this takes and lets go.
+pub async fn settled(pool: &Pool<Sqlite>) -> sqlx::Result<()> {
+    pool.begin_with("BEGIN IMMEDIATE").await?.rollback().await
+}
+
 async fn connect(db_path: &Path) -> Result<Pool<Sqlite>> {
     Ok(SqlitePoolOptions::new()
         .max_connections(5)
+        .after_connect(|conn, _| Box::pin(listen(conn)))
+        .before_acquire(|conn, _| {
+            Box::pin(async move {
+                listen(conn).await?;
+                Ok(true)
+            })
+        })
         .connect_with(options(db_path).create_if_missing(true))
         .await?)
 }
@@ -395,6 +509,111 @@ mod tests {
                 .await
                 .unwrap();
         }
+        pool.close().await;
+    }
+
+    static WRITTEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+    fn written(table: &str) {
+        WRITTEN.lock().unwrap().push(table.to_string());
+    }
+
+    /// How often `table` was heard. Every test writes tables of its own:
+    /// the listener is one for the whole run.
+    fn heard(table: &str) -> usize {
+        WRITTEN
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| *t == table)
+            .count()
+    }
+
+    const HEARD: Schema = Schema {
+        module: "heard",
+        steps: &["CREATE TABLE heard_commit (id TEXT PRIMARY KEY); \
+                  CREATE TABLE heard_unheard (id TEXT PRIMARY KEY); \
+                  CREATE TABLE heard_other (id TEXT PRIMARY KEY);"],
+    };
+
+    async fn heard_pool(dir: &Path) -> Pool<Sqlite> {
+        on_write(written);
+        open(&dir.join(DB_FILE), &[SCHEMA, HEARD]).await.unwrap()
+    }
+
+    async fn insert(db: impl sqlx::SqliteExecutor<'_>, table: &str, id: &str) {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "INSERT INTO {table} (id) VALUES (?)"
+        )))
+        .bind(id.to_owned())
+        .execute(db)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_transaction_is_heard_once_by_each_table_when_it_commits_and_never_when_rolled_back()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = heard_pool(dir.path()).await;
+
+        let mut tx = pool.begin().await.unwrap();
+        insert(&mut *tx, "heard_commit", "a").await;
+        insert(&mut *tx, "heard_commit", "b").await;
+        assert_eq!(heard("heard_commit"), 0, "not before COMMIT");
+        tx.commit().await.unwrap();
+        assert_eq!(heard("heard_commit"), 1);
+
+        let mut tx = pool.begin().await.unwrap();
+        insert(&mut *tx, "heard_commit", "c").await;
+        tx.rollback().await.unwrap();
+        // A statement on its own is a transaction of its own.
+        insert(&pool, "heard_commit", "d").await;
+        assert_eq!(heard("heard_commit"), 2, "the rollback is not heard");
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn the_writes_of_a_task_inside_unheard_are_not_heard_and_another_tasks_are() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = heard_pool(dir.path()).await;
+
+        // Outside `hearing` an `Unheard` changes nothing.
+        {
+            let _unheard = Unheard::new();
+            insert(&pool, "heard_other", "outside").await;
+        }
+        assert_eq!(heard("heard_other"), 1);
+
+        let (held, hold) = tokio::sync::oneshot::channel::<()>();
+        let (wrote, written_) = tokio::sync::oneshot::channel::<()>();
+        let quiet = pool.clone();
+        let task = tokio::spawn(hearing(async move {
+            let _unheard = Unheard::new();
+            // It holds a connection of its own while the other task writes.
+            let mut conn = quiet.acquire().await.unwrap();
+            held.send(()).unwrap();
+            written_.await.unwrap();
+            insert(&mut *conn, "heard_unheard", "a").await;
+            drop(conn);
+            let mut tx = quiet.begin().await.unwrap();
+            insert(&mut *tx, "heard_unheard", "b").await;
+            tx.commit().await.unwrap();
+        }));
+        hold.await.unwrap();
+        insert(&pool, "heard_other", "beside").await;
+        wrote.send(()).unwrap();
+        task.await.unwrap();
+        assert_eq!(heard("heard_unheard"), 0);
+        assert_eq!(heard("heard_other"), 2, "the write beside it is heard");
+
+        // Let go, the same connections are heard again.
+        hearing(async {
+            drop(Unheard::new());
+            insert(&pool, "heard_unheard", "c").await;
+        })
+        .await;
+        assert_eq!(heard("heard_unheard"), 1);
         pool.close().await;
     }
 

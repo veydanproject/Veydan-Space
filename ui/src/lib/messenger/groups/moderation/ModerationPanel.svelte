@@ -75,17 +75,22 @@
 
 <style>
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
-  /* The tabs take the width when they fit and scroll sideways when a language makes them longer. */
-  .tabs { align-self: stretch; flex-shrink: 0; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+  /* The tabs are words on the panel's background: no track, the chosen one bold with a short mark; they scroll sideways
+     when a language makes them longer and a clipped edge fades. */
+  .tabs { align-self: stretch; flex-shrink: 0; gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
-  .tabs .seg-btn { flex: 1 0 auto; justify-content: center; gap: 6px; height: calc(var(--control-h-sm) + 2px); padding: 0 var(--sp-2); font-size: var(--fs-sm); }
-  .tabs .seg-btn.glyph { flex: 0 0 auto; padding: 0 var(--sp-2); }
-  .tabs .seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .tabs .seg-btn { position: relative; flex: 0 0 auto; justify-content: center; gap: var(--sp-1); height: var(--control-h-lg); padding: 0; border-radius: 0; background: none; font-size: var(--fs-base); }
+  .tabs .seg-btn:hover:not(.active) { background: none; color: var(--text); }
+  .tabs .seg-btn.active { background: none; color: var(--text); font-weight: var(--fw-bold); }
+  .tabs .seg-btn.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
+  /* The keyboard's ring inside the tab: the row clips what sticks out. */
+  .tabs .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  /* A clipped edge fades, only while there is more of the row on that side (scrollTabs marks it). */
   .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
   .tabs:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
   .tabs:global(.fade-start.fade-end) {
     -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
     mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
   }
-  .seg-btn.active .count-pill.quiet { background: var(--accent); color: #fff; }
+  .tabs .count-pill.quiet { background: var(--surface-3); color: var(--text-2); }
 </style>

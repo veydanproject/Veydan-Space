@@ -153,6 +153,7 @@ pub async fn import(db: &Db, community_id: &str, tables: &BTreeMap<String, Table
         }
     }
     tx.commit().await.map_err(storage)?;
+    db.retired().forget(community_id);
     Ok(())
 }
 

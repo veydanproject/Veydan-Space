@@ -16,7 +16,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import type { RelayPolicy, VideoQuality } from '../api';
-  import CallIcon from './CallIcon.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { callStore } from './callStore.svelte';
   import { callErrorText } from './words';
   import { settingsRequest } from '../pages/settingsTab.svelte';
@@ -38,30 +38,22 @@
 </script>
 
 <div class="card calls">
-  <div class="card-title"><CallIcon name="incoming" size={16} />{$t('msg_calls_device_title')}</div>
+  <div class="card-title">{$t('msg_calls_device_title')}</div>
   {#if callStore.incoming !== null}
     <div class="block">
-      <div class="line">
-        <span>{$t('msg_calls_incoming')}</span>
-        <button class="toggle" class:on={callStore.incoming} disabled={callStore.busy || !callStore.loaded}
-          onclick={() => { refusal = ''; callStore.setIncoming(!callStore.incoming); }}
-          aria-pressed={callStore.incoming} aria-label={$t('msg_calls_incoming')}></button>
-      </div>
-      <p class="hint">{$t(callStore.incoming ? 'msg_calls_incoming_hint' : 'msg_calls_incoming_off_hint')}</p>
+      <ToggleRow surface="row" title={$t('msg_calls_incoming')} hint={$t(callStore.incoming ? 'msg_calls_incoming_hint' : 'msg_calls_incoming_off_hint')}
+        label={$t('msg_calls_incoming')} on={callStore.incoming} disabled={callStore.busy || !callStore.loaded}
+        onclick={() => { refusal = ''; callStore.setIncoming(!callStore.incoming); }} />
     </div>
   {/if}
   <div class="block">
-    <div class="line">
-      <span>{$t('msg_calls_confirm')}</span>
-      <button class="toggle" class:on={callStore.confirm} onclick={() => callStore.setConfirm(!callStore.confirm)}
-        aria-pressed={callStore.confirm} aria-label={$t('msg_calls_confirm')}></button>
-    </div>
-    <p class="hint">{$t('msg_calls_confirm_hint')}</p>
+    <ToggleRow surface="row" title={$t('msg_calls_confirm')} hint={$t('msg_calls_confirm_hint')} label={$t('msg_calls_confirm')}
+      on={callStore.confirm} onclick={() => callStore.setConfirm(!callStore.confirm)} />
   </div>
 </div>
 
 <div class="card calls">
-  <div class="card-title"><CallIcon name="phone" size={16} />{$t('msg_calls_title')}</div>
+  <div class="card-title">{$t('msg_calls_title')}</div>
   <p class="muted">{$t('msg_calls_intro')}</p>
   {#if callStore.loaded && !callStore.available}
     <p class="warn-line">{$t('msg_calls_unavailable')}</p>
@@ -69,7 +61,7 @@
 
   <div class="block">
     <div class="label">{$t('msg_calls_policy')}</div>
-    <div class="seg" role="radiogroup" aria-label={$t('msg_calls_policy')}>
+    <div class="seg seg-fill" role="radiogroup" aria-label={$t('msg_calls_policy')}>
       {#each POLICIES as p}
         <button class="seg-btn" class:active={callStore.policy === p} role="radio" aria-checked={callStore.policy === p}
           disabled={callStore.busy || !callStore.loaded} onclick={() => { refusal = ''; callStore.setPolicy(p); }}>
@@ -82,10 +74,10 @@
 </div>
 
 <div class="card calls">
-  <div class="card-title"><CallIcon name="video" size={16} />{$t('msg_calls_video_title')}</div>
+  <div class="card-title">{$t('msg_calls_video_title')}</div>
   <div class="block">
     <div class="label">{$t('msg_calls_video_quality')}</div>
-    <div class="seg" role="radiogroup" aria-label={$t('msg_calls_video_quality')}>
+    <div class="seg seg-fill" role="radiogroup" aria-label={$t('msg_calls_video_quality')}>
       {#each QUALITIES as q}
         <button class="seg-btn" class:active={callStore.videoQuality === q} role="radio" aria-checked={callStore.videoQuality === q}
           disabled={callStore.busy || !callStore.loaded} onclick={() => { refusal = ''; callStore.setVideoQuality(q); }}>
@@ -98,7 +90,7 @@
 </div>
 
 <div class="card calls">
-  <div class="card-title"><Icon name="network" size={16} />{$t('msg_calls_nodes_title')}</div>
+  <div class="card-title">{$t('msg_calls_nodes_title')}</div>
   <p class="muted">{$t('msg_calls_nodes_moved')}</p>
   <button class="btn btn-ghost open" onclick={() => (settingsRequest.tab = 'network')}>
     <Icon name="arrow-right" size={18} />{$t('msg_card_open')}
@@ -109,15 +101,10 @@
 <style>
   .calls { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
-  .hint { font-size: var(--fs-xs); color: var(--text-3); }
   .warn-line { margin: 0; font-size: var(--fs-sm); color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); }
   /* The settings of a card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
-  .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; font-size: var(--fs-base); color: var(--text); }
-  /* A phone is narrower than the two choices in one line: each wraps its words instead of the row running off. */
-  .seg { align-self: flex-start; max-width: 100%; }
-  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
   .open { align-self: flex-start; }
 </style>

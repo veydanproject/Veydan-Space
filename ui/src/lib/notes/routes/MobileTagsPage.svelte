@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
+  import HubButton from '$lib/core/ui/HubButton.svelte';
   import NotesBurger from '$lib/notes/mobile/NotesBurger.svelte';
   import { api, formatError, type NoteTag } from '$lib/notes/mobile/api';
   import { t } from '$lib/core/mobile/i18n';
@@ -87,6 +88,7 @@
 
 <div class="m-page">
   <div class="m-header">
+    <HubButton />
     <NotesBurger />
     <h1 class="m-title">{$t('notes_tags')}</h1>
     <button class="m-ibtn" onclick={openNew} aria-label={$t('notes_tag_create')}><Icon name="plus" size={24} /></button>

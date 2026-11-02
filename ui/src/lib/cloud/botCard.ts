@@ -52,7 +52,7 @@ export interface CardView {
   /** Over the sentence, bold: the purchase of `order.key`. */
   title?: string | null;
   /** A value shown large: a code of a sign-in, a key; `copy` is what the button of copying takes. */
-  value?: { text: string; copy: string | null } | null;
+  value?: { text: string; copy: string | null; large?: boolean } | null;
   /** Under the sentence: where a request came from, what was paid. */
   detail?: string | null;
   /** Under it: a value of the card (a receipt, sizes), or what became of its request. */
@@ -170,7 +170,7 @@ export function cardView(card: KnownCard, ctx: CardContext, t: Tr): CardView {
       }
       // Without the id of the request there is nothing to cancel.
       if (card.request_id) {
-        view.action = { id: 'cancel', label: t('cloud_alert_not_me'), requestId: card.request_id };
+        view.action = { id: 'cancel', label: t('cloud_web_not_me'), requestId: card.request_id };
         view.until = end;
       }
       return view;
@@ -181,7 +181,7 @@ export function cardView(card: KnownCard, ctx: CardContext, t: Tr): CardView {
         action: { id: 'recovery', label: t('cloud_alert_open_recovery') }, until: null,
       };
     case 'recovery.restored':
-      return { icon: 'check', tone: 'ok', text: t('cloud_alert_restored'), note: null, action: null, until: null };
+      return { icon: 'circle-check', tone: 'ok', text: t('cloud_alert_restored'), note: null, action: null, until: null };
     case 'account.deleted':
       return {
         icon: 'trash-2', tone: 'info', text: t('cloud_card_account_deleted'),
@@ -239,7 +239,7 @@ export function cardView(card: KnownCard, ctx: CardContext, t: Tr): CardView {
         view.note = t('cloud_card_web_login_expired');
         return view;
       }
-      if (isLoginCode(card.code)) view.value = { text: formatLoginCode(card.code), copy: null };
+      if (isLoginCode(card.code)) view.value = { text: formatLoginCode(card.code), copy: String(card.code), large: true };
       if (isWebId(card.id)) {
         view.action = { id: 'web_deny', label: t('cloud_web_not_me'), loginId: card.id };
         view.until = end;
@@ -288,7 +288,7 @@ export function cardView(card: KnownCard, ctx: CardContext, t: Tr): CardView {
       const paid = paidOf(card.amount_minor, card.currency, ctx.locale);
       const period = periodOf(card.period_days, t);
       return {
-        icon: 'check-circle', tone: 'ok',
+        icon: 'circle-check', tone: 'ok',
         text: plan && until ? t('cloud_card_order_paid_until', { plan, date: date(until) }) : t('cloud_card_order_paid'),
         detail: [paid, period].filter(Boolean).join(' · ') || null,
         note: null, action: { id: 'account', label: t('cloud_account_open') }, until: null,

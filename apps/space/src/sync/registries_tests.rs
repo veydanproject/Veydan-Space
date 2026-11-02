@@ -2940,3 +2940,23 @@ async fn a_log_read_up_to_a_broken_file_is_held_alone() {
     }
     let _ = std::fs::remove_dir_all(&vault);
 }
+
+/// A local edit starts a cycle soon for the tables the cycle publishes —
+/// the rows of the modules, their links, the notes — and for none of the
+/// settings, where the cycle writes keys of its own every time.
+#[test]
+fn an_edit_of_what_space_publishes_starts_a_cycle_and_a_setting_does_not() {
+    let tables = sync_registry().edited_tables();
+    for table in [
+        "notes",
+        "note_folders",
+        "note_folder_links",
+        "profiles",
+        "workspaces",
+        "password_vault",
+    ] {
+        assert!(tables.contains(table), "{table}: {tables:?}");
+    }
+    assert!(!tables.contains("app_settings"), "{tables:?}");
+    assert!(!tables.iter().any(|t| t.starts_with("sync_")), "{tables:?}");
+}

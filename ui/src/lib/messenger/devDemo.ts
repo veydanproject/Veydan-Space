@@ -358,6 +358,12 @@ export function buildDemo(): DemoData {
     botCard(now - day, { t: 'recovery.restored', at: now - day }),
     botCard(now - day + 600, { t: 'account.deleted', receipt: '7K2M-ABCD-EFGH', at: now - day + 600 }),
     botCard(now - 7200, { t: 'unknown' }),
+    botCard(now - 3000, { t: 'order.paid', order_id: 'a1b2c3d4e5f60716', plan: 'plus', until: now + day * 30, amount_minor: 499, currency: 'USD', period_days: 30, at: now - 3000 }),
+    botCard(now - 2900, { t: 'order.key', order_id: 'a1b2c3d4e5f60717', plan: 'plus', key: 'VDN1-2345-6789-ABCD-EFGH', amount_minor: 499, currency: 'USD', period_days: 30, at: now - 2900 }),
+    botCard(now - 2000, { t: 'web.signed_in', session: 'a1b2c3d4e5f60718', country: 'DE', ua_family: 'Firefox', at: now - 2000 }),
+    botCard(now - 1800, { t: 'web.login', id: 'a1b2c3d4e5f60719', code: '012345', country: 'DE', ua_family: 'Firefox', expires_at: now - 60 }),
+    botCard(now - 300, { t: 'web.confirm', id: 'a1b2c3d4e5f6071a', action: 'delete', country: 'DE', ua_family: 'Firefox', expires_at: now + 600 }),
+    botCard(now - 200, { t: 'web.login', id: 'a1b2c3d4e5f6071b', code: '482913', country: 'DE', ua_family: 'Firefox', expires_at: now + 600 }),
     botCard(now - 120, { t: 'recovery.requested', request_id: '9c'.repeat(16), created_at: now - 120, expires_at: now + 1680 }),
   ];
 

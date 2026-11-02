@@ -17,6 +17,7 @@
   import { bubblePhase } from './phase';
   import { transferStore } from './transferStore.svelte';
   import TransferStatus from './TransferStatus.svelte';
+  import FileLine from './FileLine.svelte';
   import VoicePlayer from './VoicePlayer.svelte';
   import { viewer } from './viewer.svelte';
   import { playback } from './playback.svelte';
@@ -28,15 +29,14 @@
      * `bubble`: the attachment with its file line (files, recordings, a picture in a reply).
      * `tile`: only the picture, filling its place in an album; `cover` crops it to the place,
      * `natural` keeps its proportions (a picture alone).
-     * `card`: a file in an album: its kind, name and size; `wide` when it has a row to itself.
+     * `card`: a file in an album, a line of its list.
      */
     variant?: 'bubble' | 'tile' | 'card';
-    wide?: boolean;
     fit?: 'cover' | 'natural';
     /** The ids of the album's pictures and videos, in order: the viewer pages through them. */
     album?: string[];
   }
-  let { message: m, variant = 'bubble', fit = 'cover', wide = false, album }: Props = $props();
+  let { message: m, variant = 'bubble', fit = 'cover', album }: Props = $props();
 
   const media = $derived(mediaOf(m));
   const out = $derived(m.direction === 'out');
@@ -217,9 +217,13 @@
   });
 </script>
 
-{#snippet here()}
-  <button class="act" onclick={open} aria-label={$t('msg_media_open')} title={$t('msg_media_open')}><Icon name="external-link" size={14} /></button>
-  <button class="act" onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="save" size={14} /></button>
+{#snippet openMark()}
+  <button class="file-mark" onclick={press} oncontextmenu={(e) => e.preventDefault()} aria-label={$t('msg_media_open')} title={$t('msg_media_open')}>
+    <Icon name={media?.kind === 'audio' ? 'mic' : media?.kind === 'circle' ? 'video' : media ? fileIcon(media.name, media.mime) : 'file'} size={18} />
+  </button>
+{/snippet}
+{#snippet saveBtn()}
+  <button class="act" onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="save" size={16} /></button>
 {/snippet}
 
 {#snippet foreignNote()}
@@ -228,26 +232,17 @@
   {/if}
 {/snippet}
 
-{#snippet status(look: 'compact' | 'full', overlay = false)}
+{#snippet status(look: 'compact' | 'line', overlay = false)}
   {#if media}
-    <TransferStatus p={shown} {look} {overlay} name={mediaTitle(media.kind, media.name, $t)} size={media.size} chunks={media.chunks} messageId={m.id} {busy}
+    <TransferStatus p={shown} {look} {overlay} title={media.name} name={mediaTitle(media.kind, media.name, $t)} size={media.size} chunks={media.chunks} messageId={m.id} {busy}
       ondownload={() => download(true)} />
   {/if}
 {/snippet}
 
 {#if media && variant === 'card'}
-  <div class="card-file" class:wide class:failed={failed || !!error}>
-    {#if phase === 'here' || !shown}
-      <button class="hit" onclick={press} oncontextmenu={(e) => e.preventDefault()} title={media.name}
-        aria-label={phase === 'here' ? $t('msg_media_open') : $t('msg_media_download')}></button>
-    {/if}
-    <span class="kind"><Icon name={failed ? 'alert-triangle' : fileIcon(media.name, media.mime)} size={wide ? 20 : 24} /></span>
-    <span class="about">
-      <span class="name">{media.name}</span>
-      {#if phase === 'here'}<span class="sub">{bytes(media.size, localeTag($locale))}</span>
-      {:else}<span class="status">{@render status('full')}</span>{@render foreignNote()}{/if}
-    </span>
-    {#if phase === 'here'}<span class="acts">{@render here()}</span>{/if}
+  <div class="card-file" class:failed={failed || !!error}>
+    {#if phase === 'here'}<FileLine name={mediaTitle(media.kind, media.name, $t)} title={media.name} sub={bytes(media.size, localeTag($locale))} mark={openMark} right={isTauriHost ? saveBtn : undefined} />
+    {:else}{@render status('line')}{@render foreignNote()}{/if}
     {#if error}<span class="card-fail" title={error}><Icon name="alert-triangle" size={11} />{error}</span>{/if}
   </div>
 {:else if media && variant === 'tile'}
@@ -261,7 +256,8 @@
       <video src="{src}#t=0.1" poster={thumbSrc ?? NO_POSTER} muted playsinline preload="metadata" onerror={previewBroken}></video>
     {:else}
       {#if thumbSrc}<img class="blur" src={thumbSrc} alt="" aria-hidden="true" />{/if}
-      <span class="placeholder-name">{mediaTitle(media.kind, media.name, $t)}</span>
+      <!-- The picture speaks for itself, once it has a place: only a video says what it is. -->
+      {#if media.kind === 'video' || !thumbSrc}<span class="placeholder-name">{mediaTitle(media.kind, media.name, $t)}</span>{/if}
     {/if}
 
     {#if phase === 'here' || !shown}
@@ -310,21 +306,8 @@
     {/if}
 
     {#if media.kind !== "voice" && !circleShown}
-    <div class="file-row">
-      <span class="ico">
-        {#if phase === 'remote'}<Icon name="download" size={18} />
-        {:else if failed}<Icon name="alert-triangle" size={18} />
-        {:else if media.kind === 'audio'}<Icon name="mic" size={18} />
-        {:else if media.kind === "circle"}<Icon name="video" size={18} />
-        {:else}<Icon name={fileIcon(media.name, media.mime)} size={18} />{/if}
-      </span>
-      <span class="info">
-        <span class="name" title={media.name}>{mediaTitle(media.kind, media.name, $t)}</span>
-        {#if phase === 'here'}<span class="sub">{bytes(media.size, localeTag($locale))}</span>
-        {:else}{@render status('full')}{@render foreignNote()}{/if}
-      </span>
-      {#if phase === 'here'}<span class="actions">{@render here()}</span>{/if}
-    </div>
+    {#if phase === 'here'}<FileLine name={mediaTitle(media.kind, media.name, $t)} title={media.name} sub={bytes(media.size, localeTag($locale))} mark={openMark} right={isTauriHost ? saveBtn : undefined} />
+    {:else}{@render status('line')}{@render foreignNote()}{/if}
     {/if}
 
     {#if recordingFailure}<div class="fail">{recordingFailure}</div>{/if}
@@ -337,36 +320,17 @@
   .foreign { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
   .foreign-tag { position: absolute; left: 6px; bottom: 6px; z-index: 1; pointer-events: none; padding: 1px 6px; border-radius: var(--radius-badge); background: rgba(0, 0, 0, 0.55); }
   .foreign-tag .foreign { color: #fff; }
-  .media { display: flex; flex-direction: column; gap: 6px; min-width: min(240px, 100%); max-width: 360px; }
+  .media { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .media.kind-circle, .media.kind-voice { min-width: 0; }
-  /* A file in an album: a small card, its kind in a tinted square, like the files of the old client. */
-  .card-file {
-    min-width: 0; overflow: hidden;
-    position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
-    padding: 10px 8px 8px; border-radius: var(--radius); background: color-mix(in srgb, var(--surface-3) 70%, transparent);
+  /* A file in an album: a line of its list, as a file alone. */
+  .card-file { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .card-fail { display: flex; align-items: flex-start; gap: 3px; font-size: var(--fs-xs); color: var(--danger-text); line-height: 1.3; overflow-wrap: anywhere; }
+  /* The mark of a file that is here: it opens the file. */
+  .file-mark {
+    width: 44px; height: 44px; border: none; padding: 0; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-bg); color: var(--accent-text-2);
   }
-  .card-file .hit { z-index: 0; border-radius: inherit; }
-  .card-file .kind {
-    width: 46px; height: 46px; flex-shrink: 0; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center;
-    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-text-2);
-  }
-  .card-file.failed .kind { background: var(--danger-bg); color: var(--danger-text); }
-  .card-file .about { display: flex; flex-direction: column; gap: 1px; min-width: 0; width: 100%; }
-  .card-file .name {
-    font-size: var(--fs-xs); line-height: 1.3; overflow-wrap: anywhere;
-    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  }
-  .card-file .sub { font-size: var(--fs-2xs); color: var(--text-3); }
-  .card-file .status { position: relative; z-index: 1; display: block; margin-top: 3px; text-align: left; }
-  .card-file .acts { position: relative; z-index: 1; display: inline-flex; gap: 2px; margin-top: auto; }
-  .card-file.wide { flex-direction: row; text-align: left; padding: 8px 8px 8px 10px; gap: var(--sp-2); }
-  .card-file.wide .kind { width: 40px; height: 40px; border-radius: var(--radius); }
-  .card-file.wide .about { width: auto; flex: 1 1 auto; }
-  .card-file.wide .acts { flex-shrink: 0; }
-  .card-file.wide .name { display: block; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
-  .card-file.wide .acts { margin: 0 0 0 auto; }
-  .card-file.failed { box-shadow: inset 0 0 0 1px var(--danger-border); }
-  .card-fail { display: flex; align-items: flex-start; gap: 3px; font-size: 10px; color: var(--danger-text); line-height: 1.3; text-align: left; overflow-wrap: anywhere; }
+  .file-mark:hover { color: var(--text); }
   /* A place in an album. Nothing here is text to select: it is a picture or the promise of one. */
   .tile {
     position: relative; width: 100%; height: 100%; overflow: hidden; background-color: hsl(var(--h) 38% 72%);
@@ -405,18 +369,8 @@
   .circle-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(0, 0, 0, 0.28); }
   .player { max-width: 100%; max-height: 320px; border-radius: var(--radius); background: #000; }
   .audio { width: 100%; height: 36px; }
-  .file-row { display: flex; align-items: center; gap: var(--sp-2); }
-  .file-row:has(.info > :global(.full)) { align-items: flex-start; }
-  .ico {
-    width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-    background: var(--surface-3); color: var(--accent-text-2);
-  }
-  .out .ico { background: color-mix(in srgb, var(--accent) 16%, transparent); }
-  .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: var(--fs-2xs); color: var(--text-3); }
-  .actions { display: inline-flex; gap: 2px; flex-shrink: 0; }
-  .act { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
-  .act:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+  .act { position: relative; border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px 0 4px 8px; border-radius: var(--radius-sm); }
+  .act::before { content: ''; position: absolute; inset: -10px -8px; }
+  .act:hover:not(:disabled) { color: var(--text); }
   .fail { font-size: var(--fs-2xs); color: var(--danger-text); }
 </style>

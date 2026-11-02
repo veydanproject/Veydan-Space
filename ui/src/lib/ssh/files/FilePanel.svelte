@@ -236,7 +236,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <section
-  class="file-panel"
+  class="on-glass file-panel"
   class:focused={isActive}
   role="button"
   tabindex="-1"

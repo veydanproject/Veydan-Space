@@ -20,7 +20,7 @@ scenario_c() {
   rot=$(cli rotate-now | tail -1)
   e1=$((e0 + 1))
   wait_line "$DIR/keeper.log" ".state.published == $e1" 600 "$KEEPER_FROM" >/dev/null || true
-  rest=$(swarm_cmd "expect bots=10-$((READERS - 1)) epoch=$e1 timeout=$((900 * SCALE))" || true)
+  rest=$(swarm_cmd "expect bots=10-$((READERS - 1)) epoch=$e1 timeout=$((900 * SLOW))" || true)
   out=$(swarm_cmd "expect bots=0-9 membership=left no-epoch=$e1 timeout=300" || true)
   local ok=false
   [ "$(jq -r .ok <<<"$ban")" = true ] && [ "$(jq -r ".done | length" <<<"$ban")" = 10 ] && [ "$(jq -r .refused <<<"$own")" = 10 ] && [ "$(jq -r .sent <<<"$forged")" = 10 ] \

@@ -16,11 +16,14 @@ export function byTime(a: FeedItemView, b: FeedItemView): number {
 /**
  * The newest page read again: it replaces what it covers, what was read
  * above it stays. `older`: whether anything of what was read stayed
- * above (then the cursor of the earlier pages stays as it was).
+ * above (then the cursor of the earlier pages stays as it was). An empty
+ * one covers all: the database holds nothing of the list any more (what
+ * a reader banned heard since the ban, forgotten), and what was read of
+ * it goes.
  */
 export function withNewest(shown: readonly FeedItemView[], page: readonly FeedItemView[]): { items: FeedItemView[]; older: boolean } {
   const sorted = [...page].sort(byTime);
-  const first = sorted[0]?.created_at ?? Infinity;
+  const first = sorted[0]?.created_at ?? -Infinity;
   const ids = new Set(sorted.map((x) => x.id));
   const above = shown.filter((x) => x.created_at < first && !ids.has(x.id));
   return { items: [...above, ...sorted], older: above.length > 0 };

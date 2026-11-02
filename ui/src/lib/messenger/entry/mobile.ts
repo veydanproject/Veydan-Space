@@ -13,22 +13,22 @@ import { BASE, callsHref, groupsHref, sectionHref } from '../mobile/routes';
 import { chatSections } from '../seams/sections.svelte';
 import { isTauriHost } from '../api';
 import { provideMessengerAttach } from '../attach/builtin';
+import ChatSettingsRows from '../pages/ChatSettingsRows.svelte';
 import NoticeBanner from '../push/NoticeBanner.svelte';
 import CallWatcher from '../calls/CallWatcher.svelte';
 import IncomingLink from '../incoming/IncomingLink.svelte';
 
 /**
  * The bar of the messenger's tabs: «Чаты», «Группы», the sections modules
- * give («Каналы»), «Звонки», then the Settings of the app. Space puts its
- * apps' button in the middle of it.
+ * give («Каналы»), «Звонки». Space puts its apps' button in the middle of
+ * it; the settings are behind the avatar in each tab's header.
  */
 export function tabs(): NavItem[] {
   return [
     { id: 'chats', title: 'msg_nav_chats', icon: 'message-circle', href: BASE, badge: () => chatStore.unreadOf('dm') },
     { id: 'groups', title: 'msg_nav_groups', icon: 'users', href: groupsHref(), badge: () => chatStore.unreadOf('group') },
     ...chatSections.hosts.map((h): NavItem => ({ id: h.id, title: h.title, icon: h.icon, href: sectionHref(h.id), badge: () => h.unread() })),
-    { id: 'calls', title: 'msg_nav_calls', icon: 'phone', href: callsHref(), badge: () => callLog.missed },
-    { id: 'settings', title: 'app_settings', icon: 'settings', href: '/settings' },
+    { id: 'calls', title: 'msg_nav_calls', icon: 'phone', href: callsHref(), badge: () => callLog.missed, danger: true },
   ];
 }
 
@@ -43,7 +43,8 @@ export const module: ModuleDef = {
   // The settings are a screen of their own here.
   account: accountOf(`${BASE}/settings`),
   // The module's switch is in the Modules section of the core (section 12).
-  settings: [],
+  // «Чаты» on the settings page, after the account: a row per tab of the chat's settings.
+  settings: [{ id: 'chats', title: 'msg_nav_chats', group: 'msg_nav_chats', order: 2, icon: 'message-circle', after: 'account', component: ChatSettingsRows }],
   // A call opens its page from any screen, and stays a tap away when left.
   overlays: [
     { id: 'notices', component: NoticeBanner, place: 'window' },
@@ -53,8 +54,6 @@ export const module: ModuleDef = {
   ],
   // The tabs keep the bar of the tabs; the chat, contacts and settings screens use the whole height.
   bar: (url) => (TABS.has(url.pathname.replace(/\/$/, '')) ? tabs() : url.pathname.startsWith(`${BASE}/`) ? null : undefined),
-  // The bar of the tabs has no apps button: the header of each tab carries it.
-  hubInHeader: (url) => TABS.has(url.pathname.replace(/\/$/, '')),
   async start() {
     if (!stopAttach) {
       const stops = [provideMessengerAttach()];

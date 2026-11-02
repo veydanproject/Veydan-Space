@@ -4,6 +4,7 @@
 import { api } from '$lib/notes/api';
 import { hasErrorCode } from '$lib/core/utils';
 import { afterSave, bufferFor, editorReady } from '$lib/notes/store/editor-state';
+import { trackWrite, writesSettled } from '$lib/notes/store/writes';
 import type { ActiveFilter } from '$lib/notes/filter';
 import type {
   Note,
@@ -19,6 +20,8 @@ import type {
 } from '$lib/notes/types';
 
 const AUTOSAVE_DELAY_MS = 3000;
+/** Typing that never pauses for `AUTOSAVE_DELAY_MS` is saved this long after its first key. */
+const AUTOSAVE_MAX_WAIT_MS = 6000;
 const DRAFT_INTERVAL_MS = 1000;
 
 export type NotesUiRequest =
@@ -68,6 +71,8 @@ class NotesStore {
 
   // Private autosave/draft state
   private _autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the pending autosave runs at the latest. */
+  private _autosaveDue = 0;
   private _draftInterval: ReturnType<typeof setInterval> | null = null;
   private _pendingContent: string | null = null;
   private _pendingTitle: string | null = null;
@@ -226,17 +231,7 @@ class NotesStore {
     // Allow retry if note was selected but failed to load (activeNote is null or the previous one)
     if (this.activeNoteId === id && this.activeNote?.id === id) return;
 
-    // Capture pending save for the OLD note before switching
-    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
-    const pendingContent = this._pendingContent;
-    const pendingTitle = this._pendingTitle;
-    const prevId = this._pendingFor;
-    const prevHash = this._baseHash;
-    const blocked = this.externalChange;
-    this._pendingContent = null;
-    this._pendingTitle = null;
-    this._pendingFor = null;
-    this._stopDraftInterval();
+    this._sendPending();
 
     // Update active ID immediately so the list highlights the new note right away. The editor
     // keeps the previous note, read-only, until this one has loaded (`noteLoading`).
@@ -247,34 +242,9 @@ class NotesStore {
     this._baseHash = null;
     this._knownBody = null;
 
-    // Save the previous note in background (don't block the switch), against the hash of the
-    // body it was typed on. A body that cannot go (no hash, a conflict, an error) is kept as
-    // the note's draft, which the note offers to recover when it is opened again.
-    if (!blocked && (pendingContent !== null || pendingTitle !== null) && prevId) {
-      const input: NoteUpdateInput = {};
-      if (pendingContent !== null && prevHash) {
-        input.content = pendingContent;
-        input.base_hash = prevHash;
-      }
-      if (pendingTitle !== null) input.title = pendingTitle;
-      const keepDraft = () => {
-        if (pendingContent !== null) void api.notes.draftSave(prevId, pendingContent).catch(() => {});
-      };
-      if (input.content === undefined) keepDraft();
-      if (input.content !== undefined || input.title !== undefined) {
-        void api.notes.update(prevId, input).then((u) => this._patchListItem(u)).catch((e) => {
-          console.error('[notes] Failed to save note:', prevId, e);
-          if (input.content !== undefined) keepDraft();
-        });
-      }
-    } else if (blocked && pendingContent !== null && prevId) {
-      // Left with the banner of a change from outside unanswered: the file stays, the body typed
-      // becomes the draft.
-      void api.notes.draftSave(prevId, pendingContent).catch(() => {});
-    }
-
-    // Load new note content
+    // Load new note content, once a save of it still on its way has written the file.
     try {
+      await writesSettled(id);
       const loaded = await api.notes.get(id);
       // Guard against race: another note may have been opened while loading
       if (this.activeNoteId === id) {
@@ -291,6 +261,56 @@ class NotesStore {
     } finally {
       if (this._loadingId === id) this._loadingId = null;
     }
+  }
+
+  /**
+   * Save what is pending for the note being left in background (don't block the switch), against
+   * the hash of the body it was typed on. A body that cannot go (no hash, a conflict, an error)
+   * is kept as the note's draft, which the note offers to recover when it is opened again.
+   */
+  private _sendPending() {
+    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    const pendingContent = this._pendingContent;
+    const pendingTitle = this._pendingTitle;
+    const prevId = this._pendingFor;
+    const prevHash = this._baseHash;
+    const blocked = this.externalChange;
+    this._pendingContent = null;
+    this._pendingTitle = null;
+    this._pendingFor = null;
+    this._stopDraftInterval();
+
+    if (!blocked && (pendingContent !== null || pendingTitle !== null) && prevId) {
+      const input: NoteUpdateInput = {};
+      if (pendingContent !== null && prevHash) {
+        input.content = pendingContent;
+        input.base_hash = prevHash;
+      }
+      if (pendingTitle !== null) input.title = pendingTitle;
+      const keepDraft = async () => {
+        if (pendingContent !== null) await api.notes.draftSave(prevId, pendingContent).catch(() => {});
+      };
+      if (input.content === undefined) void trackWrite(prevId, keepDraft());
+      if (input.content !== undefined || input.title !== undefined) {
+        void trackWrite(prevId, api.notes.update(prevId, input).then((u) => this._patchListItem(u)).catch(async (e) => {
+          console.error('[notes] Failed to save note:', prevId, e);
+          if (input.content !== undefined) await keepDraft();
+        }));
+      }
+    } else if (blocked && pendingContent !== null && prevId) {
+      // Left with the banner of a change from outside unanswered: the file stays, the body typed
+      // becomes the draft.
+      void trackWrite(prevId, api.notes.draftSave(prevId, pendingContent)).catch(() => {});
+    }
+  }
+
+  /**
+   * The open note leaves the editor (it dropped out of the list): what was typed in it is saved
+   * in background, as when another note opens.
+   */
+  leaveNote() {
+    this._sendPending();
+    this._clearEditorState();
   }
 
   /** The note picked last is still loading; the editor shows the previous one and takes no input. */
@@ -322,6 +342,9 @@ class NotesStore {
     if (this.noteLoading || !editorReady(this.activeNoteId, this.activeNote)) return;
     this._pendingFor = this.activeNoteId;
     this._pendingContent = content;
+    // The body of the open note is the one typed: an editor mounted again (the page left and
+    // entered back) shows it, not the body the note was opened with.
+    this.activeNote!.content = content;
     this.saveStatus = 'unsaved';
     if (this.externalChange) return;
     this._scheduleAutosave();
@@ -340,11 +363,14 @@ class NotesStore {
   }
 
   private _scheduleAutosave() {
+    const now = Date.now();
     if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
+    else this._autosaveDue = now + AUTOSAVE_MAX_WAIT_MS;
+    const delay = Math.min(AUTOSAVE_DELAY_MS, Math.max(0, this._autosaveDue - now));
     this._autosaveTimer = setTimeout(() => {
       this._autosaveTimer = null;
       void this._doAutosave();
-    }, AUTOSAVE_DELAY_MS);
+    }, delay);
   }
 
   private async _doAutosave() {
@@ -378,7 +404,7 @@ class NotesStore {
         if (base) input.base_hash = base;
       }
       if (title !== null) input.title = title;
-      const updated = await api.notes.update(noteId, input);
+      const updated = await trackWrite(noteId, api.notes.update(noteId, input));
       // Another note may have been opened while awaiting — don't clobber it.
       if (this.activeNoteId === noteId && this.activeNote?.id === noteId) {
         // Only what the save changed: the editor keeps what was typed while it ran.

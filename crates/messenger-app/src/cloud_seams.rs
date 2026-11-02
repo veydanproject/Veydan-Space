@@ -191,10 +191,13 @@ pub struct IdentitySigner {
 
 impl IdentitySigner {
     fn runtime(&self) -> Result<Arc<messenger_runtime::MessengerRuntime>, CloudError> {
-        self.app
-            .state::<MessengerState>()
-            .runtime()
-            .map_err(|e| CloudError::new(code::MESSENGER_STOPPED, e.to_string()))
+        let messenger = self.app.state::<MessengerState>();
+        messenger.runtime().map_err(|e| {
+            CloudError::new(
+                code::MESSENGER_STOPPED,
+                messenger.down().unwrap_or_else(|| e.to_string()),
+            )
+        })
     }
 
     /// The keys of the identity for one operation: they leave memory with it.
@@ -208,6 +211,10 @@ impl IdentitySigner {
 }
 
 impl Signer for IdentitySigner {
+    fn ready(&self) -> Result<(), CloudError> {
+        self.runtime().map(drop)
+    }
+
     fn pubkey(&self) -> SeamFuture<'_, String> {
         Box::pin(async move {
             let identity = self

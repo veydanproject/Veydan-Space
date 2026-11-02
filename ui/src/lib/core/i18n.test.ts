@@ -105,6 +105,8 @@ type Dict = Record<string, string>;
 const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
   desktop: {
     en: {
+      msg_card_link_short: 'In browser',
+      msg_card_preview_short: 'Preview',
       settings_camoufox_title: 'Camoufox',
       common_pane_width: 'Panel width',
       common_pane_resize_hint: 'Drag to change the width · double-click to reset',
@@ -491,6 +493,7 @@ const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
       notes_panel_resize: "Resize panel",
       notes_task_checkbox: "Task: {text}",
       notes_task_checkbox_empty: "Empty task",
+      notes_attachment_gone: "File deleted",
       notes_smart_profile_search: "Find a profile…",
       msg_contacts_more: "More",
       msg_cmd_open_chat: "Open chat: {name}",
@@ -2133,6 +2136,8 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_bot_commands: 'Commands of the bot',
     },
     ru: {
+      msg_card_link_short: 'В браузере',
+      msg_card_preview_short: 'Превью',
       settings_camoufox_title: 'Camoufox',
       common_pane_width: 'Ширина панели',
       common_pane_resize_hint: 'Потяните, чтобы изменить ширину · двойной щелчок — сброс',
@@ -2519,6 +2524,7 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       notes_panel_resize: "Изменить ширину панели",
       notes_task_checkbox: "Задача: {text}",
       notes_task_checkbox_empty: "Пустая задача",
+      notes_attachment_gone: "Файл удалён",
       notes_smart_profile_search: "Найти профиль…",
       msg_contacts_more: "Ещё",
       msg_cmd_open_chat: "Открыть чат: {name}",

@@ -763,7 +763,7 @@
 
 {#snippet window()}
   <section class="window" class:phone>
-    <header class="head" class:phone>
+    <header class="head" class:phone class:on-glass={phone}>
       {#if onback}
         {#if phone}<button class="icon back" onclick={onback} aria-label={$t('chan_back')}><Icon name="chevron-left" size={24} /></button>
         {:else}<button class="icon back narrow-only" onclick={onback} title={$t('chan_back')}><Icon name="arrow-left" size={18} /></button>{/if}
@@ -984,14 +984,14 @@
   .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; container-type: inline-size; }
   /* The head (the redesign of the feed): who on the left, its name never gives way; the section, ⋮ with one count. */
   .head { display: flex; align-items: center; gap: 10px; padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; box-sizing: border-box; }
-  /* A phone and a tablet: the whole screen, the head a bar. */
+  /* A phone and a tablet: the whole screen, the head floats inset as glass and the feed runs under it. */
   /* Over the feed's own layers (a post's ⋮ on its media), under the info panel that lies over the conversation (WithInfo):
      no layer of the scale sits there, so the base's plus two. */
-  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); min-height: 60px; gap: 6px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-1); background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
+  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); gap: 6px; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4); }
   .head.phone .back { color: var(--text); }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 160px; flex: 1 1 auto; cursor: pointer; border-radius: var(--radius-sm); }
   .head.phone .ident { min-width: 0; gap: 10px; }
-  .ident:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .ident:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-md); overflow: hidden; white-space: nowrap; }
   .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -1000,7 +1000,7 @@
   .dim { color: var(--text-3); display: inline-flex; }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
-  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .head .icon { flex-shrink: 0; width: 36px; height: 36px; padding: 0; align-items: center; justify-content: center; border-radius: var(--radius); }
   .head.phone .icon { width: 40px; height: 40px; border-radius: var(--radius-md); }
   .narrow-only { display: none; }
@@ -1012,7 +1012,7 @@
     transition: background var(--dur-fast);
   }
   .sec-btn:hover, .sec-btn[aria-expanded="true"] { background: var(--surface-2); }
-  .sec-btn:focus-visible, .sec-icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .sec-btn:focus-visible, .sec-icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .sec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sec-caret { display: inline-flex; color: var(--text-3); transition: transform var(--dur-fast); }
   .sec-caret.up { transform: rotate(180deg); }
@@ -1023,8 +1023,7 @@
   .menu-btn { position: relative; }
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
-  /* The count on ⋮ is the primitive .menu-count of base.css; on a phone it sits a little lower. */
-  .head.phone .menu-count { top: 0; right: -2px; }
+  /* The count on ⋮ is the primitive .menu-count of base.css, at the button's upper right corner. */
   /* The bars under the head: cards the feed's width. */
   .strips { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-6) 0; flex-shrink: 0; }
   .strips:not(:has(> *)) { display: none; }
@@ -1039,7 +1038,7 @@
   .locked-note b { font-weight: var(--fw-semibold); color: var(--text-body); }
   .pinbar { cursor: pointer; }
   .pinbar:hover { background: var(--surface-hover); }
-  .strip.pinbar:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .strip.pinbar:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .pin-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
   .pin-text b { color: var(--accent-text); font-weight: var(--fw-bold); margin-right: 4px; }
   .strip.warn { color: var(--text); background: var(--warn-bg); border-color: var(--warn-border); }
@@ -1048,6 +1047,12 @@
   .strip.danger .s-icon { background: var(--danger-bg); color: var(--danger-text); }
   /* The feed: a column of cards. */
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-6) var(--sp-4); display: flex; flex-direction: column; }
+  /* Under a head without a bar the feed dissolves at the top edge. */
+  .window.phone .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
+  /* Under the bars the feed dissolves at their lower edge as it does under the head, over a longer way: the bars are tall and the post would otherwise look cut. */
+  /* No strips: the feed runs behind the glass of the head (64: its 56 and its margin). */
+  .window.phone .strips:not(:has(> *)) + .scroll { isolation: isolate; margin-top: -64px; padding-top: calc(64px + var(--sp-2)); scroll-padding-top: 64px; -webkit-mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); }
+  .window.phone .strips:has(> *) + .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); }
   .content { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-3); flex-shrink: 0; }
   .content:has(> .placeholder) { margin-bottom: auto; }
   /* The states without a feed. */
@@ -1097,7 +1102,7 @@
   /* The circles shrink to fit any width of the menu (40 at most, 44 on a finger), evenly spread, none cut. */
   .q { flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; height: auto; padding: 0; border: none; background: var(--surface-3); font-size: 20px; line-height: 1; border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
   @media (pointer: coarse) { .q { max-width: 44px; } }
-  .q:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .q:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .q:hover { background: var(--surface-hover); }
   .q.mine { background: var(--accent-bg); }
   @media (pointer: coarse) {

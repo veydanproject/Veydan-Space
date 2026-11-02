@@ -35,6 +35,7 @@ const ACCENT_VARS = [
   '--accent-hover',
   '--accent-bg',
   '--accent-border',
+  '--focus-ring',
   '--accent-grad',
   '--accent-text',
   '--accent-text-2',
@@ -96,6 +97,7 @@ function applyAccent(el: HTMLElement, hex: string, theme: Theme) {
   el.style.setProperty('--accent-hover', `color-mix(in srgb, ${hex} 90%, black)`);
   el.style.setProperty('--accent-bg', `color-mix(in srgb, ${hex} ${dark ? 18 : 12}%, transparent)`);
   el.style.setProperty('--accent-border', `color-mix(in srgb, ${dark ? text : hex} ${dark ? 40 : 28}%, transparent)`);
+  el.style.setProperty('--focus-ring', text);
   el.style.setProperty('--accent-grad', hex);
   el.style.setProperty('--accent-text', text);
   el.style.setProperty('--accent-text-2', text);

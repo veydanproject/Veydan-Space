@@ -344,6 +344,7 @@
     "notes_panel_resize": "Ubah ukuran panel",
     "notes_task_checkbox": "Tugas: {text}",
     "notes_task_checkbox_empty": "Tugas kosong",
+    "notes_attachment_gone": "File dihapus",
     "notes_smart_profile_search": "Cari profil…"
   },
   "mobile": {

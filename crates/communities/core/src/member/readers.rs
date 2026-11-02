@@ -338,7 +338,7 @@ impl Member {
     }
 
     async fn key_of_epoch(&self, community_id: &str, epoch: u32) -> Result<Option<EpochKey>> {
-        let rows = db::keys::epochs(&self.env.db, community_id, SCOPE_EVERYONE).await?;
-        rows.iter().find(|r| r.epoch == i64::from(epoch)).and_then(|r| r.key_hex.as_deref()).map(|k| key_of(epoch, k)).transpose()
+        let row = db::keys::epoch_row(&self.env.db, community_id, SCOPE_EVERYONE, i64::from(epoch)).await?;
+        row.as_ref().and_then(|r| r.key_hex.as_deref()).map(|k| key_of(epoch, k)).transpose()
     }
 }

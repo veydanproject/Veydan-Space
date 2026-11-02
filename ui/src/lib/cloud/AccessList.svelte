@@ -152,11 +152,11 @@
     </NavRow>
 
     {#if words}
-      <div class="panel" class:m={isMobile}>
+      <div class="panel on-glass" class:m={isMobile}>
         <RecoveryKeyCard code={words} ondone={done} />
       </div>
     {:else if asking}
-      <form class="panel" class:m={isMobile} onsubmit={(e) => { e.preventDefault(); void issue(); }}>
+      <form class="panel on-glass" class:m={isMobile} onsubmit={(e) => { e.preventDefault(); void issue(); }}>
         <h3>{asking === 'setup' ? $t('cloud_recovery_setup') : $t('cloud_recovery_reissue')}</h3>
         {#if asking === 'reissue'}
           <Notice tone="warn">{$t('cloud_recovery_reissue_hint')}</Notice>

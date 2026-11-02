@@ -21,6 +21,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import type { CallNodeInfo, CallTrust } from '../api';
   import { callStore } from '../calls/callStore.svelte';
   import { stamp } from '../shared/time';
@@ -85,13 +86,13 @@
 </script>
 
 <div class="card nodes">
-  <div class="card-title"><Icon name="network" size={16} />{$t('msg_calls_nodes_title')}</div>
+  <div class="card-title">{$t('msg_calls_nodes_title')}</div>
   <p class="muted">{$t('msg_calls_nodes_intro')}</p>
 
   {#if v}
     <div class="block">
       <div class="label">{$t('msg_call_nodes_trust')}</div>
-      <div class="seg" role="radiogroup" aria-label={$t('msg_call_nodes_trust')}>
+      <div class="seg seg-fill" role="radiogroup" aria-label={$t('msg_call_nodes_trust')}>
         {#each LEVELS as level}
           <button class="seg-btn" class:active={v.trust === level} role="radio" aria-checked={v.trust === level}
             disabled={callNodesStore.busy} onclick={() => callNodesStore.setTrust(level)}>
@@ -104,13 +105,9 @@
   {/if}
 
   <div class="block">
-    <div class="line">
-      <span>{$t('msg_calls_policy_relay_only')}</span>
-      <button class="toggle" class:on={relayOnly} disabled={callStore.busy || !callStore.loaded}
-        onclick={() => callStore.setPolicy(relayOnly ? 'auto' : 'relay_only')}
-        aria-pressed={relayOnly} aria-label={$t('msg_calls_policy_relay_only')}></button>
-    </div>
-    <p class="hint">{$t(relayOnly ? 'msg_calls_policy_relay_only_hint' : 'msg_calls_policy_auto_hint')}</p>
+    <ToggleRow surface="row" title={$t('msg_calls_policy_relay_only')} hint={$t(relayOnly ? 'msg_calls_policy_relay_only_hint' : 'msg_calls_policy_auto_hint')}
+      label={$t('msg_calls_policy_relay_only')} on={relayOnly} disabled={callStore.busy || !callStore.loaded}
+      onclick={() => callStore.setPolicy(relayOnly ? 'auto' : 'relay_only')} />
   </div>
 
   {#if v}
@@ -187,15 +184,11 @@
 <style>
   .nodes { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
-  .hint { font-size: var(--fs-xs); color: var(--text-3); }
   /* The parts of the card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+  .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
   .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; font-size: var(--fs-base); color: var(--text); }
-  /* A phone is narrower than three choices in one line: each wraps its words instead of the row running off. */
-  .seg { align-self: flex-start; max-width: 100%; }
-  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-1) 0; }
   .row + .row { border-top: 1px solid var(--border); }

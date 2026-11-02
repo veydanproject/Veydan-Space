@@ -344,6 +344,7 @@
     "notes_panel_resize": "Đổi kích thước bảng",
     "notes_task_checkbox": "Việc cần làm: {text}",
     "notes_task_checkbox_empty": "Việc cần làm trống",
+    "notes_attachment_gone": "Tệp đã bị xóa",
     "notes_smart_profile_search": "Tìm hồ sơ…"
   },
   "mobile": {

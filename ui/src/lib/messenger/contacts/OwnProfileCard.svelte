@@ -134,7 +134,7 @@
 
 <div class="card own">
   <div class="title-row">
-    <div class="card-title"><Icon name="key" size={16} /> {$t('msg_own_title')}</div>
+    <div class="card-title">{$t('msg_own_title')}</div>
     {#if !editing}
       <span class="title-actions">
         <MyQrButton disabled={!canAct} />
@@ -172,7 +172,7 @@
             <span class="fact-icon"><Icon name="phone" size={16} /></span>
             <div class="phone-text">
               <button type="button" class="link plain" onclick={copyPhone} title={$t('msg_copy')}>{copied ? $t('msg_card_copied') : own.phone}</button>
-              <span class="private-note"><Icon name="lock-square-rounded" size={12} />{$t('msg_profile_phone_view_hint')}</span>
+              <span class="private-note">{$t('msg_profile_phone_view_hint')}</span>
             </div>
           </li>
         {/if}
@@ -196,14 +196,8 @@
 <ShareOutSheet bind:open={sharing} item={shareItem} title={$t('msg_share_out')} qr={() => messengerApi.links.contactQr(shareId)} />
 
 <style>
-  /* A card of the settings page: surface-2 with a line, radius 16 (design book, «Профиль и ключ»). */
-  .card.own {
-    min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: var(--sp-3);
-    padding: var(--sp-4) var(--sp-5); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); box-shadow: none;
-  }
+  .card.own { min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: var(--sp-3); }
   .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .card-title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
-  .card-title :global(svg) { color: var(--text-2); }
   .title-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
   .btn :global(svg) { margin-right: 2px; }
   .head { display: flex; gap: var(--sp-4); align-items: center; min-width: 0; }
@@ -221,12 +215,15 @@
     width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); background: var(--surface-3); border: 1px solid var(--border); color: var(--text-2);
     display: inline-flex; align-items: center; justify-content: center;
   }
+  /* The tile's icon is 18 (design book); on a phone the tile takes the colour of the chips on a card, without a frame. */
+  .fact-icon :global(svg) { width: 18px; height: 18px; }
+  :global(.msg-m) .fact-icon { background: var(--m-seg, var(--surface-3)); border: 0; }
   .link {
     padding: 0; border: none; background: none; cursor: pointer; font: inherit; text-align: left;
     color: var(--accent-text-3); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-word; min-width: 0;
   }
   .link.plain { color: var(--text); text-decoration: none; font-variant-numeric: tabular-nums; }
-  .link:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; border-radius: 4px; }
+  .link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .private-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text); }
   .saved { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--success-text); }

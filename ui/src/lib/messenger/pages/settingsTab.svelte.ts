@@ -19,7 +19,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = ['profile', 'network', 'not
 export const settingsRequest = $state<{ tab: SettingsTab | null }>({ tab: null });
 
 /** The tab shown now: on a computer the sections are a nav in the list's column (design kit), the section the pane. */
-export const settingsUi = $state<{ tab: SettingsTab }>({ tab: 'profile' });
+export const settingsUi = $state<{ tab: SettingsTab; focusMedia: boolean }>({ tab: 'profile', focusMedia: false });
 
 /** The icon of each section in the nav. */
 export const SETTINGS_ICONS: Record<SettingsTab, string> = {

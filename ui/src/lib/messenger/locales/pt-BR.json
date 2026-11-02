@@ -36,6 +36,8 @@
     "msg_inlink_scanner_text": "Links para entrar, recuperar uma conta e vincular um dispositivo só são abertos com o leitor do aplicativo: assim nenhum site consegue empurrar um deles para você aprovar.",
     "msg_inlink_long_title": "O link é longo demais",
     "msg_inlink_long_text": "O Veydan não abre links tão longos. Peça o link de novo.",
+    "msg_card_link_short": "No navegador",
+    "msg_card_preview_short": "Pré-visualização",
     "msg_card_link_open": "Abrir no navegador",
     "msg_card_link_moved": "O link redireciona a partir de {host}.",
     "msg_card_link_risk_insecure": "Sem criptografia: qualquer um no caminho pode ler e alterar a página.",

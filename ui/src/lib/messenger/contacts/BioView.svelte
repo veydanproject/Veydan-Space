@@ -54,7 +54,7 @@
     white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; min-width: 0;
   }
   .clamp { max-height: calc(var(--lines) * 1.45em); overflow: hidden; }
-  .clamp.over { mask-image: linear-gradient(to bottom, #000 calc(100% - 1.45em), transparent); }
+  .clamp.over { mask-image: linear-gradient(to bottom, black calc(100% - 1.45em), transparent); }
   .b { font-weight: var(--fw-bold); }
   .i { font-style: italic; }
   .s { text-decoration: line-through; }

@@ -225,7 +225,9 @@
   .merge-panel {
     width: 100%;
     max-width: 640px;
-    background: var(--surface);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
     border-left: 1px solid var(--border);
     display: flex;
     flex-direction: column;

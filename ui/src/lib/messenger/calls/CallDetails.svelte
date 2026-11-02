@@ -101,7 +101,7 @@
       </button>
     </div>
 
-    <section class="block">
+    <section class="block glass-card">
       <h3>{$t('msg_calls_history')}</h3>
       <ul class="calls">
       {#each calls as e (e.call_id)}
@@ -137,12 +137,12 @@
     font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); text-align: center; cursor: pointer;
     transition: background var(--dur-fast), border-color var(--dur-fast);
   }
-  .act:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .disc { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--success-bg); color: var(--success-text); }
   @media (hover: hover) { .act:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); } }
   .act:disabled { opacity: 0.45; cursor: default; }
   /* The calls: one card of rows, its title in sentence case. */
-  .block { display: flex; flex-direction: column; padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--border); }
+  .block { display: flex; flex-direction: column; padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); }
   .block h3 { margin: 0; padding-bottom: var(--sp-1); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .call-row { display: flex; align-items: center; gap: var(--sp-3); min-height: 56px; padding: var(--sp-2) 0; }
@@ -159,6 +159,6 @@
     border: none; border-radius: var(--radius); background: none; color: var(--text-3); font: inherit; font-size: var(--fs-sm); cursor: pointer;
   }
   .forget:hover { color: var(--danger-text); background: var(--danger-bg); }
-  .forget:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .forget:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   @media (pointer: coarse) { .forget { height: 44px; } }
 </style>

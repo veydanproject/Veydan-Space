@@ -20,6 +20,9 @@ use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
 pub const T0: i64 = 1_760_000_000;
+/// The largest event the relays of the project take
+/// (`services/server/templates/strfry.conf`, `maxEventSize`).
+pub const MAX_EVENT_BYTES: usize = 131_072;
 pub const H1: &str = "https://h1.example";
 pub const H2: &str = "https://h2.example";
 pub const H3: &str = "https://h3.example";
@@ -44,6 +47,11 @@ impl FakeClock {
     pub fn now(&self) -> i64 {
         self.0.load(Ordering::SeqCst)
     }
+
+    /// The clock at `at` (the bench resumed from a saved state).
+    pub fn set(&self, at: i64) {
+        self.0.store(at, Ordering::SeqCst);
+    }
 }
 
 impl Clock for FakeClock {
@@ -55,6 +63,17 @@ impl Clock for FakeClock {
 /// The secret store of one device.
 #[derive(Default)]
 pub struct MemSecrets(Mutex<HashMap<String, Vec<u8>>>);
+
+impl MemSecrets {
+    /// Everything held (the bench saves it with the state of a phase).
+    pub fn dump(&self) -> HashMap<String, Vec<u8>> {
+        lock(&self.0).clone()
+    }
+
+    pub fn load(&self, all: HashMap<String, Vec<u8>>) {
+        *lock(&self.0) = all;
+    }
+}
 
 #[async_trait]
 impl SecretStore for MemSecrets {
@@ -169,9 +188,12 @@ pub struct Net {
     /// named as the hint.
     pub hints: Mutex<Vec<(String, usize)>>,
     synced: Mutex<Vec<serde_json::Value>>,
-    /// Gift wraps sent and their bytes (the JSON of the event).
+    /// Gift wraps sent and their bytes (the JSON of the event), and the
+    /// largest of them: the relays of the project take 131 072 bytes at
+    /// most (`MAX_EVENT_BYTES`).
     pub wraps: AtomicUsize,
     pub wrap_bytes: AtomicUsize,
+    pub wrap_max: AtomicUsize,
     /// Events of a channel published (`PublishScoped`) and their bytes.
     pub scoped: AtomicUsize,
     pub scoped_bytes: AtomicUsize,
@@ -209,7 +231,9 @@ impl Transport for Net {
                     return Ok(Ack { accepted_by: vec![], rejected_by: vec![(relay, "timeout".into())] });
                 }
                 self.wraps.fetch_add(1, Ordering::SeqCst);
-                self.wrap_bytes.fetch_add(json_len(&event.json), Ordering::SeqCst);
+                let len = json_len(&event.json);
+                self.wrap_bytes.fetch_add(len, Ordering::SeqCst);
+                self.wrap_max.fetch_max(len, Ordering::SeqCst);
                 let keep = lock(&self.relay.keep_inbox).as_ref().is_none_or(|k| k.contains(recipient.as_hex()));
                 if !keep {
                     return Ok(Ack { accepted_by: vec![relay], rejected_by: vec![] });
@@ -291,7 +315,23 @@ pub struct MemHosts {
     pub key_refused: Mutex<Vec<(String, String)>>,
     /// The clock of the world, for the life of an upload key.
     pub clock: Mutex<Option<Arc<FakeClock>>>,
+    /// The paths of a host to the blobs they name (`put_at`): host → path
+    /// → sha256.
+    pub paths: Mutex<HashMap<String, BTreeMap<String, String>>>,
+    /// Hosts that serve no paths, as a plain Blossom host (`serves_paths`).
+    pub no_paths: Mutex<BTreeSet<String>>,
+    /// Of each host, the paths that name each hash (`paths` the other way):
+    /// a removal found them by a pass over every path of the host.
+    named: Mutex<HashMap<String, HashMap<String, BTreeSet<String>>>>,
+    /// Which puts keep their bytes (`None`: every one). The bench of a
+    /// month of a history from the join keeps the shards its readers read:
+    /// all of them, 33 MB an epoch at 600 000 readers, are 250 GB. A put
+    /// left out is counted as any other, and a get of it finds nothing.
+    pub keep: Mutex<Option<KeepFn>>,
 }
+
+/// `MemHosts::keep`: whether the bytes of a put are kept.
+pub type KeepFn = Arc<dyn Fn(&[u8]) -> bool + Send + Sync>;
 
 impl MemHosts {
     pub fn new() -> Arc<Self> {
@@ -332,6 +372,44 @@ impl MemHosts {
             lock(&self.key_refused).push((host.to_string(), pubkey));
         }
         ok
+    }
+
+    /// `host` a plain Blossom host, which serves no paths (`false`), or
+    /// one that does.
+    pub fn set_paths(&self, host: &str, serves: bool) {
+        let mut n = lock(&self.no_paths);
+        if serves {
+            n.remove(host);
+        } else {
+            n.insert(host.to_string());
+        }
+    }
+
+    /// The hash a host names at `path`.
+    pub fn at_path(&self, host: &str, path: &str) -> Option<String> {
+        lock(&self.paths).get(host).and_then(|p| p.get(path).cloned())
+    }
+
+    /// The bytes a host keeps under `sha256` replaced (a host that lies
+    /// about a blob it serves by path, where no hash checks it).
+    pub fn tamper(&self, host: &str, sha256: &str, bytes: Vec<u8>) {
+        if let Some(b) = lock(&self.blobs).get_mut(host) {
+            b.insert(sha256.to_string(), bytes);
+        }
+    }
+
+    /// The paths of every host (`put_at`), and what `named` keeps of them
+    /// rebuilt: the bench resumed from a saved state.
+    pub fn set_all_paths(&self, paths: HashMap<String, BTreeMap<String, String>>) {
+        let mut named: HashMap<String, HashMap<String, BTreeSet<String>>> = HashMap::new();
+        for (host, p) in &paths {
+            let n = named.entry(host.clone()).or_default();
+            for (path, sha) in p {
+                n.entry(sha.clone()).or_default().insert(path.clone());
+            }
+        }
+        *lock(&self.paths) = paths;
+        *lock(&self.named) = named;
     }
 
     /// How many blobs a host holds.
@@ -414,8 +492,45 @@ impl BlobHosts for MemHosts {
         }
         self.puts.fetch_add(1, Ordering::SeqCst);
         self.put_bytes.fetch_add(bytes.len(), Ordering::SeqCst);
-        lock(&self.blobs).entry(host.to_string()).or_default().insert(sha256.to_string(), bytes.to_vec());
+        let keep = lock(&self.keep).clone();
+        if keep.is_none_or(|k| k(bytes)) {
+            lock(&self.blobs).entry(host.to_string()).or_default().insert(sha256.to_string(), bytes.to_vec());
+        }
         Ok(())
+    }
+
+    async fn serves_paths(&self, host: &str) -> bool {
+        !lock(&self.no_paths).contains(host)
+    }
+
+    async fn put_at(&self, signer: &Keys, key: Option<&str>, host: &str, path: &str, sha256: &str, bytes: &[u8]) -> Result<()> {
+        if !self.serves_paths(host).await {
+            return Err(MessengerError::Transport(format!("err.unsupported: {host} {}", crate::blobs::NO_PATHS)));
+        }
+        self.put_keyed(signer, key, host, sha256, bytes).await?;
+        let before = lock(&self.paths).entry(host.to_string()).or_default().insert(path.to_string(), sha256.to_string());
+        let mut named = lock(&self.named);
+        let named = named.entry(host.to_string()).or_default();
+        if let Some(old) = before {
+            if let Some(p) = named.get_mut(&old) {
+                p.remove(path);
+            }
+        }
+        named.entry(sha256.to_string()).or_default().insert(path.to_string());
+        Ok(())
+    }
+
+    async fn get_at(&self, host: &str, path: &str) -> Result<Option<Vec<u8>>> {
+        if !self.serves_paths(host).await {
+            return Ok(None);
+        }
+        match self.at_path(host, path) {
+            Some(sha) => self.get(host, &sha).await,
+            None => {
+                self.gets.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            }
+        }
     }
 
     async fn get(&self, host: &str, sha256: &str) -> Result<Option<Vec<u8>>> {
@@ -446,6 +561,12 @@ impl BlobHosts for MemHosts {
         self.deletes.fetch_add(1, Ordering::SeqCst);
         if let Some(b) = lock(&self.blobs).get_mut(host) {
             b.remove(sha256);
+        }
+        let gone = lock(&self.named).get_mut(host).and_then(|n| n.remove(sha256)).unwrap_or_default();
+        if let Some(p) = lock(&self.paths).get_mut(host) {
+            for path in gone {
+                p.remove(&path);
+            }
         }
         Ok(())
     }
@@ -485,6 +606,12 @@ impl World {
     /// A device of the person of `keys` on a database of the caller's (a
     /// file, for the bench).
     pub fn device_on(&self, keys: Keys, db: Db) -> Node {
+        self.device_with(keys, db, Arc::new(MemSecrets::default()))
+    }
+
+    /// A device on a database and a secret store of the caller's (the
+    /// bench saves and loads both).
+    pub fn device_with(&self, keys: Keys, db: Db, secrets: Arc<MemSecrets>) -> Node {
         let me = PubKey::parse(&keys.public_key().to_hex()).unwrap_or_else(|| unreachable!("a generated key parses"));
         let net = Arc::new(Net {
             relay: self.relay.clone(),
@@ -496,11 +623,12 @@ impl World {
             synced: Mutex::new(Vec::new()),
             wraps: AtomicUsize::new(0),
             wrap_bytes: AtomicUsize::new(0),
+            wrap_max: AtomicUsize::new(0),
             scoped: AtomicUsize::new(0),
             scoped_bytes: AtomicUsize::new(0),
         });
         // No automatic attempts of a file: a failure is told at once.
-        let svc = ChannelService::new(db, Arc::new(MemSecrets::default()), net.clone(), self.hosts.clone(), self.clock.clone()).with_retry_delays(Vec::new());
+        let svc = ChannelService::new(db, secrets.clone(), net.clone(), self.hosts.clone(), self.clock.clone()).with_retry_delays(Vec::new());
         // A marker of `settle` comes behind what a Sync brought, as the
         // module's loop reads its stream.
         let sink_net = net.clone();
@@ -509,7 +637,7 @@ impl World {
             true
         })));
         svc.set_signer(Some(keys.clone()));
-        Node { keys, me, svc, net, events_seen: Mutex::new(0), inbox_seen: Mutex::new(HashMap::new()), hold: Mutex::new(BTreeSet::new()), held: Mutex::new(Vec::new()), errors: Mutex::new(Vec::new()), wake_at: Mutex::new(None) }
+        Node { keys, me, svc, net, secrets, events_seen: Mutex::new(0), inbox_seen: Mutex::new(HashMap::new()), hold: Mutex::new(BTreeSet::new()), held: Mutex::new(Vec::new()), errors: Mutex::new(Vec::new()), wake_at: Mutex::new(None) }
     }
 
     /// Pumps until nothing new arrives or goes out anywhere.
@@ -532,6 +660,7 @@ pub struct Node {
     pub me: PubKey,
     pub svc: ChannelService,
     pub net: Arc<Net>,
+    pub secrets: Arc<MemSecrets>,
     events_seen: Mutex<usize>,
     inbox_seen: Mutex<HashMap<String, usize>>,
     /// Kinds this device does not hear for now (kept for `release`).
@@ -571,6 +700,26 @@ impl Node {
     /// notes of the week again at every start).
     pub fn replay_inboxes(&self) {
         lock(&self.inbox_seen).clear();
+    }
+
+    /// The gift wraps to `who` not heard yet, taken in; how many came.
+    pub async fn hear_inbox(&self, who: &str) -> usize {
+        let wraps: Vec<serde_json::Value> = {
+            let mut seen = lock(&self.inbox_seen);
+            let at = seen.entry(who.to_string()).or_insert(0);
+            let all = lock(&self.net.relay.inbox);
+            let list = all.get(who).cloned().unwrap_or_default();
+            let out = list[(*at).min(list.len())..].to_vec();
+            *at = list.len();
+            out
+        };
+        for w in &wraps {
+            match self.svc.on_wrap(&self.keys, w).await {
+                Ok(out) => self.wake(out.and_then(|o| o.wake)),
+                Err(e) => self.note_err(e),
+            }
+        }
+        wraps.len()
     }
 
     fn note_err(&self, e: MessengerError) {
@@ -667,22 +816,7 @@ impl Node {
             }
         }
         for who in inboxes {
-            let wraps: Vec<serde_json::Value> = {
-                let mut seen = lock(&self.inbox_seen);
-                let at = seen.entry(who.clone()).or_insert(0);
-                let all = lock(&relay.inbox);
-                let list = all.get(&who).cloned().unwrap_or_default();
-                let out = list[(*at).min(list.len())..].to_vec();
-                *at = list.len();
-                out
-            };
-            for w in wraps {
-                any = true;
-                match self.svc.on_wrap(&self.keys, &w).await {
-                    Ok(out) => self.wake(out.and_then(|o| o.wake)),
-                    Err(e) => self.note_err(e),
-                }
-            }
+            any |= self.hear_inbox(&who).await > 0;
         }
         // What the events wanted of the relays (the page before a full
         // one, the heads a snapshot names) and the fetches of the member's
@@ -737,4 +871,34 @@ impl Node {
     pub fn errors(&self) -> Vec<String> {
         lock(&self.errors).clone()
     }
+
+    /// What the device took of the relay so far, when its turn is due and
+    /// what failed (the bench saves it with the state of a phase).
+    pub fn cursor(&self) -> Cursor {
+        Cursor {
+            events_seen: *lock(&self.events_seen),
+            inbox_seen: lock(&self.inbox_seen).clone(),
+            wake_at: *lock(&self.wake_at),
+            errors: self.errors(),
+            held: lock(&self.held).clone(),
+        }
+    }
+
+    pub fn set_cursor(&self, c: Cursor) {
+        *lock(&self.events_seen) = c.events_seen;
+        *lock(&self.inbox_seen) = c.inbox_seen;
+        *lock(&self.wake_at) = c.wake_at;
+        *lock(&self.errors) = c.errors;
+        *lock(&self.held) = c.held;
+    }
+}
+
+/// `Node::cursor`.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct Cursor {
+    pub events_seen: usize,
+    pub inbox_seen: HashMap<String, usize>,
+    pub wake_at: Option<u64>,
+    pub errors: Vec<String>,
+    pub held: Vec<serde_json::Value>,
 }

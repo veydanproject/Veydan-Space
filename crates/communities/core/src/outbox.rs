@@ -12,9 +12,9 @@
 //! row the relays refuse (the content after an operation relies on it,
 //! wire §4); the replaceable rows on their own; a note once the channel
 //! rows it follows are gone (`after_seq`), wrapped at this moment with the
-//! keys of its signer. Whoever runs it (the module's outbox task, the
-//! testkit's pump) waits on `ChannelService::outbox_notify` and for
-//! `Flushed::wake` between passes.
+//! keys of its signer, after every row of the other lanes. Whoever runs
+//! it (the module's outbox task, the testkit's pump) waits on
+//! `ChannelService::outbox_notify` and for `Flushed::wake` between passes.
 
 use crate::db::{self, outbox::OutboxRow};
 use crate::keeper::{OWED_FIRST_WAIT_SECS, OWED_MAX_WAIT_SECS};

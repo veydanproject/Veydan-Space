@@ -21,7 +21,8 @@
 //! fetches nothing.
 
 use crate::blobs::{fetch_verified, BlobHosts};
-use keydist::shard::ShardIndex;
+use keydist::shard::{self, ShardIndex};
+use keydist::EpochEvent;
 use messenger_core::{MessengerError, Result};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -39,8 +40,8 @@ pub const AT_ONCE_PER_CHANNEL: usize = 2;
 /// What a job fetches.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Want {
-    /// The index blob and the shard of my leaf of an epoch of a scope,
-    /// which open its key.
+    /// The index blob (or the proof) and the shard of my leaf of an epoch
+    /// of a scope, which open its key.
     Epoch { scope_id: String, epoch: u32 },
     /// Shard `index` of the snapshot of the readers dated `at`.
     Shard { at: i64, index: usize },
@@ -70,6 +71,10 @@ impl FetchJob {
 pub(crate) enum Plan {
     /// The index blob, then the shard it names at `shard`.
     Epoch { index: [u8; 32], shard: u32, hosts: Vec<String> },
+    /// An epoch in Merkle mode (wire §9): the proof and the shard of
+    /// `shard` of generation `gen` by their paths, taken of the first host
+    /// whose pair the root of `event` proves.
+    Proved { event: Box<EpochEvent>, gen: u32, shard: u32, proof_path: String, shard_path: String, hosts: Vec<String> },
     /// One blob.
     Shard { sha256: [u8; 32], hosts: Vec<String> },
 }
@@ -77,7 +82,8 @@ pub(crate) enum Plan {
 /// What the hosts gave.
 #[derive(Clone, Debug)]
 pub(crate) enum Got {
-    Epoch { index: Vec<u8>, shard: Vec<u8> },
+    /// The witness (the index blob or the proof) and the shard.
+    Epoch { witness: Vec<u8>, shard: Vec<u8> },
     Shard(Vec<u8>),
 }
 
@@ -89,7 +95,31 @@ pub(crate) async fn download(blobs: &dyn BlobHosts, plan: &Plan) -> Result<Got> 
             let hashes = ShardIndex::from_bytes(&index).map_err(|e| MessengerError::Invalid(format!("keydist: {e}")))?.hashes;
             let hash = hashes.get(*shard as usize).ok_or_else(|| MessengerError::Invalid("channel member: shard number".into()))?;
             let shard = fetch_verified(blobs, hosts, hash).await?;
-            Ok(Got::Epoch { index, shard })
+            Ok(Got::Epoch { witness: index, shard })
+        }
+        Plan::Proved { event, gen, shard, proof_path, shard_path, hosts } => {
+            // No hash names either blob: a host that gives a pair the root
+            // does not prove is passed over like one that is down, and said
+            // if no host gives one it proves.
+            let mut refused = None;
+            for host in hosts {
+                let got = async { Ok::<_, MessengerError>((blobs.get_at(host, proof_path).await?, blobs.get_at(host, shard_path).await?)) };
+                match got.await {
+                    Ok((Some(proof), Some(bytes))) => match shard::verify(event, *gen, *shard, &bytes, &proof) {
+                        Ok(_) => return Ok(Got::Epoch { witness: proof, shard: bytes }),
+                        Err(e) => {
+                            tracing::warn!(host, error = %e, "a proof or shard by path the root of the epoch does not prove");
+                            refused = Some(e);
+                        }
+                    },
+                    Ok(_) => {}
+                    Err(e) => tracing::debug!(host, error = %e, "channel blob host failed"),
+                }
+            }
+            Err(match refused {
+                Some(e) => MessengerError::Invalid(format!("keydist: {e}")),
+                None => MessengerError::Transport(format!("err.not_found: {shard_path}")),
+            })
         }
         Plan::Shard { sha256, hosts } => Ok(Got::Shard(fetch_verified(blobs, hosts, sha256).await?)),
     }
@@ -120,6 +150,11 @@ impl Fetches {
     /// sooner).
     pub(crate) fn want(&self, community_id: &str, want: Want) {
         self.map().entry((community_id.to_string(), want)).or_insert(Entry { next_at: 0, failed: 0, running: false });
+    }
+
+    /// Whether a job is wanted (due, waiting for its time, or running).
+    pub(crate) fn wanted(&self, community_id: &str, want: &Want) -> bool {
+        self.map().contains_key(&(community_id.to_string(), want.clone()))
     }
 
     /// Nothing to fetch any more (the key came another way, the snapshot

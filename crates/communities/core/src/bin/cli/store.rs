@@ -169,6 +169,8 @@ impl BlobHosts for CountingHosts {
             Ok(()) => {
                 self.counts.add("put", 1);
                 self.counts.add("put_bytes", bytes.len() as u64);
+                crate::traffic::media_out(bytes.len());
+                crate::traffic::uploaded(host, sha256, &signer.public_key().to_hex());
             }
             Err(e) => {
                 self.counts.add("put_err", 1);
@@ -194,6 +196,7 @@ impl BlobHosts for CountingHosts {
             match self.inner.get_up_to(host, sha256, max_bytes).await {
                 Ok(Some(b)) => {
                     self.counts.add("get_bytes", b.len() as u64);
+                    crate::traffic::media_in(b.len());
                     return Ok(Some(b));
                 }
                 Ok(None) => {
@@ -215,6 +218,39 @@ impl BlobHosts for CountingHosts {
         self.pacer.wait().await;
         let r = self.inner.delete_keyed(signer, key, host, sha256).await;
         self.counts.add(if r.is_ok() { "delete" } else { "delete_err" }, 1);
+        r
+    }
+
+    async fn serves_paths(&self, host: &str) -> bool {
+        self.inner.serves_paths(host).await
+    }
+
+    async fn put_at(&self, signer: &Keys, key: Option<&str>, host: &str, path: &str, sha256: &str, bytes: &[u8]) -> Result<()> {
+        self.pacer.wait().await;
+        let r = self.inner.put_at(signer, key, host, path, sha256, bytes).await;
+        match &r {
+            Ok(()) => {
+                self.counts.add("put_at", 1);
+                self.counts.add("put_bytes", bytes.len() as u64);
+                crate::traffic::media_out(bytes.len());
+                crate::traffic::uploaded(host, sha256, &signer.public_key().to_hex());
+            }
+            Err(e) => {
+                self.counts.add("put_err", 1);
+                eprintln!("put {host} {path}: {e}");
+            }
+        }
+        r
+    }
+
+    async fn get_at(&self, host: &str, path: &str) -> Result<Option<Vec<u8>>> {
+        self.pacer.wait().await;
+        self.counts.add("get_at", 1);
+        let r = self.inner.get_at(host, path).await;
+        if let Ok(Some(b)) = &r {
+            self.counts.add("get_bytes", b.len() as u64);
+            crate::traffic::media_in(b.len());
+        }
         r
     }
 

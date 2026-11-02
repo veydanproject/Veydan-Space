@@ -277,7 +277,7 @@
     font: inherit; font-size: var(--fs-xs); color: var(--accent-text-3); text-align: left; line-height: 1.4;
   }
   .more :global(svg) { flex-shrink: 0; }
-  .more:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; border-radius: var(--radius-xs); }
+  .more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-xs); }
   .person { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .person-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text); }
@@ -293,7 +293,7 @@
   .way :global(svg) { flex-shrink: 0; color: var(--accent-text); }
   .way span { overflow-wrap: break-word; text-wrap: balance; }
   .way:hover { background: var(--surface-row-hover); }
-  .way:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .way:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   /* One way alone (a computer: «Пригласить в частный чат»): a wide tile 48, the icon before the word. */
   .ways li:only-child .way { flex-direction: row; justify-content: flex-start; gap: var(--sp-3); min-height: 48px; padding: 0 var(--sp-3); font-size: var(--fs-base); text-align: left; }
   /* «Контакты» in sentence case over their rows. */
@@ -305,7 +305,7 @@
     border: none; border-radius: var(--radius-md); background: none; color: var(--text-3); font: inherit; cursor: pointer;
   }
   .row:hover:not(:disabled) { background: var(--surface-row-hover); }
-  .row:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .name { flex: 1; min-width: 0; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   code { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }

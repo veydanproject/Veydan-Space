@@ -12,19 +12,29 @@
 //! `COMMUNITIES_TRIAL_RELAY_KEY` (or `MESSENGER_DEV_RELAY_API_KEY`),
 //! `COMMUNITIES_TRIAL_STORAGE` (blob hosts, comma-separated),
 //! `COMMUNITIES_APP_KEYS` (the app keys of private servers this person has
-//! the cards of: `https://media.example.org=KEY,…`).
+//! the cards of: `https://media.example.org=KEY,…`). The stand's own
+//! knobs, never the app's (ROO-474): `COMMUNITIES_TRIAL_JOINS_PER_MINUTE`
+//! and `COMMUNITIES_TRIAL_MAX_READERS`, the keeper's limits
+//! (`communities_core::stand`); `COMMUNITIES_TRIAL_TRAFFIC_DIR` and
+//! `COMMUNITIES_TRIAL_TRAFFIC_LIMIT_MB`, the traffic of a run and where it
+//! stops, `COMMUNITIES_TRIAL_UPLOADS`, the blobs put (`traffic`).
 //!
 //! ```text
 //! communities-cli --dir D create [--name N] [--history open|from_join]
-//! communities-cli --dir D keeper [--minutes M] [--off-after S --off-minutes M]   (stdin: pause M | resume | restart | state | stats | quit)
+//! communities-cli --dir D keeper [--minutes M] [--off-after S --off-minutes M] [--synthetic N]
+//!                                       (stdin: pause M | resume | restart | state | stats | synthetic n=N | ban-wave n=N minutes=M
+//!                                        | handover | emergency | quit)
 //! communities-cli --dir D [--bot admin] join <link> | post [--count N] [--marker M] [--file F] [--scope S] | comment --post-marker M [--text T]
 //!                                       | react --target ID [--emoji E] | ban <pubkey>... | rotate-now [--scope S] | status
 //!                                       | scope-add [--title T] | level-set [--id I] [--name N] [--scopes S,S] [--post 1]
 //!                                       | set-levels [--levels L,L] <pubkey>...
-//! communities-cli --dir D swarm --readers N [--link L] [--posts P] [--comments C] [--minutes M] [--rate R] [--inboxes K] [--pools K] [--stdin]
-//!                                       (stdin: expect | scope scope=S [posts= rows= key= in= epoch= no-epoch=] | comment | join | inbox | ...)
+//! communities-cli --dir D swarm --readers N [--link L] [--posts P] [--comments C] [--minutes M] [--rate R] [--inboxes K] [--pools K]
+//!                                       [--offline-after S --return-after S [--offline-bots a-b]] [--stdin]
+//!                                       (stdin: expect | scope scope=S [posts= rows= key= in= epoch= no-epoch=] | comment | join | inbox
+//!                                        | offline bots=a-b | online bots=a-b [timeout=S] | ...)
 //! communities-cli --dir D relay-stats [--cid C]
 //! communities-cli --dir D blossom-auth --host H --sha S [--bot B] [--verb upload]
+//! communities-cli --dir D cleanup        (the blobs of the run deleted; the filters of its events on the relay)
 //! ```
 
 mod bot;
@@ -32,12 +42,14 @@ mod conn;
 mod look;
 mod net;
 mod store;
+mod traffic;
 
 use bot::Bot;
 use communities_core::op::{History, JoinMode, LevelCan, OpBody};
 use communities_core::roles::Role;
 use communities_core::service::NewChannel;
 use communities_core::state::SCOPE_EVERYONE;
+use communities_core::{bench, stand};
 use messenger_core::{MessengerError, PubKey, Result, TextFormat};
 use net::{Hub, Target};
 use serde_json::{json, Value};
@@ -202,7 +214,11 @@ async fn run(args: Args) -> Result<bool> {
         out(json!({ "authorization": h }));
         return Ok(true);
     }
+    if cmd == "cleanup" {
+        return cleanup(&dir).await;
+    }
     let target = target()?;
+    traffic::watch(cmd.clone());
     let pools = args.num("pools", if cmd == "swarm" { 3 } else { 1 }) as usize;
     let hub = Hub::connect(&target, pools).await?;
     let pacer = Pacer::new(GETS_PER_SEC);
@@ -226,6 +242,7 @@ async fn run(args: Args) -> Result<bool> {
         other => return Err(bad(format!("unknown command {other:?}"))),
     };
     hub.shutdown().await;
+    traffic::save(&cmd);
     Ok(ok)
 }
 
@@ -321,26 +338,365 @@ async fn scopes_summary(owner: &Bot, cid: &str) -> Value {
     Value::Object(m)
 }
 
+/// The folder of the owner's device that keeps the channel now: `owner`,
+/// until a handover or an emergency of the stand moved it (`channel.json`).
+fn keeper_dir(dir: &Path) -> String {
+    channel(dir).ok().and_then(|c| c["keeper_dir"].as_str().map(str::to_string)).unwrap_or_else(|| "owner".into())
+}
+
+/// Changes `channel.json` (what the other commands and the cleanup read).
+fn note_channel(dir: &Path, f: impl FnOnce(&mut serde_json::Map<String, Value>)) -> Result<()> {
+    let mut c = channel(dir)?;
+    if let Some(o) = c.as_object_mut() {
+        f(o);
+    }
+    std::fs::write(channel_file(dir), serde_json::to_string_pretty(&c)?)?;
+    Ok(())
+}
+
+/// The synthetic readers asked so far, for the ban wave of a later
+/// process and the cleanup (written before any of them joins).
+fn note_synthetic(dir: &Path, want: u64) -> Result<()> {
+    note_channel(dir, |c| {
+        let had = c.get("synthetic").and_then(Value::as_u64).unwrap_or(0);
+        c.insert("synthetic".into(), json!(had.max(want)));
+    })
+}
+
+/// The keeper as loaded, with the limits of the stand (a keeper loaded
+/// anew takes the app's).
+async fn tuned(owner: &Bot, cid: &str, tuning: &stand::Tuning) -> Option<Arc<tokio::sync::Mutex<communities_core::keeper::Keeper>>> {
+    let k = owner.svc.keeper(cid).await.ok().flatten()?;
+    tuning.apply(&mut *k.lock().await);
+    Some(k)
+}
+
+/// The readers without a device the keeper lets in (`--synthetic N`,
+/// `synthetic n=N`): readers `0..want` ask to join at once (a link posted
+/// somewhere), as fast as the keeper takes them; each one's issue is
+/// awaited on the relay (`Hub::await_note`).
+struct Synth {
+    want: u64,
+    next: u64,
+    /// When the asked ones came.
+    came: Instant,
+    issued: u64,
+    skipped: u64,
+    refused: BTreeMap<String, u64>,
+    /// From their coming to `on_join`'s issue (the queue of the keeper), s.
+    queue_s: Vec<f64>,
+    /// From their coming to the issue taken by the relay, s.
+    to_key_s: Vec<f64>,
+    busy_until: Option<Instant>,
+    door: Option<stand::Door>,
+    said: bool,
+    /// When an issue last reached the relay.
+    last_note: Instant,
+}
+
+/// At most this many joins in one beat of the keeper process.
+const SYNTH_PER_BEAT: usize = 5000;
+
+impl Synth {
+    fn new(want: u64) -> Self {
+        Self { want, next: 0, came: Instant::now(), issued: 0, skipped: 0, refused: BTreeMap::new(), queue_s: Vec::new(), to_key_s: Vec::new(), busy_until: None, door: None, said: want == 0, last_note: Instant::now() }
+    }
+
+    /// `n` more readers come now.
+    fn more(&mut self, n: u64) {
+        self.want += n;
+        self.came = Instant::now();
+        self.last_note = self.came;
+        self.said = false;
+        self.queue_s.clear();
+        self.to_key_s.clear();
+    }
+
+    fn line(&self, event: &str, hub: &Hub) -> Value {
+        let waiting = hub.awaiting();
+        json!({ "event": event, "want": self.want, "asked": self.next, "issued": self.issued, "skipped": self.skipped, "refused": self.refused,
+            "secs": self.came.elapsed().as_secs_f64(), "queue_s": bench::quantiles(self.queue_s.clone()), "to_key_s": bench::quantiles(self.to_key_s.clone()),
+            "issues_waiting": waiting, "at": now_secs() })
+    }
+
+    /// One beat: joins until the keeper is busy; what reached the relay.
+    async fn step(&mut self, owner: &Bot, cid: &str, tuning: &stand::Tuning) -> Result<Option<Value>> {
+        let delivered = owner.hub.take_delivered();
+        if !delivered.is_empty() {
+            self.last_note = Instant::now();
+        }
+        self.to_key_s.extend(delivered);
+        if self.next >= self.want {
+            // All issues on the relay, or none more for 5 minutes (one
+            // refused by the relay is told by the count left waiting).
+            if !self.said && (owner.hub.awaiting() == 0 || self.last_note.elapsed() > Duration::from_secs(300)) {
+                self.said = true;
+                return Ok(Some(self.line("synthetic_done", &owner.hub)));
+            }
+            return Ok(None);
+        }
+        if self.busy_until.is_some_and(|t| Instant::now() < t) {
+            return Ok(None);
+        }
+        self.busy_until = None;
+        let Some(k) = tuned(owner, cid, tuning).await else { return Ok(None) };
+        if self.door.is_none() {
+            self.door = Some(stand::Door::of(&owner.svc, cid).await?);
+        }
+        let Some(door) = self.door.as_ref() else { return Ok(None) };
+        let before = self.next;
+        for _ in 0..SYNTH_PER_BEAT {
+            if self.next >= self.want {
+                break;
+            }
+            let i = self.next;
+            match stand::join(&k, &owner.svc, door, cid, i, now_secs()).await? {
+                stand::Synthetic::Issued => {
+                    let pk = stand::synthetic_pk(cid, i)?.as_hex().to_string();
+                    owner.hub.await_note(pk, self.came);
+                    self.queue_s.push(self.came.elapsed().as_secs_f64());
+                    self.issued += 1;
+                }
+                stand::Synthetic::Skipped => self.skipped += 1,
+                stand::Synthetic::Busy => {
+                    // The minute of the keeper slides: asked again in a beat.
+                    self.busy_until = Some(Instant::now() + Duration::from_secs(4));
+                    break;
+                }
+                stand::Synthetic::Refused(why) => {
+                    *self.refused.entry(why.to_string()).or_insert(0) += 1;
+                    // Full: the rest would be refused the same.
+                    if why == "the channel is full" {
+                        self.next = self.want;
+                        break;
+                    }
+                }
+            }
+            self.next += 1;
+        }
+        owner.svc.outbox_notify().notify_one();
+        let crossed = |every: u64| before / every != self.next / every;
+        if crossed(10_000) || (self.next <= 10_000 && crossed(1000)) {
+            return Ok(Some(self.line("synthetic", &owner.hub)));
+        }
+        Ok(None)
+    }
+}
+
+/// A wave of bans (`ban-wave n=N minutes=M`): the owner bans `n` of the
+/// synthetic readers in, evenly over `m` minutes, spread over the tree
+/// as `communities-bench` spreads them (the worst cover); from each ban
+/// to the first epoch published that leaves it out (built after it, to
+/// the 5 s of a beat).
+struct Wave {
+    total: u64,
+    secs: u64,
+    pool: u64,
+    k: u64,
+    started: Instant,
+    banned_at: Vec<Instant>,
+    ban_ms: Vec<f64>,
+    errors: BTreeMap<String, u64>,
+    built_over: BTreeMap<u32, usize>,
+    credited: usize,
+    to_epoch_s: Vec<f64>,
+    head: u32,
+    head0: u32,
+    pub0: u64,
+}
+
+impl Wave {
+    async fn new(owner: &Bot, cid: &str, total: u64, minutes: u64, pool: u64, hub: &Hub) -> Self {
+        let head = keeper_state(owner, cid).await.and_then(|s| s.published_head.map(|h| h.epoch)).unwrap_or(0);
+        Self { total, secs: minutes.max(1) * 60, pool: pool.max(1), k: 0, started: Instant::now(), banned_at: Vec::new(), ban_ms: Vec::new(), errors: BTreeMap::new(),
+            built_over: BTreeMap::new(), credited: 0, to_epoch_s: Vec::new(), head, head0: head, pub0: hub.stats.get("pub_bytes") }
+    }
+
+    /// One beat; the line of the wave once it is over.
+    async fn step(&mut self, owner: &Bot, cid: &str) -> Result<Option<Value>> {
+        // What the keeper built and published since the last beat.
+        if let Some(s) = keeper_state(owner, cid).await {
+            if let Some(p) = s.pending.as_ref().map(|p| p.key.epoch) {
+                self.built_over.entry(p).or_insert(self.banned_at.len());
+            }
+            let now_head = s.published_head.as_ref().map_or(0, |h| h.epoch);
+            if now_head != self.head {
+                let over = self.built_over.get(&now_head).copied().unwrap_or(self.banned_at.len()).max(self.credited);
+                self.to_epoch_s.extend(self.banned_at[self.credited..over].iter().map(|t| t.elapsed().as_secs_f64()));
+                self.credited = over;
+                self.head = now_head;
+            }
+        }
+        let elapsed = self.started.elapsed().as_secs();
+        let due = (self.total * elapsed.min(self.secs) / self.secs).min(self.total);
+        if (self.banned_at.len() as u64) < due {
+            let log = owner.svc.log(cid).await?.ok_or_else(|| bad("no journal"))?;
+            let k = owner.svc.keeper(cid).await?.ok_or_else(|| bad("not kept here"))?;
+            let mut tries = 0;
+            while (self.banned_at.len() as u64) < due && tries < self.pool {
+                tries += 1;
+                let i = (self.k.wrapping_mul(999_983).wrapping_add(12_345)) % self.pool;
+                self.k += 1;
+                let who = stand::synthetic_pk(cid, i)?;
+                if log.state().is_banned(&who) || !k.lock().await.is_member(&who) {
+                    continue;
+                }
+                let t = Instant::now();
+                let r = {
+                    let lock = owner.svc.lock_of(cid).await;
+                    let _g = lock.lock().await;
+                    owner.svc.act(&owner.keys, cid, OpBody::Ban { who, reason: None }).await
+                };
+                match r {
+                    Ok(o) => {
+                        owner.apply(o);
+                        self.banned_at.push(t);
+                        self.ban_ms.push(t.elapsed().as_secs_f64() * 1000.0);
+                    }
+                    Err(e) => *self.errors.entry(e.to_string()).or_insert(0) += 1,
+                }
+            }
+            if tries >= self.pool && (self.banned_at.len() as u64) < due {
+                // Fewer readers in than bans asked: the wave is what it got.
+                self.total = self.banned_at.len() as u64;
+            }
+        }
+        let made = self.banned_at.len();
+        let over = made as u64 >= self.total && self.credited >= made;
+        let late = elapsed > self.secs + 15 * 60;
+        if !(over || late) {
+            return Ok(None);
+        }
+        Ok(Some(json!({ "event": "ban_wave", "ok": self.credited >= made && self.errors.is_empty(), "bans": made, "asked": self.total, "minutes": self.secs / 60,
+            "secs": self.started.elapsed().as_secs_f64(), "epochs": self.head - self.head0.min(self.head), "bans_not_out": made - self.credited.min(made),
+            "ban_ms": bench::quantiles(self.ban_ms.clone()), "ban_to_epoch_s": bench::quantiles(self.to_epoch_s.clone()), "errors": self.errors,
+            "pub_mb": ((owner.hub.stats.get("pub_bytes") - self.pub0) as f64 / 1_048_576.0 * 10.0).round() / 10.0, "at": now_secs() })))
+    }
+}
+
+/// The keeper to the owner's other device (wire §15), or, `emergency`,
+/// to a new device of the owner after this one is lost (spec §7.6): in a
+/// folder of its own with the owner's key, in this process; the process
+/// keeps the channel with it from here on (`channel.json`).
+async fn take_keeper(dir: &Path, cid: &str, hub: &Arc<Hub>, pacer: &Arc<Pacer>, owner: &mut Arc<Bot>, emergency: bool, tuning: &stand::Tuning) -> Result<Value> {
+    let event = if emergency { "emergency" } else { "handover" };
+    let from = keeper_dir(dir);
+    let mut n = 2;
+    while dir.join(format!("owner-{n}")).exists() {
+        n += 1;
+    }
+    let name = format!("owner-{n}");
+    std::fs::create_dir_all(dir.join(&name))?;
+    std::fs::copy(dir.join(&from).join("key"), dir.join(&name).join("key"))?;
+    let before = keeper_state(owner, cid).await;
+    let epoch_before = before.as_ref().and_then(|s| s.published_head.as_ref().map(|h| h.epoch)).unwrap_or(0);
+    let members = before.as_ref().map_or(0, |s| s.members.len());
+    let (pub0, wraps0) = (hub.stats.get("pub_bytes"), hub.stats.get(&format!("pub_{}", communities_core::notes::KIND_WRAP)));
+    let started = Instant::now();
+    let b = Bot::open(hub.clone(), &dir.join(&name), pacer.clone()).await?;
+    b.open_inboxes().await?;
+    let fail = |what: &str, b: &Bot| json!({ "event": event, "ok": false, "folder": name, "failed": what, "secs": started.elapsed().as_secs_f64(), "bot": b.counts.all() });
+    if !b.fetch_journal(cid, Duration::from_secs(60)).await? {
+        b.close().await;
+        return Ok(fail("the journal did not come", &b));
+    }
+    // The device has been the owner's for a while: in the channel, with
+    // the key of the newest epoch and its snapshot (an emergency rebuilds
+    // the readers from it).
+    let ready = wait_for(Duration::from_secs(600), || async {
+        b.admitted(cid).await && newest(&b, cid).await.is_some_and(|e| e >= epoch_before) && b.svc.member(&b.keys).latest_snapshot(cid).await.ok().flatten().is_some()
+    })
+    .await;
+    let ready_s = started.elapsed().as_secs_f64();
+    if !ready {
+        b.close().await;
+        return Ok(fail("the device did not catch up", &b));
+    }
+    if emergency {
+        // Lost: from here on it hears and sends nothing. Its inbox was the
+        // new device's connection too.
+        owner.close().await;
+        b.open_inboxes().await?;
+    }
+    let r = b.svc.keeper_take_at_head(&b.keys, cid, emergency, false, Duration::from_secs(60)).await;
+    let took = match r {
+        Ok(o) => {
+            b.apply(o);
+            None
+        }
+        Err(e) => Some(e.to_string()),
+    };
+    let take_s = started.elapsed().as_secs_f64();
+    if let Some(e) = took {
+        let mut v = fail("take", &b);
+        v["error"] = json!(e);
+        b.close().await;
+        if emergency {
+            // Found again: the stand goes on with the keeper it had.
+            *owner = Bot::open(hub.clone(), &dir.join(&from), pacer.clone()).await?;
+            owner.open_inboxes().await?;
+        }
+        return Ok(v);
+    }
+    // A hands its state over on its turn (it heard the journal name the
+    // next series); in an emergency nothing comes from it.
+    let moved = wait_for(Duration::from_secs(600), || async { b.svc.keeper(cid).await.ok().flatten().is_some() && (emergency || owner.svc.keeper(cid).await.ok().flatten().is_none()) }).await;
+    let moved_s = started.elapsed().as_secs_f64();
+    let series = b.svc.log(cid).await?.and_then(|l| l.state().keeper().cloned());
+    let from_epoch = series.as_ref().map_or(0, |s| s.from_epoch);
+    let _ = tuned(&b, cid, tuning).await;
+    let first = moved && wait_for(Duration::from_secs(900), || async { keeper_state(&b, cid).await.and_then(|s| s.published_head.map(|h| h.epoch)).is_some_and(|e| e >= from_epoch) }).await;
+    let first_s = started.elapsed().as_secs_f64();
+    if !emergency {
+        owner.close().await;
+        b.open_inboxes().await?;
+    }
+    let after = keeper_state(&b, cid).await;
+    let keeper = series.as_ref().map(|s| s.pubkey.as_hex().to_string()).unwrap_or_default();
+    note_channel(dir, |c| {
+        c.insert("keeper_dir".into(), json!(name));
+        let mut all: Vec<Value> = c.get("keepers").and_then(Value::as_array).cloned().unwrap_or_default();
+        all.push(json!(keeper));
+        c.insert("keepers".into(), Value::Array(all));
+    })?;
+    let v = json!({ "event": event, "ok": moved && first, "folder": name, "from": from, "serial": series.as_ref().map(|s| s.serial), "from_epoch": from_epoch,
+        "epoch_before": epoch_before, "members_before": members, "state": after.as_ref().map(summary),
+        "ready_s": ready_s, "take_s": take_s, "moved_s": moved_s, "first_epoch_s": first_s, "notes": hub.stats.get(&format!("pub_{}", communities_core::notes::KIND_WRAP)) - wraps0,
+        "pub_mb": ((hub.stats.get("pub_bytes") - pub0) as f64 / 1_048_576.0 * 10.0).round() / 10.0, "at": now_secs() });
+    *owner = b;
+    Ok(v)
+}
+
 async fn keeper(args: &Args, dir: &Path, hub: Arc<Hub>, pacer: Arc<Pacer>) -> Result<bool> {
     let cid = cid_of(dir, args)?;
+    let tuning = stand::Tuning::from_env();
     let saved_path = dir.join("keeper-state.json");
-    let mut owner = Bot::open(hub.clone(), &dir.join("owner"), pacer.clone()).await?;
+    let mut owner = Bot::open(hub.clone(), &dir.join(keeper_dir(dir)), pacer.clone()).await?;
     owner.open_inboxes().await?;
     let mut ok = true;
     let loaded = keeper_state(&owner, &cid).await.ok_or_else(|| bad("this folder keeps no keeper of the channel"))?;
+    let limits = tuned(&owner, &cid, &tuning).await.map(|k| async move { stand::Tuning::now_of(&*k.lock().await) });
+    let limits = match limits {
+        Some(f) => Some(f.await),
+        None => None,
+    };
+    let limits = limits.map(|(j, r)| json!({ "joins_per_minute": j, "max_readers": r }));
     if let Ok(s) = std::fs::read_to_string(&saved_path) {
         let saved: keydist::KeeperState = serde_json::from_str(&s)?;
         let equal = saved == loaded;
         ok &= equal;
-        out(json!({ "event": "loaded", "equal_to_saved": equal, "state": summary(&loaded) }));
+        out(json!({ "event": "loaded", "equal_to_saved": equal, "state": summary(&loaded), "limits": limits }));
     } else {
-        out(json!({ "event": "loaded", "state": summary(&loaded) }));
+        out(json!({ "event": "loaded", "state": summary(&loaded), "limits": limits }));
     }
     let minutes = args.num("minutes", 600);
     let end = Instant::now() + Duration::from_secs(minutes * 60);
     let mut off_at = args.get("off-after").and_then(|v| v.parse::<u64>().ok()).map(|s| Instant::now() + Duration::from_secs(s));
     let mut off_minutes = args.num("off-minutes", 0);
     let mut back_at: Option<Instant> = None;
+    let mut synth = Synth::new(args.num("synthetic", 0));
+    note_synthetic(dir, synth.want)?;
+    let mut wave: Option<Wave> = None;
     let (tx, mut lines) = tokio::sync::mpsc::unbounded_channel::<String>();
     tokio::spawn(async move {
         let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
@@ -357,6 +713,7 @@ async fn keeper(args: &Args, dir: &Path, hub: Arc<Hub>, pacer: Arc<Pacer>) -> Re
             _ = beat.tick() => {}
             line = lines.recv() => {
                 let line = line.unwrap_or_else(|| "eof".into());
+                let a = kv(&line);
                 let mut w = line.split_whitespace();
                 match w.next().unwrap_or("") {
                     "pause" => {
@@ -370,13 +727,35 @@ async fn keeper(args: &Args, dir: &Path, hub: Arc<Hub>, pacer: Arc<Pacer>) -> Re
                             out(json!({ "event": "state", "state": summary(&s), "scopes": scopes_summary(&owner, &cid).await, "snapshot_at": snap, "now": now_secs() }));
                         }
                     }
-                    "stats" => out(json!({ "event": "stats", "relay": hub.stats.all(), "hosts": owner.hosts.counts.all(), "bot": owner.counts.all() })),
+                    "stats" => out(json!({ "event": "stats", "relay": hub.stats.all(), "hosts": owner.hosts.counts.all(), "bot": owner.counts.all(),
+                        "synthetic": synth.line("synthetic", &hub), "traffic": traffic::mine(), "run_traffic": traffic::run_total() })),
+                    "synthetic" => {
+                        synth.more(a.get("n").and_then(|v| v.parse().ok()).unwrap_or(0));
+                        note_synthetic(dir, synth.want)?;
+                        out(synth.line("synthetic", &hub));
+                    }
+                    "ban-wave" => {
+                        let n = a.get("n").and_then(|v| v.parse().ok()).unwrap_or(0);
+                        let m = a.get("minutes").and_then(|v| v.parse().ok()).unwrap_or(60);
+                        // The synthetic readers of this process and of those before it.
+                        let pool = synth.want.max(channel(dir)?["synthetic"].as_u64().unwrap_or(0));
+                        wave = Some(Wave::new(&owner, &cid, n, m, pool, &hub).await);
+                        out(json!({ "event": "ban_wave_started", "bans": n, "minutes": m, "pool": pool, "at": now_secs() }));
+                    }
+                    "handover" | "emergency" => {
+                        let emergency = line.trim() == "emergency";
+                        let v = take_keeper(dir, &cid, &hub, &pacer, &mut owner, emergency, &tuning).await?;
+                        ok &= v["ok"].as_bool().unwrap_or(false);
+                        // A new device has no door of its own until it is asked.
+                        synth.door = None;
+                        out(v);
+                    }
                     "restart" => {
                         // The device goes off and comes back: the service
                         // anew from its rows, nothing kept in memory.
                         let before = keeper_state(&owner, &cid).await;
                         owner.close().await;
-                        owner = Bot::open(hub.clone(), &dir.join("owner"), pacer.clone()).await?;
+                        owner = Bot::open(hub.clone(), &dir.join(keeper_dir(dir)), pacer.clone()).await?;
                         owner.open_inboxes().await?;
                         let after = keeper_state(&owner, &cid).await;
                         let equal = before.is_some() && before == after;
@@ -404,6 +783,19 @@ async fn keeper(args: &Args, dir: &Path, hub: Arc<Hub>, pacer: Arc<Pacer>) -> Re
                 out(json!({ "event": "resumed", "at": now_secs() }));
             }
         }
+        if !hub.is_offline(owner.id) {
+            let _ = tuned(&owner, &cid, &tuning).await;
+            if let Some(v) = synth.step(&owner, &cid, &tuning).await? {
+                out(v);
+            }
+            if let Some(w) = wave.as_mut() {
+                if let Some(v) = w.step(&owner, &cid).await? {
+                    ok &= v["ok"].as_bool().unwrap_or(false);
+                    out(v);
+                    wave = None;
+                }
+            }
+        }
         if let Some(s) = keeper_state(&owner, &cid).await {
             let sum = json!({ "state": summary(&s), "scopes": scopes_summary(&owner, &cid).await });
             if sum != last {
@@ -418,7 +810,7 @@ async fn keeper(args: &Args, dir: &Path, hub: Arc<Hub>, pacer: Arc<Pacer>) -> Re
     if let Some(s) = keeper_state(&owner, &cid).await {
         std::fs::write(&saved_path, serde_json::to_string(&s)?)?;
     }
-    out(json!({ "event": "stopped", "relay": hub.stats.all(), "hosts": owner.hosts.counts.all(), "bot": owner.counts.all() }));
+    out(json!({ "event": "stopped", "relay": hub.stats.all(), "hosts": owner.hosts.counts.all(), "bot": owner.counts.all(), "synthetic": synth.line("synthetic", &hub), "traffic": traffic::mine() }));
     owner.close().await;
     Ok(ok)
 }
@@ -449,11 +841,7 @@ async fn one(args: &Args, dir: &Path, cmd: &str, hub: Arc<Hub>, pacer: Arc<Pacer
     // hide a post from those who came with the new epoch, `from_join`).
     // The newest epoch on the relay too: a process just started may not
     // have heard the rotation a moment ago (run h of the trial).
-    let on_relay = hub
-        .fetch_plain(&json!({ "kinds": [communities_core::wire::KIND_EPOCH], "#h": [cid], "limit": 1 }))
-        .await
-        .ok()
-        .and_then(|evs| evs.iter().filter_map(|e| e["tags"].as_array()?.iter().find(|t| t[0] == "n")?[1].as_str()?.parse::<i64>().ok()).max());
+    let on_relay = relay_newest_epoch(&hub, &cid).await;
     let caught = wait_for(Duration::from_secs(60), || async {
         let newest_heard = look::known_epochs(&bot, &cid).await.ok().and_then(|e| e.last().copied());
         let held = newest(&bot, &cid).await.map(i64::from);
@@ -604,6 +992,109 @@ async fn one(args: &Args, dir: &Path, cmd: &str, hub: Arc<Hub>, pacer: Arc<Pacer
     Ok(ok)
 }
 
+/// The newest epoch of the channel on the relay.
+async fn relay_newest_epoch(hub: &Hub, cid: &str) -> Option<i64> {
+    hub.fetch_plain(&json!({ "kinds": [communities_core::wire::KIND_EPOCH], "#h": [cid], "limit": 1 }))
+        .await
+        .ok()
+        .and_then(|evs| evs.iter().filter_map(|e| e["tags"].as_array()?.iter().find(|t| t[0] == "n")?[1].as_str()?.parse::<i64>().ok()).max())
+}
+
+// ─── cleanup ────────────────────────────────────────────────────────────────
+
+/// Files named `name` under `dir`, at any depth.
+fn files_named(dir: &Path, name: &str, into: &mut Vec<PathBuf>) {
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            files_named(&p, name, into);
+        } else if p.file_name().is_some_and(|n| n == name) {
+            into.push(p);
+        }
+    }
+}
+
+/// What a run of the stand left on the test servers (ROO-474): every
+/// blob it put, deleted on its host by the bot that put it
+/// (`COMMUNITIES_TRIAL_UPLOADS`, else `uploads.jsonl` of `--dir`); and
+/// the events on the relay, as filters for `strfry delete` on the server
+/// (`{"filter": …}` lines; a relay deletes for its operator, not for a
+/// client): the channels by `#h`/`#d`, everything the bots and keepers
+/// signed, every note to a bot, a keeper or a synthetic reader.
+async fn cleanup(dir: &Path) -> Result<bool> {
+    let mut keys: BTreeMap<String, nostr::key::Keys> = BTreeMap::new();
+    let mut found = Vec::new();
+    files_named(dir, "key", &mut found);
+    for p in found {
+        let Ok(hex) = std::fs::read_to_string(&p) else { continue };
+        let Ok(sk) = nostr::key::SecretKey::from_hex(hex.trim()) else { continue };
+        let k = nostr::key::Keys::new(sk);
+        keys.insert(k.public_key().to_hex(), k);
+    }
+    let uploads = std::env::var_os("COMMUNITIES_TRIAL_UPLOADS").filter(|p| !p.is_empty()).map(PathBuf::from).unwrap_or_else(|| dir.join("uploads.jsonl"));
+    let mut puts = std::collections::BTreeSet::new();
+    for l in std::fs::read_to_string(&uploads).unwrap_or_default().lines() {
+        let Ok(v) = serde_json::from_str::<Value>(l) else { continue };
+        let f = |k: &str| v[k].as_str().unwrap_or("").to_string();
+        puts.insert((f("host"), f("sha256"), f("uploader")));
+    }
+    let hosts = store::CountingHosts::new(Pacer::new(GETS_PER_SEC))?;
+    let app_keys: Vec<(String, String)> = std::env::var("COMMUNITIES_APP_KEYS")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|p| p.trim().split_once('=').map(|(h, k)| (h.to_string(), k.to_string())))
+        .collect();
+    let (mut deleted, mut unknown, mut errors) = (0u64, 0u64, BTreeMap::<String, u64>::new());
+    for (host, sha, by) in &puts {
+        let Some(k) = keys.get(by) else {
+            unknown += 1;
+            continue;
+        };
+        // A host of the kit lets a blob go with the app key of its server.
+        let key = app_keys.iter().find(|(h, _)| h.trim_end_matches('/') == host.trim_end_matches('/')).map(|(_, k)| k.as_str());
+        match communities_core::blobs::BlobHosts::delete_keyed(&hosts, k, key, host, sha).await {
+            Ok(()) => deleted += 1,
+            Err(e) => *errors.entry(e.to_string().chars().take(120).collect()).or_insert(0) += 1,
+        }
+    }
+    let mut channels = Vec::new();
+    files_named(dir, "channel.json", &mut channels);
+    let (mut cids, mut signers, mut synthetic) = (Vec::new(), keys.keys().cloned().collect::<Vec<_>>(), 0u64);
+    let mut to: Vec<String> = signers.clone();
+    for p in channels {
+        let Ok(c) = std::fs::read_to_string(&p).map_err(|_| ()).and_then(|s| serde_json::from_str::<Value>(&s).map_err(|_| ())) else { continue };
+        let Some(cid) = c["community_id"].as_str() else { continue };
+        cids.push(cid.to_string());
+        let keepers = std::iter::once(&c["keeper"]).chain(c["keepers"].as_array().into_iter().flatten()).filter_map(Value::as_str).filter(|k| !k.is_empty());
+        for k in keepers {
+            signers.push(k.to_string());
+            to.push(k.to_string());
+        }
+        let n = c["synthetic"].as_u64().unwrap_or(0);
+        synthetic += n;
+        for i in 0..n {
+            to.push(stand::synthetic_pk(cid, i)?.as_hex().to_string());
+        }
+    }
+    signers.sort();
+    signers.dedup();
+    to.sort();
+    to.dedup();
+    let mut filters = vec![json!({ "#h": cids }), json!({ "#d": cids })];
+    filters.extend(signers.chunks(500).map(|c| json!({ "authors": c })));
+    filters.extend(to.chunks(500).map(|c| json!({ "kinds": [communities_core::notes::KIND_WRAP], "#p": c })));
+    if cids.is_empty() {
+        filters.clear();
+    }
+    for f in &filters {
+        out(json!({ "filter": f }));
+    }
+    let ok = errors.is_empty() && unknown == 0;
+    out(json!({ "event": "cleanup", "ok": ok, "blobs_put": puts.len(), "blobs_deleted": deleted, "unknown_uploader": unknown, "errors": errors,
+        "channels": cids.len(), "signers": signers.len(), "recipients": to.len(), "synthetic": synthetic, "filters": filters.len() }));
+    Ok(ok)
+}
+
 // ─── relay-stats ────────────────────────────────────────────────────────────
 
 /// What the relay holds of a channel, by kind: every page of 500.
@@ -726,7 +1217,7 @@ impl Swarm {
         let keyed = secs.len();
         Ok(json!({
             "phase": "join", "ok": todo.is_empty(), "asked": asked.len(), "admitted": keyed, "retried": retried, "secs": started.elapsed().as_secs_f64(),
-            "p50": percentile(&mut secs, 0.5), "p95": percentile(&mut secs, 0.95), "max": percentile(&mut secs, 1.0),
+            "p50": percentile(&mut secs, 0.5), "p95": percentile(&mut secs, 0.95), "p99": percentile(&mut secs, 0.99), "max": percentile(&mut secs, 1.0),
         }))
     }
 
@@ -833,6 +1324,14 @@ impl Swarm {
         let everyone = want.get("all").is_some_and(|v| v == "1");
         let mut bad_ones = Vec::new();
         let mut not_in: usize;
+        // When each bot first agreed.
+        let mut good_at: BTreeMap<usize, f64> = BTreeMap::new();
+        // `open=1`: a bot that does not agree yet opens its inbox
+        // (`inboxes` at once, each for `PER_BOT`), where a bundle of the
+        // keeper comes (an emergency generation): a reader of the stand
+        // holds no inbox after its join, a device of the app does.
+        let opening = want.get("open").is_some_and(|v| v == "1");
+        let mut opened: BTreeMap<usize, Instant> = BTreeMap::new();
         loop {
             bad_ones.clear();
             not_in = 0;
@@ -847,6 +1346,26 @@ impl Swarm {
                 }
                 if !check(&l) {
                     bad_ones.push(l);
+                    if opening {
+                        match opened.get(&i) {
+                            Some(t) if t.elapsed() > PER_BOT => {
+                                self.bots[i].close_inbox().await;
+                                opened.remove(&i);
+                            }
+                            None if opened.len() < self.inboxes => {
+                                if let Err(e) = self.bots[i].open_inboxes().await {
+                                    eprintln!("{}: inbox: {e}", self.bots[i].name);
+                                }
+                                opened.insert(i, Instant::now());
+                            }
+                            _ => {}
+                        }
+                    }
+                } else {
+                    good_at.entry(i).or_insert_with(|| started.elapsed().as_secs_f64());
+                    if opened.remove(&i).is_some() {
+                        self.bots[i].close_inbox().await;
+                    }
                 }
             }
             if bad_ones.is_empty() || started.elapsed() > timeout {
@@ -854,8 +1373,12 @@ impl Swarm {
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
+        for i in opened.into_keys() {
+            self.bots[i].close_inbox().await;
+        }
         let sample: Vec<Value> = bad_ones.iter().take(5).map(|l| json!(l)).collect();
-        Ok(json!({ "check": &want, "ok": bad_ones.is_empty(), "bots": idx.len(), "not_in": not_in, "bad": bad_ones.len(), "sample": sample, "secs": started.elapsed().as_secs_f64() }))
+        Ok(json!({ "check": &want, "ok": bad_ones.is_empty(), "bots": idx.len(), "not_in": not_in, "bad": bad_ones.len(), "sample": sample, "secs": started.elapsed().as_secs_f64(),
+            "to_good_s": bench::quantiles(good_at.into_values().collect()) }))
     }
 
     /// Waits until every bot of `idx` agrees on a scope (`scope=`): `posts`
@@ -1088,8 +1611,56 @@ impl Swarm {
             gets.push(b.hosts.gets() as f64);
         }
         let avg = if gets.is_empty() { 0.0 } else { gets.iter().sum::<f64>() / gets.len() as f64 };
+        // From each bot's join to its first key, of the joins of this process.
+        let to_key: Vec<f64> = self.bots.iter().filter_map(|b| b.join_secs()).collect();
         json!({ "stats": "swarm", "bots": self.bots.len(), "inboxes_open": self.hub.inboxes_open().await, "relay": self.hub.stats.all(), "hosts": hosts, "events": bots,
-            "gets_per_bot": { "min": percentile(&mut gets, 0.0), "avg": avg, "max": percentile(&mut gets, 1.0) } })
+            "gets_per_bot": { "min": percentile(&mut gets, 0.0), "avg": avg, "max": percentile(&mut gets, 1.0) }, "time_to_key_s": bench::quantiles(to_key),
+            "offline": self.bots.iter().filter(|b| self.hub.is_offline(b.id)).count(), "traffic": traffic::mine() })
+    }
+
+    /// The bots `idx` off the network (a phone in a drawer): nothing comes
+    /// to them, nothing goes, no cycle.
+    fn offline(&self, idx: &[usize]) -> Value {
+        for &i in idx {
+            self.bots[i].set_offline(true);
+        }
+        json!({ "done": "offline", "bots": idx.len(), "at": now_secs() })
+    }
+
+    /// The bots `idx` back on the network: each catches up on its own, and
+    /// the time until it holds the newest epoch on the relay now, with the
+    /// GETs and the events it took meanwhile.
+    async fn online(&self, idx: &[usize], timeout: Duration) -> Result<Value> {
+        let target = relay_newest_epoch(&self.hub, &self.cid).await.unwrap_or(0);
+        let sum = |k: &str| -> u64 { idx.iter().map(|&i| self.bots[i].counts.get(k)).sum() };
+        let gets0: u64 = idx.iter().map(|&i| self.bots[i].hosts.gets()).sum();
+        let (hist0, live0) = (sum("history"), sum("live"));
+        let started = Instant::now();
+        for &i in idx {
+            self.bots[i].set_offline(false);
+        }
+        let mut done: BTreeMap<usize, f64> = BTreeMap::new();
+        loop {
+            for &i in idx {
+                if done.contains_key(&i) {
+                    continue;
+                }
+                let held = look::held(&self.bots[i], &self.cid).await?;
+                // Put out meanwhile (a ban): caught up when the journal says so.
+                let out = look::membership(&self.bots[i], &self.cid).await? == communities_core::service::MEMBERSHIP_LEFT;
+                if out || held.last().is_some_and(|e| *e >= target) {
+                    done.insert(i, started.elapsed().as_secs_f64());
+                }
+            }
+            if done.len() == idx.len() || started.elapsed() > timeout {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        let gets: u64 = idx.iter().map(|&i| self.bots[i].hosts.gets()).sum::<u64>() - gets0;
+        Ok(json!({ "done": "online", "ok": done.len() == idx.len(), "bots": idx.len(), "caught_up": done.len(), "target_epoch": target,
+            "to_epoch_s": bench::quantiles(done.into_values().collect()), "gets": gets, "history_events": sum("history") - hist0, "live_events": sum("live") - live0,
+            "secs": started.elapsed().as_secs_f64() }))
     }
 
     async fn status(&self) -> Result<Value> {
@@ -1162,6 +1733,12 @@ impl Swarm {
                 }
                 json!({ "done": "shards", "bots": out })
             }
+            "offline" => self.offline(&idx),
+            "online" => {
+                let v = self.online(&idx, Duration::from_secs(num("timeout", 900))).await?;
+                let ok = v["ok"].as_bool().unwrap_or(false);
+                return Ok((v, ok));
+            }
             "pubkeys" => json!({ "pubkeys": idx.iter().map(|&i| self.bots[i].pubkey()).collect::<Vec<_>>() }),
             "status" => self.status().await?,
             "stats" => self.stats().await,
@@ -1203,6 +1780,18 @@ async fn swarm(args: &Args, dir: &Path, hub: Arc<Hub>, pacer: Arc<Pacer>) -> Res
         let v = s.expect(&all, &want).await?;
         ok &= v["ok"].as_bool().unwrap_or(false);
         out(json!({ "phase": "comments", "result": v }));
+    }
+    if let Some(after) = args.get("offline-after").and_then(|v| v.parse::<u64>().ok()) {
+        // Away and back by the clock: `--offline-bots` (all) go off the
+        // network `after` s past the joins, come back `--return-after` s
+        // later and catch up.
+        let idx = pick(args.get("offline-bots"), n);
+        tokio::time::sleep(Duration::from_secs(after)).await;
+        out(json!({ "phase": "offline", "result": s.offline(&idx) }));
+        tokio::time::sleep(Duration::from_secs(args.num("return-after", 3600))).await;
+        let v = s.online(&idx, Duration::from_secs(minutes * 60)).await?;
+        ok &= v["ok"].as_bool().unwrap_or(false);
+        out(json!({ "phase": "offline_return", "result": v }));
     }
     out(s.stats().await);
     if args.flag("stdin") {

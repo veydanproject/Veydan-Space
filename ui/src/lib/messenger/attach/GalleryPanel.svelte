@@ -8,8 +8,9 @@
   import Icon from '$lib/core/Icon.svelte';
   import type { AttachPanelProps } from '../seams/attach.svelte';
   import { mediaLibrary } from './library';
+  import { cameraAllowed, openPreview } from '../media/capture';
   import { CAMERA_DENIED, type Album, type MediaAccess, type MediaItem } from './MediaLibrary';
-  import { CAPTURE_ID, GalleryModel, ThumbQueue, Viewer, durationLabel, reread, rowWindow } from './gallery.svelte';
+  import { CAPTURE_ID, CameraPreview, GalleryModel, ThumbQueue, Viewer, durationLabel, reread, rowWindow } from './gallery.svelte';
 
   let { ctx, done, bar }: AttachPanelProps = $props();
   const library = mediaLibrary();
@@ -21,7 +22,6 @@
 
   /** `null` while it is read; a source without a grid never asks. */
   let access = $state<MediaAccess | null>(caps.grid ? null : 'denied');
-  let original = $state(false);
   let note = $state('');
   let albums = $state.raw<Album[] | null>(null);
   let choosingAlbum = $state(false);
@@ -48,13 +48,50 @@
   }
 
   const onVisible = () => {
-    if (document.visibilityState === 'visible') void readAccess();
+    if (document.visibilityState === 'visible') {
+      void readAccess();
+      void startPreview();
+    } else stopPreview();
   };
+
+  // ─── The tile of the camera: what the camera sees, when it was allowed; a tap offers photo or video ───
+
+  let choosing = $state(false);
+  let gone = false;
+  /** The tile is drawn only over the grid. */
+  const tileShown = $derived(caps.capture && caps.grid && !!access && access !== 'denied');
+  const camera = new CameraPreview(
+    () => !gone && tileShown && document.visibilityState === 'visible',
+    cameraAllowed,
+    openPreview,
+  );
+  const preview = $derived(camera.stream);
+  const startPreview = (ask = false) => camera.start(ask);
+  const stopPreview = () => camera.stop();
+  $effect(() => {
+    if (tileShown) untrack(() => void startPreview());
+    else untrack(stopPreview);
+  });
+
+  /** The stub asks for the camera; whatever the answer, the choice opens: the system's camera needs no preview. */
+  async function pressCamera() {
+    if (!preview) await startPreview(true);
+    choosing = true;
+  }
+
+  function showStream(el: HTMLVideoElement, stream: MediaStream | null) {
+    el.srcObject = stream;
+    return { update: (next: MediaStream | null) => { el.srcObject = next; } };
+  }
   onMount(() => {
     void readAccess();
     document.addEventListener('visibilitychange', onVisible);
   });
-  onDestroy(() => document.removeEventListener('visibilitychange', onVisible));
+  onDestroy(() => {
+    gone = true;
+    document.removeEventListener('visibilitychange', onVisible);
+    stopPreview();
+  });
 
   async function allow() {
     try {
@@ -109,7 +146,7 @@
   }
 
   function add() {
-    if (model.chosen.length) done({ type: 'files', paths: model.paths(), original });
+    if (model.chosen.length) done({ type: 'files', paths: model.paths(), original: false });
   }
 
   $effect(() => {
@@ -119,6 +156,9 @@
 
   async function capture(kind: 'photo' | 'video') {
     note = '';
+    choosing = false;
+    // The system's camera needs the device to itself.
+    stopPreview();
     try {
       const path = await library.capture(kind);
       if (!path) return;
@@ -129,12 +169,14 @@
     } catch (e) {
       const text = String(e instanceof Error ? e.message : e);
       note = text.includes(CAMERA_DENIED) ? $t('msg_attach_camera_denied') : $t('msg_attach_camera_failed');
+    } finally {
+      void startPreview();
     }
   }
 
   async function pickSystem() {
     const paths = await library.pickSystem({ multiple: true, kind: 'media' });
-    if (paths.length) done({ type: 'files', paths: [...model.paths(), ...paths], original });
+    if (paths.length) done({ type: 'files', paths: [...model.paths(), ...paths], original: false });
   }
 
   // ─── The viewer and the albums ───
@@ -173,10 +215,6 @@
 
 {#snippet addBar()}
   <div class="add-bar">
-    <label class="orig">
-      <button type="button" class="toggle" class:on={original} role="switch" aria-checked={original} aria-label={$t('msg_xfer_original')} onclick={() => (original = !original)}></button>
-      <span>{$t('msg_xfer_original')}</span>
-    </label>
     <button type="button" class="m-btn-grad add" onclick={add}>{$t('msg_attach_add', { n: String(model.chosen.length) })}</button>
   </div>
 {/snippet}
@@ -216,18 +254,27 @@
     </div>
     {#if note}<div class="note" role="status">{note}</div>{/if}
 
-    <div class="scroll" bind:this={scroller} bind:clientHeight={viewH} bind:clientWidth={viewW} onscroll={(e) => (scrollTop = (e.currentTarget as HTMLElement).scrollTop)}>
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="scroll" onclickcapture={(e) => { if (!(e.target as Element).closest?.('.camera')) choosing = false; }} bind:this={scroller} bind:clientHeight={viewH} bind:clientWidth={viewW} onscroll={(e) => { scrollTop = (e.currentTarget as HTMLElement).scrollTop; choosing = false; }}>
       <div class="space" style:height="{Math.max(0, rows * rowH - GAP)}px">
         {#each shown as s (s.item?.id ?? 'camera')}
           <div class="cell" style:width="{side}px" style:height="{side}px" style:transform="translate({s.col * (side + GAP)}px, {s.row * rowH}px)">
             {#if !s.item}
-              <div class="camera">
-                <button type="button" class="cam-photo" onclick={() => capture('photo')}>
-                  <Icon name="camera" size={22} /><span>{$t('msg_attach_camera')}</span>
-                </button>
-                <button type="button" class="cam-video" onclick={() => capture('video')}>
-                  <Icon name="video" size={16} /><span>{$t('msg_attach_camera_video')}</span>
-                </button>
+              <div class="camera" class:live={!!preview}>
+                {#if preview}
+                  <!-- svelte-ignore a11y_media_has_caption -->
+                  <video use:showStream={preview} autoplay muted playsinline aria-hidden="true"></video>
+                {/if}
+                {#if choosing}
+                  <div class="cam-choice">
+                    <button type="button" onclick={() => capture('photo')}><Icon name="camera" size={18} /><span>{$t('msg_attach_camera')}</span></button>
+                    <button type="button" onclick={() => capture('video')}><Icon name="video" size={18} /><span>{$t('msg_attach_camera_video')}</span></button>
+                  </div>
+                {:else if preview}
+                  <button type="button" class="cam-hit" onclick={pressCamera} aria-label={$t('msg_attach_camera')}></button>
+                {:else}
+                  <button type="button" class="cam-stub" onclick={pressCamera}><Icon name="camera" size={22} /><span>{$t('msg_attach_allow')}</span></button>
+                {/if}
               </div>
             {:else}
               {@const item = s.item}
@@ -323,18 +370,15 @@
   /* A larger place to hit than to see. */
   .pick-circle::before { content: ''; position: absolute; inset: calc(-1 * var(--sp-2)); }
 
-  .camera {
-    width: 100%; height: 100%; display: flex; flex-direction: column; border-radius: var(--radius-xs); overflow: hidden;
-    background: var(--accent-tint); color: var(--accent-text);
-  }
-  .camera button {
-    border: 0; background: transparent; color: inherit; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    display: flex; align-items: center; justify-content: center; gap: var(--sp-1); min-width: 0; padding: 0 var(--sp-1);
-  }
-  .camera span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cam-photo { flex: 1; flex-direction: column; }
-  .cam-video { flex: 0 0 34%; border-top: 1px solid var(--accent-tint-border); }
-  .camera button:active { background: var(--accent-bg); }
+  /* What the camera sees, or the stub when it may not: the tile is the button. */
+  .camera { position: relative; width: 100%; height: 100%; border-radius: var(--radius-xs); overflow: hidden; background: var(--surface-2); color: var(--text-2); }
+  .camera video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .camera button { border: 0; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); min-width: 0; padding: 0 var(--sp-1); }
+  .cam-hit { position: absolute; inset: 0; background: none; }
+  .cam-stub { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-1); background: none; color: inherit; text-align: center; }
+  .cam-choice { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 2px; }
+  .cam-choice button { flex: 1; display: flex; align-items: center; justify-content: center; gap: var(--sp-1); background: var(--media-scrim); color: #fff; }
+  .cam-choice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .viewer {
     position: absolute; inset: 0; z-index: var(--z-panel); border-radius: var(--radius-md); overflow: hidden;
@@ -349,8 +393,6 @@
   .albums { position: absolute; inset: var(--control-h) 0 0; z-index: var(--z-panel); overflow-y: auto; background: var(--m-sheet); border-radius: var(--radius-md); }
   .none { padding: var(--sp-6) 0; }
 
-  .add-bar { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0; }
-  .orig { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text-2); font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
-  .orig span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .add-bar { display: flex; align-items: center; width: 100%; min-width: 0; }
   .add { flex: 1 0 auto; width: auto; min-height: var(--control-h-lg); padding: 0 var(--sp-4); }
 </style>

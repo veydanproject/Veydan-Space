@@ -99,7 +99,7 @@
     display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
   }
   @media (hover: hover) { .dial:hover:not(:disabled) { background: var(--success-bg); } }
-  .dial:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .dial:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .dial:disabled { opacity: 0.45; cursor: default; }
   .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
   @media (pointer: coarse) { .search { min-height: 48px; } .dial { width: 44px; height: 44px; } }

@@ -81,6 +81,18 @@ describe('the feed of a channel', () => {
     expect(feedStore.shown(k)).toHaveLength(2);
   });
 
+  it('shows nothing of what the database forgot, the newest page empty (a ban heard after a post since it)', () => {
+    const k = feedKey('c');
+    const t = threadKey('c', 'p001');
+    feedStore.merge(k, page([post(1)], { next: { created_at: 1001, id: 'p001' } }));
+    feedStore.merge(t, page([post(2, { post_id: 'p001' })]));
+    feedStore.merge(k, page([]));
+    feedStore.merge(t, page([]));
+    expect(feedStore.shown(k)).toEqual([]);
+    expect(feedStore.list(k)?.next).toBeUndefined();
+    expect(feedStore.shown(t)).toEqual([]);
+  });
+
   it('says the relays were asked only of an empty list', () => {
     feedStore.merge(feedKey('c'), page([], { asked: true }));
     expect(feedStore.list(feedKey('c'))?.asked).toBe(true);

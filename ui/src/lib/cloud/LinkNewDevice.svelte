@@ -7,7 +7,8 @@
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import { VAULT_UNREACHABLE } from '$lib/cloud/api';
-  import { linkErrorKey, NewDeviceLink, qrDataUrl } from '$lib/cloud/link.svelte';
+  import { qrPicture } from '$lib/core/ui/qrPicture';
+  import { linkErrorKey, NewDeviceLink } from '$lib/cloud/link.svelte';
   import Actions from '$lib/cloud/Actions.svelte';
   import Countdown from '$lib/cloud/Countdown.svelte';
   import StateView from '$lib/cloud/StateView.svelte';
@@ -19,6 +20,17 @@
   /** How long the code lived when it was shown: the line of the countdown runs from here. */
   let total = $state(0);
   let timer: ReturnType<typeof setInterval> | null = null;
+
+  /** The code as the app shows every code, the logo in it; null while it is drawn. */
+  let qr = $state<string | null>(null);
+  $effect(() => {
+    const svg = link.shown?.qr_svg;
+    qr = null;
+    if (!svg) return;
+    let live = true;
+    void qrPicture(svg).then((src) => { if (live) qr = src; });
+    return () => { live = false; };
+  });
 
   const errorText = $derived.by(() => {
     const key = linkErrorKey(link.error);
@@ -124,8 +136,8 @@
   </StateView>
 {:else if link.shown}
   <p class="text">{$t('cloud_link_new_hint')}</p>
-  <!-- Drawn in Rust by the generator of group links, shown as an image: nothing inside it can run. -->
-  <img class="qr" src={qrDataUrl(link.shown.qr_svg)} alt={$t('cloud_link_qr_alt')} />
+  <!-- Drawn in Rust as every code of the app, shown as an image: nothing inside it can run. -->
+  {#if qr}<img class="qr" src={qr} alt={$t('cloud_link_qr_alt')} />{:else}<div class="qr" aria-busy="true"></div>{/if}
   <div class="block">
     <span class="section-label">{$t('cloud_link_words')}</span>
     <WordChips words={link.shown.words} numbered />
@@ -151,7 +163,9 @@
   .text.small { font-size: var(--fs-sm); }
   .form { display: flex; flex-direction: column; gap: var(--sp-3); }
   /* A QR code is black on white in either theme: a camera reads nothing else as well. */
-  .qr { align-self: center; width: min(232px, 100%); height: auto; background: #fff; border-radius: var(--radius-lg); padding: var(--sp-2); image-rendering: pixelated; }
+  /* The card of the code is in the picture, white whatever the theme. */
+  /* The code of a link is long, its modules many: at 232px a module was 3 pixels and a screenshot read by «from a picture» lost it; at 320px it is 4, as the code of level M was at 232px. */
+  .qr { align-self: center; width: min(320px, 100%); aspect-ratio: 1; height: auto; }
   .check { padding: var(--sp-4); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); }
   .foot { padding-top: var(--sp-2); }
   .wait { margin: 0; display: flex; align-items: center; gap: var(--sp-2); color: var(--text-2); font-size: var(--fs-base); }

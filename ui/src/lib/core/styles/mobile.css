@@ -6,9 +6,23 @@
 
 :root {
   --touch: 44px;
-  --nav-h: 64px;
+  --kb: 0px; /* the keyboard's height: the host (Android) sets it on <html> as it comes and goes */
+  --hit-row: 4px; /* the room a sideways-scrolling row keeps for its controls zones */
+  --hit-max: 22px; /* the most a zone may grow on a side, see the hit area rule below */
+  /* The slot of the tab bar: its 56 plate and 12 of air above it, where the counts stand out of the plate (10 and their 2 ring). */
+  --nav-h: 68px;
+  --bar-plate-h: 64px; /* a plain bar (the attach strip, a bulk bar) */
+  /* No growth to the screen edge unless a control or its header says so (the hit area rule below). */
+  --hit-t: 0px;
+  --hit-b: 0px;
+  --hit-l: 0px;
+  --hit-r: 0px;
+  --edge-l: 0px;
+  --edge-r: 0px;
+  --edge-t: 0px;
   /* The bar floats: this much glow under it, above the system's own bar. */
   --nav-gap: 10px;
+  --page-sab: 0px; /* the gesture stripe a page leaves itself: a screen without the bar has nothing else above it */
   --m-radius: 16px; /* rows, fields, players and small tiles of the phone */
   /* Android injects real insets into these; env() covers iOS / fixed WebViews. */
   --sat: env(safe-area-inset-top, 0px);
@@ -88,9 +102,14 @@ html.scan-cover .shell { visibility: hidden; }
   overflow: hidden;
   animation: vfade var(--dur-base) ease-out;
 }
+:root:has(.shell.no-bar) {
+  --nav-h: 0px;
+  --nav-gap: 0px;
+  --page-sab: var(--sab);
+}
 .m-page.home {
   overflow-y: auto;
-  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4) calc(var(--sp-4) + var(--page-sab));
   background: transparent;
 }
 .m-body {
@@ -98,8 +117,11 @@ html.scan-cover .shell { visibility: hidden; }
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4) calc(var(--sp-4) + var(--page-sab));
   background: transparent;
+  /* Under a head without a bar the page dissolves at its top edge. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
+  mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
 }
 .m-title {
   font-size: 22px;
@@ -148,9 +170,9 @@ html.scan-cover .shell { visibility: hidden; }
   min-height: 56px;
   margin: 0;
   padding: var(--sp-2) var(--sp-2);
-  background: var(--m-head);
-  -webkit-backdrop-filter: var(--pane-filter);
-  backdrop-filter: var(--pane-filter);
+  /* No bar: no fill, no line, no glass — the window's glow runs behind the head. */
+  background: none;
+  --edge-l: var(--sp-2); --edge-r: var(--sp-2); --edge-t: var(--sp-2);
 }
 .m-header .m-title {
   flex: 1;
@@ -200,6 +222,29 @@ html.scan-cover .shell { visibility: hidden; }
 
 /* ── Touch-sized controls ── */
 .btn, .icon-btn, .seg-btn { min-height: var(--touch); }
+/* A finger's zone, not the look: whatever is shorter or narrower than --touch
+   keeps its size and grows an invisible zone to it, per axis, evenly on both
+   sides (inset is 0 for a side already long enough). --hit-max caps the growth
+   where neighbours stand close, so two zones never cross. Zero specificity: a
+   control's own position, ::before or --hit-max wins. Inline links in a text
+   run are left alone (a line is not a target); a row's own ::before too. */
+:where(button:not(.list-row), [role='button'], [role='tab'], [role='switch'], [role='radio'], [role='checkbox'], [role='menuitem'], summary, a.m-ibtn, a.m-bar-item) {
+  position: relative;
+}
+:where(button:not(.list-row), [role='button'], [role='tab'], [role='switch'], [role='radio'], [role='checkbox'], [role='menuitem'], summary, a.m-ibtn, a.m-bar-item)::before {
+  content: '';
+  position: absolute;
+  top: min(max(calc(-1 * var(--hit-max)), min(0px, calc((100% - var(--touch)) / 2))), calc(-1 * var(--hit-t, 0px)));
+  bottom: min(max(calc(-1 * var(--hit-max)), min(0px, calc((100% - var(--touch)) / 2))), calc(-1 * var(--hit-b, 0px)));
+  left: min(max(calc(-1 * var(--hit-max)), min(0px, calc((100% - var(--touch)) / 2))), calc(-1 * var(--hit-l, 0px)));
+  right: min(max(calc(-1 * var(--hit-max)), min(0px, calc((100% - var(--touch)) / 2))), calc(-1 * var(--hit-r, 0px)));
+}
+/* A control in a corner or at the edge of the screen: --hit-t/-b/-l/-r grow its zone by that much on a
+   side, past --hit-max, up to the edge of the content, so no strip beside it is dead. A header names the
+   gaps of its own padding (--edge-l/-r/-t); its first control takes the left, its last the right, each the top. */
+:where(header, .m-header) > :where(button, [role='button'], a.m-ibtn) { --hit-t: var(--edge-t, 0px); }
+:where(header, .m-header) > :where(button, [role='button'], a.m-ibtn):first-child { --hit-l: var(--edge-l, 0px); }
+:where(header, .m-header) > :where(button, [role='button'], a.m-ibtn):last-child { --hit-r: var(--edge-r, 0px); }
 input, select, textarea {
   min-height: var(--touch);
   font-size: var(--fs-md); /* prevents iOS zoom on focus */
@@ -221,7 +266,6 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   flex-shrink: 0;
   margin: 0;
   padding: 0 var(--sp-4) var(--sp-2);
-  background: var(--m-head);
 }
 .m-page > .m-search:first-child {
   padding-top: var(--sp-2);
@@ -247,12 +291,12 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   background: var(--m-field);
   font-size: var(--fs-body);
 }
-.m-search input:focus { box-shadow: 0 0 0 2px var(--accent-border); }
+.m-search input:focus { box-shadow: 0 0 0 2px var(--focus-ring); }
 .m-search .clear {
   position: absolute;
-  right: 6px;
-  width: 32px;
-  height: 32px;
+  right: 2px;
+  width: 40px;
+  height: 40px;
   border: 0;
   border-radius: 50%;
   padding: 0;
@@ -276,7 +320,6 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   flex-shrink: 0;
   margin: 0;
   padding: 0 var(--sp-4) var(--sp-2);
-  background: var(--m-head);
 }
 .m-seg {
   display: flex;
@@ -288,7 +331,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-seg::-webkit-scrollbar { display: none; }
 .m-seg-btn {
   flex-shrink: 0;
-  min-height: 34px;
+  min-height: 40px;
   padding: 0 14px;
   border: 0;
   border-radius: var(--radius-pill);
@@ -309,6 +352,23 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   border-radius: var(--radius-card);
   box-shadow: var(--m-card-shadow);
 }
+/* What sits on a glass card takes its glass: the rule is `.card` / `.glass-card` of base.css; `.m-card` is the shell's own. */
+.m-card {
+  --surface: var(--pane-strong);
+  --surface-2: var(--pane-strong);
+  --surface-3: var(--pane-strong);
+  --m-field: var(--pane-strong);
+  --m-seg: var(--pane-strong);
+}
+[data-theme='dark'] .m-card {
+  --surface-hover: var(--pane-strong-border);
+  --border: var(--pane-strong-border);
+  --border-2: var(--pane-strong-border);
+  --text-3: var(--text-2);
+  --toggle-off: var(--text-dim);
+}
+[data-theme='dark'] .m-card :is(input, textarea)::placeholder { color: var(--text-2); }
+[data-theme='dark'] .m-card .seg-btn.active { color: var(--text); }
 .m-cards {
   display: flex;
   flex-direction: column;
@@ -503,6 +563,32 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 17px; text-align: center; white-space: nowrap;
 }
 .m-bar-badge.accent { background: var(--accent); }
+/* The app's tab bar (BottomNav): a capsule of 56 on the glass. The chosen item stands on a capsule of its own, a count
+   sits on the plate's edge over its icon. The product's logo is not on it: a tab's header carries it (core/ui/HubButton). */
+.m-bar--nav {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: calc(var(--nav-h) - 12px);
+  padding: var(--sp-1);
+  border-radius: var(--radius-pill);
+  background: var(--glass-bar);
+  border-color: var(--glass-border);
+}
+.m-bar--nav .m-bar-item {
+  position: relative;
+  flex: 1 1 0;
+  min-width: var(--touch);
+  gap: 1px;
+  border-radius: var(--radius-card);
+  font-size: var(--fs-xs);
+  line-height: 14px;
+}
+.m-bar--nav .m-bar-item.active { background: var(--accent-bg); color: var(--text); font-weight: var(--fw-bold); }
+.m-bar--nav .m-bar-item.active .m-bar-ico { color: var(--accent-text); }
+/* The count is placed against the item, not the icon: centred over it, on the plate's edge, in a ring of the pane. */
+.m-bar--nav .m-bar-ico { position: static; }
+.m-bar--nav .nav-count { position: absolute; left: 50%; top: -15px; transform: translateX(-50%); box-shadow: 0 0 0 2px var(--surface-3); }
 /* A bar of choices (the attach sheet): the chosen item stands on a pill, a press sinks to .97 (M01). */
 .m-bar--pick .m-bar-item { padding: 0 var(--sp-2); }
 .m-bar--pick .m-bar-item.active { background: var(--accent-tint); }
@@ -555,7 +641,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-fab {
   position: fixed;
   right: var(--sp-4);
-  bottom: calc(var(--nav-h) + var(--nav-gap) + var(--sab) + var(--sp-4));
+  bottom: calc(var(--nav-h) + var(--nav-gap) + var(--sab));
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -714,6 +800,8 @@ mark.m-highlight {
   margin: 0;
   flex-shrink: 0;
 }
+/* The grip's zone grows upward only: the first row of the sheet stands right under it. */
+.m-sheet .handle::before { inset-block: calc(-1 * var(--touch) + 100%) 0; }
 
 /* A search field with the app's own clear button shows only that one: the
    browser's cross of type="search" would stand beside it. */
@@ -723,3 +811,17 @@ mark.m-highlight {
   appearance: none;
   display: none;
 }
+
+/* A row that scrolls sideways (`overflow-x: auto`) clips its controls' zones above and below,
+   because the other axis clips with it. `.hit-row` leaves them room: padding of --hit-row on both
+   sides, taken back by an equal margin, so the row keeps its place; --hit-row is the growth the
+   shortest control needs ((44 - its height) / 2). `.m-seg` and `.m-chips.scroll` are such rows. */
+.hit-row.hit-row,
+.m-seg.m-seg,
+.m-chips.scroll.scroll {
+  padding-block: var(--hit-row);
+  margin-block: calc(-1 * var(--hit-row));
+}
+.m-chips.scroll.scroll { --hit-row: 8px; }
+.m-seg.m-seg { margin-bottom: calc(var(--sp-3) - var(--hit-row)); }
+.m-page > .m-seg.m-seg { margin: calc(-1 * var(--hit-row)) 0; padding-bottom: calc(var(--sp-2) + var(--hit-row)); }

@@ -214,7 +214,7 @@
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); cursor: pointer; user-select: none; }
   .periods { margin-left: auto; gap: 2px; padding: 2px; }
   .periods .seg-btn { height: var(--control-h-sm); padding: 0 var(--sp-2); font-size: var(--fs-xs); }
-  .seg-btn:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .bulk-acts { display: flex; gap: 6px; flex-wrap: wrap; }
   /* The queue: one card, a row per author under a divider. */
   .queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; container-type: inline-size; }
@@ -225,7 +225,7 @@
   .q-row.busy { opacity: 0.6; }
   .tick { margin-top: var(--sp-2); flex-shrink: 0; }
   .open { min-width: 0; display: flex; align-items: flex-start; gap: var(--sp-2); border: none; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; border-radius: var(--radius-sm); }
-  .open:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .open:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .open > :global(svg:last-child) { flex-shrink: 0; margin-top: 2px; color: var(--text-3); }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .line { display: flex; align-items: center; gap: 6px; min-width: 0; }

@@ -53,7 +53,7 @@
 <style>
   .socials { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
   .social {
-    display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0;
+    display: inline-flex; --hit-max: 3px; align-items: center; gap: 6px; max-width: 100%; min-width: 0;
     padding: 4px 10px; border-radius: var(--radius-pill); cursor: pointer;
     font: inherit; font-size: var(--fs-xs); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border);

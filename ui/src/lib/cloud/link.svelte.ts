@@ -103,11 +103,6 @@ export function timeLeft(expiresAt: number, nowSecs: number): string {
   return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
 }
 
-/** The SVG of a QR code as the source of an image: nothing inside it can run. */
-export function qrDataUrl(svg: string): string {
-  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
-}
-
 /** The phases of the new device. */
 export type NewPhase = 'idle' | 'starting' | 'waiting' | 'received' | 'expired' | 'signing_in' | 'done' | 'failed';
 

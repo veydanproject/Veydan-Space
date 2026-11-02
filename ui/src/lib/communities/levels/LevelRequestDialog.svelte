@@ -109,7 +109,7 @@
     transition: background var(--dur-fast), border-color var(--dur-fast);
   }
   @media (hover: hover) { .option:hover:not(.active):not(.sent) { background: var(--surface-hover); } }
-  .option:has(input:focus-visible) { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .option:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .option.active { border-color: var(--accent-border); background: var(--accent-bg); }
   .option.sent { cursor: default; opacity: 0.75; }
   .option input { margin-top: 2px; flex-shrink: 0; }

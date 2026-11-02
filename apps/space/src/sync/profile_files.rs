@@ -371,16 +371,20 @@ impl<'a> BlobIndex<'a> {
     /// Just before the snapshot goes out: a blob found or written longer
     /// than `RECHECK_AFTER` ago may have been taken by the GC of another
     /// device since (a walk of a large profile outlives its grace); one that
-    /// is gone is uploaded again from its file. The inner `Err` says why it
+    /// is gone is uploaded again from its file. A blob the head names
+    /// (`None` in `found`) is not looked at. The inner `Err` says why it
     /// cannot be: the file is gone or changed since. `None` when a launch
     /// waits for a profile of `held`.
     async fn recheck(
         &self,
         files: &[ManifestFile],
-        found: &[(PathBuf, Instant)],
+        found: &[Option<(PathBuf, Instant)>],
         held: &Held<'_>,
     ) -> CmdResult<Option<Result<(), String>>> {
-        for (f, (abs, at)) in files.iter().zip(found) {
+        for (f, found) in files.iter().zip(found) {
+            let Some((abs, at)) = found else {
+                continue;
+            };
             if at.elapsed() < RECHECK_AFTER {
                 continue;
             }
@@ -486,7 +490,11 @@ async fn heal_missing(db: &sqlx::SqlitePool) -> CmdResult<()> {
 }
 
 /// Manifest of the directory; only files whose hash is new are read and uploaded.
-/// The inner `Err` says why the files cannot be read: a file gone since the
+/// `trusted`: `prev` is the head in the vault, so its blobs are there (the
+/// GC keeps what the head names; one it took anyway is told by
+/// `heal_missing`, which clears the trust): a file of the same hash takes
+/// its blob without a request to the vault. Otherwise the blob is looked
+/// for first. The inner `Err` says why the files cannot be read: a file gone since the
 /// walk is left out, any other error of a folder or a file gives no manifest.
 /// `None` when a launch waits for a profile of `held`.
 async fn build_manifest(
@@ -494,6 +502,7 @@ async fn build_manifest(
     blobs: &mut BlobIndex<'_>,
     dir: &Path,
     prev: &Manifest,
+    trusted: bool,
     app: Option<&AppHandle>,
     held: &Held<'_>,
 ) -> CmdResult<Option<Result<Manifest, String>>> {
@@ -526,8 +535,19 @@ async fn build_manifest(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Ok(Some(Err(format!("{rel}: {e}")))),
         };
-        // A name from the previous manifest is reused only while the blob is
-        // still in the vault; GC may have dropped it since.
+        if let Some(b) = known.get(hash.as_str()).filter(|_| trusted) {
+            large_files::touch(b);
+            found.push(None);
+            files.push(ManifestFile {
+                path: rel,
+                blob: (*b).to_string(),
+                size,
+                hash,
+            });
+            continue;
+        }
+        // A name from a manifest that is not the head is reused only while
+        // the blob is still in the vault; GC may have dropped it since.
         let reusable = match known.get(hash.as_str()) {
             Some(b) => match held.unless_wanted(blobs.exists(b)).await {
                 Some(exists) => exists?.then(|| (*b).to_string()),
@@ -546,7 +566,7 @@ async fn build_manifest(
                 Err(e) => return Ok(Some(Err(format!("{rel}: {e}")))),
             },
         };
-        found.push((abs, Instant::now()));
+        found.push(Some((abs, Instant::now())));
         files.push(ManifestFile {
             path: rel,
             blob,
@@ -709,7 +729,22 @@ pub async fn collect_local_changes(
         // Files that cannot be read, or none where the last snapshot had
         // some (the folder gone, a disk not mounted), send nothing: the
         // others would delete their copies. The profile stays dirty.
-        let built = build_manifest(&sync.file_hashes, &mut blobs, &dir, &prev, app, &held).await?;
+        // The manifest is the head here and in the vault: what it was
+        // pushed or applied as, no other snapshot waits over it.
+        let trusted = !st.synced_hash.is_empty()
+            && st.pending_manifest.is_empty()
+            && sha256_hex(st.manifest_json.as_bytes()) == st.synced_hash;
+        progress(app, "profiles_up", 78, 0, 0, "");
+        let built = build_manifest(
+            &sync.file_hashes,
+            &mut blobs,
+            &dir,
+            &prev,
+            trusted,
+            app,
+            &held,
+        )
+        .await?;
         let manifest = match built {
             // A launch waits for this profile or one held: this one waits
             // for a later cycle as it is, so does the other.
@@ -1236,6 +1271,9 @@ pub async fn push_mine(core: &Core, profile_id: &str) -> CmdResult<()> {
     };
     st.diverged = false;
     st.dirty = true;
+    // The manifest here was overtaken in the vault, its blobs may be
+    // collected: they are looked for, and an unchanged one goes out too.
+    st.synced_hash.clear();
     st.pending_manifest.clear();
     save_profile_files_state(db, &st).await
 }
@@ -1328,8 +1366,8 @@ impl Handler for ProfileFiles {
         }
         // The vault first, then the files here: a snapshot of another device
         // over files changed here makes the profile diverge before the
-        // collect could send ours over it (audit SYNCROWS-05).
-        progress(app, "profiles_down", 55, 0, 0, "");
+        // collect could send ours over it (audit SYNCROWS-05). The stage
+        // comes with the first snapshot applied (`apply_manifest`).
         let retry = match apply_remote(cx.engine, app, cx.core, cx.sync, browser, pulled_ops).await
         {
             Ok(o) => {
@@ -1361,7 +1399,6 @@ impl Handler for ProfileFiles {
                 None
             }
         };
-        progress(app, "profiles_up", 78, 0, 0, "");
         // A device that has just joined uploads no snapshot before it has
         // read the vault in full: its states went with the old binding.
         let collected = if veydan_sync_host::join::fresh_binding(db).await.is_some() {
@@ -2396,5 +2433,131 @@ mod tests {
         let _free = locks
             .lock_for_launch("pr-1", || panic!("pr-1 is held"))
             .await;
+    }
+
+    /// Requests of a storage: looks (`exists`, `get`, `list`) and writes.
+    #[derive(Default)]
+    struct Requests {
+        looks: std::sync::atomic::AtomicUsize,
+        puts: std::sync::atomic::AtomicUsize,
+    }
+
+    struct Counting {
+        inner: veydan_sync::LocalDir,
+        n: std::sync::Arc<Requests>,
+    }
+
+    #[async_trait::async_trait]
+    impl veydan_sync::Storage for Counting {
+        async fn list(&self, prefix: &str) -> veydan_sync::Result<Vec<String>> {
+            self.n
+                .looks
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.inner.list(prefix).await
+        }
+        async fn get(&self, key: &str) -> veydan_sync::Result<Option<Vec<u8>>> {
+            self.n
+                .looks
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.inner.get(key).await
+        }
+        async fn put(&self, key: &str, data: &[u8]) -> veydan_sync::Result<()> {
+            self.n
+                .puts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.inner.put(key, data).await
+        }
+        async fn delete(&self, key: &str) -> veydan_sync::Result<()> {
+            self.inner.delete(key).await
+        }
+        async fn exists(&self, key: &str) -> veydan_sync::Result<bool> {
+            self.n
+                .looks
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.inner.exists(key).await
+        }
+    }
+
+    /// A file of the hash the head names takes its blob without a request
+    /// to the vault; a changed one alone goes up. A manifest that is not
+    /// the head (`trusted` off: after `heal_missing`, a side kept over
+    /// another's) has its blobs looked for, and one gone goes up again.
+    #[tokio::test]
+    async fn a_file_of_the_hash_of_the_head_asks_the_vault_nothing() {
+        use crate::sync::registries_tests::write;
+        use std::sync::atomic::Ordering::SeqCst;
+
+        let root = crate::db::test_dir();
+        let (vault, firefox) = (root.join("vault"), root.join("firefox-profile"));
+        let n = std::sync::Arc::new(Requests::default());
+        let storage = Counting {
+            inner: veydan_sync::LocalDir::new(&vault),
+            n: n.clone(),
+        };
+        let vmk = veydan_sync::Vmk::from_base64(&format!("{}=", "A".repeat(43))).unwrap();
+        let engine = Engine::with_key(Box::new(storage), &vmk, "vault", "device");
+        let cache = HashCache::default();
+        let locks = crate::browser::ProfileLocks::default();
+        let waits = locks.launch_waits();
+        let held = Held {
+            waits: &waits,
+            ids: vec!["pr-1".into()],
+        };
+        let mut blobs = BlobIndex {
+            engine: &engine,
+            uploaded: BTreeSet::new(),
+        };
+        write(&firefox.join("prefs.js"), b"user_pref(\"a\", 1);");
+        write(&firefox.join("storage/data.bin"), b"stored");
+        write(&firefox.join("cache.bin"), b"cached");
+        macro_rules! build {
+            ($blobs:expr, $prev:expr, $trusted:expr) => {
+                build_manifest(&cache, $blobs, &firefox, $prev, $trusted, None, &held)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap()
+            };
+        }
+        let first = build!(&mut blobs, &Manifest::default(), false);
+        assert_eq!(first.files.len(), 3);
+        assert_eq!(n.puts.load(SeqCst), 3);
+
+        let mut blobs = BlobIndex {
+            engine: &engine,
+            uploaded: BTreeSet::new(),
+        };
+        n.looks.store(0, SeqCst);
+        n.puts.store(0, SeqCst);
+        let same = build!(&mut blobs, &first, true);
+        assert_eq!(same.to_json(), first.to_json());
+        assert_eq!((n.looks.load(SeqCst), n.puts.load(SeqCst)), (0, 0));
+
+        // Another length: the mtime of a write this soon may be the same.
+        write(&firefox.join("prefs.js"), b"user_pref(\"a\", 20);");
+        let changed = build!(&mut blobs, &first, true);
+        assert_ne!(changed.to_json(), first.to_json());
+        assert_eq!((n.looks.load(SeqCst), n.puts.load(SeqCst)), (0, 1));
+
+        // The GC took a blob of the manifest, which is no head any more.
+        let gone = &changed
+            .files
+            .iter()
+            .find(|f| f.path == "cache.bin")
+            .unwrap()
+            .blob;
+        engine.delete_blob(gone).await.unwrap();
+        let mut blobs = BlobIndex {
+            engine: &engine,
+            uploaded: BTreeSet::new(),
+        };
+        n.looks.store(0, SeqCst);
+        n.puts.store(0, SeqCst);
+        let healed = build!(&mut blobs, &changed, false);
+        assert_eq!(healed.to_json(), changed.to_json());
+        assert_eq!((n.looks.load(SeqCst), n.puts.load(SeqCst)), (3, 1));
+        assert!(engine.blob_exists(gone).await.unwrap());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

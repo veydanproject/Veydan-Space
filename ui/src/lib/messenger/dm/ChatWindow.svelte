@@ -560,7 +560,6 @@
   const attached = $derived(picked.length === 0 ? null : picked.some((p) => !p.file) ? 'loading' : 'ready');
   /** Pictures of this sending go as they are, not compressed (the owner's per-send switch). */
   let original = $state(false);
-  const pictures = $derived(picked.some((p) => p.file?.kind === 'image'));
 
   /** The name of a picked path, for a note before the file is read: `content://…/IMG_1.jpg` too. */
   function pathName(path: string): string {
@@ -891,7 +890,7 @@
 {/snippet}
 
 {#snippet tray()}
-  <!-- The picked files, and «without compression» at the end of their row (mockups c1.js). -->
+  <!-- The picked files: one plate over the field. -->
   <div class="tray-row">
   <div class="tray">
     {#each picked as p (p.key)}
@@ -905,18 +904,12 @@
       </div>
     {/each}
   </div>
-  {#if pictures}
-    <button class="original" class:on={original} role="switch" aria-checked={original} title={$t('msg_xfer_original_hint')}
-      onpointerdown={(e) => e.preventDefault()} onmousedown={(e) => e.preventDefault()} onclick={() => (original = !original)}>
-      <span class="box" aria-hidden="true">{#if original}<Icon name="check" size={11} />{/if}</span>{$t('msg_xfer_original')}
-    </button>
-  {/if}
   </div>
 {/snippet}
 
 <section class="window" bind:this={windowEl} style:--bottom-h={phone ? `${bottomH}px` : undefined}>
   {#if dropOver}<div class="drop" aria-hidden="true"><Icon name="paperclip" size={22} /><span>{$t("msg_drop_here")}</span></div>{/if}
-  <header class="head" class:phone>
+  <header class="head" class:phone class:on-glass={phone}>
     {#if choosing}
       <button class="icon" onclick={stopChoosing} title={$t('msg_fwd_select_exit')} aria-label={$t('msg_fwd_select_exit')}><Icon name="x" size={phone ? 22 : 16} /></button>
       <div class="chosen" aria-live="polite">{$t('msg_fwd_selected', { n: String(chosen.length) })}</div>
@@ -933,8 +926,7 @@
       <div class="who">
         <div class="title"><span class="t-name">{chat.title}</span>{#if chat.server_id && !phone}<ServerLabel server={chat.server_id} info />{/if}{#if chat.is_muted}<span class="dim"><Icon name="bell-off" size={12} /></span>{/if}</div>
         <div class="sub">
-          <!-- On a phone the name has the line to itself: the chip goes under it. -->
-          {#if chat.server_id && phone}<ServerLabel server={chat.server_id} size="icon" info />{/if}
+                    {#if chat.server_id && phone}<ServerLabel server={chat.server_id} size="icon" info />{/if}
           <span class="sub-text">{#if !sessionActive}{$t('msg_chat_locked')}
           {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
           {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
@@ -955,7 +947,7 @@
     {:else}
       <div class="ident">{@render identity()}</div>
     {/if}
-    <TransfersChip {phone} />
+    <span class="chip-slot"><TransfersChip {phone} /></span>
     {#if actions}{@render actions()}{/if}
     <button class="icon menu-btn" class:on={chatMenu.open} aria-expanded={chatMenu.open} aria-haspopup="menu" onclick={openChatMenu} title={$t("msg_chat_menu")}
       aria-label={menuCount > 0 ? `${$t("msg_chat_menu")}: ${menuCount}` : $t("msg_chat_menu")}><Icon name="more-vertical" size={18} />
@@ -966,7 +958,7 @@
   {#if !isGroup}<RelationBanner {chat} busy={acting} onaction={act} />{/if}
   {#if banner}{@render banner()}{/if}
 
-  <div class="scroll" bind:this={scroller} {onscroll}>
+  <div class="scroll" class:phone bind:this={scroller} {onscroll}>
     <div class="content" bind:this={content}>
     {#if earlierBusy}
       <!-- The past is being asked of the relays: it may take a few seconds. -->
@@ -1041,24 +1033,29 @@
   }
   /* The head as the feed's (FeedHeader): the cover 40, the name 16 bold, the line under it 13; buttons 36 with icons 18. */
   .head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; box-sizing: border-box; }
-  /* The phone: a bar the screen's width, as a channel's (the glass of the bars, the line under it); its back is the chevron of every phone screen.
+  /* The phone: the head floats inset as glass, the conversation runs under it, as a channel's and a group's; its back is the chevron of every phone screen.
      Over the conversation's own layers, under the info panel that lies over it (WithInfo): the base's plus two. */
   .head.phone {
-    position: relative; z-index: calc(var(--z-base) + 2); min-height: 60px; box-sizing: border-box; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-1);
-    background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+    position: relative; z-index: calc(var(--z-base) + 2); box-sizing: border-box;
+    margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+    --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4);
   }
+  /* The chip of transfers stands at the right of the name and the line under it, in the middle of the head, a place of its own in the row. */
+  .head.phone { gap: var(--sp-2); }
+  .chip-slot { display: contents; }
+  .head.phone .chip-slot { display: flex; justify-content: flex-end; align-self: center; flex-shrink: 0; position: relative; z-index: calc(var(--z-base) + 1); }
   .head.phone .back { color: var(--text); }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1; }
   .ident.clickable { cursor: pointer; border-radius: var(--radius-sm); }
-  .ident.clickable:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .ident.clickable:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-md); line-height: var(--lh-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .dim { color: var(--text-3); display: inline-flex; }
-  .sub { font-size: var(--fs-sm); color: var(--text-3); }
-  /* On a phone the server mark and the line share a row: the line ellipsizes, the mark's touch ring is not clipped. */
-  .head.phone .sub { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
-  .head.phone .sub-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* One line that ellipsizes before what stands right of it (the chip of transfers, ⋮): an npub does not wrap under it at 440 px.
+     On a phone the server mark shares the row, its touch ring is not clipped. */
+  .sub { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; font-size: var(--fs-sm); color: var(--text-3); }
+  .sub-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sub code { font-family: var(--font-mono); }
   .offline { color: var(--warn-text); }
   .sub .online { color: var(--success-text); }
@@ -1072,7 +1069,7 @@
   .pickable { display: flex; align-items: center; gap: var(--sp-1); padding-inline-start: var(--sp-3); cursor: pointer; user-select: none; -webkit-user-select: none; border-radius: var(--radius-sm); }
   .pickable[aria-disabled='true']:not(.on) { cursor: default; }
   .pickable.on { background: var(--accent-bg); }
-  .pickable:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .pickable:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .pick-row { flex: 1; min-width: 0; }
   .pick-tick {
     flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--text-3);
@@ -1081,14 +1078,13 @@
   .pick-tick.on { background: var(--accent); border-color: var(--accent); }
   .pick-tick.dim { opacity: 0.3; }
   .pick-tick.none { visibility: hidden; }
-  .icon:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .head .icon { flex-shrink: 0; width: 36px; height: 36px; padding: 0; align-items: center; justify-content: center; border-radius: var(--radius); }
-  .head.phone .icon { width: 40px; height: 40px; border-radius: var(--radius-md); }
+  .head.phone .icon, .head.phone :global(.wrap > .icon) { width: 40px; height: 40px; border-radius: var(--radius-md); }
   .menu-btn { position: relative; }
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
-  /* The count on ⋮ is the primitive .menu-count of base.css; on a phone it sits a little lower. */
-  .head.phone .menu-count { top: 0; right: -2px; }
+  /* The count on ⋮ is the primitive .menu-count of base.css, at the button's upper right corner. */
   @media (pointer: coarse) {
     .icon { padding: 10px; }
     .head { padding-inline: var(--sp-2); gap: var(--sp-2); }
@@ -1097,6 +1093,9 @@
   .narrow-only { display: none; }
   @media (max-width: 860px) { .narrow-only { display: inline-flex; } }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) 0 calc(var(--sp-3) + var(--bottom-h, 0px)); display: flex; flex-direction: column; }
+  /* Under a banner the messages dissolve at its edge; right under the head they run behind its glass (64: its 56 and its margin). The scroller is a layer of its own: a message's own layers stay under the glass, which then blurs them. */
+  .scroll.phone { isolation: isolate; -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
+  .head.phone + .scroll.phone { margin-top: -64px; padding-top: calc(64px + var(--sp-3)); scroll-padding-top: 64px; -webkit-mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); }
   .bottom { flex-shrink: 0; }
   .bottom.float { position: absolute; left: 0; right: 0; bottom: 0; }
   /* The conversation a column of 720 in the middle, as the feed of a channel (the lines keep their own gutter). */
@@ -1123,10 +1122,10 @@
   @keyframes to-bottom-in { from { opacity: 0; transform: scale(0.9); } }
   @media (prefers-reduced-motion: reduce) { .to-bottom { animation: none; } }
   /* Picked files above the field: pictures as they look, the rest by name. */
-  .tray-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .tray-row { display: flex; align-items: center; min-width: 0; padding: var(--sp-2); border-radius: var(--radius-card); background: var(--pane-strong); border: 1px solid var(--pane-strong-border); }
   .tray { flex: 1; min-width: 0; display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; }
   .pick {
-    position: relative; flex-shrink: 0; width: 64px; height: 64px; border-radius: var(--radius-md); overflow: hidden;
+    position: relative; flex-shrink: 0; width: 72px; height: 72px; border-radius: var(--radius-md); overflow: hidden;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px;
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2);
   }
@@ -1135,27 +1134,16 @@
   .pick-name { max-width: 100%; font-size: var(--fs-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick-size {
     position: absolute; left: 3px; bottom: 3px; max-width: calc(100% - 6px); padding: 0 4px; border-radius: var(--radius-pill);
-    font-size: 9px; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: var(--fs-2xs); line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     background: rgba(0, 0, 0, 0.55); color: #fff; pointer-events: none;
   }
   .pick:not(.picture) .pick-name { margin-bottom: 12px; }
-  /* Pictures go compressed unless this is on, for this sending only. */
-  .original {
-    flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--control-h-sm); padding: 0 var(--sp-3); cursor: pointer;
-    border: 1px solid var(--border); border-radius: var(--radius-pill); background: none; color: var(--text-2);
-    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-medium); white-space: nowrap;
-  }
-  .original:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
-  .original.on { border-color: var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-text-2); }
-  .original .box {
-    width: 14px; height: 14px; border-radius: var(--radius-xs); border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center;
-  }
   .error-line { white-space: pre-line; }
   .unpick {
-    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; padding: 0; border: none; border-radius: 50%; cursor: pointer;
+    position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; border: none; border-radius: 50%; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;
   }
-  @media (pointer: coarse) { .pick { width: 72px; height: 72px; } .unpick { width: 24px; height: 24px; } }
+  .unpick::before { content: ''; position: absolute; inset: -10px; }
   .error-line { padding: 6px var(--sp-4); font-size: var(--fs-xs); color: var(--danger-text); background: var(--danger-bg); border-top: 1px solid var(--danger-border); }
   .readers { display: flex; flex-direction: column; gap: var(--sp-1); max-height: 50vh; overflow-y: auto; }
   .reader { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text); font-size: var(--fs-sm); }

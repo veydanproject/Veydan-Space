@@ -376,7 +376,9 @@ pub async fn delete_keeper(db: &Db, community_id: &str) -> Result<()> {
         .execute(&mut *tx)
         .await
         .map_err(storage)?;
-    tx.commit().await.map_err(storage)
+    tx.commit().await.map_err(storage)?;
+    db.retired().forget(community_id);
+    Ok(())
 }
 
 // ─── The cycle ──────────────────────────────────────────────────────────────
@@ -549,9 +551,36 @@ pub async fn put_snapshot(db: &Db, row: &SnapshotRow) -> Result<()> {
     Ok(())
 }
 
+/// How many rows of `cm_keeper_retired` each keeper kept here has,
+/// counted once and kept as `retire` and `retired_done` change them: the
+/// line of the keeper's block asked it at every turn, and a history from
+/// the join keeps every shard of a month there (millions of rows of a
+/// channel of 600 000; the bench of ROO-419). A count is put in only when
+/// nothing was written since it was read (`writes`); any other writer of
+/// the table (`delete_keeper`, a handover's `import`) forgets it.
+#[derive(Default)]
+pub(crate) struct Retired {
+    writes: u64,
+    by_channel: std::collections::HashMap<String, i64>,
+}
+
+impl Retired {
+    fn add(&mut self, community_id: &str, n: i64) {
+        self.writes += 1;
+        if let Some(c) = self.by_channel.get_mut(community_id) {
+            *c += n;
+        }
+    }
+
+    pub(crate) fn forget(&mut self, community_id: &str) {
+        self.writes += 1;
+        self.by_channel.remove(community_id);
+    }
+}
+
 /// A blob to remove from `host` from `due_at` on.
 pub async fn retire(db: &Db, community_id: &str, host: &str, sha256: &str, due_at: i64) -> Result<()> {
-    sqlx::query("INSERT OR IGNORE INTO cm_keeper_retired (community_id, host, sha256, due_at) VALUES (?, ?, ?, ?)")
+    let res = sqlx::query("INSERT OR IGNORE INTO cm_keeper_retired (community_id, host, sha256, due_at) VALUES (?, ?, ?, ?)")
         .bind(community_id)
         .bind(host)
         .bind(sha256)
@@ -559,12 +588,16 @@ pub async fn retire(db: &Db, community_id: &str, host: &str, sha256: &str, due_a
         .execute(db.pool())
         .await
         .map_err(storage)?;
+    db.retired().add(community_id, i64::try_from(res.rows_affected()).unwrap_or(0));
     Ok(())
 }
 
-/// `(host, sha256)` due for removal by `now`.
+/// `(host, sha256)` due for removal by `now`. By the index of `due_at`
+/// (`+community_id`): the primary key took every row of the channel, the
+/// blobs of every epoch a history from the join keeps for a month too, at
+/// every turn (the bench of ROO-419).
 pub async fn retired_due(db: &Db, community_id: &str, now: i64) -> Result<Vec<(String, String)>> {
-    sqlx::query_as::<_, (String, String)>("SELECT host, sha256 FROM cm_keeper_retired WHERE community_id = ? AND due_at <= ? ORDER BY due_at, sha256")
+    sqlx::query_as::<_, (String, String)>("SELECT host, sha256 FROM cm_keeper_retired WHERE +community_id = ? AND due_at <= ? ORDER BY due_at, sha256")
         .bind(community_id)
         .bind(now)
         .fetch_all(db.pool())
@@ -573,17 +606,30 @@ pub async fn retired_due(db: &Db, community_id: &str, now: i64) -> Result<Vec<(S
 }
 
 pub async fn retired_count(db: &Db, community_id: &str) -> Result<i64> {
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM cm_keeper_retired WHERE community_id = ?").bind(community_id).fetch_one(db.pool()).await.map_err(storage)
+    let writes = {
+        let r = db.retired();
+        if let Some(n) = r.by_channel.get(community_id) {
+            return Ok(*n);
+        }
+        r.writes
+    };
+    let n = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM cm_keeper_retired WHERE community_id = ?").bind(community_id).fetch_one(db.pool()).await.map_err(storage)?;
+    let mut r = db.retired();
+    if r.writes == writes {
+        r.by_channel.insert(community_id.to_string(), n);
+    }
+    Ok(n)
 }
 
 pub async fn retired_done(db: &Db, community_id: &str, host: &str, sha256: &str) -> Result<()> {
-    sqlx::query("DELETE FROM cm_keeper_retired WHERE community_id = ? AND host = ? AND sha256 = ?")
+    let res = sqlx::query("DELETE FROM cm_keeper_retired WHERE community_id = ? AND host = ? AND sha256 = ?")
         .bind(community_id)
         .bind(host)
         .bind(sha256)
         .execute(db.pool())
         .await
         .map_err(storage)?;
+    db.retired().add(community_id, -i64::try_from(res.rows_affected()).unwrap_or(0));
     Ok(())
 }
 
@@ -741,6 +787,31 @@ mod tests {
     use keydist::{GenerationMaster, KeyDistribution, Policy, Revoke, RootSecret, SchemeId, SdKeeper};
 
     const CID: &str = crate::state::tests::CHANNEL;
+
+    /// The count of the blobs to remove, kept once read, follows what is
+    /// retired and removed, and a keeper forgotten or taken in again.
+    #[tokio::test]
+    async fn the_count_of_the_blobs_to_remove_follows_the_rows() {
+        let db = Db::open_in_memory().await.unwrap();
+        let fresh = || Db { pool: db.pool.clone(), mirrors: Default::default(), retired: Default::default() };
+        retire(&db, CID, "h1", "a", 10).await.unwrap();
+        assert_eq!(retired_count(&db, CID).await.unwrap(), 1);
+        retire(&db, CID, "h1", "b", 20).await.unwrap();
+        retire(&db, CID, "h2", "a", 10).await.unwrap();
+        retire(&db, CID, "h1", "a", 30).await.unwrap();
+        assert_eq!(retired_count(&db, CID).await.unwrap(), 3, "the same blob of a host once");
+        assert_eq!(retired_due(&db, CID, 15).await.unwrap(), vec![("h1".to_string(), "a".to_string()), ("h2".to_string(), "a".to_string())]);
+        retired_done(&db, CID, "h1", "a").await.unwrap();
+        retired_done(&db, CID, "h1", "a").await.unwrap();
+        assert_eq!(retired_count(&db, CID).await.unwrap(), 2);
+        assert_eq!(retired_count(&fresh(), CID).await.unwrap(), 2);
+        delete_keeper(&db, CID).await.unwrap();
+        assert_eq!(retired_count(&db, CID).await.unwrap(), 0);
+        let mut tables = std::collections::BTreeMap::new();
+        tables.insert("cm_keeper_retired".to_string(), vec![[("host", "h3"), ("sha256", "c")].into_iter().map(|(k, v)| (k.to_string(), serde_json::json!(v))).chain([("due_at".to_string(), serde_json::json!(5))]).collect()]);
+        crate::db::handover::import(&db, CID, &tables).await.unwrap();
+        assert_eq!(retired_count(&db, CID).await.unwrap(), 1, "a handover's rows counted");
+    }
 
     /// Every kind of row goes in and comes back as the state it was, the
     /// masters derived again from the root and never written.

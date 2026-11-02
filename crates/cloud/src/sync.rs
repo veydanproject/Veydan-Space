@@ -220,6 +220,13 @@ impl<R: Runtime> CloudCredentials for Credentials<R> {
         }))
     }
 
+    fn waiting(&self) -> Option<String> {
+        match self.signer_seam() {
+            None => Some(NOT_STARTED.into()),
+            Some(signer) => signer.ready().err().map(|e| e.message),
+        }
+    }
+
     fn why_no_host(&self) -> Option<String> {
         WHY_NO_HOST
             .lock()
@@ -624,7 +631,9 @@ mod tests {
             app: app.handle().clone(),
         };
 
-        // Without the messenger's seams nothing is signed, nothing derived.
+        // Without the messenger's seams nothing is signed, nothing derived,
+        // and the cycles wait.
+        assert_eq!(credentials.waiting().as_deref(), Some(NOT_STARTED));
         let refused = credentials
             .signer()
             .authorization("GET", "https://a.example.com/vault/v1/o?prefix=", None, 1)
@@ -648,6 +657,7 @@ mod tests {
         ));
 
         veydan_shell::provide::<dyn Signer, _, _>(app.handle(), Arc::new(Fake));
+        assert_eq!(credentials.waiting(), None);
         let hosts = Arc::new(Hosts::default());
         veydan_shell::provide::<dyn VaultHosts, _, _>(app.handle(), hosts.clone());
         veydan_shell::provide::<dyn Http, _, _>(app.handle(), Arc::new(OwnServers));

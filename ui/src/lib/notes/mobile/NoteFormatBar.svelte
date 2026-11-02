@@ -4,6 +4,7 @@
 <!-- Horizontally scrollable Markdown formatting bar for the mobile note editor. -->
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
+  import { scrollTabs } from '$lib/core/ui/scrollTabs';
   import type { EditAction } from '$lib/notes/markdown-edit';
   import type { EditorMode } from '$lib/notes/mobile/notes-editor';
   import { t, type Key } from '$lib/core/mobile/i18n';
@@ -48,7 +49,7 @@
   const label = (item: Item) => (isHeading(item.action) ? item.label : $t(item.label as Key));
 </script>
 
-<div class="bar">
+<div class="bar hit-row" use:scrollTabs={{ fadeStart: true }}>
   {#each groups as group, gi (gi)}
     {#if gi > 0}<span class="sep"></span>{/if}
     {#each group as item (item.action)}
@@ -83,21 +84,29 @@
   .bar {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    margin: 0 calc(-1 * var(--sp-4));
-    padding: 0 var(--sp-4);
+    margin-inline: calc(-1 * var(--sp-4));
+    padding-inline: var(--sp-4);
+    --hit-row: 3px;
   }
   .bar::-webkit-scrollbar { display: none; }
+  /* A clipped edge fades, only while there is more of the row on that side (scrollTabs marks it). */
+  .bar:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
+  .bar:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
+  .bar:global(.fade-start.fade-end) {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+  }
   .fb {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     padding: 0;
     border: 0;
     border-radius: var(--radius-sm);
@@ -124,18 +133,20 @@
     display: inline-flex;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    overflow: hidden;
+
   }
   .mode {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 36px;
-    height: 30px;
+    min-width: 44px;
+    height: 38px;
     padding: 0 8px;
     border: 0;
     background: transparent;
     color: var(--text-2);
   }
+  .mode:first-child { border-radius: calc(var(--radius-sm) - 1px) 0 0 calc(var(--radius-sm) - 1px); }
+  .mode:last-child { border-radius: 0 calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px) 0; }
   .mode.on { color: var(--accent-text); background: var(--accent-tint); }
 </style>

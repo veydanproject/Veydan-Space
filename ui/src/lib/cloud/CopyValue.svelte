@@ -26,18 +26,24 @@
 <div class="value">
   <span class="text" class:large>{text}</span>
   {#if copy}
-    <button class="btn btn-ghost btn-sm copy" type="button" onclick={put} aria-label={$t('cloud_copy')}>
-      <Icon name={copied ? 'check' : 'copy'} size={14} />{copied ? $t('cloud_copied') : $t('cloud_copy')}
+    <button class="copy" class:copied type="button" onclick={put} aria-label={copied ? $t('cloud_copied') : $t('cloud_copy')} title={copied ? $t('cloud_copied') : $t('cloud_copy')}>
+      <Icon name={copied ? 'check' : 'copy'} size={18} />
     </button>
   {/if}
 </div>
 
 <style>
-  .value { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-width: 0; }
+  .value { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-width: 0; }
   .text {
     font-family: var(--font-mono); font-size: var(--fs-md); font-weight: var(--fw-bold); letter-spacing: 0.06em;
     color: var(--text); overflow-wrap: anywhere; user-select: all;
   }
   .text.large { font-size: var(--fs-2xl); letter-spacing: 0.12em; }
-  .copy { flex-shrink: 0; }
+  .copy {
+    position: relative; flex-shrink: 0; width: 40px; height: 40px; border: none; padding: 0; border-radius: var(--radius-md); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text-2);
+  }
+  .copy::before { content: ''; position: absolute; inset: -2px; }
+  .copy.copied { color: var(--success-text); }
+  .copy:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 </style>

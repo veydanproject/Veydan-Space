@@ -75,7 +75,7 @@
   <div class="actions">
     {#if hasPlans}
       <!-- The plans of the choice are right under this card, the one they point at carries the page's one primary button. -->
-      <button class="btn btn-ghost" type="button" onclick={onPlans}>
+      <button class="btn" class:btn-primary={account.state === 'free'} class:btn-ghost={account.state !== 'free'} type="button" onclick={onPlans}>
         {account.state === 'free' ? $t('cloud_plan_upgrade') : $t('cloud_plan_see_all')}
       </button>
     {/if}

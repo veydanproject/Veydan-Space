@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { get } from 'svelte/store';
   import { LANGUAGES, locale, t, taglineOf, type Locale, type TranslationKey } from '$lib/core/i18n';
   import {
@@ -129,9 +129,20 @@
    */
   function selectSection(id: string) {
     activeSection = id;
+    moduleSections.find((sec) => sec.id === id)?.onopen?.();
     if (scrollEl) scrollEl.scrollTop = 0;
     if (location.hash !== `#${id}`) history.replaceState(history.state, '', `#${id}`);
   }
+  // Sections that are views of one state of their module (the tabs of the chat's settings): when the module itself
+  // moves to another one (a link inside a tab), the page shows that section.
+  const named = () => moduleSections.find((sec) => sec.current?.())?.id ?? '';
+  let followed = untrack(named);
+  $effect(() => {
+    const id = named();
+    if (id === followed) return;
+    followed = id;
+    if (id) untrack(() => id !== activeSection && selectSection(id));
+  });
   function sectionFromHash() {
     const wanted = location.hash.slice(1);
     if (wanted && navItems.some((it) => it.id === wanted)) selectSection(wanted);
@@ -338,7 +349,7 @@
       {#if section.bare}
       <div class="bare" id={section.id}>
         {#if section.hint}<p class="muted bare-hint">{$t(section.hint as TranslationKey)}</p>{/if}
-        <section.component />
+        <section.component {...section.props} />
       </div>
       {:else}
       <div class="card" id={section.id}>
@@ -347,7 +358,7 @@
           {#if section.badge}<span class="badge badge-warn">{$t(section.badge as TranslationKey)}</span>{/if}
         </div>
         {#if section.hint}<p class="muted">{$t(section.hint as TranslationKey)}</p>{/if}
-        <section.component />
+        <section.component {...section.props} />
       </div>
       {/if}
     {/each}

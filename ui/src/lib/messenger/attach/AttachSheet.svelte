@@ -136,7 +136,7 @@
   /* Pulled up to the whole screen, the panel takes all of it above the strip (the whole gallery). */
   :global(.m-sheet.full) .panel { flex: 1 1 0; height: auto; }
   .strip {
-    display: flex; flex-shrink: 0; min-height: var(--nav-h); padding: var(--sp-1) var(--sp-2);
+    display: flex; flex-shrink: 0; min-height: var(--bar-plate-h); padding: var(--sp-1) var(--sp-2);
     overflow-x: auto; scrollbar-width: none; touch-action: pan-x; container-type: inline-size;
   }
   .strip::-webkit-scrollbar { display: none; }

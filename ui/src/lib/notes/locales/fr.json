@@ -344,6 +344,7 @@
     "notes_panel_resize": "Redimensionner le panneau",
     "notes_task_checkbox": "Tâche : {text}",
     "notes_task_checkbox_empty": "Tâche vide",
+    "notes_attachment_gone": "Fichier supprimé",
     "notes_smart_profile_search": "Rechercher un profil…"
   },
   "mobile": {

@@ -232,6 +232,8 @@ pub(crate) fn store_attachment_stream(
         return Err(e);
     }
     std::fs::rename(&part, &dest).map_err(AppError::io)?;
+    // A file is no row: sync hears of it here, not from the data file.
+    veydan_sync_host::edits::edited();
     to_attachment(note_id, &dest).ok_or_else(|| AppError::io("attachment write failed"))
 }
 
@@ -493,6 +495,7 @@ pub async fn note_attachment_delete(
     let path = attachments_dir_for(&note_file, &note_id).join(safe_file_name(&name));
     if path.is_file() {
         std::fs::remove_file(&path).map_err(AppError::io)?;
+        veydan_sync_host::edits::edited();
     }
     Ok(())
 }
@@ -562,7 +565,11 @@ pub async fn note_attachments_gc(
         .fetch_all(&core.db)
         .await
         .map_err(AppError::db)?;
-    Ok(collect_orphans(&core.app_data_dir, &rows, delete))
+    let orphans = collect_orphans(&core.app_data_dir, &rows, delete);
+    if delete && !orphans.is_empty() {
+        veydan_sync_host::edits::edited();
+    }
+    Ok(orphans)
 }
 
 /// The attachments of `rows` (id, file path) their note does not reference.

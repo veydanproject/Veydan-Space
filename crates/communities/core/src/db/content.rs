@@ -430,6 +430,22 @@ pub async fn mark_deleted(db: &Db, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// What a channel's members wrote from `at` on, forgotten here: the posts,
+/// the comments and the reactions of a channel that banned me then, heard
+/// before the ban was (spec §7.3: my own app shows nothing of it, though
+/// the key of the epoch, current until the window, still opens it).
+pub async fn forget_since(db: &Db, community_id: &str, at: i64) -> Result<u64> {
+    let mut gone = 0;
+    for sql in [
+        "DELETE FROM cm_posts WHERE community_id = ? AND created_at >= ?",
+        "DELETE FROM cm_comments WHERE community_id = ? AND created_at >= ?",
+        "DELETE FROM cm_reactions WHERE community_id = ? AND at >= ?",
+    ] {
+        gone += sqlx::query(sql).bind(community_id).bind(at).execute(db.pool()).await.map_err(storage)?.rows_affected();
+    }
+    Ok(gone)
+}
+
 /// What waits for a moderator in a channel, oldest first.
 pub async fn pending(db: &Db, community_id: &str) -> Result<Vec<MessageRow>> {
     let mut rows = sqlx::query_as::<_, MessageRow>(sqlx::AssertSqlSafe(format!("SELECT {POST_COLS} FROM cm_posts WHERE community_id = ? AND review = ?")))

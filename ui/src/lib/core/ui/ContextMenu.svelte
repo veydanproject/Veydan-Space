@@ -316,7 +316,7 @@
   }
   .menu-item:hover:not(:disabled),
   .menu-item:focus:not(:disabled) { background: var(--surface-hover); outline: none; }
-  .menu-item:focus-visible { box-shadow: inset 0 0 0 1.5px var(--accent-border); }
+  .menu-item:focus-visible { box-shadow: inset 0 0 0 1.5px var(--focus-ring); }
   .menu-item:disabled { color: var(--text-3); cursor: default; }
   .menu-item.danger { color: var(--danger-text); }
   .menu-item.danger:hover:not(:disabled),
@@ -373,7 +373,7 @@
   .menu-item.pair-btn.primary :global(svg) { color: #fff; }
   .menu-item.pair-btn:hover:not(:disabled), .menu-item.pair-btn:focus:not(:disabled) { background: var(--surface-hover); }
   .menu-item.pair-btn.primary:hover:not(:disabled), .menu-item.pair-btn.primary:focus:not(:disabled) { background: var(--accent-grad); filter: brightness(1.1); }
-  .menu-item.pair-btn:focus-visible { box-shadow: none; outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .menu-item.pair-btn:focus-visible { box-shadow: none; outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
   /* The phone's sheet: rows of the shell's lists (mobile.css .m-row), 52px high. */
   .sheet-menu-header {

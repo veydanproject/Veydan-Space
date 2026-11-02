@@ -105,7 +105,7 @@
   .srv-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .srv-chip:hover:not(:disabled) { border-color: var(--border-2); color: var(--text); }
   .srv-chip.on { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent-border); }
-  .srv-chip:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
+  .srv-chip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .srv-chip:disabled { opacity: 0.5; cursor: default; }
 
   .many { display: flex; flex-direction: column; gap: 6px; }

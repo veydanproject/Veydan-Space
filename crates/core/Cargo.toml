@@ -23,6 +23,8 @@ anyhow = "1"
 veydan-lock = { path = "../lock" }
 # Only the entity directory needs it: a provider is called with the app handle.
 tauri = { version = "2", features = [] }
+# The task that writes what is no edit of the user (`db::Unheard`).
+tokio = { version = "1", features = ["rt"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

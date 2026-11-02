@@ -242,6 +242,67 @@ export class Viewer {
   }
 }
 
+/**
+ * What the camera sees on its tile, while it is `wanted` (the panel is
+ * there, the tile is drawn, the app is on the screen). `wanted` is asked
+ * before the camera opens, again after each wait (an answer about the
+ * access, the camera itself), and a stream that comes when it is no longer
+ * wanted, or after a newer start or a `stop`, is stopped at once: the
+ * camera never stays on behind the app. A start asked while another one
+ * waits is made when that one ends.
+ */
+export class CameraPreview {
+  stream = $state.raw<MediaStream | null>(null);
+  /** Moves with every start and stop: an older start that ends later keeps nothing. */
+  private run = 0;
+  private starting = false;
+  private again = false;
+
+  constructor(
+    private readonly wanted: () => boolean,
+    private readonly allowed: () => Promise<boolean>,
+    private readonly open: () => Promise<MediaStream | null>,
+  ) {}
+
+  /** `ask`: the camera is asked for even when it was not allowed yet. */
+  async start(ask = false): Promise<void> {
+    if (!this.wanted() || this.stream) return;
+    if (this.starting) {
+      this.again = true;
+      return;
+    }
+    this.starting = true;
+    this.again = false;
+    const n = ++this.run;
+    try {
+      if (!ask && !(await this.allowed())) return;
+      if (n !== this.run || !this.wanted()) return;
+      const stream = await this.open();
+      if (n !== this.run || !this.wanted()) {
+        stopTracks(stream);
+        return;
+      }
+      this.stream = stream;
+    } catch {
+      // No picture on the tile; a tap still opens the choice.
+    } finally {
+      this.starting = false;
+      if (this.again) void this.start();
+    }
+  }
+
+  stop() {
+    this.run++;
+    this.again = false;
+    stopTracks(this.stream);
+    this.stream = null;
+  }
+}
+
+function stopTracks(stream: MediaStream | null) {
+  stream?.getTracks().forEach((t) => t.stop());
+}
+
 /** The rows of a grid of `rows` rows of `rowH` pixels that show in a view of `viewH` scrolled to `top`, with `over` rows around. */
 export function rowWindow(top: number, viewH: number, rowH: number, rows: number, over = 3): { first: number; last: number } {
   if (rowH <= 0 || rows <= 0) return { first: 0, last: -1 };

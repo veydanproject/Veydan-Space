@@ -48,6 +48,7 @@ pub struct Bot {
     wake: Notify,
     stop: AtomicBool,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    sender: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 /// The key of a bot, kept in its folder.
@@ -99,9 +100,11 @@ impl Bot {
             wake: Notify::new(),
             stop: AtomicBool::new(false),
             task: Mutex::new(None),
+            sender: Mutex::new(None),
         });
         let task = tokio::spawn(bot.clone().run(rx));
         *lock(&bot.task) = Some(task);
+        *lock(&bot.sender) = Some(tokio::spawn(bot.clone().send_out()));
         bot.listen.notify_one();
         Ok(bot)
     }
@@ -110,8 +113,9 @@ impl Bot {
     pub async fn close(&self) {
         self.stop.store(true, Ordering::SeqCst);
         self.wake.notify_one();
-        let task = lock(&self.task).take();
-        if let Some(t) = task {
+        self.svc.outbox_notify().notify_one();
+        let tasks = [lock(&self.task).take(), lock(&self.sender).take()];
+        for t in tasks.into_iter().flatten() {
             let _ = t.await;
         }
         self.close_inbox().await;
@@ -252,6 +256,26 @@ impl Bot {
                     }
                     next_tick = next.max(Instant::now() + Duration::from_millis(200));
                 }
+            }
+        }
+    }
+
+    /// The outbox sent as soon as a row is put into it, as the app's
+    /// outbox task does (the cycle sends it too, at least every 30 s): an
+    /// issue of the keeper waited for the next turn.
+    async fn send_out(self: Arc<Self>) {
+        let signal = self.svc.outbox_notify();
+        loop {
+            signal.notified().await;
+            if self.stop.load(Ordering::SeqCst) {
+                break;
+            }
+            if self.hub.is_offline(self.id) {
+                continue;
+            }
+            match self.svc.flush_outbox().await {
+                Ok(f) => self.counts.add("outbox_sent", f.sent as u64),
+                Err(e) => eprintln!("{}: outbox: {e}", self.name),
             }
         }
     }

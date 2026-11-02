@@ -105,6 +105,10 @@ pub struct Hub {
     seen_wraps: Mutex<HashSet<(BotId, String)>>,
     next_id: AtomicUsize,
     pub stats: Counters,
+    /// The readers without a device whose first note is awaited, and since
+    /// when (`await_note`); the seconds to it of those it reached.
+    awaited: Mutex<HashMap<String, Instant>>,
+    delivered: Mutex<Vec<f64>>,
 }
 
 /// Where the trial goes: the relay (with its key), the blob hosts.
@@ -133,6 +137,8 @@ impl Hub {
             seen_wraps: Mutex::default(),
             next_id: AtomicUsize::new(0),
             stats: Counters::default(),
+            awaited: Mutex::default(),
+            delivered: Mutex::default(),
         });
         let mut pools = Vec::new();
         for _ in 0..n.max(1) {
@@ -388,6 +394,11 @@ impl Hub {
             Ok(a) if a.is_delivered() => {
                 self.stats.add(&format!("pub_{kind}"), 1);
                 self.stats.add("pub_bytes", bytes);
+                if kind == u64::from(communities_core::notes::KIND_WRAP) {
+                    if let Some(since) = tag(&event.json, "p").and_then(|p| lock(&self.awaited).remove(&p)) {
+                        lock(&self.delivered).push(since.elapsed().as_secs_f64());
+                    }
+                }
             }
             Ok(a) => {
                 self.stats.add("pub_refused", 1);
@@ -399,6 +410,23 @@ impl Hub {
             }
         }
         ack
+    }
+
+    /// The first note to `pubkey` (a reader without a device: its issue)
+    /// is awaited since `since`.
+    pub fn await_note(&self, pubkey: String, since: Instant) {
+        lock(&self.awaited).insert(pubkey, since);
+    }
+
+    /// How many awaited ones no note reached yet.
+    pub fn awaiting(&self) -> usize {
+        lock(&self.awaited).len()
+    }
+
+    /// The seconds to the first note of each awaited one it reached since
+    /// the last call.
+    pub fn take_delivered(&self) -> Vec<f64> {
+        std::mem::take(&mut *lock(&self.delivered))
     }
 
     fn route_part(&self, bot: BotId, cid: String, part: &str) {

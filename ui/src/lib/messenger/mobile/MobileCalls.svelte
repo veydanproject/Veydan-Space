@@ -80,5 +80,6 @@
     background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center;
     box-shadow: var(--shadow-accent);
   }
+  .fab { --hit-r: var(--sp-4); }
   .fab:active { filter: brightness(0.92); }
 </style>

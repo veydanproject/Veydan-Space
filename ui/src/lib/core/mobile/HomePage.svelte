@@ -82,6 +82,11 @@
           <span class="label">{$t(app.title)}</span>
         </a>
       {/each}
+      <!-- Home has no bar: Settings is the last tile. -->
+      <a href="/settings" class="m-tile">
+        <Icon name="settings" size={24} />
+        <span class="label">{$t('app_settings')}</span>
+      </a>
     </div>
   </div>
 {/if}

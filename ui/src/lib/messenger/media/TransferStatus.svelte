@@ -4,8 +4,9 @@
 <!--
   Where the transfer of one file is, and what can be done with it. Two
   looks: `compact`, a ring with its percent and its main action (a picture,
-  a circle, a voice message), and `full`, two lines of words, the buttons
-  and a thin bar (a file, the list of transfers). `p` is `null` while the
+  a circle, a voice message), `line`, a file in a message: the mark is its
+  main action with the ring round it, one line of words, and `full`, two
+  lines of words, the buttons and a thin bar (the list of transfers). `p` is `null` while the
   file is elsewhere and nothing fetches it.
 -->
 <script lang="ts">
@@ -16,15 +17,18 @@
   import { bytes, percent } from '../shared/format';
   import { mediaErrorText } from './errors';
   import { transferStore } from './transferStore.svelte';
+  import FileLine from './FileLine.svelte';
   import {
-    remoteLines, shortLine, transferActions, transferLines, type TransferAction, type TransferKey, type Translate, type Words,
+    oneLine, remoteLines, shortLine, transferActions, transferLines, type TransferAction, type TransferKey, type Translate, type Words,
   } from './transferLabel';
 
   interface Props {
     p: MessengerTransferProgress | null;
-    look: 'compact' | 'full';
+    look: 'compact' | 'full' | 'line';
     /** Compact over a picture or a circle: white on dark, laid over it. */
     overlay?: boolean;
+    /** `line`: the file's whole name, for its title. */
+    title?: string;
     /** The file: its name (asked about before an upload is cancelled), its size and parts while it is elsewhere. */
     name: string;
     size: number;
@@ -42,7 +46,7 @@
      */
     act?: (a: TransferAction) => Promise<unknown>;
   }
-  let { p, look, overlay = false, name, size, chunks, messageId = null, ondownload, busy = false, onask, act }: Props = $props();
+  let { p, look, overlay = false, title, name, size, chunks, messageId = null, ondownload, busy = false, onask, act }: Props = $props();
 
   /** An upload with more than this sent asks before it is cancelled: its message goes too. */
   const ASK_ABOVE = 20 * 1024 * 1024;
@@ -77,6 +81,8 @@
   const pct = $derived(p ? percent(p.done_bytes, p.total_bytes) : 0);
   const actions = $derived(transferActions(p));
   const main = $derived(actions[0] ?? null);
+  /** `line`: the mark is the action that is not the cancel; the cancel has its own place. */
+  const lineMain = $derived(actions.find((a) => a !== 'cancel') ?? null);
   const failed = $derived(p?.status === 'failed');
   const pill = $derived(shortLine(p, size, words));
 
@@ -139,7 +145,28 @@
   }
 </script>
 
-{#if look === 'compact'}
+{#snippet lineMark()}
+  <span class="ring" role="progressbar" aria-label={name} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-valuetext={lines.line1}>
+    <svg viewBox="0 0 40 40" aria-hidden="true">
+      {#if p}<circle cx="20" cy="20" r="17" />
+      <circle class="done" cx="20" cy="20" r="17" style="stroke-dasharray:{RING};stroke-dashoffset:{RING * (1 - pct / 100)}" />{/if}
+    </svg>
+  </span>
+  <button class="ring-btn" class:bare={!p} disabled={!lineMain || !usable(lineMain)} onclick={(e) => lineMain && press(e, lineMain)}
+    aria-label={lineMain ? label(lineMain) : lines.line1} title={[lines.line1, lines.line2].filter(Boolean).join(' · ')}>
+    <span class:spin={!lineMain || (busy && fetches(lineMain))}><Icon name={lineMain && !(busy && fetches(lineMain)) ? ICON[lineMain] : 'loader'} size={18} /></span>
+  </button>
+{/snippet}
+{#snippet lineCancel()}
+  <button class="line-x" disabled={!usable('cancel')} onclick={(e) => press(e, 'cancel')} aria-label={label('cancel')} title={label('cancel')}><Icon name="x" size={16} /></button>
+{/snippet}
+
+{#if look === 'line'}
+  <div class="line-wrap" class:failed>
+    <FileLine {name} {title} sub={oneLine(p, lines, words)} {failed} mark={lineMark} right={actions.includes('cancel') ? lineCancel : undefined} />
+    {#if error}<span class="err">{error}</span>{/if}
+  </div>
+{:else if look === 'compact'}
   <div class="compact" class:overlay class:failed>
     <span class="ring-wrap">
       <span class="ring" role="progressbar" aria-label={name} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-valuetext={lines.line1}>
@@ -189,6 +216,20 @@
 {/if}
 
 <style>
+  /* A file in a message: the ring round the mark, the button is the mark. */
+  .line-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; width: 100%; }
+  .line-wrap .ring { inset: 0; }
+  .line-wrap .ring-btn { inset: 4px; background: var(--accent-bg); }
+  .line-wrap .ring-btn.bare { inset: 0; }
+  .line-wrap .ring-btn::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
+  .line-wrap.failed .ring-btn { background: var(--danger-bg); color: var(--danger-text); }
+  .line-x {
+    position: relative; width: 28px; height: 24px; border: none; background: none; padding: 0; color: var(--text-3); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: flex-end; border-radius: var(--radius-xs);
+  }
+  .line-x::before { content: ''; position: absolute; inset: -10px -8px; }
+  .line-x:hover:not(:disabled) { color: var(--text); }
+  .line-x:disabled { opacity: 0.45; cursor: default; }
   /* Compact: inline beside a voice message, or laid over a picture. */
   .compact { position: relative; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .compact.overlay { position: absolute; inset: 0; flex-direction: column; justify-content: center; gap: 5px; pointer-events: none; }

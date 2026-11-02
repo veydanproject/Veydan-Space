@@ -37,7 +37,7 @@
   --scroll-thumb-active: #7066c6;                    /* ... and while it is dragged */
   --text:        #eef1f7;
   --text-2:      #c3c5cc;
-  --text-3:      #979aa0;  /* dimmest: placeholders, table header labels */
+  --text-3:      #a1a4aa;  /* dimmest: placeholders, table header labels */
   --text-body:   #d8dbe1;  /* long-form body text (note reader, descriptions) */
   --text-soft:   #c3c5cc;  /* metric text, default icon-button glyphs */
   --text-faint:  #adb0b6;  /* field labels, sublabels */
@@ -47,6 +47,7 @@
   --accent-hover:  #655cb2;
   --accent-bg:     rgba(112, 102, 198, 0.26);
   --accent-border: rgba(185, 177, 242, 0.4);
+  --focus-ring:    #b9b1f2;  /* keyboard focus ring: 7.4-9.1:1 on bg, surface, surface-2 */
   --accent-grad:   #7066c6;
   --accent-text:   #b9b1f2;  /* active nav / tabs */
   --accent-text-2: #b9b1f2;  /* mono badges */
@@ -185,7 +186,7 @@
   --scroll-thumb-active: #5f50d8;                 /* ... and while it is dragged */
   --text:        #162033;  /* 16.8:1 */
   --text-2:      #4a5468;  /* 5.5:1 */
-  --text-3:      #6c7588;  /* dimmest: placeholders, table header labels */
+  --text-3:      #61697a;  /* dimmest: placeholders, table header labels */
   --text-body:   #2b3546;  /* long-form body text */
   --text-soft:   #414959;  /* metric text, default icon-button glyphs */
   --text-faint:  #5b6478;  /* field labels, sublabels */
@@ -195,6 +196,7 @@
   --accent-hover:  #655cb2;
   --accent-bg:     rgba(112, 102, 198, 0.12);
   --accent-border: rgba(112, 102, 198, 0.28);
+  --focus-ring:    #5f50d8;  /* keyboard focus ring: 5.0-5.8:1 on bg, surface, surface-2 */
   --accent-grad:   #7066c6;  /* brand, unchanged */
   --accent-text:   #5f50d8;  /* active nav / tabs */
   --accent-text-2: #5f50d8;  /* mono badges */

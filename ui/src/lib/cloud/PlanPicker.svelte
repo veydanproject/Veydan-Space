@@ -193,14 +193,14 @@
   <div class="pmd">
     <ul class="plans">
       {#each plans as plan (plan.id)}
-        <li class="plan" class:mine={plan.id === current} class:pointed={plan.id === recommended} class:open={open === plan.id}>
+        <li class="plan on-glass" class:mine={plan.id === current} class:pointed={plan.id === recommended} class:open={open === plan.id}>
           <button class="top" type="button" aria-expanded={open === plan.id} onclick={() => (opened = plan.id)}>{@render top(plan)}</button>
           {#if open === plan.id}<div class="inline">{@render body(plan)}</div>{/if}
         </li>
       {/each}
     </ul>
     {#if openPlan}
-      <div class="detail" class:pointed={openPlan.id === recommended} aria-live="polite">
+      <div class="detail on-glass" class:pointed={openPlan.id === recommended} aria-live="polite">
         <div class="detail-top">{@render top(openPlan)}</div>
         {@render body(openPlan)}
       </div>
@@ -240,7 +240,7 @@
   }
   .top:hover { background: var(--surface-row-hover); }
   /* The card clips what is outside it: the keyboard's ring drawn inside. */
-  .top:focus-visible { outline: 2px solid var(--accent-border); outline-offset: -2px; }
+  .top:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .inline { display: flex; flex-direction: column; gap: var(--sp-3); padding: 0 var(--sp-4) var(--sp-4); }
   .detail { display: none; }
   /* Wide: the list keeps the heads, the chosen plan opens beside it. */
