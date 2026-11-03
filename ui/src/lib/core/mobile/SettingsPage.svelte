@@ -5,6 +5,8 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { hasHome } from '$lib/core/mobile/nav';
+  import Tabs from '$lib/core/ui/Tabs.svelte';
+  import { leave } from '$lib/core/ui/back';
   import Icon from '$lib/core/Icon.svelte';
   import { theme, type Theme } from '$lib/core/theme';
   import { api as shared } from '$lib/core/api';
@@ -81,6 +83,13 @@
   const sections = $derived(registry.settings().filter((s) => !s.into && !s.after && (s.visible?.() ?? true)));
   // The ones that stand right after the account (the chat's settings).
   const afterAccount = $derived(registry.settings().filter((s) => s.after === 'account' && (s.visible?.() ?? true)));
+  // A product of one module: the pages of their own beside the settings, tabs before them and the first shown
+  // (the chat's profile and key, behind the avatar of its tabs). The page is then no tab of the bar: an arrow back.
+  const pages = $derived(registry.only ? registry.settings().filter((s) => s.into === 'tab' && (s.visible?.() ?? true)) : []);
+  const SETTINGS = 'settings';
+  let picked = $state<string | null>(null);
+  const shown = $derived(picked === SETTINGS ? undefined : (pages.find((p) => p.id === picked) ?? pages[0]));
+  const pageTabs = $derived([...pages.map((p) => ({ id: p.id, label: $t(p.title) })), { id: SETTINGS, label: $t('app_settings') }]);
   // The account of the product, where a module shows one: first on the page, and the way to sync.
   const accountSections = $derived(registry.accountSections());
   // The Modules section: in a product of more than one module (section 12).
@@ -191,11 +200,22 @@
   <div class="m-header">
 {#if hasHome()}
       <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+    {:else if pages.length > 0}
+      <!-- Not a tab of the bar: opened by the avatar of a tab, back to it. -->
+      <button type="button" class="m-ibtn" onclick={() => void leave('/')} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
     {/if}
     <h1 class="m-title">{$t('app_settings')}</h1>
   </div>
+  {#if pages.length > 0}
+    <div class="page-tabs">
+      <Tabs tabs={pageTabs} selected={shown?.id ?? SETTINGS} onpick={(id) => (picked = id)} label={$t('app_settings')} phone />
+    </div>
+  {/if}
 
   <div class="m-body">
+  {#if shown}
+    <shown.component {...shown.props} />
+  {:else}
   {#if updateCheck.status === 'available' && !distribution.fromStore}
     <div class="m-card update-card">
       <span class="update-title">{$t('update_available', { version: updateCheck.latest })}</span>
@@ -401,6 +421,7 @@
   </div>
   {#if dataMsg}<p class="ok-msg">{dataMsg}</p>{/if}
   {#if dataError}<p class="err-msg">{dataError}</p>{/if}
+  {/if}
   </div>
 </div>
 
@@ -451,6 +472,7 @@
 />
 
 <style>
+  .page-tabs { flex-shrink: 0; padding: 0 var(--sp-4); }
   .ok, .m-row-value.ok { color: var(--success-text); font-weight: 600; }
   .account { margin-top: var(--sp-3); }
   .new, .m-row-value.new { color: var(--accent-text); font-weight: 600; }

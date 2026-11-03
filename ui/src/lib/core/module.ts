@@ -104,8 +104,11 @@ export interface SettingsSection {
    * before the core's blocks and without a title of its own. Where one is
    * shown it also leads to sync, and the phone leaves out its own row to
    * it. (On a computer the same card is an ordinary one of a low order.)
+   * `tab` — a phone in a product of one module: a page of its own beside
+   * the settings, a tab before «Настройки» and the one the settings open
+   * on (the chat's profile and key, behind the avatar). Space shows none.
    */
-  into?: 'sync' | 'account';
+  into?: 'sync' | 'account' | 'tab';
   /**
    * A phone: the section stands right after the account (and its way to
    * sync) at the top of the page, with the group's title over it, before the

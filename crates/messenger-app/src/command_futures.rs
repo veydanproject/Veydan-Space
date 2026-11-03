@@ -207,6 +207,7 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_gallery_thumb", r3(crate::commands::gallery::messenger_gallery_thumb)));
     v.push(("messenger_gallery_forget_thumbs", r1(crate::commands::gallery::messenger_gallery_forget_thumbs)));
     v.push(("messenger_gallery_readable", r2(crate::commands::gallery::messenger_gallery_readable)));
+    v.push(("messenger_gallery_camera", r2(crate::commands::gallery::messenger_gallery_camera)));
     v.push(("messenger_gallery_capture", r2(crate::commands::gallery::messenger_gallery_capture)));
     v.push(("messenger_gallery_pick", r3(crate::commands::gallery::messenger_gallery_pick)));
     v.push(("messenger_gallery_save_picture", r3(crate::commands::gallery::messenger_gallery_save_picture)));

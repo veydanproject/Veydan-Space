@@ -25,7 +25,10 @@ describe('the group «Чаты» of the settings', () => {
     expect(profile.current?.()).toBe(false);
   });
 
-  it('is one titled card of rows after the account on a phone', () => {
-    expect(mobile.settings.map((s) => [s.id, s.group, s.after])).toEqual([['chats', 'msg_nav_chats', 'account']]);
+  it('is one titled card of rows after the account on a phone, and the profile a tab of their own (Chat alone)', () => {
+    expect(mobile.settings.map((s) => [s.id, s.group, s.after, s.into])).toEqual([
+      ['chats', 'msg_nav_chats', 'account', undefined],
+      ['profile', 'msg_nav_chats', undefined, 'tab'],
+    ]);
   });
 });

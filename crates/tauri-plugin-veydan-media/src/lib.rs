@@ -78,6 +78,11 @@ struct Albums {
 }
 
 #[derive(Deserialize)]
+struct CameraAnswer {
+    granted: bool,
+}
+
+#[derive(Deserialize)]
 struct PathAnswer {
     path: Option<String>,
 }
@@ -164,6 +169,13 @@ impl<R: Runtime> VeydanMedia<R> {
     pub async fn readable(&self, uris: &[String]) -> Result<(Vec<String>, Vec<PathBuf>)> {
         let a: ReadableAnswer = self.call("readable", serde_json::json!({ "uris": uris })).await?;
         Ok((a.readable, a.gone.into_iter().map(PathBuf::from).collect()))
+    }
+
+    /// Whether the app may use the camera, read of the system; with `ask`,
+    /// the system's question first (or the app's settings, when the user
+    /// refused for good).
+    pub async fn camera(&self, ask: bool) -> Result<bool> {
+        Ok(self.call::<CameraAnswer>("camera", serde_json::json!({ "ask": ask })).await?.granted)
     }
 
     /// The system camera (`photo` or `video`): the `content://` address of

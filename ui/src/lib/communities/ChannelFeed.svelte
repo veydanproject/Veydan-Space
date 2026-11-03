@@ -800,7 +800,6 @@
         {#if waitingAll > 0}<span class="menu-count" aria-hidden="true">{waitingAll > 99 ? '99+' : waitingAll}</span>{/if}</button>
     </header>
     <!-- Under the head, the colour of the section shown (the accent for «Все»). -->
-    {#if sectioned && (where === 'reading' || where === 'catching_up')}<div class="stripe" style:background={shownColor} aria-hidden="true"></div>{/if}
 
     <!-- The bars under the head: cards the feed's width. -->
     <div class="strips">
@@ -1019,7 +1018,6 @@
   /* On a phone an icon alone, beside the menu, in the ink of the section's colour. */
   .sec-icon.icon { color: color-mix(in srgb, var(--chip) 65%, var(--text)); }
   .sec-icon.icon[aria-expanded="true"] { background: var(--surface-2); }
-  .stripe { height: 3px; flex-shrink: 0; }
   .menu-btn { position: relative; }
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }

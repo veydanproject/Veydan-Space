@@ -50,19 +50,36 @@
   const onVisible = () => {
     if (document.visibilityState === 'visible') {
       void readAccess();
+      void readCamera();
       void startPreview();
     } else stopPreview();
   };
 
-  // ─── The tile of the camera: what the camera sees, when it was allowed; a tap offers photo or video ───
+  // ─── The tile of the camera: what the camera sees, when it was allowed; its left half takes a photo, its right a video ───
 
-  let choosing = $state(false);
   let gone = false;
+  /**
+   * The system's word on the camera, `null` while it is read: only a `false`
+   * shows «Разрешить доступ». The webview never says it (its query of the
+   * permission is never `granted`), so it is asked of the app.
+   */
+  let cameraOk = $state<boolean | null>(null);
+  async function readCamera(ask = false) {
+    if (!caps.capture || !caps.grid) return;
+    try {
+      cameraOk = await library.camera(ask);
+    } catch {
+      cameraOk = false;
+    }
+  }
   /** The tile is drawn only over the grid. */
   const tileShown = $derived(caps.capture && caps.grid && !!access && access !== 'denied');
   const camera = new CameraPreview(
     () => !gone && tileShown && document.visibilityState === 'visible',
-    cameraAllowed,
+    async () => {
+      await readCamera();
+      return cameraOk === true || cameraAllowed();
+    },
     openPreview,
   );
   const preview = $derived(camera.stream);
@@ -73,10 +90,10 @@
     else untrack(stopPreview);
   });
 
-  /** The stub asks for the camera; whatever the answer, the choice opens: the system's camera needs no preview. */
-  async function pressCamera() {
-    if (!preview) await startPreview(true);
-    choosing = true;
+  /** «Разрешить доступ» of the tile: the system's question, or the app's settings when it no longer asks. */
+  async function allowCamera() {
+    await readCamera(true);
+    if (cameraOk) void startPreview(true);
   }
 
   function showStream(el: HTMLVideoElement, stream: MediaStream | null) {
@@ -156,7 +173,6 @@
 
   async function capture(kind: 'photo' | 'video') {
     note = '';
-    choosing = false;
     // The system's camera needs the device to itself.
     stopPreview();
     try {
@@ -170,6 +186,7 @@
       const text = String(e instanceof Error ? e.message : e);
       note = text.includes(CAMERA_DENIED) ? $t('msg_attach_camera_denied') : $t('msg_attach_camera_failed');
     } finally {
+      await readCamera();
       void startPreview();
     }
   }
@@ -255,7 +272,7 @@
     {#if note}<div class="note" role="status">{note}</div>{/if}
 
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="scroll" onclickcapture={(e) => { if (!(e.target as Element).closest?.('.camera')) choosing = false; }} bind:this={scroller} bind:clientHeight={viewH} bind:clientWidth={viewW} onscroll={(e) => { scrollTop = (e.currentTarget as HTMLElement).scrollTop; choosing = false; }}>
+    <div class="scroll" bind:this={scroller} bind:clientHeight={viewH} bind:clientWidth={viewW} onscroll={(e) => { scrollTop = (e.currentTarget as HTMLElement).scrollTop; }}>
       <div class="space" style:height="{Math.max(0, rows * rowH - GAP)}px">
         {#each shown as s (s.item?.id ?? 'camera')}
           <div class="cell" style:width="{side}px" style:height="{side}px" style:transform="translate({s.col * (side + GAP)}px, {s.row * rowH}px)">
@@ -265,15 +282,13 @@
                   <!-- svelte-ignore a11y_media_has_caption -->
                   <video use:showStream={preview} autoplay muted playsinline aria-hidden="true"></video>
                 {/if}
-                {#if choosing}
-                  <div class="cam-choice">
-                    <button type="button" onclick={() => capture('photo')}><Icon name="camera" size={18} /><span>{$t('msg_attach_camera')}</span></button>
-                    <button type="button" onclick={() => capture('video')}><Icon name="video" size={18} /><span>{$t('msg_attach_camera_video')}</span></button>
-                  </div>
-                {:else if preview}
-                  <button type="button" class="cam-hit" onclick={pressCamera} aria-label={$t('msg_attach_camera')}></button>
+                {#if cameraOk === false}
+                  <button type="button" class="cam-stub" onclick={allowCamera}><Icon name="camera" size={22} /><span>{$t('msg_attach_allow')}</span></button>
                 {:else}
-                  <button type="button" class="cam-stub" onclick={pressCamera}><Icon name="camera" size={22} /><span>{$t('msg_attach_allow')}</span></button>
+                  <div class="cam-split">
+                    <button type="button" onclick={() => capture('photo')} aria-label={$t('msg_attach_camera')}><Icon name="camera" size={24} /></button>
+                    <button type="button" onclick={() => capture('video')} aria-label={$t('msg_attach_camera_video')}><Icon name="video" size={24} /></button>
+                  </div>
                 {/if}
               </div>
             {:else}
@@ -370,15 +385,16 @@
   /* A larger place to hit than to see. */
   .pick-circle::before { content: ''; position: absolute; inset: calc(-1 * var(--sp-2)); }
 
-  /* What the camera sees, or the stub when it may not: the tile is the button. */
+  /* What the camera sees under two halves, a photo and a video; the stub when the camera is not allowed. */
   .camera { position: relative; width: 100%; height: 100%; border-radius: var(--radius-xs); overflow: hidden; background: var(--surface-2); color: var(--text-2); }
   .camera video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .camera button { border: 0; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); min-width: 0; padding: 0 var(--sp-1); }
-  .cam-hit { position: absolute; inset: 0; background: none; }
   .cam-stub { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-1); background: none; color: inherit; text-align: center; }
-  .cam-choice { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 2px; }
-  .cam-choice button { flex: 1; display: flex; align-items: center; justify-content: center; gap: var(--sp-1); background: var(--media-scrim); color: #fff; }
-  .cam-choice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cam-split { position: absolute; inset: 0; display: flex; }
+  .cam-split button { flex: 1; display: flex; align-items: center; justify-content: center; padding: 0; background: none; color: inherit; }
+  .cam-split::after { content: ''; position: absolute; left: 50%; top: 25%; bottom: 25%; width: 1px; background: currentColor; opacity: 0.3; pointer-events: none; }
+  .camera.live .cam-split { color: #fff; }
+  .camera.live .cam-split button { filter: var(--media-icon-shadow); }
 
   .viewer {
     position: absolute; inset: 0; z-index: var(--z-panel); border-radius: var(--radius-md); overflow: hidden;

@@ -218,6 +218,7 @@ pub fn module() -> Module {
                 commands::gallery::messenger_gallery_thumb,
                 commands::gallery::messenger_gallery_forget_thumbs,
                 commands::gallery::messenger_gallery_readable,
+                commands::gallery::messenger_gallery_camera,
                 commands::gallery::messenger_gallery_capture,
                 commands::gallery::messenger_gallery_pick,
                 commands::gallery::messenger_gallery_save_picture,

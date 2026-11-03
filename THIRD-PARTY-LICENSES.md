@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 898
+- **Rust / Cargo crates:** 897
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 1054
+- **Total third-party components:** 1053
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -39,7 +39,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | License | Count |
 |---|---:|
 | MIT OR Apache-2.0 | 319 |
-| MIT | 165 |
+| MIT | 164 |
 | MIT OR Apache-2.0 (platform dep) | 115 |
 | Apache-2.0 OR MIT | 111 |
 | MIT (platform dep) | 29 |
@@ -103,7 +103,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (898)
+## Full acknowledgements — Rust crates (897)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -627,7 +627,7 @@ Thank you to the authors of the following Cargo crates:
 | proc-macro-error-attr2 | 2.0.0 | MIT OR Apache-2.0 |
 | proc-macro-error2 | 2.0.1 | MIT OR Apache-2.0 |
 | proc-macro2 | 1.0.106 | MIT OR Apache-2.0 |
-| pulldown-cmark | 0.13.5 | MIT |
+| pulldown-cmark | 0.13.6 | MIT |
 | pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 |
 | qrcode | 0.14.1 | MIT OR Apache-2.0 |
 | quick-error | 2.0.1 | MIT OR Apache-2.0 |
@@ -899,7 +899,7 @@ Thank you to the authors of the following Cargo crates:
 | webpki-root-certs | 1.0.8 | CDLA-Permissive-2.0 * |
 | webpki-roots | 0.26.11 | CDLA-Permissive-2.0 |
 | webpki-roots | 1.0.10 | CDLA-Permissive-2.0 |
-| webrtc-sys-build | 0.3.19 | Apache-2.0 |
+| webrtc-sys-build | 0.3.20 | Apache-2.0 |
 | webview2-com | 0.38.2 | MIT * |
 | webview2-com-macros | 0.8.1 | MIT * |
 | webview2-com-sys | 0.38.2 | MIT * |
@@ -993,7 +993,6 @@ Thank you to the authors of the following Cargo crates:
 | zerotrie | 0.2.4 | Unicode-3.0 |
 | zerovec | 0.11.6 | Unicode-3.0 |
 | zerovec-derive | 0.11.3 | Unicode-3.0 |
-| zip | 0.6.6 | MIT |
 | zip | 4.6.1 | MIT * |
 | zip | 9.0.4 | MIT |
 | zlib-rs | 0.6.5 | Zlib |

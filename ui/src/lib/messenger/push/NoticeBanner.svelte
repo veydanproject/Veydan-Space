@@ -246,7 +246,8 @@
     display: flex; align-items: flex-start; gap: var(--sp-3);
     padding: var(--sp-3) var(--sp-3) calc(var(--sp-3) + 2px);
     border: 1px solid var(--border); border-radius: var(--radius-md);
-    background: var(--surface); color: var(--text);
+    /* Opaque: --surface is glass on a phone, and the list showed through the card. */
+    background: var(--bg-2); color: var(--text);
     box-shadow: 0 10px 28px rgb(0 0 0 / 0.18);
     transform: translate(var(--dx), var(--dy)); opacity: var(--fade);
     transition: transform 180ms ease, opacity 180ms ease;
@@ -259,7 +260,7 @@
   .badge {
     position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--accent); color: #fff; border: 2px solid var(--surface);
+    background: var(--accent); color: #fff; border: 2px solid var(--bg-2);
   }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }

@@ -236,6 +236,7 @@ messenger_emoji_used messenger all
 messenger_forward messenger all
 messenger_gallery_access messenger all
 messenger_gallery_albums messenger all
+messenger_gallery_camera messenger all
 messenger_gallery_capture messenger all
 messenger_gallery_forget_thumbs messenger all
 messenger_gallery_pick messenger all

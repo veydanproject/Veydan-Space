@@ -87,6 +87,7 @@ export function makeMockLibrary(state: Mode = mode(), count = MOCK_COUNT): Media
         return !!m && visible(Number(m[1]));
       });
     },
+    camera: async () => true,
     capture: async (kind) => `/home/dev/Pictures/capture-${Date.now()}.${kind === 'video' ? 'mp4' : 'jpg'}`,
     pickSystem: async () => [...MOCK_PICKED],
   };

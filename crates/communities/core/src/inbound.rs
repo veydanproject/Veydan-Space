@@ -1048,7 +1048,12 @@ impl ChannelService {
                 let keeper = state.keeper().ok_or_else(|| MessengerError::Invalid("no keeper".into()))?.inbox().clone();
                 let join = Join { community_id: cid.clone(), proof: None, admit_id: Some(admit.admit_id.clone()), created_at: now };
                 self.send_join(state, &keeper, &join).await?;
-                self.refresh_row(state, &me, Some(MEMBERSHIP_JOINING)).await?;
+                // A replayed admission can arrive after the keeper's issue.
+                // Keep that issue's joined row while asking for a fresh copy.
+                let joined = db::channels::get(&self.env.db, &cid)
+                    .await?
+                    .is_some_and(|row| row.membership == MEMBERSHIP_JOINED);
+                self.refresh_row(state, &me, if joined { None } else { Some(MEMBERSHIP_JOINING) }).await?;
             }
             wire::T_NOT_LET_IN => {
                 let Some(log) = log else { return Ok(out) };

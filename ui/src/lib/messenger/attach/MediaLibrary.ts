@@ -56,6 +56,8 @@ export interface MediaLibrary {
    * of the source by itself, whatever album or page the grid shows.
    */
   readable(paths: string[]): Promise<string[]>;
+  /** Whether the app may use the camera, read of the system; `ask`: the system's question (or the app's settings) first. */
+  camera(ask: boolean): Promise<boolean>;
   /** The path of what the camera took, for `importPicked`; `null`: cancelled. */
   capture(kind: 'photo' | 'video'): Promise<string | null>;
   /** The chooser of the system; the paths picked, none when cancelled. */
@@ -71,5 +73,6 @@ export const noGrid = {
   thumbUrl: async (): Promise<string> => { throw new Error('no grid'); },
   forgetThumbs: async (): Promise<void> => {},
   readable: async (_paths: string[]): Promise<string[]> => [],
+  camera: async (_ask: boolean): Promise<boolean> => false,
   capture: async (): Promise<string | null> => null,
 };

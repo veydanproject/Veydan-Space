@@ -7,13 +7,14 @@
   import { commandsFor, stepRow, typedCommand } from './bot-commands';
   import { readingOf } from '../content/markdown';
   import { classifyPaste, takePictures } from '../media/clipboard';
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import EmojiPicker from '../shared/emoji/EmojiPicker.svelte';
   import { usageStore } from '../shared/emoji/usageStore.svelte';
   import { onKeyboard } from '../shared/keyboard';
+  import { holdBack } from '../attach/sheetBack';
   import RecorderBar from '../media/RecorderBar.svelte';
   import CircleRecorder from '../media/CircleRecorder.svelte';
   import TouchRecorder from '../media/TouchRecorder.svelte';
@@ -87,6 +88,8 @@
   // Like a sheet, the panel can be pulled up by its grip (to look for an
   // emoji), and folded by its button.
   let dock = $state<'' | 'open' | 'tokb' | 'down'>('');
+  /** How far from a side the system's swipe back may start (Android's widest setting, in CSS px). */
+  const EDGE_PX = 40;
   let expanded = $state(false);
   let dragH = $state<number | null>(null);
   /** The height animates — not while it follows the keyboard or a finger (the composer would jump). */
@@ -126,14 +129,34 @@
     const timer = setTimeout(() => window.dispatchEvent(new Event('veydan-keyboard')), 220);
     return () => clearTimeout(timer);
   });
+  // The system «Назад» takes the panel down first, as it does the keyboard, and only the next one leaves the chat:
+  // the open panel holds a place in the history (ROO-558). Given back when it goes another way (the keyboard, a fold).
+  $effect(() => {
+    if (dock !== 'open') return;
+    // Untracked: taking a place in the history writes the page's state, which it also reads.
+    return untrack(() => holdBack(() => { closeDock(); el?.blur(); }, 'emojiDock'));
+  });
   // A tap outside the composer and the panel takes both down.
   $effect(() => {
     if (dock !== 'open') return;
     const outside = (e: PointerEvent) => {
       if (root?.contains(e.target as Node)) return;
       if ((e.target as HTMLElement).closest?.('.m-sheet, .context-menu, .fmt-top')) return;
-      closeDock();
-      el?.blur();
+      const down = () => { closeDock(); el?.blur(); };
+      // A finger down at a side edge may be the system's swipe back: closing here would give the place in the
+      // history back and the swipe would leave the chat too (ROO-563). The tap closes on its way up; a swipe the
+      // system takes is cancelled, and its back pops the place, which takes the panel down alone.
+      if (e.pointerType !== 'mouse' && (e.clientX < EDGE_PX || e.clientX > window.innerWidth - EDGE_PX)) {
+        const up = () => { stop(); down(); };
+        const stop = () => {
+          document.removeEventListener('pointerup', up, true);
+          document.removeEventListener('pointercancel', stop, true);
+        };
+        document.addEventListener('pointerup', up, true);
+        document.addEventListener('pointercancel', stop, true);
+        return;
+      }
+      down();
     };
     // The attach button opens its own sheet in the panel's place. Not on the finger going down: the composer
     // would slide down under the finger, and the tap would land on whatever came under it (a picture).

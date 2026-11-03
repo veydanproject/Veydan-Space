@@ -63,6 +63,12 @@ class CaptureArgs {
 }
 
 @InvokeArg
+class CameraArgs {
+  /** The user tapped «Разрешить доступ» on the tile: ask, not only read. */
+  var ask: Boolean = false
+}
+
+@InvokeArg
 class PickArgs {
   var multiple: Boolean = true
   /** `image`, `video`, `media`. */
@@ -108,6 +114,7 @@ private const val STORAGE = "storage"
 private const val WRITE = "write"
 private const val PREFS = "veydan-media"
 private const val ASKED = "asked"
+private const val CAMERA_ASKED = "camera-asked"
 
 /**
  * The phone's gallery for the sheet of the paperclip (ROO-110 1b): the
@@ -118,7 +125,7 @@ private const val ASKED = "asked"
  *
  * Nothing is asked of the user before a tap: the access is only read until
  * the page asks for it (`request`), the camera's permission until the tile
- * of the camera is tapped (`capture`).
+ * of the camera is tapped (`camera` with `ask`, `capture`).
  */
 @TauriPlugin(
   permissions = [
@@ -139,6 +146,8 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
   private val captureDir = File(activity.cacheDir, "attach-capture")
   /** The file the camera app is writing into, while it is open. */
   private var capturing: File? = null
+  /** The camera's rationale before the request of a tap on «Разрешить доступ». */
+  private var cameraRationale = false
 
   override fun load(webView: WebView) {
     // What a run before left: thumbnails and shots never imported.
@@ -308,6 +317,43 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
    * Answers `{ path }`, the `content://` address of the shot, or no path
    * when it was given up; `camera_denied`, `no_camera_app` refuse.
    */
+  private fun cameraAnswer(): JSObject =
+    JSObject().put("granted", getPermissionState(CAMERA) == PermissionState.GRANTED)
+
+  /**
+   * Whether the app may use the camera (`{ granted }`), read of the system:
+   * the WebView never says it, so the tile of the camera asks here. With
+   * `ask` (a tap on «Разрешить доступ»), the system's question when it may
+   * still be shown, else the app's page of settings (refused for good).
+   */
+  @Command
+  fun camera(invoke: Invoke) {
+    val ask = invoke.parseArgs(CameraArgs::class.java).ask
+    if (!ask || getPermissionState(CAMERA) == PermissionState.GRANTED) {
+      invoke.resolve(cameraAnswer())
+      return
+    }
+    val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val rationale = ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
+    if (!MediaPermissions.mayAsk(MediaAccess.DENIED, prefs.getBoolean(CAMERA_ASKED, false), rationale)) {
+      openSettings()
+      invoke.resolve(cameraAnswer())
+      return
+    }
+    prefs.edit().putBoolean(CAMERA_ASKED, true).apply()
+    cameraRationale = rationale
+    requestPermissionForAlias(CAMERA, invoke, "cameraRead")
+  }
+
+  /** Turned down with no question (refused for good before the tile asked): the settings at once. */
+  @PermissionCallback
+  fun cameraRead(invoke: Invoke) {
+    val granted = getPermissionState(CAMERA) == PermissionState.GRANTED
+    val rationale = ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
+    if (MediaPermissions.refusedUnasked(granted, cameraRationale, rationale)) openSettings()
+    invoke.resolve(cameraAnswer())
+  }
+
   @Command
   fun capture(invoke: Invoke) {
     if (getPermissionState(CAMERA) == PermissionState.GRANTED) {

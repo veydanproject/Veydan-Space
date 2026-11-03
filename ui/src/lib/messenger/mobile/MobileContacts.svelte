@@ -12,8 +12,9 @@
   import ContactsPanel from '../contacts/ContactsPanel.svelte';
   import ContactAddForm from '../contacts/ContactAddForm.svelte';
   import MobileFrame from './MobileFrame.svelte';
-  import { BASE, chatHref } from './routes';
+  import { chatHref } from './routes';
   import { markPhone } from '../shared/phone';
+  import MeButton from './MeButton.svelte';
   import MyQrButton from '../invites/MyQrButton.svelte';
   import ScanQrButton from '../invites/ScanQrButton.svelte';
 
@@ -33,9 +34,10 @@
   <ScanQrButton icon />
   <MyQrButton icon />
   <button class="ibtn" onclick={() => (adding = true)} aria-label={$t('msg_contacts_new')}><Icon name="user-plus" size={21} /></button>
+  <MeButton />
 {/snippet}
 
-<MobileFrame title={$t('msg_contacts_title')} onback={() => goto(BASE)} {actions}>
+<MobileFrame hubButton title={$t('msg_contacts_title')} {actions}>
   <ContactsPanel compact onchat={(pk) => write(pk).catch(() => {})} />
 </MobileFrame>
 

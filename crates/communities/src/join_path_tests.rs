@@ -562,7 +562,8 @@ async fn made_before(network: &Arc<Network>, hosts: &Arc<MemHosts>, path: &Path,
     let link = first.service.share_link(&cid).await.unwrap();
     // Its journal and card on the relay before the run ends.
     first.service.flush_outbox().await.unwrap();
-    first.service.db().close().await;
+    // The outbox and keeper jobs can still be finishing after the flush.
+    // Closing their pool here races those jobs and can lose their writes.
     lock(&network.pools).clear();
     first.stop();
     (cid, link)
@@ -650,9 +651,10 @@ async fn a_keeper_whose_hosts_refuse_answers_a_join_and_says_the_refusal_once() 
     until_quiet(&a.listener).await;
     hosts.refusing.store(true, std::sync::atomic::Ordering::SeqCst);
     a.service.rotate_now(&cid).await.unwrap();
-    for _ in 0..3 {
+    wait_for(Duration::from_secs(5), || async {
         a.service.tick().await.unwrap();
-    }
+        a.service.keeper_status(&cid).is_some_and(|s| s.storage_error.as_deref().is_some_and(|e| e.contains(HOST) && e.contains("no_account")))
+    }).await;
     let status = a.service.keeper_status(&cid).unwrap();
     assert!(status.pending_epoch.is_some(), "the epoch waits for its hosts");
     assert!(status.storage_error.as_deref().is_some_and(|e| e.contains(HOST) && e.contains("no_account")), "{status:?}");

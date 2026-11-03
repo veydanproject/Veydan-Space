@@ -711,4 +711,15 @@ describe('the preview of the camera on its tile', () => {
   it('the panel asks the app to be on the screen before the camera opens', () => {
     expect(panelSource).toMatch(/new CameraPreview\(\s*\(\) => !gone && tileShown && document\.visibilityState === 'visible'/);
   });
+
+  it('says «Разрешить доступ» only when the system refused the camera, read of the app, not of the webview (ROO-569)', () => {
+    expect(androidMediaLibrary.camera.toString()).toContain('gallery.camera');
+    const tile = panelSource.split('<div class="camera"')[1].split('{:else}\n              {@const item')[0];
+    expect(tile).toMatch(/\{#if cameraOk === false\}\s*<button type="button" class="cam-stub" onclick=\{allowCamera\}>.*msg_attach_allow/);
+    // Granted or still read: two halves, the photo on the left, the video on the right.
+    expect(tile).toMatch(/cam-split">\s*<button[^\n]*capture\('photo'\)[^\n]*\n\s*<button[^\n]*capture\('video'\)/);
+    const script = panelSource.split('</script>')[0];
+    expect(script).toMatch(/cameraOk = await library\.camera\(ask\)/);
+    expect(script.split('onMount(')[1].split('});')[0]).not.toContain('camera(true)');
+  });
 });

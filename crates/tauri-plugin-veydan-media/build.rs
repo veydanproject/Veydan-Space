@@ -10,6 +10,7 @@ const COMMANDS: &[&str] = &[
     "albums",
     "thumb",
     "readable",
+    "camera",
     "capture",
     "forget_capture",
     "pick_system",

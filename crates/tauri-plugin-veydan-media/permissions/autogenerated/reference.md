@@ -66,6 +66,32 @@ Denies the albums command without any pre-configured scope.
 <tr>
 <td>
 
+`veydan-media:allow-camera`
+
+</td>
+<td>
+
+Enables the camera command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-media:deny-camera`
+
+</td>
+<td>
+
+Denies the camera command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `veydan-media:allow-capture`
 
 </td>

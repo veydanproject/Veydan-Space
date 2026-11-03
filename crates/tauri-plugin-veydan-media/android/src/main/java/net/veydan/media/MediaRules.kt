@@ -61,6 +61,16 @@ object MediaPermissions {
     MediaAccess.PARTIAL -> true
     MediaAccess.DENIED -> !askedBefore || rationale
   }
+
+  /**
+   * Whether the system answered a request with no question shown: still
+   * refused, and no rationale before it nor after it. A question refused
+   * once leaves a rationale; one never asked before that the system turned
+   * down at once was refused for good elsewhere (calls, the camera of an
+   * earlier version), so the app's settings are opened on this first tap.
+   */
+  fun refusedUnasked(granted: Boolean, rationaleBefore: Boolean, rationaleAfter: Boolean): Boolean =
+    !granted && !rationaleBefore && !rationaleAfter
 }
 
 /**

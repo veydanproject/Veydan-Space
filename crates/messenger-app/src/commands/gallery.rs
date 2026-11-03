@@ -210,6 +210,20 @@ pub async fn messenger_gallery_readable(uris: Vec<String>, app: tauri::AppHandle
     }
 }
 
+/// Whether the app may use the camera, read of the system (the webview
+/// never says it); `ask`: the user tapped «Разрешить доступ» on the tile of
+/// the camera, the system's question or the app's settings first.
+#[tauri::command]
+pub async fn messenger_gallery_camera(ask: bool, app: tauri::AppHandle) -> CmdResult<bool> {
+    #[cfg(target_os = "android")]
+    return app.veydan_media().camera(ask).await.map_err(bridge);
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (ask, app);
+        Ok(false)
+    }
+}
+
 /// The system camera, `photo` or `video`: the address of the shot for
 /// `importPicked` (which deletes the shot once it is copied), `null` when
 /// it was given up. `camera_denied`: the user refused the camera.

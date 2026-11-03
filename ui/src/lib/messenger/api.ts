@@ -2761,6 +2761,8 @@ export const messengerApi = {
     forgetThumbs: () => invoke<void>('messenger_gallery_forget_thumbs'),
     /** Which of the items chosen in the grid the app may still read, each by its own row. */
     readable: (uris: string[]) => invoke<string[]>('messenger_gallery_readable', { uris }),
+    /** Whether the app may use the camera, read of the system; `ask`: the system's question (or the settings) first. */
+    camera: (ask: boolean) => invoke<boolean>('messenger_gallery_camera', { ask }),
     /** The system camera: the address of the shot, `null` when given up; refused with `camera_denied`. */
     capture: (kind: 'photo' | 'video') => invoke<string | null>('messenger_gallery_capture', { kind }),
     /** The system's Photo Picker. */

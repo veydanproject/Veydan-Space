@@ -23,6 +23,7 @@ export const androidMediaLibrary: MediaLibrary = {
   thumbUrl: (item, px) => messengerApi.gallery.thumb(item.path, Math.round(px)),
   forgetThumbs: () => messengerApi.gallery.forgetThumbs(),
   readable: (paths) => messengerApi.gallery.readable(paths),
+  camera: (ask) => messengerApi.gallery.camera(ask),
   capture: (kind) => messengerApi.gallery.capture(kind),
   async pickSystem({ multiple, kind }) {
     // A file of any kind is the system's chooser of documents, as it has always been.

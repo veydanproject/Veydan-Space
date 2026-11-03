@@ -44,7 +44,7 @@
   onMount(() => onKeyboard((inset) => (kb = inset)));
 </script>
 
-<div class="m-page msg-m" class:kb-open={kb > 0} style:padding-bottom="{kb}px">
+<div class="m-page msg-m" class:bare class:kb-open={kb > 0} style:padding-bottom="{kb}px">
   {#if !bare}
     <header class="bar">
       {#if onback}
@@ -69,6 +69,10 @@
 
 <style>
   .msg-m { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; }
+  /* A chat, a group, a channel bring their own head, glass over the conversation: no fade in. While a page's
+     opacity is under 1 the WebView draws no blur behind that glass, the first 0.2 s the posts showed through it
+     as if over the head, and then the head as if over them (ROO-558). */
+  .msg-m.bare { animation: none; }
   .bar {
     display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; min-height: 52px;
     padding: var(--sp-1) var(--sp-2); background: none; border-bottom: 0;

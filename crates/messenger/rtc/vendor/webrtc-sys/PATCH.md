@@ -5,8 +5,11 @@ This folder is the crate `webrtc-sys` 0.3.48 as published on crates.io
 `[patch.crates-io]` in `crates/messenger/Cargo.toml` and in the root
 `Cargo.toml`. `Cargo.toml.orig` and `.cargo_vcs_info.json` of the package are
 left out; everything else is the published copy, except the hunks below.
-The companion crates `libwebrtc` 0.3.51 and `webrtc-sys-build` 0.3.19 come
-from the registry unchanged. The stage-0 spike (tmp/calls-spike/REPORT.md,
+The companion crates `libwebrtc` 0.3.51 and `webrtc-sys-build` 0.3.20 come
+from the registry unchanged. `webrtc-sys-build` 0.3.20 is 0.3.19 on zip 9
+(RUSTSEC-2026-0429 and the three before it); it stays at that version in the
+lock files: 0.3.21 moves `WEBRTC_TAG` to another build of libwebrtc, and
+the archive pinned by hash is of `webrtc-89d790b`. The stage-0 spike (tmp/calls-spike/REPORT.md,
 section 2) found what the patches fix.
 
 ## Why a copy and not a fork or an upstream change

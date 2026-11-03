@@ -98,8 +98,8 @@
     return h % 360;
   });
 
-  /** The place a picture or a video alone takes before it is shown: its own proportions, within reason. */
-  const ratio = $derived(media?.dim ? Math.min(1.9, Math.max(0.75, media.dim[0] / media.dim[1])) : 4 / 3);
+  /** The place a picture or a video alone takes, before it is shown and after: its own proportions (the tile's 120–360 in height keep it within reason). */
+  const ratio = $derived(media?.dim && media.dim[0] > 0 && media.dim[1] > 0 ? media.dim[0] / media.dim[1] : 4 / 3);
 
   /** What pressing a tile or a card does: look or open, or fetch. A transfer has its own buttons. */
   function press() {
@@ -246,7 +246,7 @@
     {#if error}<span class="card-fail" title={error}><Icon name="alert-triangle" size={11} />{error}</span>{/if}
   </div>
 {:else if media && variant === 'tile'}
-  <div class="tile kind-{media.kind}" class:natural={fit === 'natural'} class:shown={(phase === 'here' || uploading) && !!src} style="--h:{hue}; --ar:{ratio}">
+  <div class="tile kind-{media.kind}" class:natural={fit === 'natural'} class:sized={!!media.dim} class:shown={(phase === 'here' || uploading) && !!src} style="--h:{hue}; --ar:{ratio}">
     <!-- The file on this device shows while it goes up too, as it will once sent. -->
     {#if (phase === 'here' || uploading) && src && media.kind === 'image'}
       <img {src} alt={media.name} onerror={previewBroken} />
@@ -344,6 +344,9 @@
   .tile.natural { height: auto; min-height: 120px; }
   .tile.natural img, .tile.natural video { height: auto; max-height: 360px; object-fit: contain; }
   .tile.natural:not(.shown) { aspect-ratio: var(--ar, 4 / 3); }
+  /* Its size known, the tile is the same box before the picture comes and after: nothing in the conversation moves when it is drawn. */
+  .tile.natural.sized { aspect-ratio: var(--ar); max-height: 360px; }
+  .tile.natural.sized img:not(.blur), .tile.natural.sized video { height: 100%; max-height: none; }
   .placeholder-name {
     position: absolute; left: 8px; bottom: 7px; right: 8px; font-family: var(--font-mono); font-size: 10px;
     color: rgba(0, 0, 0, 0.55); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

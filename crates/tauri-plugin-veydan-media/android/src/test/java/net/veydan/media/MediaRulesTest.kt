@@ -80,6 +80,22 @@ class MediaRulesTest {
     assertFalse(p.mayAsk(MediaAccess.FULL, askedBefore = true, rationale = false))
   }
 
+  /**
+   * CAMERA refused for good by the calls before the tile ever asked: the
+   * first tap still asks (never asked by it), the system turns it down with
+   * no question and no rationale, and the settings open on that same tap.
+   * A question shown and refused once leaves a rationale: no settings.
+   */
+  @Test
+  fun aCameraRefusedForGoodElsewhereOpensTheSettingsOnTheFirstTap() {
+    val p = MediaPermissions
+    assertTrue(p.mayAsk(MediaAccess.DENIED, askedBefore = false, rationale = false))
+    assertTrue(p.refusedUnasked(granted = false, rationaleBefore = false, rationaleAfter = false))
+    assertFalse(p.refusedUnasked(granted = false, rationaleBefore = false, rationaleAfter = true))
+    assertFalse(p.refusedUnasked(granted = false, rationaleBefore = true, rationaleAfter = false))
+    assertFalse(p.refusedUnasked(granted = true, rationaleBefore = false, rationaleAfter = false))
+  }
+
   // ─── Pages ───────────────────────────────────────────────────────────────
 
   @Test

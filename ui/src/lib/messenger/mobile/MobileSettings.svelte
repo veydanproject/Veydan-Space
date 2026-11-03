@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
+  import { leave } from '$lib/core/ui/back';
   import { messengerStore } from '../store.svelte';
   import SettingsView from '../pages/SettingsView.svelte';
   import MobileFrame from './MobileFrame.svelte';
@@ -21,7 +22,7 @@
   });
 </script>
 
-<!-- "Settings" alone is the app's own tab: this screen is the messenger's. -->
-<MobileFrame title={$t('msg_settings_title_full')} onback={() => goto(BASE)} scroll={false}>
+<!-- "Settings" alone is the app's own tab: this screen is the messenger's. Back to where it was opened from (the app's settings, a call button). -->
+<MobileFrame title={$t('msg_settings_title_full')} onback={() => void leave(BASE)} scroll={false}>
   <SettingsView compact />
 </MobileFrame>

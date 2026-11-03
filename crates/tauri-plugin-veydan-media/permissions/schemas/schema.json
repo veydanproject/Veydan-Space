@@ -319,6 +319,18 @@
           "markdownDescription": "Denies the albums command without any pre-configured scope."
         },
         {
+          "description": "Enables the camera command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-camera",
+          "markdownDescription": "Enables the camera command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the camera command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-camera",
+          "markdownDescription": "Denies the camera command without any pre-configured scope."
+        },
+        {
           "description": "Enables the capture command without any pre-configured scope.",
           "type": "string",
           "const": "allow-capture",

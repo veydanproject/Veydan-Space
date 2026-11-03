@@ -19,6 +19,9 @@ export const sectionItemHref = (chatId: string) => `${BASE}/item?id=${encodeURIC
 /** The contacts: QR codes, adding, the list (reached from «Новый чат»). */
 export const contactsHref = () => `${BASE}/contacts`;
 
+/** «Профиль и ключ» alone: behind my avatar where the app's settings hold the chat's others (Space). */
+export const profileHref = () => `${BASE}/profile`;
+
 export const chatHref = (chatId: string) => `${BASE}/chat?id=${encodeURIComponent(chatId)}`;
 
 /** Where a chat opened from elsewhere is shown: a row of a module's section (`owned`, seams/sections) on its own screen. */
