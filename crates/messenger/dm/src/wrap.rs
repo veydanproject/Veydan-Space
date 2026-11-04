@@ -453,6 +453,9 @@ mod tests {
 
         let message = wrap(&alice, pk(&bob), "hi", 1_700_000_000, None).unwrap();
         assert_eq!(tag_value(&message.to_peer, CALL_TAG), None);
+        // Nor a note of a channel (the push of the keeper, shown to nobody):
+        // a message rings as a message (ROO-645).
+        assert_eq!(tag_value(&message.to_peer, pushtags::CHANNEL), None);
         let note = wrap_note(&alice, pk(&bob), "x", 1_700_000_000, false, None).unwrap();
         assert_eq!(tag_value(&note.to_peer, CALL_TAG), None);
         // A call to myself is my own copy: quiet, and no call.

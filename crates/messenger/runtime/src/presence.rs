@@ -117,11 +117,17 @@ impl PresenceDriver {
     }
 
     /// A new session: a new pool that watches nothing yet, maybe another
-    /// user, and a beat at the first chance.
+    /// user, and a beat at the first chance. My other devices are told
+    /// where this one stands at the first look around: one added since the
+    /// last `own.presence`, or one that missed it, would beat from a key
+    /// no contact watches; the one behind takes it, the one ahead answers.
     pub(crate) async fn session_started(&self) {
         self.subscribed.lock().await.clear();
         *self.epoch_key.lock().unwrap() = None;
         self.last_beat.store(0, Ordering::SeqCst);
+        if let Err(e) = self.dm.presence_devices_unsure().await {
+            eprintln!("messenger presence: my devices not told: {e}");
+        }
     }
 
     /// The device woke from a sleep: beat at the next chance.
@@ -495,8 +501,20 @@ mod tests {
     }
 
     /// A runtime with a session, offline, and the relationship gate off: a
-    /// contact in the book is an approved one.
+    /// contact in the book is an approved one. What the session told my
+    /// devices at its first look around (`session_tells_my_devices_where_it_stands`)
+    /// has left the outbox.
     async fn started() -> (tempfile::TempDir, MessengerRuntime, Keys) {
+        let (dir, rt, keys) = started_fresh().await;
+        rt.presence_tick().await.unwrap();
+        for row in messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap() {
+            messenger_store::outbox::mark_published(rt.store(), &row.local_id).await.unwrap();
+        }
+        (dir, rt, keys)
+    }
+
+    /// As `started`, with the outbox as the session left it.
+    async fn started_fresh() -> (tempfile::TempDir, MessengerRuntime, Keys) {
         let dir = tempfile::tempdir().unwrap();
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
@@ -700,6 +718,47 @@ mod tests {
         rt.presence_tick().await.unwrap();
         rt.presence_tick().await.unwrap();
         assert_eq!(queued(&rt, &me, &[]).await.1, vec![state.note()], "owed, then told once");
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn session_tells_my_devices_where_it_stands() {
+        // A device that never heard a rotation (added later, or the note
+        // is gone from the relays) beat from a key no contact watched
+        // (ROO-621): each session says where it stands, epoch 0 too.
+        let (_dir, rt, me) = started_fresh().await;
+        rt.presence_tick().await.unwrap();
+        rt.presence_tick().await.unwrap();
+        assert_eq!(own_notes(&queued(&rt, &me, &[]).await.1), vec![(0, true)], "told once a session");
+
+        // The next session tells again.
+        let state = rt.dm().rotate_presence(true).await.unwrap();
+        rt.presence_tick().await.unwrap();
+        rt.presence().session_started().await;
+        rt.presence_tick().await.unwrap();
+        assert_eq!(own_notes(&queued(&rt, &me, &[]).await.1), vec![(0, true), (1, true), (1, true)]);
+        assert_eq!(rt.dm().presence_state().await.unwrap(), state);
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_device_behind_me_is_answered_with_my_epoch() {
+        use crate::tests::{ctx_of, dm_inbound, pk_of};
+        let (_dir, rt, me) = started().await;
+        rt.dm().rotate_presence(true).await.unwrap();
+        rt.dm().rotate_presence(true).await.unwrap();
+        rt.presence_tick().await.unwrap();
+        assert_eq!(own_notes(&queued(&rt, &me, &[]).await.1), vec![(2, true)]);
+
+        // My phone, at epoch 0 (it missed both), says where it stands.
+        let now = SystemClock.now().secs();
+        let mut msg = dm_inbound(&pk_of(&me), &pk_of(&me), Envelope::own_presence(0, 0, true).encode(), now);
+        msg.rumor_kind = messenger_core::envelope::KIND_OWN_RUMOR;
+        rt.dm().apply_inbound(msg, &ctx_of(&pk_of(&me), now)).await.unwrap();
+        assert_eq!(rt.dm().presence_epoch().await.unwrap(), 2, "an older epoch changes nothing here");
+        rt.presence_tick().await.unwrap();
+        rt.presence_tick().await.unwrap();
+        assert_eq!(own_notes(&queued(&rt, &me, &[]).await.1), vec![(2, true), (2, true)], "answered once");
         rt.shutdown().await;
     }
 

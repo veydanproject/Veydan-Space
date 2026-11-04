@@ -2578,9 +2578,9 @@ dependencies = [
 
 [[package]]
 name = "nostr-sdk"
-version = "0.45.4"
+version = "0.45.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db717044f755b5ed9be53cacb59660c36efbe578bde870151a24d6bead3cb218"
+checksum = "6241efa2469244b0c40ad9b32172d07e363a537cb822d3d5ba8c3a78e2829746"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3762,7 +3762,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -4179,8 +4179,8 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vlink-client"
-version = "0.3.4"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.3.4#718f28bf39434ae0f163efc066481a40dae29abe"
+version = "0.3.5"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.3.5#bb3fd62fce63ceba172f6af8a5c5c534177a9e32"
 dependencies = [
  "bytes",
  "h2",
@@ -4194,8 +4194,8 @@ dependencies = [
 
 [[package]]
 name = "vlink-proto"
-version = "0.3.4"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.3.4#718f28bf39434ae0f163efc066481a40dae29abe"
+version = "0.3.5"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.3.5#bb3fd62fce63ceba172f6af8a5c5c534177a9e32"
 dependencies = [
  "bytes",
  "h2",

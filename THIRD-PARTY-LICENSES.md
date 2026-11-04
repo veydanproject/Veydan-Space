@@ -533,7 +533,7 @@ Thank you to the authors of the following Cargo crates:
 | nostr | 0.45.5 | MIT |
 | nostr-database | 0.45.2 | MIT |
 | nostr-gossip | 0.45.1 | MIT |
-| nostr-sdk | 0.45.4 | MIT |
+| nostr-sdk | 0.45.6 | MIT |
 | notify | 8.2.0 | CC0-1.0 |
 | notify-types | 2.1.0 | MIT OR Apache-2.0 |
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 * |

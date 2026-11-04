@@ -651,9 +651,12 @@ async fn a_keeper_whose_hosts_refuse_answers_a_join_and_says_the_refusal_once() 
     until_quiet(&a.listener).await;
     hosts.refusing.store(true, std::sync::atomic::Ordering::SeqCst);
     a.service.rotate_now(&cid).await.unwrap();
+    // Both, not the refusal alone: the refusal of a shard of the snapshot
+    // the turn at the start put may come before the epoch of the rotation
+    // waits (the PR Gate of #112 caught it, once in about 25 here).
     wait_for(Duration::from_secs(5), || async {
         a.service.tick().await.unwrap();
-        a.service.keeper_status(&cid).is_some_and(|s| s.storage_error.as_deref().is_some_and(|e| e.contains(HOST) && e.contains("no_account")))
+        a.service.keeper_status(&cid).is_some_and(|s| s.pending_epoch.is_some() && s.storage_error.as_deref().is_some_and(|e| e.contains(HOST) && e.contains("no_account")))
     }).await;
     let status = a.service.keeper_status(&cid).unwrap();
     assert!(status.pending_epoch.is_some(), "the epoch waits for its hosts");

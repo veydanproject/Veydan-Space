@@ -25,6 +25,8 @@ internal data class Push(
   val data: String?,
   /** The server says the event carries an invitation to a call (the outside of the wrap, which anyone may mark). */
   val call: Boolean = false,
+  /** The server says the event is a channel service note (the mark `channel` outside the wrap), also when it carries no event. */
+  val channel: Boolean = false,
 ) {
   /** Handled, not shown. */
   val silent: Boolean
@@ -45,6 +47,7 @@ internal data class Push(
     if (count > 1) put("count", count.toString())
     put("trace", trace)
     if (call) put("call", "1")
+    if (channel) put("channel", "1")
   }
 
   companion object {
@@ -90,6 +93,7 @@ internal data class Push(
         trace = data["trace"]?.takeIf { TRACE.matches(it) } ?: "-",
         data = data["data"],
         call = data["call"] == "1",
+        channel = data["channel"] == "1",
       )
     }
 

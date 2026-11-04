@@ -319,6 +319,17 @@ async fn an_invitation_goes_to_an_admission_and_a_join() {
     w.pump(&all).await;
     assert_eq!(membership(&guest, &cid).await, MEMBERSHIP_JOINED);
     assert!(newest(&guest, &cid).await.is_some());
+    // Every note of the way (the invitation, the answer to the one who
+    // invited, the admission, the issue) is marked outside: none of them
+    // is pushed to a phone as "New message" (ROO-645).
+    let marked = |wrap: &serde_json::Value| wrap["tags"].as_array().is_some_and(|t| t.iter().any(|t| t[0] == crate::notes::PUSH_MARK && t[1] == "1"));
+    let inbox = lock(&w.relay.inbox).clone();
+    let types = |n: &Node, k: &str| inbox.get(k).cloned().unwrap_or_default().iter().filter_map(|wr| crate::notes::open(&n.keys, wr).ok().map(|o| (messenger_core::Envelope::parse(&o.content).map(|e| e.t).unwrap_or_default(), marked(wr)))).collect::<Vec<_>>();
+    let notes = [types(&owner, owner.me.as_hex()), types(&guest, guest.me.as_hex())].concat();
+    for t in [wire::T_INVITE, wire::T_INVITE_REPLY] {
+        assert!(notes.iter().any(|(n, _)| n == t), "{t} went: {notes:?}");
+    }
+    assert!(notes.iter().all(|(_, m)| *m), "every note is marked: {notes:?}");
 }
 
 /// The link of an invite-only channel is nothing to a stranger, and the
@@ -3446,6 +3457,24 @@ async fn a_join_to_the_owners_key_is_answered_by_the_keeper_of_the_app() {
     assert!(newest(&reader, &cid).await.is_some());
     assert_eq!(keeper_inbox(&w, &owner, &cid).await, 1, "the join went to the owner's key");
     assert!(lock(&w.relay.inbox).get(keeper.as_hex()).is_none_or(Vec::is_empty), "nothing to the keeper's key");
+    // The owner's push server pushes the join as a direct message: the mark
+    // outside makes it the keeper's on the owner's phone, no "New message"
+    // (ROO-633). The keeper's notes to the reader are marked too (ROO-645).
+    let marked = |wrap: &serde_json::Value| wrap["tags"].as_array().is_some_and(|t| t.iter().any(|t| t[0] == crate::notes::PUSH_MARK && t[1] == "1"));
+    let to_owner = lock(&w.relay.inbox).get(owner.me.as_hex()).cloned().unwrap_or_default();
+    let joins: Vec<_> = to_owner.iter().filter(|wr| crate::notes::open(&owner.keys, wr).is_ok_and(|o| o.content.contains(wire::T_JOIN))).collect();
+    assert!(!joins.is_empty() && joins.iter().all(|wr| marked(wr)), "the join to the keeper's inbox is marked");
+    let to_reader = lock(&w.relay.inbox).get(reader.me.as_hex()).cloned().unwrap_or_default();
+    assert!(!to_reader.is_empty() && to_reader.iter().all(marked), "the keeper's notes to the reader are marked");
+    // The keeper's inbox is the owner's key: a note there to the owner as a
+    // person (a request to a moderator) is no message either, marked too.
+    let state = reader.svc.state(&cid).await.unwrap_or_else(|e| panic!("{e}"));
+    let request = wire::Request { community_id: cid.clone(), note: "QA".into(), created_at: w.clock.now() };
+    reader.svc.send_note(Some(&state), &cid, &pk(&owner), wire::T_REQUEST, &request, None).await.unwrap_or_else(|e| panic!("{e}"));
+    w.pump(&all).await;
+    let to_owner = lock(&w.relay.inbox).get(owner.me.as_hex()).cloned().unwrap_or_default();
+    let requests: Vec<_> = to_owner.iter().filter(|wr| crate::notes::open(&owner.keys, wr).is_ok_and(|o| o.content.contains(wire::T_REQUEST))).collect();
+    assert!(!requests.is_empty() && requests.iter().all(|wr| marked(wr)), "a note to the owner as a person is marked");
     for n in all {
         let subs = n.svc.subscriptions(&n.keys).await.unwrap_or_default();
         for s in subs {

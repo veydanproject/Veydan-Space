@@ -28,9 +28,15 @@ internal object Keeper {
   /** The mark on the outside of the wrap: a tag of a push the module Communities owns. */
   private const val MARK = "channel"
 
-  /** The push is the keeper's: a wrap (as a direct message) marked `channel` on the outside. */
+  /**
+   * The push is the keeper's: a wrap (as a direct message) marked `channel`
+   * on the outside. The server says so in the push itself (`channel`), also
+   * of a burst it pushes as one without the event; an older server does not,
+   * and its first push of a burst is read by the tag of the event.
+   */
   fun isWake(push: Push): Boolean {
     if (push.type != Push.TYPE_DM) return false
+    if (push.channel) return true
     val event = push.event ?: return false
     return try {
       val tags = JSONObject(event).optJSONArray("tags") ?: return false

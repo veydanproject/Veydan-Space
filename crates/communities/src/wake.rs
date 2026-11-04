@@ -21,6 +21,11 @@
 //! The wake follows the note to the keeper by a moment, once a channel per
 //! `WAKE_EVERY`: a newcomer's first join is sent before the row of the
 //! channel is written, which names the owner.
+//!
+//! A journal that names the owner's key as the keeper's inbox (wire §3
+//! `inbox`, every channel of the app) needs no wake: the note itself goes
+//! to the owner's inbox, marked the same way (`notes::wrap_note`),
+//! and the keeper's key the resolver looks for is not its recipient.
 
 use async_trait::async_trait;
 use messenger_core::outbound::WireEvent;
@@ -38,7 +43,7 @@ use veydan_core::BoxFuture;
 /// The mark on the outside of the wrap of a wake, as the messenger's
 /// `pushtags::CHANNEL` and the push plugin's `Keeper.kt` name it: the tag
 /// of a push this module owns.
-pub(crate) const PUSH_TAG: &str = "channel";
+pub(crate) const PUSH_TAG: &str = communities_core::notes::PUSH_MARK;
 /// The type of the note inside.
 pub(crate) const T_WAKE: &str = "channel.wake";
 /// One wake a channel this often at most: a burst of notes to its keeper

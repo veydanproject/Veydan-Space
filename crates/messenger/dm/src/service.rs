@@ -4244,6 +4244,42 @@ mod tests {
         assert_eq!(phone.dm.rotate_presence(true).await.unwrap().since, now + 52);
     }
 
+    #[tokio::test]
+    async fn a_presence_note_behind_mine_is_answered_one_alike_is_not() {
+        use crate::own::PresenceState;
+        let desktop = Party::new().await;
+        let now = desktop.clock.now().secs();
+        let state = |epoch, since, sharing| PresenceState { epoch, since, sharing };
+        // A device that has not said where it stands owes it, epoch 0 too.
+        assert_eq!(desktop.dm.presence_devices_owed().await.unwrap(), Some(state(0, 0, true)));
+        desktop.receive(&own_note(&desktop.keys, &Envelope::own_presence(3, 1_000, true), now)).await;
+        assert_eq!(desktop.dm.presence_devices_owed().await.unwrap(), None, "a device told me this very state");
+
+        let behind = [
+            Envelope::own_presence(1, 500, true),
+            Envelope::own_presence(3, 900, true),
+            Envelope::own_presence(0, 0, true),
+        ];
+        for note in behind {
+            assert!(desktop.receive(&own_note(&desktop.keys, &note, now)).await.is_empty(), "{}", note.encode());
+            assert_eq!(desktop.dm.presence_devices_owed().await.unwrap(), Some(state(3, 1_000, true)), "{}", note.encode());
+            desktop.dm.presence_devices_told(3).await.unwrap();
+        }
+        // Ahead in one thing, behind in another: both take the merge, and
+        // the device that sent it is told.
+        assert_eq!(desktop.receive(&own_note(&desktop.keys, &Envelope::own_presence(3, 900, false), now)).await.len(), 1);
+        assert_eq!(desktop.dm.presence_devices_owed().await.unwrap(), Some(state(3, 1_000, false)));
+        desktop.dm.presence_devices_told(3).await.unwrap();
+        // The same again, or a newer epoch: nothing to answer.
+        for note in [Envelope::own_presence(3, 1_000, false), Envelope::own_presence(4, 2_000, true)] {
+            desktop.receive(&own_note(&desktop.keys, &note, now)).await;
+            assert_eq!(desktop.dm.presence_devices_owed().await.unwrap(), None, "{}", note.encode());
+        }
+        assert_eq!(desktop.dm.presence_state().await.unwrap(), state(4, 2_000, true));
+        desktop.dm.presence_devices_unsure().await.unwrap();
+        assert_eq!(desktop.dm.presence_devices_owed().await.unwrap(), Some(state(4, 2_000, true)), "a new session");
+    }
+
     // ─── Contact cards ──────────────────────────────────────────────────────
 
     fn card_of(pubkey: &str, name: &str, phone: Option<&str>) -> ContactCard {

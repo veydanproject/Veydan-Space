@@ -42,19 +42,36 @@ fn rumor(from: &Keys, kind: u16, to: PublicKey, content: &str, created_at: i64) 
     r
 }
 
+/// The mark on the outside of the wrap of every note of the channels,
+/// `["channel", "1"]`, as the messenger's `pushtags::CHANNEL` and the push
+/// plugin's `Keeper.kt` name it.
+pub const PUSH_MARK: &str = "channel";
+
 /// A note from `from` to `to`: rumor 30079, sealed by `from`, wrapped to
-/// `to`.
+/// `to`, marked [`PUSH_MARK`] outside. No note of the channels is read as
+/// a message, and the recipient's push server pushes an unmarked wrap to
+/// its key as a direct message: a join to the keeper's inbox (the owner's
+/// key, wire §3 `inbox`) rang "New message" (ROO-633), so did an answer
+/// to an invitation to the one who invited (ROO-645). Marked, the push is
+/// the keeper's: shown to nobody, the app takes a turn.
 pub fn wrap_note(from: &Keys, to: &PubKey, content: &str, created_at: i64) -> Result<WireEvent> {
     let receiver = PublicKey::from_hex(to.as_hex()).map_err(crypto)?;
     let r = rumor(from, KIND_NOTE, receiver, content, created_at);
-    wire(GiftWrapBuilder::new(receiver, r).finalize(from).map_err(crypto)?)
+    marked(GiftWrapBuilder::new(receiver, r), from)
 }
 
-/// A note to my own devices: rumor 30078, sealed and wrapped to my key.
+fn marked(wrap: GiftWrapBuilder, from: &Keys) -> Result<WireEvent> {
+    let wrap = wrap.extra_tags([Tag::parse([PUSH_MARK, "1"]).map_err(crypto)?]);
+    wire(wrap.finalize(from).map_err(crypto)?)
+}
+
+/// A note to my own devices: rumor 30078, sealed and wrapped to my key,
+/// marked as [`wrap_note`]: my push server would push it to my other
+/// phone as a direct message.
 pub fn wrap_own(keys: &Keys, content: &str, created_at: i64) -> Result<WireEvent> {
     let me = keys.public_key();
     let r = rumor(keys, KIND_OWN, me, content, created_at);
-    wire(GiftWrapBuilder::new(me, r).finalize(keys).map_err(crypto)?)
+    marked(GiftWrapBuilder::new(me, r), keys)
 }
 
 /// A note opened: who sealed it (the seal's signature, which the rumor's
@@ -115,5 +132,31 @@ mod tests {
         assert!(!w.json.to_string().contains("channel.leave"), "nothing of it on the outside");
         let own = wrap_own(&a, "{}", 5).unwrap();
         assert_eq!(open(&a, &own.json).unwrap().kind, KIND_OWN);
+    }
+
+    /// Every note of the channels carries the mark of the push outside, to
+    /// a keeper or to a person, and to my own devices, and opens as any
+    /// note: none is read as a message, and an unmarked one is pushed as a
+    /// direct message ("New message" for `channel.invite_reply`, ROO-645).
+    #[test]
+    fn every_note_is_marked_outside() {
+        use crate::wire::{
+            T_ADMIT, T_INVITE, T_INVITE_REPLY, T_ISSUE, T_JOIN, T_KEEPER_HANDOVER, T_KEEPER_MASTER, T_LEAVE, T_LEVEL_REQUEST, T_LEVEL_RESOLVE, T_MISSED, T_NOT_LET_IN,
+            T_REBUNDLE, T_REJECTED, T_REQUEST, T_TICKET, T_TICKET_REQUEST, T_TICKET_USE, T_TRANSFER_DECLINE, T_TRANSFER_OFFER, T_UPLOAD_KEYS,
+        };
+        let (a, b) = (Keys::generate(), Keys::generate());
+        let mark = |w: &WireEvent| w.json["tags"].as_array().unwrap().iter().filter(|t| t[0] == PUSH_MARK).cloned().collect::<Vec<_>>();
+        let all = [
+            T_JOIN, T_REQUEST, T_INVITE, T_INVITE_REPLY, T_ADMIT, T_REJECTED, T_ISSUE, T_REBUNDLE, T_NOT_LET_IN, T_MISSED, T_LEAVE, T_KEEPER_MASTER,
+            T_LEVEL_REQUEST, T_LEVEL_RESOLVE, T_KEEPER_HANDOVER, T_TRANSFER_OFFER, T_TRANSFER_DECLINE, T_TICKET_REQUEST, T_TICKET, T_TICKET_USE, T_UPLOAD_KEYS,
+        ];
+        for t in all {
+            let content = format!("{{\"v\":1,\"t\":\"{t}\"}}");
+            let w = wrap_note(&a, &pk(&b), &content, 1_760_000_000).unwrap();
+            assert_eq!(mark(&w), vec![serde_json::json!([PUSH_MARK, "1"])], "{t}");
+            assert!(open(&b, &w.json).unwrap().content.contains(t));
+            let own = wrap_own(&a, &content, 1_760_000_000).unwrap();
+            assert_eq!(mark(&own), vec![serde_json::json!([PUSH_MARK, "1"])], "own {t}");
+        }
     }
 }

@@ -63,8 +63,6 @@ fn epoch_line(v: &crate::epoch::Verdict, signed: &serde_json::Value, cid: &str) 
     Some(format!("epoch {n} of {}: {what}", short(cid)))
 }
 
-/// The notes to a keeper (wire §7): heard on the inbox its journal names.
-const KEEPER_NOTES: [&str; 7] = [wire::T_JOIN, wire::T_ADMIT, wire::T_REBUNDLE, wire::T_MISSED, wire::T_LEAVE, wire::T_KEEPER_MASTER, wire::T_TICKET_REQUEST];
 /// The most notes that wait in the queue of a keeper (`cm_keeper_inbox`):
 /// a week of joins of a busy channel; past it a joiner sends again.
 pub const MAX_QUEUED_NOTES: i64 = 20_000;
@@ -915,7 +913,7 @@ impl ChannelService {
         // A peer note of the messenger (a receipt, a presence) comes on the
         // same `#p`: only what reads as a note of the channels is ours.
         let Ok(env) = Envelope::parse(&n.content) else { return Ok(out) };
-        let ours = env.t.starts_with("channel.") || KEEPER_NOTES.contains(&env.t.as_str());
+        let ours = env.t.starts_with("channel.") || wire::KEEPER_NOTES.contains(&env.t.as_str());
         let now = self.now();
         if n.kind == KIND_OWN {
             if env.t == T_OWN_KEYS || env.t == wire::T_INVITE || env.t == wire::T_LEVEL_RESOLVE {
@@ -949,7 +947,7 @@ impl ChannelService {
         // its inbox (wire §3, §7: the keeper of the app hears on my
         // connection); the copy of an admission of somebody else is the
         // keeper's too, mine is the one that names me.
-        if KEEPER_NOTES.contains(&env.t.as_str()) {
+        if wire::KEEPER_NOTES.contains(&env.t.as_str()) {
             let to_keeper = log.as_ref().and_then(|l| l.state().keeper()).is_some_and(|k| k.inbox() == &me);
             let my_copy = env.t == wire::T_ADMIT && wire::note_body::<Admit>(&env).is_ok_and(|a| a.who == me);
             if to_keeper && !my_copy && self.keeper(&cid).await?.is_some() {

@@ -20,7 +20,11 @@
 //! with when it began and the presence switch: the device that rotates
 //! tells the contacts the new key, the others take the epoch, beat from
 //! the new key, tell it with the same `since` and tell nobody what they
-//! told before; a switch turned off on one device is off on all.
+//! told before; a switch turned off on one device is off on all. A note
+//! is told once, and a relay keeps it no longer than its wraps: a device
+//! added later, or one that missed the note, would beat from an old key
+//! for good. So each session tells my devices where this one stands, and
+//! a device that hears a note behind its own state answers with it.
 //!
 //! What of my profile stays off kind 0 travels the same way: my phone and
 //! whether my card carries it (`own.profile`, sent on a change and again
@@ -69,8 +73,10 @@ pub const KEY_PRESENCE_EPOCH: &str = "presence.epoch";
 /// to the newer one.
 pub const KEY_PRESENCE_SINCE: &str = "presence.since";
 /// The newest epoch my other devices know of: by an `own.presence` this
-/// device sent, or one it heard. A rotation without a session leaves the
-/// note owed until the next one.
+/// device sent, or one it heard. None: they may not know where this device
+/// stands (a new session, a note behind it), and are told at the next look
+/// around. A rotation without a session leaves the note owed until the
+/// next one.
 pub const KEY_PRESENCE_DEVICES_TOLD: &str = "presence.devices_told";
 /// My presence key moved to another epoch, or the switch moved on another
 /// device: `{}`.
@@ -100,6 +106,19 @@ impl PresenceState {
     /// The note that tells my other devices.
     pub fn note(&self) -> Envelope {
         Envelope::own_presence(self.epoch, self.since, self.sharing)
+    }
+
+    /// Where both end when one device stands at `self` and hears `other`:
+    /// the newer epoch; at the same one (two devices that rotated at once)
+    /// the later `since` and "not sharing".
+    pub fn merged(self, other: PresenceState) -> PresenceState {
+        match other.epoch.cmp(&self.epoch) {
+            std::cmp::Ordering::Greater => other,
+            std::cmp::Ordering::Equal => {
+                PresenceState { epoch: self.epoch, since: self.since.max(other.since), sharing: self.sharing && other.sharing }
+            }
+            std::cmp::Ordering::Less => self,
+        }
     }
 }
 
@@ -244,51 +263,64 @@ impl DmService {
     }
 
     /// The state my other devices have not been told (`own.presence`): this
-    /// device moved to an epoch none of them told it of. Told once.
+    /// device moved to an epoch none of them told it of, or they may not
+    /// know where it stands. Told once.
     pub async fn presence_devices_owed(&self) -> Result<Option<PresenceState>> {
         let s = self.presence_state().await?;
-        Ok((s.epoch > self.presence_devices_told_epoch().await?).then_some(s))
+        Ok(self.presence_devices_told_epoch().await?.is_none_or(|told| s.epoch > told).then_some(s))
     }
 
     /// My other devices know of `epoch`.
     pub async fn presence_devices_told(&self, epoch: u32) -> Result<()> {
-        if epoch > self.presence_devices_told_epoch().await? {
+        if self.presence_devices_told_epoch().await?.is_none_or(|told| epoch > told) {
             settings::set(&self.store, KEY_PRESENCE_DEVICES_TOLD, &epoch.to_string()).await?;
         }
         Ok(())
     }
 
-    async fn presence_devices_told_epoch(&self) -> Result<u32> {
-        Ok(settings::get(&self.store, KEY_PRESENCE_DEVICES_TOLD).await?.and_then(|s| s.parse().ok()).unwrap_or(0))
+    /// My other devices may not know where this device stands: a new
+    /// session (a device added since the last note, a note a relay no
+    /// longer keeps), or a note that came from behind. They are told at
+    /// the next look around.
+    pub async fn presence_devices_unsure(&self) -> Result<()> {
+        settings::delete(&self.store, KEY_PRESENCE_DEVICES_TOLD).await
     }
 
-    /// Another device of mine rotated, or turned presence on or off: this
-    /// one takes the same epoch, `since` and switch. A newer epoch wins; at
-    /// the same epoch (two devices that rotated at once) the later `since`
-    /// and "not sharing" win, so both end alike. Whom this device told
-    /// counts as told the new key: the device that rotated tells it, so a
-    /// contact removed there is not told here before this device learns of
-    /// the removal; with sharing off the runtime withdraws it from them.
+    async fn presence_devices_told_epoch(&self) -> Result<Option<u32>> {
+        Ok(settings::get(&self.store, KEY_PRESENCE_DEVICES_TOLD).await?.and_then(|s| s.parse().ok()))
+    }
+
+    /// Another device of mine rotated, turned presence on or off, or says
+    /// where it stands: this one takes the same epoch, `since` and switch
+    /// (`PresenceState::merged`), so both end alike. A note behind what
+    /// this device knows (an older epoch: a device that missed a rotation,
+    /// or rotated from behind) is answered with my state at the next look
+    /// around, or the two would beat from two keys for good. Whom this
+    /// device told counts as told the new key: the device that rotated
+    /// tells it, so a contact removed there is not told here before this
+    /// device learns of the removal; with sharing off the runtime withdraws
+    /// it from them.
     async fn presence_elsewhere(&self, envelope: &Envelope) -> Result<Vec<Effect>> {
         let epoch = envelope.fields.get("epoch").and_then(|v| v.as_u64()).and_then(|e| u32::try_from(e).ok());
         let since = envelope.fields.get("since").and_then(|v| v.as_i64()).filter(|s| *s >= 0);
         let (Some(epoch), Some(since)) = (epoch, since) else { return Ok(vec![]) };
         let sharing = envelope.fields.get("sharing").and_then(|v| v.as_bool()).unwrap_or(true);
+        let theirs = PresenceState { epoch, since, sharing };
         let mine = self.presence_state().await?;
-        let next = match epoch.cmp(&mine.epoch) {
-            std::cmp::Ordering::Greater => PresenceState { epoch, since, sharing },
-            std::cmp::Ordering::Equal => {
-                PresenceState { epoch, since: since.max(mine.since), sharing: sharing && mine.sharing }
+        let next = mine.merged(theirs);
+        if next != mine {
+            self.set_presence_state(&next).await?;
+            if epoch > mine.epoch {
+                presence::carry_told(&self.store, epoch).await?;
             }
-            std::cmp::Ordering::Less => return Ok(vec![]),
-        };
+        }
+        if next == theirs {
+            self.presence_devices_told(epoch).await?;
+        } else {
+            self.presence_devices_unsure().await?;
+        }
         if next == mine {
             return Ok(vec![]);
-        }
-        self.set_presence_state(&next).await?;
-        self.presence_devices_told(epoch).await?;
-        if epoch > mine.epoch {
-            presence::carry_told(&self.store, epoch).await?;
         }
         Ok(vec![Effect::Emit(UiEvent { name: UI_EVENT_PRESENCE_EPOCH_CHANGED.into(), payload: serde_json::json!({}) })])
     }

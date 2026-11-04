@@ -67,6 +67,26 @@ async fn wraps_for(url: &str, who: &PubKey) -> usize {
     .len()
 }
 
+/// The gift wraps a relay holds for the user of `rt`, but the notes that
+/// tell my devices where my presence stands: each session sends one to the
+/// home set, whatever its chats (`PresenceDriver::session_started`).
+async fn wraps_but_presence(url: &str, rt: &MessengerRuntime) -> usize {
+    let keys = rt.session_keys().await.unwrap();
+    let filter = serde_json::json!({ "kinds": [1059], "#p": [keys.public_key().to_hex()] });
+    on_relay(url, filter)
+        .await
+        .into_iter()
+        .filter(|w| {
+            let Ok(ev) = serde_json::from_value::<nostr::prelude::Event>(w.clone()) else { return true };
+            let Ok(u) = nostr::nips::nip59::UnwrappedGift::from_gift_wrap(&keys, &ev) else { return true };
+            let presence = u.rumor.kind.as_u16() == messenger_core::envelope::KIND_OWN_RUMOR
+                && messenger_core::Envelope::parse(&u.rumor.content)
+                    .is_ok_and(|e| e.t == messenger_core::envelope::T_OWN_PRESENCE);
+            !presence
+        })
+        .count()
+}
+
 /// A runtime on the home relay with the private server, logged in.
 async fn device(
     home: &str,
@@ -266,11 +286,11 @@ async fn a_private_chat_never_reaches_the_home_relay() {
     assert!(wraps_for(&private_url, &bob_pk).await >= 2);
     assert!(wraps_for(&private_url, &alice_pk).await >= 2);
     assert_eq!(
-        wraps_for(&home_url, &bob_pk).await,
+        wraps_but_presence(&home_url, &bob).await,
         0,
         "nothing of the private chat at home"
     );
-    assert_eq!(wraps_for(&home_url, &alice_pk).await, 0);
+    assert_eq!(wraps_but_presence(&home_url, &alice).await, 0);
 
     // My kind 0 goes to the server too, of the same second as the home one.
     let profile = messenger_contacts::ProfileInput {
@@ -487,7 +507,7 @@ async fn a_private_server_reaches_my_other_device_and_so_does_its_removal() {
         .unwrap();
     assert_eq!(texts_when(&alice2, &chat, 2).await, vec!["first", "second"]);
     assert_eq!(
-        wraps_for(&home_url, &alice_pk).await,
+        wraps_but_presence(&home_url, &alice1).await,
         0,
         "nothing of the private chat at home"
     );
@@ -546,7 +566,7 @@ async fn a_group_of_a_private_server_never_reaches_the_home_relay() {
         .await;
 
     let (_a, a, _a_pk) = home_device(&home_url).await;
-    let (_b, b, b_pk, s1) = device(&home_url, &private_url).await;
+    let (_b, b, _b_pk, s1) = device(&home_url, &private_url).await;
     b.server_put_private(&PrivateServerInput {
         relay_url: private_url.clone(),
         name: Some("S1".into()),
@@ -619,7 +639,7 @@ async fn a_group_of_a_private_server_never_reaches_the_home_relay() {
         "no event of the group at home"
     );
     assert_eq!(
-        wraps_for(&home_url, &b_pk).await,
+        wraps_but_presence(&home_url, &b).await,
         0,
         "nothing of the group's protocol at home"
     );
@@ -876,7 +896,7 @@ async fn a_link_with_the_card_of_its_server_leads_there() {
         "B hears the request on S1",
         !bob.group_get(&g.id).await.unwrap().requests.is_empty()
     );
-    assert_eq!(wraps_for(&home_url, &bob_pk).await, 0, "nothing of it at home");
+    assert_eq!(wraps_but_presence(&home_url, &bob).await, 0, "nothing of it at home");
     alice.shutdown().await;
     bob.shutdown().await;
 }

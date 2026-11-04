@@ -805,6 +805,9 @@ pub const T_TICKET: &str = "channel.ticket";
 pub const T_TICKET_USE: &str = "channel.ticket_use";
 /// The upload keys of a channel's own server for one of its staff (wire §9.1).
 pub const T_UPLOAD_KEYS: &str = "channel.upload_keys";
+/// The notes to a keeper (§7): heard on the inbox its journal names. Every
+/// other note to that inbox is to the person whose key it is.
+pub const KEEPER_NOTES: [&str; 7] = [T_JOIN, T_ADMIT, T_REBUNDLE, T_MISSED, T_LEAVE, T_KEEPER_MASTER, T_TICKET_REQUEST];
 /// The most tickets one moderator holds at once (§17).
 pub const MAX_TICKETS: u32 = 50;
 /// How long a ticket lives (§17): short, a newcomer by a ticket reads from
